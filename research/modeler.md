@@ -201,3 +201,46 @@ breaks on bpmn-js-properties-panel majors (it is at 5.x). Start without it.
   Ants serves and the user opens in a browser. Small, but it is a second UI.
 - **Maintain:** bump two vendored bundles now and then. bpmn-js ships about weekly (18.30.1 on
   2026-09-24, 18.31.0 on 2026-10-01, GitHub releases), so there is no pressure to follow every one.
+
+## Route C: anything else credible
+
+**Miragon BPMN Modeler (VS Code extension).** Apache-2.0, vscode-v1.15.0 released 2026-10-08,
+active ([GitHub Miragon/bpmn-modeler](https://github.com/Miragon/bpmn-modeler), GitHub API).
+"Full BPMN 2.0 + DMN modeling for Camunda 7 and Camunda 8 (plus compatible forks like Operaton and
+CIB7)", element templates "by convention" from `.camunda/element-templates/`, and a deploy sidebar
+for C7 and C8 (README). Operaton support is "via C7 compatibility"
+([docs/index.md](https://github.com/Miragon/bpmn-modeler/blob/main/docs/index.md)): no
+`operaton.org` namespace appears in its source, so it writes `camunda:` like A1. One thing it does
+better than A1: it runs a filesystem watcher over the element-template folders
+([ElementTemplatesParticipant.ts](https://github.com/Miragon/bpmn-modeler/blob/main/apps/vscode-plugin/src/modeler/bpmn/controller/editor-participants/ElementTemplatesParticipant.ts)),
+so a template Ants rewrites shows up without Cmd+R. *Inference:* the best desktop option **if** the
+user lives in VS Code. The user's editor is Varde, a TUI, so it would mean opening VS Code only to
+draw. Its standalone desktop app is "Build-from-source, unreleased" (README).
+
+**Dropped, one line each:**
+- **Camunda Web Modeler:** part of Camunda 8 and its licence; C8 only. Out with Camunda 8.
+- **CIB seven Modeler:** Apache-2.0, web-based, built for the CIB seven fork, 1 star
+  ([GitHub cibseven/cibseven-modeler](https://github.com/cibseven/cibseven-modeler)). Too new.
+- **demo.bpmn.io / plain `vs-code-bpmn-io`:** plain BPMN, no Camunda 7 properties panel, so no
+  external-task topic or extension properties without hand-editing XML.
+- **SpiffWorkflow's modeler:** LGPL-2.1, writes `spiffworkflow` extensions Operaton does not read
+  ([GitHub sartography/spiff-arena](https://github.com/sartography/spiff-arena)).
+
+## Sanity check: is BPMN the right notation at all?
+
+The visual agent tools that are big in 2026 split in two. **LLM pipeline builders**, Langflow
+(MIT), Flowise (Apache-2.0 outside an `enterprise` directory under a commercial licence) and Dify
+(modified Apache-2.0: no multi-tenant use without permission, its logo must stay), wire model API
+calls into graphs (licences from each repo's LICENSE file, GitHub API). Ants does not call model
+APIs: it shells out to `claude -p` on the user's subscription, and paying per token is out of scope
+(issue #1). **General automation tools** come closer. n8n's Wait node can resume "On Webhook Call"
+or "On Form Submitted", and "When the workflow pauses it offloads the execution data to the
+database" ([n8n docs: Wait](https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.wait/)).
+But n8n is under the Sustainable Use License, "only for your own internal business purposes or for
+non-commercial or personal use" ([n8n LICENSE.md](https://github.com/n8n-io/n8n/blob/master/LICENSE.md)):
+fine for one user, not open source. Node-RED (Apache-2.0) is a message-flow tool. Windmill is AGPLv3
+with proprietary enterprise parts. Kestra (Apache-2.0) and Temporal (MIT) define flows in YAML or
+code, not by drawing. *Inference:* none of them gives all of what BPMN plus Operaton gives at once:
+a standard notation the user can draw, durable wait states for user tasks across restarts, gateways
+and loops, call activities as sub-processes, DMN tables, and an Apache-2.0 engine. n8n is the only
+one that comes close, and it has no DMN and a non-OSI licence. Stay with BPMN.
