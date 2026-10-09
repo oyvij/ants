@@ -1,0 +1,36 @@
+{
+  "outcome": "done",
+  "summary": "Second round on the invoice CSV export: who, which invoices, columns, number format.",
+  "output": {
+    "questions": [
+      {
+        "id": "who",
+        "title": "Who exports",
+        "ask": "Who gets the export button: everyone who can see invoices, or only admins?",
+        "recommendation": "Everyone who can see the invoice list; the export holds exactly what they can already see.",
+        "why": "The invoice list already filters by permission (InvoiceQuery.visible_to), so the export inherits it and needs no new rule."
+      },
+      {
+        "id": "scope",
+        "title": "Which invoices",
+        "ask": "Does the export take the invoices currently filtered on screen, or all of them?",
+        "recommendation": "The current filter, so what you see is what you get.",
+        "why": "A full export of 40k invoices would need a background job; the filtered list is capped at 5,000 rows and can stream straight from the request."
+      },
+      {
+        "id": "columns",
+        "title": "Columns",
+        "ask": "Which columns go in the file?",
+        "recommendation": "The columns visible in the table, in the same order, plus the invoice id and the customer's org number.",
+        "why": "Accounting asked for the org number (Vault: 'Invoice reconciliation'). Matching the table keeps the file predictable; the id makes every row traceable back to its invoice."
+      },
+      {
+        "id": "format",
+        "title": "Number format",
+        "ask": "Should amounts use Norwegian formatting (1 234,50) or plain (1234.50)?",
+        "recommendation": "Plain 1234.50 with a period, and UTF-8 with a BOM so Excel opens æøå correctly.",
+        "why": "Plain numbers survive every importer; the BOM is the one Excel quirk that matters for Norwegian names."
+      }
+    ]
+  }
+}
