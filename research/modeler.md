@@ -7,7 +7,46 @@ Checked on 2026-10-09 against GitHub repos (via the GitHub API and shallow clone
 licence text, docs.camunda.io, docs.camunda.org and Operaton's own docs. Each claim cites its source.
 Inferences are marked as such.
 
-<!-- ANSWER -->
+## Answer
+
+**Use the Camunda Desktop Modeler, Camunda 7 target, with an element template Ants generates. Do not
+build a modeler.** It is MIT, released every few weeks, still maintained for Camunda 7, draws every
+building block Ants needs (user tasks, gateways, loops, call activities and embedded sub-processes,
+business rule tasks with DMN tables), and deploys straight to Operaton's `/engine-rest`, which is
+what Operaton's own quick start tells you to do. Ants writes one "Agent Task" template into
+`.camunda/element-templates/` next to the Processes, with Agent and Skill as dropdowns built from
+the Agents and Skills on disk. The cost: dropdown choices are static, so the user presses Cmd+R
+after adding an Agent or Skill, and the file says `camunda:`, which Operaton accepts today but has
+marked for removal.
+
+**Keep route B as the known upgrade, not a rewrite.** If Cmd+R gets old, if a Task should pick its
+inputs from earlier Tasks' results, or when Ants moves to a server and grows an HTTP surface anyway,
+an Ants page is cheap: `camunda-bpmn-js` and `camunda-dmn-js` ship pre-built Camunda 7 modelers
+with the properties panel and element templates, and the template loader accepts an async callback,
+so the dropdowns are fetched live from Ants. Roughly 150 lines of JS and two vendored bundles, not
+a modeler project. "Create the modeler myself" in any bigger sense is not worth it: every route
+here, desktop or web, is the same bpmn-js core, and the only Ants-specific part is the template.
+
+**Switch to the Operaton Modeler when it ships releases.** It is the only modeler that writes
+`operaton:`, the namespace Operaton is keeping, but today it has no releases and lags upstream.
+Until then, when Operaton drops `camunda:`, rename on the way to the engine (the Operaton Modeler
+does it as three regex replacements).
+
+**BPMN stays.** No non-BPMN visual tool offers drawable flows, durable user-task waits, DMN and an
+open-source engine together (see the sanity check at the end).
+
+## The routes side by side
+
+| | A1 Camunda Desktop Modeler | A2 Operaton Modeler | B Ants page on camunda-bpmn-js | C Miragon (VS Code) |
+|---|---|---|---|---|
+| Licence | MIT; bpmn.io watermark clause on the bundled bpmn-js | MIT; same | MIT + bpmn.io licence; the watermark stays visible on the page | Apache-2.0; same bpmn.io core |
+| Releases | v5.52.0, 2026-10-06 | none, build from source | npm, about weekly | vscode-v1.15.0, 2026-10-08 |
+| Namespace written | `camunda:` (accepted, deprecated for removal) | `operaton:` | `camunda:`; Ants can rename on save | `camunda:` |
+| Agent / Skill | template dropdowns, static, Cmd+R to reload | same | template dropdowns fetched live from Ants | template dropdowns, file-watched |
+| Inputs / result | template fields (`camunda:property`, input/output parameters) | same | same, or a custom panel later | same |
+| DMN | yes | yes | yes (`camunda-dmn-js`) | yes |
+| Deploy | built in, to `/engine-rest` | built in | Ants backend on Save | built in |
+| Effort | one generated JSON | same + build an Electron app | ~150 lines JS + 3 endpoints, ~2 days (inference) | one generated JSON; needs VS Code |
 
 ## Route A: an existing desktop modeler, as-is
 
@@ -20,7 +59,7 @@ without asking anyone.
 
 **Is the C7 target still alive?** Yes, today. The 5.5x changelog still carries Camunda 7 work: "FIX:
 enable element template chooser in Camunda 7 (#6108)" in 5.51.0, "support Camunda 7.24 (#4984)"
-earlier ([CHANGELOG.md](https://github.com/camunda/camunda-modeler/blob/main/CHANGELOG.md)). No
+earlier ([CHANGELOG.md](https://github.com/camunda/camunda-modeler/blob/develop/CHANGELOG.md)). No
 official removal date exists. The nearest statement is a Camunda reply on the forum: "there will
 always be a version of the Desktop Modeler that supports the latest Camunda 7 version but it might
 not be the latest Desktop Modeler version", and C7 support is expected to last until Enterprise
@@ -71,7 +110,7 @@ do: "click on the deploy button in the Camunda Modeler ... provide an URL ... (e
 `http://localhost:8080/engine-rest`)"
 ([Operaton docs: quick start, deploy](https://github.com/operaton/documentation/blob/main/docs/get-started/quick-start/deploy.md)). The C7 deployment tool posts to `/deployment/create` on a
 REST URL defaulting to `http://localhost:8080/engine-rest`
-([CamundaAPI.js](https://github.com/camunda/camunda-modeler/blob/main/client/src/plugins/camunda-plugin/shared/CamundaAPI.js)).
+([CamundaAPI.js](https://github.com/camunda/camunda-modeler/blob/develop/client/src/plugins/camunda-plugin/shared/CamundaAPI.js)).
 Operaton Run serves the same REST API at `http://localhost:8080/engine-rest/`
 ([Operaton docs: Operaton Run](https://github.com/operaton/documentation/blob/main/docs/documentation/user-guide/operaton-bpm-run.md)),
 and Operaton keeps a "fully compatible REST API" with Camunda 7
@@ -97,9 +136,9 @@ It pins older bpmn.io libraries than Camunda's (`bpmn-js ^18.3.1` against Fluxno
 rewrites to `operaton:` on save: `normalizeOperatonXml` replaces `camunda:` prefixes with
 `operaton:` and declares `http://operaton.org/schema/1.0/bpmn` (and `.../dmn`), called from
 `BpmnEditor.js` and `DmnEditor.js` on export
-([client/src/util/operatonXml.js](https://github.com/operaton/operaton-modeler/blob/main/client/src/util/operatonXml.js)).
+([client/src/util/operatonXml.js](https://github.com/operaton/operaton-modeler/blob/develop/client/src/util/operatonXml.js)).
 Opening a `camunda:` file triggers a conversion dialog
-([operatonConversion.js](https://github.com/operaton/operaton-modeler/blob/main/client/src/app/tabs/util/operatonConversion.js)).
+([operatonConversion.js](https://github.com/operaton/operaton-modeler/blob/develop/client/src/app/tabs/util/operatonConversion.js)).
 This is the only modeler found that writes the namespace Operaton intends to keep.
 
 **Agent, Skill, inputs, result.** The same element-template engine as Camunda's (it depends on
@@ -110,7 +149,7 @@ step renames). Same static-dropdown catch as A1.
 
 **Deploy.** Yes: it keeps Camunda's deployment tool, defaulting to
 `http://localhost:8080/engine-rest`
-([DeploymentTool.js:51](https://github.com/operaton/operaton-modeler/blob/main/client/src/plugins/camunda-plugin/deployment-tool/DeploymentTool.js)).
+([DeploymentTool.js:51](https://github.com/operaton/operaton-modeler/blob/develop/client/src/plugins/camunda-plugin/deployment-tool/DeploymentTool.js)).
 
 **Effort.** Same template work as A1, plus building an Electron app from source on every machine,
 and a young fork that already lags upstream. *Inference:* the right tool the day it ships signed
@@ -179,7 +218,7 @@ breaks on bpmn-js-properties-panel majors (it is at 5.x). Start without it.
   (`operaton-bpmn-moddle` and `@operaton/bpmn-moddle` do not exist on the registry); the Operaton
   Modeler keeps its own unpublished copy. The fix when Operaton drops `camunda:` is the same rename
   on save the Operaton Modeler does
-  ([operatonXml.js](https://github.com/operaton/operaton-modeler/blob/main/client/src/util/operatonXml.js)),
+  ([operatonXml.js](https://github.com/operaton/operaton-modeler/blob/develop/client/src/util/operatonXml.js)),
   and Ants owns the save path here, so it is one place.
 - **DMN:** `camunda-dmn-js` gives the Camunda 7 DMN modeler in the same form.
 - **Deploy:** Ants' backend posts the XML to Operaton's `/engine-rest/deployment/create` on Save.
