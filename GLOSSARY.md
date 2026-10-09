@@ -43,6 +43,11 @@ What an Agent hands back when its Task ends: either done, carrying what the Task
 saying what it needs from the user.
 _Avoid_: response, return value
 
+**Round**:
+One set of questions a Task asks the user at once, answered together on one page, after which the
+Task resumes its session with the answers.
+_Avoid_: batch, questionnaire
+
 **Report**:
 What a Run leaves behind once its Run workspace is gone: what was done and which repos it changed.
 _Avoid_: summary, log
