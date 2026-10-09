@@ -1,0 +1,170 @@
+<!doctype html>
+<!-- PROTOTYPE, throwaway. Answers "Prototype a round of questions and its answer screen" (oyvij/ants#7).
+     The Ants web UI's answer page, after the map dropped the TUI. It carries the verdict on the
+     superseded TUI prototype (this branch's history): one question at a time, a tab bar, going back
+     to edit, a context per question, colours, and an editor-grade text area, which a native
+     <textarea> gives for free (word jumps, selection, copy/paste, undo).
+     Open it: open prototype/answer-page.html -->
+<html lang="en">
+<meta charset="utf-8">
+<title>Ants · questions (prototype)</title>
+<style>
+  :root { --q: #3b5bdb; --ctx: #ae3ec9; --rec: #e67700; --ans: #2b8a3e; --line: #dee2e6; --dim: #868e96;
+          font: 15px/1.5 system-ui, sans-serif; color: #212529; }
+  body { margin: 0; background: #f8f9fa; }
+  header { padding: 14px 24px 10px; background: #fff; }
+  header b { margin-right: 8px; }
+  .tag { font: 12px ui-monospace, monospace; background: #fff4e6; color: var(--rec); padding: 2px 6px; border-radius: 4px; }
+  .summary { color: var(--dim); font-size: 13px; }
+  nav { position: sticky; top: 0; display: flex; gap: 2px; padding: 0 24px; background: #fff; border-bottom: 1px solid var(--line); }
+  nav button { border: 0; background: none; padding: 10px 14px; border-bottom: 3px solid transparent; cursor: pointer; font: inherit; color: var(--dim); }
+  nav button[aria-selected=true] { color: #212529; border-color: var(--q); font-weight: 600; background: #edf2ff; }
+  .m-done { color: var(--ans); } .m-edit { color: var(--rec); }
+  main { max-width: 760px; margin: 28px auto; padding: 0 24px; }
+  .count { color: var(--dim); font-size: 13px; margin-bottom: 12px; }
+  section { border-left: 4px solid; padding: 2px 0 2px 14px; margin-bottom: 20px; }
+  section h2 { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; margin: 0 0 4px; }
+  section p { margin: 0; }
+  .ask { border-color: var(--q); } .ask h2 { color: var(--q); } .ask p { font-size: 19px; font-weight: 600; }
+  .ctx { border-color: var(--ctx); } .ctx h2 { color: var(--ctx); }
+  .rec { border-color: var(--rec); } .rec h2 { color: var(--rec); } .rec p { color: #495057; }
+  .ans { border-color: var(--ans); } .ans h2 { color: var(--ans); }
+  textarea { width: 100%; box-sizing: border-box; font: inherit; padding: 10px; border: 1px solid var(--line); border-radius: 6px; resize: vertical; min-height: 5em; }
+  textarea:focus { outline: 2px solid var(--ans); border-color: transparent; }
+  textarea::selection { background: #ffe8cc; }
+  .actions { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+  .hint { color: var(--dim); font-size: 13px; margin-left: auto; }
+  kbd { font: 12px ui-monospace, monospace; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; background: #fff; }
+  button.primary, button.plain { font: inherit; padding: 6px 14px; border-radius: 6px; cursor: pointer; }
+  button.primary { background: var(--ans); color: #fff; border: 0; }
+  button.plain { background: #fff; border: 1px solid var(--line); }
+  .review a { display: block; padding: 10px 12px; margin-bottom: 8px; background: #fff; border: 1px solid var(--line); border-radius: 6px; color: inherit; text-decoration: none; }
+  .review a:hover { border-color: var(--q); }
+  .review .a { color: var(--ans); white-space: pre-wrap; margin-top: 2px; }
+  pre { background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 12px; overflow: auto; font-size: 12px; }
+  details.proto { position: fixed; bottom: 12px; right: 12px; max-width: 46vw; max-height: 70vh; overflow: auto; background: #212529; color: #f8f9fa; border-radius: 8px; padding: 8px 12px; font-size: 13px; }
+  details.proto pre { background: #343a40; color: #f8f9fa; border: 0; }
+</style>
+<script type="application/json" id="round">
+{
+  "outcome": "done",
+  "summary": "Second round on the invoice CSV export: who, which invoices, columns, number format.",
+  "output": {
+    "questions": [
+      {
+        "id": "who",
+        "title": "Who exports",
+        "ask": "Who gets the export button: everyone who can see invoices, or only admins?",
+        "context": "Settles who the feature is for, which decides whether it needs a new permission or rides on the existing invoice access.",
+        "recommendation": "Everyone who can see the invoice list; the export holds exactly what they can already see.",
+        "why": "The invoice list already filters by permission (InvoiceQuery.visible_to), so the export inherits it and needs no new rule."
+      },
+      {
+        "id": "scope",
+        "title": "Which invoices",
+        "ask": "Does the export take the invoices currently filtered on screen, or all of them?",
+        "context": "Settles how big an export can get, which decides whether it streams from the request or needs a background job.",
+        "recommendation": "The current filter, so what you see is what you get.",
+        "why": "A full export of 40k invoices would need a background job; the filtered list is capped at 5,000 rows and can stream straight from the request."
+      },
+      {
+        "id": "columns",
+        "title": "Columns",
+        "ask": "Which columns go in the file?",
+        "context": "Settles what the file promises to hold, so accounting can rely on it when reconciling.",
+        "recommendation": "The columns visible in the table, in the same order, plus the invoice id and the customer's org number.",
+        "why": "Accounting asked for the org number (Vault: 'Invoice reconciliation'). Matching the table keeps the file predictable; the id makes every row traceable back to its invoice."
+      },
+      {
+        "id": "format",
+        "title": "Number format",
+        "ask": "Should amounts use Norwegian formatting (1 234,50) or plain (1234.50)?",
+        "context": "Settles whether the file opens cleanly in Excel and imports cleanly elsewhere.",
+        "recommendation": "Plain 1234.50 with a period, and UTF-8 with a BOM so Excel opens æøå correctly.",
+        "why": "Plain numbers survive every importer; the BOM is the one Excel quirk that matters for Norwegian names."
+      }
+    ]
+  }
+}
+</script>
+
+<header>
+  <!-- Ants supplies the header (Run, Task, Notification tag); the round's JSON only supplies the summary. -->
+  <b>Run invoices-csv-export</b> Grill the spec · round 2 <span class="tag">[questions]</span>
+  <div class="summary" id="summary"></div>
+</header>
+<nav id="tabs" role="tablist"></nav>
+<main id="main"></main>
+<details class="proto"><summary>Prototype state</summary>
+  <p>Answers: what the User Task completes with</p><pre id="answersJson"></pre>
+  <p>Round: the griller Task's Result</p><pre id="roundJson"></pre>
+</details>
+
+<script>
+  const round = JSON.parse(document.getElementById("round").textContent)
+  const qs = round.output.questions, n = qs.length
+  const answers = qs.map(q => ({ text: q.recommendation, accepted: false }))
+  let i = 0, sent = false
+
+  const esc = s => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c])
+  const mark = j => answers[j].text !== qs[j].recommendation ? '<span class="m-edit">✎</span>'
+    : answers[j].accepted ? '<span class="m-done">✓</span>' : "·"
+  const payload = () => ({ answers: qs.map((q, j) => ({
+    id: q.id, answer: answers[j].text, source: answers[j].text === q.recommendation ? "accepted" : "written" })) })
+
+  function go(j) { i = (j + n + 1) % (n + 1); sent = false; render() }
+  function accept() { answers[i].accepted = true; go(i + 1) }
+
+  function renderTabs() {
+    document.getElementById("tabs").innerHTML = qs.map((q, j) =>
+      `<button role="tab" aria-selected="${j === i && !sent}" onclick="go(${j})">${mark(j)} ${esc(q.title)}</button>`).join("")
+      + `<button role="tab" aria-selected="${i === n || sent}" onclick="go(${n})">Review and send</button>`
+    document.getElementById("answersJson").textContent = JSON.stringify(payload(), null, 2)
+  }
+
+  function render() {
+    renderTabs()
+    const main = document.getElementById("main")
+    if (sent) {
+      main.innerHTML = `<h2>Sent</h2><p>The User Task completes with:</p><pre>${esc(JSON.stringify(payload(), null, 2))}</pre>
+        <button class="plain" onclick="go(0)">Back to the round</button>`
+    } else if (i === n) {
+      main.innerHTML = `<h2>Review the round</h2><div class="review">` + qs.map((q, j) =>
+        `<a href="#" onclick="go(${j});return false">${mark(j)} ${esc(q.ask)}<div class="a">${esc(answers[j].text)}</div></a>`).join("")
+        + `</div><div class="actions"><button class="primary" id="send">Send the round</button>
+           <span class="hint"><kbd>Enter</kbd> send · click a question to change it</span></div>`
+      const send = document.getElementById("send")
+      send.onclick = () => { sent = true; render() }
+      send.focus()
+    } else {
+      const q = qs[i]
+      main.innerHTML = `<div class="count">Question ${i + 1} of ${n}</div>
+        <section class="ask"><h2>Question</h2><p>${esc(q.ask)}</p></section>
+        <section class="ctx"><h2>What it settles</h2><p>${esc(q.context)}</p></section>
+        <section class="rec"><h2>Recommended, because</h2><p>${esc(q.why)}</p></section>
+        <section class="ans"><h2>Your answer</h2><textarea id="answer"></textarea>
+          <div class="actions"><button class="primary" onclick="accept()">Accept</button>
+            <button class="plain" onclick="reset()">Back to the recommendation</button>
+            <span class="hint"><kbd>Enter</kbd> accept · <kbd>Shift</kbd>+<kbd>Enter</kbd> new line · <kbd>Esc</kbd> reset · <kbd>Tab</kbd> next</span></div>
+        </section>`
+      const ta = document.getElementById("answer")
+      ta.value = answers[i].text
+      ta.focus()
+      // The untouched recommendation starts selected, so typing replaces it and Enter accepts it.
+      if (ta.value === q.recommendation) ta.select(); else ta.setSelectionRange(ta.value.length, ta.value.length)
+      ta.oninput = () => { answers[i].text = ta.value; renderTabs() }
+      ta.onkeydown = e => {
+        if (e.key === "Enter" && !e.shiftKey && !e.altKey) { e.preventDefault(); accept() }
+        else if (e.key === "Escape") reset()
+        else if (e.key === "Tab") { e.preventDefault(); go(i + (e.shiftKey ? -1 : 1)) }
+      }
+    }
+  }
+
+  function reset() { answers[i].text = qs[i].recommendation; render() }
+
+  document.getElementById("summary").textContent = round.summary
+  document.getElementById("roundJson").textContent = JSON.stringify(round, null, 2)
+  render()
+</script>
+</html>
