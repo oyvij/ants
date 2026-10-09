@@ -21,7 +21,11 @@
   nav button { border: 0; background: none; padding: 10px 14px; border-bottom: 3px solid transparent; cursor: pointer; font: inherit; color: var(--dim); }
   nav button[aria-selected=true] { color: #212529; border-color: var(--q); font-weight: 600; background: #edf2ff; }
   .m-done { color: var(--ans); } .m-edit { color: var(--rec); }
-  main { max-width: 760px; margin: 28px auto; padding: 0 24px; }
+  main { max-width: 760px; margin: 28px auto; padding: 0 24px 96px; }
+  footer { position: fixed; bottom: 0; left: 0; right: 0; background: #fff; border-top: 1px solid var(--line); }
+  footer div { max-width: 760px; margin: 0 auto; padding: 12px 24px; display: flex; gap: 8px; }
+  footer .primary { margin-left: auto; min-width: 140px; }
+  footer button:disabled, footer .hide { visibility: hidden; }
   .count { color: var(--dim); font-size: 13px; margin-bottom: 12px; }
   section { border-left: 4px solid; padding: 2px 0 2px 14px; margin-bottom: 20px; }
   section h2 { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; margin: 0 0 4px; }
@@ -33,8 +37,6 @@
   textarea { width: 100%; box-sizing: border-box; font: inherit; padding: 10px; border: 1px solid var(--line); border-radius: 6px; resize: vertical; min-height: 5em; }
   textarea:focus { outline: 2px solid var(--ans); border-color: transparent; }
   textarea::selection { background: #ffe8cc; }
-  .actions { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
-  .hint { color: var(--dim); font-size: 13px; margin-left: auto; }
   button.primary, button.plain { font: inherit; padding: 6px 14px; border-radius: 6px; cursor: pointer; }
   button.primary { background: var(--ans); color: #fff; border: 0; }
   button.plain { background: #fff; border: 1px solid var(--line); }
@@ -42,7 +44,7 @@
   .review a:hover { border-color: var(--q); }
   .review .a { color: var(--ans); white-space: pre-wrap; margin-top: 2px; }
   pre { background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 12px; overflow: auto; font-size: 12px; }
-  details.proto { position: fixed; bottom: 12px; right: 12px; max-width: 46vw; max-height: 70vh; overflow: auto; background: #212529; color: #f8f9fa; border-radius: 8px; padding: 8px 12px; font-size: 13px; }
+  details.proto { position: fixed; bottom: 76px; right: 12px; max-width: 46vw; max-height: 70vh; overflow: auto; background: #212529; color: #f8f9fa; border-radius: 8px; padding: 8px 12px; font-size: 13px; }
   details.proto pre { background: #343a40; color: #f8f9fa; border: 0; }
 </style>
 <script type="application/json" id="round">
@@ -95,6 +97,8 @@
 </header>
 <nav id="tabs" role="tablist"></nav>
 <main id="main"></main>
+<!-- Fixed, so the buttons stay put from question to question; a slot is hidden, never removed. -->
+<footer><div><button class="plain" id="back">Back</button><button class="plain" id="reset">Reset to the recommendation</button><button class="primary" id="next"></button></div></footer>
 <details class="proto"><summary>Prototype state</summary>
   <p>Answers: what the User Task completes with</p><pre id="answersJson"></pre>
   <p>Round: the griller Task's Result</p><pre id="roundJson"></pre>
@@ -124,27 +128,27 @@
 
   function render() {
     renderTabs()
+    const [back, rst, next] = ["back", "reset", "next"].map(id => document.getElementById(id))
+    back.disabled = i === 0 && !sent
+    back.onclick = () => sent ? go(n) : go(i - 1)
+    rst.classList.toggle("hide", sent || i === n)
+    rst.onclick = reset
+    next.textContent = sent ? "Back to the round" : i === n ? "Send the round" : "Next"
+    next.onclick = () => sent ? go(0) : i === n ? (sent = true, render()) : accept()
     const main = document.getElementById("main")
     if (sent) {
-      main.innerHTML = `<h2>Sent</h2><p>The User Task completes with:</p><pre>${esc(JSON.stringify(payload(), null, 2))}</pre>
-        <button class="plain" onclick="go(0)">Back to the round</button>`
+      main.innerHTML = `<h2>Sent</h2><p>The User Task completes with:</p><pre>${esc(JSON.stringify(payload(), null, 2))}</pre>`
     } else if (i === n) {
       main.innerHTML = `<h2>Review the round</h2><div class="review">` + qs.map((q, j) =>
         `<a href="#" onclick="go(${j});return false">${mark(j)} ${esc(q.ask)}<div class="a">${esc(answers[j].text)}</div></a>`).join("")
-        + `</div><div class="actions"><button class="plain" onclick="go(${n - 1})">Back</button>
-           <button class="primary" onclick="sent = true; render()">Send the round</button>
-           <span class="hint">Click a question to change it</span></div>`
+        + `</div><p class="count">Click a question to change it.</p>`
     } else {
       const q = qs[i]
       main.innerHTML = `<div class="count">Question ${i + 1} of ${n}</div>
         <section class="ask"><h2>Question</h2><p>${esc(q.ask)}</p></section>
         <section class="ctx"><h2>What it settles</h2><p>${esc(q.context)}</p></section>
         <section class="rec"><h2>Recommended, because</h2><p>${esc(q.why)}</p></section>
-        <section class="ans"><h2>Your answer</h2><textarea id="answer"></textarea>
-          <div class="actions">${i ? `<button class="plain" onclick="go(${i - 1})">Back</button>` : ""}
-            <button class="primary" onclick="accept()">Next</button>
-            <button class="plain" onclick="reset()">Reset to the recommendation</button></div>
-        </section>`
+        <section class="ans"><h2>Your answer</h2><textarea id="answer"></textarea></section>`
       const ta = document.getElementById("answer")
       ta.value = answers[i].text
       ta.oninput = () => { answers[i].text = ta.value; renderTabs() }
