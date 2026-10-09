@@ -14,9 +14,16 @@ report.
 _Avoid_: workflow (Varde's word for a folder of Skills run in order), pipeline, flow
 
 **Task**:
-One step of a Process that an Agent carries out by running one Skill on the inputs it names, ending
-in a result the next step reads.
+One step of a Process, reading the inputs it names and ending in a result the next steps read.
 _Avoid_: job, step, activity
+
+**Agent Task**:
+A Task an Agent carries out by running one Skill.
+_Avoid_: AI task, service task
+
+**User Task**:
+A Task the user carries out on a page, such as answering a Round or approving.
+_Avoid_: human task, manual step
 
 **Agent**:
 A reusable definition of who does a Task: which AI CLI it runs, which tools it may use and its
