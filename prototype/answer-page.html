@@ -3,7 +3,8 @@
      The Ants web UI's answer page, after the map dropped the TUI. It carries the verdict on the
      superseded TUI prototype (this branch's history): one question at a time, a tab bar, going back
      to edit, a context per question, colours, and an editor-grade text area, which a native
-     <textarea> gives for free (word jumps, selection, copy/paste, undo).
+     <textarea> gives for free (word jumps, selection, copy/paste, undo). It behaves like a
+     normal web form: Enter is a new line, Tab moves focus, buttons move between questions.
      Open it: open prototype/answer-page.html -->
 <html lang="en">
 <meta charset="utf-8">
@@ -34,7 +35,6 @@
   textarea::selection { background: #ffe8cc; }
   .actions { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
   .hint { color: var(--dim); font-size: 13px; margin-left: auto; }
-  kbd { font: 12px ui-monospace, monospace; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; background: #fff; }
   button.primary, button.plain { font: inherit; padding: 6px 14px; border-radius: 6px; cursor: pointer; }
   button.primary { background: var(--ans); color: #fff; border: 0; }
   button.plain { background: #fff; border: 1px solid var(--line); }
@@ -131,11 +131,9 @@
     } else if (i === n) {
       main.innerHTML = `<h2>Review the round</h2><div class="review">` + qs.map((q, j) =>
         `<a href="#" onclick="go(${j});return false">${mark(j)} ${esc(q.ask)}<div class="a">${esc(answers[j].text)}</div></a>`).join("")
-        + `</div><div class="actions"><button class="primary" id="send">Send the round</button>
-           <span class="hint"><kbd>Enter</kbd> send · click a question to change it</span></div>`
-      const send = document.getElementById("send")
-      send.onclick = () => { sent = true; render() }
-      send.focus()
+        + `</div><div class="actions"><button class="plain" onclick="go(${n - 1})">Back</button>
+           <button class="primary" onclick="sent = true; render()">Send the round</button>
+           <span class="hint">Click a question to change it</span></div>`
     } else {
       const q = qs[i]
       main.innerHTML = `<div class="count">Question ${i + 1} of ${n}</div>
@@ -143,21 +141,13 @@
         <section class="ctx"><h2>What it settles</h2><p>${esc(q.context)}</p></section>
         <section class="rec"><h2>Recommended, because</h2><p>${esc(q.why)}</p></section>
         <section class="ans"><h2>Your answer</h2><textarea id="answer"></textarea>
-          <div class="actions"><button class="primary" onclick="accept()">Accept</button>
-            <button class="plain" onclick="reset()">Back to the recommendation</button>
-            <span class="hint"><kbd>Enter</kbd> accept · <kbd>Shift</kbd>+<kbd>Enter</kbd> new line · <kbd>Esc</kbd> reset · <kbd>Tab</kbd> next</span></div>
+          <div class="actions">${i ? `<button class="plain" onclick="go(${i - 1})">Back</button>` : ""}
+            <button class="primary" onclick="accept()">Next</button>
+            <button class="plain" onclick="reset()">Reset to the recommendation</button></div>
         </section>`
       const ta = document.getElementById("answer")
       ta.value = answers[i].text
-      ta.focus()
-      // The untouched recommendation starts selected, so typing replaces it and Enter accepts it.
-      if (ta.value === q.recommendation) ta.select(); else ta.setSelectionRange(ta.value.length, ta.value.length)
       ta.oninput = () => { answers[i].text = ta.value; renderTabs() }
-      ta.onkeydown = e => {
-        if (e.key === "Enter" && !e.shiftKey && !e.altKey) { e.preventDefault(); accept() }
-        else if (e.key === "Escape") reset()
-        else if (e.key === "Tab") { e.preventDefault(); go(i + (e.shiftKey ? -1 : 1)) }
-      }
     }
   }
 
