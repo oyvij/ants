@@ -66,7 +66,10 @@ Processes, and the user presses Cmd+R after creating an Agent. Workable, a littl
 **DMN.** Yes. DMN tables and DRDs, C7 target, deployable to the same engine (it bundles dmn-js,
 README).
 
-**Deploy to the engine.** Yes, built in. The C7 deployment tool posts to `/deployment/create` on a
+**Deploy to the engine.** Yes, built in, and it is what Operaton's own quick start tells users to
+do: "click on the deploy button in the Camunda Modeler ... provide an URL ... (e.g.
+`http://localhost:8080/engine-rest`)"
+([Operaton docs: quick start, deploy](https://github.com/operaton/documentation/blob/main/docs/get-started/quick-start/deploy.md)). The C7 deployment tool posts to `/deployment/create` on a
 REST URL defaulting to `http://localhost:8080/engine-rest`
 ([CamundaAPI.js](https://github.com/camunda/camunda-modeler/blob/main/client/src/plugins/camunda-plugin/shared/CamundaAPI.js)).
 Operaton Run serves the same REST API at `http://localhost:8080/engine-rest/`
@@ -120,3 +123,81 @@ MIT, v1.3.2 released 2026-08-21, active (pushed 2026-10-09)
 parent of the Operaton Modeler, but it writes the `fluxnova:` namespace
 (`http://fluxnova.finos.org/schema/1.0/bpmn`, `client/src/moddle/fluxnova-bpmn-moddle.json`), which
 Operaton does not parse. Reject for Ants.
+
+## Route B: a thin Ants modeler page on bpmn-js / dmn-js
+
+### What it is built from
+
+| Package | Licence | Latest (npm, 2026-10-09) | What it gives |
+|---|---|---|---|
+| `bpmn-js` | bpmn.io licence (MIT + watermark clause) | 18.31.0 | the BPMN canvas |
+| `dmn-js` | bpmn.io licence | 17.12.3 | DRD, decision table, literal expression editors |
+| `bpmn-js-properties-panel` | MIT | 5.65.2 | the side panel, with a Camunda 7 provider |
+| `bpmn-js-element-templates` | MIT | 2.37.1 | element templates in the panel |
+| `camunda-bpmn-js` | MIT (bundles bpmn-js) | 5.36.0 | all of the above as one "Camunda Platform Modeler" |
+| `camunda-dmn-js` | MIT (bundles dmn-js) | 3.8.3 | the same for DMN |
+
+Licences from the GitHub API and the npm registry. All repos were pushed to in October 2026.
+
+**The watermark.** bpmn-js and dmn-js are MIT plus one clause: "The source code responsible for
+displaying the bpmn.io project watermark that links back to https://bpmn.io as part of rendered
+diagrams MUST NOT be removed or changed. When this software is being used in a website or
+application, the watermark must stay fully visible and not visually overlapped by other elements"
+([bpmn-js LICENSE](https://github.com/bpmn-io/bpmn-js/blob/develop/LICENSE), same text in
+[dmn-js](https://github.com/bpmn-io/dmn-js)). Free for a personal tool; the small logo stays in the
+canvas corner. The desktop modelers carry the same obligation, they just meet it for you.
+
+**No build step needed for the thin version.** `camunda-bpmn-js` ships pre-built bundles:
+"Use a pre-packaged distribution ... `dist/camunda-platform-modeler.development.js`", and its
+`camunda-platform` distribution already includes `camunda-bpmn-moddle`, the Camunda 7 properties
+provider, `ElementTemplatesPropertiesProviderModule` and the element-template chooser
+([camunda-bpmn-js README](https://github.com/camunda/camunda-bpmn-js),
+[docs/DISTRIBUTIONS.md](https://github.com/camunda/camunda-bpmn-js/blob/main/docs/DISTRIBUTIONS.md),
+[lib/camunda-platform/Modeler.js](https://github.com/camunda/camunda-bpmn-js/blob/main/lib/camunda-platform/Modeler.js)).
+`dist/camunda-platform-modeler.production.min.js` resolves on unpkg for both `camunda-bpmn-js@5.36.0`
+and `camunda-dmn-js@3.8.3` (HTTP 200, checked 2026-10-09). *Inference:* vendor two JS files and two
+CSS files into Ants; no npm toolchain.
+
+### How Agent, Skill, inputs and result get entered
+
+This is where B beats A. The same Camunda 7 element templates work, but the page can **fetch them
+from Ants every time a diagram opens**. The loader takes `config.elementTemplates` as "an array of
+template descriptors or a node style callback to retrieve the templates asynchronously", and calls it
+again on every `diagram.init`
+([ElementTemplatesLoader.js](https://github.com/bpmn-io/bpmn-js-element-templates/blob/main/src/element-templates/ElementTemplatesLoader.js)).
+So Ants generates the "Agent Task" template from the Agents and Skills on disk, and the dropdowns
+are always current. No file to regenerate, no Cmd+R.
+
+Beyond templates, a custom properties provider (MIT `@bpmn-io/properties-panel` components) can do
+what static templates cannot: filter Skills by Agent, offer the results of earlier Tasks as inputs,
+validate the result schema. *Inference:* that needs a JS bundler and Preact-style components, and
+breaks on bpmn-js-properties-panel majors (it is at 5.x). Start without it.
+
+### Namespace, DMN, deploy
+
+- **Namespace:** writes `camunda:` (it uses `camunda-bpmn-moddle`). No `operaton:` moddle is on npm
+  (`operaton-bpmn-moddle` and `@operaton/bpmn-moddle` do not exist on the registry); the Operaton
+  Modeler keeps its own unpublished copy. The fix when Operaton drops `camunda:` is the same rename
+  on save the Operaton Modeler does
+  ([operatonXml.js](https://github.com/operaton/operaton-modeler/blob/main/client/src/util/operatonXml.js)),
+  and Ants owns the save path here, so it is one place.
+- **DMN:** `camunda-dmn-js` gives the Camunda 7 DMN modeler in the same form.
+- **Deploy:** Ants' backend posts the XML to Operaton's `/engine-rest/deployment/create` on Save.
+  Going through Ants avoids CORS; Operaton Run would otherwise need `operaton.bpm.run.cors` enabled
+  ([Operaton docs: Operaton Run, CORS](https://github.com/operaton/documentation/blob/main/docs/documentation/user-guide/operaton-bpm-run.md)).
+  Save and deploy become one click, and Ants can validate the Process (every Agent Task names an
+  existing Agent and Skill) before the engine sees it.
+
+### Effort
+
+*Inference, not measured:*
+- **Thin page:** one HTML file of roughly 150 lines of JS (open a Process from the Processes
+  folder, BPMN/DMN tabs, Save = deploy), plus three Ants HTTP endpoints (list/read Processes, serve
+  the generated template, save-and-deploy). About two days.
+- **What it gives up against A:** the desktop modeler's file tabs, BPMN linting against the C7
+  target, "start instance", the template chooser polish, and Camunda's QA on every release. Some come
+  free with `camunda-bpmn-js`; linting and multi-file handling would be Ants code.
+- **New surface:** issue #1 settles the Ants UI as a TUI in a Varde pane. Route B adds an HTTP page
+  Ants serves and the user opens in a browser. Small, but it is a second UI.
+- **Maintain:** bump two vendored bundles now and then. bpmn-js ships about weekly (18.30.1 on
+  2026-09-24, 18.31.0 on 2026-10-01, GitHub releases), so there is no pressure to follow every one.
