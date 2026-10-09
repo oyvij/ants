@@ -38,6 +38,11 @@ _Avoid_: instance, job, execution
 The folder a Run works in, holding its clones and intermediate files, deleted when the Run ends.
 _Avoid_: sandbox, scratch dir
 
+**Result**:
+What an Agent hands back when its Task ends: either done, carrying what the Task promised, or stuck,
+saying what it needs from the user.
+_Avoid_: response, return value
+
 **Report**:
 What a Run leaves behind once its Run workspace is gone: what was done and which repos it changed.
 _Avoid_: summary, log
