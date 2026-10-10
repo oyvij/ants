@@ -190,6 +190,7 @@
   details.proto pre { background: #0003; padding: 8px; border-radius: 6px; }
 </style>
 
+<div id="side"></div>
 <div id="app"></div>
 <div id="drawer"></div>
 <details class="proto"><summary>Prototype state</summary><pre id="state"></pre></details>
@@ -219,7 +220,7 @@ const TOOLS = {
   "Delegate and plan": [["Agent", "Start Subagents inside this Task"], ["TodoWrite", "Keep a todo list while it works"]],
 }
 const S = {
-  loggedIn: true, version: "0.4.2", update: "available", paused: { claude: "15:45" }, cap: 3, toast: null,
+  loggedIn: true, version: "0.4.2", update: "available", paused: { claude: "15:45" }, cap: 3,
   vaults: [{ name: "Work", path: "~/.varde/knowledge", def: true }, { name: "Side projects", path: "~/notes/vault" }],
   sourceMaps: [{ name: "Stacc repos", path: "~/.varde/source-map.md", def: true }, { name: "Personal", path: "~/code/source-map.md" }],
   agentFolders: ["~/.ants/agents", "~/.varde/ai/skills/workflows/knowledge-vault/agents"],
@@ -472,7 +473,7 @@ setInterval(() => {
   if (TICK === 25) newRound()
   // A free slot goes to the oldest queued Task (no paused CLI in its way).
   const q = running() < S.cap && S.runs.filter(r => r.state === "live").flatMap(r => r.tasks).find(t => t.st === "queued")
-  if (q) { Object.assign(q, { st: "running", el: 0, tok: 0, live: [] }); if (!document.activeElement?.closest(".ed, input, textarea, select")) render() }
+  if (q) { Object.assign(q, { st: "running", el: 0, tok: 0, live: [] }); refresh() }
 }, 1000)
 setInterval(() => { const g = ["·", "✢", "✳", "✶", "✻", "✽", "✻", "✶", "✳", "✢"]; document.querySelectorAll(".spin").forEach(e => e.textContent = g[Math.floor(Date.now() / 120) % g.length]) }, 120)
 function typeOut(el) { // assistant text streams in, like --include-partial-messages
@@ -485,8 +486,8 @@ function newRound() {
   g.st = "round"; g.subs = 0; g.round = 3
   r.tasks = r.tasks.filter(t => t.id !== "answer").concat(T("answer", "Answer the round", "waiting", { tag: "questions", waited: 0, summary: "Round 3 on the dark-mode toggle: placement, default, chart colours, persistence." }))
   const k = run("search-impl")?.tasks.find(t => t.st === "queued"); if (k) Object.assign(k, { st: "running", el: 0, tok: 0 }) // the freed slot goes to the oldest queued Task
-  S.toast = `<b>New: dark-mode-toggle asks round 3</b><br>4 questions are waiting on you. Its slot went to <b>search-impl · Update knowledge</b>, which was queued.`
-  if (!document.activeElement?.closest(".ed, input, textarea")) render()
+  toast(`<b>New: dark-mode-toggle asks round 3</b><br>4 questions are waiting on you. Its slot went to <b>search-impl · Update knowledge</b>, which was queued.`)
+  refresh()
 }
 
 const ph = (title, { crumbs = [], acts = "", sub = "" } = {}) =>
@@ -496,12 +497,13 @@ const md = (id, value, ph = "") => `<textarea data-md id="${id}" placeholder="${
 const mdView = s => `<div class="md" data-mdview>${esc(s)}</div>`
 
 // ---------- shell ----------
-function shell(body, full) {
+function renderSide() {
+  const box = document.getElementById("side"); if (!S.loggedIn || route() === "/login") { box.innerHTML = ""; return }
   const n = notes().length, live = S.runs.filter(r => r.state === "live").length
   const pause = Object.entries(S.paused).map(([cli, t]) => `<div class="notice pause"><b>⏸ ${cli} paused</b><br>Usage limit, resets at ${t}<button onclick="tryNow('${cli}')">Try now</button></div>`).join("")
-  const upd = S.update === "available" ? `<div class="notice upd"><b>Update available</b><br>v${S.version} → v0.5.0<button onclick="S.update='installed';render()">Update</button></div>`
+  const upd = S.update === "available" ? `<div class="notice upd"><b>Update available</b><br>v${S.version} → v0.5.0<button onclick="S.update='installed';refresh()">Update</button></div>`
     : S.update === "installed" ? `<div class="notice upd"><b>v0.5.0 installed</b><br>Restart Ants to use it: <code>ants restart</code></div>` : ""
-  return `<nav class="side"><div class="logo"><b>🐜</b>Ants</div>
+  box.innerHTML = `<nav class="side"><div class="logo"><b>🐜</b>Ants</div>
     <a class="${on("/")}" href="#/">${icon("home")}Home</a>
     <a class="${on("/notifications")}" href="#/notifications">${icon("bell")}Notifications${n ? `<span class="n">${n}</span>` : ""}</a>
     <div class="grp">Work</div>
@@ -512,8 +514,19 @@ function shell(body, full) {
     <a class="${on("/skills")}" href="#/skills">${icon("skill")}Skills</a>
     <div class="bottom">${pause}${upd}
       <a class="${on("/settings")}" href="#/settings">${icon("gear")}Settings</a>
-      <a href="#/login" onclick="S.loggedIn=false">${icon("out")}Log out <span class="m">v${S.version}</span></a></div></nav>
-    <main class="${full ? "full" : ""}">${body}</main>${S.toast ? `<div class="toast">${S.toast}<div style="text-align:right;margin-top:8px"><button onclick="S.toast=null;render()">OK</button></div></div>` : ""}`
+      <a href="#/login" onclick="S.loggedIn=false">${icon("out")}Log out <span class="m">v${S.version}</span></a></div></nav>`
+  document.title = (n ? `(${n}) ` : "") + "Ants"
+}
+// Something changed in the background (a Round arrived, a slot freed, Try now): refresh the sidebar, and the page
+// only if it is a list that shows it. Never the modeler, a Run's diagram or a form the user is in.
+function refresh() {
+  renderSide()
+  if (["/", "/notifications", "/runs"].includes(route()) && !document.activeElement?.closest(".ed, input, textarea, select")) render()
+}
+function toast(html) {
+  const t = document.createElement("div"); t.className = "toast"
+  t.innerHTML = html + `<div style="text-align:right;margin-top:8px"><button onclick="this.closest('.toast').remove()">OK</button></div>`
+  document.body.append(t); setTimeout(() => t.remove(), 12000)
 }
 
 // ---------- pages ----------
@@ -755,7 +768,7 @@ const folderLabel = f => f === "shipped" ? "shipped with Ants" : f
 const usedBy = (kind, name) => Object.entries(PROPS).filter(([, els]) => Object.values(els).some(e => e[kind] === name)).map(([pid]) => proc(pid)?.name).filter(Boolean)
 function pList(kind) {
   const one = kind === "agents" ? "Agent" : "Skill"
-  return ph(`${one}s`, { acts: `<button onclick="S.toast='Import one markdown file. It fills the create form, unsaved.';render()">Import…</button><button class="primary" onclick="go('#/${kind}/new')">New ${one}</button>`,
+  return ph(`${one}s`, { acts: `<button onclick="toast('Import one markdown file. It fills the create form, unsaved.')">Import…</button><button class="primary" onclick="go('#/${kind}/new')">New ${one}</button>`,
       sub: `From the folders in <a href="#/settings">Settings</a>. Ants writes only into <code>~/.ants/${kind}</code>; the rest are read-only, with Copy.` })
     + `<table><tr><th>Name</th>${kind === "agents" ? "<th>CLI · model</th><th>Skills</th>" : "<th>Run by</th>"}<th>Description</th><th>Folder</th></tr>
     ${S[kind].map(x => `<tr class="click" onclick="go('#/${kind}/${x.name}')"><td><b>${esc(x.name)}</b>${x.vault ? ' <span class="tag t-approve">vault</span>' : ""}</td>
@@ -772,7 +785,7 @@ function pAgent(name) {
         ${ro ? "" : `<button onclick="(S.draft.bash||=[]).push('');render()">＋ Add command</button>`}` : ""}</fieldset>`).join("")}</div>`
     : `<select ${ro}><option ${d.sandbox === "read-only" ? "selected" : ""}>read-only: reads files, changes nothing</option><option>workspace-write: changes files in the Run workspace</option><option>danger-full-access</option></select>`
   return ph(esc(x.name || "New Agent"), { crumbs: [`<a href="#/agents">Agents</a>`, esc(x.name || "New")],
-      acts: ro ? `<span class="muted small">Read-only (${esc(folderLabel(x.folder))})</span><button onclick="S.toast='Copied into ~/.ants/agents as ${esc(x.name)}-copy.';render()">Copy</button>` : `${x.isNew ? "" : `<button class="danger">Delete</button>`}<button class="primary">Save</button>`,
+      acts: ro ? `<span class="muted small">Read-only (${esc(folderLabel(x.folder))})</span><button onclick="toast('Copied into ~/.ants/agents as ${esc(x.name)}-copy.')">Copy</button>` : `${x.isNew ? "" : `<button class="danger">Delete</button>`}<button class="primary">Save</button>`,
       sub: `Used by: ${usedBy("agent", x.name).join(", ") || "no Process"}` })
     + `<div class="grid2" style="grid-template-columns:1.2fr 1fr"><div class="card"><h3>Who it is</h3>
       ${field("Name", "How Tasks name it. Unique across all Agent folders.", "implementer", `<input ${ro} value="${esc(d.name)}">`)}
@@ -794,7 +807,7 @@ function pSkill(name) {
   const runBy = S.agents.filter(a => a.skills.includes(x.name))
   const schema = JSON.stringify({ type: "object", required: x.fields, properties: Object.fromEntries(x.fields.map(f => [f, { type: f.endsWith("s") ? "array" : "string", description: `What ${f} holds` }])) }, null, 2)
   return ph(esc(x.name || "New Skill"), { crumbs: [`<a href="#/skills">Skills</a>`, esc(x.name || "New")],
-      acts: ro ? `<span class="muted small">Read-only (${esc(folderLabel(x.folder))})</span><button onclick="S.toast='Copied into ~/.ants/skills.';render()">Copy</button>` : `${x.isNew ? "" : `<button class="danger">Delete</button>`}<button class="primary">Save</button>`,
+      acts: ro ? `<span class="muted small">Read-only (${esc(folderLabel(x.folder))})</span><button onclick="toast('Copied into ~/.ants/skills.')">Copy</button>` : `${x.isNew ? "" : `<button class="danger">Delete</button>`}<button class="primary">Save</button>`,
       sub: `Used by: ${usedBy("skill", x.name).join(", ") || "no Process"}` })
     + `<div class="grid2" style="grid-template-columns:1.4fr 1fr"><div class="card">
       ${field("Name", "How Agents and Tasks name it. Unique across all Skill folders.", "walkthrough", `<input ${ro} value="${esc(x.name)}">`)}
@@ -829,7 +842,7 @@ function pSettings() {
     ${named("sourceMaps", "Source maps", "Each Process picks one on its diagram; new Processes get the default.")}
     <div class="grid2">${paths("agentFolders", "Agent folders", "Every <code>*.md</code> directly inside is an Agent.", "Ants' own, always")}${paths("skillFolders", "Skill folders", "Every folder holding a <code>SKILL.md</code>, at any depth, is a Skill.", "Ants' own, always")}</div>
     <div class="grid2"><div class="card"><h3>Server</h3>${field("Address", "Ants refuses a non-loopback address while the password is the default.", "127.0.0.1:7323", `<input class="mono" value="127.0.0.1:7323">`)}${field("Password", "", "", `<input type="password" placeholder="Change from admin">`)}</div>
-    <div class="card"><h3>Updates</h3><p class="small">Running v${S.version}. ${S.update === "available" ? `v0.5.0 is available. <button onclick="S.update='installed';render()">Update</button>` : S.update === "installed" ? "v0.5.0 installed; <code>ants restart</code> to use it." : "Up to date."}</p><button onclick="S.toast='Checked: nothing newer.';render()">Check now</button></div></div>`
+    <div class="card"><h3>Updates</h3><p class="small">Running v${S.version}. ${S.update === "available" ? `v0.5.0 is available. <button onclick="S.update='installed';refresh();render()">Update</button>` : S.update === "installed" ? "v0.5.0 installed; <code>ants restart</code> to use it." : "Up to date."}</p><button onclick="toast('Checked: nothing newer.')">Check now</button></div></div>`
 }
 
 // ---------- actions (stubs) ----------
@@ -844,7 +857,7 @@ function send(rid, tid) { const t = run(rid).tasks.find(x => x.id === tid), m = 
 function stop(rid, tid) { Object.assign(run(rid).tasks.find(x => x.id === tid), { st: "stopped", subs: 0, waited: 0, summary: "You stopped it.", needs: "Stopped by you just now." }); render() }
 function cancelRun(rid) { if (!confirm("Cancel the Run? It ends as failed and keeps its Run workspace until dismissed.")) return; Object.assign(run(rid), { state: "failed", ended: "now" }); go(`#/runs/${rid}`) }
 function dismiss(rid) { S.runs = S.runs.filter(r => r.id !== rid); go("#/runs") }
-function tryNow(cli) { delete S.paused[cli]; S.runs.flatMap(r => r.tasks).filter(t => t.st === "paused").forEach(t => t.st = "queued"); render() }
+function tryNow(cli) { delete S.paused[cli]; S.runs.flatMap(r => r.tasks).filter(t => t.st === "paused").forEach(t => t.st = "queued"); refresh() }
 function startRun(pid) {
   const id = (document.getElementById("f_branch")?.value || "").replace(/^ants\//, "") || "new-run-" + (S.runs.length + 1)
   const first = { "setup-vault": T("init", "Init the Vault", "queued"), implement: T("clone", "Clone repos", "done") }[pid] || T("scout", "Scout", "queued")
@@ -1142,7 +1155,7 @@ function saveDeploy() {
 // ---------- router ----------
 function render() {
   const p = route().split("/").filter(Boolean)
-  if (!S.loggedIn || p[0] === "login") { document.getElementById("app").innerHTML = pLogin(); return dump() }
+  if (!S.loggedIn || p[0] === "login") { renderSide(); document.getElementById("app").innerHTML = pLogin(); return dump() }
   let body, full = false
   if (!p.length) body = home()
   else if (p[0] === "notifications") body = pNotifications()
@@ -1159,8 +1172,8 @@ function render() {
   else if (p[0] === "settings") body = pSettings()
   else body = ph("Not found")
   if (p[0] !== "agents") S.draft = null
-  document.getElementById("app").innerHTML = shell(body, full)
-  document.title = (notes().length ? `(${notes().length}) ` : "") + "Ants"
+  document.getElementById("app").innerHTML = `<main class="${full ? "full" : ""}">${body}</main>`
+  renderSide()
   selected = null; mountDiagrams(); window.mountEditors?.(); dump()
 }
 function dump() {
