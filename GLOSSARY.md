@@ -70,6 +70,11 @@ Everything an Agent Task's Agent said and did across all its launches, readable 
 after the Run ends.
 _Avoid_: log, session, output
 
+**Usage limit**:
+How much the AI CLI's login may use in a window; an Agent Task that reaches it pauses, without the
+user, and resumes after the reset.
+_Avoid_: rate limit, quota
+
 **Round**:
 One set of questions a Task asks at once, answered together by the user, an Agent or the
 recommendations, after which the Task resumes its session with the answers.
