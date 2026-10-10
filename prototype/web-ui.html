@@ -798,18 +798,18 @@ function nextText(sc) {
   const mins = Math.round((d - new Date()) / 60000), today = d.toDateString() === new Date().toDateString()
   return `${today ? "today" : d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" })} ${d.toTimeString().slice(0, 5)} · in ${mins >= 1440 ? Math.floor(mins / 1440) + "d " : ""}${Math.floor(mins % 1440 / 60)}h ${mins % 60}m`
 }
-const schedShort = p => p.schedule ? `<span title="${esc(cronOf(p.schedule))}">⏰ ${schedText(p.schedule).replace(/^Every /, "")}${p.schedule.paused ? " · paused" : ""}</span>` : "—"
+const schedShort = p => !p.schedule ? `<a href="#/processes/${p.id}" onclick="event.stopPropagation();setTimeout(()=>document.getElementById('schedule')?.scrollIntoView({block:'center'}),50)">＋ Schedule</a>` : p.schedule ? `<span title="${esc(cronOf(p.schedule))}">⏰ ${schedText(p.schedule).replace(/^Every /, "")}${p.schedule.paused ? " · paused" : ""}</span>` : "—"
 function setSched(id, patch) { const p = proc(id); p.schedule = { ...p.schedule, ...patch }; render() }
 function schedCard(p) {
   const sc = p.schedule, id = p.id, fields = PROPS[id].start.fields
-  if (!sc) return `<div class="card"><h3>⏰ Schedule</h3><div class="row"><span class="muted grow">No schedule. Runs start when someone presses Start.</span>
+  if (!sc) return `<div class="card" id="schedule"><h3>⏰ Schedule</h3><div class="row"><span class="muted grow">No schedule. Runs start when someone presses Start.</span>
     <button onclick="setSched('${id}',{every:'day',at:'00:00',on:'Mon',dom:1,paused:false,values:{}})">＋ Add a schedule</button></div></div>`
   const missing = fields.filter(f => f.required && !(sc.values?.[f.name]?.length))
   const val = f => f.type === "repos" ? `<div class="row" style="flex-wrap:wrap;gap:6px 14px">${["billing", "web", "api", "search", "payments"].map(x => `<label class="row" style="font-weight:500"><input type="checkbox" ${(sc.values[f.name] || []).includes(x) ? "checked" : ""}
       onchange="const v=proc('${id}').schedule.values;v['${f.name}']=(v['${f.name}']||[]).filter(y=>y!=='${x}').concat(this.checked?['${x}']:[]);render()"> <span class="mono">${x}</span></label>`).join("")}</div>`
     : f.type === "yesno" ? `<label class="row" style="font-weight:500"><input type="checkbox" ${sc.values[f.name] ? "checked" : ""} onchange="proc('${id}').schedule.values['${f.name}']=this.checked"> Yes</label>`
     : `<input value="${esc(sc.values[f.name] || "")}" onchange="proc('${id}').schedule.values['${f.name}']=this.value;render()">`
-  return `<div class="card"><h3>⏰ Schedule <span class="grow"></span>${sc.paused ? '<span class="pill p-quiet">Paused</span>' : '<span class="pill p-ready">On</span>'}</h3>
+  return `<div class="card" id="schedule"><h3>⏰ Schedule <span class="grow"></span>${sc.paused ? '<span class="pill p-quiet">Paused</span>' : '<span class="pill p-ready">On</span>'}</h3>
     <div class="row" style="flex-wrap:wrap">
       <select style="width:auto" onchange="setSched('${id}',{every:this.value,cron:''})">${EVERY.map(([v, l]) => `<option value="${v}" ${v === sc.every && !sc.cron ? "selected" : ""}>${l}</option>`).join("")}</select>
       ${sc.every === "week" ? `<span>on</span><select style="width:auto" onchange="setSched('${id}',{on:this.value})">${DAYS.map(d => `<option ${d === sc.on ? "selected" : ""}>${d}</option>`).join("")}</select>` : ""}
@@ -831,7 +831,7 @@ const upcoming = () => S.processes.filter(p => p.schedule && !p.schedule.paused 
 function pProcess(id) {
   const p = proc(id); if (!p) return ph("No such Process")
   const fields = PROPS[id].start.fields
-  return ph(esc(p.name), { crumbs: [`<a href="#/processes">Processes</a>`, esc(p.name)], acts: `<button onclick="go('#/processes/${id}/edit')">Edit diagram</button>`,
+  return ph(esc(p.name), { crumbs: [`<a href="#/processes">Processes</a>`, esc(p.name)], acts: `<button onclick="if(!proc('${id}').schedule)setSched('${id}',{every:'day',at:'00:00',on:'Mon',dom:1,paused:false,values:{}});setTimeout(()=>document.getElementById('schedule')?.scrollIntoView({behavior:'smooth',block:'center'}))">⏰ ${p.schedule ? "Schedule" : "Add a schedule"}</button><button onclick="go('#/processes/${id}/edit')">Edit diagram</button>`,
       sub: `Vault <b>${esc(p.vault)}</b> · Source map <b>${esc(p.sourceMap)}</b> · set on the diagram` })
     + `<div class="card">${p.ready ? `<span class="pill p-ready">Ready</span> <span class="muted small">&nbsp;Names, schemas, CLI commands, Source map, paths and the login all check out.</span>`
       : `<span class="pill p-failed">Can't start</span><ul class="reasons">${p.reasons.map(x => `<li>${esc(x)}</li>`).join("")}</ul>`}</div>
