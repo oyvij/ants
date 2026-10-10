@@ -38,6 +38,11 @@ _Avoid_: worker, bot, ant
 A `SKILL.md` saying how to do one job; the instructions a Task hands its Agent.
 _Avoid_: prompt, task instructions
 
+**Schedule**:
+When a Process starts Runs on its own, such as every night at midnight; it says only when, so a Process that needs
+input from the user can't have one.
+_Avoid_: cron, timer, trigger
+
 ### Running work
 
 **Run**:
