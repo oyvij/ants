@@ -173,7 +173,7 @@
   .modal .split { display: grid; grid-template-columns: 1fr 1fr; flex: 1; min-height: 0; }
   .modal .split > div { overflow: auto; } .modal .split .cm-editor { min-height: 100%; max-height: none; font-size: 15px; } .modal .split .cm-scroller { padding: 12px 8px; }
   .modal .split .md { padding: 20px 28px; border-left: 1px solid var(--line); background: #fcfcfd; font-size: 15px; }
-  .toast { top: 16px; right: 16px; z-index: 50; width: 380px; background: #0f172a; color: #e2e8f0; border-radius: 10px; padding: 12px 14px; box-shadow: 0 10px 30px rgba(0,0,0,.25); font-size: 13px; }
+  .toast { position: fixed; top: 16px; right: 16px; z-index: 90; width: 380px; background: #0f172a; color: #e2e8f0; border-radius: 10px; padding: 12px 14px; box-shadow: 0 10px 30px rgba(0,0,0,.25); font-size: 13px; }
 
   .tools { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .tools fieldset { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; margin: 0; }
@@ -871,58 +871,109 @@ function pList(kind) {
       ${kind === "agents" ? `<td class="small">${x.cli} · ${x.model}</td><td class="small">${x.skills.map(esc).join(", ")}</td>` : `<td class="small">${S.agents.filter(a => a.skills.includes(x.name)).map(a => a.name).join(", ") || "<span class='muted'>no Agent</span>"}</td>`}
       <td class="small">${esc(x.desc)}</td><td class="muted small">${esc(folderLabel(x.folder))}</td></tr>`).join("")}</table>`
 }
+// The Agent and Skill forms are shared by their pages and by the "New" modal in the modeler.
+// formRender redraws whichever is showing: the page, or only the modal (so the diagram behind it survives).
+let formRender = () => render()
 function pAgent(name) {
-  const x = agentOf(name) || { name: "", folder: "~/.ants/agents", desc: "", cli: "claude", model: "sonnet", tools: ["Read", "Glob", "Grep"], skills: [], isNew: true }
+  const x = agentOf(name) || { name: "", folder: "~/.ants/agents", desc: "", cli: "claude", model: "default", tools: ["Read", "Glob", "Grep"], skills: [], isNew: true }
   if (!S.draft || S.draft.name !== x.name) S.draft = JSON.parse(JSON.stringify(x))
-  const d = S.draft, ro = isOwn(x) ? "" : "disabled"
+  const ro = isOwn(x) ? "" : "disabled"
+  return ph(esc(x.name || "New Agent"), { crumbs: [`<a href="#/agents">Agents</a>`, esc(x.name || "New")],
+      acts: ro ? `<span class="muted small">Read-only (${esc(folderLabel(x.folder))})</span><button onclick="toast('Copied into ~/.ants/agents as ${esc(x.name)}-copy.')">Copy</button>` : `${x.isNew ? "" : `<button class="danger">Delete</button>`}<button class="primary">Save</button>`,
+      sub: `Used by: ${usedBy("agent", x.name).join(", ") || "no Process"}` })
+    + agentForm(S.draft, ro)
+}
+function agentForm(d, ro) {
   const capOn = cap => cap[3].some(t => d.tools.includes(t))
   const toolsCtl = d.cli === "claude" ? `<div class="tools">${CAPS.map(cap => { const [k, name, help, tools, limLabel, eg] = cap, on = capOn(cap), L = capLimit(k, d)
       return `<fieldset><label><input type="checkbox" ${ro} ${on ? "checked" : ""} onchange="toggleCap('${k}',this.checked)"><div><b>${name}</b><span>${help}</span><span class="mono" style="font-size:11px">${tools.join(" · ")}</span></div></label>
         ${on && limLabel ? `<div class="help" style="margin:4px 0">${limLabel}. None listed means all.</div>
-          ${L.map((v, i) => `<div class="row" style="margin-bottom:4px"><input class="mono grow" ${ro} placeholder="e.g. ${eg}" value="${esc(v)}" onchange="capLimit('${k}')[${i}]=this.value">${ro ? "" : `<button class="ghost" title="Remove" onclick="capLimit('${k}').splice(${i},1);render()">×</button>`}</div>`).join("")}
-          ${ro ? "" : `<button onclick="capLimit('${k}').push('');render()">＋ Add</button>`}` : ""}</fieldset>` }).join("")}</div>
+          ${L.map((v, i) => `<div class="row" style="margin-bottom:4px"><input class="mono grow" ${ro} placeholder="e.g. ${eg}" value="${esc(v)}" onchange="capLimit('${k}')[${i}]=this.value">${ro ? "" : `<button class="ghost" title="Remove" onclick="capLimit('${k}').splice(${i},1);formRender()">×</button>`}</div>`).join("")}
+          ${ro ? "" : `<button onclick="capLimit('${k}').push('');formRender()">＋ Add</button>`}` : ""}</fieldset>` }).join("")}</div>
       <details class="small" style="margin-top:12px"><summary style="cursor:pointer;color:var(--acc)">And Claude Code's other tools?</summary>
         <p><b>Always on:</b> ${ALWAYS_ON}.</p><p style="margin-bottom:4px"><b>Always off in Ants:</b></p>
         <ul style="margin:0;padding-left:18px">${ALWAYS_OFF.map(([why, list]) => `<li><span class="mono" style="font-size:11.5px">${list}</span>: ${why}.</li>`).join("")}</ul></details>`
     : `<select ${ro}><option ${d.sandbox === "read-only" ? "selected" : ""}>read-only: reads files, changes nothing</option><option>workspace-write: changes files in the Run workspace</option><option>danger-full-access</option></select>`
-  return ph(esc(x.name || "New Agent"), { crumbs: [`<a href="#/agents">Agents</a>`, esc(x.name || "New")],
-      acts: ro ? `<span class="muted small">Read-only (${esc(folderLabel(x.folder))})</span><button onclick="toast('Copied into ~/.ants/agents as ${esc(x.name)}-copy.')">Copy</button>` : `${x.isNew ? "" : `<button class="danger">Delete</button>`}<button class="primary">Save</button>`,
-      sub: `Used by: ${usedBy("agent", x.name).join(", ") || "no Process"}` })
-    + `<div class="grid2" style="grid-template-columns:1.2fr 1fr"><div class="card"><h3>Who it is</h3>
-      ${field("Name", "How Tasks name it. Unique across all Agent folders.", "implementer", `<input ${ro} value="${esc(d.name)}">`)}
-      ${field("Description", "One line: what this Agent is for. Shown in the modeler's Agent dropdown.", "Implements one ticket, test first, and commits.", `<input ${ro} value="${esc(d.desc)}">`)}
-      <div class="grid2">${field("CLI", "Which AI CLI runs it, on Ants' own login.", "", `<select ${ro} onchange="S.draft.cli=this.value;render()"><option ${d.cli === "claude" ? "selected" : ""}>claude</option><option ${d.cli === "codex" ? "selected" : ""}>codex</option></select>`)}
-      ${field("Model", "The models this CLI offers. Default follows the CLI.", "", `<select ${ro}>${MODELS[d.cli].map(m => `<option ${m === d.model ? "selected" : ""}>${m}</option>`).join("")}</select>`)}</div>
+  return `<div class="grid2" style="grid-template-columns:1.2fr 1fr"><div class="card"><h3>Who it is</h3>
+      ${field("Name", "How Tasks name it. Unique across all Agent folders.", "implementer", `<input ${ro} value="${esc(d.name)}" onchange="S.draft.name=this.value">`)}
+      ${field("Description", "One line: what this Agent is for. Shown in the modeler's Agent dropdown.", "Implements one ticket, test first, and commits.", `<input ${ro} value="${esc(d.desc)}" onchange="S.draft.desc=this.value">`)}
+      <div class="grid2">${field("CLI", "Which AI CLI runs it, on Ants' own login.", "", `<select ${ro} onchange="S.draft.cli=this.value;S.draft.model='default';formRender()"><option ${d.cli === "claude" ? "selected" : ""}>claude</option><option ${d.cli === "codex" ? "selected" : ""}>codex</option></select>`)}
+      ${field("Model", "The models this CLI offers. Default follows the CLI.", "", `<select ${ro} onchange="S.draft.model=this.value">${MODELS[d.cli].map(m => `<option ${m === d.model ? "selected" : ""}>${m}</option>`).join("")}</select>`)}</div>
       ${field("Skills it runs", "The jobs this Agent may do. A Task picks one of them; the modeler only offers these.", "implement, tdd", chipSel(d.skills, ro))}</div>
     <div class="card"><h3>What it may do</h3><div class="help">${d.cli === "claude" ? "Each switch covers some of Claude Code's tools, named small under it. Anything off is refused, so an Agent without <b>Change files</b> can't edit code whatever its Skill says." : "Codex has no tool list; its sandbox decides what it may touch."}</div>${toolsCtl}</div></div>
-    <div class="card"><h3>Standing instructions</h3><div class="help">Who the Agent is and how it works, whatever the Skill. Markdown; <b>Expand</b> gives you a big editor with a live preview.</div>${md("instr", `You are the **${d.name || "agent"}**.\n\n## How you work\n\n- Keep changes small\n- Never push`, "", true)}${ro ? '<input type="hidden" disabled>' : ""}</div>`
+    <div class="card"><h3>Standing instructions</h3><div class="help">Who the Agent is and how it works, whatever the Skill. Markdown; <b>Expand</b> gives you a big editor with a live preview.</div>${md("instr", d.instr ?? `You are the **${d.name || "agent"}**.\n\n## How you work\n\n- Keep changes small\n- Never push`, "", true)}${ro ? '<input type="hidden" disabled>' : ""}</div>`
 }
 function chipSel(list, ro) {
-  return `<div class="chipsel">${list.map(s => `<span class="c">${esc(s)}${ro ? "" : `<button onclick="S.draft.skills=S.draft.skills.filter(x=>x!=='${s}');render()">×</button>`}</span>`).join("")}
-    ${ro ? "" : `<input list="skillList" placeholder="Add a Skill…" onchange="if(skillOf(this.value)&&!S.draft.skills.includes(this.value)){S.draft.skills.push(this.value);render()}">`}</div>
+  return `<div class="chipsel">${list.map(s => `<span class="c">${esc(s)}${ro ? "" : `<button onclick="S.draft.skills=S.draft.skills.filter(x=>x!=='${s}');formRender()">×</button>`}</span>`).join("")}
+    ${ro ? "" : `<input list="skillList" placeholder="Add a Skill…" onchange="if(skillOf(this.value)&&!S.draft.skills.includes(this.value)){S.draft.skills.push(this.value);formRender()}">`}</div>
     <datalist id="skillList">${S.skills.map(s => `<option value="${s.name}">${esc(s.desc)}</option>`).join("")}</datalist>`
 }
-function toggleCap(k, v) { const cap = CAPS.find(x => x[0] === k); S.draft.tools = v ? [...new Set([...S.draft.tools, ...cap[3]])] : S.draft.tools.filter(t => !cap[3].includes(t)); render() }
+function toggleCap(k, v) { const cap = CAPS.find(x => x[0] === k); S.draft.tools = v ? [...new Set([...S.draft.tools, ...cap[3]])] : S.draft.tools.filter(t => !cap[3].includes(t)); formRender() }
 const capLimit = (k, d = S.draft) => k === "bash" ? (d.bash ||= []) : ((d.limits ||= {})[k] ||= [])
+const schemaOf = fields => JSON.stringify({ type: "object", required: fields, properties: Object.fromEntries(fields.map(f => [f, { type: f.endsWith("s") ? "array" : "string", description: `What ${f} holds` }])) }, null, 2)
 function pSkill(name) {
   const x = skillOf(name) || { name: "", folder: "~/.ants/skills", desc: "", fields: [], isNew: true }, ro = isOwn(x) ? "" : "disabled"
   const runBy = S.agents.filter(a => a.skills.includes(x.name))
-  const schema = JSON.stringify({ type: "object", required: x.fields, properties: Object.fromEntries(x.fields.map(f => [f, { type: f.endsWith("s") ? "array" : "string", description: `What ${f} holds` }])) }, null, 2)
   return ph(esc(x.name || "New Skill"), { crumbs: [`<a href="#/skills">Skills</a>`, esc(x.name || "New")],
       acts: ro ? `<span class="muted small">Read-only (${esc(folderLabel(x.folder))})</span><button onclick="toast('Copied into ~/.ants/skills.')">Copy</button>` : `${x.isNew ? "" : `<button class="danger">Delete</button>`}<button class="primary">Save</button>`,
       sub: `Used by: ${usedBy("skill", x.name).join(", ") || "no Process"}` })
-    + `<div class="grid2" style="grid-template-columns:1.4fr 1fr"><div class="card">
-      ${field("Name", "How Agents and Tasks name it. Unique across all Skill folders.", "walkthrough", `<input ${ro} value="${esc(x.name)}">`)}
-      ${field("Description", "When to use it, in one line. Agents and the modeler show it.", "Tell the story of a set of changes across repos, for review.", `<input ${ro} value="${esc(x.desc)}">`)}
-      ${field("SKILL.md", "The instructions the Agent follows for this job. Markdown, with the frontmatter above.", "", md("skillmd", `# ${x.name || "New Skill"}\n\n${x.desc}\n\n## Steps\n\n1. Read the inputs\n2. Do the job\n3. Return the **Result** with the fields below`, "", true))}
+    + skillForm(x, ro, `<h3>Run by</h3><div class="help">Agents whose <b>Skills it runs</b> list this Skill. Edit that list on the Agent.</div>
+      ${runBy.map(a => `<div class="row" style="padding:6px 0;border-bottom:1px solid var(--line2)"><a class="grow" href="#/agents/${a.name}">${esc(a.name)}</a><span class="muted small">${a.cli}</span></div>`).join("") || `<div class="warn">No Agent runs this Skill yet, so no Task can use it.</div>`}
+      <h3 style="margin-top:18px">Result fields</h3><div class="help">Inputs this Skill offers the Tasks after it.</div>${x.fields.map(f => `<code>\${${x.name}.${f}}</code> `).join("") || "<span class='muted small'>none</span>"}`)
+}
+function skillForm(x, ro, side, bind = "") {
+  const on = prop => bind ? `onchange="${bind}.${prop}=this.value"` : ""
+  return `<div class="grid2" style="grid-template-columns:1.4fr 1fr"><div class="card">
+      ${field("Name", "How Agents and Tasks name it. Unique across all Skill folders.", "walkthrough", `<input ${ro} value="${esc(x.name)}" ${on("name")}>`)}
+      ${field("Description", "When to use it, in one line. Agents and the modeler show it.", "Tell the story of a set of changes across repos, for review.", `<input ${ro} value="${esc(x.desc)}" ${on("desc")}>`)}
+      ${field("SKILL.md", "The instructions the Agent follows for this job. Markdown, with the frontmatter above.", "", md("skillmd", x.body ?? `# ${x.name || "New Skill"}\n\n${x.desc}\n\n## Steps\n\n1. Read the inputs\n2. Do the job\n3. Return the **Result** with the fields below`, "", true))}
       ${field("result.schema.json", `A JSON Schema for the Result's <code>output</code>. Later Tasks read each field as <code>\${taskId.field}</code>, so every property here becomes an input others can use.`, "",
-        `<textarea data-json data-tall id="schema">${esc(schema)}</textarea>`)}
+        `<textarea data-json data-tall id="schema">${esc(x.schema ?? schemaOf(x.fields))}</textarea>`)}
       <details class="small" style="margin-top:8px"><summary style="cursor:pointer">Example: scout's schema</summary><pre class="mono" style="background:var(--line2);padding:10px;border-radius:8px">${esc(JSON.stringify({ type: "object", required: ["repos", "brief"], properties: { repos: { type: "array", items: { type: "string" }, description: "Source map names of the repos to clone" }, branch: { type: "string", description: "A suggested work branch" }, brief: { type: "string", description: "Path to scout/brief.md" } } }, null, 2))}</pre>
         Later Tasks then take <code>\${scout.repos}</code> and <code>\${scout.brief}</code> as inputs.</details>
-      ${field("Vault", "Tell Agents running this Skill where the Vault is (<code>metadata.varde-vault</code>). The Task can still turn it off.", "", `<label class="row" style="font-weight:500"><input type="checkbox" ${ro} ${x.vault ? "checked" : ""}> This Skill reads or writes the Vault</label>`)}</div>
-    <div class="card"><h3>Run by</h3><div class="help">Agents whose <b>Skills it runs</b> list this Skill. Edit that list on the Agent.</div>
-      ${runBy.map(a => `<div class="row" style="padding:6px 0;border-bottom:1px solid var(--line2)"><a class="grow" href="#/agents/${a.name}">${esc(a.name)}</a><span class="muted small">${a.cli}</span></div>`).join("") || `<div class="warn">No Agent runs this Skill yet, so no Task can use it.</div>`}
-      <h3 style="margin-top:18px">Result fields</h3><div class="help">Inputs this Skill offers the Tasks after it.</div>${x.fields.map(f => `<code>\${${x.name}.${f}}</code> `).join("") || "<span class='muted small'>none</span>"}</div></div>`
+      ${field("Vault", "Tell Agents running this Skill where the Vault is (<code>metadata.varde-vault</code>). The Task can still turn it off.", "", `<label class="row" style="font-weight:500"><input type="checkbox" ${ro} ${x.vault ? "checked" : ""} ${bind ? `onchange="${bind}.vault=this.checked"` : ""}> This Skill reads or writes the Vault</label>`)}</div>
+    <div class="card">${side}</div></div>`
+}
+
+// "New Agent" / "New Skill" from an Agent Task in the modeler: the same form in a big modal; Create and use picks it on the Task.
+function openCreate(kind, pid, elId) {
+  const task = PROPS[pid][elId], ag = agentOf(task.agent)
+  if (kind === "agents") S.draft = { name: "", folder: "~/.ants/agents", desc: "", cli: "claude", model: "default", tools: ["Read", "Glob", "Grep"], skills: task.skill ? [task.skill] : [], isNew: true }
+  else S.sdraft = { name: "", folder: "~/.ants/skills", desc: "", fields: [], isNew: true }
+  const bg = document.createElement("div"); bg.className = "modal-bg"; bg.id = "createModal"
+  const side = () => !ag ? `<h3>Who runs it</h3><div class="warn">This Task has no Agent yet. The Skill is created, and you add it to an Agent's <b>Skills it runs</b>.</div>`
+    : isOwn(ag) ? `<h3>Who runs it</h3><div class="okbox">Added to <b>${esc(ag.name)}</b>'s Skills, and picked on this Task.</div>`
+    : `<h3>Who runs it</h3><div class="warn"><b>${esc(ag.name)}</b> is ${esc(folderLabel(ag.folder))} and read-only, so the Skill can't be added to it. Copy the Agent, or pick one of your own, then choose this Skill.</div>`
+  formRender = () => {
+    const keep = id => bg.querySelector("#" + id)?.value
+    if (kind === "agents") { const v = keep("instr"); if (v !== undefined) S.draft.instr = v } else { const b = keep("skillmd"), sc = keep("schema"); if (b !== undefined) Object.assign(S.sdraft, { body: b, schema: sc }) }
+    bg.innerHTML = `<div class="modal"><div class="mh"><b>New ${kind === "agents" ? "Agent" : "Skill"}</b><span class="muted small">saved into <code>~/.ants/${kind}</code></span><span style="flex:1"></span>
+      <button class="ghost" onclick="closeCreate()">Cancel</button><button class="primary" onclick="saveCreate('${kind}','${pid}','${elId}')">Create and use</button></div>
+      <div class="mb" style="font-size:14px;background:var(--bg)">${kind === "agents" ? agentForm(S.draft, "") : skillForm(S.sdraft, "", side(), "S.sdraft")}</div></div>`
+    window.mountEditors?.()
+  }
+  document.body.append(bg); formRender()
+}
+function closeCreate() { document.getElementById("createModal")?.remove(); formRender = () => render(); S.draft = null }
+function saveCreate(kind, pid, elId) {
+  const task = PROPS[pid][elId], bg = document.getElementById("createModal")
+  if (kind === "agents") {
+    const d = S.draft; d.instr = bg.querySelector("#instr")?.value
+    if (!/^[a-z][a-z0-9-]*$/.test(d.name || "")) return toast("Give the Agent a name: lowercase letters, digits and dashes.")
+    if (agentOf(d.name)) return toast(`There is already an Agent called ${esc(d.name)}.`)
+    S.agents.push({ ...d, isNew: false, folder: "~/.ants/agents" }); task.agent = d.name; task.skill = d.skills[0] || ""
+    toast(`Created <b>${esc(d.name)}</b> in <code>~/.ants/agents</code> and picked it on this Task.`)
+  } else {
+    const d = S.sdraft, sc = bg.querySelector("#schema")?.value
+    if (!/^[a-z][a-z0-9-]*$/.test(d.name || "")) return toast("Give the Skill a name: lowercase letters, digits and dashes.")
+    if (skillOf(d.name)) return toast(`There is already a Skill called ${esc(d.name)}.`)
+    let fields = []; try { fields = Object.keys(JSON.parse(sc).properties || {}) } catch { return toast("Fix result.schema.json first: it isn't valid JSON.") }
+    S.skills.push({ name: d.name, folder: "~/.ants/skills", desc: d.desc || "", fields, vault: !!d.vault })
+    const ag = agentOf(task.agent)
+    if (ag && isOwn(ag)) { ag.skills.push(d.name); task.skill = d.name }
+    toast(`Created <b>${esc(d.name)}</b> in <code>~/.ants/skills</code>${ag && isOwn(ag) ? `, added it to ${esc(ag.name)} and picked it on this Task` : ""}.`)
+  }
+  closeCreate(); renderProps(pid)
 }
 
 function pSettings() {
@@ -1141,8 +1192,10 @@ function renderProps(pid) {
     const ag = agentOf(e.agent), sk = ag ? ag.skills : [], ins = offered(pid, selected), id = selected.id
     html = head("Agent Task", "e.g. Write the spec") + `
       ${field("Agent", "Who does it.", "", `<select onchange="PROPS['${pid}']['${id}'].agent=this.value;PROPS['${pid}']['${id}'].skill=(agentOf(this.value)?.skills||[])[0]||'';renderProps('${pid}')"><option value="">Choose…</option>${S.agents.map(a => `<option ${a.name === e.agent ? "selected" : ""} value="${a.name}">${a.name} · ${esc(a.desc)}</option>`).join("")}</select>`)}
+      <button class="ghost small" onclick="openCreate('agents','${pid}','${id}')">＋ New Agent</button>
       ${e.agent && !ag ? `<div class="warn">No Agent folder holds "${esc(e.agent)}".</div>` : ""}
       ${field("Skill", "One of the Agent's Skills: the one job this Task does.", "", `<select ${ag ? "" : "disabled"} onchange="PROPS['${pid}']['${id}'].skill=this.value;renderProps('${pid}')">${sk.map(s => `<option ${s === e.skill ? "selected" : ""}>${s}</option>`).join("")}</select>`)}
+      <button class="ghost small" onclick="openCreate('skills','${pid}','${id}')">＋ New Skill</button>
       ${skillOf(e.skill) ? `<div class="help">${esc(skillOf(e.skill).desc)}<br>Later Tasks can read: ${skillOf(e.skill).fields.map(f => `<code>\${${id}.${f}}</code>`).join(" ") || "nothing"}</div>` : ""}
       ${field("Inputs", "What it reads: start-form fields and Results of Tasks <b>before</b> it in the diagram.", "${scout.brief}",
         `<div class="listed">${e.inputs.map((v, i) => `<div class="row"><select class="mono grow" onchange="PROPS['${pid}']['${id}'].inputs[${i}]=this.value;renderProps('${pid}')"><option value="">Choose…</option>
@@ -1287,7 +1340,7 @@ function dump() {
   document.getElementById("state").textContent = JSON.stringify({ route: route(), notifications: notes().length, agentTasksRunning: `${running()} of ${S.cap}`, paused: S.paused, update: S.update,
     runs: Object.fromEntries(S.runs.map(r => [r.id, r.state === "live" ? r.tasks.map(t => `${t.id}:${t.st}`).join(" ") : r.state])) }, null, 2)
 }
-addEventListener("hashchange", () => { scrollTo(0, 0); closeDrawer(); render() })
+addEventListener("hashchange", () => { scrollTo(0, 0); closeDrawer(); closeCreate(); render() })
 render()
 </script>
 
