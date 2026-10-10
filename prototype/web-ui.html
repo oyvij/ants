@@ -24,6 +24,7 @@
     --panel2: #fafbfc; --hover: #f6f7f9; --field: #fff; --fieldLine: #d5d9e0; --text2: #334155; --text3: #475569;
     --warnText: #92400e; --okText: #166534; --badText: #991b1b; --codeBg: #fff; --dimCode: #b8bec9; --lnum: #b0b7c3; --band: #fcfcfd;
     --composer: rgba(255,255,255,.96); --dotgrid: #d9dde5; --citeC: #0e7490; --invC: #b45309; --accHover: #4338ca;
+    --chev: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2712%27 height=%2712%27 viewBox=%270 0 24 24%27 fill=%27none%27 stroke=%27%2364748b%27 stroke-width=%272.5%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27%3E%3Cpath d=%27m6 9 6 6 6-6%27/%3E%3C/svg%3E");
     --r: 10px; --sh: 0 1px 2px rgba(16,24,40,.05), 0 1px 3px rgba(16,24,40,.06);
     font: 14px/1.5 Inter, ui-sans-serif, system-ui, -apple-system, sans-serif; color: var(--text);
   }
@@ -34,6 +35,7 @@
     --acc: #818cf8; --accSoft: #1f2245; --accText: #c7cdfc; --accHover: #6366f1;
     --run: #60a5fa; --runSoft: #13233d; --wait: #f59e0b; --waitSoft: #2a1f0c; --ok: #4ade80; --okSoft: #0f2a1a; --bad: #f87171; --badSoft: #2c1416; --vio: #a78bfa; --vioSoft: #211a38;
     --warnText: #fbbf24; --okText: #86efac; --badText: #fca5a5; --codeBg: #0f1218; --dimCode: #4b5363; --lnum: #4b5363; --band: #161a22;
+    --chev: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2712%27 height=%2712%27 viewBox=%270 0 24 24%27 fill=%27none%27 stroke=%27%238b94a5%27 stroke-width=%272.5%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27%3E%3Cpath d=%27m6 9 6 6 6-6%27/%3E%3C/svg%3E");
     --composer: rgba(19,22,29,.94); --dotgrid: #252b38; --citeC: #67e8f9; --invC: #fbbf24; --sh: 0 1px 2px rgba(0,0,0,.45);
   }
   html.dark .dia .djs-container > svg, html.dark .djs-palette, html.dark .djs-context-pad, html.dark .djs-popup { filter: invert(.9) hue-rotate(180deg); }
@@ -108,6 +110,8 @@
   label.f { display: block; font-weight: 600; font-size: 13px; margin: 18px 0 4px; }
   .help { color: var(--muted); font-size: 12.5px; margin-bottom: 8px; line-height: 1.5; } .help .eg { font-family: ui-monospace, monospace; font-size: 12px; color: var(--text2); background: var(--line2); padding: 1px 6px; border-radius: 5px; }
   input, select, textarea { font: inherit; padding: 7px 10px; border: 1px solid var(--fieldLine); border-radius: 8px; background: var(--field); color: var(--text); width: 100%; }
+  select { appearance: none; -webkit-appearance: none; padding-right: 34px; background-image: var(--chev); background-repeat: no-repeat; background-position: right 12px center; background-size: 12px; cursor: pointer; }
+  select[multiple] { background-image: none; padding-right: 10px; }
   input:focus, select:focus, textarea:focus { outline: 2px solid var(--accSoft); border-color: var(--acc); }
   input[type=checkbox], input[type=radio] { width: auto; accent-color: var(--acc); }
   .row { display: flex; gap: 10px; align-items: center; } .row > select { width: auto; } .row > .grow { flex: 1; }
