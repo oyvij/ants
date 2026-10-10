@@ -146,6 +146,12 @@
 
   .ants-pal-agent { color: #4f46e5 !important; } .ants-pal-user { color: #d97706 !important; } .ants-pal-builtin { color: #475569 !important; }
   .djs-palette .entry { border-radius: 4px; }
+  .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: 460px; background: var(--panel); border-left: 1px solid var(--line); box-shadow: -12px 0 32px rgba(15,23,42,.12); z-index: 30; display: flex; flex-direction: column; animation: slidein .2s ease-out; }
+  @keyframes slidein { from { transform: translateX(40px); opacity: 0; } }
+  .drawer .dh { padding: 16px 18px 10px; border-bottom: 1px solid var(--line2); } .drawer .db { padding: 14px 18px; overflow: auto; flex: 1; } .drawer .df { padding: 12px 18px; border-top: 1px solid var(--line); }
+  .drawer .tr { box-shadow: none; max-height: 300px; overflow: auto; }
+  .sofar { background: var(--accSoft); border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; } .sofar p { margin: 4px 0 0; }
+  .todo { font-size: 13px; padding: 2px 0; } .todo.done { color: var(--muted); text-decoration: line-through; } .todo.now { font-weight: 600; color: var(--run); }
   .modelerWrap { display: grid; grid-template-columns: 1fr 340px; gap: 14px; }
   .props { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sh); padding: 16px; height: calc(100vh - 128px); overflow: auto; }
   .props h3 { margin: 0; font-size: 15px; } .props .kind { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
@@ -185,6 +191,7 @@
 </style>
 
 <div id="app"></div>
+<div id="drawer"></div>
 <details class="proto"><summary>Prototype state</summary><pre id="state"></pre></details>
 
 <script>
@@ -203,6 +210,7 @@ const icon = k => `<svg class="i" viewBox="0 0 24 24">${I[k]}</svg>`
 
 // ---------- in-memory state ----------
 // Claude Code's built-in tools, grouped. Ants ships this list with its version; MCP is off (--strict-mcp-config), so it is complete.
+const MODELS = { claude: ["default", "opus", "sonnet", "haiku"], codex: ["default", "gpt-5", "gpt-5-codex"] }
 const TOOLS = {
   "Read the code": [["Read", "Read a file"], ["Glob", "Find files by name pattern"], ["Grep", "Search file contents"]],
   "Change files": [["Edit", "Change part of a file"], ["Write", "Create or overwrite a file"], ["NotebookEdit", "Edit Jupyter notebooks"]],
@@ -445,10 +453,12 @@ setInterval(() => {
     document.querySelectorAll(`[data-subel="${k}"]`).forEach((e, i) => e.textContent = fmtEl(Math.max(0, t.el - 20 - i * 9)))
     if (TICK % 4 === (r.id.length % 4)) { // a new event arrives in the stream
       const l = FEED[(t.live ||= []).length % FEED.length]; t.live.push(l)
-      const tr = document.querySelector(`#tr[data-run="${k}"] .feed`)
-      if (tr) { tr.insertAdjacentHTML("beforeend", feedLine(l, l.k === "text")); typeOut(tr.lastElementChild) }
+      document.querySelectorAll(`.tr[data-run="${k}"] .feed`).forEach(tr => { tr.insertAdjacentHTML("beforeend", feedLine(l, l.k === "text")); typeOut(tr.lastElementChild); tr.closest(".drawer .tr")?.scrollTo(0, 1e6) })
     }
     document.querySelectorAll(`[data-verb="${k}"]`).forEach(e => e.textContent = verbOf(t) + "…")
+    t.sumAge = (t.sumAge || 0) + 1
+    if (t.el % 20 === 0) { t.sumN = (t.sumN || 0) + 1; t.sumAge = 0; document.querySelectorAll(`[data-sofar="${k}"]`).forEach(e => { e.outerHTML = soFar(r, t); window.mountEditors?.() }) }
+    document.querySelectorAll(`[data-sumage="${k}"]`).forEach(e => e.textContent = fmtEl(t.sumAge))
   }
   if (TICK === 25) newRound()
   // A free slot goes to the oldest queued Task (no paused CLI in its way).
@@ -589,6 +599,49 @@ function taskHead(r, t) {
     acts: pr.kind === "agent" ? `<span class="muted small"><a href="#/agents/${pr.agent}">${esc(pr.agent)}</a> · <a href="#/skills/${pr.skill}">${esc(pr.skill)}</a> · ${t.st === "running" ? `<span class="num" data-tok="${key(r, t)}">${fmtTok(t.tok)}</span>` : t.tokens || 0} tokens</span>` : `<span class="muted small">${pr.kind === "user" ? "User Task" : "Built-in Task"}</span>`,
     sub: t.summary ? esc(t.summary) : "" })
 }
+// "So far": a short paragraph of what the Agent has done, rewritten every couple of minutes while it runs
+// (in Ants: a haiku call over the new Transcript lines, its tokens counted on the Task), plus the Agent's own todo list from TodoWrite.
+const SOFAR = {
+  grill: ["Read the scout's brief and the theme code in **web**. Two Subagents are mapping every hard-coded colour and how settings are stored.",
+    "Header and Sidebar can use the theme tokens as they are; the chart colours need a dark palette of their own. Now checking the theme tests.",
+    "The theme tests pass. Drafting round 3: where the toggle sits, the default, chart colours and where the choice is stored."],
+  backend: ["Planned 3 tickets for the reindex. On ticket 1, retrying a failed reindex job: wrote the failing test, now changing `ReindexJob`.",
+    "Ticket 1 is done and committed. On ticket 2, the alias swap: reading how the search client creates indices.", "Tickets 1 and 2 are committed; running the full search test suite before ticket 3."],
+  frontend: ["Adding the reindex progress bar to the admin page. Reused the existing `ProgressBar`; wiring it to the new status endpoint.",
+    "The progress bar polls every 5 s and stops when done. Writing the component test."],
+}
+const TODOS = { grill: ["Read the brief", "Map hard-coded colours", "Check how settings persist", "Run the theme tests", "Write round 3"],
+  backend: ["Ticket 1: retry failed jobs", "Ticket 2: alias swap", "Ticket 3: backfill batches", "Run the full suite"], frontend: ["Progress bar", "Poll the status endpoint", "Component test"] }
+function soFar(r, t) {
+  const pr = propsOf(r, t); if (pr.kind !== "agent") return ""
+  const k = key(r, t), list = SOFAR[t.id], live = t.st === "running"
+  const text = live && list ? list[Math.min(t.sumN || 0, list.length - 1)] : t.st === "done" ? (t.summary || `Finished ${t.name.toLowerCase()}. The Result is in the Transcript.`) : t.summary || (list ? list[0] : "Nothing yet.")
+  const todos = live || t.st === "done" ? TODOS[t.id] || [] : []
+  const doneN = live ? Math.min(todos.length - 1, Math.floor((t.live?.length || 0) / 3) + (t.sumN || 0) + 1) : todos.length
+  return `<div class="sofar" data-sofar="${k}"><div class="row small"><b>So far</b><span class="grow"></span>${live ? `<span class="muted">updated <span data-sumage="${k}">${fmtEl(t.sumAge || 0)}</span> ago</span>` : ""}</div>
+    ${mdView(text)}${todos.length ? `<div style="margin-top:8px">${todos.map((x, i) => `<div class="todo ${i < doneN ? "done" : i === doneN && live ? "now" : ""}">${i < doneN ? "☑" : i === doneN && live ? "◐" : "☐"} ${esc(x)}</div>`).join("")}</div>` : ""}</div>`
+}
+function openDrawer(rid, tid) {
+  const r = run(rid), t = r.tasks.find(x => x.id === tid), pr = propsOf(r, t), k = key(r, t)
+  S.drawer = { rid, tid }
+  const tail = pr.kind === "agent" && t.st !== "queued" ? `<h3 style="font-size:13px;margin:4px 0 8px">Latest output</h3><div class="tr" data-run="${k}">
+      ${(t.live || []).slice(-6).map(l => feedLine(l)).join("") || `<div class="tool">Read scout/brief.md</div><div>I'll read the brief first, then look at how the code handles this today.</div>`}<div class="feed"></div>
+      ${t.st === "running" ? `<div class="status">${liveLine(r, t)}</div>` : ""}</div>` : ""
+  const act = WAITING.includes(t.st) ? `<a class="btn primary" style="display:inline-block;text-decoration:none" href="${taskHref(r, t)}">${{ questions: "Answer the round", approve: t.id === "review" ? "Review the changes" : "Approve or send back" }[t.tag] || "Continue or start fresh"}</a>` : ""
+  const body = pr.kind === "agent" ? soFar(r, t) + tail : pr.kind === "user" ? `<div class="sofar">${mdView(t.summary || "You did this.")}</div>` : `<div class="sofar">Ants did this itself; there is no Transcript.</div>`
+  const foot = t.st === "running" ? `<div class="df">${md("dmsg", "", "Comment to the Agent. It reads it at its next tool call.")}<div class="row" style="margin-top:8px"><span class="grow"></span>
+      <button onclick="stop('${rid}','${tid}');closeDrawer();render()">Stop</button><button class="primary" onclick="sendFromDrawer('${rid}','${tid}')">Send</button></div></div>`
+    : act ? `<div class="df">${act}</div>` : ""
+  document.getElementById("drawer").innerHTML = `<div class="drawer"><div class="dh"><div class="row"><div class="grow"><div class="muted small">${esc(r.id)} · ${pr.kind === "agent" ? `${esc(pr.agent)} · ${esc(pr.skill)}` : pr.kind === "user" ? "User Task" : "Built-in Task"}</div>
+      <h3 style="margin:2px 0 6px;font-size:16px">${esc(t.name)}</h3></div><button class="ghost" onclick="closeDrawer()" title="Close (Esc)">✕</button></div>
+      <div class="row">${t.st === "running" ? `<span class="small">${liveLine(r, t)}</span>` : badge(t)}<span class="grow"></span><a class="small" href="${taskHref(r, t)}">Full Transcript →</a></div></div>
+    <div class="db">${body}${(t.sent || []).map(m => `<div style="background:var(--accSoft);padding:8px 12px;border-radius:8px;margin-top:8px"><b class="small">You</b>${mdView(m)}</div>`).join("")}</div>${foot}</div>`
+  window.mountEditors?.()
+}
+function sendFromDrawer(rid, tid) { const m = document.getElementById("dmsg").value; if (!m) return; (run(rid).tasks.find(x => x.id === tid).sent ||= []).push(m); openDrawer(rid, tid) }
+function closeDrawer() { S.drawer = null; const d = document.getElementById("drawer"); if (d) d.innerHTML = "" }
+addEventListener("keydown", e => { if (e.key === "Escape" && S.drawer) closeDrawer() })
+
 function pTask(rid, tid) {
   const r = run(rid), t = r?.tasks.find(x => x.id === tid); if (!t) return ph("No such Task")
   if (t.st === "waiting" && t.tag === "questions") return pAnswer(r, t)
@@ -603,7 +656,7 @@ function pTask(rid, tid) {
   const round = t.st === "round" && ans ? `<div class="card" style="border-color:var(--wait)">This Task asked round ${t.round}. <a href="${taskHref(r, ans)}">Answer the round</a> and its session resumes.</div>` : ""
   const composer = t.st === "running" ? `<div class="composer"><div><div class="grow">${md("msg", "", "Message the Agent. It sees it at its next tool call.")}</div>
     <button onclick="stop('${r.id}','${t.id}')">Stop</button><button class="primary" onclick="send('${r.id}','${t.id}')">Send</button></div></div>` : ""
-  return taskHead(r, t) + chips + round + transcript(r, t) + composer
+  return taskHead(r, t) + soFar(r, t) + chips + round + transcript(r, t) + composer
 }
 
 function pAnswer(r, t) {
@@ -712,7 +765,7 @@ function pAgent(name) {
       ${field("Name", "How Tasks name it. Unique across all Agent folders.", "implementer", `<input ${ro} value="${esc(d.name)}">`)}
       ${field("Description", "One line: what this Agent is for. Shown in the modeler's Agent dropdown.", "Implements one ticket, test first, and commits.", `<input ${ro} value="${esc(d.desc)}">`)}
       <div class="grid2">${field("CLI", "Which AI CLI runs it, on Ants' own login.", "", `<select ${ro} onchange="S.draft.cli=this.value;render()"><option ${d.cli === "claude" ? "selected" : ""}>claude</option><option ${d.cli === "codex" ? "selected" : ""}>codex</option></select>`)}
-      ${field("Model", "Blank means the CLI's default.", d.cli === "claude" ? "opus, sonnet" : "gpt-5", `<input ${ro} value="${esc(d.model)}">`)}</div>
+      ${field("Model", "The models this CLI offers. Default follows the CLI.", "", `<select ${ro}>${MODELS[d.cli].map(m => `<option ${m === d.model ? "selected" : ""}>${m}</option>`).join("")}</select>`)}</div>
       ${field("Skills it runs", "The jobs this Agent may do. A Task picks one of them; the modeler only offers these.", "implement, tdd", chipSel(d.skills, ro))}
       ${field("Standing instructions", "Who the Agent is and how it works, whatever the Skill. Markdown.", "", md("instr", `You are the **${d.name || "agent"}**.\n\n## How you work\n\n- Keep changes small\n- Never push`))}</div>
     <div class="card"><h3>What it may do</h3><div class="help">${d.cli === "claude" ? "Claude Code's tools, grouped. Anything unticked is refused, so an Agent without <b>Change files</b> can't edit code whatever the Skill says." : "Codex has no tool list; its sandbox decides what it may touch."}</div>${toolsCtl}</div></div>`
@@ -813,7 +866,7 @@ async function mountDiagrams() {
       overlays.add(t.id, { position: { top: -12, right: t.st === "done" ? 16 : 70 }, html: `<span class="ov ${t.st === "done" ? "done" : stCls(t) === "stuck" ? "waiting" : stCls(t)}">${label}</span>` })
       if (t.round) overlays.add(t.id, { position: { bottom: 14, left: 6 }, html: `<span class="ov quiet">round ${t.round}</span>` })
     })
-    bpmn.get("eventBus").on("element.click", e => { const t = r.tasks.find(x => x.id === e.element.id); if (t) go(taskHref(r, t)) })
+    bpmn.get("eventBus").on("element.click", e => { const t = r.tasks.find(x => x.id === e.element.id); if (t) openDrawer(r.id, t.id) })
   }
   if (kind === "modeler") {
     bpmn.get("eventBus").on("selection.changed", e => { selected = e.newSelection[0] || null; renderProps(pid) })
@@ -1085,7 +1138,7 @@ function dump() {
   document.getElementById("state").textContent = JSON.stringify({ route: route(), notifications: notes().length, agentTasksRunning: `${running()} of ${S.cap}`, paused: S.paused, update: S.update,
     runs: Object.fromEntries(S.runs.map(r => [r.id, r.state === "live" ? r.tasks.map(t => `${t.id}:${t.st}`).join(" ") : r.state])) }, null, 2)
 }
-addEventListener("hashchange", () => { scrollTo(0, 0); render() })
+addEventListener("hashchange", () => { scrollTo(0, 0); closeDrawer(); render() })
 render()
 </script>
 
@@ -1149,6 +1202,7 @@ window.mountEditors = () => {
     const view = new EditorView({ state: EditorState.create({ doc: ta.value, extensions: [fmt, ...base, sync, placeholder(ta.placeholder || ""), EditorState.readOnly.of(ro),
       ...(mdMode ? [markdown(), syntaxHighlighting(mdStyle)] : [json(), syntaxHighlighting(defaultHighlightStyle), bracketMatching(), linter(jsonParseLinter()), lintGutter()])] }) })
     wrap(view, ta, mdMode)
+    if (ro) { const ed = ta.nextElementSibling; ed.style.background = "#fafbfc"; ed.querySelector(".bar").insertAdjacentHTML("beforeend", '<span class="st" style="color:#64748b">Read-only · Copy to edit</span>') }
   })
   document.querySelectorAll("[data-mdview]:not([data-done])").forEach(el => { el.dataset.done = 1; renderMd(el, el.textContent) })
 }
