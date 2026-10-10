@@ -193,6 +193,26 @@
   .chipsel input { border: 0; outline: 0; flex: 1; min-width: 160px; padding: 4px; }
   .listed .row { margin-bottom: 6px; }
 
+  .storyview { display: grid; grid-template-columns: 250px 1fr; gap: 16px; align-items: start; }
+  .spine { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 14px; position: sticky; top: 16px; }
+  .spine .stitle { font-weight: 700; text-decoration: underline; text-underline-offset: 3px; margin-bottom: 10px; line-height: 1.35; }
+  .spine .srow { display: block; padding: 6px 8px; border-radius: 6px; color: var(--text); font-size: 13.5px; } .spine .srow:hover { background: var(--line2); text-decoration: none; }
+  .spine .srow.on { background: var(--accSoft); font-weight: 600; } .spine .srem { margin-top: 12px; border-top: 1px solid var(--line2); padding-top: 10px; font-size: 12.5px; }
+  .sover { padding: 8px 0; border-top: 1px solid var(--line2); }
+  .walkgrid { display: grid; grid-template-columns: 170px 1fr; gap: 0; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+  .smenu { background: #fafbfc; border-right: 1px solid var(--line); padding: 8px 0; } .smenu a { display: block; padding: 5px 12px; font-size: 13px; color: var(--muted); }
+  .smenu a.on { background: var(--text); color: #fff; font-weight: 700; } .smenu a:hover { text-decoration: none; }
+  .cfile { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--line2); font-size: 12.5px; }
+  .code { font: 12.5px/1.6 ui-monospace, Menlo, monospace; padding: 8px 0; overflow-x: auto; background: #fff; }
+  .cl { display: grid; grid-template-columns: 40px 4px 1fr; gap: 8px; white-space: pre; } .cl .ln { text-align: right; color: #b0b7c3; }
+  .cl.dim .tx { color: #b8bec9; } .cl.site.changed .bar { background: #eab308; } .cl.site.context .bar { background: #3b82f6; } .cl.site .tx { color: var(--text); }
+  .cl.add { background: #ecfdf3; } .cl.add .tx { color: #166534; } .cl.del { background: #fdecec; } .cl.del .tx { color: #991b1b; text-decoration: line-through; }
+  .band { border-top: 1px solid var(--line); padding: 12px 14px; background: #fcfcfd; }
+  .band .claim { font-size: 15px; font-weight: 600; } .band .stale { background: var(--waitSoft); color: #92400e; font-size: 11px; font-weight: 800; padding: 1px 6px; border-radius: 4px; letter-spacing: .05em; }
+  .vals { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px; font-size: 12.5px; } .vals .cited { color: #0e7490; } .vals .inv { color: #b45309; }
+  .pred { margin-top: 10px; background: var(--vioSoft); border-radius: 8px; padding: 10px 12px; font-size: 13px; }
+  .scomment { margin-top: 8px; font-size: 12.5px; background: var(--waitSoft); padding: 6px 10px; border-radius: 6px; }
+  kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; color: var(--muted); background: #fff; }
   .tabs { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid var(--line); }
   .tabs button { border: 0; box-shadow: none; background: none; border-radius: 0; padding: 8px 14px; color: var(--muted); border-bottom: 2px solid transparent; }
   .tabs button.on { color: var(--text); border-bottom-color: var(--acc); }
@@ -829,29 +849,152 @@ function confirmPush(rid, tid) {
       <button class="primary" onclick="this.closest('.modal-bg').remove();act('${rid}','${tid}');toast('Pushed <b>${ps.map(p => p.repo).join("</b> and <b>")}</b> to <code>${branch}</code>.')">Push ${n} branch${n === 1 ? "" : "es"}</button></div></div>`
   document.body.append(bg)
 }
+// ---------- story mode, after Varde's (docs/guide/stories.md in varde-editor) ----------
+// A walkthrough Agent writes a story set as JSON in Varde's format: a title, short stories that follow the code as it runs,
+// each step a one-sentence claim about one exact line range. Ants checks it mechanically (file missing, range out of
+// bounds, a "changed" site that touches no hunk, a citation that isn't there) and fills each site's text from disk to spot staleness.
+const SRC = {
+  "billing:PaymentFailedHandler.kt": { lines: ["package billing", "", "class PaymentFailedHandler(", "    private val invoices: InvoiceRepository,", "    private val policy: PaymentRetryPolicy,",
+    "    private val retries: RetryScheduler,", ") {", "    fun handle(event: PaymentFailed) {", "        val invoice = invoices.get(event.invoiceId)",
+    "        log.info(\"Payment failed for ${invoice.id}, attempt ${event.attempt}\")", "        policy.next(event.attempt)?.let { retries.schedule(invoice, it) }",
+    "            ?: invoice.markUnpaid()", "        invoices.save(invoice)", "    }", "}"], added: [5, 6, 11, 12], removed: { 10: ["        invoice.markUnpaid()"] } },
+  "billing:PaymentRetryPolicy.kt": { lines: ["package billing", "", "import kotlin.time.Duration", "import kotlin.time.Duration.Companion.hours", "",
+    "/** How long to wait before each retry of a failed card payment. */", "data class PaymentRetryPolicy(", "    val delays: List<Duration> = listOf(1.hours, 6.hours, 24.hours),",
+    ") {", "    /** The delay before retry [attempt], or null when none are left. */", "    fun next(attempt: Int): Duration? = delays.getOrNull(attempt - 1)", "}"], added: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], removed: {} },
+  "billing:RetryScheduler.kt": { lines: ["package billing", "", "class RetryScheduler(private val jobs: JobQueue) {", "    fun schedule(invoice: Invoice, after: Duration) {",
+    "        invoice.nextRetryAt = Instant.now() + after", "        jobs.enqueue(RetryPayment(invoice.id), after)", "    }", "}"], added: [1, 2, 3, 4, 5, 6, 7, 8], removed: {} },
+  "billing:Invoice.kt": { lines: ["package billing", "", "class Invoice(val id: InvoiceId, val customer: CustomerId, val amount: Money) {", "    var status: InvoiceStatus = InvoiceStatus.OPEN",
+    "    var nextRetryAt: Instant? = null", "", "    fun markUnpaid() {", "        status = InvoiceStatus.UNPAID", "        nextRetryAt = null", "    }", "}"], added: [5, 9], removed: {} },
+  "web:InvoiceBanner.tsx": { lines: ["import { Banner } from \"../ui/Banner\"", "import { relative } from \"../time\"", "import type { Invoice } from \"./types\"", "",
+    "export function InvoiceBanner({ invoice }: { invoice: Invoice }) {", "  if (invoice.status === \"UNPAID\") return <Banner tone=\"danger\">This invoice is unpaid.</Banner>",
+    "  if (invoice.nextRetryAt)", "    return <Banner tone=\"info\">We'll try your card again {relative(invoice.nextRetryAt)}.</Banner>", "  return null", "}"], added: [2, 7, 8], removed: {} },
+  "billing:PaymentRetryPolicyTest.kt": { lines: ["class PaymentRetryPolicyTest {", "    private val policy = PaymentRetryPolicy()", "",
+    "    @Test fun `first retry waits an hour`() = assertEquals(1.hours, policy.next(1))", "    @Test fun `third retry waits a day`() = assertEquals(24.hours, policy.next(3))",
+    "    @Test fun `no fourth retry`() = assertNull(policy.next(4))", "}"], added: [1, 2, 3, 4, 5, 6, 7], removed: {} },
+}
+const ST = (name, file, kind, from, to, claim, x = {}) => ({ name, file, kind, from, to, claim, ...x })
+const STORY_SETS = {
+  "billing-retry-impl": { title: "A failed card payment is retried three times before the invoice goes unpaid", stories: [
+    { name: "Retrying a failed payment", premise: "A failed payment no longer marks the invoice unpaid at once: it asks a policy for a delay and schedules a retry.", steps: [
+      ST("Failure arrives", "billing:PaymentFailedHandler.kt", "context", 8, 10, "A failed payment arrives in `PaymentFailedHandler.handle`, carrying which attempt it was.",
+        { why: "This is where control enters: the payment provider's webhook ends up here.", flow: { in: "PaymentWebhookController posts PaymentFailed", out: "policy.next(attempt)" },
+          values: [["attempt", "1", "fixture", "PaymentFailedHandlerTest.kt:14"]] }),
+      ST("Ask the policy", "billing:PaymentFailedHandler.kt", "changed", 11, 11, "Instead of giving up, the handler asks the retry policy how long to wait.",
+        { why: "Keeps the numbers out of the handler, so changing the schedule never touches the flow." }),
+      ST("Three delays", "billing:PaymentRetryPolicy.kt", "changed", 7, 11, "The policy holds three delays, 1 h, 6 h and 24 h, and has none for a fourth attempt.",
+        { values: [["delays", "1 h, 6 h, 24 h", "literal", "PaymentRetryPolicy.kt:8"], ["next(4)", "null", "invented"]],
+          prediction: { question: "Why does next() use attempt − 1 rather than attempt?", choices: [
+            ["Attempts count from 1 and the list from 0", true, "Right: attempt 1 is the first retry, which is delays[0]."],
+            ["To skip the first delay", false, "No: attempt 1 gets 1 h, the first delay."],
+            ["getOrNull is off by one", false, "getOrNull is plain index access; the − 1 lines up 1-based attempts with a 0-based list."]] } }),
+      ST("Schedule it", "billing:RetryScheduler.kt", "changed", 4, 7, "The retry becomes a delayed job on the existing JobQueue, so it survives a restart.",
+        { nudge: "Look at what happens if the job runs after the invoice was paid some other way." })] },
+    { name: "What the customer sees", premise: "While a retry is planned, the invoice page says when.", steps: [
+      ST("nextRetryAt", "billing:Invoice.kt", "changed", 5, 5, "The invoice now records when the next attempt happens.", { flow: { in: "RetryScheduler.schedule sets it", out: "InvoiceBanner reads it" } }),
+      ST("The banner", "web:InvoiceBanner.tsx", "changed", 7, 8, "The invoice page shows an info banner while `nextRetryAt` is set.")] },
+    { name: "Giving up", premise: "After the last retry the invoice ends up unpaid, as before.", steps: [
+      ST("Last attempt", "billing:PaymentFailedHandler.kt", "changed", 12, 12, "With no delay left, the handler marks the invoice unpaid: the old behaviour."),
+      ST("Clears the date", "billing:Invoice.kt", "changed", 9, 9, "Marking it unpaid also clears `nextRetryAt`, so the banner goes away."),
+      ST("No fourth retry", "billing:PaymentRetryPolicyTest.kt", "changed", 6, 6, "A test pins that a fourth attempt gets no delay.",
+        { stale: "    @Test fun `no fourth retry`() = assertEquals(null, policy.next(4))" })] },
+  ], remainder: [["web:src/invoices/types.ts", 1], ["web:src/invoices/InvoiceBanner.test.tsx", 2], ["billing:src/test/kotlin/billing/PaymentFailedHandlerTest.kt", 1]] },
+}
+const W = { rid: null, story: null, step: 0, diff: false, details: false, answered: {}, commenting: false }
+const REVIEW_COMMENTS = {}
+const inl = s => esc(s).replace(/`([^`]+)`/g, "<code>$1</code>")
+function spineHtml(set) {
+  return `<div class="spine"><div class="stitle">${esc(set.title)}</div>
+    ${set.stories.map((s, i) => { const stale = s.steps.filter(x => x.stale).length
+      return `<a class="srow ${W.story === i ? "on" : ""}" href="javascript:walk(${i},0)">${esc(s.name)} <span class="muted">(${s.steps.length} steps${stale ? `, <span style="color:var(--wait)">${stale} stale</span>` : ""})</span></a>` }).join("")}
+    <div class="srem"><b>Remainder</b>: ${set.remainder.reduce((a, [, n]) => a + n, 0)} changes no step covers${set.remainder.map(([f, n]) => `<div class="mono">${esc(f.split(":")[1].split("/").pop())} <span class="muted">${n}</span></div>`).join("")}</div></div>`
+}
+function codeHtml(st) {
+  const src = SRC[st.file], [repo, path] = st.file.split(":"), rows = []
+  src.lines.forEach((text, i) => {
+    const n = i + 1, inSite = n >= st.from && n <= st.to, added = W.diff && src.added.includes(n)
+    rows.push(`<div class="cl ${inSite ? "site " + st.kind : "dim"} ${added ? "add" : ""}"><span class="ln">${n}</span><span class="bar"></span><span class="tx">${esc(text) || " "}</span></div>`)
+    if (W.diff) (src.removed[n] || []).forEach(t => rows.push(`<div class="cl del"><span class="ln">−</span><span class="bar"></span><span class="tx">${esc(t)}</span></div>`))
+  })
+  return `<div class="cfile"><span class="mono"><b>${repo}</b> · ${esc(path)}</span><span class="grow"></span><label class="small row" style="gap:6px"><input type="checkbox" ${W.diff ? "checked" : ""} onchange="W.diff=this.checked;renderWalk()"> Show the diff <kbd>d</kbd></label></div><div class="code">${rows.join("")}</div>`
+}
+function walk(i, j) { Object.assign(W, { story: i, step: j, details: false, commenting: false }); renderWalk() }
+function stepBy(d) {
+  const set = STORY_SETS[W.rid]; if (W.story == null) return
+  const n = set.stories[W.story].steps.length, j = W.step + d
+  if (j >= 0 && j < n) walk(W.story, j)
+}
+function answer(k) { (W.answered[`${W.story}.${W.step}`] ||= []).push(k); renderWalk() }
+function renderWalk() {
+  const box = document.getElementById("walkMain"), spine = document.getElementById("walkSpine"); if (!box) return
+  const set = STORY_SETS[W.rid]; spine.innerHTML = spineHtml(set)
+  if (W.story == null) {
+    box.innerHTML = `<div class="card"><div class="muted small">Story set</div><h3 style="font-size:17px;margin:2px 0 10px">${esc(set.title)}</h3>
+      ${set.stories.map((s, i) => `<div class="sover"><a href="javascript:walk(${i},0)"><b>${esc(s.name)}</b></a> <span class="muted small">${s.steps.length} steps</span><div class="small">${inl(s.premise)}</div>
+        <div class="small muted">${s.steps.map(x => esc(x.name)).join(" → ")}</div></div>`).join("")}
+      <div class="help" style="margin-top:12px">Pick a story to walk it one step at a time: <kbd>n</kbd> next, <kbd>p</kbd> back, <kbd>d</kbd> diff, <kbd>c</kbd> comment, <kbd>Esc</kbd> back here.</div></div>`
+    return
+  }
+  const s = set.stories[W.story], st = s.steps[W.step], key = `${W.story}.${W.step}`, picks = W.answered[key] || []
+  const solved = st.prediction && picks.some(k => st.prediction.choices[k][1])
+  const comments = (REVIEW_COMMENTS[W.rid] ||= []).filter(c => c.story === W.story && c.step === W.step)
+  box.innerHTML = `<div class="row" style="margin-bottom:8px"><b>${esc(s.name)}</b><span class="muted small">${inl(s.premise)}</span><span class="grow"></span><button class="ghost small" onclick="W.story=null;renderWalk()">All stories <kbd>Esc</kbd></button></div>
+    <div class="walkgrid"><div class="smenu">${s.steps.map((x, j) => `<a class="${j === W.step ? "on" : ""}" href="javascript:walk(${W.story},${j})">${x.stale ? "⚠ " : ""}${esc(x.name)}</a>`).join("")}</div>
+    <div>${codeHtml(st)}
+      <div class="band">
+        <div class="claim">${st.stale ? '<span class="stale">STALE</span> ' : ""}${inl(st.claim)}</div>
+        ${st.values ? `<div class="vals">${st.values.map(([n, v, prov, cite]) => `<span class="${cite ? "cited" : "inv"}" title="${cite ? "from " + esc(cite) : "not found in the code"}">${esc(n)}: <b>${esc(v)}</b> <span class="small">[${cite ? prov : "invented"}]</span></span>`).join("")}</div>` : ""}
+        ${st.prediction && !W.details ? `<div class="pred"><b>${esc(st.prediction.question)}</b>${solved ? `<div class="small" style="margin-top:4px">✓ ${esc(st.prediction.choices.find(c => c[1])[2])}</div>`
+          : `<div class="row" style="flex-wrap:wrap;margin-top:6px">${st.prediction.choices.map(([t], k) => `<button class="small" ${picks.includes(k) ? "disabled" : ""} onclick="answer(${k})">(${k + 1}) ${esc(t)}</button>`).join("")}</div>
+            ${picks.length ? `<div class="small" style="margin-top:4px;color:#92400e">${esc(st.prediction.choices[picks.at(-1)][2])}</div>` : ""}`}</div>` : ""}
+        ${W.details ? `<div class="kv small" style="margin-top:8px;grid-template-columns:70px 1fr">
+          ${st.why ? `<span class="k">Why</span><span>${inl(st.why)}</span>` : ""}
+          ${st.flow ? `<span class="k">Flow</span><span>in: ${inl(st.flow.in)}<br>out: ${inl(st.flow.out)}</span>` : ""}
+          ${st.nudge ? `<span class="k">Nudge</span><span>${inl(st.nudge)}</span>` : ""}
+          ${st.stale ? `<span class="k">Stale</span><span>Written against<br><code>${esc(st.stale.trim())}</code><br>Now<br><code>${esc(SRC[st.file].lines[st.from - 1].trim())}</code></span>` : ""}
+          ${!st.why && !st.flow && !st.nudge && !st.stale ? '<span class="k"></span><span class="muted">Nothing more for this step.</span>' : ""}</div>` : ""}
+        ${comments.map(c => `<div class="scomment"><b>${c.type}</b> ${esc(c.text)}</div>`).join("")}
+        ${W.commenting ? `<div class="row" style="margin-top:8px"><select id="ctype" style="width:auto">${["ISSUE", "SUGGESTION", "NOTE", "COMMENT"].map(x => `<option>${x}</option>`).join("")}</select>
+          <input id="ctext" class="grow" placeholder="On this claim…" onkeydown="if(event.key==='Enter')saveStepComment();if(event.key==='Escape'){W.commenting=false;renderWalk()}"><button class="primary" onclick="saveStepComment()">Add</button></div>` : ""}
+        <div class="row" style="margin-top:10px"><button onclick="stepBy(-1)" ${W.step ? "" : "disabled"}>◀ Back <kbd>p</kbd></button><button onclick="stepBy(1)" ${W.step < s.steps.length - 1 ? "" : "disabled"}>Next <kbd>n</kbd> ▶</button>
+          <span class="grow"></span><button class="ghost" onclick="W.details=!W.details;renderWalk()">${W.details ? "Hide details" : "Why, flow, nudge"} <kbd>D</kbd></button>
+          <button class="ghost" onclick="W.commenting=true;renderWalk();document.getElementById('ctext')?.focus()">Comment on this step <kbd>c</kbd></button></div></div></div></div>`
+  if (W.commenting) document.getElementById("ctext")?.focus()
+}
+function saveStepComment() {
+  const text = document.getElementById("ctext")?.value.trim(); if (!text) return
+  const s = STORY_SETS[W.rid].stories[W.story]
+  REVIEW_COMMENTS[W.rid].push({ story: W.story, step: W.step, type: document.getElementById("ctype").value, text, where: `${s.name} › ${s.steps[W.step].name}` })
+  W.commenting = false; renderWalk(); renderStepComments()
+}
+function renderStepComments() {
+  const box = document.getElementById("stepComments"); if (!box) return
+  const cs = REVIEW_COMMENTS[W.rid] || []
+  box.innerHTML = cs.length ? `<b class="small">Comments on steps (${cs.length})</b>${cs.map(c => `<div class="small" style="padding:3px 0"><span class="tag t-approve">${c.type}</span> <a href="javascript:walk(${c.story},${c.step})">${esc(c.where)}</a>: ${esc(c.text)}</div>`).join("")}` : ""
+}
+addEventListener("keydown", e => {
+  if (!document.getElementById("walkMain") || document.getElementById("walkMain").closest("[hidden]") || e.target.closest("input, textarea, select, [contenteditable]") || e.metaKey || e.ctrlKey) return
+  if (W.story == null) return
+  const k = e.key
+  if (k === "n") stepBy(1); else if (k === "p") stepBy(-1); else if (k === "d") { W.diff = !W.diff; renderWalk() }
+  else if (k === "D") { W.details = !W.details; renderWalk() } else if (k === "c") { e.preventDefault(); W.commenting = true; renderWalk() }
+  else if (k === "Escape") { W.story = null; renderWalk() } else if (/^[123]$/.test(k)) { const st = STORY_SETS[W.rid].stories[W.story].steps[W.step]; if (st.prediction) answer(+k - 1) }
+})
+
 function pReview(r, t) {
-  const story = [
-    ["The retry policy", "billing", "Failed card payments now retry three times, with backoff of 1 h, 6 h and 24 h. The policy is a value object so the numbers live in one place.",
-      "@@ PaymentRetryPolicy.kt @@\n+data class PaymentRetryPolicy(val delays: List<Duration> = listOf(1.hours, 6.hours, 24.hours))\n+  fun next(attempt: Int) = delays.getOrNull(attempt)"],
-    ["Where it hooks in", "billing", "`PaymentFailedHandler` used to mark the invoice unpaid at once. It now schedules a retry and only marks it unpaid after the last one.",
-      "@@ PaymentFailedHandler.kt @@\n-    invoice.markUnpaid()\n+    policy.next(event.attempt)?.let { retries.schedule(invoice, it) }\n+      ?: invoice.markUnpaid()"],
-    ["What the customer sees", "web", "A banner on the invoice page says a retry is planned and when. It reads the new `nextRetryAt` field, so the frontend needs no polling.",
-      "@@ InvoiceBanner.tsx @@\n+{invoice.nextRetryAt && <Banner tone=\"info\">We'll try your card again {relative(invoice.nextRetryAt)}.</Banner>}"],
-    ["Tests", "billing, web", "12 new tests; both repos' suites pass. The walkthrough Agent ran them again after the last commit.", ""],
-  ]
+  W.rid = r.id; setTimeout(() => { renderWalk(); renderStepComments() })
   return taskHead(r, t) + `<div class="grid3" style="margin-bottom:14px">
     ${[["billing", "6 files", "+184 −22", "3 commits"], ["web", "3 files", "+41 −3", "1 commit"]].map(([n, f, d, c]) => `<div class="card"><b class="mono">${n}</b> <span class="muted small">on ants/${esc(r.id)}</span>${remoteOf(r.id, n) ? `<div class="mono small muted" title="${esc(remoteOf(r.id, n))}">${esc(remoteShort(remoteOf(r.id, n)))}</div>` : ""}<div class="small">${f} · <span style="color:var(--ok)">${d.split(" ")[0]}</span> <span style="color:var(--bad)">${d.split(" ")[1]}</span> · ${c}</div></div>`).join("")}
     <div class="card"><b>Tests</b><div class="small"><span class="pill p-done">Passing</span> 412 billing · 96 web</div></div></div>
     <div class="tabs"><button class="on" data-tab="story" onclick="reviewTab('story')">The story</button><button data-tab="repo" onclick="reviewTab('repo')">By repo</button></div>
-    <div class="walk" data-view="story"><nav><b class="small muted" style="padding:0 10px 6px">THE STORY</b>${story.map(([h], i) => `<a href="javascript:document.getElementById('st${i}').scrollIntoView({block:'start'})">${i + 1}. ${h}</a>`).join("")}</nav>
-    <div>${story.map(([h, repo, prose, diff], i) => `<div class="card" id="st${i}"><div class="muted small">${i + 1} of ${story.length} · <span class="mono">${repo}</span></div><h3 style="font-size:16px;margin:2px 0 6px">${h}</h3>${mdView(prose + (diff ? "\n\n```diff\n" + diff + "\n```" : ""))}</div>`).join("")}</div></div>
+    <div class="storyview" data-view="story"><div id="walkSpine"></div><div id="walkMain"></div></div>
     <div class="walk" data-view="repo" hidden><nav>${(PUSHES[r.id] || []).map(p => `<b class="small mono" style="padding:8px 10px 2px">${p.repo}</b>${(FILES[p.repo] || []).map(([path], j) => `<a class="mono" style="font-size:12px" href="javascript:document.getElementById('f_${p.repo}_${j}').scrollIntoView({block:'start'})">${esc(path.split("/").pop())}</a>`).join("")}`).join("")}</nav>
     <div>${(PUSHES[r.id] || []).map(p => `<div class="card"><div class="row"><b class="mono" style="font-size:16px">${p.repo}</b><span class="mono small muted" title="${esc(p.remote)}">${esc(remoteShort(p.remote))}</span><code>ants/${esc(r.id)}</code><span class="grow"></span><span class="small">${p.files} files · <span style="color:var(--ok)">+${p.add}</span> <span style="color:var(--bad)">−${p.del}</span></span></div>
         <div style="margin:8px 0 4px">${p.commits.map(([sha, msg]) => `<div class="small"><span class="mono muted">${sha}</span> ${esc(msg)}</div>`).join("")}</div>
         ${(FILES[p.repo] || []).map(([path, add, del, diff], j) => `<details id="f_${p.repo}_${j}" ${diff ? "open" : ""} style="border-top:1px solid var(--line2);padding:8px 0"><summary style="cursor:pointer"><span class="mono small">${esc(path)}</span> <span class="small"><span style="color:var(--ok)">+${add}</span> <span style="color:var(--bad)">−${del}</span></span></summary>
           ${diff ? mdView("```diff\n" + diff + "\n```") : '<div class="muted small" style="padding:6px 0">Tests: the full diff opens in the clone.</div>'}</details>`).join("")}</div>`).join("")}</div></div>
-    <div style="margin-left:238px">${field("Comment", "Required to send back: the implementers resume with it. Approving pushes both branches.", "", md("cmt", ""))}</div>
-    <div class="composer"><div><span class="grow muted small">Nothing is pushed until you approve.</span><button onclick="if(!document.getElementById('cmt').value)return alert('Send back needs a comment');act('${r.id}','${t.id}','back')">Send back</button>
+    <div id="stepComments" style="margin:16px 0 0"></div>
+    ${field("Overall comment", "Send back needs this or a comment on a step: the implementers resume with all of them. Approving pushes both branches.", "", md("cmt", ""))}
+    <div class="composer"><div><span class="grow muted small">Nothing is pushed until you approve.</span><button onclick="if(!document.getElementById('cmt').value&&!(REVIEW_COMMENTS['${r.id}']||[]).length)return alert('Send back needs a comment, overall or on a step');act('${r.id}','${t.id}','back')">Send back</button>
     <button class="primary" onclick="confirmPush('${r.id}','${t.id}')">Approve and push…</button></div></div>`
 }
 function pStuck(r, t) {
