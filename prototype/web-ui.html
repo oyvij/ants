@@ -846,6 +846,13 @@ function defaultCtl(pid, i, f, after) {
   if (f.type === "markdown") return `<textarea rows="3" placeholder="No default" onchange="${set("this.value")}">${esc(f.default || "")}</textarea>`
   return `<input placeholder="No default" value="${esc(f.default || "")}" onchange="${set("this.value")}">`
 }
+function saveDefaults(id) {
+  PROPS[id].start.fields.forEach(f => {
+    const el = document.getElementById("f_" + f.name)
+    f.default = f.type === "repos" ? [...document.querySelectorAll(`input[name="f_${f.name}"]:checked`)].map(x => x.value) : f.type === "yesno" ? !!el?.checked : (el?.value || "").trim()
+  })
+  render(); toast("Saved as defaults." + (proc(id).schedule ? " Scheduled Runs start with these." : ""))
+}
 function schedCard(p) {
   const sc = p.schedule, id = p.id, fields = PROPS[id].start.fields
   if (!sc) return `<div class="card" id="schedule"><h3>⏰ Schedule</h3><div class="row"><span class="muted grow">No schedule. Runs start when someone presses Start.</span>
@@ -861,10 +868,10 @@ function schedCard(p) {
       <span class="k">Next Run</span><span>${sc.paused ? '<span class="muted">paused</span>' : !p.ready ? '<span style="color:var(--bad)">won\'t start until the check above passes</span>' : nextText(sc)}</span>
       <span class="k">Cron</span><span><code>${esc(cronOf(sc))}</code> <details style="display:inline-block;margin-left:8px"><summary class="small" style="cursor:pointer;color:var(--acc)">Advanced</summary>
         <input class="mono" style="margin-top:6px;width:260px" placeholder="minute hour day month weekday" value="${esc(sc.cron || "")}" onchange="setSched('${id}',{cron:this.value.trim()})"></details></span></div>
-    ${fields.length ? `<div class="subsec"><b class="small">What scheduled Runs fill in</b><div class="help">Each field's <b>default</b>, the same value the Start form opens with. Change it here and it changes there too.</div>
-      ${fields.map((f, i) => field(esc(f.label || f.name) + (f.required ? "" : ' <span class="muted small" style="font-weight:500">(optional)</span>'),
-        f.required ? "" : isEmpty(f) ? (f.name === "branch" ? "Left empty: the scout suggests one each time." : "Left empty: the Run goes without it.") : "", "", defaultCtl(id, i, f, "render()"))).join("")}
-      ${missing.length ? `<div class="warn">Required, so scheduled Runs can't start without a default for: ${missing.map(f => esc(f.label || f.name)).join(", ")}</div>` : ""}</div>` : ""}
+    ${fields.length ? `<div class="subsec"><b class="small">Scheduled Runs start with</b><div class="help">The Start form's saved defaults. Change them in <b>Start a Run</b> above, then <b>Save as defaults</b>.</div>
+      <div class="kv">${fields.map(f => `<span class="k">${esc(f.label || f.name)}</span><span>${!isEmpty(f) ? `<span class="mono small">${esc(Array.isArray(f.default) ? f.default.join(", ") : String(f.default).length > 90 ? String(f.default).slice(0, 90) + "…" : f.default)}</span>`
+        : f.required ? '<span style="color:var(--bad)">no default yet</span>' : f.name === "branch" ? '<span class="muted">empty: the scout suggests one each time</span>' : '<span class="muted">empty</span>'}</span>`).join("")}</div>
+      ${missing.length ? `<div class="warn">Scheduled Runs can't start until these have a saved default: ${missing.map(f => esc(f.label || f.name)).join(", ")}</div>` : ""}</div>` : ""}
     <div class="subsec row"><span class="help grow" style="margin:0">Missed while Ants was off or asleep? It runs once when Ants is back, not once per missed time.</span>
       <button onclick="setSched('${id}',{paused:${!sc.paused}})">${sc.paused ? "Resume" : "Pause"}</button>
       <button class="danger" onclick="proc('${id}').schedule=null;render()">Remove</button></div></div>`
@@ -884,7 +891,8 @@ function pProcess(id) {
         : f.type === "repos" ? `<div class="row" style="flex-wrap:wrap;gap:6px 14px">${["billing", "web", "api", "search", "payments"].map(x => `<label class="row" style="font-weight:500"><input type="checkbox" name="f_${f.name}" value="${x}" ${(f.default || []).includes(x) ? "checked" : ""}> <span class="mono">${x}</span></label>`).join("")}</div>`
         : f.type === "yesno" ? `<label class="row" style="font-weight:500"><input type="checkbox" id="f_${f.name}" ${f.default ? "checked" : ""}> Yes</label>`
         : `<input id="f_${f.name}" value="${esc(f.default || "")}">`)).join("")}
-      <p style="margin-top:16px"><button class="primary" ${p.ready ? "" : "disabled"} onclick="startRun('${id}')">Start</button></p></div>
+      <div class="row" style="margin-top:16px"><button class="primary" ${p.ready ? "" : "disabled"} onclick="startRun('${id}')">Start</button>
+        <button onclick="saveDefaults('${id}')">Save as defaults</button><span class="help" style="margin:0">Pre-fill this form next time${p.schedule ? ", and what scheduled Runs start with" : ""}.</span></div></div>
     ${schedCard(p)}
     <h2>Diagram</h2>${diagramBox("viewer", id)}
     <h2>Runs of this Process</h2>${runsTable(S.runs.filter(r => r.proc === id))}`
