@@ -6,7 +6,7 @@ Its Task worker runs inside the same process and fetches external tasks through 
 not over REST. This revises the earlier plan of a standalone Operaton server with workers long-polling
 its REST API. Operaton ties Ants to a JVM whatever else we choose, so a second process would add
 another thing to install, start and upgrade, and give nothing back. Users still never install a JVM:
-Ants ships as a jlink/jpackage app with its own trimmed Java runtime.
+Ants ships as a jlink image with its own trimmed Java runtime.
 
 ## Considered Options
 
@@ -25,4 +25,8 @@ Ants ships as a jlink/jpackage app with its own trimmed Java runtime.
 - The web UI is rendered on the server with JTE templates. The modeler's `camunda-bpmn-js` and
   `camunda-dmn-js` come from pnpm, run by the Gradle build with its own Node. Their `dist/` files are
   copied into the static resources, so there's no bundler and the installed app carries no Node.
-- The jpackage app is built on each OS it targets, and on macOS it must be signed and notarized.
+- The jlink image is built on each OS it targets. It ships as a tarball installed by script, not a
+  jpackage `.dmg`/`.pkg`, and is unsigned (ad-hoc only) in the first version, so it is never
+  downloaded through a browser. Notarizing waits until Ants goes public. On Linux it ships inside a
+  container image. (Revised by
+  [How is Ants installed, started and updated?](https://github.com/oyvij/ants/issues/16).)
