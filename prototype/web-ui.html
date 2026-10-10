@@ -101,7 +101,7 @@
   .ed .bar button { padding: 2px 8px; font-size: 12px; border: 0; box-shadow: none; background: none; color: #475569; }
   .ed .bar button:hover { background: var(--line2); } .ed .bar button.on { background: var(--accSoft); color: var(--accText); }
   .ed .bar .sp { flex: 1; } .ed .bar .st { font-size: 12px; padding-right: 6px; }
-  .ed .cm-editor { min-height: 90px; max-height: 520px; } .ed .cm-editor.cm-focused { outline: none; } .ed .cm-scroller { font-family: inherit; line-height: 1.55; }
+  .ed .cm-editor { min-height: 130px; max-height: 520px; } .ed.tall .cm-editor { min-height: 300px; max-height: 680px; } .ed .cm-editor.cm-focused { outline: none; } .ed .cm-scroller { font-family: inherit; line-height: 1.55; }
   .ed.json .cm-scroller { font-family: ui-monospace, monospace; font-size: 12.5px; }
   .ed .prev { padding: 10px 14px; min-height: 90px; }
   .md h1, .md h2, .md h3 { margin: 12px 0 6px; } .md p { margin: 6px 0; } .md pre { background: #0f172a; color: #e2e8f0; padding: 12px 14px; border-radius: 8px; overflow: auto; font-size: 12.5px; }
@@ -126,7 +126,7 @@
   /* Diagrams */
   .dia { position: relative; background: #fff radial-gradient(#d9dde5 1px, transparent 1px) 0 0 / 18px 18px; border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sh); height: 440px; overflow: hidden; }
   .dia.modeler { height: calc(100vh - 128px); }
-  .dia .zoom { position: absolute; right: 12px; bottom: 12px; display: flex; gap: 4px; z-index: 3; }
+  .dia .zoom { position: absolute; right: 12px; top: 12px; display: flex; gap: 4px; z-index: 3; }
   .dia .zoom button { padding: 4px 10px; }
   .dia .legend { position: absolute; left: 12px; bottom: 12px; z-index: 3; display: flex; gap: 6px; }
   .dia:fullscreen { height: 100vh; border-radius: 0; }
@@ -157,7 +157,23 @@
   .props h3 { margin: 0; font-size: 15px; } .props .kind { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
   .warn { background: var(--waitSoft); color: #92400e; border-radius: 8px; padding: 8px 10px; font-size: 12.5px; margin-top: 8px; }
   .okbox { background: var(--okSoft); color: #166534; border-radius: 8px; padding: 8px 10px; font-size: 12.5px; margin-top: 8px; }
-  .toast { position: fixed; top: 16px; right: 16px; z-index: 50; width: 380px; background: #0f172a; color: #e2e8f0; border-radius: 10px; padding: 12px 14px; box-shadow: 0 10px 30px rgba(0,0,0,.25); font-size: 13px; }
+  .toast code { background: #1e293b; color: #e2e8f0; }
+  .kv { display: grid; grid-template-columns: 130px 1fr; gap: 12px 14px; align-items: center; }
+  .kv > .k { color: var(--muted); font-size: 12.5px; font-weight: 600; }
+  .meter { display: grid; grid-template-columns: 60px 1fr 40px; align-items: center; gap: 10px; font-size: 12.5px; margin: 2px 0; }
+  .meter .track { height: 7px; background: var(--line2); border-radius: 4px; overflow: hidden; } .meter .fill { height: 100%; background: var(--acc); border-radius: 4px; } .meter .fill.hot { background: var(--wait); }
+  .cmd { display: flex; align-items: center; gap: 8px; background: #0f172a; border-radius: 8px; padding: 6px 6px 6px 12px; margin: 6px 0 10px; }
+  .cmd code { background: none; color: #e2e8f0; flex: 1; overflow-x: auto; white-space: nowrap; padding: 0; }
+  .cmd button { background: #1e293b; border-color: #334155; color: #e2e8f0; padding: 4px 10px; font-size: 12px; }
+  .subsec { border-top: 1px solid var(--line2); margin-top: 16px; padding-top: 14px; }
+  .modal-bg { position: fixed; inset: 0; background: rgba(15,23,42,.5); z-index: 80; display: grid; place-items: center; animation: fadein .15s; }
+  .modal { width: min(1200px, 92vw); height: 86vh; background: #fff; border-radius: 12px; display: flex; flex-direction: column; box-shadow: 0 24px 60px rgba(0,0,0,.3); overflow: hidden; }
+  .modal .mh { display: flex; align-items: center; gap: 10px; padding: 12px 18px; border-bottom: 1px solid var(--line); }
+  .modal .mb { flex: 1; overflow: auto; padding: 24px 40px; font-size: 15px; } .modal .mb.md { max-width: 820px; margin: 0 auto; width: 100%; }
+  .modal .split { display: grid; grid-template-columns: 1fr 1fr; flex: 1; min-height: 0; }
+  .modal .split > div { overflow: auto; } .modal .split .cm-editor { min-height: 100%; max-height: none; font-size: 15px; } .modal .split .cm-scroller { padding: 12px 8px; }
+  .modal .split .md { padding: 20px 28px; border-left: 1px solid var(--line); background: #fcfcfd; font-size: 15px; }
+  .toast { top: 16px; right: 16px; z-index: 50; width: 380px; background: #0f172a; color: #e2e8f0; border-radius: 10px; padding: 12px 14px; box-shadow: 0 10px 30px rgba(0,0,0,.25); font-size: 13px; }
 
   .tools { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .tools fieldset { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; margin: 0; }
@@ -493,7 +509,7 @@ function newRound() {
 const ph = (title, { crumbs = [], acts = "", sub = "" } = {}) =>
   `${crumbs.length ? `<div class="crumbs">${crumbs.join(" / ")}</div>` : ""}<div class="ph"><h1>${title}</h1><div class="acts">${acts}</div>${sub ? `<div class="sub">${sub}</div>` : ""}</div>`
 const field = (label, help, eg, control) => `<label class="f">${label}</label><div class="help">${help}${eg ? ` &nbsp;e.g. <span class="eg">${esc(eg)}</span>` : ""}</div>${control}`
-const md = (id, value, ph = "") => `<textarea data-md id="${id}" placeholder="${esc(ph)}">${esc(value)}</textarea>`
+const md = (id, value, ph = "", tall) => `<textarea data-md ${tall ? "data-tall" : ""} id="${id}" placeholder="${esc(ph)}">${esc(value)}</textarea>`
 const mdView = s => `<div class="md" data-mdview>${esc(s)}</div>`
 
 // ---------- shell ----------
@@ -740,14 +756,14 @@ function pProcess(id) {
       sub: `Vault <b>${esc(p.vault)}</b> · Source map <b>${esc(p.sourceMap)}</b> · set on the diagram` })
     + `<div class="card">${p.ready ? `<span class="pill p-ready">Ready</span> <span class="muted small">&nbsp;Names, schemas, CLI commands, Source map, paths and the login all check out.</span>`
       : `<span class="pill p-failed">Can't start</span><ul class="reasons">${p.reasons.map(x => `<li>${esc(x)}</li>`).join("")}</ul>`}</div>
-    <div class="grid2" style="grid-template-columns:1fr 1.4fr"><div class="card"><h3>Start a Run</h3>
+    <div class="card"><h3>Start a Run</h3>
       ${fields.map(f => field(esc(f.label || f.name) + (f.required ? "" : ' <span class="muted small" style="font-weight:500">(optional)</span>'), esc(f.help || ""), "",
-        f.type === "markdown" ? md("f_" + f.name, "")
+        f.type === "markdown" ? md("f_" + f.name, "", "", true)
         : f.type === "repos" ? `<div class="row" style="flex-wrap:wrap;gap:6px 14px">${["billing", "web", "api", "search", "payments"].map(x => `<label class="row" style="font-weight:500"><input type="checkbox" name="f_${f.name}" value="${x}"> <span class="mono">${x}</span></label>`).join("")}</div>`
         : f.type === "yesno" ? `<label class="row" style="font-weight:500"><input type="checkbox" id="f_${f.name}"> Yes</label>`
         : `<input id="f_${f.name}">`)).join("")}
       <p style="margin-top:16px"><button class="primary" ${p.ready ? "" : "disabled"} onclick="startRun('${id}')">Start</button></p></div>
-      <div>${diagramBox("viewer", id)}</div></div>
+    <h2>Diagram</h2>${diagramBox("viewer", id)}
     <h2>Runs of this Process</h2>${runsTable(S.runs.filter(r => r.proc === id))}`
 }
 function pNewProcess() {
@@ -792,9 +808,9 @@ function pAgent(name) {
       ${field("Description", "One line: what this Agent is for. Shown in the modeler's Agent dropdown.", "Implements one ticket, test first, and commits.", `<input ${ro} value="${esc(d.desc)}">`)}
       <div class="grid2">${field("CLI", "Which AI CLI runs it, on Ants' own login.", "", `<select ${ro} onchange="S.draft.cli=this.value;render()"><option ${d.cli === "claude" ? "selected" : ""}>claude</option><option ${d.cli === "codex" ? "selected" : ""}>codex</option></select>`)}
       ${field("Model", "The models this CLI offers. Default follows the CLI.", "", `<select ${ro}>${MODELS[d.cli].map(m => `<option ${m === d.model ? "selected" : ""}>${m}</option>`).join("")}</select>`)}</div>
-      ${field("Skills it runs", "The jobs this Agent may do. A Task picks one of them; the modeler only offers these.", "implement, tdd", chipSel(d.skills, ro))}
-      ${field("Standing instructions", "Who the Agent is and how it works, whatever the Skill. Markdown.", "", md("instr", `You are the **${d.name || "agent"}**.\n\n## How you work\n\n- Keep changes small\n- Never push`))}</div>
-    <div class="card"><h3>What it may do</h3><div class="help">${d.cli === "claude" ? "Claude Code's tools, grouped. Anything unticked is refused, so an Agent without <b>Change files</b> can't edit code whatever the Skill says." : "Codex has no tool list; its sandbox decides what it may touch."}</div>${toolsCtl}</div></div>`
+      ${field("Skills it runs", "The jobs this Agent may do. A Task picks one of them; the modeler only offers these.", "implement, tdd", chipSel(d.skills, ro))}</div>
+    <div class="card"><h3>What it may do</h3><div class="help">${d.cli === "claude" ? "Claude Code's tools, grouped. Anything unticked is refused, so an Agent without <b>Change files</b> can't edit code whatever the Skill says." : "Codex has no tool list; its sandbox decides what it may touch."}</div>${toolsCtl}</div></div>
+    <div class="card"><h3>Standing instructions</h3><div class="help">Who the Agent is and how it works, whatever the Skill. Markdown; <b>Expand</b> gives you a big editor with a live preview.</div>${md("instr", `You are the **${d.name || "agent"}**.\n\n## How you work\n\n- Keep changes small\n- Never push`, "", true)}${ro ? '<input type="hidden" disabled>' : ""}</div>`
 }
 function chipSel(list, ro) {
   return `<div class="chipsel">${list.map(s => `<span class="c">${esc(s)}${ro ? "" : `<button onclick="S.draft.skills=S.draft.skills.filter(x=>x!=='${s}');render()">×</button>`}</span>`).join("")}
@@ -812,9 +828,9 @@ function pSkill(name) {
     + `<div class="grid2" style="grid-template-columns:1.4fr 1fr"><div class="card">
       ${field("Name", "How Agents and Tasks name it. Unique across all Skill folders.", "walkthrough", `<input ${ro} value="${esc(x.name)}">`)}
       ${field("Description", "When to use it, in one line. Agents and the modeler show it.", "Tell the story of a set of changes across repos, for review.", `<input ${ro} value="${esc(x.desc)}">`)}
-      ${field("SKILL.md", "The instructions the Agent follows for this job. Markdown, with the frontmatter above.", "", md("skillmd", `# ${x.name || "New Skill"}\n\n${x.desc}\n\n## Steps\n\n1. Read the inputs\n2. Do the job\n3. Return the **Result** with the fields below`))}
+      ${field("SKILL.md", "The instructions the Agent follows for this job. Markdown, with the frontmatter above.", "", md("skillmd", `# ${x.name || "New Skill"}\n\n${x.desc}\n\n## Steps\n\n1. Read the inputs\n2. Do the job\n3. Return the **Result** with the fields below`, "", true))}
       ${field("result.schema.json", `A JSON Schema for the Result's <code>output</code>. Later Tasks read each field as <code>\${taskId.field}</code>, so every property here becomes an input others can use.`, "",
-        `<textarea data-json id="schema">${esc(schema)}</textarea>`)}
+        `<textarea data-json data-tall id="schema">${esc(schema)}</textarea>`)}
       <details class="small" style="margin-top:8px"><summary style="cursor:pointer">Example: scout's schema</summary><pre class="mono" style="background:var(--line2);padding:10px;border-radius:8px">${esc(JSON.stringify({ type: "object", required: ["repos", "brief"], properties: { repos: { type: "array", items: { type: "string" }, description: "Source map names of the repos to clone" }, branch: { type: "string", description: "A suggested work branch" }, brief: { type: "string", description: "Path to scout/brief.md" } } }, null, 2))}</pre>
         Later Tasks then take <code>\${scout.repos}</code> and <code>\${scout.brief}</code> as inputs.</details>
       ${field("Vault", "Tell Agents running this Skill where the Vault is (<code>metadata.varde-vault</code>). The Task can still turn it off.", "", `<label class="row" style="font-weight:500"><input type="checkbox" ${ro} ${x.vault ? "checked" : ""}> This Skill reads or writes the Vault</label>`)}</div>
@@ -833,10 +849,15 @@ function pSettings() {
       <input class="grow mono" value="${esc(v)}" ${i === 0 ? "disabled" : ""} onchange="S.${key}[${i}]=this.value">${i === 0 ? `<span class="muted small" style="white-space:nowrap">${fixed}</span>` : `<button class="ghost" onclick="S.${key}.splice(${i},1);render()">Remove</button>`}</div>`).join("")}
       <button onclick="S.${key}.push('');render()">＋ Add folder</button></div></div>`
   return ph("Settings", { acts: `<button class="primary">Save</button>`, sub: "Written to <code>~/.ants/settings.yaml</code>." })
-    + `<div class="grid2"><div class="card"><h3>Claude login</h3><span class="pill p-ready">Logged in</span> <span class="small">personal Pro · <code>~/.ants/claude</code></span>
-      <div class="help" style="margin-top:8px">To log in again, run in a terminal: <code>CLAUDE_CONFIG_DIR=~/.ants/claude claude auth login</code></div>
-      <div class="small" style="margin-top:8px">Usage: 5-hour <b>82%</b> · 7-day <b>41%</b></div>
-      ${field("Agent Tasks at once", "Live CLI processes across all Runs. More waits as Queued.", "3", `<input type="number" value="${S.cap}" style="width:90px" onchange="S.cap=+this.value;render()">`)}</div>
+    + `<div class="grid2"><div class="card"><h3>Claude login</h3>
+      <div class="kv"><span class="k">Status</span><span><span class="pill p-ready">Logged in</span> &nbsp;personal Pro</span>
+        <span class="k">Config folder</span><span><code>~/.ants/claude</code></span>
+        <span class="k">Usage</span><span>${[["5-hour", 82], ["7-day", 41]].map(([l, v]) => `<div class="meter"><span>${l}</span><div class="track"><div class="fill ${v > 75 ? "hot" : ""}" style="width:${v}%"></div></div><b>${v}%</b></div>`).join("")}</span></div>
+      <div class="subsec"><b class="small">Log in again</b><div class="help">Run this in a terminal, then press <b>Check login</b>.</div>
+        <div class="cmd"><code>CLAUDE_CONFIG_DIR=~/.ants/claude claude auth login</code><button onclick="navigator.clipboard?.writeText('CLAUDE_CONFIG_DIR=~/.ants/claude claude auth login');toast('Copied the command.')">Copy</button></div>
+        <button onclick="toast('Logged in as personal Pro.')">Check login</button></div>
+      <div class="subsec"><b class="small">Agent Tasks at once</b><div class="help">Live CLI processes across all Runs. More wait as <b>Queued</b>.</div>
+        <input type="number" min="1" value="${S.cap}" style="width:90px" onchange="S.cap=+this.value;render()"></div></div>
     <div class="card"><h3>Commands</h3>${["claude", "codex", "git"].map(c => field(c, "", "", `<input class="mono" value="/opt/homebrew/bin/${c}">`)).join("")}<p><button>Detect</button></p></div></div>
     ${named("vaults", "Vaults", "Each Process picks one on its diagram; new Processes get the default.")}
     ${named("sourceMaps", "Source maps", "Each Process picks one on its diagram; new Processes get the default.")}
@@ -1213,18 +1234,16 @@ const renderMd = (el, src) => { el.innerHTML = marked.parse(src); colourDiff(el)
 function wrap(view, ta, mdMode) {
   const ed = document.createElement("div"); ed.className = "ed" + (mdMode ? "" : " json")
   const bar = document.createElement("div"); bar.className = "bar"
-  const prev = document.createElement("div"); prev.className = "prev md"; prev.hidden = true
   const surround = (a, b = a) => { const { from, to } = view.state.selection.main
     view.dispatch({ changes: { from, to, insert: a + view.state.sliceDoc(from, to) + b }, selection: { anchor: from + a.length, head: to + a.length } }); view.focus() }
   const linePrefix = p => { const line = view.state.doc.lineAt(view.state.selection.main.from); view.dispatch({ changes: { from: line.from, insert: p } }); view.focus() }
   const btn = (label, title, fn) => { const b = document.createElement("button"); b.type = "button"; b.innerHTML = label; b.title = title; b.onclick = fn; bar.append(b); return b }
   if (mdMode) {
-    const write = btn("Write", "Edit", () => { prev.hidden = true; view.dom.hidden = false; write.classList.add("on"); pv.classList.remove("on") })
-    const pv = btn("Preview", "Preview", () => { renderMd(prev, view.state.doc.toString()); prev.hidden = false; view.dom.hidden = true; pv.classList.add("on"); write.classList.remove("on") })
-    write.classList.add("on")
-    bar.append(Object.assign(document.createElement("span"), { className: "sp" }))
     btn("<b>B</b>", "Bold (⌘B)", () => surround("**")); btn("<i>I</i>", "Italic (⌘I)", () => surround("*")); btn("H", "Heading", () => linePrefix("## "))
     btn("•", "List", () => linePrefix("- ")); btn("1.", "Numbered list", () => linePrefix("1. ")); btn("&lt;/&gt;", "Code", () => surround("`")); btn("🔗", "Link", () => surround("[", "](url)"))
+    bar.append(Object.assign(document.createElement("span"), { className: "sp" }))
+    btn("Preview", "Preview in a big window", () => modal("Preview", m => { m.className = "mb md"; renderMd(m, view.state.doc.toString()) }))
+    btn("⤢ Expand", "Write in a big window with a live preview", () => expand(view, bar, ta))
   } else {
     bar.append(Object.assign(document.createElement("span"), { className: "sp", textContent: "JSON Schema" }))
     const st = Object.assign(document.createElement("span"), { className: "st" }); bar.append(st)
@@ -1232,7 +1251,25 @@ function wrap(view, ta, mdMode) {
       catch (e) { st.innerHTML = `<span style="color:#dc2626">✗ ${e.message.split(" in JSON")[0]}</span>` } }
     view.dom.addEventListener("keyup", check); check()
   }
-  ta.hidden = true; ta.after(ed); ed.append(bar, view.dom, prev)
+  ta.hidden = true; ta.after(ed); ed.append(bar, view.dom); if (ta.hasAttribute("data-tall")) ed.classList.add("tall")
+}
+// A big window: Esc, the ✕ or a click outside closes it.
+function modal(title, fill, onClose) {
+  const bg = document.createElement("div"); bg.className = "modal-bg"
+  bg.innerHTML = `<div class="modal"><div class="mh"><b>${title}</b><span style="flex:1"></span><span class="muted small">Esc to close</span><button class="ghost" title="Close">✕</button></div><div class="mb"></div></div>`
+  const close = () => { bg.remove(); removeEventListener("keydown", esc); onClose?.() }, esc = e => { if (e.key === "Escape") close() }
+  bg.querySelector(".mh button").onclick = close; bg.onclick = e => { if (e.target === bg) close() }; addEventListener("keydown", esc)
+  document.body.append(bg); fill(bg.querySelector(".mb"), bg)
+}
+// Expand moves the same editor into the window, next to a live preview, and back on close: nothing to sync.
+function expand(view, bar, ta) {
+  const label = ta.closest(".card")?.querySelector("h3, label.f")?.textContent || "Edit"
+  let h
+  modal(label, mb => {
+    mb.className = "split"; mb.innerHTML = '<div class="left"></div><div class="md"></div>'
+    const pv = mb.querySelector(".md"), update = () => renderMd(pv, view.state.doc.toString())
+    mb.querySelector(".left").append(view.dom); update(); view.focus(); h = setInterval(update, 400)
+  }, () => { clearInterval(h); bar.after(view.dom); view.focus() })
 }
 
 window.mountEditors = () => {
