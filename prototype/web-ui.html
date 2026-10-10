@@ -785,6 +785,35 @@ function pApprove(r, t) {
     <button class="primary" onclick="act('${r.id}','${t.id}')">Approve</button></div></div>`
 }
 // Reviewing an implementation: an Agent wrote a walkthrough of the changes; the user reads it as a story and approves the push.
+// What a push would send, per repo: read from the Run's clones (git log origin/<base>..HEAD) when the modal opens.
+const PUSHES = {
+  "billing-retry-impl": [
+    { repo: "billing", remote: "git@github.com:stacc/billing.git", base: "main", isNew: true, files: 6, add: 184, del: 22,
+      commits: [["a1f3c2e", "Add PaymentRetryPolicy with 1 h, 6 h and 24 h backoff"], ["9b07d41", "Schedule a retry instead of marking the invoice unpaid"], ["3c5e88a", "Test retry scheduling and the last attempt"]] },
+    { repo: "web", remote: "git@github.com:stacc/web.git", base: "main", isNew: true, files: 3, add: 41, del: 3,
+      commits: [["e42d901", "Show the planned retry on the invoice page"]] },
+  ],
+}
+function confirmPush(rid, tid) {
+  const ps = PUSHES[rid] || [], n = ps.length, branch = `ants/${rid}`
+  const bg = document.createElement("div"); bg.className = "modal-bg"; bg.id = "pushModal"
+  bg.onclick = e => { if (e.target === bg) bg.remove() }
+  bg.innerHTML = `<div class="modal" style="height:auto;max-height:86vh;width:min(760px,92vw)">
+    <div class="mh"><b>Push ${n} branch${n === 1 ? "" : "es"}?</b><span style="flex:1"></span><button class="ghost" title="Close" onclick="this.closest('.modal-bg').remove()">✕</button></div>
+    <div class="mb" style="font-size:14px;padding:18px 24px">
+      <div class="help">Last check before anything leaves your machine. This is exactly what will be pushed.</div>
+      ${ps.map(p => `<div class="card" style="box-shadow:none;margin:12px 0">
+        <div class="row"><b class="mono" style="font-size:15px">${esc(p.repo)}</b><span class="grow"></span><span class="small">${p.files} files · <span style="color:var(--ok)">+${p.add}</span> <span style="color:var(--bad)">−${p.del}</span></span></div>
+        <div class="kv" style="margin-top:10px;grid-template-columns:90px 1fr">
+          <span class="k">Remote</span><span class="mono small">${esc(p.remote)}</span>
+          <span class="k">Branch</span><span><code>${esc(branch)}</code> ${p.isNew ? `<span class="pill p-quiet">new on the remote</span>` : `<span class="pill p-waiting">updates an existing branch</span>`} <span class="muted small">based on <code>${esc(p.base)}</code></span></span>
+          <span class="k">Commits</span><span>${p.commits.map(([sha, msg]) => `<div class="small" style="padding:2px 0"><span class="mono muted">${sha}</span> ${esc(msg)}</div>`).join("")}</span></div></div>`).join("")}
+      <div class="help">Ants pushes these branches only: never with force, never to <code>${esc(ps[0]?.base || "main")}</code>, and it opens no pull request.</div></div>
+    <div class="row" style="padding:12px 24px;border-top:1px solid var(--line)"><span class="grow"></span>
+      <button onclick="this.closest('.modal-bg').remove()">Cancel</button>
+      <button class="primary" onclick="this.closest('.modal-bg').remove();act('${rid}','${tid}');toast('Pushed <b>${ps.map(p => p.repo).join("</b> and <b>")}</b> to <code>${branch}</code>.')">Push ${n} branch${n === 1 ? "" : "es"}</button></div></div>`
+  document.body.append(bg)
+}
 function pReview(r, t) {
   const story = [
     ["The retry policy", "billing", "Failed card payments now retry three times, with backoff of 1 h, 6 h and 24 h. The policy is a value object so the numbers live in one place.",
@@ -802,7 +831,7 @@ function pReview(r, t) {
     <div>${story.map(([h, repo, prose, diff], i) => `<div class="card" id="st${i}"><div class="muted small">${i + 1} of ${story.length} · <span class="mono">${repo}</span></div><h3 style="font-size:16px;margin:2px 0 6px">${h}</h3>${mdView(prose + (diff ? "\n\n```diff\n" + diff + "\n```" : ""))}</div>`).join("")}
     ${field("Comment", "Required to send back: the implementers resume with it. Approving pushes both branches.", "", md("cmt", ""))}</div></div>
     <div class="composer"><div><span class="grow muted small">Nothing is pushed until you approve.</span><button onclick="if(!document.getElementById('cmt').value)return alert('Send back needs a comment');act('${r.id}','${t.id}','back')">Send back</button>
-    <button class="primary" onclick="act('${r.id}','${t.id}')">Approve and push</button></div></div>`
+    <button class="primary" onclick="confirmPush('${r.id}','${t.id}')">Approve and push…</button></div></div>`
 }
 function pStuck(r, t) {
   const lbl = { stuck: "What it needs", failed: "Why it failed", stopped: "Where it stopped" }[t.st]
