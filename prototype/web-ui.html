@@ -97,6 +97,9 @@
   .t-stuck, .t-stopped { background: var(--vioSoft); color: var(--vio); border-color: color-mix(in srgb, var(--vio) 35%, transparent); }
   .t-failed { background: var(--badSoft); color: var(--bad); border-color: color-mix(in srgb, var(--bad) 35%, transparent); }
   .t-vault, .t-ISSUE, .t-NOTE, .t-SUGGESTION, .t-COMMENT { background: var(--accSoft); color: var(--accText); border-color: color-mix(in srgb, var(--acc) 30%, transparent); }
+  .ent { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; vertical-align: middle; } .ent svg.i { width: 15px; height: 15px; }
+  .ent-agent svg.i { color: var(--acc); } .ent-skill svg.i { color: var(--citeC); } .ent a { color: inherit; } .ent a:hover { color: var(--acc); }
+  h1 .ent svg.i { width: 22px; height: 22px; } .ph h1 .ent { gap: 9px; }
   .live { display: inline-flex; align-items: center; gap: 7px; } .live i { width: 8px; height: 8px; border-radius: 50%; background: var(--run); animation: pulse 1.4s infinite; }
 
   button, .btn { font: inherit; font-weight: 600; font-size: 13px; padding: 7px 14px; border-radius: 8px; cursor: pointer; background: var(--panel); border: 1px solid var(--fieldLine); color: var(--text); box-shadow: 0 1px 1px rgba(16,24,40,.04); }
@@ -110,6 +113,8 @@
   button:disabled { opacity: .45; cursor: not-allowed; }
   .side button { background: #262a35; border-color: #333846; color: #e5e7eb; font-size: 12px; padding: 5px 10px; }
 
+  label.f svg.i { width: 15px; height: 15px; vertical-align: -3px; color: var(--muted); }
+  button svg.i { width: 15px; height: 15px; }
   label.f { display: block; font-weight: 600; font-size: 13px; margin: 18px 0 4px; }
   .help { color: var(--muted); font-size: 12.5px; margin-bottom: 8px; line-height: 1.5; } .help .eg { font-family: ui-monospace, monospace; font-size: 12px; color: var(--text2); background: var(--line2); padding: 1px 6px; border-radius: 5px; }
   input, select, textarea { font: inherit; padding: 7px 10px; border: 1px solid var(--fieldLine); border-radius: 8px; background: var(--field); color: var(--text); width: 100%; }
@@ -215,6 +220,7 @@
   .tools label span { color: var(--muted); font-size: 12px; display: block; }
   .chipsel { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; border: 1px solid var(--fieldLine); border-radius: 8px; padding: 6px; background: var(--field); }
   .chipsel .c { background: var(--accSoft); color: var(--accText); font-weight: 600; font-size: 12.5px; border-radius: 6px; padding: 2px 4px 2px 8px; display: inline-flex; gap: 4px; align-items: center; }
+  .chipsel .c svg.i { width: 13px; height: 13px; color: var(--citeC); }
   .chipsel .c button { border: 0; background: none; box-shadow: none; padding: 0 4px; color: var(--accText); }
   .chipsel input { border: 0; outline: 0; flex: 1; min-width: 160px; padding: 4px; min-height: 0; background: none; }
   .listed .row { margin-bottom: 6px; }
@@ -276,7 +282,7 @@ const I = {
   runs: '<circle cx="12" cy="12" r="9"/><path d="m10 8.5 5 3.5-5 3.5z"/>',
   proc: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><path d="M6.5 10v3.5A2.5 2.5 0 0 0 9 16h5"/>',
   agent: '<rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 8V4M9 13v1M15 13v1"/>',
-  skill: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5"/>',
+  skill: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>',
   gear: '<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/>',
   out: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>',
   moon: '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>',
@@ -287,6 +293,9 @@ let theme = (hasStore && localStorage.getItem(THEME_KEY)) || (typeof matchMedia 
 const applyTheme = () => document.documentElement?.classList.toggle("dark", theme === "dark")
 function toggleTheme() { theme = theme === "dark" ? "light" : "dark"; if (hasStore) localStorage.setItem(THEME_KEY, theme); applyTheme(); renderSide() }
 applyTheme()
+const ent = (kind, name, href) => `<span class="ent ent-${kind}">${icon(kind)}${href ? `<a href="${href}">${esc(name)}</a>` : esc(name)}</span>`
+const agentName = (n, link = true) => ent("agent", n, link ? `#/agents/${n}` : "")
+const skillName = (n, link = true) => ent("skill", n, link ? `#/skills/${n}` : "")
 const icon = k => `<svg class="i" viewBox="0 0 24 24">${I[k]}</svg>`
 
 // ---------- in-memory state ----------
@@ -738,7 +747,7 @@ function pRun(id) {
     + diagramBox("viewer", r.proc, r.id) + `<div class="help" style="margin-top:6px">Drag to pan, Ctrl/⌘ + scroll to zoom. Click a Task to open it.</div>
     <h2>Tasks</h2><table><tr><th>Task</th><th>Agent · Skill</th><th>State</th><th>Tokens</th></tr>
     ${r.tasks.map(t => { const pr = propsOf(r, t); return `<tr class="click" onclick="go('${taskHref(r, t)}')"><td><b>${esc(t.name)}</b>${t.round ? ` <span class="muted small">round ${t.round}</span>` : ""}${t.st === "running" && t.subs ? ` <span class="muted" title="Subagents">⑂ ${t.subs}</span>` : ""}</td>
-      <td class="muted small">${pr.kind === "agent" ? `${esc(pr.agent)} · ${esc(pr.skill)}` : pr.kind === "user" ? "User Task" : "Built-in Task"}</td>
+      <td class="small">${pr.kind === "agent" ? `${agentName(pr.agent)} &nbsp;${skillName(pr.skill)}` : pr.kind === "user" ? "User Task" : "Built-in Task"}</td>
       <td>${t.st === "running" ? `<span class="small">${liveLine(r, t)}</span>` : badge(t)}</td><td class="muted small num">${t.st === "running" ? `<span data-tok="${key(r, t)}">${fmtTok(t.tok)}</span>` : t.tokens || ""}</td></tr>` }).join("")}</table>
     ${r.state === "failed" ? `<h2>Run workspace</h2><div class="card">Kept at <code>~/.ants/runs/${esc(r.id)}/workspace</code> until you dismiss the Run.</div>` : ""}
     ${r.state === "done" ? `<h2>Report</h2><div class="card">${mdView(`**What was done.** Scouted ${r.repos.join(", ") || "nothing"}, grilled the spec over 3 Rounds (14 questions, 11 answered by you), wrote and approved \`specs/${r.id}.md\`.\n\n**Repos changed.** ${r.repos.map(x => `\`${x}\` on \`ants/${r.id}\`, 1 commit, not pushed`).join("; ") || "none"}\n\n**Tokens.** ${r.tasks.filter(t => t.tokens).map(t => `${t.name} ${t.tokens}`).join(" · ")}`)}</div>` : `<div class="help" style="margin-top:10px">The Report appears here when the Run ends.</div>`}`
@@ -767,7 +776,7 @@ function transcript(r, t) {
 function taskHead(r, t) {
   const pr = propsOf(r, t)
   return ph(`${esc(t.name)} ${badge(t)}`, { crumbs: [`<a href="#/runs">Runs</a>`, `<a href="#/runs/${r.id}">${esc(r.id)}</a>`, esc(t.name)],
-    acts: pr.kind === "agent" ? `<span class="muted small"><a href="#/agents/${pr.agent}">${esc(pr.agent)}</a> · <a href="#/skills/${pr.skill}">${esc(pr.skill)}</a> · ${t.st === "running" ? `<span class="num" data-tok="${key(r, t)}">${fmtTok(t.tok)}</span>` : t.tokens || 0} tokens</span>` : `<span class="muted small">${pr.kind === "user" ? "User Task" : "Built-in Task"}</span>`,
+    acts: pr.kind === "agent" ? `<span class="muted small">${agentName(pr.agent)} &nbsp;${skillName(pr.skill)} · ${t.st === "running" ? `<span class="num" data-tok="${key(r, t)}">${fmtTok(t.tok)}</span>` : t.tokens || 0} tokens</span>` : `<span class="muted small">${pr.kind === "user" ? "User Task" : "Built-in Task"}</span>`,
     sub: t.summary ? esc(t.summary) : "" })
 }
 // "So far": a short paragraph of what the Agent has done, rewritten every couple of minutes while it runs
@@ -803,7 +812,7 @@ function openDrawer(rid, tid) {
   const foot = t.st === "running" ? `<div class="df">${md("dmsg", "", "Comment to the Agent. It reads it at its next tool call.")}<div class="row" style="margin-top:8px"><span class="grow"></span>
       <button onclick="stop('${rid}','${tid}');closeDrawer();render()">Stop</button><button class="primary" onclick="sendFromDrawer('${rid}','${tid}')">Send</button></div></div>`
     : act ? `<div class="df">${act}</div>` : ""
-  document.getElementById("drawer").innerHTML = `<div class="drawer"><div class="dh"><div class="row"><div class="grow"><div class="muted small">${esc(r.id)} · ${pr.kind === "agent" ? `${esc(pr.agent)} · ${esc(pr.skill)}` : pr.kind === "user" ? "User Task" : "Built-in Task"}</div>
+  document.getElementById("drawer").innerHTML = `<div class="drawer"><div class="dh"><div class="row"><div class="grow"><div class="muted small">${esc(r.id)} · ${pr.kind === "agent" ? `${agentName(pr.agent)} &nbsp;${skillName(pr.skill)}` : pr.kind === "user" ? "User Task" : "Built-in Task"}</div>
       <h3 style="margin:2px 0 6px;font-size:16px">${esc(t.name)}</h3></div><button class="ghost" onclick="closeDrawer()" title="Close (Esc)">✕</button></div>
       <div class="row">${t.st === "running" ? `<span class="small">${liveLine(r, t)}</span>` : badge(t)}<span class="grow"></span><a class="small" href="${taskHref(r, t)}">Full Transcript →</a></div></div>
     <div class="db">${body}${(t.sent || []).map(m => `<div style="background:var(--accSoft);padding:8px 12px;border-radius:8px;margin-top:8px"><b class="small">You</b>${mdView(m)}</div>`).join("")}</div>${foot}</div>`
@@ -1144,8 +1153,8 @@ function pList(kind) {
   return ph(`${one}s`, { acts: `<button onclick="toast('Import one markdown file. It fills the create form, unsaved.')">Import…</button><button class="primary" onclick="go('#/${kind}/new')">New ${one}</button>`,
       sub: `From the folders in <a href="#/settings">Settings</a>. Ants writes only into <code>~/.ants/${kind}</code>; the rest are read-only, with Copy.` })
     + `<table><tr><th>Name</th>${kind === "agents" ? "<th>CLI · model</th><th>Skills</th>" : "<th>Run by</th>"}<th>Description</th><th>Folder</th></tr>
-    ${S[kind].map(x => `<tr class="click" onclick="go('#/${kind}/${x.name}')"><td><b>${esc(x.name)}</b>${x.vault ? ' <span class="tag t-vault">Vault</span>' : ""}</td>
-      ${kind === "agents" ? `<td class="small">${x.cli} · ${x.model}</td><td class="small">${x.skills.map(esc).join(", ")}</td>` : `<td class="small">${S.agents.filter(a => a.skills.includes(x.name)).map(a => a.name).join(", ") || "<span class='muted'>no Agent</span>"}</td>`}
+    ${S[kind].map(x => `<tr class="click" onclick="go('#/${kind}/${x.name}')"><td><b>${ent(kind === "agents" ? "agent" : "skill", x.name)}</b>${x.vault ? ' <span class="tag t-vault">Vault</span>' : ""}</td>
+      ${kind === "agents" ? `<td class="small">${x.cli} · ${x.model}</td><td class="small">${x.skills.map(n => skillName(n, false)).join(" ")}</td>` : `<td class="small">${S.agents.filter(a => a.skills.includes(x.name)).map(a => agentName(a.name, false)).join(" ") || "<span class='muted'>no Agent</span>"}</td>`}
       <td class="small">${esc(x.desc)}</td><td class="muted small">${esc(folderLabel(x.folder))}</td></tr>`).join("")}</table>`
 }
 // The Agent and Skill forms are shared by their pages and by the "New" modal in the modeler.
@@ -1155,7 +1164,7 @@ function pAgent(name) {
   const x = agentOf(name) || { name: "", folder: "~/.ants/agents", desc: "", cli: "claude", model: "default", tools: ["Read", "Glob", "Grep"], skills: [], isNew: true }
   if (!S.draft || S.draft.name !== x.name) S.draft = JSON.parse(JSON.stringify(x))
   const ro = isOwn(x) ? "" : "disabled"
-  return ph(esc(x.name || "New Agent"), { crumbs: [`<a href="#/agents">Agents</a>`, esc(x.name || "New")],
+  return ph(ent("agent", x.name || "New Agent"), { crumbs: [`<a href="#/agents">Agents</a>`, esc(x.name || "New")],
       acts: ro ? `<span class="muted small">Read-only (${esc(folderLabel(x.folder))})</span><button onclick="toast('Copied into ~/.ants/agents as ${esc(x.name)}-copy.')">Copy</button>` : `${x.isNew ? "" : `<button class="danger">Delete</button>`}<button class="primary">Save</button>`,
       sub: `Used by: ${usedBy("agent", x.name).join(", ") || "no Process"}` })
     + agentForm(S.draft, ro)
@@ -1195,7 +1204,7 @@ function toolsSection(d, ro) {
 function toggleTool(n, v) { S.draft.tools = v ? [...new Set([...S.draft.tools, n])] : S.draft.tools.filter(t => t !== n); if (!v && S.draft.limits) delete S.draft.limits[n]; formRender() }
 function addTool(v) { v = (v || "").trim(); if (!v || S.draft.tools.includes(v)) return; S.draft.tools.push(v); if (OTHER_TOOLS.includes(v)) S.draft.showOthers = true; formRender() }
 function chipSel(list, ro) {
-  return `<div class="chipsel">${list.map(s => `<span class="c">${esc(s)}${ro ? "" : `<button onclick="S.draft.skills=S.draft.skills.filter(x=>x!=='${s}');formRender()">×</button>`}</span>`).join("")}
+  return `<div class="chipsel">${list.map(s => `<span class="c">${icon("skill")}${esc(s)}${ro ? "" : `<button onclick="S.draft.skills=S.draft.skills.filter(x=>x!=='${s}');formRender()">×</button>`}</span>`).join("")}
     ${ro ? "" : `<input list="skillList" placeholder="Add a Skill…" onchange="if(skillOf(this.value)&&!S.draft.skills.includes(this.value)){S.draft.skills.push(this.value);formRender()}">`}</div>
     <datalist id="skillList">${S.skills.map(s => `<option value="${s.name}">${esc(s.desc)}</option>`).join("")}</datalist>`
 }
@@ -1203,11 +1212,11 @@ const schemaOf = fields => JSON.stringify({ type: "object", required: fields, pr
 function pSkill(name) {
   const x = skillOf(name) || { name: "", folder: "~/.ants/skills", desc: "", fields: [], isNew: true }, ro = isOwn(x) ? "" : "disabled"
   const runBy = S.agents.filter(a => a.skills.includes(x.name))
-  return ph(esc(x.name || "New Skill"), { crumbs: [`<a href="#/skills">Skills</a>`, esc(x.name || "New")],
+  return ph(ent("skill", x.name || "New Skill"), { crumbs: [`<a href="#/skills">Skills</a>`, esc(x.name || "New")],
       acts: ro ? `<span class="muted small">Read-only (${esc(folderLabel(x.folder))})</span><button onclick="toast('Copied into ~/.ants/skills.')">Copy</button>` : `${x.isNew ? "" : `<button class="danger">Delete</button>`}<button class="primary">Save</button>`,
       sub: `Used by: ${usedBy("skill", x.name).join(", ") || "no Process"}` })
     + skillForm(x, ro, `<h3>Run by</h3><div class="help">Agents whose <b>Skills it runs</b> list this Skill. Edit that list on the Agent.</div>
-      ${runBy.map(a => `<div class="row" style="padding:6px 0;border-bottom:1px solid var(--line2)"><a class="grow" href="#/agents/${a.name}">${esc(a.name)}</a><span class="muted small">${a.cli}</span></div>`).join("") || `<div class="warn">No Agent runs this Skill yet, so no Task can use it.</div>`}
+      ${runBy.map(a => `<div class="row" style="padding:6px 0;border-bottom:1px solid var(--line2)"><span class="grow">${agentName(a.name)}</span><span class="muted small">${a.cli}</span></div>`).join("") || `<div class="warn">No Agent runs this Skill yet, so no Task can use it.</div>`}
       <h3 style="margin-top:18px">Result fields</h3><div class="help">Inputs this Skill offers the Tasks after it.</div>${x.fields.map(f => `<code>\${${x.name}.${f}}</code> `).join("") || "<span class='muted small'>none</span>"}`)
 }
 function skillForm(x, ro, side, bind = "") {
@@ -1236,7 +1245,7 @@ function openCreate(kind, pid, elId) {
   formRender = () => {
     const keep = id => bg.querySelector("#" + id)?.value
     if (kind === "agents") { const v = keep("instr"); if (v !== undefined) S.draft.instr = v } else { const b = keep("skillmd"), sc = keep("schema"); if (b !== undefined) Object.assign(S.sdraft, { body: b, schema: sc }) }
-    bg.innerHTML = `<div class="modal"><div class="mh"><b>New ${kind === "agents" ? "Agent" : "Skill"}</b><span class="muted small">saved into <code>~/.ants/${kind}</code></span><span style="flex:1"></span>
+    bg.innerHTML = `<div class="modal"><div class="mh"><b class="ent ent-${kind === "agents" ? "agent" : "skill"}">${icon(kind === "agents" ? "agent" : "skill")}New ${kind === "agents" ? "Agent" : "Skill"}</b><span class="muted small">saved into <code>~/.ants/${kind}</code></span><span style="flex:1"></span>
       <button class="ghost" onclick="closeCreate()">Cancel</button><button class="primary" onclick="saveCreate('${kind}','${pid}','${elId}')">Create and use</button></div>
       <div class="mb" style="font-size:14px;background:var(--bg)">${kind === "agents" ? agentForm(S.draft, "") : skillForm(S.sdraft, "", side(), "S.sdraft")}</div></div>`
     window.mountEditors?.()
@@ -1480,11 +1489,11 @@ function renderProps(pid) {
   } else if (e.kind === "agent") {
     const ag = agentOf(e.agent), sk = ag ? ag.skills : [], ins = offered(pid, selected), id = selected.id
     html = head("Agent Task", "e.g. Write the spec") + `
-      ${field("Agent", "Who does it.", "", `<select onchange="PROPS['${pid}']['${id}'].agent=this.value;PROPS['${pid}']['${id}'].skill=(agentOf(this.value)?.skills||[])[0]||'';renderProps('${pid}')"><option value="">Choose…</option>${S.agents.map(a => `<option ${a.name === e.agent ? "selected" : ""} value="${a.name}">${a.name} · ${esc(a.desc)}</option>`).join("")}</select>`)}
-      <button class="ghost small" onclick="openCreate('agents','${pid}','${id}')">＋ New Agent</button>
+      ${field(`${icon("agent")} Agent`, "Who does it.", "", `<select onchange="PROPS['${pid}']['${id}'].agent=this.value;PROPS['${pid}']['${id}'].skill=(agentOf(this.value)?.skills||[])[0]||'';renderProps('${pid}')"><option value="">Choose…</option>${S.agents.map(a => `<option ${a.name === e.agent ? "selected" : ""} value="${a.name}">${a.name} · ${esc(a.desc)}</option>`).join("")}</select>`)}
+      <button class="ghost small" onclick="openCreate('agents','${pid}','${id}')">＋ ${icon("agent")} New Agent</button>
       ${e.agent && !ag ? `<div class="warn">No Agent folder holds "${esc(e.agent)}".</div>` : ""}
-      ${field("Skill", "One of the Agent's Skills: the one job this Task does.", "", `<select ${ag ? "" : "disabled"} onchange="PROPS['${pid}']['${id}'].skill=this.value;renderProps('${pid}')">${sk.map(s => `<option ${s === e.skill ? "selected" : ""}>${s}</option>`).join("")}</select>`)}
-      <button class="ghost small" onclick="openCreate('skills','${pid}','${id}')">＋ New Skill</button>
+      ${field(`${icon("skill")} Skill`, "One of the Agent's Skills: the one job this Task does.", "", `<select ${ag ? "" : "disabled"} onchange="PROPS['${pid}']['${id}'].skill=this.value;renderProps('${pid}')">${sk.map(s => `<option ${s === e.skill ? "selected" : ""}>${s}</option>`).join("")}</select>`)}
+      <button class="ghost small" onclick="openCreate('skills','${pid}','${id}')">＋ ${icon("skill")} New Skill</button>
       ${skillOf(e.skill) ? `<div class="help">${esc(skillOf(e.skill).desc)}<br>Later Tasks can read: ${skillOf(e.skill).fields.map(f => `<code>\${${id}.${f}}</code>`).join(" ") || "nothing"}</div>` : ""}
       ${field("Inputs", "What it reads: start-form fields and Results of Tasks <b>before</b> it in the diagram.", "${scout.brief}",
         `<div class="listed">${e.inputs.map((v, i) => `<div class="row"><select class="mono grow" onchange="PROPS['${pid}']['${id}'].inputs[${i}]=this.value;renderProps('${pid}')"><option value="">Choose…</option>
