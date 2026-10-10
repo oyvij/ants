@@ -259,9 +259,9 @@ const S = {
     { id: "implement", name: "Implement the spec", by: "you", ready: true, vault: "Work", sourceMap: "Stacc repos" },
     { id: "setup-vault", name: "Set up Vault", by: "shipped", ready: true, vault: "Work", sourceMap: "—" },
     { id: "nightly-knowledge", name: "Nightly knowledge sweep", by: "you", ready: true, vault: "Work", sourceMap: "Stacc repos",
-      schedule: { every: "day", at: "00:00", on: "Mon", dom: 1, paused: false, values: { repos: ["billing", "web", "api"] } } },
+      schedule: { every: "day", at: "00:00", on: "Mon", dom: 1, paused: false } },
     { id: "dep-bumps", name: "Weekly dependency bumps", by: "you", ready: false, vault: "—", sourceMap: "Personal",
-      schedule: { every: "week", at: "06:00", on: "Mon", dom: 1, paused: false, values: {} },
+      schedule: { every: "week", at: "06:00", on: "Mon", dom: 1, paused: false },
       reasons: ['Task "Bump versions" names Agent "bumper", which no Agent folder holds', 'Start form repo "ledger" is not in the Source map "Personal"'] },
   ],
   agents: [
@@ -396,6 +396,7 @@ const FIELD_DEFAULTS = {
   vault: { label: "Vault folder", type: "text", required: true, help: "Where the new Vault goes." },
 }
 Object.values(PROPS).forEach(P => { if (P.start) P.start.fields = P.start.fields.map(n => ({ name: n, ...(FIELD_DEFAULTS[n] || { label: n, type: "text", required: false, help: "" }) })) })
+PROPS["nightly-knowledge"].start.fields[0].default = ["billing", "web", "api"]
 
 // ---------- Runs ----------
 // Task st: running | queued | paused | round | waiting | stuck | failed | stopped | done
@@ -800,15 +801,21 @@ function nextText(sc) {
 }
 const schedShort = p => !p.schedule ? `<a href="#/processes/${p.id}" onclick="event.stopPropagation();setTimeout(()=>document.getElementById('schedule')?.scrollIntoView({block:'center'}),50)">＋ Schedule</a>` : p.schedule ? `<span title="${esc(cronOf(p.schedule))}">⏰ ${schedText(p.schedule).replace(/^Every /, "")}${p.schedule.paused ? " · paused" : ""}</span>` : "—"
 function setSched(id, patch) { const p = proc(id); p.schedule = { ...p.schedule, ...patch }; render() }
+const REPOS = ["billing", "web", "api", "search", "payments"]
+const isEmpty = f => f.default == null || f.default === "" || (Array.isArray(f.default) && !f.default.length)
+function defaultCtl(pid, i, f, after) {
+  const set = v => `PROPS['${pid}'].start.fields[${i}].default=${v};${after}`
+  if (f.type === "repos") return `<div class="row" style="flex-wrap:wrap;gap:6px 14px">${REPOS.map(x => `<label class="row" style="font-weight:500"><input type="checkbox" ${(f.default || []).includes(x) ? "checked" : ""}
+    onchange="${set(`(PROPS['${pid}'].start.fields[${i}].default||[]).filter(y=>y!=='${x}').concat(this.checked?['${x}']:[])`)}"> <span class="mono">${x}</span></label>`).join("")}</div>`
+  if (f.type === "yesno") return `<label class="row" style="font-weight:500"><input type="checkbox" ${f.default ? "checked" : ""} onchange="${set("this.checked")}"> Yes</label>`
+  if (f.type === "markdown") return `<textarea rows="3" placeholder="No default" onchange="${set("this.value")}">${esc(f.default || "")}</textarea>`
+  return `<input placeholder="No default" value="${esc(f.default || "")}" onchange="${set("this.value")}">`
+}
 function schedCard(p) {
   const sc = p.schedule, id = p.id, fields = PROPS[id].start.fields
   if (!sc) return `<div class="card" id="schedule"><h3>⏰ Schedule</h3><div class="row"><span class="muted grow">No schedule. Runs start when someone presses Start.</span>
-    <button onclick="setSched('${id}',{every:'day',at:'00:00',on:'Mon',dom:1,paused:false,values:{}})">＋ Add a schedule</button></div></div>`
-  const missing = fields.filter(f => f.required && !(sc.values?.[f.name]?.length))
-  const val = f => f.type === "repos" ? `<div class="row" style="flex-wrap:wrap;gap:6px 14px">${["billing", "web", "api", "search", "payments"].map(x => `<label class="row" style="font-weight:500"><input type="checkbox" ${(sc.values[f.name] || []).includes(x) ? "checked" : ""}
-      onchange="const v=proc('${id}').schedule.values;v['${f.name}']=(v['${f.name}']||[]).filter(y=>y!=='${x}').concat(this.checked?['${x}']:[]);render()"> <span class="mono">${x}</span></label>`).join("")}</div>`
-    : f.type === "yesno" ? `<label class="row" style="font-weight:500"><input type="checkbox" ${sc.values[f.name] ? "checked" : ""} onchange="proc('${id}').schedule.values['${f.name}']=this.checked"> Yes</label>`
-    : `<input value="${esc(sc.values[f.name] || "")}" onchange="proc('${id}').schedule.values['${f.name}']=this.value;render()">`
+    <button onclick="setSched('${id}',{every:'day',at:'00:00',on:'Mon',dom:1,paused:false})">＋ Add a schedule</button></div></div>`
+  const missing = fields.filter(f => f.required && isEmpty(f))
   return `<div class="card" id="schedule"><h3>⏰ Schedule <span class="grow"></span>${sc.paused ? '<span class="pill p-quiet">Paused</span>' : '<span class="pill p-ready">On</span>'}</h3>
     <div class="row" style="flex-wrap:wrap">
       <select style="width:auto" onchange="setSched('${id}',{every:this.value,cron:''})">${EVERY.map(([v, l]) => `<option value="${v}" ${v === sc.every && !sc.cron ? "selected" : ""}>${l}</option>`).join("")}</select>
@@ -819,9 +826,10 @@ function schedCard(p) {
       <span class="k">Next Run</span><span>${sc.paused ? '<span class="muted">paused</span>' : !p.ready ? '<span style="color:var(--bad)">won\'t start until the check above passes</span>' : nextText(sc)}</span>
       <span class="k">Cron</span><span><code>${esc(cronOf(sc))}</code> <details style="display:inline-block;margin-left:8px"><summary class="small" style="cursor:pointer;color:var(--acc)">Advanced</summary>
         <input class="mono" style="margin-top:6px;width:260px" placeholder="minute hour day month weekday" value="${esc(sc.cron || "")}" onchange="setSched('${id}',{cron:this.value.trim()})"></details></span></div>
-    ${fields.length ? `<div class="subsec"><b class="small">Start form for scheduled Runs</b><div class="help">Nobody is there to fill it in, so scheduled Runs use these values.</div>
-      ${fields.map(f => field(esc(f.label || f.name) + (f.required ? "" : ' <span class="muted small" style="font-weight:500">(optional)</span>'), "", "", val(f))).join("")}
-      ${missing.length ? `<div class="warn">Required, so scheduled Runs can't start without it: ${missing.map(f => esc(f.label || f.name)).join(", ")}</div>` : ""}</div>` : ""}
+    ${fields.length ? `<div class="subsec"><b class="small">What scheduled Runs fill in</b><div class="help">Each field's <b>default</b>, the same value the Start form opens with. Change it here and it changes there too.</div>
+      ${fields.map((f, i) => field(esc(f.label || f.name) + (f.required ? "" : ' <span class="muted small" style="font-weight:500">(optional)</span>'),
+        f.required ? "" : isEmpty(f) ? (f.name === "branch" ? "Left empty: the scout suggests one each time." : "Left empty: the Run goes without it.") : "", "", defaultCtl(id, i, f, "render()"))).join("")}
+      ${missing.length ? `<div class="warn">Required, so scheduled Runs can't start without a default for: ${missing.map(f => esc(f.label || f.name)).join(", ")}</div>` : ""}</div>` : ""}
     <div class="subsec row"><span class="help grow" style="margin:0">Missed while Ants was off or asleep? It runs once when Ants is back, not once per missed time.</span>
       <button onclick="setSched('${id}',{paused:${!sc.paused}})">${sc.paused ? "Resume" : "Pause"}</button>
       <button class="danger" onclick="proc('${id}').schedule=null;render()">Remove</button></div></div>`
@@ -831,16 +839,16 @@ const upcoming = () => S.processes.filter(p => p.schedule && !p.schedule.paused 
 function pProcess(id) {
   const p = proc(id); if (!p) return ph("No such Process")
   const fields = PROPS[id].start.fields
-  return ph(esc(p.name), { crumbs: [`<a href="#/processes">Processes</a>`, esc(p.name)], acts: `<button onclick="if(!proc('${id}').schedule)setSched('${id}',{every:'day',at:'00:00',on:'Mon',dom:1,paused:false,values:{}});setTimeout(()=>document.getElementById('schedule')?.scrollIntoView({behavior:'smooth',block:'center'}))">⏰ ${p.schedule ? "Schedule" : "Add a schedule"}</button><button onclick="go('#/processes/${id}/edit')">Edit diagram</button>`,
+  return ph(esc(p.name), { crumbs: [`<a href="#/processes">Processes</a>`, esc(p.name)], acts: `<button onclick="if(!proc('${id}').schedule)setSched('${id}',{every:'day',at:'00:00',on:'Mon',dom:1,paused:false});setTimeout(()=>document.getElementById('schedule')?.scrollIntoView({behavior:'smooth',block:'center'}))">⏰ ${p.schedule ? "Schedule" : "Add a schedule"}</button><button onclick="go('#/processes/${id}/edit')">Edit diagram</button>`,
       sub: `Vault <b>${esc(p.vault)}</b> · Source map <b>${esc(p.sourceMap)}</b> · set on the diagram` })
     + `<div class="card">${p.ready ? `<span class="pill p-ready">Ready</span> <span class="muted small">&nbsp;Names, schemas, CLI commands, Source map, paths and the login all check out.</span>`
       : `<span class="pill p-failed">Can't start</span><ul class="reasons">${p.reasons.map(x => `<li>${esc(x)}</li>`).join("")}</ul>`}</div>
     <div class="card"><h3>Start a Run</h3>
       ${fields.map(f => field(esc(f.label || f.name) + (f.required ? "" : ' <span class="muted small" style="font-weight:500">(optional)</span>'), esc(f.help || ""), "",
-        f.type === "markdown" ? md("f_" + f.name, "", "", true)
-        : f.type === "repos" ? `<div class="row" style="flex-wrap:wrap;gap:6px 14px">${["billing", "web", "api", "search", "payments"].map(x => `<label class="row" style="font-weight:500"><input type="checkbox" name="f_${f.name}" value="${x}"> <span class="mono">${x}</span></label>`).join("")}</div>`
-        : f.type === "yesno" ? `<label class="row" style="font-weight:500"><input type="checkbox" id="f_${f.name}"> Yes</label>`
-        : `<input id="f_${f.name}">`)).join("")}
+        f.type === "markdown" ? md("f_" + f.name, f.default || "", "", true)
+        : f.type === "repos" ? `<div class="row" style="flex-wrap:wrap;gap:6px 14px">${["billing", "web", "api", "search", "payments"].map(x => `<label class="row" style="font-weight:500"><input type="checkbox" name="f_${f.name}" value="${x}" ${(f.default || []).includes(x) ? "checked" : ""}> <span class="mono">${x}</span></label>`).join("")}</div>`
+        : f.type === "yesno" ? `<label class="row" style="font-weight:500"><input type="checkbox" id="f_${f.name}" ${f.default ? "checked" : ""}> Yes</label>`
+        : `<input id="f_${f.name}" value="${esc(f.default || "")}">`)).join("")}
       <p style="margin-top:16px"><button class="primary" ${p.ready ? "" : "disabled"} onclick="startRun('${id}')">Start</button></p></div>
     ${schedCard(p)}
     <h2>Diagram</h2>${diagramBox("viewer", id)}
@@ -1252,6 +1260,7 @@ function startForm(pid) {
       <div class="row" style="margin-top:6px"><select onchange="${set(i, "type", "this.value")}">${FIELD_TYPES.map(([v, l]) => `<option value="${v}" ${v === x.type ? "selected" : ""}>${l}</option>`).join("")}</select>
         <label class="row small" style="white-space:nowrap;font-weight:500"><input type="checkbox" ${x.required ? "checked" : ""} onchange="${set(i, "required", "this.checked")}"> Required</label></div>
       <input class="small" style="margin-top:6px" placeholder="Help shown under the field" value="${esc(x.help || "")}" onchange="${set(i, "help", "this.value")}">
+      <div class="small muted" style="margin:8px 0 4px">Default: pre-fills the Start form, and scheduled Runs use it</div>${defaultCtl(pid, i, x, `renderProps('${pid}')`)}
       ${x.editName ? `<div class="row" style="margin-top:6px"><span class="small muted" style="white-space:nowrap">Tasks read it as</span><input class="mono" value="${esc(x.name)}" onchange="PROPS['${pid}'].start.fields[${i}].editName=false;${set(i, "name", "this.value")}"></div>`
         : x.name ? `<div class="help" style="margin:6px 0 0">Tasks read it as <code>\${${esc(x.name)}}</code> · <a href="javascript:void 0" onclick="PROPS['${pid}'].start.fields[${i}].editName=true;renderProps('${pid}')">change</a></div>` : ""}</div>`).join("")}
     <button onclick="PROPS['${pid}'].start.fields.push({name:'',label:'',type:'text',required:false,help:''});renderProps('${pid}')">＋ Add field</button></div>`)
