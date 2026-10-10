@@ -70,6 +70,11 @@ Everything an Agent Task's Agent said and did across all its launches, readable 
 after the Run ends.
 _Avoid_: log, session, output
 
+**Subagent**:
+A helper an Agent's AI CLI starts inside its own session to do part of a Task; not an Agent, and
+never drawn in a Process.
+_Avoid_: agent, child agent, sub-task
+
 **Usage limit**:
 How much the AI CLI's login may use in a window; an Agent Task that reaches it pauses, without the
 user, and resumes after the reset.
