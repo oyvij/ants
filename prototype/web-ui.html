@@ -91,9 +91,12 @@
   .p-failed { background: var(--badSoft); color: var(--bad); } .p-quiet { background: var(--line2); color: var(--text3); }
   .p-stuck { background: var(--vioSoft); color: var(--vio); }
   @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(37,99,235,.55); } 70% { box-shadow: 0 0 0 7px rgba(37,99,235,0); } 100% { box-shadow: 0 0 0 0 rgba(37,99,235,0); } }
-  .tag { font-family: ui-monospace, monospace; font-size: 11.5px; font-weight: 600; padding: 1px 7px; border-radius: 6px; }
-  .t-questions, .t-approve { background: var(--waitSoft); color: var(--wait); } .t-stuck, .t-stopped { background: var(--vioSoft); color: var(--vio); }
-  .t-failed { background: var(--badSoft); color: var(--bad); }
+  .tag { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 9px 0 7px; border-radius: 6px; font-size: 12px; font-weight: 600; letter-spacing: .01em; white-space: nowrap; border: 1px solid; vertical-align: middle; }
+  .tag i { font-style: normal; font-size: 10.5px; font-weight: 800; width: 14px; height: 14px; display: inline-grid; place-items: center; border-radius: 4px; background: currentColor; -webkit-text-fill-color: var(--panel); }
+  .t-questions, .t-approve { background: var(--waitSoft); color: var(--wait); border-color: color-mix(in srgb, var(--wait) 35%, transparent); }
+  .t-stuck, .t-stopped { background: var(--vioSoft); color: var(--vio); border-color: color-mix(in srgb, var(--vio) 35%, transparent); }
+  .t-failed { background: var(--badSoft); color: var(--bad); border-color: color-mix(in srgb, var(--bad) 35%, transparent); }
+  .t-vault, .t-ISSUE, .t-NOTE, .t-SUGGESTION, .t-COMMENT { background: var(--accSoft); color: var(--accText); border-color: color-mix(in srgb, var(--acc) 30%, transparent); }
   .live { display: inline-flex; align-items: center; gap: 7px; } .live i { width: 8px; height: 8px; border-radius: 50%; background: var(--run); animation: pulse 1.4s infinite; }
 
   button, .btn { font: inherit; font-weight: 600; font-size: 13px; padding: 7px 14px; border-radius: 8px; cursor: pointer; background: var(--panel); border: 1px solid var(--fieldLine); color: var(--text); box-shadow: 0 1px 1px rgba(16,24,40,.04); }
@@ -550,6 +553,8 @@ const propsOf = (r, t) => PROPS[r.proc]?.[t.id] || {}
 const ago = m => m >= 1440 ? `${Math.floor(m / 1440)}d ${Math.floor(m % 1440 / 60)}h` : m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`
 const WAITING = ["waiting", "stuck", "failed", "stopped"]
 const tagOf = t => t.tag || t.st
+const TAGS = { failed: ["✕", "Failed"], stuck: ["⚠", "Stuck"], stopped: ["■", "Stopped"], questions: ["?", "Questions"], approve: ["✓", "Approve"] }
+const tagLabel = k => { const [i, l] = TAGS[k] || ["", k]; return `<span class="tag t-${k}"><i>${i}</i>${l}</span>` }
 const notes = () => S.runs.filter(r => r.state === "live").flatMap(r => r.tasks.filter(t => WAITING.includes(t.st)).map(t => ({ r, t }))).sort((a, b) => b.t.waited - a.t.waited)
 const running = () => S.runs.flatMap(r => r.tasks).filter(t => t.st === "running").length
 const taskHref = (r, t) => `#/runs/${r.id}/tasks/${t.id}`
@@ -560,7 +565,7 @@ const on = (...ps) => ps.some(p => p === "/" ? route() === "/" : route() === p |
 const stText = t => ({ running: "Running", done: "Done", queued: `Queued · ${running()} of ${S.cap} running`, paused: `Paused until ${S.paused.claude || "the reset"}`,
   round: "Waiting on its Round", waiting: "Waiting on you", stuck: "Stuck", failed: "Failed", stopped: "Stopped" })[t.st]
 const stCls = t => ({ running: "running", done: "done", queued: "quiet", paused: "quiet", round: "quiet", waiting: "waiting", stuck: "stuck", failed: "failed", stopped: "stuck" })[t.st]
-const badge = t => `<span class="pill p-${stCls(t)}">${esc(stText(t))}</span>${WAITING.includes(t.st) ? ` <span class="tag t-${tagOf(t)}">[${tagOf(t)}]</span>` : ""}`
+const badge = t => `<span class="pill p-${stCls(t)}">${esc(stText(t))}</span>${WAITING.includes(t.st) ? ` ${tagLabel(tagOf(t))}` : ""}`
 function runNow(r) {
   if (r.state === "done") return `<span class="pill p-done">Done · ${esc(r.ended)}</span>`
   if (r.state === "failed") return `<span class="pill p-failed">Failed · ${esc(r.ended)}</span>`
@@ -698,7 +703,7 @@ function home() {
 
 function noteTable(ns, bare) {
   if (!ns.length) return `<div class="muted">Nothing waits on you.</div>`
-  const rows = ns.map(({ r, t }) => `<tr class="click" onclick="go('${taskHref(r, t)}')"><td style="width:96px"><span class="tag t-${tagOf(t)}">[${tagOf(t)}]</span></td>
+  const rows = ns.map(({ r, t }) => `<tr class="click" onclick="go('${taskHref(r, t)}')"><td style="width:130px">${tagLabel(tagOf(t))}</td>
     <td><b>${esc(r.id)}</b> · ${esc(t.name)}<div class="muted small">${esc(proc(r.proc).name)}</div></td><td>${esc(t.summary)}</td><td class="muted small" style="white-space:nowrap">${ago(t.waited)}</td></tr>`).join("")
   return bare ? `<table style="box-shadow:none">${rows}</table>` : `<table><tr><th>Tag</th><th>Run · Task</th><th>Summary</th><th>Waiting</th></tr>${rows}</table>`
 }
@@ -1002,7 +1007,7 @@ function saveStepComment() {
 function renderStepComments() {
   const box = document.getElementById("stepComments"); if (!box) return
   const cs = REVIEW_COMMENTS[W.rid] || []
-  box.innerHTML = cs.length ? `<b class="small">Comments on steps (${cs.length})</b>${cs.map(c => `<div class="small" style="padding:3px 0"><span class="tag t-approve">${c.type}</span> <a href="javascript:walk(${c.story},${c.step})">${esc(c.where)}</a>: ${esc(c.text)}</div>`).join("")}` : ""
+  box.innerHTML = cs.length ? `<b class="small">Comments on steps (${cs.length})</b>${cs.map(c => `<div class="small" style="padding:3px 0"><span class="tag t-${c.type}">${c.type[0] + c.type.slice(1).toLowerCase()}</span> <a href="javascript:walk(${c.story},${c.step})">${esc(c.where)}</a>: ${esc(c.text)}</div>`).join("")}` : ""
 }
 addEventListener("keydown", e => {
   if (!document.getElementById("walkMain") || document.getElementById("walkMain").closest("[hidden]") || e.target.closest("input, textarea, select, [contenteditable]") || e.metaKey || e.ctrlKey) return
@@ -1139,7 +1144,7 @@ function pList(kind) {
   return ph(`${one}s`, { acts: `<button onclick="toast('Import one markdown file. It fills the create form, unsaved.')">Import…</button><button class="primary" onclick="go('#/${kind}/new')">New ${one}</button>`,
       sub: `From the folders in <a href="#/settings">Settings</a>. Ants writes only into <code>~/.ants/${kind}</code>; the rest are read-only, with Copy.` })
     + `<table><tr><th>Name</th>${kind === "agents" ? "<th>CLI · model</th><th>Skills</th>" : "<th>Run by</th>"}<th>Description</th><th>Folder</th></tr>
-    ${S[kind].map(x => `<tr class="click" onclick="go('#/${kind}/${x.name}')"><td><b>${esc(x.name)}</b>${x.vault ? ' <span class="tag t-approve">vault</span>' : ""}</td>
+    ${S[kind].map(x => `<tr class="click" onclick="go('#/${kind}/${x.name}')"><td><b>${esc(x.name)}</b>${x.vault ? ' <span class="tag t-vault">Vault</span>' : ""}</td>
       ${kind === "agents" ? `<td class="small">${x.cli} · ${x.model}</td><td class="small">${x.skills.map(esc).join(", ")}</td>` : `<td class="small">${S.agents.filter(a => a.skills.includes(x.name)).map(a => a.name).join(", ") || "<span class='muted'>no Agent</span>"}</td>`}
       <td class="small">${esc(x.desc)}</td><td class="muted small">${esc(folderLabel(x.folder))}</td></tr>`).join("")}</table>`
 }
@@ -1330,7 +1335,7 @@ async function mountDiagrams() {
     r.tasks.forEach(t => {
       if (!reg.get(t.id)) return
       canvas.addMarker(t.id, "m-" + ({ quiet: "quiet", stuck: "waiting" }[stCls(t)] || stCls(t)))
-      const label = t.st === "running" ? `<i></i><span class="num" data-el="${key(r, t)}">${fmtEl(t.el)}</span> · <span class="num" data-tok="${key(r, t)}">${fmtTok(t.tok)}</span>${t.subs ? ` · ⑂ ${t.subs}` : ""}` : t.st === "done" ? "✓" : WAITING.includes(t.st) ? `[${tagOf(t)}]` : stText(t)
+      const label = t.st === "running" ? `<i></i><span class="num" data-el="${key(r, t)}">${fmtEl(t.el)}</span> · <span class="num" data-tok="${key(r, t)}">${fmtTok(t.tok)}</span>${t.subs ? ` · ⑂ ${t.subs}` : ""}` : t.st === "done" ? "✓" : WAITING.includes(t.st) ? (TAGS[tagOf(t)] || ["", tagOf(t)]).join(" ") : stText(t)
       overlays.add(t.id, { position: { top: -12, right: t.st === "done" ? 16 : 70 }, html: `<span class="ov ${t.st === "done" ? "done" : stCls(t) === "stuck" ? "waiting" : stCls(t)}">${label}</span>` })
       if (t.round) overlays.add(t.id, { position: { bottom: 14, left: 6 }, html: `<span class="ov quiet">round ${t.round}</span>` })
     })
