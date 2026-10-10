@@ -1,0 +1,550 @@
+<!doctype html>
+<!-- PROTOTYPE, throwaway. Answers "Prototype the web UI's pages and how the user moves between them" (oyvij/ants#20).
+     Every page of Ants' web UI, rough and clickable, in memory. Three variants of the app shell and home page,
+     switchable with ?variant=A|B|C, the floating bar at the bottom, or the ← → keys:
+       A  Top nav, home is the Notification list
+       B  Sidebar, home is a dashboard
+       C  Runs first, a bell holds the Notification list, Agents and Skills share a Library
+     Page contents follow the map's settled decisions and are the same in every variant; only the shell,
+     the nav and the home page differ. A Task has one URL; what its page shows depends on its state.
+     Open it: open prototype/web-ui.html -->
+<html lang="en">
+<meta charset="utf-8">
+<title>Ants (prototype)</title>
+<style>
+  :root { --q: #3b5bdb; --ctx: #ae3ec9; --rec: #e67700; --ans: #2b8a3e; --bad: #c92a2a; --line: #dee2e6; --dim: #868e96;
+          font: 14px/1.5 system-ui, sans-serif; color: #212529; }
+  body { margin: 0; background: #f8f9fa; }
+  a { color: var(--q); text-decoration: none; } a:hover { text-decoration: underline; }
+  h1 { font-size: 20px; margin: 0 0 4px; } h2 { font-size: 15px; margin: 24px 0 8px; }
+  .dim { color: var(--dim); } .small { font-size: 12px; }
+  main { max-width: 980px; margin: 0 auto; padding: 24px 24px 140px; }
+  table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid var(--line); border-radius: 6px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); font-weight: 600; }
+  tr.click { cursor: pointer; } tr.click:hover td { background: #f1f3f5; }
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 14px 16px; margin-bottom: 12px; }
+  .tag { font: 12px ui-monospace, monospace; padding: 1px 6px; border-radius: 4px; white-space: nowrap; }
+  .t-questions, .t-approve { background: #fff4e6; color: var(--rec); }
+  .t-stuck, .t-stopped { background: #f3f0ff; color: #7048e8; } .t-failed { background: #fff5f5; color: var(--bad); }
+  .st { font-size: 12px; padding: 1px 8px; border-radius: 10px; white-space: nowrap; }
+  .s-running { background: #e7f5ff; color: #1971c2; } .s-queued, .s-paused, .s-round { background: #f1f3f5; color: #495057; }
+  .s-waiting { background: #fff4e6; color: var(--rec); } .s-done { background: #ebfbee; color: var(--ans); }
+  .s-failed { background: #fff5f5; color: var(--bad); } .s-ready { background: #ebfbee; color: var(--ans); }
+  button { font: inherit; padding: 6px 14px; border-radius: 6px; cursor: pointer; background: #fff; border: 1px solid var(--line); }
+  button.primary { background: var(--ans); color: #fff; border: 0; } button.danger { color: var(--bad); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.link { border: 0; background: none; padding: 0; color: var(--q); }
+  input, textarea, select { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; box-sizing: border-box; }
+  textarea { width: 100%; min-height: 5em; resize: vertical; } label { display: block; margin: 10px 0 4px; font-weight: 600; font-size: 13px; }
+  .row { display: flex; gap: 8px; align-items: center; } .grow { flex: 1; } .right { margin-left: auto; }
+  .reasons li { color: var(--bad); }
+  .pill { font-size: 12px; background: #fff3bf; color: #5c3c00; padding: 2px 8px; border-radius: 10px; white-space: nowrap; }
+  .upd { font-size: 12px; background: #e7f5ff; color: #1971c2; padding: 2px 8px; border-radius: 10px; white-space: nowrap; }
+  .count { background: var(--rec); color: #fff; border-radius: 9px; padding: 0 6px; font-size: 11px; font-weight: 700; margin-left: 4px; }
+  .footbar { position: fixed; bottom: 0; left: 0; right: 0; background: #fff; border-top: 1px solid var(--line); z-index: 5; }
+  .footbar div { max-width: 980px; margin: 0 auto; padding: 12px 24px; display: flex; gap: 8px; }
+  .footbar .primary { margin-left: auto; }
+  body.vB .footbar { left: 210px; }
+
+  /* Transcript */
+  .tr { background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 8px 14px; font-size: 13px; }
+  .tr > * { margin: 6px 0; }
+  .tr .tool { font-family: ui-monospace, monospace; color: #495057; } .tr .tool::before { content: "⏺ "; color: var(--ans); }
+  .tr .sys { color: var(--dim); font-style: italic; text-align: center; font-size: 12px; }
+  .tr .div { border-top: 1px dashed var(--line); padding-top: 4px; color: var(--dim); font-size: 12px; }
+  .tr .you { background: #edf2ff; padding: 6px 10px; border-radius: 6px; } .tr .you::before { content: "You: "; font-weight: 600; }
+  .tr details.sub { border-left: 3px solid var(--ctx); padding-left: 10px; } .tr details.sub summary { color: var(--ctx); cursor: pointer; }
+  .tr details summary { cursor: pointer; color: var(--dim); }
+  .chips { display: flex; gap: 6px; margin: 8px 0; flex-wrap: wrap; }
+  .chip { font-size: 12px; background: #f8f0fc; color: var(--ctx); border-radius: 12px; padding: 2px 10px; cursor: pointer; }
+  pre { background: #f8f9fa; border: 1px solid var(--line); border-radius: 6px; padding: 10px; overflow: auto; font-size: 12px; white-space: pre-wrap; }
+
+  /* Diagram strip on the Run page and the modeler canvas */
+  .diagram { display: flex; align-items: center; gap: 0; background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 18px; overflow-x: auto; }
+  .diagram .box { border: 2px solid #adb5bd; border-radius: 8px; padding: 6px 10px; font-size: 12px; min-width: 84px; text-align: center; background: #fff; }
+  .diagram .arrow { width: 22px; height: 2px; background: #adb5bd; flex: none; }
+  .diagram .ev { width: 22px; height: 22px; border-radius: 50%; border: 2px solid #adb5bd; flex: none; }
+  .diagram .gw { width: 20px; height: 20px; transform: rotate(45deg); border: 2px solid #adb5bd; flex: none; margin: 0 4px; }
+  .box.b-done { border-color: var(--ans); } .box.b-running { border-color: #1971c2; box-shadow: 0 0 0 3px #d0ebff; }
+  .box.b-waiting { border-color: var(--rec); box-shadow: 0 0 0 3px #ffe8cc; } .box.b-failed { border-color: var(--bad); }
+  .box.b-queued, .box.b-paused, .box.b-round { border-color: #495057; border-style: dashed; } .box.sel { outline: 2px solid var(--q); }
+
+  /* Variant A: top nav */
+  .navA { position: sticky; top: 0; z-index: 4; background: #212529; color: #fff; display: flex; align-items: center; gap: 4px; padding: 0 20px; height: 46px; }
+  .navA a, .navB a, .navC a { color: inherit; padding: 6px 10px; border-radius: 6px; }
+  .navA a.on, .navC a.on { background: #495057; } .navA a:hover, .navC a:hover { text-decoration: none; background: #343a40; }
+  .brand { font-weight: 800; margin-right: 14px; letter-spacing: .02em; }
+
+  /* Variant B: sidebar */
+  body.vB { padding-left: 210px; }
+  .navB { position: fixed; top: 0; bottom: 0; left: 0; width: 210px; background: #fff; border-right: 1px solid var(--line); display: flex; flex-direction: column; padding: 14px 10px; box-sizing: border-box; gap: 2px; }
+  .navB a { color: #212529; display: flex; } .navB a.on { background: #edf2ff; color: var(--q); font-weight: 600; } .navB a:hover { text-decoration: none; background: #f1f3f5; }
+  .navB .brand { padding: 4px 10px 14px; } .navB .bottom { margin-top: auto; display: flex; flex-direction: column; gap: 6px; padding: 0 6px 60px; }
+  .navB .grp { font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: .06em; padding: 12px 10px 2px; }
+  .dash { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; } .dash .wide { grid-column: 1 / -1; }
+
+  /* Variant C: runs first, bell */
+  .navC { position: sticky; top: 0; z-index: 4; background: #fff; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 4px; padding: 0 20px; height: 46px; }
+  .navC a.on { background: #edf2ff; color: var(--q); } .navC a:hover { background: #f1f3f5; }
+  .bell { position: relative; cursor: pointer; padding: 6px 10px; border-radius: 6px; } .bell:hover { background: #f1f3f5; }
+  .drop { position: absolute; right: 0; top: 40px; width: 440px; background: #fff; border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 24px #0002; padding: 8px; z-index: 9; }
+  .drop a.entry { display: block; padding: 8px; border-radius: 6px; color: inherit; } .drop a.entry:hover { background: #f1f3f5; text-decoration: none; }
+
+  .entry-row td:first-child { width: 90px; }
+
+  /* Prototype chrome, not part of the design */
+  .switcher { position: fixed; bottom: 70px; left: 50%; transform: translateX(-50%); z-index: 20; background: #f03e3e; color: #fff; border-radius: 22px; padding: 6px 8px; display: flex; gap: 8px; align-items: center; box-shadow: 0 4px 16px #0004; font-size: 13px; }
+  .switcher button { background: #fff2; color: #fff; border: 0; border-radius: 50%; width: 28px; height: 28px; padding: 0; }
+  details.proto { position: fixed; bottom: 70px; right: 12px; z-index: 20; max-width: 40vw; max-height: 60vh; overflow: auto; background: #212529; color: #f8f9fa; border-radius: 8px; padding: 8px 12px; font-size: 12px; }
+  details.proto pre { background: #343a40; color: #f8f9fa; border: 0; }
+</style>
+
+<div id="app"></div>
+<div class="switcher"><button onclick="cycle(-1)">←</button><span id="vlabel"></span><button onclick="cycle(1)">→</button></div>
+<details class="proto"><summary>Prototype state</summary><pre id="state"></pre></details>
+
+<script>
+const VARIANTS = { A: "Top nav · home is the Notification list", B: "Sidebar · home is a dashboard", C: "Runs first · bell · Library" }
+const V = VARIANTS[new URLSearchParams(location.search).get("variant")] ? new URLSearchParams(location.search).get("variant") : "A"
+function cycle(d) { const k = Object.keys(VARIANTS), n = k[(k.indexOf(V) + d + k.length) % k.length]; location.search = "?variant=" + n }
+document.addEventListener("keydown", e => {
+  if (e.target.closest("input, textarea, select, [contenteditable]")) return
+  if (e.key === "ArrowLeft") cycle(-1); if (e.key === "ArrowRight") cycle(1)
+})
+document.getElementById("vlabel").textContent = `${V} (${VARIANTS[V]})`
+document.body.className = "v" + V
+
+// ---------- in-memory state ----------
+const S = {
+  loggedIn: true, version: "0.4.2", update: "available", paused: { claude: "15:45" }, cap: 3, bellOpen: false,
+  processes: [
+    { id: "spec-you", name: "Prompt to spec · you answer", by: "shipped", ready: true },
+    { id: "spec-agent", name: "Prompt to spec · an Agent answers", by: "shipped", ready: true },
+    { id: "spec-rec", name: "Prompt to spec · recommendations answer", by: "shipped", ready: true },
+    { id: "setup-vault", name: "Set up Vault", by: "shipped", ready: true },
+    { id: "dep-bumps", name: "Weekly dependency bumps", by: "you", ready: false,
+      reasons: ['Task "Bump versions" names Agent "bumper", which no Agent folder holds', 'Start form repo "ledger" is not in the Source map'] },
+  ],
+  runs: [],
+  agents: [
+    { name: "scout", cli: "claude", folder: "shipped", tools: "Read, Grep, Glob", desc: "Reads the prompt, the Vault and the Source map; never code." },
+    { name: "griller", cli: "claude", folder: "shipped", tools: "Read, Grep, Glob, Agent", desc: "Asks Rounds of questions until the plan is clear." },
+    { name: "answerer", cli: "claude", folder: "shipped", tools: "Read, Grep", desc: "Answers a Round the way the user would, from the Answer History and the Vault." },
+    { name: "writer", cli: "claude", folder: "shipped", tools: "Read, Write, Edit, Grep", desc: "Writes specs and Reports." },
+    { name: "reviewer", cli: "codex", folder: "~/.ants/agents", tools: "Read, Grep", desc: "My second opinion on a spec." },
+    { name: "vault-keeper", cli: "claude", folder: "~/.varde/ai/skills/workflows/knowledge-vault/agents", tools: "Read, Write", desc: "Varde's Vault agent." },
+  ],
+  skills: [
+    { name: "scout", folder: "shipped", desc: "Find the repos and write the brief." },
+    { name: "grilling", folder: "shipped", desc: "Grill the plan, one Round at a time." },
+    { name: "answer-round", folder: "shipped", desc: "Answer a Round for the user." },
+    { name: "to-spec", folder: "shipped", desc: "Turn the answered Rounds into a spec." },
+    { name: "report", folder: "shipped", desc: "Write the Run's Report." },
+    { name: "init-vault", folder: "shipped", desc: "Create an empty Vault." },
+    { name: "search-knowledge", folder: "shipped", desc: "Search the Vault.", vault: true },
+    { name: "bump-deps", folder: "~/.ants/skills", desc: "Bump dependencies and run the tests." },
+    { name: "tdd", folder: "~/.varde/ai/skills", desc: "Varde's test-first Skill." },
+  ],
+}
+// Tasks: kind Agent|User|Built-in; st running|queued|paused|round|waiting|stuck|failed|stopped|done
+const T = (id, name, kind, st, x = {}) => ({ id, name, kind, st, ...x })
+const specTasks = (grillAgent = "griller") => [
+  T("scout", "Scout", "Agent", "done", { agent: "scout", skill: "scout", tokens: "18.2k" }),
+  T("clone", "Clone repos", "Built-in", "done"),
+  T("grill", "Grill the spec", "Agent", "done", { agent: grillAgent, skill: "grilling", tokens: "64.0k" }),
+]
+S.runs = [
+  { id: "release-notes", proc: "spec-you", state: "live", started: "Mon 08:30", repos: ["web"],
+    tasks: [T("scout", "Scout", "Agent", "failed", { agent: "scout", skill: "scout", waited: 2950, tokens: "9.1k",
+      summary: "The Result did not match scout's schema, twice.", needs: "Missing required property `brief`.\n\nLast stderr:\n(none)" })] },
+  { id: "payments-webhook", proc: "spec-agent", state: "live", started: "Fri 16:02", repos: ["payments", "web"],
+    tasks: [...specTasks().slice(0, 2), T("grill", "Grill the spec", "Agent", "stuck", { agent: "griller", skill: "grilling", waited: 1210, tokens: "41.5k",
+      summary: "Can't tell which webhook provider the prompt means.",
+      needs: "The prompt says \"the webhook\", but payments has two: Stripe (`StripeWebhookController`) and Vipps (`VippsCallback`). Which one, or both?" })] },
+  { id: "invoices-csv-export", proc: "spec-you", state: "live", started: "09:12", repos: ["billing"],
+    tasks: [...specTasks(), T("answer", "Answer the round", "User", "waiting", { tag: "questions", waited: 130,
+      summary: "Second round on the invoice CSV export: who, which invoices, columns, number format." })],
+    grillSt: "round" },
+  { id: "search-reindex", proc: "spec-you", state: "live", started: "08:40", repos: ["search"],
+    tasks: [...specTasks(), T("tospec", "Write the spec", "Agent", "done", { agent: "writer", skill: "to-spec", tokens: "22.7k" }),
+      T("approve", "Approve the spec", "User", "waiting", { tag: "approve", waited: 95, summary: "Spec for a zero-downtime reindex: shadow index, alias swap, backfill job." })] },
+  { id: "onboarding-email", proc: "spec-rec", state: "live", started: "10:05", repos: ["web"],
+    tasks: [...specTasks(), T("tospec", "Write the spec", "Agent", "stopped", { agent: "writer", skill: "to-spec", waited: 12, tokens: "8.0k",
+      summary: "You stopped it.", needs: "Stopped by you at 11:41 while it was rewriting the email copy." })] },
+  { id: "dark-mode-toggle", proc: "spec-agent", state: "live", started: "11:20", repos: ["web"],
+    tasks: [...specTasks().slice(0, 2), T("grill", "Grill the spec", "Agent", "running", { agent: "griller", skill: "grilling", tokens: "31.9k", subs: 2 })] },
+  { id: "api-pagination", proc: "spec-rec", state: "live", started: "11:31", repos: ["api"],
+    tasks: [...specTasks(), T("tospec", "Write the spec", "Agent", "running", { agent: "writer", skill: "to-spec", tokens: "5.3k" })] },
+  { id: "cli-help", proc: "spec-you", state: "live", started: "11:48", repos: [],
+    tasks: [T("scout", "Scout", "Agent", "running", { agent: "scout", skill: "scout", tokens: "2.1k" })] },
+  { id: "audit-logging", proc: "spec-rec", state: "live", started: "11:50", repos: ["api"],
+    tasks: [...specTasks(), T("accept", "Accept recommendations", "Built-in", "done"), T("tospec", "Write the spec", "Agent", "queued", { agent: "writer", skill: "to-spec" })] },
+  { id: "billing-retry", proc: "spec-you", state: "live", started: "07:55", repos: ["billing"],
+    tasks: [...specTasks().slice(0, 2), T("grill", "Grill the spec", "Agent", "paused", { agent: "griller", skill: "grilling", tokens: "52.4k" })] },
+  { id: "vault-setup", proc: "setup-vault", state: "done", started: "Sun 20:10", ended: "Sun 20:14", repos: [],
+    tasks: [T("init", "Init the Vault", "Agent", "done", { agent: "vault-keeper", skill: "init-vault", tokens: "6.6k" })] },
+  { id: "csv-import", proc: "spec-you", state: "done", started: "Sat 10:00", ended: "Sat 13:22", repos: ["billing"],
+    tasks: [...specTasks(), T("tospec", "Write the spec", "Agent", "done", { agent: "writer", skill: "to-spec", tokens: "19.0k" }),
+      T("approve", "Approve the spec", "User", "done"), T("report", "Write the Report", "Agent", "done", { agent: "writer", skill: "report", tokens: "4.4k" })] },
+  { id: "flaky-tests", proc: "spec-rec", state: "failed", started: "Thu 14:00", ended: "Thu 15:10", repos: ["api"], workspace: "~/.ants/runs/flaky-tests/workspace",
+    tasks: [...specTasks().slice(0, 2), T("grill", "Grill the spec", "Agent", "failed", { agent: "griller", skill: "grilling", tokens: "12.0k" })] },
+]
+S.runs.find(r => r.id === "invoices-csv-export").tasks[2].st = "round"
+
+// ---------- helpers ----------
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c])
+const run = id => S.runs.find(r => r.id === id)
+const proc = id => S.processes.find(p => p.id === id)
+const ago = m => m >= 1440 ? `${Math.floor(m / 1440)}d ${Math.floor(m % 1440 / 60)}h` : m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`
+const WAITING = ["waiting", "stuck", "failed", "stopped"]
+const tagOf = t => t.tag || t.st
+const notes = () => S.runs.filter(r => r.state === "live").flatMap(r => r.tasks.filter(t => WAITING.includes(t.st)).map(t => ({ r, t })))
+  .sort((a, b) => b.t.waited - a.t.waited)
+const nCount = () => notes().length
+const running = () => S.runs.flatMap(r => r.tasks).filter(t => t.st === "running").length
+const taskHref = (r, t) => `#/runs/${r.id}/tasks/${t.id}`
+const stLabel = t => ({
+  running: "Running", done: "Done", queued: `Queued: ${running()} of ${S.cap} Agent Tasks running`,
+  paused: `Paused until ${S.paused.claude || "—"} (usage limit)`, round: "Waiting on its Round", waiting: "Waiting on you",
+  stuck: "Waiting on you", failed: "Waiting on you", stopped: "Waiting on you",
+})[t.st]
+const stClass = t => ({ stuck: "waiting", failed: "failed", stopped: "waiting" })[t.st] || t.st
+const badge = t => `<span class="st s-${stClass(t)}">${esc(stLabel(t))}</span>${WAITING.includes(t.st) ? ` <span class="tag t-${tagOf(t)}">[${tagOf(t)}]</span>` : ""}`
+const runState = r => {
+  if (r.state === "done") return `<span class="st s-done">Done ${esc(r.ended)}</span>`
+  if (r.state === "failed") return `<span class="st s-failed">Failed ${esc(r.ended)}</span>`
+  const w = r.tasks.find(t => WAITING.includes(t.st)); if (w) return badge(w)
+  const now = r.tasks.find(t => t.st !== "done") || r.tasks.at(-1); return badge(now) + ` <span class="dim small">${esc(now.name)}</span>`
+}
+const go = h => { location.hash = h }
+
+// ---------- shells ----------
+function topRight() {
+  const p = Object.entries(S.paused).map(([cli, t]) => `<span class="pill">${cli} paused until ${t} <button class="link" onclick="tryNow('${cli}')">Try now</button></span>`).join(" ")
+  const u = S.update === "available" ? `<span class="upd">v${S.version} → v0.5 <button class="link" onclick="doUpdate()">Update</button></span>`
+    : S.update === "installed" ? `<span class="upd">v0.5 installed, restart to use</span>` : `<span class="dim small">v${S.version}</span>`
+  return { p, u }
+}
+const on = (...prefixes) => prefixes.some(p => route() === p || route().startsWith(p + "/")) ? "on" : ""
+
+function shellA(body) {
+  const { p, u } = topRight(), n = nCount()
+  return `<div class="navA"><a class="brand" href="#/">ANTS</a>
+    <a class="${route() === "/" || on("/notifications") ? "on" : ""}" href="#/">Notifications${n ? `<span class="count">${n}</span>` : ""}</a>
+    <a class="${on("/runs")}" href="#/runs">Runs</a><a class="${on("/processes")}" href="#/processes">Processes</a>
+    <a class="${on("/agents")}" href="#/agents">Agents</a><a class="${on("/skills")}" href="#/skills">Skills</a>
+    <span class="right row">${p} ${u}<a class="${on("/settings")}" href="#/settings">Settings</a><a href="#/login" onclick="S.loggedIn=false">Log out</a></span></div>
+    <main>${body}</main>`
+}
+function shellB(body) {
+  const { p, u } = topRight(), n = nCount(), live = S.runs.filter(r => r.state === "live").length
+  return `<div class="navB"><a class="brand" href="#/">ANTS</a>
+    <a class="${route() === "/" ? "on" : ""}" href="#/">Home</a>
+    <a class="${on("/notifications")}" href="#/notifications">Notifications${n ? `<span class="count right">${n}</span>` : ""}</a>
+    <div class="grp">Work</div>
+    <a class="${on("/runs")}" href="#/runs">Runs <span class="right dim small">${live} live</span></a>
+    <a class="${on("/processes")}" href="#/processes">Processes</a>
+    <div class="grp">Library</div>
+    <a class="${on("/agents")}" href="#/agents">Agents</a><a class="${on("/skills")}" href="#/skills">Skills</a>
+    <div class="bottom">${p}${u}<a class="${on("/settings")}" href="#/settings">Settings</a><a href="#/login" onclick="S.loggedIn=false">Log out</a></div></div>
+    <main>${body}</main>`
+}
+function shellC(body) {
+  const { p, u } = topRight(), n = nCount()
+  const drop = S.bellOpen ? `<div class="drop" onclick="event.stopPropagation()"><div class="row"><b>Waiting on you</b><a class="right small" href="#/notifications" onclick="S.bellOpen=false">See all</a></div>
+    ${notes().map(({ r, t }) => `<a class="entry" href="${taskHref(r, t)}" onclick="S.bellOpen=false"><span class="tag t-${tagOf(t)}">[${tagOf(t)}]</span> <b>${esc(r.id)}</b> · ${esc(t.name)} <span class="dim small right">${ago(t.waited)}</span><div class="dim small">${esc(t.summary)}</div></a>`).join("") || "<p class='dim'>Nothing waits on you.</p>"}</div>` : ""
+  return `<div class="navC"><a class="brand" href="#/">ANTS</a>
+    <a class="${route() === "/" || on("/runs") ? "on" : ""}" href="#/">Runs</a><a class="${on("/processes")}" href="#/processes">Processes</a>
+    <a class="${on("/agents") || on("/skills")}" href="#/agents">Library</a>
+    <span class="right row">${p} ${u}
+      <span class="bell" onclick="event.stopPropagation();S.bellOpen=!S.bellOpen;render()">🔔${n ? `<span class="count">${n}</span>` : ""}${drop}</span>
+      <a class="${on("/settings")}" href="#/settings">⚙ Settings</a><a href="#/login" onclick="S.loggedIn=false">Log out</a></span></div>
+    <main>${body}</main>`
+}
+document.addEventListener("click", () => { if (S.bellOpen) { S.bellOpen = false; render() } })
+
+// ---------- pages ----------
+function pLogin() {
+  return `<main style="max-width:340px;margin-top:12vh"><div class="card"><h1>Ants</h1>
+    <label>User</label><input value="admin" style="width:100%"><label>Password</label><input type="password" value="admin" style="width:100%">
+    <p><button class="primary" style="width:100%" onclick="S.loggedIn=true;go('#/')">Log in</button></p>
+    <p class="dim small">Single user. A long-lived session cookie keeps you logged in.</p></div></main>`
+}
+
+function notificationTable() {
+  const ns = notes()
+  if (!ns.length) return `<div class="card dim">Nothing waits on you. <a href="#/runs">See the Runs</a></div>`
+  return `<table><tr><th>Tag</th><th>Run · Task</th><th>Summary</th><th>Waiting</th></tr>
+    ${ns.map(({ r, t }) => `<tr class="click entry-row" onclick="go('${taskHref(r, t)}')"><td><span class="tag t-${tagOf(t)}">[${tagOf(t)}]</span></td>
+      <td><b>${esc(r.id)}</b> · ${esc(t.name)}<div class="dim small">${esc(proc(r.proc).name)}</div></td><td>${esc(t.summary)}</td><td class="dim">${ago(t.waited)}</td></tr>`).join("")}</table>`
+}
+const pNotifications = () => `<h1>Notifications</h1><p class="dim">Every Task waiting on you, oldest first. An entry goes the moment you act.</p>${notificationTable()}`
+
+function runsTable(rs, opts = {}) {
+  return `<table><tr><th>Run</th><th>Process</th><th>Now</th><th>Started</th>${opts.actions ? "<th></th>" : ""}</tr>
+    ${rs.map(r => `<tr class="click" onclick="go('#/runs/${r.id}')"><td><b>${esc(r.id)}</b>${subsOf(r)}</td><td class="dim">${esc(proc(r.proc).name)}</td>
+      <td>${runState(r)}</td><td class="dim">${esc(r.started)}</td>
+      ${opts.actions ? `<td>${r.state === "failed" ? `<button onclick="event.stopPropagation();dismiss('${r.id}')">Dismiss</button>` : r.state === "done" ? `<a href="#/runs/${r.id}" onclick="event.stopPropagation()">Report</a>` : ""}</td>` : ""}</tr>`).join("")}</table>`
+}
+const subsOf = r => { const s = r.tasks.reduce((a, t) => a + (t.st === "running" && t.subs ? t.subs : 0), 0); return s ? ` <span title="Subagents" class="dim">⑂ ${s}</span>` : "" }
+function pRuns() {
+  const live = S.runs.filter(r => r.state === "live"), ended = S.runs.filter(r => r.state !== "live")
+  return `<div class="row"><h1>Runs</h1><button class="right primary" onclick="go('#/processes')">Start a Run…</button></div>
+    <p class="dim">${running()} of ${S.cap} Agent Tasks running.</p>
+    <h2>Live (${live.length})</h2>${runsTable(live)}
+    <h2>Ended</h2><p class="dim small">Done Runs leave their Report. Failed Runs keep their Run workspace until you dismiss them.</p>${runsTable(ended, { actions: true })}`
+}
+
+function diagram(r, sel) {
+  return `<div class="diagram"><div class="ev"></div>${r.tasks.map(t => `<div class="arrow"></div>
+    <a class="box b-${stClass(t)} ${t.id === sel ? "sel" : ""}" ${r.id ? `href="${taskHref(r, t)}"` : ""}>${esc(t.name)}<div class="small dim">${t.kind}</div></a>`).join("")}
+    <div class="arrow"></div><div class="gw"></div><div class="arrow" style="background:#dee2e6"></div><div class="box dim" style="border-color:#dee2e6">… not reached</div></div>`
+}
+function pRun(id) {
+  const r = run(id); if (!r) return `<h1>No such Run</h1>`
+  const live = r.state === "live"
+  return `<div class="dim small"><a href="#/runs">Runs</a> › ${esc(r.id)}</div>
+    <div class="row"><h1>${esc(r.id)}</h1> ${runState(r)}
+      <span class="right">${live ? `<button class="danger" onclick="cancelRun('${r.id}')">Cancel the Run</button>` : r.state === "failed" ? `<button onclick="dismiss('${r.id}')">Dismiss</button>` : ""}</span></div>
+    <p class="dim">Process <a href="#/processes/${r.proc}">${esc(proc(r.proc).name)}</a> · started ${esc(r.started)} · branch <code>ants/${esc(r.id)}</code> · repos ${r.repos.map(esc).join(", ") || "none yet"}</p>
+    ${diagram(r)}
+    <h2>Tasks</h2>
+    <table><tr><th>Task</th><th>Kind</th><th>Agent · Skill</th><th>State</th><th>Tokens</th></tr>
+    ${r.tasks.map(t => `<tr class="click" onclick="go('${taskHref(r, t)}')"><td><b>${esc(t.name)}</b>${t.st === "running" && t.subs ? ` <span class="dim" title="Explore: Find every hard-coded colour&#10;Explore: Check how settings persist">⑂ ${t.subs}</span>` : ""}</td>
+      <td class="dim">${t.kind}</td><td class="dim">${t.agent ? `${esc(t.agent)} · ${esc(t.skill)}` : ""}</td><td>${badge(t)}</td><td class="dim">${t.tokens || ""}</td></tr>`).join("")}</table>
+    ${r.state === "failed" ? `<h2>Run workspace</h2><p>Kept at <code>${esc(r.workspace)}</code> until you dismiss the Run.</p>` : ""}
+    ${r.state === "done" ? report(r) : `<p class="dim small">The Report appears here when the Run ends.</p>`}`
+}
+function report(r) {
+  return `<h2>Report</h2><div class="card"><p><b>What was done.</b> ${r.proc === "setup-vault" ? "Created an empty Vault at <code>~/.ants/vault</code> with the index Note." :
+    "Scouted billing, grilled the spec over 3 Rounds (14 questions, 11 answered by you), wrote and approved <code>specs/csv-import.md</code>."}</p>
+    <p><b>Repos changed.</b> ${r.repos.length ? r.repos.map(x => `<code>${esc(x)}</code> on <code>ants/${esc(r.id)}</code>, 1 commit, not pushed`).join(", ") : "none"}</p>
+    <p><b>Tokens.</b> ${r.tasks.filter(t => t.tokens).map(t => `${esc(t.name)} ${t.tokens}`).join(" · ")}</p>
+    <p class="small dim">Kept at <code>~/.ants/runs/${esc(r.id)}/report.md</code>. Transcripts: ${r.tasks.filter(t => t.kind === "Agent").map(t => `<a href="${taskHref(r, t)}">${esc(t.name)}</a>`).join(", ")}</p></div>`
+}
+
+// Transcript, the same for every Agent Task in the prototype; only the end changes with the state.
+function transcript(r, t) {
+  const sub = (n, d, live) => `<details class="sub" id="sub${n}"><summary>⑂ Explore · ${d} ${live ? `<span class="dim small">running 1m ${10 + n * 7}s</span>` : ""}</summary>
+    <div class="small dim">Prompt: ${d}. Report file paths and line numbers.</div><div class="tool">Grep "#[0-9a-f]{6}" repos/web/src</div><div class="tool">Read repos/web/src/theme.ts</div></details>`
+  const end = {
+    running: `<div class="tool">Read repos/web/src/settings/Preferences.tsx</div>${sub(1, "Find every hard-coded colour", true)}${sub(2, "Check how settings persist", true)}`,
+    done: `<div>The spec is clear enough; returning the Result.</div><div class="div">Result</div><pre>{ "outcome": "done", "summary": "…" }</pre>`,
+    paused: `<div class="sys">Paused at the usage limit, resumes after ${S.paused.claude || "the reset"}</div>`,
+    queued: "", round: `<div class="div">Result: a Round of 4 questions</div><div class="sys">Waiting for the Round to be answered, then resumes this session</div>`,
+    stuck: `<div class="div">Result</div><pre>{ "outcome": "stuck", "summary": "${esc(t.summary)}", "needs": "…" }</pre>`,
+    failed: `<div class="sys">Invalid Result, retried once</div><div class="sys">Invalid Result again: [failed]</div>`,
+    stopped: `<div class="tool">Edit specs/onboarding-email.md</div><div class="sys">Stopped by you</div>`,
+  }[t.st]
+  if (t.st === "queued") return `<div class="tr"><div class="sys">No launch yet.</div></div>`
+  return `<div class="tr" id="tr"><details><summary>Opening prompt</summary><pre>Run the ${esc(t.skill)} Skill for this Task. Inputs follow as JSON.
+{"prompt": "…", "brief": "scout/brief.md", "repos": ${JSON.stringify(r.repos)}}</pre></details>
+    <div class="div">Launch 1 · ${esc(r.started)} · ${t.tokens || "0"} tokens</div>
+    <div>I'll read the brief first, then look at how the code handles this today.</div>
+    <div class="tool">Read scout/brief.md</div><details><summary>Thinking</summary><div class="dim">…</div></details>
+    ${(t.sent || []).map(m => `<div class="you">${esc(m)}</div>`).join("")}${end}</div>`
+}
+
+function taskHead(r, t, tag) {
+  return `<div class="dim small"><a href="#/runs">Runs</a> › <a href="#/runs/${r.id}">${esc(r.id)}</a> › ${esc(t.name)}</div>
+    <div class="row"><h1>${esc(t.name)}</h1> ${badge(t)} <span class="right dim">${t.agent ? `${esc(t.agent)} · ${esc(t.skill)} · ${t.tokens || 0} tokens` : t.kind + " Task"}</span></div>`
+}
+function pTask(rid, tid) {
+  const r = run(rid), t = r?.tasks.find(x => x.id === tid); if (!t) return `<h1>No such Task</h1>`
+  // Waiting on the user: the page is where they act.
+  if (t.st === "waiting" && t.tag === "questions") return pAnswer(r, t)
+  if (t.st === "waiting" && t.tag === "approve") return pApprove(r, t)
+  if (["stuck", "failed", "stopped"].includes(t.st)) return pStuck(r, t)
+  if (t.kind !== "Agent") return taskHead(r, t) + `<p>${t.kind} Task, ${t.st}. ${t.kind === "Built-in" ? "Ants did this itself; no Transcript." : "Answered by you."}</p>`
+  const chips = t.st === "running" && t.subs ? `<div class="chips">${["Find every hard-coded colour · 1m 17s", "Check how settings persist · 1m 24s"].slice(0, t.subs)
+    .map((c, i) => `<span class="chip" onclick="document.getElementById('sub${i + 1}').open=true;document.getElementById('sub${i + 1}').scrollIntoView()">⑂ Explore · ${c}</span>`).join("")}</div>` : ""
+  const round = t.st === "round" ? `<div class="card">This Task asked a Round. <a href="${taskHref(r, r.tasks.find(x => x.tag === "questions"))}">Answer the round</a> and it resumes its session.</div>` : ""
+  const composer = t.st === "running" ? `<div class="footbar"><div><input id="msg" class="grow" placeholder="Message the Agent; it sees it at the next tool call">
+    <button onclick="stop('${r.id}','${t.id}')">Stop</button><button class="primary" style="margin-left:0" onclick="send('${r.id}','${t.id}')">Send</button></div></div>` : ""
+  return taskHead(r, t) + chips + round + `<h2>Transcript</h2>` + transcript(r, t) + composer
+}
+
+function pAnswer(r, t) {
+  const qs = ["Who gets the export button: everyone who can see invoices, or only admins?", "Does the export take the invoices currently filtered on screen, or all of them?",
+    "Which columns go in the file?", "Should amounts use Norwegian formatting (1 234,50) or plain (1234.50)?"]
+  return taskHead(r, t) + `<p class="dim">${esc(t.summary)}</p>
+    <div class="card">The answer screen is settled: <a href="answer-page.html" target="_blank">open the answer-page prototype</a>. This stub stands in for it here.</div>
+    ${qs.map((q, i) => `<div class="card"><b>${i + 1}. ${esc(q)}</b><textarea>Recommended answer ${i + 1}</textarea></div>`).join("")}
+    <div class="footbar"><div><button class="primary" onclick="act('${r.id}','${t.id}')">Send the round</button></div></div>`
+}
+function pApprove(r, t) {
+  return taskHead(r, t) + `<p>${esc(t.summary)}</p><p class="dim">Shows the Result of <a href="${taskHref(r, r.tasks.find(x => x.id === "tospec"))}">Write the spec</a> and the files it references.</p>
+    <div class="card"><div class="dim small">specs/search-reindex.md</div><h2 style="margin-top:4px">Zero-downtime reindex</h2>
+    <p>Build a shadow index, backfill it with a job, then swap the alias. Reads keep hitting the old index until the swap…</p></div>
+    <label>Comment (required to send back)</label><textarea id="cmt"></textarea>
+    <div class="footbar"><div><button onclick="if(!document.getElementById('cmt').value)return alert('Send back needs a comment');act('${r.id}','${t.id}','sent back')">Send back</button>
+    <button class="primary" onclick="act('${r.id}','${t.id}')">Approve</button></div></div>`
+}
+function pStuck(r, t) {
+  const needsLabel = { stuck: "What it needs", failed: "Why it failed", stopped: "Where it stopped" }[t.st]
+  return taskHead(r, t) + `<p>${esc(t.summary)}</p><div class="card"><b>${needsLabel}</b><pre>${esc(t.needs)}</pre>
+    <details><summary>The session so far</summary>${transcript(r, t)}</details></div>
+    <label>Your instruction ${t.st === "stuck" ? "(required to continue)" : "(optional)"}</label><textarea id="ins"></textarea>
+    <div class="footbar"><div>${t.st === "failed" ? `<button class="danger" onclick="cancelRun('${r.id}')">Cancel the Run</button>` : ""}
+    <button style="${t.st === "failed" ? "" : "margin-left:auto"}" onclick="act('${r.id}','${t.id}','fresh')">Start fresh</button>
+    <button class="primary" style="margin-left:0" onclick="if(${t.st === "stuck"}&&!document.getElementById('ins').value)return alert('Continue needs an instruction');act('${r.id}','${t.id}','continue')">Continue the session</button></div></div>`
+}
+
+function pProcesses() {
+  return `<div class="row"><h1>Processes</h1><button class="right" onclick="go('#/processes/new/edit')">New Process</button></div>
+    <table><tr><th>Process</th><th>From</th><th>Check</th><th>Live Runs</th><th></th></tr>
+    ${S.processes.map(p => `<tr class="click" onclick="go('#/processes/${p.id}')"><td><b>${esc(p.name)}</b></td><td class="dim">${p.by}</td>
+      <td>${p.ready ? `<span class="st s-ready">Ready</span>` : `<span class="st s-failed">Can't start</span>`}</td>
+      <td class="dim">${S.runs.filter(r => r.proc === p.id && r.state === "live").length}</td>
+      <td><a href="#/processes/${p.id}/edit" onclick="event.stopPropagation()">Edit diagram</a></td></tr>`).join("")}</table>`
+}
+function pProcess(id) {
+  const p = proc(id); if (!p) return `<h1>No such Process</h1>`
+  const vault = id === "setup-vault"
+  return `<div class="dim small"><a href="#/processes">Processes</a> › ${esc(p.name)}</div>
+    <div class="row"><h1>${esc(p.name)}</h1><a class="right" href="#/processes/${id}/edit">Edit diagram</a></div>
+    <div class="card">${p.ready ? `<span class="st s-ready">Ready</span> <span class="dim small">Names, schemas, CLI commands, Source map, paths and the login all check out.</span> <button class="link small" onclick="render()">Check now</button>`
+      : `<span class="st s-failed">Can't start</span><ul class="reasons">${p.reasons.map(x => `<li>${esc(x)}</li>`).join("")}</ul>`}</div>
+    <h2>Start a Run</h2><div class="card">
+    ${vault ? `<label>Vault folder</label><input value="~/.ants/vault" style="width:100%">` : `<label>Prompt</label><textarea id="prompt" placeholder="What should this Run find its way to?"></textarea>
+    <label>Work branch <span class="dim small">(optional; the scout suggests one)</span></label><input id="branch" placeholder="ants/…" style="width:100%">`}
+    <p><button class="primary" ${p.ready ? "" : "disabled"} onclick="startRun('${id}')">Start</button></p></div>
+    ${diagram({ tasks: id.startsWith("spec") ? [T("scout", "Scout", "Agent", "x"), T("clone", "Clone repos", "Built-in", "x"), T("grill", "Grill the spec", "Agent", "x"),
+      T("answer", { "spec-you": "Answer the round", "spec-agent": "Answer round (Agent)", "spec-rec": "Accept recommendations" }[id], id === "spec-you" ? "User" : id === "spec-agent" ? "Agent" : "Built-in", "x"),
+      T("tospec", "Write the spec", "Agent", "x"), T("approve", "Approve the spec", "User", "x"), T("report", "Write the Report", "Agent", "x")] : [T("init", "Init the Vault", "Agent", "x")] })}
+    <h2>Runs of this Process</h2>${runsTable(S.runs.filter(r => r.proc === id))}`
+}
+function pModeler(id) {
+  const p = proc(id)
+  return `<div class="dim small"><a href="#/processes">Processes</a> › ${p ? `<a href="#/processes/${id}">${esc(p.name)}</a>` : "New Process"} › diagram</div>
+    <div class="row"><h1>${p ? esc(p.name) : "New Process"}</h1><span class="right row"><span class="dim small">${p?.by === "shipped" ? "Shipped: Save makes a copy" : "Draft"}</span>
+    <button class="primary" onclick="alert('Save and deploy: validates, renames camunda: to operaton:, deploys to the embedded Operaton.')">Save and deploy</button></span></div>
+    <div style="display:grid;grid-template-columns:120px 1fr 260px;gap:10px;margin-top:12px">
+      <div class="card small"><b>Palette</b><p>○ Start<br>◎ End<br>◇ Gateway<br>▭ Agent Task<br>▭ User Task<br>▭ Built-in Task</p><p class="dim">camunda-bpmn-js</p></div>
+      <div class="card" style="min-height:360px;background:repeating-linear-gradient(0deg,#fff 0 19px,#f1f3f5 19px 20px),#fff">${diagram({ tasks: [T("scout", "Scout", "Agent", "x"), T("clone", "Clone repos", "Built-in", "x"), T("grill", "Grill the spec", "Agent", "x")] }, "grill")}</div>
+      <div class="card"><b>Grill the spec</b><div class="dim small">Agent Task</div>
+        <label>Agent</label><select style="width:100%">${S.agents.map(a => `<option ${a.name === "griller" ? "selected" : ""}>${a.name}</option>`).join("")}</select>
+        <label>Skill</label><select style="width:100%">${S.skills.map(s => `<option ${s.name === "grilling" ? "selected" : ""}>${s.name}</option>`).join("")}</select>
+        <label>Inputs</label><input value="\${scout.brief}" style="width:100%"><input value="\${prompt}" style="width:100%;margin-top:4px">
+        <label><input type="checkbox" checked> Resume the session when the flow comes back</label>
+        <label><input type="checkbox"> Vault</label><label><input type="checkbox"> Answer History</label></div></div>`
+}
+
+const isOwn = x => x.folder.startsWith("~/.ants/")
+const folderLabel = f => f === "shipped" ? "shipped" : f
+const usedBy = name => S.processes.filter(p => p.by === "shipped" && ["griller", "scout", "writer", "grilling", "scout", "to-spec", "report"].includes(name)).map(p => p.name).slice(0, 3)
+function libTabs(which) { return V === "C" ? `<div class="row" style="margin-bottom:12px"><a href="#/agents" class="st ${which === "agents" ? "s-running" : "s-queued"}">Agents</a><a href="#/skills" class="st ${which === "skills" ? "s-running" : "s-queued"}">Skills</a></div>` : "" }
+function pList(kind) {
+  const items = S[kind], one = kind === "agents" ? "Agent" : "Skill"
+  return libTabs(kind) + `<div class="row"><h1>${one}s</h1><span class="right row"><button onclick="alert('Import one markdown file; fills the create form unsaved.')">Import…</button><button class="primary" onclick="go('#/${kind}/new')">New ${one}</button></span></div>
+    <p class="dim">Folders come from <a href="#/settings">settings</a>. Ants writes only into <code>~/.ants/${kind}</code>; the rest are read-only, with Copy.</p>
+    <table><tr><th>Name</th>${kind === "agents" ? "<th>CLI</th>" : ""}<th>Description</th><th>Folder</th><th>Used by</th></tr>
+    ${items.map(x => `<tr class="click" onclick="go('#/${kind}/${x.name}')"><td><b>${esc(x.name)}</b>${x.vault ? ' <span class="tag t-questions">vault</span>' : ""}</td>${kind === "agents" ? `<td>${x.cli}</td>` : ""}
+      <td>${esc(x.desc)}</td><td class="dim small">${esc(folderLabel(x.folder))}</td><td class="dim small">${usedBy(x.name).join(", ") || "—"}</td></tr>`).join("")}</table>`
+}
+function pItem(kind, name) {
+  const x = S[kind].find(i => i.name === name) || { name: "", folder: `~/.ants/${kind}`, desc: "", cli: "claude", tools: "" }
+  const ro = !isOwn(x) ? "disabled" : "", one = kind === "agents" ? "Agent" : "Skill"
+  return libTabs(kind) + `<div class="dim small"><a href="#/${kind}">${one}s</a> › ${esc(x.name || "new")}</div>
+    <div class="row"><h1>${esc(x.name || "New " + one)}</h1><span class="right row">${ro ? `<span class="dim small">Read-only (${esc(folderLabel(x.folder))})</span><button onclick="alert('Copies into ~/.ants/${kind} under a new name.')">Copy</button>`
+      : `<button class="danger">Delete</button><button class="primary">Save</button>`}</span></div>
+    <p class="dim small">Used by: ${usedBy(x.name).join(", ") || "no Process"}</p>
+    <div class="card">${kind === "agents" ? `<label>name</label><input ${ro} value="${esc(x.name)}"><label>description</label><input ${ro} value="${esc(x.desc)}" style="width:100%">
+      <label>cli</label><select ${ro}><option>claude</option><option ${x.cli === "codex" ? "selected" : ""}>codex</option></select>
+      <label>tools</label><input ${ro} value="${esc(x.tools)}" style="width:100%"><label>model</label><input ${ro} value="sonnet">
+      <label>Standing instructions</label><textarea ${ro} style="min-height:10em">You are the ${esc(x.name)}…</textarea>`
+      : `<label>SKILL.md</label><textarea ${ro} style="min-height:12em;font-family:ui-monospace,monospace">---\nname: ${esc(x.name)}\ndescription: ${esc(x.desc)}${x.vault ? "\nmetadata:\n  varde-vault: true" : ""}\n---\n\n…</textarea>
+      <label>result.schema.json</label><textarea ${ro} style="font-family:ui-monospace,monospace">{ "type": "object", … }</textarea><p class="dim small">Other files in the folder: none</p>`}</div>`
+}
+
+function pSettings() {
+  return `<h1>Settings</h1><p class="dim small">Written to <code>~/.ants/settings.yaml</code>.</p>
+    <div class="card"><h2 style="margin-top:0">Claude login</h2><p><span class="st s-ready">Logged in</span> as personal Pro account · <code>CLAUDE_CONFIG_DIR=~/.ants/claude</code></p>
+      <p class="dim small">To log in again, run in a terminal: <code>CLAUDE_CONFIG_DIR=~/.ants/claude claude auth login</code></p>
+      <p>Usage: 5-hour 82% · 7-day 41% ${S.paused.claude ? `· <span class="pill">paused until ${S.paused.claude}</span>` : ""}</p>
+      <label>Agent Tasks at once</label><input type="number" value="${S.cap}" style="width:80px" onchange="S.cap=+this.value;render()"></div>
+    <div class="card"><h2 style="margin-top:0">Commands</h2>
+      ${["claude", "codex", "git"].map(c => `<label>${c}</label><div class="row"><input class="grow" value="/opt/homebrew/bin/${c}"></div>`).join("")}<p><button>Detect</button></p></div>
+    <div class="card"><h2 style="margin-top:0">Knowledge</h2><label>Vault</label><input value="~/.varde/knowledge" style="width:100%"><label>Source map</label><input value="~/.varde/source-map.md" style="width:100%"></div>
+    <div class="card"><h2 style="margin-top:0">Folders</h2><label>Agent folders</label><div class="dim small">~/.ants/agents (always)</div><input value="~/.varde/ai/skills/workflows/knowledge-vault/agents" style="width:100%">
+      <label>Skill folders</label><div class="dim small">~/.ants/skills (always)</div><input value="~/.varde/ai/skills" style="width:100%"></div>
+    <div class="card"><h2 style="margin-top:0">Server</h2><label>Address</label><input value="127.0.0.1:7323"><label>Password</label><input type="password" placeholder="change from admin"></div>
+    <div class="card"><h2 style="margin-top:0">Updates</h2><p>Running v${S.version}. ${S.update === "available" ? `v0.5 available. <button onclick="doUpdate()">Update</button>` : S.update === "installed" ? "v0.5 installed, restart to use (<code>ants restart</code>)." : "Up to date."} <button onclick="alert('Checked: nothing newer')">Check now</button></p></div>
+    <div class="footbar"><div><button class="primary">Save</button></div></div>`
+}
+
+// ---------- home pages: the variants disagree here ----------
+function homeA() { return pNotifications() + `<h2>Live Runs</h2>` + runsTable(S.runs.filter(r => r.state === "live").slice(0, 4)) + `<p><a href="#/runs">All Runs</a></p>` }
+function homeB() {
+  const ns = notes()
+  return `<h1>Home</h1><div class="dash">
+    <div class="card wide"><div class="row"><b>Waiting on you (${ns.length})</b><a class="right small" href="#/notifications">All</a></div>
+      ${ns.slice(0, 3).map(({ r, t }) => `<div class="row" style="margin-top:8px"><span class="tag t-${tagOf(t)}">[${tagOf(t)}]</span><a href="${taskHref(r, t)}"><b>${esc(r.id)}</b> · ${esc(t.name)}</a><span class="dim small grow">${esc(t.summary)}</span><span class="dim small">${ago(t.waited)}</span></div>`).join("") || "<p class='dim'>Nothing.</p>"}</div>
+    <div class="card"><b>Working now</b><p class="dim small">${running()} of ${S.cap} Agent Tasks running</p>
+      ${S.runs.filter(r => r.state === "live" && r.tasks.some(t => ["running", "queued", "paused"].includes(t.st))).map(r => `<div><a href="#/runs/${r.id}">${esc(r.id)}</a> ${runState(r)}</div>`).join("")}</div>
+    <div class="card"><b>Start a Run</b>${S.processes.map(p => `<div><a href="#/processes/${p.id}">${esc(p.name)}</a> ${p.ready ? "" : '<span class="st s-failed">Can\'t start</span>'}</div>`).join("")}</div>
+    <div class="card wide"><b>Ended lately</b>${S.runs.filter(r => r.state !== "live").map(r => `<div><a href="#/runs/${r.id}">${esc(r.id)}</a> ${runState(r)}</div>`).join("")}</div></div>`
+}
+function homeC() {
+  // Runs first: waiting Runs float to the top with their entries inline.
+  const live = S.runs.filter(r => r.state === "live"), w = r => r.tasks.some(t => WAITING.includes(t.st))
+  return `<div class="row"><h1>Runs</h1><button class="right primary" onclick="go('#/processes')">Start a Run…</button></div>
+    <p class="dim">${running()} of ${S.cap} Agent Tasks running.</p>
+    <h2>Waiting on you</h2>${runsTable(live.filter(w))}<h2>Working</h2>${runsTable(live.filter(r => !w(r)))}
+    <h2>Ended</h2>${runsTable(S.runs.filter(r => r.state !== "live"), { actions: true })}`
+}
+
+// ---------- actions (stubs) ----------
+function act(rid, tid, how) {
+  const r = run(rid), t = r.tasks.find(x => x.id === tid)
+  if (t.kind === "User") { t.st = "done"; if (how === "sent back") r.tasks.find(x => x.id === "tospec").st = "queued"
+    else if (t.tag === "questions") r.tasks.find(x => x.id === "grill").st = "queued" }
+  else t.st = "queued"
+  go(`#/runs/${rid}`)
+}
+function send(rid, tid) { const t = run(rid).tasks.find(x => x.id === tid), m = document.getElementById("msg").value; if (m) (t.sent ||= []).push(m); render() }
+function stop(rid, tid) { Object.assign(run(rid).tasks.find(x => x.id === tid), { st: "stopped", subs: 0, waited: 0, summary: "You stopped it.", needs: "Stopped by you just now." }); render() }
+function cancelRun(rid) { if (!confirm("Cancel the Run? It ends as failed and keeps its Run workspace until dismissed.")) return
+  Object.assign(run(rid), { state: "failed", ended: "now", workspace: `~/.ants/runs/${rid}/workspace` }); go(`#/runs/${rid}`) }
+function dismiss(rid) { S.runs = S.runs.filter(r => r.id !== rid); go("#/runs") }
+function tryNow(cli) { delete S.paused[cli]; S.runs.flatMap(r => r.tasks).filter(t => t.st === "paused").forEach(t => t.st = "queued"); render() }
+function doUpdate() { S.update = "installed"; render() }
+function startRun(pid) {
+  const id = (document.getElementById("branch")?.value || "").replace(/^ants\//, "") || "new-run-" + (S.runs.length + 1)
+  S.runs.unshift({ id, proc: pid, state: "live", started: "now", repos: [], tasks: [T("scout", "Scout", "Agent", running() < S.cap ? "running" : "queued", { agent: "scout", skill: "scout" })] })
+  go(`#/runs/${id}`)
+}
+
+// ---------- router ----------
+const route = () => location.hash.slice(1) || "/"
+function render() {
+  const p = route().split("/").filter(Boolean)
+  if (!S.loggedIn || p[0] === "login") { document.getElementById("app").innerHTML = pLogin(); return dump() }
+  let body
+  if (!p.length) body = { A: homeA, B: homeB, C: homeC }[V]()
+  else if (p[0] === "notifications") body = pNotifications()
+  else if (p[0] === "runs" && p[2] === "tasks") body = pTask(p[1], p[3])
+  else if (p[0] === "runs" && p[1]) body = pRun(p[1])
+  else if (p[0] === "runs") body = V === "C" ? homeC() : pRuns()
+  else if (p[0] === "processes" && p[2] === "edit") body = pModeler(p[1])
+  else if (p[0] === "processes" && p[1]) body = pProcess(p[1])
+  else if (p[0] === "processes") body = pProcesses()
+  else if ((p[0] === "agents" || p[0] === "skills") && p[1]) body = pItem(p[0], p[1])
+  else if (p[0] === "agents" || p[0] === "skills") body = pList(p[0])
+  else if (p[0] === "settings") body = pSettings()
+  else body = "<h1>Not found</h1>"
+  document.getElementById("app").innerHTML = { A: shellA, B: shellB, C: shellC }[V](body)
+  document.title = (nCount() ? `(${nCount()}) ` : "") + "Ants"
+  dump()
+}
+function dump() {
+  document.getElementById("state").textContent = JSON.stringify({
+    variant: V, route: route(), notificationCount: nCount(), agentTasksRunning: `${running()} of ${S.cap}`, paused: S.paused, update: S.update,
+    runs: Object.fromEntries(S.runs.map(r => [r.id, r.state === "live" ? r.tasks.map(t => `${t.id}:${t.st}`).join(" ") : r.state])),
+  }, null, 2)
+}
+addEventListener("hashchange", () => { scrollTo(0, 0); render() })
+render()
+</script>
+</html>
