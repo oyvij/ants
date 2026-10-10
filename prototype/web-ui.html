@@ -234,7 +234,37 @@ const icon = k => `<svg class="i" viewBox="0 0 24 24">${I[k]}</svg>`
 
 // ---------- in-memory state ----------
 // Claude Code's built-in tools, grouped. Ants ships this list with its version; MCP is off (--strict-mcp-config), so it is complete.
-const MODELS = { claude: ["default", "opus", "sonnet", "haiku"], codex: ["default", "gpt-5", "gpt-5-codex"] }
+// Claude models: Anthropic's public "Model status" table (platform.claude.com/docs/en/about-claude/model-deprecations.md),
+// fetched with Ants' update check every 6 hours. No login, no API key. Retired models drop off. Snapshot of 2026-10-11.
+const CLAUDE_MODELS = [
+  ["claude-fable-5-1", "Active"], ["claude-fable-5", "Active"], ["claude-mythos-5-1", "Active"], ["claude-mythos-5", "Active"], ["claude-mythos-preview", "Deprecated", "To be announced"],
+  ["claude-opus-5-5", "Active"], ["claude-opus-5", "Active"], ["claude-opus-4-8", "Active"], ["claude-opus-4-7", "Active"], ["claude-opus-4-6", "Active"], ["claude-opus-4-5-20251101", "Active"],
+  ["claude-sonnet-5-5", "Active"], ["claude-sonnet-5", "Active"], ["claude-sonnet-4-6", "Active"], ["claude-sonnet-4-5-20250929", "Deprecated", "30 Nov 2026"],
+  ["claude-haiku-5-5", "Active"], ["claude-haiku-4-5-20251001", "Active"],
+]
+// What each alias resolved to on the last Run that used it (the CLI reports the model in its first stream event).
+const ALIAS_NOW = { opus: "claude-opus-5-5", sonnet: "claude-sonnet-5-5", haiku: "claude-haiku-5-5", fable: "claude-fable-5-1" }
+const modelName = id => { const m = id.match(/^claude-([a-z]+)-(.*?)(-\d{8})?$/); if (!m) return id
+  const [, fam, ver] = m; return fam[0].toUpperCase() + fam.slice(1) + " " + (/^\d/.test(ver) ? ver.replace(/-/g, ".") : ver) }
+const CODEX_MODELS = ["default", "gpt-5", "gpt-5-codex"]
+const S_MODELS_CHECKED = "08:12"
+function modelSelect(d, ro) {
+  if (d.cli !== "claude") return `<select ${ro} onchange="S.draft.model=this.value">${CODEX_MODELS.map(m => `<option ${m === d.model ? "selected" : ""}>${m}</option>`).join("")}</select>
+    <div class="help" style="margin-top:4px">Codex's models ship with Ants. Check during the build whether <code>codex</code> can list them itself.</div>`
+  const known = ["default", ...Object.keys(ALIAS_NOW), ...CLAUDE_MODELS.map(m => m[0])], other = d.model && !known.includes(d.model)
+  const opt = (v, label) => `<option value="${v}" ${v === d.model ? "selected" : ""}>${label}</option>`
+  const dep = CLAUDE_MODELS.find(m => m[0] === d.model && m[1] === "Deprecated")
+  return `<select ${ro} onchange="if(this.value==='__other'){S.draft.model='';S.draft.otherModel=true}else{S.draft.model=this.value;S.draft.otherModel=false};formRender()">
+      ${opt("default", "default · whatever the CLI picks")}
+      <optgroup label="Always the newest">${Object.entries(ALIAS_NOW).map(([a, id]) => opt(a, `${a} · newest ${a[0].toUpperCase() + a.slice(1)}, now ${modelName(id)}`)).join("")}</optgroup>
+      <optgroup label="A fixed version">${CLAUDE_MODELS.filter(m => m[1] === "Active").map(([id]) => opt(id, `${modelName(id)} · ${id}`)).join("")}</optgroup>
+      <optgroup label="Deprecated: still runs, retiring">${CLAUDE_MODELS.filter(m => m[1] === "Deprecated").map(([id, , when]) => opt(id, `${modelName(id)} · ${id} · retires ${when}`)).join("")}</optgroup>
+      <option value="__other" ${other || d.otherModel ? "selected" : ""}>Other model ID…</option></select>
+    ${other || d.otherModel ? `<input class="mono" style="margin-top:6px" ${ro} placeholder="e.g. claude-opus-6" value="${esc(d.model || "")}" onchange="S.draft.model=this.value.trim();formRender()">
+      <div class="help" style="margin-top:4px">Not on Anthropic's list yet. The check before a Run tries it once on your login.</div>` : ""}
+    ${dep ? `<div class="warn">Deprecated: it retires ${dep[2]}. Pick a newer version, or <b>opus</b> / <b>sonnet</b> to always get the newest.</div>` : ""}
+    <div class="help" style="margin-top:6px">From Anthropic's public model list, refreshed with Ants' update check (last ${S_MODELS_CHECKED}). <button class="ghost small" onclick="toast('Checked: no new models.')">Check now</button></div>`
+}
 // What an Agent may do: one tick box per Claude Code tool (tools-reference, Claude Code 2.1.2xx).
 // Ants passes the ticked tools as an explicit allow-list (--tools), so anything unticked, including tools a later Claude Code
 // adds, stays off. Naming Glob and Grep there also brings them back on macOS and Linux, where they are absent by default.
@@ -904,7 +934,7 @@ function agentForm(d, ro) {
       <div class="grid2">${field("Name", "How Tasks name it. Unique across all Agent folders.", "implementer", `<input ${ro} value="${esc(d.name)}" onchange="S.draft.name=this.value">`)}
       ${field("Description", "One line: what this Agent is for. Shown in the modeler's Agent dropdown.", "Implements one ticket, test first, and commits.", `<input ${ro} value="${esc(d.desc)}" onchange="S.draft.desc=this.value">`)}
       ${field("CLI", "Which AI CLI runs it, on Ants' own login.", "", `<select ${ro} onchange="S.draft.cli=this.value;S.draft.model='default';formRender()"><option ${d.cli === "claude" ? "selected" : ""}>claude</option><option ${d.cli === "codex" ? "selected" : ""}>codex</option></select>`)}
-      ${field("Model", "The models this CLI offers. Default follows the CLI.", "", `<select ${ro} onchange="S.draft.model=this.value">${MODELS[d.cli].map(m => `<option ${m === d.model ? "selected" : ""}>${m}</option>`).join("")}</select>`)}</div>
+      ${field("Model", "An alias always runs the newest of its family; a fixed version stays put until it retires.", "", modelSelect(d, ro))}</div>
       ${field("Skills it runs", "The jobs this Agent may do. A Task picks one of them; the modeler only offers these.", "implement, tdd", chipSel(d.skills, ro))}</div>
     <div class="card"><h3>What it may do</h3>${d.cli === "claude" ? toolsSection(d, ro)
       : `<div class="help">Codex has no tool list; its sandbox decides what it may touch.</div><select ${ro}><option ${d.sandbox === "read-only" ? "selected" : ""}>read-only: reads files, changes nothing</option><option>workspace-write: changes files in the Run workspace</option><option>danger-full-access</option></select>`}</div>
