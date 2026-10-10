@@ -240,6 +240,41 @@ const CAPS = [
   ["agent", "Start Subagents", "Helpers inside this Task's slot, such as Explore.", ["Agent"], "Only these Subagent types", "Explore"],
 ]
 const ALWAYS_ON = "TaskCreate, TaskGet, TaskList and TaskUpdate: the Agent's own task list, which feeds <b>So far</b>"
+const KNOWN_TOOLS = ["Agent", "Artifact", "AskUserQuestion", "Bash", "CronCreate", "CronDelete", "CronList", "Edit", "EndConversation", "EnterPlanMode", "EnterWorktree",
+  "ExitPlanMode", "ExitWorktree", "Glob", "Grep", "ListAgents", "ListMcpResourcesTool", "LSP", "Monitor", "NotebookEdit", "PowerShell", "PushNotification", "Read",
+  "ReadMcpResourceTool", "RemoteTrigger", "ReportFindings", "ScheduleWakeup", "SendFeedback", "SendMessage", "SendUserFile", "ShareOnboardingGuide", "Skill",
+  "TaskCreate", "TaskGet", "TaskList", "TaskOutput", "TaskStop", "TaskUpdate", "TodoWrite", "ToolSearch", "WaitForMcpServers", "WebFetch", "WebSearch", "Workflow", "Write"]
+const CAUTION = {
+  AskUserQuestion: "Nobody is at a terminal, so the question goes unanswered. Ask through a Round instead.",
+  EnterPlanMode: "Plan mode waits for an approval nobody gives.", ExitPlanMode: "Plan mode waits for an approval nobody gives.",
+  EnterWorktree: "Moves the Agent out of the Run workspace.", ExitWorktree: "Moves the Agent out of the Run workspace.",
+  CronCreate: "Its schedule dies with the session. Schedule the Process instead.", CronList: "Its schedule dies with the session.", CronDelete: "Its schedule dies with the session.", ScheduleWakeup: "Its schedule dies with the session.",
+  RemoteTrigger: "Creates Routines on claude.ai, outside Ants.", PushNotification: "Notifies outside Ants; the Notification list is the place.",
+  SendMessage: "Reaches your other Claude sessions on this machine.", ListAgents: "Reaches your other Claude sessions on this machine.",
+  Workflow: "Starts many background agents outside the slot cap.", Monitor: "Background work is off for Agents.", TaskOutput: "Background work is off for Agents.", TaskStop: "Background work is off for Agents.",
+  PowerShell: "Windows only.", Artifact: "Publishes to claude.ai.", SendUserFile: "Sends files outside the Run.", ShareOnboardingGuide: "Uploads to claude.ai.",
+  EndConversation: "Ends the session without a Result.", SendFeedback: "Queues feedback nobody reviews.",
+  ToolSearch: "Only useful with MCP, which Ants turns off.", WaitForMcpServers: "Only useful with MCP, which Ants turns off.",
+  ListMcpResourcesTool: "Only useful with MCP, which Ants turns off.", ReadMcpResourceTool: "Only useful with MCP, which Ants turns off.",
+}
+function toolNote(t) {
+  const base = t.replace(/\(.*$/, ""), cap = CAPS.find(c => c[3].includes(base))
+  if (t.startsWith("mcp__")) return ["warn", "An MCP tool. Ants starts Agents with MCP off, so it needs an MCP server Ants doesn't configure yet."]
+  if (CAUTION[base]) return ["warn", CAUTION[base]]
+  if (cap && base === t) return ["dup", `Already covered by <b>${cap[1]}</b> above.`]
+  if (cap) return ["ok", `A rule narrowing <b>${cap[1]}</b>.`]
+  if (KNOWN_TOOLS.includes(base)) return ["ok", ""]
+  return ["unknown", "Not a tool Ants knows. It's passed to Claude Code as written; the check before a Run says if the CLI doesn't have it."]
+}
+function extraTools(d, ro) {
+  const list = d.extra ||= [], notes = list.map(t => [t, ...toolNote(t)])
+  const colour = { warn: "background:var(--waitSoft);color:#92400e", dup: "background:var(--line2);color:#475569", unknown: "background:var(--line2);color:#475569", ok: "" }
+  return `<div class="subsec"><b class="small">More tools</b><div class="help">Any other Claude Code tool by name, or a rule such as <code>WebFetch(domain:github.com)</code> or <code>Bash(git status)</code>. Ants passes them on as written.</div>
+    <div class="chipsel">${notes.map(([t, k]) => `<span class="c" style="${colour[k]}">${k === "warn" ? "⚠ " : k === "unknown" ? "? " : ""}<span class="mono">${esc(t)}</span>${ro ? "" : `<button style="color:inherit" onclick="S.draft.extra=S.draft.extra.filter(x=>x!=='${esc(t)}');formRender()">×</button>`}</span>`).join("")}
+      ${ro ? "" : `<input list="toolList" placeholder="Add a tool or rule…" onkeydown="if(event.key==='Enter'){this.dispatchEvent(new Event('change'));event.preventDefault()}" onchange="const v=this.value.trim();if(v&&!S.draft.extra.includes(v)){S.draft.extra.push(v);formRender()}">`}</div>
+    <datalist id="toolList">${KNOWN_TOOLS.filter(t => !CAPS.some(c => c[3].includes(t)) && !list.includes(t)).map(t => `<option value="${t}">${esc(CAUTION[t] || "")}</option>`).join("")}</datalist>
+    ${notes.filter(([, k, n]) => n && k !== "ok").map(([t, k, n]) => `<div class="small" style="margin-top:6px;${k === "warn" ? "color:#92400e" : "color:var(--muted)"}"><span class="mono">${esc(t)}</span>: ${n}</div>`).join("")}</div>`
+}
 const ALWAYS_OFF = [["Ants does the job itself", "AskUserQuestion (a Round), EnterWorktree and ExitWorktree (the Run workspace), CronCreate, CronDelete, CronList, ScheduleWakeup and RemoteTrigger (schedules), PushNotification (the Notification list)"],
   ["they need a person at a terminal", "EnterPlanMode, ExitPlanMode, EndConversation, SendFeedback"],
   ["they reach outside the Run", "SendMessage, ListAgents, Workflow, Artifact, SendUserFile, ShareOnboardingGuide, ReportFindings"],
@@ -269,7 +304,7 @@ const S = {
     { name: "griller", cli: "claude", folder: "shipped", model: "opus", tools: ["Read", "Glob", "Grep", "Agent"], skills: ["grilling"], desc: "Asks Rounds of questions until the plan is clear." },
     { name: "answerer", cli: "claude", folder: "shipped", model: "sonnet", tools: ["Read", "Grep"], skills: ["answer-round"], desc: "Answers a Round the way the user would, from the Answer History and the Vault." },
     { name: "writer", cli: "claude", folder: "shipped", model: "sonnet", tools: ["Read", "Glob", "Grep", "Write", "Edit"], skills: ["to-spec", "to-tickets", "walkthrough", "report"], desc: "Writes specs, tickets, walkthroughs and Reports." },
-    { name: "implementer", cli: "claude", folder: "~/.ants/agents", model: "opus", tools: ["Read", "Glob", "Grep", "Edit", "Write", "Bash", "Agent", "TodoWrite"], bash: ["git *", "./gradlew *", "pnpm *"], skills: ["implement", "tdd"], desc: "Implements one ticket, test first, and commits." },
+    { name: "implementer", cli: "claude", folder: "~/.ants/agents", model: "opus", tools: ["Read", "Glob", "Grep", "Edit", "Write", "Bash", "Agent", "TodoWrite"], bash: ["git *", "./gradlew *", "pnpm *"], extra: ["Skill", "WebFetch(domain:docs.spring.io)"], skills: ["implement", "tdd"], desc: "Implements one ticket, test first, and commits." },
     { name: "reviewer", cli: "codex", folder: "~/.ants/agents", model: "gpt-5", sandbox: "read-only", skills: ["to-spec"], desc: "A second opinion on a spec, from another model." },
     { name: "vault-keeper", cli: "claude", folder: "~/.varde/ai/skills/workflows/knowledge-vault/agents", model: "sonnet", tools: ["Read", "Write", "Edit", "Glob", "Grep"], skills: ["init-vault", "search-knowledge", "update-knowledge"], desc: "Varde's Vault agent." },
   ],
@@ -899,7 +934,7 @@ function agentForm(d, ro) {
           ${L.map((v, i) => `<div class="row" style="margin-bottom:4px"><input class="mono grow" ${ro} placeholder="e.g. ${eg}" value="${esc(v)}" onchange="capLimit('${k}')[${i}]=this.value">${ro ? "" : `<button class="ghost" title="Remove" onclick="capLimit('${k}').splice(${i},1);formRender()">×</button>`}</div>`).join("")}
           ${ro ? "" : `<button onclick="capLimit('${k}').push('');formRender()">＋ Add</button>`}` : ""}</fieldset>` }).join("")}</div>
       <details class="small" style="margin-top:12px"><summary style="cursor:pointer;color:var(--acc)">And Claude Code's other tools?</summary>
-        <p><b>Always on:</b> ${ALWAYS_ON}.</p><p style="margin-bottom:4px"><b>Always off in Ants:</b></p>
+        <p><b>Always on:</b> ${ALWAYS_ON}.</p><p style="margin-bottom:4px"><b>Off unless you add them under More tools:</b></p>
         <ul style="margin:0;padding-left:18px">${ALWAYS_OFF.map(([why, list]) => `<li><span class="mono" style="font-size:11.5px">${list}</span>: ${why}.</li>`).join("")}</ul></details>`
     : `<select ${ro}><option ${d.sandbox === "read-only" ? "selected" : ""}>read-only: reads files, changes nothing</option><option>workspace-write: changes files in the Run workspace</option><option>danger-full-access</option></select>`
   return `<div class="grid2" style="grid-template-columns:1.2fr 1fr"><div class="card"><h3>Who it is</h3>
@@ -908,7 +943,7 @@ function agentForm(d, ro) {
       <div class="grid2">${field("CLI", "Which AI CLI runs it, on Ants' own login.", "", `<select ${ro} onchange="S.draft.cli=this.value;S.draft.model='default';formRender()"><option ${d.cli === "claude" ? "selected" : ""}>claude</option><option ${d.cli === "codex" ? "selected" : ""}>codex</option></select>`)}
       ${field("Model", "The models this CLI offers. Default follows the CLI.", "", `<select ${ro} onchange="S.draft.model=this.value">${MODELS[d.cli].map(m => `<option ${m === d.model ? "selected" : ""}>${m}</option>`).join("")}</select>`)}</div>
       ${field("Skills it runs", "The jobs this Agent may do. A Task picks one of them; the modeler only offers these.", "implement, tdd", chipSel(d.skills, ro))}</div>
-    <div class="card"><h3>What it may do</h3><div class="help">${d.cli === "claude" ? "Each switch covers some of Claude Code's tools, named small under it. Anything off is refused, so an Agent without <b>Change files</b> can't edit code whatever its Skill says." : "Codex has no tool list; its sandbox decides what it may touch."}</div>${toolsCtl}</div></div>
+    <div class="card"><h3>What it may do</h3><div class="help">${d.cli === "claude" ? "Each switch covers some of Claude Code's tools, named small under it. Anything off is refused, so an Agent without <b>Change files</b> can't edit code whatever its Skill says." : "Codex has no tool list; its sandbox decides what it may touch."}</div>${toolsCtl}${d.cli === "claude" ? extraTools(d, ro) : ""}</div></div>
     <div class="card"><h3>Standing instructions</h3><div class="help">Who the Agent is and how it works, whatever the Skill. Markdown; <b>Expand</b> gives you a big editor with a live preview.</div>${md("instr", d.instr ?? `You are the **${d.name || "agent"}**.\n\n## How you work\n\n- Keep changes small\n- Never push`, "", true)}${ro ? '<input type="hidden" disabled>' : ""}</div>`
 }
 function chipSel(list, ro) {
