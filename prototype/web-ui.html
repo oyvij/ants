@@ -21,9 +21,24 @@
     --acc: #4f46e5; --accSoft: #eef2ff; --accText: #3730a3;
     --run: #2563eb; --runSoft: #e0ecff; --wait: #d97706; --waitSoft: #fff4e0; --ok: #16a34a; --okSoft: #e7f8ed;
     --bad: #dc2626; --badSoft: #fdecec; --vio: #7c3aed; --vioSoft: #f3edff;
+    --panel2: #fafbfc; --hover: #f6f7f9; --field: #fff; --fieldLine: #d5d9e0; --text2: #334155; --text3: #475569;
+    --warnText: #92400e; --okText: #166534; --badText: #991b1b; --codeBg: #fff; --dimCode: #b8bec9; --lnum: #b0b7c3; --band: #fcfcfd;
+    --composer: rgba(255,255,255,.96); --dotgrid: #d9dde5; --citeC: #0e7490; --invC: #b45309; --accHover: #4338ca;
     --r: 10px; --sh: 0 1px 2px rgba(16,24,40,.05), 0 1px 3px rgba(16,24,40,.06);
     font: 14px/1.5 Inter, ui-sans-serif, system-ui, -apple-system, sans-serif; color: var(--text);
   }
+  html.dark {
+    color-scheme: dark;
+    --bg: #0b0d12; --panel: #13161d; --panel2: #171b23; --hover: #1b1f28; --field: #0f1218; --fieldLine: #2c3240; --text: #e6e8ee; --text2: #c3c8d2; --text3: #9aa3b2;
+    --muted: #8b94a5; --line: #252a35; --line2: #1d212a; --side: #07080b; --side2: #12141a;
+    --acc: #818cf8; --accSoft: #1f2245; --accText: #c7cdfc; --accHover: #6366f1;
+    --run: #60a5fa; --runSoft: #13233d; --wait: #f59e0b; --waitSoft: #2a1f0c; --ok: #4ade80; --okSoft: #0f2a1a; --bad: #f87171; --badSoft: #2c1416; --vio: #a78bfa; --vioSoft: #211a38;
+    --warnText: #fbbf24; --okText: #86efac; --badText: #fca5a5; --codeBg: #0f1218; --dimCode: #4b5363; --lnum: #4b5363; --band: #161a22;
+    --composer: rgba(19,22,29,.94); --dotgrid: #252b38; --citeC: #67e8f9; --invC: #fbbf24; --sh: 0 1px 2px rgba(0,0,0,.45);
+  }
+  html.dark .dia .djs-container > svg, html.dark .djs-palette, html.dark .djs-context-pad, html.dark .djs-popup { filter: invert(.9) hue-rotate(180deg); }
+  html.dark .cm-cursor { border-left-color: var(--text) !important; } html.dark .cm-selectionBackground { background: #2b3350 !important; }
+  html.dark .modal-bg { background: rgba(0,0,0,.6); } html.dark .toast { border: 1px solid var(--line); }
   * { box-sizing: border-box; } [hidden] { display: none !important; }
   body { margin: 0; background: var(--bg); padding-left: 232px; }
   a { color: var(--acc); text-decoration: none; } a:hover { text-decoration: underline; }
@@ -48,30 +63,30 @@
   .notice.upd b { color: #93c5fd; }
 
   /* Page */
-  main { max-width: 1120px; margin: 0 auto; padding: 28px 32px 160px; }
+  main { max-width: 1160px; margin: 0 auto; padding: 32px 40px 160px; }
   main.full { max-width: none; padding: 20px 24px 24px; }
   .crumbs { font-size: 12.5px; color: var(--muted); margin-bottom: 6px; } .crumbs a { color: var(--muted); }
   .ph { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
   .ph h1 { font-size: 22px; letter-spacing: -.01em; margin: 0; } .ph .sub { width: 100%; color: var(--muted); margin-top: -6px; }
   .ph .acts { margin-left: auto; display: flex; gap: 8px; align-items: center; }
-  h2 { font-size: 14px; margin: 28px 0 10px; letter-spacing: .01em; }
+  h2 { font-size: 14px; margin: 32px 0 12px; letter-spacing: .01em; }
   .muted { color: var(--muted); } .small { font-size: 12.5px; }
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sh); padding: 16px 18px; margin-bottom: 14px; }
-  .card h3 { margin: 0 0 10px; font-size: 14px; display: flex; align-items: center; gap: 8px; }
-  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; } .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sh); padding: 20px 22px; margin-bottom: 16px; }
+  .card h3 { margin: 0 0 14px; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 20px; } .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px 20px; }
   .stat { font-size: 26px; font-weight: 700; letter-spacing: -.02em; } .stat small { font-size: 13px; color: var(--muted); font-weight: 500; }
 
   table { width: 100%; border-collapse: separate; border-spacing: 0; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sh); overflow: hidden; }
-  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line2); vertical-align: middle; }
+  th, td { text-align: left; padding: 12px 16px; border-bottom: 1px solid var(--line2); vertical-align: middle; }
   tr:last-child td { border-bottom: 0; }
-  th { font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; background: #fafbfc; }
-  tr.click { cursor: pointer; } tr.click:hover td { background: #f8f9fb; }
+  th { font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; background: var(--panel2); }
+  tr.click { cursor: pointer; } tr.click:hover td { background: var(--hover); }
 
   .pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; padding: 2px 9px; border-radius: 20px; white-space: nowrap; }
   .pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
   .p-running { background: var(--runSoft); color: var(--run); } .p-running::before { animation: pulse 1.4s infinite; }
   .p-waiting { background: var(--waitSoft); color: var(--wait); } .p-done, .p-ready { background: var(--okSoft); color: var(--ok); }
-  .p-failed { background: var(--badSoft); color: var(--bad); } .p-quiet { background: var(--line2); color: #475569; }
+  .p-failed { background: var(--badSoft); color: var(--bad); } .p-quiet { background: var(--line2); color: var(--text3); }
   .p-stuck { background: var(--vioSoft); color: var(--vio); }
   @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(37,99,235,.55); } 70% { box-shadow: 0 0 0 7px rgba(37,99,235,0); } 100% { box-shadow: 0 0 0 0 rgba(37,99,235,0); } }
   .tag { font-family: ui-monospace, monospace; font-size: 11.5px; font-weight: 600; padding: 1px 7px; border-radius: 6px; }
@@ -79,27 +94,31 @@
   .t-failed { background: var(--badSoft); color: var(--bad); }
   .live { display: inline-flex; align-items: center; gap: 7px; } .live i { width: 8px; height: 8px; border-radius: 50%; background: var(--run); animation: pulse 1.4s infinite; }
 
-  button, .btn { font: inherit; font-weight: 600; font-size: 13px; padding: 7px 14px; border-radius: 8px; cursor: pointer; background: #fff; border: 1px solid #d5d9e0; color: var(--text); box-shadow: 0 1px 1px rgba(16,24,40,.04); }
-  button:hover { background: #f8f9fb; }
-  button.primary { background: var(--acc); border-color: var(--acc); color: #fff; } button.primary:hover { background: #4338ca; }
+  button, .btn { font: inherit; font-weight: 600; font-size: 13px; padding: 7px 14px; border-radius: 8px; cursor: pointer; background: var(--panel); border: 1px solid var(--fieldLine); color: var(--text); box-shadow: 0 1px 1px rgba(16,24,40,.04); }
+  button, .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; line-height: 1.2; white-space: nowrap; }
+  button.small, .ghost.small { min-height: 28px; font-size: 12.5px; }
+  input:not([type=checkbox]):not([type=radio]), select { min-height: 36px; }
+  .ed .bar button, .tabs button, .chipsel .c button, .side button, .cmd button, .dia .zoom button, .notice button { min-height: 0; }
+  button:hover { background: var(--hover); }
+  button.primary { background: var(--acc); border-color: var(--acc); color: #fff; } button.primary:hover { background: var(--accHover); }
   button.danger { color: var(--bad); } button.ghost { border-color: transparent; box-shadow: none; background: none; color: var(--acc); padding: 4px 6px; }
   button:disabled { opacity: .45; cursor: not-allowed; }
   .side button { background: #262a35; border-color: #333846; color: #e5e7eb; font-size: 12px; padding: 5px 10px; }
 
-  label.f { display: block; font-weight: 600; font-size: 13px; margin: 16px 0 2px; }
-  .help { color: var(--muted); font-size: 12.5px; margin-bottom: 6px; } .help .eg { font-family: ui-monospace, monospace; font-size: 12px; color: #334155; background: var(--line2); padding: 1px 6px; border-radius: 5px; }
-  input, select, textarea { font: inherit; padding: 7px 10px; border: 1px solid #d5d9e0; border-radius: 8px; background: #fff; color: var(--text); width: 100%; }
+  label.f { display: block; font-weight: 600; font-size: 13px; margin: 18px 0 4px; }
+  .help { color: var(--muted); font-size: 12.5px; margin-bottom: 8px; line-height: 1.5; } .help .eg { font-family: ui-monospace, monospace; font-size: 12px; color: var(--text2); background: var(--line2); padding: 1px 6px; border-radius: 5px; }
+  input, select, textarea { font: inherit; padding: 7px 10px; border: 1px solid var(--fieldLine); border-radius: 8px; background: var(--field); color: var(--text); width: 100%; }
   input:focus, select:focus, textarea:focus { outline: 2px solid var(--accSoft); border-color: var(--acc); }
   input[type=checkbox], input[type=radio] { width: auto; accent-color: var(--acc); }
-  .row { display: flex; gap: 8px; align-items: center; } .row > .grow { flex: 1; }
+  .row { display: flex; gap: 10px; align-items: center; } .row > select { width: auto; } .row > .grow { flex: 1; }
   .grid2 > .fld, .grid3 > .fld { display: flex; flex-direction: column; } .grid2 > .fld > :last-child, .grid3 > .fld > :last-child { margin-top: auto; }
   .reasons { margin: 8px 0 0; padding-left: 18px; color: var(--bad); }
 
   /* Editors (CodeMirror mounts over data-md / data-json textareas) */
-  .ed { border: 1px solid #d5d9e0; border-radius: 8px; background: #fff; overflow: hidden; }
+  .ed { border: 1px solid var(--fieldLine); border-radius: 8px; background: var(--field); overflow: hidden; } .ed .cm-editor { color: var(--text); }
   .ed:focus-within { border-color: var(--acc); outline: 2px solid var(--accSoft); }
-  .ed .bar { display: flex; gap: 2px; align-items: center; padding: 4px 6px; border-bottom: 1px solid var(--line2); background: #fafbfc; }
-  .ed .bar button { padding: 2px 8px; font-size: 12px; border: 0; box-shadow: none; background: none; color: #475569; }
+  .ed .bar { display: flex; gap: 2px; align-items: center; padding: 4px 6px; border-bottom: 1px solid var(--line2); background: var(--panel2); }
+  .ed .bar button { padding: 2px 8px; font-size: 12px; border: 0; box-shadow: none; background: none; color: var(--text3); }
   .ed .bar button:hover { background: var(--line2); } .ed .bar button.on { background: var(--accSoft); color: var(--accText); }
   .ed .bar .sp { flex: 1; } .ed .bar .st { font-size: 12px; padding-right: 6px; }
   .ed .cm-editor { min-height: 130px; max-height: 520px; } .ed.tall .cm-editor { min-height: 300px; max-height: 680px; } .ed .cm-editor.cm-focused { outline: none; } .ed .cm-scroller { font-family: inherit; line-height: 1.55; }
@@ -112,7 +131,7 @@
   /* Transcript */
   .tr { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sh); padding: 10px 18px; font-size: 13.5px; }
   .tr > * { margin: 8px 0; }
-  .tr .tool { font-family: ui-monospace, monospace; font-size: 12.5px; color: #334155; } .tr .tool::before { content: "⏺ "; color: var(--ok); }
+  .tr .tool { font-family: ui-monospace, monospace; font-size: 12.5px; color: var(--text2); } .tr .tool::before { content: "⏺ "; color: var(--ok); }
   .tr .sys { color: var(--muted); font-size: 12px; text-align: center; }
   .tr .div { border-top: 1px dashed var(--line); padding-top: 6px; color: var(--muted); font-size: 12px; }
   .tr .you { background: var(--accSoft); padding: 8px 12px; border-radius: 8px; } .tr .you::before { content: "You"; display: block; font-weight: 700; font-size: 12px; color: var(--accText); }
@@ -120,12 +139,12 @@
   .tr details.sub { border-left: 3px solid var(--vio); padding-left: 12px; } .tr details.sub > summary { color: var(--vio); font-weight: 600; }
   .chips { display: flex; gap: 6px; margin: 0 0 12px; flex-wrap: wrap; }
   .chip { font-size: 12px; font-weight: 600; background: var(--vioSoft); color: var(--vio); border-radius: 20px; padding: 3px 11px; cursor: pointer; }
-  .composer { position: fixed; bottom: 0; left: 232px; right: 0; background: rgba(255,255,255,.96); backdrop-filter: blur(6px); border-top: 1px solid var(--line); z-index: 5; }
+  .composer { position: fixed; bottom: 0; left: 232px; right: 0; background: var(--composer); backdrop-filter: blur(6px); border-top: 1px solid var(--line); z-index: 5; }
   .composer > div { max-width: 1120px; margin: 0 auto; padding: 12px 32px; display: flex; gap: 8px; align-items: flex-end; }
   .composer .grow { flex: 1; } .composer .ed .cm-editor { min-height: 44px; max-height: 160px; }
 
   /* Diagrams */
-  .dia { position: relative; isolation: isolate; background: #fff radial-gradient(#d9dde5 1px, transparent 1px) 0 0 / 18px 18px; border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sh); height: 440px; overflow: hidden; }
+  .dia { position: relative; isolation: isolate; background: var(--panel) radial-gradient(var(--dotgrid) 1px, transparent 1px) 0 0 / 18px 18px; border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sh); height: 440px; overflow: hidden; }
   .dia.modeler { height: calc(100vh - 128px); }
   .dia .zoom { position: absolute; right: 12px; top: 12px; display: flex; gap: 4px; z-index: 3; }
   .dia .zoom button { padding: 4px 10px; }
@@ -156,10 +175,10 @@
   .modelerWrap { display: grid; grid-template-columns: 1fr 340px; gap: 14px; }
   .props { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sh); padding: 16px; height: calc(100vh - 128px); overflow: auto; }
   .props h3 { margin: 0; font-size: 15px; } .props .kind { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
-  .warn { background: var(--waitSoft); color: #92400e; border-radius: 8px; padding: 8px 10px; font-size: 12.5px; margin-top: 8px; }
-  .okbox { background: var(--okSoft); color: #166534; border-radius: 8px; padding: 8px 10px; font-size: 12.5px; margin-top: 8px; }
+  .warn { background: var(--waitSoft); color: var(--warnText); border-radius: 8px; padding: 8px 10px; font-size: 12.5px; margin-top: 8px; }
+  .okbox { background: var(--okSoft); color: var(--okText); border-radius: 8px; padding: 8px 10px; font-size: 12.5px; margin-top: 8px; }
   .toast code { background: #1e293b; color: #e2e8f0; }
-  .kv { display: grid; grid-template-columns: 130px 1fr; gap: 12px 14px; align-items: center; }
+  .kv { display: grid; grid-template-columns: 130px 1fr; gap: 12px 16px; align-items: baseline; }
   .kv > .k { color: var(--muted); font-size: 12.5px; font-weight: 600; }
   .meter { display: grid; grid-template-columns: 60px 1fr 40px; align-items: center; gap: 10px; font-size: 12.5px; margin: 2px 0; }
   .meter .track { height: 7px; background: var(--line2); border-radius: 4px; overflow: hidden; } .meter .fill { height: 100%; background: var(--acc); border-radius: 4px; } .meter .fill.hot { background: var(--wait); }
@@ -168,57 +187,58 @@
   .cmd button { background: #1e293b; border-color: #334155; color: #e2e8f0; padding: 4px 10px; font-size: 12px; }
   .subsec { border-top: 1px solid var(--line2); margin-top: 16px; padding-top: 14px; }
   .modal-bg { position: fixed; inset: 0; background: rgba(15,23,42,.5); z-index: 80; display: grid; place-items: center; animation: fadein .15s; }
-  .modal { width: min(1200px, 92vw); height: 86vh; background: #fff; border-radius: 12px; display: flex; flex-direction: column; box-shadow: 0 24px 60px rgba(0,0,0,.3); overflow: hidden; }
+  .modal { width: min(1200px, 92vw); height: 86vh; background: var(--panel); border-radius: 12px; display: flex; flex-direction: column; box-shadow: 0 24px 60px rgba(0,0,0,.3); overflow: hidden; }
   .modal .mh { display: flex; align-items: center; gap: 10px; padding: 12px 18px; border-bottom: 1px solid var(--line); }
   .modal .mb { flex: 1; overflow: auto; padding: 24px 40px; font-size: 15px; } .modal .mb.md { max-width: 820px; margin: 0 auto; width: 100%; }
   .modal .split { display: grid; grid-template-columns: 1fr 1fr; flex: 1; min-height: 0; }
   .modal .split > div { overflow: auto; } .modal .split .cm-editor { min-height: 100%; max-height: none; font-size: 15px; } .modal .split .cm-scroller { padding: 12px 8px; }
-  .modal .split .md { padding: 20px 28px; border-left: 1px solid var(--line); background: #fcfcfd; font-size: 15px; }
+  .modal .split .md { padding: 20px 28px; border-left: 1px solid var(--line); background: var(--band); font-size: 15px; }
   .toast { position: fixed; top: 16px; right: 16px; z-index: 90; width: 380px; background: #0f172a; color: #e2e8f0; border-radius: 10px; padding: 12px 14px; box-shadow: 0 10px 30px rgba(0,0,0,.25); font-size: 13px; }
 
   .tgroup { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 700; margin: 16px 0 4px; }
   .trow { display: grid; grid-template-columns: 190px 1fr auto; gap: 2px 14px; align-items: center; padding: 6px 10px; border-radius: 8px; }
-  .trow:hover { background: #f8f9fb; } .trow.on { background: var(--accSoft); }
+  .trow:hover { background: var(--hover); } .trow.on { background: var(--accSoft); }
   .trow label { display: flex; gap: 8px; align-items: center; cursor: pointer; } .trow .mono { font-size: 13px; }
-  .tdesc { font-size: 13px; color: #334155; } .twarn { color: #92400e; font-size: 12.5px; }
+  .tdesc { font-size: 13px; color: var(--text2); } .twarn { color: var(--warnText); font-size: 12.5px; }
   .tlim { grid-column: 1 / -1; padding: 4px 0 6px 28px; } .tlim input { max-width: 420px; }
   .tools { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .tools fieldset { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; margin: 0; }
   .tools legend { font-weight: 700; font-size: 12.5px; padding: 0 4px; }
   .tools label { display: flex; gap: 8px; align-items: flex-start; padding: 4px 0; font-size: 13px; cursor: pointer; }
   .tools label span { color: var(--muted); font-size: 12px; display: block; }
-  .chipsel { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; border: 1px solid #d5d9e0; border-radius: 8px; padding: 6px; background: #fff; }
+  .chipsel { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; border: 1px solid var(--fieldLine); border-radius: 8px; padding: 6px; background: var(--field); }
   .chipsel .c { background: var(--accSoft); color: var(--accText); font-weight: 600; font-size: 12.5px; border-radius: 6px; padding: 2px 4px 2px 8px; display: inline-flex; gap: 4px; align-items: center; }
   .chipsel .c button { border: 0; background: none; box-shadow: none; padding: 0 4px; color: var(--accText); }
-  .chipsel input { border: 0; outline: 0; flex: 1; min-width: 160px; padding: 4px; }
+  .chipsel input { border: 0; outline: 0; flex: 1; min-width: 160px; padding: 4px; min-height: 0; background: none; }
   .listed .row { margin-bottom: 6px; }
 
-  .storyview { display: grid; grid-template-columns: 250px 1fr; gap: 16px; align-items: start; }
-  .spine { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 14px; position: sticky; top: 16px; }
-  .spine .stitle { font-weight: 700; text-decoration: underline; text-underline-offset: 3px; margin-bottom: 10px; line-height: 1.35; }
-  .spine .srow { display: block; padding: 6px 8px; border-radius: 6px; color: var(--text); font-size: 13.5px; } .spine .srow:hover { background: var(--line2); text-decoration: none; }
-  .spine .srow.on { background: var(--accSoft); font-weight: 600; } .spine .srem { margin-top: 12px; border-top: 1px solid var(--line2); padding-top: 10px; font-size: 12.5px; }
-  .sover { padding: 8px 0; border-top: 1px solid var(--line2); }
-  .walkgrid { display: grid; grid-template-columns: 170px 1fr; gap: 0; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
-  .smenu { background: #fafbfc; border-right: 1px solid var(--line); padding: 8px 0; } .smenu a { display: block; padding: 5px 12px; font-size: 13px; color: var(--muted); }
-  .smenu a.on { background: var(--text); color: #fff; font-weight: 700; } .smenu a:hover { text-decoration: none; }
-  .cfile { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--line2); font-size: 12.5px; }
-  .code { font: 12.5px/1.6 ui-monospace, Menlo, monospace; padding: 8px 0; overflow-x: auto; background: #fff; }
-  .cl { display: grid; grid-template-columns: 40px 4px 1fr; gap: 8px; white-space: pre; } .cl .ln { text-align: right; color: #b0b7c3; }
-  .cl.dim .tx { color: #b8bec9; } .cl.site.changed .bar { background: #eab308; } .cl.site.context .bar { background: #3b82f6; } .cl.site .tx { color: var(--text); }
-  .cl.add { background: #ecfdf3; } .cl.add .tx { color: #166534; } .cl.del { background: #fdecec; } .cl.del .tx { color: #991b1b; text-decoration: line-through; }
-  .band { border-top: 1px solid var(--line); padding: 12px 14px; background: #fcfcfd; }
-  .band .claim { font-size: 15px; font-weight: 600; } .band .stale { background: var(--waitSoft); color: #92400e; font-size: 11px; font-weight: 800; padding: 1px 6px; border-radius: 4px; letter-spacing: .05em; }
-  .vals { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px; font-size: 12.5px; } .vals .cited { color: #0e7490; } .vals .inv { color: #b45309; }
-  .pred { margin-top: 10px; background: var(--vioSoft); border-radius: 8px; padding: 10px 12px; font-size: 13px; }
-  .scomment { margin-top: 8px; font-size: 12.5px; background: var(--waitSoft); padding: 6px 10px; border-radius: 6px; }
-  kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; color: var(--muted); background: #fff; }
-  .tabs { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid var(--line); }
-  .tabs button { border: 0; box-shadow: none; background: none; border-radius: 0; padding: 8px 14px; color: var(--muted); border-bottom: 2px solid transparent; }
+  .storyview { display: grid; grid-template-columns: 280px 1fr; gap: 20px; align-items: start; }
+  .spine { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sh); padding: 18px; position: sticky; top: 16px; }
+  .spine .stitle { font-weight: 700; font-size: 15px; line-height: 1.4; margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--line2); }
+  .spine .srow { display: flex; align-items: baseline; gap: 10px; padding: 8px 10px; margin: 0 -10px; border-radius: 8px; color: var(--text); font-size: 13.5px; } .spine .srow .cnt { margin-left: auto; color: var(--muted); font-size: 12px; white-space: nowrap; } .spine .srow:hover { background: var(--line2); text-decoration: none; }
+  .spine .srow.on { background: var(--accSoft); font-weight: 600; } .spine .srem { margin-top: 14px; border-top: 1px solid var(--line2); padding-top: 12px; font-size: 12.5px; } .spine .srem .rf { display: flex; justify-content: space-between; padding: 3px 0; color: var(--text2); }
+  .sover { padding: 12px 0; border-top: 1px solid var(--line2); } .sover > div { margin-top: 3px; }
+  .walkgrid { display: grid; grid-template-columns: 180px minmax(0, 1fr); box-shadow: var(--sh); gap: 0; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+  .smenu { background: var(--panel2); border-right: 1px solid var(--line); padding: 8px 0; } .smenu a { display: block; padding: 8px 16px; font-size: 13px; color: var(--muted); }
+  .smenu a.on { background: var(--text); color: var(--panel); font-weight: 700; } .smenu a:hover { text-decoration: none; }
+  .cfile { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--line2); font-size: 12.5px; }
+  .code { font: 12.5px/1.75 ui-monospace, Menlo, monospace; padding: 10px 0; overflow-x: auto; background: var(--codeBg); }
+  .cl { display: grid; grid-template-columns: 44px 3px 1fr; gap: 12px; white-space: pre; padding-right: 16px; } .cl .ln { text-align: right; color: var(--lnum); }
+  .cl.dim .tx { color: var(--dimCode); } .cl.site.changed .bar { background: #eab308; } .cl.site.context .bar { background: #3b82f6; } .cl.site .tx { color: var(--text); }
+  .cl.add { background: var(--okSoft); } .cl.add .tx { color: var(--okText); } .cl.del { background: var(--badSoft); } .cl.del .tx { color: var(--badText); text-decoration: line-through; }
+  .band { border-top: 1px solid var(--line); padding: 16px 18px; background: var(--band); }
+  .band .claim { font-size: 15px; font-weight: 600; } .band .stale { background: var(--waitSoft); color: var(--warnText); font-size: 11px; font-weight: 800; padding: 1px 6px; border-radius: 4px; letter-spacing: .05em; }
+  .vals { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 10px; font-size: 12.5px; } .vals .cited { color: var(--citeC); } .vals .inv { color: var(--invC); }
+  .pred { margin-top: 14px; background: var(--vioSoft); border-radius: 8px; padding: 10px 12px; font-size: 13px; }
+  .scomment { margin-top: 12px; font-size: 12.5px; background: var(--waitSoft); padding: 6px 10px; border-radius: 6px; }
+  kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; color: var(--muted); background: var(--panel); display: inline-block; line-height: 16px; margin-left: 4px; vertical-align: 1px; font-weight: 500; }
+  .bandacts { display: flex; align-items: center; gap: 10px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line2); }
+  .tabs { display: flex; gap: 4px; margin-bottom: 18px; border-bottom: 1px solid var(--line); }
+  .tabs button { border: 0; box-shadow: none; background: none; border-radius: 0; padding: 10px 16px; color: var(--muted); border-bottom: 2px solid transparent; }
   .tabs button.on { color: var(--text); border-bottom-color: var(--acc); }
   .walk { display: grid; grid-template-columns: 220px 1fr; gap: 18px; }
   .walk nav { position: sticky; top: 20px; align-self: start; display: flex; flex-direction: column; gap: 2px; }
-  .walk nav a { color: var(--text); padding: 6px 10px; border-radius: 8px; font-size: 13px; } .walk nav a:hover { background: #fff; text-decoration: none; }
+  .walk nav a { color: var(--text); padding: 6px 10px; border-radius: 8px; font-size: 13px; } .walk nav a:hover { background: var(--panel); text-decoration: none; }
 
   /* Liveness: what a running Agent looks like everywhere it appears */
   .spin { display: inline-block; width: 1em; text-align: center; color: var(--run); font-weight: 700; }
@@ -252,7 +272,14 @@ const I = {
   skill: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5"/>',
   gear: '<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/>',
   out: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>',
+  moon: '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
 }
+const THEME_KEY = "ants-theme", hasStore = typeof localStorage !== "undefined"
+let theme = (hasStore && localStorage.getItem(THEME_KEY)) || (typeof matchMedia !== "undefined" && matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
+const applyTheme = () => document.documentElement?.classList.toggle("dark", theme === "dark")
+function toggleTheme() { theme = theme === "dark" ? "light" : "dark"; if (hasStore) localStorage.setItem(THEME_KEY, theme); applyTheme(); renderSide() }
+applyTheme()
 const icon = k => `<svg class="i" viewBox="0 0 24 24">${I[k]}</svg>`
 
 // ---------- in-memory state ----------
@@ -623,6 +650,7 @@ function renderSide() {
     <a class="${on("/agents")}" href="#/agents">${icon("agent")}Agents</a>
     <a class="${on("/skills")}" href="#/skills">${icon("skill")}Skills</a>
     <div class="bottom">${pause}${upd}
+      <a href="javascript:toggleTheme()">${theme === "dark" ? icon("sun") + "Light mode" : icon("moon") + "Dark mode"}</a>
       <a class="${on("/settings")}" href="#/settings">${icon("gear")}Settings</a>
       <a href="#/login" onclick="S.loggedIn=false">${icon("out")}Log out <span class="m">v${S.version}</span></a></div></nav>`
   document.title = (n ? `(${n}) ` : "") + "Ants"
@@ -796,7 +824,7 @@ function pTask(rid, tid) {
 function pAnswer(r, t) {
   const qs = [["Who exports", "Who gets the export button: everyone who can see invoices, or only admins?", "Everyone who can see the invoice list; the export holds exactly what they can already see."],
     ["Which invoices", "Does the export take the invoices currently filtered on screen, or all of them?", "The **current filter**, so what you see is what you get."]]
-  return taskHead(r, t) + `<div class="card" style="background:var(--accSoft);border-color:#c7d2fe">The answer screen is settled (<a href="answer-page.html" target="_blank">answer-page prototype</a>); this stub shows its text area as a markdown editor.</div>
+  return taskHead(r, t) + `<div class="card" style="background:var(--accSoft);border-color:var(--acc)">The answer screen is settled (<a href="answer-page.html" target="_blank">answer-page prototype</a>); this stub shows its text area as a markdown editor.</div>
     ${qs.map(([title, q, rec], i) => `<div class="card"><div class="muted small">Question ${i + 1} of 4 · ${title}</div><p style="font-size:17px;font-weight:600;margin:4px 0 10px">${esc(q)}</p>${md("q" + i, rec)}</div>`).join("")}
     <div class="composer"><div><span class="grow"></span><button class="primary" onclick="act('${r.id}','${t.id}')">Send the round</button></div></div>`
 }
@@ -905,8 +933,8 @@ const inl = s => esc(s).replace(/`([^`]+)`/g, "<code>$1</code>")
 function spineHtml(set) {
   return `<div class="spine"><div class="stitle">${esc(set.title)}</div>
     ${set.stories.map((s, i) => { const stale = s.steps.filter(x => x.stale).length
-      return `<a class="srow ${W.story === i ? "on" : ""}" href="javascript:walk(${i},0)">${esc(s.name)} <span class="muted">(${s.steps.length} steps${stale ? `, <span style="color:var(--wait)">${stale} stale</span>` : ""})</span></a>` }).join("")}
-    <div class="srem"><b>Remainder</b>: ${set.remainder.reduce((a, [, n]) => a + n, 0)} changes no step covers${set.remainder.map(([f, n]) => `<div class="mono">${esc(f.split(":")[1].split("/").pop())} <span class="muted">${n}</span></div>`).join("")}</div></div>`
+      return `<a class="srow ${W.story === i ? "on" : ""}" href="javascript:walk(${i},0)"><span>${esc(s.name)}</span><span class="cnt">${s.steps.length} steps${stale ? ` · <span style="color:var(--wait)">${stale} stale</span>` : ""}</span></a>` }).join("")}
+    <div class="srem"><div style="margin-bottom:6px"><b>Remainder</b> · ${set.remainder.reduce((a, [, n]) => a + n, 0)} changes no step covers</div>${set.remainder.map(([f, n]) => `<div class="rf"><span class="mono">${esc(f.split(":")[1].split("/").pop())}</span><span class="muted">${n}</span></div>`).join("")}</div></div>`
 }
 function codeHtml(st) {
   const src = SRC[st.file], [repo, path] = st.file.split(":"), rows = []
@@ -937,7 +965,7 @@ function renderWalk() {
   const s = set.stories[W.story], st = s.steps[W.step], key = `${W.story}.${W.step}`, picks = W.answered[key] || []
   const solved = st.prediction && picks.some(k => st.prediction.choices[k][1])
   const comments = (REVIEW_COMMENTS[W.rid] ||= []).filter(c => c.story === W.story && c.step === W.step)
-  box.innerHTML = `<div class="row" style="margin-bottom:8px"><b>${esc(s.name)}</b><span class="muted small">${inl(s.premise)}</span><span class="grow"></span><button class="ghost small" onclick="W.story=null;renderWalk()">All stories <kbd>Esc</kbd></button></div>
+  box.innerHTML = `<div class="row" style="margin-bottom:12px;align-items:baseline"><b style="font-size:15px">${esc(s.name)}</b><span class="muted small">${inl(s.premise)}</span><span class="grow"></span><button class="ghost small" onclick="W.story=null;renderWalk()">All stories <kbd>Esc</kbd></button></div>
     <div class="walkgrid"><div class="smenu">${s.steps.map((x, j) => `<a class="${j === W.step ? "on" : ""}" href="javascript:walk(${W.story},${j})">${x.stale ? "⚠ " : ""}${esc(x.name)}</a>`).join("")}</div>
     <div>${codeHtml(st)}
       <div class="band">
@@ -945,17 +973,18 @@ function renderWalk() {
         ${st.values ? `<div class="vals">${st.values.map(([n, v, prov, cite]) => `<span class="${cite ? "cited" : "inv"}" title="${cite ? "from " + esc(cite) : "not found in the code"}">${esc(n)}: <b>${esc(v)}</b> <span class="small">[${cite ? prov : "invented"}]</span></span>`).join("")}</div>` : ""}
         ${st.prediction && !W.details ? `<div class="pred"><b>${esc(st.prediction.question)}</b>${solved ? `<div class="small" style="margin-top:4px">✓ ${esc(st.prediction.choices.find(c => c[1])[2])}</div>`
           : `<div class="row" style="flex-wrap:wrap;margin-top:6px">${st.prediction.choices.map(([t], k) => `<button class="small" ${picks.includes(k) ? "disabled" : ""} onclick="answer(${k})">(${k + 1}) ${esc(t)}</button>`).join("")}</div>
-            ${picks.length ? `<div class="small" style="margin-top:4px;color:#92400e">${esc(st.prediction.choices[picks.at(-1)][2])}</div>` : ""}`}</div>` : ""}
-        ${W.details ? `<div class="kv small" style="margin-top:8px;grid-template-columns:70px 1fr">
+            ${picks.length ? `<div class="small" style="margin-top:4px;color:var(--warnText)">${esc(st.prediction.choices[picks.at(-1)][2])}</div>` : ""}`}</div>` : ""}
+        ${W.details && !st.why && !st.flow && !st.nudge && !st.stale ? '<div class="muted small" style="margin-top:12px">Nothing more for this step.</div>' : ""}
+        ${W.details && (st.why || st.flow || st.nudge || st.stale) ? `<div class="kv small" style="margin-top:12px;grid-template-columns:64px 1fr">
           ${st.why ? `<span class="k">Why</span><span>${inl(st.why)}</span>` : ""}
           ${st.flow ? `<span class="k">Flow</span><span>in: ${inl(st.flow.in)}<br>out: ${inl(st.flow.out)}</span>` : ""}
           ${st.nudge ? `<span class="k">Nudge</span><span>${inl(st.nudge)}</span>` : ""}
           ${st.stale ? `<span class="k">Stale</span><span>Written against<br><code>${esc(st.stale.trim())}</code><br>Now<br><code>${esc(SRC[st.file].lines[st.from - 1].trim())}</code></span>` : ""}
-          ${!st.why && !st.flow && !st.nudge && !st.stale ? '<span class="k"></span><span class="muted">Nothing more for this step.</span>' : ""}</div>` : ""}
+</div>` : ""}
         ${comments.map(c => `<div class="scomment"><b>${c.type}</b> ${esc(c.text)}</div>`).join("")}
-        ${W.commenting ? `<div class="row" style="margin-top:8px"><select id="ctype" style="width:auto">${["ISSUE", "SUGGESTION", "NOTE", "COMMENT"].map(x => `<option>${x}</option>`).join("")}</select>
+        ${W.commenting ? `<div class="row" style="margin-top:14px"><select id="ctype">${["ISSUE", "SUGGESTION", "NOTE", "COMMENT"].map(x => `<option>${x}</option>`).join("")}</select>
           <input id="ctext" class="grow" placeholder="On this claim…" onkeydown="if(event.key==='Enter')saveStepComment();if(event.key==='Escape'){W.commenting=false;renderWalk()}"><button class="primary" onclick="saveStepComment()">Add</button></div>` : ""}
-        <div class="row" style="margin-top:10px"><button onclick="stepBy(-1)" ${W.step ? "" : "disabled"}>◀ Back <kbd>p</kbd></button><button onclick="stepBy(1)" ${W.step < s.steps.length - 1 ? "" : "disabled"}>Next <kbd>n</kbd> ▶</button>
+        <div class="bandacts"><button onclick="stepBy(-1)" ${W.step ? "" : "disabled"}>◀ Back <kbd>p</kbd></button><button onclick="stepBy(1)" ${W.step < s.steps.length - 1 ? "" : "disabled"}>Next <kbd>n</kbd> ▶</button>
           <span class="grow"></span><button class="ghost" onclick="W.details=!W.details;renderWalk()">${W.details ? "Hide details" : "Why, flow, nudge"} <kbd>D</kbd></button>
           <button class="ghost" onclick="W.commenting=true;renderWalk();document.getElementById('ctext')?.focus()">Comment on this step <kbd>c</kbd></button></div></div></div></div>`
   if (W.commenting) document.getElementById("ctext")?.focus()
@@ -1610,9 +1639,9 @@ import { marked } from "https://esm.sh/marked@14"
 const mdStyle = HighlightStyle.define([
   { tag: tags.heading1, fontSize: "1.45em", fontWeight: "700" }, { tag: tags.heading2, fontSize: "1.25em", fontWeight: "700" },
   { tag: tags.heading3, fontSize: "1.1em", fontWeight: "700" }, { tag: tags.strong, fontWeight: "700" }, { tag: tags.emphasis, fontStyle: "italic" },
-  { tag: tags.strikethrough, textDecoration: "line-through" }, { tag: tags.link, color: "#4f46e5", textDecoration: "underline" },
-  { tag: tags.monospace, fontFamily: "ui-monospace, monospace", fontSize: ".92em", backgroundColor: "#f0f2f5" },
-  { tag: [tags.processingInstruction, tags.meta], color: "#94a3b8" }, { tag: tags.quote, color: "#64748b", fontStyle: "italic" }, { tag: tags.list, color: "#4f46e5" },
+  { tag: tags.strikethrough, textDecoration: "line-through" }, { tag: tags.link, color: "var(--acc)", textDecoration: "underline" },
+  { tag: tags.monospace, fontFamily: "ui-monospace, monospace", fontSize: ".92em", backgroundColor: "var(--line2)" },
+  { tag: [tags.processingInstruction, tags.meta], color: "var(--muted)" }, { tag: tags.quote, color: "var(--muted)", fontStyle: "italic" }, { tag: tags.list, color: "var(--acc)" },
 ])
 const base = [history(), drawSelection(), EditorView.lineWrapping, keymap.of([...defaultKeymap, ...historyKeymap])]
 
@@ -1637,8 +1666,8 @@ function wrap(view, ta, mdMode) {
   } else {
     bar.append(Object.assign(document.createElement("span"), { className: "sp", textContent: "JSON Schema" }))
     const st = Object.assign(document.createElement("span"), { className: "st" }); bar.append(st)
-    const check = () => { try { const o = JSON.parse(view.state.doc.toString()); st.innerHTML = o.type === "object" && o.properties ? '<span style="color:#16a34a">✓ valid schema</span>' : '<span style="color:#d97706">needs "type": "object" and "properties"</span>' }
-      catch (e) { st.innerHTML = `<span style="color:#dc2626">✗ ${e.message.split(" in JSON")[0]}</span>` } }
+    const check = () => { try { const o = JSON.parse(view.state.doc.toString()); st.innerHTML = o.type === "object" && o.properties ? '<span style="color:var(--ok)">✓ valid schema</span>' : '<span style="color:var(--wait)">needs "type": "object" and "properties"</span>' }
+      catch (e) { st.innerHTML = `<span style="color:var(--bad)">✗ ${e.message.split(" in JSON")[0]}</span>` } }
     view.dom.addEventListener("keyup", check); check()
   }
   ta.hidden = true; ta.after(ed); ed.append(bar, view.dom); if (ta.hasAttribute("data-tall")) ed.classList.add("tall")
@@ -1671,7 +1700,7 @@ window.mountEditors = () => {
     const view = new EditorView({ state: EditorState.create({ doc: ta.value, extensions: [fmt, ...base, sync, placeholder(ta.placeholder || ""), EditorState.readOnly.of(ro),
       ...(mdMode ? [markdown(), syntaxHighlighting(mdStyle)] : [json(), syntaxHighlighting(defaultHighlightStyle), bracketMatching(), linter(jsonParseLinter()), lintGutter()])] }) })
     wrap(view, ta, mdMode)
-    if (ro) { const ed = ta.nextElementSibling; ed.style.background = "#fafbfc"; ed.querySelector(".bar").insertAdjacentHTML("beforeend", '<span class="st" style="color:#64748b">Read-only · Copy to edit</span>') }
+    if (ro) { const ed = ta.nextElementSibling; ed.style.background = "var(--panel2)"; ed.querySelector(".bar").insertAdjacentHTML("beforeend", '<span class="st" style="color:var(--muted)">Read-only · Copy to edit</span>') }
   })
   document.querySelectorAll("[data-mdview]:not([data-done])").forEach(el => { el.dataset.done = 1; renderMd(el, el.textContent) })
 }
