@@ -193,6 +193,9 @@
   .chipsel input { border: 0; outline: 0; flex: 1; min-width: 160px; padding: 4px; }
   .listed .row { margin-bottom: 6px; }
 
+  .tabs { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid var(--line); }
+  .tabs button { border: 0; box-shadow: none; background: none; border-radius: 0; padding: 8px 14px; color: var(--muted); border-bottom: 2px solid transparent; }
+  .tabs button.on { color: var(--text); border-bottom-color: var(--acc); }
   .walk { display: grid; grid-template-columns: 220px 1fr; gap: 18px; }
   .walk nav { position: sticky; top: 20px; align-self: start; display: flex; flex-direction: column; gap: 2px; }
   .walk nav a { color: var(--text); padding: 6px 10px; border-radius: 8px; font-size: 13px; } .walk nav a:hover { background: #fff; text-decoration: none; }
@@ -794,6 +797,16 @@ const PUSHES = {
       commits: [["e42d901", "Show the planned retry on the invoice page"]] },
   ],
 }
+const FILES = {
+  billing: [["src/main/kotlin/billing/PaymentRetryPolicy.kt", 31, 0, "@@ PaymentRetryPolicy.kt @@\n+data class PaymentRetryPolicy(val delays: List<Duration> = listOf(1.hours, 6.hours, 24.hours))\n+  fun next(attempt: Int) = delays.getOrNull(attempt)"],
+    ["src/main/kotlin/billing/PaymentFailedHandler.kt", 9, 4, "@@ PaymentFailedHandler.kt @@\n-    invoice.markUnpaid()\n+    policy.next(event.attempt)?.let { retries.schedule(invoice, it) }\n+      ?: invoice.markUnpaid()"],
+    ["src/main/kotlin/billing/RetryScheduler.kt", 38, 0, "@@ RetryScheduler.kt @@\n+class RetryScheduler(private val jobs: JobQueue) {\n+  fun schedule(invoice: Invoice, after: Duration) = jobs.enqueue(RetryPayment(invoice.id), after)\n+}"],
+    ["src/main/kotlin/billing/Invoice.kt", 6, 2, "@@ Invoice.kt @@\n+  var nextRetryAt: Instant? = null"],
+    ["src/test/kotlin/billing/PaymentRetryPolicyTest.kt", 54, 0, ""], ["src/test/kotlin/billing/PaymentFailedHandlerTest.kt", 46, 16, ""]],
+  web: [["src/invoices/InvoiceBanner.tsx", 14, 1, "@@ InvoiceBanner.tsx @@\n+{invoice.nextRetryAt && <Banner tone=\"info\">We'll try your card again {relative(invoice.nextRetryAt)}.</Banner>}"],
+    ["src/invoices/types.ts", 2, 0, "@@ types.ts @@\n+  nextRetryAt?: string"], ["src/invoices/InvoiceBanner.test.tsx", 25, 2, ""]],
+}
+function reviewTab(v) { document.querySelectorAll("[data-view]").forEach(e => e.hidden = e.dataset.view !== v); document.querySelectorAll("[data-tab]").forEach(b => b.classList.toggle("on", b.dataset.tab === v)) }
 function confirmPush(rid, tid) {
   const ps = PUSHES[rid] || [], n = ps.length, branch = `ants/${rid}`
   const bg = document.createElement("div"); bg.className = "modal-bg"; bg.id = "pushModal"
@@ -827,9 +840,15 @@ function pReview(r, t) {
   return taskHead(r, t) + `<div class="grid3" style="margin-bottom:14px">
     ${[["billing", "6 files", "+184 −22", "3 commits"], ["web", "3 files", "+41 −3", "1 commit"]].map(([n, f, d, c]) => `<div class="card"><b class="mono">${n}</b> <span class="muted small">on ants/${esc(r.id)}</span><div class="small">${f} · <span style="color:var(--ok)">${d.split(" ")[0]}</span> <span style="color:var(--bad)">${d.split(" ")[1]}</span> · ${c}</div></div>`).join("")}
     <div class="card"><b>Tests</b><div class="small"><span class="pill p-done">Passing</span> 412 billing · 96 web</div></div></div>
-    <div class="walk"><nav><b class="small muted" style="padding:0 10px 6px">THE STORY</b>${story.map(([h], i) => `<a href="javascript:document.getElementById('st${i}').scrollIntoView({block:'start'})">${i + 1}. ${h}</a>`).join("")}</nav>
-    <div>${story.map(([h, repo, prose, diff], i) => `<div class="card" id="st${i}"><div class="muted small">${i + 1} of ${story.length} · <span class="mono">${repo}</span></div><h3 style="font-size:16px;margin:2px 0 6px">${h}</h3>${mdView(prose + (diff ? "\n\n```diff\n" + diff + "\n```" : ""))}</div>`).join("")}
-    ${field("Comment", "Required to send back: the implementers resume with it. Approving pushes both branches.", "", md("cmt", ""))}</div></div>
+    <div class="tabs"><button class="on" data-tab="story" onclick="reviewTab('story')">The story</button><button data-tab="repo" onclick="reviewTab('repo')">By repo</button></div>
+    <div class="walk" data-view="story"><nav><b class="small muted" style="padding:0 10px 6px">THE STORY</b>${story.map(([h], i) => `<a href="javascript:document.getElementById('st${i}').scrollIntoView({block:'start'})">${i + 1}. ${h}</a>`).join("")}</nav>
+    <div>${story.map(([h, repo, prose, diff], i) => `<div class="card" id="st${i}"><div class="muted small">${i + 1} of ${story.length} · <span class="mono">${repo}</span></div><h3 style="font-size:16px;margin:2px 0 6px">${h}</h3>${mdView(prose + (diff ? "\n\n```diff\n" + diff + "\n```" : ""))}</div>`).join("")}</div></div>
+    <div class="walk" data-view="repo" hidden><nav>${(PUSHES[r.id] || []).map(p => `<b class="small mono" style="padding:8px 10px 2px">${p.repo}</b>${(FILES[p.repo] || []).map(([path], j) => `<a class="mono" style="font-size:12px" href="javascript:document.getElementById('f_${p.repo}_${j}').scrollIntoView({block:'start'})">${esc(path.split("/").pop())}</a>`).join("")}`).join("")}</nav>
+    <div>${(PUSHES[r.id] || []).map(p => `<div class="card"><div class="row"><b class="mono" style="font-size:16px">${p.repo}</b><code>ants/${esc(r.id)}</code><span class="grow"></span><span class="small">${p.files} files · <span style="color:var(--ok)">+${p.add}</span> <span style="color:var(--bad)">−${p.del}</span></span></div>
+        <div style="margin:8px 0 4px">${p.commits.map(([sha, msg]) => `<div class="small"><span class="mono muted">${sha}</span> ${esc(msg)}</div>`).join("")}</div>
+        ${(FILES[p.repo] || []).map(([path, add, del, diff], j) => `<details id="f_${p.repo}_${j}" ${diff ? "open" : ""} style="border-top:1px solid var(--line2);padding:8px 0"><summary style="cursor:pointer"><span class="mono small">${esc(path)}</span> <span class="small"><span style="color:var(--ok)">+${add}</span> <span style="color:var(--bad)">−${del}</span></span></summary>
+          ${diff ? mdView("```diff\n" + diff + "\n```") : '<div class="muted small" style="padding:6px 0">Tests: the full diff opens in the clone.</div>'}</details>`).join("")}</div>`).join("")}</div></div>
+    <div style="margin-left:238px">${field("Comment", "Required to send back: the implementers resume with it. Approving pushes both branches.", "", md("cmt", ""))}</div>
     <div class="composer"><div><span class="grow muted small">Nothing is pushed until you approve.</span><button onclick="if(!document.getElementById('cmt').value)return alert('Send back needs a comment');act('${r.id}','${t.id}','back')">Send back</button>
     <button class="primary" onclick="confirmPush('${r.id}','${t.id}')">Approve and push…</button></div></div>`
 }
