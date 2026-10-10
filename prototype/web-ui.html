@@ -228,13 +228,24 @@ const icon = k => `<svg class="i" viewBox="0 0 24 24">${I[k]}</svg>`
 // ---------- in-memory state ----------
 // Claude Code's built-in tools, grouped. Ants ships this list with its version; MCP is off (--strict-mcp-config), so it is complete.
 const MODELS = { claude: ["default", "opus", "sonnet", "haiku"], codex: ["default", "gpt-5", "gpt-5-codex"] }
-const TOOLS = {
-  "Read the code": [["Read", "Read a file"], ["Glob", "Find files by name pattern"], ["Grep", "Search file contents"]],
-  "Change files": [["Edit", "Change part of a file"], ["Write", "Create or overwrite a file"], ["NotebookEdit", "Edit Jupyter notebooks"]],
-  "Run commands": [["Bash", "Run shell commands: builds, tests, git. Narrow it below."]],
-  "Web": [["WebFetch", "Fetch a URL"], ["WebSearch", "Search the web"]],
-  "Delegate and plan": [["Agent", "Start Subagents inside this Task"], ["TodoWrite", "Keep a todo list while it works"]],
-}
+// What an Agent may do: six switches over Claude Code's built-in tools (tools-reference, Claude Code 2.1.2xx).
+// Ants passes the result as an explicit allow-list (--tools), so anything not switched on, including tools a later
+// Claude Code adds, stays off. Naming Glob and Grep there also brings them back on macOS and Linux, where they are absent by default.
+const CAPS = [
+  ["read", "Read the code", "Open files, find them by name, search inside them, jump to definitions.", ["Read", "Glob", "Grep", "LSP"], "Only these paths", "src/**"],
+  ["edit", "Change files", "Create and edit files, Jupyter notebooks included.", ["Edit", "Write", "NotebookEdit"], "Only these paths", "src/**"],
+  ["bash", "Run commands", "Builds, tests, git and any other shell command.", ["Bash"], "Only these commands; * matches the rest", "pnpm test"],
+  ["fetch", "Fetch web pages", "Read the page at a URL.", ["WebFetch"], "Only these domains", "docs.spring.io"],
+  ["search", "Search the web", "Run web searches.", ["WebSearch"]],
+  ["agent", "Start Subagents", "Helpers inside this Task's slot, such as Explore.", ["Agent"], "Only these Subagent types", "Explore"],
+]
+const ALWAYS_ON = "TaskCreate, TaskGet, TaskList and TaskUpdate: the Agent's own task list, which feeds <b>So far</b>"
+const ALWAYS_OFF = [["Ants does the job itself", "AskUserQuestion (a Round), EnterWorktree and ExitWorktree (the Run workspace), CronCreate, CronDelete, CronList, ScheduleWakeup and RemoteTrigger (schedules), PushNotification (the Notification list)"],
+  ["they need a person at a terminal", "EnterPlanMode, ExitPlanMode, EndConversation, SendFeedback"],
+  ["they reach outside the Run", "SendMessage, ListAgents, Workflow, Artifact, SendUserFile, ShareOnboardingGuide, ReportFindings"],
+  ["background work is off", "Monitor, TaskOutput, TaskStop"],
+  ["MCP is off", "ToolSearch, WaitForMcpServers, ListMcpResourcesTool, ReadMcpResourceTool and every MCP server's tools"],
+  ["Windows only", "PowerShell"]]
 const S = {
   loggedIn: true, version: "0.4.2", update: "available", paused: { claude: "15:45" }, cap: 3,
   vaults: [{ name: "Work", path: "~/.varde/knowledge", def: true }, { name: "Side projects", path: "~/notes/vault" }],
@@ -648,7 +659,7 @@ function taskHead(r, t) {
     sub: t.summary ? esc(t.summary) : "" })
 }
 // "So far": a short paragraph of what the Agent has done, rewritten every couple of minutes while it runs
-// (in Ants: a haiku call over the new Transcript lines, its tokens counted on the Task), plus the Agent's own todo list from TodoWrite.
+// (in Ants: a haiku call over the new Transcript lines, its tokens counted on the Task), plus the Agent's own task list (TaskCreate / TaskUpdate; TodoWrite is off by default now).
 const SOFAR = {
   grill: ["Read the scout's brief and the theme code in **web**. Two Subagents are mapping every hard-coded colour and how settings are stored.",
     "Header and Sidebar can use the theme tokens as they are; the chart colours need a dark palette of their own. Now checking the theme tests.",
@@ -864,10 +875,15 @@ function pAgent(name) {
   const x = agentOf(name) || { name: "", folder: "~/.ants/agents", desc: "", cli: "claude", model: "sonnet", tools: ["Read", "Glob", "Grep"], skills: [], isNew: true }
   if (!S.draft || S.draft.name !== x.name) S.draft = JSON.parse(JSON.stringify(x))
   const d = S.draft, ro = isOwn(x) ? "" : "disabled"
-  const toolsCtl = d.cli === "claude" ? `<div class="tools">${Object.entries(TOOLS).map(([g, ts]) => `<fieldset><legend>${g}</legend>${ts.map(([n, h]) => `<label><input type="checkbox" ${ro} ${d.tools.includes(n) ? "checked" : ""} onchange="toggleTool('${n}',this.checked)"><div><b class="mono">${n}</b><span>${h}</span></div></label>`).join("")}
-      ${g === "Run commands" && d.tools.includes("Bash") ? `<div class="help" style="margin:6px 0 4px">Allowed commands, one per row; <code>*</code> matches the rest. None listed means any command.</div>
-        ${(d.bash || []).map((c, i) => `<div class="row" style="margin-bottom:4px"><input class="mono grow" ${ro} placeholder="e.g. pnpm test" value="${esc(c)}" onchange="S.draft.bash[${i}]=this.value">${ro ? "" : `<button class="ghost" title="Remove" onclick="S.draft.bash.splice(${i},1);render()">×</button>`}</div>`).join("")}
-        ${ro ? "" : `<button onclick="(S.draft.bash||=[]).push('');render()">＋ Add command</button>`}` : ""}</fieldset>`).join("")}</div>`
+  const capOn = cap => cap[3].some(t => d.tools.includes(t))
+  const toolsCtl = d.cli === "claude" ? `<div class="tools">${CAPS.map(cap => { const [k, name, help, tools, limLabel, eg] = cap, on = capOn(cap), L = capLimit(k, d)
+      return `<fieldset><label><input type="checkbox" ${ro} ${on ? "checked" : ""} onchange="toggleCap('${k}',this.checked)"><div><b>${name}</b><span>${help}</span><span class="mono" style="font-size:11px">${tools.join(" · ")}</span></div></label>
+        ${on && limLabel ? `<div class="help" style="margin:4px 0">${limLabel}. None listed means all.</div>
+          ${L.map((v, i) => `<div class="row" style="margin-bottom:4px"><input class="mono grow" ${ro} placeholder="e.g. ${eg}" value="${esc(v)}" onchange="capLimit('${k}')[${i}]=this.value">${ro ? "" : `<button class="ghost" title="Remove" onclick="capLimit('${k}').splice(${i},1);render()">×</button>`}</div>`).join("")}
+          ${ro ? "" : `<button onclick="capLimit('${k}').push('');render()">＋ Add</button>`}` : ""}</fieldset>` }).join("")}</div>
+      <details class="small" style="margin-top:12px"><summary style="cursor:pointer;color:var(--acc)">And Claude Code's other tools?</summary>
+        <p><b>Always on:</b> ${ALWAYS_ON}.</p><p style="margin-bottom:4px"><b>Always off in Ants:</b></p>
+        <ul style="margin:0;padding-left:18px">${ALWAYS_OFF.map(([why, list]) => `<li><span class="mono" style="font-size:11.5px">${list}</span>: ${why}.</li>`).join("")}</ul></details>`
     : `<select ${ro}><option ${d.sandbox === "read-only" ? "selected" : ""}>read-only: reads files, changes nothing</option><option>workspace-write: changes files in the Run workspace</option><option>danger-full-access</option></select>`
   return ph(esc(x.name || "New Agent"), { crumbs: [`<a href="#/agents">Agents</a>`, esc(x.name || "New")],
       acts: ro ? `<span class="muted small">Read-only (${esc(folderLabel(x.folder))})</span><button onclick="toast('Copied into ~/.ants/agents as ${esc(x.name)}-copy.')">Copy</button>` : `${x.isNew ? "" : `<button class="danger">Delete</button>`}<button class="primary">Save</button>`,
@@ -878,7 +894,7 @@ function pAgent(name) {
       <div class="grid2">${field("CLI", "Which AI CLI runs it, on Ants' own login.", "", `<select ${ro} onchange="S.draft.cli=this.value;render()"><option ${d.cli === "claude" ? "selected" : ""}>claude</option><option ${d.cli === "codex" ? "selected" : ""}>codex</option></select>`)}
       ${field("Model", "The models this CLI offers. Default follows the CLI.", "", `<select ${ro}>${MODELS[d.cli].map(m => `<option ${m === d.model ? "selected" : ""}>${m}</option>`).join("")}</select>`)}</div>
       ${field("Skills it runs", "The jobs this Agent may do. A Task picks one of them; the modeler only offers these.", "implement, tdd", chipSel(d.skills, ro))}</div>
-    <div class="card"><h3>What it may do</h3><div class="help">${d.cli === "claude" ? "Claude Code's tools, grouped. Anything unticked is refused, so an Agent without <b>Change files</b> can't edit code whatever the Skill says." : "Codex has no tool list; its sandbox decides what it may touch."}</div>${toolsCtl}</div></div>
+    <div class="card"><h3>What it may do</h3><div class="help">${d.cli === "claude" ? "Each switch covers some of Claude Code's tools, named small under it. Anything off is refused, so an Agent without <b>Change files</b> can't edit code whatever its Skill says." : "Codex has no tool list; its sandbox decides what it may touch."}</div>${toolsCtl}</div></div>
     <div class="card"><h3>Standing instructions</h3><div class="help">Who the Agent is and how it works, whatever the Skill. Markdown; <b>Expand</b> gives you a big editor with a live preview.</div>${md("instr", `You are the **${d.name || "agent"}**.\n\n## How you work\n\n- Keep changes small\n- Never push`, "", true)}${ro ? '<input type="hidden" disabled>' : ""}</div>`
 }
 function chipSel(list, ro) {
@@ -886,7 +902,8 @@ function chipSel(list, ro) {
     ${ro ? "" : `<input list="skillList" placeholder="Add a Skill…" onchange="if(skillOf(this.value)&&!S.draft.skills.includes(this.value)){S.draft.skills.push(this.value);render()}">`}</div>
     <datalist id="skillList">${S.skills.map(s => `<option value="${s.name}">${esc(s.desc)}</option>`).join("")}</datalist>`
 }
-function toggleTool(n, v) { S.draft.tools = v ? [...S.draft.tools, n] : S.draft.tools.filter(x => x !== n); render() }
+function toggleCap(k, v) { const cap = CAPS.find(x => x[0] === k); S.draft.tools = v ? [...new Set([...S.draft.tools, ...cap[3]])] : S.draft.tools.filter(t => !cap[3].includes(t)); render() }
+const capLimit = (k, d = S.draft) => k === "bash" ? (d.bash ||= []) : ((d.limits ||= {})[k] ||= [])
 function pSkill(name) {
   const x = skillOf(name) || { name: "", folder: "~/.ants/skills", desc: "", fields: [], isNew: true }, ro = isOwn(x) ? "" : "disabled"
   const runBy = S.agents.filter(a => a.skills.includes(x.name))
