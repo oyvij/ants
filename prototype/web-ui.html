@@ -247,7 +247,10 @@ const S = {
     { id: "spec-rec", name: "Prompt to spec · recommendations answer", by: "shipped", ready: true, vault: "Work", sourceMap: "Stacc repos" },
     { id: "implement", name: "Implement the spec", by: "you", ready: true, vault: "Work", sourceMap: "Stacc repos" },
     { id: "setup-vault", name: "Set up Vault", by: "shipped", ready: true, vault: "Work", sourceMap: "—" },
+    { id: "nightly-knowledge", name: "Nightly knowledge sweep", by: "you", ready: true, vault: "Work", sourceMap: "Stacc repos",
+      schedule: { every: "day", at: "00:00", on: "Mon", dom: 1, paused: false, values: { repos: ["billing", "web", "api"] } } },
     { id: "dep-bumps", name: "Weekly dependency bumps", by: "you", ready: false, vault: "—", sourceMap: "Personal",
+      schedule: { every: "week", at: "06:00", on: "Mon", dom: 1, paused: false, values: {} },
       reasons: ['Task "Bump versions" names Agent "bumper", which no Agent folder holds', 'Start form repo "ledger" is not in the Source map "Personal"'] },
   ],
   agents: [
@@ -292,6 +295,8 @@ const PROPS = {
     knowledge: A("vault-keeper", "update-knowledge", ["${plan.tickets}"]), walkthrough: A("writer", "walkthrough", ["${backend.commits}", "${frontend.commits}"]),
     review: { kind: "user", what: "Approve", shows: "walkthrough" }, push: { kind: "builtin", what: "Push", inputs: ["${clone.repos}"] } },
   "setup-vault": { start: { kind: "start", fields: ["vault"] }, init: A("vault-keeper", "init-vault") },
+  "nightly-knowledge": { start: { kind: "start", fields: ["repos"] }, clone: { kind: "builtin", what: "Clone repos", inputs: ["${repos}"] },
+    sweep: A("vault-keeper", "update-knowledge", ["${clone.repos}"]), approve: { kind: "user", what: "Approve", shows: "sweep" } },
   "dep-bumps": { start: { kind: "start", fields: ["repos"] }, clone: { kind: "builtin", what: "Clone repos" }, bump: A("bumper", "bump-deps"), push: { kind: "builtin", what: "Push" } },
 }
 
@@ -341,6 +346,9 @@ const XML = {
      ["f16", "gwOk", "gwMerge", "send back", [[1420, 285], [1420, 480], [560, 480], [560, 285]]]]),
   "setup-vault": bpmnXml("setup_vault", [["start", "startEvent", "Vault folder", 150, 200], ["init", "serviceTask", "Init the Vault", 280, 200], ["end", "endEvent", "Done", 410, 200]],
     [["f1", "start", "init"], ["f2", "init", "end"]]),
+  "nightly-knowledge": bpmnXml("nightly_knowledge", [["start", "startEvent", "Every night 00:00", 150, 200, true], ["clone", "serviceTask", "Clone repos", 270, 200],
+    ["sweep", "serviceTask", "Sweep yesterday's merges", 420, 200], ["approve", "userTask", "Approve the Notes", 570, 200], ["end", "endEvent", "Done", 700, 200]],
+    [["f1", "start", "clone"], ["f2", "clone", "sweep"], ["f3", "sweep", "approve"], ["f4", "approve", "end"]]),
   "dep-bumps": bpmnXml("dep_bumps", [["start", "startEvent", "Mondays 06:00", 150, 200, true], ["clone", "serviceTask", "Clone repos", 270, 200], ["bump", "serviceTask", "Bump versions", 420, 200],
     ["push", "serviceTask", "Push", 570, 200], ["end", "endEvent", "Done", 700, 200]], [["f1", "start", "clone"], ["f2", "clone", "bump"], ["f3", "bump", "push"], ["f4", "push", "end"]]),
 }
@@ -565,8 +573,9 @@ function home() {
     <div class="card"><h3>${icon("bell")} Waiting on you <a class="small" style="margin-left:auto;font-weight:500" href="#/notifications">All ${ns.length}</a></h3>${noteTable(ns.slice(0, 4), true)}</div>
     <div class="grid2"><div class="card"><h3>${icon("runs")} Working now</h3>
       ${working.map(r => `<div style="padding:7px 0;border-bottom:1px solid var(--line2)"><a href="#/runs/${r.id}"><b>${esc(r.id)}</b></a><div>${runNow(r)}</div></div>`).join("")}</div>
+    <div><div class="card"><h3>⏰ Coming up</h3>${upcoming().map(({ p }) => `<div class="row" style="padding:6px 0;border-bottom:1px solid var(--line2)"><a class="grow" href="#/processes/${p.id}">${esc(p.name)}</a><span class="small muted">${nextText(p.schedule)}</span></div>`).join("") || '<div class="muted small">Nothing scheduled.</div>'}</div>
     <div class="card"><h3>${icon("proc")} Start a Run</h3>
-      ${S.processes.map(p => `<div class="row" style="padding:6px 0;border-bottom:1px solid var(--line2)"><a class="grow" href="#/processes/${p.id}">${esc(p.name)}</a>${p.ready ? "" : '<span class="pill p-failed">Can\'t start</span>'}</div>`).join("")}</div></div>`
+      ${S.processes.map(p => `<div class="row" style="padding:6px 0;border-bottom:1px solid var(--line2)"><a class="grow" href="#/processes/${p.id}">${esc(p.name)}</a>${p.ready ? "" : '<span class="pill p-failed">Can\'t start</span>'}</div>`).join("")}</div></div></div>`
 }
 
 function noteTable(ns, bare) {
@@ -586,6 +595,7 @@ function runsTable(rs, actions) {
 }
 function pRuns() {
   return ph("Runs", { acts: `<button class="primary" onclick="go('#/processes')">Start a Run</button>`, sub: `${running()} of ${S.cap} Agent Tasks running.` })
+    + (upcoming().length ? `<h2>Coming up</h2><table>${upcoming().map(({ p }) => `<tr class="click" onclick="go('#/processes/${p.id}')"><td><b>${esc(p.name)}</b></td><td class="small">${schedText(p.schedule)}</td><td class="muted small">${nextText(p.schedule)}</td></tr>`).join("")}</table>` : "")
     + `<h2>Live</h2>${runsTable(S.runs.filter(r => r.state === "live"))}
     <h2>Ended</h2><div class="help">Done Runs leave their Report. Failed Runs keep their Run workspace until you dismiss them.</div>${runsTable(S.runs.filter(r => r.state !== "live"), true)}`
 }
@@ -743,12 +753,70 @@ function pStuck(r, t) {
 
 function pProcesses() {
   return ph("Processes", { acts: `<button class="primary" onclick="go('#/processes/new')">New Process</button>` })
-    + `<table><tr><th>Process</th><th>From</th><th>Vault · Source map</th><th>Check</th><th>Live Runs</th><th></th></tr>
-    ${S.processes.map(p => `<tr class="click" onclick="go('#/processes/${p.id}')"><td><b>${esc(p.name)}</b></td><td class="muted small">${p.by}</td><td class="muted small">${esc(p.vault)} · ${esc(p.sourceMap)}</td>
+    + `<table><tr><th>Process</th><th>From</th><th>Vault · Source map</th><th>Schedule</th><th>Check</th><th>Live Runs</th><th></th></tr>
+    ${S.processes.map(p => `<tr class="click" onclick="go('#/processes/${p.id}')"><td><b>${esc(p.name)}</b></td><td class="muted small">${p.by}</td><td class="muted small">${esc(p.vault)} · ${esc(p.sourceMap)}</td><td class="small">${schedShort(p)}</td>
       <td>${p.ready ? `<span class="pill p-ready">Ready</span>` : `<span class="pill p-failed">Can't start</span>`}</td>
       <td class="muted">${S.runs.filter(r => r.proc === p.id && r.state === "live").length}</td>
       <td><a href="#/processes/${p.id}/edit" onclick="event.stopPropagation()">Edit diagram</a></td></tr>`).join("")}</table>`
 }
+// ---------- schedules ----------
+// A schedule is the Process's timer start event (Operaton keeps the timer, so it survives restarts).
+// The Process page edits it in words; the cron it writes is shown, and editable under Advanced.
+const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+const EVERY = [["hour", "Every hour"], ["day", "Every day"], ["weekday", "Every weekday"], ["week", "Every week"], ["month", "Every month"]]
+function cronOf(sc) {
+  if (sc.cron) return sc.cron
+  const [h, m] = sc.at.split(":").map(Number)
+  return { hour: `${m} * * * *`, day: `${m} ${h} * * *`, weekday: `${m} ${h} * * MON-FRI`, week: `${m} ${h} * * ${sc.on.toUpperCase()}`, month: `${m} ${h} ${sc.dom} * *` }[sc.every]
+}
+function schedText(sc) {
+  if (sc.cron) return `On cron <code>${esc(sc.cron)}</code>`
+  return { hour: `Every hour at :${sc.at.split(":")[1]}`, day: `Every day at ${sc.at}`, weekday: `Every weekday at ${sc.at}`, week: `Every ${sc.on} at ${sc.at}`, month: `On day ${sc.dom} of every month at ${sc.at}` }[sc.every]
+}
+function nextRun(sc) {
+  if (sc.cron) return null
+  const now = new Date(), [h, m] = sc.at.split(":").map(Number), d = new Date(now); d.setSeconds(0, 0)
+  if (sc.every === "hour") { d.setMinutes(m); if (d <= now) d.setHours(d.getHours() + 1); return d }
+  d.setHours(h, m)
+  const ok = x => sc.every === "day" || (sc.every === "weekday" && x.getDay() % 6 !== 0) || (sc.every === "week" && x.getDay() === DAYS.indexOf(sc.on)) || (sc.every === "month" && x.getDate() === +sc.dom)
+  for (let i = 0; i < 400 && (d <= now || !ok(d)); i++) d.setDate(d.getDate() + 1)
+  return d
+}
+function nextText(sc) {
+  const d = nextRun(sc); if (!d) return "per the cron"
+  const mins = Math.round((d - new Date()) / 60000), today = d.toDateString() === new Date().toDateString()
+  return `${today ? "today" : d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" })} ${d.toTimeString().slice(0, 5)} · in ${mins >= 1440 ? Math.floor(mins / 1440) + "d " : ""}${Math.floor(mins % 1440 / 60)}h ${mins % 60}m`
+}
+const schedShort = p => p.schedule ? `<span title="${esc(cronOf(p.schedule))}">⏰ ${schedText(p.schedule).replace(/^Every /, "")}${p.schedule.paused ? " · paused" : ""}</span>` : "—"
+function setSched(id, patch) { const p = proc(id); p.schedule = { ...p.schedule, ...patch }; render() }
+function schedCard(p) {
+  const sc = p.schedule, id = p.id, fields = PROPS[id].start.fields
+  if (!sc) return `<div class="card"><h3>⏰ Schedule</h3><div class="row"><span class="muted grow">No schedule. Runs start when someone presses Start.</span>
+    <button onclick="setSched('${id}',{every:'day',at:'00:00',on:'Mon',dom:1,paused:false,values:{}})">＋ Add a schedule</button></div></div>`
+  const missing = fields.filter(f => f.required && !(sc.values?.[f.name]?.length))
+  const val = f => f.type === "repos" ? `<div class="row" style="flex-wrap:wrap;gap:6px 14px">${["billing", "web", "api", "search", "payments"].map(x => `<label class="row" style="font-weight:500"><input type="checkbox" ${(sc.values[f.name] || []).includes(x) ? "checked" : ""}
+      onchange="const v=proc('${id}').schedule.values;v['${f.name}']=(v['${f.name}']||[]).filter(y=>y!=='${x}').concat(this.checked?['${x}']:[]);render()"> <span class="mono">${x}</span></label>`).join("")}</div>`
+    : f.type === "yesno" ? `<label class="row" style="font-weight:500"><input type="checkbox" ${sc.values[f.name] ? "checked" : ""} onchange="proc('${id}').schedule.values['${f.name}']=this.checked"> Yes</label>`
+    : `<input value="${esc(sc.values[f.name] || "")}" onchange="proc('${id}').schedule.values['${f.name}']=this.value;render()">`
+  return `<div class="card"><h3>⏰ Schedule <span class="grow"></span>${sc.paused ? '<span class="pill p-quiet">Paused</span>' : '<span class="pill p-ready">On</span>'}</h3>
+    <div class="row" style="flex-wrap:wrap">
+      <select style="width:auto" onchange="setSched('${id}',{every:this.value,cron:''})">${EVERY.map(([v, l]) => `<option value="${v}" ${v === sc.every && !sc.cron ? "selected" : ""}>${l}</option>`).join("")}</select>
+      ${sc.every === "week" ? `<span>on</span><select style="width:auto" onchange="setSched('${id}',{on:this.value})">${DAYS.map(d => `<option ${d === sc.on ? "selected" : ""}>${d}</option>`).join("")}</select>` : ""}
+      ${sc.every === "month" ? `<span>on day</span><input type="number" min="1" max="28" style="width:70px" value="${sc.dom}" onchange="setSched('${id}',{dom:+this.value})">` : ""}
+      <span>at</span><input type="time" style="width:auto" value="${sc.at}" onchange="setSched('${id}',{at:this.value})"></div>
+    <div class="kv" style="margin-top:14px"><span class="k">Runs</span><span>${schedText(sc)}</span>
+      <span class="k">Next Run</span><span>${sc.paused ? '<span class="muted">paused</span>' : !p.ready ? '<span style="color:var(--bad)">won\'t start until the check above passes</span>' : nextText(sc)}</span>
+      <span class="k">Cron</span><span><code>${esc(cronOf(sc))}</code> <details style="display:inline-block;margin-left:8px"><summary class="small" style="cursor:pointer;color:var(--acc)">Advanced</summary>
+        <input class="mono" style="margin-top:6px;width:260px" placeholder="minute hour day month weekday" value="${esc(sc.cron || "")}" onchange="setSched('${id}',{cron:this.value.trim()})"></details></span></div>
+    ${fields.length ? `<div class="subsec"><b class="small">Start form for scheduled Runs</b><div class="help">Nobody is there to fill it in, so scheduled Runs use these values.</div>
+      ${fields.map(f => field(esc(f.label || f.name) + (f.required ? "" : ' <span class="muted small" style="font-weight:500">(optional)</span>'), "", "", val(f))).join("")}
+      ${missing.length ? `<div class="warn">Required, so scheduled Runs can't start without it: ${missing.map(f => esc(f.label || f.name)).join(", ")}</div>` : ""}</div>` : ""}
+    <div class="subsec row"><span class="help grow" style="margin:0">Missed while Ants was off or asleep? It runs once when Ants is back, not once per missed time.</span>
+      <button onclick="setSched('${id}',{paused:${!sc.paused}})">${sc.paused ? "Resume" : "Pause"}</button>
+      <button class="danger" onclick="proc('${id}').schedule=null;render()">Remove</button></div></div>`
+}
+const upcoming = () => S.processes.filter(p => p.schedule && !p.schedule.paused && p.ready).map(p => ({ p, at: nextRun(p.schedule) })).sort((a, b) => (a.at || 9e15) - (b.at || 9e15))
+
 function pProcess(id) {
   const p = proc(id); if (!p) return ph("No such Process")
   const fields = PROPS[id].start.fields
@@ -763,6 +831,7 @@ function pProcess(id) {
         : f.type === "yesno" ? `<label class="row" style="font-weight:500"><input type="checkbox" id="f_${f.name}"> Yes</label>`
         : `<input id="f_${f.name}">`)).join("")}
       <p style="margin-top:16px"><button class="primary" ${p.ready ? "" : "disabled"} onclick="startRun('${id}')">Start</button></p></div>
+    ${schedCard(p)}
     <h2>Diagram</h2>${diagramBox("viewer", id)}
     <h2>Runs of this Process</h2>${runsTable(S.runs.filter(r => r.proc === id))}`
 }
@@ -1039,7 +1108,7 @@ function renderProps(pid) {
       ${field("Vault", "Which Vault this Process's Tasks are told about.", "", `<select onchange="(proc('${pid}')||{}).vault=this.value">${[...S.vaults.map(v => v.name), "—"].map(v => `<option ${v === p.vault ? "selected" : ""}>${esc(v)}</option>`).join("")}</select>`)}
       ${field("Source map", "Where repo names in this Process resolve.", "", `<select>${S.sourceMaps.map(v => `<option ${v.name === p.sourceMap ? "selected" : ""}>${esc(v.name)}</option>`).join("")}</select>`)}`
   } else if (t === "bpmn:StartEvent" && ev === "bpmn:TimerEventDefinition") {
-    html = head("Timer start", "e.g. Every Monday 06:00") + explain("Starts a Run on a schedule, with no one pressing Start. The start form's fields come from the defaults below.")
+    html = head("Timer start", "e.g. Every Monday 06:00") + explain(`Starts a Run on a schedule, with no one pressing Start. ${proc(pid) ? `Easier: set it in words under <b>Schedule</b> on <a href="#/processes/${pid}">the Process page</a>.` : "Set it in words on the Process page once it's saved."}`)
       + field("When", "A cron expression: minute, hour, day of month, month, day of week.", "0 6 * * MON  (Mondays at 06:00)", `<input class="mono" value="0 6 * * MON">`)
       + startForm(pid)
   } else if (t === "bpmn:StartEvent") {
