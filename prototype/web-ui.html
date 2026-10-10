@@ -1075,15 +1075,18 @@ function startForm(pid) {
   const F = (PROPS[pid].start ||= { kind: "start", fields: [] }).fields, set = (i, prop, v) => `setField('${pid}',${i},'${prop}',${v})`
   return field("Start form", "What the user fills in to start a Run. Tasks read each field by its name, as <code>${name}</code>.", "", `<div class="listed">${F.map((x, i) => `
     <div class="card" style="padding:10px;margin:6px 0;box-shadow:none">
-      <div class="row"><input class="mono" style="width:42%" placeholder="name, e.g. prompt" value="${esc(x.name)}" onchange="${set(i, "name", "this.value")}">
-        <input placeholder="Label, e.g. Prompt" value="${esc(x.label)}" onchange="${set(i, "label", "this.value")}"><button class="ghost" title="Remove" onclick="PROPS['${pid}'].start.fields.splice(${i},1);renderProps('${pid}')">×</button></div>
+      <div class="row"><input placeholder="Label, e.g. Work branch" value="${esc(x.label)}" onchange="setLabel('${pid}',${i},this.value)"><button class="ghost" title="Remove" onclick="PROPS['${pid}'].start.fields.splice(${i},1);renderProps('${pid}')">×</button></div>
       <div class="row" style="margin-top:6px"><select onchange="${set(i, "type", "this.value")}">${FIELD_TYPES.map(([v, l]) => `<option value="${v}" ${v === x.type ? "selected" : ""}>${l}</option>`).join("")}</select>
         <label class="row small" style="white-space:nowrap;font-weight:500"><input type="checkbox" ${x.required ? "checked" : ""} onchange="${set(i, "required", "this.checked")}"> Required</label></div>
       <input class="small" style="margin-top:6px" placeholder="Help shown under the field" value="${esc(x.help || "")}" onchange="${set(i, "help", "this.value")}">
-      ${x.name ? `<div class="help" style="margin:6px 0 0">Tasks read it as <code>\${${esc(x.name)}}</code></div>` : ""}</div>`).join("")}
+      ${x.editName ? `<div class="row" style="margin-top:6px"><span class="small muted" style="white-space:nowrap">Tasks read it as</span><input class="mono" value="${esc(x.name)}" onchange="PROPS['${pid}'].start.fields[${i}].editName=false;${set(i, "name", "this.value")}"></div>`
+        : x.name ? `<div class="help" style="margin:6px 0 0">Tasks read it as <code>\${${esc(x.name)}}</code> · <a href="javascript:void 0" onclick="PROPS['${pid}'].start.fields[${i}].editName=true;renderProps('${pid}')">change</a></div>` : ""}</div>`).join("")}
     <button onclick="PROPS['${pid}'].start.fields.push({name:'',label:'',type:'text',required:false,help:''});renderProps('${pid}')">＋ Add field</button></div>`)
 }
-function setField(pid, i, prop, v) { PROPS[pid].start.fields[i][prop] = v; renderProps(pid) }
+// "Work branch" -> workBranch. Only while the name is still derived: renaming later would break Tasks that read it.
+const camel = l => l.trim().toLowerCase().replace(/[^a-z0-9]+(.)/g, (m, c) => c.toUpperCase()).replace(/[^a-zA-Z0-9]/g, "").replace(/^[^a-z]+/, "")
+function setLabel(pid, i, v) { const x = PROPS[pid].start.fields[i]; x.label = v; if (!x.name || x.auto) { x.name = camel(v); x.auto = true }; renderProps(pid) }
+function setField(pid, i, prop, v) { if (prop === "name") PROPS[pid].start.fields[i].auto = false; PROPS[pid].start.fields[i][prop] = v; renderProps(pid) }
 
 // Live checks: everything Save and deploy would refuse, shown while drawing. Click one to jump to it.
 const UNSUPPORTED = { "bpmn:ScriptTask": "Ants doesn't run inline scripts; use a Built-in Task.", "bpmn:BusinessRuleTask": "DMN isn't decided yet.",
