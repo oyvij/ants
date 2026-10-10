@@ -38,6 +38,11 @@ _Avoid_: instance, job, execution
 The folder a Run works in, holding its clones and intermediate files, deleted when the Run ends.
 _Avoid_: sandbox, scratch dir
 
+**Vault**:
+The user's store of knowledge Notes, kept across Runs and shared with Varde; only a Skill that opts in
+is told where it is.
+_Avoid_: knowledge base, wiki, memory
+
 **Result**:
 What an Agent hands back when its Task ends: either done, carrying what the Task promised, or stuck,
 saying what it needs from the user.
