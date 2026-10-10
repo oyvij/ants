@@ -17,6 +17,8 @@ both tools must write Notes the other can read; a Vault full of Notes is costly 
 
 - Ants' `vault-format.md` is its own file, kept in step with Varde's by hand. A change to the format
   is made in both.
-- Ants keeps Varde's ADR 0025 promise: only a Skill whose frontmatter has `metadata.varde-vault: true`
-  is told the Vault's and the Source map's paths and given access to the Vault folder; the Vault's
-  path never goes into an environment variable or the Run workspace.
+- Ants keeps Varde's ADR 0025 promise that the Vault is opt-in: only a Task that opts in is told the
+  Vault's and the Source map's paths and given access to the Vault folder; the Vault's path never goes
+  into an environment variable or the Run workspace. A Skill whose frontmatter has
+  `metadata.varde-vault: true` opts in by default; the Task's Vault toggle in the Process has the
+  final say, either way (decided in "How does YOLO answer a round?").

@@ -71,9 +71,14 @@ after the Run ends.
 _Avoid_: log, session, output
 
 **Round**:
-One set of questions a Task asks the user at once, answered together on one page, after which the
-Task resumes its session with the answers.
-_Avoid_: batch, questionnaire
+One set of questions a Task asks at once, answered together by the user, an Agent or the
+recommendations, after which the Task resumes its session with the answers.
+_Avoid_: batch, questionnaire, YOLO
+
+**Answer History**:
+Every question the user answered themselves, with their answer, kept across Runs and Processes so an
+Agent can answer a Round the way the user would.
+_Avoid_: answer log, memory
 
 **Report**:
 What a Run leaves behind once its Run workspace is gone: what was done and which repos it changed.
