@@ -92,6 +92,7 @@
   input:focus, select:focus, textarea:focus { outline: 2px solid var(--accSoft); border-color: var(--acc); }
   input[type=checkbox], input[type=radio] { width: auto; accent-color: var(--acc); }
   .row { display: flex; gap: 8px; align-items: center; } .row > .grow { flex: 1; }
+  .grid2 > .fld, .grid3 > .fld { display: flex; flex-direction: column; } .grid2 > .fld > :last-child, .grid3 > .fld > :last-child { margin-top: auto; }
   .reasons { margin: 8px 0 0; padding-left: 18px; color: var(--bad); }
 
   /* Editors (CodeMirror mounts over data-md / data-json textareas) */
@@ -124,7 +125,7 @@
   .composer .grow { flex: 1; } .composer .ed .cm-editor { min-height: 44px; max-height: 160px; }
 
   /* Diagrams */
-  .dia { position: relative; background: #fff radial-gradient(#d9dde5 1px, transparent 1px) 0 0 / 18px 18px; border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sh); height: 440px; overflow: hidden; }
+  .dia { position: relative; isolation: isolate; background: #fff radial-gradient(#d9dde5 1px, transparent 1px) 0 0 / 18px 18px; border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sh); height: 440px; overflow: hidden; }
   .dia.modeler { height: calc(100vh - 128px); }
   .dia .zoom { position: absolute; right: 12px; top: 12px; display: flex; gap: 4px; z-index: 3; }
   .dia .zoom button { padding: 4px 10px; }
@@ -175,6 +176,12 @@
   .modal .split .md { padding: 20px 28px; border-left: 1px solid var(--line); background: #fcfcfd; font-size: 15px; }
   .toast { position: fixed; top: 16px; right: 16px; z-index: 90; width: 380px; background: #0f172a; color: #e2e8f0; border-radius: 10px; padding: 12px 14px; box-shadow: 0 10px 30px rgba(0,0,0,.25); font-size: 13px; }
 
+  .tgroup { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 700; margin: 16px 0 4px; }
+  .trow { display: grid; grid-template-columns: 190px 1fr auto; gap: 2px 14px; align-items: center; padding: 6px 10px; border-radius: 8px; }
+  .trow:hover { background: #f8f9fb; } .trow.on { background: var(--accSoft); }
+  .trow label { display: flex; gap: 8px; align-items: center; cursor: pointer; } .trow .mono { font-size: 13px; }
+  .tdesc { font-size: 13px; color: #334155; } .twarn { color: #92400e; font-size: 12.5px; }
+  .tlim { grid-column: 1 / -1; padding: 4px 0 6px 28px; } .tlim input { max-width: 420px; }
   .tools { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .tools fieldset { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; margin: 0; }
   .tools legend { font-weight: 700; font-size: 12.5px; padding: 0 4px; }
@@ -228,24 +235,27 @@ const icon = k => `<svg class="i" viewBox="0 0 24 24">${I[k]}</svg>`
 // ---------- in-memory state ----------
 // Claude Code's built-in tools, grouped. Ants ships this list with its version; MCP is off (--strict-mcp-config), so it is complete.
 const MODELS = { claude: ["default", "opus", "sonnet", "haiku"], codex: ["default", "gpt-5", "gpt-5-codex"] }
-// What an Agent may do: six switches over Claude Code's built-in tools (tools-reference, Claude Code 2.1.2xx).
-// Ants passes the result as an explicit allow-list (--tools), so anything not switched on, including tools a later
-// Claude Code adds, stays off. Naming Glob and Grep there also brings them back on macOS and Linux, where they are absent by default.
-const CAPS = [
-  ["read", "Read the code", "Open files, find them by name, search inside them, jump to definitions.", ["Read", "Glob", "Grep", "LSP"], "Only these paths", "src/**"],
-  ["edit", "Change files", "Create and edit files, Jupyter notebooks included.", ["Edit", "Write", "NotebookEdit"], "Only these paths", "src/**"],
-  ["bash", "Run commands", "Builds, tests, git and any other shell command.", ["Bash"], "Only these commands; * matches the rest", "pnpm test"],
-  ["fetch", "Fetch web pages", "Read the page at a URL.", ["WebFetch"], "Only these domains", "docs.spring.io"],
-  ["search", "Search the web", "Run web searches.", ["WebSearch"]],
-  ["agent", "Start Subagents", "Helpers inside this Task's slot, such as Explore.", ["Agent"], "Only these Subagent types", "Explore"],
+// What an Agent may do: one tick box per Claude Code tool (tools-reference, Claude Code 2.1.2xx).
+// Ants passes the ticked tools as an explicit allow-list (--tools), so anything unticked, including tools a later Claude Code
+// adds, stays off. Naming Glob and Grep there also brings them back on macOS and Linux, where they are absent by default.
+// [name, what it does, what Limit narrows, example, note]
+const TOOL_GROUPS = [
+  ["Read the code", [["Read", "Open a file.", "paths", "src/**", "Also limits Glob, Grep and LSP."], ["Glob", "Find files by name."], ["Grep", "Search inside files."], ["LSP", "Jump to definitions and find references."]]],
+  ["Change files", [["Edit", "Change part of a file.", "paths", "src/**", "Also limits Write and NotebookEdit."], ["Write", "Create or overwrite a file."], ["NotebookEdit", "Edit Jupyter notebooks (.ipynb). Only matters if your repos have them."]]],
+  ["Run commands", [["Bash", "Shell commands: builds, tests, git.", "commands", "pnpm test", "* matches the rest, as in git *."]]],
+  ["Web", [["WebFetch", "Read the page at a URL.", "domains", "domain:docs.spring.io"], ["WebSearch", "Search the web."]]],
+  ["Helpers", [["Agent", "Start Subagents inside this Task's slot.", "Subagent types", "Explore"], ["Skill", "Use other Skills besides the Task's own."]]],
 ]
-const ALWAYS_ON = "TaskCreate, TaskGet, TaskList and TaskUpdate: the Agent's own task list, which feeds <b>So far</b>"
+const COMMON_TOOLS = TOOL_GROUPS.flatMap(g => g[1].map(t => t[0]))
+const ALWAYS_ON_TOOLS = ["TaskCreate", "TaskGet", "TaskList", "TaskUpdate"]
 const KNOWN_TOOLS = ["Agent", "Artifact", "AskUserQuestion", "Bash", "CronCreate", "CronDelete", "CronList", "Edit", "EndConversation", "EnterPlanMode", "EnterWorktree",
   "ExitPlanMode", "ExitWorktree", "Glob", "Grep", "ListAgents", "ListMcpResourcesTool", "LSP", "Monitor", "NotebookEdit", "PowerShell", "PushNotification", "Read",
   "ReadMcpResourceTool", "RemoteTrigger", "ReportFindings", "ScheduleWakeup", "SendFeedback", "SendMessage", "SendUserFile", "ShareOnboardingGuide", "Skill",
   "TaskCreate", "TaskGet", "TaskList", "TaskOutput", "TaskStop", "TaskUpdate", "TodoWrite", "ToolSearch", "WaitForMcpServers", "WebFetch", "WebSearch", "Workflow", "Write"]
+const OTHER_TOOLS = KNOWN_TOOLS.filter(t => !COMMON_TOOLS.includes(t) && !ALWAYS_ON_TOOLS.includes(t))
+// Why each of the other tools is usually off for an Agent running unattended in a Run.
 const CAUTION = {
-  AskUserQuestion: "Nobody is at a terminal, so the question goes unanswered. Ask through a Round instead.",
+  AskUserQuestion: "Nobody is at a terminal, so the question goes unanswered. A Round is how an Agent asks.",
   EnterPlanMode: "Plan mode waits for an approval nobody gives.", ExitPlanMode: "Plan mode waits for an approval nobody gives.",
   EnterWorktree: "Moves the Agent out of the Run workspace.", ExitWorktree: "Moves the Agent out of the Run workspace.",
   CronCreate: "Its schedule dies with the session. Schedule the Process instead.", CronList: "Its schedule dies with the session.", CronDelete: "Its schedule dies with the session.", ScheduleWakeup: "Its schedule dies with the session.",
@@ -253,34 +263,11 @@ const CAUTION = {
   SendMessage: "Reaches your other Claude sessions on this machine.", ListAgents: "Reaches your other Claude sessions on this machine.",
   Workflow: "Starts many background agents outside the slot cap.", Monitor: "Background work is off for Agents.", TaskOutput: "Background work is off for Agents.", TaskStop: "Background work is off for Agents.",
   PowerShell: "Windows only.", Artifact: "Publishes to claude.ai.", SendUserFile: "Sends files outside the Run.", ShareOnboardingGuide: "Uploads to claude.ai.",
-  EndConversation: "Ends the session without a Result.", SendFeedback: "Queues feedback nobody reviews.",
+  EndConversation: "Ends the session without a Result.", SendFeedback: "Queues feedback nobody reviews.", ReportFindings: "Draws review findings in Claude Code's own screen, which nobody sees.",
+  TodoWrite: "Replaced by the task-list tools, which are always on.",
   ToolSearch: "Only useful with MCP, which Ants turns off.", WaitForMcpServers: "Only useful with MCP, which Ants turns off.",
   ListMcpResourcesTool: "Only useful with MCP, which Ants turns off.", ReadMcpResourceTool: "Only useful with MCP, which Ants turns off.",
 }
-function toolNote(t) {
-  const base = t.replace(/\(.*$/, ""), cap = CAPS.find(c => c[3].includes(base))
-  if (t.startsWith("mcp__")) return ["warn", "An MCP tool. Ants starts Agents with MCP off, so it needs an MCP server Ants doesn't configure yet."]
-  if (CAUTION[base]) return ["warn", CAUTION[base]]
-  if (cap && base === t) return ["dup", `Already covered by <b>${cap[1]}</b> above.`]
-  if (cap) return ["ok", `A rule narrowing <b>${cap[1]}</b>.`]
-  if (KNOWN_TOOLS.includes(base)) return ["ok", ""]
-  return ["unknown", "Not a tool Ants knows. It's passed to Claude Code as written; the check before a Run says if the CLI doesn't have it."]
-}
-function extraTools(d, ro) {
-  const list = d.extra ||= [], notes = list.map(t => [t, ...toolNote(t)])
-  const colour = { warn: "background:var(--waitSoft);color:#92400e", dup: "background:var(--line2);color:#475569", unknown: "background:var(--line2);color:#475569", ok: "" }
-  return `<div class="subsec"><b class="small">More tools</b><div class="help">Any other Claude Code tool by name, or a rule such as <code>WebFetch(domain:github.com)</code> or <code>Bash(git status)</code>. Ants passes them on as written.</div>
-    <div class="chipsel">${notes.map(([t, k]) => `<span class="c" style="${colour[k]}">${k === "warn" ? "⚠ " : k === "unknown" ? "? " : ""}<span class="mono">${esc(t)}</span>${ro ? "" : `<button style="color:inherit" onclick="S.draft.extra=S.draft.extra.filter(x=>x!=='${esc(t)}');formRender()">×</button>`}</span>`).join("")}
-      ${ro ? "" : `<input list="toolList" placeholder="Add a tool or rule…" onkeydown="if(event.key==='Enter'){this.dispatchEvent(new Event('change'));event.preventDefault()}" onchange="const v=this.value.trim();if(v&&!S.draft.extra.includes(v)){S.draft.extra.push(v);formRender()}">`}</div>
-    <datalist id="toolList">${KNOWN_TOOLS.filter(t => !CAPS.some(c => c[3].includes(t)) && !list.includes(t)).map(t => `<option value="${t}">${esc(CAUTION[t] || "")}</option>`).join("")}</datalist>
-    ${notes.filter(([, k, n]) => n && k !== "ok").map(([t, k, n]) => `<div class="small" style="margin-top:6px;${k === "warn" ? "color:#92400e" : "color:var(--muted)"}"><span class="mono">${esc(t)}</span>: ${n}</div>`).join("")}</div>`
-}
-const ALWAYS_OFF = [["Ants does the job itself", "AskUserQuestion (a Round), EnterWorktree and ExitWorktree (the Run workspace), CronCreate, CronDelete, CronList, ScheduleWakeup and RemoteTrigger (schedules), PushNotification (the Notification list)"],
-  ["they need a person at a terminal", "EnterPlanMode, ExitPlanMode, EndConversation, SendFeedback"],
-  ["they reach outside the Run", "SendMessage, ListAgents, Workflow, Artifact, SendUserFile, ShareOnboardingGuide, ReportFindings"],
-  ["background work is off", "Monitor, TaskOutput, TaskStop"],
-  ["MCP is off", "ToolSearch, WaitForMcpServers, ListMcpResourcesTool, ReadMcpResourceTool and every MCP server's tools"],
-  ["Windows only", "PowerShell"]]
 const S = {
   loggedIn: true, version: "0.4.2", update: "available", paused: { claude: "15:45" }, cap: 3,
   vaults: [{ name: "Work", path: "~/.varde/knowledge", def: true }, { name: "Side projects", path: "~/notes/vault" }],
@@ -304,7 +291,7 @@ const S = {
     { name: "griller", cli: "claude", folder: "shipped", model: "opus", tools: ["Read", "Glob", "Grep", "Agent"], skills: ["grilling"], desc: "Asks Rounds of questions until the plan is clear." },
     { name: "answerer", cli: "claude", folder: "shipped", model: "sonnet", tools: ["Read", "Grep"], skills: ["answer-round"], desc: "Answers a Round the way the user would, from the Answer History and the Vault." },
     { name: "writer", cli: "claude", folder: "shipped", model: "sonnet", tools: ["Read", "Glob", "Grep", "Write", "Edit"], skills: ["to-spec", "to-tickets", "walkthrough", "report"], desc: "Writes specs, tickets, walkthroughs and Reports." },
-    { name: "implementer", cli: "claude", folder: "~/.ants/agents", model: "opus", tools: ["Read", "Glob", "Grep", "Edit", "Write", "Bash", "Agent", "TodoWrite"], bash: ["git *", "./gradlew *", "pnpm *"], extra: ["Skill", "WebFetch(domain:docs.spring.io)"], skills: ["implement", "tdd"], desc: "Implements one ticket, test first, and commits." },
+    { name: "implementer", cli: "claude", folder: "~/.ants/agents", model: "opus", tools: ["Read", "Glob", "Grep", "Edit", "Write", "Bash", "Agent", "Skill", "WebFetch"], limits: { Bash: ["git *", "./gradlew *", "pnpm *"], WebFetch: ["domain:docs.spring.io"] }, skills: ["implement", "tdd"], desc: "Implements one ticket, test first, and commits." },
     { name: "reviewer", cli: "codex", folder: "~/.ants/agents", model: "gpt-5", sandbox: "read-only", skills: ["to-spec"], desc: "A second opinion on a spec, from another model." },
     { name: "vault-keeper", cli: "claude", folder: "~/.varde/ai/skills/workflows/knowledge-vault/agents", model: "sonnet", tools: ["Read", "Write", "Edit", "Glob", "Grep"], skills: ["init-vault", "search-knowledge", "update-knowledge"], desc: "Varde's Vault agent." },
   ],
@@ -562,7 +549,7 @@ function newRound() {
 
 const ph = (title, { crumbs = [], acts = "", sub = "" } = {}) =>
   `${crumbs.length ? `<div class="crumbs">${crumbs.join(" / ")}</div>` : ""}<div class="ph"><h1>${title}</h1><div class="acts">${acts}</div>${sub ? `<div class="sub">${sub}</div>` : ""}</div>`
-const field = (label, help, eg, control) => `<label class="f">${label}</label><div class="help">${help}${eg ? ` &nbsp;e.g. <span class="eg">${esc(eg)}</span>` : ""}</div>${control}`
+const field = (label, help, eg, control) => `<div class="fld"><label class="f">${label}</label><div class="help">${help}${eg ? ` &nbsp;e.g. <span class="eg">${esc(eg)}</span>` : ""}</div>${control}</div>`
 const md = (id, value, ph = "", tall) => `<textarea data-md ${tall ? "data-tall" : ""} id="${id}" placeholder="${esc(ph)}">${esc(value)}</textarea>`
 const mdView = s => `<div class="md" data-mdview>${esc(s)}</div>`
 
@@ -913,32 +900,44 @@ function pAgent(name) {
     + agentForm(S.draft, ro)
 }
 function agentForm(d, ro) {
-  const capOn = cap => cap[3].some(t => d.tools.includes(t))
-  const toolsCtl = d.cli === "claude" ? `<div class="tools">${CAPS.map(cap => { const [k, name, help, tools, limLabel, eg] = cap, on = capOn(cap), L = capLimit(k, d)
-      return `<fieldset><label><input type="checkbox" ${ro} ${on ? "checked" : ""} onchange="toggleCap('${k}',this.checked)"><div><b>${name}</b><span>${help}</span><span class="mono" style="font-size:11px">${tools.join(" · ")}</span></div></label>
-        ${on && limLabel ? `<div class="help" style="margin:4px 0">${limLabel}. None listed means all.</div>
-          ${L.map((v, i) => `<div class="row" style="margin-bottom:4px"><input class="mono grow" ${ro} placeholder="e.g. ${eg}" value="${esc(v)}" onchange="capLimit('${k}')[${i}]=this.value">${ro ? "" : `<button class="ghost" title="Remove" onclick="capLimit('${k}').splice(${i},1);formRender()">×</button>`}</div>`).join("")}
-          ${ro ? "" : `<button onclick="capLimit('${k}').push('');formRender()">＋ Add</button>`}` : ""}</fieldset>` }).join("")}</div>
-      <details class="small" style="margin-top:12px"><summary style="cursor:pointer;color:var(--acc)">And Claude Code's other tools?</summary>
-        <p><b>Always on:</b> ${ALWAYS_ON}.</p><p style="margin-bottom:4px"><b>Off unless you add them under More tools:</b></p>
-        <ul style="margin:0;padding-left:18px">${ALWAYS_OFF.map(([why, list]) => `<li><span class="mono" style="font-size:11.5px">${list}</span>: ${why}.</li>`).join("")}</ul></details>`
-    : `<select ${ro}><option ${d.sandbox === "read-only" ? "selected" : ""}>read-only: reads files, changes nothing</option><option>workspace-write: changes files in the Run workspace</option><option>danger-full-access</option></select>`
-  return `<div class="grid2" style="grid-template-columns:1.2fr 1fr"><div class="card"><h3>Who it is</h3>
-      ${field("Name", "How Tasks name it. Unique across all Agent folders.", "implementer", `<input ${ro} value="${esc(d.name)}" onchange="S.draft.name=this.value">`)}
+  return `<div class="card"><h3>Who it is</h3>
+      <div class="grid2">${field("Name", "How Tasks name it. Unique across all Agent folders.", "implementer", `<input ${ro} value="${esc(d.name)}" onchange="S.draft.name=this.value">`)}
       ${field("Description", "One line: what this Agent is for. Shown in the modeler's Agent dropdown.", "Implements one ticket, test first, and commits.", `<input ${ro} value="${esc(d.desc)}" onchange="S.draft.desc=this.value">`)}
-      <div class="grid2">${field("CLI", "Which AI CLI runs it, on Ants' own login.", "", `<select ${ro} onchange="S.draft.cli=this.value;S.draft.model='default';formRender()"><option ${d.cli === "claude" ? "selected" : ""}>claude</option><option ${d.cli === "codex" ? "selected" : ""}>codex</option></select>`)}
+      ${field("CLI", "Which AI CLI runs it, on Ants' own login.", "", `<select ${ro} onchange="S.draft.cli=this.value;S.draft.model='default';formRender()"><option ${d.cli === "claude" ? "selected" : ""}>claude</option><option ${d.cli === "codex" ? "selected" : ""}>codex</option></select>`)}
       ${field("Model", "The models this CLI offers. Default follows the CLI.", "", `<select ${ro} onchange="S.draft.model=this.value">${MODELS[d.cli].map(m => `<option ${m === d.model ? "selected" : ""}>${m}</option>`).join("")}</select>`)}</div>
       ${field("Skills it runs", "The jobs this Agent may do. A Task picks one of them; the modeler only offers these.", "implement, tdd", chipSel(d.skills, ro))}</div>
-    <div class="card"><h3>What it may do</h3><div class="help">${d.cli === "claude" ? "Each switch covers some of Claude Code's tools, named small under it. Anything off is refused, so an Agent without <b>Change files</b> can't edit code whatever its Skill says." : "Codex has no tool list; its sandbox decides what it may touch."}</div>${toolsCtl}${d.cli === "claude" ? extraTools(d, ro) : ""}</div></div>
+    <div class="card"><h3>What it may do</h3>${d.cli === "claude" ? toolsSection(d, ro)
+      : `<div class="help">Codex has no tool list; its sandbox decides what it may touch.</div><select ${ro}><option ${d.sandbox === "read-only" ? "selected" : ""}>read-only: reads files, changes nothing</option><option>workspace-write: changes files in the Run workspace</option><option>danger-full-access</option></select>`}</div>
     <div class="card"><h3>Standing instructions</h3><div class="help">Who the Agent is and how it works, whatever the Skill. Markdown; <b>Expand</b> gives you a big editor with a live preview.</div>${md("instr", d.instr ?? `You are the **${d.name || "agent"}**.\n\n## How you work\n\n- Keep changes small\n- Never push`, "", true)}${ro ? '<input type="hidden" disabled>' : ""}</div>`
 }
+function toolRow(d, ro, name, desc, limKind, eg, limNote, warn) {
+  const on = d.tools.includes(name), L = d.limits?.[name] || [], open = on && limKind && (L.length || d.limOpen === name)
+  return `<div class="trow ${on ? "on" : ""}"><label><input type="checkbox" ${ro} ${on ? "checked" : ""} onchange="toggleTool('${esc(name)}',this.checked)"> <b class="mono">${esc(name)}</b></label>
+    <span class="tdesc">${desc}${warn ? `<span class="twarn">${desc ? " " : ""}⚠ ${warn}</span>` : ""}</span>
+    ${on && limKind && !ro && !open ? `<button class="ghost small" onclick="S.draft.limOpen='${name}';((S.draft.limits||={})['${name}']||=['']);formRender()">Limit…</button>` : on && limKind && L.filter(Boolean).length ? `<span class="small muted">limited</span>` : "<span></span>"}
+    ${open ? `<div class="tlim"><div class="help">Only these ${limKind}. ${limNote || ""} None listed means all.</div>
+      ${L.map((v, i) => `<div class="row" style="margin-bottom:4px"><input class="mono grow" ${ro} placeholder="e.g. ${eg}" value="${esc(v)}" onchange="S.draft.limits['${name}'][${i}]=this.value">${ro ? "" : `<button class="ghost" title="Remove" onclick="S.draft.limits['${name}'].splice(${i},1);formRender()">×</button>`}</div>`).join("")}
+      ${ro ? "" : `<button onclick="S.draft.limits['${name}'].push('');formRender()">＋ Add</button>`}</div>` : ""}</div>`
+}
+function toolsSection(d, ro) {
+  const custom = d.tools.filter(t => !KNOWN_TOOLS.includes(t)), othersOn = OTHER_TOOLS.filter(t => d.tools.includes(t)).length
+  const customNote = t => t.startsWith("mcp__") ? "An MCP tool. Ants starts Agents with MCP off, so it needs an MCP server Ants doesn't configure yet." : "Not a tool Ants knows. Passed to Claude Code as written; the check before a Run says if the CLI doesn't have it."
+  return `<div class="help">Tick each tool this Agent may use. Anything unticked is refused: an Agent without <b>Edit</b> and <b>Write</b> can't change code, whatever its Skill says.</div>
+    ${TOOL_GROUPS.map(([g, ts]) => `<div class="tgroup">${g}</div>${ts.map(([n, desc, lk, eg, ln]) => toolRow(d, ro, n, desc, lk, eg, ln)).join("")}`).join("")}
+    <details ${othersOn || d.showOthers ? "open" : ""} ontoggle="S.draft.showOthers=this.open" style="margin-top:16px">
+      <summary class="small" style="cursor:pointer;color:var(--acc)">Claude Code's other ${OTHER_TOOLS.length} tools${othersOn ? ` (${othersOn} ticked)` : ""}: usually off for Agents, and why</summary>
+      ${OTHER_TOOLS.map(n => toolRow(d, ro, n, "", null, null, null, CAUTION[n])).join("")}</details>
+    ${custom.length ? `<div class="tgroup">Added by you</div>${custom.map(n => toolRow(d, ro, n, "", null, null, null, customNote(n))).join("")}` : ""}
+    ${ro ? "" : `<div class="row" style="margin-top:14px"><input class="mono" placeholder="A tool Ants doesn't list yet, by name" onkeydown="if(event.key==='Enter'){addTool(this.value);event.preventDefault()}"><button style="white-space:nowrap" onclick="addTool(this.previousElementSibling.value)">＋ Add tool</button></div>`}
+    <div class="help" style="margin-top:12px">Always on: <span class="mono">${ALWAYS_ON_TOOLS.join(", ")}</span>, the Agent's own task list, which feeds <b>So far</b>.</div>`
+}
+function toggleTool(n, v) { S.draft.tools = v ? [...new Set([...S.draft.tools, n])] : S.draft.tools.filter(t => t !== n); if (!v && S.draft.limits) delete S.draft.limits[n]; formRender() }
+function addTool(v) { v = (v || "").trim(); if (!v || S.draft.tools.includes(v)) return; S.draft.tools.push(v); if (OTHER_TOOLS.includes(v)) S.draft.showOthers = true; formRender() }
 function chipSel(list, ro) {
   return `<div class="chipsel">${list.map(s => `<span class="c">${esc(s)}${ro ? "" : `<button onclick="S.draft.skills=S.draft.skills.filter(x=>x!=='${s}');formRender()">×</button>`}</span>`).join("")}
     ${ro ? "" : `<input list="skillList" placeholder="Add a Skill…" onchange="if(skillOf(this.value)&&!S.draft.skills.includes(this.value)){S.draft.skills.push(this.value);formRender()}">`}</div>
     <datalist id="skillList">${S.skills.map(s => `<option value="${s.name}">${esc(s.desc)}</option>`).join("")}</datalist>`
 }
-function toggleCap(k, v) { const cap = CAPS.find(x => x[0] === k); S.draft.tools = v ? [...new Set([...S.draft.tools, ...cap[3]])] : S.draft.tools.filter(t => !cap[3].includes(t)); formRender() }
-const capLimit = (k, d = S.draft) => k === "bash" ? (d.bash ||= []) : ((d.limits ||= {})[k] ||= [])
 const schemaOf = fields => JSON.stringify({ type: "object", required: fields, properties: Object.fromEntries(fields.map(f => [f, { type: f.endsWith("s") ? "array" : "string", description: `What ${f} holds` }])) }, null, 2)
 function pSkill(name) {
   const x = skillOf(name) || { name: "", folder: "~/.ants/skills", desc: "", fields: [], isNew: true }, ro = isOwn(x) ? "" : "disabled"
