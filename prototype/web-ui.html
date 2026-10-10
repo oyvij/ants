@@ -238,7 +238,7 @@ const S = {
     { name: "griller", cli: "claude", folder: "shipped", model: "opus", tools: ["Read", "Glob", "Grep", "Agent"], skills: ["grilling"], desc: "Asks Rounds of questions until the plan is clear." },
     { name: "answerer", cli: "claude", folder: "shipped", model: "sonnet", tools: ["Read", "Grep"], skills: ["answer-round"], desc: "Answers a Round the way the user would, from the Answer History and the Vault." },
     { name: "writer", cli: "claude", folder: "shipped", model: "sonnet", tools: ["Read", "Glob", "Grep", "Write", "Edit"], skills: ["to-spec", "to-tickets", "walkthrough", "report"], desc: "Writes specs, tickets, walkthroughs and Reports." },
-    { name: "implementer", cli: "claude", folder: "~/.ants/agents", model: "opus", tools: ["Read", "Glob", "Grep", "Edit", "Write", "Bash", "Agent", "TodoWrite"], bash: "git *, ./gradlew *, pnpm *", skills: ["implement", "tdd"], desc: "Implements one ticket, test first, and commits." },
+    { name: "implementer", cli: "claude", folder: "~/.ants/agents", model: "opus", tools: ["Read", "Glob", "Grep", "Edit", "Write", "Bash", "Agent", "TodoWrite"], bash: ["git *", "./gradlew *", "pnpm *"], skills: ["implement", "tdd"], desc: "Implements one ticket, test first, and commits." },
     { name: "reviewer", cli: "codex", folder: "~/.ants/agents", model: "gpt-5", sandbox: "read-only", skills: ["to-spec"], desc: "A second opinion on a spec, from another model." },
     { name: "vault-keeper", cli: "claude", folder: "~/.varde/ai/skills/workflows/knowledge-vault/agents", model: "sonnet", tools: ["Read", "Write", "Edit", "Glob", "Grep"], skills: ["init-vault", "search-knowledge", "update-knowledge"], desc: "Varde's Vault agent." },
   ],
@@ -351,6 +351,15 @@ const PATTERNS = {
     { start: { kind: "start", fields: ["prompt"] }, a: A("", "", ["${prompt}"]), b: A("", "", ["${prompt}"]), review: { kind: "user", what: "Approve", shows: "a" } }, {}],
 }
 Object.entries(PATTERNS).forEach(([id, [, , nodes, flows, props]]) => { XML[id] = bpmnXml(id.replace("-", "_"), nodes, flows); PROPS[id] = props })
+const FIELD_TYPES = [["text", "One line of text"], ["markdown", "Markdown text"], ["repos", "Repos from the Source map"], ["yesno", "Yes / no"]]
+const FIELD_DEFAULTS = {
+  prompt: { label: "Prompt", type: "markdown", required: true, help: "What should this Run find its way to?" },
+  branch: { label: "Work branch", type: "text", required: false, help: "The scout suggests one if left empty." },
+  spec: { label: "Spec", type: "markdown", required: true, help: "The approved spec, or a path to it." },
+  repos: { label: "Repos", type: "repos", required: true, help: "Picked from this Process's Source map." },
+  vault: { label: "Vault folder", type: "text", required: true, help: "Where the new Vault goes." },
+}
+Object.values(PROPS).forEach(P => { if (P.start) P.start.fields = P.start.fields.map(n => ({ name: n, ...(FIELD_DEFAULTS[n] || { label: n, type: "text", required: false, help: "" }) })) })
 
 // ---------- Runs ----------
 // Task st: running | queued | paused | round | waiting | stuck | failed | stopped | done
@@ -719,9 +728,11 @@ function pProcess(id) {
     + `<div class="card">${p.ready ? `<span class="pill p-ready">Ready</span> <span class="muted small">&nbsp;Names, schemas, CLI commands, Source map, paths and the login all check out.</span>`
       : `<span class="pill p-failed">Can't start</span><ul class="reasons">${p.reasons.map(x => `<li>${esc(x)}</li>`).join("")}</ul>`}</div>
     <div class="grid2" style="grid-template-columns:1fr 1.4fr"><div class="card"><h3>Start a Run</h3>
-      ${fields.map(f => f === "prompt" || f === "spec" ? field(f === "prompt" ? "Prompt" : "Spec", f === "prompt" ? "What should this Run find its way to? Markdown." : "The approved spec, or a path to it.", "", md("f_" + f, ""))
-        : f === "branch" ? field("Work branch", "Optional; the scout suggests one.", "ants/invoice-csv-export", `<input id="branch">`)
-        : f === "repos" ? field("Repos", "Names from the Source map, comma separated.", "billing, web", `<input id="repos">`) : field("Vault folder", "", "", `<input value="~/.ants/vault">`)).join("")}
+      ${fields.map(f => field(esc(f.label || f.name) + (f.required ? "" : ' <span class="muted small" style="font-weight:500">(optional)</span>'), esc(f.help || ""), "",
+        f.type === "markdown" ? md("f_" + f.name, "")
+        : f.type === "repos" ? `<div class="row" style="flex-wrap:wrap;gap:6px 14px">${["billing", "web", "api", "search", "payments"].map(x => `<label class="row" style="font-weight:500"><input type="checkbox" name="f_${f.name}" value="${x}"> <span class="mono">${x}</span></label>`).join("")}</div>`
+        : f.type === "yesno" ? `<label class="row" style="font-weight:500"><input type="checkbox" id="f_${f.name}"> Yes</label>`
+        : `<input id="f_${f.name}">`)).join("")}
       <p style="margin-top:16px"><button class="primary" ${p.ready ? "" : "disabled"} onclick="startRun('${id}')">Start</button></p></div>
       <div>${diagramBox("viewer", id)}</div></div>
     <h2>Runs of this Process</h2>${runsTable(S.runs.filter(r => r.proc === id))}`
@@ -756,7 +767,9 @@ function pAgent(name) {
   if (!S.draft || S.draft.name !== x.name) S.draft = JSON.parse(JSON.stringify(x))
   const d = S.draft, ro = isOwn(x) ? "" : "disabled"
   const toolsCtl = d.cli === "claude" ? `<div class="tools">${Object.entries(TOOLS).map(([g, ts]) => `<fieldset><legend>${g}</legend>${ts.map(([n, h]) => `<label><input type="checkbox" ${ro} ${d.tools.includes(n) ? "checked" : ""} onchange="toggleTool('${n}',this.checked)"><div><b class="mono">${n}</b><span>${h}</span></div></label>`).join("")}
-      ${g === "Run commands" && d.tools.includes("Bash") ? `<input ${ro} placeholder="Allowed commands, e.g. git *, pnpm test" value="${esc(d.bash || "")}" style="margin-top:4px">` : ""}</fieldset>`).join("")}</div>`
+      ${g === "Run commands" && d.tools.includes("Bash") ? `<div class="help" style="margin:6px 0 4px">Allowed commands, one per row; <code>*</code> matches the rest. None listed means any command.</div>
+        ${(d.bash || []).map((c, i) => `<div class="row" style="margin-bottom:4px"><input class="mono grow" ${ro} placeholder="e.g. pnpm test" value="${esc(c)}" onchange="S.draft.bash[${i}]=this.value">${ro ? "" : `<button class="ghost" title="Remove" onclick="S.draft.bash.splice(${i},1);render()">×</button>`}</div>`).join("")}
+        ${ro ? "" : `<button onclick="(S.draft.bash||=[]).push('');render()">＋ Add command</button>`}` : ""}</fieldset>`).join("")}</div>`
     : `<select ${ro}><option ${d.sandbox === "read-only" ? "selected" : ""}>read-only: reads files, changes nothing</option><option>workspace-write: changes files in the Run workspace</option><option>danger-full-access</option></select>`
   return ph(esc(x.name || "New Agent"), { crumbs: [`<a href="#/agents">Agents</a>`, esc(x.name || "New")],
       acts: ro ? `<span class="muted small">Read-only (${esc(folderLabel(x.folder))})</span><button onclick="S.toast='Copied into ~/.ants/agents as ${esc(x.name)}-copy.';render()">Copy</button>` : `${x.isNew ? "" : `<button class="danger">Delete</button>`}<button class="primary">Save</button>`,
@@ -833,7 +846,7 @@ function cancelRun(rid) { if (!confirm("Cancel the Run? It ends as failed and ke
 function dismiss(rid) { S.runs = S.runs.filter(r => r.id !== rid); go("#/runs") }
 function tryNow(cli) { delete S.paused[cli]; S.runs.flatMap(r => r.tasks).filter(t => t.st === "paused").forEach(t => t.st = "queued"); render() }
 function startRun(pid) {
-  const id = (document.getElementById("branch")?.value || "").replace(/^ants\//, "") || "new-run-" + (S.runs.length + 1)
+  const id = (document.getElementById("f_branch")?.value || "").replace(/^ants\//, "") || "new-run-" + (S.runs.length + 1)
   const first = { "setup-vault": T("init", "Init the Vault", "queued"), implement: T("clone", "Clone repos", "done") }[pid] || T("scout", "Scout", "queued")
   S.runs.unshift({ id, proc: pid, state: "live", started: "now", repos: [], tasks: [first] }); go(`#/runs/${id}`)
 }
@@ -926,7 +939,7 @@ const fieldsOf = (id, p) => p.kind === "agent" ? skillOf(p.skill)?.fields || [] 
   : p.what === "Clone repos" ? ["repos"] : p.what === "Accept recommendations" ? ["answers"] : []
 function offered(pid, el) {
   const P = PROPS[pid], reg = bpmn.get("elementRegistry"), out = []
-  ;(P.start?.fields || []).forEach(f => out.push(["${" + f + "}", "start form"]))
+  ;(P.start?.fields || []).forEach(f => f.name && out.push(["${" + f.name + "}", "start form"]))
   upstream(el).forEach(id => { const p = P[id]; if (p && p.kind !== "start") fieldsOf(id, p).forEach(f => out.push([`\${${id}.${f}}`, reg.get(id)?.businessObject.name || id])) })
   return out
 }
@@ -1059,10 +1072,18 @@ function renderProps(pid) {
   renderChecks(pid)
 }
 function startForm(pid) {
-  const P = PROPS[pid]
-  return field("Start form", "Fields the user fills in to start a Run. Tasks read them as <code>${field}</code>.", "prompt, branch",
-    `<input value="${esc((P.start?.fields || []).join(", "))}" onchange="PROPS['${pid}'].start={kind:'start',fields:this.value.split(',').map(s=>s.trim()).filter(Boolean)};renderChecks('${pid}')">`)
+  const F = (PROPS[pid].start ||= { kind: "start", fields: [] }).fields, set = (i, prop, v) => `setField('${pid}',${i},'${prop}',${v})`
+  return field("Start form", "What the user fills in to start a Run. Tasks read each field by its name, as <code>${name}</code>.", "", `<div class="listed">${F.map((x, i) => `
+    <div class="card" style="padding:10px;margin:6px 0;box-shadow:none">
+      <div class="row"><input class="mono" style="width:42%" placeholder="name, e.g. prompt" value="${esc(x.name)}" onchange="${set(i, "name", "this.value")}">
+        <input placeholder="Label, e.g. Prompt" value="${esc(x.label)}" onchange="${set(i, "label", "this.value")}"><button class="ghost" title="Remove" onclick="PROPS['${pid}'].start.fields.splice(${i},1);renderProps('${pid}')">×</button></div>
+      <div class="row" style="margin-top:6px"><select onchange="${set(i, "type", "this.value")}">${FIELD_TYPES.map(([v, l]) => `<option value="${v}" ${v === x.type ? "selected" : ""}>${l}</option>`).join("")}</select>
+        <label class="row small" style="white-space:nowrap;font-weight:500"><input type="checkbox" ${x.required ? "checked" : ""} onchange="${set(i, "required", "this.checked")}"> Required</label></div>
+      <input class="small" style="margin-top:6px" placeholder="Help shown under the field" value="${esc(x.help || "")}" onchange="${set(i, "help", "this.value")}">
+      ${x.name ? `<div class="help" style="margin:6px 0 0">Tasks read it as <code>\${${esc(x.name)}}</code></div>` : ""}</div>`).join("")}
+    <button onclick="PROPS['${pid}'].start.fields.push({name:'',label:'',type:'text',required:false,help:''});renderProps('${pid}')">＋ Add field</button></div>`)
 }
+function setField(pid, i, prop, v) { PROPS[pid].start.fields[i][prop] = v; renderProps(pid) }
 
 // Live checks: everything Save and deploy would refuse, shown while drawing. Click one to jump to it.
 const UNSUPPORTED = { "bpmn:ScriptTask": "Ants doesn't run inline scripts; use a Built-in Task.", "bpmn:BusinessRuleTask": "DMN isn't decided yet.",
@@ -1073,6 +1094,11 @@ function checks(pid) {
   const P = PROPS[pid] ||= {}, C = CONDS[pid] ||= {}, out = []
   const els = bpmn.get("elementRegistry").getAll().filter(e => e.type !== "label" && !e.waypoints && !["bpmn:Process", "bpmn:TextAnnotation", "bpmn:Group", "bpmn:Association"].includes(e.type) && e.parent)
   if (!els.some(e => e.type === "bpmn:StartEvent")) out.push({ msg: "Add a start event: it is where a Run begins." })
+  const startId = els.find(e => e.type === "bpmn:StartEvent")?.id, names = (P.start?.fields || []).map(f => f.name)
+  names.forEach((n, i) => {
+    if (!/^[a-z][A-Za-z0-9]*$/.test(n)) out.push({ id: startId, msg: `<b>Start form</b>: "${esc(n) || "(no name)"}" can't be read as \${…}. Use letters and digits, starting with a lowercase letter.` })
+    else if (names.indexOf(n) !== i) out.push({ id: startId, msg: `<b>Start form</b>: two fields are called "${esc(n)}".` })
+  })
   if (!els.some(e => e.type === "bpmn:EndEvent")) out.push({ msg: "Add an end event so a Run can finish." })
   els.forEach(e => {
     const n = nameOf(e), ev = e.businessObject.eventDefinitions?.[0]?.$type, p = P[e.id], add = msg => out.push({ id: e.id, msg: `<b>${esc(n)}</b>: ${msg}` })
