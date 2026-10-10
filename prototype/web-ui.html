@@ -1,0 +1,1735 @@
+<!doctype html>
+<!-- PROTOTYPE, throwaway. Answers "Prototype the web UI's pages and how the user moves between them" (oyvij/ants#20).
+     Round 2, after the user picked variant B (sidebar, home is a dashboard) from round 1 (this file's history).
+     Every page of Ants' web UI, clickable, state in memory. Real libraries from a CDN so the feel is right:
+       bpmn-js (the modeler and the Run diagram), CodeMirror 6 (markdown and JSON editors), marked (markdown view).
+     Open it: open prototype/web-ui.html  (needs the network for the CDN) -->
+<html lang="en">
+<meta charset="utf-8">
+<title>Ants (prototype)</title>
+<link rel="stylesheet" href="https://unpkg.com/bpmn-js@17/dist/assets/diagram-js.css">
+<link rel="stylesheet" href="https://unpkg.com/bpmn-js@17/dist/assets/bpmn-js.css">
+<link rel="stylesheet" href="https://unpkg.com/bpmn-js@17/dist/assets/bpmn-font/css/bpmn.css">
+<script src="https://unpkg.com/bpmn-js@17/dist/bpmn-navigated-viewer.development.js"></script>
+<script>window.BpmnViewer = window.BpmnJS</script>
+<script src="https://unpkg.com/bpmn-js@17/dist/bpmn-modeler.development.js"></script>
+<script>window.BpmnModeler = window.BpmnJS</script>
+<style>
+  :root {
+    --bg: #f4f5f7; --panel: #fff; --text: #0f172a; --muted: #64748b; --line: #e4e7ec; --line2: #f0f2f5;
+    --side: #0e1016; --side2: #171a22; --sideText: #9aa3b2;
+    --acc: #4f46e5; --accSoft: #eef2ff; --accText: #3730a3;
+    --run: #2563eb; --runSoft: #e0ecff; --wait: #d97706; --waitSoft: #fff4e0; --ok: #16a34a; --okSoft: #e7f8ed;
+    --bad: #dc2626; --badSoft: #fdecec; --vio: #7c3aed; --vioSoft: #f3edff;
+    --panel2: #fafbfc; --hover: #f6f7f9; --field: #fff; --fieldLine: #d5d9e0; --text2: #334155; --text3: #475569;
+    --warnText: #92400e; --okText: #166534; --badText: #991b1b; --codeBg: #fff; --dimCode: #b8bec9; --lnum: #b0b7c3; --band: #fcfcfd;
+    --composer: rgba(255,255,255,.96); --dotgrid: #d9dde5; --citeC: #0e7490; --invC: #b45309; --accHover: #4338ca;
+    --chev: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2712%27 height=%2712%27 viewBox=%270 0 24 24%27 fill=%27none%27 stroke=%27%2364748b%27 stroke-width=%272.5%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27%3E%3Cpath d=%27m6 9 6 6 6-6%27/%3E%3C/svg%3E");
+    --r: 10px; --sh: 0 1px 2px rgba(16,24,40,.05), 0 1px 3px rgba(16,24,40,.06);
+    font: 14px/1.5 Inter, ui-sans-serif, system-ui, -apple-system, sans-serif; color: var(--text);
+  }
+  html.dark {
+    color-scheme: dark;
+    --bg: #0b0d12; --panel: #13161d; --panel2: #171b23; --hover: #1b1f28; --field: #0f1218; --fieldLine: #2c3240; --text: #e6e8ee; --text2: #c3c8d2; --text3: #9aa3b2;
+    --muted: #8b94a5; --line: #252a35; --line2: #1d212a; --side: #07080b; --side2: #12141a;
+    --acc: #818cf8; --accSoft: #1f2245; --accText: #c7cdfc; --accHover: #6366f1;
+    --run: #60a5fa; --runSoft: #13233d; --wait: #f59e0b; --waitSoft: #2a1f0c; --ok: #4ade80; --okSoft: #0f2a1a; --bad: #f87171; --badSoft: #2c1416; --vio: #a78bfa; --vioSoft: #211a38;
+    --warnText: #fbbf24; --okText: #86efac; --badText: #fca5a5; --codeBg: #0f1218; --dimCode: #4b5363; --lnum: #4b5363; --band: #161a22;
+    --chev: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2712%27 height=%2712%27 viewBox=%270 0 24 24%27 fill=%27none%27 stroke=%27%238b94a5%27 stroke-width=%272.5%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27%3E%3Cpath d=%27m6 9 6 6 6-6%27/%3E%3C/svg%3E");
+    --composer: rgba(19,22,29,.94); --dotgrid: #252b38; --citeC: #67e8f9; --invC: #fbbf24; --sh: 0 1px 2px rgba(0,0,0,.45);
+  }
+  html.dark .dia .djs-container > svg, html.dark .djs-palette, html.dark .djs-context-pad, html.dark .djs-popup { filter: invert(.9) hue-rotate(180deg); }
+  html.dark .cm-cursor { border-left-color: var(--text) !important; } html.dark .cm-selectionBackground { background: #2b3350 !important; }
+  html.dark .modal-bg { background: rgba(0,0,0,.6); } html.dark .toast { border: 1px solid var(--line); }
+  * { box-sizing: border-box; } [hidden] { display: none !important; }
+  body { margin: 0; background: var(--bg); padding-left: 232px; }
+  a { color: var(--acc); text-decoration: none; } a:hover { text-decoration: underline; }
+  code, .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12.5px; }
+  code { background: var(--line2); padding: 1px 5px; border-radius: 5px; }
+  svg.i { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+  /* Sidebar */
+  .side { position: fixed; inset: 0 auto 0 0; width: 232px; background: var(--side); color: var(--sideText); display: flex; flex-direction: column; padding: 16px 12px; gap: 2px; z-index: 10; }
+  .logo { display: flex; align-items: center; gap: 10px; color: #fff; font-weight: 700; font-size: 16px; padding: 4px 10px 18px; letter-spacing: .01em; }
+  .logo b { width: 28px; height: 28px; border-radius: 8px; background: linear-gradient(135deg, #6366f1, #a855f7); display: grid; place-items: center; font-size: 14px; }
+  .side a { display: flex; align-items: center; gap: 10px; color: var(--sideText); padding: 7px 10px; border-radius: 8px; font-weight: 500; }
+  .side a:hover { background: var(--side2); color: #e5e7eb; text-decoration: none; }
+  .side a.on { background: #232733; color: #fff; }
+  .side .grp { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: #5b6475; padding: 16px 10px 4px; font-weight: 600; }
+  .side .n { margin-left: auto; background: var(--wait); color: #fff; font-size: 11px; font-weight: 700; border-radius: 10px; padding: 0 7px; line-height: 18px; }
+  .side .m { margin-left: auto; font-size: 12px; color: #6b7385; }
+  .side .bottom { margin-top: auto; display: flex; flex-direction: column; gap: 8px; }
+  .notice { background: var(--side2); border: 1px solid #262a35; border-radius: 9px; padding: 8px 10px; font-size: 12px; color: #cbd2dd; }
+  .notice button { margin-top: 6px; width: 100%; }
+  .notice.pause { border-color: #4a3a12; } .notice.pause b { color: #fbbf24; }
+  .notice.upd b { color: #93c5fd; }
+
+  /* Page */
+  main { max-width: 1160px; margin: 0 auto; padding: 32px 40px 160px; }
+  main.full { max-width: none; padding: 20px 24px 24px; }
+  .crumbs { font-size: 12.5px; color: var(--muted); margin-bottom: 6px; } .crumbs a { color: var(--muted); }
+  .ph { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
+  .ph h1 { font-size: 22px; letter-spacing: -.01em; margin: 0; } .ph .sub { width: 100%; color: var(--muted); margin-top: -6px; }
+  .ph .acts { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  h2 { font-size: 14px; margin: 32px 0 12px; letter-spacing: .01em; }
+  .muted { color: var(--muted); } .small { font-size: 12.5px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sh); padding: 20px 22px; margin-bottom: 16px; }
+  .card h3 { margin: 0 0 14px; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 20px; } .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px 20px; }
+  .stat { font-size: 26px; font-weight: 700; letter-spacing: -.02em; } .stat small { font-size: 13px; color: var(--muted); font-weight: 500; }
+
+  table { width: 100%; border-collapse: separate; border-spacing: 0; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sh); overflow: hidden; }
+  th, td { text-align: left; padding: 12px 16px; border-bottom: 1px solid var(--line2); vertical-align: middle; }
+  tr:last-child td { border-bottom: 0; }
+  th { font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; background: var(--panel2); }
+  tr.click { cursor: pointer; } tr.click:hover td { background: var(--hover); }
+
+  .pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; padding: 2px 9px; border-radius: 20px; white-space: nowrap; }
+  .pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .p-running { background: var(--runSoft); color: var(--run); } .p-running::before { animation: pulse 1.4s infinite; }
+  .p-waiting { background: var(--waitSoft); color: var(--wait); } .p-done, .p-ready { background: var(--okSoft); color: var(--ok); }
+  .p-failed { background: var(--badSoft); color: var(--bad); } .p-quiet { background: var(--line2); color: var(--text3); }
+  .p-stuck { background: var(--vioSoft); color: var(--vio); }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(37,99,235,.55); } 70% { box-shadow: 0 0 0 7px rgba(37,99,235,0); } 100% { box-shadow: 0 0 0 0 rgba(37,99,235,0); } }
+  .tag { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 9px 0 7px; border-radius: 6px; font-size: 12px; font-weight: 600; letter-spacing: .01em; white-space: nowrap; border: 1px solid; vertical-align: middle; }
+  .tag i { font-style: normal; font-size: 10.5px; font-weight: 800; width: 14px; height: 14px; display: inline-grid; place-items: center; border-radius: 4px; background: currentColor; -webkit-text-fill-color: var(--panel); }
+  .t-questions, .t-approve { background: var(--waitSoft); color: var(--wait); border-color: color-mix(in srgb, var(--wait) 35%, transparent); }
+  .t-stuck, .t-stopped { background: var(--vioSoft); color: var(--vio); border-color: color-mix(in srgb, var(--vio) 35%, transparent); }
+  .t-failed { background: var(--badSoft); color: var(--bad); border-color: color-mix(in srgb, var(--bad) 35%, transparent); }
+  .t-vault, .t-ISSUE, .t-NOTE, .t-SUGGESTION, .t-COMMENT { background: var(--accSoft); color: var(--accText); border-color: color-mix(in srgb, var(--acc) 30%, transparent); }
+  .ent { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; vertical-align: middle; } .ent svg.i { width: 15px; height: 15px; }
+  .ent-agent svg.i { color: var(--acc); } .ent-skill svg.i { color: var(--citeC); } .ent a { color: inherit; } .ent a:hover { color: var(--acc); }
+  h1 .ent svg.i { width: 22px; height: 22px; } .ph h1 .ent { gap: 9px; }
+  .live { display: inline-flex; align-items: center; gap: 7px; } .live i { width: 8px; height: 8px; border-radius: 50%; background: var(--run); animation: pulse 1.4s infinite; }
+
+  button, .btn { font: inherit; font-weight: 600; font-size: 13px; padding: 7px 14px; border-radius: 8px; cursor: pointer; background: var(--panel); border: 1px solid var(--fieldLine); color: var(--text); box-shadow: 0 1px 1px rgba(16,24,40,.04); }
+  button, .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; line-height: 1.2; white-space: nowrap; }
+  button.small, .ghost.small { min-height: 28px; font-size: 12.5px; }
+  input:not([type=checkbox]):not([type=radio]), select { min-height: 36px; }
+  .ed .bar button, .tabs button, .chipsel .c button, .side button, .cmd button, .dia .zoom button, .notice button { min-height: 0; }
+  button:hover { background: var(--hover); }
+  button.primary { background: var(--acc); border-color: var(--acc); color: #fff; } button.primary:hover { background: var(--accHover); }
+  button.danger { color: var(--bad); } button.ghost { border-color: transparent; box-shadow: none; background: none; color: var(--acc); padding: 4px 6px; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  .side button { background: #262a35; border-color: #333846; color: #e5e7eb; font-size: 12px; padding: 5px 10px; }
+
+  label.f svg.i { width: 15px; height: 15px; vertical-align: -3px; color: var(--muted); }
+  button svg.i { width: 15px; height: 15px; }
+  label.f { display: block; font-weight: 600; font-size: 13px; margin: 18px 0 4px; }
+  .help { color: var(--muted); font-size: 12.5px; margin-bottom: 8px; line-height: 1.5; } .help .eg { font-family: ui-monospace, monospace; font-size: 12px; color: var(--text2); background: var(--line2); padding: 1px 6px; border-radius: 5px; }
+  input, select, textarea { font: inherit; padding: 7px 10px; border: 1px solid var(--fieldLine); border-radius: 8px; background: var(--field); color: var(--text); width: 100%; }
+  select { appearance: none; -webkit-appearance: none; padding-right: 34px; background-image: var(--chev); background-repeat: no-repeat; background-position: right 12px center; background-size: 12px; cursor: pointer; }
+  select[multiple] { background-image: none; padding-right: 10px; }
+  input:focus, select:focus, textarea:focus { outline: 2px solid var(--accSoft); border-color: var(--acc); }
+  input[type=checkbox], input[type=radio] { width: auto; accent-color: var(--acc); }
+  .row { display: flex; gap: 10px; align-items: center; } .row > select { width: auto; } .row > .grow { flex: 1; }
+  .grid2 > .fld, .grid3 > .fld { display: flex; flex-direction: column; } .grid2 > .fld > :last-child, .grid3 > .fld > :last-child { margin-top: auto; }
+  .reasons { margin: 8px 0 0; padding-left: 18px; color: var(--bad); }
+
+  /* Editors (CodeMirror mounts over data-md / data-json textareas) */
+  .ed { border: 1px solid var(--fieldLine); border-radius: 8px; background: var(--field); overflow: hidden; } .ed .cm-editor { color: var(--text); }
+  .ed:focus-within { border-color: var(--acc); outline: 2px solid var(--accSoft); }
+  .ed .bar { display: flex; gap: 2px; align-items: center; padding: 4px 6px; border-bottom: 1px solid var(--line2); background: var(--panel2); }
+  .ed .bar button { padding: 2px 8px; font-size: 12px; border: 0; box-shadow: none; background: none; color: var(--text3); }
+  .ed .bar button:hover { background: var(--line2); } .ed .bar button.on { background: var(--accSoft); color: var(--accText); }
+  .ed .bar .sp { flex: 1; } .ed .bar .st { font-size: 12px; padding-right: 6px; }
+  .ed .cm-editor { min-height: 130px; max-height: 520px; } .ed.tall .cm-editor { min-height: 300px; max-height: 680px; } .ed .cm-editor.cm-focused { outline: none; } .ed .cm-scroller { font-family: inherit; line-height: 1.55; }
+  .ed .cm-content { min-height: 128px; cursor: text; } .ed.tall .cm-content { min-height: 298px; } .composer .ed .cm-content { min-height: 42px; }
+  .modal .split .cm-content { min-height: calc(86vh - 80px); } .ed .cm-scroller { cursor: text; }
+  .ed.json .cm-scroller { font-family: ui-monospace, monospace; font-size: 12.5px; }
+  .ed .prev { padding: 10px 14px; min-height: 90px; }
+  .md h1, .md h2, .md h3 { margin: 12px 0 6px; } .md p { margin: 6px 0; } .md pre { background: #0f172a; color: #e2e8f0; padding: 12px 14px; border-radius: 8px; overflow: auto; font-size: 12.5px; }
+  .md pre code { background: none; padding: 0; color: inherit; } .md .add { color: #86efac; } .md .del { color: #fca5a5; } .md .hunk { color: #93c5fd; }
+  textarea[data-md], textarea[data-json] { min-height: 90px; }
+
+  /* Transcript */
+  .tr { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sh); padding: 10px 18px; font-size: 13.5px; }
+  .tr > * { margin: 8px 0; }
+  .tr .tool { font-family: ui-monospace, monospace; font-size: 12.5px; color: var(--text2); } .tr .tool::before { content: "⏺ "; color: var(--ok); }
+  .tr .sys { color: var(--muted); font-size: 12px; text-align: center; }
+  .tr .div { border-top: 1px dashed var(--line); padding-top: 6px; color: var(--muted); font-size: 12px; }
+  .tr .you { background: var(--accSoft); padding: 8px 12px; border-radius: 8px; } .tr .you::before { content: "You"; display: block; font-weight: 700; font-size: 12px; color: var(--accText); }
+  .tr details summary { cursor: pointer; color: var(--muted); }
+  .tr details.sub { border-left: 3px solid var(--vio); padding-left: 12px; } .tr details.sub > summary { color: var(--vio); font-weight: 600; }
+  .chips { display: flex; gap: 6px; margin: 0 0 12px; flex-wrap: wrap; }
+  .chip { font-size: 12px; font-weight: 600; background: var(--vioSoft); color: var(--vio); border-radius: 20px; padding: 3px 11px; cursor: pointer; }
+  .composer { position: fixed; bottom: 0; left: 232px; right: 0; background: var(--composer); backdrop-filter: blur(6px); border-top: 1px solid var(--line); z-index: 5; }
+  .composer > div { max-width: 1120px; margin: 0 auto; padding: 12px 32px; display: flex; gap: 8px; align-items: flex-end; }
+  .composer .grow { flex: 1; } .composer .ed .cm-editor { min-height: 44px; max-height: 160px; }
+
+  /* Diagrams */
+  .dia { position: relative; isolation: isolate; background: var(--panel) radial-gradient(var(--dotgrid) 1px, transparent 1px) 0 0 / 18px 18px; border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sh); height: 440px; overflow: hidden; }
+  .dia.modeler { height: calc(100vh - 128px); }
+  .dia .zoom { position: absolute; right: 12px; top: 12px; display: flex; gap: 4px; z-index: 3; }
+  .dia .zoom button { padding: 4px 10px; }
+  .dia .legend { position: absolute; left: 12px; bottom: 12px; z-index: 3; display: flex; gap: 6px; }
+  .dia:fullscreen { height: 100vh; border-radius: 0; }
+  .dia .nolib { padding: 40px; color: var(--muted); }
+  .ants-agent .djs-visual > rect { fill: #eef2ff !important; stroke: #6366f1 !important; }
+  .ants-user .djs-visual > rect { fill: #fff8eb !important; stroke: #d97706 !important; }
+  .ants-builtin .djs-visual > rect { fill: #f8fafc !important; stroke: #64748b !important; }
+  .m-done .djs-visual > rect { fill: #ecfdf3 !important; stroke: #16a34a !important; }
+  .m-running .djs-visual > rect { fill: #e0ecff !important; stroke: #2563eb !important; stroke-width: 3px !important; }
+  .m-waiting .djs-visual > rect { fill: #fff4e0 !important; stroke: #d97706 !important; stroke-width: 3px !important; }
+  .m-failed .djs-visual > rect { fill: #fdecec !important; stroke: #dc2626 !important; stroke-width: 3px !important; }
+  .m-quiet .djs-visual > rect { stroke-dasharray: 5 4; stroke: #475569 !important; stroke-width: 2px !important; }
+  .ov { font: 600 11px Inter, system-ui, sans-serif; padding: 2px 8px; border-radius: 20px; white-space: nowrap; display: inline-flex; align-items: center; gap: 5px; box-shadow: var(--sh); }
+  .ov.running { background: var(--run); color: #fff; } .ov.running i { width: 7px; height: 7px; border-radius: 50%; background: #fff; animation: pulse 1.4s infinite; }
+  .ov.waiting { background: var(--wait); color: #fff; } .ov.failed { background: var(--bad); color: #fff; } .ov.quiet { background: #475569; color: #fff; }
+  .ov.done { background: var(--ok); color: #fff; padding: 2px 6px; }
+
+  .ants-pal-agent { color: #4f46e5 !important; } .ants-pal-user { color: #d97706 !important; } .ants-pal-builtin { color: #475569 !important; }
+  .djs-palette .entry { border-radius: 4px; }
+  .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: 460px; background: var(--panel); border-left: 1px solid var(--line); box-shadow: -12px 0 32px rgba(15,23,42,.12); z-index: 30; display: flex; flex-direction: column; animation: slidein .2s ease-out; }
+  @keyframes slidein { from { transform: translateX(40px); opacity: 0; } }
+  .drawer .dh { padding: 16px 18px 10px; border-bottom: 1px solid var(--line2); } .drawer .db { padding: 14px 18px; overflow: auto; flex: 1; } .drawer .df { padding: 12px 18px; border-top: 1px solid var(--line); }
+  .drawer .tr { box-shadow: none; max-height: 300px; overflow: auto; }
+  .sofar { background: var(--accSoft); border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; } .sofar p { margin: 4px 0 0; }
+  .todo { font-size: 13px; padding: 2px 0; } .todo.done { color: var(--muted); text-decoration: line-through; } .todo.now { font-weight: 600; color: var(--run); }
+  .modelerWrap { display: grid; grid-template-columns: 1fr 340px; gap: 14px; }
+  .props { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sh); padding: 16px; height: calc(100vh - 128px); overflow: auto; }
+  .props h3 { margin: 0; font-size: 15px; } .props .kind { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  .warn { background: var(--waitSoft); color: var(--warnText); border-radius: 8px; padding: 8px 10px; font-size: 12.5px; margin-top: 8px; }
+  .okbox { background: var(--okSoft); color: var(--okText); border-radius: 8px; padding: 8px 10px; font-size: 12.5px; margin-top: 8px; }
+  .toast code { background: #1e293b; color: #e2e8f0; }
+  .kv { display: grid; grid-template-columns: 130px 1fr; gap: 12px 16px; align-items: baseline; }
+  .kv > .k { color: var(--muted); font-size: 12.5px; font-weight: 600; }
+  .meter { display: grid; grid-template-columns: 60px 1fr 40px; align-items: center; gap: 10px; font-size: 12.5px; margin: 2px 0; }
+  .meter .track { height: 7px; background: var(--line2); border-radius: 4px; overflow: hidden; } .meter .fill { height: 100%; background: var(--acc); border-radius: 4px; } .meter .fill.hot { background: var(--wait); }
+  .cmd { display: flex; align-items: center; gap: 8px; background: #0f172a; border-radius: 8px; padding: 6px 6px 6px 12px; margin: 6px 0 10px; }
+  .cmd code { background: none; color: #e2e8f0; flex: 1; overflow-x: auto; white-space: nowrap; padding: 0; }
+  .cmd button { background: #1e293b; border-color: #334155; color: #e2e8f0; padding: 4px 10px; font-size: 12px; }
+  .subsec { border-top: 1px solid var(--line2); margin-top: 16px; padding-top: 14px; }
+  .modal-bg { position: fixed; inset: 0; background: rgba(15,23,42,.5); z-index: 80; display: grid; place-items: center; animation: fadein .15s; }
+  .modal { width: min(1200px, 92vw); height: 86vh; background: var(--panel); border-radius: 12px; display: flex; flex-direction: column; box-shadow: 0 24px 60px rgba(0,0,0,.3); overflow: hidden; }
+  .modal .mh { display: flex; align-items: center; gap: 10px; padding: 12px 18px; border-bottom: 1px solid var(--line); }
+  .modal .mb { flex: 1; overflow: auto; padding: 24px 40px; font-size: 15px; } .modal .mb.md { max-width: 820px; margin: 0 auto; width: 100%; }
+  .modal .split { display: grid; grid-template-columns: 1fr 1fr; flex: 1; min-height: 0; }
+  .modal .split > div { overflow: auto; } .modal .split .cm-editor { min-height: 100%; max-height: none; font-size: 15px; } .modal .split .cm-scroller { padding: 12px 8px; }
+  .modal .split .md { padding: 20px 28px; border-left: 1px solid var(--line); background: var(--band); font-size: 15px; }
+  .toast { position: fixed; top: 16px; right: 16px; z-index: 90; width: 380px; background: #0f172a; color: #e2e8f0; border-radius: 10px; padding: 12px 14px; box-shadow: 0 10px 30px rgba(0,0,0,.25); font-size: 13px; }
+
+  .tgroup { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 700; margin: 16px 0 4px; }
+  .trow { display: grid; grid-template-columns: 190px 1fr auto; gap: 2px 14px; align-items: center; padding: 6px 10px; border-radius: 8px; }
+  .trow:hover { background: var(--hover); } .trow.on { background: var(--accSoft); }
+  .trow label { display: flex; gap: 8px; align-items: center; cursor: pointer; } .trow .mono { font-size: 13px; }
+  .tdesc { font-size: 13px; color: var(--text2); } .twarn { color: var(--warnText); font-size: 12.5px; }
+  .tlim { grid-column: 1 / -1; padding: 4px 0 6px 28px; } .tlim input { max-width: 420px; }
+  .tools { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .tools fieldset { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; margin: 0; }
+  .tools legend { font-weight: 700; font-size: 12.5px; padding: 0 4px; }
+  .tools label { display: flex; gap: 8px; align-items: flex-start; padding: 4px 0; font-size: 13px; cursor: pointer; }
+  .tools label span { color: var(--muted); font-size: 12px; display: block; }
+  .chipsel { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; border: 1px solid var(--fieldLine); border-radius: 8px; padding: 6px; background: var(--field); }
+  .chipsel .c { background: var(--accSoft); color: var(--accText); font-weight: 600; font-size: 12.5px; border-radius: 6px; padding: 2px 4px 2px 8px; display: inline-flex; gap: 4px; align-items: center; }
+  .chipsel .c svg.i { width: 13px; height: 13px; color: var(--citeC); }
+  .chipsel .c button { border: 0; background: none; box-shadow: none; padding: 0 4px; color: var(--accText); }
+  .chipsel input { border: 0; outline: 0; flex: 1; min-width: 160px; padding: 4px; min-height: 0; background: none; }
+  .listed .row { margin-bottom: 6px; }
+
+  .storyview { display: grid; grid-template-columns: 280px 1fr; gap: 20px; align-items: start; }
+  .spine { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sh); padding: 18px; position: sticky; top: 16px; }
+  .spine .stitle { font-weight: 700; font-size: 15px; line-height: 1.4; margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--line2); }
+  .spine .srow { display: flex; align-items: baseline; gap: 10px; padding: 8px 10px; margin: 0 -10px; border-radius: 8px; color: var(--text); font-size: 13.5px; } .spine .srow .cnt { margin-left: auto; color: var(--muted); font-size: 12px; white-space: nowrap; } .spine .srow:hover { background: var(--line2); text-decoration: none; }
+  .spine .srow.on { background: var(--accSoft); font-weight: 600; } .spine .srem { margin-top: 14px; border-top: 1px solid var(--line2); padding-top: 12px; font-size: 12.5px; } .spine .srem .rf { display: flex; justify-content: space-between; padding: 3px 0; color: var(--text2); }
+  .sover { padding: 12px 0; border-top: 1px solid var(--line2); } .sover > div { margin-top: 3px; }
+  .walkgrid { display: grid; grid-template-columns: 180px minmax(0, 1fr); box-shadow: var(--sh); gap: 0; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+  .smenu { background: var(--panel2); border-right: 1px solid var(--line); padding: 8px 0; } .smenu a { display: block; padding: 8px 16px; font-size: 13px; color: var(--muted); }
+  .smenu a.on { background: var(--text); color: var(--panel); font-weight: 700; } .smenu a:hover { text-decoration: none; }
+  .cfile { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--line2); font-size: 12.5px; }
+  .code { font: 12.5px/1.75 ui-monospace, Menlo, monospace; padding: 10px 0; overflow-x: auto; background: var(--codeBg); }
+  .cl { display: grid; grid-template-columns: 44px 3px 1fr; gap: 12px; white-space: pre; padding-right: 16px; } .cl .ln { text-align: right; color: var(--lnum); }
+  .cl.dim .tx { color: var(--dimCode); } .cl.site.changed .bar { background: #eab308; } .cl.site.context .bar { background: #3b82f6; } .cl.site .tx { color: var(--text); }
+  .cl.add { background: var(--okSoft); } .cl.add .tx { color: var(--okText); } .cl.del { background: var(--badSoft); } .cl.del .tx { color: var(--badText); text-decoration: line-through; }
+  .band { border-top: 1px solid var(--line); padding: 16px 18px; background: var(--band); }
+  .band .claim { font-size: 15px; font-weight: 600; } .band .stale { background: var(--waitSoft); color: var(--warnText); font-size: 11px; font-weight: 800; padding: 1px 6px; border-radius: 4px; letter-spacing: .05em; }
+  .vals { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 10px; font-size: 12.5px; } .vals .cited { color: var(--citeC); } .vals .inv { color: var(--invC); }
+  .pred { margin-top: 14px; background: var(--vioSoft); border-radius: 8px; padding: 10px 12px; font-size: 13px; }
+  .scomment { margin-top: 12px; font-size: 12.5px; background: var(--waitSoft); padding: 6px 10px; border-radius: 6px; }
+  kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; color: var(--muted); background: var(--panel); display: inline-block; line-height: 16px; margin-left: 4px; vertical-align: 1px; font-weight: 500; }
+  .bandacts { display: flex; align-items: center; gap: 10px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line2); }
+  .tabs { display: flex; gap: 4px; margin-bottom: 18px; border-bottom: 1px solid var(--line); }
+  .tabs button { border: 0; box-shadow: none; background: none; border-radius: 0; padding: 10px 16px; color: var(--muted); border-bottom: 2px solid transparent; }
+  .tabs button.on { color: var(--text); border-bottom-color: var(--acc); }
+  .walk { display: grid; grid-template-columns: 220px 1fr; gap: 18px; }
+  .walk nav { position: sticky; top: 20px; align-self: start; display: flex; flex-direction: column; gap: 2px; }
+  .walk nav a { color: var(--text); padding: 6px 10px; border-radius: 8px; font-size: 13px; } .walk nav a:hover { background: var(--panel); text-decoration: none; }
+
+  /* Liveness: what a running Agent looks like everywhere it appears */
+  .spin { display: inline-block; width: 1em; text-align: center; color: var(--run); font-weight: 700; }
+  .side .spin { color: #93c5fd; }
+  .shimmer { background: linear-gradient(90deg, var(--run) 0%, var(--run) 35%, #a5c8ff 50%, var(--run) 65%, var(--run) 100%); background-size: 250% 100%;
+    -webkit-background-clip: text; background-clip: text; color: transparent; animation: shim 2s linear infinite; font-weight: 600; }
+  @keyframes shim { from { background-position: 100% 0; } to { background-position: -150% 0; } }
+  .status { display: flex; gap: 6px; align-items: baseline; padding: 6px 0 2px; font-size: 13.5px; }
+  .tr .new { animation: fadein .35s ease-out; } @keyframes fadein { from { opacity: 0; transform: translateY(4px); } }
+  .caret::after { content: "▍"; color: var(--run); animation: blink 1s steps(2) infinite; } @keyframes blink { 50% { opacity: 0; } }
+  .num { font-variant-numeric: tabular-nums; }
+  .flash { animation: flash 1.2s ease-out; } @keyframes flash { from { background: #fff4e0; } }
+
+  details.proto { position: fixed; bottom: 12px; right: 12px; z-index: 60; max-width: 34vw; max-height: 50vh; overflow: auto; background: #f03e3e; color: #fff; border-radius: 8px; padding: 6px 12px; font-size: 12px; }
+  details.proto pre { background: #0003; padding: 8px; border-radius: 6px; }
+</style>
+
+<div id="side"></div>
+<div id="app"></div>
+<div id="drawer"></div>
+<details class="proto"><summary>Prototype state</summary><pre id="state"></pre></details>
+
+<script>
+// ---------- icons ----------
+const I = {
+  home: '<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
+  bell: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
+  runs: '<circle cx="12" cy="12" r="9"/><path d="m10 8.5 5 3.5-5 3.5z"/>',
+  proc: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><path d="M6.5 10v3.5A2.5 2.5 0 0 0 9 16h5"/>',
+  agent: '<rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 8V4M9 13v1M15 13v1"/>',
+  skill: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>',
+  gear: '<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/>',
+  out: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>',
+  moon: '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+}
+const THEME_KEY = "ants-theme", hasStore = typeof localStorage !== "undefined"
+let theme = (hasStore && localStorage.getItem(THEME_KEY)) || (typeof matchMedia !== "undefined" && matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
+const applyTheme = () => document.documentElement?.classList.toggle("dark", theme === "dark")
+function toggleTheme() { theme = theme === "dark" ? "light" : "dark"; if (hasStore) localStorage.setItem(THEME_KEY, theme); applyTheme(); renderSide() }
+applyTheme()
+const ent = (kind, name, href) => `<span class="ent ent-${kind}">${icon(kind)}${href ? `<a href="${href}">${esc(name)}</a>` : esc(name)}</span>`
+const agentName = (n, link = true) => ent("agent", n, link ? `#/agents/${n}` : "")
+const skillName = (n, link = true) => ent("skill", n, link ? `#/skills/${n}` : "")
+const icon = k => `<svg class="i" viewBox="0 0 24 24">${I[k]}</svg>`
+
+// ---------- in-memory state ----------
+// Claude Code's built-in tools, grouped. Ants ships this list with its version; MCP is off (--strict-mcp-config), so it is complete.
+// Claude models: Anthropic's public "Model status" table (platform.claude.com/docs/en/about-claude/model-deprecations.md),
+// fetched with Ants' update check every 6 hours. No login, no API key. Retired models drop off. Snapshot of 2026-10-11.
+const CLAUDE_MODELS = [
+  ["claude-fable-5-1", "Active"], ["claude-fable-5", "Active"], ["claude-mythos-5-1", "Active"], ["claude-mythos-5", "Active"], ["claude-mythos-preview", "Deprecated", "To be announced"],
+  ["claude-opus-5-5", "Active"], ["claude-opus-5", "Active"], ["claude-opus-4-8", "Active"], ["claude-opus-4-7", "Active"], ["claude-opus-4-6", "Active"], ["claude-opus-4-5-20251101", "Active"],
+  ["claude-sonnet-5-5", "Active"], ["claude-sonnet-5", "Active"], ["claude-sonnet-4-6", "Active"], ["claude-sonnet-4-5-20250929", "Deprecated", "30 Nov 2026"],
+  ["claude-haiku-5-5", "Active"], ["claude-haiku-4-5-20251001", "Active"],
+]
+// What each alias resolved to on the last Run that used it (the CLI reports the model in its first stream event).
+const ALIAS_NOW = { opus: "claude-opus-5-5", sonnet: "claude-sonnet-5-5", haiku: "claude-haiku-5-5", fable: "claude-fable-5-1" }
+const modelName = id => { const m = id.match(/^claude-([a-z]+)-(.*?)(-\d{8})?$/); if (!m) return id
+  const [, fam, ver] = m; return fam[0].toUpperCase() + fam.slice(1) + " " + (/^\d/.test(ver) ? ver.replace(/-/g, ".") : ver) }
+const CODEX_MODELS = ["default", "gpt-5", "gpt-5-codex"]
+const S_MODELS_CHECKED = "08:12"
+function modelSelect(d, ro) {
+  if (d.cli !== "claude") return `<select ${ro} onchange="S.draft.model=this.value">${CODEX_MODELS.map(m => `<option ${m === d.model ? "selected" : ""}>${m}</option>`).join("")}</select>
+    <div class="help" style="margin-top:4px">Codex's models ship with Ants. Check during the build whether <code>codex</code> can list them itself.</div>`
+  const known = ["default", ...Object.keys(ALIAS_NOW), ...CLAUDE_MODELS.map(m => m[0])], other = d.model && !known.includes(d.model)
+  const opt = (v, label) => `<option value="${v}" ${v === d.model ? "selected" : ""}>${label}</option>`
+  const dep = CLAUDE_MODELS.find(m => m[0] === d.model && m[1] === "Deprecated")
+  return `<select ${ro} onchange="if(this.value==='__other'){S.draft.model='';S.draft.otherModel=true}else{S.draft.model=this.value;S.draft.otherModel=false};formRender()">
+      ${opt("default", "default · whatever the CLI picks")}
+      <optgroup label="Always the newest">${Object.entries(ALIAS_NOW).map(([a, id]) => opt(a, `${a} · newest ${a[0].toUpperCase() + a.slice(1)}, now ${modelName(id)}`)).join("")}</optgroup>
+      <optgroup label="A fixed version">${CLAUDE_MODELS.filter(m => m[1] === "Active").map(([id]) => opt(id, `${modelName(id)} · ${id}`)).join("")}</optgroup>
+      <optgroup label="Deprecated: still runs, retiring">${CLAUDE_MODELS.filter(m => m[1] === "Deprecated").map(([id, , when]) => opt(id, `${modelName(id)} · ${id} · retires ${when}`)).join("")}</optgroup>
+      <option value="__other" ${other || d.otherModel ? "selected" : ""}>Other model ID…</option></select>
+    ${other || d.otherModel ? `<input class="mono" style="margin-top:6px" ${ro} placeholder="e.g. claude-opus-6" value="${esc(d.model || "")}" onchange="S.draft.model=this.value.trim();formRender()">
+      <div class="help" style="margin-top:4px">Not on Anthropic's list yet. The check before a Run tries it once on your login.</div>` : ""}
+    ${dep ? `<div class="warn">Deprecated: it retires ${dep[2]}. Pick a newer version, or <b>opus</b> / <b>sonnet</b> to always get the newest.</div>` : ""}
+    <div class="help" style="margin-top:6px">From Anthropic's public model list, refreshed with Ants' update check (last ${S_MODELS_CHECKED}). <button class="ghost small" onclick="toast('Checked: no new models.')">Check now</button></div>`
+}
+// What an Agent may do: one tick box per Claude Code tool (tools-reference, Claude Code 2.1.2xx).
+// Ants passes the ticked tools as an explicit allow-list (--tools), so anything unticked, including tools a later Claude Code
+// adds, stays off. Naming Glob and Grep there also brings them back on macOS and Linux, where they are absent by default.
+// [name, what it does, what Limit narrows, example, note]
+const TOOL_GROUPS = [
+  ["Read the code", [["Read", "Open a file.", "paths", "src/**", "Also limits Glob, Grep and LSP."], ["Glob", "Find files by name."], ["Grep", "Search inside files."], ["LSP", "Jump to definitions and find references."]]],
+  ["Change files", [["Edit", "Change part of a file.", "paths", "src/**", "Also limits Write and NotebookEdit."], ["Write", "Create or overwrite a file."], ["NotebookEdit", "Edit Jupyter notebooks (.ipynb). Only matters if your repos have them."]]],
+  ["Run commands", [["Bash", "Shell commands: builds, tests, git.", "commands", "pnpm test", "* matches the rest, as in git *."]]],
+  ["Web", [["WebFetch", "Read the page at a URL.", "domains", "domain:docs.spring.io"], ["WebSearch", "Search the web."]]],
+  ["Helpers", [["Agent", "Start Subagents inside this Task's slot.", "Subagent types", "Explore"], ["Skill", "Use other Skills besides the Task's own."]]],
+]
+const COMMON_TOOLS = TOOL_GROUPS.flatMap(g => g[1].map(t => t[0]))
+const ALWAYS_ON_TOOLS = ["TaskCreate", "TaskGet", "TaskList", "TaskUpdate"]
+const KNOWN_TOOLS = ["Agent", "Artifact", "AskUserQuestion", "Bash", "CronCreate", "CronDelete", "CronList", "Edit", "EndConversation", "EnterPlanMode", "EnterWorktree",
+  "ExitPlanMode", "ExitWorktree", "Glob", "Grep", "ListAgents", "ListMcpResourcesTool", "LSP", "Monitor", "NotebookEdit", "PowerShell", "PushNotification", "Read",
+  "ReadMcpResourceTool", "RemoteTrigger", "ReportFindings", "ScheduleWakeup", "SendFeedback", "SendMessage", "SendUserFile", "ShareOnboardingGuide", "Skill",
+  "TaskCreate", "TaskGet", "TaskList", "TaskOutput", "TaskStop", "TaskUpdate", "TodoWrite", "ToolSearch", "WaitForMcpServers", "WebFetch", "WebSearch", "Workflow", "Write"]
+const OTHER_TOOLS = KNOWN_TOOLS.filter(t => !COMMON_TOOLS.includes(t) && !ALWAYS_ON_TOOLS.includes(t))
+// Why each of the other tools is usually off for an Agent running unattended in a Run.
+const CAUTION = {
+  AskUserQuestion: "Nobody is at a terminal, so the question goes unanswered. A Round is how an Agent asks.",
+  EnterPlanMode: "Plan mode waits for an approval nobody gives.", ExitPlanMode: "Plan mode waits for an approval nobody gives.",
+  EnterWorktree: "Moves the Agent out of the Run workspace.", ExitWorktree: "Moves the Agent out of the Run workspace.",
+  CronCreate: "Its schedule dies with the session. Schedule the Process instead.", CronList: "Its schedule dies with the session.", CronDelete: "Its schedule dies with the session.", ScheduleWakeup: "Its schedule dies with the session.",
+  RemoteTrigger: "Creates Routines on claude.ai, outside Ants.", PushNotification: "Notifies outside Ants; the Notification list is the place.",
+  SendMessage: "Reaches your other Claude sessions on this machine.", ListAgents: "Reaches your other Claude sessions on this machine.",
+  Workflow: "Starts many background agents outside the slot cap.", Monitor: "Background work is off for Agents.", TaskOutput: "Background work is off for Agents.", TaskStop: "Background work is off for Agents.",
+  PowerShell: "Windows only.", Artifact: "Publishes to claude.ai.", SendUserFile: "Sends files outside the Run.", ShareOnboardingGuide: "Uploads to claude.ai.",
+  EndConversation: "Ends the session without a Result.", SendFeedback: "Queues feedback nobody reviews.", ReportFindings: "Draws review findings in Claude Code's own screen, which nobody sees.",
+  TodoWrite: "Replaced by the task-list tools, which are always on.",
+  ToolSearch: "Only useful with MCP, which Ants turns off.", WaitForMcpServers: "Only useful with MCP, which Ants turns off.",
+  ListMcpResourcesTool: "Only useful with MCP, which Ants turns off.", ReadMcpResourceTool: "Only useful with MCP, which Ants turns off.",
+}
+const S = {
+  loggedIn: true, version: "0.4.2", update: "available", paused: { claude: "15:45" }, cap: 3,
+  vaults: [{ name: "Work", path: "~/.varde/knowledge", def: true }, { name: "Side projects", path: "~/notes/vault" }],
+  sourceMaps: [{ name: "Stacc repos", path: "~/.varde/source-map.md", def: true }, { name: "Personal", path: "~/code/source-map.md" }],
+  agentFolders: ["~/.ants/agents", "~/.varde/ai/skills/workflows/knowledge-vault/agents"],
+  skillFolders: ["~/.ants/skills", "~/.varde/ai/skills"],
+  processes: [
+    { id: "spec-you", name: "Prompt to spec · you answer", by: "shipped", ready: true, vault: "Work", sourceMap: "Stacc repos" },
+    { id: "spec-agent", name: "Prompt to spec · an Agent answers", by: "shipped", ready: true, vault: "Work", sourceMap: "Stacc repos" },
+    { id: "spec-rec", name: "Prompt to spec · recommendations answer", by: "shipped", ready: true, vault: "Work", sourceMap: "Stacc repos" },
+    { id: "implement", name: "Implement the spec", by: "you", ready: true, vault: "Work", sourceMap: "Stacc repos" },
+    { id: "setup-vault", name: "Set up Vault", by: "shipped", ready: true, vault: "Work", sourceMap: "—" },
+    { id: "nightly-knowledge", name: "Nightly knowledge sweep", by: "you", ready: true, vault: "Work", sourceMap: "Stacc repos",
+      schedule: { every: "day", at: "00:00", on: "Mon", dom: 1, paused: false } },
+    { id: "dep-bumps", name: "Weekly dependency bumps", by: "you", ready: false, vault: "—", sourceMap: "Personal",
+      schedule: { every: "week", at: "06:00", on: "Mon", dom: 1, paused: false },
+      reasons: ['Task "Bump versions" names Agent "bumper", which no Agent folder holds', 'Start form repo "ledger" is not in the Source map "Personal"'] },
+  ],
+  agents: [
+    { name: "scout", cli: "claude", folder: "shipped", model: "sonnet", tools: ["Read", "Glob", "Grep"], skills: ["scout"], desc: "Reads the prompt, the Vault and the Source map. Never reads code." },
+    { name: "griller", cli: "claude", folder: "shipped", model: "opus", tools: ["Read", "Glob", "Grep", "Agent"], skills: ["grilling"], desc: "Asks Rounds of questions until the plan is clear." },
+    { name: "answerer", cli: "claude", folder: "shipped", model: "sonnet", tools: ["Read", "Grep"], skills: ["answer-round"], desc: "Answers a Round the way the user would, from the Answer History and the Vault." },
+    { name: "writer", cli: "claude", folder: "shipped", model: "sonnet", tools: ["Read", "Glob", "Grep", "Write", "Edit"], skills: ["to-spec", "to-tickets", "walkthrough", "report"], desc: "Writes specs, tickets, walkthroughs and Reports." },
+    { name: "implementer", cli: "claude", folder: "~/.ants/agents", model: "opus", tools: ["Read", "Glob", "Grep", "Edit", "Write", "Bash", "Agent", "Skill", "WebFetch"], limits: { Bash: ["git *", "./gradlew *", "pnpm *"], WebFetch: ["domain:docs.spring.io"] }, skills: ["implement", "tdd"], desc: "Implements one ticket, test first, and commits." },
+    { name: "reviewer", cli: "codex", folder: "~/.ants/agents", model: "gpt-5", sandbox: "read-only", skills: ["to-spec"], desc: "A second opinion on a spec, from another model." },
+    { name: "vault-keeper", cli: "claude", folder: "~/.varde/ai/skills/workflows/knowledge-vault/agents", model: "sonnet", tools: ["Read", "Write", "Edit", "Glob", "Grep"], skills: ["init-vault", "search-knowledge", "update-knowledge"], desc: "Varde's Vault agent." },
+  ],
+  skills: [
+    { name: "scout", folder: "shipped", desc: "Find the repos the prompt touches and write a brief.", fields: ["repos", "branch", "brief"] },
+    { name: "grilling", folder: "shipped", desc: "Grill the plan, one Round of questions at a time.", fields: ["questions"] },
+    { name: "answer-round", folder: "shipped", desc: "Answer a Round for the user.", fields: ["answers"] },
+    { name: "to-spec", folder: "shipped", desc: "Turn the answered Rounds into a spec.", fields: ["spec"] },
+    { name: "to-tickets", folder: "shipped", desc: "Cut a spec into tickets.", fields: ["tickets"] },
+    { name: "walkthrough", folder: "shipped", desc: "Tell the story of a set of changes across repos, for review.", fields: ["walkthrough"] },
+    { name: "report", folder: "shipped", desc: "Write the Run's Report.", fields: ["report"] },
+    { name: "init-vault", folder: "shipped", desc: "Create an empty Vault.", fields: ["vault"], vault: true },
+    { name: "search-knowledge", folder: "shipped", desc: "Search the Vault.", fields: ["notes"], vault: true },
+    { name: "update-knowledge", folder: "shipped", desc: "Propose Notes for what the Run learned.", fields: ["notes"], vault: true },
+    { name: "implement", folder: "~/.ants/skills", desc: "Implement one ticket in the cloned repos and commit.", fields: ["commits", "summary"] },
+    { name: "tdd", folder: "~/.varde/ai/skills", desc: "Varde's test-first Skill.", fields: [] },
+  ],
+}
+
+// What each Task in a diagram is: kind, Agent, Skill, inputs. Keyed by Process, then BPMN element id.
+const A = (agent, skill, inputs = []) => ({ kind: "agent", agent, skill, inputs })
+const specProps = answer => ({
+  start: { kind: "start", fields: ["prompt", "branch"] },
+  scout: A("scout", "scout", ["${prompt}"]), clone: { kind: "builtin", what: "Clone repos", inputs: ["${scout.repos}", "${branch}"] },
+  grill: A("griller", "grilling", ["${prompt}", "${scout.brief}"]), answer,
+  tospec: A("writer", "to-spec", ["${scout.brief}"]), approve: { kind: "user", what: "Approve", shows: "tospec" }, report: A("writer", "report"),
+})
+const PROPS = {
+  "spec-you": specProps({ kind: "user", what: "Answer a Round", shows: "grill" }),
+  "spec-agent": specProps(A("answerer", "answer-round", ["${grill.questions}"])),
+  "spec-rec": specProps({ kind: "builtin", what: "Accept recommendations", inputs: ["${grill.questions}"] }),
+  implement: { start: { kind: "start", fields: ["spec", "repos"] }, clone: { kind: "builtin", what: "Clone repos", inputs: ["${repos}"] },
+    plan: A("writer", "to-tickets", ["${spec}"]), backend: A("implementer", "implement", ["${plan.tickets}"]), frontend: A("implementer", "implement", ["${plan.tickets}"]),
+    knowledge: A("vault-keeper", "update-knowledge", ["${plan.tickets}"]), walkthrough: A("writer", "walkthrough", ["${backend.commits}", "${frontend.commits}"]),
+    review: { kind: "user", what: "Approve", shows: "walkthrough" }, push: { kind: "builtin", what: "Push", inputs: ["${clone.repos}"] } },
+  "setup-vault": { start: { kind: "start", fields: ["vault"] }, init: A("vault-keeper", "init-vault") },
+  "nightly-knowledge": { start: { kind: "start", fields: [] }, clone: { kind: "builtin", what: "Clone repos", inputs: [] },
+    sweep: A("vault-keeper", "update-knowledge", ["${clone.repos}"]), approve: { kind: "user", what: "Approve", shows: "sweep" } },
+  "dep-bumps": { start: { kind: "start", fields: ["repos"] }, clone: { kind: "builtin", what: "Clone repos" }, bump: A("bumper", "bump-deps"), push: { kind: "builtin", what: "Push" } },
+}
+
+// ---------- BPMN diagrams, generated with their layout ----------
+const SZ = { startEvent: [36, 36], endEvent: [36, 36], exclusiveGateway: [50, 50], parallelGateway: [50, 50], serviceTask: [120, 80], userTask: [120, 80], task: [120, 80] }
+const xesc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c])
+function bpmnXml(pid, nodes, flows) {
+  const N = Object.fromEntries(nodes.map(([id, type, name, cx, cy, timer]) => [id, { id, type, name, cx, cy, timer, w: SZ[type][0], h: SZ[type][1] }]))
+  const inc = {}, out = {}; flows.forEach(([f, a, b]) => { (out[a] ||= []).push(f); (inc[b] ||= []).push(f) })
+  const els = Object.values(N).map(n => `<bpmn:${n.type} id="${n.id}" name="${xesc(n.name || "")}">${(inc[n.id] || []).map(f => `<bpmn:incoming>${f}</bpmn:incoming>`).join("")}${(out[n.id] || []).map(f => `<bpmn:outgoing>${f}</bpmn:outgoing>`).join("")}${n.timer ? `<bpmn:timerEventDefinition id="${n.id}_timer"/>` : ""}</bpmn:${n.type}>`).join("")
+  const fls = flows.map(([f, a, b, name]) => `<bpmn:sequenceFlow id="${f}" name="${xesc(name || "")}" sourceRef="${a}" targetRef="${b}"/>`).join("")
+  const shapes = Object.values(N).map(n => {
+    const gw = n.type.includes("Gateway"), label = n.name && !n.type.endsWith("Task")
+    const ly = gw ? n.cy - n.h / 2 - 20 : n.cy + n.h / 2 + 4
+    return `<bpmndi:BPMNShape id="${n.id}_di" bpmnElement="${n.id}"${gw ? ' isMarkerVisible="true"' : ""}><dc:Bounds x="${n.cx - n.w / 2}" y="${n.cy - n.h / 2}" width="${n.w}" height="${n.h}"/>${label ? `<bpmndi:BPMNLabel><dc:Bounds x="${n.cx - 45}" y="${ly}" width="90" height="14"/></bpmndi:BPMNLabel>` : ""}</bpmndi:BPMNShape>`
+  }).join("")
+  const edges = flows.map(([f, a, b, name, wps]) => {
+    const s = N[a], t = N[b], pts = wps || [[s.cx + s.w / 2, s.cy], [t.cx - t.w / 2, t.cy]]
+    return `<bpmndi:BPMNEdge id="${f}_di" bpmnElement="${f}">${pts.map(([x, y]) => `<di:waypoint x="${x}" y="${y}"/>`).join("")}${name ? `<bpmndi:BPMNLabel><dc:Bounds x="${pts[0][0] + 6}" y="${pts[0][1] + 4}" width="70" height="14"/></bpmndi:BPMNLabel>` : ""}</bpmndi:BPMNEdge>`
+  }).join("")
+  return `<?xml version="1.0" encoding="UTF-8"?><bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="defs_${pid}" targetNamespace="http://ants.local/bpmn"><bpmn:process id="${pid}" isExecutable="true">${els}${fls}</bpmn:process><bpmndi:BPMNDiagram id="d_${pid}"><bpmndi:BPMNPlane id="p_${pid}" bpmnElement="${pid}">${shapes}${edges}</bpmndi:BPMNPlane></bpmndi:BPMNDiagram></bpmn:definitions>`
+}
+const specXml = (pid, answerType, answerName) => bpmnXml(pid, [
+  ["start", "startEvent", "Prompt", 150, 220], ["scout", "serviceTask", "Scout", 260, 220], ["clone", "serviceTask", "Clone repos", 420, 220],
+  ["grill", "serviceTask", "Grill the spec", 580, 220], ["gwRound", "exclusiveGateway", "Any questions?", 730, 220],
+  ["answer", answerType, answerName, 730, 370], ["tospec", "serviceTask", "Write the spec", 880, 220],
+  ["approve", "userTask", "Approve the spec", 1040, 220], ["gwOk", "exclusiveGateway", "Approved?", 1190, 220],
+  ["report", "serviceTask", "Write the Report", 1340, 220], ["end", "endEvent", "Done", 1480, 220]],
+  [["f1", "start", "scout"], ["f2", "scout", "clone"], ["f3", "clone", "grill"], ["f4", "grill", "gwRound"],
+   ["f5", "gwRound", "answer", "yes", [[730, 245], [730, 330]]], ["f6", "answer", "grill", "", [[670, 370], [580, 370], [580, 260]]],
+   ["f7", "gwRound", "tospec", "no"], ["f8", "tospec", "approve"], ["f9", "approve", "gwOk"], ["f10", "gwOk", "report", "yes"], ["f11", "report", "end"],
+   ["f12", "gwOk", "tospec", "send back", [[1190, 195], [1190, 110], [880, 110], [880, 180]]]])
+const XML = {
+  "spec-you": specXml("spec_you", "userTask", "Answer the round"),
+  "spec-agent": specXml("spec_agent", "serviceTask", "Answer the round (Agent)"),
+  "spec-rec": specXml("spec_rec", "serviceTask", "Accept recommendations"),
+  implement: bpmnXml("implement", [
+    ["start", "startEvent", "Approved spec", 150, 260], ["clone", "serviceTask", "Clone repos", 260, 260], ["plan", "serviceTask", "Plan the tickets", 420, 260],
+    ["gwMerge", "exclusiveGateway", "", 560, 260], ["split", "parallelGateway", "", 660, 260],
+    ["backend", "serviceTask", "Implement backend", 820, 130], ["frontend", "serviceTask", "Implement frontend", 820, 260], ["knowledge", "serviceTask", "Update knowledge", 820, 390],
+    ["join", "parallelGateway", "", 980, 260], ["walkthrough", "serviceTask", "Write the walkthrough", 1110, 260], ["review", "userTask", "Review the changes", 1270, 260],
+    ["gwOk", "exclusiveGateway", "Approved?", 1420, 260], ["push", "serviceTask", "Push", 1560, 260], ["end", "endEvent", "Pushed", 1690, 260]],
+    [["f1", "start", "clone"], ["f2", "clone", "plan"], ["f3", "plan", "gwMerge"], ["f4", "gwMerge", "split"],
+     ["f5", "split", "backend", "", [[660, 235], [660, 130], [760, 130]]], ["f6", "split", "frontend"], ["f7", "split", "knowledge", "", [[660, 285], [660, 390], [760, 390]]],
+     ["f8", "backend", "join", "", [[880, 130], [980, 130], [980, 235]]], ["f9", "frontend", "join"], ["f10", "knowledge", "join", "", [[880, 390], [980, 390], [980, 285]]],
+     ["f11", "join", "walkthrough"], ["f12", "walkthrough", "review"], ["f13", "review", "gwOk"], ["f14", "gwOk", "push", "yes"], ["f15", "push", "end"],
+     ["f16", "gwOk", "gwMerge", "send back", [[1420, 285], [1420, 480], [560, 480], [560, 285]]]]),
+  "setup-vault": bpmnXml("setup_vault", [["start", "startEvent", "Vault folder", 150, 200], ["init", "serviceTask", "Init the Vault", 280, 200], ["end", "endEvent", "Done", 410, 200]],
+    [["f1", "start", "init"], ["f2", "init", "end"]]),
+  "nightly-knowledge": bpmnXml("nightly_knowledge", [["start", "startEvent", "Every night 00:00", 150, 200, true], ["clone", "serviceTask", "Clone repos", 270, 200],
+    ["sweep", "serviceTask", "Sweep yesterday's merges", 420, 200], ["approve", "userTask", "Approve the Notes", 570, 200], ["end", "endEvent", "Done", 700, 200]],
+    [["f1", "start", "clone"], ["f2", "clone", "sweep"], ["f3", "sweep", "approve"], ["f4", "approve", "end"]]),
+  "dep-bumps": bpmnXml("dep_bumps", [["start", "startEvent", "Mondays 06:00", 150, 200, true], ["clone", "serviceTask", "Clone repos", 270, 200], ["bump", "serviceTask", "Bump versions", 420, 200],
+    ["push", "serviceTask", "Push", 570, 200], ["end", "endEvent", "Done", 700, 200]], [["f1", "start", "clone"], ["f2", "clone", "bump"], ["f3", "bump", "push"], ["f4", "push", "end"]]),
+}
+const EMPTY_XML = bpmnXml("new_process", [["start", "startEvent", "Start", 180, 200]], [])
+const PATTERNS = {
+  "new-blank": ["Blank", "Just a start event. Draw the rest.", [["start", "startEvent", "Start", 180, 200]], [], {}, {}],
+  "new-review": ["Do, then approve", "An Agent does the work; you approve or send it back, and it carries on in the same session.",
+    [["start", "startEvent", "Prompt", 150, 200], ["work", "serviceTask", "Do the work", 270, 200], ["approve", "userTask", "Approve", 420, 200],
+     ["gwOk", "exclusiveGateway", "Approved?", 560, 200], ["end", "endEvent", "Done", 680, 200]],
+    [["f1", "start", "work"], ["f2", "work", "approve"], ["f3", "approve", "gwOk"], ["f4", "gwOk", "end", "yes"], ["f5", "gwOk", "work", "send back", [[560, 175], [560, 100], [270, 100], [270, 160]]]],
+    { start: { kind: "start", fields: ["prompt"] }, work: A("", "", ["${prompt}"]), approve: { kind: "user", what: "Approve", shows: "work" } },
+    { f4: { field: "${approve.approved}", op: "is true" }, f5: { def: true } }],
+  "new-loop": ["Ask until clear", "An Agent asks Rounds of questions; you answer until it has none, then it writes the result.",
+    [["start", "startEvent", "Prompt", 150, 200], ["ask", "serviceTask", "Ask questions", 270, 200], ["gw", "exclusiveGateway", "Any questions?", 420, 200],
+     ["answer", "userTask", "Answer the round", 420, 340], ["write", "serviceTask", "Write it up", 560, 200], ["end", "endEvent", "Done", 690, 200]],
+    [["f1", "start", "ask"], ["f2", "ask", "gw"], ["f3", "gw", "answer", "yes", [[420, 225], [420, 300]]], ["f4", "answer", "ask", "", [[360, 340], [270, 340], [270, 240]]],
+     ["f5", "gw", "write", "no"], ["f6", "write", "end"]],
+    { start: { kind: "start", fields: ["prompt"] }, ask: A("griller", "grilling", ["${prompt}"]), answer: { kind: "user", what: "Answer a Round", shows: "ask" }, write: A("", "", ["${prompt}"]) },
+    { f3: { field: "${ask.questions}", op: "is not empty" }, f5: { def: true } }],
+  "new-parallel": ["Parallel branches", "Two Agents work at the same time; the flow waits for both, then you review.",
+    [["start", "startEvent", "Prompt", 150, 220], ["split", "parallelGateway", "", 260, 220], ["a", "serviceTask", "Branch A", 400, 120], ["b", "serviceTask", "Branch B", 400, 320],
+     ["join", "parallelGateway", "", 540, 220], ["review", "userTask", "Review", 660, 220], ["end", "endEvent", "Done", 790, 220]],
+    [["f1", "start", "split"], ["f2", "split", "a", "", [[260, 195], [260, 120], [340, 120]]], ["f3", "split", "b", "", [[260, 245], [260, 320], [340, 320]]],
+     ["f4", "a", "join", "", [[460, 120], [540, 120], [540, 195]]], ["f5", "b", "join", "", [[460, 320], [540, 320], [540, 245]]], ["f6", "join", "review"], ["f7", "review", "end"]],
+    { start: { kind: "start", fields: ["prompt"] }, a: A("", "", ["${prompt}"]), b: A("", "", ["${prompt}"]), review: { kind: "user", what: "Approve", shows: "a" } }, {}],
+}
+Object.entries(PATTERNS).forEach(([id, [, , nodes, flows, props]]) => { XML[id] = bpmnXml(id.replace("-", "_"), nodes, flows); PROPS[id] = props })
+const FIELD_TYPES = [["text", "One line of text"], ["markdown", "Markdown text"], ["repos", "Repos from the Source map"], ["yesno", "Yes / no"]]
+const FIELD_DEFAULTS = {
+  prompt: { label: "Prompt", type: "markdown", required: true, help: "What should this Run find its way to?" },
+  branch: { label: "Work branch", type: "text", required: false, help: "The scout suggests one if left empty." },
+  spec: { label: "Spec", type: "markdown", required: true, help: "The approved spec, or a path to it." },
+  repos: { label: "Repos", type: "repos", required: true, help: "Picked from this Process's Source map." },
+  vault: { label: "Vault folder", type: "text", required: true, help: "Where the new Vault goes." },
+}
+Object.values(PROPS).forEach(P => { if (P.start) P.start.fields = P.start.fields.map(n => ({ name: n, ...(FIELD_DEFAULTS[n] || { label: n, type: "text", required: false, help: "" }) })) })
+
+// ---------- Runs ----------
+// Task st: running | queued | paused | round | waiting | stuck | failed | stopped | done
+const T = (id, name, st, x = {}) => ({ id, name, st, ...x })
+const specDone = (n = 3) => [T("scout", "Scout", "done", { tokens: "18.2k" }), T("clone", "Clone repos", "done"), T("grill", "Grill the spec", "done", { tokens: "64.0k", round: 3 })].slice(0, n)
+S.runs = [
+  { id: "release-notes", proc: "spec-you", state: "live", started: "Mon 08:30", repos: ["web"],
+    tasks: [T("scout", "Scout", "failed", { waited: 2950, tokens: "9.1k", summary: "The Result did not match scout's schema, twice.", needs: "Missing required property `brief`.\n\n**Last stderr:** none" })] },
+  { id: "payments-webhook", proc: "spec-agent", state: "live", started: "Fri 16:02", repos: ["payments", "web"],
+    tasks: [...specDone(2), T("grill", "Grill the spec", "stuck", { waited: 1210, tokens: "41.5k", round: 1, summary: "Can't tell which webhook provider the prompt means.",
+      needs: "The prompt says *the webhook*, but **payments** has two:\n\n- Stripe (`StripeWebhookController`)\n- Vipps (`VippsCallback`)\n\nWhich one, or both?" })] },
+  { id: "invoices-csv-export", proc: "spec-you", state: "live", started: "09:12", repos: ["billing"],
+    tasks: [...specDone(2), T("grill", "Grill the spec", "round", { tokens: "48.3k", round: 2 }), T("answer", "Answer the round", "waiting", { tag: "questions", waited: 130, summary: "Second round on the invoice CSV export: who, which invoices, columns, number format." })] },
+  { id: "billing-retry-impl", proc: "implement", state: "live", started: "07:10", repos: ["billing", "web"],
+    tasks: [T("clone", "Clone repos", "done"), T("plan", "Plan the tickets", "done", { tokens: "12.1k" }), T("backend", "Implement backend", "done", { tokens: "210k" }),
+      T("frontend", "Implement frontend", "done", { tokens: "96.4k" }), T("knowledge", "Update knowledge", "done", { tokens: "8.8k" }), T("walkthrough", "Write the walkthrough", "done", { tokens: "31.0k" }),
+      T("review", "Review the changes", "waiting", { tag: "approve", waited: 64, summary: "Retry failed card payments 3 times with backoff; a banner tells the customer. 2 repos, 9 files." })] },
+  { id: "search-reindex", proc: "spec-you", state: "live", started: "08:40", repos: ["search"],
+    tasks: [...specDone(), T("tospec", "Write the spec", "done", { tokens: "22.7k" }), T("approve", "Approve the spec", "waiting", { tag: "approve", waited: 95, summary: "Spec for a zero-downtime reindex: shadow index, alias swap, backfill job." })] },
+  { id: "onboarding-email", proc: "spec-rec", state: "live", started: "10:05", repos: ["web"],
+    tasks: [...specDone(), T("answer", "Accept recommendations", "done"), T("tospec", "Write the spec", "stopped", { waited: 12, tokens: "8.0k", summary: "You stopped it.", needs: "Stopped by you at 11:41 while it was rewriting the email copy." })] },
+  { id: "dark-mode-toggle", proc: "spec-you", state: "live", started: "11:20", repos: ["web"],
+    tasks: [...specDone(2), T("grill", "Grill the spec", "running", { tokens: "31.9k", subs: 2, round: 2 }), T("answer", "Answer the round", "done")] },
+  { id: "search-impl", proc: "implement", state: "live", started: "11:02", repos: ["search", "web"],
+    tasks: [T("clone", "Clone repos", "done"), T("plan", "Plan the tickets", "done", { tokens: "9.7k" }), T("backend", "Implement backend", "running", { tokens: "88.0k", subs: 1 }),
+      T("frontend", "Implement frontend", "running", { tokens: "41.2k" }), T("knowledge", "Update knowledge", "queued")] },
+  { id: "audit-logging", proc: "spec-rec", state: "live", started: "11:50", repos: ["api"],
+    tasks: [...specDone(), T("answer", "Accept recommendations", "done"), T("tospec", "Write the spec", "queued")] },
+  { id: "billing-retry", proc: "spec-you", state: "live", started: "07:55", repos: ["billing"],
+    tasks: [...specDone(2), T("grill", "Grill the spec", "paused", { tokens: "52.4k", round: 1 })] },
+  { id: "vault-setup", proc: "setup-vault", state: "done", started: "Sun 20:10", ended: "Sun 20:14", repos: [], tasks: [T("init", "Init the Vault", "done", { tokens: "6.6k" })] },
+  { id: "csv-import", proc: "spec-you", state: "done", started: "Sat 10:00", ended: "Sat 13:22", repos: ["billing"],
+    tasks: [...specDone(), T("answer", "Answer the round", "done"), T("tospec", "Write the spec", "done", { tokens: "19.0k" }), T("approve", "Approve the spec", "done"), T("report", "Write the Report", "done", { tokens: "4.4k" })] },
+  { id: "flaky-tests", proc: "spec-rec", state: "failed", started: "Thu 14:00", ended: "Thu 15:10", repos: ["api"],
+    tasks: [...specDone(2), T("grill", "Grill the spec", "failed", { tokens: "12.0k" })] },
+]
+S.runs.forEach((r, i) => r.tasks.forEach(t => { if (t.st === "running") Object.assign(t, { el: 60 + i * 47, tok: Math.round(parseFloat(t.tokens) * 1000) }) }))
+
+// ---------- helpers ----------
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c])
+const run = id => S.runs.find(r => r.id === id)
+const proc = id => S.processes.find(p => p.id === id)
+const agentOf = n => S.agents.find(a => a.name === n)
+const skillOf = n => S.skills.find(s => s.name === n)
+const propsOf = (r, t) => PROPS[r.proc]?.[t.id] || {}
+const ago = m => m >= 1440 ? `${Math.floor(m / 1440)}d ${Math.floor(m % 1440 / 60)}h` : m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`
+const WAITING = ["waiting", "stuck", "failed", "stopped"]
+const tagOf = t => t.tag || t.st
+const TAGS = { failed: ["✕", "Failed"], stuck: ["⚠", "Stuck"], stopped: ["■", "Stopped"], questions: ["?", "Questions"], approve: ["✓", "Approve"] }
+const tagLabel = k => { const [i, l] = TAGS[k] || ["", k]; return `<span class="tag t-${k}"><i>${i}</i>${l}</span>` }
+const notes = () => S.runs.filter(r => r.state === "live").flatMap(r => r.tasks.filter(t => WAITING.includes(t.st)).map(t => ({ r, t }))).sort((a, b) => b.t.waited - a.t.waited)
+const running = () => S.runs.flatMap(r => r.tasks).filter(t => t.st === "running").length
+const taskHref = (r, t) => `#/runs/${r.id}/tasks/${t.id}`
+const go = h => { location.hash = h }
+const route = () => location.hash.slice(1) || "/"
+const on = (...ps) => ps.some(p => p === "/" ? route() === "/" : route() === p || route().startsWith(p + "/")) ? "on" : ""
+
+const stText = t => ({ running: "Running", done: "Done", queued: `Queued · ${running()} of ${S.cap} running`, paused: `Paused until ${S.paused.claude || "the reset"}`,
+  round: "Waiting on its Round", waiting: "Waiting on you", stuck: "Stuck", failed: "Failed", stopped: "Stopped" })[t.st]
+const stCls = t => ({ running: "running", done: "done", queued: "quiet", paused: "quiet", round: "quiet", waiting: "waiting", stuck: "stuck", failed: "failed", stopped: "stuck" })[t.st]
+const badge = t => `<span class="pill p-${stCls(t)}">${esc(stText(t))}</span>${WAITING.includes(t.st) ? ` ${tagLabel(tagOf(t))}` : ""}`
+function runNow(r) {
+  if (r.state === "done") return `<span class="pill p-done">Done · ${esc(r.ended)}</span>`
+  if (r.state === "failed") return `<span class="pill p-failed">Failed · ${esc(r.ended)}</span>`
+  const w = r.tasks.filter(t => WAITING.includes(t.st)), live = r.tasks.filter(t => t.st === "running"), quiet = r.tasks.filter(t => ["queued", "paused", "round"].includes(t.st))
+  return [...w.map(t => `${badge(t)} <span class="small">${esc(t.name)}</span>`),
+    ...live.map(t => `<b class="small">${esc(t.name)}</b>${t.subs ? ` <span class="muted small" title="Subagents">⑂ ${t.subs}</span>` : ""}<div class="small">${liveLine(r, t)}</div>`),
+    ...(w.length || live.length ? [] : quiet.map(t => `${badge(t)} <span class="small muted">${esc(t.name)}</span>`))].join("<br>")
+}
+// ---------- liveness ----------
+// In Ants this all comes off the stream-json events over SSE: the clock from the launch, tokens from usage, the activity from the latest event.
+const key = (r, t) => `${r.id}/${t.id}`
+const fmtTok = n => n >= 1000 ? (n / 1000).toFixed(1) + "k" : String(n)
+const fmtEl = s => s >= 3600 ? `${Math.floor(s / 3600)}h ${Math.floor(s % 3600 / 60)}m` : s >= 60 ? `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s` : `${s}s`
+const VERBS = ["Crafting", "Pondering", "Weaving", "Mulling", "Sketching", "Brewing", "Untangling", "Cogitating"]
+const FEED = [
+  { k: "text", s: "The theme lives in one place, but three components read colours directly. Let me check how each one does it." },
+  { k: "tool", s: "Grep \"color:\" repos/web/src/components", act: "Searching components" },
+  { k: "tool", s: "Read repos/web/src/components/Header.tsx", act: "Reading Header.tsx" },
+  { k: "think", act: "Thinking" },
+  { k: "text", s: "Header and Sidebar can switch to the theme tokens as they are. The chart colours need a dark palette of their own, so that is a question for the user." },
+  { k: "tool", s: "Bash pnpm test -- theme", act: "Running tests" },
+  { k: "tool", s: "Read repos/web/src/charts/palette.ts", act: "Reading palette.ts" },
+  { k: "text", s: "I have enough for the next Round: four questions on the toggle's placement, the default, chart colours and persistence." },
+]
+const liveLine = (r, t) => `<span class="spin">✻</span> <span class="shimmer" data-verb="${key(r, t)}">${verbOf(t)}…</span> <span class="muted num">(<span data-el="${key(r, t)}">${fmtEl(t.el)}</span> · ↓ <span data-tok="${key(r, t)}">${fmtTok(t.tok)}</span> tokens)</span>`
+const verbOf = t => { const last = t.live?.at(-1); return last?.act || VERBS[Math.floor(TICK / 4 + t.el) % VERBS.length] }
+let TICK = 0
+function feedLine(l, typing) {
+  if (l.k === "tool") return `<div class="tool new">${esc(l.s)}</div>`
+  if (l.k === "think") return `<details class="new"><summary>Thinking</summary><div class="muted">…</div></details>`
+  return `<div class="new ${typing ? "caret" : ""}" data-type="${typing ? esc(l.s) : ""}">${typing ? "" : esc(l.s)}</div>`
+}
+setInterval(() => {
+  TICK++
+  for (const r of S.runs) for (const t of r.tasks) {
+    if (t.st !== "running") continue
+    t.el++; t.tok += 40 + (TICK * 37 + t.el * 13) % 260
+    const k = key(r, t)
+    document.querySelectorAll(`[data-el="${k}"]`).forEach(e => e.textContent = fmtEl(t.el))
+    document.querySelectorAll(`[data-tok="${k}"]`).forEach(e => e.textContent = fmtTok(t.tok))
+    document.querySelectorAll(`[data-subel="${k}"]`).forEach((e, i) => e.textContent = fmtEl(Math.max(0, t.el - 20 - i * 9)))
+    if (TICK % 4 === (r.id.length % 4)) { // a new event arrives in the stream
+      const l = FEED[(t.live ||= []).length % FEED.length]; t.live.push(l)
+      document.querySelectorAll(`.tr[data-run="${k}"] .feed`).forEach(tr => { tr.insertAdjacentHTML("beforeend", feedLine(l, l.k === "text")); typeOut(tr.lastElementChild); tr.closest(".drawer .tr")?.scrollTo(0, 1e6) })
+    }
+    document.querySelectorAll(`[data-verb="${k}"]`).forEach(e => e.textContent = verbOf(t) + "…")
+    t.sumAge = (t.sumAge || 0) + 1
+    if (t.el % 20 === 0) { t.sumN = (t.sumN || 0) + 1; t.sumAge = 0; document.querySelectorAll(`[data-sofar="${k}"]`).forEach(e => { e.outerHTML = soFar(r, t); window.mountEditors?.() }) }
+    document.querySelectorAll(`[data-sumage="${k}"]`).forEach(e => e.textContent = fmtEl(t.sumAge))
+  }
+  if (TICK === 25) newRound()
+  // A free slot goes to the oldest queued Task (no paused CLI in its way).
+  const q = running() < S.cap && S.runs.filter(r => r.state === "live").flatMap(r => r.tasks).find(t => t.st === "queued")
+  if (q) { Object.assign(q, { st: "running", el: 0, tok: 0, live: [] }); refresh() }
+}, 1000)
+setInterval(() => { const g = ["·", "✢", "✳", "✶", "✻", "✽", "✻", "✶", "✳", "✢"]; document.querySelectorAll(".spin").forEach(e => e.textContent = g[Math.floor(Date.now() / 120) % g.length]) }, 120)
+function typeOut(el) { // assistant text streams in, like --include-partial-messages
+  const s = el?.dataset?.type; if (!s) return
+  let i = 0; const h = setInterval(() => { i += 3; el.textContent = s.slice(0, i); if (i >= s.length) { clearInterval(h); el.classList.remove("caret") } }, 30)
+}
+// Halfway through, the dark-mode griller finishes a Round on its own and a new entry lands on the Notification list.
+function newRound() {
+  const r = run("dark-mode-toggle"), g = r?.tasks.find(t => t.id === "grill"); if (!g || g.st !== "running") return
+  g.st = "round"; g.subs = 0; g.round = 3
+  r.tasks = r.tasks.filter(t => t.id !== "answer").concat(T("answer", "Answer the round", "waiting", { tag: "questions", waited: 0, summary: "Round 3 on the dark-mode toggle: placement, default, chart colours, persistence." }))
+  const k = run("search-impl")?.tasks.find(t => t.st === "queued"); if (k) Object.assign(k, { st: "running", el: 0, tok: 0 }) // the freed slot goes to the oldest queued Task
+  toast(`<b>New: dark-mode-toggle asks round 3</b><br>4 questions are waiting on you. Its slot went to <b>search-impl · Update knowledge</b>, which was queued.`)
+  refresh()
+}
+
+const ph = (title, { crumbs = [], acts = "", sub = "" } = {}) =>
+  `${crumbs.length ? `<div class="crumbs">${crumbs.join(" / ")}</div>` : ""}<div class="ph"><h1>${title}</h1><div class="acts">${acts}</div>${sub ? `<div class="sub">${sub}</div>` : ""}</div>`
+const field = (label, help, eg, control) => `<div class="fld"><label class="f">${label}</label><div class="help">${help}${eg ? ` &nbsp;e.g. <span class="eg">${esc(eg)}</span>` : ""}</div>${control}</div>`
+const md = (id, value, ph = "", tall) => `<textarea data-md ${tall ? "data-tall" : ""} id="${id}" placeholder="${esc(ph)}">${esc(value)}</textarea>`
+const mdView = s => `<div class="md" data-mdview>${esc(s)}</div>`
+
+// ---------- shell ----------
+function renderSide() {
+  const box = document.getElementById("side"); if (!S.loggedIn || route() === "/login") { box.innerHTML = ""; return }
+  const n = notes().length, live = S.runs.filter(r => r.state === "live").length
+  const pause = Object.entries(S.paused).map(([cli, t]) => `<div class="notice pause"><b>⏸ ${cli} paused</b><br>Usage limit, resets at ${t}<button onclick="tryNow('${cli}')">Try now</button></div>`).join("")
+  const upd = S.update === "available" ? `<div class="notice upd"><b>Update available</b><br>v${S.version} → v0.5.0<button onclick="S.update='installed';refresh()">Update</button></div>`
+    : S.update === "installed" ? `<div class="notice upd"><b>v0.5.0 installed</b><br>Restart Ants to use it: <code>ants restart</code></div>` : ""
+  box.innerHTML = `<nav class="side"><div class="logo"><b>🐜</b>Ants</div>
+    <a class="${on("/")}" href="#/">${icon("home")}Home</a>
+    <a class="${on("/notifications")}" href="#/notifications">${icon("bell")}Notifications${n ? `<span class="n">${n}</span>` : ""}</a>
+    <div class="grp">Work</div>
+    <a class="${on("/runs")}" href="#/runs">${icon("runs")}Runs<span class="m">${running() ? `<span class="spin">✻</span> ${running()} working` : `${live} live`}</span></a>
+    <a class="${on("/processes")}" href="#/processes">${icon("proc")}Processes</a>
+    <div class="grp">Library</div>
+    <a class="${on("/agents")}" href="#/agents">${icon("agent")}Agents</a>
+    <a class="${on("/skills")}" href="#/skills">${icon("skill")}Skills</a>
+    <div class="bottom">${pause}${upd}
+      <a href="javascript:toggleTheme()">${theme === "dark" ? icon("sun") + "Light mode" : icon("moon") + "Dark mode"}</a>
+      <a class="${on("/settings")}" href="#/settings">${icon("gear")}Settings</a>
+      <a href="#/login" onclick="S.loggedIn=false">${icon("out")}Log out <span class="m">v${S.version}</span></a></div></nav>`
+  document.title = (n ? `(${n}) ` : "") + "Ants"
+}
+// Something changed in the background (a Round arrived, a slot freed, Try now): refresh the sidebar, and the page
+// only if it is a list that shows it. Never the modeler, a Run's diagram or a form the user is in.
+function refresh() {
+  renderSide()
+  if (["/", "/notifications", "/runs"].includes(route()) && !document.activeElement?.closest(".ed, input, textarea, select")) render()
+}
+function toast(html) {
+  const t = document.createElement("div"); t.className = "toast"
+  t.innerHTML = html + `<div style="text-align:right;margin-top:8px"><button onclick="this.closest('.toast').remove()">OK</button></div>`
+  document.body.append(t); setTimeout(() => t.remove(), 12000)
+}
+
+// ---------- pages ----------
+function pLogin() {
+  return `<div style="min-height:100vh;display:grid;place-items:center;margin-left:-232px;background:var(--side)"><div class="card" style="width:360px;padding:28px">
+    <div class="logo" style="color:var(--text);padding:0 0 18px"><b>🐜</b>Ants</div>
+    <label class="f">User</label><input value="admin"><label class="f">Password</label><input type="password" value="admin">
+    <p><button class="primary" style="width:100%;padding:10px" onclick="S.loggedIn=true;go('#/')">Log in</button></p>
+    <div class="help">Single user. The session lasts until you log out.</div></div></div>`
+}
+
+function home() {
+  const ns = notes(), liveRuns = S.runs.filter(r => r.state === "live")
+  const working = liveRuns.filter(r => r.tasks.some(t => ["running", "queued", "paused"].includes(t.st)))
+  return ph("Good afternoon", { acts: `<button class="primary" onclick="go('#/processes')">Start a Run</button>` }) + `
+    <div class="grid3" style="margin-bottom:14px">
+      <div class="card"><div class="muted small">Waiting on you</div><div class="stat">${ns.length} <small>Tasks</small></div></div>
+      <div class="card"><div class="muted small">Agent Tasks running</div><div class="stat">${running()} <small>of ${S.cap}</small></div></div>
+      <div class="card"><div class="muted small">Live Runs</div><div class="stat">${liveRuns.length} <small>${S.runs.filter(r => r.state !== "live").length} ended</small></div></div></div>
+    <div class="card"><h3>${icon("bell")} Waiting on you <a class="small" style="margin-left:auto;font-weight:500" href="#/notifications">All ${ns.length}</a></h3>${noteTable(ns.slice(0, 4), true)}</div>
+    <div class="grid2"><div class="card"><h3>${icon("runs")} Working now</h3>
+      ${working.map(r => `<div style="padding:7px 0;border-bottom:1px solid var(--line2)"><a href="#/runs/${r.id}"><b>${esc(r.id)}</b></a><div>${runNow(r)}</div></div>`).join("")}</div>
+    <div><div class="card"><h3>⏰ Coming up</h3>${upcoming().map(({ p }) => `<div class="row" style="padding:6px 0;border-bottom:1px solid var(--line2)"><a class="grow" href="#/processes/${p.id}">${esc(p.name)}</a><span class="small muted">${nextText(p.schedule)}</span></div>`).join("") || '<div class="muted small">Nothing scheduled.</div>'}</div>
+    <div class="card"><h3>${icon("proc")} Start a Run</h3>
+      ${S.processes.map(p => `<div class="row" style="padding:6px 0;border-bottom:1px solid var(--line2)"><a class="grow" href="#/processes/${p.id}">${esc(p.name)}</a>${p.ready ? "" : '<span class="pill p-failed">Can\'t start</span>'}</div>`).join("")}</div></div></div>`
+}
+
+function noteTable(ns, bare) {
+  if (!ns.length) return `<div class="muted">Nothing waits on you.</div>`
+  const rows = ns.map(({ r, t }) => `<tr class="click" onclick="go('${taskHref(r, t)}')"><td style="width:130px">${tagLabel(tagOf(t))}</td>
+    <td><b>${esc(r.id)}</b> · ${esc(t.name)}<div class="muted small">${esc(proc(r.proc).name)}</div></td><td>${esc(t.summary)}</td><td class="muted small" style="white-space:nowrap">${ago(t.waited)}</td></tr>`).join("")
+  return bare ? `<table style="box-shadow:none">${rows}</table>` : `<table><tr><th>Tag</th><th>Run · Task</th><th>Summary</th><th>Waiting</th></tr>${rows}</table>`
+}
+const pNotifications = () => ph("Notifications", { sub: "Every Task waiting on you, oldest first. An entry goes the moment you act." }) + noteTable(notes())
+
+function runsTable(rs, actions) {
+  if (!rs.length) return `<div class="card muted">None.</div>`
+  return `<table><tr><th>Run</th><th>Process</th><th>Now</th><th>Started</th>${actions ? "<th></th>" : ""}</tr>
+    ${rs.map(r => `<tr class="click" onclick="go('#/runs/${r.id}')"><td><b>${esc(r.id)}</b></td><td class="muted">${esc(proc(r.proc).name)}</td>
+      <td>${runNow(r)}</td><td class="muted small">${esc(r.started)}</td>
+      ${actions ? `<td>${r.state === "failed" ? `<button onclick="event.stopPropagation();dismiss('${r.id}')">Dismiss</button>` : `<a href="#/runs/${r.id}" onclick="event.stopPropagation()">Report</a>`}</td>` : ""}</tr>`).join("")}</table>`
+}
+function pRuns() {
+  return ph("Runs", { acts: `<button class="primary" onclick="go('#/processes')">Start a Run</button>`, sub: `${running()} of ${S.cap} Agent Tasks running.` })
+    + (upcoming().length ? `<h2>Coming up</h2><table>${upcoming().map(({ p }) => `<tr class="click" onclick="go('#/processes/${p.id}')"><td><b>${esc(p.name)}</b></td><td class="small">${schedText(p.schedule)}</td><td class="muted small">${nextText(p.schedule)}</td></tr>`).join("")}</table>` : "")
+    + `<h2>Live</h2>${runsTable(S.runs.filter(r => r.state === "live"))}
+    <h2>Ended</h2><div class="help">Done Runs leave their Report. Failed Runs keep their Run workspace until you dismiss them.</div>${runsTable(S.runs.filter(r => r.state !== "live"), true)}`
+}
+
+function diagramBox(kind, procId, runId) {
+  return `<div class="dia ${kind === "modeler" ? "modeler" : ""}" data-bpmn="${kind}" data-proc="${procId}" data-run="${runId || ""}">
+    <div class="nolib">Loading the diagram… (bpmn-js comes from unpkg.com; this needs the network)</div>
+    ${kind === "viewer" ? `<div class="legend"><span class="pill p-running">Running</span><span class="pill p-waiting">Waiting on you</span><span class="pill p-done">Done</span><span class="pill p-quiet">Queued / paused</span></div>` : ""}
+    <div class="zoom"><button data-z="in">＋</button><button data-z="out">－</button><button data-z="fit">Fit</button><button data-z="full">⛶</button></div></div>`
+}
+function pRun(id) {
+  const r = run(id); if (!r) return ph("No such Run")
+  const live = r.state === "live", p = proc(r.proc)
+  return ph(esc(r.id), { crumbs: [`<a href="#/runs">Runs</a>`, esc(r.id)],
+      acts: live ? `<button class="danger" onclick="cancelRun('${r.id}')">Cancel the Run</button>` : r.state === "failed" ? `<button onclick="dismiss('${r.id}')">Dismiss</button>` : "",
+      sub: `<a href="#/processes/${r.proc}">${esc(p.name)}</a> · started ${esc(r.started)} · branch <code>ants/${esc(r.id)}</code> · repos ${r.repos.map(x => `<code>${esc(x)}</code>`).join(" ") || "none yet"} · Vault ${esc(p.vault)}` })
+    + diagramBox("viewer", r.proc, r.id) + `<div class="help" style="margin-top:6px">Drag to pan, Ctrl/⌘ + scroll to zoom. Click a Task to open it.</div>
+    <h2>Tasks</h2><table><tr><th>Task</th><th>Agent · Skill</th><th>State</th><th>Tokens</th></tr>
+    ${r.tasks.map(t => { const pr = propsOf(r, t); return `<tr class="click" onclick="go('${taskHref(r, t)}')"><td><b>${esc(t.name)}</b>${t.round ? ` <span class="muted small">round ${t.round}</span>` : ""}${t.st === "running" && t.subs ? ` <span class="muted" title="Subagents">⑂ ${t.subs}</span>` : ""}</td>
+      <td class="small">${pr.kind === "agent" ? `${agentName(pr.agent)} &nbsp;${skillName(pr.skill)}` : pr.kind === "user" ? "User Task" : "Built-in Task"}</td>
+      <td>${t.st === "running" ? `<span class="small">${liveLine(r, t)}</span>` : badge(t)}</td><td class="muted small num">${t.st === "running" ? `<span data-tok="${key(r, t)}">${fmtTok(t.tok)}</span>` : t.tokens || ""}</td></tr>` }).join("")}</table>
+    ${r.state === "failed" ? `<h2>Run workspace</h2><div class="card">Kept at <code>~/.ants/runs/${esc(r.id)}/workspace</code> until you dismiss the Run.</div>` : ""}
+    ${r.state === "done" ? `<h2>Report</h2><div class="card">${mdView(`**What was done.** Scouted ${r.repos.join(", ") || "nothing"}, grilled the spec over 3 Rounds (14 questions, 11 answered by you), wrote and approved \`specs/${r.id}.md\`.\n\n**Repos changed.** ${r.repos.map(x => `\`${x}\` on \`ants/${r.id}\`, 1 commit, not pushed`).join("; ") || "none"}\n\n**Tokens.** ${r.tasks.filter(t => t.tokens).map(t => `${t.name} ${t.tokens}`).join(" · ")}`)}</div>` : `<div class="help" style="margin-top:10px">The Report appears here when the Run ends.</div>`}`
+}
+
+function transcript(r, t) {
+  if (t.st === "queued") return `<div class="tr"><div class="sys">No launch yet.</div></div>`
+  const pr = propsOf(r, t)
+  const sub = (n, d, live) => `<details class="sub" id="sub${n}"><summary>⑂ Explore · ${d}${live ? ` <span class="small"><span class="spin">✻</span> <span class="num" data-subel="${key(r, t)}">${fmtEl(Math.max(0, t.el - 20 - (n - 1) * 9))}</span></span>` : ""}</summary>
+    <div class="muted small">Prompt: ${d}. Report file paths and line numbers.</div><div class="tool">Grep "#[0-9a-f]{6}" repos/web/src</div><div class="tool">Read repos/web/src/theme.ts</div></details>`
+  const end = { running: `<div class="tool">Read repos/web/src/settings/Preferences.tsx</div>${t.subs ? sub(1, "Find every hard-coded colour", true) : ""}${t.subs > 1 ? sub(2, "Check how settings persist", true) : ""}
+      <div class="feed">${(t.live || []).map(l => feedLine(l)).join("")}</div><div class="status">${liveLine(r, t)}</div>`,
+    done: `<div>Everything the Task promised is in place; returning the Result.</div><div class="div">Result</div><pre class="mono" style="background:var(--line2);padding:8px;border-radius:8px">{ "outcome": "done", "summary": "…", "output": { … } }</pre>`,
+    paused: `<div class="sys">⏸ Paused at the usage limit · resumes after ${S.paused.claude || "the reset"}</div>`,
+    round: `<div class="div">Result: a Round of 4 questions</div><div class="sys">Waiting for the Round to be answered, then this session resumes</div>`,
+    stuck: `<div class="div">Result: stuck</div>`, failed: `<div class="sys">Invalid Result, retried once</div><div class="sys">Invalid Result again · [failed]</div>`,
+    stopped: `<div class="tool">Edit specs/onboarding-email.md</div><div class="sys">Stopped by you</div>` }[t.st] || ""
+  return `<div class="tr" id="tr" data-run="${key(r, t)}"><details><summary>Opening prompt</summary><pre class="mono">Run the ${esc(pr.skill)} Skill for this Task. Inputs follow as JSON.\n${esc(JSON.stringify(Object.fromEntries((pr.inputs || []).map(i => [i.slice(2, -1), "…"]))))}</pre></details>
+    <div class="div">Launch 1 · ${esc(r.started)} · ${t.tokens || "0"} tokens</div>
+    <div>I'll read the brief first, then look at how the code handles this today.</div>
+    <div class="tool">Read scout/brief.md</div><details><summary>Thinking</summary><div class="muted">…</div></details>
+    ${t.round > 1 ? `<div class="div">Launch ${t.round} · resumed with the answers to round ${t.round - 1}</div>` : ""}
+    ${(t.sent || []).map(m => `<div class="you">${mdView(m)}</div>`).join("")}${end}</div>`
+}
+
+function taskHead(r, t) {
+  const pr = propsOf(r, t)
+  return ph(`${esc(t.name)} ${badge(t)}`, { crumbs: [`<a href="#/runs">Runs</a>`, `<a href="#/runs/${r.id}">${esc(r.id)}</a>`, esc(t.name)],
+    acts: pr.kind === "agent" ? `<span class="muted small">${agentName(pr.agent)} &nbsp;${skillName(pr.skill)} · ${t.st === "running" ? `<span class="num" data-tok="${key(r, t)}">${fmtTok(t.tok)}</span>` : t.tokens || 0} tokens</span>` : `<span class="muted small">${pr.kind === "user" ? "User Task" : "Built-in Task"}</span>`,
+    sub: t.summary ? esc(t.summary) : "" })
+}
+// "So far": a short paragraph of what the Agent has done, rewritten every couple of minutes while it runs
+// (in Ants: a haiku call over the new Transcript lines, its tokens counted on the Task), plus the Agent's own task list (TaskCreate / TaskUpdate; TodoWrite is off by default now).
+const SOFAR = {
+  grill: ["Read the scout's brief and the theme code in **web**. Two Subagents are mapping every hard-coded colour and how settings are stored.",
+    "Header and Sidebar can use the theme tokens as they are; the chart colours need a dark palette of their own. Now checking the theme tests.",
+    "The theme tests pass. Drafting round 3: where the toggle sits, the default, chart colours and where the choice is stored."],
+  backend: ["Planned 3 tickets for the reindex. On ticket 1, retrying a failed reindex job: wrote the failing test, now changing `ReindexJob`.",
+    "Ticket 1 is done and committed. On ticket 2, the alias swap: reading how the search client creates indices.", "Tickets 1 and 2 are committed; running the full search test suite before ticket 3."],
+  frontend: ["Adding the reindex progress bar to the admin page. Reused the existing `ProgressBar`; wiring it to the new status endpoint.",
+    "The progress bar polls every 5 s and stops when done. Writing the component test."],
+}
+const TODOS = { grill: ["Read the brief", "Map hard-coded colours", "Check how settings persist", "Run the theme tests", "Write round 3"],
+  backend: ["Ticket 1: retry failed jobs", "Ticket 2: alias swap", "Ticket 3: backfill batches", "Run the full suite"], frontend: ["Progress bar", "Poll the status endpoint", "Component test"] }
+function soFar(r, t) {
+  const pr = propsOf(r, t); if (pr.kind !== "agent") return ""
+  const k = key(r, t), list = SOFAR[t.id], live = t.st === "running"
+  const text = live && list ? list[Math.min(t.sumN || 0, list.length - 1)] : t.st === "done" ? (t.summary || `Finished ${t.name.toLowerCase()}. The Result is in the Transcript.`) : t.summary || (list ? list[0] : "Nothing yet.")
+  const todos = live || t.st === "done" ? TODOS[t.id] || [] : []
+  const doneN = live ? Math.min(todos.length - 1, Math.floor((t.live?.length || 0) / 3) + (t.sumN || 0) + 1) : todos.length
+  return `<div class="sofar" data-sofar="${k}"><div class="row small"><b>So far</b><span class="grow"></span>${live ? `<span class="muted">updated <span data-sumage="${k}">${fmtEl(t.sumAge || 0)}</span> ago</span>` : ""}</div>
+    ${mdView(text)}${todos.length ? `<div style="margin-top:8px">${todos.map((x, i) => `<div class="todo ${i < doneN ? "done" : i === doneN && live ? "now" : ""}">${i < doneN ? "☑" : i === doneN && live ? "◐" : "☐"} ${esc(x)}</div>`).join("")}</div>` : ""}</div>`
+}
+function openDrawer(rid, tid) {
+  const r = run(rid), t = r.tasks.find(x => x.id === tid), pr = propsOf(r, t), k = key(r, t)
+  S.drawer = { rid, tid }
+  const tail = pr.kind === "agent" && t.st !== "queued" ? `<h3 style="font-size:13px;margin:4px 0 8px">Latest output</h3><div class="tr" data-run="${k}">
+      ${(t.live || []).slice(-6).map(l => feedLine(l)).join("") || `<div class="tool">Read scout/brief.md</div><div>I'll read the brief first, then look at how the code handles this today.</div>`}<div class="feed"></div>
+      ${t.st === "running" ? `<div class="status">${liveLine(r, t)}</div>` : ""}</div>` : ""
+  const act = WAITING.includes(t.st) ? `<a class="btn primary" style="display:inline-block;text-decoration:none" href="${taskHref(r, t)}">${{ questions: "Answer the round", approve: t.id === "review" ? "Review the changes" : "Approve or send back" }[t.tag] || "Continue or start fresh"}</a>` : ""
+  const body = pr.kind === "agent" ? soFar(r, t) + tail : pr.kind === "user" ? `<div class="sofar">${mdView(t.summary || "You did this.")}</div>` : `<div class="sofar">Ants did this itself; there is no Transcript.</div>`
+  const foot = t.st === "running" ? `<div class="df">${md("dmsg", "", "Comment to the Agent. It reads it at its next tool call.")}<div class="row" style="margin-top:8px"><span class="grow"></span>
+      <button onclick="stop('${rid}','${tid}');closeDrawer();render()">Stop</button><button class="primary" onclick="sendFromDrawer('${rid}','${tid}')">Send</button></div></div>`
+    : act ? `<div class="df">${act}</div>` : ""
+  document.getElementById("drawer").innerHTML = `<div class="drawer"><div class="dh"><div class="row"><div class="grow"><div class="muted small">${esc(r.id)} · ${pr.kind === "agent" ? `${agentName(pr.agent)} &nbsp;${skillName(pr.skill)}` : pr.kind === "user" ? "User Task" : "Built-in Task"}</div>
+      <h3 style="margin:2px 0 6px;font-size:16px">${esc(t.name)}</h3></div><button class="ghost" onclick="closeDrawer()" title="Close (Esc)">✕</button></div>
+      <div class="row">${t.st === "running" ? `<span class="small">${liveLine(r, t)}</span>` : badge(t)}<span class="grow"></span><a class="small" href="${taskHref(r, t)}">Full Transcript →</a></div></div>
+    <div class="db">${body}${(t.sent || []).map(m => `<div style="background:var(--accSoft);padding:8px 12px;border-radius:8px;margin-top:8px"><b class="small">You</b>${mdView(m)}</div>`).join("")}</div>${foot}</div>`
+  window.mountEditors?.()
+}
+function sendFromDrawer(rid, tid) { const m = document.getElementById("dmsg").value; if (!m) return; (run(rid).tasks.find(x => x.id === tid).sent ||= []).push(m); openDrawer(rid, tid) }
+function closeDrawer() { S.drawer = null; const d = document.getElementById("drawer"); if (d) d.innerHTML = "" }
+addEventListener("keydown", e => { if (e.key === "Escape" && S.drawer) closeDrawer() })
+
+function pTask(rid, tid) {
+  const r = run(rid), t = r?.tasks.find(x => x.id === tid); if (!t) return ph("No such Task")
+  if (t.st === "waiting" && t.tag === "questions") return pAnswer(r, t)
+  if (t.st === "waiting" && t.id === "review") return pReview(r, t)
+  if (t.st === "waiting" && t.tag === "approve") return pApprove(r, t)
+  if (["stuck", "failed", "stopped"].includes(t.st)) return pStuck(r, t)
+  const pr = propsOf(r, t)
+  if (pr.kind !== "agent") return taskHead(r, t) + `<div class="card">${pr.kind === "builtin" ? "Ants did this itself; there is no Transcript." : "You answered this."}</div>`
+  const chips = t.st === "running" && t.subs ? `<div class="chips">${["Find every hard-coded colour", "Check how settings persist"].slice(0, t.subs)
+    .map((c, i) => `<span class="chip" onclick="const d=document.getElementById('sub${i + 1}');d.open=true;d.scrollIntoView({block:'center'})"><span class="spin" style="color:inherit">✻</span> Explore · ${c} · <span class="num" data-subel="${key(r, t)}">${fmtEl(Math.max(0, t.el - 20 - i * 9))}</span></span>`).join("")}</div>` : ""
+  const ans = r.tasks.find(x => x.tag === "questions")
+  const round = t.st === "round" && ans ? `<div class="card" style="border-color:var(--wait)">This Task asked round ${t.round}. <a href="${taskHref(r, ans)}">Answer the round</a> and its session resumes.</div>` : ""
+  const composer = t.st === "running" ? `<div class="composer"><div><div class="grow">${md("msg", "", "Message the Agent. It sees it at its next tool call.")}</div>
+    <button onclick="stop('${r.id}','${t.id}')">Stop</button><button class="primary" onclick="send('${r.id}','${t.id}')">Send</button></div></div>` : ""
+  return taskHead(r, t) + soFar(r, t) + chips + round + transcript(r, t) + composer
+}
+
+function pAnswer(r, t) {
+  const qs = [["Who exports", "Who gets the export button: everyone who can see invoices, or only admins?", "Everyone who can see the invoice list; the export holds exactly what they can already see."],
+    ["Which invoices", "Does the export take the invoices currently filtered on screen, or all of them?", "The **current filter**, so what you see is what you get."]]
+  return taskHead(r, t) + `<div class="card" style="background:var(--accSoft);border-color:var(--acc)">The answer screen is settled (<a href="answer-page.html" target="_blank">answer-page prototype</a>); this stub shows its text area as a markdown editor.</div>
+    ${qs.map(([title, q, rec], i) => `<div class="card"><div class="muted small">Question ${i + 1} of 4 · ${title}</div><p style="font-size:17px;font-weight:600;margin:4px 0 10px">${esc(q)}</p>${md("q" + i, rec)}</div>`).join("")}
+    <div class="composer"><div><span class="grow"></span><button class="primary" onclick="act('${r.id}','${t.id}')">Send the round</button></div></div>`
+}
+function pApprove(r, t) {
+  return taskHead(r, t) + `<div class="help">Shows the Result of <a href="${taskHref(r, r.tasks.find(x => x.id === "tospec"))}">Write the spec</a> and the files it references.</div>
+    <div class="card"><div class="muted small mono">specs/search-reindex.md</div>${mdView("# Zero-downtime reindex\n\nBuild a **shadow index**, backfill it with a job, then swap the alias. Reads keep hitting the old index until the swap.\n\n## Steps\n\n1. Create `products_v2` with the new mapping\n2. Backfill from Postgres in batches of 5,000\n3. Swap the `products` alias atomically")}</div>
+    ${field("Comment", "Required to send back. The Agent's session resumes with it.", "", md("cmt", ""))}
+    <div class="composer"><div><span class="grow"></span><button onclick="if(!document.getElementById('cmt').value)return alert('Send back needs a comment');act('${r.id}','${t.id}','back')">Send back</button>
+    <button class="primary" onclick="act('${r.id}','${t.id}')">Approve</button></div></div>`
+}
+// Reviewing an implementation: an Agent wrote a walkthrough of the changes; the user reads it as a story and approves the push.
+// What a push would send, per repo: read from the Run's clones (git log origin/<base>..HEAD) when the modal opens.
+const PUSHES = {
+  "billing-retry-impl": [
+    { repo: "billing", remote: "git@github.com:stacc/billing.git", base: "main", isNew: true, files: 6, add: 184, del: 22,
+      commits: [["a1f3c2e", "Add PaymentRetryPolicy with 1 h, 6 h and 24 h backoff"], ["9b07d41", "Schedule a retry instead of marking the invoice unpaid"], ["3c5e88a", "Test retry scheduling and the last attempt"]] },
+    { repo: "web", remote: "git@github.com:stacc/web.git", base: "main", isNew: true, files: 3, add: 41, del: 3,
+      commits: [["e42d901", "Show the planned retry on the invoice page"]] },
+  ],
+}
+const FILES = {
+  billing: [["src/main/kotlin/billing/PaymentRetryPolicy.kt", 31, 0, "@@ PaymentRetryPolicy.kt @@\n+data class PaymentRetryPolicy(val delays: List<Duration> = listOf(1.hours, 6.hours, 24.hours))\n+  fun next(attempt: Int) = delays.getOrNull(attempt)"],
+    ["src/main/kotlin/billing/PaymentFailedHandler.kt", 9, 4, "@@ PaymentFailedHandler.kt @@\n-    invoice.markUnpaid()\n+    policy.next(event.attempt)?.let { retries.schedule(invoice, it) }\n+      ?: invoice.markUnpaid()"],
+    ["src/main/kotlin/billing/RetryScheduler.kt", 38, 0, "@@ RetryScheduler.kt @@\n+class RetryScheduler(private val jobs: JobQueue) {\n+  fun schedule(invoice: Invoice, after: Duration) = jobs.enqueue(RetryPayment(invoice.id), after)\n+}"],
+    ["src/main/kotlin/billing/Invoice.kt", 6, 2, "@@ Invoice.kt @@\n+  var nextRetryAt: Instant? = null"],
+    ["src/test/kotlin/billing/PaymentRetryPolicyTest.kt", 54, 0, ""], ["src/test/kotlin/billing/PaymentFailedHandlerTest.kt", 46, 16, ""]],
+  web: [["src/invoices/InvoiceBanner.tsx", 14, 1, "@@ InvoiceBanner.tsx @@\n+{invoice.nextRetryAt && <Banner tone=\"info\">We'll try your card again {relative(invoice.nextRetryAt)}.</Banner>}"],
+    ["src/invoices/types.ts", 2, 0, "@@ types.ts @@\n+  nextRetryAt?: string"], ["src/invoices/InvoiceBanner.test.tsx", 25, 2, ""]],
+}
+const remoteShort = url => url.replace(/^git@([^:]+):/, "$1/").replace(/^https?:\/\//, "").replace(/\.git$/, "")
+const remoteOf = (rid, repo) => (PUSHES[rid] || []).find(p => p.repo === repo)?.remote
+function reviewTab(v) { document.querySelectorAll("[data-view]").forEach(e => e.hidden = e.dataset.view !== v); document.querySelectorAll("[data-tab]").forEach(b => b.classList.toggle("on", b.dataset.tab === v)) }
+function confirmPush(rid, tid) {
+  const ps = PUSHES[rid] || [], n = ps.length, branch = `ants/${rid}`
+  const bg = document.createElement("div"); bg.className = "modal-bg"; bg.id = "pushModal"
+  bg.onclick = e => { if (e.target === bg) bg.remove() }
+  bg.innerHTML = `<div class="modal" style="height:auto;max-height:86vh;width:min(760px,92vw)">
+    <div class="mh"><b>Push ${n} branch${n === 1 ? "" : "es"}?</b><span style="flex:1"></span><button class="ghost" title="Close" onclick="this.closest('.modal-bg').remove()">✕</button></div>
+    <div class="mb" style="font-size:14px;padding:18px 24px">
+      <div class="help">Last check before anything leaves your machine. This is exactly what will be pushed.</div>
+      ${ps.map(p => `<div class="card" style="box-shadow:none;margin:12px 0">
+        <div class="row"><b class="mono" style="font-size:15px">${esc(p.repo)}</b><span class="grow"></span><span class="small">${p.files} files · <span style="color:var(--ok)">+${p.add}</span> <span style="color:var(--bad)">−${p.del}</span></span></div>
+        <div class="kv" style="margin-top:10px;grid-template-columns:90px 1fr">
+          <span class="k">Remote</span><span class="mono small">${esc(p.remote)}</span>
+          <span class="k">Branch</span><span><code>${esc(branch)}</code> ${p.isNew ? `<span class="pill p-quiet">new on the remote</span>` : `<span class="pill p-waiting">updates an existing branch</span>`} <span class="muted small">based on <code>${esc(p.base)}</code></span></span>
+          <span class="k">Commits</span><span>${p.commits.map(([sha, msg]) => `<div class="small" style="padding:2px 0"><span class="mono muted">${sha}</span> ${esc(msg)}</div>`).join("")}</span></div></div>`).join("")}
+      <div class="help">Ants pushes these branches only: never with force, never to <code>${esc(ps[0]?.base || "main")}</code>, and it opens no pull request.</div></div>
+    <div class="row" style="padding:12px 24px;border-top:1px solid var(--line)"><span class="grow"></span>
+      <button onclick="this.closest('.modal-bg').remove()">Cancel</button>
+      <button class="primary" onclick="this.closest('.modal-bg').remove();act('${rid}','${tid}');toast('Pushed <b>${ps.map(p => p.repo).join("</b> and <b>")}</b> to <code>${branch}</code>.')">Push ${n} branch${n === 1 ? "" : "es"}</button></div></div>`
+  document.body.append(bg)
+}
+// ---------- story mode, after Varde's (docs/guide/stories.md in varde-editor) ----------
+// A walkthrough Agent writes a story set as JSON in Varde's format: a title, short stories that follow the code as it runs,
+// each step a one-sentence claim about one exact line range. Ants checks it mechanically (file missing, range out of
+// bounds, a "changed" site that touches no hunk, a citation that isn't there) and fills each site's text from disk to spot staleness.
+const SRC = {
+  "billing:PaymentFailedHandler.kt": { lines: ["package billing", "", "class PaymentFailedHandler(", "    private val invoices: InvoiceRepository,", "    private val policy: PaymentRetryPolicy,",
+    "    private val retries: RetryScheduler,", ") {", "    fun handle(event: PaymentFailed) {", "        val invoice = invoices.get(event.invoiceId)",
+    "        log.info(\"Payment failed for ${invoice.id}, attempt ${event.attempt}\")", "        policy.next(event.attempt)?.let { retries.schedule(invoice, it) }",
+    "            ?: invoice.markUnpaid()", "        invoices.save(invoice)", "    }", "}"], added: [5, 6, 11, 12], removed: { 10: ["        invoice.markUnpaid()"] } },
+  "billing:PaymentRetryPolicy.kt": { lines: ["package billing", "", "import kotlin.time.Duration", "import kotlin.time.Duration.Companion.hours", "",
+    "/** How long to wait before each retry of a failed card payment. */", "data class PaymentRetryPolicy(", "    val delays: List<Duration> = listOf(1.hours, 6.hours, 24.hours),",
+    ") {", "    /** The delay before retry [attempt], or null when none are left. */", "    fun next(attempt: Int): Duration? = delays.getOrNull(attempt - 1)", "}"], added: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], removed: {} },
+  "billing:RetryScheduler.kt": { lines: ["package billing", "", "class RetryScheduler(private val jobs: JobQueue) {", "    fun schedule(invoice: Invoice, after: Duration) {",
+    "        invoice.nextRetryAt = Instant.now() + after", "        jobs.enqueue(RetryPayment(invoice.id), after)", "    }", "}"], added: [1, 2, 3, 4, 5, 6, 7, 8], removed: {} },
+  "billing:Invoice.kt": { lines: ["package billing", "", "class Invoice(val id: InvoiceId, val customer: CustomerId, val amount: Money) {", "    var status: InvoiceStatus = InvoiceStatus.OPEN",
+    "    var nextRetryAt: Instant? = null", "", "    fun markUnpaid() {", "        status = InvoiceStatus.UNPAID", "        nextRetryAt = null", "    }", "}"], added: [5, 9], removed: {} },
+  "web:InvoiceBanner.tsx": { lines: ["import { Banner } from \"../ui/Banner\"", "import { relative } from \"../time\"", "import type { Invoice } from \"./types\"", "",
+    "export function InvoiceBanner({ invoice }: { invoice: Invoice }) {", "  if (invoice.status === \"UNPAID\") return <Banner tone=\"danger\">This invoice is unpaid.</Banner>",
+    "  if (invoice.nextRetryAt)", "    return <Banner tone=\"info\">We'll try your card again {relative(invoice.nextRetryAt)}.</Banner>", "  return null", "}"], added: [2, 7, 8], removed: {} },
+  "billing:PaymentRetryPolicyTest.kt": { lines: ["class PaymentRetryPolicyTest {", "    private val policy = PaymentRetryPolicy()", "",
+    "    @Test fun `first retry waits an hour`() = assertEquals(1.hours, policy.next(1))", "    @Test fun `third retry waits a day`() = assertEquals(24.hours, policy.next(3))",
+    "    @Test fun `no fourth retry`() = assertNull(policy.next(4))", "}"], added: [1, 2, 3, 4, 5, 6, 7], removed: {} },
+}
+const ST = (name, file, kind, from, to, claim, x = {}) => ({ name, file, kind, from, to, claim, ...x })
+const STORY_SETS = {
+  "billing-retry-impl": { title: "A failed card payment is retried three times before the invoice goes unpaid", stories: [
+    { name: "Retrying a failed payment", premise: "A failed payment no longer marks the invoice unpaid at once: it asks a policy for a delay and schedules a retry.", steps: [
+      ST("Failure arrives", "billing:PaymentFailedHandler.kt", "context", 8, 10, "A failed payment arrives in `PaymentFailedHandler.handle`, carrying which attempt it was.",
+        { why: "This is where control enters: the payment provider's webhook ends up here.", flow: { in: "PaymentWebhookController posts PaymentFailed", out: "policy.next(attempt)" },
+          values: [["attempt", "1", "fixture", "PaymentFailedHandlerTest.kt:14"]] }),
+      ST("Ask the policy", "billing:PaymentFailedHandler.kt", "changed", 11, 11, "Instead of giving up, the handler asks the retry policy how long to wait.",
+        { why: "Keeps the numbers out of the handler, so changing the schedule never touches the flow." }),
+      ST("Three delays", "billing:PaymentRetryPolicy.kt", "changed", 7, 11, "The policy holds three delays, 1 h, 6 h and 24 h, and has none for a fourth attempt.",
+        { values: [["delays", "1 h, 6 h, 24 h", "literal", "PaymentRetryPolicy.kt:8"], ["next(4)", "null", "invented"]],
+          prediction: { question: "Why does next() use attempt − 1 rather than attempt?", choices: [
+            ["Attempts count from 1 and the list from 0", true, "Right: attempt 1 is the first retry, which is delays[0]."],
+            ["To skip the first delay", false, "No: attempt 1 gets 1 h, the first delay."],
+            ["getOrNull is off by one", false, "getOrNull is plain index access; the − 1 lines up 1-based attempts with a 0-based list."]] } }),
+      ST("Schedule it", "billing:RetryScheduler.kt", "changed", 4, 7, "The retry becomes a delayed job on the existing JobQueue, so it survives a restart.",
+        { nudge: "Look at what happens if the job runs after the invoice was paid some other way." })] },
+    { name: "What the customer sees", premise: "While a retry is planned, the invoice page says when.", steps: [
+      ST("nextRetryAt", "billing:Invoice.kt", "changed", 5, 5, "The invoice now records when the next attempt happens.", { flow: { in: "RetryScheduler.schedule sets it", out: "InvoiceBanner reads it" } }),
+      ST("The banner", "web:InvoiceBanner.tsx", "changed", 7, 8, "The invoice page shows an info banner while `nextRetryAt` is set.")] },
+    { name: "Giving up", premise: "After the last retry the invoice ends up unpaid, as before.", steps: [
+      ST("Last attempt", "billing:PaymentFailedHandler.kt", "changed", 12, 12, "With no delay left, the handler marks the invoice unpaid: the old behaviour."),
+      ST("Clears the date", "billing:Invoice.kt", "changed", 9, 9, "Marking it unpaid also clears `nextRetryAt`, so the banner goes away."),
+      ST("No fourth retry", "billing:PaymentRetryPolicyTest.kt", "changed", 6, 6, "A test pins that a fourth attempt gets no delay.",
+        { stale: "    @Test fun `no fourth retry`() = assertEquals(null, policy.next(4))" })] },
+  ], remainder: [["web:src/invoices/types.ts", 1], ["web:src/invoices/InvoiceBanner.test.tsx", 2], ["billing:src/test/kotlin/billing/PaymentFailedHandlerTest.kt", 1]] },
+}
+const W = { rid: null, story: null, step: 0, diff: false, details: false, answered: {}, commenting: false }
+const REVIEW_COMMENTS = {}
+const inl = s => esc(s).replace(/`([^`]+)`/g, "<code>$1</code>")
+function spineHtml(set) {
+  return `<div class="spine"><div class="stitle">${esc(set.title)}</div>
+    ${set.stories.map((s, i) => { const stale = s.steps.filter(x => x.stale).length
+      return `<a class="srow ${W.story === i ? "on" : ""}" href="javascript:walk(${i},0)"><span>${esc(s.name)}</span><span class="cnt">${s.steps.length} steps${stale ? ` · <span style="color:var(--wait)">${stale} stale</span>` : ""}</span></a>` }).join("")}
+    <div class="srem"><div style="margin-bottom:6px"><b>Remainder</b> · ${set.remainder.reduce((a, [, n]) => a + n, 0)} changes no step covers</div>${set.remainder.map(([f, n]) => `<div class="rf"><span class="mono">${esc(f.split(":")[1].split("/").pop())}</span><span class="muted">${n}</span></div>`).join("")}</div></div>`
+}
+function codeHtml(st) {
+  const src = SRC[st.file], [repo, path] = st.file.split(":"), rows = []
+  src.lines.forEach((text, i) => {
+    const n = i + 1, inSite = n >= st.from && n <= st.to, added = W.diff && src.added.includes(n)
+    rows.push(`<div class="cl ${inSite ? "site " + st.kind : "dim"} ${added ? "add" : ""}"><span class="ln">${n}</span><span class="bar"></span><span class="tx">${esc(text) || " "}</span></div>`)
+    if (W.diff) (src.removed[n] || []).forEach(t => rows.push(`<div class="cl del"><span class="ln">−</span><span class="bar"></span><span class="tx">${esc(t)}</span></div>`))
+  })
+  return `<div class="cfile"><span class="mono"><b>${repo}</b> · ${esc(path)}</span><span class="grow"></span><label class="small row" style="gap:6px"><input type="checkbox" ${W.diff ? "checked" : ""} onchange="W.diff=this.checked;renderWalk()"> Show the diff <kbd>d</kbd></label></div><div class="code">${rows.join("")}</div>`
+}
+function walk(i, j) { Object.assign(W, { story: i, step: j, details: false, commenting: false }); renderWalk() }
+function stepBy(d) {
+  const set = STORY_SETS[W.rid]; if (W.story == null) return
+  const n = set.stories[W.story].steps.length, j = W.step + d
+  if (j >= 0 && j < n) walk(W.story, j)
+}
+function answer(k) { (W.answered[`${W.story}.${W.step}`] ||= []).push(k); renderWalk() }
+function renderWalk() {
+  const box = document.getElementById("walkMain"), spine = document.getElementById("walkSpine"); if (!box) return
+  const set = STORY_SETS[W.rid]; spine.innerHTML = spineHtml(set)
+  if (W.story == null) {
+    box.innerHTML = `<div class="card"><div class="muted small">Story set</div><h3 style="font-size:17px;margin:2px 0 10px">${esc(set.title)}</h3>
+      ${set.stories.map((s, i) => `<div class="sover"><a href="javascript:walk(${i},0)"><b>${esc(s.name)}</b></a> <span class="muted small">${s.steps.length} steps</span><div class="small">${inl(s.premise)}</div>
+        <div class="small muted">${s.steps.map(x => esc(x.name)).join(" → ")}</div></div>`).join("")}
+      <div class="help" style="margin-top:12px">Pick a story to walk it one step at a time: <kbd>n</kbd> next, <kbd>p</kbd> back, <kbd>d</kbd> diff, <kbd>c</kbd> comment, <kbd>Esc</kbd> back here.</div></div>`
+    return
+  }
+  const s = set.stories[W.story], st = s.steps[W.step], key = `${W.story}.${W.step}`, picks = W.answered[key] || []
+  const solved = st.prediction && picks.some(k => st.prediction.choices[k][1])
+  const comments = (REVIEW_COMMENTS[W.rid] ||= []).filter(c => c.story === W.story && c.step === W.step)
+  box.innerHTML = `<div class="row" style="margin-bottom:12px;align-items:baseline"><b style="font-size:15px">${esc(s.name)}</b><span class="muted small">${inl(s.premise)}</span><span class="grow"></span><button class="ghost small" onclick="W.story=null;renderWalk()">All stories <kbd>Esc</kbd></button></div>
+    <div class="walkgrid"><div class="smenu">${s.steps.map((x, j) => `<a class="${j === W.step ? "on" : ""}" href="javascript:walk(${W.story},${j})">${x.stale ? "⚠ " : ""}${esc(x.name)}</a>`).join("")}</div>
+    <div>${codeHtml(st)}
+      <div class="band">
+        <div class="claim">${st.stale ? '<span class="stale">STALE</span> ' : ""}${inl(st.claim)}</div>
+        ${st.values ? `<div class="vals">${st.values.map(([n, v, prov, cite]) => `<span class="${cite ? "cited" : "inv"}" title="${cite ? "from " + esc(cite) : "not found in the code"}">${esc(n)}: <b>${esc(v)}</b> <span class="small">[${cite ? prov : "invented"}]</span></span>`).join("")}</div>` : ""}
+        ${st.prediction && !W.details ? `<div class="pred"><b>${esc(st.prediction.question)}</b>${solved ? `<div class="small" style="margin-top:4px">✓ ${esc(st.prediction.choices.find(c => c[1])[2])}</div>`
+          : `<div class="row" style="flex-wrap:wrap;margin-top:6px">${st.prediction.choices.map(([t], k) => `<button class="small" ${picks.includes(k) ? "disabled" : ""} onclick="answer(${k})">(${k + 1}) ${esc(t)}</button>`).join("")}</div>
+            ${picks.length ? `<div class="small" style="margin-top:4px;color:var(--warnText)">${esc(st.prediction.choices[picks.at(-1)][2])}</div>` : ""}`}</div>` : ""}
+        ${W.details && !st.why && !st.flow && !st.nudge && !st.stale ? '<div class="muted small" style="margin-top:12px">Nothing more for this step.</div>' : ""}
+        ${W.details && (st.why || st.flow || st.nudge || st.stale) ? `<div class="kv small" style="margin-top:12px;grid-template-columns:64px 1fr">
+          ${st.why ? `<span class="k">Why</span><span>${inl(st.why)}</span>` : ""}
+          ${st.flow ? `<span class="k">Flow</span><span>in: ${inl(st.flow.in)}<br>out: ${inl(st.flow.out)}</span>` : ""}
+          ${st.nudge ? `<span class="k">Nudge</span><span>${inl(st.nudge)}</span>` : ""}
+          ${st.stale ? `<span class="k">Stale</span><span>Written against<br><code>${esc(st.stale.trim())}</code><br>Now<br><code>${esc(SRC[st.file].lines[st.from - 1].trim())}</code></span>` : ""}
+</div>` : ""}
+        ${comments.map(c => `<div class="scomment"><b>${c.type}</b> ${esc(c.text)}</div>`).join("")}
+        ${W.commenting ? `<div class="row" style="margin-top:14px"><select id="ctype">${["ISSUE", "SUGGESTION", "NOTE", "COMMENT"].map(x => `<option>${x}</option>`).join("")}</select>
+          <input id="ctext" class="grow" placeholder="On this claim…" onkeydown="if(event.key==='Enter')saveStepComment();if(event.key==='Escape'){W.commenting=false;renderWalk()}"><button class="primary" onclick="saveStepComment()">Add</button></div>` : ""}
+        <div class="bandacts"><button onclick="stepBy(-1)" ${W.step ? "" : "disabled"}>◀ Back <kbd>p</kbd></button><button onclick="stepBy(1)" ${W.step < s.steps.length - 1 ? "" : "disabled"}>Next <kbd>n</kbd> ▶</button>
+          <span class="grow"></span><button class="ghost" onclick="W.details=!W.details;renderWalk()">${W.details ? "Hide details" : "Why, flow, nudge"} <kbd>D</kbd></button>
+          <button class="ghost" onclick="W.commenting=true;renderWalk();document.getElementById('ctext')?.focus()">Comment on this step <kbd>c</kbd></button></div></div></div></div>`
+  if (W.commenting) document.getElementById("ctext")?.focus()
+}
+function saveStepComment() {
+  const text = document.getElementById("ctext")?.value.trim(); if (!text) return
+  const s = STORY_SETS[W.rid].stories[W.story]
+  REVIEW_COMMENTS[W.rid].push({ story: W.story, step: W.step, type: document.getElementById("ctype").value, text, where: `${s.name} › ${s.steps[W.step].name}` })
+  W.commenting = false; renderWalk(); renderStepComments()
+}
+function renderStepComments() {
+  const box = document.getElementById("stepComments"); if (!box) return
+  const cs = REVIEW_COMMENTS[W.rid] || []
+  box.innerHTML = cs.length ? `<b class="small">Comments on steps (${cs.length})</b>${cs.map(c => `<div class="small" style="padding:3px 0"><span class="tag t-${c.type}">${c.type[0] + c.type.slice(1).toLowerCase()}</span> <a href="javascript:walk(${c.story},${c.step})">${esc(c.where)}</a>: ${esc(c.text)}</div>`).join("")}` : ""
+}
+addEventListener("keydown", e => {
+  if (!document.getElementById("walkMain") || document.getElementById("walkMain").closest("[hidden]") || e.target.closest("input, textarea, select, [contenteditable]") || e.metaKey || e.ctrlKey) return
+  if (W.story == null) return
+  const k = e.key
+  if (k === "n") stepBy(1); else if (k === "p") stepBy(-1); else if (k === "d") { W.diff = !W.diff; renderWalk() }
+  else if (k === "D") { W.details = !W.details; renderWalk() } else if (k === "c") { e.preventDefault(); W.commenting = true; renderWalk() }
+  else if (k === "Escape") { W.story = null; renderWalk() } else if (/^[123]$/.test(k)) { const st = STORY_SETS[W.rid].stories[W.story].steps[W.step]; if (st.prediction) answer(+k - 1) }
+})
+
+function pReview(r, t) {
+  W.rid = r.id; setTimeout(() => { renderWalk(); renderStepComments() })
+  return taskHead(r, t) + `<div class="grid3" style="margin-bottom:14px">
+    ${[["billing", "6 files", "+184 −22", "3 commits"], ["web", "3 files", "+41 −3", "1 commit"]].map(([n, f, d, c]) => `<div class="card"><b class="mono">${n}</b> <span class="muted small">on ants/${esc(r.id)}</span>${remoteOf(r.id, n) ? `<div class="mono small muted" title="${esc(remoteOf(r.id, n))}">${esc(remoteShort(remoteOf(r.id, n)))}</div>` : ""}<div class="small">${f} · <span style="color:var(--ok)">${d.split(" ")[0]}</span> <span style="color:var(--bad)">${d.split(" ")[1]}</span> · ${c}</div></div>`).join("")}
+    <div class="card"><b>Tests</b><div class="small"><span class="pill p-done">Passing</span> 412 billing · 96 web</div></div></div>
+    <div class="tabs"><button class="on" data-tab="story" onclick="reviewTab('story')">The story</button><button data-tab="repo" onclick="reviewTab('repo')">By repo</button></div>
+    <div class="storyview" data-view="story"><div id="walkSpine"></div><div id="walkMain"></div></div>
+    <div class="walk" data-view="repo" hidden><nav>${(PUSHES[r.id] || []).map(p => `<b class="small mono" style="padding:8px 10px 2px">${p.repo}</b>${(FILES[p.repo] || []).map(([path], j) => `<a class="mono" style="font-size:12px" href="javascript:document.getElementById('f_${p.repo}_${j}').scrollIntoView({block:'start'})">${esc(path.split("/").pop())}</a>`).join("")}`).join("")}</nav>
+    <div>${(PUSHES[r.id] || []).map(p => `<div class="card"><div class="row"><b class="mono" style="font-size:16px">${p.repo}</b><span class="mono small muted" title="${esc(p.remote)}">${esc(remoteShort(p.remote))}</span><code>ants/${esc(r.id)}</code><span class="grow"></span><span class="small">${p.files} files · <span style="color:var(--ok)">+${p.add}</span> <span style="color:var(--bad)">−${p.del}</span></span></div>
+        <div style="margin:8px 0 4px">${p.commits.map(([sha, msg]) => `<div class="small"><span class="mono muted">${sha}</span> ${esc(msg)}</div>`).join("")}</div>
+        ${(FILES[p.repo] || []).map(([path, add, del, diff], j) => `<details id="f_${p.repo}_${j}" ${diff ? "open" : ""} style="border-top:1px solid var(--line2);padding:8px 0"><summary style="cursor:pointer"><span class="mono small">${esc(path)}</span> <span class="small"><span style="color:var(--ok)">+${add}</span> <span style="color:var(--bad)">−${del}</span></span></summary>
+          ${diff ? mdView("```diff\n" + diff + "\n```") : '<div class="muted small" style="padding:6px 0">Tests: the full diff opens in the clone.</div>'}</details>`).join("")}</div>`).join("")}</div></div>
+    <div id="stepComments" style="margin:16px 0 0"></div>
+    ${field("Overall comment", "Send back needs this or a comment on a step: the implementers resume with all of them. Approving pushes both branches.", "", md("cmt", ""))}
+    <div class="composer"><div><span class="grow muted small">Nothing is pushed until you approve.</span><button onclick="if(!document.getElementById('cmt').value&&!(REVIEW_COMMENTS['${r.id}']||[]).length)return alert('Send back needs a comment, overall or on a step');act('${r.id}','${t.id}','back')">Send back</button>
+    <button class="primary" onclick="confirmPush('${r.id}','${t.id}')">Approve and push…</button></div></div>`
+}
+function pStuck(r, t) {
+  const lbl = { stuck: "What it needs", failed: "Why it failed", stopped: "Where it stopped" }[t.st]
+  return taskHead(r, t) + `<div class="card"><h3>${lbl}</h3>${mdView(t.needs)}</div>
+    <details style="margin-bottom:14px"><summary class="small" style="cursor:pointer">The session so far</summary>${transcript(r, t)}</details>
+    ${field("Your instruction", t.st === "stuck" ? "Required to continue the session. Optional when starting fresh." : "Optional.", "", md("ins", ""))}
+    <div class="composer"><div>${t.st === "failed" ? `<button class="danger" onclick="cancelRun('${r.id}')">Cancel the Run</button>` : ""}<span class="grow"></span>
+    <button onclick="act('${r.id}','${t.id}','fresh')">Start fresh</button>
+    <button class="primary" onclick="if(${t.st === "stuck"}&&!document.getElementById('ins').value)return alert('Continue needs an instruction');act('${r.id}','${t.id}','continue')">Continue the session</button></div></div>`
+}
+
+function pProcesses() {
+  return ph("Processes", { acts: `<button class="primary" onclick="go('#/processes/new')">New Process</button>` })
+    + `<table><tr><th>Process</th><th>From</th><th>Vault · Source map</th><th>Schedule</th><th>Check</th><th>Live Runs</th><th></th></tr>
+    ${S.processes.map(p => `<tr class="click" onclick="go('#/processes/${p.id}')"><td><b>${esc(p.name)}</b></td><td class="muted small">${p.by}</td><td class="muted small">${esc(p.vault)} · ${esc(p.sourceMap)}</td><td class="small">${schedShort(p)}</td>
+      <td>${p.ready ? `<span class="pill p-ready">Ready</span>` : `<span class="pill p-failed">Can't start</span>`}</td>
+      <td class="muted">${S.runs.filter(r => r.proc === p.id && r.state === "live").length}</td>
+      <td><a href="#/processes/${p.id}/edit" onclick="event.stopPropagation()">Edit diagram</a></td></tr>`).join("")}</table>`
+}
+// ---------- schedules ----------
+// A schedule is the Process's timer start event (Operaton keeps the timer, so it survives restarts).
+// The Process page edits it in words; the cron it writes is shown, and editable under Advanced.
+const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+const EVERY = [["hour", "Every hour"], ["day", "Every day"], ["weekday", "Every weekday"], ["week", "Every week"], ["month", "Every month"]]
+function cronOf(sc) {
+  if (sc.cron) return sc.cron
+  const [h, m] = sc.at.split(":").map(Number)
+  return { hour: `${m} * * * *`, day: `${m} ${h} * * *`, weekday: `${m} ${h} * * MON-FRI`, week: `${m} ${h} * * ${sc.on.toUpperCase()}`, month: `${m} ${h} ${sc.dom} * *` }[sc.every]
+}
+function schedText(sc) {
+  if (sc.cron) return `On cron <code>${esc(sc.cron)}</code>`
+  return { hour: `Every hour at :${sc.at.split(":")[1]}`, day: `Every day at ${sc.at}`, weekday: `Every weekday at ${sc.at}`, week: `Every ${sc.on} at ${sc.at}`, month: `On day ${sc.dom} of every month at ${sc.at}` }[sc.every]
+}
+function nextRun(sc) {
+  if (sc.cron) return null
+  const now = new Date(), [h, m] = sc.at.split(":").map(Number), d = new Date(now); d.setSeconds(0, 0)
+  if (sc.every === "hour") { d.setMinutes(m); if (d <= now) d.setHours(d.getHours() + 1); return d }
+  d.setHours(h, m)
+  const ok = x => sc.every === "day" || (sc.every === "weekday" && x.getDay() % 6 !== 0) || (sc.every === "week" && x.getDay() === DAYS.indexOf(sc.on)) || (sc.every === "month" && x.getDate() === +sc.dom)
+  for (let i = 0; i < 400 && (d <= now || !ok(d)); i++) d.setDate(d.getDate() + 1)
+  return d
+}
+function nextText(sc) {
+  const d = nextRun(sc); if (!d) return "per the cron"
+  const mins = Math.round((d - new Date()) / 60000), today = d.toDateString() === new Date().toDateString()
+  return `${today ? "today" : d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" })} ${d.toTimeString().slice(0, 5)} · in ${mins >= 1440 ? Math.floor(mins / 1440) + "d " : ""}${Math.floor(mins % 1440 / 60)}h ${mins % 60}m`
+}
+const schedShort = p => !p.schedule ? `<a href="#/processes/${p.id}" onclick="event.stopPropagation();setTimeout(()=>document.getElementById('schedule')?.scrollIntoView({block:'center'}),50)">＋ Schedule</a>` : p.schedule ? `<span title="${esc(cronOf(p.schedule))}">⏰ ${schedText(p.schedule).replace(/^Every /, "")}${p.schedule.paused ? " · paused" : ""}</span>` : "—"
+function setSched(id, patch) { const p = proc(id); p.schedule = { ...p.schedule, ...patch }; render() }
+function schedCard(p) {
+  const sc = p.schedule, id = p.id, fields = PROPS[id].start.fields
+  if (!sc) return `<div class="card" id="schedule"><h3>⏰ Schedule</h3><div class="row"><span class="muted grow">No schedule. Runs start when someone presses Start.</span>
+    <button onclick="setSched('${id}',{every:'day',at:'00:00',on:'Mon',dom:1,paused:false})">＋ Add a schedule</button></div></div>`
+  const missing = fields.filter(f => f.required)
+  return `<div class="card" id="schedule"><h3>⏰ Schedule <span class="grow"></span>${sc.paused ? '<span class="pill p-quiet">Paused</span>' : '<span class="pill p-ready">On</span>'}</h3>
+    <div class="row" style="flex-wrap:wrap">
+      <select style="width:auto" onchange="setSched('${id}',{every:this.value,cron:''})">${EVERY.map(([v, l]) => `<option value="${v}" ${v === sc.every && !sc.cron ? "selected" : ""}>${l}</option>`).join("")}</select>
+      ${sc.every === "week" ? `<span>on</span><select style="width:auto" onchange="setSched('${id}',{on:this.value})">${DAYS.map(d => `<option ${d === sc.on ? "selected" : ""}>${d}</option>`).join("")}</select>` : ""}
+      ${sc.every === "month" ? `<span>on day</span><input type="number" min="1" max="28" style="width:70px" value="${sc.dom}" onchange="setSched('${id}',{dom:+this.value})">` : ""}
+      <span>at</span><input type="time" style="width:auto" value="${sc.at}" onchange="setSched('${id}',{at:this.value})"></div>
+    <div class="kv" style="margin-top:14px"><span class="k">Runs</span><span>${schedText(sc)}</span>
+      <span class="k">Next Run</span><span>${sc.paused ? '<span class="muted">paused</span>' : !p.ready ? '<span style="color:var(--bad)">won\'t start until the check above passes</span>' : missing.length ? '<span style="color:var(--bad)">won\'t start: it needs input</span>' : nextText(sc)}</span>
+      <span class="k">Cron</span><span><code>${esc(cronOf(sc))}</code> <details style="display:inline-block;margin-left:8px"><summary class="small" style="cursor:pointer;color:var(--acc)">Advanced</summary>
+        <input class="mono" style="margin-top:6px;width:260px" placeholder="minute hour day month weekday" value="${esc(sc.cron || "")}" onchange="setSched('${id}',{cron:this.value.trim()})"></details></span></div>
+    ${missing.length ? `<div class="warn" style="margin-top:14px">This Process asks for <b>${missing.map(f => esc(f.label || f.name)).join(", ")}</b> every time it starts, and a scheduled Run has nobody to ask, so it won't start on this schedule. Schedule a Process whose job is fixed, or make the field optional.</div>` : ""}
+    <div class="subsec row"><span class="help grow" style="margin:0">Missed while Ants was off or asleep? It runs once when Ants is back, not once per missed time.</span>
+      <button onclick="setSched('${id}',{paused:${!sc.paused}})">${sc.paused ? "Resume" : "Pause"}</button>
+      <button class="danger" onclick="proc('${id}').schedule=null;render()">Remove</button></div></div>`
+}
+const upcoming = () => S.processes.filter(p => p.schedule && !p.schedule.paused && p.ready && !PROPS[p.id].start.fields.some(f => f.required)).map(p => ({ p, at: nextRun(p.schedule) })).sort((a, b) => (a.at || 9e15) - (b.at || 9e15))
+
+function pProcess(id) {
+  const p = proc(id); if (!p) return ph("No such Process")
+  const fields = PROPS[id].start.fields
+  return ph(esc(p.name), { crumbs: [`<a href="#/processes">Processes</a>`, esc(p.name)], acts: `<button onclick="if(!proc('${id}').schedule)setSched('${id}',{every:'day',at:'00:00',on:'Mon',dom:1,paused:false});setTimeout(()=>document.getElementById('schedule')?.scrollIntoView({behavior:'smooth',block:'center'}))">⏰ ${p.schedule ? "Schedule" : "Add a schedule"}</button><button onclick="go('#/processes/${id}/edit')">Edit diagram</button>`,
+      sub: `Vault <b>${esc(p.vault)}</b> · Source map <b>${esc(p.sourceMap)}</b> · set on the diagram` })
+    + `<div class="card">${p.ready ? `<span class="pill p-ready">Ready</span> <span class="muted small">&nbsp;Names, schemas, CLI commands, Source map, paths and the login all check out.</span>`
+      : `<span class="pill p-failed">Can't start</span><ul class="reasons">${p.reasons.map(x => `<li>${esc(x)}</li>`).join("")}</ul>`}</div>
+    <div class="card"><h3>Start a Run</h3>${fields.length ? "" : '<div class="help">This Process takes no input: its job is in the diagram.</div>'}
+      ${fields.map(f => field(esc(f.label || f.name) + (f.required ? "" : ' <span class="muted small" style="font-weight:500">(optional)</span>'), esc(f.help || ""), "",
+        f.type === "markdown" ? md("f_" + f.name, "", "", true)
+        : f.type === "repos" ? `<div class="row" style="flex-wrap:wrap;gap:6px 14px">${["billing", "web", "api", "search", "payments"].map(x => `<label class="row" style="font-weight:500"><input type="checkbox" name="f_${f.name}" value="${x}"> <span class="mono">${x}</span></label>`).join("")}</div>`
+        : f.type === "yesno" ? `<label class="row" style="font-weight:500"><input type="checkbox" id="f_${f.name}"> Yes</label>`
+        : `<input id="f_${f.name}">`)).join("")}
+      <p style="margin-top:16px"><button class="primary" ${p.ready ? "" : "disabled"} onclick="startRun('${id}')">Start</button></p></div>
+    ${schedCard(p)}
+    <h2>Diagram</h2>${diagramBox("viewer", id)}
+    <h2>Runs of this Process</h2>${runsTable(S.runs.filter(r => r.proc === id))}`
+}
+function pNewProcess() {
+  return ph("New Process", { crumbs: [`<a href="#/processes">Processes</a>`, "New"], sub: "Start from a pattern. Everything in it can be changed, and the modeler explains each element as you select it." })
+    + `<div class="grid2">${Object.entries(PATTERNS).map(([id, [n, d, nodes]]) => `<a class="card" href="#/processes/${id}/edit" style="color:inherit;text-decoration:none;display:block">
+      <h3>${n}</h3><div class="muted small">${d}</div><div class="small mono" style="margin-top:10px;color:var(--acc)">${nodes.filter(x => x[2]).map(x => x[2]).join(" → ")}</div></a>`).join("")}</div>`
+}
+function pModeler(id) {
+  const p = proc(id)
+  return ph(p ? esc(p.name) : "New Process" + (PATTERNS[id] ? ` <span class="muted" style="font-weight:500">· ${PATTERNS[id][0]}</span>` : ""), { crumbs: [`<a href="#/processes">Processes</a>`, p ? `<a href="#/processes/${id}">${esc(p.name)}</a>` : `<a href="#/processes/new">New</a>`, "Diagram"],
+      acts: `<span class="muted small">${p?.by === "shipped" ? "Shipped: saving makes your own copy" : "Draft"}</span><button class="primary" onclick="saveDeploy()">Save and deploy</button>` })
+    + `<div class="modelerWrap">${diagramBox("modeler", id || "new")}<div class="props"><div id="props"></div><div id="checks" style="border-top:1px solid var(--line);margin-top:18px;padding-top:12px"></div></div></div>`
+}
+
+// ---------- Library ----------
+const isOwn = x => x.folder.startsWith("~/.ants/")
+const folderLabel = f => f === "shipped" ? "shipped with Ants" : f
+const usedBy = (kind, name) => Object.entries(PROPS).filter(([, els]) => Object.values(els).some(e => e[kind] === name)).map(([pid]) => proc(pid)?.name).filter(Boolean)
+function pList(kind) {
+  const one = kind === "agents" ? "Agent" : "Skill"
+  return ph(`${one}s`, { acts: `<button onclick="toast('Import one markdown file. It fills the create form, unsaved.')">Import…</button><button class="primary" onclick="go('#/${kind}/new')">New ${one}</button>`,
+      sub: `From the folders in <a href="#/settings">Settings</a>. Ants writes only into <code>~/.ants/${kind}</code>; the rest are read-only, with Copy.` })
+    + `<table><tr><th>Name</th>${kind === "agents" ? "<th>CLI · model</th><th>Skills</th>" : "<th>Run by</th>"}<th>Description</th><th>Folder</th></tr>
+    ${S[kind].map(x => `<tr class="click" onclick="go('#/${kind}/${x.name}')"><td><b>${ent(kind === "agents" ? "agent" : "skill", x.name)}</b>${x.vault ? ' <span class="tag t-vault">Vault</span>' : ""}</td>
+      ${kind === "agents" ? `<td class="small">${x.cli} · ${x.model}</td><td class="small">${x.skills.map(n => skillName(n, false)).join(" ")}</td>` : `<td class="small">${S.agents.filter(a => a.skills.includes(x.name)).map(a => agentName(a.name, false)).join(" ") || "<span class='muted'>no Agent</span>"}</td>`}
+      <td class="small">${esc(x.desc)}</td><td class="muted small">${esc(folderLabel(x.folder))}</td></tr>`).join("")}</table>`
+}
+// The Agent and Skill forms are shared by their pages and by the "New" modal in the modeler.
+// formRender redraws whichever is showing: the page, or only the modal (so the diagram behind it survives).
+let formRender = () => render()
+function pAgent(name) {
+  const x = agentOf(name) || { name: "", folder: "~/.ants/agents", desc: "", cli: "claude", model: "default", tools: ["Read", "Glob", "Grep"], skills: [], isNew: true }
+  if (!S.draft || S.draft.name !== x.name) S.draft = JSON.parse(JSON.stringify(x))
+  const ro = isOwn(x) ? "" : "disabled"
+  return ph(ent("agent", x.name || "New Agent"), { crumbs: [`<a href="#/agents">Agents</a>`, esc(x.name || "New")],
+      acts: ro ? `<span class="muted small">Read-only (${esc(folderLabel(x.folder))})</span><button onclick="toast('Copied into ~/.ants/agents as ${esc(x.name)}-copy.')">Copy</button>` : `${x.isNew ? "" : `<button class="danger">Delete</button>`}<button class="primary">Save</button>`,
+      sub: `Used by: ${usedBy("agent", x.name).join(", ") || "no Process"}` })
+    + agentForm(S.draft, ro)
+}
+function agentForm(d, ro) {
+  return `<div class="card"><h3>Who it is</h3>
+      <div class="grid2">${field("Name", "How Tasks name it. Unique across all Agent folders.", "implementer", `<input ${ro} value="${esc(d.name)}" onchange="S.draft.name=this.value">`)}
+      ${field("Description", "One line: what this Agent is for. Shown in the modeler's Agent dropdown.", "Implements one ticket, test first, and commits.", `<input ${ro} value="${esc(d.desc)}" onchange="S.draft.desc=this.value">`)}
+      ${field("CLI", "Which AI CLI runs it, on Ants' own login.", "", `<select ${ro} onchange="S.draft.cli=this.value;S.draft.model='default';formRender()"><option ${d.cli === "claude" ? "selected" : ""}>claude</option><option ${d.cli === "codex" ? "selected" : ""}>codex</option></select>`)}
+      ${field("Model", "An alias always runs the newest of its family; a fixed version stays put until it retires.", "", modelSelect(d, ro))}</div>
+      ${field("Skills it runs", "The jobs this Agent may do. A Task picks one of them; the modeler only offers these.", "implement, tdd", chipSel(d.skills, ro))}</div>
+    <div class="card"><h3>What it may do</h3>${d.cli === "claude" ? toolsSection(d, ro)
+      : `<div class="help">Codex has no tool list; its sandbox decides what it may touch.</div><select ${ro}><option ${d.sandbox === "read-only" ? "selected" : ""}>read-only: reads files, changes nothing</option><option>workspace-write: changes files in the Run workspace</option><option>danger-full-access</option></select>`}</div>
+    <div class="card"><h3>Standing instructions</h3><div class="help">Who the Agent is and how it works, whatever the Skill. Markdown; <b>Expand</b> gives you a big editor with a live preview.</div>${md("instr", d.instr ?? `You are the **${d.name || "agent"}**.\n\n## How you work\n\n- Keep changes small\n- Never push`, "", true)}${ro ? '<input type="hidden" disabled>' : ""}</div>`
+}
+function toolRow(d, ro, name, desc, limKind, eg, limNote, warn) {
+  const on = d.tools.includes(name), L = d.limits?.[name] || [], open = on && limKind && (L.length || d.limOpen === name)
+  return `<div class="trow ${on ? "on" : ""}"><label><input type="checkbox" ${ro} ${on ? "checked" : ""} onchange="toggleTool('${esc(name)}',this.checked)"> <b class="mono">${esc(name)}</b></label>
+    <span class="tdesc">${desc}${warn ? `<span class="twarn">${desc ? " " : ""}⚠ ${warn}</span>` : ""}</span>
+    ${on && limKind && !ro && !open ? `<button class="ghost small" onclick="S.draft.limOpen='${name}';((S.draft.limits||={})['${name}']||=['']);formRender()">Limit…</button>` : on && limKind && L.filter(Boolean).length ? `<span class="small muted">limited</span>` : "<span></span>"}
+    ${open ? `<div class="tlim"><div class="help">Only these ${limKind}. ${limNote || ""} None listed means all.</div>
+      ${L.map((v, i) => `<div class="row" style="margin-bottom:4px"><input class="mono grow" ${ro} placeholder="e.g. ${eg}" value="${esc(v)}" onchange="S.draft.limits['${name}'][${i}]=this.value">${ro ? "" : `<button class="ghost" title="Remove" onclick="S.draft.limits['${name}'].splice(${i},1);formRender()">×</button>`}</div>`).join("")}
+      ${ro ? "" : `<button onclick="S.draft.limits['${name}'].push('');formRender()">＋ Add</button>`}</div>` : ""}</div>`
+}
+function toolsSection(d, ro) {
+  const custom = d.tools.filter(t => !KNOWN_TOOLS.includes(t)), othersOn = OTHER_TOOLS.filter(t => d.tools.includes(t)).length
+  const customNote = t => t.startsWith("mcp__") ? "An MCP tool. Ants starts Agents with MCP off, so it needs an MCP server Ants doesn't configure yet." : "Not a tool Ants knows. Passed to Claude Code as written; the check before a Run says if the CLI doesn't have it."
+  return `<div class="help">Tick each tool this Agent may use. Anything unticked is refused: an Agent without <b>Edit</b> and <b>Write</b> can't change code, whatever its Skill says.</div>
+    ${TOOL_GROUPS.map(([g, ts]) => `<div class="tgroup">${g}</div>${ts.map(([n, desc, lk, eg, ln]) => toolRow(d, ro, n, desc, lk, eg, ln)).join("")}`).join("")}
+    <details ${othersOn || d.showOthers ? "open" : ""} ontoggle="S.draft.showOthers=this.open" style="margin-top:16px">
+      <summary class="small" style="cursor:pointer;color:var(--acc)">Claude Code's other ${OTHER_TOOLS.length} tools${othersOn ? ` (${othersOn} ticked)` : ""}: usually off for Agents, and why</summary>
+      ${OTHER_TOOLS.map(n => toolRow(d, ro, n, "", null, null, null, CAUTION[n])).join("")}</details>
+    ${custom.length ? `<div class="tgroup">Added by you</div>${custom.map(n => toolRow(d, ro, n, "", null, null, null, customNote(n))).join("")}` : ""}
+    ${ro ? "" : `<div class="row" style="margin-top:14px"><input class="mono" placeholder="A tool Ants doesn't list yet, by name" onkeydown="if(event.key==='Enter'){addTool(this.value);event.preventDefault()}"><button style="white-space:nowrap" onclick="addTool(this.previousElementSibling.value)">＋ Add tool</button></div>`}
+    <div class="help" style="margin-top:12px">Always on: <span class="mono">${ALWAYS_ON_TOOLS.join(", ")}</span>, the Agent's own task list, which feeds <b>So far</b>.</div>`
+}
+function toggleTool(n, v) { S.draft.tools = v ? [...new Set([...S.draft.tools, n])] : S.draft.tools.filter(t => t !== n); if (!v && S.draft.limits) delete S.draft.limits[n]; formRender() }
+function addTool(v) { v = (v || "").trim(); if (!v || S.draft.tools.includes(v)) return; S.draft.tools.push(v); if (OTHER_TOOLS.includes(v)) S.draft.showOthers = true; formRender() }
+function chipSel(list, ro) {
+  return `<div class="chipsel">${list.map(s => `<span class="c">${icon("skill")}${esc(s)}${ro ? "" : `<button onclick="S.draft.skills=S.draft.skills.filter(x=>x!=='${s}');formRender()">×</button>`}</span>`).join("")}
+    ${ro ? "" : `<input list="skillList" placeholder="Add a Skill…" onchange="if(skillOf(this.value)&&!S.draft.skills.includes(this.value)){S.draft.skills.push(this.value);formRender()}">`}</div>
+    <datalist id="skillList">${S.skills.map(s => `<option value="${s.name}">${esc(s.desc)}</option>`).join("")}</datalist>`
+}
+const schemaOf = fields => JSON.stringify({ type: "object", required: fields, properties: Object.fromEntries(fields.map(f => [f, { type: f.endsWith("s") ? "array" : "string", description: `What ${f} holds` }])) }, null, 2)
+function pSkill(name) {
+  const x = skillOf(name) || { name: "", folder: "~/.ants/skills", desc: "", fields: [], isNew: true }, ro = isOwn(x) ? "" : "disabled"
+  const runBy = S.agents.filter(a => a.skills.includes(x.name))
+  return ph(ent("skill", x.name || "New Skill"), { crumbs: [`<a href="#/skills">Skills</a>`, esc(x.name || "New")],
+      acts: ro ? `<span class="muted small">Read-only (${esc(folderLabel(x.folder))})</span><button onclick="toast('Copied into ~/.ants/skills.')">Copy</button>` : `${x.isNew ? "" : `<button class="danger">Delete</button>`}<button class="primary">Save</button>`,
+      sub: `Used by: ${usedBy("skill", x.name).join(", ") || "no Process"}` })
+    + skillForm(x, ro, `<h3>Run by</h3><div class="help">Agents whose <b>Skills it runs</b> list this Skill. Edit that list on the Agent.</div>
+      ${runBy.map(a => `<div class="row" style="padding:6px 0;border-bottom:1px solid var(--line2)"><span class="grow">${agentName(a.name)}</span><span class="muted small">${a.cli}</span></div>`).join("") || `<div class="warn">No Agent runs this Skill yet, so no Task can use it.</div>`}
+      <h3 style="margin-top:18px">Result fields</h3><div class="help">Inputs this Skill offers the Tasks after it.</div>${x.fields.map(f => `<code>\${${x.name}.${f}}</code> `).join("") || "<span class='muted small'>none</span>"}`)
+}
+function skillForm(x, ro, side, bind = "") {
+  const on = prop => bind ? `onchange="${bind}.${prop}=this.value"` : ""
+  return `<div class="grid2" style="grid-template-columns:1.4fr 1fr"><div class="card">
+      ${field("Name", "How Agents and Tasks name it. Unique across all Skill folders.", "walkthrough", `<input ${ro} value="${esc(x.name)}" ${on("name")}>`)}
+      ${field("Description", "When to use it, in one line. Agents and the modeler show it.", "Tell the story of a set of changes across repos, for review.", `<input ${ro} value="${esc(x.desc)}" ${on("desc")}>`)}
+      ${field("SKILL.md", "The instructions the Agent follows for this job. Markdown, with the frontmatter above.", "", md("skillmd", x.body ?? `# ${x.name || "New Skill"}\n\n${x.desc}\n\n## Steps\n\n1. Read the inputs\n2. Do the job\n3. Return the **Result** with the fields below`, "", true))}
+      ${field("result.schema.json", `A JSON Schema for the Result's <code>output</code>. Later Tasks read each field as <code>\${taskId.field}</code>, so every property here becomes an input others can use.`, "",
+        `<textarea data-json data-tall id="schema">${esc(x.schema ?? schemaOf(x.fields))}</textarea>`)}
+      <details class="small" style="margin-top:8px"><summary style="cursor:pointer">Example: scout's schema</summary><pre class="mono" style="background:var(--line2);padding:10px;border-radius:8px">${esc(JSON.stringify({ type: "object", required: ["repos", "brief"], properties: { repos: { type: "array", items: { type: "string" }, description: "Source map names of the repos to clone" }, branch: { type: "string", description: "A suggested work branch" }, brief: { type: "string", description: "Path to scout/brief.md" } } }, null, 2))}</pre>
+        Later Tasks then take <code>\${scout.repos}</code> and <code>\${scout.brief}</code> as inputs.</details>
+      ${field("Vault", "Tell Agents running this Skill where the Vault is (<code>metadata.varde-vault</code>). The Task can still turn it off.", "", `<label class="row" style="font-weight:500"><input type="checkbox" ${ro} ${x.vault ? "checked" : ""} ${bind ? `onchange="${bind}.vault=this.checked"` : ""}> This Skill reads or writes the Vault</label>`)}</div>
+    <div class="card">${side}</div></div>`
+}
+
+// "New Agent" / "New Skill" from an Agent Task in the modeler: the same form in a big modal; Create and use picks it on the Task.
+function openCreate(kind, pid, elId) {
+  const task = PROPS[pid][elId], ag = agentOf(task.agent)
+  if (kind === "agents") S.draft = { name: "", folder: "~/.ants/agents", desc: "", cli: "claude", model: "default", tools: ["Read", "Glob", "Grep"], skills: task.skill ? [task.skill] : [], isNew: true }
+  else S.sdraft = { name: "", folder: "~/.ants/skills", desc: "", fields: [], isNew: true }
+  const bg = document.createElement("div"); bg.className = "modal-bg"; bg.id = "createModal"
+  const side = () => !ag ? `<h3>Who runs it</h3><div class="warn">This Task has no Agent yet. The Skill is created, and you add it to an Agent's <b>Skills it runs</b>.</div>`
+    : isOwn(ag) ? `<h3>Who runs it</h3><div class="okbox">Added to <b>${esc(ag.name)}</b>'s Skills, and picked on this Task.</div>`
+    : `<h3>Who runs it</h3><div class="warn"><b>${esc(ag.name)}</b> is ${esc(folderLabel(ag.folder))} and read-only, so the Skill can't be added to it. Copy the Agent, or pick one of your own, then choose this Skill.</div>`
+  formRender = () => {
+    const keep = id => bg.querySelector("#" + id)?.value
+    if (kind === "agents") { const v = keep("instr"); if (v !== undefined) S.draft.instr = v } else { const b = keep("skillmd"), sc = keep("schema"); if (b !== undefined) Object.assign(S.sdraft, { body: b, schema: sc }) }
+    bg.innerHTML = `<div class="modal"><div class="mh"><b class="ent ent-${kind === "agents" ? "agent" : "skill"}">${icon(kind === "agents" ? "agent" : "skill")}New ${kind === "agents" ? "Agent" : "Skill"}</b><span class="muted small">saved into <code>~/.ants/${kind}</code></span><span style="flex:1"></span>
+      <button class="ghost" onclick="closeCreate()">Cancel</button><button class="primary" onclick="saveCreate('${kind}','${pid}','${elId}')">Create and use</button></div>
+      <div class="mb" style="font-size:14px;background:var(--bg)">${kind === "agents" ? agentForm(S.draft, "") : skillForm(S.sdraft, "", side(), "S.sdraft")}</div></div>`
+    window.mountEditors?.()
+  }
+  document.body.append(bg); formRender()
+}
+function closeCreate() { document.getElementById("createModal")?.remove(); formRender = () => render(); S.draft = null }
+function saveCreate(kind, pid, elId) {
+  const task = PROPS[pid][elId], bg = document.getElementById("createModal")
+  if (kind === "agents") {
+    const d = S.draft; d.instr = bg.querySelector("#instr")?.value
+    if (!/^[a-z][a-z0-9-]*$/.test(d.name || "")) return toast("Give the Agent a name: lowercase letters, digits and dashes.")
+    if (agentOf(d.name)) return toast(`There is already an Agent called ${esc(d.name)}.`)
+    S.agents.push({ ...d, isNew: false, folder: "~/.ants/agents" }); task.agent = d.name; task.skill = d.skills[0] || ""
+    toast(`Created <b>${esc(d.name)}</b> in <code>~/.ants/agents</code> and picked it on this Task.`)
+  } else {
+    const d = S.sdraft, sc = bg.querySelector("#schema")?.value
+    if (!/^[a-z][a-z0-9-]*$/.test(d.name || "")) return toast("Give the Skill a name: lowercase letters, digits and dashes.")
+    if (skillOf(d.name)) return toast(`There is already a Skill called ${esc(d.name)}.`)
+    let fields = []; try { fields = Object.keys(JSON.parse(sc).properties || {}) } catch { return toast("Fix result.schema.json first: it isn't valid JSON.") }
+    S.skills.push({ name: d.name, folder: "~/.ants/skills", desc: d.desc || "", fields, vault: !!d.vault })
+    const ag = agentOf(task.agent)
+    if (ag && isOwn(ag)) { ag.skills.push(d.name); task.skill = d.name }
+    toast(`Created <b>${esc(d.name)}</b> in <code>~/.ants/skills</code>${ag && isOwn(ag) ? `, added it to ${esc(ag.name)} and picked it on this Task` : ""}.`)
+  }
+  closeCreate(); renderProps(pid)
+}
+
+function pSettings() {
+  const named = (key, label, help) => `<div class="card"><h3>${label}</h3><div class="help">${help}</div><div class="listed">${S[key].map((v, i) => `<div class="row">
+      <input style="width:180px" value="${esc(v.name)}" onchange="S.${key}[${i}].name=this.value"><input class="grow mono" value="${esc(v.path)}" onchange="S.${key}[${i}].path=this.value">
+      <label class="row small" style="white-space:nowrap"><input type="radio" name="${key}" ${v.def ? "checked" : ""} onchange="S.${key}.forEach((x,j)=>x.def=j===${i})"> default</label>
+      <button class="ghost" onclick="S.${key}.splice(${i},1);render()">Remove</button></div>`).join("")}
+      <button onclick="S.${key}.push({name:'',path:''});render()">＋ Add</button></div></div>`
+  const paths = (key, label, help, fixed) => `<div class="card"><h3>${label}</h3><div class="help">${help}</div><div class="listed">${S[key].map((v, i) => `<div class="row">
+      <input class="grow mono" value="${esc(v)}" ${i === 0 ? "disabled" : ""} onchange="S.${key}[${i}]=this.value">${i === 0 ? `<span class="muted small" style="white-space:nowrap">${fixed}</span>` : `<button class="ghost" onclick="S.${key}.splice(${i},1);render()">Remove</button>`}</div>`).join("")}
+      <button onclick="S.${key}.push('');render()">＋ Add folder</button></div></div>`
+  return ph("Settings", { acts: `<button class="primary">Save</button>`, sub: "Written to <code>~/.ants/settings.yaml</code>." })
+    + `<div class="grid2"><div class="card"><h3>Claude login</h3>
+      <div class="kv"><span class="k">Status</span><span><span class="pill p-ready">Logged in</span> &nbsp;personal Pro</span>
+        <span class="k">Config folder</span><span><code>~/.ants/claude</code></span>
+        <span class="k">Usage</span><span>${[["5-hour", 82], ["7-day", 41]].map(([l, v]) => `<div class="meter"><span>${l}</span><div class="track"><div class="fill ${v > 75 ? "hot" : ""}" style="width:${v}%"></div></div><b>${v}%</b></div>`).join("")}</span></div>
+      <div class="subsec"><b class="small">Log in again</b><div class="help">Run this in a terminal, then press <b>Check login</b>.</div>
+        <div class="cmd"><code>CLAUDE_CONFIG_DIR=~/.ants/claude claude auth login</code><button onclick="navigator.clipboard?.writeText('CLAUDE_CONFIG_DIR=~/.ants/claude claude auth login');toast('Copied the command.')">Copy</button></div>
+        <button onclick="toast('Logged in as personal Pro.')">Check login</button></div>
+      <div class="subsec"><b class="small">Agent Tasks at once</b><div class="help">Live CLI processes across all Runs. More wait as <b>Queued</b>.</div>
+        <input type="number" min="1" value="${S.cap}" style="width:90px" onchange="S.cap=+this.value;render()"></div></div>
+    <div class="card"><h3>Commands</h3>${["claude", "codex", "git"].map(c => field(c, "", "", `<input class="mono" value="/opt/homebrew/bin/${c}">`)).join("")}<p><button>Detect</button></p></div></div>
+    ${named("vaults", "Vaults", "Each Process picks one on its diagram; new Processes get the default.")}
+    ${named("sourceMaps", "Source maps", "Each Process picks one on its diagram; new Processes get the default.")}
+    <div class="grid2">${paths("agentFolders", "Agent folders", "Every <code>*.md</code> directly inside is an Agent.", "Ants' own, always")}${paths("skillFolders", "Skill folders", "Every folder holding a <code>SKILL.md</code>, at any depth, is a Skill.", "Ants' own, always")}</div>
+    <div class="grid2"><div class="card"><h3>Server</h3>${field("Address", "Ants refuses a non-loopback address while the password is the default.", "127.0.0.1:7323", `<input class="mono" value="127.0.0.1:7323">`)}${field("Password", "", "", `<input type="password" placeholder="Change from admin">`)}</div>
+    <div class="card"><h3>Updates</h3><p class="small">Running v${S.version}. ${S.update === "available" ? `v0.5.0 is available. <button onclick="S.update='installed';refresh();render()">Update</button>` : S.update === "installed" ? "v0.5.0 installed; <code>ants restart</code> to use it." : "Up to date."}</p><button onclick="toast('Checked: nothing newer.')">Check now</button></div></div>`
+}
+
+// ---------- actions (stubs) ----------
+function act(rid, tid, how) {
+  const r = run(rid), t = r.tasks.find(x => x.id === tid); t.st = "done"
+  if (how === "back") { const target = { approve: "tospec", review: "backend" }[tid]; r.tasks.find(x => x.id === target).st = "queued" }
+  else if (t.tag === "questions") r.tasks.find(x => x.id === "grill").st = "queued"
+  else if (how) t.st = "queued"
+  go(`#/runs/${rid}`)
+}
+function send(rid, tid) { const t = run(rid).tasks.find(x => x.id === tid), m = document.getElementById("msg").value; if (m) (t.sent ||= []).push(m); render() }
+function stop(rid, tid) { Object.assign(run(rid).tasks.find(x => x.id === tid), { st: "stopped", subs: 0, waited: 0, summary: "You stopped it.", needs: "Stopped by you just now." }); render() }
+function cancelRun(rid) { if (!confirm("Cancel the Run? It ends as failed and keeps its Run workspace until dismissed.")) return; Object.assign(run(rid), { state: "failed", ended: "now" }); go(`#/runs/${rid}`) }
+function dismiss(rid) { S.runs = S.runs.filter(r => r.id !== rid); go("#/runs") }
+function tryNow(cli) { delete S.paused[cli]; S.runs.flatMap(r => r.tasks).filter(t => t.st === "paused").forEach(t => t.st = "queued"); refresh() }
+function startRun(pid) {
+  const id = (document.getElementById("f_branch")?.value || "").replace(/^ants\//, "") || "new-run-" + (S.runs.length + 1)
+  const first = { "setup-vault": T("init", "Init the Vault", "queued"), implement: T("clone", "Clone repos", "done") }[pid] || T("scout", "Scout", "queued")
+  S.runs.unshift({ id, proc: pid, state: "live", started: "now", repos: [], tasks: [first] }); go(`#/runs/${id}`)
+}
+
+// ---------- bpmn-js ----------
+let bpmn = null, selected = null
+async function mountDiagrams() {
+  const box = document.querySelector("[data-bpmn]"); if (!box) return
+  if (!window.BpmnViewer) return
+  box.querySelector(".nolib")?.remove()
+  const kind = box.dataset.bpmn, pid = box.dataset.proc, r = run(box.dataset.run)
+  const Ctor = kind === "modeler" ? window.BpmnModeler : window.BpmnViewer
+  bpmn = new Ctor({ container: box, additionalModules: kind === "modeler" ? [antsModule] : [] })
+  await bpmn.importXML(XML[pid] || EMPTY_XML)
+  const canvas = bpmn.get("canvas"), reg = bpmn.get("elementRegistry"), overlays = bpmn.get("overlays")
+  canvas.zoom("fit-viewport", "auto")
+  PROPS[pid] ||= {}
+  reg.getAll().forEach(e => { const k = PROPS[pid][e.id]?.kind; if (k && k !== "start") canvas.addMarker(e.id, "ants-" + k) })
+  box.querySelectorAll("[data-z]").forEach(b => b.onclick = () => {
+    const z = b.dataset.z
+    if (z === "in") canvas.zoom(canvas.zoom() * 1.25); else if (z === "out") canvas.zoom(canvas.zoom() / 1.25)
+    else if (z === "fit") canvas.zoom("fit-viewport", "auto"); else box.requestFullscreen()
+  })
+  box.onfullscreenchange = () => setTimeout(() => { canvas.resized(); canvas.zoom("fit-viewport", "auto") }, 50)
+  if (r) { // Run: colour each reached Task and pin a live badge on the active ones
+    r.tasks.forEach(t => {
+      if (!reg.get(t.id)) return
+      canvas.addMarker(t.id, "m-" + ({ quiet: "quiet", stuck: "waiting" }[stCls(t)] || stCls(t)))
+      const label = t.st === "running" ? `<i></i><span class="num" data-el="${key(r, t)}">${fmtEl(t.el)}</span> · <span class="num" data-tok="${key(r, t)}">${fmtTok(t.tok)}</span>${t.subs ? ` · ⑂ ${t.subs}` : ""}` : t.st === "done" ? "✓" : WAITING.includes(t.st) ? (TAGS[tagOf(t)] || ["", tagOf(t)]).join(" ") : stText(t)
+      overlays.add(t.id, { position: { top: -12, right: t.st === "done" ? 16 : 70 }, html: `<span class="ov ${t.st === "done" ? "done" : stCls(t) === "stuck" ? "waiting" : stCls(t)}">${label}</span>` })
+      if (t.round) overlays.add(t.id, { position: { bottom: 14, left: 6 }, html: `<span class="ov quiet">round ${t.round}</span>` })
+    })
+    bpmn.get("eventBus").on("element.click", e => { const t = r.tasks.find(x => x.id === e.element.id); if (t) openDrawer(r.id, t.id) })
+  }
+  if (kind === "modeler") {
+    bpmn.get("eventBus").on("selection.changed", e => { selected = e.newSelection[0] || null; renderProps(pid) })
+    bpmn.get("eventBus").on("shape.added", e => { const k = PROPS[pid][e.element.id]?.kind; if (k) setTimeout(() => canvas.addMarker(e.element.id, "ants-" + k)) })
+    bpmn.get("eventBus").on("commandStack.changed", () => renderChecks(pid))
+    renderProps(pid)
+  }
+}
+// ---------- Ants on bpmn-js: offer only what Ants runs, and explain every element ----------
+const KIND_INFO = {
+  agent: ["Agent Task", "An Agent runs one of its Skills and hands back a Result.", "bpmn:ServiceTask", "bpmn-icon-service-task"],
+  user: ["User Task", "Waits for you: answer a Round, or approve / send back.", "bpmn:UserTask", "bpmn-icon-user-task"],
+  builtin: ["Built-in Task", "Ants does it itself: clone repos, push, accept recommendations.", "bpmn:ServiceTask", "bpmn-icon-script-task"],
+}
+const curPid = () => document.querySelector("[data-bpmn]")?.dataset.proc
+const seedKind = (id, kind) => { PROPS[curPid()][id] = kind === "agent" ? A("", "") : { kind, what: kind === "user" ? "Approve" : "Clone repos", inputs: [] } }
+// Replace-menu entries for elements Ants doesn't run (see "Which BPMN elements does Ants run?").
+const DENY = ["script", "business-rule", "manual", "send-task", "receive-task", "message", "signal", "error", "escalation", "conditional", "compensat", "link", "complex", "inclusive", "event-based", "transaction", "ad-hoc", "terminate", "data-"]
+function AntsModeler(palette, contextPad, popupMenu, create, elementFactory, autoPlace) {
+  const ants = kind => { const s = elementFactory.createShape({ type: KIND_INFO[kind][2] }); s.businessObject.name = KIND_INFO[kind][0]; seedKind(s.id, kind); return s }
+  const shape = (attrs, name) => () => { const s = elementFactory.createShape(attrs); if (name) s.businessObject.name = name; return s }
+  const entry = (group, className, title, mk) => ({ group, className, title, action: { dragstart: e => create.start(e, mk()), click: e => create.start(e, mk()) } })
+  palette.registerProvider(500, { getPaletteEntries: () => entries => {
+    ["create.task", "create.data-object", "create.data-store", "create.participant-expanded", "create.intermediate-event"].forEach(k => delete entries[k])
+    Object.assign(entries, {
+      "create.start-event": entry("event", "bpmn-icon-start-event-none", "Start: where a Run begins; holds the start form", shape({ type: "bpmn:StartEvent" })),
+      "create.timer-start": entry("event", "bpmn-icon-start-event-timer", "Timer start: start a Run on a schedule", shape({ type: "bpmn:StartEvent", eventDefinitionType: "bpmn:TimerEventDefinition" }, "Every Monday 06:00")),
+      "create.timer-wait": entry("event", "bpmn-icon-intermediate-event-catch-timer", "Wait: pause the flow for a while or until a time", shape({ type: "bpmn:IntermediateCatchEvent", eventDefinitionType: "bpmn:TimerEventDefinition" }, "Wait 1 hour")),
+      "create.end-event": entry("event", "bpmn-icon-end-event-none", "End: the Run finishes here", shape({ type: "bpmn:EndEvent" })),
+      "create.exclusive-gateway": entry("gateway", "bpmn-icon-gateway-xor", "Decision: take exactly one path, or merge paths back together", shape({ type: "bpmn:ExclusiveGateway" })),
+      "create.parallel-gateway": entry("gateway", "bpmn-icon-gateway-parallel", "Parallel: run branches at the same time, then wait for all", shape({ type: "bpmn:ParallelGateway" })),
+      "create.call-activity": entry("activity", "bpmn-icon-call-activity", "Call another Process as one step", shape({ type: "bpmn:CallActivity" }, "Call a Process")),
+      "ants-sep": { group: "ants", separator: true },
+      ...Object.fromEntries(Object.keys(KIND_INFO).map(k => ["create.ants-" + k, entry("ants", `${KIND_INFO[k][3]} ants-pal-${k}`, `${KIND_INFO[k][0]}: ${KIND_INFO[k][1]}`, () => ants(k))])),
+    })
+    return entries
+  } })
+  contextPad.registerProvider(500, { getContextPadEntries: el => entries => {
+    delete entries["append.append-task"]; delete entries["append.intermediate-event"]
+    if (el.type === "bpmn:EndEvent" || el.type === "label" || el.waypoints) return entries
+    Object.keys(KIND_INFO).forEach(k => entries["append.ants-" + k] = { group: "model", className: `${KIND_INFO[k][3]} ants-pal-${k}`, title: "Append an " + KIND_INFO[k][0],
+      action: { click: (e, src) => autoPlace.append(src, ants(k)), dragstart: e => create.start(e, ants(k), { source: el }) } })
+    return entries
+  } })
+  popupMenu.registerProvider("bpmn-replace", 500, { getPopupMenuEntries: () => entries => {
+    Object.keys(entries).forEach(k => { if (k === "replace-with-task" || DENY.some(d => k.includes(d))) delete entries[k] }); return entries } })
+}
+AntsModeler.$inject = ["palette", "contextPad", "popupMenu", "create", "elementFactory", "autoPlace"]
+const antsModule = { __init__: ["antsModeler"], antsModeler: ["type", AntsModeler] }
+
+// Upstream Tasks of an element, walking incoming flows: their Result fields are what it can read.
+function upstream(el, seen = new Set()) {
+  (el.incoming || []).forEach(f => { const s = f.source; if (!seen.has(s.id)) { seen.add(s.id); upstream(s, seen) } })
+  return seen
+}
+const fieldsOf = (id, p) => p.kind === "agent" ? skillOf(p.skill)?.fields || [] : p.kind === "user" ? (p.what === "Approve" ? ["approved", "comment"] : ["answers"])
+  : p.what === "Clone repos" ? ["repos"] : p.what === "Accept recommendations" ? ["answers"] : []
+function offered(pid, el) {
+  const P = PROPS[pid], reg = bpmn.get("elementRegistry"), out = []
+  ;(P.start?.fields || []).forEach(f => f.name && out.push(["${" + f.name + "}", "start form"]))
+  upstream(el).forEach(id => { const p = P[id]; if (p && p.kind !== "start") fieldsOf(id, p).forEach(f => out.push([`\${${id}.${f}}`, reg.get(id)?.businessObject.name || id])) })
+  return out
+}
+
+// Conditions on the paths out of an exclusive gateway. Ants writes them as JUEL on the flow; the user never has to.
+const CONDS = {}
+;["spec-you", "spec-agent", "spec-rec"].forEach(p => CONDS[p] = { f5: { field: "${grill.questions}", op: "is not empty" }, f7: { def: true }, f10: { field: "${approve.approved}", op: "is true" }, f12: { def: true } })
+Object.entries(PATTERNS).forEach(([id, p]) => CONDS[id] = p[5])
+CONDS.implement = { f14: { field: "${review.approved}", op: "is true" }, f16: { def: true } }
+const OPS = ["is true", "is false", "is empty", "is not empty", "equals", "does not equal", "is more than", "is less than"]
+const needsValue = op => ["equals", "does not equal", "is more than", "is less than"].includes(op)
+function juel(c) {
+  if (c?.def) return "(default: no condition)"
+  if (!c?.field) return "(no condition yet)"
+  const f = c.field.slice(2, -1), v = /^-?\d+(\.\d+)?$/.test(c.value || "") ? c.value : `'${c.value || ""}'`
+  return { "is true": `\${${f}}`, "is false": `\${!${f}}`, "is empty": `\${empty ${f}}`, "is not empty": `\${not empty ${f}}`,
+    "equals": `\${${f} == ${v}}`, "does not equal": `\${${f} != ${v}}`, "is more than": `\${${f} > ${v}}`, "is less than": `\${${f} < ${v}}` }[c.op]
+}
+const nameOf = e => e.businessObject.name || { "bpmn:ExclusiveGateway": "Decision", "bpmn:ParallelGateway": "Parallel gateway", "bpmn:SequenceFlow": "Path" }[e.type] || e.type.replace("bpmn:", "")
+function setCond(pid, fid, patch) { const C = CONDS[pid] ||= {}; C[fid] = { ...(C[fid] || {}), ...patch }; delete C[fid].def; renderProps(pid) }
+function setDefault(pid, gwId, fid) {
+  const C = CONDS[pid] ||= {}, gw = bpmn.get("elementRegistry").get(gwId)
+  gw.outgoing.forEach(f => { if (C[f.id]?.def) delete C[f.id].def }); C[fid] = { def: true }
+  bpmn.get("modeling").updateProperties(gw, { default: bpmn.get("elementRegistry").get(fid).businessObject }); renderProps(pid)
+}
+function pathEditor(pid, gw, f) {
+  const c = (CONDS[pid] ||= {})[f.id] || {}, fields = offered(pid, gw)
+  return `<div class="card" style="padding:10px 12px;margin:8px 0;box-shadow:none">
+    <div class="row small"><b class="grow">→ ${esc(nameOf(f.target))}</b><button class="ghost small" onclick="bpmn.get('selection').select(bpmn.get('elementRegistry').get('${f.id}'))">Select</button></div>
+    <input placeholder="Label on the diagram, e.g. yes" value="${esc(f.businessObject.name || "")}" onchange="bpmn.get('modeling').updateLabel(bpmn.get('elementRegistry').get('${f.id}'),this.value)" style="margin:6px 0">
+    <label class="row small" style="font-weight:500"><input type="radio" name="def_${gw.id}" ${c.def ? "checked" : ""} onchange="setDefault('${pid}','${gw.id}','${f.id}')"> Default path: taken when no other condition matches</label>
+    ${c.def ? "" : `<div class="small" style="margin-top:8px">Take this path when</div>
+      <select onchange="setCond('${pid}','${f.id}',{field:this.value})" style="margin:4px 0"><option value="">Choose a Result field…</option>
+        ${fields.map(([x, from]) => `<option value="${x}" ${x === c.field ? "selected" : ""}>${x.slice(2, -1)}  (from ${esc(from)})</option>`).join("")}</select>
+      <div class="row"><select onchange="setCond('${pid}','${f.id}',{op:this.value})">${OPS.map(o => `<option ${o === (c.op || "is true") ? "selected" : ""}>${o}</option>`).join("")}</select>
+        ${needsValue(c.op) ? `<input placeholder="value" value="${esc(c.value || "")}" onchange="setCond('${pid}','${f.id}',{value:this.value})">` : ""}</div>
+      ${fields.length ? "" : `<div class="warn">No Task before this decision returns anything to decide on.</div>`}`}
+    <div class="help mono" style="margin:6px 0 0">${esc(juel(c))}</div></div>`
+}
+const explain = html => `<div class="okbox" style="background:var(--accSoft);color:var(--accText);margin:12px 0">${html}</div>`
+function replaceAs(type, kind) {
+  const pid = curPid(), old = selected.businessObject.name, el = bpmn.get("bpmnReplace").replaceElement(selected, { type })
+  if (kind) { seedKind(el.id, kind); bpmn.get("canvas").addMarker(el.id, "ants-" + kind); if (!old) bpmn.get("modeling").updateLabel(el, KIND_INFO[kind][0]) }
+  bpmn.get("selection").select(el); renderProps(pid)
+}
+const kindButtons = () => Object.entries(KIND_INFO).map(([k, [n, d, type, cls]]) => `<button style="display:flex;gap:10px;width:100%;text-align:left;margin:6px 0;font-weight:500" onclick="replaceAs('${type}','${k}')">
+  <span class="${cls}" style="font-size:22px"></span><span><b>${n}</b><br><span class="muted small">${d}</span></span></button>`).join("")
+
+function renderProps(pid) {
+  const box = document.getElementById("props"); if (!box) return
+  const P = PROPS[pid] ||= {}, p = proc(pid) || { name: "New Process", vault: "Work", sourceMap: "Stacc repos" }
+  const head = (k, ph = "") => `<div class="kind">${k}</div><input style="font-weight:700;font-size:15px" placeholder="${ph}" value="${esc(selected.businessObject.name || "")}" onchange="bpmn.get('modeling').updateLabel(selected,this.value)">`
+  const t = selected?.type, bo = selected?.businessObject, ev = bo?.eventDefinitions?.[0]?.$type, e = selected ? P[selected.id] || {} : {}
+  let html
+  if (!selected || t === "bpmn:Process") {
+    html = `<div class="kind">Process</div><h3>${esc(p.name)}</h3>
+      ${explain(`<b>Drawing a Process</b><ol style="margin:6px 0 0;padding-left:18px">
+        <li>A Run begins at the <b>start event</b> (its start form) and finishes at an <b>end event</b>.</li>
+        <li>Add work from the bottom of the palette, or hover a shape and pick the next step from its menu: <b>Agent</b>, <b>User</b> or <b>Built-in Task</b>.</li>
+        <li>Choose between paths with a <b>decision</b> (◇ ×). Loop by drawing a path back to an earlier Task.</li>
+        <li>Run branches side by side with two <b>parallel gateways</b> (◇ +): one splits, one joins.</li>
+        <li>Fix everything under <b>Checks</b>, then <b>Save and deploy</b>.</li></ol>`)}
+      ${field("Vault", "Which Vault this Process's Tasks are told about.", "", `<select onchange="(proc('${pid}')||{}).vault=this.value">${[...S.vaults.map(v => v.name), "—"].map(v => `<option ${v === p.vault ? "selected" : ""}>${esc(v)}</option>`).join("")}</select>`)}
+      ${field("Source map", "Where repo names in this Process resolve.", "", `<select>${S.sourceMaps.map(v => `<option ${v.name === p.sourceMap ? "selected" : ""}>${esc(v.name)}</option>`).join("")}</select>`)}`
+  } else if (t === "bpmn:StartEvent" && ev === "bpmn:TimerEventDefinition") {
+    html = head("Timer start", "e.g. Every Monday 06:00") + explain(`Starts a Run on a schedule, with no one pressing Start. ${proc(pid) ? `Easier: set it in words under <b>Schedule</b> on <a href="#/processes/${pid}">the Process page</a>.` : "Set it in words on the Process page once it's saved."}`)
+      + field("When", "A cron expression: minute, hour, day of month, month, day of week.", "0 6 * * MON  (Mondays at 06:00)", `<input class="mono" value="0 6 * * MON">`)
+      + startForm(pid)
+  } else if (t === "bpmn:StartEvent") {
+    html = head("Start event", "e.g. Prompt") + explain("Where a Run begins. Its fields are the start form the user fills in on the Process page, and every Task can read them as <code>${field}</code>.") + startForm(pid)
+  } else if (t === "bpmn:EndEvent") {
+    html = head("End event", "e.g. Done") + explain("The Run finishes here. Ants writes the Report and deletes the Run workspace. Several end events are fine, named for how the Run ended.")
+  } else if (t === "bpmn:IntermediateCatchEvent" && ev === "bpmn:TimerEventDefinition") {
+    html = head("Wait", "e.g. Wait 1 hour") + explain("The flow pauses here. No Agent runs and no slot is held.")
+      + field("Wait for", "An ISO 8601 duration: <code>PT30M</code> 30 minutes, <code>PT1H</code> an hour, <code>P1D</code> a day.", "PT1H", `<input class="mono" value="PT1H">`)
+  } else if (t === "bpmn:Task" || t === "bpmn:ManualTask" || ((t === "bpmn:ServiceTask" || t === "bpmn:UserTask") && !e.kind)) {
+    html = head(t === "bpmn:Task" ? "Plain Task" : t.replace("bpmn:", ""), "e.g. Write the spec") + `<div class="warn">${t === "bpmn:Task" || t === "bpmn:ManualTask" ? "Ants would pass straight through this, doing nothing." : "Ants doesn't know who does this yet."} What should it be?</div>` + kindButtons()
+  } else if (e.kind === "agent") {
+    const ag = agentOf(e.agent), sk = ag ? ag.skills : [], ins = offered(pid, selected), id = selected.id
+    html = head("Agent Task", "e.g. Write the spec") + `
+      ${field(`${icon("agent")} Agent`, "Who does it.", "", `<select onchange="PROPS['${pid}']['${id}'].agent=this.value;PROPS['${pid}']['${id}'].skill=(agentOf(this.value)?.skills||[])[0]||'';renderProps('${pid}')"><option value="">Choose…</option>${S.agents.map(a => `<option ${a.name === e.agent ? "selected" : ""} value="${a.name}">${a.name} · ${esc(a.desc)}</option>`).join("")}</select>`)}
+      <button class="ghost small" onclick="openCreate('agents','${pid}','${id}')">＋ ${icon("agent")} New Agent</button>
+      ${e.agent && !ag ? `<div class="warn">No Agent folder holds "${esc(e.agent)}".</div>` : ""}
+      ${field(`${icon("skill")} Skill`, "One of the Agent's Skills: the one job this Task does.", "", `<select ${ag ? "" : "disabled"} onchange="PROPS['${pid}']['${id}'].skill=this.value;renderProps('${pid}')">${sk.map(s => `<option ${s === e.skill ? "selected" : ""}>${s}</option>`).join("")}</select>`)}
+      <button class="ghost small" onclick="openCreate('skills','${pid}','${id}')">＋ ${icon("skill")} New Skill</button>
+      ${skillOf(e.skill) ? `<div class="help">${esc(skillOf(e.skill).desc)}<br>Later Tasks can read: ${skillOf(e.skill).fields.map(f => `<code>\${${id}.${f}}</code>`).join(" ") || "nothing"}</div>` : ""}
+      ${field("Inputs", "What it reads: start-form fields and Results of Tasks <b>before</b> it in the diagram.", "${scout.brief}",
+        `<div class="listed">${e.inputs.map((v, i) => `<div class="row"><select class="mono grow" onchange="PROPS['${pid}']['${id}'].inputs[${i}]=this.value;renderProps('${pid}')"><option value="">Choose…</option>
+          ${[...ins, ...(v && !ins.some(([x]) => x === v) ? [[v, "not available here"]] : [])].map(([x, from]) => `<option value="${x}" ${x === v ? "selected" : ""}>${x}  (${esc(from)})</option>`).join("")}</select>
+          <button class="ghost" onclick="PROPS['${pid}']['${id}'].inputs.splice(${i},1);renderProps('${pid}')">×</button></div>
+          ${!v || ins.some(([x]) => x === v) ? "" : `<div class="warn">${esc(v)} isn't returned by any Task before this one.</div>`}`).join("")}
+          <button onclick="PROPS['${pid}']['${id}'].inputs.push('');renderProps('${pid}')">＋ Add input</button></div>`)}
+      ${field("When the flow comes back", "", "", `<label class="row" style="font-weight:500"><input type="checkbox" checked> Resume the session (Round answers, Send back)</label>`)}
+      ${field("Knowledge", "", "", `<label class="row" style="font-weight:500"><input type="checkbox" ${skillOf(e.skill)?.vault ? "checked" : ""}> Vault</label><label class="row" style="font-weight:500"><input type="checkbox"> Answer History</label>`)}`
+  } else if (e.kind === "user") {
+    html = head("User Task", "e.g. Approve the spec") + explain("The Run waits here, on the Notification list, until you act. Other branches keep going.")
+      + field("What you do", "", "", `<select onchange="PROPS['${pid}']['${selected.id}'].what=this.value;renderProps('${pid}')"><option ${e.what === "Answer a Round" ? "selected" : ""}>Answer a Round</option><option ${e.what === "Approve" ? "selected" : ""}>Approve</option></select>`)
+      + field("Shows the Result of", "The earlier Task whose Result the page shows, and which Send back resumes.", "", `<select>${Object.entries(P).filter(([, x]) => x.kind === "agent").map(([id]) => `<option ${id === e.shows ? "selected" : ""}>${id}</option>`).join("")}</select>`)
+      + `<div class="help" style="margin-top:8px">Later Tasks and decisions can read: ${fieldsOf(selected.id, e).map(f => `<code>\${${selected.id}.${f}}</code>`).join(" ")}</div>`
+  } else if (e.kind === "builtin") {
+    html = head("Built-in Task", "e.g. Clone repos") + explain("Ants does this itself. No Agent, no tokens, no slot.")
+      + field("What Ants does", "", "", `<select onchange="PROPS['${pid}']['${selected.id}'].what=this.value;renderProps('${pid}')">${["Clone repos", "Push", "Accept recommendations", "Choose repos"].map(w => `<option ${w === e.what ? "selected" : ""}>${w}</option>`).join("")}</select>`)
+  } else if (t === "bpmn:ExclusiveGateway") {
+    const out = selected.outgoing, merge = out.length <= 1 && selected.incoming.length > 1
+    html = head("Decision (exclusive gateway)", "Ask it as a question, e.g. Approved?")
+      + (merge ? explain("This decision only <b>merges</b> paths back into one, such as a loop's way back in. It needs no conditions.")
+        : explain(`A fork in the road: the Run takes <b>exactly one</b> path out. Give each path a condition on a Result from an earlier Task, and make one the <b>default</b>, taken when nothing else matches.
+          <div class="small" style="margin-top:6px">Example from the shipped Processes: <b>Approved?</b> takes <i>yes</i> when <code>approve.approved</code> is true; <i>send back</i> is the default and loops to Write the spec.</div>`))
+      + (out.length ? `<b class="small">Paths out (${out.length})</b>` + out.map(f => pathEditor(pid, selected, f)).join("") : `<div class="warn">No paths out yet. Hover the decision and drag its arrow to the next step.</div>`)
+  } else if (t === "bpmn:ParallelGateway") {
+    const split = selected.outgoing.length > 1, join = selected.incoming.length > 1
+    html = head("Parallel gateway") + explain(split && !join ? `<b>Splits</b> the flow: all ${selected.outgoing.length} branches start at once. Agent Tasks in them share the ${S.cap} slots.`
+      : join && !split ? `<b>Joins</b> the branches: waits here until all ${selected.incoming.length} have arrived, then carries on.`
+      : "Use two of these: one to <b>split</b> into branches that run at the same time, one to <b>join</b> them, waiting until all are done.")
+      + (split ? `<b class="small">Branches</b>${selected.outgoing.map(f => `<div class="small" style="padding:4px 0">→ ${esc(nameOf(f.target))}</div>`).join("")}` : "")
+  } else if (t === "bpmn:SequenceFlow") {
+    const src = selected.source
+    html = head("Path", "e.g. yes") + (src.type === "bpmn:ExclusiveGateway" && src.outgoing.length > 1 ? pathEditor(pid, src, selected) + `<button class="ghost" onclick="bpmn.get('selection').select(bpmn.get('elementRegistry').get('${src.id}'))">See every path out of ${esc(nameOf(src))}</button>`
+      : explain(`Paths out of ${src.type.includes("Gateway") ? "a parallel gateway" : "a Task or event"} need no condition: when it's done, the flow moves on.`))
+  } else if (t === "bpmn:CallActivity") {
+    html = head("Call a Process", "e.g. Prompt to spec") + explain("Runs another Process as one step and waits for it to finish. How inputs and the result travel is open in <a href='https://github.com/oyvij/ants/issues/21' target='_blank'>Which BPMN elements does Ants run?</a>")
+      + field("Process", "", "", `<select>${S.processes.map(x => `<option>${esc(x.name)}</option>`).join("")}</select>`)
+  } else if (t === "bpmn:SubProcess") {
+    html = head("Sub-process", "e.g. Grill until clear") + explain("Groups part of the flow into one box, such as a question loop. Collapse it from the wrench menu to tidy the diagram.")
+  } else if (["bpmn:TextAnnotation", "bpmn:Group"].includes(t)) {
+    html = `<div class="kind">${t.replace("bpmn:", "")}</div>` + explain("A note for people reading the diagram. Ants ignores it when running.")
+  } else {
+    html = `<div class="kind">${esc(t.replace("bpmn:", ""))}${ev ? " · " + esc(ev.replace("bpmn:", "")) : ""}</div><h3>${esc(nameOf(selected))}</h3><div class="warn">Ants doesn't run this element, so Save and deploy will refuse it. See <a href="https://github.com/oyvij/ants/issues/21" target="_blank">Which BPMN elements does Ants run?</a></div>`
+      + (/Task$/.test(t) ? `<div class="small" style="margin-top:10px">Change it to:</div>` + kindButtons() : /Gateway$/.test(t) ? `<div class="small" style="margin-top:10px">Change it to:</div><button onclick="replaceAs('bpmn:ExclusiveGateway')">Decision</button> <button onclick="replaceAs('bpmn:ParallelGateway')">Parallel gateway</button>` : "")
+  }
+  box.innerHTML = html
+  renderChecks(pid)
+}
+function startForm(pid) {
+  const F = (PROPS[pid].start ||= { kind: "start", fields: [] }).fields, set = (i, prop, v) => `setField('${pid}',${i},'${prop}',${v})`
+  return field("Start form", "What the user fills in to start a Run. Tasks read each field by its name, as <code>${name}</code>.", "", `<div class="listed">${F.map((x, i) => `
+    <div class="card" style="padding:10px;margin:6px 0;box-shadow:none">
+      <div class="row"><input placeholder="Label, e.g. Work branch" value="${esc(x.label)}" onchange="setLabel('${pid}',${i},this.value)"><button class="ghost" title="Remove" onclick="PROPS['${pid}'].start.fields.splice(${i},1);renderProps('${pid}')">×</button></div>
+      <div class="row" style="margin-top:6px"><select onchange="${set(i, "type", "this.value")}">${FIELD_TYPES.map(([v, l]) => `<option value="${v}" ${v === x.type ? "selected" : ""}>${l}</option>`).join("")}</select>
+        <label class="row small" style="white-space:nowrap;font-weight:500"><input type="checkbox" ${x.required ? "checked" : ""} onchange="${set(i, "required", "this.checked")}"> Required</label></div>
+      <input class="small" style="margin-top:6px" placeholder="Help shown under the field" value="${esc(x.help || "")}" onchange="${set(i, "help", "this.value")}">
+      ${x.editName ? `<div class="row" style="margin-top:6px"><span class="small muted" style="white-space:nowrap">Tasks read it as</span><input class="mono" value="${esc(x.name)}" onchange="PROPS['${pid}'].start.fields[${i}].editName=false;${set(i, "name", "this.value")}"></div>`
+        : x.name ? `<div class="help" style="margin:6px 0 0">Tasks read it as <code>\${${esc(x.name)}}</code> · <a href="javascript:void 0" onclick="PROPS['${pid}'].start.fields[${i}].editName=true;renderProps('${pid}')">change</a></div>` : ""}</div>`).join("")}
+    <button onclick="PROPS['${pid}'].start.fields.push({name:'',label:'',type:'text',required:false,help:''});renderProps('${pid}')">＋ Add field</button></div>`)
+}
+// "Work branch" -> workBranch. Only while the name is still derived: renaming later would break Tasks that read it.
+const camel = l => l.trim().toLowerCase().replace(/[^a-z0-9]+(.)/g, (m, c) => c.toUpperCase()).replace(/[^a-zA-Z0-9]/g, "").replace(/^[^a-z]+/, "")
+function setLabel(pid, i, v) { const x = PROPS[pid].start.fields[i]; x.label = v; if (!x.name || x.auto) { x.name = camel(v); x.auto = true }; renderProps(pid) }
+function setField(pid, i, prop, v) { if (prop === "name") PROPS[pid].start.fields[i].auto = false; PROPS[pid].start.fields[i][prop] = v; renderProps(pid) }
+
+// Live checks: everything Save and deploy would refuse, shown while drawing. Click one to jump to it.
+const UNSUPPORTED = { "bpmn:ScriptTask": "Ants doesn't run inline scripts; use a Built-in Task.", "bpmn:BusinessRuleTask": "DMN isn't decided yet.",
+  "bpmn:SendTask": "Ants doesn't send messages.", "bpmn:ReceiveTask": "Ants doesn't receive messages.", "bpmn:InclusiveGateway": "use a decision or a parallel gateway.",
+  "bpmn:ComplexGateway": "use a decision or a parallel gateway.", "bpmn:EventBasedGateway": "use a decision.", "bpmn:DataObjectReference": "data objects aren't run; use an annotation.",
+  "bpmn:DataStoreReference": "data stores aren't run; use an annotation.", "bpmn:Participant": "pools aren't run; one Process per diagram.", "bpmn:IntermediateThrowEvent": "Ants doesn't throw events." }
+function checks(pid) {
+  const P = PROPS[pid] ||= {}, C = CONDS[pid] ||= {}, out = []
+  const els = bpmn.get("elementRegistry").getAll().filter(e => e.type !== "label" && !e.waypoints && !["bpmn:Process", "bpmn:TextAnnotation", "bpmn:Group", "bpmn:Association"].includes(e.type) && e.parent)
+  if (!els.some(e => e.type === "bpmn:StartEvent")) out.push({ msg: "Add a start event: it is where a Run begins." })
+  const startId = els.find(e => e.type === "bpmn:StartEvent")?.id, names = (P.start?.fields || []).map(f => f.name)
+  names.forEach((n, i) => {
+    if (!/^[a-z][A-Za-z0-9]*$/.test(n)) out.push({ id: startId, msg: `<b>Start form</b>: "${esc(n) || "(no name)"}" can't be read as \${…}. Use letters and digits, starting with a lowercase letter.` })
+    else if (names.indexOf(n) !== i) out.push({ id: startId, msg: `<b>Start form</b>: two fields are called "${esc(n)}".` })
+  })
+  if (!els.some(e => e.type === "bpmn:EndEvent")) out.push({ msg: "Add an end event so a Run can finish." })
+  els.forEach(e => {
+    const n = nameOf(e), ev = e.businessObject.eventDefinitions?.[0]?.$type, p = P[e.id], add = msg => out.push({ id: e.id, msg: `<b>${esc(n)}</b>: ${msg}` })
+    if (UNSUPPORTED[e.type]) return add(UNSUPPORTED[e.type])
+    if (ev && ev !== "bpmn:TimerEventDefinition") return add(`Ants doesn't run ${ev.replace("bpmn:", "").replace("EventDefinition", "").toLowerCase()} events.`)
+    if (e.type === "bpmn:Task" || e.type === "bpmn:ManualTask") return add("does nothing as it stands. Choose Agent, User or Built-in Task.")
+    if (/ServiceTask|UserTask/.test(e.type) && !p) return add("choose whether it is an Agent, User or Built-in Task.")
+    if (e.type !== "bpmn:StartEvent" && !e.incoming.length) add("nothing leads here.")
+    if (e.type !== "bpmn:EndEvent" && !e.outgoing.length) add("leads nowhere. Connect it to the next step or an end event.")
+    if (p?.kind === "agent") {
+      if (!agentOf(p.agent)) add(p.agent ? `no Agent folder holds "${esc(p.agent)}".` : "choose an Agent.")
+      else if (!agentOf(p.agent).skills.includes(p.skill)) add(`${esc(p.agent)} doesn't run the Skill "${esc(p.skill)}".`)
+      const ins = offered(pid, e).map(([x]) => x); p.inputs.filter(v => v && !ins.includes(v)).forEach(v => add(`${esc(v)} isn't returned by any Task before it.`))
+    }
+    if (e.type === "bpmn:ExclusiveGateway" && e.outgoing.length > 1) {
+      if (!e.outgoing.some(f => C[f.id]?.def)) add("no default path. If no condition matches, the Run stops here.")
+      const bare = e.outgoing.filter(f => !C[f.id]?.def && !C[f.id]?.field).length
+      if (bare) add(`${bare} path${bare > 1 ? "s" : ""} without a condition.`)
+    }
+  })
+  return out
+}
+function renderChecks(pid) {
+  const box = document.getElementById("checks"); if (!box || !bpmn) return
+  const cs = checks(pid)
+  box.innerHTML = `<div class="row" style="margin-bottom:6px"><b>Checks</b><span class="grow"></span>${cs.length ? `<span class="pill p-waiting">${cs.length} to fix</span>` : `<span class="pill p-ready">Ready to deploy</span>`}</div>`
+    + cs.map(c => `<div class="small" style="padding:5px 8px;border-radius:6px;cursor:${c.id ? "pointer" : "default"}" onmouseover="this.style.background='var(--line2)'" onmouseout="this.style.background=''"
+      ${c.id ? `onclick="const el=bpmn.get('elementRegistry').get('${c.id}');bpmn.get('canvas').scrollToElement(el);bpmn.get('selection').select(el)"` : ""}>⚠ ${c.msg}</div>`).join("")
+}
+function saveDeploy() {
+  const pid = curPid(), cs = checks(pid)
+  const t = document.createElement("div"); t.className = "toast"
+  t.innerHTML = (cs.length ? `<b>Can't deploy: ${cs.length} to fix</b><div class="small" style="margin-top:4px">They're listed under Checks; click one to jump to it.</div>`
+    : "<b>Deployed.</b> Renamed <code>camunda:</code> to <code>operaton:</code> and deployed to Operaton. New Runs use this version.") + `<div style="text-align:right;margin-top:8px"><button onclick="this.closest('.toast').remove()">OK</button></div>`
+  document.body.append(t)
+}
+
+// ---------- router ----------
+function render() {
+  const p = route().split("/").filter(Boolean)
+  if (!S.loggedIn || p[0] === "login") { renderSide(); document.getElementById("app").innerHTML = pLogin(); return dump() }
+  let body, full = false
+  if (!p.length) body = home()
+  else if (p[0] === "notifications") body = pNotifications()
+  else if (p[0] === "runs" && p[2] === "tasks") body = pTask(p[1], p[3])
+  else if (p[0] === "runs" && p[1]) body = pRun(p[1])
+  else if (p[0] === "runs") body = pRuns()
+  else if (p[0] === "processes" && p[2] === "edit") { body = pModeler(p[1]); full = true }
+  else if (p[0] === "processes" && p[1] === "new") body = pNewProcess()
+  else if (p[0] === "processes" && p[1]) body = pProcess(p[1])
+  else if (p[0] === "processes") body = pProcesses()
+  else if (p[0] === "agents" && p[1]) body = pAgent(p[1] === "new" ? "" : p[1])
+  else if (p[0] === "skills" && p[1]) body = pSkill(p[1] === "new" ? "" : p[1])
+  else if (p[0] === "agents" || p[0] === "skills") body = pList(p[0])
+  else if (p[0] === "settings") body = pSettings()
+  else body = ph("Not found")
+  if (p[0] !== "agents") S.draft = null
+  document.getElementById("app").innerHTML = `<main class="${full ? "full" : ""}">${body}</main>`
+  renderSide()
+  selected = null; mountDiagrams(); window.mountEditors?.(); dump()
+}
+function dump() {
+  document.getElementById("state").textContent = JSON.stringify({ route: route(), notifications: notes().length, agentTasksRunning: `${running()} of ${S.cap}`, paused: S.paused, update: S.update,
+    runs: Object.fromEntries(S.runs.map(r => [r.id, r.state === "live" ? r.tasks.map(t => `${t.id}:${t.st}`).join(" ") : r.state])) }, null, 2)
+}
+addEventListener("hashchange", () => { scrollTo(0, 0); closeDrawer(); closeCreate(); render() })
+render()
+</script>
+
+<script type="module">
+// Markdown and JSON editors (CodeMirror 6) over every textarea[data-md] / textarea[data-json], and markdown views.
+import { EditorView, keymap, drawSelection, placeholder } from "https://esm.sh/@codemirror/view@6"
+import { EditorState } from "https://esm.sh/@codemirror/state@6"
+import { defaultKeymap, history, historyKeymap } from "https://esm.sh/@codemirror/commands@6"
+import { syntaxHighlighting, HighlightStyle, bracketMatching, defaultHighlightStyle } from "https://esm.sh/@codemirror/language@6"
+import { markdown } from "https://esm.sh/@codemirror/lang-markdown@6"
+import { json, jsonParseLinter } from "https://esm.sh/@codemirror/lang-json@6"
+import { linter, lintGutter } from "https://esm.sh/@codemirror/lint@6"
+import { tags } from "https://esm.sh/@lezer/highlight@1"
+import { marked } from "https://esm.sh/marked@14"
+
+const mdStyle = HighlightStyle.define([
+  { tag: tags.heading1, fontSize: "1.45em", fontWeight: "700" }, { tag: tags.heading2, fontSize: "1.25em", fontWeight: "700" },
+  { tag: tags.heading3, fontSize: "1.1em", fontWeight: "700" }, { tag: tags.strong, fontWeight: "700" }, { tag: tags.emphasis, fontStyle: "italic" },
+  { tag: tags.strikethrough, textDecoration: "line-through" }, { tag: tags.link, color: "var(--acc)", textDecoration: "underline" },
+  { tag: tags.monospace, fontFamily: "ui-monospace, monospace", fontSize: ".92em", backgroundColor: "var(--line2)" },
+  { tag: [tags.processingInstruction, tags.meta], color: "var(--muted)" }, { tag: tags.quote, color: "var(--muted)", fontStyle: "italic" }, { tag: tags.list, color: "var(--acc)" },
+])
+const base = [history(), drawSelection(), EditorView.lineWrapping, keymap.of([...defaultKeymap, ...historyKeymap])]
+
+const colourDiff = root => root.querySelectorAll("code.language-diff").forEach(c => {
+  c.innerHTML = c.textContent.split("\n").map(l => `<span class="${l.startsWith("+") ? "add" : l.startsWith("-") ? "del" : l.startsWith("@@") ? "hunk" : ""}">${l.replace(/[&<>]/g, x => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[x])}</span>`).join("\n")
+})
+const renderMd = (el, src) => { el.innerHTML = marked.parse(src); colourDiff(el) }
+
+function wrap(view, ta, mdMode) {
+  const ed = document.createElement("div"); ed.className = "ed" + (mdMode ? "" : " json")
+  const bar = document.createElement("div"); bar.className = "bar"
+  const surround = (a, b = a) => { const { from, to } = view.state.selection.main
+    view.dispatch({ changes: { from, to, insert: a + view.state.sliceDoc(from, to) + b }, selection: { anchor: from + a.length, head: to + a.length } }); view.focus() }
+  const linePrefix = p => { const line = view.state.doc.lineAt(view.state.selection.main.from); view.dispatch({ changes: { from: line.from, insert: p } }); view.focus() }
+  const btn = (label, title, fn) => { const b = document.createElement("button"); b.type = "button"; b.innerHTML = label; b.title = title; b.onclick = fn; bar.append(b); return b }
+  if (mdMode) {
+    btn("<b>B</b>", "Bold (⌘B)", () => surround("**")); btn("<i>I</i>", "Italic (⌘I)", () => surround("*")); btn("H", "Heading", () => linePrefix("## "))
+    btn("•", "List", () => linePrefix("- ")); btn("1.", "Numbered list", () => linePrefix("1. ")); btn("&lt;/&gt;", "Code", () => surround("`")); btn("🔗", "Link", () => surround("[", "](url)"))
+    bar.append(Object.assign(document.createElement("span"), { className: "sp" }))
+    btn("Preview", "Preview in a big window", () => modal("Preview", m => { m.className = "mb md"; renderMd(m, view.state.doc.toString()) }))
+    btn("⤢ Expand", "Write in a big window with a live preview", () => expand(view, bar, ta))
+  } else {
+    bar.append(Object.assign(document.createElement("span"), { className: "sp", textContent: "JSON Schema" }))
+    const st = Object.assign(document.createElement("span"), { className: "st" }); bar.append(st)
+    const check = () => { try { const o = JSON.parse(view.state.doc.toString()); st.innerHTML = o.type === "object" && o.properties ? '<span style="color:var(--ok)">✓ valid schema</span>' : '<span style="color:var(--wait)">needs "type": "object" and "properties"</span>' }
+      catch (e) { st.innerHTML = `<span style="color:var(--bad)">✗ ${e.message.split(" in JSON")[0]}</span>` } }
+    view.dom.addEventListener("keyup", check); check()
+  }
+  // A click anywhere in the box that misses the text still puts the cursor in it (at the end).
+  view.dom.addEventListener("mousedown", e => {
+    if (e.target.closest(".cm-content") || e.button !== 0) return
+    e.preventDefault(); view.focus(); view.dispatch({ selection: { anchor: view.state.doc.length } })
+  })
+  ta.hidden = true; ta.after(ed); ed.append(bar, view.dom); if (ta.hasAttribute("data-tall")) ed.classList.add("tall")
+}
+// A big window: Esc, the ✕ or a click outside closes it.
+function modal(title, fill, onClose) {
+  const bg = document.createElement("div"); bg.className = "modal-bg"
+  bg.innerHTML = `<div class="modal"><div class="mh"><b>${title}</b><span style="flex:1"></span><span class="muted small">Esc to close</span><button class="ghost" title="Close">✕</button></div><div class="mb"></div></div>`
+  const close = () => { bg.remove(); removeEventListener("keydown", esc); onClose?.() }, esc = e => { if (e.key === "Escape") close() }
+  bg.querySelector(".mh button").onclick = close; bg.onclick = e => { if (e.target === bg) close() }; addEventListener("keydown", esc)
+  document.body.append(bg); fill(bg.querySelector(".mb"), bg)
+}
+// Expand moves the same editor into the window, next to a live preview, and back on close: nothing to sync.
+function expand(view, bar, ta) {
+  const label = ta.closest(".card")?.querySelector("h3, label.f")?.textContent || "Edit"
+  let h
+  modal(label, mb => {
+    mb.className = "split"; mb.innerHTML = '<div class="left"></div><div class="md"></div>'
+    const pv = mb.querySelector(".md"), update = () => renderMd(pv, view.state.doc.toString())
+    mb.querySelector(".left").append(view.dom); update(); view.focus(); h = setInterval(update, 400)
+  }, () => { clearInterval(h); bar.after(view.dom); view.focus() })
+}
+
+window.mountEditors = () => {
+  document.querySelectorAll("textarea[data-md]:not([data-done]), textarea[data-json]:not([data-done])").forEach(ta => {
+    ta.dataset.done = 1
+    const mdMode = ta.hasAttribute("data-md"), ro = !!ta.closest(".card")?.querySelector("input[disabled]")
+    const sync = EditorView.updateListener.of(u => { if (u.docChanged) ta.value = u.state.doc.toString() })
+    const fmt = keymap.of(mdMode ? [{ key: "Mod-b", run: v => (wrapSel(v, "**"), true) }, { key: "Mod-i", run: v => (wrapSel(v, "*"), true) }] : [])
+    const view = new EditorView({ state: EditorState.create({ doc: ta.value, extensions: [fmt, ...base, sync, placeholder(ta.placeholder || ""), EditorState.readOnly.of(ro),
+      ...(mdMode ? [markdown(), syntaxHighlighting(mdStyle)] : [json(), syntaxHighlighting(defaultHighlightStyle), bracketMatching(), linter(jsonParseLinter()), lintGutter()])] }) })
+    wrap(view, ta, mdMode)
+    if (ro) { const ed = ta.nextElementSibling; ed.style.background = "var(--panel2)"; ed.querySelector(".bar").insertAdjacentHTML("beforeend", '<span class="st" style="color:var(--muted)">Read-only · Copy to edit</span>') }
+  })
+  document.querySelectorAll("[data-mdview]:not([data-done])").forEach(el => { el.dataset.done = 1; renderMd(el, el.textContent) })
+}
+function wrapSel(v, m) { const { from, to } = v.state.selection.main; v.dispatch({ changes: { from, to, insert: m + v.state.sliceDoc(from, to) + m }, selection: { anchor: from + m.length, head: to + m.length } }) }
+window.mountEditors()
+</script>
+</html>
