@@ -144,6 +144,8 @@
   .ov.waiting { background: var(--wait); color: #fff; } .ov.failed { background: var(--bad); color: #fff; } .ov.quiet { background: #475569; color: #fff; }
   .ov.done { background: var(--ok); color: #fff; padding: 2px 6px; }
 
+  .ants-pal-agent { color: #4f46e5 !important; } .ants-pal-user { color: #d97706 !important; } .ants-pal-builtin { color: #475569 !important; }
+  .djs-palette .entry { border-radius: 4px; }
   .modelerWrap { display: grid; grid-template-columns: 1fr 340px; gap: 14px; }
   .props { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sh); padding: 16px; height: calc(100vh - 128px); overflow: auto; }
   .props h3 { margin: 0; font-size: 15px; } .props .kind { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
@@ -272,9 +274,9 @@ const PROPS = {
 const SZ = { startEvent: [36, 36], endEvent: [36, 36], exclusiveGateway: [50, 50], parallelGateway: [50, 50], serviceTask: [120, 80], userTask: [120, 80], task: [120, 80] }
 const xesc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c])
 function bpmnXml(pid, nodes, flows) {
-  const N = Object.fromEntries(nodes.map(([id, type, name, cx, cy]) => [id, { id, type, name, cx, cy, w: SZ[type][0], h: SZ[type][1] }]))
+  const N = Object.fromEntries(nodes.map(([id, type, name, cx, cy, timer]) => [id, { id, type, name, cx, cy, timer, w: SZ[type][0], h: SZ[type][1] }]))
   const inc = {}, out = {}; flows.forEach(([f, a, b]) => { (out[a] ||= []).push(f); (inc[b] ||= []).push(f) })
-  const els = Object.values(N).map(n => `<bpmn:${n.type} id="${n.id}" name="${xesc(n.name || "")}">${(inc[n.id] || []).map(f => `<bpmn:incoming>${f}</bpmn:incoming>`).join("")}${(out[n.id] || []).map(f => `<bpmn:outgoing>${f}</bpmn:outgoing>`).join("")}</bpmn:${n.type}>`).join("")
+  const els = Object.values(N).map(n => `<bpmn:${n.type} id="${n.id}" name="${xesc(n.name || "")}">${(inc[n.id] || []).map(f => `<bpmn:incoming>${f}</bpmn:incoming>`).join("")}${(out[n.id] || []).map(f => `<bpmn:outgoing>${f}</bpmn:outgoing>`).join("")}${n.timer ? `<bpmn:timerEventDefinition id="${n.id}_timer"/>` : ""}</bpmn:${n.type}>`).join("")
   const fls = flows.map(([f, a, b, name]) => `<bpmn:sequenceFlow id="${f}" name="${xesc(name || "")}" sourceRef="${a}" targetRef="${b}"/>`).join("")
   const shapes = Object.values(N).map(n => {
     const gw = n.type.includes("Gateway"), label = n.name && !n.type.endsWith("Task")
@@ -314,10 +316,33 @@ const XML = {
      ["f16", "gwOk", "gwMerge", "send back", [[1420, 285], [1420, 480], [560, 480], [560, 285]]]]),
   "setup-vault": bpmnXml("setup_vault", [["start", "startEvent", "Vault folder", 150, 200], ["init", "serviceTask", "Init the Vault", 280, 200], ["end", "endEvent", "Done", 410, 200]],
     [["f1", "start", "init"], ["f2", "init", "end"]]),
-  "dep-bumps": bpmnXml("dep_bumps", [["start", "startEvent", "Monday 06:00", 150, 200], ["clone", "serviceTask", "Clone repos", 270, 200], ["bump", "serviceTask", "Bump versions", 420, 200],
+  "dep-bumps": bpmnXml("dep_bumps", [["start", "startEvent", "Mondays 06:00", 150, 200, true], ["clone", "serviceTask", "Clone repos", 270, 200], ["bump", "serviceTask", "Bump versions", 420, 200],
     ["push", "serviceTask", "Push", 570, 200], ["end", "endEvent", "Done", 700, 200]], [["f1", "start", "clone"], ["f2", "clone", "bump"], ["f3", "bump", "push"], ["f4", "push", "end"]]),
 }
 const EMPTY_XML = bpmnXml("new_process", [["start", "startEvent", "Start", 180, 200]], [])
+const PATTERNS = {
+  "new-blank": ["Blank", "Just a start event. Draw the rest.", [["start", "startEvent", "Start", 180, 200]], [], {}, {}],
+  "new-review": ["Do, then approve", "An Agent does the work; you approve or send it back, and it carries on in the same session.",
+    [["start", "startEvent", "Prompt", 150, 200], ["work", "serviceTask", "Do the work", 270, 200], ["approve", "userTask", "Approve", 420, 200],
+     ["gwOk", "exclusiveGateway", "Approved?", 560, 200], ["end", "endEvent", "Done", 680, 200]],
+    [["f1", "start", "work"], ["f2", "work", "approve"], ["f3", "approve", "gwOk"], ["f4", "gwOk", "end", "yes"], ["f5", "gwOk", "work", "send back", [[560, 175], [560, 100], [270, 100], [270, 160]]]],
+    { start: { kind: "start", fields: ["prompt"] }, work: A("", "", ["${prompt}"]), approve: { kind: "user", what: "Approve", shows: "work" } },
+    { f4: { field: "${approve.approved}", op: "is true" }, f5: { def: true } }],
+  "new-loop": ["Ask until clear", "An Agent asks Rounds of questions; you answer until it has none, then it writes the result.",
+    [["start", "startEvent", "Prompt", 150, 200], ["ask", "serviceTask", "Ask questions", 270, 200], ["gw", "exclusiveGateway", "Any questions?", 420, 200],
+     ["answer", "userTask", "Answer the round", 420, 340], ["write", "serviceTask", "Write it up", 560, 200], ["end", "endEvent", "Done", 690, 200]],
+    [["f1", "start", "ask"], ["f2", "ask", "gw"], ["f3", "gw", "answer", "yes", [[420, 225], [420, 300]]], ["f4", "answer", "ask", "", [[360, 340], [270, 340], [270, 240]]],
+     ["f5", "gw", "write", "no"], ["f6", "write", "end"]],
+    { start: { kind: "start", fields: ["prompt"] }, ask: A("griller", "grilling", ["${prompt}"]), answer: { kind: "user", what: "Answer a Round", shows: "ask" }, write: A("", "", ["${prompt}"]) },
+    { f3: { field: "${ask.questions}", op: "is not empty" }, f5: { def: true } }],
+  "new-parallel": ["Parallel branches", "Two Agents work at the same time; the flow waits for both, then you review.",
+    [["start", "startEvent", "Prompt", 150, 220], ["split", "parallelGateway", "", 260, 220], ["a", "serviceTask", "Branch A", 400, 120], ["b", "serviceTask", "Branch B", 400, 320],
+     ["join", "parallelGateway", "", 540, 220], ["review", "userTask", "Review", 660, 220], ["end", "endEvent", "Done", 790, 220]],
+    [["f1", "start", "split"], ["f2", "split", "a", "", [[260, 195], [260, 120], [340, 120]]], ["f3", "split", "b", "", [[260, 245], [260, 320], [340, 320]]],
+     ["f4", "a", "join", "", [[460, 120], [540, 120], [540, 195]]], ["f5", "b", "join", "", [[460, 320], [540, 320], [540, 245]]], ["f6", "join", "review"], ["f7", "review", "end"]],
+    { start: { kind: "start", fields: ["prompt"] }, a: A("", "", ["${prompt}"]), b: A("", "", ["${prompt}"]), review: { kind: "user", what: "Approve", shows: "a" } }, {}],
+}
+Object.entries(PATTERNS).forEach(([id, [, , nodes, flows, props]]) => { XML[id] = bpmnXml(id.replace("-", "_"), nodes, flows); PROPS[id] = props })
 
 // ---------- Runs ----------
 // Task st: running | queued | paused | round | waiting | stuck | failed | stopped | done
@@ -626,7 +651,7 @@ function pStuck(r, t) {
 }
 
 function pProcesses() {
-  return ph("Processes", { acts: `<button class="primary" onclick="go('#/processes/new/edit')">New Process</button>` })
+  return ph("Processes", { acts: `<button class="primary" onclick="go('#/processes/new')">New Process</button>` })
     + `<table><tr><th>Process</th><th>From</th><th>Vault · Source map</th><th>Check</th><th>Live Runs</th><th></th></tr>
     ${S.processes.map(p => `<tr class="click" onclick="go('#/processes/${p.id}')"><td><b>${esc(p.name)}</b></td><td class="muted small">${p.by}</td><td class="muted small">${esc(p.vault)} · ${esc(p.sourceMap)}</td>
       <td>${p.ready ? `<span class="pill p-ready">Ready</span>` : `<span class="pill p-failed">Can't start</span>`}</td>
@@ -648,11 +673,16 @@ function pProcess(id) {
       <div>${diagramBox("viewer", id)}</div></div>
     <h2>Runs of this Process</h2>${runsTable(S.runs.filter(r => r.proc === id))}`
 }
+function pNewProcess() {
+  return ph("New Process", { crumbs: [`<a href="#/processes">Processes</a>`, "New"], sub: "Start from a pattern. Everything in it can be changed, and the modeler explains each element as you select it." })
+    + `<div class="grid2">${Object.entries(PATTERNS).map(([id, [n, d, nodes]]) => `<a class="card" href="#/processes/${id}/edit" style="color:inherit;text-decoration:none;display:block">
+      <h3>${n}</h3><div class="muted small">${d}</div><div class="small mono" style="margin-top:10px;color:var(--acc)">${nodes.filter(x => x[2]).map(x => x[2]).join(" → ")}</div></a>`).join("")}</div>`
+}
 function pModeler(id) {
   const p = proc(id)
-  return ph(p ? esc(p.name) : "New Process", { crumbs: [`<a href="#/processes">Processes</a>`, p ? `<a href="#/processes/${id}">${esc(p.name)}</a>` : "New", "Diagram"],
+  return ph(p ? esc(p.name) : "New Process" + (PATTERNS[id] ? ` <span class="muted" style="font-weight:500">· ${PATTERNS[id][0]}</span>` : ""), { crumbs: [`<a href="#/processes">Processes</a>`, p ? `<a href="#/processes/${id}">${esc(p.name)}</a>` : `<a href="#/processes/new">New</a>`, "Diagram"],
       acts: `<span class="muted small">${p?.by === "shipped" ? "Shipped: saving makes your own copy" : "Draft"}</span><button class="primary" onclick="saveDeploy()">Save and deploy</button>` })
-    + `<div class="modelerWrap">${diagramBox("modeler", id || "new")}<div class="props" id="props"></div></div>`
+    + `<div class="modelerWrap">${diagramBox("modeler", id || "new")}<div class="props"><div id="props"></div><div id="checks" style="border-top:1px solid var(--line);margin-top:18px;padding-top:12px"></div></div></div>`
 }
 
 // ---------- Library ----------
@@ -763,7 +793,7 @@ async function mountDiagrams() {
   box.querySelector(".nolib")?.remove()
   const kind = box.dataset.bpmn, pid = box.dataset.proc, r = run(box.dataset.run)
   const Ctor = kind === "modeler" ? window.BpmnModeler : window.BpmnViewer
-  bpmn = new Ctor({ container: box, additionalModules: kind === "modeler" ? [antsPalette] : [] })
+  bpmn = new Ctor({ container: box, additionalModules: kind === "modeler" ? [antsModule] : [] })
   await bpmn.importXML(XML[pid] || EMPTY_XML)
   const canvas = bpmn.get("canvas"), reg = bpmn.get("elementRegistry"), overlays = bpmn.get("overlays")
   canvas.zoom("fit-viewport", "auto")
@@ -788,86 +818,243 @@ async function mountDiagrams() {
   if (kind === "modeler") {
     bpmn.get("eventBus").on("selection.changed", e => { selected = e.newSelection[0] || null; renderProps(pid) })
     bpmn.get("eventBus").on("shape.added", e => { const k = PROPS[pid][e.element.id]?.kind; if (k) setTimeout(() => canvas.addMarker(e.element.id, "ants-" + k)) })
+    bpmn.get("eventBus").on("commandStack.changed", () => renderChecks(pid))
     renderProps(pid)
   }
 }
-// Ants' own palette entries, standing in for the generated element templates.
-function AntsPalette(palette, create, elementFactory) {
-  const make = (type, name, kind) => (event) => {
-    const shape = elementFactory.createShape({ type })
-    shape.businessObject.name = name
-    PROPS[document.querySelector("[data-bpmn]").dataset.proc][shape.id] = kind === "agent" ? A("", "") : { kind, what: "" }
-    create.start(event, shape)
-  }
-  palette.registerProvider({ getPaletteEntries: () => ({
-    "ants-sep": { group: "ants", separator: true },
-    "create.ants-agent": { group: "ants", className: "bpmn-icon-service-task ants-pal-agent", title: "Agent Task", action: { dragstart: make("bpmn:ServiceTask", "Agent Task", "agent"), click: make("bpmn:ServiceTask", "Agent Task", "agent") } },
-    "create.ants-user": { group: "ants", className: "bpmn-icon-user-task ants-pal-user", title: "User Task (answer a Round, approve)", action: { dragstart: make("bpmn:UserTask", "User Task", "user"), click: make("bpmn:UserTask", "User Task", "user") } },
-    "create.ants-builtin": { group: "ants", className: "bpmn-icon-script-task ants-pal-builtin", title: "Built-in Task (clone, push, accept recommendations)", action: { dragstart: make("bpmn:ServiceTask", "Built-in Task", "builtin"), click: make("bpmn:ServiceTask", "Built-in Task", "builtin") } },
-  }) })
+// ---------- Ants on bpmn-js: offer only what Ants runs, and explain every element ----------
+const KIND_INFO = {
+  agent: ["Agent Task", "An Agent runs one of its Skills and hands back a Result.", "bpmn:ServiceTask", "bpmn-icon-service-task"],
+  user: ["User Task", "Waits for you: answer a Round, or approve / send back.", "bpmn:UserTask", "bpmn-icon-user-task"],
+  builtin: ["Built-in Task", "Ants does it itself: clone repos, push, accept recommendations.", "bpmn:ServiceTask", "bpmn-icon-script-task"],
 }
-AntsPalette.$inject = ["palette", "create", "elementFactory"]
-const antsPalette = { __init__: ["antsPalette"], antsPalette: ["type", AntsPalette] }
+const curPid = () => document.querySelector("[data-bpmn]")?.dataset.proc
+const seedKind = (id, kind) => { PROPS[curPid()][id] = kind === "agent" ? A("", "") : { kind, what: kind === "user" ? "Approve" : "Clone repos", inputs: [] } }
+// Replace-menu entries for elements Ants doesn't run (see "Which BPMN elements does Ants run?").
+const DENY = ["script", "business-rule", "manual", "send-task", "receive-task", "message", "signal", "error", "escalation", "conditional", "compensat", "link", "complex", "inclusive", "event-based", "transaction", "ad-hoc", "terminate", "data-"]
+function AntsModeler(palette, contextPad, popupMenu, create, elementFactory, autoPlace) {
+  const ants = kind => { const s = elementFactory.createShape({ type: KIND_INFO[kind][2] }); s.businessObject.name = KIND_INFO[kind][0]; seedKind(s.id, kind); return s }
+  const shape = (attrs, name) => () => { const s = elementFactory.createShape(attrs); if (name) s.businessObject.name = name; return s }
+  const entry = (group, className, title, mk) => ({ group, className, title, action: { dragstart: e => create.start(e, mk()), click: e => create.start(e, mk()) } })
+  palette.registerProvider(500, { getPaletteEntries: () => entries => {
+    ["create.task", "create.data-object", "create.data-store", "create.participant-expanded", "create.intermediate-event"].forEach(k => delete entries[k])
+    Object.assign(entries, {
+      "create.start-event": entry("event", "bpmn-icon-start-event-none", "Start: where a Run begins; holds the start form", shape({ type: "bpmn:StartEvent" })),
+      "create.timer-start": entry("event", "bpmn-icon-start-event-timer", "Timer start: start a Run on a schedule", shape({ type: "bpmn:StartEvent", eventDefinitionType: "bpmn:TimerEventDefinition" }, "Every Monday 06:00")),
+      "create.timer-wait": entry("event", "bpmn-icon-intermediate-event-catch-timer", "Wait: pause the flow for a while or until a time", shape({ type: "bpmn:IntermediateCatchEvent", eventDefinitionType: "bpmn:TimerEventDefinition" }, "Wait 1 hour")),
+      "create.end-event": entry("event", "bpmn-icon-end-event-none", "End: the Run finishes here", shape({ type: "bpmn:EndEvent" })),
+      "create.exclusive-gateway": entry("gateway", "bpmn-icon-gateway-xor", "Decision: take exactly one path, or merge paths back together", shape({ type: "bpmn:ExclusiveGateway" })),
+      "create.parallel-gateway": entry("gateway", "bpmn-icon-gateway-parallel", "Parallel: run branches at the same time, then wait for all", shape({ type: "bpmn:ParallelGateway" })),
+      "create.call-activity": entry("activity", "bpmn-icon-call-activity", "Call another Process as one step", shape({ type: "bpmn:CallActivity" }, "Call a Process")),
+      "ants-sep": { group: "ants", separator: true },
+      ...Object.fromEntries(Object.keys(KIND_INFO).map(k => ["create.ants-" + k, entry("ants", `${KIND_INFO[k][3]} ants-pal-${k}`, `${KIND_INFO[k][0]}: ${KIND_INFO[k][1]}`, () => ants(k))])),
+    })
+    return entries
+  } })
+  contextPad.registerProvider(500, { getContextPadEntries: el => entries => {
+    delete entries["append.append-task"]; delete entries["append.intermediate-event"]
+    if (el.type === "bpmn:EndEvent" || el.type === "label" || el.waypoints) return entries
+    Object.keys(KIND_INFO).forEach(k => entries["append.ants-" + k] = { group: "model", className: `${KIND_INFO[k][3]} ants-pal-${k}`, title: "Append an " + KIND_INFO[k][0],
+      action: { click: (e, src) => autoPlace.append(src, ants(k)), dragstart: e => create.start(e, ants(k), { source: el }) } })
+    return entries
+  } })
+  popupMenu.registerProvider("bpmn-replace", 500, { getPopupMenuEntries: () => entries => {
+    Object.keys(entries).forEach(k => { if (k === "replace-with-task" || DENY.some(d => k.includes(d))) delete entries[k] }); return entries } })
+}
+AntsModeler.$inject = ["palette", "contextPad", "popupMenu", "create", "elementFactory", "autoPlace"]
+const antsModule = { __init__: ["antsModeler"], antsModeler: ["type", AntsModeler] }
 
-// Upstream Tasks of an element, walking incoming flows: their Result fields are the inputs on offer.
+// Upstream Tasks of an element, walking incoming flows: their Result fields are what it can read.
 function upstream(el, seen = new Set()) {
   (el.incoming || []).forEach(f => { const s = f.source; if (!seen.has(s.id)) { seen.add(s.id); upstream(s, seen) } })
   return seen
 }
+const fieldsOf = (id, p) => p.kind === "agent" ? skillOf(p.skill)?.fields || [] : p.kind === "user" ? (p.what === "Approve" ? ["approved", "comment"] : ["answers"])
+  : p.what === "Clone repos" ? ["repos"] : p.what === "Accept recommendations" ? ["answers"] : []
 function offered(pid, el) {
-  const P = PROPS[pid], out = []
+  const P = PROPS[pid], reg = bpmn.get("elementRegistry"), out = []
   ;(P.start?.fields || []).forEach(f => out.push(["${" + f + "}", "start form"]))
-  upstream(el).forEach(id => { const p = P[id]; if (!p) return
-    if (p.kind === "agent" && skillOf(p.skill)) skillOf(p.skill).fields.forEach(f => out.push([`\${${id}.${f}}`, `${p.skill} Result`]))
-    if (id === "clone") out.push(["${clone.repos}", "Clone repos"]) })
+  upstream(el).forEach(id => { const p = P[id]; if (p && p.kind !== "start") fieldsOf(id, p).forEach(f => out.push([`\${${id}.${f}}`, reg.get(id)?.businessObject.name || id])) })
   return out
 }
+
+// Conditions on the paths out of an exclusive gateway. Ants writes them as JUEL on the flow; the user never has to.
+const CONDS = {}
+;["spec-you", "spec-agent", "spec-rec"].forEach(p => CONDS[p] = { f5: { field: "${grill.questions}", op: "is not empty" }, f7: { def: true }, f10: { field: "${approve.approved}", op: "is true" }, f12: { def: true } })
+Object.entries(PATTERNS).forEach(([id, p]) => CONDS[id] = p[5])
+CONDS.implement = { f14: { field: "${review.approved}", op: "is true" }, f16: { def: true } }
+const OPS = ["is true", "is false", "is empty", "is not empty", "equals", "does not equal", "is more than", "is less than"]
+const needsValue = op => ["equals", "does not equal", "is more than", "is less than"].includes(op)
+function juel(c) {
+  if (c?.def) return "(default: no condition)"
+  if (!c?.field) return "(no condition yet)"
+  const f = c.field.slice(2, -1), v = /^-?\d+(\.\d+)?$/.test(c.value || "") ? c.value : `'${c.value || ""}'`
+  return { "is true": `\${${f}}`, "is false": `\${!${f}}`, "is empty": `\${empty ${f}}`, "is not empty": `\${not empty ${f}}`,
+    "equals": `\${${f} == ${v}}`, "does not equal": `\${${f} != ${v}}`, "is more than": `\${${f} > ${v}}`, "is less than": `\${${f} < ${v}}` }[c.op]
+}
+const nameOf = e => e.businessObject.name || { "bpmn:ExclusiveGateway": "Decision", "bpmn:ParallelGateway": "Parallel gateway", "bpmn:SequenceFlow": "Path" }[e.type] || e.type.replace("bpmn:", "")
+function setCond(pid, fid, patch) { const C = CONDS[pid] ||= {}; C[fid] = { ...(C[fid] || {}), ...patch }; delete C[fid].def; renderProps(pid) }
+function setDefault(pid, gwId, fid) {
+  const C = CONDS[pid] ||= {}, gw = bpmn.get("elementRegistry").get(gwId)
+  gw.outgoing.forEach(f => { if (C[f.id]?.def) delete C[f.id].def }); C[fid] = { def: true }
+  bpmn.get("modeling").updateProperties(gw, { default: bpmn.get("elementRegistry").get(fid).businessObject }); renderProps(pid)
+}
+function pathEditor(pid, gw, f) {
+  const c = (CONDS[pid] ||= {})[f.id] || {}, fields = offered(pid, gw)
+  return `<div class="card" style="padding:10px 12px;margin:8px 0;box-shadow:none">
+    <div class="row small"><b class="grow">→ ${esc(nameOf(f.target))}</b><button class="ghost small" onclick="bpmn.get('selection').select(bpmn.get('elementRegistry').get('${f.id}'))">Select</button></div>
+    <input placeholder="Label on the diagram, e.g. yes" value="${esc(f.businessObject.name || "")}" onchange="bpmn.get('modeling').updateLabel(bpmn.get('elementRegistry').get('${f.id}'),this.value)" style="margin:6px 0">
+    <label class="row small" style="font-weight:500"><input type="radio" name="def_${gw.id}" ${c.def ? "checked" : ""} onchange="setDefault('${pid}','${gw.id}','${f.id}')"> Default path: taken when no other condition matches</label>
+    ${c.def ? "" : `<div class="small" style="margin-top:8px">Take this path when</div>
+      <select onchange="setCond('${pid}','${f.id}',{field:this.value})" style="margin:4px 0"><option value="">Choose a Result field…</option>
+        ${fields.map(([x, from]) => `<option value="${x}" ${x === c.field ? "selected" : ""}>${x.slice(2, -1)}  (from ${esc(from)})</option>`).join("")}</select>
+      <div class="row"><select onchange="setCond('${pid}','${f.id}',{op:this.value})">${OPS.map(o => `<option ${o === (c.op || "is true") ? "selected" : ""}>${o}</option>`).join("")}</select>
+        ${needsValue(c.op) ? `<input placeholder="value" value="${esc(c.value || "")}" onchange="setCond('${pid}','${f.id}',{value:this.value})">` : ""}</div>
+      ${fields.length ? "" : `<div class="warn">No Task before this decision returns anything to decide on.</div>`}`}
+    <div class="help mono" style="margin:6px 0 0">${esc(juel(c))}</div></div>`
+}
+const explain = html => `<div class="okbox" style="background:var(--accSoft);color:var(--accText);margin:12px 0">${html}</div>`
+function replaceAs(type, kind) {
+  const pid = curPid(), old = selected.businessObject.name, el = bpmn.get("bpmnReplace").replaceElement(selected, { type })
+  if (kind) { seedKind(el.id, kind); bpmn.get("canvas").addMarker(el.id, "ants-" + kind); if (!old) bpmn.get("modeling").updateLabel(el, KIND_INFO[kind][0]) }
+  bpmn.get("selection").select(el); renderProps(pid)
+}
+const kindButtons = () => Object.entries(KIND_INFO).map(([k, [n, d, type, cls]]) => `<button style="display:flex;gap:10px;width:100%;text-align:left;margin:6px 0;font-weight:500" onclick="replaceAs('${type}','${k}')">
+  <span class="${cls}" style="font-size:22px"></span><span><b>${n}</b><br><span class="muted small">${d}</span></span></button>`).join("")
+
 function renderProps(pid) {
   const box = document.getElementById("props"); if (!box) return
-  const P = PROPS[pid], p = proc(pid) || { name: "New Process", vault: "Work", sourceMap: "Stacc repos" }
-  if (!selected || selected.type === "bpmn:Process") {
-    box.innerHTML = `<div class="kind">Process</div><h3>${esc(p.name)}</h3>
+  const P = PROPS[pid] ||= {}, p = proc(pid) || { name: "New Process", vault: "Work", sourceMap: "Stacc repos" }
+  const head = (k, ph = "") => `<div class="kind">${k}</div><input style="font-weight:700;font-size:15px" placeholder="${ph}" value="${esc(selected.businessObject.name || "")}" onchange="bpmn.get('modeling').updateLabel(selected,this.value)">`
+  const t = selected?.type, bo = selected?.businessObject, ev = bo?.eventDefinitions?.[0]?.$type, e = selected ? P[selected.id] || {} : {}
+  let html
+  if (!selected || t === "bpmn:Process") {
+    html = `<div class="kind">Process</div><h3>${esc(p.name)}</h3>
+      ${explain(`<b>Drawing a Process</b><ol style="margin:6px 0 0;padding-left:18px">
+        <li>A Run begins at the <b>start event</b> (its start form) and finishes at an <b>end event</b>.</li>
+        <li>Add work from the bottom of the palette, or hover a shape and pick the next step from its menu: <b>Agent</b>, <b>User</b> or <b>Built-in Task</b>.</li>
+        <li>Choose between paths with a <b>decision</b> (◇ ×). Loop by drawing a path back to an earlier Task.</li>
+        <li>Run branches side by side with two <b>parallel gateways</b> (◇ +): one splits, one joins.</li>
+        <li>Fix everything under <b>Checks</b>, then <b>Save and deploy</b>.</li></ol>`)}
       ${field("Vault", "Which Vault this Process's Tasks are told about.", "", `<select onchange="(proc('${pid}')||{}).vault=this.value">${[...S.vaults.map(v => v.name), "—"].map(v => `<option ${v === p.vault ? "selected" : ""}>${esc(v)}</option>`).join("")}</select>`)}
-      ${field("Source map", "Where repo names in this Process resolve.", "", `<select>${S.sourceMaps.map(v => `<option ${v.name === p.sourceMap ? "selected" : ""}>${esc(v.name)}</option>`).join("")}</select>`)}
-      ${field("Start form", "Fields the user fills in to start a Run. Tasks read them as <code>${field}</code>.", "prompt, branch", `<input value="${esc((P.start?.fields || []).join(", "))}" onchange="PROPS['${pid}'].start={kind:'start',fields:this.value.split(',').map(s=>s.trim()).filter(Boolean)}">`)}
-      <div class="help" style="margin-top:18px"><b>Drawing:</b> drag from the palette on the left (Ants' Agent, User and Built-in Tasks are at the bottom), connect with the arrow in the hover menu, Ctrl/⌘ + scroll to zoom, drag the background to pan. Gateways, loops and parallel branches are plain BPMN.</div>`
-    return
-  }
-  const e = P[selected.id] || {}, name = selected.businessObject.name || ""
-  const head = k => `<div class="kind">${k}</div><input style="font-weight:700;font-size:15px" value="${esc(name)}" onchange="bpmn.get('modeling').updateLabel(selected,this.value)">`
-  if (e.kind === "agent") {
-    const ag = agentOf(e.agent), sk = ag ? ag.skills : [], ins = offered(pid, selected)
-    box.innerHTML = head("Agent Task") + `
-      ${field("Agent", "Who does it.", "", `<select onchange="PROPS['${pid}']['${selected.id}'].agent=this.value;PROPS['${pid}']['${selected.id}'].skill=(agentOf(this.value)?.skills||[])[0]||'';renderProps('${pid}')"><option value="">Choose…</option>${S.agents.map(a => `<option ${a.name === e.agent ? "selected" : ""} value="${a.name}">${a.name} · ${esc(a.desc)}</option>`).join("")}</select>`)}
+      ${field("Source map", "Where repo names in this Process resolve.", "", `<select>${S.sourceMaps.map(v => `<option ${v.name === p.sourceMap ? "selected" : ""}>${esc(v.name)}</option>`).join("")}</select>`)}`
+  } else if (t === "bpmn:StartEvent" && ev === "bpmn:TimerEventDefinition") {
+    html = head("Timer start", "e.g. Every Monday 06:00") + explain("Starts a Run on a schedule, with no one pressing Start. The start form's fields come from the defaults below.")
+      + field("When", "A cron expression: minute, hour, day of month, month, day of week.", "0 6 * * MON  (Mondays at 06:00)", `<input class="mono" value="0 6 * * MON">`)
+      + startForm(pid)
+  } else if (t === "bpmn:StartEvent") {
+    html = head("Start event", "e.g. Prompt") + explain("Where a Run begins. Its fields are the start form the user fills in on the Process page, and every Task can read them as <code>${field}</code>.") + startForm(pid)
+  } else if (t === "bpmn:EndEvent") {
+    html = head("End event", "e.g. Done") + explain("The Run finishes here. Ants writes the Report and deletes the Run workspace. Several end events are fine, named for how the Run ended.")
+  } else if (t === "bpmn:IntermediateCatchEvent" && ev === "bpmn:TimerEventDefinition") {
+    html = head("Wait", "e.g. Wait 1 hour") + explain("The flow pauses here. No Agent runs and no slot is held.")
+      + field("Wait for", "An ISO 8601 duration: <code>PT30M</code> 30 minutes, <code>PT1H</code> an hour, <code>P1D</code> a day.", "PT1H", `<input class="mono" value="PT1H">`)
+  } else if (t === "bpmn:Task" || t === "bpmn:ManualTask" || ((t === "bpmn:ServiceTask" || t === "bpmn:UserTask") && !e.kind)) {
+    html = head(t === "bpmn:Task" ? "Plain Task" : t.replace("bpmn:", ""), "e.g. Write the spec") + `<div class="warn">${t === "bpmn:Task" || t === "bpmn:ManualTask" ? "Ants would pass straight through this, doing nothing." : "Ants doesn't know who does this yet."} What should it be?</div>` + kindButtons()
+  } else if (e.kind === "agent") {
+    const ag = agentOf(e.agent), sk = ag ? ag.skills : [], ins = offered(pid, selected), id = selected.id
+    html = head("Agent Task", "e.g. Write the spec") + `
+      ${field("Agent", "Who does it.", "", `<select onchange="PROPS['${pid}']['${id}'].agent=this.value;PROPS['${pid}']['${id}'].skill=(agentOf(this.value)?.skills||[])[0]||'';renderProps('${pid}')"><option value="">Choose…</option>${S.agents.map(a => `<option ${a.name === e.agent ? "selected" : ""} value="${a.name}">${a.name} · ${esc(a.desc)}</option>`).join("")}</select>`)}
       ${e.agent && !ag ? `<div class="warn">No Agent folder holds "${esc(e.agent)}".</div>` : ""}
-      ${field("Skill", "One of the Agent's Skills: the one job this Task does.", "", `<select ${ag ? "" : "disabled"} onchange="PROPS['${pid}']['${selected.id}'].skill=this.value;renderProps('${pid}')">${sk.map(s => `<option ${s === e.skill ? "selected" : ""}>${s}</option>`).join("")}</select>`)}
-      ${skillOf(e.skill) ? `<div class="help">${esc(skillOf(e.skill).desc)}<br>Offers: ${skillOf(e.skill).fields.map(f => `<code>\${${selected.id}.${f}}</code>`).join(" ") || "nothing"}</div>` : ""}
-      ${field("Inputs", "Start-form fields and Results of Tasks <b>before</b> this one in the diagram. Type <code>$</code> to pick.", "${scout.brief}",
-        `<div class="listed">${e.inputs.map((v, i) => `<div class="row"><input class="mono grow" list="ins" value="${esc(v)}" onchange="PROPS['${pid}']['${selected.id}'].inputs[${i}]=this.value;renderProps('${pid}')"><button class="ghost" onclick="PROPS['${pid}']['${selected.id}'].inputs.splice(${i},1);renderProps('${pid}')">×</button></div>
-          ${ins.some(([x]) => x === v) ? "" : `<div class="warn">${esc(v)} isn't offered by any Task before this one.</div>`}`).join("")}
-          <button onclick="PROPS['${pid}']['${selected.id}'].inputs.push('');renderProps('${pid}')">＋ Add input</button></div>
-         <datalist id="ins">${ins.map(([x, from]) => `<option value="${x}">${from}</option>`).join("")}</datalist>`)}
+      ${field("Skill", "One of the Agent's Skills: the one job this Task does.", "", `<select ${ag ? "" : "disabled"} onchange="PROPS['${pid}']['${id}'].skill=this.value;renderProps('${pid}')">${sk.map(s => `<option ${s === e.skill ? "selected" : ""}>${s}</option>`).join("")}</select>`)}
+      ${skillOf(e.skill) ? `<div class="help">${esc(skillOf(e.skill).desc)}<br>Later Tasks can read: ${skillOf(e.skill).fields.map(f => `<code>\${${id}.${f}}</code>`).join(" ") || "nothing"}</div>` : ""}
+      ${field("Inputs", "What it reads: start-form fields and Results of Tasks <b>before</b> it in the diagram.", "${scout.brief}",
+        `<div class="listed">${e.inputs.map((v, i) => `<div class="row"><select class="mono grow" onchange="PROPS['${pid}']['${id}'].inputs[${i}]=this.value;renderProps('${pid}')"><option value="">Choose…</option>
+          ${[...ins, ...(v && !ins.some(([x]) => x === v) ? [[v, "not available here"]] : [])].map(([x, from]) => `<option value="${x}" ${x === v ? "selected" : ""}>${x}  (${esc(from)})</option>`).join("")}</select>
+          <button class="ghost" onclick="PROPS['${pid}']['${id}'].inputs.splice(${i},1);renderProps('${pid}')">×</button></div>
+          ${!v || ins.some(([x]) => x === v) ? "" : `<div class="warn">${esc(v)} isn't returned by any Task before this one.</div>`}`).join("")}
+          <button onclick="PROPS['${pid}']['${id}'].inputs.push('');renderProps('${pid}')">＋ Add input</button></div>`)}
       ${field("When the flow comes back", "", "", `<label class="row" style="font-weight:500"><input type="checkbox" checked> Resume the session (Round answers, Send back)</label>`)}
       ${field("Knowledge", "", "", `<label class="row" style="font-weight:500"><input type="checkbox" ${skillOf(e.skill)?.vault ? "checked" : ""}> Vault</label><label class="row" style="font-weight:500"><input type="checkbox"> Answer History</label>`)}`
   } else if (e.kind === "user") {
-    box.innerHTML = head("User Task") + field("What the user does", "", "", `<select><option ${e.what === "Answer a Round" ? "selected" : ""}>Answer a Round</option><option ${e.what === "Approve" ? "selected" : ""}>Approve</option></select>`)
+    html = head("User Task", "e.g. Approve the spec") + explain("The Run waits here, on the Notification list, until you act. Other branches keep going.")
+      + field("What you do", "", "", `<select onchange="PROPS['${pid}']['${selected.id}'].what=this.value;renderProps('${pid}')"><option ${e.what === "Answer a Round" ? "selected" : ""}>Answer a Round</option><option ${e.what === "Approve" ? "selected" : ""}>Approve</option></select>`)
       + field("Shows the Result of", "The earlier Task whose Result the page shows, and which Send back resumes.", "", `<select>${Object.entries(P).filter(([, x]) => x.kind === "agent").map(([id]) => `<option ${id === e.shows ? "selected" : ""}>${id}</option>`).join("")}</select>`)
+      + `<div class="help" style="margin-top:8px">Later Tasks and decisions can read: ${fieldsOf(selected.id, e).map(f => `<code>\${${selected.id}.${f}}</code>`).join(" ")}</div>`
   } else if (e.kind === "builtin") {
-    box.innerHTML = head("Built-in Task") + field("What Ants does", "", "", `<select>${["Clone repos", "Push", "Accept recommendations", "Choose repos"].map(w => `<option ${w === e.what ? "selected" : ""}>${w}</option>`).join("")}</select>`)
-  } else if (selected.type.includes("Gateway")) {
-    box.innerHTML = head(selected.type.includes("Parallel") ? "Parallel gateway" : "Exclusive gateway") + `<div class="help" style="margin-top:12px">${selected.type.includes("Parallel") ? "Splits into branches that run at the same time, or waits for all of them." : "Picks one outgoing flow. Click a flow to set its condition on a Result field, such as <code>${approve.approved}</code> or <code>${grill.questions}</code> being empty."}</div>`
-  } else if (selected.type === "bpmn:SequenceFlow") {
-    box.innerHTML = head("Flow") + field("Condition", "Only on flows out of an exclusive gateway.", "${!approve.approved}", `<input class="mono" value="">`)
-  } else box.innerHTML = head(selected.type.replace("bpmn:", "")) + `<div class="help" style="margin-top:12px">Use an Agent, User or Built-in Task from the bottom of the palette for work Ants runs.</div>`
+    html = head("Built-in Task", "e.g. Clone repos") + explain("Ants does this itself. No Agent, no tokens, no slot.")
+      + field("What Ants does", "", "", `<select onchange="PROPS['${pid}']['${selected.id}'].what=this.value;renderProps('${pid}')">${["Clone repos", "Push", "Accept recommendations", "Choose repos"].map(w => `<option ${w === e.what ? "selected" : ""}>${w}</option>`).join("")}</select>`)
+  } else if (t === "bpmn:ExclusiveGateway") {
+    const out = selected.outgoing, merge = out.length <= 1 && selected.incoming.length > 1
+    html = head("Decision (exclusive gateway)", "Ask it as a question, e.g. Approved?")
+      + (merge ? explain("This decision only <b>merges</b> paths back into one, such as a loop's way back in. It needs no conditions.")
+        : explain(`A fork in the road: the Run takes <b>exactly one</b> path out. Give each path a condition on a Result from an earlier Task, and make one the <b>default</b>, taken when nothing else matches.
+          <div class="small" style="margin-top:6px">Example from the shipped Processes: <b>Approved?</b> takes <i>yes</i> when <code>approve.approved</code> is true; <i>send back</i> is the default and loops to Write the spec.</div>`))
+      + (out.length ? `<b class="small">Paths out (${out.length})</b>` + out.map(f => pathEditor(pid, selected, f)).join("") : `<div class="warn">No paths out yet. Hover the decision and drag its arrow to the next step.</div>`)
+  } else if (t === "bpmn:ParallelGateway") {
+    const split = selected.outgoing.length > 1, join = selected.incoming.length > 1
+    html = head("Parallel gateway") + explain(split && !join ? `<b>Splits</b> the flow: all ${selected.outgoing.length} branches start at once. Agent Tasks in them share the ${S.cap} slots.`
+      : join && !split ? `<b>Joins</b> the branches: waits here until all ${selected.incoming.length} have arrived, then carries on.`
+      : "Use two of these: one to <b>split</b> into branches that run at the same time, one to <b>join</b> them, waiting until all are done.")
+      + (split ? `<b class="small">Branches</b>${selected.outgoing.map(f => `<div class="small" style="padding:4px 0">→ ${esc(nameOf(f.target))}</div>`).join("")}` : "")
+  } else if (t === "bpmn:SequenceFlow") {
+    const src = selected.source
+    html = head("Path", "e.g. yes") + (src.type === "bpmn:ExclusiveGateway" && src.outgoing.length > 1 ? pathEditor(pid, src, selected) + `<button class="ghost" onclick="bpmn.get('selection').select(bpmn.get('elementRegistry').get('${src.id}'))">See every path out of ${esc(nameOf(src))}</button>`
+      : explain(`Paths out of ${src.type.includes("Gateway") ? "a parallel gateway" : "a Task or event"} need no condition: when it's done, the flow moves on.`))
+  } else if (t === "bpmn:CallActivity") {
+    html = head("Call a Process", "e.g. Prompt to spec") + explain("Runs another Process as one step and waits for it to finish. How inputs and the result travel is open in <a href='https://github.com/oyvij/ants/issues/21' target='_blank'>Which BPMN elements does Ants run?</a>")
+      + field("Process", "", "", `<select>${S.processes.map(x => `<option>${esc(x.name)}</option>`).join("")}</select>`)
+  } else if (t === "bpmn:SubProcess") {
+    html = head("Sub-process", "e.g. Grill until clear") + explain("Groups part of the flow into one box, such as a question loop. Collapse it from the wrench menu to tidy the diagram.")
+  } else if (["bpmn:TextAnnotation", "bpmn:Group"].includes(t)) {
+    html = `<div class="kind">${t.replace("bpmn:", "")}</div>` + explain("A note for people reading the diagram. Ants ignores it when running.")
+  } else {
+    html = `<div class="kind">${esc(t.replace("bpmn:", ""))}${ev ? " · " + esc(ev.replace("bpmn:", "")) : ""}</div><h3>${esc(nameOf(selected))}</h3><div class="warn">Ants doesn't run this element, so Save and deploy will refuse it. See <a href="https://github.com/oyvij/ants/issues/21" target="_blank">Which BPMN elements does Ants run?</a></div>`
+      + (/Task$/.test(t) ? `<div class="small" style="margin-top:10px">Change it to:</div>` + kindButtons() : /Gateway$/.test(t) ? `<div class="small" style="margin-top:10px">Change it to:</div><button onclick="replaceAs('bpmn:ExclusiveGateway')">Decision</button> <button onclick="replaceAs('bpmn:ParallelGateway')">Parallel gateway</button>` : "")
+  }
+  box.innerHTML = html
+  renderChecks(pid)
+}
+function startForm(pid) {
+  const P = PROPS[pid]
+  return field("Start form", "Fields the user fills in to start a Run. Tasks read them as <code>${field}</code>.", "prompt, branch",
+    `<input value="${esc((P.start?.fields || []).join(", "))}" onchange="PROPS['${pid}'].start={kind:'start',fields:this.value.split(',').map(s=>s.trim()).filter(Boolean)};renderChecks('${pid}')">`)
+}
+
+// Live checks: everything Save and deploy would refuse, shown while drawing. Click one to jump to it.
+const UNSUPPORTED = { "bpmn:ScriptTask": "Ants doesn't run inline scripts; use a Built-in Task.", "bpmn:BusinessRuleTask": "DMN isn't decided yet.",
+  "bpmn:SendTask": "Ants doesn't send messages.", "bpmn:ReceiveTask": "Ants doesn't receive messages.", "bpmn:InclusiveGateway": "use a decision or a parallel gateway.",
+  "bpmn:ComplexGateway": "use a decision or a parallel gateway.", "bpmn:EventBasedGateway": "use a decision.", "bpmn:DataObjectReference": "data objects aren't run; use an annotation.",
+  "bpmn:DataStoreReference": "data stores aren't run; use an annotation.", "bpmn:Participant": "pools aren't run; one Process per diagram.", "bpmn:IntermediateThrowEvent": "Ants doesn't throw events." }
+function checks(pid) {
+  const P = PROPS[pid] ||= {}, C = CONDS[pid] ||= {}, out = []
+  const els = bpmn.get("elementRegistry").getAll().filter(e => e.type !== "label" && !e.waypoints && !["bpmn:Process", "bpmn:TextAnnotation", "bpmn:Group", "bpmn:Association"].includes(e.type) && e.parent)
+  if (!els.some(e => e.type === "bpmn:StartEvent")) out.push({ msg: "Add a start event: it is where a Run begins." })
+  if (!els.some(e => e.type === "bpmn:EndEvent")) out.push({ msg: "Add an end event so a Run can finish." })
+  els.forEach(e => {
+    const n = nameOf(e), ev = e.businessObject.eventDefinitions?.[0]?.$type, p = P[e.id], add = msg => out.push({ id: e.id, msg: `<b>${esc(n)}</b>: ${msg}` })
+    if (UNSUPPORTED[e.type]) return add(UNSUPPORTED[e.type])
+    if (ev && ev !== "bpmn:TimerEventDefinition") return add(`Ants doesn't run ${ev.replace("bpmn:", "").replace("EventDefinition", "").toLowerCase()} events.`)
+    if (e.type === "bpmn:Task" || e.type === "bpmn:ManualTask") return add("does nothing as it stands. Choose Agent, User or Built-in Task.")
+    if (/ServiceTask|UserTask/.test(e.type) && !p) return add("choose whether it is an Agent, User or Built-in Task.")
+    if (e.type !== "bpmn:StartEvent" && !e.incoming.length) add("nothing leads here.")
+    if (e.type !== "bpmn:EndEvent" && !e.outgoing.length) add("leads nowhere. Connect it to the next step or an end event.")
+    if (p?.kind === "agent") {
+      if (!agentOf(p.agent)) add(p.agent ? `no Agent folder holds "${esc(p.agent)}".` : "choose an Agent.")
+      else if (!agentOf(p.agent).skills.includes(p.skill)) add(`${esc(p.agent)} doesn't run the Skill "${esc(p.skill)}".`)
+      const ins = offered(pid, e).map(([x]) => x); p.inputs.filter(v => v && !ins.includes(v)).forEach(v => add(`${esc(v)} isn't returned by any Task before it.`))
+    }
+    if (e.type === "bpmn:ExclusiveGateway" && e.outgoing.length > 1) {
+      if (!e.outgoing.some(f => C[f.id]?.def)) add("no default path. If no condition matches, the Run stops here.")
+      const bare = e.outgoing.filter(f => !C[f.id]?.def && !C[f.id]?.field).length
+      if (bare) add(`${bare} path${bare > 1 ? "s" : ""} without a condition.`)
+    }
+  })
+  return out
+}
+function renderChecks(pid) {
+  const box = document.getElementById("checks"); if (!box || !bpmn) return
+  const cs = checks(pid)
+  box.innerHTML = `<div class="row" style="margin-bottom:6px"><b>Checks</b><span class="grow"></span>${cs.length ? `<span class="pill p-waiting">${cs.length} to fix</span>` : `<span class="pill p-ready">Ready to deploy</span>`}</div>`
+    + cs.map(c => `<div class="small" style="padding:5px 8px;border-radius:6px;cursor:${c.id ? "pointer" : "default"}" onmouseover="this.style.background='var(--line2)'" onmouseout="this.style.background=''"
+      ${c.id ? `onclick="const el=bpmn.get('elementRegistry').get('${c.id}');bpmn.get('canvas').scrollToElement(el);bpmn.get('selection').select(el)"` : ""}>⚠ ${c.msg}</div>`).join("")
 }
 function saveDeploy() {
-  const pid = document.querySelector("[data-bpmn]").dataset.proc, P = PROPS[pid], probs = []
-  bpmn.get("elementRegistry").getAll().forEach(el => { const e = P[el.id]; if (e?.kind !== "agent") return
-    const n = el.businessObject.name || el.id
-    if (!agentOf(e.agent)) probs.push(`${n}: choose an Agent`); else if (!agentOf(e.agent).skills.includes(e.skill)) probs.push(`${n}: ${e.agent} doesn't run the Skill "${e.skill}"`)
-    const ins = offered(pid, el).map(([x]) => x); e.inputs.filter(v => v && !ins.includes(v)).forEach(v => probs.push(`${n}: ${v} isn't offered before this Task`)) })
-  S.toast = probs.length ? `<b>Can't deploy</b><ul style="margin:6px 0 0;padding-left:18px">${probs.map(p => `<li>${esc(p)}</li>`).join("")}</ul>` : "<b>Deployed.</b> Renamed <code>camunda:</code> to <code>operaton:</code> and deployed to Operaton. New Runs use this version."
-  const t = document.createElement("div"); t.className = "toast"; t.innerHTML = S.toast + `<div style="text-align:right;margin-top:8px"><button onclick="this.closest('.toast').remove()">OK</button></div>`; S.toast = null; document.body.append(t)
+  const pid = curPid(), cs = checks(pid)
+  const t = document.createElement("div"); t.className = "toast"
+  t.innerHTML = (cs.length ? `<b>Can't deploy: ${cs.length} to fix</b><div class="small" style="margin-top:4px">They're listed under Checks; click one to jump to it.</div>`
+    : "<b>Deployed.</b> Renamed <code>camunda:</code> to <code>operaton:</code> and deployed to Operaton. New Runs use this version.") + `<div style="text-align:right;margin-top:8px"><button onclick="this.closest('.toast').remove()">OK</button></div>`
+  document.body.append(t)
 }
 
 // ---------- router ----------
@@ -881,6 +1068,7 @@ function render() {
   else if (p[0] === "runs" && p[1]) body = pRun(p[1])
   else if (p[0] === "runs") body = pRuns()
   else if (p[0] === "processes" && p[2] === "edit") { body = pModeler(p[1]); full = true }
+  else if (p[0] === "processes" && p[1] === "new") body = pNewProcess()
   else if (p[0] === "processes" && p[1]) body = pProcess(p[1])
   else if (p[0] === "processes") body = pProcesses()
   else if (p[0] === "agents" && p[1]) body = pAgent(p[1] === "new" ? "" : p[1])
