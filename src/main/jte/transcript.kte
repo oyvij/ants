@@ -2,6 +2,9 @@
 @param task: String
 @param transcript: ants.Transcript
 @param offset: Long
+@param live: Boolean
+@param error: String? = null
+@param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
 <!doctype html>
 <html lang="en">
@@ -31,6 +34,19 @@ $unsafe{entry}
 $unsafe{transcript.html("live")}
 $unsafe{transcript.html("status")}
 $unsafe{transcript.html("subagents")}
+@if(error != null)<p role="alert">${error}</p>@endif
+@if(live)
+<form method="post" action="/runs/${run}/tasks/${task}/transcript/send">
+    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+    <label>Message <textarea name="message" required></textarea></label>
+    <button>Send</button>
+    <small>The Agent reads it at its next tool call.</small>
+</form>
+<form method="post" action="/runs/${run}/tasks/${task}/transcript/stop">
+    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+    <button>■ Stop</button>
+</form>
+@endif
 <script>
     // Follows the Transcript from where this page's copy ends, replacing each changed element or appending a new entry, a Subagent's into its block.
     const entries = document.getElementById('entries');

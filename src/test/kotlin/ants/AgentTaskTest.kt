@@ -1,12 +1,18 @@
 package ants
 
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import tools.jackson.databind.json.JsonMapper
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.Duration
+import java.time.Instant
+import java.time.format.DateTimeFormatter
+import java.util.concurrent.TimeUnit.SECONDS
 import kotlin.io.path.createDirectories
 import kotlin.io.path.createFile
 import kotlin.io.path.deleteIfExists
+import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
 import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.readLines
@@ -15,6 +21,7 @@ import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 
 class AgentTaskTest : AntsTest() {
     private val browser by lazy { browser().also { it.login() } }
@@ -301,6 +308,108 @@ class AgentTaskTest : AntsTest() {
         assertFalse("--model" in argv)
         assertEquals(emptyMap<String, Any>(), (claude.launches("draft").single().schema()["properties"] as Map<*, *>)["output"])
     }
+
+    /** Puts the clock back and opens claude's gate, which a failed pause test could leave shut for every later test. */
+    @AfterEach
+    fun putTheClockBack() {
+        clock.offset = Duration.ZERO
+        browser.get("/processes") // for a CSRF token
+        browser.post("/pauses/claude", emptyMap())
+    }
+
+    /** A Usage limit rejection, as claude reports it, resetting at [resetsAt]. */
+    private fun rejected(resetsAt: Instant) = """{"type":"rate_limit_event","rate_limit_info":{"status":"rejected",""" +
+        """"resetsAt":${resetsAt.epochSecond},"rateLimitType":"five_hour","isUsingOverage":false},"session_id":"${'$'}SESSION"}"""
+
+    private fun hhmm(instant: Instant) = DateTimeFormatter.ofPattern("HH:mm").withZone(clock.zone).format(instant)
+
+    /** The nav's pill as [page] shows it: the nav fills its slot from the stream it names. */
+    private fun pill(page: String): String {
+        val slot = Regex("""<span id="paused" data-src="([^"]+)"></span>""").find(browser.get(page).body)
+        return browser.events(assertNotNull(slot, "$page has no pill in its nav").groupValues[1]).poll(10, SECONDS).orEmpty()
+    }
+
+    @Test
+    fun `a rejection pauses the Task until resetsAt plus one minute, then resumes the same session with the reset message`() {
+        settings()
+        agent("Write plainly.\n")
+        skill()
+        val resetsAt = clock.instant().plus(Duration.ofHours(1))
+        claude.session("draft", 1, rejected(resetsAt), "wait never") // claude carries on; Ants kills it
+        claude.session("draft", done)
+        val run = start()
+        val until = hhmm(Instant.ofEpochSecond(resetsAt.epochSecond).plusSeconds(60))
+        eventually { assertContains(page(run), "<dt>draft</dt><dd>Paused until $until</dd>") }
+        assertContains(pill("/runs/$run"), "claude paused until $until")
+        assertFalse("/runs/$run\"" in browser.get("/notifications").body) // a pause waits on nobody
+
+        clock.offset = Duration.ofHours(1) // past resetsAt, not yet the minute after
+        Thread.sleep(600)
+        assertEquals(1, claude.launches("draft").size)
+        clock.offset = Duration.ofMinutes(62)
+        eventually { assertContains(page(run), "State: Completed") }
+
+        val (first, resumed) = claude.launches("draft")
+        assertEquals(first.flag("--session-id"), resumed.flag("--resume"))
+        assertEquals(null, resumed.flag("--session-id"))
+        assertEquals("""{"type":"user","message":{"role":"user","content":"The usage limit has reset. Carry on where you stopped."}}""", resumed.stdin)
+        assertFalse("paused" in pill("/runs/$run"))
+    }
+
+    @Test
+    fun `while claude is paused other ready Tasks don't launch, and Try now opens the gate and launches them`() {
+        settings()
+        agent("Write plainly.\n")
+        skill()
+        val resetsAt = clock.instant().plus(Duration.ofHours(1))
+        claude.session("draft", 1, rejected(resetsAt), "wait never")
+        claude.session("draft", done)
+        val first = start()
+        val paused = "<dt>draft</dt><dd>Paused until ${hhmm(Instant.ofEpochSecond(resetsAt.epochSecond).plusSeconds(60))}</dd>"
+        eventually { assertContains(page(first), paused) }
+        val second = start()
+        eventually { assertContains(page(second), paused) }
+        assertEquals(1, claude.launches("draft").size)
+
+        val runs = pill("/runs")
+        assertContains(runs, "claude paused until")
+        assertContains(runs, """action="/pauses/claude"""")
+        assertContains(runs, "Try now")
+        browser.post("/pauses/claude", emptyMap())
+        for (run in listOf(first, second)) eventually { assertContains(page(run), "State: Completed") }
+        val (cut, after1, after2) = claude.launches("draft") // the two after Try now launch together
+        assertEquals(setOf(cut.flag("--session-id"), null), setOf(after1.flag("--resume"), after2.flag("--resume")))
+        assertFalse("Try now" in pill("/runs"))
+    }
+
+    /** Plays [limit] as the first launch and checks that claude pauses for 30 minutes and resumes after. */
+    private fun pausesFor30Minutes(vararg limit: String) {
+        settings()
+        agent("Write plainly.\n")
+        skill()
+        claude.session("draft", 1, *limit, "wait never")
+        claude.session("draft", done)
+        val before = clock.instant()
+        val run = start()
+        eventually { assertContains(page(run), "<dt>draft</dt><dd>Paused until ") }
+        val after = clock.instant()
+        assertContains(setOf(hhmm(before.plusSeconds(31 * 60)), hhmm(after.plusSeconds(31 * 60))), page(run).substringAfter("Paused until ").take(5))
+        clock.offset = Duration.ofMinutes(32)
+        eventually { assertContains(page(run), "State: Completed") }
+        assertContains(claude.launches("draft").last().argv, "--resume")
+    }
+
+    @Test
+    fun `a 429 with no rejection pauses claude for 30 minutes`() = pausesFor30Minutes(
+        """{"type":"result","subtype":"success","is_error":true,"api_error_status":429,"result":"API Error: Request rejected (429)","session_id":"${'$'}SESSION"}""",
+    )
+
+    @Test
+    fun `a Subagent retrying on the rate limit pauses claude for 30 minutes`() = pausesFor30Minutes(
+        """{"type":"tool_progress","tool_use_id":"agent_msg_1","tool_name":"Agent","parent_tool_use_id":"toolu_1","elapsed_time_seconds":0,""" +
+            """"session_id":"${'$'}SESSION","subagent_type":"general-purpose","subagent_retry":{"agent_id":"a1","attempt":1,"max_retries":10,""" +
+            """"retry_delay_ms":1000,"error_status":429,"error_category":"rate_limit"}}""",
+    )
 }
 
 /** The fake `claude`, copied into a folder of its own, where tests write its sessions and read what it recorded. */
@@ -331,7 +440,7 @@ class FakeClaude {
     /** The working directory of every launch, in launch order. */
     fun launchLog(): List<String> = dir.resolve("launches.log").let { if (Files.exists(it)) it.readLines() else emptyList() }
 
-    class Launch(dir: Path) {
+    class Launch(private val dir: Path) {
         val argv = dir.resolve("argv").readLines()
 
         /** The value after [flag] in argv, or null. */
@@ -339,6 +448,9 @@ class FakeClaude {
         val env = dir.resolve("env").readLines().associate { it.substringBefore('=') to it.substringAfter('=') }
         val cwd = dir.resolve("cwd").readText().trim()
         val stdin = dir.resolve("stdin").readText().trim()
+
+        /** Whether Ants killed the launch. */
+        val killed get() = dir.resolve("killed").exists()
     }
 }
 
