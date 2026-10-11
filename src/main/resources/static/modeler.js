@@ -26,12 +26,9 @@ const kinds = {
     flow: {name: "Sequence flow", explain: "The path a Run takes from one element to the next."},
 }
 
-// The Built-in Tasks, by the topic Ants carries them out on.
-const builtIns = {
-    "clone-repos": "Clone repos: clones the named repos into the Run workspace on the work branch.",
-    "accept-recommendations": "Accept recommendations: answers a Round with every recommendation.",
-    push: "Push: waits for you to push the work branch of every repo.",
-}
+// From the server (modelerFacts in Checks.kt): the Built-in Tasks by topic, and the start-form field types by the
+// `ants.type` property each field carries (the engine only knows `string`).
+const {builtIns, fieldTypes} = JSON.parse(document.getElementById("canvas").dataset.facts)
 
 // The three Tasks Ants runs, as the BPMN each one is.
 const tasks = {
@@ -230,9 +227,6 @@ const panels = {
         return el("div", {}, el("label", {}, "Which ", select), el("p", {textContent: builtIns[topic] || "Ants has no Built-in Task " + topic}))
     },
 }
-
-// The start form's field types, by the `ants.type` property each field carries (the engine only knows `string`).
-const fieldTypes = {text: "Text", markdown: "Markdown", repos: "Repos"}
 
 // True while the panel writes the diagram itself, so it isn't redrawn under the user's cursor.
 let quiet = false

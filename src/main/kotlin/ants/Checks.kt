@@ -27,6 +27,7 @@ import org.operaton.bpm.model.xml.instance.ModelElementInstance
 import org.springframework.scheduling.support.CronExpression
 import org.springframework.stereotype.Component
 import org.operaton.bpm.engine.RepositoryService
+import tools.jackson.databind.json.JsonMapper
 
 /** One thing wrong with a Process, on the element it names (a BPMN id, or null for the whole file). A warning doesn't stop Save and deploy. */
 data class Check(val element: String?, val message: String, val warning: Boolean = false)
@@ -54,8 +55,18 @@ class Checks(private val catalogue: Catalogue, private val repository: Repositor
     }
 }
 
-/** The Built-in Tasks, by the topic Ants carries each out on (as in `static/modeler.js`). */
-val builtIns = setOf("clone-repos", "accept-recommendations", "push")
+/** The Built-in Tasks, by the topic Ants carries each out on, with what each does. */
+val builtIns = mapOf(
+    "clone-repos" to "Clone repos: clones the named repos into the Run workspace on the work branch.",
+    "accept-recommendations" to "Accept recommendations: answers a Round with every recommendation.",
+    "push" to "Push: waits for you to push the work branch of every repo.",
+)
+
+/** What the modeler page knows of Ants from the server, as JSON on its canvas's `data-facts`: the Built-in Tasks and the start-form field types. */
+val modelerFacts: String = JsonMapper.shared().writeValueAsString(mapOf(
+    "builtIns" to builtIns,
+    "fieldTypes" to FieldType.entries.associate { it.name.lowercase() to it.name.lowercase().replaceFirstChar(Char::uppercase) },
+))
 
 /** The BPMN elements Ants runs, by their XML name; [refusedUses] refuses some uses of them. Anything else is refused. */
 private val allowed = setOf(
