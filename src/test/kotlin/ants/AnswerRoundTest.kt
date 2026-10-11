@@ -47,9 +47,9 @@ class AnswerRoundTest : AntsTest() {
     private fun row(run: String) = Regex("""<tr>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
         .find(browser.get("/notifications").body)?.groupValues?.get(1)
 
-    private fun entry(run: String): String {
+    private fun entry(run: String, seconds: Long = 10): String {
         var path = ""
-        eventually { path = Regex("""href="(/notifications/[^"]+)"""").find(assertNotNull(row(run)))!!.groupValues[1] }
+        eventually(seconds) { path = Regex("""href="(/notifications/[^"]+)"""").find(assertNotNull(row(run)))!!.groupValues[1] }
         return path
     }
 
@@ -187,7 +187,9 @@ class AnswerRoundTest : AntsTest() {
         claude.session("grill", 11, round("Nothing left."))
         val run = start(process = "proposed")
 
-        val entry = entry(run)
+        // Ten launches and nine Accept recommendations, each waiting on its worker's next poll: about 0.4 s a Round, and
+        // twice that on a busy machine (9.4 s under full CPU load), so the wait has room for all ten.
+        val entry = entry(run, seconds = 30)
         assertEquals(10, claude.launches("grill").size)
         assertContains(browser.get(entry).body, "Round 10")
         browser.post("$entry/answers", mapOf("answer.who" to "Only admins."))

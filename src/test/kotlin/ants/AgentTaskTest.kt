@@ -475,9 +475,9 @@ class FakeClaude {
     }
 }
 
-/** Retries [check] until it passes or ten seconds are up. */
-fun eventually(check: () -> Unit) {
-    val deadline = System.nanoTime() + 10_000_000_000
+/** Retries [check] until it passes or [seconds] are up. */
+fun eventually(seconds: Long = 10, check: () -> Unit) {
+    val deadline = System.nanoTime() + seconds * 1_000_000_000
     while (true) {
         try {
             return check()
