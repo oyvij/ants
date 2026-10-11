@@ -2,6 +2,7 @@ package ants
 
 import org.operaton.bpm.engine.delegate.DelegateExecution
 import org.operaton.bpm.engine.impl.persistence.entity.ExecutionEntity
+import org.operaton.bpm.model.bpmn.instance.ServiceTask
 import java.nio.file.Path
 
 /** The Report's file in a Run workspace, kept by cleanup. */
@@ -9,7 +10,8 @@ const val REPORT = "report.md"
 
 /**
  * The Report of the Run [run] as it ends, as markdown, written mechanically: its Process and how it ended, its start
- * form, and each Agent Task's Result summary, tokens and Transcript link, read from the Transcripts in [workspace].
+ * form, each Agent Task's Result summary, tokens and Transcript link, read from the Transcripts in [workspace], and
+ * the Push Results.
  */
 fun report(run: DelegateExecution, workspace: Path): String = buildString {
     val definition = (run as ExecutionEntity).processDefinition
@@ -23,5 +25,20 @@ fun report(run: DelegateExecution, workspace: Path): String = buildString {
     for ((task, transcript) in transcripts) {
         val result = transcript.result?.let { " · ${it["outcome"]}: ${it["summary"]}" }.orEmpty()
         append("- [$task](/runs/${run.processInstanceId}/tasks/$task/transcript)$result · ${tokens(transcript.tokens)}\n")
+    }
+    append(pushes(run))
+}
+
+/** The Push Results of the Run [run], one line per repo, or nothing when no Push ran. */
+private fun pushes(run: DelegateExecution): String {
+    val results = run.bpmnModelInstance.getModelElementsByType(ServiceTask::class.java).filter { it.operatonTopic == Push.TOPIC }
+        .flatMap { run.getVariable(it.id) as? List<*> ?: emptyList() }.map { it as Map<*, *> }
+    if (results.isEmpty()) return ""
+    return "\n## Push\n\n" + results.joinToString("") { repo ->
+        if (repo["pushed"] != true) return@joinToString "- **${repo["repo"]}** · not pushed: ${"${repo["error"]}".replace('\n', ' ')}\n"
+        val branch = (if (repo["isNew"] == true) "new branch" else "existing branch") + (repo["base"]?.let { " off `$it`" }.orEmpty())
+        val commits = (repo["commits"] as List<*>).size.let { if (it == 1) "1 commit" else "$it commits" }
+        val compare = repo["compareUrl"]?.let { " · [Compare]($it)" }.orEmpty()
+        "- **${repo["repo"]}** · pushed `${repo["branch"]}` to `${repo["remote"]}` · $branch · $commits$compare\n"
     }
 }

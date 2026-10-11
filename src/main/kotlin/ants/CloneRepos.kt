@@ -113,7 +113,7 @@ class CloneRepos(
             .distinct()
 
     /** Runs git in [dir] with [args], giving its output, trimmed; fails with git's message when git does. */
-    private fun git(dir: Path, args: List<String>): String {
+    fun git(dir: Path, args: List<String>): String {
         val process = ProcessBuilder(listOf(settings.path("git") ?: "git") + args).directory(dir.toFile())
             .redirectInput(File("/dev/null")).redirectErrorStream(true)
             .apply { environment()["GIT_TERMINAL_PROMPT"] = "0" }.start()
