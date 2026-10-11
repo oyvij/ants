@@ -140,10 +140,12 @@ class LandingTest : AntsTest() {
         eventually { assertEquals(2, claude.launches("implement").size) }
         // Each works in its own folder, a worktree of each clone beside links to the rest of the Run workspace.
         val instances = workspace(run).resolve("instances")
-        assertEquals(setOf("implement-1", "implement-2").map { "${instances.resolve(it)}" }.toSet(), claude.launches("implement").map { it.cwd }.toSet())
-        for (launch in claude.launches("implement")) {
-            assertEquals("${home.runWorkspace(run)}", launch.argv.zipWithNext().filter { it.first == "--add-dir" }.map { it.second }.first { "skills" !in it })
-            assertContains(launch.stdin, "for the workspace at ${home.runWorkspace(run)}/instances/${launch.cwd.substringAfterLast('/')}.")
+        eventually { // a launch just started may not have written its cwd and stdin yet
+            assertEquals(setOf("implement-1", "implement-2").map { "${instances.resolve(it)}" }.toSet(), claude.launches("implement").map { it.cwd }.toSet())
+            for (launch in claude.launches("implement")) {
+                assertEquals("${home.runWorkspace(run)}", launch.argv.zipWithNext().filter { it.first == "--add-dir" }.map { it.second }.first { "skills" !in it })
+                assertContains(launch.stdin, "for the workspace at ${home.runWorkspace(run)}/instances/${launch.cwd.substringAfterLast('/')}.")
+            }
         }
         val one = instances.resolve("implement-1")
         assertEquals("ants/$run--implement-1", git(one.resolve("repos/api"), "branch", "--show-current"))
