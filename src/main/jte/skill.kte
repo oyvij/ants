@@ -1,5 +1,6 @@
 @param form: ants.SkillForm
 @param message: String? = null
+@param users: ants.Users?
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
 <!doctype html>
@@ -29,6 +30,15 @@
     <p><button>Save</button></p>
 @endif
 </form>
+@if(users != null)
+@template.users(users = users)
+@endif
+@if(form.name != null && !form.readOnly)
+<form method="post" action="/skills/${form.name}/delete">
+    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+    <button>Delete…</button>
+</form>
+@endif
 @template.codemirror()
 <script type="module" src="/skill-editor.js"></script>
 </body>

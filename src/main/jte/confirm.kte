@@ -1,0 +1,29 @@
+@param question: String
+@param users: ants.Users
+@param action: String
+@param fields: Map<String, String>
+@param back: String
+@param _csrf: org.springframework.security.web.csrf.CsrfToken
+@param colorScheme: String = "light dark"
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="color-scheme" content="${colorScheme}">
+    <title>${question} · Ants</title>
+</head>
+<body>
+@template.nav()
+<h1>${question}</h1>
+@if(!users.none)<p role="alert">These use it by name and will break. Ants doesn't change them.</p>@endif
+@template.users(users = users)
+<form method="post" action="${action}">
+    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+@for(field in fields.entries)
+    @if(field.key != _csrf.parameterName)<input type="hidden" name="${field.key}" value="${field.value}">@endif
+@endfor
+    <input type="hidden" name="confirm" value="on">
+    <button>${question.substringBefore(' ')}</button> <a href="${back}">Cancel</a>
+</form>
+</body>
+</html>
