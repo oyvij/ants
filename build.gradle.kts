@@ -41,8 +41,6 @@ dependencies {
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation(kotlin("test"))
-    // BrowserTest. 1.60.0 drives Chromium build 1223, which a local ~/Library/Caches/ms-playwright already holds.
-    testImplementation("com.microsoft.playwright:playwright:1.60.0")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
@@ -88,12 +86,6 @@ val nodeTest = tasks.register<com.github.gradle.node.task.NodeTask>("nodeTest") 
     options = listOf("--test")
 }
 
-// Playwright's CLI, such as `./gradlew playwright --args="install chromium"`, for the Chromium BrowserTest drives.
-tasks.register<JavaExec>("playwright") {
-    classpath = sourceSets.test.get().runtimeClasspath
-    mainClass = "com.microsoft.playwright.CLI"
-}
-
 tasks.test {
     dependsOn(nodeTest)
     useJUnitPlatform { excludeTags("live") }
@@ -102,8 +94,6 @@ tasks.test {
     // Ants must strip these from every Agent's environment, even when the allow-list names them.
     environment("ANTHROPIC_API_KEY", "sk-ant-test")
     environment("CLAUDE_CODE_RETRY_WATCHDOG", "1")
-    // BrowserTest drives the Chromium the playwright task installed; it never downloads one itself.
-    environment("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD", "1")
     // Test classes run in a random order (junit-platform.properties), from a seed it prints; -PtestSeed=… replays one.
     // Set when the task runs, so a new seed never makes an up-to-date test task run again.
     val testSeed = findProperty("testSeed")
