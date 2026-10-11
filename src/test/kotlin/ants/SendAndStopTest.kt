@@ -110,4 +110,30 @@ class SendAndStopTest : AntsTest() {
         val (first, second) = claude.launches("draft")
         assertEquals(first.flag("--session-id"), second.flag("--resume"))
     }
+
+    /** Stops the Run's live session, which then plays [after], and returns the Run's row on the Notification list. */
+    private fun stopThen(vararg after: String): String {
+        claude.session("draft", init, "read", *after)
+        val run = start()
+        live(run)
+        browser.post("${transcript(run)}/stop", emptyMap())
+        var row = ""
+        eventually {
+            row = assertNotNull(Regex("""<tr>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
+                .find(browser.get("/notifications").body)).groupValues[1]
+        }
+        return row
+    }
+
+    @Test
+    fun `after Stop only error_during_execution is stopped, any other result without a Result fails`() {
+        val row = stopThen("""{"type":"result","subtype":"error_max_turns","is_error":true,"session_id":"${'$'}SESSION"}""", "exit 1")
+        assertContains(row, "✕ [failed]")
+        assertContains(row, "claude ended without a Result: error_max_turns")
+    }
+
+    @Test
+    fun `a CLI that exits with no result after Stop is stopped`() {
+        assertContains(stopThen("exit 1"), "■ [stopped]")
+    }
 }

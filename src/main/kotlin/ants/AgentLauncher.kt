@@ -245,6 +245,7 @@ class AgentLauncher(
             var stopped = false
             var retried = false
             var limit: Instant? = null
+            var answered = false // a result line came after the user's Stop
             process.inputReader().forEachLine { line ->
                 transcript.line(line)
                 if (failure != null || stopped || limit != null || (valid != null && !stdin.open)) return@forEachLine
@@ -267,11 +268,12 @@ class AgentLauncher(
                     return@forEachLine
                 }
                 if (event["type"] != "result") return@forEachLine
+                if (stdin.stopping) answered = true
                 val result = event["structured_output"]
                 val errors = result?.let { ResultContract.errors(it, schema, workspace) }
                 valid = null // the last result line is the one that counts
                 when {
-                    errors == null && stdin.stopping -> stopped = true
+                    errors == null && stdin.stopping && event["subtype"] == "error_during_execution" -> stopped = true
                     errors == null -> failure = Failed(
                         listOf("${agent.cli} ended without a Result:", event["subtype"], event["result"], (event["errors"] as? List<*>)?.joinToString("; "))
                             .filter { it != null && it != "" }.joinToString(" "),
@@ -289,7 +291,7 @@ class AgentLauncher(
             drain.join()
             limit?.let { throw UsageLimit(it) }
             val tail = synchronized(stderr) { stderr.joinToString("\n") }.ifEmpty { null }
-            if (stopped) throw Stopped()
+            if (stopped || (stdin.stopping && !answered && failure == null)) throw Stopped()
             failure?.let { throw Failed(it.message, it.details ?: tail) }
             if (exit != 0) throw Failed("${agent.cli} exited with code $exit", tail)
             return valid ?: throw Failed("${agent.cli} ended without a Result", tail)
