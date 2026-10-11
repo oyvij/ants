@@ -20,7 +20,10 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit.MILLISECONDS
+import java.util.concurrent.TimeUnit.SECONDS
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.io.path.readText
+import kotlin.io.path.writeText
 
 /**
  * The in-process worker. It fetches ready Agent Tasks (external tasks on topic `agent`) only for free slots under
@@ -43,6 +46,7 @@ class AgentLauncher(
     private val poller = Executors.newSingleThreadScheduledExecutor()
     private val clis = ConcurrentHashMap.newKeySet<Process>()
     private val live = AtomicInteger()
+    private val usageFile = home.resolve("claude-usage.json")
 
     // ponytail: one pause gate per CLI, not per model, kept in memory; after a restart the held Tasks wait out
     // their locks, which end at the reset, and the first Task to hit the limit again shuts the gate again.
@@ -208,6 +212,7 @@ class AgentLauncher(
                 transcript.line(line)
                 if (valid != null || failure != null) return@forEachLine
                 val event = runCatching { json.readValue(line, Map::class.java) }.getOrNull() ?: return@forEachLine
+                if (event["type"] == "rate_limit_event") keepUsage(event)
                 usageLimit(event)?.let { throw UsageLimit(it) } // and the CLI is killed, to resume after the reset
                 if (event["type"] != "result") return@forEachLine
                 val result = event["structured_output"]
@@ -271,6 +276,24 @@ class AgentLauncher(
             "--allowedTools", tools.joinToString(","),
         ) + skills.flatMap { listOf("--add-dir", it.folder.toString()) } + (if (agent.model != null) listOf("--model", agent.model) else emptyList()) +
             (if (agent.instructions.isNotEmpty()) listOf("--append-system-prompt", agent.instructions) else emptyList())
+    }
+
+    /** What `claude auth status` says of Ants' own Claude login, asked the way a launch runs; empty when it can't tell. */
+    fun login(): Map<*, *> = runCatching {
+        val process = cli("claude", home, listOf("auth", "status", "--json")).start()
+        if (!process.waitFor(10, SECONDS)) process.destroyForcibly()
+        json.readValue(process.inputReader().readText(), Map::class.java)
+    }.getOrDefault(emptyMap<Any, Any>())
+
+    /**
+     * The latest usage claude reported: its `rate_limit_event`'s `unifiedWindows`, such as
+     * `{"five_hour":{"utilization":0.04,"resetsAt":<epoch s>},"seven_day":{…}}`, utilization a fraction. Empty until a launch reports one.
+     */
+    fun usage(): Map<*, *> = runCatching { json.readValue(usageFile.readText(), Map::class.java) }.getOrDefault(emptyMap<Any, Any>())
+
+    private fun keepUsage(event: Map<*, *>) {
+        val windows = (event["rate_limit_info"] as? Map<*, *>)?.get("unifiedWindows") ?: return
+        usageFile.writeText(json.writeValueAsString(windows))
     }
 
     /** The CLI's command prefix with [args], in [workspace], on the narrowed environment. */
