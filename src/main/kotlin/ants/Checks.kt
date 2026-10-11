@@ -22,6 +22,7 @@ import org.operaton.bpm.model.bpmn.instance.operaton.OperatonFormData
 import org.operaton.bpm.model.bpmn.instance.operaton.OperatonInputOutput
 import org.operaton.bpm.model.xml.ModelException
 import org.operaton.bpm.model.xml.instance.DomElement
+import org.springframework.scheduling.support.CronExpression
 import org.springframework.stereotype.Component
 import org.operaton.bpm.engine.RepositoryService
 
@@ -34,7 +35,7 @@ data class Check(val element: String?, val message: String, val warning: Boolean
  */
 @Component
 class Checks(private val catalogue: Catalogue, private val repository: RepositoryService) {
-    private val rules: List<(BpmnModelInstance) -> List<Check>> = listOf(::refusedElements, ::refusedUses, ::oneStartEvent, ::startFormNames, ::emptyInputs, ::defaultPaths, ::timerTimes,
+    private val rules: List<(BpmnModelInstance) -> List<Check>> = listOf(::refusedElements, ::refusedUses, ::oneStartEvent, ::startFormNames, ::emptyInputs, ::defaultPaths, ::timerTimes, ::schedules,
         { agentTasks(catalogue, it) }, { references(catalogue, it) }, // these two in AgentTaskChecks.kt
         { calls(repository, it) }) // in CallActivityChecks.kt
 
@@ -154,3 +155,24 @@ private fun defaultPaths(model: BpmnModelInstance) = model.getModelElementsByTyp
 private fun timerTimes(model: BpmnModelInstance) = model.getModelElementsByType(TimerEventDefinition::class.java)
     .filter { listOfNotNull(it.timeDuration, it.timeDate, it.timeCycle).all { time -> time.textContent.isBlank() } }
     .map { (it.parentElement as BaseElement).let { event -> Check(event.id, "${event.label} is a timer without a time.") } }
+
+/**
+ * A Schedule is a cron Ants can run (Operaton's six fields, seconds first) and starts Runs with no one there, so every
+ * required start-form field needs a stored value.
+ */
+private fun schedules(model: BpmnModelInstance): List<Check> {
+    val timer = model.scheduleTimer() ?: return emptyList()
+    val start = timer.parentElement as StartEvent
+    val cron = model.schedule()
+    val time = when {
+        cron == null && timer.timeDuration == null && timer.timeDate == null -> null // timerTimes says so
+        cron == null -> "${start.label} has a Schedule that isn't a cron: give it one, such as 0 0 8 * * * for every day at 08:00."
+        else -> runCatching { CronExpression.parse(cron) }.exceptionOrNull()
+            ?.let { "${start.label} has a Schedule that isn't a cron Ants can read (${it.message})." }
+    }
+    val fields = start.extensionElements?.elementsQuery?.filterByType(OperatonFormData::class.java)?.list().orEmpty().flatMap { it.operatonFormFields }
+    return listOfNotNull(time?.let { Check(start.id, it) }) + fields
+        .filter { field -> field.operatonValidation?.operatonConstraints.orEmpty().any { it.operatonName == "required" } }
+        .filter { field -> field.operatonProperties?.operatonProperties.orEmpty().none { it.operatonId == "ants.stored" && !it.operatonValue.isNullOrBlank() } }
+        .map { Check(start.id, "${start.label} has a Schedule, so its required start-form field ${it.operatonLabel ?: it.operatonId} needs a stored value.") }
+}

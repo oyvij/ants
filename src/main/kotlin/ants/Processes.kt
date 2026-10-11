@@ -31,7 +31,7 @@ import javax.xml.transform.dom.DOMSource
 import javax.xml.transform.stream.StreamResult
 
 @Controller
-class Processes(private val repository: RepositoryService, private val startForm: StartForm, private val settings: Settings, private val checks: Checks, private val preRun: PreRun) {
+class Processes(private val repository: RepositoryService, private val startForm: StartForm, private val settings: Settings, private val checks: Checks, private val preRun: PreRun, private val schedules: Schedules) {
     @GetMapping("/processes")
     fun list(model: Model): String {
         model.addAttribute("processes", repository.createProcessDefinitionQuery().latestVersion().orderByProcessDefinitionName().asc().list())
@@ -149,6 +149,7 @@ class Processes(private val repository: RepositoryService, private val startForm
         val fields = startForm.fields(process)
         model.addAttribute("fields", fields)
         model.addAttribute("repos", settings.repos().map(Repo::name))
+        model.addAttribute("schedule", schedules.of(process))
         // A refused Start has already checked what was posted.
         if (!model.containsAttribute("reasons")) model.addAttribute("reasons", preRun.reasons(process, fields.filter { it.type == FieldType.REPOS }.flatMap { it.storedRepos }))
         return "process"
@@ -166,6 +167,53 @@ class Processes(private val repository: RepositoryService, private val startForm
         response.status = HttpStatus.BAD_REQUEST.value()
         model.addAttribute("reasons", e.reasons)
         process(key, model)
+    }
+
+    /** Pauses the Process's Schedule: no Run starts on it, not even for the times missed, until it's resumed. */
+    @PostMapping("/processes/{key}/schedule/pause")
+    fun pause(@PathVariable key: String): String {
+        schedules.pause(latest(key).key, true)
+        return "redirect:/processes/$key"
+    }
+
+    @PostMapping("/processes/{key}/schedule/resume")
+    fun resume(@PathVariable key: String): String {
+        schedules.pause(latest(key).key, false)
+        return "redirect:/processes/$key"
+    }
+
+    /** Removes the Schedule: the next version of the Process starts by hand only, its start event a none start. */
+    @PostMapping("/processes/{key}/schedule/remove")
+    fun remove(@PathVariable key: String, model: Model, response: HttpServletResponse): String {
+        if (schedules.of(latest(key)) == null) return "redirect:/processes/$key"
+        val document = parse(repository.getProcessModel(latest(key).id).readAllBytes())
+        for (start in process(document).getElementsByTagNameNS(BPMN, "startEvent").elements().filter { it.parentNode.localName == "process" }) {
+            start.getElementsByTagNameNS(BPMN, "timerEventDefinition").elements().forEach { start.removeChild(it) }
+        }
+        try {
+            deploy(serialize(document).toByteArray())
+        } catch (e: Refused) {
+            response.status = HttpStatus.BAD_REQUEST.value()
+            model.addAttribute("error", e.message)
+            return process(key, model)
+        }
+        schedules.forget(key)
+        return "redirect:/processes/$key"
+    }
+
+    /** **Start now** on a scheduled Run that couldn't start: the Run with the stored values, else the Process page and why. */
+    @PostMapping("/processes/{key}/schedule/start")
+    fun startNow(@PathVariable key: String): String = try {
+        "redirect:/runs/" + schedules.startNow(latest(key)).id
+    } catch (_: Exception) {
+        "redirect:/processes/$key" // which shows the reason
+    }
+
+    /** **Dismiss** a scheduled Run that couldn't start. */
+    @PostMapping("/processes/{key}/schedule/dismiss")
+    fun dismiss(@PathVariable key: String): String {
+        schedules.dismiss(latest(key).key)
+        return "redirect:/processes/$key"
     }
 
     @GetMapping("/processes/{key}/diagram.bpmn", produces = ["application/xml"])

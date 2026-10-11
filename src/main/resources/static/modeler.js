@@ -327,7 +327,6 @@ function multiInstance(element) {
         el("label", {}, "Collection ", field("camunda:collection", "${totickets.output.tickets}")), el("br"),
         el("label", {}, "Element variable ", field("camunda:elementVariable", "item")))
 }
-panels["timer-start"] = startForm
 
 // The condition builder: a Result field, an operator and a value write each path's JUEL, shown under it, and one path
 // is the default. A condition it can't read back shows as is, and the builder replaces it once the user edits it.
@@ -451,6 +450,72 @@ function timerPanel(element) {
 }
 panels.timer = timerPanel
 panels["timer-boundary"] = timerPanel
+
+// The Schedule in words: every hour, day, weekday, week or month at a time, written as the cron Ants runs it on
+// (seconds first, as Schedules.kt reads it back); any other cron under Advanced.
+const weekdays = {MON: "Monday", TUE: "Tuesday", WED: "Wednesday", THU: "Thursday", FRI: "Friday", SAT: "Saturday", SUN: "Sunday"}
+const everies = {hour: "hour", day: "day", weekday: "weekday", week: "week", month: "month", advanced: "Advanced (cron)"}
+
+function readSchedule(cron) {
+    const advanced = {every: "advanced", cron}
+    const [s, m, h, dom, mon, dow, ...rest] = cron.trim().split(/\s+/)
+    if (rest.length || dow === undefined || s !== "0" || mon !== "*") return advanced
+    if (m === "0" && h === "*" && dom === "*" && dow === "*") return {every: "hour", cron}
+    if (!/^\d+$/.test(h) || !/^\d+$/.test(m) || +h > 23 || +m > 59) return advanced
+    const at = `${h.padStart(2, "0")}:${m.padStart(2, "0")}`
+    if (dom === "*" && dow === "*") return {every: "day", at, cron}
+    if (dom === "*" && dow === "MON-FRI") return {every: "weekday", at, cron}
+    if (dom === "*" && weekdays[dow]) return {every: "week", at, on: dow, cron}
+    if (dow === "*" && /^\d+$/.test(dom) && +dom >= 1 && +dom <= 31) return {every: "month", at, dom, cron}
+    return advanced
+}
+
+function cronOf({every, at, on, dom, cron}) {
+    if (every === "advanced") return cron
+    if (every === "hour") return "0 0 * * * *"
+    const [h, m] = (at || "08:00").split(":").map(Number)
+    return `0 ${m} ${h} ` + {day: "* * *", weekday: "* * MON-FRI", week: `* * ${on || "MON"}`, month: `${dom || 1} * *`}[every]
+}
+
+function schedulePanel(element) {
+    const definition = element.businessObject.eventDefinitions[0]
+    const schedule = readSchedule(definition.timeCycle?.body || "0 0 8 * * *")
+    const every = el("select", {}, ...Object.entries(everies).map(([value, text]) => el("option", {value, textContent: text, selected: value === schedule.every})))
+    const at = el("input", {type: "time", value: schedule.at || "08:00"})
+    const on = el("select", {}, ...Object.entries(weekdays).map(([value, text]) => el("option", {value, textContent: text, selected: value === schedule.on})))
+    const dom = el("input", {type: "number", min: 1, max: 31, value: schedule.dom || 1})
+    const cron = el("input", {value: schedule.cron, placeholder: "0 0 8 * * MON-FRI", size: 20})
+    const parts = {at: el("label", {}, " at ", at), on: el("label", {}, " on ", on), dom: el("label", {}, " on day ", dom), cron: el("label", {}, " ", cron)}
+    const show = () => {
+        parts.at.hidden = ["hour", "advanced"].includes(every.value)
+        parts.on.hidden = every.value !== "week"
+        parts.dom.hidden = every.value !== "month"
+        parts.cron.hidden = every.value !== "advanced"
+    }
+    const write = () => {
+        show()
+        const body = cronOf({every: every.value, at: at.value, on: on.value, dom: dom.value, cron: cron.value.trim()})
+        if (every.value !== "advanced") cron.value = body
+        quiet = true
+        try {
+            modeler.get("modeling").updateModdleProperties(element, definition, {
+                timeDuration: undefined, timeDate: undefined,
+                timeCycle: body ? modeler.get("bpmnFactory").create("bpmn:FormalExpression", {body}) : undefined,
+            })
+        } finally {
+            quiet = false
+        }
+    }
+    every.onchange = on.onchange = write
+    at.oninput = dom.oninput = cron.oninput = write
+    show()
+    if (!definition.timeCycle?.body) write() // a new timer start gets every day at 08:00
+    return el("div", {},
+        el("h3", {textContent: "Schedule"}),
+        el("p", {}, "Every ", every, parts.at, parts.on, parts.dom, parts.cron),
+        el("p", {textContent: "Every required start-form field needs a stored value, since a scheduled Run starts with no one there. Pause or remove the Schedule on the Process page."}))
+}
+panels["timer-start"] = element => el("div", {}, schedulePanel(element), startForm(element))
 
 // The Agent Task: its Agent from a live dropdown, then one of the Skills that Agent lists, one input per name the Skill
 // declares (its pickers offer only start-form fields, Run variables and earlier Results), the Vault and Answer History

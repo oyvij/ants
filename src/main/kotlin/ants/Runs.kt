@@ -7,6 +7,7 @@ import org.operaton.bpm.engine.delegate.ExecutionListener
 import org.operaton.bpm.engine.externaltask.ExternalTask
 import org.operaton.bpm.engine.history.HistoricProcessInstance
 import org.operaton.bpm.engine.impl.bpmn.behavior.MultiInstanceActivityBehavior
+import org.operaton.bpm.engine.impl.bpmn.parser.BpmnParse
 import org.operaton.bpm.engine.impl.bpmn.parser.BpmnParseListener
 import org.operaton.bpm.engine.impl.cfg.AbstractProcessEnginePlugin
 import org.operaton.bpm.engine.impl.cfg.ProcessEngineConfigurationImpl
@@ -277,6 +278,8 @@ class RunLifecycle(@Value("\${ants.home}") private val home: Path) : AbstractPro
         configuration.customPostBPMNParseListeners = (configuration.customPostBPMNParseListeners ?: mutableListOf()) +
             object : BpmnParseListener {
                 override fun parseProcess(element: Element, process: ProcessDefinitionEntity) {
+                    // A timer start is the Process's Schedule, which Ants runs itself (Schedules), so Operaton gets no timer job.
+                    process.setProperty(BpmnParse.PROPERTYNAME_START_TIMER, null)
                     val tasks = process.tasks()
                     tasks.forEach { it.addBuiltInListener(ExecutionListener.EVENTNAME_START, counted) }
                     val fannedOut = process.multiInstanceBodies().map(::collect)

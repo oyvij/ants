@@ -3,6 +3,7 @@
 @param done: Long
 @param entries: List<ants.Entry>
 @param working: List<ants.Working>
+@param coming: List<ants.Schedule>
 @param processes: List<org.operaton.bpm.engine.repository.ProcessDefinition>
 @param colorScheme: String = "light dark"
 <!doctype html>
@@ -15,7 +16,7 @@
 <body>
 @template.nav()
 <h1>Home</h1>
-<div id="live">@template.dashboard(live = live, waiting = waiting, done = done, entries = entries, working = working)</div>
+<div id="live">@template.dashboard(live = live, waiting = waiting, done = done, entries = entries, working = working, coming = coming)</div>
 <section id="start-a-run">
 <h2>Start a Run</h2>
 <ul>

@@ -3,6 +3,7 @@
 @param done: Long
 @param entries: List<ants.Entry>
 @param working: List<ants.Working>
+@param coming: List<ants.Schedule>
 <section id="stats">
 <h2>Runs</h2>
 <dl>
@@ -24,6 +25,19 @@
     <tr><th>Process</th><th>Run</th><th>Task</th></tr>
 @for(task in working)
     <tr><td>${task.process}</td><td><a href="/runs/${task.run}">${task.run}</a></td><td>${task.task}</td></tr>
+@endfor
+</table>
+@endif
+</section>
+<section id="coming-up">
+<h2>Coming up</h2>
+@if(coming.isEmpty())
+<p>No Schedule starts a Run.</p>
+@else
+<table>
+    <tr><th>When</th><th>Process</th><th>Schedule</th></tr>
+@for(schedule in coming)
+    <tr><td>${schedule.at}</td><td><a href="/processes/${schedule.key}">${schedule.process}</a></td><td>${schedule.words}</td></tr>
 @endfor
 </table>
 @endif

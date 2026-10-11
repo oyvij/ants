@@ -24,7 +24,7 @@ import java.time.Clock
 /** An Agent Task running now, in a Run of a Process. */
 class Working(val process: String, val run: String, val task: String)
 
-/** Home: stats, Waiting on you, Working now, all live, and Start a Run. */
+/** Home: stats, Waiting on you, Working now, Coming up, all live, and Start a Run. */
 @Controller
 class Home(
     private val notifications: Notifications,
@@ -36,6 +36,7 @@ class Home(
     private val launcher: AgentLauncher,
     private val clock: Clock,
     private val streams: Streams,
+    private val schedules: Schedules,
 ) {
     @GetMapping("/")
     fun home(model: Model): String {
@@ -72,10 +73,11 @@ class Home(
         val entries = notifications.entries()
         return mapOf(
             "live" to history.createHistoricProcessInstanceQuery().rootProcessInstances().active().count(),
-            "waiting" to entries.distinctBy { it.run }.size,
+            "waiting" to entries.filter { it.run.isNotEmpty() }.distinctBy { it.run }.size, // a scheduled Run that didn't start isn't a Run
             "done" to history.createHistoricProcessInstanceQuery().rootProcessInstances().completed().count(),
             "entries" to entries,
             "working" to working(),
+            "coming" to schedules.all().filter { it.next != null },
         )
     }
 

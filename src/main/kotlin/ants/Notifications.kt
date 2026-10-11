@@ -27,7 +27,8 @@ import java.util.Date
 /**
  * One entry on the Notification list: a Task of a Run waiting on the user since [since]. [taskId] is the Task's key in
  * the Run ([taskKey]); the Task is the element [activity] of the process instance [instance], which is the Run's own
- * or, in a called Process, the called one's.
+ * or, in a called Process, the called one's. A scheduled Run that couldn't start has no Run; it leads to its Process
+ * page ([href]).
  */
 class Entry(
     val id: String,
@@ -40,6 +41,7 @@ class Entry(
     val since: Date,
     val instance: String,
     val activity: String,
+    val href: String = "/notifications/$id",
 ) {
     val icon get() = ICONS[tag] ?: "•"
 
@@ -69,10 +71,21 @@ class Notifications(
     private val externalTasks: ExternalTaskService,
     private val launcher: AgentLauncher,
     private val streams: Streams,
+    private val schedules: Schedules,
     @Value("\${ants.home}") private val home: Path,
 ) {
     /** Everything waiting on the user, oldest first. */
-    fun entries(): List<Entry> = rootCauses().map(::entry)
+    fun entries(): List<Entry> = (rootCauses().map(::entry) + failedStarts()).sortedBy { it.since }
+
+    /** The scheduled Runs that couldn't start, until started or dismissed on their Process page. */
+    private fun failedStarts() = schedules.all().mapNotNull { schedule ->
+        val failed = schedule.failed ?: return@mapNotNull null
+        Entry(
+            id = "schedule-${schedule.key}", tag = "[failed]", process = schedule.process, run = "", task = "Scheduled Run", taskId = "",
+            summary = "The scheduled Run didn't start: ${failed.why}", since = Date.from(failed.at), instance = "", activity = "",
+            href = "/processes/${schedule.key}",
+        )
+    }
 
     @GetMapping("/notifications")
     fun list(model: Model): String {
@@ -142,7 +155,7 @@ class Notifications(
     /** The count for the nav and the tab title, sent on connect and whenever it changes. */
     @GetMapping("/notifications/count", produces = [TEXT_EVENT_STREAM_VALUE])
     @ResponseBody
-    fun count(): SseEmitter = streams.changes { rootCauses().size.toString() }
+    fun count(): SseEmitter = streams.changes { entries().size.toString() }
 
     private fun incidents() = runtime.createIncidentQuery().incidentType(Incident.EXTERNAL_TASK_HANDLER_TYPE)
 

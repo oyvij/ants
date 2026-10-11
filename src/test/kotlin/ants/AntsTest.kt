@@ -85,6 +85,7 @@ abstract class AntsTest {
             // Engine timers fire on the job executor, which otherwise looks for due ones every 5 s or more.
             registry.add("operaton.bpm.job-execution.wait-time-in-millis") { 200 }
             registry.add("operaton.bpm.job-execution.max-wait") { 500 }
+            registry.add("ants.schedule-every") { "200ms" }
         }
     }
 

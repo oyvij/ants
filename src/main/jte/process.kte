@@ -4,6 +4,7 @@
 @param fields: List<ants.Field>
 @param repos: List<String>
 @param reasons: List<String>
+@param schedule: ants.Schedule? = null
 @param error: String? = null
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
@@ -20,6 +21,20 @@
 <p><a href="/processes">Processes</a></p>
 <h1>${process.name ?: process.key}</h1>
 <p><a href="/processes/${process.key}/edit">Edit</a> · <a href="/processes/new?from=${process.key}">Copy</a></p>
+@if(schedule != null)
+<section id="schedule">
+    <h2>Schedule</h2>
+    <p>${schedule.words}@if(schedule.paused) · paused@elseif(schedule.at != null) · next ${schedule.at}@endif</p>
+    @if(schedule.skipped != null)<p>${schedule.skipped}</p>@endif
+    @if(schedule.failed != null)
+    <p role="alert">✕ [failed] The scheduled Run didn't start: ${schedule.failed.why}</p>
+    <form method="post" action="/processes/${process.key}/schedule/start"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>Start now</button></form>
+    <form method="post" action="/processes/${process.key}/schedule/dismiss"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>Dismiss</button></form>
+    @endif
+    <form method="post" action="/processes/${process.key}/schedule/${if (schedule.paused) "resume" else "pause"}"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>${if (schedule.paused) "Resume" else "Pause"}</button></form>
+    <form method="post" action="/processes/${process.key}/schedule/remove"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>Remove</button></form>
+</section>
+@endif
 <div id="diagram" data-src="/processes/${process.key}/diagram.bpmn" style="height: 60vh"></div>
 <form method="post" action="/processes/${process.key}/runs">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
