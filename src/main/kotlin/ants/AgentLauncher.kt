@@ -15,7 +15,11 @@ import tools.jackson.databind.json.JsonMapper
 import java.io.BufferedWriter
 import java.io.IOException
 import java.nio.file.Path
+import java.time.Clock
 import java.time.Duration
+import java.time.Instant
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
@@ -31,7 +35,8 @@ import kotlin.io.path.writeText
  * task, stored as a process variable named after the Task's BPMN id; a `stuck` one or a failure is an incident. When
  * the user acts on it, the Notification list leaves their choice in the Task's local variables: Continue resumes the
  * session with their instruction, Start fresh starts a new one with it under "From the user:". While a session runs,
- * the user can [send] it a message or [stop] it.
+ * the user can [send] it a message or [stop] it. A Task that hits the Usage limit pauses its CLI until the reset, then
+ * continues its session the same way, with the reset message.
  */
 @Component
 class AgentLauncher(
@@ -40,6 +45,7 @@ class AgentLauncher(
     private val repository: RepositoryService,
     private val settings: Settings,
     private val catalogue: Catalogue,
+    private val clock: Clock,
     @Value("\${ants.home}") private val home: Path,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -49,6 +55,11 @@ class AgentLauncher(
     private val live = AtomicInteger()
     private val stdins = ConcurrentHashMap<String, Stdin>() // by `<run>/<task id>`
     private val usageFile = home.resolve("claude-usage.json")
+
+    // ponytail: one pause gate per CLI, not per model, kept in memory; after a restart the held Tasks wait out
+    // their locks, which end at the reset, and the first Task to hit the limit again shuts the gate again.
+    private val gates = ConcurrentHashMap<String, Instant>() // CLI -> when its gate opens
+    private val held = ConcurrentHashMap<String, String>() // external task id -> the CLI holding it
 
     /** How many Agent Tasks are running now. */
     val running get() = live.get()
@@ -73,7 +84,10 @@ class AgentLauncher(
     fun start() {
         // ponytail: one Ants per ANTS_HOME, so a lock left by the last one is a launch that died with it, and its Task
         // starts over; locks are long instead of extended, so this is also the only way a lock ever ends early.
-        externalTasks.createExternalTaskQuery().topicName(TOPIC).locked().list().forEach { externalTasks.unlock(it.id) }
+        // A pause's lock ends at its reset, days away at most, and the engine's locks run on the system time.
+        externalTasks.createExternalTaskQuery().topicName(TOPIC).locked().list()
+            .filter { it.lockExpirationTime.toInstant() > Instant.now() + Duration.ofDays(30) }
+            .forEach { externalTasks.unlock(it.id) }
         poller.scheduleWithFixedDelay(::fetch, 0, 200, MILLISECONDS)
     }
 
@@ -88,6 +102,7 @@ class AgentLauncher(
 
     private fun fetch() {
         try {
+            gates.filterValues { !it.isAfter(clock.instant()) }.keys.forEach(::tryNow)
             val free = settings.agentTasks() - live.get()
             if (free <= 0) return
             externalTasks.fetchAndLock().workerId(WORKER).maxTasks(free).orderByCreateTime().asc()
@@ -107,17 +122,57 @@ class AgentLauncher(
         }
     }
 
+    /** The CLIs paused by the Usage limit, and when each resumes. */
+    fun pauses(): Map<String, Instant> = gates.toMap()
+
+    /** When the Task with external task [id] resumes, if a pause holds it. */
+    fun pausedUntil(id: String): Instant? = held[id]?.let(gates::get)
+
+    /** Opens [cli]'s gate and unlocks the Tasks it held, so they launch as slots free up. */
+    fun tryNow(cli: String) = synchronized(gates) {
+        gates.remove(cli)
+        held.filterValues { it == cli }.keys.forEach { id ->
+            held.remove(id)
+            runCatching { externalTasks.unlock(id) } // gone if its Run ended meanwhile
+        }
+    }
+
+    /**
+     * Holds [task] while [cli] is paused, first pausing it [until] a reset if given, and returns false when [cli] isn't
+     * paused. The hold is a failure with retries left, so it is no incident, and its lock ends at the reset.
+     */
+    private fun hold(task: LockedExternalTask, cli: String, until: Instant? = null): Boolean {
+        synchronized(gates) {
+            if (until != null) gates.merge(cli, until, ::maxOf)
+            val reset = gates[cli] ?: return false
+            val wait = Duration.between(clock.instant(), reset).toMillis().coerceAtLeast(0)
+            externalTasks.handleFailure(task.id, WORKER, "Paused until $reset", null, 1, wait)
+            held[task.id] = cli
+            return true
+        }
+    }
+
     /** Runs [task] once, between a divider and a line saying how it ended in its Transcript. */
     private fun launch(task: LockedExternalTask) {
         val resume = (task.variables[SESSION] as? String)?.takeIf { task.variables[ACTION] == CONTINUE }
         val session = resume ?: UUID.randomUUID().toString()
         var transcript: Transcript.Writer? = null
         try {
+            val agent = catalogue.agent(task.extensionProperties["ants.agent"] ?: error("${task.activityId} names no ants.agent"))
+            if (hold(task, agent.cli)) return // keeping its choice for the launch after the reset
             runtime.removeVariablesLocal(task.executionId, listOf(ACTION, INSTRUCTION, SESSION)) // the choice is used once
             val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult().rootProcessInstanceId
             val workspace = home.resolve("runs").resolve(run)
             transcript = Transcript.Writer(Transcript.file(workspace, task.activityId)).apply { ants("launch") }
-            val result = session(task, run, workspace, transcript, session, resume != null, task.variables[INSTRUCTION] as? String)
+            val result = try {
+                session(task, agent, run, workspace, transcript, session, resume != null, task.variables[INSTRUCTION] as? String)
+            } catch (limit: UsageLimit) {
+                val until = limit.resetsAt + Duration.ofMinutes(1)
+                transcript.ants("end", "Paused by the ${agent.cli} usage limit until ${clock.local(until)}.")
+                runtime.setVariablesLocal(task.executionId, mapOf(ACTION to CONTINUE, INSTRUCTION to RESET, SESSION to session))
+                hold(task, agent.cli, until)
+                return
+            }
             if (result["outcome"] == "done") {
                 transcript.ants("end", "Done.")
                 externalTasks.complete(task.id, WORKER, mapOf(task.activityId to result))
@@ -155,9 +210,8 @@ class AgentLauncher(
      * with the hand-off prompt and the user's [instruction], if any; a [resume]d one with the instruction alone.
      */
     private fun session(
-        task: LockedExternalTask, run: String, workspace: Path, transcript: Transcript.Writer, session: String, resume: Boolean, instruction: String?,
+        task: LockedExternalTask, agent: Agent, run: String, workspace: Path, transcript: Transcript.Writer, session: String, resume: Boolean, instruction: String?,
     ): Map<*, *> {
-        val agent = catalogue.agent(task.extensionProperties["ants.agent"] ?: error("${task.activityId} names no ants.agent"))
         val skill = catalogue.skill(task.extensionProperties["ants.skill"] ?: error("${task.activityId} names no ants.skill"))
         check(agent.cli == "claude") { "Agent ${agent.name} runs ${agent.cli}, and only claude runs for now" }
         val used = catalogue.uses(skill)
@@ -186,9 +240,10 @@ class AgentLauncher(
             var failure: Failed? = null
             var stopped = false
             var retried = false
+            var limit: Instant? = null
             process.inputReader().forEachLine { line ->
                 transcript.line(line)
-                if (failure != null || stopped || (valid != null && !stdin.open)) return@forEachLine
+                if (failure != null || stopped || limit != null || (valid != null && !stdin.open)) return@forEachLine
                 val event = runCatching { json.readValue(line, Map::class.java) }.getOrNull() ?: return@forEachLine
                 if (event["type"] == "user" && event["isReplay"] == true) stdin.read()
                 if (event["type"] == "rate_limit_event") keepUsage(event)
@@ -199,6 +254,12 @@ class AgentLauncher(
                     failure = Failed(LOST_LOGIN, apiKey?.let { "${agent.cli} would use an API key (apiKeySource: $it), and Ants runs only on its own login." })
                     stdin.close()
                     process.toHandle().destroy() // unlike Process.destroy, leaves the rest of stdout to read
+                    return@forEachLine
+                }
+                usageLimit(event)?.let {
+                    limit = it // the session continues after the reset
+                    stdin.close()
+                    process.toHandle().destroy()
                     return@forEachLine
                 }
                 if (event["type"] != "result") return@forEachLine
@@ -222,6 +283,7 @@ class AgentLauncher(
             }
             val exit = process.waitFor()
             drain.join()
+            limit?.let { throw UsageLimit(it) }
             val tail = synchronized(stderr) { stderr.joinToString("\n") }.ifEmpty { null }
             if (stopped) throw Stopped()
             failure?.let { throw Failed(it.message, it.details ?: tail) }
@@ -231,6 +293,26 @@ class AgentLauncher(
             stdin.close()
             stdins.remove("$run/${task.activityId}", stdin)
             clis -= process
+        }
+    }
+
+    /**
+     * When the Usage limit that [event] reports resets, or null if it reports none: a `rate_limit_event` rejection
+     * gives `resetsAt`; one without it, a Subagent retrying on `rate_limit`, or a 429 `result` means 30 minutes.
+     * Probed with claude 2.1.295 against a fake API (#36): a rejection is a top-level `rate_limit_event`, even when a
+     * Subagent's request hit it, and it isn't retried. A plain 429 is retried as `subagent_retry` events first, and
+     * the rejection without `resetsAt` comes only after the last retry. A 429 on the main session gives the rejection,
+     * then a `result` with `api_error_status` 429, and a session that resumes with its first prompt intact.
+     */
+    private fun usageLimit(event: Map<*, *>): Instant? {
+        val fallback = clock.instant() + Duration.ofMinutes(30)
+        val info = event["rate_limit_info"] as? Map<*, *>
+        return when {
+            event["type"] == "rate_limit_event" && info?.get("status") == "rejected" ->
+                (info["resetsAt"] as? Number)?.let { Instant.ofEpochSecond(it.toLong()) } ?: fallback
+            (event["subagent_retry"] as? Map<*, *>)?.get("error_category") == "rate_limit" -> fallback
+            event["type"] == "result" && event["api_error_status"] == 429 -> fallback
+            else -> null
         }
     }
 
@@ -360,6 +442,9 @@ class AgentLauncher(
     /** A failure of Ants' own, with what the `[failed]` page shows: the last stderr lines, or an invalid Result whole. */
     private class Failed(override val message: String, val details: String? = null) : Exception(message)
 
+    /** The Usage limit cut the session short; it continues once the limit resets at [resetsAt]. */
+    private class UsageLimit(val resetsAt: Instant) : Exception("Usage limit")
+
     companion object {
         const val TOPIC = "agent"
 
@@ -372,6 +457,7 @@ class AgentLauncher(
         /** The session id of a held Task's last launch. */
         private const val SESSION = "ants.session"
         private const val WORKER = "ants"
+        private const val RESET = "The usage limit has reset. Carry on where you stopped."
         private val LOCK = Duration.ofDays(365)
         private const val STDERR_LINES = 20
         private const val LOST_LOGIN = "Ants' Claude login is missing or expired. Log in again (Settings)"
@@ -379,4 +465,10 @@ class AgentLauncher(
         val DEFAULT_TOOLS = listOf("Bash", "Edit", "Glob", "Grep", "NotebookEdit", "Read", "TodoWrite", "WebFetch", "WebSearch", "Write")
         private val json = JsonMapper.shared()
     }
+}
+
+/** [instant] as the user reads it on this [Clock]: `15:45`, with the day in front when it isn't today. */
+fun Clock.local(instant: Instant): String {
+    val time = instant.atZone(zone)
+    return time.format(DateTimeFormatter.ofPattern(if (time.toLocalDate() == LocalDate.now(this)) "HH:mm" else "EEE d MMM HH:mm"))
 }
