@@ -1,0 +1,43 @@
+#!/usr/bin/env python3
+"""Everything a ticket's implementer must read, in one call, with nothing filtered out.
+
+    scripts/ticket-context <n>
+
+Prints the ticket and its comments, then every ticket it is blocked by and every ticket it blocks, each whole with
+its comments (the upstream ones say what exists, the downstream ones settle scope), then the whole spec (#27). It
+saves calls, never content: everything the manual path would read is printed.
+"""
+import json
+import subprocess
+import sys
+
+REPO = "oyvij/ants"
+SPEC = 27
+
+
+def gh(*args):
+    return json.loads(subprocess.run(["gh", *args], check=True, capture_output=True, text=True).stdout)
+
+
+def show(n, level="#"):
+    issue = gh("issue", "view", str(n), "-R", REPO, "--json", "number,title,state,body,comments")
+    print(f"{level} #{n} {issue['title']} [{issue['state'].lower()}]\n\n{(issue['body'] or '').strip()}\n")
+    for comment in issue["comments"]:
+        print(f"{level}# Comment on #{n} by {comment['author']['login']}\n\n{comment['body'].strip()}\n")
+
+
+def main():
+    if len(sys.argv) != 2 or sys.argv[1] in ("-h", "--help"):
+        sys.exit(__doc__.strip())
+    n = int(sys.argv[1])
+    show(n)
+    for relation in ("blocked_by", "blocking"):
+        for other in gh("api", f"repos/{REPO}/issues/{n}/dependencies/{relation}"):
+            print(f"---\n\n**{relation.replace('_', ' ').capitalize()}:**\n")
+            show(other["number"], "##")
+    print("---\n\n**The spec:**\n")
+    show(SPEC, "##")
+
+
+if __name__ == "__main__":
+    main()

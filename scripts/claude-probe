@@ -1,0 +1,183 @@
+#!/usr/bin/env python3
+"""Runs the real claude with Ants' headless flags and prints one line per stream-json event.
+
+    scripts/claude-probe [options] "prompt" [-- extra claude flags]
+
+  --schema JSON|FILE   pass as --json-schema; a bare output schema is wrapped in Ants' Result envelope
+  --raw-schema         pass --schema as given, without the envelope
+  --then MESSAGE       send after a result line, instead of closing stdin (repeatable, in order)
+  --interrupt SECONDS  send an interrupt control request after SECONDS
+  --model MODEL        default haiku
+  --cwd DIR            the working directory, default a fresh temporary Run workspace
+  --timeout SECONDS    kill claude after SECONDS, default 300
+  --out FILE           the full recording, default /tmp/claude-probe-<time>.jsonl
+  --fixture FILE       also write a fake-claude session (src/test/resources/fake-claude/claude): partial
+                       stream events dropped, the session id as $SESSION, a `read` line where a message was sent
+
+It runs on your own claude login (not ANTS_HOME/claude) and costs a little usage. ANTHROPIC_API_KEY is dropped,
+as Ants drops it.
+"""
+import argparse
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+import uuid
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+
+# ponytail: a copy of AgentLauncher.flags' fixed part; keep in step by hand, or read it from Ants if it drifts.
+FLAGS = [
+    "-p",
+    "--output-format", "stream-json", "--verbose", "--include-partial-messages",
+    "--input-format", "stream-json", "--replay-user-messages",
+    "--permission-mode", "dontAsk",
+    "--setting-sources", "user,project",
+    "--settings", '{"disableAllHooks":true}',
+    "--strict-mcp-config",
+    "--disable-slash-commands",
+    "--forward-subagent-text",
+]
+
+
+def envelope(output):
+    """Ants' Result envelope around [output], as ResultContract.schema builds it (ADR 0003)."""
+    return {
+        "type": "object",
+        "properties": {
+            "outcome": {"enum": ["done", "stuck"]},
+            "summary": {"type": "string", "description": "One sentence, for people."},
+            "output": output,
+            "needs": {"type": "string", "description": "What blocks you, and what would unblock you."},
+        },
+        "required": ["outcome", "summary"],
+        "additionalProperties": False,
+        "if": {"properties": {"outcome": {"const": "done"}}},
+        "then": {"required": ["output"], "not": {"required": ["needs"]}},
+        "else": {"required": ["needs"], "not": {"required": ["output"]}},
+    }
+
+
+def short(value, limit=160):
+    text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+    text = text.replace("\n", "\\n")
+    return text if len(text) <= limit else text[:limit] + "…"
+
+
+def describe(event):
+    """One line for [event], or None for a partial stream event."""
+    kind = event.get("type")
+    if kind == "stream_event":
+        return None
+    name = f"{kind}/{event['subtype']}" if event.get("subtype") else kind
+    if kind == "system" and event.get("subtype") == "init":
+        return f"{name} apiKeySource={event.get('apiKeySource')} model={event.get('model')}"
+    if kind in ("assistant", "user"):
+        parts = []
+        content = (event.get("message") or {}).get("content") or []
+        for block in [{"type": "text", "text": content}] if isinstance(content, str) else content:
+            if block.get("type") == "text":
+                parts.append("text " + short(block["text"], 100))
+            elif block.get("type") == "tool_use":
+                parts.append(f"tool_use {block['name']} {short(block.get('input'), 100)}")
+            elif block.get("type") == "tool_result":
+                parts.append("tool_result " + short(block.get("content"), 80))
+            else:
+                parts.append(block.get("type", "?"))
+        return f"{name}: " + " | ".join(parts)
+    if kind == "result":
+        line = f"{name} is_error={event.get('is_error')}"
+        if "structured_output" in event:
+            line += " structured_output=" + short(event["structured_output"], 400)
+        return line + " result=" + short(event.get("result", ""), 200)
+    return f"{name} " + short({k: v for k, v in event.items() if k not in ("type", "subtype", "uuid", "session_id")}, 300)
+
+
+def main():
+    argv = sys.argv[1:]
+    extra = argv[argv.index("--") + 1:] if "--" in argv else []
+    argv = argv[: argv.index("--")] if "--" in argv else argv
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("prompt", nargs="?")
+    parser.add_argument("--schema")
+    parser.add_argument("--raw-schema", action="store_true")
+    parser.add_argument("--then", action="append", default=[])
+    parser.add_argument("--interrupt", type=float)
+    parser.add_argument("--model", default="haiku")
+    parser.add_argument("--cwd")
+    parser.add_argument("--timeout", type=float, default=300)
+    parser.add_argument("--out")
+    parser.add_argument("--fixture")
+    parser.add_argument("-h", "--help", action="store_true")
+    args = parser.parse_args(argv)
+    if args.help or not args.prompt:
+        sys.exit(__doc__.strip())
+
+    session = str(uuid.uuid4())
+    command = ["claude", *FLAGS, "--session-id", session, "--model", args.model]
+    if args.schema:
+        schema = json.loads(Path(args.schema).read_text() if Path(args.schema).is_file() else args.schema)
+        command += ["--json-schema", json.dumps(schema if args.raw_schema else envelope(schema))]
+    command += extra
+    cwd = args.cwd or tempfile.mkdtemp(prefix="claude-probe-")
+    out = Path(args.out or f"/tmp/claude-probe-{time.strftime('%Y%m%d-%H%M%S')}.jsonl")
+    env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
+
+    print(f"# cwd {cwd}\n# recording {out}", file=sys.stderr)
+    claude = subprocess.Popen(command, cwd=cwd, env=env, text=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+    threading.Timer(args.timeout, claude.kill).start() if args.timeout else None
+    fixture, partials, pending = [], 0, list(args.then)
+
+    def send(message):
+        claude.stdin.write(json.dumps(message) + "\n")
+        claude.stdin.flush()
+
+    def say(text):
+        send({"type": "user", "message": {"role": "user", "content": text}})
+
+    say(args.prompt)
+    if args.interrupt:
+        def interrupt():
+            if claude.stdin.closed:
+                return print("--> no interrupt: the session had already ended", flush=True)
+            send({"type": "control_request", "request_id": str(uuid.uuid4()), "request": {"subtype": "interrupt"}})
+            fixture.append("read")
+            print(f"--> interrupt after {args.interrupt}s", flush=True)
+        threading.Timer(args.interrupt, interrupt).start()
+
+    with out.open("w") as recording:
+        for line in claude.stdout:
+            recording.write(line)
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                print("(not JSON) " + short(line.rstrip()), flush=True)
+                continue
+            description = describe(event)
+            if description is None:
+                partials += 1
+                continue
+            print(description, flush=True)
+            fixture.append(line.rstrip().replace(session, "$SESSION"))
+            if event.get("type") == "result":
+                if pending:
+                    message = pending.pop(0)
+                    print(f"--> {short(message, 100)}", flush=True)
+                    fixture.append("read")
+                    say(message)
+                else:
+                    claude.stdin.close()
+    code = claude.wait()
+    print(f"# exit {code}, {partials} partial stream events not shown", file=sys.stderr)
+    if args.fixture:
+        Path(args.fixture).write_text("\n".join(fixture) + "\n")
+        print(f"# fixture {args.fixture}", file=sys.stderr)
+    os._exit(code)  # the timeout timer would otherwise keep Python alive
+
+
+if __name__ == "__main__":
+    main()

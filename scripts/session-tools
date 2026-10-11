@@ -1,0 +1,126 @@
+#!/usr/bin/env python3
+"""Digests Claude Code session logs into their tool calls, so repeated work shows without reading transcripts.
+
+    scripts/session-tools [--last N | FILE.jsonl ...] [--calls] [--grep REGEX]
+
+  --last N      the N newest sessions of this project (default 1, the current one)
+  --calls       list every call: index, tool, what it did, result size, ✗ for an error
+  --grep REGEX  only calls whose label matches
+
+Without --calls it prints totals, Bash commands grouped by signature (program and subcommand) with their
+counts across sessions, every tool's count, the largest results, and the failed calls. Sizes are characters
+of tool output, a stand-in for tokens (about 4 characters each).
+"""
+import argparse
+import collections
+import json
+import re
+import shlex
+from pathlib import Path
+
+PROJECTS = Path.home() / ".claude" / "projects"
+SUBCOMMANDS = {"gh", "git", "./gradlew", "gradle", "npm", "pnpm", "docker", "kubectl", "claude", "scripts/claude-probe"}
+
+
+def project_dir():
+    return PROJECTS / re.sub(r"[^A-Za-z0-9]", "-", str(Path.cwd()))
+
+
+def signature(command):
+    """The program and, for multi-command tools, its subcommand, of [command]'s first real step."""
+    for step in re.split(r"&&|\|\||;|\|", command):
+        step = step.strip()
+        if not step or step.startswith(("cd ", "export ", "for ", "do ", "done", "echo ", "ls")):
+            continue
+        try:
+            words = [w for w in shlex.split(step) if "=" not in w.split("/")[0] or w.startswith("-")]
+        except ValueError:
+            words = step.split()
+        if not words:
+            continue
+        program = words[0].split("/")[-1] if words[0].startswith("/") else words[0]
+        rest = [w for w in words[1:] if not w.startswith("-")]
+        return " ".join([program, *rest[:2]] if program in SUBCOMMANDS else [program])
+    return command.split()[0] if command.split() else "?"
+
+
+def label(tool, data):
+    if tool == "Bash":
+        return f"{data.get('description', '')} :: {data.get('command', '').splitlines()[0][:120]}"
+    for key in ("file_path", "path", "pattern", "skill", "description", "query", "url"):
+        if key in data:
+            return str(data[key])[:140]
+    return json.dumps(data)[:140]
+
+
+def calls(path):
+    """Every tool call in the session at [path], with its result's size and whether it failed."""
+    uses, results = [], {}
+    for line in path.open():
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        content = (event.get("message") or {}).get("content")
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if block.get("type") == "tool_use":
+                uses.append(block)
+            elif block.get("type") == "tool_result":
+                body = block.get("content")
+                text = body if isinstance(body, str) else json.dumps(body)
+                results[block.get("tool_use_id")] = (len(text), bool(block.get("is_error")))
+    for use in uses:
+        size, error = results.get(use["id"], (0, False))
+        data = use.get("input") or {}
+        yield {"session": path.stem[:8], "tool": use["name"], "input": data, "label": label(use["name"], data),
+               "size": size, "error": error}
+
+
+def main():
+    parser = argparse.ArgumentParser(usage=__doc__)
+    parser.add_argument("files", nargs="*", type=Path)
+    parser.add_argument("--last", type=int, default=1)
+    parser.add_argument("--calls", action="store_true")
+    parser.add_argument("--grep")
+    args = parser.parse_args()
+
+    files = args.files or sorted(project_dir().glob("*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)[: args.last]
+    every = [c for f in files for c in calls(f)]
+    if args.grep:
+        every = [c for c in every if re.search(args.grep, c["label"], re.I)]
+
+    if args.calls:
+        for i, c in enumerate(every):
+            print(f"{i:4} {c['session']} {c['tool']:<8} {c['size']:>7} {'✗' if c['error'] else ' '} {c['label']}")
+        return
+
+    print(f"{len(files)} session(s): {', '.join(f.stem[:8] for f in files)}")
+    print(f"{len(every)} calls, {sum(c['size'] for c in every):,} characters of output, {sum(c['error'] for c in every)} failed\n")
+
+    groups = collections.defaultdict(list)
+    for c in every:
+        if c["tool"] == "Bash":
+            groups[signature(c["input"].get("command", ""))].append(c)
+    print("Bash by signature (calls, sessions, output characters):")
+    for sig, cs in sorted(groups.items(), key=lambda kv: -len(kv[1])):
+        if len(cs) > 1:
+            print(f"  {len(cs):3}× {len({c['session'] for c in cs})}s {sum(c['size'] for c in cs):>8,}  {sig}")
+
+    tools = collections.Counter(c["tool"] for c in every)
+    print("\nTools: " + ", ".join(f"{t} {n}" for t, n in tools.most_common()))
+
+    print("\nLargest results:")
+    for c in sorted(every, key=lambda c: -c["size"])[:8]:
+        print(f"  {c['size']:>8,}  {c['session']} {c['tool']}  {c['label'][:110]}")
+
+    failed = [c for c in every if c["error"]]
+    if failed:
+        print("\nFailed:")
+        for c in failed:
+            print(f"  {c['session']} {c['tool']}  {c['label'][:120]}")
+
+
+if __name__ == "__main__":
+    main()
