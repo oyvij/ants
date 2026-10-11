@@ -1,10 +1,6 @@
 package ants
 
-import java.io.File
 import java.nio.file.Path
-
-/** A commit under review, by its short hash. */
-class Commit(val hash: String, val subject: String)
 
 /**
  * One row of a unified diff: a hunk header (`@`), or a line kept (` `), removed (`-`) or added (`+`), with its numbers
@@ -19,8 +15,8 @@ class DiffLine(val kind: Char, val old: Int?, val new: Int?, val text: String) {
 /** One file's diff, [path] relative to the Run workspace root, as every comment's `file` is. */
 class FileDiff(val path: String, val lines: List<DiffLine>)
 
-/** A repo's changes under review: the commits on its work branch since [base] and their diff. */
-class RepoChanges(val name: String, val branch: String, val base: String, val commits: List<Commit>, val files: List<FileDiff>)
+/** A repo's changes under review: its commits since the base, as Push reads them ([repo]), and their diff. */
+class RepoChanges(val repo: Outgoing, val files: List<FileDiff>)
 
 /**
  * A line comment, in Varde's shape: [story] and [step] say which story step it is on, else null; [from] and [to] are
@@ -40,18 +36,12 @@ data class LineComment(
 }
 
 /**
- * The changes of each of [clones] (the Run's `clones`) in [workspace], read with [git]: the commits since the base,
- * where the work branch left the remote's default branch, and their diff.
+ * The changes in each of the Run's clones, [outgoing] as Push sees them: the commits on the work branch since the
+ * base, the remote's default branch, and their diff, read with [git].
  */
-fun changes(workspace: Path, clones: Any?, git: String): List<RepoChanges> = (clones as? List<*>).orEmpty().map { it as Map<*, *> }.map { clone ->
-    val name = clone["name"].toString()
-    val path = clone["path"].toString()
-    fun git(vararg args: String) = git(git, workspace.resolve(path), *args)
-    val base = runCatching { git("merge-base", "origin/HEAD", "HEAD") }.getOrElse { "" }
-    val commits = if (base.isEmpty()) emptyList() else git("log", "--reverse", "--format=%h%x09%s", "$base..HEAD").lines().filter(String::isNotEmpty)
-        .map { Commit(it.substringBefore('\t'), it.substringAfter('\t')) }
-    val diff = if (base.isEmpty()) "" else git("-c", "core.quotePath=false", "diff", "--no-color", "--no-ext-diff", "--no-renames", base, "HEAD")
-    RepoChanges(name, git("branch", "--show-current"), base.take(7), commits, files(diff, path))
+fun changes(outgoing: List<Outgoing>, git: (Path, List<String>) -> String): List<RepoChanges> = outgoing.map { repo ->
+    val diff = repo.base?.let { git(repo.path, listOf("-c", "core.quotePath=false", "diff", "--no-color", "--no-ext-diff", "--no-renames", "origin/$it...HEAD")) }
+    RepoChanges(repo, files(diff.orEmpty(), "repos/${repo.repo}"))
 }
 
 /** The files of the unified diff [diff], each path prefixed with the clone's [path] in the Run workspace. */
@@ -78,13 +68,4 @@ private fun files(diff: String, path: String): List<FileDiff> {
         }
     }
     return files.map { (file, lines) -> FileDiff(file, lines) }
-}
-
-/** Runs [git] in [dir] with [args], giving its output less its last newline; fails with git's message when git does. */
-// ponytail: a second copy of CloneRepos' git runner; one shared one once Push needs it too.
-private fun git(git: String, dir: Path, vararg args: String): String {
-    val process = ProcessBuilder(listOf(git) + args).directory(dir.toFile()).redirectInput(File("/dev/null")).redirectErrorStream(true).start()
-    val output = process.inputReader().readText().trimEnd('\n')
-    check(process.waitFor() == 0) { "git ${args.first()} failed: $output" }
-    return output
 }

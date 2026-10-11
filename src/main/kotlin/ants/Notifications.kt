@@ -48,7 +48,7 @@ sealed class Entry(val id: String, val tag: String, val process: String, val tas
         }
 
     private companion object {
-        val ICONS = mapOf("[failed]" to "✕", "[stuck]" to "⚠", "[stopped]" to "■", "[questions]" to "?", "[approve]" to "✓", "[review]" to "±")
+        val ICONS = mapOf("[failed]" to "✕", "[stuck]" to "⚠", "[stopped]" to "■", "[questions]" to "?", "[approve]" to "✓", "[review]" to "±", "[push]" to "↑")
     }
 }
 
@@ -80,10 +80,11 @@ class Notifications(
     private val externalTasks: ExternalTaskService,
     private val userTasks: TaskService,
     private val launcher: AgentLauncher,
+    private val push: Push,
     private val streams: Streams,
     private val schedules: Schedules,
     private val tickets: Tickets,
-    private val settings: Settings,
+    private val cloneRepos: CloneRepos,
     @Value("\${ants.home}") private val home: Path,
 ) {
     /** Everything waiting on the user, oldest first. */
@@ -118,7 +119,7 @@ class Notifications(
                 return "answer"
             }
             if (kind(task) == REVIEW_CHANGES) {
-                model.addAttribute("changes", changes(home.runWorkspace(entry.run), runtime.getVariable(task.executionId, "clones"), settings.path("git") ?: "git"))
+                model.addAttribute("changes", changes(push.outgoing(entry.run), cloneRepos::git))
                 model.addAttribute("comments", comments(task))
                 return "review"
             }
@@ -129,6 +130,10 @@ class Notifications(
         val entry = entry(incident)
         model.addAttribute("entry", entry)
         model.addAttribute("details", details(entry))
+        if (isPush(incident)) {
+            model.addAttribute("repos", push.outgoing(entry.run))
+            return "push"
+        }
         return "notification"
     }
 
@@ -136,10 +141,16 @@ class Notifications(
     fun details(entry: TaskEntry): String? = runtime.createIncidentQuery().incidentId(entry.id).singleResult()
         ?.let { externalTasks.getExternalTaskErrorDetails(it.configuration) }
 
+    /** Whether [entry] is a Push waiting or failed, whose page is Push's own. */
+    fun isPush(entry: TaskEntry) = runtime.createIncidentQuery().incidentId(entry.id).singleResult()?.let(::isPush) == true
+
+    private fun isPush(incident: Incident) = externalTasks.createExternalTaskQuery().externalTaskId(incident.configuration).topicName(Push.TOPIC).count() > 0
+
     /**
      * Continue the session (instruction required) or Start fresh (instruction optional), then Next up, or back to
      * the Run page when the user acted from its Task drawer ([back] is `run`); or Cancel the Run, which ends it and
-     * keeps its Run workspace until the user dismisses it on the Run page.
+     * keeps its Run workspace until the user dismisses it on the Run page. A Push offers Push, and Continue (no
+     * instruction) after the user pushed by hand, instead.
      */
     @PostMapping("/notifications/{id}")
     fun act(
@@ -148,13 +159,15 @@ class Notifications(
     ): String {
         val incident = incidents().incidentId(id).singleResult() ?: return gone(model, response)
         val entry = entry(incident)
-        val name = when (action) {
-            AgentLauncher.CONTINUE -> "Continue the session"
-            AgentLauncher.FRESH -> "Start fresh"
-            CANCEL -> "Cancel the Run"
+        val pushing = isPush(incident)
+        val name = when {
+            action == AgentLauncher.CONTINUE -> if (pushing) "Continue" else "Continue the session"
+            action == AgentLauncher.FRESH && !pushing -> "Start fresh"
+            action == Push.PUSH && pushing -> "Push"
+            action == CANCEL -> "Cancel the Run"
             else -> throw ResponseStatusException(HttpStatus.BAD_REQUEST, "No action $action")
         }
-        if (action == AgentLauncher.CONTINUE && instruction.isBlank()) {
+        if (action == AgentLauncher.CONTINUE && instruction.isBlank() && !pushing) {
             model.addAttribute("error", "Continue the session needs an instruction.")
             return entry(id, model, response)
         }

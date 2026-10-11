@@ -28,15 +28,15 @@
 <h1>${entry.task}</h1>
 @if(error != null)<p role="alert">${error}</p>@endif
 <nav id="tabs"><b>By repo</b></nav>
-@for(repo in changes)
-<section class="repo" data-repo="${repo.name}">
-    <h2>${repo.name}</h2>
-    <p>${repo.branch} since ${repo.base.ifEmpty { "no base" }} · ${repo.commits.size} commits</p>
+@for(changed in changes)
+<section class="repo" data-repo="${changed.repo.repo}">
+    <h2>${changed.repo.repo}</h2>
+    <p>${changed.repo.branch} since ${changed.repo.base ?: "the start: the remote has no default branch"} · ${changed.repo.commits.size} commits, newest first</p>
     <ol class="commits">
-        @for(commit in repo.commits)<li><code>${commit.hash}</code> ${commit.subject}</li>
+        @for(commit in changed.repo.commits)<li><code>${commit["sha"]?.take(7)}</code> ${commit["subject"]}</li>
         @endfor
     </ol>
-    @for(file in repo.files)
+    @for(file in changed.files)
     <details open>
         <summary>${file.path}</summary>
         <table class="diff" data-file="${file.path}">
