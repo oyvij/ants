@@ -1,0 +1,25 @@
+#!/bin/bash
+# A fake `claude` for tests, run from a copy in its own folder. `--help` prints ./help, if there is one. Otherwise it
+# records its argv, environment, working directory and stdin's first line under ./launches/<skill>.XXXX, appends its
+# working directory to ./launches.log, and plays ./sessions/<skill>.jsonl, picked by the Skill in the hand-off line.
+# A session line `wait <file>` waits until ./<file> exists; every other line is printed, with $SESSION as the --session-id.
+dir=$(cd "$(dirname "$0")" && pwd)
+if [ "$1" = --help ]; then cat "$dir/help" 2>/dev/null; exit 0; fi
+session= previous=
+for arg; do [ "$previous" = --session-id ] && session=$arg; previous=$arg; done
+IFS= read -r prompt
+skill=$(basename "$(printf '%s' "$prompt" | sed -n 's|.*Follow the Skill in \(.*\)/SKILL.md for.*|\1|p')")
+mkdir -p "$dir/launches"
+launch=$(mktemp -d "$dir/launches/$skill.XXXX")
+printf '%s\n' "$@" > "$launch/argv"
+env > "$launch/env"
+pwd > "$launch/cwd"
+printf '%s\n' "$prompt" > "$launch/stdin"
+pwd >> "$dir/launches.log"
+while IFS= read -r line; do
+    case $line in
+        "wait "*) while [ ! -e "$dir/${line#wait }" ]; do sleep 0.05; done ;;
+        *) printf '%s\n' "${line//\$SESSION/$session}" ;;
+    esac
+done < "$dir/sessions/$skill.jsonl"
+cat > /dev/null # like claude, it stays until Ants closes stdin

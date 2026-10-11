@@ -1,8 +1,10 @@
 package ants
 
+import org.operaton.bpm.engine.ExternalTaskService
 import org.operaton.bpm.engine.HistoryService
 import org.operaton.bpm.engine.delegate.DelegateExecution
 import org.operaton.bpm.engine.delegate.ExecutionListener
+import org.operaton.bpm.engine.externaltask.ExternalTask
 import org.operaton.bpm.engine.history.HistoricProcessInstance
 import org.operaton.bpm.engine.impl.bpmn.parser.BpmnParseListener
 import org.operaton.bpm.engine.impl.cfg.AbstractProcessEnginePlugin
@@ -23,10 +25,16 @@ import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.server.ResponseStatusException
 import java.nio.file.Path
+import java.util.Date
 import kotlin.io.path.createDirectories
 
 @Controller
-class Runs(private val history: HistoryService) {
+class Runs(
+    private val history: HistoryService,
+    private val externalTasks: ExternalTaskService,
+    private val launcher: AgentLauncher,
+    private val settings: Settings,
+) {
     @GetMapping("/runs")
     fun list(model: Model): String {
         model.addAttribute("runs", history.createHistoricProcessInstanceQuery().rootProcessInstances().orderByProcessInstanceStartTime().desc().list())
@@ -46,7 +54,17 @@ class Runs(private val history: HistoryService) {
                 .orderByVariableName().asc().list()
                 .associate { it.name to ((it.typedValue as? ObjectValue)?.valueSerialized ?: "${it.value}") },
         )
+        model.addAttribute(
+            "agentTasks",
+            externalTasks.createExternalTaskQuery().processInstanceId(id).topicName(AgentLauncher.TOPIC).list().associate { it.activityId to state(it) },
+        )
         return "run"
+    }
+
+    private fun state(task: ExternalTask) = when {
+        task.retries == 0 -> "Failed: ${task.errorMessage}"
+        task.lockExpirationTime?.after(Date()) == true -> "Running"
+        else -> "Queued: ${launcher.running} of ${settings.agentTasks()} Agent Tasks running"
     }
 }
 

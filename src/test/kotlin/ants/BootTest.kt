@@ -3,9 +3,13 @@ package ants
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.springframework.boot.builder.SpringApplicationBuilder
+import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
+import kotlin.io.path.readText
+import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class BootTest : AntsTest() {
@@ -55,5 +59,20 @@ class BindTest {
             ).close()
         }
         assertContains(generateSequence<Throwable>(error) { it.cause }.joinToString { it.message.orEmpty() }, "default password")
+    }
+}
+
+class ShippedTest {
+    @Test
+    fun `shipped is replaced whole on start when any file differs`() {
+        val home = AntsTest.tempHome()
+        val agents = home.resolve("shipped/agents").createDirectories()
+        agents.resolve("shipped-writer.md").writeText("edited by hand")
+        agents.resolve("removed.md").writeText("shipped by an older Ants")
+        // Its own engine name: closing it would otherwise take engine `default` from the other tests' Cockpit.
+        SpringApplicationBuilder(AntsApplication::class.java)
+            .run("--ants.home=$home", "--server.port=0", "--operaton.bpm.process-engine-name=shipped").close()
+        assertEquals(javaClass.getResource("/shipped/agents/shipped-writer.md")!!.readText(), agents.resolve("shipped-writer.md").readText())
+        assertFalse(agents.resolve("removed.md").exists())
     }
 }

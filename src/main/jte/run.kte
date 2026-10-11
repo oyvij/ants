@@ -1,6 +1,7 @@
 @import ants.stateName
 @param run: org.operaton.bpm.engine.history.HistoricProcessInstance
 @param variables: Map<String, String>
+@param agentTasks: Map<String, String>
 <!doctype html>
 <html lang="en">
 <head>
@@ -11,6 +12,14 @@
 <p><a href="/runs">Runs</a></p>
 <h1><a href="/processes/${run.processDefinitionKey}">${run.processDefinitionName ?: run.processDefinitionKey}</a></h1>
 <p>State: ${run.stateName}</p>
+@if(agentTasks.isNotEmpty())
+<h2>Agent Tasks</h2>
+<dl>
+@for((task, state) in agentTasks)
+    <dt>${task}</dt><dd>${state}</dd>
+@endfor
+</dl>
+@endif
 <h2>Variables</h2>
 <dl>
 @for((name, value) in variables)

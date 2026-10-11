@@ -1,0 +1,80 @@
+package ants
+
+import org.springframework.beans.factory.annotation.Value
+import org.springframework.core.io.support.PathMatchingResourcePatternResolver
+import org.springframework.stereotype.Component
+import org.yaml.snakeyaml.Yaml
+import java.nio.file.Files
+import java.nio.file.Path
+import kotlin.io.path.exists
+import kotlin.io.path.isRegularFile
+import kotlin.io.path.listDirectoryEntries
+import kotlin.io.path.nameWithoutExtension
+import kotlin.io.path.readBytes
+import kotlin.io.path.readText
+import kotlin.io.path.relativeTo
+import kotlin.io.path.walk
+import kotlin.io.path.writeBytes
+
+/** Who does a Task: the CLI it runs, its tools, its model and its standing instructions. */
+class Agent(val name: String, val cli: String, val tools: List<String>?, val model: String?, val instructions: String)
+
+/** A `SKILL.md` and the folder it lives in. */
+class Skill(val name: String, val file: Path) {
+    val folder: Path get() = file.parent
+}
+
+/**
+ * Agents and Skills by name, read from `agents/`, `skills/` and `shipped/` in ANTS_HOME each time they're asked for,
+ * so an edit reaches the next launch. `shipped/` is Ants' own, replaced whole on start when any file differs.
+ */
+@Component
+class Catalogue(@Value("\${ants.home}") home: Path) {
+    private val shipped = home.resolve("shipped")
+    private val agentFolders = listOf(home.resolve("agents"), shipped.resolve("agents"))
+    private val skillFolders = listOf(home.resolve("skills"), shipped.resolve("skills"))
+
+    init {
+        val bundled = PathMatchingResourcePatternResolver().getResources("classpath*:shipped/**").filter { it.isReadable }
+            .associate { it.url.toString().substringAfter("/shipped/") to it.contentAsByteArray }
+        val onDisk = if (shipped.exists()) shipped.walk().filter { it.isRegularFile() }.associate { it.relativeTo(shipped).toString() to it.readBytes() } else emptyMap()
+        if (bundled.keys != onDisk.keys || bundled.any { (path, bytes) -> !bytes.contentEquals(onDisk[path]) }) {
+            shipped.toFile().deleteRecursively()
+            for ((path, bytes) in bundled) shipped.resolve(path).also { Files.createDirectories(it.parent) }.writeBytes(bytes)
+        }
+    }
+
+    /** The Agent [name]; a file without frontmatter is an Agent with defaults, named after the file. */
+    fun agent(name: String): Agent {
+        val agents = agentFolders.filter { it.exists() }.flatMap { it.listDirectoryEntries("*.md") }.map { file ->
+            val (meta, body) = frontmatter(file.readText())
+            Agent(
+                name = meta["name"]?.toString() ?: file.nameWithoutExtension,
+                cli = meta["cli"]?.toString() ?: "claude",
+                tools = when (val tools = meta["tools"]) {
+                    null -> null
+                    is List<*> -> tools.map(Any?::toString)
+                    else -> tools.toString().split(',').map(String::trim).filter(String::isNotEmpty)
+                },
+                model = meta["model"]?.toString(),
+                instructions = body.trim(),
+            )
+        }.filter { it.name == name }
+        return agents.singleOrNull() ?: error(if (agents.isEmpty()) "No Agent named $name" else "More than one Agent is named $name")
+    }
+
+    /** The Skill [name]; a shipped Skill wins its name. */
+    fun skill(name: String): Skill {
+        val skills = skillFolders.filter { it.exists() }.flatMap { folder ->
+            folder.walk().filter { it.fileName.toString() == "SKILL.md" }.map { Skill(frontmatter(it.readText()).first["name"]?.toString() ?: "", it) }
+        }.filter { it.name == name }
+        return skills.singleOrNull() ?: skills.firstOrNull { it.file.startsWith(shipped) }
+            ?: error(if (skills.isEmpty()) "No Skill named $name" else "More than one Skill is named $name")
+    }
+}
+
+/** A markdown file's YAML frontmatter and its body. */
+private fun frontmatter(text: String): Pair<Map<*, *>, String> {
+    val match = Regex("""\A---\R(.*?)\R---\R?(.*)""", RegexOption.DOT_MATCHES_ALL).find(text) ?: return emptyMap<String, Any?>() to text
+    return (Yaml().load<Any?>(match.groupValues[1]) as? Map<*, *> ?: emptyMap<String, Any?>()) to match.groupValues[2]
+}
