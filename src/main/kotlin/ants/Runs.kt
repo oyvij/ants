@@ -24,7 +24,12 @@ import org.springframework.ui.Model
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.server.ResponseStatusException
+import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardOpenOption.APPEND
+import java.nio.file.StandardOpenOption.CREATE
+import java.time.Instant
+import java.time.temporal.ChronoUnit.SECONDS
 import java.util.Date
 import kotlin.io.path.createDirectories
 
@@ -68,6 +73,11 @@ class Runs(
         task.lockExpirationTime?.after(Date()) == true -> "Running"
         else -> "Queued: ${launcher.running} of ${settings.agentTasks()} Agent Tasks running"
     }
+}
+
+/** Appends one entry to the Run log, `run-log.md` in the Run workspace [workspace]: [what] the user did on [task], and [text]. */
+fun runLog(workspace: Path, task: String, what: String, text: String) {
+    Files.writeString(workspace.resolve("run-log.md"), "## ${Instant.now().truncatedTo(SECONDS)} · $task · $what\n\n${text.trim()}\n\n", CREATE, APPEND)
 }
 
 /** How a Run's state reads on its pages. */

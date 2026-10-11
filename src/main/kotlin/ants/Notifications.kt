@@ -21,13 +21,9 @@ import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.ResponseBody
 import org.springframework.web.server.ResponseStatusException
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
-import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.StandardOpenOption.APPEND
-import java.nio.file.StandardOpenOption.CREATE
 import java.time.Duration
 import java.time.Instant
-import java.time.temporal.ChronoUnit.SECONDS
 import java.util.Date
 
 /** One entry on the Notification list: a Task of a Run waiting on the user since [since]. */
@@ -102,11 +98,7 @@ class Notifications(
         }
         // The choice first: the worker can fetch the Task again the moment its retries are back.
         runtime.setVariablesLocal(incident.executionId, mapOf(AgentLauncher.ACTION to action, AgentLauncher.INSTRUCTION to instruction))
-        Files.writeString(
-            home.resolve("runs").resolve(entry.run).resolve("run-log.md"),
-            "## ${Instant.now().truncatedTo(SECONDS)} · ${entry.task} · $name\n\n${instruction.trim()}\n\n",
-            CREATE, APPEND,
-        )
+        runLog(home.resolve("runs").resolve(entry.run), entry.task, name, instruction)
         externalTasks.setRetries(incident.configuration, 1)
         return "redirect:/notifications/next?run=${entry.run}"
     }
