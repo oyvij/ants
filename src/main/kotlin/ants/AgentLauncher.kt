@@ -27,7 +27,7 @@ import java.util.concurrent.TimeUnit.MILLISECONDS
 import java.util.concurrent.TimeUnit.SECONDS
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.io.path.readText
-import kotlin.io.path.writeText
+import kotlin.io.path.exists
 
 /**
  * The in-process worker. It fetches ready Agent Tasks (external tasks on topic `agent`) only for free slots under
@@ -453,11 +453,14 @@ class AgentLauncher(
      * The latest usage claude reported: its `rate_limit_event`'s `unifiedWindows`, such as
      * `{"five_hour":{"utilization":0.04,"resetsAt":<epoch s>},"seven_day":{…}}`, utilization a fraction. Empty until a launch reports one.
      */
-    fun usage(): Map<*, *> = runCatching { json.readValue(usageFile.readText(), Map::class.java) }.getOrDefault(emptyMap<Any, Any>())
+    fun usage(): Map<*, *> = if (!usageFile.exists()) emptyMap<Any, Any>()
+    else runCatching { json.readValue(usageFile.readText(), Map::class.java) }
+        .onFailure { log.warn("$usageFile isn't the usage claude last reported", it) }.getOrDefault(emptyMap<Any, Any>())
 
+    /** Keeps the usage [event] reports; launches running at once each write it whole, and the last one wins. */
     private fun keepUsage(event: Map<*, *>) {
         val windows = (event["rate_limit_info"] as? Map<*, *>)?.get("unifiedWindows") ?: return
-        usageFile.writeText(json.writeValueAsString(windows))
+        usageFile.writeAtomically(json.writeValueAsString(windows))
     }
 
     /** The CLI's command prefix with [args], in [workspace], on the narrowed environment. */

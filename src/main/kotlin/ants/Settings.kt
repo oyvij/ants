@@ -4,21 +4,15 @@ import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Component
-import org.yaml.snakeyaml.DumperOptions
 import org.yaml.snakeyaml.Yaml
 import java.io.File
 import java.net.InetAddress
-import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.StandardCopyOption.ATOMIC_MOVE
-import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 import java.time.Duration
 import java.util.concurrent.TimeUnit.SECONDS
 import java.util.concurrent.atomic.AtomicReference
-import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.readText
-import kotlin.io.path.writeText
 
 /** `settings.yaml` in ANTS_HOME, created on first start and read fresh each time, so hand edits count. */
 @Component
@@ -33,9 +27,8 @@ class Settings(
 
     init {
         if (!file.exists()) {
-            home.createDirectories()
             val found = detect().mapValues { mapOf("path" to it.value) }
-            file.writeText(HEADER + if (found.isEmpty()) "" else yaml.dump(found))
+            file.writeAtomically(HEADER + if (found.isEmpty()) "" else yaml.dump(found))
         }
         val loopback = address.isNotEmpty() && InetAddress.getByName(address).isLoopbackAddress
         check(loopback || !encoder.matches("admin", password())) {
@@ -106,11 +99,7 @@ class Settings(
     /** Rewrites the file with [change] applied to its keys. Keys it doesn't touch are kept; comments are not. */
     @Synchronized
     fun save(change: (MutableMap<String, Any?>) -> Unit) {
-        val values = LinkedHashMap(read()).also(change)
-        // Written beside it and moved over, so a launch reading it meanwhile never sees half a file.
-        val next = Files.createTempFile(file.parent, "settings", ".yaml")
-        next.writeText(HEADER + yaml.dump(values))
-        Files.move(next, file, ATOMIC_MOVE, REPLACE_EXISTING)
+        file.writeAtomically(HEADER + yaml.dump(LinkedHashMap(read()).also(change)))
     }
 
     /** Finds each CLI through the user's login shell, which sees the PATH their profile sets. A missing one is left out. */
@@ -146,18 +135,19 @@ class Settings(
 
         val DEFAULT_ENV = listOf("PATH", "HOME", "USER", "LOGNAME", "SHELL", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE", "TERM")
 
-        /** A YAML list, or a string read as space-separated words, so `command: claude` works too. */
+        /**
+         * A YAML list, or a string read as space-separated words, so `command: claude` works too, as do a Skill's
+         * `ants-uses` names.
+         */
         // ponytail: a string splits on spaces, so a path with a space in it needs the YAML list form
         fun strings(value: Any?) = when (value) {
             null -> null
             is List<*> -> value.map(Any?::toString)
-            else -> value.toString().split(' ').filter(String::isNotEmpty)
+            else -> value.toString().split(Regex("\\s+")).filter(String::isNotEmpty)
         }
 
         /** [path] with a leading `~` read as the user's home. */
         fun expand(path: String): Path = Path.of(path.replaceFirst(Regex("^~(?=/|$)"), Regex.escapeReplacement(System.getProperty("user.home"))))
-
-        private val yaml = Yaml(DumperOptions().apply { defaultFlowStyle = DumperOptions.FlowStyle.BLOCK })
 
         private val HEADER = """
             # Ants settings. Ants reads this file as it goes, so hand edits count. Saving the settings page rewrites it.

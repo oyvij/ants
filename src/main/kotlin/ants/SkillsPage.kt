@@ -19,7 +19,6 @@ import kotlin.io.path.exists
 import kotlin.io.path.readText
 import kotlin.io.path.relativeTo
 import kotlin.io.path.walk
-import kotlin.io.path.writeText
 
 /** A Skill's two files as the Skills page shows them; [name] is null on the create form. */
 data class SkillForm(val name: String?, val skill: String, val schema: String, val readOnly: Boolean = false, val where: String = "")
@@ -78,15 +77,14 @@ class SkillsPage(private val catalogue: Catalogue, private val usedBy: UsedBy) {
     fun copy(@PathVariable name: String): String {
         val source = find(name)
         val taken = catalogue.skills().map { it.name }.toSet()
-        val copy = generateSequence(1, Int::inc).map { if (it == 1) "$name-copy" else "$name-copy-$it" }
-            .first { it !in taken && !catalogue.yourSkills.resolve(it).exists() }
+        val copy = copyName(name) { it in taken || catalogue.yourSkills.resolve(it).exists() }
         val folder = catalogue.yourSkills.resolve(copy)
-        // A Skill folder can hold other Skills' folders; those stay where they are.
+        // A Skill folder can hold other Skills' folders; those stay where they are. SKILL.md goes last, so a launch
+        // finds the copy only once it is whole.
         for (file in source.folder.walk().filter { file -> generateSequence(file.parent) { it.parent }.takeWhile { it != source.folder }.none { it.resolve("SKILL.md").exists() } }) {
-            folder.resolve(file.relativeTo(source.folder).toString()).also { it.parent.createDirectories() }.let { file.copyTo(it) }
+            if (file != source.file) folder.resolve(file.relativeTo(source.folder).toString()).also { it.parent.createDirectories() }.let { file.copyTo(it) }
         }
-        val skill = folder.resolve("SKILL.md")
-        skill.writeText(Regex("(?m)^name:.*$").replaceFirst(skill.readText(), "name: $copy"))
+        folder.resolve("SKILL.md").writeAtomically(Regex("(?m)^name:.*$").replaceFirst(source.file.readText(), "name: $copy"))
         return "redirect:/skills/$copy"
     }
 
@@ -140,8 +138,8 @@ class SkillsPage(private val catalogue: Catalogue, private val usedBy: UsedBy) {
             }
             if (folder != edited.folder) Files.move(edited.folder, folder)
         }
-        folder.createDirectories().resolve("SKILL.md").writeText(form.skill)
-        folder.resolve("result.schema.json").run { if (form.schema.isBlank()) deleteIfExists() else writeText(form.schema) }
+        folder.resolve("result.schema.json").run { if (form.schema.isBlank()) deleteIfExists() else writeAtomically(form.schema) }
+        folder.resolve("SKILL.md").writeAtomically(form.skill)
         return "redirect:/skills/$name"
     }
 
