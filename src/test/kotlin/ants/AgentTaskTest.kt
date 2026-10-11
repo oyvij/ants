@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import tools.jackson.databind.json.JsonMapper
 import java.nio.file.Files
+import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 import java.time.Duration
 import java.time.Instant
@@ -480,8 +481,8 @@ fun eventually(check: () -> Unit) {
     while (true) {
         try {
             return check()
-        } catch (e: AssertionError) {
-            if (System.nanoTime() > deadline) throw e
+        } catch (e: Throwable) { // a launch's files, read through [FakeClaude.Launch], may not be written yet
+            if (e !is AssertionError && e !is NoSuchFileException || System.nanoTime() > deadline) throw e
             Thread.sleep(100)
         }
     }
