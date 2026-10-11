@@ -23,10 +23,12 @@ import org.springframework.stereotype.Controller
 import org.springframework.ui.Model
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
+import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.server.ResponseStatusException
 import java.nio.file.Path
 import java.util.Date
 import kotlin.io.path.createDirectories
+import kotlin.io.path.exists
 
 @Controller
 class Runs(
@@ -34,6 +36,7 @@ class Runs(
     private val externalTasks: ExternalTaskService,
     private val launcher: AgentLauncher,
     private val settings: Settings,
+    @Value("\${ants.home}") private val home: Path,
 ) {
     @GetMapping("/runs")
     fun list(model: Model): String {
@@ -43,11 +46,9 @@ class Runs(
 
     @GetMapping("/runs/{id}")
     fun run(@PathVariable id: String, model: Model): String {
-        model.addAttribute(
-            "run",
-            history.createHistoricProcessInstanceQuery().processInstanceId(id).singleResult()
-                ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No Run $id"),
-        )
+        val run = run(id)
+        model.addAttribute("run", run)
+        model.addAttribute("kept", keptWorkspace(run)?.toString())
         model.addAttribute(
             "variables",
             history.createHistoricVariableInstanceQuery().processInstanceId(id).disableCustomObjectDeserialization()
@@ -60,6 +61,19 @@ class Runs(
         )
         return "run"
     }
+
+    /** Dismiss: deletes the Run workspace an ended Run kept, such as a cancelled one's. */
+    @PostMapping("/runs/{id}/dismiss")
+    fun dismiss(@PathVariable id: String): String {
+        keptWorkspace(run(id))?.toFile()?.deleteRecursively()
+        return "redirect:/runs/$id"
+    }
+
+    private fun run(id: String) = history.createHistoricProcessInstanceQuery().processInstanceId(id).singleResult()
+        ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No Run $id")
+
+    private fun keptWorkspace(run: HistoricProcessInstance) =
+        home.resolve("runs").resolve(run.id).takeIf { run.state != HistoricProcessInstance.STATE_ACTIVE && it.exists() }
 
     private fun state(task: ExternalTask) = when {
         task.retries == 0 -> listOfNotNull(task.errorMessage, externalTasks.getExternalTaskErrorDetails(task.id)).joinToString(" ")

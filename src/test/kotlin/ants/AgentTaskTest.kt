@@ -7,6 +7,7 @@ import java.nio.file.Path
 import kotlin.io.path.createDirectories
 import kotlin.io.path.createFile
 import kotlin.io.path.deleteIfExists
+import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
 import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.readLines
@@ -331,7 +332,7 @@ class FakeClaude {
     /** The working directory of every launch, in launch order. */
     fun launchLog(): List<String> = dir.resolve("launches.log").let { if (Files.exists(it)) it.readLines() else emptyList() }
 
-    class Launch(dir: Path) {
+    class Launch(private val dir: Path) {
         val argv = dir.resolve("argv").readLines()
 
         /** The value after [flag] in argv, or null. */
@@ -339,6 +340,9 @@ class FakeClaude {
         val env = dir.resolve("env").readLines().associate { it.substringBefore('=') to it.substringAfter('=') }
         val cwd = dir.resolve("cwd").readText().trim()
         val stdin = dir.resolve("stdin").readText().trim()
+
+        /** Whether Ants killed the launch. */
+        val killed get() = dir.resolve("killed").exists()
     }
 }
 
