@@ -4,8 +4,9 @@
 # records its argv, environment, working directory and stdin's first line under ./launches/<skill>.<n> for the nth
 # launch of that Skill, appends its working directory to ./launches.log, and plays ./sessions/<skill>.<n>.jsonl, or
 # ./sessions/<skill>.jsonl when there is none. The Skill is picked by the hand-off line, or for `--resume` by the
-# session's first launch. A session line `wait <file>` waits until ./<file> exists, and `read` reads the next stdin
-# line into the launch's stdin record; every other line is printed, with $SESSION as the --session-id or --resume.
+# session's first launch. Like claude with --replay-user-messages, it echoes every stdin message with "isReplay":true.
+# A session line `wait <file>` waits until ./<file> exists, and `read` reads the next stdin line into the launch's stdin
+# record; every other line is printed, with $SESSION as the --session-id or --resume.
 dir=$(cd "$(dirname "$0")" && pwd)
 if [ "$1" = --help ]; then cat "$dir/help" 2>/dev/null; exit 0; fi
 if [ "$1 $2" = "auth status" ]; then cat "$CLAUDE_CONFIG_DIR/auth-status.json" 2>/dev/null || { echo '{"loggedIn":false,"authMethod":"none"}'; exit 1; }; exit 0; fi
@@ -23,12 +24,14 @@ env > "$launch/env"
 pwd > "$launch/cwd"
 printf '%s\n' "$prompt" > "$launch/stdin"
 pwd >> "$dir/launches.log"
+replay() { printf '%s\n' "${1%\}},\"isReplay\":true}"; }
+replay "$prompt"
 script=$dir/sessions/$skill.$n.jsonl
 [ -e "$script" ] || script=$dir/sessions/$skill.jsonl
 while IFS= read -r line <&3; do
     case $line in
         "wait "*) while [ ! -e "$dir/${line#wait }" ]; do sleep 0.05; done ;;
-        read) IFS= read -r message && printf '%s\n' "$message" >> "$launch/stdin" ;;
+        read) IFS= read -r message && printf '%s\n' "$message" >> "$launch/stdin" && replay "$message" ;;
         *) printf '%s\n' "${line//\$SESSION/$session}" ;;
     esac
 done 3< "$script"
