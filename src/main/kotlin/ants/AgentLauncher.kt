@@ -33,7 +33,7 @@ class AgentLauncher(
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val poller = Executors.newSingleThreadScheduledExecutor()
-    private val processes = ConcurrentHashMap.newKeySet<Process>()
+    private val clis = ConcurrentHashMap.newKeySet<Process>()
     private val live = AtomicInteger()
 
     /** How many Agent Tasks are running now. */
@@ -50,7 +50,7 @@ class AgentLauncher(
     @PreDestroy
     fun stop() {
         poller.shutdownNow()
-        processes.forEach(Process::destroy)
+        clis.forEach(Process::destroy)
     }
 
     private fun fetch() {
@@ -75,13 +75,14 @@ class AgentLauncher(
     }
 
     private fun launch(task: LockedExternalTask) {
-        val result = try {
-            session(task)
+        try {
+            externalTasks.complete(task.id, WORKER, mapOf(task.activityId to session(task)))
         } catch (e: Exception) {
+            if (poller.isShutdown) return // Ants is stopping: the Task stays locked, and the next start unlocks it
             log.warn("Agent Task ${task.activityId} failed", e)
-            return externalTasks.handleFailure(task.id, WORKER, e.message ?: e.toString(), 0, 0)
+            runCatching { externalTasks.handleFailure(task.id, WORKER, e.message ?: e.toString(), 0, 0) }
+                .onFailure { log.warn("Agent Task ${task.activityId} couldn't be marked failed", it) }
         }
-        externalTasks.complete(task.id, WORKER, mapOf(task.activityId to result))
     }
 
     /** Runs the Task's Skill in one CLI session and returns its Result. */
@@ -95,7 +96,7 @@ class AgentLauncher(
 
         val prompt = "Follow the Skill in ${skill.file} for the workspace at $workspace.\n\n" + json.writeValueAsString(task.variables.toSortedMap())
         val process = cli(agent.cli, workspace, flags(agent, skill)).start()
-        processes += process
+        clis += process
         try {
             val stdin = process.outputWriter()
             stdin.write(json.writeValueAsString(mapOf("type" to "user", "message" to mapOf("role" to "user", "content" to prompt))))
@@ -111,9 +112,11 @@ class AgentLauncher(
             }
             val exit = process.waitFor()
             check(exit == 0) { "${agent.cli} exited with code $exit" }
-            return result?.get("structured_output") ?: error("${agent.cli} ended without a Result")
+            val output = result?.get("structured_output") as? Map<*, *> ?: error("${agent.cli} ended without a Result")
+            check(output["outcome"] == "done") { "The Agent ended ${output["outcome"]}: ${output["summary"]}" }
+            return output
         } finally {
-            processes -= process
+            clis -= process
         }
     }
 
@@ -133,8 +136,8 @@ class AgentLauncher(
             "--tools", tools.map { it.substringBefore('(') }.distinct().joinToString(","),
             "--allowedTools", tools.joinToString(","),
             "--add-dir", skill.folder.toString(),
-        ) + listOfNotNull(agent.model?.let { "--model" }, agent.model) +
-            listOfNotNull(agent.instructions.ifEmpty { null }?.let { "--append-system-prompt" }, agent.instructions.ifEmpty { null })
+        ) + (if (agent.model != null) listOf("--model", agent.model) else emptyList()) +
+            (if (agent.instructions.isNotEmpty()) listOf("--append-system-prompt", agent.instructions) else emptyList())
     }
 
     /** The CLI's command prefix with [args], in [workspace], on the narrowed environment. */
@@ -152,6 +155,8 @@ class AgentLauncher(
         }
 
     /** `--bare` never reads Ants' login, so a `-p` that turns it on by default would fail every Task on auth. */
+    // ponytail: reads `--help` before every launch (~50 ms) and refuses when the `--bare` paragraph says "default";
+    // wording like "not the default" would refuse too. Check for a real opt-out flag once claude ships one.
     private fun refuseBareByDefault(cli: String, workspace: Path) {
         val help = cli(cli, workspace, listOf("--help")).redirectErrorStream(true).start().run { inputReader().readText().also { waitFor() } }
         val bare = Regex("""^ *--bare\b.*?(?=^ {0,4}-|\z)""", setOf(RegexOption.MULTILINE, RegexOption.DOT_MATCHES_ALL)).find(help)?.value.orEmpty()

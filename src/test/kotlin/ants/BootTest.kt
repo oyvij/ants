@@ -2,7 +2,6 @@ package ants
 
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
-import org.springframework.boot.builder.SpringApplicationBuilder
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.readText
@@ -52,11 +51,7 @@ class BindTest {
     @Test
     fun `a non-loopback bind is refused while the password is the default`() {
         val error = assertThrows<Exception> {
-            SpringApplicationBuilder(AntsApplication::class.java).run(
-                "--ants.home=${AntsTest.tempHome()}",
-                "--server.address=0.0.0.0",
-                "--server.port=0",
-            ).close()
+            AntsTest.bootAnother(AntsTest.tempHome(), "--server.address=0.0.0.0")
         }
         assertContains(generateSequence<Throwable>(error) { it.cause }.joinToString { it.message.orEmpty() }, "default password")
     }
@@ -69,9 +64,7 @@ class ShippedTest {
         val agents = home.resolve("shipped/agents").createDirectories()
         agents.resolve("shipped-writer.md").writeText("edited by hand")
         agents.resolve("removed.md").writeText("shipped by an older Ants")
-        // Its own engine name: closing it would otherwise take engine `default` from the other tests' Cockpit.
-        SpringApplicationBuilder(AntsApplication::class.java)
-            .run("--ants.home=$home", "--server.port=0", "--operaton.bpm.process-engine-name=shipped").close()
+        AntsTest.bootAnother(home)
         assertEquals(javaClass.getResource("/shipped/agents/shipped-writer.md")!!.readText(), agents.resolve("shipped-writer.md").readText())
         assertFalse(agents.resolve("removed.md").exists())
     }

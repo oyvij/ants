@@ -51,13 +51,20 @@ class Settings(
     fun agentTasks(): Int = (read()["agent-tasks"] as? Int) ?: 3
 
     /** The command prefix for [cli]. */
-    fun command(cli: String): List<String> = cli(cli)["command"]?.let { (it as List<*>).map(Any?::toString) } ?: listOf(cli)
+    fun command(cli: String): List<String> = strings(cli(cli)["command"]) ?: listOf(cli)
 
     /** The environment variables an Agent on [cli] may see. */
-    fun env(cli: String): List<String> = cli(cli)["env"]?.let { (it as List<*>).map(Any?::toString) }
+    fun env(cli: String): List<String> = strings(cli(cli)["env"])
         ?: listOf("PATH", "HOME", "USER", "LOGNAME", "SHELL", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE", "TERM")
 
     private fun cli(cli: String) = read()[cli] as? Map<*, *> ?: emptyMap<String, Any?>()
+
+    /** A YAML list, or a string read as space-separated words, so `command: claude` works too. */
+    private fun strings(value: Any?) = when (value) {
+        null -> null
+        is List<*> -> value.map(Any?::toString)
+        else -> value.toString().split(' ').filter(String::isNotEmpty)
+    }
 
     private fun read(): Map<String, Any?> = Yaml().load(file.readText()) ?: emptyMap()
 }

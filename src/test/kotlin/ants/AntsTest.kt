@@ -1,5 +1,6 @@
 package ants
 
+import org.springframework.boot.builder.SpringApplicationBuilder
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.test.context.SpringBootTest.WebEnvironment.RANDOM_PORT
 import org.springframework.boot.test.web.server.LocalServerPort
@@ -27,6 +28,18 @@ abstract class AntsTest {
 
         /** A temporary ANTS_HOME that doesn't exist yet. */
         fun tempHome(): Path = Files.createTempDirectory("ants-test").resolve("ants")
+
+        /**
+         * Boots and closes a second Ants on [home]. Operaton keeps engines and Cockpit's runtime JVM-wide, so it runs
+         * without the webapp and with an engine of its own, or closing it would break the shared Ants' Cockpit.
+         */
+        fun bootAnother(home: Path, vararg args: String) = SpringApplicationBuilder(AntsApplication::class.java).run(
+            "--ants.home=$home",
+            "--server.port=0",
+            "--operaton.bpm.process-engine-name=another",
+            "--spring.autoconfigure.exclude=org.operaton.bpm.spring.boot.starter.webapp.OperatonBpmWebappAutoConfiguration",
+            *args,
+        ).close()
 
         @JvmStatic
         @DynamicPropertySource

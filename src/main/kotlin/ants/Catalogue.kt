@@ -35,8 +35,12 @@ class Catalogue(@Value("\${ants.home}") home: Path) {
     private val skillFolders = listOf(home.resolve("skills"), shipped.resolve("skills"))
 
     init {
-        val bundled = PathMatchingResourcePatternResolver().getResources("classpath*:shipped/**").filter { it.isReadable }
-            .associate { it.url.toString().substringAfter("/shipped/") to it.contentAsByteArray }
+        val resources = PathMatchingResourcePatternResolver()
+        val roots = resources.getResources("classpath*:shipped/").map { it.url.toString() }
+        val bundled = resources.getResources("classpath*:shipped/**").filter { it.isReadable }.associate { resource ->
+            val url = resource.url.toString()
+            url.removePrefix(roots.first(url::startsWith)) to resource.contentAsByteArray
+        }
         val onDisk = if (shipped.exists()) shipped.walk().filter { it.isRegularFile() }.associate { it.relativeTo(shipped).toString() to it.readBytes() } else emptyMap()
         if (bundled.keys != onDisk.keys || bundled.any { (path, bytes) -> !bytes.contentEquals(onDisk[path]) }) {
             shipped.toFile().deleteRecursively()

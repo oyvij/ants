@@ -55,6 +55,17 @@ class AgentTaskTest : AntsTest() {
     }
 
     @Test
+    fun `only a done Result completes the Task`() {
+        settings()
+        agent("Write plainly.\n")
+        skill()
+        claude.session("draft", done.replace(""""outcome":"done"""", """"outcome":"stuck""""))
+        val run = start()
+        eventually { assertContains(page(run), "<dt>draft</dt><dd>Failed: ") }
+        assertContains(page(run), "State: Running")
+    }
+
+    @Test
     fun `the CLI gets Ants' headless flags, a narrowed environment and the hand-off prompt`() {
         settings()
         agent("---\nname: writer\ndescription: Writes.\ntools: Read, Grep, Skill, Bash(git log:*)\nmodel: sonnet\n---\nWrite plainly.\n")
