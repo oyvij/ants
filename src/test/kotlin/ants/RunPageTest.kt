@@ -123,7 +123,7 @@ class RunPageTest : AntsTest() {
     fun `So far rewrites a running Task's new Transcript lines with haiku, counts on the Task, and can be switched off`() {
         setUp("so-far: 1s\n")
         val looked = """{"type":"assistant","message":{"id":"m1","content":[{"type":"text","text":"Looked at the notes."}]}}"""
-        claude.session("draft", looked, "wait release", done)
+        claude.session("draft", looked, "wait release", done, "wait linger")
         claude.session(
             "so-far",
             """{"type":"result","subtype":"success","is_error":false,"result":"It read the notes.",""" +
@@ -138,6 +138,8 @@ class RunPageTest : AntsTest() {
         assertEquals("", rewrite.flag("--tools"))
         assertFalse("ANTHROPIC_API_KEY" in rewrite.env)
         claude.release("release")
+        Thread.sleep(2500) // with the session lingering after its Result, no second rewrite
+        claude.release("linger")
         eventually { assertContains(browser.get("/runs/$run").body, "State: Completed") }
         assertContains(browser.get("/runs/$run/tasks/draft/transcript").body, """<span id="tokens">42 tokens</span>""")
 
