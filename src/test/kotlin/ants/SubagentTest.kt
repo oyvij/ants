@@ -64,12 +64,21 @@ class SubagentTest : AntsTest() {
 
         val launch = launch()
         val offered = JsonMapper.shared().readValue(launch.flag("--agents"), Map::class.java)
-        assertEquals(mapOf("description" to "Searches notes.", "prompt" to "Search the notes.", "tools" to listOf("Read", "Grep", "Bash"), "model" to "haiku"), offered["searcher"])
+        assertEquals(mapOf("description" to "Searches notes.", "prompt" to "Search the notes.", "tools" to listOf("Read", "Grep", "Bash(git log *)"), "model" to "haiku"), offered["searcher"])
         assertEquals(mapOf("description" to "Reviews.", "prompt" to "Review."), offered["reviewer"])
         assertFalse("private" in offered)
         assertFalse("codex-helper" in offered)
         assertNull(launch.flag("--disallowedTools")) // the Agent tool without a Limit starts any type
         assertEquals("2", launch.env["CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH"])
+    }
+
+    @Test
+    fun `an Agent without the Agent tool, such as one with the default tools, gets no Subagent types`() {
+        agent("writer", "description: Writes.\n", "Write plainly.")
+        agent("searcher", "description: Searches.\nants-subagent: true\n")
+        val launch = launch()
+        assertNull(launch.flag("--agents"))
+        assertFalse("Agent" in launch.flag("--tools")!!.split(","))
     }
 
     @Test

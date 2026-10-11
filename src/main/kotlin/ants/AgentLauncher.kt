@@ -403,20 +403,24 @@ class AgentLauncher(
     }
 
     /**
-     * Every offered claude Agent as a Subagent type (`--agents`), and when the Agent tool among [tools] has a Limit,
-     * such as `Agent(searcher)`, every other type denied: claude lets the Agent tool start any type that isn't denied.
+     * When the Agent tool is among [tools], every offered claude Agent as a Subagent type (`--agents`), and when the
+     * Agent tool has a Limit, such as `Agent(searcher)`, every other type denied: claude lets the Agent tool start any
+     * type that isn't denied.
      */
     private fun subagents(tools: List<String>): List<String> {
+        val agentTool = tools.filter { it.substringBefore('(') in SUBAGENT_TOOLS }
+        if (agentTool.isEmpty()) return emptyList()
+        // Probed on claude 2.1.295 against a fake API: rules such as `Bash(git log *)` are accepted in `--agents`
+        // tools, but a Subagent's permissions are its Task's (`--allowedTools` under dontAsk), so they narrow nothing more.
         val offered = catalogue.agents().filter { it.subagent && it.cli == "claude" }.associate { agent ->
             agent.name to listOfNotNull(
                 "description" to agent.description,
                 "prompt" to agent.instructions,
-                agent.tools?.let { rules -> "tools" to rules.map { it.substringBefore('(') }.distinct().filter { it != "Skill" } },
+                agent.tools?.let { rules -> "tools" to rules.filter { it.substringBefore('(') != "Skill" } },
                 agent.model?.let { "model" to it },
             ).toMap()
         }
-        val agentTool = tools.filter { it.substringBefore('(') in SUBAGENT_TOOLS }
-        val allowed = agentTool.takeIf { rules -> rules.isNotEmpty() && rules.all { '(' in it } }
+        val allowed = agentTool.takeIf { rules -> rules.all { '(' in it } }
             ?.flatMap { it.substringAfter('(').removeSuffix(")").split(',').map(String::trim) }
         val denied = allowed?.let { (BUILT_IN_SUBAGENTS + offered.keys).filter { it !in allowed }.map { "Agent($it)" } }.orEmpty()
         return (if (offered.isEmpty()) emptyList() else listOf("--agents", json.writeValueAsString(offered))) +
@@ -489,7 +493,10 @@ class AgentLauncher(
         private const val STDERR_LINES = 20
         private const val LOST_LOGIN = "Ants' Claude login is missing or expired. Log in again (Settings)"
 
-        /** An Agent's tools when its file names none. claude 2.1.295 has no TodoWrite; its task-list tools are these four Task*. */
+        /**
+         * An Agent's tools when its file names none. claude 2.1.295 has no TodoWrite; its task-list tools are these four
+         * Task*. Not `Agent`: an Agent starts Subagents only when its file names the Agent tool, as the implementer's does.
+         */
         val DEFAULT_TOOLS = listOf(
             "Bash", "Edit", "Glob", "Grep", "NotebookEdit", "Read", "TaskCreate", "TaskGet", "TaskList", "TaskUpdate", "WebFetch", "WebSearch", "Write",
         )

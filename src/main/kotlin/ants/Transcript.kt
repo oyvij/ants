@@ -72,8 +72,8 @@ class Transcript {
         val tokens get() = modelUsage ?: usage.values.sum()
     }
 
-    /** A Subagent the session started, shown as a block of the entries it added, [entries]. */
-    private class Subagent(val entry: Int, val type: String, val description: String, val start: Instant) {
+    /** A Subagent the session, or the Subagent [parent], started, shown as a block of the entries it added, [entries]. */
+    private class Subagent(val entry: Int, val type: String, val description: String, val start: Instant, val parent: Subagent?) {
         val entries = mutableListOf<Int>()
         var end: Instant? = null
         var status = "running"
@@ -128,7 +128,8 @@ class Transcript {
         else -> if (id.endsWith("s")) summary(blocks.getValue(id.removePrefix("e").removeSuffix("s").toInt()))
         else id.removePrefix("e").toInt().let { entry ->
             blocks[entry]?.let { block ->
-                """<details class="subagent" id="$id"${if (running && block.end == null) " open" else ""}>${summary(block)}""" +
+                val inside = block.parent?.let { """ data-in="e${it.entry}"""" }.orEmpty()
+                """<details class="subagent" id="$id"$inside${if (running && block.end == null) " open" else ""}>${summary(block)}""" +
                     """<div>${block.entries.joinToString("") { html("e$it") }}</div></details>"""
             } ?: entries[entry]
         }
@@ -215,8 +216,8 @@ class Transcript {
             "tool_use" -> {
                 val name = block["name"].toString()
                 val input = block["input"] as? Map<*, *> ?: emptyMap<Any, Any>()
-                if (parent == null && name in AgentLauncher.SUBAGENT_TOOLS) {
-                    spawn(block["id"], input["subagent_type"]?.toString() ?: "general-purpose", input["description"]?.toString().orEmpty())
+                if (name in AgentLauncher.SUBAGENT_TOOLS) {
+                    spawn(block["id"], input["subagent_type"]?.toString() ?: "general-purpose", input["description"]?.toString().orEmpty(), parent)
                 } else {
                     val argument = input.values.firstOrNull { it is String }?.toString().orEmpty()
                     tools[block["id"]] = append(parent) {
@@ -256,12 +257,11 @@ class Transcript {
         }
     }
 
-    /** Opens a block for the Subagent the tool call [id] starts. */
-    private fun spawn(id: Any?, type: String, description: String): Subagent {
-        val entry = entries.size
-        val block = Subagent(entry, type, description, seen)
-        blocks[entry] = block
-        append { "" } // the block's HTML is composed from its entries
+    /** Opens a block for the Subagent the tool call [id] starts, inside [parent]'s block when a Subagent started it. */
+    private fun spawn(id: Any?, type: String, description: String, parent: Subagent? = null): Subagent {
+        val block = Subagent(entries.size, type, description, seen, parent)
+        blocks[block.entry] = block
+        append(parent) { "" } // the block's HTML is composed from its entries
         subagents[id] = block
         return block
     }
