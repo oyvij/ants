@@ -80,7 +80,7 @@ class Runs(
                 .orderByVariableName().asc().list()
                 .associate { it.name to ((it.typedValue as? ObjectValue)?.valueSerialized ?: "${it.value}") },
         )
-        model.addAttribute("transcripts", Transcript.all(home.resolve("runs").resolve(id)).mapValues { it.value.tokens })
+        model.addAttribute("transcripts", Transcript.all(home.runWorkspace(id)).mapValues { it.value.tokens })
         model.addAttribute(
             "agentTasks",
             externalTasks.createExternalTaskQuery().processInstanceId(id).topicName(AgentLauncher.TOPIC).list().associate { it.activityId to state(it) },
@@ -110,7 +110,7 @@ class Runs(
     fun drawer(@PathVariable id: String, @PathVariable task: String, csrf: CsrfToken): SseEmitter {
         val element = repository.getBpmnModelInstance(run(id).processDefinitionId).getModelElementById<FlowElement>(task)
             ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No Task $task")
-        val file = Transcript.file(home.resolve("runs").resolve(id), task)
+        val file = Transcript.file(home.runWorkspace(id), task)
         val transcript = Transcript()
         var offset = 0L
         csrf.token // loads the token while the request is still here
@@ -162,7 +162,7 @@ class Runs(
         ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No Run $id")
 
     /** The workspace of a cancelled Run, until it is dismissed. */
-    private fun keptWorkspace(run: HistoricProcessInstance) = home.resolve("runs").resolve(run.id).takeIf { workspace ->
+    private fun keptWorkspace(run: HistoricProcessInstance) = home.runWorkspace(run.id).takeIf { workspace ->
         run.state == HistoricProcessInstance.STATE_EXTERNALLY_TERMINATED && workspace.toFile().listFiles()?.any { it.name != "tasks" } == true
     }
 
@@ -175,6 +175,12 @@ class Runs(
 }
 
 private val json = JsonMapper.shared()
+
+/** The Run workspace of [run] in this ANTS_HOME: `runs/<run>/`. */
+fun Path.runWorkspace(run: String): Path = resolve("runs").resolve(run)
+
+/** Back to the Run page of [run] when the user acted from its Task drawer ([back] is `run`), else to [otherwise]. */
+fun back(back: String?, run: String, otherwise: String) = "redirect:" + if (back == "run") "/runs/$run" else otherwise
 
 /** Appends one entry to the Run log, `run-log.md` in the Run workspace [workspace]: [what] the user did on [task], and [text]. */
 fun runLog(workspace: Path, task: String, what: String, text: String) {
@@ -194,11 +200,9 @@ val HistoricProcessInstance.stateName
  * Task-id variable is `null`, so forward references read `null`, and `runs` counts each Task's runs.
  */
 @Component
-class RunLifecycle(@Value("\${ants.home}") home: Path) : AbstractProcessEnginePlugin() {
-    private val workspaces = home.resolve("runs")
-
+class RunLifecycle(@Value("\${ants.home}") private val home: Path) : AbstractProcessEnginePlugin() {
     private fun started(tasks: List<String>) = ExecutionListener { run ->
-        if (run.isTopRun) workspaces.resolve(run.processInstanceId).createDirectories()
+        if (run.isTopRun) home.runWorkspace(run.processInstanceId).createDirectories()
         for (task in tasks) run.setVariable(task, null)
         run.setVariable("runs", tasks.associateWith { 0 })
     }
@@ -214,7 +218,7 @@ class RunLifecycle(@Value("\${ants.home}") home: Path) : AbstractProcessEnginePl
     private val ended = ExecutionListener { run ->
         // A cancelled Run keeps its workspace, so no commits are lost.
         if (!run.isTopRun || run.isCanceled) return@ExecutionListener
-        val workspace = workspaces.resolve(run.processInstanceId).toFile()
+        val workspace = home.runWorkspace(run.processInstanceId).toFile()
         // Only once the end is committed: a rolled-back end leaves the Run alive and needing its workspace.
         Context.getCommandContext().transactionContext.addTransactionListener(TransactionState.COMMITTED) { cleanUp(workspace) }
     }

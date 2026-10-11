@@ -53,7 +53,11 @@ class AgentLauncher(
     /** Each live CLI process and the Run it works for. */
     private val clis = ConcurrentHashMap<Process, String>()
     private val live = AtomicInteger()
-    private val stdins = ConcurrentHashMap<String, Stdin>() // by `<run>/<task id>`
+    // ponytail: one live session per Task id in a Run; two live instances of one Task, as in a parallel multi-instance,
+    // need a key of their own, along with a Transcript of their own (both are by Task id).
+    private val stdins = ConcurrentHashMap<String, Stdin>() // by key(run, task id)
+
+    private fun key(run: String, task: String) = "$run/$task"
     private val usageFile = home.resolve("claude-usage.json")
 
     // ponytail: one pause gate per CLI, not per model, kept in memory; after a restart the held Tasks wait out
@@ -65,20 +69,20 @@ class AgentLauncher(
     val running get() = live.get()
 
     /** Whether [task] of [run] has a session that still takes messages. */
-    fun live(run: String, task: String) = stdins["$run/$task"]?.open == true
+    fun live(run: String, task: String) = stdins[key(run, task)]?.open == true
 
     /**
      * Writes [message] into the live session of [task] in [run], which reads it at its next tool boundary, and appends
      * it to the Run log. False when no session takes it any more, such as once Ants holds the Task's Result.
      */
     fun send(run: String, task: String, message: String): Boolean {
-        val stdin = stdins["$run/$task"]?.takeIf { it.say(message) } ?: return false
-        runLog(home.resolve("runs").resolve(run), stdin.task, "Send", message)
+        val stdin = stdins[key(run, task)]?.takeIf { it.say(message) } ?: return false
+        runLog(home.runWorkspace(run), stdin.task, "Send", message)
         return true
     }
 
     /** Interrupts the live session of [task] in [run], which leaves the Task `[stopped]`. False when there is none. */
-    fun stop(run: String, task: String) = stdins["$run/$task"]?.interrupt() == true
+    fun stop(run: String, task: String) = stdins[key(run, task)]?.interrupt() == true
 
     @EventListener(ApplicationReadyEvent::class)
     fun start() {
@@ -92,7 +96,7 @@ class AgentLauncher(
     }
 
     @PreDestroy
-    fun stop() {
+    fun shutdown() {
         poller.shutdownNow()
         clis.keys.forEach(Process::destroy)
     }
@@ -102,7 +106,7 @@ class AgentLauncher(
 
     private fun fetch() {
         try {
-            gates.filterValues { !it.isAfter(clock.instant()) }.keys.forEach(::tryNow)
+            gates.filterValues { !it.isAfter(clock.instant()) }.forEach { (cli, reset) -> tryNow(cli, reset) }
             val fetched = synchronized(live) { // the slots So far takes too
                 val free = settings.agentTasks() - live.get()
                 if (free <= 0) return
@@ -143,9 +147,12 @@ class AgentLauncher(
     /** When the Task with external task [id] resumes, if a pause holds it. */
     fun pausedUntil(id: String): Instant? = held[id]?.let(gates::get)
 
-    /** Opens [cli]'s gate and unlocks the Tasks it held, so they launch as slots free up. */
-    fun tryNow(cli: String) = synchronized(gates) {
-        gates.remove(cli)
+    /**
+     * Opens [cli]'s gate and unlocks the Tasks it held, so they launch as slots free up; with [reset], only if the
+     * gate still opens then, so a later reset a Task has just hit keeps it shut.
+     */
+    fun tryNow(cli: String, reset: Instant? = null) = synchronized(gates) {
+        if (reset == null) gates.remove(cli) else if (!gates.remove(cli, reset)) return@synchronized
         held.filterValues { it == cli }.keys.forEach { id ->
             held.remove(id)
             runCatching { externalTasks.unlock(id) } // gone if its Run ended meanwhile
@@ -177,7 +184,7 @@ class AgentLauncher(
             if (hold(task, agent.cli)) return // keeping its choice for the launch after the reset
             runtime.removeVariablesLocal(task.executionId, listOf(ACTION, INSTRUCTION, SESSION)) // the choice is used once
             val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult().rootProcessInstanceId
-            val workspace = home.resolve("runs").resolve(run)
+            val workspace = home.runWorkspace(run)
             val skill = catalogue.skill(task.extensionProperties["ants.skill"] ?: error("${task.activityId} names no ants.skill"))
             check(agent.cli == "claude") { "Agent ${agent.name} runs ${agent.cli}, and only claude runs for now" }
             val used = catalogue.uses(skill)
@@ -254,7 +261,7 @@ class AgentLauncher(
         }
         try {
             stdin.say(prompt)
-            stdins["$run/${task.activityId}"] = stdin // only now, so the prompt goes first
+            stdins[key(run, task.activityId)] = stdin // only now, so the prompt goes first
             var valid: Map<*, *>? = null
             var failure: Failed? = null
             var stopped = false
@@ -312,7 +319,7 @@ class AgentLauncher(
             return valid ?: throw Failed("${agent.cli} ended without a Result", tail)
         } finally {
             stdin.close()
-            stdins.remove("$run/${task.activityId}", stdin)
+            stdins.remove(key(run, task.activityId), stdin)
             clis -= process
         }
     }

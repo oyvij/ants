@@ -107,7 +107,7 @@ class Notifications(
             model.addAttribute("error", "Continue the session needs an instruction.")
             return entry(id, model)
         }
-        runLog(home.resolve("runs").resolve(entry.run), entry.task, name, instruction)
+        runLog(home.runWorkspace(entry.run), entry.task, name, instruction)
         if (action == CANCEL) {
             // A cancelled Run keeps its workspace; externally terminated is what its pages read as Cancelled.
             runtime.deleteProcessInstance(entry.run, "Cancelled by the user", false, true)
@@ -117,7 +117,7 @@ class Notifications(
         // The choice first: the worker can fetch the Task again the moment its retries are back.
         runtime.setVariablesLocal(incident.executionId, mapOf(AgentLauncher.ACTION to action, AgentLauncher.INSTRUCTION to instruction))
         externalTasks.setRetries(incident.configuration, 1)
-        return if (back == "run") "redirect:/runs/${entry.run}" else "redirect:/notifications/next?run=${entry.run}"
+        return back(back, entry.run, "/notifications/next?run=${entry.run}")
     }
 
     /** Next up: the Run's next entry, if one turns up within a few seconds; else the Notification list. */

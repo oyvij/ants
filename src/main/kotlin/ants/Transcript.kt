@@ -416,7 +416,7 @@ class Transcripts(@Value("\${ants.home}") home: Path, private val launcher: Agen
         val error = when {
             message.isBlank() -> "Write a message to send."
             !launcher.send(run, task, message) -> "Not sent: the Agent's session has ended, as Ants holds its Result or it is not running."
-            else -> return if (back == "run") "redirect:/runs/$run" else "redirect:/runs/$run/tasks/$task/transcript"
+            else -> return back(back, run, "/runs/$run/tasks/$task/transcript")
         }
         model.addAttribute("error", error)
         return page(run, task, model)
@@ -425,7 +425,7 @@ class Transcripts(@Value("\${ants.home}") home: Path, private val launcher: Agen
     /** Stop: interrupts the Task's live session, which puts it on the Notification list as `[stopped]`. */
     @PostMapping("/runs/{run}/tasks/{task}/transcript/stop")
     fun stop(@PathVariable run: String, @PathVariable task: String, @RequestParam(required = false) back: String?, model: Model): String {
-        if (launcher.stop(run, task)) return if (back == "run") "redirect:/runs/$run" else "redirect:/runs/$run/tasks/$task/transcript"
+        if (launcher.stop(run, task)) return back(back, run, "/runs/$run/tasks/$task/transcript")
         model.addAttribute("error", "Not stopped: the Agent's session has already ended.")
         return page(run, task, model)
     }

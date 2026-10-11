@@ -11,7 +11,7 @@ import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 
-class SkillsPageTest : AntsTest() {
+class SkillsTest : AntsTest() {
     private val browser by lazy { browser().also { it.login() } }
 
     /** A `SKILL.md` named [name]. */

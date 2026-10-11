@@ -31,7 +31,7 @@ data class SkillRow(val skill: Skill, val where: String, val hidden: Boolean)
  * Catalogue reads the files at every launch, so an edit reaches live Runs at their next one.
  */
 @Controller
-class SkillsPage(private val catalogue: Catalogue, private val usedBy: UsedBy) {
+class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy) {
     @GetMapping("/skills")
     fun list(model: Model) = list(model, null)
 
