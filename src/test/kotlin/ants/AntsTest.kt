@@ -77,6 +77,9 @@ abstract class AntsTest {
         fun antsHome(registry: DynamicPropertyRegistry) {
             registry.add("ants.home") { home.toString() }
             registry.add("ants.shell") { shell.toString() }
+            // Engine timers fire on the job executor, which otherwise looks for due ones every 5 s or more.
+            registry.add("operaton.bpm.job-execution.wait-time-in-millis") { 200 }
+            registry.add("operaton.bpm.job-execution.max-wait") { 500 }
         }
     }
 

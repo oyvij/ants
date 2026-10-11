@@ -158,28 +158,28 @@ class Processes(private val repository: RepositoryService, private val startForm
 
 private const val CAMUNDA = "http://camunda.org/schema/1.0/bpmn"
 private const val OPERATON = "http://operaton.org/schema/1.0/bpmn"
-private const val BPMN = "http://www.omg.org/spec/BPMN/20100524/MODEL"
-private const val BPMNDI = "http://www.omg.org/spec/BPMN/20100524/DI"
+internal const val BPMN = "http://www.omg.org/spec/BPMN/20100524/MODEL"
+internal const val BPMNDI = "http://www.omg.org/spec/BPMN/20100524/DI"
 
 /** Why a Process can't be deployed, in the XML parser's or the engine's words. */
 class Refused(message: String?) : Exception(message)
 
-private fun parse(bpmn: ByteArray): Document = DocumentBuilderFactory.newInstance().apply {
+internal fun parse(bpmn: ByteArray): Document = DocumentBuilderFactory.newInstance().apply {
     isNamespaceAware = true
     setFeature("http://apache.org/xml/features/disallow-doctype-decl", true) // no external entities from an upload
 }.newDocumentBuilder().parse(bpmn.inputStream())
 
-private fun serialize(document: Document) =
+internal fun serialize(document: Document) =
     StringWriter().also { TransformerFactory.newInstance().newTransformer().transform(DOMSource(document), StreamResult(it)) }.toString()
 
-private fun NodeList.elements() = List(length) { item(it) as Element }
+internal fun NodeList.elements() = List(length) { item(it) as Element }
 
 /** The Process a diagram defines; Ants draws one per file. */
-private fun process(document: Document) =
+internal fun process(document: Document) =
     document.getElementsByTagNameNS(BPMN, "process").elements().firstOrNull() ?: throw Refused("The file defines no Process.")
 
 /** Moves every element and attribute in Camunda's namespace to Operaton's. */
-private fun operatonOnly(document: Document) {
+internal fun operatonOnly(document: Document) {
     fun rewrite(element: Element) {
         for (attribute in List(element.attributes.length) { element.attributes.item(it) as Attr }) when {
             attribute.namespaceURI == XMLNS_ATTRIBUTE_NS_URI && attribute.value == CAMUNDA -> element.removeAttributeNode(attribute)

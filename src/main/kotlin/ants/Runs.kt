@@ -6,11 +6,13 @@ import org.operaton.bpm.engine.delegate.DelegateExecution
 import org.operaton.bpm.engine.delegate.ExecutionListener
 import org.operaton.bpm.engine.externaltask.ExternalTask
 import org.operaton.bpm.engine.history.HistoricProcessInstance
+import org.operaton.bpm.engine.impl.bpmn.behavior.MultiInstanceActivityBehavior
 import org.operaton.bpm.engine.impl.bpmn.parser.BpmnParseListener
 import org.operaton.bpm.engine.impl.cfg.AbstractProcessEnginePlugin
 import org.operaton.bpm.engine.impl.cfg.ProcessEngineConfigurationImpl
 import org.operaton.bpm.engine.impl.cfg.TransactionState
 import org.operaton.bpm.engine.impl.context.Context
+import org.operaton.bpm.engine.impl.persistence.entity.ExecutionEntity
 import org.operaton.bpm.engine.impl.persistence.entity.ProcessDefinitionEntity
 import org.operaton.bpm.engine.impl.pvm.process.ActivityImpl
 import org.operaton.bpm.engine.impl.pvm.process.ScopeImpl
@@ -78,6 +80,7 @@ class Runs(
             "variables",
             history.createHistoricVariableInstanceQuery().processInstanceId(id).disableCustomObjectDeserialization()
                 .orderByVariableName().asc().list()
+                .filter { it.executionId == id } // the Run's own, not an Agent Task's inputs or a multi-instance's own Results
                 .associate { it.name to ((it.typedValue as? ObjectValue)?.valueSerialized ?: "${it.value}") },
         )
         model.addAttribute("transcripts", Transcript.all(home.runWorkspace(id)).mapValues { it.value.tokens })
@@ -197,18 +200,20 @@ val HistoricProcessInstance.stateName
 
 /**
  * Gives each Run its Run workspace, `runs/<run>/` in ANTS_HOME, for as long as it lives. At Run start every
- * Task-id variable is `null`, so forward references read `null`, and `runs` counts each Task's runs.
+ * Task-id variable is `null`, so forward references read `null`, and `runs` counts each Task's runs. A multi-instance
+ * collects its instances' Results into one list ([collect]).
  */
 @Component
 class RunLifecycle(@Value("\${ants.home}") private val home: Path) : AbstractProcessEnginePlugin() {
-    private fun started(tasks: List<String>) = ExecutionListener { run ->
+    private fun started(tasks: List<String>, fannedOut: List<String>) = ExecutionListener { run ->
         if (run.isTopRun) home.runWorkspace(run.processInstanceId).createDirectories()
-        for (task in tasks) run.setVariable(task, null)
+        for (id in tasks + fannedOut) run.setVariable(id, null)
         run.setVariable("runs", tasks.associateWith { 0 })
     }
 
     // ponytail: parallel Tasks starting in separate transactions clash on `runs` (optimistic locking) and the losing
-    // transaction rolls back; whoever drives it (the worker, a User Task's form) must retry once Tasks run in parallel.
+    // transaction rolls back; whoever drives it must retry, as the worker does (AgentLauncher.complete), and so must a
+    // User Task's form once wave 4 completes one.
     private val counted = ExecutionListener { task ->
         @Suppress("UNCHECKED_CAST")
         val counts = task.getVariable("runs") as Map<String, Int>
@@ -223,13 +228,42 @@ class RunLifecycle(@Value("\${ants.home}") private val home: Path) : AbstractPro
         Context.getCommandContext().transactionContext.addTransactionListener(TransactionState.COMMITTED) { cleanUp(workspace) }
     }
 
+    /**
+     * Collects the Results of [body]'s instances into one list, in instance order, under the id of the activity it
+     * repeats. Each instance keeps the Results it makes as its own local variables, so `${id}` inside it reads its own;
+     * as it ends, they go into the list in the same transaction, so two instances ending at once clash (optimistic
+     * locking) instead of losing one. A Task (or call activity) gives its Result, a sub-process `{taskId: Result}`.
+     * Each instance reads its item as `${item}` unless the loop names its element variable. Returns the activity's id.
+     */
+    private fun collect(body: ActivityImpl): String {
+        val loop = body.activityBehavior as MultiInstanceActivityBehavior
+        if (loop.collectionElementVariable == null) loop.collectionElementVariable = "item"
+        val inner = body.activities.single()
+        val subProcess = inner.getProperty("type") == "subProcess"
+        val ids = if (subProcess) inner.tasks().map { it.id } else listOf(inner.id)
+        inner.addBuiltInListener(ExecutionListener.EVENTNAME_START, ExecutionListener { instance -> ids.forEach { instance.setVariableLocal(it, null) } })
+        inner.addBuiltInListener(ExecutionListener.EVENTNAME_END, ExecutionListener { instance ->
+            val result = if (subProcess) ids.associateWith { instance.getVariableLocal(it) } else instance.getVariableLocal(inner.id)
+            // The body's own execution holds the loop's counts; a non-scope Task in a sequential loop runs on it too.
+            val bodyExecution = generateSequence(instance as ExecutionEntity) { it.parent }.first { it.hasVariableLocal("nrOfInstances") }
+            // Until the last instance ends, the Results so far wait on the body by instance number: a list with gaps can't
+            // be stored, since the JSON serializer types a list by its first item.
+            val results = (bodyExecution.getVariableLocal(RESULTS) as? Map<*, *>).orEmpty() + ("${instance.getVariable("loopCounter")}" to result)
+            val count = bodyExecution.getVariableLocal("nrOfInstances") as Int
+            if (results.size < count) bodyExecution.setVariableLocal(RESULTS, results)
+            else bodyExecution.parent.setVariable(inner.id, (0 until count).map { results["$it"] })
+        })
+        return inner.id
+    }
+
     override fun preInit(configuration: ProcessEngineConfigurationImpl) {
         configuration.customPostBPMNParseListeners = (configuration.customPostBPMNParseListeners ?: mutableListOf()) +
             object : BpmnParseListener {
                 override fun parseProcess(element: Element, process: ProcessDefinitionEntity) {
                     val tasks = process.tasks()
                     tasks.forEach { it.addBuiltInListener(ExecutionListener.EVENTNAME_START, counted) }
-                    process.addBuiltInListener(ExecutionListener.EVENTNAME_START, started(tasks.map { it.id }))
+                    val fannedOut = process.multiInstanceBodies().map(::collect)
+                    process.addBuiltInListener(ExecutionListener.EVENTNAME_START, started(tasks.map { it.id }, fannedOut))
                     process.addBuiltInListener(ExecutionListener.EVENTNAME_END, ended)
                 }
             }
@@ -246,6 +280,14 @@ fun cleanUp(workspace: File) {
 private fun ScopeImpl.tasks(): List<ActivityImpl> = activities.flatMap { activity ->
     val type = activity.getProperty("type") as? String
     listOfNotNull(activity.takeIf { type == "task" || type?.endsWith("Task") == true }) + activity.tasks()
+}
+
+/** The Results a multi-instance's instances have given so far, on its body's execution. */
+private const val RESULTS = "ants.results"
+
+/** Every multi-instance body in this scope and the scopes inside it. */
+private fun ScopeImpl.multiInstanceBodies(): List<ActivityImpl> = activities.flatMap { activity ->
+    listOfNotNull(activity.takeIf { it.activityBehavior is MultiInstanceActivityBehavior }) + activity.multiInstanceBodies()
 }
 
 /** A called Process runs inside its caller's Run. */
