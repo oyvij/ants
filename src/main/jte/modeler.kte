@@ -1,3 +1,4 @@
+@import ants.modelerFacts
 @param name: String
 @param src: String
 @param action: String = "/processes/deploy"
@@ -41,7 +42,7 @@
 </header>
 <ul id="checks" aria-label="Checks"></ul>
 <main>
-    <div id="canvas" data-src="${src}"></div>
+    <div id="canvas" data-src="${src}" data-facts="${modelerFacts}"></div>
     <aside id="explain"></aside>
 </main>
 <script src="/vendor/camunda-bpmn-js/camunda-platform-modeler.production.min.js"></script>

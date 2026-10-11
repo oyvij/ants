@@ -1,6 +1,7 @@
 package ants
 
 import org.junit.jupiter.api.Test
+import tools.jackson.databind.json.JsonMapper
 import kotlin.io.path.createDirectories
 import kotlin.io.path.writeText
 import kotlin.test.assertContains
@@ -84,5 +85,15 @@ class ModelerTest : AntsTest() {
         val (_, diagram) = open("/processes/start-end/edit")
         assertContains(diagram, """id="start-end"""")
         assertContains(browser.get("/processes/start-end").body, """href="/processes/start-end/edit"""")
+    }
+
+    @Test
+    fun `the modeler gets the Built-in Tasks and field types from the server`() {
+        val (modeler, _) = open("/processes/new?name=Facts")
+        val facts = Regex("""data-facts="([^"]+)"""").find(modeler.body)!!.groupValues[1].replace("&#34;", "\"")
+        val read = JsonMapper.shared().readValue(facts, Map::class.java)
+        assertEquals(builtIns, read["builtIns"])
+        assertEquals(mapOf("text" to "Text", "markdown" to "Markdown", "repos" to "Repos"), read["fieldTypes"])
+        assertEquals(false, "Clone repos:" in browser.get("/modeler.js").body)
     }
 }
