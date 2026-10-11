@@ -209,3 +209,31 @@ document.getElementById("save").onclick = async () => {
     if (response.ok) location = response.url
     else document.getElementById("refusal").textContent = await response.text()
 }
+
+// The live Checks: everything Save and deploy would refuse, from the Checks it runs, and the warnings. Save and deploy
+// is disabled while any Check fails; clicking a Check selects its element, inside a collapsed sub-process too.
+const save = document.getElementById("save")
+const checks = document.getElementById("checks")
+
+function jump(id) {
+    const element = modeler.get("elementRegistry").get(id)
+    if (!element?.parent) return // the Process itself, or gone
+    const canvas = modeler.get("canvas")
+    canvas.setRootElement(canvas.findRoot(element))
+    canvas.scrollToElement(element)
+    modeler.get("selection").select(element)
+}
+
+async function check() {
+    const {xml} = await modeler.saveXML()
+    const found = await (await fetch("/processes/checks", {method: "POST", body: new URLSearchParams({_csrf: csrf, bpmn: xml})})).json()
+    save.disabled = found.some(item => !item.warning)
+    save.title = save.disabled ? "Fix the Checks first" : ""
+    checks.replaceChildren(...found.map(item => el("li", {className: item.warning ? "warning" : "error"}, item.element
+        ? el("a", {href: "#" + item.element, textContent: item.message, onclick: event => { event.preventDefault(); jump(item.element) }})
+        : item.message)))
+}
+
+let pending
+modeler.on("commandStack.changed", () => { clearTimeout(pending); pending = setTimeout(check, 300) })
+modeler.on("import.done", check)

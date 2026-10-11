@@ -12,7 +12,7 @@
 <body>
 @template.nav()
 <h1>Processes</h1>
-@if(error != null)<p role="alert">${error}</p>@endif
+@if(error != null)<p role="alert" style="white-space: pre-line">${error}</p>@endif
 <ul>
 @for(process in processes)
     <li><a href="/processes/${process.key}">${process.name ?: process.key}</a></li>

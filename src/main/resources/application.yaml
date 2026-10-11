@@ -33,3 +33,5 @@ operaton:
       password: admin
     webapp:
       index-redirect-enabled: false
+    # Every Process reaches the engine through Ants' deploy path, Checks included, never from the classpath.
+    auto-deployment-enabled: false

@@ -30,7 +30,7 @@ import javax.xml.transform.dom.DOMSource
 import javax.xml.transform.stream.StreamResult
 
 @Controller
-class Processes(private val repository: RepositoryService, private val runtime: RuntimeService) {
+class Processes(private val repository: RepositoryService, private val runtime: RuntimeService, private val checks: Checks) {
     @GetMapping("/processes")
     fun list(model: Model): String {
         model.addAttribute("processes", repository.createProcessDefinitionQuery().latestVersion().orderByProcessDefinitionName().asc().list())
@@ -57,16 +57,35 @@ class Processes(private val repository: RepositoryService, private val runtime: 
         ResponseEntity.badRequest().contentType(MediaType.TEXT_PLAIN).body(e.message)
     }
 
-    /** Ants' own deploy path: everything reaches Operaton through here, written with `operaton:` only. Gives the Process's key. */
+    /** The live Checks: what Save and deploy would refuse in [bpmn], and the warnings. */
+    @PostMapping("/processes/checks")
+    @ResponseBody
+    fun checks(@RequestParam bpmn: String): List<Check> = try {
+        checks.of(operatonOnly(bpmn.toByteArray()))
+    } catch (e: Refused) {
+        listOf(Check(null, e.message ?: "The file can't be read."))
+    }
+
+    /**
+     * Ants' own deploy path: everything reaches Operaton through here, written with `operaton:` only, and only when no
+     * Check fails. Gives the Process's key.
+     */
     private fun deploy(bpmn: ByteArray, name: String? = null): String = try {
-        val document = parse(bpmn).also(::operatonOnly)
-        val key = process(document).getAttribute("id")
+        val xml = operatonOnly(bpmn)
+        val failed = checks.of(xml).filterNot { it.warning }
+        if (failed.isNotEmpty()) throw Refused(failed.joinToString("\n") { it.message })
+        val key = process(parse(xml.toByteArray())).getAttribute("id")
         val resource = name ?: "$key.bpmn"
-        repository.createDeployment().name(resource).enableDuplicateFiltering(true).addString(resource, serialize(document)).deploy()
+        repository.createDeployment().name(resource).enableDuplicateFiltering(true).addString(resource, xml).deploy()
         key
-    } catch (e: SAXException) {
-        throw Refused(e.message)
     } catch (e: ProcessEngineException) {
+        throw Refused(e.message)
+    }
+
+    /** [bpmn] as Ants reads and deploys it, with `operaton:` only. */
+    private fun operatonOnly(bpmn: ByteArray): String = try {
+        serialize(parse(bpmn).also(::operatonOnly))
+    } catch (e: SAXException) {
         throw Refused(e.message)
     }
 

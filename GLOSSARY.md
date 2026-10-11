@@ -29,6 +29,11 @@ _Avoid_: human task, manual step
 A Task Ants carries out itself, with no Agent and no user, such as cloning repos.
 _Avoid_: system task, service task, Ants task
 
+**Check**:
+One thing **Save and deploy** refuses in a Process, such as an element Ants doesn't run, naming the
+element; a warning is a Check that doesn't refuse.
+_Avoid_: lint, validation error, rule
+
 **Agent**:
 A reusable definition of who does a Task: which AI CLI it runs, which tools it may use and its
 standing instructions.

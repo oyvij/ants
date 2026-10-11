@@ -16,6 +16,10 @@
         /* bpmn-js draws black on the page's background, so the canvas stays light in dark mode. */
         #canvas { flex: 1; background: white; color-scheme: light; }
         #explain { width: 20rem; overflow: auto; padding: 0 1rem; border-left: 1px solid #888; }
+        #refusal { white-space: pre-line; }
+        #checks { max-height: 8rem; overflow: auto; margin: 0; }
+        #checks .error::marker { content: "✖ "; color: crimson; }
+        #checks .warning::marker { content: "⚠ "; color: darkorange; }
     </style>
 </head>
 <body>
@@ -26,6 +30,7 @@
     <p id="refusal" role="alert"></p>
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
 </header>
+<ul id="checks" aria-label="Checks"></ul>
 <main>
     <div id="canvas" data-src="${src}"></div>
     <aside id="explain"></aside>
