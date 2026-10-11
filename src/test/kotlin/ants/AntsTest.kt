@@ -57,14 +57,17 @@ abstract class AntsTest {
          * Boots and closes a second Ants on [home]. Operaton keeps engines and Cockpit's runtime JVM-wide, so it runs
          * without the webapp and with an engine of its own, or closing it would break the shared Ants' Cockpit.
          */
-        fun bootAnother(home: Path, vararg args: String) = SpringApplicationBuilder(AntsApplication::class.java).run(
+        fun bootAnother(home: Path, vararg args: String) = startAnother(home, *args).close()
+
+        /** Starts a second Ants on [home], as [bootAnother] does, and leaves it running. */
+        fun startAnother(home: Path, vararg args: String) = SpringApplicationBuilder(AntsApplication::class.java).run(
             "--ants.home=$home",
             "--ants.shell=$shell",
             "--server.port=0",
             "--operaton.bpm.process-engine-name=another",
             "--spring.autoconfigure.exclude=org.operaton.bpm.spring.boot.starter.webapp.OperatonBpmWebappAutoConfiguration",
             *args,
-        ).close()
+        )
 
         /** Ants' clock, shared like [home]: a test that moves it puts it back. */
         val clock = MovableClock()

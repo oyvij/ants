@@ -23,8 +23,6 @@ import org.springframework.security.web.csrf.CsrfToken
 import org.operaton.bpm.engine.RepositoryService
 import org.operaton.bpm.engine.RuntimeService
 import org.springframework.beans.factory.annotation.Value
-import org.springframework.context.event.ContextClosedEvent
-import org.springframework.context.event.EventListener
 import org.springframework.http.MediaType.TEXT_EVENT_STREAM_VALUE
 import org.springframework.web.bind.annotation.ResponseBody
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
@@ -62,6 +60,7 @@ class Runs(
     private val settings: Settings,
     private val clock: Clock,
     private val templates: TemplateEngine,
+    private val streams: Streams,
     @Value("\${ants.home}") private val home: Path,
 ) {
     @GetMapping("/runs")
@@ -99,7 +98,7 @@ class Runs(
     @ResponseBody
     fun live(@PathVariable id: String): SseEmitter {
         run(id)
-        return stream { json.writeValueAsString(mapOf("state" to run(id).stateName, "elements" to shown(id))) }
+        return streams.changes { json.writeValueAsString(mapOf("state" to run(id).stateName, "elements" to shown(id))) }
     }
 
     /**
@@ -115,7 +114,7 @@ class Runs(
         val transcript = Transcript()
         var offset = 0L
         csrf.token // loads the token while the request is still here
-        return stream {
+        return streams.changes {
             val (lines, end) = Transcript.read(file, offset)
             offset = end
             lines.forEach(transcript::add)
@@ -124,8 +123,7 @@ class Runs(
                 "run" to id, "task" to task, "name" to (element.name ?: task), "shown" to shown(id)[task], "transcript" to transcript,
                 "entry" to entry, "details" to entry?.let(notifications::details), "live" to launcher.live(id, task), "_csrf" to csrf,
             )
-            // One data line: a newline as a character reference still reads as one, in a <pre> too.
-            StringOutput().also { templates.render("drawer.kte", model, it) }.toString().replace("\n", "&#10;")
+            StringOutput().also { templates.render("drawer.kte", model, it) }.toString()
         }
     }
 
@@ -151,33 +149,6 @@ class Runs(
                 else -> Shown("running", null, round)
             }
         }
-    }
-
-    /** Sends what [render] gives on connect and whenever it changes, one data line each. */
-    // ponytail: polls every second per open stream, like Home; the stream ends after a minute and EventSource reconnects.
-    private fun stream(render: () -> String): SseEmitter = SseEmitter(60_000).also { emitter ->
-        Thread.ofVirtual().start {
-            var last = ""
-            try {
-                while (!closing) {
-                    val data = render()
-                    if (data != last) emitter.send(data).also { last = data }
-                    Thread.sleep(1000)
-                }
-                emitter.complete()
-            } catch (_: Exception) {
-                // the page went away or the stream timed out
-            }
-        }
-    }
-
-    @Volatile
-    private var closing = false
-
-    /** Ends the open streams, or a graceful shutdown would wait for them. */
-    @EventListener(ContextClosedEvent::class)
-    fun close() {
-        closing = true
     }
 
     /** Dismiss: cleans up the Run workspace a cancelled Run kept, as if the Run had ended. */

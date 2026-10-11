@@ -24,7 +24,6 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
@@ -392,7 +391,7 @@ fun tokens(count: Long) = String.format(Locale.ROOT, "%,d tokens", count)
 
 /** The Transcript page, which replays the file and then follows it over SSE, with Send and Stop while the Task runs. */
 @Controller
-class Transcripts(@Value("\${ants.home}") home: Path, private val launcher: AgentLauncher) {
+class Transcripts(@Value("\${ants.home}") home: Path, private val launcher: AgentLauncher, private val streams: Streams) {
     private val runs = home.resolve("runs")
 
     @GetMapping("/runs/{run}/tasks/{task}/transcript")
@@ -435,29 +434,13 @@ class Transcripts(@Value("\${ants.home}") home: Path, private val launcher: Agen
     @GetMapping("/runs/{run}/tasks/{task}/transcript/events")
     fun events(@PathVariable run: String, @PathVariable task: String, @RequestParam from: Long): SseEmitter {
         val file = file(run, task)
-        val emitter = SseEmitter(0L)
-        val open = AtomicBoolean(true)
-        emitter.onCompletion { open.set(false) }
-        emitter.onError { open.set(false) }
-        Thread.ofVirtual().start {
-            try {
-                val transcript = Transcript()
-                var offset = Transcript.read(file, 0, from).let { (lines, end) -> lines.forEach(transcript::add); end }
-                var quiet = 0
-                // ponytail: each open page polls its file every 250 ms; an in-process notification once pages are many
-                while (open.get()) {
-                    val (lines, end) = Transcript.read(file, offset)
-                    offset = end
-                    val changed = lines.flatMapTo(linkedSetOf()) { transcript.add(it) }
-                    for (id in changed) emitter.send(SseEmitter.event().name("entry").data(transcript.html(id)))
-                    if (changed.isEmpty() && ++quiet % 40 == 0) emitter.send(SseEmitter.event().comment("")) // finds a closed page
-                    Thread.sleep(250)
-                }
-            } catch (_: Exception) {
-                emitter.complete() // the page went away
-            }
+        val transcript = Transcript()
+        var offset = Transcript.read(file, 0, from).let { (lines, end) -> lines.forEach(transcript::add); end }
+        return streams.poll(Duration.ofMillis(250), "entry") {
+            val (lines, end) = Transcript.read(file, offset)
+            offset = end
+            lines.flatMapTo(linkedSetOf()) { transcript.add(it) }.map(transcript::html)
         }
-        return emitter
     }
 
     private fun file(run: String, task: String) = Transcript.file(runs.resolve(run), task).normalize()

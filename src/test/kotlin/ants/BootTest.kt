@@ -2,6 +2,9 @@ package ants
 
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import org.springframework.boot.web.server.context.WebServerApplicationContext
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.measureTime
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.readText
@@ -62,6 +65,18 @@ class BindTest {
             AntsTest.bootAnother(AntsTest.tempHome(), "--server.address=0.0.0.0")
         }
         assertContains(generateSequence<Throwable>(error) { it.cause }.joinToString { it.message.orEmpty() }, "default password")
+    }
+}
+
+class ShutdownTest {
+    @Test
+    fun `an open Transcript stream doesn't hold up shutdown`() {
+        val ants = AntsTest.startAnother(AntsTest.tempHome())
+        val browser = Browser("http://127.0.0.1:${(ants as WebServerApplicationContext).webServer!!.port}").also { it.login() }
+        browser.events("/runs/r/tasks/t/transcript/events?from=0")
+        Thread.sleep(1000)
+        val took = measureTime { ants.close() }
+        assertTrue(took < 10.seconds, "shutdown took $took")
     }
 }
 
