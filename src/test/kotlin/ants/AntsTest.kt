@@ -41,9 +41,12 @@ abstract class AntsTest {
         /** What only a login shell finds: Ants' login shell is a fake that puts this folder on PATH only with `-l`. */
         val loginBin: Path = Files.createDirectories(Files.createTempDirectory("fake-shell").resolve("bin"))
 
-        /** The fake login shell. Only `-l` reads the "profile", the way only a login shell reads the user's. */
+        /**
+         * The fake login shell. Only `-l` reads the "profile", the way only a login shell reads the user's, and puts
+         * [loginBin] before the system folders alone, so Detect never finds a real claude or nono.
+         */
         val shell: Path = loginBin.resolveSibling("sh").also {
-            Files.writeString(it, "#!/bin/sh\n[ \"$1\" = -l ] && PATH=\"$loginBin:\$PATH\" && shift\n[ \"$1\" = -c ] && exec /bin/sh -c \"$2\"\n")
+            Files.writeString(it, "#!/bin/sh\n[ \"$1\" = -l ] && PATH=\"$loginBin:/usr/bin:/bin\" && shift\n[ \"$1\" = -c ] && exec /bin/sh -c \"$2\"\n")
             it.toFile().setExecutable(true)
         }
 

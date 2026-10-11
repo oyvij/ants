@@ -25,6 +25,14 @@ class BootTest : AntsTest() {
     }
 
     @Test
+    fun `tests never reach a real claude or nono, by its bare name or through the login shell`() {
+        for (shell in listOf(listOf("/bin/sh", "-c"), listOf("$shell", "-l", "-c"))) {
+            val found = ProcessBuilder(shell + "command -v claude nono").start().inputReader().readLines()
+            assertEquals(emptyList(), found.filter { !it.startsWith("$loginBin") }, "found by $shell")
+        }
+    }
+
+    @Test
     fun `admin admin logs in and sees Home`() {
         val home = browser().login()
         assertEquals(200, home.status)

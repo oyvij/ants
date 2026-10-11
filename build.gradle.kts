@@ -79,6 +79,8 @@ tasks.withType<Test> {
 
 tasks.test {
     useJUnitPlatform { excludeTags("live") }
+    // Only the system folders, so a CLI run by its bare name, such as claude or nono, is never the real one.
+    environment("PATH", "/usr/bin:/bin")
     // Ants must strip these from every Agent's environment, even when the allow-list names them.
     environment("ANTHROPIC_API_KEY", "sk-ant-test")
     environment("CLAUDE_CODE_RETRY_WATCHDOG", "1")
