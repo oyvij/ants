@@ -1,0 +1,59 @@
+@param entry: ants.TaskEntry
+@param round: Int
+@param questions: List<ants.Question>
+@param error: String? = null
+@param _csrf: org.springframework.security.web.csrf.CsrfToken
+@param colorScheme: String = "light dark"
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="color-scheme" content="${colorScheme}">
+    <title>${entry.icon} ${entry.tag} ${entry.task} · Ants</title>
+    <style>
+        /* Fixed, so the buttons stay put from question to question; a button is made invisible, never removed. */
+        form { padding-bottom: 4em; }
+        footer { position: fixed; bottom: 0; left: 0; right: 0; padding: .75em 1em; background: Canvas; border-top: 1px solid GrayText; display: flex; gap: .5em; }
+        footer #next { margin-left: auto; }
+        #tabs [aria-selected=true] { font-weight: bold; }
+        textarea { width: 100%; min-height: 5em; }
+    </style>
+    <script src="/answer.js" defer></script>
+</head>
+<body>
+@template.nav()
+<p><a href="/notifications">Notification list</a></p>
+<p>${entry.icon} ${entry.tag} ${entry.task} · Round ${round} · ${entry.process} · <a href="/runs/${entry.run}">Run ${entry.run}</a> · waiting ${entry.waited}</p>
+<h1>${entry.summary.ifEmpty { entry.task }}</h1>
+<nav id="tabs" role="tablist" hidden></nav>
+@if(error != null)<p role="alert">${error}</p>@endif
+<form method="post" action="/notifications/${entry.id}/answers" id="round">
+    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+    @for((i, q) in questions.withIndex())
+    <section class="question" data-title="${q.title}" data-recommendation="${q.recommendation}">
+        <p>Question ${i + 1} of ${questions.size}</p>
+        <h2>${q.title}</h2>
+        <h3>Question</h3>
+        <p>${q.ask}</p>
+        <h3>What it settles</h3>
+        <p>${q.context}</p>
+        <h3>Recommended</h3>
+        <p>${q.recommendation}</p>
+        <p>${q.why}</p>
+        <h3><label for="answer-${q.id}">Your answer</label></h3>
+        <textarea id="answer-${q.id}" name="answer.${q.id}" required>${q.answer}</textarea>
+    </section>
+    @endfor
+    <section id="review" hidden>
+        <h2>Review the Round</h2>
+        <div id="review-list"></div>
+        <p>Click a question to change it.</p>
+    </section>
+    <footer>
+        <button type="button" id="back" hidden>Back</button>
+        <button type="button" id="reset" hidden>Reset to the recommendation</button>
+        <button id="next">Send the Round</button>
+    </footer>
+</form>
+</body>
+</html>
