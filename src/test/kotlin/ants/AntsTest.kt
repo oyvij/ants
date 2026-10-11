@@ -3,7 +3,11 @@ package ants
 import org.springframework.boot.builder.SpringApplicationBuilder
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.test.context.SpringBootTest.WebEnvironment.RANDOM_PORT
+import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.boot.test.web.server.LocalServerPort
+import org.springframework.context.annotation.Bean
+import org.springframework.context.annotation.Import
+import org.springframework.context.annotation.Primary
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
 import java.net.CookieManager
@@ -14,9 +18,14 @@ import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.Clock
+import java.time.Duration
+import java.time.Instant
+import java.time.ZoneId
 
 /** Boots Ants on a random port with a temporary ANTS_HOME (and so a temporary H2), driven over HTTP. */
 @SpringBootTest(webEnvironment = RANDOM_PORT)
+@Import(AntsTest.Time::class)
 abstract class AntsTest {
     @LocalServerPort
     var port = 0
@@ -42,10 +51,27 @@ abstract class AntsTest {
             *args,
         ).close()
 
+        /** Ants' clock, shared like [home]: a test that moves it puts it back. */
+        val clock = MovableClock()
+
         @JvmStatic
         @DynamicPropertySource
         fun antsHome(registry: DynamicPropertyRegistry) = registry.add("ants.home") { home.toString() }
     }
+
+    @TestConfiguration
+    class Time {
+        @Bean
+        @Primary
+        fun movableClock(): Clock = clock
+    }
+}
+
+/** The system clock, moved forward by [offset], so tests reach a time without waiting for it. */
+class MovableClock(@Volatile var offset: Duration = Duration.ZERO) : Clock() {
+    override fun instant(): Instant = Instant.now() + offset
+    override fun getZone(): ZoneId = ZoneId.systemDefault()
+    override fun withZone(zone: ZoneId) = throw UnsupportedOperationException()
 }
 
 /** A user with a browser: keeps cookies, follows redirects and posts forms with their CSRF token. */

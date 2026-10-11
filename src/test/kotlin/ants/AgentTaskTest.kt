@@ -1,9 +1,13 @@
 package ants
 
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import tools.jackson.databind.json.JsonMapper
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.Duration
+import java.time.Instant
+import java.time.format.DateTimeFormatter
 import kotlin.io.path.createDirectories
 import kotlin.io.path.createFile
 import kotlin.io.path.deleteIfExists
@@ -253,6 +257,97 @@ class AgentTaskTest : AntsTest() {
         assertFalse("--model" in argv)
         assertEquals(emptyMap<String, Any>(), (claude.launches("draft").single().schema()["properties"] as Map<*, *>)["output"])
     }
+
+    @AfterEach
+    fun putTheClockBack() {
+        clock.offset = Duration.ZERO
+    }
+
+    /** A Usage limit rejection, as claude reports it, resetting at [resetsAt]. */
+    private fun rejected(resetsAt: Instant) = """{"type":"rate_limit_event","rate_limit_info":{"status":"rejected",""" +
+        """"resetsAt":${resetsAt.epochSecond},"rateLimitType":"five_hour","isUsingOverage":false},"session_id":"${'$'}SESSION"}"""
+
+    private fun hhmm(instant: Instant) = DateTimeFormatter.ofPattern("HH:mm").withZone(clock.zone).format(instant)
+
+    @Test
+    fun `a rejection pauses the Task until resetsAt plus one minute, then resumes the same session with the reset message`() {
+        settings()
+        agent("Write plainly.\n")
+        skill()
+        val resetsAt = clock.instant().plus(Duration.ofHours(1))
+        claude.session("draft.1", rejected(resetsAt), "wait never") // claude carries on; Ants kills it
+        claude.session("draft", done)
+        val run = start()
+        val until = hhmm(Instant.ofEpochSecond(resetsAt.epochSecond).plusSeconds(60))
+        eventually { assertContains(page(run), "<dt>draft</dt><dd>Paused until $until</dd>") }
+        assertContains(browser.get("/").body, "claude paused until $until")
+
+        clock.offset = Duration.ofHours(1) // past resetsAt, not yet the minute after
+        Thread.sleep(600)
+        assertEquals(1, claude.launches("draft").size)
+        clock.offset = Duration.ofMinutes(62)
+        eventually { assertContains(page(run), "State: Completed") }
+
+        val (first, resumed) = claude.launches("draft")
+        assertEquals(first.argv[first.argv.indexOf("--session-id") + 1], resumed.argv[resumed.argv.indexOf("--resume") + 1])
+        assertFalse("--session-id" in resumed.argv)
+        assertEquals("""{"type":"user","message":{"role":"user","content":"The usage limit has reset. Carry on where you stopped."}}""", resumed.stdin)
+        assertFalse("paused" in browser.get("/").body)
+    }
+
+    @Test
+    fun `while claude is paused other ready Tasks don't launch, and Try now opens the gate and launches them`() {
+        settings()
+        agent("Write plainly.\n")
+        skill()
+        val resetsAt = clock.instant().plus(Duration.ofHours(1))
+        claude.session("draft.1", rejected(resetsAt), "wait never")
+        claude.session("draft", done)
+        val first = start()
+        val paused = "<dt>draft</dt><dd>Paused until ${hhmm(Instant.ofEpochSecond(resetsAt.epochSecond).plusSeconds(60))}</dd>"
+        eventually { assertContains(page(first), paused) }
+        val second = start()
+        eventually { assertContains(page(second), paused) }
+        assertEquals(1, claude.launches("draft").size)
+
+        val home = browser.get("/").body
+        assertContains(home, "Try now")
+        browser.post("/pauses/claude", emptyMap())
+        for (run in listOf(first, second)) eventually { assertContains(page(run), "State: Completed") }
+        val (_, resumed, fresh) = claude.launches("draft")
+        assertContains(resumed.argv, "--resume")
+        assertContains(fresh.argv, "--session-id")
+        assertFalse("Try now" in browser.get("/").body)
+    }
+
+    /** Plays [limit] as the first launch and checks that claude pauses for 30 minutes and resumes after. */
+    private fun pausesFor30Minutes(vararg limit: String) {
+        settings()
+        agent("Write plainly.\n")
+        skill()
+        claude.session("draft.1", *limit, "wait never")
+        claude.session("draft", done)
+        val before = clock.instant()
+        val run = start()
+        eventually { assertContains(page(run), "<dt>draft</dt><dd>Paused until ") }
+        val after = clock.instant()
+        assertContains(setOf(hhmm(before.plusSeconds(31 * 60)), hhmm(after.plusSeconds(31 * 60))), page(run).substringAfter("Paused until ").take(5))
+        clock.offset = Duration.ofMinutes(32)
+        eventually { assertContains(page(run), "State: Completed") }
+        assertContains(claude.launches("draft").last().argv, "--resume")
+    }
+
+    @Test
+    fun `a 429 with no rejection pauses claude for 30 minutes`() = pausesFor30Minutes(
+        """{"type":"result","subtype":"success","is_error":true,"api_error_status":429,"result":"API Error: Request rejected (429)","session_id":"${'$'}SESSION"}""",
+    )
+
+    @Test
+    fun `a Subagent retrying on the rate limit pauses claude for 30 minutes`() = pausesFor30Minutes(
+        """{"type":"tool_progress","tool_use_id":"agent_msg_1","tool_name":"Agent","parent_tool_use_id":"toolu_1","elapsed_time_seconds":0,""" +
+            """"session_id":"${'$'}SESSION","subagent_type":"general-purpose","subagent_retry":{"agent_id":"a1","attempt":1,"max_retries":10,""" +
+            """"retry_delay_ms":1000,"error_status":429,"error_category":"rate_limit"}}""",
+    )
 }
 
 /** The fake `claude`, copied into a folder of its own, where tests write its sessions and read what it recorded. */
@@ -272,8 +367,12 @@ class FakeClaude {
 
     fun help(text: String) = dir.resolve("help").writeText(text)
 
-    fun launches(skill: String): List<Launch> =
-        if (dir.resolve("launches").isDirectory()) dir.resolve("launches").listDirectoryEntries("$skill.*").map(::Launch) else emptyList()
+    /** The Skill's launches, in launch order. */
+    fun launches(skill: String): List<Launch> = if (dir.resolve("launches").isDirectory()) {
+        dir.resolve("launches").listDirectoryEntries("$skill.*").sortedBy { it.fileName.toString().split('.')[1].toInt() }.map(::Launch)
+    } else {
+        emptyList()
+    }
 
     /** The working directory of every launch, in launch order. */
     fun launchLog(): List<String> = dir.resolve("launches.log").let { if (Files.exists(it)) it.readLines() else emptyList() }

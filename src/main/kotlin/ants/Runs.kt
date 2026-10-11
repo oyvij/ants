@@ -25,6 +25,8 @@ import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.server.ResponseStatusException
 import java.nio.file.Path
+import java.time.Clock
+import java.time.Instant
 import java.util.Date
 import kotlin.io.path.createDirectories
 
@@ -34,6 +36,7 @@ class Runs(
     private val externalTasks: ExternalTaskService,
     private val launcher: AgentLauncher,
     private val settings: Settings,
+    private val clock: Clock,
 ) {
     @GetMapping("/runs")
     fun list(model: Model): String {
@@ -61,8 +64,9 @@ class Runs(
         return "run"
     }
 
-    private fun state(task: ExternalTask) = when {
+    private fun state(task: ExternalTask, paused: Instant? = launcher.pausedUntil(task.id)) = when {
         task.retries == 0 -> listOfNotNull(task.errorMessage, externalTasks.getExternalTaskErrorDetails(task.id)).joinToString(" ")
+        paused != null -> "Paused until ${clock.local(paused)}"
         task.lockExpirationTime?.after(Date()) == true -> "Running"
         else -> "Queued: ${launcher.running} of ${settings.agentTasks()} Agent Tasks running"
     }

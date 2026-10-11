@@ -1,3 +1,5 @@
+@param pauses: Map<String, String>
+@param _csrf: org.springframework.security.web.csrf.CsrfToken
 <!doctype html>
 <html lang="en">
 <head>
@@ -6,6 +8,13 @@
 </head>
 <body>
 <h1>Home</h1>
-<nav><a href="/processes">Processes</a> · <a href="/runs">Runs</a></nav>
+<nav><a href="/processes">Processes</a> · <a href="/runs">Runs</a>
+@for((cli, until) in pauses)
+    <form method="post" action="/pauses/${cli}" style="display: inline">
+        <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+        · ${cli} paused until ${until} <button>Try now</button>
+    </form>
+@endfor
+</nav>
 </body>
 </html>
