@@ -247,6 +247,22 @@ class BrowserTest : AntsTest() {
         assertThat(page.locator("#comments")).containsText("SUGGESTION repos/api/hello.txt:1-2 (new): Say hello.")
     }
 
+    @Test
+    fun `ticking Items are Tickets on a multi-instance saves it on the element`() = browse {
+        agentTask(null, mapOf("draft" to """{"type":"object","properties":{"items":{"type":"array"}}}"""))
+        val loop = """<bpmn:multiInstanceLoopCharacteristics operaton:collection="${'$'}{plan.output.items}" /></bpmn:serviceTask>"""
+        val (process, plane) = row("ticketed", """<bpmn:startEvent id="start" />""", agentTaskXml("plan", "Plan"),
+            agentTaskXml("implement", "Implement").replace("</bpmn:serviceTask>", loop), """<bpmn:endEvent id="end" />""")
+        deploy(definitions("ticketed", "Ticketed", process, plane))
+
+        page.navigate(url("/processes/ticketed/edit"))
+        shape("implement").click()
+        page.getByLabel("Items are Tickets").check()
+        page.locator("#save").click()
+        assertThat(page).hasURL(Pattern.compile(".*/processes/ticketed$"))
+        assertContains(http.get("/processes/ticketed/diagram.bpmn").body, """name="ants.items-are-tickets" value="true"""")
+    }
+
     /** An Agent Task [id] running `writer`'s Skill `draft`. */
     private fun agentTaskXml(id: String, name: String) = """<bpmn:serviceTask id="$id" name="$name" operaton:type="external" operaton:topic="agent">""" +
         """<bpmn:extensionElements><operaton:properties><operaton:property name="ants.agent" value="writer" />""" +

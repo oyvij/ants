@@ -315,7 +315,12 @@ function multiInstance(element) {
         el("h3", {textContent: (loop.isSequential ? "Sequential" : "Parallel") + " multi-instance"}),
         el("p", {textContent: "One instance per item of a list from an earlier Result. Each instance reads its item under the element variable, and the Result is a list in instance order: of Results for a Task, of {taskId: Result} for a sub-process or call activity."}),
         el("label", {}, "Collection ", field("camunda:collection", "${totickets.output.tickets}")), el("br"),
-        el("label", {}, "Element variable ", field("camunda:elementVariable", "item")))
+        el("label", {}, "Element variable ", field("camunda:elementVariable", "item")),
+        el("p", {}, el("label", {title: "Each item names a Ticket (tickets/issues/01-hello.md, or 01). An instance waits until its Ticket's Blocked by are in-review or done, a ready-for-human Ticket waits for you, and a landed instance's Ticket goes in-review."},
+            el("input", {
+                type: "checkbox", checked: agentProperties(element.businessObject)["ants.items-are-tickets"] === "true",
+                onchange: event => writeAgentTask(element, {"ants.items-are-tickets": event.target.checked ? "true" : undefined}),
+            }), " Items are Tickets")))
 }
 
 // The condition builder: a Result field, an operator and a value write each path's JUEL, shown under it, and one path

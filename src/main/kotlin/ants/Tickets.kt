@@ -46,6 +46,12 @@ class Tracked(val run: String, val name: String, val file: Path) {
     val title = Regex("""^# +(.+)$""", RegexOption.MULTILINE).find(text)?.groupValues?.get(1)?.trim() ?: name
     val status = STATUS.find(text)?.groupValues?.get(1)
 
+    /** A Ticket's number, which `Blocked by:` lines name it by: 1 for `01-hello`. */
+    val number = name.substringBefore('-').toIntOrNull()
+
+    /** The numbers its `Blocked by:` line names, as written: `01, 03`. */
+    val blockedBy = BLOCKED_BY.find(text)?.groupValues?.get(2)?.let { line -> NUMBER.findAll(line).map { it.value }.toList() }.orEmpty()
+
     /** What a page sends back to say which version of the file it shows. */
     val version: String = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(text.toByteArray()))
 
@@ -81,6 +87,28 @@ class SpecRow(val run: String, val process: String, val spec: Tracked, val ticke
 
 /** A `Status:` line, the first. */
 private val STATUS = Regex("""^Status:[ \t]*(\S+)""", RegexOption.MULTILINE)
+private val BLOCKED_BY = Regex("""^(Blocked by:)(.*)$""", RegexOption.MULTILINE)
+private val NUMBER = Regex("""\d+""")
+
+/**
+ * The Ticket an item of an Items are Tickets multi-instance names, in the Run workspace [workspace] of the Run [run]: by
+ * its path, file name or number, as `tickets/issues/01-hello.md`, `01-hello` or `01`.
+ */
+fun ticket(workspace: Path, run: String, item: Any?): Tracked? {
+    val number = Regex("""^\d+""").find(item.toString().substringAfterLast('/'))?.value?.toInt() ?: return null
+    return tickets(workspace, run).firstOrNull { it.number == number }
+}
+
+/**
+ * Why the instance implementing [ticket] waits before launch, or null when it may launch: `Ready for human` while the
+ * Ticket is the user's to do, else `Blocked by 01, 03` while those of its blockers among [tickets] aren't `in-review`
+ * or `done` yet.
+ */
+fun held(ticket: Tracked, tickets: List<Tracked>): String? {
+    if (ticket.status == "ready-for-human") return "Ready for human"
+    val open = ticket.blockedBy.filter { n -> tickets.any { it.number == n.toInt() && it.status !in setOf("in-review", "done") } }
+    return if (open.isEmpty()) null else "Blocked by ${open.joinToString()}"
+}
 
 /** The Spec in the Run workspace [workspace] of the Run [run], if it has one. */
 fun spec(workspace: Path, run: String) = workspace.resolve("tickets/spec.md").takeIf { it.exists() }?.let { Tracked(run, "spec", it) }
@@ -226,8 +254,8 @@ class Tickets(private val history: HistoryService, private val streams: Streams,
     private fun html(file: Tracked): String {
         val tickets = tickets(file.run)
         val linked = BLOCKED_BY.replace(file.text) { line ->
-            line.groupValues[1] + Regex("""\d+""").replace(line.groupValues[2]) { number ->
-                tickets.firstOrNull { it.name.substringBefore('-').toIntOrNull() == number.value.toInt() }?.let { "[${number.value}](${it.href})" } ?: number.value
+            line.groupValues[1] + NUMBER.replace(line.groupValues[2]) { number ->
+                tickets.firstOrNull { it.number == number.value.toInt() }?.let { "[${number.value}](${it.href})" } ?: number.value
             }
         }
         return renderer.render(parser.parse(linked))
@@ -235,7 +263,6 @@ class Tickets(private val history: HistoryService, private val streams: Streams,
 
     private companion object {
         const val CHANGED = "This file changed since you opened it, so nothing was saved. This is the new version."
-        val BLOCKED_BY = Regex("""^(Blocked by:)(.*)$""", RegexOption.MULTILINE)
 
         /** A task list item's checkbox, its mark in group 1. */
         val CHECKBOX = Regex("""^\s*(?:[-*+]|\d+[.)])\s+\[([ xX])]""")

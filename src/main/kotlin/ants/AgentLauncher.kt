@@ -68,6 +68,19 @@ class AgentLauncher(
     private val gates = ConcurrentHashMap<String, Instant>() // CLI -> when its gate opens
     private val held = ConcurrentHashMap<String, String>() // external task id -> the CLI holding it
 
+    /**
+     * Instances of an Items are Tickets multi-instance held before launch, by external task id: each keeps its lock
+     * while held, and is unlocked to launch once [Held.check] finds its Ticket free. After a restart, [start] unlocks
+     * them with every other long lock, and each is held again at its next fetch.
+     */
+    // ponytail: every poll (200 ms) re-reads each held instance's Tickets; watch tickets/ instead if many are ever held.
+    private val heldOnTickets = ConcurrentHashMap<String, Held>()
+
+    private class Held(val reason: String, val check: () -> String?)
+
+    /** Why the Task with external task [id] is held before launch, such as `Blocked by 01`, if it is. */
+    fun heldBy(id: String): String? = heldOnTickets[id]?.reason
+
     /** How many Agent Tasks are running now. */
     val running get() = live.get()
 
@@ -124,6 +137,14 @@ class AgentLauncher(
     private fun fetch() {
         try {
             gates.filterValues { !it.isAfter(clock.instant()) }.forEach { (cli, reset) -> tryNow(cli, reset) }
+            if (heldOnTickets.isNotEmpty()) { // ended with their Runs, else released once their Ticket is free
+                heldOnTickets.keys.retainAll(externalTasks.createExternalTaskQuery().externalTaskIdIn(heldOnTickets.keys.toSet()).list().map { it.id }.toSet())
+                heldOnTickets.forEach { (id, held) ->
+                    val reason = held.check()
+                    if (reason == null && heldOnTickets.remove(id) != null) runCatching { externalTasks.unlock(id) }
+                    else if (reason != null) heldOnTickets[id] = Held(reason, held.check)
+                }
+            }
             val fetched = synchronized(live) { // the slots So far takes too
                 val free = settings.agentTasks() - live.get()
                 if (free <= 0) return
@@ -197,11 +218,12 @@ class AgentLauncher(
         var session = resume // a new one only once claude starts, so Continue never resumes a session claude never saw
         var transcript: Transcript.Writer? = null
         try {
+            val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult().rootProcessInstanceId
+            val workspace = home.runWorkspace(run)
+            if (ticketed(task, run, workspace)) return
             val agent = catalogue.agent(task.extensionProperties[AGENT] ?: error("${task.activityId} names no $AGENT"))
             if (hold(task, agent.cli)) return // keeping its choice for the launch after the reset
             runtime.removeVariablesLocal(task.executionId, listOf(ACTION, INSTRUCTION, SESSION)) // the choice is used once
-            val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult().rootProcessInstanceId
-            val workspace = home.runWorkspace(run)
             val skill = catalogue.skill(task.extensionProperties[SKILL] ?: error("${task.activityId} names no $SKILL"))
             check(agent.cli == "claude") { "Agent ${agent.name} runs ${agent.cli}, and only claude runs for now" }
             val used = catalogue.uses(skill)
@@ -263,6 +285,22 @@ class AgentLauncher(
             if (e !is Stopped) log.warn("Agent Task ${task.activityId} failed", e)
             incident(task, session, reason, (e as? Failed)?.details)
         }
+    }
+
+    /**
+     * Whether [task] of [run], an instance of an Items are Tickets multi-instance, launches nothing now: held while its
+     * Ticket is the user's or blocked ([ants.held]), or done without a launch once the user has marked it done.
+     */
+    private fun ticketed(task: LockedExternalTask, run: String, workspace: Path): Boolean {
+        val item = runtime.ticketItem(task.executionId, task.activityId) ?: return false
+        val ticket = ticket(workspace, run, item) ?: error("The item $item names no Ticket in tickets/issues")
+        if (ticket.status == "done") {
+            complete(task, mapOf("outcome" to "done", "summary" to "Done by the user.", "output" to emptyMap<String, Any>()))
+            return true
+        }
+        val check = { ticket(workspace, run, item)?.let { if (it.status == "done") null else held(it, tickets(workspace, run)) } }
+        heldOnTickets[task.id] = Held(check() ?: return false, check)
+        return true
     }
 
     /** Completes [task] with its [result] ([onClash]). */
