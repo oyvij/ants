@@ -248,6 +248,22 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `ticking Items are Tickets on a multi-instance saves it on the element`() = browse {
+        agentTask(null, mapOf("draft" to """{"type":"object","properties":{"items":{"type":"array"}}}"""))
+        val loop = """<bpmn:multiInstanceLoopCharacteristics operaton:collection="${'$'}{plan.output.items}" /></bpmn:serviceTask>"""
+        val (process, plane) = row("ticketed", """<bpmn:startEvent id="start" />""", agentTaskXml("plan", "Plan"),
+            agentTaskXml("implement", "Implement").replace("</bpmn:serviceTask>", loop), """<bpmn:endEvent id="end" />""")
+        deploy(definitions("ticketed", "Ticketed", process, plane))
+
+        page.navigate(url("/processes/ticketed/edit"))
+        shape("implement").click()
+        page.getByLabel("Items are Tickets").check()
+        page.locator("#save").click()
+        assertThat(page).hasURL(Pattern.compile(".*/processes/ticketed$"))
+        assertContains(http.get("/processes/ticketed/diagram.bpmn").body, """name="ants.items-are-tickets" value="true"""")
+    }
+
+    @Test
     fun `Review changes opens on the Story tab, comments on a story step, and switches to By repo`() = browse {
         val claude = FakeClaude()
         agentTask(claude, mapOf("walkthrough" to null, "fix-review" to null, "ship" to null), extra = reviewSourceMap())

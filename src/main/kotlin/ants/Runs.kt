@@ -10,6 +10,8 @@ import org.operaton.bpm.engine.impl.bpmn.behavior.MultiInstanceActivityBehavior
 import org.operaton.bpm.engine.impl.bpmn.behavior.ParallelMultiInstanceActivityBehavior
 import org.operaton.bpm.engine.impl.bpmn.parser.BpmnParse
 import org.operaton.bpm.engine.impl.bpmn.parser.BpmnParseListener
+import org.operaton.bpm.engine.impl.bpmn.parser.BpmnParseUtil
+import org.operaton.bpm.engine.impl.interceptor.CommandContext
 import org.operaton.bpm.engine.impl.ServiceImpl
 import org.operaton.bpm.engine.impl.cfg.AbstractProcessEnginePlugin
 import org.operaton.bpm.engine.impl.cfg.ProcessEngineConfigurationImpl
@@ -92,7 +94,8 @@ class Runs(
         model.addAttribute("report", Files.exists(home.runWorkspace(id).resolve(REPORT)))
         model.addAttribute(
             "agentTasks",
-            externalTasks.createExternalTaskQuery().processInstanceId(id).topicName(AgentLauncher.TOPIC).list().associate { it.activityId to state(it) },
+            externalTasks.createExternalTaskQuery().processInstanceId(id).topicName(AgentLauncher.TOPIC).list()
+                .associate { runCatching { runtime.taskKey(it.executionId, it.activityId) }.getOrDefault(it.activityId) to state(it) }.toSortedMap(),
         )
         return "run"
     }
@@ -173,10 +176,12 @@ class Runs(
             val entry = entries[activity]
             val tasks = agentTasks[activity].orEmpty()
             val paused = tasks.firstNotNullOfOrNull { launcher.pausedUntil(it.id) }
+            val held = tasks.map { launcher.heldBy(it.id) }
             when {
                 instances.all { it.endTime != null } -> Shown("done", null, round)
                 entry != null -> Shown("waiting", "${entry.icon} ${entry.tag}", round)
                 paused != null -> Shown("queued", "Paused until ${clock.local(paused)}", round)
+                held.isNotEmpty() && held.all { it != null } -> Shown("queued", held.first(), round)
                 tasks.isNotEmpty() && tasks.none { it.lockExpirationTime?.after(Date()) == true } -> Shown("queued", "Queued", round)
                 else -> Shown("running", null, round)
             }
@@ -198,9 +203,10 @@ class Runs(
         run.state == HistoricProcessInstance.STATE_EXTERNALLY_TERMINATED && workspace.toFile().listFiles()?.any { it.name !in KEPT } == true
     }
 
-    private fun state(task: ExternalTask, paused: Instant? = launcher.pausedUntil(task.id)) = when {
+    private fun state(task: ExternalTask, paused: Instant? = launcher.pausedUntil(task.id), held: String? = launcher.heldBy(task.id)) = when {
         task.retries == 0 -> listOfNotNull(task.errorMessage, externalTasks.getExternalTaskErrorDetails(task.id)).joinToString(" ")
         paused != null -> "Paused until ${clock.local(paused)}"
+        held != null -> held
         task.lockExpirationTime?.after(Date()) == true -> "Running"
         else -> "Queued: ${launcher.running} of ${settings.agentTasks()} Agent Tasks running"
     }
@@ -294,6 +300,14 @@ class RunLifecycle(@Value("\${ants.home}") private val home: Path) : AbstractPro
             val count = bodyExecution.getVariableLocal("nrOfInstances") as Int
             if (results.size < count) bodyExecution.setVariableLocal(RESULTS, results)
             else bodyExecution.parent.setVariable(inner.id, (0 until count).map { results["$it"] })
+            // With Items are Tickets, the instance's Ticket goes in review once it ends, after its last landing.
+            if (body.getProperty(ITEMS_ARE_TICKETS) == true && !instance.isCanceled) {
+                val item = instance.getVariable(loop.collectionElementVariable)
+                val run = (instance as ExecutionEntity).rootProcessInstanceId
+                Context.getCommandContext().transactionContext.addTransactionListener(TransactionState.COMMITTED) {
+                    ticket(home.runWorkspace(run), run, item)?.takeIf { it.status !in setOf("done", "wontfix") }?.status("in-review")
+                }
+            }
         })
         // With no instances the loop never sets its count, and no instance ends to give the list.
         body.addBuiltInListener(ExecutionListener.EVENTNAME_END, ExecutionListener { execution ->
@@ -313,6 +327,10 @@ class RunLifecycle(@Value("\${ants.home}") private val home: Path) : AbstractPro
                     val results = process.results()
                     process.addBuiltInListener(ExecutionListener.EVENTNAME_START, started(tasks.map { it.id }, results))
                     process.addBuiltInListener(ExecutionListener.EVENTNAME_END, ended(results))
+                }
+
+                override fun parseMultiInstanceLoopCharacteristics(activity: Element, loop: Element, body: ActivityImpl) {
+                    if (BpmnParseUtil.parseOperatonExtensionProperties(activity)?.get(ITEMS_ARE_TICKETS) == "true") body.setProperty(ITEMS_ARE_TICKETS, true)
                 }
             }
     }
@@ -373,12 +391,33 @@ fun RuntimeService.taskKey(execution: String, activity: String): String = (this 
  * in one calling it, and so lands ([Landing]).
  */
 fun RuntimeService.inParallel(execution: String, activity: String): Boolean = (this as ServiceImpl).commandExecutor.execute { context ->
-    val task = checkNotNull(context.executionManager.findExecutionById(execution)) { "No execution $execution" }
-    generateSequence(task to activity) { (it, _) -> it.processInstance.superExecution?.let { call -> call to call.currentActivityId } }.any { (it, id) ->
-        generateSequence(it.processDefinition.findActivity(id) as ScopeImpl?) { (it as? ActivityImpl)?.flowScope }
-            .any { (it as? ActivityImpl)?.activityBehavior is ParallelMultiInstanceActivityBehavior }
+    context.scopes(execution, activity).any { (_, scope) -> (scope as? ActivityImpl)?.activityBehavior is ParallelMultiInstanceActivityBehavior }
+}
+
+/**
+ * The item of the Items are Tickets multi-instance the Task [activity] on [execution] runs an instance of, in its own
+ * Process or in one calling it: the innermost such; null when it runs in none.
+ */
+fun RuntimeService.ticketItem(execution: String, activity: String): Any? = (this as ServiceImpl).commandExecutor.execute { context ->
+    context.scopes(execution, activity).firstNotNullOfOrNull { (level, scope) ->
+        (scope as? ActivityImpl)?.takeIf { it.getProperty(ITEMS_ARE_TICKETS) == true }
+            ?.let { body -> level.getVariable((body.activityBehavior as MultiInstanceActivityBehavior).collectionElementVariable) }
     }
 }
+
+/**
+ * Every scope the Task [activity] on [execution] runs in, innermost first, in its own Process and then in those calling
+ * it, each with the execution at that level: the Task's, then each call activity's.
+ */
+private fun CommandContext.scopes(execution: String, activity: String): Sequence<Pair<ExecutionEntity, ScopeImpl>> {
+    val task = checkNotNull(executionManager.findExecutionById(execution)) { "No execution $execution" }
+    return generateSequence(task to activity) { (it, _) -> it.processInstance.superExecution?.let { call -> call to call.currentActivityId } }.flatMap { (level, id) ->
+        generateSequence(level.processDefinition.findActivity(id) as ScopeImpl?) { (it as? ActivityImpl)?.flowScope }.map { level to it }
+    }
+}
+
+/** The extension property ticking **Items are Tickets** on a multi-instance, and the mark Ants leaves on its body. */
+const val ITEMS_ARE_TICKETS = "ants.items-are-tickets"
 
 /** The Results a multi-instance's instances have given so far, on its body's execution. */
 private const val RESULTS = "ants.results"
