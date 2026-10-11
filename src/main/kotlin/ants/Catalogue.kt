@@ -24,7 +24,7 @@ class Agent(val name: String, val cli: String, val tools: List<String>?, val mod
  * A `SKILL.md` and the folder it lives in, with the Skills it names in `metadata.ants-uses` and whether it opts in to
  * the Vault (`metadata.varde-vault: true`).
  */
-class Skill(val name: String, val file: Path, val uses: List<String>, val vault: Boolean) {
+class Skill(val name: String, val description: String, val file: Path, val uses: List<String>, val vault: Boolean) {
     val folder: Path get() = file.parent
 
     /** The schema of the `output` the Skill promises, from `result.schema.json` beside it; without one, any output. */
@@ -40,8 +40,8 @@ class Skill(val name: String, val file: Path, val uses: List<String>, val vault:
 @Component
 class Catalogue(@Value("\${ants.home}") private val home: Path, private val settings: Settings) {
     private val shipped = home.resolve("shipped")
-    private val agentFolders get() = listOf(home.resolve("agents")) + settings.agentFolders() + shipped.resolve("agents")
-    private val skillFolders get() = listOf(home.resolve("skills")) + settings.skillFolders() + shipped.resolve("skills")
+    private val agentFolders get() = listOf(home.resolve("agents")) + settings.agentFolders() + listOf(shipped.resolve("agents"))
+    private val skillFolders get() = listOf(home.resolve("skills")) + settings.skillFolders() + listOf(shipped.resolve("skills"))
 
     init {
         val resources = PathMatchingResourcePatternResolver()
@@ -76,21 +76,30 @@ class Catalogue(@Value("\${ants.home}") private val home: Path, private val sett
         return agents.singleOrNull() ?: error(if (agents.isEmpty()) "No Agent named $name" else "More than one Agent is named $name")
     }
 
+    /** The user's own Skills, the one Skill folder the Skills page writes to. */
+    val yourSkills: Path = home.resolve("skills")
+
+    /** Every Skill in every Skill folder, a folder holding a `SKILL.md` at any depth, in folder order. */
+    fun skills(): List<Skill> = skillFolders.filter { it.exists() }.flatMap { folder ->
+        folder.walk().filter { it.fileName.toString() == "SKILL.md" }.sorted().map { file ->
+            val meta = frontmatter(file.readText()).first
+            val metadata = meta["metadata"] as? Map<*, *> ?: emptyMap<String, Any?>()
+            Skill(
+                name = meta["name"]?.toString() ?: "",
+                description = meta["description"]?.toString() ?: "",
+                file = file,
+                uses = metadata["ants-uses"]?.toString()?.split(Regex("\\s+"))?.filter(String::isNotEmpty) ?: emptyList(),
+                vault = metadata["varde-vault"] == true,
+            )
+        }
+    }
+
+    fun shipped(skill: Skill) = skill.file.startsWith(shipped)
+
     /** The Skill [name]; a shipped Skill wins its name. */
     fun skill(name: String): Skill {
-        val skills = skillFolders.filter { it.exists() }.flatMap { folder ->
-            folder.walk().filter { it.fileName.toString() == "SKILL.md" }.map { file ->
-                val meta = frontmatter(file.readText()).first
-                val metadata = meta["metadata"] as? Map<*, *> ?: emptyMap<String, Any?>()
-                Skill(
-                    name = meta["name"]?.toString() ?: "",
-                    file = file,
-                    uses = metadata["ants-uses"]?.toString()?.split(Regex("\\s+"))?.filter(String::isNotEmpty) ?: emptyList(),
-                    vault = metadata["varde-vault"] == true,
-                )
-            }
-        }.filter { it.name == name }
-        return skills.singleOrNull() ?: skills.firstOrNull { it.file.startsWith(shipped) }
+        val skills = skills().filter { it.name == name }
+        return skills.singleOrNull() ?: skills.firstOrNull(::shipped)
             ?: error(if (skills.isEmpty()) "No Skill named $name" else "More than one Skill is named $name")
     }
 
@@ -109,8 +118,8 @@ class Catalogue(@Value("\${ants.home}") private val home: Path, private val sett
     }
 }
 
-/** A markdown file's YAML frontmatter and its body. */
-private fun frontmatter(text: String): Pair<Map<*, *>, String> {
+/** A markdown file's YAML frontmatter and its body; broken YAML throws. */
+internal fun frontmatter(text: String): Pair<Map<*, *>, String> {
     val match = Regex("""\A---\R(.*?)\R---\R?(.*)""", RegexOption.DOT_MATCHES_ALL).find(text) ?: return emptyMap<String, Any?>() to text
     return (Yaml().load<Any?>(match.groupValues[1]) as? Map<*, *> ?: emptyMap<String, Any?>()) to match.groupValues[2]
 }

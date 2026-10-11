@@ -1,2 +1,2 @@
-<nav><a href="/">Home</a> · <a href="/processes">Processes</a> · <a href="/runs">Runs</a> · <a href="/notifications">Notification list <span id="waiting"></span></a> · <a href="/settings">Settings</a></nav>
+<nav><a href="/">Home</a> · <a href="/processes">Processes</a> · <a href="/runs">Runs</a> · <a href="/notifications">Notification list <span id="waiting"></span></a> · <a href="/skills">Skills</a> · <a href="/settings">Settings</a></nav>
 <script src="/notifications.js" defer></script>
