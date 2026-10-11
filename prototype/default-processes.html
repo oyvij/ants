@@ -1,0 +1,290 @@
+<!doctype html>
+<!-- PROTOTYPE, throwaway. Answers "Draw the three default Processes end to end" (oyvij/ants#25).
+     The three shipped default Processes as real BPMN, drawn from the shipped Templates, every element clickable.
+     Open it: open prototype/default-processes.html  (bpmn-js comes from unpkg.com; needs the network) -->
+<html lang="en">
+<meta charset="utf-8">
+<title>Ants default Processes (prototype)</title>
+<link rel="stylesheet" href="https://unpkg.com/bpmn-js@17/dist/assets/diagram-js.css">
+<link rel="stylesheet" href="https://unpkg.com/bpmn-js@17/dist/assets/bpmn-js.css">
+<link rel="stylesheet" href="https://unpkg.com/bpmn-js@17/dist/assets/bpmn-font/css/bpmn.css">
+<script src="https://unpkg.com/bpmn-js@17/dist/bpmn-navigated-viewer.development.js"></script>
+<style>
+  body { margin: 0; font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, sans-serif; color: #0f172a; background: #f4f5f7; }
+  header { display: flex; gap: 8px; align-items: center; padding: 10px 16px; background: #0e1016; color: #9aa3b2; }
+  header b { color: #fff; margin-right: 12px }
+  button { font: inherit; border: 1px solid #d5d9e0; background: #fff; border-radius: 8px; padding: 4px 12px; cursor: pointer }
+  header button { background: #171a22; color: #9aa3b2; border-color: #252a35 }
+  header button.on { background: #4f46e5; color: #fff; border-color: #4f46e5 }
+  .spacer { flex: 1 }
+  main { display: grid; grid-template-columns: 1fr 380px; height: calc(100vh - 50px) }
+  #dia { position: relative; background: #fff; border-right: 1px solid #e4e7ec }
+  #dia.hidden { display: none }
+  #side { overflow: auto; padding: 14px 16px; background: #fafbfc }
+  #page { display: none; grid-column: 1 / -1; overflow: auto; padding: 20px 28px; background: #fff }
+  h2 { font-size: 15px; margin: 0 0 6px } h3 { font-size: 13px; margin: 16px 0 4px; color: #475569; text-transform: uppercase; letter-spacing: .04em }
+  code { background: #eef2ff; color: #3730a3; padding: 0 4px; border-radius: 4px; font-size: 12.5px }
+  .tag { display: inline-block; font-size: 11px; padding: 1px 8px; border-radius: 99px; margin-right: 4px; font-weight: 600 }
+  .agent { background: #e0ecff; color: #1d4ed8 } .user { background: #fff4e0; color: #b45309 } .builtin { background: #eceef2; color: #334155 }
+  .tpl { background: #f3edff; color: #6d28d9 } .q { background: #fdecec; color: #991b1b }
+  dl { margin: 6px 0; display: grid; grid-template-columns: 110px 1fr; gap: 3px 8px } dt { color: #64748b } dd { margin: 0 }
+  ul { margin: 4px 0; padding-left: 18px }
+  .legend span { margin-right: 10px }
+  table { border-collapse: collapse; width: 100%; max-width: 1200px } td, th { border-bottom: 1px solid #e4e7ec; padding: 6px 8px; text-align: left; vertical-align: top }
+  .ok { color: #16a34a; font-weight: 700 } .warn { color: #d97706; font-weight: 700 }
+  .djs-element.ants-agent .djs-visual > rect { fill: #e0ecff !important; stroke: #2563eb !important }
+  .djs-element.ants-user .djs-visual > rect { fill: #fff4e0 !important; stroke: #d97706 !important }
+  .djs-element.ants-builtin .djs-visual > rect { fill: #eceef2 !important; stroke: #475569 !important }
+  .djs-element.ants-tpl > .djs-visual > rect { stroke: #7c3aed !important; stroke-dasharray: 6 3 }
+  .djs-element.ants-q .djs-visual > :first-child { stroke: #dc2626 !important; stroke-width: 3px !important }
+  .nolib { padding: 40px; color: #64748b }
+</style>
+<header>
+  <b>Default Processes</b>
+  <button data-proc="user">user-in-the-loop</button>
+  <button data-proc="agent">agent answers</button>
+  <button data-proc="recs">recommendations</button>
+  <button data-proc="check">Building blocks &amp; open questions</button>
+  <span class="spacer"></span>
+  <button data-view="expanded">Expanded</button>
+  <button data-view="saved">As saved (Templates collapsed)</button>
+</header>
+<main>
+  <div id="dia"><div class="nolib">Loading bpmn-js from unpkg.com…</div></div>
+  <aside id="side"></aside>
+  <div id="page"></div>
+</main>
+<script>
+// ---------- Element details: what each element is, keyed by BPMN id ----------
+const BR = "${branch != '' ? branch : scout.output.branch}"
+const I = {
+  start: { kind: "start", name: "Prompt", form: ["<code>prompt</code> markdown, required", "<code>branch</code> text, optional: empty means the scout names it"] },
+  end: { kind: "end", name: "Done", notes: ["The Run ends: Ants writes the Report <span class='tag q'>Q1</span>, closes the Spec, deletes the Run workspace except <code>tickets/</code> and the Report. Nothing drawn."] },
+  scout: { kind: "agent", agent: "scout", skill: "scout", inputs: ["prompt = ${prompt}", "sourceMap = ${sourceMap}", "nameBranch = ${branch == ''}"], toggles: "Vault on",
+    result: "{repos, branch, brief}", src: "#19" },
+  clone: { kind: "builtin", what: "Clone repos", inputs: ["repos = ${scout.output.repos}", "branch = " + BR], result: "[{name, path, commit}]",
+    notes: ["Also sets the Run variable <code>clones</code>: every repo cloned so far in this Run <span class='tag q'>Q2</span>"], src: "#8" },
+  grill: { kind: "agent", agent: "griller", skill: "grilling", inputs: ["prompt = ${prompt}", "brief = ${scout.output.brief}", "clones = ${clones}"], toggles: "Vault on · resume on",
+    result: "{questions[], repos[]}", notes: ["<code>repos</code> = repos it found it needs since the scout, Source map names only <span class='tag q'>Q2</span>"], src: "#7, #19" },
+  cloneMore: { kind: "builtin", what: "Clone repos", inputs: ["repos = ${grill.output.repos}"], result: "[{name, path, commit}]", q: true,
+    notes: ["Skips repos already cloned; an empty list does nothing. Uses the Run's work branch, fixed by the first Clone repos.", "Exists only if Q2 says yes <span class='tag q'>Q2</span>"], src: "#8" },
+  gwQ: { kind: "gateway", notes: ["yes: <code>${not empty grill.output.questions}</code>", "no: default flow, the loop ends"] },
+  answer: { kind: "user", what: "Answer a Round", answers: "grill", result: "{answers: [{id, answer, source: accepted|written}]}",
+    notes: ["Appended to the Round log and the Answer History."], src: "#7, #15" },
+  gwCap: { kind: "gateway", notes: ["yes: <code>${runs.grill >= 10}</code> → the user answers", "no: default flow → the unattended answerer", "Once at the cap, every later Round goes to the user."], src: "#15" },
+  answerer: { kind: "agent", agent: "answerer", skill: "answer-round", inputs: ["questions = ${grill.output.questions}"], toggles: "Vault on · Answer History on",
+    answers: "grill", result: "{answers: [{id, answer, why}]}", notes: ["Ants stamps <code>source: agent</code>."], src: "#15" },
+  accept: { kind: "builtin", what: "Accept recommendations", answers: "grill", result: "{answers}", notes: ["Ants stamps <code>source: recommended</code>."], src: "#15" },
+  answerAtCap: { kind: "user", what: "Answer a Round", answers: "grill", result: "{answers}", notes: ["Same page as user-in-the-loop."], src: "#15" },
+  gwMerge: { kind: "gateway", notes: ["Merge: both answerers lead back to the griller, which resumes its session with the answers."] },
+  tospec: { kind: "agent", agent: "planner", skill: "to-spec", inputs: ["prompt = ${prompt}", "brief = ${scout.output.brief}", "rounds = 'rounds.md'", "clones = ${clones}"], toggles: "resume on",
+    result: "{spec: 'tickets/spec.md'}", notes: ["A fresh session, reading the Round log, not the griller's session."], src: "#7, #23" },
+  approveSpec: { kind: "user", what: "Approve", shows: "tospec", result: "{approved, comment}", src: "#9" },
+  gwSpec: { kind: "gateway", notes: ["yes: <code>${approveSpec.approved}</code>", "send back: default flow, to-spec resumes with the comment"] },
+  totickets: { kind: "agent", agent: "planner", skill: "to-tickets", inputs: ["spec = ${tospec.output.spec}", "clones = ${clones}"], result: "{spec, tickets[]}", src: "#23" },
+  implement: { kind: "agent", agent: "implementer", skill: "implement", mi: "parallel over <code>${totickets.output.tickets}</code>, element variable <code>ticket</code>, Items are Tickets ☑ <span class='tag q'>Q4</span>",
+    inputs: ["ticket = ${ticket}", "spec = ${totickets.output.spec}"], result: "list of {ticket, commits[]}", q: true,
+    notes: ["Implicit, nothing drawn: a worktree per instance, landing on <code>done</code>, Ticket <code>in-review</code> on landing.", "Held per instance until its Blocked by Tickets are in-review or done."], src: "#23, #24" },
+  walkthrough: { kind: "agent", agent: "storyteller", skill: "walkthrough", inputs: ["spec = ${totickets.output.spec}", "clones = ${clones}"], toggles: "resume on",
+    result: "{stories: 'walkthrough/stories.json'}", notes: ["Ants runs Varde's four checks on done; Send back loops through here again for a whole new Story set."], src: "#22" },
+  review: { kind: "user", what: "Review changes", fields: ["Walkthrough = walkthrough", "Send back resumes = fix"], result: "{approved, comment, comments[]}",
+    notes: ["Approve sets every in-review Ticket done."], src: "#22" },
+  gwReview: { kind: "gateway", notes: ["yes: <code>${review.approved}</code>", "send back: default flow → fix"] },
+  fix: { kind: "agent", agent: "implementer", skill: "fix-review", inputs: ["review = ${review}", "spec = ${totickets.output.spec}", "stories = ${walkthrough.output.stories}"], toggles: "resume on (starts if none)",
+    result: "{commits[]}", notes: ["Shared clones, commits on the work branch, a Comment line on each Ticket it touched."], src: "#24" },
+  push: { kind: "builtin", what: "Push", result: "[{repo, remote, branch, base, isNew, commits, pushed, error, compareUrl}]", notes: ["Waits on the Notification list: Push / Cancel the Run."], src: "#22" },
+  pr: { kind: "agent", agent: "pr", skill: "pr", inputs: ["push = ${push}", "spec = ${totickets.output.spec}"], result: "[{repo, url}]", src: "#22" },
+}
+const TPL = {
+  scoutAndClone: { name: "Scout and clone", src: "#21", notes: ["Shipped Template."] },
+  grillLoop: { name: "Grill until no questions", src: "#21", notes: ["Shipped Template, one per answerer: (you answer), (an Agent answers), (accept recommendations). The last two carry the cap."] },
+  specApproval: { name: "To-spec and approve", src: "#21", notes: ["Shipped Template."] },
+  cutAndImplement: { name: "Cut and implement", q: true, notes: ["<b>New</b> Template proposed here <span class='tag q'>Q5</span>: the multi-instance is the fiddliest thing to set up by hand."] },
+  reviewAndPush: { name: "Review and push", src: "#22, #24", notes: ["Shipped Template, with fix as Send back's target."] },
+}
+
+// ---------- Templates: children relative to the Template's left edge (x) and the main line (y = 0) ----------
+// node: [id, type, name, x, y, extra]; flow: [id, from, to, label, route, condition, isDefault]
+// route: [fromSide, ...points, toSide]; sides are l r t b.
+const ev = (pre, x) => [pre + "_start", "startEvent", "", 40, 0]
+const T = {
+  scoutAndClone: () => ({ w: 460, nodes: [ev("sc"), ["scout", "serviceTask", "Scout", 150, 0], ["clone", "serviceTask", "Clone repos", 310, 0], ["sc_end", "endEvent", "", 420, 0]],
+    flows: [["sc1", "sc_start", "scout"], ["sc2", "scout", "clone"], ["sc3", "clone", "sc_end"]] }),
+  grillLoop: answerer => {
+    const nodes = [ev("gl"), ["grill", "serviceTask", "Grill", 160, 0], ["cloneMore", "serviceTask", "Clone new repos", 330, 0],
+      ["gwQ", "exclusiveGateway", "Any questions?", 470, 0], ["gl_end", "endEvent", "", 580, 0]]
+    const flows = [["gl1", "gl_start", "grill"], ["gl2", "grill", "cloneMore"], ["gl3", "cloneMore", "gwQ"],
+      ["gl4", "gwQ", "gl_end", "no", null, null, true], ["gl5", "gwQ", answerer ? "gwCap" : "answer", "yes", ["b", "t"], "${not empty grill.output.questions}"]]
+    if (!answerer) {
+      nodes.push(["answer", "userTask", "Answer a Round", 470, 140])
+      flows.push(["gl6", "answer", "grill", "", ["l", [160, 140], "b"]])
+    } else {
+      nodes.push(["gwCap", "exclusiveGateway", "Asked 10 Rounds?", 470, 140], [answerer[0], "serviceTask", answerer[1], 330, 140],
+        ["answerAtCap", "userTask", "Answer a Round", 470, 270], ["gwMerge", "exclusiveGateway", "", 160, 140])
+      flows.push(["gl6", "gwCap", answerer[0], "no", ["l", "r"], null, true], ["gl7", "gwCap", "answerAtCap", "yes", ["b", "t"], "${runs.grill >= 10}"],
+        ["gl8", answerer[0], "gwMerge", "", ["l", "r"]], ["gl9", "answerAtCap", "gwMerge", "", ["l", [160, 270], "b"]], ["gl10", "gwMerge", "grill", "", ["t", "b"]])
+    }
+    return { w: 620, nodes, flows }
+  },
+  specApproval: () => ({ w: 620, nodes: [ev("sa"), ["tospec", "serviceTask", "To-spec", 160, 0], ["approveSpec", "userTask", "Approve the Spec", 330, 0],
+      ["gwSpec", "exclusiveGateway", "Approved?", 470, 0], ["sa_end", "endEvent", "", 580, 0]],
+    flows: [["sa1", "sa_start", "tospec"], ["sa2", "tospec", "approveSpec"], ["sa3", "approveSpec", "gwSpec"], ["sa4", "gwSpec", "sa_end", "yes", null, "${approveSpec.approved}"],
+      ["sa5", "gwSpec", "tospec", "send back", ["b", [470, 120], [160, 120], "b"], null, true]] }),
+  cutAndImplement: () => ({ w: 480, nodes: [ev("ci"), ["totickets", "serviceTask", "To-tickets", 160, 0], ["implement", "serviceTask", "Implement each Ticket", 330, 0, { mi: true }], ["ci_end", "endEvent", "", 440, 0]],
+    flows: [["ci1", "ci_start", "totickets"], ["ci2", "totickets", "implement"], ["ci3", "implement", "ci_end"]] }),
+  reviewAndPush: () => ({ w: 920, nodes: [ev("rp"), ["walkthrough", "serviceTask", "Walkthrough", 160, 0], ["review", "userTask", "Review changes", 330, 0],
+      ["gwReview", "exclusiveGateway", "Approved?", 470, 0], ["push", "serviceTask", "Push", 600, 0], ["pr", "serviceTask", "Open pull request", 770, 0], ["rp_end", "endEvent", "", 880, 0],
+      ["fix", "serviceTask", "Fix", 470, 140]],
+    flows: [["rp1", "rp_start", "walkthrough"], ["rp2", "walkthrough", "review"], ["rp3", "review", "gwReview"], ["rp4", "gwReview", "push", "yes", null, "${review.approved}"],
+      ["rp5", "push", "pr"], ["rp6", "pr", "rp_end"], ["rp7", "gwReview", "fix", "send back", ["b", "t"], null, true], ["rp8", "fix", "walkthrough", "", ["l", [160, 140], "b"]]] }),
+}
+const PROCS = {
+  user: { name: "user-in-the-loop", grill: null },
+  agent: { name: "agent answers", grill: ["answerer", "Answer the Round (Agent)"] },
+  recs: { name: "recommendations", grill: ["accept", "Accept recommendations"] },
+}
+
+// ---------- BPMN XML from the Templates ----------
+const SZ = { startEvent: [36, 36], endEvent: [36, 36], exclusiveGateway: [50, 50], serviceTask: [120, 80], userTask: [120, 80] }
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c])
+const side = (n, s) => ({ l: [n.cx - n.w / 2, n.cy], r: [n.cx + n.w / 2, n.cy], t: [n.cx, n.cy - n.h / 2], b: [n.cx, n.cy + n.h / 2] })[s]
+
+function buildXml(key, view) {
+  const P = PROCS[key], order = [["scoutAndClone", T.scoutAndClone()], ["grillLoop", T.grillLoop(P.grill)], ["specApproval", T.specApproval()],
+    ["cutAndImplement", T.cutAndImplement()], ["reviewAndPush", T.reviewAndPush()]]
+  // Expanded: two rows of Templates. Saved: one row of collapsed boxes, children drawn on their own planes.
+  const rows = [[0, 1, 2], [3, 4]], ROWY = [150, 680], N = {}, sps = []
+  let shapes = { main: [] }, edges = { main: [] }
+  order.forEach(([id, t], i) => {
+    const row = rows.findIndex(r => r.includes(i)), before = rows[row].filter(j => j < i).reduce((x, j) => x + order[j][1].w + 60, 120)
+    const ox = view === "expanded" ? before : 100, oy = view === "expanded" ? ROWY[row] : 200
+    t.nodes.forEach(([nid, type, name, x, y, extra]) => N[nid] = { id: nid, type, name, cx: ox + x, cy: oy + y, w: SZ[type][0], h: SZ[type][1], parent: id, ...(extra || {}) })
+    const bottom = Math.max(...t.nodes.map(n => n[4] + SZ[n[1]][1] / 2), ...t.flows.flatMap(f => (f[4] || []).filter(Array.isArray).map(p => p[1]))) + 30
+    sps.push({ id, name: TPL[id].name, t, x: before, y: ROWY[row] - 90, w: t.w, h: bottom + 90, cx: view === "expanded" ? before + t.w / 2 : 200 + i * 170, cy: view === "expanded" ? ROWY[row] : 150 })
+  })
+  const flowXml = (fid, a, b, label, cond, def) => `<bpmn:sequenceFlow id="${fid}" name="${esc(label || "")}" sourceRef="${a}" targetRef="${b}">${cond ? `<bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${esc(cond)}</bpmn:conditionExpression>` : ""}</bpmn:sequenceFlow>`
+  const defaults = {}
+  const nodeXml = n => {
+    const def = defaults[n.id] ? ` default="${defaults[n.id]}"` : ""
+    return `<bpmn:${n.type} id="${n.id}" name="${esc(n.name)}"${def}>${n.mi ? "<bpmn:multiInstanceLoopCharacteristics/>" : ""}</bpmn:${n.type}>`
+  }
+  sps.forEach(sp => sp.t.flows.forEach(f => { if (f[6]) defaults[f[1]] = f[0] }))
+  const spXml = sps.map(sp => `<bpmn:subProcess id="${sp.id}" name="${esc(sp.name)}">${sp.t.nodes.map(n => nodeXml(N[n[0]])).join("")}${sp.t.flows.map(f => flowXml(f[0], f[1], f[2], f[3], f[5])).join("")}</bpmn:subProcess>`).join("")
+  const top = [["start", "startEvent", "Prompt"], ["end", "endEvent", "Done"]]
+  const topFlows = [["t0", "start", sps[0].id], ...sps.slice(1).map((sp, i) => ["t" + (i + 1), sps[i].id, sp.id]), ["t9", sps[4].id, "end"]]
+  const procXml = `<bpmn:process id="${key}" name="${esc(P.name)}" isExecutable="true">${top.map(([id, type, name]) => `<bpmn:${type} id="${id}" name="${name}"/>`).join("")}${spXml}${topFlows.map(([f, a, b]) => flowXml(f, a, b)).join("")}</bpmn:process>`
+
+  // DI
+  const shape = (n, plane, expanded) => {
+    const lbl = n.name && !n.type.endsWith("Task") && n.type !== "subProcess"
+    const gw = n.type.includes("Gateway"), ly = gw ? n.cy - 46 : n.cy + n.h / 2 + 4, lx = gw ? n.cx + 4 : n.cx - 45
+    ;(shapes[plane] ||= []).push(`<bpmndi:BPMNShape id="${n.id}_di" bpmnElement="${n.id}"${gw ? ' isMarkerVisible="true"' : ""}${expanded !== undefined ? ` isExpanded="${expanded}"` : ""}><dc:Bounds x="${n.cx - n.w / 2}" y="${n.cy - n.h / 2}" width="${n.w}" height="${n.h}"/>${lbl ? `<bpmndi:BPMNLabel><dc:Bounds x="${lx}" y="${ly}" width="110" height="14"/></bpmndi:BPMNLabel>` : ""}</bpmndi:BPMNShape>`)
+  }
+  const edge = (fid, pts, label, plane) => (edges[plane] ||= []).push(`<bpmndi:BPMNEdge id="${fid}_di" bpmnElement="${fid}">${pts.map(([x, y]) => `<di:waypoint x="${x}" y="${y}"/>`).join("")}${label ? `<bpmndi:BPMNLabel><dc:Bounds x="${pts[0][0] + 6}" y="${pts[0][1] + 4}" width="60" height="14"/></bpmndi:BPMNLabel>` : ""}</bpmndi:BPMNEdge>`)
+  const route = (f, ox, oy) => {
+    const [, a, b, , r] = f, rt = r || ["r", "l"]
+    return [side(N[a], rt[0]), ...rt.slice(1, -1).map(([x, y]) => [ox + x, oy + y]), side(N[b], rt[rt.length - 1])]
+  }
+  const expanded = view === "expanded"
+  sps.forEach((sp, i) => {
+    const ox = expanded ? sp.x : 100, oy = expanded ? sp.cy : 200, plane = expanded ? "main" : sp.id
+    if (expanded) shape({ id: sp.id, type: "subProcess", cx: sp.x + sp.w / 2, cy: sp.y + sp.h / 2, w: sp.w, h: sp.h }, "main", true)
+    else shape({ id: sp.id, type: "subProcess", cx: sp.cx, cy: sp.cy, w: 120, h: 80 }, "main", false)
+    sp.t.nodes.forEach(n => shape(N[n[0]], plane))
+    sp.t.flows.forEach(f => edge(f[0], route(f, ox, oy), f[3], plane))
+  })
+  const S = expanded ? { start: [60, 150], end: [sps[4].x + sps[4].w + 60, 680] } : { start: [80, 150], end: [200 + 5 * 170 - 20, 150] }
+  ;[["start", "startEvent", "Prompt"], ["end", "endEvent", "Done"]].forEach(([id, type, name]) => { N[id] = { id, type, name, cx: S[id][0], cy: S[id][1], w: 36, h: 36 }; shape(N[id], "main") })
+  const box = sp => expanded ? { l: [sp.x, sp.cy], r: [sp.x + sp.w, sp.cy] } : { l: [sp.cx - 60, sp.cy], r: [sp.cx + 60, sp.cy] }
+  topFlows.forEach(([f, a, b]) => {
+    const A = sps.find(s => s.id === a), B = sps.find(s => s.id === b)
+    const p1 = A ? box(A).r : side(N[a], "r"), p2 = B ? box(B).l : side(N[b], "l")
+    const pts = expanded && p1[1] !== p2[1] ? [p1, [p1[0] + 30, p1[1]], [p1[0] + 30, 590], [p2[0] - 30, 590], [p2[0] - 30, p2[1]], p2] : [p1, p2]
+    edge(f, pts, "", "main")
+  })
+  const planes = Object.keys(shapes).map(pl => `<bpmndi:BPMNDiagram id="d_${pl}"><bpmndi:BPMNPlane id="p_${pl}" bpmnElement="${pl === "main" ? key : pl}">${shapes[pl].join("")}${(edges[pl] || []).join("")}</bpmndi:BPMNPlane></bpmndi:BPMNDiagram>`)
+  return `<?xml version="1.0" encoding="UTF-8"?><bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" id="defs_${key}" targetNamespace="http://ants.local/bpmn">${procXml}${planes.join("")}</bpmn:definitions>`
+}
+
+// ---------- Side panel ----------
+const KIND = { agent: ["agent", "Agent Task"], user: ["user", "User Task"], builtin: ["builtin", "Built-in Task"] }
+function info(id) {
+  const t = TPL[id]
+  if (t) return `<span class="tag tpl">Template</span>${t.q ? "<span class='tag q'>open</span>" : ""}<h2>${t.name}</h2><ul>${t.notes.map(n => `<li>${n}</li>`).join("")}</ul>${t.src ? `<p style="color:#64748b">Decided in ${t.src}</p>` : ""}<p style="color:#64748b">In "As saved", double-click the ⤵ on the box to open it.</p>`
+  const e = I[id]; if (!e) return intro()
+  const k = KIND[e.kind], row = (a, b) => b ? `<dt>${a}</dt><dd>${b}</dd>` : ""
+  const tpl = Object.entries(TPL).find(([tid]) => tplOf(tid, id))
+  return `${k ? `<span class="tag ${k[0]}">${k[1]}</span>` : `<span class="tag builtin">${e.kind}</span>`}${e.q ? "<span class='tag q'>open</span>" : ""}${tpl ? `<span class="tag tpl">${TPL[tpl[0]].name}</span>` : ""}
+    <h2>${e.what || e.name || id}</h2><dl>
+    ${row("id", `<code>${id}</code>`)}${row("Agent", e.agent && `<code>${e.agent}</code>`)}${row("Skill", e.skill && `<code>${e.skill}</code>`)}
+    ${row("Shows", e.shows && `<code>${e.shows}</code>`)}${row("Answers", e.answers && `<code>${e.answers}</code> (resumes its session)`)}
+    ${row("Fields", e.fields && e.fields.map(x => `<code>${esc(x)}</code>`).join("<br>"))}${row("Start form", e.form && e.form.join("<br>"))}
+    ${row("Multi-instance", e.mi)}${row("Inputs", e.inputs && e.inputs.map(x => `<code>${esc(x)}</code>`).join("<br>"))}
+    ${row("Settings", e.toggles)}${row("Result", e.result && `<code>${esc(e.result)}</code>`)}</dl>
+    ${e.notes ? `<ul>${e.notes.map(n => `<li>${n}</li>`).join("")}</ul>` : ""}${e.src ? `<p style="color:#64748b">Decided in ${e.src}</p>` : ""}`
+}
+const tplOf = (tid, id) => { const t = tid === "grillLoop" ? T.grillLoop(PROCS[cur].grill) : T[tid](); return t.nodes.some(n => n[0] === id) }
+const intro = () => `<h2>${PROCS[cur].name}</h2>
+  <p>Prompt → five shipped Templates → Done. The three Processes differ only inside <b>Grill until no questions</b>.</p>
+  <p class="legend"><span class="tag agent">Agent Task</span><span class="tag user">User Task</span><span class="tag builtin">Built-in Task</span><span class="tag tpl">Template</span><span class="tag q">open question</span></p>
+  <p>Click any element for its Agent, Skill, inputs and Result. Red outline = depends on an open question (see the last tab).</p>
+  <h3>Waits on the user</h3><ul><li>Answer a Round${cur === "user" ? " (every Round)" : " (only from Round 10 on)"}</li><li>Approve the Spec</li><li>Review changes</li><li>Push</li><li>any <code>[stuck]</code> / <code>[failed]</code></li></ul>`
+
+// ---------- Building blocks & open questions page ----------
+const CHECK = [
+  ["Start event with a start form (prompt, branch)", "ok", "#8, #21"],
+  ["Agent Tasks: scout, griller, answer-round, to-spec, to-tickets, implement, walkthrough, fix, pr", "ok", "#5"],
+  ["User Tasks: Answer a Round, Approve, Review changes", "ok", "#7, #9, #22"],
+  ["Built-in Tasks: Clone repos, Accept recommendations, Push", "ok", "#8, #15, #22"],
+  ["Exclusive gateways on Results; the <code>runs</code> counter", "ok", "#15, #21"],
+  ["Answering Tasks naming the asker; resume when the flow comes back", "ok", "#7, #15"],
+  ["Embedded sub-processes (dropped Templates)", "ok", "#21"],
+  ["Parallel multi-instance with its list Result; worktrees and landing implicit", "ok", "#21, #24"],
+  ["Blocked-by hold: how does Ants know the items are Tickets?", "warn", "Q4"],
+  ["Run variable <code>clones</code> (all repos cloned so far), like <code>runs</code>", "warn", "Q2"],
+  ["Cross-Template references (<code>${scout.output.brief}</code>) survive a drop", "warn", "Q3"],
+  ["The Report: drawn Task or Ants on Run end?", "warn", "Q1"],
+  ["Cleanup: Ants on Run end, keeping <code>tickets/</code> and the Report", "ok", "map"],
+]
+const QS = [
+  ["Q1 Who writes the Report?", "Ants, mechanically, whenever a Run ends: the start form, each Task's summary, the Rounds with their <code>source</code> (non-user answers listed apart), Tickets, Push and PR Results. No Report Task drawn, so every Process gets one.", "A drawn <b>Write the Report</b> Agent Task (shipped report Skill) before Done; a Process without one gets no Report."],
+  ["Q2 Repos the griller finds mid-loop", "The griller's Result gains <code>repos[]</code>; a second <b>Clone repos</b> sits in the loop (empty = no-op); Ants keeps a Run variable <code>clones</code> (every clone so far) that Tasks read, instead of one Clone repos' Result.", "No Clone repos in the loop: scout's repos are final, and a griller needing another one asks in a Round or goes stuck."],
+  ["Q3 Ids when a Template is dropped", "Keep the Template's ids; add a suffix only on a clash (and rewrite references inside it). Then <code>${scout.output.brief}</code> in Grill until no questions finds the scout from Scout and clone.", "Always fresh ids (as written in #21): every cross-Template reference has to be fixed by hand after a drop."],
+  ["Q4 What switches on the Blocked-by hold?", "A tick box <b>Items are Tickets</b> on a multi-instance, ticked in the shipped Template: holds by Blocked by, skips ready-for-human, links the drawer to Tickets.", "Implicit: Ants notices the collection holds Ticket ids of the Run's tracker."],
+  ["Q5 A fifth shipped Template, Cut and implement", "Yes: to-tickets → Implement each Ticket (parallel, over <code>${totickets.output.tickets}</code>, Items are Tickets). The default Processes are then five Templates in a row.", "Draw the two Tasks bare in the default Processes."],
+  ["Q6 Shipped Agents", "<code>scout</code>, <code>griller</code> (Read, Grep, Glob), <code>answerer</code>, <code>planner</code> (to-spec and to-tickets; writes only <code>tickets/</code>), <code>implementer</code> (implement and fix-review), <code>storyteller</code> (walkthrough; Bash limited to git log/diff/show), <code>pr</code>.", "A separate writer Agent for to-spec; fix on its own Agent."],
+  ["Q7 Updating the Vault at the end", "Not in the default Processes; stays in the fog with the rest of knowledge update.", "An Update knowledge Agent Task + Approve loop after Open pull request."],
+]
+const checkPage = () => `<h2>Is every element a building block a user could draw?</h2>
+  <table><tr><th>Element</th><th></th><th>Where</th></tr>${CHECK.map(([a, s, w]) => `<tr><td>${a}</td><td class="${s}">${s === "ok" ? "✓" : "?"}</td><td>${w}</td></tr>`).join("")}</table>
+  <h2 style="margin-top:28px">Open questions</h2>
+  <table><tr><th>Question</th><th>Recommended</th><th>Instead</th></tr>${QS.map(([q, r, o]) => `<tr><td><b>${q}</b></td><td>${r}</td><td style="color:#64748b">${o}</td></tr>`).join("")}</table>`
+
+// ---------- Wiring ----------
+let cur = "user", view = "expanded", viewer = null
+async function render() {
+  document.querySelectorAll("[data-proc]").forEach(b => b.classList.toggle("on", b.dataset.proc === cur))
+  document.querySelectorAll("[data-view]").forEach(b => b.classList.toggle("on", b.dataset.view === view))
+  const page = document.getElementById("page"), dia = document.getElementById("dia"), sideEl = document.getElementById("side")
+  if (cur === "check") { page.style.display = "block"; dia.classList.add("hidden"); sideEl.style.display = "none"; page.innerHTML = checkPage(); return }
+  page.style.display = "none"; dia.classList.remove("hidden"); sideEl.style.display = ""
+  sideEl.innerHTML = intro()
+  if (!window.BpmnJS) return
+  if (!viewer) {
+    dia.innerHTML = ""; viewer = new BpmnJS({ container: dia })
+    viewer.get("eventBus").on("element.click", e => { sideEl.innerHTML = info(e.element.id) })
+  }
+  const xml = buildXml(cur, view)
+  try { await viewer.importXML(xml) } catch (err) { dia.innerHTML = `<pre class="nolib">${esc(err.message)}</pre>`; viewer = null; return }
+  const canvas = viewer.get("canvas")
+  viewer.get("elementRegistry").getAll().forEach(el => {
+    const e = I[el.id]; if (e && KIND[e.kind]) canvas.addMarker(el.id, "ants-" + e.kind)
+    if (TPL[el.id]) canvas.addMarker(el.id, "ants-tpl")
+    if ((e && e.q) || (TPL[el.id] && TPL[el.id].q)) canvas.addMarker(el.id, "ants-q")
+  })
+  canvas.zoom("fit-viewport")
+}
+document.querySelectorAll("[data-proc]").forEach(b => b.onclick = () => { cur = b.dataset.proc; render() })
+document.querySelectorAll("[data-view]").forEach(b => b.onclick = () => { view = b.dataset.view; if (cur === "check") cur = "user"; render() })
+render()
+</script>
