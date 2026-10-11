@@ -26,7 +26,13 @@ import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.server.ResponseStatusException
 import java.io.File
+import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardOpenOption.APPEND
+import java.nio.file.StandardOpenOption.CREATE
+import java.time.Clock
+import java.time.Instant
+import java.time.temporal.ChronoUnit.SECONDS
 import java.util.Date
 import kotlin.io.path.createDirectories
 
@@ -36,6 +42,7 @@ class Runs(
     private val externalTasks: ExternalTaskService,
     private val launcher: AgentLauncher,
     private val settings: Settings,
+    private val clock: Clock,
     @Value("\${ants.home}") private val home: Path,
 ) {
     @GetMapping("/runs")
@@ -78,11 +85,17 @@ class Runs(
         run.state == HistoricProcessInstance.STATE_EXTERNALLY_TERMINATED && workspace.toFile().listFiles()?.any { it.name != "tasks" } == true
     }
 
-    private fun state(task: ExternalTask) = when {
+    private fun state(task: ExternalTask, paused: Instant? = launcher.pausedUntil(task.id)) = when {
         task.retries == 0 -> listOfNotNull(task.errorMessage, externalTasks.getExternalTaskErrorDetails(task.id)).joinToString(" ")
+        paused != null -> "Paused until ${clock.local(paused)}"
         task.lockExpirationTime?.after(Date()) == true -> "Running"
         else -> "Queued: ${launcher.running} of ${settings.agentTasks()} Agent Tasks running"
     }
+}
+
+/** Appends one entry to the Run log, `run-log.md` in the Run workspace [workspace]: [what] the user did on [task], and [text]. */
+fun runLog(workspace: Path, task: String, what: String, text: String) {
+    Files.writeString(workspace.resolve("run-log.md"), "## ${Instant.now().truncatedTo(SECONDS)} · $task · $what\n\n${text.trim()}\n\n", CREATE, APPEND)
 }
 
 /** How a Run's state reads on its pages. */
