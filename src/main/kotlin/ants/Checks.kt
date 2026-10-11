@@ -40,7 +40,9 @@ class Checks(private val catalogue: Catalogue, private val repository: Repositor
         { calls(repository, it) }) // in CallActivityChecks.kt
 
     /** What the input pickers of the Task [element] in [bpmn] offer, as `${…}` references; see [offered]. */
-    fun inputs(bpmn: String, element: String) = offered(catalogue, Bpmn.readModelFromStream(bpmn.byteInputStream()), element)
+    fun inputs(bpmn: String, element: String) = offered(catalogue, Bpmn.readModelFromStream(bpmn.byteInputStream()), element) { key ->
+        repository.createProcessDefinitionQuery().processDefinitionKey(key).latestVersion().singleResult()?.let { repository.getBpmnModelInstance(it.id) }
+    }
 
     fun of(bpmn: String): List<Check> = try {
         Bpmn.readModelFromStream(bpmn.byteInputStream()).let { model -> rules.flatMap { it(model) } }

@@ -4,6 +4,7 @@ import org.operaton.bpm.model.bpmn.BpmnModelInstance
 import org.operaton.bpm.model.bpmn.instance.Activity
 import org.operaton.bpm.model.bpmn.instance.BaseElement
 import org.operaton.bpm.model.bpmn.instance.BoundaryEvent
+import org.operaton.bpm.model.bpmn.instance.CallActivity
 import org.operaton.bpm.model.bpmn.instance.FlowElement
 import org.operaton.bpm.model.bpmn.instance.FlowNode
 import org.operaton.bpm.model.bpmn.instance.SubProcess
@@ -66,8 +67,18 @@ private fun promised(catalogue: Catalogue, task: ServiceTask): Map<*, *>? {
     return runCatching { catalogue.skill(task.property("ants.skill").orEmpty()).outputSchema }.getOrNull()
 }
 
-/** The names an expression may start with besides start-form fields and Task ids: Ants' Run variables and the engine's own. */
-private val runVariables = setOf("runs", "clones", "item", "execution", "loopCounter", "nrOfInstances", "nrOfActiveInstances", "nrOfCompletedInstances")
+/** The names an expression anywhere may start with besides start-form fields and Task ids: Ants' Run variables and the engine's own. */
+private val runVariables = setOf("runs", "clones", "execution")
+
+/** What an instance of a multi-instance reads besides its element variable. */
+private val loopVariables = setOf("loopCounter", "nrOfInstances", "nrOfActiveInstances", "nrOfCompletedInstances")
+
+/** The multi-instances [element] runs as an instance of, itself or a sub-process it is in. */
+private fun loops(element: ModelElementInstance) =
+    generateSequence(element) { it.parentElement }.mapNotNull { (it as? Activity)?.loopCharacteristics as? MultiInstanceLoopCharacteristics }.toList()
+
+/** The variable each instance reads its item from: the one the loop names, else `item`. */
+private val MultiInstanceLoopCharacteristics.element get() = operatonElementVariable?.takeIf(String::isNotBlank) ?: "item"
 private val juelWords = setOf("and", "or", "not", "eq", "ne", "lt", "gt", "le", "ge", "empty", "div", "mod", "true", "false", "null", "instanceof")
 
 /** The names [expression] reads, such as `draft.output.text`: dotted names outside quotes, less a method called on them. */
@@ -87,9 +98,11 @@ internal fun reads(expression: String): List<List<String>> =
  */
 internal fun references(catalogue: Catalogue, model: BpmnModelInstance): List<Check> {
     val activities = model.getModelElementsByType(Activity::class.java).associateBy { it.id }
-    val names = model.getModelElementsByType(OperatonFormField::class.java).map { it.operatonId }.toSet() + activities.keys + runVariables +
-        model.getModelElementsByType(MultiInstanceLoopCharacteristics::class.java).mapNotNull { it.operatonElementVariable }
-    return expressions(model).flatMap { (owner, text) -> reads(text).mapNotNull { path -> problem(catalogue, path, names, activities)?.let { owner to it } } }
+    val names = model.getModelElementsByType(OperatonFormField::class.java).map { it.operatonId }.toSet() + activities.keys + runVariables
+    return expressions(model).flatMap { (owner, text) ->
+        val inScope = names + loops(owner).flatMap { listOf(it.element) + loopVariables }
+        reads(text).mapNotNull { path -> problem(catalogue, path, inScope, activities)?.let { owner to it } }
+    }
         .distinct().map { (owner, problem) -> Check(owner.id, "${owner.label} reads $problem") }
 }
 
@@ -125,11 +138,12 @@ private fun problem(catalogue: Catalogue, path: List<String>, names: Set<String>
 }
 
 /**
- * What an input picker on the Task [id] offers: the start-form fields, the Run variables, and the Results of the Tasks
- * before it, an Agent Task's by field (its `summary`, its `output` and each field its schema promises). A Task is
- * before it when a path leads from it to [id], so a loop puts later Tasks before it too; they read `null` until run.
+ * What an input picker on the Task [id] offers: the start-form fields, the Run variables, the element variable of each
+ * multi-instance it runs in, and the Results of the Tasks before it, an Agent Task's by field (its `summary`, its
+ * `output` and each field its schema promises) and a call activity's by the [called] Process's Task. A Task is before
+ * it when a path leads from it to [id], so a loop puts later Tasks before it too; they read `null` until run.
  */
-internal fun offered(catalogue: Catalogue, model: BpmnModelInstance, id: String): List<String> {
+internal fun offered(catalogue: Catalogue, model: BpmnModelInstance, id: String, called: (String) -> BpmnModelInstance?): List<String> {
     val target = model.getModelElementById<FlowNode>(id) ?: return emptyList()
     val before = mutableSetOf<String>() // ids: the model hands out a new object for an element each time
     // From the sequence flows, since a file need not list a node's `incoming`.
@@ -141,11 +155,15 @@ internal fun offered(catalogue: Catalogue, model: BpmnModelInstance, id: String)
     walk(target)
     before -= generateSequence(target.parentElement) { it.parentElement }.filterIsInstance<SubProcess>().map { it.id }.toSet() // still running, no Result yet
     val fields = model.getModelElementsByType(OperatonFormField::class.java).map { it.operatonId }
-    val results = model.getModelElementsByType(Activity::class.java).filter { it.id in before }
-        .flatMap { task ->
-            if (task !is ServiceTask || task.operatonTopic != AgentLauncher.TOPIC) listOf(task.id)
-            else listOf("${task.id}.summary", "${task.id}.output") +
-                (promised(catalogue, task)?.get("properties") as? Map<*, *>).orEmpty().keys.map { "${task.id}.output.$it" }
-        }
-    return (fields + listOf("runs", "clones") + results).distinct().map { "\${$it}" }
+    fun results(task: Activity, key: String): List<String> =
+        if (task !is ServiceTask || task.operatonTopic != AgentLauncher.TOPIC) listOf(key)
+        else listOf("$key.summary", "$key.output") + (promised(catalogue, task)?.get("properties") as? Map<*, *>).orEmpty().keys.map { "$key.output.$it" }
+    val results = model.getModelElementsByType(Activity::class.java).filter { it.id in before && it.givesResult }.flatMap { task ->
+        val process = (task as? CallActivity)?.calledElement?.let(called)
+        process?.getModelElementsByType(Activity::class.java)?.filter { it.givesResult }?.flatMap { results(it, "${task.id}.${it.id}") } ?: results(task, task.id)
+    }
+    return (fields + listOf("runs", "clones") + loops(target).map { it.element } + results).distinct().map { "\${$it}" }
 }
+
+/** Whether a Result is kept under the activity's id: anything but a sub-process that runs once. */
+private val Activity.givesResult get() = this !is SubProcess || loopCharacteristics != null

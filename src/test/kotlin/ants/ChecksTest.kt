@@ -10,6 +10,7 @@ import kotlin.io.path.deleteIfExists
 import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class ChecksTest : AntsTest() {
@@ -359,6 +360,43 @@ class ChecksTest : AntsTest() {
         assertEquals(setOf("text", "meta"), ((draft["output"] as Map<*, *>)["properties"] as Map<*, *>).keys)
         val other = skills["other"] as Map<*, *>
         assertEquals(listOf(emptyList<String>(), true, true, null), listOf(other["inputs"], other["vault"], other["answerHistory"], other["output"]))
+    }
+
+    /** Review in a multi-instance over `${prompt}`, its element variable [element] (or the default), reading [reads]. */
+    private fun inLoop(reads: String, element: String? = null) = twoTasks(reads, agentTask(
+        "review",
+        """<bpmn:multiInstanceLoopCharacteristics operaton:collection="${'$'}{prompt}" ${element?.let { "operaton:elementVariable=\"$it\"" }.orEmpty()} />""",
+        """<operaton:inputParameter name="tone">$reads</operaton:inputParameter>""",
+    ))
+
+    @Test
+    fun `a loop's own variables are read only inside it, its element variable under its own name`() {
+        writerAndDraft()
+        refuses(twoTasks("${'$'}{item}"), "review", "Draft (review) reads item, which is no Task, start-form field or Run variable.")
+        refuses(twoTasks("${'$'}{loopCounter}"), "review", "Draft (review) reads loopCounter, which is no Task, start-form field or Run variable.")
+        refuses(inLoop("${'$'}{item}", element = "ticket"), "review", "Draft (review) reads item, which is no Task, start-form field or Run variable.")
+        assertEquals(emptyList(), checks(inLoop("${'$'}{ticket}${'$'}{loopCounter}${'$'}{nrOfInstances}", element = "ticket")))
+        assertEquals(emptyList(), checks(inLoop("${'$'}{item}")))
+    }
+
+    /** What the input pickers of [element] in [bpmn] offer. */
+    private fun offered(bpmn: String, element: String = "review") =
+        JsonMapper.shared().readValue(browser.post("/processes/inputs", mapOf("bpmn" to bpmn, "element" to element)).body, List::class.java).toSet()
+
+    @Test
+    fun `input pickers offer a loop's element variable inside it, and the Results of an earlier call by Task id`() {
+        writerAndDraft()
+        assertContains(offered(inLoop("", element = "ticket")), "${'$'}{ticket}")
+        assertContains(offered(inLoop("")), "${'$'}{item}")
+        assertFalse("${'$'}{item}" in offered(twoTasks("")))
+
+        assertEquals("/processes/called", browser.post("/processes/deploy", mapOf("bpmn" to diagram(agentTask("draft")).replace("\"checked\"", "\"called\""))).path)
+        val caller = twoTasks("").replace("""<bpmn:serviceTask id="draft"""", """<bpmn:callActivity id="build" calledElement="called" /><bpmn:serviceTask id="unused"""")
+            .replace("""sourceRef="draft"""", """sourceRef="build"""").replace("""targetRef="draft"""", """targetRef="build"""")
+        assertEquals(
+            setOf("${'$'}{prompt}", "${'$'}{runs}", "${'$'}{clones}", "${'$'}{build.draft.summary}", "${'$'}{build.draft.output}", "${'$'}{build.draft.output.text}", "${'$'}{build.draft.output.meta}"),
+            offered(caller),
+        )
     }
 
     @Test
