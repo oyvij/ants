@@ -149,7 +149,7 @@ private fun Document.ids() = getElementsByTagName("*").elements()
  * Drops [template] into [target]'s Process as a collapsed sub-process centred on ([x], [y]), named after the Template's
  * Process, else [name]. The Template's elements keep their ids; an id [target] already has is suffixed `_2`, `_3`, …
  * (a JUEL name, so `${approve_2.output}` still reads), and every reference inside the Template follows: flows,
- * defaults, boundaries, the diagram, `operaton:property` values naming a Task, and ids in `${…}` expressions.
+ * defaults, boundaries, the diagram and ids in `${…}` expressions.
  * The sub-process's own diagram is a plane of its own, as bpmn-js draws a collapsed sub-process. Gives its id.
  */
 internal fun drop(target: Document, template: Document, name: String, x: Int, y: Int): String {
@@ -168,7 +168,8 @@ internal fun drop(target: Document, template: Document, name: String, x: Int, y:
             val diagram = element.namespaceURI == BPMN || element.namespaceURI == BPMNDI
             for (attribute in List(element.attributes.length) { element.attributes.item(it) }) attribute.nodeValue = when {
                 attribute.localName == "id" && diagram || attribute.localName in references -> renamed[attribute.nodeValue]
-                element.localName == "property" && attribute.localName == "value" -> renamed[attribute.nodeValue]
+                // ponytail: no `operaton:property` names a Task yet, and `ants.agent` or `ants.skill` may equal a Task's id;
+                // rename the values of the ones that will (wave 4's Send back resumes) by property name.
                 else -> null
             } ?: expressions(attribute.nodeValue)
             if (element.children().isEmpty() && element.textContent.isNotEmpty()) element.textContent =

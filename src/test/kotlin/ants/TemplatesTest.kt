@@ -2,6 +2,8 @@ package ants
 
 import org.junit.jupiter.api.Test
 import tools.jackson.databind.json.JsonMapper
+import kotlin.io.path.createDirectories
+import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 
@@ -53,6 +55,26 @@ class TemplatesTest : AntsTest() {
         assertContains(twice, "\${runs.approve &gt;= 3}")
 
         assertEquals("/processes/dropped-twice", browser.post("/processes/deploy", mapOf("bpmn" to twice)).path)
+    }
+
+    @Test
+    fun `a renamed Task keeps the Agent and Skill it names, even when the Skill's name is its id`() {
+        home.resolve("templates").createDirectories().resolve("grilling.bpmn").writeText("""<?xml version="1.0" encoding="UTF-8"?>
+            <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:operaton="http://operaton.org/schema/1.0/bpmn"
+                              xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" id="definitions" targetNamespace="http://bpmn.io/schema/bpmn">
+              <bpmn:process id="grilling" isExecutable="true">
+                <bpmn:serviceTask id="grill" operaton:type="external" operaton:topic="agent">
+                  <bpmn:extensionElements><operaton:properties>
+                    <operaton:property name="ants.agent" value="grill" /><operaton:property name="ants.skill" value="grill" />
+                  </operaton:properties></bpmn:extensionElements>
+                </bpmn:serviceTask>
+              </bpmn:process>
+              <bpmndi:BPMNDiagram id="diagram"><bpmndi:BPMNPlane id="grill_plane" bpmnElement="grilling" /></bpmndi:BPMNDiagram>
+            </bpmn:definitions>""")
+        val (once, _) = drop("grilling", blank("Grilled twice"))
+        val (twice, _) = drop("grilling", once)
+        assertContains(twice, """<bpmn:serviceTask id="grill_2" operaton:topic="agent" operaton:type="external">""")
+        assertEquals(4, Regex("""value="grill"""").findAll(twice).count(), twice)
     }
 
     @Test
