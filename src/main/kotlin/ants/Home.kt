@@ -15,8 +15,12 @@ import org.springframework.ui.Model
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.ResponseBody
+import org.springframework.security.web.csrf.CsrfToken
+import org.springframework.security.web.csrf.DefaultCsrfToken
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
+import java.net.URI
 import java.time.Clock
 
 /** An Agent Task running now, in a Run of a Process. */
@@ -37,30 +41,40 @@ class Home(
     @GetMapping("/")
     fun home(model: Model): String {
         model.addAllAttributes(dashboard())
-        model.addAttribute("pauses", launcher.pauses().mapValues { clock.local(it.value) })
         model.addAttribute("processes", repository.createProcessDefinitionQuery().latestVersion().orderByProcessDefinitionName().asc().list())
         return "home"
     }
 
-    /** **Try now**: retries a CLI the Usage limit paused, before its reset. */
+    /** **Try now**: retries a CLI the Usage limit paused, before its reset, and goes back to the page it was on. */
     @PostMapping("/pauses/{cli}")
-    fun tryNow(@PathVariable cli: String): String {
+    fun tryNow(@PathVariable cli: String, @RequestHeader("Referer", required = false) from: String?): String {
         launcher.tryNow(cli)
-        return "redirect:/"
+        return "redirect:" + (from?.let { runCatching { URI(it).path }.getOrNull() }?.ifEmpty { null } ?: "/")
     }
 
     /** The live part of Home as HTML, sent on connect and whenever it changes. */
-    // ponytail: polls every second per open tab, like the Notification list count; the stream ends after a minute and
-    // EventSource reconnects.
     @GetMapping("/home/live", produces = [TEXT_EVENT_STREAM_VALUE])
     @ResponseBody
-    fun live(): SseEmitter = SseEmitter(60_000).also { emitter ->
+    fun live(): SseEmitter = stream("dashboard.kte") { dashboard() }
+
+    /** The nav's pill as HTML, "claude paused until 15:45" with **Try now** per paused CLI, or nothing. */
+    @GetMapping("/pauses", produces = [TEXT_EVENT_STREAM_VALUE])
+    @ResponseBody
+    fun pauses(csrf: CsrfToken): SseEmitter {
+        val token = DefaultCsrfToken(csrf.headerName, csrf.parameterName, csrf.token) // read now, while the request lives
+        return stream("pill.kte") { mapOf("pauses" to launcher.pauses().mapValues { clock.local(it.value) }, "csrf" to token) }
+    }
+
+    /** Streams [template] rendered with [params], sent on connect and whenever it changes. */
+    // ponytail: polls every second per open tab, like the Notification list count; the stream ends after a minute and
+    // EventSource reconnects.
+    private fun stream(template: String, params: () -> Map<String, Any>) = SseEmitter(60_000).also { emitter ->
         Thread.ofVirtual().start {
-            var last = ""
+            var last: String? = null
             try {
                 while (!closing) {
-                    val html = StringOutput().also { templates.render("dashboard.kte", dashboard(), it) }.toString()
-                        .replace('\n', ' ') // one SSE data line
+                    val html = StringOutput().also { templates.render(template, params(), it) }.toString()
+                        .replace('\n', ' ').trim() // one SSE data line
                     if (html != last) emitter.send(html).also { last = html }
                     Thread.sleep(1000)
                 }

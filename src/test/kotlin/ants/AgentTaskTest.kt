@@ -8,6 +8,7 @@ import java.nio.file.Path
 import java.time.Duration
 import java.time.Instant
 import java.time.format.DateTimeFormatter
+import java.util.concurrent.TimeUnit.SECONDS
 import kotlin.io.path.createDirectories
 import kotlin.io.path.createFile
 import kotlin.io.path.deleteIfExists
@@ -19,6 +20,7 @@ import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 
 class AgentTaskTest : AntsTest() {
     private val browser by lazy { browser().also { it.login() } }
@@ -306,9 +308,12 @@ class AgentTaskTest : AntsTest() {
         assertEquals(emptyMap<String, Any>(), (claude.launches("draft").single().schema()["properties"] as Map<*, *>)["output"])
     }
 
+    /** Puts the clock back and opens claude's gate, which a failed pause test could leave shut for every later test. */
     @AfterEach
     fun putTheClockBack() {
         clock.offset = Duration.ZERO
+        browser.get("/processes") // for a CSRF token
+        browser.post("/pauses/claude", emptyMap())
     }
 
     /** A Usage limit rejection, as claude reports it, resetting at [resetsAt]. */
@@ -316,6 +321,12 @@ class AgentTaskTest : AntsTest() {
         """"resetsAt":${resetsAt.epochSecond},"rateLimitType":"five_hour","isUsingOverage":false},"session_id":"${'$'}SESSION"}"""
 
     private fun hhmm(instant: Instant) = DateTimeFormatter.ofPattern("HH:mm").withZone(clock.zone).format(instant)
+
+    /** The nav's pill as [page] shows it: the nav fills its slot from the stream it names. */
+    private fun pill(page: String): String {
+        val slot = Regex("""<span id="paused" data-src="([^"]+)"></span>""").find(browser.get(page).body)
+        return browser.events(assertNotNull(slot, "$page has no pill in its nav").groupValues[1]).poll(10, SECONDS).orEmpty()
+    }
 
     @Test
     fun `a rejection pauses the Task until resetsAt plus one minute, then resumes the same session with the reset message`() {
@@ -328,7 +339,7 @@ class AgentTaskTest : AntsTest() {
         val run = start()
         val until = hhmm(Instant.ofEpochSecond(resetsAt.epochSecond).plusSeconds(60))
         eventually { assertContains(page(run), "<dt>draft</dt><dd>Paused until $until</dd>") }
-        assertContains(browser.get("/").body, "claude paused until $until")
+        assertContains(pill("/runs/$run"), "claude paused until $until")
         assertFalse("/runs/$run\"" in browser.get("/notifications").body) // a pause waits on nobody
 
         clock.offset = Duration.ofHours(1) // past resetsAt, not yet the minute after
@@ -341,7 +352,7 @@ class AgentTaskTest : AntsTest() {
         assertEquals(first.flag("--session-id"), resumed.flag("--resume"))
         assertEquals(null, resumed.flag("--session-id"))
         assertEquals("""{"type":"user","message":{"role":"user","content":"The usage limit has reset. Carry on where you stopped."}}""", resumed.stdin)
-        assertFalse("paused" in browser.get("/").body)
+        assertFalse("paused" in pill("/runs/$run"))
     }
 
     @Test
@@ -359,13 +370,15 @@ class AgentTaskTest : AntsTest() {
         eventually { assertContains(page(second), paused) }
         assertEquals(1, claude.launches("draft").size)
 
-        val home = browser.get("/").body
-        assertContains(home, "Try now")
+        val runs = pill("/runs")
+        assertContains(runs, "claude paused until")
+        assertContains(runs, """action="/pauses/claude"""")
+        assertContains(runs, "Try now")
         browser.post("/pauses/claude", emptyMap())
         for (run in listOf(first, second)) eventually { assertContains(page(run), "State: Completed") }
         val (cut, after1, after2) = claude.launches("draft") // the two after Try now launch together
         assertEquals(setOf(cut.flag("--session-id"), null), setOf(after1.flag("--resume"), after2.flag("--resume")))
-        assertFalse("Try now" in browser.get("/").body)
+        assertFalse("Try now" in pill("/runs"))
     }
 
     /** Plays [limit] as the first launch and checks that claude pauses for 30 minutes and resumes after. */

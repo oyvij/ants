@@ -5,8 +5,6 @@
 @param working: List<ants.Working>
 @param processes: List<org.operaton.bpm.engine.repository.ProcessDefinition>
 @param colorScheme: String = "light dark"
-@param pauses: Map<String, String>
-@param _csrf: org.springframework.security.web.csrf.CsrfToken
 <!doctype html>
 <html lang="en">
 <head>
@@ -16,12 +14,6 @@
 </head>
 <body>
 @template.nav()
-@for((cli, until) in pauses)
-<form method="post" action="/pauses/${cli}">
-    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
-    ${cli} paused until ${until} <button>Try now</button>
-</form>
-@endfor
 <h1>Home</h1>
 <div id="live">@template.dashboard(live = live, waiting = waiting, done = done, entries = entries, working = working)</div>
 <section id="start-a-run">
