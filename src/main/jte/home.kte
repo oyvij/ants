@@ -1,7 +1,9 @@
+@param colorScheme: String = "light dark"
 <!doctype html>
 <html lang="en">
 <head>
     <meta charset="utf-8">
+    <meta name="color-scheme" content="${colorScheme}">
     <title>Ants</title>
 </head>
 <body>

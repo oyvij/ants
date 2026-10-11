@@ -34,14 +34,14 @@ class Skill(val name: String, val file: Path, val uses: List<String>, val vault:
 }
 
 /**
- * Agents and Skills by name, read from `agents/`, `skills/` and `shipped/` in ANTS_HOME each time they're asked for,
- * so an edit reaches the next launch. `shipped/` is Ants' own, replaced whole on start when any file differs.
+ * Agents and Skills by name, read from `agents/` and `skills/` in ANTS_HOME, then the extra folders in settings, then
+ * `shipped/`, each time they're asked for, so an edit reaches the next launch. `shipped/` is Ants' own, replaced whole on start when any file differs.
  */
 @Component
-class Catalogue(@Value("\${ants.home}") home: Path) {
+class Catalogue(@Value("\${ants.home}") private val home: Path, private val settings: Settings) {
     private val shipped = home.resolve("shipped")
-    private val agentFolders = listOf(home.resolve("agents"), shipped.resolve("agents"))
-    private val skillFolders = listOf(home.resolve("skills"), shipped.resolve("skills"))
+    private val agentFolders get() = listOf(home.resolve("agents")) + settings.agentFolders() + shipped.resolve("agents")
+    private val skillFolders get() = listOf(home.resolve("skills")) + settings.skillFolders() + shipped.resolve("skills")
 
     init {
         val resources = PathMatchingResourcePatternResolver()
