@@ -82,7 +82,7 @@ class AgentLauncher(
         } catch (e: Exception) {
             if (poller.isShutdown) return // Ants is stopping: the Task stays locked, and the next start unlocks it
             log.warn("Agent Task ${task.activityId} failed", e)
-            incident(task, "[failed] ${e.message ?: e}", (e as? InvalidResult)?.result)
+            incident(task, "[failed] ${e.message ?: e}", (e as? InvalidResult)?.details)
         }
     }
 
@@ -101,7 +101,7 @@ class AgentLauncher(
         refuseBareByDefault(agent.cli, workspace)
 
         val prompt = "Follow the Skill in ${skill.file} for the workspace at $workspace.\n\n" + json.writeValueAsString(task.variables.toSortedMap())
-        val schema = ResultContract.schema(skill.output)
+        val schema = ResultContract.schema(skill.outputSchema)
         val process = cli(agent.cli, workspace, flags(agent, schema, skill)).start()
         clis += process
         try {
@@ -113,25 +113,27 @@ class AgentLauncher(
             }
             say(prompt)
             var valid: Map<*, *>? = null
-            var invalid: InvalidResult? = null
+            var failure: Exception? = null
             var retried = false
             process.inputReader().forEachLine { line ->
+                if (valid != null || failure != null) return@forEachLine
                 val event = runCatching { json.readValue(line, Map::class.java) }.getOrNull() ?: return@forEachLine
                 if (event["type"] != "result") return@forEachLine
                 val result = event["structured_output"]
-                val errors = if (result == null) listOf("No Result came back.") else ResultContract.errors(result, schema, workspace)
-                if (errors.isEmpty()) {
-                    valid = result as Map<*, *>
-                } else if (!retried) {
-                    retried = true
-                    say("Your Result is invalid:\n${errors.joinToString("\n") { "- $it" }}\nAnswer again with a valid Result.")
-                } else {
-                    invalid = InvalidResult("The Result is invalid: ${errors.joinToString("; ")}", json.writeValueAsString(result))
+                val errors = result?.let { ResultContract.errors(it, schema, workspace) }
+                when {
+                    errors == null -> failure = IllegalStateException("${agent.cli} ended without a Result: ${event["subtype"]} ${event["result"] ?: ""}".trim())
+                    errors.isEmpty() -> { valid = result as Map<*, *> }
+                    !retried -> {
+                        retried = true
+                        say("Your Result is invalid:\n${errors.joinToString("\n") { "- $it" }}\nAnswer again with a valid Result.")
+                    }
+                    else -> failure = InvalidResult("The Result is invalid: ${errors.joinToString("; ")}", errors.joinToString("\n") + "\n\n" + json.writeValueAsString(result))
                 }
-                if (valid != null || invalid != null) stdin.close() // the session ends once Ants holds its Result
+                if (valid != null || failure != null) stdin.close() // the session ends once Ants holds its Result
             }
             val exit = process.waitFor()
-            invalid?.let { throw it }
+            failure?.let { throw it }
             check(exit == 0) { "${agent.cli} exited with code $exit" }
             return valid ?: error("${agent.cli} ended without a Result")
         } finally {
@@ -183,8 +185,8 @@ class AgentLauncher(
         check("default" !in bare.lowercase()) { "$cli -p now turns on --bare by default, which never reads Ants' login. Ants needs updating." }
     }
 
-    /** A second invalid Result, kept for the `[failed]` page. */
-    private class InvalidResult(message: String, val result: String) : Exception(message)
+    /** A second invalid Result: its errors and the Result itself, kept whole for the `[failed]` page. */
+    private class InvalidResult(message: String, val details: String) : Exception(message)
 
     companion object {
         const val TOPIC = "agent"

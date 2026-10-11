@@ -40,8 +40,13 @@ class AgentTaskTest : AntsTest() {
     /** The `--json-schema` the launch was given. */
     private fun FakeClaude.Launch.schema(): Map<*, *> = JsonMapper.shared().readValue(argv[argv.indexOf("--json-schema") + 1], Map::class.java)
 
-    private val done = """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION",""" +
-        """"structured_output":{"outcome":"done","summary":"Drafted.","output":{"text":"Hello"}}}"""
+    /** A result line whose Result is done, carrying [output]. */
+    private fun done(output: String = """{"text":"Hello"}""") = """{"type":"result","subtype":"success","is_error":false,""" +
+        """"session_id":"${'$'}SESSION","structured_output":{"outcome":"done","summary":"Drafted.","output":$output}}"""
+
+    private val done = done()
+    private val textSchema = """{"type":"object","properties":{"text":{"type":"string"}},"required":["text"]}"""
+    private val fileSchema = """{"type":"object","properties":{"file":{"type":"string","format":"path"}},"required":["file"]}"""
 
     private fun start(): String {
         browser.import("agent-task.bpmn")
@@ -66,7 +71,7 @@ class AgentTaskTest : AntsTest() {
     fun `--json-schema holds the envelope around the Skill's promised output`() {
         settings()
         agent("Write plainly.\n")
-        skill("""{"type":"object","properties":{"text":{"type":"string"}},"required":["text"]}""")
+        skill(textSchema)
         claude.session("draft", done)
         val run = start()
         eventually { assertContains(page(run), "State: Completed") }
@@ -95,8 +100,8 @@ class AgentTaskTest : AntsTest() {
     fun `an invalid Result resumes the same session once with the error, and a valid second Result completes the Task`() {
         settings()
         agent("Write plainly.\n")
-        skill("""{"type":"object","properties":{"text":{"type":"string"}},"required":["text"]}""")
-        claude.session("draft", done.replace(""""text":"Hello"""", """"words":"Hello""""), "read", done)
+        skill(textSchema)
+        claude.session("draft", done("""{"words":"Hello"}"""), "read", done)
         val run = start()
         eventually { assertContains(page(run), "State: Completed") }
         assertContains(page(run), """<dt>draft</dt><dd><code>{"outcome":"done","summary":"Drafted.","output":{"text":"Hello"}}</code></dd>""")
@@ -122,9 +127,8 @@ class AgentTaskTest : AntsTest() {
     fun `a file reference in output that escapes the Run workspace is rejected as invalid`() {
         settings()
         agent("Write plainly.\n")
-        skill("""{"type":"object","properties":{"file":{"type":"string","format":"path"}},"required":["file"]}""")
-        val file = { path: String -> done.replace(""""text":"Hello"""", """"file":"$path"""") }
-        claude.session("draft", file("../other-run/notes.md"), "read", file("/etc/passwd"))
+        skill(fileSchema)
+        claude.session("draft", done("""{"file":"../other-run/notes.md"}"""), "read", done("""{"file":"/etc/passwd"}"""))
         val run = start()
         eventually { assertContains(page(run), "<dt>draft</dt><dd>[failed] The Result is invalid: ") }
         assertContains(page(run), "/etc/passwd")
@@ -135,10 +139,35 @@ class AgentTaskTest : AntsTest() {
     fun `a file reference inside the Run workspace is valid`() {
         settings()
         agent("Write plainly.\n")
-        skill("""{"type":"object","properties":{"file":{"type":"string","format":"path"}},"required":["file"]}""")
-        claude.session("draft", done.replace(""""text":"Hello"""", """"file":"tickets/../tickets/spec.md""""))
+        skill(fileSchema)
+        claude.session("draft", done("""{"file":"tickets/../tickets/spec.md"}"""))
         val run = start()
         eventually { assertContains(page(run), "State: Completed") }
+    }
+
+    @Test
+    fun `a file reference through a symlink out of the Run workspace is rejected as invalid`() {
+        settings()
+        agent("Write plainly.\n")
+        skill(fileSchema)
+        val outside = Files.createTempDirectory("outside").also { it.resolve("secret.md").writeText("secret") }
+        claude.session("draft", "wait release", done("""{"file":"link/secret.md"}"""), "read", done("""{"file":"."}"""))
+        val run = start()
+        Files.createSymbolicLink(home.resolve("runs/$run/link"), outside)
+        claude.release("release")
+        eventually { assertContains(page(run), "<dt>draft</dt><dd>[failed] The Result is invalid: ") }
+        assertContains(claude.launches("draft").single().stdin.lines()[1], "/output/file: does not match the path pattern")
+    }
+
+    @Test
+    fun `a result line without a Result is a failure, not an invalid Result to retry`() {
+        settings()
+        agent("Write plainly.\n")
+        skill()
+        claude.session("draft", """{"type":"result","subtype":"error_max_turns","is_error":true,"session_id":"${'$'}SESSION"}""", "read", done)
+        val run = start()
+        eventually { assertContains(page(run), "<dt>draft</dt><dd>[failed] claude ended without a Result: error_max_turns</dd>") }
+        assertEquals(1, claude.launches("draft").single().stdin.lines().size)
     }
 
     @Test

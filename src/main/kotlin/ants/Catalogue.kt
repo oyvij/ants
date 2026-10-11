@@ -25,7 +25,7 @@ class Skill(val name: String, val file: Path) {
     val folder: Path get() = file.parent
 
     /** The schema of the `output` the Skill promises, from `result.schema.json` beside it; without one, any output. */
-    val output: Map<*, *>
+    val outputSchema: Map<*, *>
         get() = folder.resolve("result.schema.json").takeIf { it.exists() }?.let { JsonMapper.shared().readValue(it.toFile(), Map::class.java) }
             ?: emptyMap<String, Any?>()
 }
