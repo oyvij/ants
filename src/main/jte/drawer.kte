@@ -4,7 +4,7 @@
 @param name: String
 @param shown: ants.Shown?
 @param transcript: ants.Transcript
-@param entry: ants.Entry?
+@param entry: ants.TaskEntry?
 @param details: String?
 @param live: Boolean
 @param _csrf: org.springframework.security.web.csrf.CsrfToken

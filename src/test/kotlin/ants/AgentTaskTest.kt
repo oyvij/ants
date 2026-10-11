@@ -12,7 +12,6 @@ import java.time.format.DateTimeFormatter
 import java.util.concurrent.TimeUnit.SECONDS
 import kotlin.io.path.createDirectories
 import kotlin.io.path.createFile
-import kotlin.io.path.deleteIfExists
 import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
 import kotlin.io.path.listDirectoryEntries
@@ -22,6 +21,7 @@ import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -32,22 +32,13 @@ class AgentTaskTest : AntsTest() {
     @Autowired
     lateinit var catalogue: Catalogue
 
-    private fun settings(agentTasks: Int = 3) = home.resolve("settings.yaml").writeText(
-        """
-        agent-tasks: $agentTasks
-        claude:
-          command: [${claude.command}]
-          env: [PATH, HOME, ANTHROPIC_API_KEY, CLAUDE_CODE_RETRY_WATCHDOG]
-        """.trimIndent(),
-    )
+    private val env = listOf("PATH", "HOME", "ANTHROPIC_API_KEY", "CLAUDE_CODE_RETRY_WATCHDOG")
 
-    private fun agent(text: String) = home.resolve("agents").createDirectories().resolve("writer.md").writeText(text)
+    private fun settings(agentTasks: Int = 3, extra: String = "") = settings(claude, "agent-tasks: $agentTasks\n$extra", env)
 
-    private fun skill(schema: String? = null, metadata: String = "") {
-        val folder = home.resolve("skills/draft").createDirectories()
-        folder.resolve("SKILL.md").writeText("---\nname: draft\ndescription: Drafts a text.\n$metadata---\nDraft the text.\n")
-        folder.resolve("result.schema.json").run { if (schema != null) writeText(schema) else deleteIfExists() }
-    }
+    /** The Agent Task's recipe for the Skill `draft` promising [schema]; [agent] and [metadata] go in the Agent's and the Skill's frontmatter. */
+    private fun agentTask(schema: String? = null, agent: String = "", metadata: String = "", agentTasks: Int = 3, extra: String = "") =
+        agentTask(claude, mapOf("draft" to schema), agent, metadata, "agent-tasks: $agentTasks\n$extra", env)
 
     /** A Skill [name] that only other Skills use, its frontmatter carrying [metadata]. */
     private fun usedSkill(name: String, metadata: String = ""): Path = home.resolve("skills/used/$name").createDirectories().resolve("SKILL.md")
@@ -72,13 +63,66 @@ class AgentTaskTest : AntsTest() {
         return browser.post("/processes/agent-task/runs", mapOf("prompt" to "Say hello")).path.removePrefix("/runs/")
     }
 
+    /** Deploys [file] as the Process [key], its first Agent Task given [properties] too, and starts a Run of it. */
+    private fun startWith(key: String, properties: String, file: String = "agent-task") : String {
+        val bpmn = javaClass.getResource("/$file.bpmn")!!.readText().replace("\"$file\"", "\"$key\"")
+            .replaceFirst("""<operaton:property name="ants.skill" value="draft" />""", """<operaton:property name="ants.skill" value="draft" />$properties""")
+        browser.get("/processes")
+        assertFalse("role=\"alert\"" in browser.upload("/processes", "file", "$key.bpmn", bpmn.toByteArray()).body)
+        browser.get("/processes/$key")
+        return browser.post("/processes/$key/runs", mapOf("prompt" to "Say hello")).path.removePrefix("/runs/")
+    }
+
+    private fun property(name: String, value: String) = """<operaton:property name="$name" value="${value.replace("\"", "&quot;")}" />"""
+
+    @Test
+    fun `a result-schema override replaces the Skill's schema in --json-schema`() {
+        agentTask(textSchema)
+        claude.session("draft", done("""{"verdict":"ship"}"""))
+        val verdict = """{"type":"object","properties":{"verdict":{"type":"string"}},"required":["verdict"]}"""
+        val run = startWith("overridden", property("ants.result-schema", verdict))
+        eventually { assertContains(page(run), "State: Completed") }
+        val output = (claude.launches("draft").single().schema()["properties"] as Map<*, *>)["output"]
+        assertEquals(JsonMapper.shared().readValue(verdict, Map::class.java), output)
+    }
+
+    @Test
+    fun `the Vault and Answer History toggles reach the hand-off line only when on, defaulting from the Skill`() {
+        val map = Files.createTempFile("source-map", ".md")
+        agentTask(metadata = "metadata:\n  varde-vault: true\n", extra = "source-maps:\n  mine: $map\n")
+        claude.session("draft", done)
+        val byDefault = startWith("toggles-default", "")
+        eventually { assertContains(page(byDefault), "State: Completed") }
+        val defaults = claude.launches("draft").last().stdin
+        assertContains(defaults, "for the workspace at ${home.resolve("runs/$byDefault")}. The Vault is $vaultPath and the Source map is $map.\\n")
+        assertFalse("Answer History" in defaults)
+
+        val flipped = startWith("toggles-flipped", property("ants.vault", "false") + property("ants.answer-history", "true"))
+        eventually { assertContains(page(flipped), "State: Completed") }
+        val toggled = claude.launches("draft").last().stdin
+        assertContains(toggled, "for the workspace at ${home.resolve("runs/$flipped")}. The Answer History is ${home.resolve("answer-history")}.\\n")
+        assertFalse("Vault" in toggled)
+    }
+
+    @Test
+    fun `with resume on, a Task the flow comes back to resumes its session with its inputs`() {
+        agentTask()
+        claude.session("draft", done)
+        val run = startWith("resumed", property("ants.resume", "true"), file = "agent-loop") // on Draft, which loops once; not on Polish
+        eventually { assertContains(page(run), "State: Completed") }
+        val (first, again, polish) = claude.launches("draft")
+        assertEquals(first.flag("--session-id"), again.flag("--resume"))
+        assertEquals(null, again.flag("--session-id"))
+        assertEquals(first.stdin, again.stdin) // the hand-off and the inputs, read afresh
+        assertEquals(null, polish.flag("--resume"))
+        assertNotEquals(first.flag("--session-id"), polish.flag("--session-id"))
+    }
+
     private fun page(run: String) = browser.get("/runs/$run").body.replace("&#34;", "\"")
 
     @Test
     fun `a Process with one Agent Task ends with the Task's Result stored under its Task id`() {
-        settings()
-        agent("---\nname: writer\ndescription: Writes.\nmodel: sonnet\n---\nWrite plainly.\n")
-        skill()
+        agentTask(agent = "name: writer\ndescription: Writes.\nmodel: sonnet\n")
         claude.session("draft", """{"type":"system","subtype":"init","session_id":"${'$'}SESSION","apiKeySource":"none"}""", done)
         val run = start()
         eventually { assertContains(page(run), "State: Completed") }
@@ -87,9 +131,7 @@ class AgentTaskTest : AntsTest() {
 
     @Test
     fun `--json-schema holds the envelope around the Skill's promised output`() {
-        settings()
-        agent("Write plainly.\n")
-        skill(textSchema)
+        agentTask(textSchema)
         claude.session("draft", done)
         val run = start()
         eventually { assertContains(page(run), "State: Completed") }
@@ -104,9 +146,7 @@ class AgentTaskTest : AntsTest() {
 
     @Test
     fun `a stuck Result raises an incident holding what the Agent needs, and never completes the Task`() {
-        settings()
-        agent("Write plainly.\n")
-        skill()
+        agentTask()
         claude.session("draft", done.replace(""""outcome":"done","summary":"Drafted.","output":{"text":"Hello"}""",
             """"outcome":"stuck","summary":"No tone given.","needs":"Which tone, dry or warm?""""))
         val run = start()
@@ -116,9 +156,7 @@ class AgentTaskTest : AntsTest() {
 
     @Test
     fun `an invalid Result resumes the same session once with the error, and a valid second Result completes the Task`() {
-        settings()
-        agent("Write plainly.\n")
-        skill(textSchema)
+        agentTask(textSchema)
         claude.session("draft", done("""{"words":"Hello"}"""), "read", done)
         val run = start()
         eventually { assertContains(page(run), "State: Completed") }
@@ -130,9 +168,7 @@ class AgentTaskTest : AntsTest() {
 
     @Test
     fun `a second invalid Result raises an incident naming the error`() {
-        settings()
-        agent("Write plainly.\n")
-        skill()
+        agentTask()
         val invalid = done.replace(""""summary":"Drafted.",""", "")
         claude.session("draft", invalid, "read", invalid)
         val run = start()
@@ -143,9 +179,7 @@ class AgentTaskTest : AntsTest() {
 
     @Test
     fun `a file reference in output that escapes the Run workspace is rejected as invalid`() {
-        settings()
-        agent("Write plainly.\n")
-        skill(fileSchema)
+        agentTask(fileSchema)
         claude.session("draft", done("""{"file":"../other-run/notes.md"}"""), "read", done("""{"file":"/etc/passwd"}"""))
         val run = start()
         eventually { assertContains(page(run), "<dt>draft</dt><dd>[failed] The Result is invalid: ") }
@@ -155,9 +189,7 @@ class AgentTaskTest : AntsTest() {
 
     @Test
     fun `a file reference inside the Run workspace is valid`() {
-        settings()
-        agent("Write plainly.\n")
-        skill(fileSchema)
+        agentTask(fileSchema)
         claude.session("draft", done("""{"file":"tickets/../tickets/spec.md"}"""))
         val run = start()
         eventually { assertContains(page(run), "State: Completed") }
@@ -165,9 +197,7 @@ class AgentTaskTest : AntsTest() {
 
     @Test
     fun `a file reference through a symlink out of the Run workspace is rejected as invalid`() {
-        settings()
-        agent("Write plainly.\n")
-        skill(fileSchema)
+        agentTask(fileSchema)
         val outside = Files.createTempDirectory("outside").also { it.resolve("secret.md").writeText("secret") }
         claude.session("draft", "wait release", done("""{"file":"link/secret.md"}"""), "read", done("""{"file":"."}"""))
         val run = start()
@@ -179,9 +209,7 @@ class AgentTaskTest : AntsTest() {
 
     @Test
     fun `a result line without a Result is a failure, not an invalid Result to retry`() {
-        settings()
-        agent("Write plainly.\n")
-        skill()
+        agentTask()
         claude.session("draft", """{"type":"result","subtype":"error_max_turns","is_error":true,"session_id":"${'$'}SESSION"}""", "read", done)
         val run = start()
         eventually { assertContains(page(run), "<dt>draft</dt><dd>[failed] claude ended without a Result: error_max_turns</dd>") }
@@ -190,9 +218,7 @@ class AgentTaskTest : AntsTest() {
 
     @Test
     fun `the CLI gets Ants' headless flags, a narrowed environment and the hand-off prompt`() {
-        settings()
-        agent("---\nname: writer\ndescription: Writes.\ntools: Read, Grep, Skill, Bash(git log:*)\nmodel: sonnet\n---\nWrite plainly.\n")
-        skill()
+        agentTask(agent = "name: writer\ndescription: Writes.\ntools: Read, Grep, Skill, Bash(git log:*)\nmodel: sonnet\n")
         claude.session("draft", done)
         val run = start()
         eventually { assertContains(page(run), "State: Completed") }
@@ -221,9 +247,7 @@ class AgentTaskTest : AntsTest() {
 
     @Test
     fun `a two-level ants-uses chain puts every used Skill in the hand-off line and in --add-dir`() {
-        settings()
-        agent("Write plainly.\n")
-        skill(metadata = uses("implement-tdd"))
+        agentTask(metadata = uses("implement-tdd"))
         val tdd = usedSkill("implement-tdd", uses("seams review"))
         val seams = usedSkill("seams")
         val review = usedSkill("review", uses("seams"))
@@ -238,22 +262,20 @@ class AgentTaskTest : AntsTest() {
 
     @Test
     fun `an ants-uses cycle fails before launch, naming the cycle`() {
-        settings()
-        agent("Write plainly.\n")
-        skill(metadata = uses("implement-tdd"))
+        agentTask(metadata = uses("implement-tdd"), agentTasks = 0) // the pre-Run check refuses a cycle, so it closes after the Run starts
         usedSkill("implement-tdd", uses("seams"))
-        usedSkill("seams", uses("draft"))
+        usedSkill("seams")
         claude.session("draft", done)
         val run = start()
+        usedSkill("seams", uses("draft"))
+        settings()
         eventually { assertContains(page(run), "<dt>draft</dt><dd>[failed] The Skills draft → implement-tdd → seams → draft use each other in a cycle</dd>") }
         assertEquals(emptyList(), claude.launches("draft"))
     }
 
     @Test
     fun `a used Skill's Vault opt-in turns the Task's Vault on`() {
-        settings()
-        agent("Write plainly.\n")
-        skill(metadata = uses("search"))
+        agentTask(metadata = uses("search"))
         usedSkill("search", "metadata:\n  varde-vault: true\n")
         claude.session("draft", done)
         assertTrue(catalogue.vault(catalogue.skill("draft")))
@@ -265,9 +287,7 @@ class AgentTaskTest : AntsTest() {
 
     @Test
     fun `with the cap at 1 a second ready Task waits, and ready Tasks launch oldest first across Runs`() {
-        settings(agentTasks = 1)
-        agent("Write plainly.\n")
-        skill()
+        agentTask(agentTasks = 1)
         claude.session("draft", "wait release", done)
         val runs = List(3) { start() }
         eventually { assertEquals(1, claude.launchLog().size) }
@@ -280,9 +300,7 @@ class AgentTaskTest : AntsTest() {
 
     @Test
     fun `the Task fails loudly, before any session, once claude -p turns on --bare by default`() {
-        settings()
-        agent("Write plainly.\n")
-        skill()
+        agentTask()
         claude.session("draft", done)
         claude.help("Options:\n  --bare      Minimal mode, the default with -p: never reads OAuth\n  --verbose   Says more\n")
         val run = start()
@@ -292,9 +310,7 @@ class AgentTaskTest : AntsTest() {
 
     @Test
     fun `today's --bare, off by default, passes the guard`() {
-        settings()
-        agent("Write plainly.\n")
-        skill()
+        agentTask()
         claude.session("draft", done)
         claude.help("Options:\n  --bare      Minimal mode: skip hooks, LSP and keychain reads\n  --verbose   The default is quiet\n")
         val run = start()
@@ -303,11 +319,12 @@ class AgentTaskTest : AntsTest() {
 
     @Test
     fun `a file without frontmatter is an Agent with defaults, named after the file`() {
-        settings()
-        agent("Write plainly.\n")
-        skill()
+        agentTask() // listing draft, so the Process deploys
         claude.session("draft", done)
+        settings(agentTasks = 0) // the pre-Run check needs the Agent to list draft; the launch, once allowed, reads the file without
         val run = start()
+        home.resolve("agents/writer.md").writeText("Write plainly.\n")
+        settings()
         eventually { assertContains(page(run), "State: Completed") }
         val argv = claude.launches("draft").single().argv.joinToString(" ")
         assertContains(argv, "--append-system-prompt Write plainly.")
@@ -338,9 +355,7 @@ class AgentTaskTest : AntsTest() {
 
     @Test
     fun `a rejection pauses the Task until resetsAt plus one minute, then resumes the same session with the reset message`() {
-        settings()
-        agent("Write plainly.\n")
-        skill()
+        agentTask()
         val resetsAt = clock.instant().plus(Duration.ofHours(1))
         claude.session("draft", 1, rejected(resetsAt), "wait never") // claude carries on; Ants kills it
         claude.session("draft", done)
@@ -366,9 +381,7 @@ class AgentTaskTest : AntsTest() {
 
     @Test
     fun `while claude is paused other ready Tasks don't launch, and Try now opens the gate and launches them`() {
-        settings()
-        agent("Write plainly.\n")
-        skill()
+        agentTask()
         val resetsAt = clock.instant().plus(Duration.ofHours(1))
         claude.session("draft", 1, rejected(resetsAt), "wait never")
         claude.session("draft", done)
@@ -392,9 +405,7 @@ class AgentTaskTest : AntsTest() {
 
     /** Plays [limit] as the first launch and checks that claude pauses for 30 minutes and resumes after. */
     private fun pausesFor30Minutes(vararg limit: String) {
-        settings()
-        agent("Write plainly.\n")
-        skill()
+        agentTask()
         claude.session("draft", 1, *limit, "wait never")
         claude.session("draft", done)
         val before = clock.instant()
@@ -429,6 +440,9 @@ class FakeClaude {
         Files.copy(javaClass.getResourceAsStream("/fake-claude/claude")!!, command)
         command.toFile().setExecutable(true)
         dir.resolve("sessions").createDirectories()
+        // Logged in, as the pre-Run check needs; a test of the login writes its own status over this.
+        AntsTest.home.resolve("claude").createDirectories().resolve("auth-status.json")
+            .writeText("""{"loggedIn":true,"authMethod":"claude.ai","apiKeySource":"none"}""")
     }
 
     fun session(skill: String, vararg lines: String) = dir.resolve("sessions/$skill.jsonl").writeText(lines.joinToString("\n", postfix = "\n"))
@@ -448,14 +462,15 @@ class FakeClaude {
     /** The working directory of every launch, in launch order. */
     fun launchLog(): List<String> = dir.resolve("launches.log").let { if (Files.exists(it)) it.readLines() else emptyList() }
 
+    /** One launch's record, read when asked: a launch just started may not have written it yet. */
     class Launch(private val dir: Path) {
-        val argv = dir.resolve("argv").readLines()
+        val argv get() = dir.resolve("argv").readLines()
 
         /** The value after [flag] in argv, or null. */
-        fun flag(flag: String) = argv.indexOf(flag).takeIf { it >= 0 }?.let { argv[it + 1] }
-        val env = dir.resolve("env").readLines().associate { it.substringBefore('=') to it.substringAfter('=') }
-        val cwd = dir.resolve("cwd").readText().trim()
-        val stdin = dir.resolve("stdin").readText().trim()
+        fun flag(flag: String) = argv.let { argv -> argv.indexOf(flag).takeIf { it >= 0 }?.let { argv[it + 1] } }
+        val env get() = dir.resolve("env").readLines().associate { it.substringBefore('=') to it.substringAfter('=') }
+        val cwd get() = dir.resolve("cwd").readText().trim()
+        val stdin get() = dir.resolve("stdin").readText().trim()
 
         /** Whether Ants killed the launch. */
         val killed get() = dir.resolve("killed").exists()

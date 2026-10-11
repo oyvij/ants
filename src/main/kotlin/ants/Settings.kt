@@ -14,6 +14,9 @@ import java.util.concurrent.atomic.AtomicReference
 import kotlin.io.path.exists
 import kotlin.io.path.readText
 
+/** One repo in a Source map: its short name, its local checkout and its git remote. */
+data class Repo(val name: String, val path: String, val remote: String)
+
 /** `settings.yaml` in ANTS_HOME, created on first start and read fresh each time, so hand edits count. */
 @Component
 class Settings(
@@ -83,6 +86,16 @@ class Settings(
 
     /** The default Source map's name: the one the user picked, else the first. */
     fun defaultSourceMap(): String? = default("source-maps", "default-source-map")
+
+    /**
+     * The repos in the Source map [name] (by default the default one), read from its file in Varde's format, one
+     * `- <name>: <local path> (<git remote>)` line per repo. Other lines, and a file that isn't there, give none.
+     */
+    fun repos(name: String? = defaultSourceMap()): List<Repo> {
+        val file = sourceMaps()[name]?.let(::expand)?.takeIf { it.exists() } ?: return emptyList()
+        return file.readText().lines().mapNotNull { Regex("""^- ([^:]+): (.+?) \((.+)\)$""").find(it.trim())?.destructured }
+            .map { (repo, path, remote) -> Repo(repo.trim(), path, remote) }
+    }
 
     /** The extra Agent folders, read after Ants' own. */
     fun agentFolders(): List<Path> = folders("agent-folders")

@@ -20,7 +20,7 @@
       <bpmn:extensionElements>
         <operaton:properties>
           <operaton:property name="ants.agent" value="writer" />
-          <operaton:property name="ants.skill" value="missing" />
+          <operaton:property name="ants.skill" value="check" />
         </operaton:properties>
       </bpmn:extensionElements>
     </bpmn:serviceTask>

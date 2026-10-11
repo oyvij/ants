@@ -6,11 +6,15 @@ import org.operaton.bpm.engine.delegate.DelegateExecution
 import org.operaton.bpm.engine.delegate.ExecutionListener
 import org.operaton.bpm.engine.externaltask.ExternalTask
 import org.operaton.bpm.engine.history.HistoricProcessInstance
+import org.operaton.bpm.engine.impl.bpmn.behavior.MultiInstanceActivityBehavior
+import org.operaton.bpm.engine.impl.bpmn.parser.BpmnParse
 import org.operaton.bpm.engine.impl.bpmn.parser.BpmnParseListener
+import org.operaton.bpm.engine.impl.ServiceImpl
 import org.operaton.bpm.engine.impl.cfg.AbstractProcessEnginePlugin
 import org.operaton.bpm.engine.impl.cfg.ProcessEngineConfigurationImpl
 import org.operaton.bpm.engine.impl.cfg.TransactionState
 import org.operaton.bpm.engine.impl.context.Context
+import org.operaton.bpm.engine.impl.persistence.entity.ExecutionEntity
 import org.operaton.bpm.engine.impl.persistence.entity.ProcessDefinitionEntity
 import org.operaton.bpm.engine.impl.pvm.process.ActivityImpl
 import org.operaton.bpm.engine.impl.pvm.process.ScopeImpl
@@ -78,6 +82,7 @@ class Runs(
             "variables",
             history.createHistoricVariableInstanceQuery().processInstanceId(id).disableCustomObjectDeserialization()
                 .orderByVariableName().asc().list()
+                .filter { it.executionId == id } // the Run's own, not an Agent Task's inputs or a multi-instance's own Results
                 .associate { it.name to ((it.typedValue as? ObjectValue)?.valueSerialized ?: "${it.value}") },
         )
         model.addAttribute("transcripts", Transcript.all(home.runWorkspace(id)).mapValues { it.value.tokens })
@@ -93,24 +98,37 @@ class Runs(
     @ResponseBody
     fun diagram(@PathVariable id: String): ByteArray = repository.getProcessModel(run(id).processDefinitionId).readAllBytes()
 
-    /** The Run's state and each element's [Shown], as JSON, sent on connect and whenever it changes. */
+    /**
+     * The Run's state, each element's [Shown] and the process instance each call activity called (its latest), as
+     * JSON, sent on connect and whenever it changes. [id] may be a called Process's instance, for the breadcrumb.
+     */
     @GetMapping("/runs/{id}/live", produces = [TEXT_EVENT_STREAM_VALUE])
     @ResponseBody
     fun live(@PathVariable id: String): SseEmitter {
         run(id)
-        return streams.changes { json.writeValueAsString(mapOf("state" to run(id).stateName, "elements" to shown(id))) }
+        return streams.changes {
+            // ponytail: a multi-instance call activity opens its latest called instance; a picker if one is wanted.
+            val called = history.createHistoricActivityInstanceQuery().processInstanceId(id).activityType("callActivity")
+                .orderByHistoricActivityInstanceStartTime().asc().list().filter { it.calledProcessInstanceId != null }
+                .associate { it.activityId to it.calledProcessInstanceId }
+            json.writeValueAsString(mapOf("state" to run(id).stateName, "elements" to shown(id), "called" to called))
+        }
     }
 
     /**
      * The drawer of the Run's Task [task] as HTML, sent on connect and whenever it changes: its state, So far, the
-     * Agent's checklist, latest output, and the comment box and action when it waits on the user.
+     * Agent's checklist, latest output, and the comment box and action when it waits on the user. [id] may be a
+     * called Process's instance, whose Task is kept in the top Run under its key ([taskKey]).
      */
     @GetMapping("/runs/{id}/tasks/{task}/drawer", produces = [TEXT_EVENT_STREAM_VALUE])
     @ResponseBody
     fun drawer(@PathVariable id: String, @PathVariable task: String, csrf: CsrfToken): SseEmitter {
-        val element = repository.getBpmnModelInstance(run(id).processDefinitionId).getModelElementById<FlowElement>(task)
+        val instance = run(id)
+        val element = repository.getBpmnModelInstance(instance.processDefinitionId).getModelElementById<FlowElement>(task)
             ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No Task $task")
-        val file = Transcript.file(home.runWorkspace(id), task)
+        val top = instance.rootProcessInstanceId
+        val key = (history.createHistoricVariableInstanceQuery().processInstanceId(id).variableName(CALLED).singleResult()?.value as? String).orEmpty() + task
+        val file = Transcript.file(home.runWorkspace(top), key)
         val transcript = Transcript()
         var offset = 0L
         csrf.token // loads the token while the request is still here
@@ -118,10 +136,10 @@ class Runs(
             val (lines, end) = Transcript.read(file, offset)
             offset = end
             lines.forEach(transcript::add)
-            val entry = notifications.entries().firstOrNull { it.run == id && it.taskId == task }
+            val entry = notifications.tasks().firstOrNull { it.instance == id && it.activity == task }
             val model = mapOf(
-                "run" to id, "task" to task, "name" to (element.name ?: task), "shown" to shown(id)[task], "transcript" to transcript,
-                "entry" to entry, "details" to entry?.let(notifications::details), "live" to launcher.live(id, task), "_csrf" to csrf,
+                "run" to top, "task" to key, "name" to (element.name ?: task), "shown" to shown(id)[task], "transcript" to transcript,
+                "entry" to entry, "details" to entry?.let(notifications::details), "live" to launcher.live(top, key), "_csrf" to csrf,
             )
             StringOutput().also { templates.render("drawer.kte", model, it) }.toString()
         }
@@ -133,7 +151,7 @@ class Runs(
      * Agent Task no worker holds yet. Its Round is its count in `runs`.
      */
     private fun shown(id: String): Map<String, Shown> {
-        val entries = notifications.entries().filter { it.run == id }.associateBy { it.taskId }
+        val entries = notifications.tasks().filter { it.instance == id }.associateBy { it.activity }
         val agentTasks = externalTasks.createExternalTaskQuery().processInstanceId(id).topicName(AgentLauncher.TOPIC).list().groupBy { it.activityId }
         val rounds = history.createHistoricVariableInstanceQuery().processInstanceId(id).variableName("runs").singleResult()?.value as? Map<*, *>
         return history.createHistoricActivityInstanceQuery().processInstanceId(id).list().groupBy { it.activityId }.mapValues { (activity, instances) ->
@@ -197,40 +215,82 @@ val HistoricProcessInstance.stateName
 
 /**
  * Gives each Run its Run workspace, `runs/<run>/` in ANTS_HOME, for as long as it lives. At Run start every
- * Task-id variable is `null`, so forward references read `null`, and `runs` counts each Task's runs.
+ * Task-id (and call activity id) variable is `null`, so forward references read `null`, and `runs` counts each Task's
+ * runs. A multi-instance collects its instances' Results into one list ([collect]). A called Process runs inside its
+ * caller's Run: it ends by giving its call activity every Result in it, by id.
  */
 @Component
 class RunLifecycle(@Value("\${ants.home}") private val home: Path) : AbstractProcessEnginePlugin() {
-    private fun started(tasks: List<String>) = ExecutionListener { run ->
+    private fun started(tasks: List<String>, results: List<String>) = ExecutionListener { run ->
         if (run.isTopRun) home.runWorkspace(run.processInstanceId).createDirectories()
-        for (task in tasks) run.setVariable(task, null)
+        else run.setVariable(CALLED, called(run.superExecution))
+        for (id in results) run.setVariable(id, null)
         run.setVariable("runs", tasks.associateWith { 0 })
     }
 
     // ponytail: parallel Tasks starting in separate transactions clash on `runs` (optimistic locking) and the losing
-    // transaction rolls back; whoever drives it (the worker, a User Task's form) must retry once Tasks run in parallel.
+    // transaction rolls back; whoever drives it must retry, as the worker does (AgentLauncher.complete), and so must a
+    // User Task's form once wave 4 completes one.
     private val counted = ExecutionListener { task ->
         @Suppress("UNCHECKED_CAST")
         val counts = task.getVariable("runs") as Map<String, Int>
         task.setVariable("runs", counts + (task.currentActivityId to (counts[task.currentActivityId] ?: 0) + 1))
     }
 
-    private val ended = ExecutionListener { run ->
+    private fun ended(results: List<String>) = ExecutionListener { run ->
         // A cancelled Run keeps its workspace, so no commits are lost.
-        if (!run.isTopRun || run.isCanceled) return@ExecutionListener
+        if (run.isCanceled) return@ExecutionListener
+        // A called Process's Result is every Result in it, by id, on its call activity, as a Task's is on the Task.
+        run.superExecution?.let { call -> return@ExecutionListener call.setVariable(call.currentActivityId, results.associateWith { run.getVariable(it) }) }
         val workspace = home.runWorkspace(run.processInstanceId).toFile()
         // Only once the end is committed: a rolled-back end leaves the Run alive and needing its workspace.
         Context.getCommandContext().transactionContext.addTransactionListener(TransactionState.COMMITTED) { cleanUp(workspace) }
+    }
+
+    /**
+     * Collects the Results of [body]'s instances into one list, in instance order, under the id of the activity it
+     * repeats. Each instance keeps the Results it makes as its own local variables, so `${id}` inside it reads its own;
+     * as it ends, they go into the list in the same transaction, so two instances ending at once clash (optimistic
+     * locking) instead of losing one. A Task (or call activity) gives its Result, a sub-process `{taskId: Result}`.
+     * An empty collection gives an empty list. Each instance reads its item as `${item}` unless the loop names its
+     * element variable.
+     */
+    private fun collect(body: ActivityImpl) {
+        val loop = body.activityBehavior as MultiInstanceActivityBehavior
+        if (loop.collectionElementVariable == null) loop.collectionElementVariable = "item"
+        val inner = body.activities.single()
+        val subProcess = inner.getProperty("type") == "subProcess"
+        val ids = if (subProcess) inner.results() else listOf(inner.id)
+        inner.addBuiltInListener(ExecutionListener.EVENTNAME_START, ExecutionListener { instance -> ids.forEach { instance.setVariableLocal(it, null) } })
+        inner.addBuiltInListener(ExecutionListener.EVENTNAME_END, ExecutionListener { instance ->
+            val result = if (subProcess) ids.associateWith { instance.getVariableLocal(it) } else instance.getVariableLocal(inner.id)
+            // The body's own execution holds the loop's counts; a non-scope Task in a sequential loop runs on it too.
+            val bodyExecution = generateSequence(instance as ExecutionEntity) { it.parent }.first { it.hasVariableLocal("nrOfInstances") }
+            // Until the last instance ends, the Results so far wait on the body by instance number: a list with gaps can't
+            // be stored, since the JSON serializer types a list by its first item.
+            val results = (bodyExecution.getVariableLocal(RESULTS) as? Map<*, *>).orEmpty() + ("${instance.getVariable("loopCounter")}" to result)
+            val count = bodyExecution.getVariableLocal("nrOfInstances") as Int
+            if (results.size < count) bodyExecution.setVariableLocal(RESULTS, results)
+            else bodyExecution.parent.setVariable(inner.id, (0 until count).map { results["$it"] })
+        })
+        // With no instances the loop never sets its count, and no instance ends to give the list.
+        body.addBuiltInListener(ExecutionListener.EVENTNAME_END, ExecutionListener { execution ->
+            if (execution.getVariableLocal("nrOfInstances") == null) execution.setVariable(inner.id, ArrayList<Any>())
+        })
     }
 
     override fun preInit(configuration: ProcessEngineConfigurationImpl) {
         configuration.customPostBPMNParseListeners = (configuration.customPostBPMNParseListeners ?: mutableListOf()) +
             object : BpmnParseListener {
                 override fun parseProcess(element: Element, process: ProcessDefinitionEntity) {
+                    // A timer start is the Process's Schedule, which Ants runs itself (Schedules), so Operaton gets no timer job.
+                    process.setProperty(BpmnParse.PROPERTYNAME_START_TIMER, null)
                     val tasks = process.tasks()
                     tasks.forEach { it.addBuiltInListener(ExecutionListener.EVENTNAME_START, counted) }
-                    process.addBuiltInListener(ExecutionListener.EVENTNAME_START, started(tasks.map { it.id }))
-                    process.addBuiltInListener(ExecutionListener.EVENTNAME_END, ended)
+                    process.multiInstanceBodies().forEach(::collect)
+                    val results = process.results()
+                    process.addBuiltInListener(ExecutionListener.EVENTNAME_START, started(tasks.map { it.id }, results))
+                    process.addBuiltInListener(ExecutionListener.EVENTNAME_END, ended(results))
                 }
             }
     }
@@ -246,6 +306,47 @@ fun cleanUp(workspace: File) {
 private fun ScopeImpl.tasks(): List<ActivityImpl> = activities.flatMap { activity ->
     val type = activity.getProperty("type") as? String
     listOfNotNull(activity.takeIf { type == "task" || type?.endsWith("Task") == true }) + activity.tasks()
+}
+
+/** The ids of the Results this scope gives, each `null` until given: its Tasks', call activities' and multi-instances'. */
+private fun ScopeImpl.results() = (tasks() + calls() + multiInstanceBodies().map { it.activities.single() }).map { it.id }.distinct()
+
+/** Every call activity in this scope and the scopes inside it. */
+private fun ScopeImpl.calls(): List<ActivityImpl> =
+    activities.flatMap { activity -> listOfNotNull(activity.takeIf { it.getProperty("type") == "callActivity" }) + activity.calls() }
+
+/**
+ * On a called Process's instance, what the keys of its Tasks start with in the Run (see [taskKey]): its call
+ * activity's key and a dot, such as `build.`, or `build-2.` for the second instance of a multi-instance call.
+ */
+const val CALLED = "ants.called"
+
+/** The key prefix of the Process [call] calls: its caller's own, then the call's key. */
+private fun called(call: DelegateExecution) = key(call as ExecutionEntity, call.currentActivityId) + "."
+
+/**
+ * The key of [activity] on [execution] in its Run: its id, then `-<n>` for each multi-instance it is the nth instance
+ * of, outermost first, as in `draft-2-1` for the first `draft` in the second instance of a multi-instance sub-process;
+ * in a called Process, after its call's key ([CALLED]).
+ */
+private fun key(execution: ExecutionEntity, activity: String) = (execution.getVariable(CALLED) as? String).orEmpty() + activity +
+    generateSequence(execution) { it.parent }.mapNotNull { it.getVariableLocal("loopCounter") as? Int }.toList().asReversed().joinToString("") { "-${it + 1}" }
+
+/**
+ * The key of the Task [activity] on [execution] in its Run, for its Transcript, live session and Notification entry,
+ * since instances of a multi-instance run at once and a called Process's Task ids can be its caller's too: `draft`,
+ * `draft-2`, `draft-2-1` or `build.draft`.
+ */
+fun RuntimeService.taskKey(execution: String, activity: String): String = (this as ServiceImpl).commandExecutor.execute { context ->
+    key(checkNotNull(context.executionManager.findExecutionById(execution)) { "No execution $execution" }, activity)
+}
+
+/** The Results a multi-instance's instances have given so far, on its body's execution. */
+private const val RESULTS = "ants.results"
+
+/** Every multi-instance body in this scope and the scopes inside it. */
+private fun ScopeImpl.multiInstanceBodies(): List<ActivityImpl> = activities.flatMap { activity ->
+    listOfNotNull(activity.takeIf { it.activityBehavior is MultiInstanceActivityBehavior }) + activity.multiInstanceBodies()
 }
 
 /** A called Process runs inside its caller's Run. */

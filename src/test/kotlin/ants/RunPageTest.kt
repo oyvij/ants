@@ -4,9 +4,6 @@ import org.junit.jupiter.api.Test
 import tools.jackson.databind.json.JsonMapper
 import java.util.concurrent.BlockingQueue
 import java.util.concurrent.TimeUnit.SECONDS
-import kotlin.io.path.createDirectories
-import kotlin.io.path.deleteIfExists
-import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -16,13 +13,7 @@ class RunPageTest : AntsTest() {
     private val browser by lazy { browser().also { it.login() } }
     private val claude = FakeClaude()
 
-    private fun setUp(settings: String = "") {
-        home.resolve("settings.yaml").writeText("claude:\n  command: [${claude.command}]\n$settings")
-        home.resolve("agents").createDirectories().resolve("writer.md").writeText("Write plainly.\n")
-        val skill = home.resolve("skills/draft").createDirectories()
-        skill.resolve("SKILL.md").writeText("---\nname: draft\ndescription: Drafts a text.\n---\nDraft the text.\n")
-        skill.resolve("result.schema.json").deleteIfExists()
-    }
+    private fun setUp(settings: String = "") = agentTask(claude, extra = settings)
 
     private fun result(result: String) = """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":$result}"""
     private val stuck = result("""{"outcome":"stuck","summary":"No tone given.","needs":"Which tone, dry or warm?"}""")

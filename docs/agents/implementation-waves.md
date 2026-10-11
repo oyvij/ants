@@ -39,8 +39,12 @@ Agents, Skills, `ants-uses`, Used by, Subagents.
 
 ## Wave 4: Git, User Tasks, Tickets and review (#57–#68)
 
+#84 adds Playwright browser tests: wave 3's untried modeler criteria, plus wave 4's own browser criteria. Restore
+the work moved out of wave 3 (`git show ba85df6 6a6223d`). Chromium runs in a local session only under the nono
+rules #84 lists.
+
 ```
-/mattpocock-skills:implement-spec Spec #27. Implement only tickets #57–#68; every other ticket is out of scope, even if it is on the frontier. Integration branch: wave-4-git-and-review, from main. Resolve tickets as docs/agents/issue-tracker.md says (comment, close). Stop after the code-review fixes; don't merge to main.
+/mattpocock-skills:implement-spec Spec #27. Implement only tickets #57–#68 and #84; every other ticket is out of scope, even if it is on the frontier. Integration branch: wave-4-git-and-review, from main. Resolve tickets as docs/agents/issue-tracker.md says (comment, close). Stop after the code-review fixes; don't merge to main.
 ```
 
 ## Wave 5: Shipped content (#69–#73)

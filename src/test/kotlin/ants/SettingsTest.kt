@@ -85,7 +85,7 @@ class SettingsTest : AntsTest() {
         // The Agent and Skill come from extra folders; drop any same-named ones another test left in Ants' own.
         home.resolve("agents/writer.md").toFile().delete()
         home.resolve("skills/draft").toFile().deleteRecursively()
-        extra.resolve("agents").createDirectories().resolve("writer.md").writeText("Write plainly.\n")
+        extra.resolve("agents").createDirectories().resolve("writer.md").writeText("---\nskills: draft\n---\nWrite plainly.\n")
         extra.resolve("skills/draft").createDirectories().resolve("SKILL.md").writeText("---\nname: draft\ndescription: Drafts.\n---\nDraft.\n")
         claude.session("draft", """{"type":"result","subtype":"success","structured_output":{"outcome":"done","summary":"Drafted.","output":{}}}""")
         press("save", mapOf(
@@ -93,6 +93,7 @@ class SettingsTest : AntsTest() {
             "claude.env" to "PATH",
             "agent-folders" to "$extra/agents",
             "skill-folders" to "$extra/skills",
+            "vaults[0].name" to "notes", "vaults[0].path" to "$extra",
         ))
         browser.import("agent-task.bpmn")
         val run = browser.post("/processes/agent-task/runs", mapOf("prompt" to "Say hello")).path
@@ -156,7 +157,7 @@ class SettingsTest : AntsTest() {
 
     /** A fake claude as the command; its `auth status` answers [status] when it's in Ants' Claude config folder. */
     private fun fakeClaude(status: String? = null) = FakeClaude().also { claude ->
-        file.writeText("claude:\n  command: [${claude.command}]\n")
+        file.writeText("claude:\n  command: [${claude.command}]\n$vault")
         home.resolve("claude").createDirectories().resolve("auth-status.json").run { if (status != null) writeText(status) else deleteIfExists() }
     }
 
@@ -185,7 +186,7 @@ class SettingsTest : AntsTest() {
     @Test
     fun `the latest 5-hour and 7-day usage shows next to the login`() {
         val claude = fakeClaude("""{"loggedIn":true,"authMethod":"claude.ai"}""")
-        home.resolve("agents").createDirectories().resolve("writer.md").writeText("Write plainly.\n")
+        home.resolve("agents").createDirectories().resolve("writer.md").writeText("---\nskills: draft\n---\nWrite plainly.\n")
         home.resolve("skills/draft").createDirectories().resolve("SKILL.md").writeText("---\nname: draft\ndescription: Drafts.\n---\nDraft.\n")
         home.resolve("skills/draft/result.schema.json").deleteIfExists()
         fun limit(fiveHour: Double) = """{"type":"rate_limit_event","rate_limit_info":{"status":"allowed","rateLimitType":"five_hour",""" +

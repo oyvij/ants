@@ -1,5 +1,9 @@
 package ants
 
+import org.junit.jupiter.api.BeforeEach
+import org.operaton.bpm.engine.RepositoryService
+import org.operaton.bpm.engine.RuntimeService
+import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.builder.SpringApplicationBuilder
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.test.context.SpringBootTest.WebEnvironment.RANDOM_PORT
@@ -24,6 +28,9 @@ import java.time.Instant
 import java.time.ZoneId
 import java.util.concurrent.BlockingQueue
 import java.util.concurrent.LinkedBlockingQueue
+import kotlin.io.path.createDirectories
+import kotlin.io.path.deleteIfExists
+import kotlin.io.path.writeText
 
 /** Boots Ants on a random port with a temporary ANTS_HOME (and so a temporary H2), driven over HTTP. */
 @SpringBootTest(webEnvironment = RANDOM_PORT)
@@ -33,6 +40,67 @@ abstract class AntsTest {
     var port = 0
 
     fun browser() = Browser("http://127.0.0.1:$port")
+
+    @Autowired
+    private lateinit var repository: RepositoryService
+
+    @Autowired
+    private lateinit var runtime: RuntimeService
+
+    @Autowired
+    private lateinit var launcher: AgentLauncher
+
+    /**
+     * Every test starts on a clean Ants, whatever ran before it in this JVM: no Processes, Runs or Schedules, no live
+     * CLI holding a launch slot, no Agents, Skills or Templates of the user's, the clock where it belongs and claude's
+     * gate open. A test writes its own `settings.yaml`.
+     */
+    @BeforeEach
+    fun cleanSlate() {
+        clock.offset = Duration.ZERO
+        val runs = runtime.createProcessInstanceQuery().rootProcessInstances().list().map { it.id }
+        // Deleting a deployment deletes its Runs and their history too; Schedules read the deployed Processes.
+        for (deployment in repository.createDeploymentQuery().list()) {
+            // A worker may be completing one of its Tasks at the same time.
+            for (attempt in 1..10) if (runCatching { repository.deleteDeployment(deployment.id, true, true) }.isSuccess) break else Thread.sleep(50)
+        }
+        // Only once their Runs are gone, so no worker launches the Task again; each slot frees as its CLI ends.
+        val deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos()
+        while (launcher.running > 0 && System.nanoTime() < deadline) {
+            runs.forEach(launcher::cancel)
+            Thread.sleep(50)
+        }
+        launcher.tryNow("claude")
+        for (folder in listOf("agents", "skills", "templates")) home.resolve(folder).toFile().run { deleteRecursively(); mkdirs() }
+        home.resolve("schedules.yaml").toFile().delete()
+    }
+
+    /**
+     * What a Run of an Agent Task needs, in one place: the Agent `writer` listing the [skills] (with [agent] lines in its
+     * frontmatter), each Skill with its result schema, none when null (and [metadata] lines in its frontmatter), and
+     * [settings] with [claude] and [extra]. gh is the fake on the tests' PATH, logged in; a [FakeClaude] logs claude in.
+     */
+    fun agentTask(
+        claude: FakeClaude?,
+        skills: Map<String, String?> = mapOf("draft" to null),
+        agent: String = "",
+        metadata: String = "",
+        extra: String = "",
+        env: List<String>? = null,
+    ) {
+        settings(claude, extra, env)
+        home.resolve("agents/writer.md").writeText("---\n${agent}skills: ${skills.keys.joinToString(", ")}\n---\nWrite plainly.\n")
+        for ((name, schema) in skills) {
+            val folder = home.resolve("skills/$name").createDirectories()
+            folder.resolve("SKILL.md").writeText("---\nname: $name\ndescription: Does $name.\n$metadata---\nDo it.\n")
+            folder.resolve("result.schema.json").run { if (schema != null) writeText(schema) else deleteIfExists() }
+        }
+    }
+
+    /** `settings.yaml`: a Vault, which the pre-Run check needs, [claude]'s command and [env] allow-list when given, and [extra]. */
+    fun settings(claude: FakeClaude?, extra: String = "", env: List<String>? = null) = home.resolve("settings.yaml").writeText(
+        (if (claude == null) "" else "claude:\n  command: [${claude.command}]\n" + (env?.let { "  env: [${it.joinToString(", ")}]\n" } ?: "")) + vault + extra,
+    )
 
     companion object {
         /** Shared by every test in the JVM: a test that writes a file into it resets that file. */
@@ -49,6 +117,11 @@ abstract class AntsTest {
             Files.writeString(it, "#!/bin/sh\n[ \"$1\" = -l ] && PATH=\"$loginBin:/usr/bin:/bin\" && shift\n[ \"$1\" = -c ] && exec /bin/sh -c \"$2\"\n")
             it.toFile().setExecutable(true)
         }
+
+        val vaultPath: Path = Files.createTempDirectory("vault")
+
+        /** `settings.yaml` lines for a Vault at [vaultPath], which the pre-Run check needs before any Run starts. */
+        val vault = "vaults:\n  notes: $vaultPath\n"
 
         /** A temporary ANTS_HOME that doesn't exist yet. */
         fun tempHome(): Path = Files.createTempDirectory("ants-test").resolve("ants")
@@ -77,6 +150,10 @@ abstract class AntsTest {
         fun antsHome(registry: DynamicPropertyRegistry) {
             registry.add("ants.home") { home.toString() }
             registry.add("ants.shell") { shell.toString() }
+            // Engine timers fire on the job executor, which otherwise looks for due ones every 5 s or more.
+            registry.add("operaton.bpm.job-execution.wait-time-in-millis") { 200 }
+            registry.add("operaton.bpm.job-execution.max-wait") { 500 }
+            registry.add("ants.schedule-every") { "200ms" }
         }
     }
 
@@ -97,7 +174,7 @@ class MovableClock(@Volatile var offset: Duration = Duration.ZERO) : Clock() {
 
 /** A user with a browser: keeps cookies, follows redirects and posts forms with their CSRF token. */
 class Browser(private val base: String) {
-    class Page(val status: Int, val path: String, val body: String)
+    class Page(val status: Int, val path: String, val body: String, val headers: java.net.http.HttpHeaders? = null)
 
     private val client = HttpClient.newBuilder()
         .cookieHandler(CookieManager())
@@ -107,9 +184,12 @@ class Browser(private val base: String) {
 
     fun get(path: String) = send(HttpRequest.newBuilder(URI("$base$path")).GET())
 
-    fun post(path: String, form: Map<String, String>): Page {
+    fun post(path: String, form: Map<String, String>): Page = post(path, form.toList())
+
+    /** Posts a form whose fields may repeat, such as a multi-select's. */
+    fun post(path: String, form: List<Pair<String, String>>): Page {
         val body = (form + listOfNotNull(csrf?.let { "_csrf" to it }))
-            .entries.joinToString("&") { (k, v) -> "${enc(k)}=${enc(v)}" }
+            .joinToString("&") { (k, v) -> "${enc(k)}=${enc(v)}" }
         return send(
             HttpRequest.newBuilder(URI("$base$path"))
                 .header("Content-Type", "application/x-www-form-urlencoded")
@@ -154,7 +234,7 @@ class Browser(private val base: String) {
         val response = client.send(request.build(), HttpResponse.BodyHandlers.ofString())
         val body = response.body()
         csrf = Regex("""name="_csrf"[^>]*value="([^"]+)"""").find(body)?.groupValues?.get(1) ?: csrf
-        return Page(response.statusCode(), response.uri().path, body)
+        return Page(response.statusCode(), response.uri().path, body, response.headers())
     }
 
     private fun enc(s: String) = URLEncoder.encode(s, Charsets.UTF_8)

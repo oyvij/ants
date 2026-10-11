@@ -2,9 +2,11 @@ package ants
 
 import jakarta.annotation.PreDestroy
 import org.operaton.bpm.engine.ExternalTaskService
+import org.operaton.bpm.engine.OptimisticLockingException
 import org.operaton.bpm.engine.RepositoryService
 import org.operaton.bpm.engine.RuntimeService
 import org.operaton.bpm.engine.externaltask.LockedExternalTask
+import org.operaton.bpm.model.bpmn.instance.BaseElement
 import org.operaton.bpm.model.bpmn.instance.FlowElement
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
@@ -27,6 +29,7 @@ import java.util.concurrent.TimeUnit.MILLISECONDS
 import java.util.concurrent.TimeUnit.SECONDS
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.io.path.readText
+import kotlin.io.path.writeText
 import kotlin.io.path.exists
 
 /**
@@ -53,9 +56,7 @@ class AgentLauncher(
     /** Each live CLI process and the Run it works for. */
     private val clis = ConcurrentHashMap<Process, String>()
     private val live = AtomicInteger()
-    // ponytail: one live session per Task id in a Run; two live instances of one Task, as in a parallel multi-instance,
-    // need a key of their own, along with a Transcript of their own (both are by Task id).
-    private val stdins = ConcurrentHashMap<String, Stdin>() // by key(run, task id)
+    private val stdins = ConcurrentHashMap<String, Stdin>() // by key(run, instance(task))
 
     private fun key(run: String, task: String) = "$run/$task"
     private val usageFile = home.resolve("claude-usage.json")
@@ -180,21 +181,27 @@ class AgentLauncher(
         var session = resume // a new one only once claude starts, so Continue never resumes a session claude never saw
         var transcript: Transcript.Writer? = null
         try {
-            val agent = catalogue.agent(task.extensionProperties["ants.agent"] ?: error("${task.activityId} names no ants.agent"))
+            val agent = catalogue.agent(task.extensionProperties[AGENT] ?: error("${task.activityId} names no $AGENT"))
             if (hold(task, agent.cli)) return // keeping its choice for the launch after the reset
             runtime.removeVariablesLocal(task.executionId, listOf(ACTION, INSTRUCTION, SESSION)) // the choice is used once
             val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult().rootProcessInstanceId
             val workspace = home.runWorkspace(run)
-            val skill = catalogue.skill(task.extensionProperties["ants.skill"] ?: error("${task.activityId} names no ants.skill"))
+            val skill = catalogue.skill(task.extensionProperties[SKILL] ?: error("${task.activityId} names no $SKILL"))
             check(agent.cli == "claude") { "Agent ${agent.name} runs ${agent.cli}, and only claude runs for now" }
             val used = catalogue.uses(skill)
-            // ponytail: a Task whose catalogue.vault(skill) is on runs without the Vault until #69 hands it over (its
-            // path in the hand-off line and an --add-dir).
             refuseBareByDefault(agent.cli, workspace)
-            session = session ?: UUID.randomUUID().toString()
-            transcript = Transcript.Writer(Transcript.file(workspace, task.activityId)).apply { ants("launch") }
+            val instance = instance(task)
+            // With [RESUME], a Task the flow comes back to, as in a loop, resumes its last session; the user's
+            // Continue and Start fresh choose for themselves.
+            val last = Transcript.file(workspace, instance).resolveSibling("session")
+            val again = last.takeIf { resume == null && task.variables[ACTION] == null && task.extensionProperties[RESUME] == "true" && it.exists() }?.readText()
+            session = session ?: again ?: UUID.randomUUID().toString()
+            transcript = Transcript.Writer(Transcript.file(workspace, instance)).apply { ants("launch") }
+            last.writeText(session)
+            val resumed = resume != null || again != null // claude knows the session already
+            val continued = resume != null // the user's Continue: their instruction alone, no hand-off again
             val result = try {
-                session(task, agent, skill, used, run, workspace, transcript, session, resume != null, task.variables[INSTRUCTION] as? String)
+                session(task, instance, agent, skill, used, run, workspace, transcript, session, resumed, task.variables[INSTRUCTION] as? String, handedOff = !continued)
             } catch (limit: UsageLimit) {
                 val until = limit.resetsAt + Duration.ofMinutes(1)
                 transcript.ants("end", "Paused by the ${agent.cli} usage limit until ${clock.local(until)}.")
@@ -204,7 +211,7 @@ class AgentLauncher(
             }
             if (result["outcome"] == "done") {
                 transcript.ants("end", "Done.")
-                externalTasks.complete(task.id, WORKER, mapOf(task.activityId to result))
+                complete(task, result)
             } else {
                 val reason = "[stuck] ${result["summary"]}"
                 transcript.ants("end", reason)
@@ -228,6 +235,35 @@ class AgentLauncher(
     }
 
     /**
+     * Completes [task] with its [result], retrying while another path's Task wins the race to a shared execution, such
+     * as a parallel join, to `runs` or to a multi-instance's Results: the engine rolls the loser back whole, so trying
+     * again is safe.
+     */
+    private fun complete(task: LockedExternalTask, result: Map<*, *>) {
+        for (attempt in 1..COMPLETE_TRIES) {
+            try {
+                return externalTasks.complete(task.id, WORKER, mapOf(task.activityId to result))
+            } catch (e: OptimisticLockingException) {
+                if (attempt == COMPLETE_TRIES) throw e
+                Thread.sleep((10L..100L).random()) // apart, so the losers don't clash again
+            }
+        }
+    }
+
+    /** The key of [task] in its Run, for its Transcript and live session ([taskKey]). */
+    private fun instance(task: LockedExternalTask) = runtime.taskKey(task.executionId, task.activityId)
+
+    /**
+     * The Task's inputs: its input parameters, not the other local variables its execution may hold, such as a
+     * multi-instance's loop variables or the Results its instance collects.
+     */
+    private fun inputs(task: LockedExternalTask): Map<String, Any?> {
+        val names = repository.getBpmnModelInstance(task.processDefinitionId).getModelElementById<BaseElement>(task.activityId)
+            ?.inputs().orEmpty().map { it.operatonName }
+        return task.variables.filterKeys { it in names }.toSortedMap()
+    }
+
+    /**
      * Puts [task] on hold as an incident, its tag and reason in [message] and anything longer in [details], keeping
      * its [session], if claude ever started one, for Continue.
      */
@@ -240,18 +276,18 @@ class AgentLauncher(
      * Runs [skill], which uses [used], in one CLI session in [workspace], every line it prints going to [transcript],
      * and returns its Result: the last valid one, once every message written to the session has been read. A new
      * [session] starts with the hand-off prompt and the user's [instruction], if any; a [resume]d one with the
-     * instruction alone.
+     * instruction alone, unless it is [handedOff] again, as when the flow comes back to the Task.
      */
     private fun session(
-        task: LockedExternalTask, agent: Agent, skill: Skill, used: List<Skill>, run: String, workspace: Path, transcript: Transcript.Writer,
-        session: String, resume: Boolean, instruction: String?,
+        task: LockedExternalTask, instance: String, agent: Agent, skill: Skill, used: List<Skill>, run: String, workspace: Path, transcript: Transcript.Writer,
+        session: String, resume: Boolean, instruction: String?, handedOff: Boolean = !resume,
     ): Map<*, *> {
-        val handOff = "Follow the Skill in ${skill.file} for the workspace at $workspace." +
-            (if (used.isEmpty()) "" else " It uses the Skills ${used.joinToString { "${it.name} (${it.file})" }}.")
-        val inputs = task.variables.filterKeys { !it.startsWith("ants.") }.toSortedMap()
-        val prompt = if (resume) instruction.orEmpty()
-        else "$handOff\n\n" + json.writeValueAsString(inputs) + (if (instruction.isNullOrBlank()) "" else "\n\nFrom the user:\n$instruction")
-        val schema = ResultContract.schema(skill.outputSchema)
+        val inputs = inputs(task)
+        val prompt = if (!handedOff) instruction.orEmpty()
+        else handOff(task, skill, used, workspace) + "\n\n" + json.writeValueAsString(inputs) + (if (instruction.isNullOrBlank()) "" else "\n\nFrom the user:\n$instruction")
+        // The Task's result-schema override replaces the Skill's result.schema.json; Checks refuse one that isn't valid.
+        val override = task.extensionProperties[RESULT_SCHEMA]?.takeIf(String::isNotBlank)?.let { json.readValue(it, Map::class.java) }
+        val schema = ResultContract.schema(override ?: skill.outputSchema)
         val process = cli(agent.cli, workspace, flags(agent, schema, listOf(skill) + used, session, resume)).start()
         val stdin = Stdin(process.outputWriter(), name(task))
         clis[process] = workspace.fileName.toString() // the Run workspace is runs/<run>/
@@ -261,7 +297,7 @@ class AgentLauncher(
         }
         try {
             stdin.say(prompt)
-            stdins[key(run, task.activityId)] = stdin // only now, so the prompt goes first
+            stdins[key(run, instance)] = stdin // only now, so the prompt goes first
             var valid: Map<*, *>? = null
             var failure: Failed? = null
             var stopped = false
@@ -319,9 +355,29 @@ class AgentLauncher(
             return valid ?: throw Failed("${agent.cli} ended without a Result", tail)
         } finally {
             stdin.close()
-            stdins.remove(key(run, task.activityId), stdin)
+            stdins.remove(key(run, instance), stdin)
             clis -= process
         }
+    }
+
+    /**
+     * The hand-off line: the Skill and the workspace, the Skills it [used], and where the Vault and Source map and the
+     * Answer History are, each only when on: the Task's toggle ([VAULT], [ANSWER_HISTORY]) has the final
+     * say, else the Skill's opt-in.
+     */
+    // ponytail: the default Vault and Source map, until a Process picks its own; with none configured the sentence is
+    // left out, and the pre-Run check (#55) is what refuses to start. The Vault's --add-dir is #69's.
+    private fun handOff(task: LockedExternalTask, skill: Skill, used: List<Skill>, workspace: Path): String {
+        val vault = task.extensionProperties[VAULT]?.toBooleanStrictOrNull() ?: catalogue.vault(skill)
+        val answerHistory = task.extensionProperties[ANSWER_HISTORY]?.toBooleanStrictOrNull() ?: skill.answerHistory
+        val places = listOfNotNull(
+            settings.vaults()[settings.defaultVault()]?.let { "the Vault is $it" },
+            settings.sourceMaps()[settings.defaultSourceMap()]?.let { "the Source map is $it" },
+        ).takeIf { vault }.orEmpty()
+        return "Follow the Skill in ${skill.file} for the workspace at $workspace." +
+            (if (used.isEmpty()) "" else " It uses the Skills ${used.joinToString { "${it.name} (${it.file})" }}.") +
+            (if (places.isEmpty()) "" else " " + places.joinToString(" and ").replaceFirstChar(Char::uppercase) + ".") +
+            (if (answerHistory) " The Answer History is ${home.resolve("answer-history")}." else "")
     }
 
     /**
@@ -516,7 +572,8 @@ class AgentLauncher(
         private const val RESET = "The usage limit has reset. Carry on where you stopped."
         private val LOCK = Duration.ofDays(365)
         private const val STDERR_LINES = 20
-        private const val LOST_LOGIN = "Ants' Claude login is missing or expired. Log in again (Settings)"
+        private const val COMPLETE_TRIES = 10
+        const val LOST_LOGIN = "Ants' Claude login is missing or expired. Log in again (Settings)"
 
         /**
          * An Agent's tools when its file names none. claude 2.1.295 has no TodoWrite; its checklist tools are these four

@@ -58,11 +58,20 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy) {
         }
     }
 
+    /**
+     * The create form; with `use=<agent>`, as the modeler's New Skill modal shows it, for a Task run by that Agent.
+     * Its Create and use also adds the Skill to the Agent's Skills, when the Agent is the user's own.
+     */
     @GetMapping("/skills/new")
-    fun new(model: Model) = show(model, SkillForm(null, "---\nname: \ndescription: \n---\n", ""))
+    fun new(@RequestParam use: String?, model: Model) = show(model.addAttribute("use", use), SkillForm(null, "---\nname: \ndescription: \n---\n", ""))
 
     @PostMapping("/skills/new")
-    fun create(@RequestParam skill: String, @RequestParam schema: String, model: Model) = save(SkillForm(null, skill, schema), model)
+    fun create(@RequestParam skill: String, @RequestParam schema: String, @RequestParam use: String?, model: Model): String {
+        val agent = catalogue.agents().firstOrNull { it.name == use && it.file.parent == catalogue.yourAgents }
+        return save(SkillForm(null, skill, schema), model.addAttribute("use", use)) { name ->
+            if (agent != null) agent.file.writeAtomically(AgentForm.of(agent).copy(skills = (agent.skills + name).distinct().joinToString(", ")).text())
+        }
+    }
 
     @GetMapping("/skills/{name}")
     fun skill(@PathVariable name: String, model: Model): String {
@@ -108,7 +117,8 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy) {
     @ResponseBody
     fun check(@RequestParam schema: String) = ResultContract.schemaErrors(schema)
 
-    private fun save(posted: SkillForm, model: Model, confirmed: Boolean = false): String {
+    /** Saves the Skill and opens it, calling [saved] with its name, else shows the form again with why not. */
+    private fun save(posted: SkillForm, model: Model, confirmed: Boolean = false, saved: (String) -> Unit = {}): String {
         val edited = posted.name?.let(::yours)
         val form = posted.copy(where = edited?.folder?.toString().orEmpty())
         val name = try {
@@ -140,6 +150,7 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy) {
         }
         folder.resolve("result.schema.json").run { if (form.schema.isBlank()) deleteIfExists() else writeAtomically(form.schema) }
         folder.resolve("SKILL.md").writeAtomically(form.skill)
+        saved(name)
         return "redirect:/skills/$name"
     }
 

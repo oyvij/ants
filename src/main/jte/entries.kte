@@ -5,7 +5,7 @@
 <table>
     <tr><th></th><th>Process</th><th>Run</th><th>Task</th><th>Summary</th><th>Waiting</th></tr>
 @for(entry in entries)
-    <tr><td>${entry.icon} ${entry.tag}</td><td>${entry.process}</td><td><a href="/runs/${entry.run}">${entry.run}</a></td><td><a href="/notifications/${entry.id}">${entry.task}</a></td><td>${entry.summary}</td><td>${entry.waited}</td></tr>
+    <tr><td>${entry.icon} ${entry.tag}</td><td>${entry.process}</td><td>@if(entry is ants.TaskEntry)<a href="/runs/${entry.run}">${entry.run}</a>@endif</td><td><a href="/notifications/${entry.id}">${entry.task}</a></td><td>${entry.summary}</td><td>${entry.waited}</td></tr>
 @endfor
 </table>
 @endif

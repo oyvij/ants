@@ -152,11 +152,10 @@ class SkillsTest : AntsTest() {
         val settings = home.resolve("settings.yaml")
         val before = settings.readText()
         try {
-            settings.writeText("claude:\n  command: [${claude.command}]\n")
-            home.resolve("agents").createDirectories().resolve("writer.md").writeText("Write plainly.\n")
+            settings.writeText("claude:\n  command: [${claude.command}]\n$vault")
+            home.resolve("agents").createDirectories().resolve("writer.md").writeText("---\nskills: draft\n---\nWrite plainly.\n")
             home.resolve("skills/draft").toFile().deleteRecursively()
             claude.session("draft", """{"type":"result","subtype":"success","structured_output":{"outcome":"done","summary":"Drafted.","output":{}}}""")
-            browser.import("agent-task.bpmn")
             fun run(): Any? {
                 val run = browser.post("/processes/agent-task/runs", mapOf("prompt" to "Say hello")).path
                 eventually { assertContains(browser.get(run).body, "State: Completed") }
@@ -165,11 +164,33 @@ class SkillsTest : AntsTest() {
             }
 
             save(skillMd("draft"), """{"type": "object"}""")
+            browser.import("agent-task.bpmn") // once the Skill exists
             assertEquals(mapOf("type" to "object"), run())
             save(skillMd("draft"), """{"type": "object", "required": []}""", name = "draft")
             assertEquals(mapOf("type" to "object", "required" to emptyList<Any>()), run())
         } finally {
             settings.writeText(before)
         }
+    }
+
+    @Test
+    fun `New Skill from the modeler opens the create form in its modal, and Create and use adds it to the Task's Agent`() {
+        val agent = home.resolve("agents").createDirectories().resolve("picker.md")
+        agent.writeText("---\nname: picker\ndescription: Picks.\ncli: claude\nskills: tdd\n---\nPick.\n")
+        home.resolve("skills/chosen").toFile().deleteRecursively()
+        val form = browser.get("/skills/new?use=picker").body
+        assertContains(form, "<button>Create and use</button>")
+        assertFalse("<nav>" in form) // the modeler's own page is behind the modal
+
+        val refused = browser.post("/skills/new", mapOf("skill" to "no frontmatter", "schema" to "", "use" to "picker"))
+        assertContains(refused.body, "<button>Create and use</button>") // a refusal stays in the modal
+        assertEquals("/skills/chosen", browser.post("/skills/new", mapOf("skill" to skillMd("chosen"), "schema" to "", "use" to "picker")).path)
+        assertEquals(listOf("tdd", "chosen"), Agent(agent).skills)
+
+        // A read-only Agent is left as it is: the Task's Checks say it doesn't list the Skill.
+        home.resolve("skills/also-chosen").toFile().deleteRecursively()
+        val shipped = Agent(home.resolve("shipped/agents/shipped-writer.md")).skills
+        assertEquals("/skills/also-chosen", browser.post("/skills/new", mapOf("skill" to skillMd("also-chosen"), "schema" to "", "use" to "shipped-writer")).path)
+        assertEquals(shipped, Agent(home.resolve("shipped/agents/shipped-writer.md")).skills)
     }
 }

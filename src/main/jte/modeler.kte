@@ -1,0 +1,51 @@
+@import ants.modelerFacts
+@param name: String
+@param src: String
+@param action: String = "/processes/deploy"
+@param saveLabel: String = "Save and deploy"
+@param copy: String? = null
+@param _csrf: org.springframework.security.web.csrf.CsrfToken
+@param colorScheme: String = "light dark"
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="color-scheme" content="${colorScheme}">
+    <title>${name} · Modeler · Ants</title>
+    <link rel="stylesheet" href="/vendor/camunda-bpmn-js/assets/camunda-platform-modeler.css">
+    <style>
+        body { margin: 0; height: 100vh; display: flex; flex-direction: column; }
+        header { display: flex; gap: 1rem; align-items: baseline; padding: 0 1rem; }
+        main { flex: 1; display: flex; min-height: 0; }
+        /* bpmn-js draws black on the page's background, so the canvas stays light in dark mode. */
+        #canvas { flex: 1; background: white; color-scheme: light; }
+        #explain { width: 20rem; overflow: auto; padding: 0 1rem; border-left: 1px solid #888; }
+        #refusal { white-space: pre-line; }
+        #checks { max-height: 8rem; overflow: auto; margin: 0; }
+        #checks .error::marker { content: "✖ "; color: crimson; }
+        #checks .warning::marker { content: "⚠ "; color: darkorange; }
+    </style>
+</head>
+<body>
+@template.nav()
+<header>
+    <h1>${name}</h1>
+    <button id="save" data-action="${action}" hidden="${copy != null}">${saveLabel}</button>
+@if(copy != null)
+    <form method="post" action="${copy}">
+        <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+        <p>Ants' own, read-only. <button>Copy</button> makes your own.</p>
+    </form>
+@endif
+    <p id="refusal" role="alert"></p>
+    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+</header>
+<ul id="checks" aria-label="Checks"></ul>
+<main>
+    <div id="canvas" data-src="${src}" data-facts="${modelerFacts}"></div>
+    <aside id="explain"></aside>
+</main>
+<script src="/vendor/camunda-bpmn-js/camunda-platform-modeler.production.min.js"></script>
+<script type="module" src="/modeler.js"></script>
+</body>
+</html>

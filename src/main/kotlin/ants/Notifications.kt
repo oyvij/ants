@@ -24,17 +24,8 @@ import java.time.Duration
 import java.time.Instant
 import java.util.Date
 
-/** One entry on the Notification list: a Task of a Run waiting on the user since [since]. */
-class Entry(
-    val id: String,
-    val tag: String,
-    val process: String,
-    val run: String,
-    val task: String,
-    val taskId: String,
-    val summary: String,
-    val since: Date,
-) {
+/** One entry on the Notification list, waiting on the user since [since]: a [TaskEntry] or a [StartEntry]. */
+sealed class Entry(val id: String, val tag: String, val process: String, val task: String, val summary: String, val since: Date) {
     val icon get() = ICONS[tag] ?: "•"
 
     val waited: String
@@ -52,6 +43,19 @@ class Entry(
 }
 
 /**
+ * A Task of the Run [run] held by an incident. [taskId] is the Task's key in the Run ([taskKey]); the Task is the
+ * element [activity] of the process instance [instance], which is the Run's own or, in a called Process, the called one's.
+ */
+class TaskEntry(
+    id: String, tag: String, process: String, val run: String, task: String, val taskId: String, summary: String, since: Date,
+    val instance: String, val activity: String,
+) : Entry(id, tag, process, task, summary, since)
+
+/** A scheduled Run of the Process [key] that couldn't start, until started now or dismissed. */
+class StartEntry(val key: String, process: String, failed: FailedStart) :
+    Entry("schedule-$key", "[failed]", process, "Scheduled Run", "The scheduled Run didn't start: ${failed.why}", Date.from(failed.at))
+
+/**
  * The Notification list: one query over what is waiting on the user, with no table of its own, so it can't drift.
  * For now that is every Agent Task held by an incident, its tag and summary read from the incident message.
  */
@@ -63,10 +67,17 @@ class Notifications(
     private val externalTasks: ExternalTaskService,
     private val launcher: AgentLauncher,
     private val streams: Streams,
+    private val schedules: Schedules,
     @Value("\${ants.home}") private val home: Path,
 ) {
     /** Everything waiting on the user, oldest first. */
-    fun entries(): List<Entry> = incidents().orderByIncidentTimestamp().asc().list().map(::entry)
+    fun entries(): List<Entry> = (tasks() + failedStarts()).sortedBy { it.since }
+
+    /** The Tasks waiting on the user, oldest first. */
+    fun tasks(): List<TaskEntry> = rootCauses().map(::entry)
+
+    /** The scheduled Runs that couldn't start, until started or dismissed. */
+    private fun failedStarts() = schedules.all().mapNotNull { schedule -> schedule.failed?.let { StartEntry(schedule.key, schedule.process, it) } }
 
     @GetMapping("/notifications")
     fun list(model: Model): String {
@@ -76,6 +87,11 @@ class Notifications(
 
     @GetMapping("/notifications/{id}")
     fun entry(@PathVariable id: String, model: Model): String {
+        val failed = failedStarts().firstOrNull { it.id == id }
+        if (failed != null) {
+            model.addAttribute("entry", failed)
+            return "failed-start"
+        }
         val entry = entry(incident(id))
         model.addAttribute("entry", entry)
         model.addAttribute("details", details(entry))
@@ -83,7 +99,7 @@ class Notifications(
     }
 
     /** What [entry]'s page shows beyond its summary, such as what a stuck Agent needs. */
-    fun details(entry: Entry): String? = runtime.createIncidentQuery().incidentId(entry.id).singleResult()
+    fun details(entry: TaskEntry): String? = runtime.createIncidentQuery().incidentId(entry.id).singleResult()
         ?.let { externalTasks.getExternalTaskErrorDetails(it.configuration) }
 
     /**
@@ -126,7 +142,7 @@ class Notifications(
     fun next(@RequestParam run: String): String {
         val deadline = Instant.now().plusSeconds(5)
         while (Instant.now() < deadline) {
-            entries().firstOrNull { it.run == run }?.let { return "redirect:/notifications/${it.id}" }
+            tasks().firstOrNull { it.run == run }?.let { return "redirect:/notifications/${it.id}" }
             if (history.createHistoricProcessInstanceQuery().processInstanceId(run).singleResult()?.state != HistoricProcessInstance.STATE_ACTIVE) break
             Thread.sleep(200)
         }
@@ -136,27 +152,35 @@ class Notifications(
     /** The count for the nav and the tab title, sent on connect and whenever it changes. */
     @GetMapping("/notifications/count", produces = [TEXT_EVENT_STREAM_VALUE])
     @ResponseBody
-    fun count(): SseEmitter = streams.changes { incidents().count().toString() }
+    fun count(): SseEmitter = streams.changes { entries().size.toString() }
 
     private fun incidents() = runtime.createIncidentQuery().incidentType(Incident.EXTERNAL_TASK_HANDLER_TYPE)
+
+    /**
+     * The incidents on Tasks, oldest first. An incident in a called Process also puts one on each call activity above
+     * it, the same Task waiting, so only the root cause counts.
+     */
+    private fun rootCauses() = incidents().orderByIncidentTimestamp().asc().list().filter { it.id == it.rootCauseIncidentId }
 
     private fun incident(id: String): Incident = incidents().incidentId(id).singleResult()
         ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "Nothing is waiting on you here any more")
 
-    private fun entry(incident: Incident): Entry {
+    private fun entry(incident: Incident): TaskEntry {
         val run = runtime.createProcessInstanceQuery().processInstanceId(incident.processInstanceId).singleResult().rootProcessInstanceId
         val top = history.createHistoricProcessInstanceQuery().processInstanceId(run).singleResult()
         val task = repository.getBpmnModelInstance(incident.processDefinitionId).getModelElementById<FlowElement>(incident.activityId)
         val tag = Regex("""^\[[\w-]+]""").find(incident.incidentMessage.orEmpty())?.value
-        return Entry(
+        return TaskEntry(
             id = incident.id,
             tag = tag ?: "[failed]",
             process = top.processDefinitionName ?: top.processDefinitionKey,
             run = run,
             task = task?.name ?: incident.activityId,
-            taskId = incident.activityId,
+            taskId = runtime.taskKey(incident.executionId, incident.activityId),
             summary = incident.incidentMessage.orEmpty().removePrefix(tag.orEmpty()).trim(),
             since = incident.incidentTimestamp,
+            instance = incident.processInstanceId,
+            activity = incident.activityId,
         )
     }
 

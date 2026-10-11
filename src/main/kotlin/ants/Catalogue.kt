@@ -60,7 +60,13 @@ class Agent(val file: Path, text: String = file.readText()) {
  * A `SKILL.md` and the folder it lives in, with the Skills it names in `metadata.ants-uses` and whether it opts in to
  * the Vault (`metadata.varde-vault: true`).
  */
-class Skill(val name: String, val description: String, val file: Path, val uses: List<String>, val vault: Boolean) {
+class Skill(
+    val name: String, val description: String, val file: Path, val uses: List<String>, val vault: Boolean,
+    /** The inputs it declares (`metadata.ants-inputs`), one per name, which a Task fills. */
+    val inputs: List<String> = emptyList(),
+    /** Whether it opts in to the Answer History (`metadata.ants-answer-history: true`). */
+    val answerHistory: Boolean = false,
+) {
     val folder: Path get() = file.parent
 
     /** The schema of the `output` the Skill promises, from `result.schema.json` beside it; without one, any output. */
@@ -106,6 +112,9 @@ class Catalogue(@Value("\${ants.home}") private val home: Path, private val sett
     /** The user's own Skills, the one Skill folder the Skills page writes to. */
     val yourSkills: Path = home.resolve("skills")
 
+    /** The user's own Agents, the one Agent folder Ants writes to. */
+    val yourAgents: Path = home.resolve("agents")
+
     /** Every Skill in every Skill folder, a folder holding a `SKILL.md` at any depth, in folder order. */
     fun skills(): List<Skill> = skillFolders.filter { it.exists() }.flatMap { folder ->
         folder.walk().filter { it.fileName.toString() == "SKILL.md" }.sorted().map { file ->
@@ -117,6 +126,8 @@ class Catalogue(@Value("\${ants.home}") private val home: Path, private val sett
                 file = file,
                 uses = Settings.strings(metadata["ants-uses"]?.toString()).orEmpty(),
                 vault = metadata["varde-vault"] == true,
+                inputs = Settings.strings(metadata["ants-inputs"]?.toString()).orEmpty(),
+                answerHistory = metadata["ants-answer-history"] == true,
             )
         }
     }
@@ -159,8 +170,11 @@ fun nameError(kind: String, name: String) = when {
 }
 
 /** The first free name of `<name>-copy`, `<name>-copy-2`, …, for a copy of [name], made a valid name first. */
-fun copyName(name: String, taken: (String) -> Boolean): String {
-    val base = name.lowercase().replace(Regex("[^a-z0-9-]+"), "-").trim('-') + "-copy"
+fun copyName(name: String, taken: (String) -> Boolean) = freeName("$name-copy", taken)
+
+/** The first free name of `<name>`, `<name>-2`, …, made of lowercase letters, digits and hyphens first. */
+fun freeName(name: String, taken: (String) -> Boolean): String {
+    val base = name.lowercase().replace(Regex("[^a-z0-9-]+"), "-").trim('-')
     return generateSequence(1, Int::inc).map { if (it == 1) base else "$base-$it" }.first { !taken(it) }
 }
 

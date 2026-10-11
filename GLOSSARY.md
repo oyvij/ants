@@ -29,6 +29,11 @@ _Avoid_: human task, manual step
 A Task Ants carries out itself, with no Agent and no user, such as cloning repos.
 _Avoid_: system task, service task, Ants task
 
+**Check**:
+One thing **Save and deploy** refuses in a Process, such as an element Ants doesn't run, naming the
+element; a warning is a Check that doesn't refuse.
+_Avoid_: lint, validation error, rule
+
 **Agent**:
 A reusable definition of who does a Task: which AI CLI it runs, which tools it may use and its
 standing instructions.
@@ -54,6 +59,12 @@ _Avoid_: cron, timer, trigger
 One execution of a Process, including any Processes it calls, from its starting input to its end;
 many Runs of one Process may be live at once.
 _Avoid_: instance, job, execution
+
+**Pre-Run check**:
+What the Process page runs before **Start**: the Checks again, plus the settings, logins, CLIs and
+remotes a Run needs. It shows **Ready** or **Can't start** with every reason, and a Run never starts
+while it has one.
+_Avoid_: preflight, validation
 
 **Run workspace**:
 The folder a Run works in, holding its clones and intermediate files, deleted when the Run ends, or kept

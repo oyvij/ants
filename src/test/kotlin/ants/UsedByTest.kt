@@ -29,8 +29,10 @@ class UsedByTest : AntsTest() {
         it.writeText("---\nname: $name\ndescription: Keeps notes.\n" + uses?.let { "metadata:\n  ants-uses: $it\n" }.orEmpty() + "---\nKeep notes.\n")
     }
 
-    /** Deploys the Process used-by, "Keep notes", whose one Agent Task runs [agent] with [skill]. */
+    /** Deploys the Process used-by, "Keep notes", whose one Agent Task runs [agent] with [skill]; the Agent lists the Skill, and both exist. */
     private fun deploy(agent: String, skill: String) {
+        home.resolve("agents").resolve("$agent.md").writeText("---\nname: $agent\nskills: $skill\n---\nKeep it.\n")
+        if (!home.resolve("skills/$skill").exists()) skill(skill)
         browser.get("/processes")
         val bpmn = javaClass.getResource("/used-by.bpmn")!!.readText().replace("keeper", agent).replace("keep-notes", skill)
         browser.upload("/processes", "file", "used-by.bpmn", bpmn.toByteArray())
@@ -59,8 +61,12 @@ class UsedByTest : AntsTest() {
     fun `Used by also lists an older Process version that live Runs still run`() {
         agent("old-keeper")
         deploy("old-keeper", "old-keeper-skill")
+        val settings = "claude:\n  command: [${FakeClaude().command}]\n$vault"
+        home.resolve("settings.yaml").writeText("agent-tasks: 0\n$settings") // started while the Skill is there, launched once it's gone
         browser.get("/processes/used-by")
         val run = browser.post("/processes/used-by/runs", mapOf("prompt" to "Keep it")).path.removePrefix("/runs/")
+        home.resolve("skills/old-keeper-skill").toFile().deleteRecursively()
+        home.resolve("settings.yaml").writeText(settings)
         assertContains(get("/runs/$run"), "State: Running") // its Skill is missing, so its Task waits on the user
         deploy("new-keeper", "old-keeper-skill")
 
