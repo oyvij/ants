@@ -13,18 +13,31 @@
     <meta charset="utf-8">
     <meta name="color-scheme" content="${colorScheme}">
     <title>${run.processDefinitionName ?: run.processDefinitionKey} · Ants</title>
+    <link rel="stylesheet" href="/vendor/camunda-bpmn-js/assets/base-navigated-viewer.css">
+    <style>
+        .ants-done .djs-visual > :first-child { stroke: #2e7d32 !important; fill: #e8f5e9 !important; }
+        .ants-running .djs-visual > :first-child { stroke: #1565c0 !important; fill: #e3f2fd !important; }
+        .ants-queued .djs-visual > :first-child { stroke: #888 !important; stroke-dasharray: 4 !important; }
+        .ants-waiting .djs-visual > :first-child { stroke: #e65100 !important; fill: #fff3e0 !important; }
+        .ants-badge { background: #333; color: #fff; border-radius: 8px; padding: 0 5px; font-size: 12px; white-space: nowrap; }
+        #drawer { position: fixed; top: 0; right: 0; width: min(28rem, 100%); height: 100%; overflow: auto; padding: 1rem;
+            box-sizing: border-box; background: Canvas; border-left: 1px solid #888; }
+        .completed { text-decoration: line-through; }
+    </style>
 </head>
 <body>
 @template.nav()
 <p><a href="/runs">Runs</a></p>
 <h1><a href="/processes/${run.processDefinitionKey}">${run.processDefinitionName ?: run.processDefinitionKey}</a></h1>
-<p>State: ${run.stateName}</p>
+<p id="state">State: ${run.stateName}</p>
 @if(kept != null)
 <form method="post" action="/runs/${run.id}/dismiss">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
     <p>The Run workspace is kept at <code>${kept}</code> until you dismiss it. <button>Dismiss</button></p>
 </form>
 @endif
+<div id="diagram" style="height: 60vh"></div>
+<aside id="drawer" hidden><button id="close" aria-label="Close">✕</button><div id="parts"></div></aside>
 @if(agentTasks.isNotEmpty())
 <h2>Agent Tasks</h2>
 <dl>
@@ -47,5 +60,58 @@
     <dt>${name}</dt><dd><code>${value}</code></dd>
 @endfor
 </dl>
+<script src="/vendor/camunda-bpmn-js/base-navigated-viewer.production.min.js"></script>
+<script>
+    // The live diagram: each update patches only the elements whose state, badge or Round changed, so an open drawer stays.
+    const run = '${run.id}';
+    const viewer = new BpmnNavigatedViewer({ container: '#diagram' });
+    const shown = {};
+    fetch('/runs/' + run + '/diagram.bpmn').then(response => response.text()).then(xml => viewer.importXML(xml)).then(() => {
+        const canvas = viewer.get('canvas'), overlays = viewer.get('overlays'), registry = viewer.get('elementRegistry');
+        canvas.zoom('fit-viewport');
+        new EventSource('/runs/' + run + '/live').onmessage = event => {
+            const live = JSON.parse(event.data);
+            document.getElementById('state').textContent = 'State: ' + live.state;
+            for (const [id, now] of Object.entries(live.elements)) {
+                const before = shown[id];
+                if (!registry.get(id) || JSON.stringify(before) === JSON.stringify(now)) continue;
+                if (before) canvas.removeMarker(id, 'ants-' + before.state);
+                canvas.addMarker(id, 'ants-' + now.state);
+                overlays.remove({ element: id, type: 'ants' });
+                const badge = [now.badge, now.round > 1 ? '↻ ' + now.round : null].filter(Boolean).join(' · ');
+                if (badge) {
+                    const span = document.createElement('span');
+                    span.className = 'ants-badge';
+                    span.textContent = badge;
+                    overlays.add(id, 'ants', { position: { bottom: 8, right: 8 }, html: span });
+                }
+                shown[id] = now;
+            }
+        };
+        viewer.on('element.click', ({ element }) => { if (element.type.endsWith('Task')) open(element.id); });
+    });
+
+    // The Task drawer follows its Task over SSE, replacing only the parts that changed, so a comment being typed stays.
+    const drawer = document.getElementById('drawer'), parts = document.getElementById('parts');
+    let following = null, received = {};
+    function open(task) {
+        following?.close();
+        received = {};
+        parts.replaceChildren();
+        drawer.hidden = false;
+        following = new EventSource('/runs/' + run + '/tasks/' + encodeURIComponent(task) + '/drawer');
+        following.onmessage = event => {
+            const template = document.createElement('template');
+            template.innerHTML = event.data;
+            for (const part of [...template.content.children]) {
+                if (received[part.id] === part.outerHTML) continue;
+                received[part.id] = part.outerHTML;
+                const old = document.getElementById(part.id);
+                old ? old.replaceWith(part) : parts.append(part);
+            }
+        };
+    }
+    document.getElementById('close').onclick = () => { following?.close(); drawer.hidden = true; };
+</script>
 </body>
 </html>

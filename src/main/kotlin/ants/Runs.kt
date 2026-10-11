@@ -16,7 +16,19 @@ import org.operaton.bpm.engine.impl.pvm.process.ActivityImpl
 import org.operaton.bpm.engine.impl.pvm.process.ScopeImpl
 import org.operaton.bpm.engine.impl.util.xml.Element
 import org.operaton.bpm.engine.variable.value.ObjectValue
+import gg.jte.TemplateEngine
+import gg.jte.output.StringOutput
+import org.operaton.bpm.model.bpmn.instance.FlowElement
+import org.springframework.security.web.csrf.CsrfToken
+import org.operaton.bpm.engine.RepositoryService
+import org.operaton.bpm.engine.RuntimeService
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.context.event.ContextClosedEvent
+import org.springframework.context.event.EventListener
+import org.springframework.http.MediaType.TEXT_EVENT_STREAM_VALUE
+import org.springframework.web.bind.annotation.ResponseBody
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
+import tools.jackson.databind.json.JsonMapper
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Component
 import org.springframework.stereotype.Controller
@@ -36,13 +48,20 @@ import java.time.temporal.ChronoUnit.SECONDS
 import java.util.Date
 import kotlin.io.path.createDirectories
 
+/** What the live diagram shows of one element: its state (done, running, queued or waiting), a badge and its Round. */
+class Shown(val state: String, val badge: String?, val round: Int?)
+
 @Controller
 class Runs(
     private val history: HistoryService,
+    private val runtime: RuntimeService,
+    private val repository: RepositoryService,
     private val externalTasks: ExternalTaskService,
+    private val notifications: Notifications,
     private val launcher: AgentLauncher,
     private val settings: Settings,
     private val clock: Clock,
+    private val templates: TemplateEngine,
     @Value("\${ants.home}") private val home: Path,
 ) {
     @GetMapping("/runs")
@@ -70,6 +89,97 @@ class Runs(
         return "run"
     }
 
+    /** The diagram of the Process version the Run runs. */
+    @GetMapping("/runs/{id}/diagram.bpmn", produces = ["application/xml"])
+    @ResponseBody
+    fun diagram(@PathVariable id: String): ByteArray = repository.getProcessModel(run(id).processDefinitionId).readAllBytes()
+
+    /** The Run's state and each element's [Shown], as JSON, sent on connect and whenever it changes. */
+    @GetMapping("/runs/{id}/live", produces = [TEXT_EVENT_STREAM_VALUE])
+    @ResponseBody
+    fun live(@PathVariable id: String): SseEmitter {
+        run(id)
+        return stream { json.writeValueAsString(mapOf("state" to run(id).stateName, "elements" to shown(id))) }
+    }
+
+    /**
+     * The drawer of the Run's Task [task] as HTML, sent on connect and whenever it changes: its state, So far, task
+     * list, latest output, and the comment box and action when it waits on the user.
+     */
+    @GetMapping("/runs/{id}/tasks/{task}/drawer", produces = [TEXT_EVENT_STREAM_VALUE])
+    @ResponseBody
+    fun drawer(@PathVariable id: String, @PathVariable task: String, csrf: CsrfToken): SseEmitter {
+        val element = repository.getBpmnModelInstance(run(id).processDefinitionId).getModelElementById<FlowElement>(task)
+            ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No Task $task")
+        val file = Transcript.file(home.resolve("runs").resolve(id), task)
+        val transcript = Transcript()
+        var offset = 0L
+        csrf.token // loads the token while the request is still here
+        return stream {
+            val (lines, end) = Transcript.read(file, offset)
+            offset = end
+            lines.forEach(transcript::add)
+            val entry = notifications.entries().firstOrNull { it.run == id && it.taskId == task }
+            val model = mapOf(
+                "run" to id, "task" to task, "name" to (element.name ?: task), "shown" to shown(id)[task], "transcript" to transcript,
+                "entry" to entry, "details" to entry?.let(notifications::details), "live" to launcher.live(id, task), "_csrf" to csrf,
+            )
+            // One data line: a newline as a character reference still reads as one, in a <pre> too.
+            StringOutput().also { templates.render("drawer.kte", model, it) }.toString().replace("\n", "&#10;")
+        }
+    }
+
+    /**
+     * Each element the Run has reached: done once every instance of it ended, else waiting when it has a Notification
+     * list entry, else queued with a badge while a usage limit pauses its Agent Task, else running, or queued for an
+     * Agent Task no worker holds yet. Its Round is its count in `runs`.
+     */
+    private fun shown(id: String): Map<String, Shown> {
+        val entries = notifications.entries().filter { it.run == id }.associateBy { it.taskId }
+        val agentTasks = externalTasks.createExternalTaskQuery().processInstanceId(id).topicName(AgentLauncher.TOPIC).list().groupBy { it.activityId }
+        val rounds = history.createHistoricVariableInstanceQuery().processInstanceId(id).variableName("runs").singleResult()?.value as? Map<*, *>
+        return history.createHistoricActivityInstanceQuery().processInstanceId(id).list().groupBy { it.activityId }.mapValues { (activity, instances) ->
+            val round = (rounds?.get(activity) as? Number)?.toInt()
+            val entry = entries[activity]
+            val tasks = agentTasks[activity].orEmpty()
+            val paused = tasks.firstNotNullOfOrNull { launcher.pausedUntil(it.id) }
+            when {
+                instances.all { it.endTime != null } -> Shown("done", null, round)
+                entry != null -> Shown("waiting", "${entry.icon} ${entry.tag}", round)
+                paused != null -> Shown("queued", "Paused until ${clock.local(paused)}", round)
+                tasks.isNotEmpty() && tasks.none { it.lockExpirationTime?.after(Date()) == true } -> Shown("queued", "Queued", round)
+                else -> Shown("running", null, round)
+            }
+        }
+    }
+
+    /** Sends what [render] gives on connect and whenever it changes, one data line each. */
+    // ponytail: polls every second per open stream, like Home; the stream ends after a minute and EventSource reconnects.
+    private fun stream(render: () -> String): SseEmitter = SseEmitter(60_000).also { emitter ->
+        Thread.ofVirtual().start {
+            var last = ""
+            try {
+                while (!closing) {
+                    val data = render()
+                    if (data != last) emitter.send(data).also { last = data }
+                    Thread.sleep(1000)
+                }
+                emitter.complete()
+            } catch (_: Exception) {
+                // the page went away or the stream timed out
+            }
+        }
+    }
+
+    @Volatile
+    private var closing = false
+
+    /** Ends the open streams, or a graceful shutdown would wait for them. */
+    @EventListener(ContextClosedEvent::class)
+    fun close() {
+        closing = true
+    }
+
     /** Dismiss: cleans up the Run workspace a cancelled Run kept, as if the Run had ended. */
     @PostMapping("/runs/{id}/dismiss")
     fun dismiss(@PathVariable id: String): String {
@@ -92,6 +202,8 @@ class Runs(
         else -> "Queued: ${launcher.running} of ${settings.agentTasks()} Agent Tasks running"
     }
 }
+
+private val json = JsonMapper.shared()
 
 /** Appends one entry to the Run log, `run-log.md` in the Run workspace [workspace]: [what] the user did on [task], and [text]. */
 fun runLog(workspace: Path, task: String, what: String, text: String) {

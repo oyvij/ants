@@ -1,0 +1,68 @@
+@import ants.tokens
+@param run: String
+@param task: String
+@param name: String
+@param shown: ants.Shown?
+@param transcript: ants.Transcript
+@param entry: ants.Entry?
+@param details: String?
+@param live: Boolean
+@param _csrf: org.springframework.security.web.csrf.CsrfToken
+<section id="drawer-head">
+    <h2>${name}</h2>
+    <p>@if(entry != null)${entry.icon} ${entry.tag} ${entry.summary}@elseif(shown != null)${shown.badge ?: shown.state}@else not reached@endif · ${tokens(transcript.tokens)}</p>
+</section>
+<section id="drawer-so-far">
+    <h3>So far</h3>
+    <p>${transcript.soFar ?: "Nothing yet."}</p>
+</section>
+<section id="drawer-tasks">
+    <h3>Tasks</h3>
+@if(transcript.todos.isEmpty())
+    <p>No task list.</p>
+@else
+    <ul>
+@for(todo in transcript.todos.values)
+        <li class="${todo.status}">${todo.subject}</li>
+@endfor
+    </ul>
+@endif
+</section>
+<section id="drawer-output">
+    <h3>Latest output</h3>
+    $unsafe{transcript.output ?: "<p>None yet.</p>"}
+</section>
+@if(entry != null)
+<section id="drawer-action">
+@if(details != null)
+    <h3>@if(entry.tag == "[stuck]")What the Agent needs@else Details@endif</h3>
+    <pre>${details}</pre>
+@endif
+    <form method="post" action="/notifications/${entry.id}">
+        <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+        <input type="hidden" name="back" value="run">
+        <label>Comment <textarea name="instruction" required></textarea></label>
+        <button name="action" value="continue">Continue the session</button>
+        <button name="action" value="fresh" formnovalidate>Start fresh</button>
+        @if(entry.tag == "[failed]")<button name="action" value="cancel" formnovalidate>Cancel the Run</button>@endif
+    </form>
+</section>
+@endif
+@if(live)
+<section id="drawer-send">
+    <form method="post" action="/runs/${run}/tasks/${task}/transcript/send">
+        <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+        <input type="hidden" name="back" value="run">
+        <label>Comment <textarea name="message" required></textarea></label>
+        <button>Send</button>
+    </form>
+    <form method="post" action="/runs/${run}/tasks/${task}/transcript/stop">
+        <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+        <input type="hidden" name="back" value="run">
+        <button>■ Stop</button>
+    </form>
+</section>
+@endif
+<section id="drawer-links">
+    <a href="/runs/${run}/tasks/${task}/transcript">Transcript</a>
+</section>

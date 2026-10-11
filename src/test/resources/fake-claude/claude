@@ -4,7 +4,8 @@
 # records its argv, environment, working directory and stdin's first line under ./launches/<skill>.<n> for the nth
 # launch of that Skill, appends its working directory to ./launches.log, and plays ./sessions/<skill>.<n>.jsonl, or
 # ./sessions/<skill>.jsonl when there is none. The Skill is picked by the hand-off line, or for `--resume` by the
-# session's first launch. Like claude with --replay-user-messages, it echoes every stdin message with "isReplay":true.
+# session's first launch; a launch with neither, a So far rewrite, plays the Skill `so-far`. Like claude with
+# --replay-user-messages, it echoes every stdin message with "isReplay":true.
 # A session line `wait <file>` waits until ./<file> exists, `read` reads the next stdin line into the launch's stdin
 # record (a control request, such as Stop's interrupt, is not echoed), `stderr <text>` prints to stderr and `exit <code>`
 # exits; every other line is printed. $SESSION stands for the --session-id or --resume. A launch that is killed leaves
@@ -17,7 +18,9 @@ for arg; do case $previous in --session-id|--resume) session=$arg ;; esac; previ
 IFS= read -r prompt
 skill=$(basename "$(printf '%s' "$prompt" | sed -n 's|.*Follow the Skill in \(.*\)/SKILL.md for.*|\1|p')")
 mkdir -p "$dir/launches" "$dir/skills"
-if [ -n "$skill" ]; then printf '%s' "$skill" > "$dir/skills/$session"; else skill=$(cat "$dir/skills/$session"); fi
+if [ -n "$skill" ]; then printf '%s' "$skill" > "$dir/skills/$session"
+elif [ -n "$session" ]; then skill=$(cat "$dir/skills/$session")
+else skill=so-far; fi
 n=1
 while ! mkdir "$dir/launches/$skill.$n" 2>/dev/null; do n=$((n + 1)); done
 launch=$dir/launches/$skill.$n

@@ -11,6 +11,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption.ATOMIC_MOVE
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
+import java.time.Duration
 import java.util.concurrent.TimeUnit.SECONDS
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
@@ -48,6 +49,13 @@ class Settings(
 
     // ponytail: one global cap, no per-CLI caps or priorities
     fun agentTasks(): Int = (read()["agent-tasks"] as? Int) ?: 3
+
+    /** How often a running Task's So far is rewritten (default 2 minutes), or null when it is switched off. */
+    fun soFar(): Duration? = when (val value = read()["so-far"]) {
+        false -> null
+        null, true -> Duration.ofMinutes(2)
+        else -> Duration.parse("PT$value".uppercase())
+    }
 
     /** Where [cli] lives, as Detect found it or the user set it. */
     fun path(cli: String): String? = cli(cli)["path"]?.toString()
@@ -148,6 +156,8 @@ class Settings(
             # vaults, source-maps: name: path. default-vault, default-source-map: a name; without one, the first.
             # agent-folders, skill-folders: extra folders, read after Ants' own
             # theme: light or dark; without it, the pages follow the system
+            # so-far: false switches off the So far paragraph on running Tasks; a time (90s, 5m) sets how often it's
+            #   rewritten (default 2m)
 
             """.trimIndent() + "\n"
     }

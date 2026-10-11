@@ -77,18 +77,25 @@ class Notifications(
 
     @GetMapping("/notifications/{id}")
     fun entry(@PathVariable id: String, model: Model): String {
-        val incident = incident(id)
-        model.addAttribute("entry", entry(incident))
-        model.addAttribute("details", externalTasks.getExternalTaskErrorDetails(incident.configuration))
+        val entry = entry(incident(id))
+        model.addAttribute("entry", entry)
+        model.addAttribute("details", details(entry))
         return "notification"
     }
 
+    /** What [entry]'s page shows beyond its summary, such as what a stuck Agent needs. */
+    fun details(entry: Entry): String? = runtime.createIncidentQuery().incidentId(entry.id).singleResult()
+        ?.let { externalTasks.getExternalTaskErrorDetails(it.configuration) }
+
     /**
-     * Continue the session (instruction required) or Start fresh (instruction optional), then Next up; or Cancel the
-     * Run, which ends it and keeps its Run workspace until the user dismisses it on the Run page.
+     * Continue the session (instruction required) or Start fresh (instruction optional), then Next up, or back to
+     * the Run page when the user acted from its Task drawer ([back] is `run`); or Cancel the Run, which ends it and
+     * keeps its Run workspace until the user dismisses it on the Run page.
      */
     @PostMapping("/notifications/{id}")
-    fun act(@PathVariable id: String, @RequestParam action: String, @RequestParam instruction: String, model: Model): String {
+    fun act(
+        @PathVariable id: String, @RequestParam action: String, @RequestParam instruction: String, @RequestParam(required = false) back: String?, model: Model,
+    ): String {
         val incident = incident(id)
         val entry = entry(incident)
         val name = when (action) {
@@ -111,7 +118,7 @@ class Notifications(
         // The choice first: the worker can fetch the Task again the moment its retries are back.
         runtime.setVariablesLocal(incident.executionId, mapOf(AgentLauncher.ACTION to action, AgentLauncher.INSTRUCTION to instruction))
         externalTasks.setRetries(incident.configuration, 1)
-        return "redirect:/notifications/next?run=${entry.run}"
+        return if (back == "run") "redirect:/runs/${entry.run}" else "redirect:/notifications/next?run=${entry.run}"
     }
 
     /** Next up: the Run's next entry, if one turns up within a few seconds; else the Notification list. */

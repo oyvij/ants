@@ -415,7 +415,7 @@ class AgentLauncher(
     }
 
     /** The CLI's command prefix with [args], in [workspace], on the narrowed environment. */
-    private fun cli(cli: String, workspace: Path, args: List<String>) = ProcessBuilder(settings.command(cli) + args)
+    fun cli(cli: String, workspace: Path, args: List<String>): ProcessBuilder = ProcessBuilder(settings.command(cli) + args)
         .directory(workspace.toFile())
         .apply {
             environment().keys.retainAll(settings.env(cli).toSet())
@@ -461,8 +461,11 @@ class AgentLauncher(
         private val LOCK = Duration.ofDays(365)
         private const val STDERR_LINES = 20
         private const val LOST_LOGIN = "Ants' Claude login is missing or expired. Log in again (Settings)"
-        /** An Agent's tools when its file names none. */
-        val DEFAULT_TOOLS = listOf("Bash", "Edit", "Glob", "Grep", "NotebookEdit", "Read", "TodoWrite", "WebFetch", "WebSearch", "Write")
+
+        /** An Agent's tools when its file names none. claude 2.1.295 has no TodoWrite; its task-list tools are these four Task*. */
+        val DEFAULT_TOOLS = listOf(
+            "Bash", "Edit", "Glob", "Grep", "NotebookEdit", "Read", "TaskCreate", "TaskGet", "TaskList", "TaskUpdate", "WebFetch", "WebSearch", "Write",
+        )
         private val json = JsonMapper.shared()
     }
 }

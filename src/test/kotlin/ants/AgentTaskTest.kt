@@ -304,7 +304,7 @@ class AgentTaskTest : AntsTest() {
         eventually { assertContains(page(run), "State: Completed") }
         val argv = claude.launches("draft").single().argv.joinToString(" ")
         assertContains(argv, "--append-system-prompt Write plainly.")
-        assertContains(argv, "--tools Bash,Edit,Glob,Grep,NotebookEdit,Read,TodoWrite,WebFetch,WebSearch,Write")
+        assertContains(argv, "--tools Bash,Edit,Glob,Grep,NotebookEdit,Read,TaskCreate,TaskGet,TaskList,TaskUpdate,WebFetch,WebSearch,Write")
         assertFalse("--model" in argv)
         assertEquals(emptyMap<String, Any>(), (claude.launches("draft").single().schema()["properties"] as Map<*, *>)["output"])
     }
@@ -341,6 +341,7 @@ class AgentTaskTest : AntsTest() {
         val until = hhmm(Instant.ofEpochSecond(resetsAt.epochSecond).plusSeconds(60))
         eventually { assertContains(page(run), "<dt>draft</dt><dd>Paused until $until</dd>") }
         assertContains(pill("/runs/$run"), "claude paused until $until")
+        assertContains(browser.events("/runs/$run/live").poll(10, SECONDS).orEmpty(), "\"badge\":\"Paused until $until\"") // the diagram's badge
         assertFalse("/runs/$run\"" in browser.get("/notifications").body) // a pause waits on nobody
 
         clock.offset = Duration.ofHours(1) // past resetsAt, not yet the minute after

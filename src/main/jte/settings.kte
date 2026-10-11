@@ -81,6 +81,12 @@
     </fieldset>
 
     <fieldset>
+        <legend>So far</legend>
+        <p><label><input type="checkbox" name="so-far" checked="${form.soFar}"> Write a So far paragraph on running Tasks</label>
+            haiku rewrites each Task's new Transcript lines every couple of minutes; its tokens count on the Task.</p>
+    </fieldset>
+
+    <fieldset>
         <legend>Theme</legend>
 @for(theme in listOf("system", "light", "dark"))
         <label><input type="radio" name="theme" value="${theme}" checked="${theme == form.theme}"> ${theme}</label>

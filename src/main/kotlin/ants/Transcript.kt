@@ -45,6 +45,20 @@ class Transcript {
     private val changed = linkedSetOf<String>()
     private val live = StringBuilder() // the text block streaming in now
     private var verb = "Starting"
+    private var soFarTokens = 0L
+
+    /** The latest So far paragraph, if one has been written. */
+    var soFar: String? = null
+        private set
+
+    /** The latest text block, as HTML. */
+    var output: String? = null
+        private set
+
+    /** The Agent's task list in this launch, from the task-list tools, by task id. */
+    val todos = linkedMapOf<String, Todo>()
+
+    class Todo(val subject: String, val status: String)
 
     private class Launch(val entry: Int, val number: Int, val start: Instant) {
         var end: Instant? = null
@@ -54,8 +68,11 @@ class Transcript {
         val tokens get() = modelUsage ?: usage.values.sum()
     }
 
-    /** Every launch's tokens: the last `result`'s `modelUsage`, which counts Subagents too, or so far the messages'. */
-    val tokens get() = launches.sumOf { it.tokens }
+    /**
+     * Every launch's tokens: the last `result`'s `modelUsage`, which counts Subagents too, or so far the messages'.
+     * The So far rewrites count on the Task too.
+     */
+    val tokens get() = launches.sumOf { it.tokens } + soFarTokens
 
     private val running get() = launches.isNotEmpty() && launches.last().end == null
 
@@ -97,6 +114,11 @@ class Transcript {
                 append { divider(launch) }
                 verb = "Starting"
                 live.clear()
+                todos.clear()
+            }
+            "so-far" -> {
+                soFar = event["text"]?.toString()
+                soFarTokens += (event["tokens"] as? Number)?.toLong() ?: 0
             }
             else -> {
                 if (event["subtype"] == "end") launches.lastOrNull()?.end = at
@@ -107,6 +129,8 @@ class Transcript {
     }
 
     private fun user(event: Map<*, *>, launch: Launch?) {
+        // TaskCreate's tool result carries the id claude gave the new task.
+        ((event["tool_use_result"] as? Map<*, *>)?.get("task") as? Map<*, *>)?.let { todos[it["id"].toString()] = Todo(it["subject"].toString(), "pending") }
         fun said(text: Any?) {
             if (launch != null && !launch.prompted) {
                 launch.prompted = true
@@ -136,7 +160,8 @@ class Transcript {
         for (block in (message["content"] as? List<*>).orEmpty().filterIsInstance<Map<*, *>>()) when (block["type"]) {
             "text" -> {
                 live.clear()
-                append { """<div class="text" id="$it">${markdown(block["text"].toString())}</div>""" }
+                output = markdown(block["text"].toString())
+                append { """<div class="text" id="$it">$output</div>""" }
             }
             "thinking" -> append { """<details class="thinking" id="$it"><summary>✻ Thinking</summary>${esc(block["thinking"])}</details>""" }
             "tool_use" -> {
@@ -146,8 +171,17 @@ class Transcript {
                     """<div class="tool" id="$it">⏺ <b>${esc(name)}</b> <code>${esc(argument.lines().first().take(120))}</code></div>"""
                 }
                 verb = VERBS[name] ?: "Working"
+                if (name == "TaskUpdate") todo(block["input"] as? Map<*, *> ?: emptyMap<Any, Any>())
             }
         }
+    }
+
+    /** A TaskUpdate: a new status or subject for a task in the list, or `deleted`. */
+    private fun todo(update: Map<*, *>) {
+        val id = update["taskId"]?.toString() ?: return
+        val todo = todos[id] ?: return
+        if (update["status"] == "deleted") todos -= id
+        else todos[id] = Todo(update["subject"]?.toString() ?: todo.subject, update["status"]?.toString() ?: todo.status)
     }
 
     private fun stream(event: Map<*, *>) {
@@ -197,13 +231,18 @@ class Transcript {
             file.parent.createDirectories()
         }
 
+        // The So far writes into a Transcript its launch is writing to, and a long line goes out in several writes.
+        // ponytail: one lock for every Transcript; one per file if writes ever queue
         fun line(line: String) {
-            if (line.isNotBlank()) Files.writeString(file, "$line\n", CREATE, APPEND)
+            if (line.isNotBlank()) synchronized(Writer::class.java) { Files.writeString(file, "$line\n", CREATE, APPEND) }
         }
 
-        /** One of Ants' own lines: `launch`, or `end` with how the launch ended. */
-        fun ants(subtype: String, text: String? = null) =
-            line(json.writeValueAsString(listOfNotNull("type" to "ants", "subtype" to subtype, "at" to Instant.now().toString(), text?.let { "text" to it }).toMap()))
+        /** One of Ants' own lines: `launch`, `end` with how the launch ended, or `so-far` with the paragraph and its [tokens]. */
+        fun ants(subtype: String, text: String? = null, tokens: Long? = null) = line(
+            json.writeValueAsString(
+                listOfNotNull("type" to "ants", "subtype" to subtype, "at" to Instant.now().toString(), text?.let { "text" to it }, tokens?.let { "tokens" to it }).toMap(),
+            ),
+        )
     }
 
     companion object {
@@ -211,7 +250,7 @@ class Transcript {
         private val VERBS = mapOf(
             "Read" to "Reading", "Edit" to "Editing", "Write" to "Writing", "NotebookEdit" to "Editing", "Grep" to "Searching",
             "Glob" to "Searching", "Bash" to "Running", "WebFetch" to "Browsing", "WebSearch" to "Browsing", "Agent" to "Delegating",
-            "Task" to "Delegating", "TodoWrite" to "Planning",
+            "Task" to "Delegating", "TaskCreate" to "Planning", "TaskUpdate" to "Planning",
         )
         private val TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault())
         private val json = JsonMapper.shared()
@@ -272,13 +311,18 @@ class Transcripts(@Value("\${ants.home}") home: Path, private val launcher: Agen
         return "transcript"
     }
 
-    /** Send: a message into the Task's live session, refused once the session takes no more. */
+    /**
+     * Send: a message into the Task's live session, refused once the session takes no more. From the Run page's Task
+     * drawer ([back] is `run`) it returns to the Run page.
+     */
     @PostMapping("/runs/{run}/tasks/{task}/transcript/send")
-    fun send(@PathVariable run: String, @PathVariable task: String, @RequestParam message: String, model: Model): String {
+    fun send(
+        @PathVariable run: String, @PathVariable task: String, @RequestParam message: String, @RequestParam(required = false) back: String?, model: Model,
+    ): String {
         val error = when {
             message.isBlank() -> "Write a message to send."
             !launcher.send(run, task, message) -> "Not sent: the Agent's session has ended, as Ants holds its Result or it is not running."
-            else -> return "redirect:/runs/$run/tasks/$task/transcript"
+            else -> return if (back == "run") "redirect:/runs/$run" else "redirect:/runs/$run/tasks/$task/transcript"
         }
         model.addAttribute("error", error)
         return page(run, task, model)
@@ -286,8 +330,8 @@ class Transcripts(@Value("\${ants.home}") home: Path, private val launcher: Agen
 
     /** Stop: interrupts the Task's live session, which puts it on the Notification list as `[stopped]`. */
     @PostMapping("/runs/{run}/tasks/{task}/transcript/stop")
-    fun stop(@PathVariable run: String, @PathVariable task: String, model: Model): String {
-        if (launcher.stop(run, task)) return "redirect:/runs/$run/tasks/$task/transcript"
+    fun stop(@PathVariable run: String, @PathVariable task: String, @RequestParam(required = false) back: String?, model: Model): String {
+        if (launcher.stop(run, task)) return if (back == "run") "redirect:/runs/$run" else "redirect:/runs/$run/tasks/$task/transcript"
         model.addAttribute("error", "Not stopped: the Agent's session has already ended.")
         return page(run, task, model)
     }
