@@ -91,7 +91,8 @@
         viewer.on('element.click', ({ element }) => { if (element.type.endsWith('Task')) open(element.id); });
     });
 
-    // The Task drawer follows its Task over SSE, replacing only the parts that changed, so a comment being typed stays.
+    // The Task drawer follows its Task over SSE, replacing only the parts that changed, so a comment being typed stays,
+    // and removing the parts that are gone, such as Send once the session ends or the action once it is handled.
     const drawer = document.getElementById('drawer'), parts = document.getElementById('parts');
     let following = null, received = {};
     function open(task) {
@@ -103,12 +104,18 @@
         following.onmessage = event => {
             const template = document.createElement('template');
             template.innerHTML = event.data;
-            for (const part of [...template.content.children]) {
-                if (received[part.id] === part.outerHTML) continue;
+            const now = [...template.content.children];
+            for (const old of [...parts.children]) {
+                if (now.some(part => part.id === old.id)) continue;
+                old.remove();
+                delete received[old.id];
+            }
+            now.forEach((part, i) => {
+                if (received[part.id] === part.outerHTML) return;
                 received[part.id] = part.outerHTML;
                 const old = document.getElementById(part.id);
-                old ? old.replaceWith(part) : parts.append(part);
-            }
+                old ? old.replaceWith(part) : parts.insertBefore(part, parts.children[i] ?? null);
+            });
         };
     }
     document.getElementById('close').onclick = () => { following?.close(); drawer.hidden = true; };
