@@ -1,0 +1,3 @@
+#!/bin/sh
+# A fake `gh` for tests, on their PATH: logged in, and it does nothing else.
+exit 0

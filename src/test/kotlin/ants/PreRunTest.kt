@@ -190,14 +190,14 @@ class PreRunTest : AntsTest() {
     }
 
     @Test
-    fun `gh not logged in, for an Agent that runs gh`() {
+    fun `gh not logged in, whatever tools the Agents have`() {
+        ready() // the tests' own gh is logged in
         val gh = Files.createTempDirectory("fake-gh").resolve("gh")
         gh.writeText("#!/bin/sh\n[ \"$1 $2\" = \"auth status\" ] && exit 1\nexit 0\n")
         gh.toFile().setExecutable(true)
-        settings("gh:\n  path: $gh\n")
-        catalogue("tools: Read, Bash(gh pr create:*)\n")
-        assertFalse("role=\"alert\"" in browser.import("agent-task.bpmn").body)
-        cantStart("gh isn't logged in: run gh auth login.") { }
+        cantStart("gh isn't logged in: run gh auth login.") { settings("gh:\n  path: $gh\n") }
+        cantStart("gh isn't logged in: run gh auth login.") { catalogue("tools: Read\n") }
+        cantStart("gh: /nowhere/gh isn't an executable.") { settings("gh:\n  path: /nowhere/gh\n") }
     }
 
     @Test

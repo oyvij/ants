@@ -33,8 +33,8 @@ class PreRun(
     private val launcher: AgentLauncher,
     @Value("\${ants.home}") private val home: Path,
 ) {
-    // ponytail: in memory, so a custom model ID is tried once per Ants start; a bad one stays bad until then.
-    private val models = ConcurrentHashMap<String, String>() // model ID -> why it failed, empty when it answered
+    // ponytail: in memory, so a custom model ID is tried once per Ants start and claude command; a bad one stays bad until then.
+    private val models = ConcurrentHashMap<Pair<List<String>, String>, String>() // (claude command, model ID) -> why it failed, empty when it answered
 
     /**
      * Why a Run of [definition] with the Repos [repos] (Source map names) can't start; empty when it's Ready. Without
@@ -55,8 +55,8 @@ class PreRun(
         val sourceMap = settings.defaultSourceMap()
         val known = settings.repos().associateBy { it.name }
         val named = repos.distinct()
-        val gh = agents.any { agent -> agent.tools.orEmpty().any { it.replace(" ", "").startsWith("Bash(gh") } }
-        val missing = (agents.map { it.cli } + listOfNotNull("git".takeIf { named.isNotEmpty() }, "gh".takeIf { gh }))
+        // gh for every Process: any Agent with Bash, which the default tools have, can run it.
+        val missing = (agents.map { it.cli } + listOfNotNull("git".takeIf { named.isNotEmpty() }) + "gh")
             .distinct().associateWith { cli -> command(cli) }.filterValues { !executable(it) }
         return buildList {
             settings.vaults()[vault]?.let(Settings::expand)?.takeIf { !it.exists() }?.let { add("The Vault $vault isn't there: $it.") }
@@ -72,7 +72,7 @@ class PreRun(
                 else for (agent in agents) agent.model?.takeIf { agent.cli == "claude" && custom(it) }
                     ?.let { model -> tryModel(model)?.let { add("The Agent ${agent.name}'s model $model doesn't work: $it") } }
             }
-            if (gh && "gh" !in missing && failure(ProcessBuilder(command("gh"), "auth", "status"), 20) != null) add("gh isn't logged in: run gh auth login.")
+            if ("gh" !in missing && failure(ProcessBuilder(command("gh"), "auth", "status"), 20) != null) add("gh isn't logged in: run gh auth login.")
             if ("git" !in missing) for (repo in named.mapNotNull(known::get)) {
                 val lsRemote = ProcessBuilder(command("git"), "ls-remote", "--heads", repo.remote).apply { environment()["GIT_TERMINAL_PROMPT"] = "0" }
                 if (failure(lsRemote, 20) != null) add("git ls-remote can't reach ${repo.name}'s remote ${repo.remote}.")
@@ -104,7 +104,7 @@ class PreRun(
     private fun custom(model: String) = model.substringBefore('[').let { id -> id !in Models.aliases && Models.all.none { it.id == id } }
 
     /** Tries [model] once with a one-line prompt, the way a launch runs claude: null when it answers, else its last words. */
-    private fun tryModel(model: String): String? = models.computeIfAbsent(model) {
+    private fun tryModel(model: String): String? = models.computeIfAbsent(settings.command("claude") to model) {
         failure(launcher.cli("claude", home, listOf("-p", "--model", model, "Reply with OK.")), 60).orEmpty()
     }.ifEmpty { null }
 
