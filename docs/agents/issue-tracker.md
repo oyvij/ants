@@ -5,6 +5,9 @@ transfer it or mirror it under an organisation. Use `gh`; it infers the repo fro
 
 - **Create**: `gh issue create --title "..." --body "..."` (heredoc for multi-line bodies)
 - **Read**: `gh issue view <n> --comments`
+- **Start a ticket**: `scripts/ticket-context <n> [term ...]` prints, in one call, the ticket and its comments, What
+  to build of every ticket it is blocked by or blocks, and every spec (#27) section mentioning a term, whole. It
+  saves the full spec to `/tmp/ants-spec.md` and lists its headings, so read any other section the ticket touches.
 - **Comment / close**: `gh issue comment <n> --body "..."`, `gh issue close <n> --comment "..."`
 - **Resolve a ticket**: comment what was built, then close. Where the code departs from the spec (#27), record an
   ADR in `docs/adr/` and edit the spec's text to match, in the same pass.

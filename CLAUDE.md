@@ -7,3 +7,4 @@ Runs BPMN Processes whose Tasks are AI agents. The v1 spec is written; nothing i
   `gh`. See `docs/agents/issue-tracker.md`.
 - The spec is issue #27, "Spec: Ants v1". It collapses the closed `/wayfinder` map #1 and its
   sub-issues.
+- Helper scripts live in `scripts/` (each prints its usage with `--help`); project skills in `.claude/skills/`.
