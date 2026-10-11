@@ -7,6 +7,7 @@
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
 @param transcripts: Map<String, Long>
+@param report: Boolean
 <!doctype html>
 <html lang="en">
 <head>
@@ -30,6 +31,9 @@
 <p><a href="/runs">Runs</a></p>
 <h1><a href="/processes/${run.processDefinitionKey}">${run.processDefinitionName ?: run.processDefinitionKey}</a></h1>
 <p id="state">State: ${run.stateName}</p>
+@if(report)
+<p><a href="/runs/${run.id}/report">Report</a></p>
+@endif
 @if(kept != null)
 <form method="post" action="/runs/${run.id}/dismiss">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">

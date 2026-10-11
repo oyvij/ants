@@ -3,9 +3,11 @@ package ants
 import org.junit.jupiter.api.Test
 import java.util.concurrent.BlockingQueue
 import java.util.concurrent.TimeUnit.SECONDS
+import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
 import kotlin.io.path.readText
+import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -268,11 +270,15 @@ class NotificationListTest : AntsTest() {
         assertFalse("[failed]" in transcript.readText())
         assertTrue(home.resolve("runs/$run").isDirectory())
         assertContains(runLog(run), "Check · Cancel the Run")
+        assertContains(browser.get("/runs/$run/report").body, "<p>Cancelled</p>") // the Report is written as the Run ends
+        home.resolve("runs/$run/tickets").createDirectories().resolve("spec.md").writeText("# Hello\n")
 
         val dismissed = browser.post("/runs/$run/dismiss", emptyMap())
         assertEquals("/runs/$run", dismissed.path)
         assertFalse(home.resolve("runs/$run/run-log.md").exists())
         assertTrue(home.resolve("runs/$run/tasks/draft/transcript.jsonl").exists()) // Transcripts outlive the Run
+        assertTrue(home.resolve("runs/$run/tickets/spec.md").exists())
+        assertContains(browser.get(dismissed.path).body, """<a href="/runs/$run/report">Report</a>""")
         assertFalse("Dismiss" in dismissed.body)
     }
 

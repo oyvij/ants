@@ -86,11 +86,22 @@ class Runs(
                 .associate { it.name to ((it.typedValue as? ObjectValue)?.valueSerialized ?: "${it.value}") },
         )
         model.addAttribute("transcripts", Transcript.all(home.runWorkspace(id)).mapValues { it.value.tokens })
+        model.addAttribute("report", Files.exists(home.runWorkspace(id).resolve(REPORT)))
         model.addAttribute(
             "agentTasks",
             externalTasks.createExternalTaskQuery().processInstanceId(id).topicName(AgentLauncher.TOPIC).list().associate { it.activityId to state(it) },
         )
         return "run"
+    }
+
+    /** The Report the Run left as it ended, rendered. */
+    @GetMapping("/runs/{id}/report")
+    fun report(@PathVariable id: String, model: Model): String {
+        val file = home.runWorkspace(run(id).id).resolve(REPORT)
+        if (!Files.exists(file)) throw ResponseStatusException(HttpStatus.NOT_FOUND, "Run $id has no Report yet")
+        model.addAttribute("run", id)
+        model.addAttribute("html", Transcript.markdown(Files.readString(file)))
+        return "report"
     }
 
     /** The diagram of the Process version the Run runs. */
@@ -181,7 +192,7 @@ class Runs(
 
     /** The workspace of a cancelled Run, until it is dismissed. */
     private fun keptWorkspace(run: HistoricProcessInstance) = home.runWorkspace(run.id).takeIf { workspace ->
-        run.state == HistoricProcessInstance.STATE_EXTERNALLY_TERMINATED && workspace.toFile().listFiles()?.any { it.name != "tasks" } == true
+        run.state == HistoricProcessInstance.STATE_EXTERNALLY_TERMINATED && workspace.toFile().listFiles()?.any { it.name !in KEPT } == true
     }
 
     private fun state(task: ExternalTask, paused: Instant? = launcher.pausedUntil(task.id)) = when {
@@ -239,13 +250,20 @@ class RunLifecycle(@Value("\${ants.home}") private val home: Path) : AbstractPro
     }
 
     private fun ended(results: List<String>) = ExecutionListener { run ->
-        // A cancelled Run keeps its workspace, so no commits are lost.
-        if (run.isCanceled) return@ExecutionListener
+        val cancelled = run.isCanceled
         // A called Process's Result is every Result in it, by id, on its call activity, as a Task's is on the Task.
-        run.superExecution?.let { call -> return@ExecutionListener call.setVariable(call.currentActivityId, results.associateWith { run.getVariable(it) }) }
-        val workspace = home.runWorkspace(run.processInstanceId).toFile()
+        run.superExecution?.let { call ->
+            if (!cancelled) call.setVariable(call.currentActivityId, results.associateWith { run.getVariable(it) })
+            return@ExecutionListener
+        }
+        val workspace = home.runWorkspace(run.processInstanceId)
+        val report = report(run, workspace)
         // Only once the end is committed: a rolled-back end leaves the Run alive and needing its workspace.
-        Context.getCommandContext().transactionContext.addTransactionListener(TransactionState.COMMITTED) { cleanUp(workspace) }
+        Context.getCommandContext().transactionContext.addTransactionListener(TransactionState.COMMITTED) {
+            Files.writeString(workspace.resolve(REPORT), report)
+            // A cancelled Run keeps its workspace, so no commits are lost.
+            if (!cancelled) cleanUp(workspace.toFile())
+        }
     }
 
     /**
@@ -297,9 +315,12 @@ class RunLifecycle(@Value("\${ants.home}") private val home: Path) : AbstractPro
     }
 }
 
-/** Deletes a Run workspace once its Run is done with it, all but the Transcripts (`tasks/`), which outlive the Run. */
+/** What outlives the Run in its workspace: the Transcripts (`tasks/`), the Spec and Tickets (`tickets/`) and the Report. */
+private val KEPT = setOf("tasks", "tickets", REPORT)
+
+/** Deletes a Run workspace once its Run is done with it, all but what is [KEPT]. */
 fun cleanUp(workspace: File) {
-    workspace.listFiles()?.filter { it.name != "tasks" }?.forEach { it.deleteRecursively() }
+    workspace.listFiles()?.filter { it.name !in KEPT }?.forEach { it.deleteRecursively() }
     workspace.delete() // only if nothing was kept
 }
 
