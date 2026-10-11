@@ -100,6 +100,16 @@ Every question the user answered themselves, with their answer, kept across Runs
 Agent can answer a Round the way the user would.
 _Avoid_: answer log, memory
 
+**Spec**:
+What a Run is to build, written by an Agent and approved by the user; it holds the Run's Tickets
+and outlives the Run.
+_Avoid_: PRD, plan, epic
+
+**Ticket**:
+One slice of a Spec, implemented by one Agent Task, with its status, its acceptance criteria and the
+Tickets that block it; Agents move it along as they work, and the user can read and edit it.
+_Avoid_: issue, story, card, task
+
 **Story set**:
 A guided reading of what a Run changed across its repos: stories that follow the code in the order it
 runs, written for one review and never updated.
