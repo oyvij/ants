@@ -16,6 +16,7 @@
     </style>
 </head>
 <body>
+@template.nav()
 <p><a href="/runs/${run}">Run</a></p>
 <h1>${task} · $unsafe{transcript.html("tokens")}</h1>
 <div id="entries" data-from="${offset}">
