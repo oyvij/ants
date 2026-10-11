@@ -60,7 +60,13 @@ class Agent(val file: Path, text: String = file.readText()) {
  * A `SKILL.md` and the folder it lives in, with the Skills it names in `metadata.ants-uses` and whether it opts in to
  * the Vault (`metadata.varde-vault: true`).
  */
-class Skill(val name: String, val description: String, val file: Path, val uses: List<String>, val vault: Boolean) {
+class Skill(
+    val name: String, val description: String, val file: Path, val uses: List<String>, val vault: Boolean,
+    /** The inputs it declares (`metadata.ants-inputs`), one per name, which a Task fills. */
+    val inputs: List<String> = emptyList(),
+    /** Whether it opts in to the Answer History (`metadata.ants-answer-history: true`). */
+    val answerHistory: Boolean = false,
+) {
     val folder: Path get() = file.parent
 
     /** The schema of the `output` the Skill promises, from `result.schema.json` beside it; without one, any output. */
@@ -117,6 +123,8 @@ class Catalogue(@Value("\${ants.home}") private val home: Path, private val sett
                 file = file,
                 uses = Settings.strings(metadata["ants-uses"]?.toString()).orEmpty(),
                 vault = metadata["varde-vault"] == true,
+                inputs = Settings.strings(metadata["ants-inputs"]?.toString()).orEmpty(),
+                answerHistory = metadata["ants-answer-history"] == true,
             )
         }
     }

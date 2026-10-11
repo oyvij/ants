@@ -29,8 +29,9 @@ data class Check(val element: String?, val message: String, val warning: Boolean
  * written with `operaton:` only, and gives its Checks; a new Check is one more rule in [rules].
  */
 @Component
-class Checks {
-    private val rules: List<(BpmnModelInstance) -> List<Check>> = listOf(::refusedElements, ::refusedUses, ::oneStartEvent, ::startFormNames, ::emptyInputs)
+class Checks(private val catalogue: Catalogue) {
+    private val rules: List<(BpmnModelInstance) -> List<Check>> = listOf(::refusedElements, ::refusedUses, ::oneStartEvent, ::startFormNames, ::emptyInputs,
+        { agentTasks(catalogue, it) }, { references(catalogue, it) }) // the last two in AgentTaskChecks.kt
 
     fun of(bpmn: String): List<Check> = try {
         Bpmn.readModelFromStream(bpmn.byteInputStream()).let { model -> rules.flatMap { it(model) } }

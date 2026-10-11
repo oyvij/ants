@@ -1,15 +1,22 @@
 package ants
 
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.CsvSource
 import tools.jackson.databind.json.JsonMapper
+import kotlin.io.path.createDirectories
+import kotlin.io.path.deleteIfExists
+import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class ChecksTest : AntsTest() {
     private val browser by lazy { browser().also { it.login(); it.get("/processes") } }
+
+    @BeforeEach
+    fun writer() = writerAndDraft(inputs = "")
 
     /** A Process `checked` with one start event and [body], and [outside] after the Process (such as a pool). */
     private fun diagram(body: String, outside: String = "") = """
@@ -185,7 +192,7 @@ class ChecksTest : AntsTest() {
 
     @Test
     fun `the modeler reads camunda as the deploy path does`() {
-        val bpmn = diagram("""<bpmn:serviceTask id="x" camunda:type="external" camunda:topic="agent" />""")
+        val bpmn = diagram(agentTask("x").replace("operaton:", "camunda:"))
             .replace("<bpmn:definitions ", """<bpmn:definitions xmlns:camunda="http://camunda.org/schema/1.0/bpmn" """)
         assertEquals(emptyList(), checks(bpmn))
     }
@@ -196,6 +203,153 @@ class ChecksTest : AntsTest() {
             diagram("""<bpmn:endEvent id="stop"><bpmn:terminateEventDefinition /></bpmn:endEvent>""").toByteArray())
         assertContains(page.body, "terminate.bpmn: stop is a terminate end event, which Ants doesn't run.")
         assertEquals(404, browser.get("/processes/checked").status)
+    }
+
+    /** The Agent `writer`, listing [skills], and the Skill `draft` promising `{text}` and declaring [inputs]. */
+    private fun writerAndDraft(skills: String = "draft, other", inputs: String = "tone") {
+        home.resolve("agents").createDirectories().resolve("writer.md").writeText("---\nskills: $skills\n---\nWrite plainly.\n")
+        skill("draft", schema = """{"type":"object","properties":{"text":{"type":"string"},"meta":{"type":"object","properties":{"words":{"type":"integer"}}}}}""",
+            metadata = "metadata:\n  ants-inputs: $inputs\n")
+    }
+
+    private fun skill(name: String, schema: String? = null, metadata: String = "", folder: String = name) {
+        val dir = home.resolve("skills/$folder").createDirectories()
+        dir.resolve("SKILL.md").writeText("---\nname: $name\ndescription: A Skill.\n$metadata---\nDo it.\n")
+        dir.resolve("result.schema.json").run { if (schema != null) writeText(schema) else deleteIfExists() }
+    }
+
+    /** Draft, then Review reading [reads] from Draft, with the start-form field `prompt`. */
+    private fun twoTasks(reads: String, review: String = agentTask("review", inputs = """<operaton:inputParameter name="tone">$reads</operaton:inputParameter>""")) = diagram(
+        """
+        <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="draft" />
+        ${agentTask("draft", inputs = """<operaton:inputParameter name="tone">${'$'}{prompt}</operaton:inputParameter>""")}
+        <bpmn:sequenceFlow id="f2" sourceRef="draft" targetRef="review" />
+        $review
+        """,
+    ).replace(
+        """<bpmn:startEvent id="start" />""",
+        """<bpmn:startEvent id="start"><bpmn:extensionElements><operaton:formData><operaton:formField id="prompt" label="Prompt" type="string" /></operaton:formData></bpmn:extensionElements></bpmn:startEvent>""",
+    )
+
+    /** Save and deploy refuses [bpmn], naming [element] in a Check saying [message]. */
+    private fun refuses(bpmn: String, element: String, message: String) {
+        assertContains(checks(bpmn), mapOf("element" to element, "message" to message, "warning" to false))
+        val refused = browser.post("/processes/deploy", mapOf("bpmn" to bpmn))
+        assertEquals(400, refused.status)
+        assertContains(refused.body, message)
+    }
+
+    private fun withAgent(agent: String, skill: String = "draft") = agentTask("draft").replace("\"writer\"", "\"$agent\"").replace("value=\"draft\"", "value=\"$skill\"")
+
+    @Test
+    fun `an unknown, ambiguous or missing Agent name is refused`() {
+        writerAndDraft()
+        refuses(diagram(withAgent("nobody")), "draft", "Draft (draft): No Agent named nobody.")
+        refuses(diagram(withAgent("")), "draft", "Draft (draft) has no Agent.")
+        val agents = home.resolve("agents")
+        agents.resolve("twin-1.md").writeText("---\nname: twin\n---\nOne.\n")
+        agents.resolve("twin-2.md").writeText("---\nname: twin\n---\nTwo.\n")
+        try {
+            refuses(diagram(withAgent("twin")), "draft", "Draft (draft): More than one Agent is named twin.")
+        } finally {
+            agents.resolve("twin-1.md").deleteIfExists()
+            agents.resolve("twin-2.md").deleteIfExists()
+        }
+    }
+
+    @Test
+    fun `an unknown, ambiguous or missing Skill name is refused`() {
+        writerAndDraft()
+        refuses(diagram(withAgent("writer", "nothing")), "draft", "Draft (draft): No Skill named nothing.")
+        refuses(diagram(withAgent("writer", "")), "draft", "Draft (draft) has no Skill.")
+        skill("other", folder = "twin-1")
+        skill("other", folder = "twin-2")
+        try {
+            refuses(diagram(withAgent("writer", "other")), "draft", "Draft (draft): More than one Skill is named other.")
+        } finally {
+            home.resolve("skills/twin-1").toFile().deleteRecursively()
+            home.resolve("skills/twin-2").toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `a Skill the Agent doesn't list is refused`() {
+        writerAndDraft(skills = "other")
+        refuses(diagram(agentTask("draft")), "draft", "Draft (draft): The Agent writer doesn't list the Skill draft.")
+    }
+
+    @Test
+    fun `an unknown used Skill or a cycle of used Skills is refused`() {
+        writerAndDraft()
+        skill("other", metadata = "metadata:\n  ants-uses: helper\n")
+        refuses(diagram(withAgent("writer", "other")), "draft", "Draft (draft): No Skill named helper.")
+        skill("helper", metadata = "metadata:\n  ants-uses: other\n")
+        try {
+            refuses(diagram(withAgent("writer", "other")), "draft", "Draft (draft): The Skills other → helper → other use each other in a cycle.")
+        } finally {
+            home.resolve("skills/helper").toFile().deleteRecursively()
+            skill("other")
+        }
+    }
+
+    @Test
+    fun `an invalid result schema, the Skill's or the Task's override, is refused`() {
+        writerAndDraft()
+        skill("other", schema = """{"type":"object","properties":"text"}""")
+        try {
+            val message = checks(diagram(withAgent("writer", "other"))).single()["message"] as String
+            assertContains(message, "Draft (draft): The Skill other's result.schema.json is invalid: ")
+            refuses(diagram(withAgent("writer", "other")), "draft", message)
+        } finally {
+            skill("other")
+        }
+        val override = agentTask("draft").replace("</operaton:properties>", """<operaton:property name="ants.result-schema" value="[1]" /></operaton:properties>""")
+        refuses(diagram(override), "draft", "Draft (draft): Its result-schema override is invalid: A result schema is a JSON object.")
+    }
+
+    @Test
+    fun `a reference to a Task or field that doesn't exist is refused`() {
+        writerAndDraft()
+        refuses(twoTasks("${'$'}{drafted.output.text}"), "review", "Draft (review) reads drafted, which is no Task, start-form field or Run variable.")
+        refuses(twoTasks("${'$'}{draft.output.colour}"), "review", "Draft (review) reads draft.output.colour, which draft's output schema doesn't have.")
+        refuses(twoTasks("${'$'}{draft.output.meta.lines}"), "review", "Draft (review) reads draft.output.meta.lines, which draft's output schema doesn't have.")
+        refuses(twoTasks("${'$'}{draft.result}"), "review", "Draft (review) reads draft.result, which draft's Result doesn't have.")
+        refuses(twoTasks("${'$'}{runs.drafted > 2}"), "review", "Draft (review) reads runs.drafted, which is no Task.")
+        val condition = twoTasks("${'$'}{prompt}").replace(
+            """<bpmn:sequenceFlow id="f2" sourceRef="draft" targetRef="review" />""",
+            """<bpmn:sequenceFlow id="f2" sourceRef="draft" targetRef="review"><bpmn:conditionExpression>${'$'}{draft.output.tone == 'dry'}</bpmn:conditionExpression></bpmn:sequenceFlow>""",
+        )
+        refuses(condition, "f2", "f2 reads draft.output.tone, which draft's output schema doesn't have.")
+    }
+
+    @Test
+    fun `reading the output of a Task whose Skill promises no result schema is refused`() {
+        writerAndDraft()
+        skill("other")
+        refuses(twoTasks("${'$'}{draft.output.text}").replace(Regex("""(<bpmn:serviceTask id="draft"(?:(?!</bpmn:serviceTask>).)*?)value="draft""", RegexOption.DOT_MATCHES_ALL), "$1value=\"other"),
+            "review", "Draft (review) reads draft.output.text, but draft promises no result schema.")
+    }
+
+    @Test
+    fun `references to start-form fields, Run variables and Result fields deploy, and an override replaces the Skill's schema`() {
+        writerAndDraft()
+        val reads = "${'$'}{draft.output.text}${'$'}{draft.output.meta.words}${'$'}{draft.summary}${'$'}{runs.draft >= 2 and empty clones}" +
+            "${'$'}{prompt.trim()}${'$'}{draft.output.text.length() > 0 ? 'a.b' : \"c.d\"}${'$'}{true}"
+        assertEquals(emptyList(), checks(twoTasks(reads)))
+        val override = twoTasks("${'$'}{draft.output.verdict}").replace(
+            """<operaton:property name="ants.skill" value="draft" />""",
+            """<operaton:property name="ants.skill" value="draft" /><operaton:property name="ants.result-schema" value="{&quot;type&quot;:&quot;object&quot;,&quot;properties&quot;:{&quot;verdict&quot;:{}}}" />""",
+        )
+        assertEquals(emptyList(), checks(override))
+    }
+
+    @Test
+    fun `a declared input with no value is a warning`() {
+        writerAndDraft(inputs = "tone length")
+        assertEquals(
+            listOf(mapOf("element" to "draft", "message" to "Draft (draft) has an empty input length.", "warning" to true)),
+            checks(diagram(agentTask("draft", inputs = """<operaton:inputParameter name="tone">dry</operaton:inputParameter>"""))),
+        )
     }
 
     @Test
