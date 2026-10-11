@@ -16,7 +16,10 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit.MILLISECONDS
+import java.util.concurrent.TimeUnit.SECONDS
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.io.path.readText
+import kotlin.io.path.writeText
 
 /**
  * The in-process worker. It fetches ready Agent Tasks (external tasks on topic `agent`) only for free slots under
@@ -37,6 +40,7 @@ class AgentLauncher(
     private val poller = Executors.newSingleThreadScheduledExecutor()
     private val clis = ConcurrentHashMap.newKeySet<Process>()
     private val live = AtomicInteger()
+    private val usageFile = home.resolve("claude-usage.json")
 
     /** How many Agent Tasks are running now. */
     val running get() = live.get()
@@ -76,18 +80,32 @@ class AgentLauncher(
         }
     }
 
+    /** Runs [task] once, between a divider and a line saying how it ended in its Transcript. */
     private fun launch(task: LockedExternalTask) {
         val resume = (task.variables[SESSION] as? String)?.takeIf { task.variables[ACTION] == CONTINUE }
         val session = resume ?: UUID.randomUUID().toString()
+        var transcript: Transcript.Writer? = null
         try {
             runtime.removeVariablesLocal(task.executionId, listOf(ACTION, INSTRUCTION, SESSION)) // the choice is used once
-            val result = session(task, session, resume != null, task.variables[INSTRUCTION] as? String)
-            if (result["outcome"] == "done") externalTasks.complete(task.id, WORKER, mapOf(task.activityId to result))
-            else incident(task, session, "[stuck] ${result["summary"]}", result["needs"].toString())
+            val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult().rootProcessInstanceId
+            val workspace = home.resolve("runs").resolve(run)
+            transcript = Transcript.Writer(Transcript.file(workspace, task.activityId)).apply { ants("launch") }
+            val result = session(task, workspace, transcript, session, resume != null, task.variables[INSTRUCTION] as? String)
+            if (result["outcome"] == "done") {
+                transcript.ants("end", "Done.")
+                externalTasks.complete(task.id, WORKER, mapOf(task.activityId to result))
+            } else {
+                val reason = "[stuck] ${result["summary"]}"
+                transcript.ants("end", reason)
+                incident(task, session, reason, result["needs"].toString())
+            }
         } catch (e: Exception) {
-            if (poller.isShutdown) return // Ants is stopping: the Task stays locked, and the next start unlocks it
+            val stopping = poller.isShutdown // the Task stays locked, and the next start unlocks it
+            val reason = if (stopping) "Ants stopped." else "[failed] ${e.message ?: e}"
+            runCatching { transcript?.ants("end", reason) }
+            if (stopping) return
             log.warn("Agent Task ${task.activityId} failed", e)
-            incident(task, session, "[failed] ${e.message ?: e}", (e as? InvalidResult)?.details)
+            incident(task, session, reason, (e as? InvalidResult)?.details)
         }
     }
 
@@ -101,10 +119,13 @@ class AgentLauncher(
     }.onFailure { log.warn("Agent Task ${task.activityId} couldn't be put on hold", it) }
 
     /**
-     * Runs the Task's Skill in one CLI session and returns its Result. A new [session] starts with the hand-off prompt
-     * and the user's [instruction], if any; a [resume]d one with the instruction alone.
+     * Runs the Task's Skill in one CLI session in [workspace], every line it prints going to [transcript], and returns
+     * its Result. A new [session] starts with the hand-off prompt and the user's [instruction], if any; a [resume]d one
+     * with the instruction alone.
      */
-    private fun session(task: LockedExternalTask, session: String, resume: Boolean, instruction: String?): Map<*, *> {
+    private fun session(
+        task: LockedExternalTask, workspace: Path, transcript: Transcript.Writer, session: String, resume: Boolean, instruction: String?,
+    ): Map<*, *> {
         val agent = catalogue.agent(task.extensionProperties["ants.agent"] ?: error("${task.activityId} names no ants.agent"))
         val skill = catalogue.skill(task.extensionProperties["ants.skill"] ?: error("${task.activityId} names no ants.skill"))
         check(agent.cli == "claude") { "Agent ${agent.name} runs ${agent.cli}, and only claude runs for now" }
@@ -112,8 +133,6 @@ class AgentLauncher(
         // ponytail: until the Vault is handed to Tasks (its path in the hand-off line and an --add-dir), a Task that
         // gets the Vault fails rather than run without it.
         (listOf(skill) + used).firstOrNull { it.vault }?.let { error("The Task uses the Vault, as ${it.name} opts in, and no Vault can be handed to a Task yet") }
-        val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult().rootProcessInstanceId
-        val workspace = home.resolve("runs").resolve(run)
         refuseBareByDefault(agent.cli, workspace)
 
         val handOff = "Follow the Skill in ${skill.file} for the workspace at $workspace." +
@@ -136,8 +155,10 @@ class AgentLauncher(
             var failure: Exception? = null
             var retried = false
             process.inputReader().forEachLine { line ->
+                transcript.line(line)
                 if (valid != null || failure != null) return@forEachLine
                 val event = runCatching { json.readValue(line, Map::class.java) }.getOrNull() ?: return@forEachLine
+                if (event["type"] == "rate_limit_event") keepUsage(event)
                 if (event["type"] != "result") return@forEachLine
                 val result = event["structured_output"]
                 val errors = result?.let { ResultContract.errors(it, schema, workspace) }
@@ -179,6 +200,24 @@ class AgentLauncher(
             "--allowedTools", tools.joinToString(","),
         ) + skills.flatMap { listOf("--add-dir", it.folder.toString()) } + (if (agent.model != null) listOf("--model", agent.model) else emptyList()) +
             (if (agent.instructions.isNotEmpty()) listOf("--append-system-prompt", agent.instructions) else emptyList())
+    }
+
+    /** What `claude auth status` says of Ants' own Claude login, asked the way a launch runs; empty when it can't tell. */
+    fun login(): Map<*, *> = runCatching {
+        val process = cli("claude", home, listOf("auth", "status", "--json")).start()
+        if (!process.waitFor(10, SECONDS)) process.destroyForcibly()
+        json.readValue(process.inputReader().readText(), Map::class.java)
+    }.getOrDefault(emptyMap<Any, Any>())
+
+    /**
+     * The latest usage claude reported: its `rate_limit_event`'s `unifiedWindows`, such as
+     * `{"five_hour":{"utilization":0.04,"resetsAt":<epoch s>},"seven_day":{…}}`, utilization a fraction. Empty until a launch reports one.
+     */
+    fun usage(): Map<*, *> = runCatching { json.readValue(usageFile.readText(), Map::class.java) }.getOrDefault(emptyMap<Any, Any>())
+
+    private fun keepUsage(event: Map<*, *>) {
+        val windows = (event["rate_limit_info"] as? Map<*, *>)?.get("unifiedWindows") ?: return
+        usageFile.writeText(json.writeValueAsString(windows))
     }
 
     /** The CLI's command prefix with [args], in [workspace], on the narrowed environment. */

@@ -36,6 +36,7 @@ dependencies {
     implementation("org.jetbrains.kotlin:kotlin-reflect")
     implementation("com.networknt:json-schema-validator:2.0.4")
     implementation("tools.jackson.dataformat:jackson-dataformat-toml") // reads Varde's config.toml
+    implementation("org.commonmark:commonmark:0.30.1")
     runtimeOnly("com.h2database:h2")
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
