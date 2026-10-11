@@ -8,6 +8,7 @@
     <title>Processes · Ants</title>
 </head>
 <body>
+@template.nav()
 <h1>Processes</h1>
 @if(error != null)<p role="alert">${error}</p>@endif
 <ul>

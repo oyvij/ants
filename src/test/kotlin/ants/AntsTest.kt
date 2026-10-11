@@ -14,6 +14,8 @@ import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.BlockingQueue
+import java.util.concurrent.LinkedBlockingQueue
 
 /** Boots Ants on a random port with a temporary ANTS_HOME (and so a temporary H2), driven over HTTP. */
 @SpringBootTest(webEnvironment = RANDOM_PORT)
@@ -88,6 +90,14 @@ class Browser(private val base: String) {
     fun import(file: String): Page {
         get("/processes")
         return upload("/processes", "file", file, javaClass.getResource("/$file")!!.readBytes())
+    }
+
+    /** Opens an SSE stream the way a page's `EventSource` does; each event's data arrives on the queue. */
+    fun events(path: String): BlockingQueue<String> {
+        val events = LinkedBlockingQueue<String>()
+        client.sendAsync(HttpRequest.newBuilder(URI("$base$path")).header("Accept", "text/event-stream").GET().build(), HttpResponse.BodyHandlers.ofLines())
+            .thenAccept { response -> response.body().forEach { if (it.startsWith("data:")) events += it.removePrefix("data:") } }
+        return events
     }
 
     fun login(password: String = "admin"): Page {
