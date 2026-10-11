@@ -482,6 +482,24 @@ function writeAgentTask(element, changes, inputs, redraw = false) {
     }
 }
 
+// ＋ New Agent and ＋ New Skill: the create form (/agents/new, /skills/new) in a modal over the modeler. The modeler
+// page never navigates, so the diagram, its unsaved changes and the selection stay. Create and use lands the frame on
+// the new one's page; [use] then picks that name on the Task.
+function createAndUse(kind, src, use) {
+    const frame = el("iframe", {src, title: kind === "agents" ? "New Agent" : "New Skill"})
+    frame.style = "width: min(64rem, 90vw); height: 80vh; border: 0; display: block"
+    const dialog = el("dialog", {}, el("form", {method: "dialog"}, el("button", {textContent: "Cancel"})), frame)
+    dialog.onclose = () => dialog.remove()
+    frame.onload = () => {
+        const name = frame.contentWindow.location.pathname.match(new RegExp(`^/${kind}/([^/]+)$`))?.[1]
+        if (!name || name === "new") return // the form, or the form refusing a save
+        dialog.close()
+        use(decodeURIComponent(name))
+    }
+    document.body.append(dialog)
+    dialog.showModal()
+}
+
 panels.agent = element => {
     const box = el("div", {}, el("p", {textContent: "Loading the Agents and Skills…"}))
     agentPanel(element, box)
@@ -503,15 +521,20 @@ async function agentPanel(element, box) {
         ...names.map(name => el("option", {value: name, textContent: name, selected: name === current}))]
     const agentSelect = el("select", {onchange: () => writeAgentTask(element, {"ants.agent": agentSelect.value || undefined}, undefined, true)},
         ...options(catalogue.agents.map(a => a.name), props["ants.agent"], "not found"))
-    const skillSelect = el("select", {
-        disabled: !agent,
-        onchange: () => {
-            const picked = catalogue.skills.find(s => s.name === skillSelect.value)
-            const kept = Object.fromEntries(agentInputs(bo))
-            // One input per declared name, keeping what the user already filled in.
-            writeAgentTask(element, {"ants.skill": skillSelect.value || undefined}, (picked?.inputs || []).map(name => [name, kept[name] || ""]), true)
-        },
-    }, ...options(agent?.skills || [], props["ants.skill"], "not listed by this Agent"))
+    const pickSkill = (name, skills) => {
+        const picked = skills.find(s => s.name === name)
+        const kept = Object.fromEntries(agentInputs(bo))
+        // One input per declared name, keeping what the user already filled in.
+        writeAgentTask(element, {"ants.skill": name || undefined}, (picked?.inputs || []).map(input => [input, kept[input] || ""]), true)
+    }
+    const skillSelect = el("select", {disabled: !agent, onchange: () => pickSkill(skillSelect.value, catalogue.skills)},
+        ...options(agent?.skills || [], props["ants.skill"], "not listed by this Agent"))
+    const newAgent = el("button", {type: "button", textContent: "＋ New Agent", onclick: () =>
+        createAndUse("agents", "/agents/new?use", name => writeAgentTask(element, {"ants.agent": name}, undefined, true))})
+    // The Skill's page adds it to the Task's Agent when that Agent is the user's own.
+    const newSkill = el("button", {type: "button", textContent: "＋ New Skill", onclick: () =>
+        createAndUse("skills", "/skills/new?use=" + encodeURIComponent(props["ants.agent"] || ""),
+            async name => pickSkill(name, (await (await fetch("/catalogue.json")).json()).skills))})
     const references = el("datalist", {id: "ants-references"}, ...offered.map(value => el("option", {value})))
     const inputs = agentInputs(bo).map(([name, value], i) => {
         const field = el("input", {value, size: 28, oninput: () => {
@@ -532,8 +555,8 @@ async function agentPanel(element, box) {
         oninput: () => writeAgentTask(element, {"ants.result-schema": override.value.trim() || undefined}),
     })
     box.replaceChildren(
-        el("p", {}, el("label", {}, "Agent ", agentSelect)),
-        el("p", {}, el("label", {}, "Skill ", skillSelect)),
+        el("p", {}, el("label", {}, "Agent ", agentSelect), " ", newAgent),
+        el("p", {}, el("label", {}, "Skill ", skillSelect), " ", newSkill),
         skill?.description ? el("p", {textContent: skill.description}) : "",
         el("h3", {textContent: "Inputs"}), references,
         ...(inputs.length ? inputs : [el("p", {textContent: skill ? "The Skill declares no inputs." : "Pick a Skill to see its inputs."})]),

@@ -235,4 +235,18 @@ class AgentsTest : AntsTest() {
             settings.writeText(before)
         }
     }
+
+    @Test
+    fun `New Agent from the modeler opens the create form in its modal, and Create and use lands on the new Agent`() {
+        agents.resolve("helper.md").deleteIfExists()
+        val form = browser.get("/agents/new?use")
+        assertEquals("SAMEORIGIN", form.headers?.firstValue("X-Frame-Options")?.orElse(null)) // the modeler frames it
+        assertContains(form.body, "<button>Create and use</button>")
+        assertFalse("<nav>" in form.body) // the modeler's own page is behind the modal
+
+        val refused = browser.post("/agents/new", mapOf("name" to "Helper!", "cli" to "claude", "use" to ""))
+        assertContains(refused.body, "<button>Create and use</button>") // a refusal stays in the modal
+        assertEquals("/agents/helper", browser.post("/agents/new", mapOf("name" to "helper", "cli" to "claude", "use" to "")).path)
+        assertTrue(agents.resolve("helper.md").exists())
+    }
 }

@@ -100,7 +100,7 @@ class MovableClock(@Volatile var offset: Duration = Duration.ZERO) : Clock() {
 
 /** A user with a browser: keeps cookies, follows redirects and posts forms with their CSRF token. */
 class Browser(private val base: String) {
-    class Page(val status: Int, val path: String, val body: String)
+    class Page(val status: Int, val path: String, val body: String, val headers: java.net.http.HttpHeaders? = null)
 
     private val client = HttpClient.newBuilder()
         .cookieHandler(CookieManager())
@@ -160,7 +160,7 @@ class Browser(private val base: String) {
         val response = client.send(request.build(), HttpResponse.BodyHandlers.ofString())
         val body = response.body()
         csrf = Regex("""name="_csrf"[^>]*value="([^"]+)"""").find(body)?.groupValues?.get(1) ?: csrf
-        return Page(response.statusCode(), response.uri().path, body)
+        return Page(response.statusCode(), response.uri().path, body, response.headers())
     }
 
     private fun enc(s: String) = URLEncoder.encode(s, Charsets.UTF_8)
