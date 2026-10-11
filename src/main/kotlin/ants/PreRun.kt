@@ -2,6 +2,7 @@ package ants
 
 import org.operaton.bpm.engine.RepositoryService
 import org.operaton.bpm.engine.repository.ProcessDefinition
+import org.operaton.bpm.model.bpmn.instance.CallActivity
 import org.operaton.bpm.model.bpmn.instance.ServiceTask
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
@@ -37,15 +38,19 @@ class PreRun(
 
     /**
      * Why a Run of [definition] with the Repos [repos] (Source map names) can't start; empty when it's Ready. Without
-     * a Vault the only reason is [CONFIGURE_VAULT], since v1 needs one.
+     * a Vault the only reason is [CONFIGURE_VAULT], since v1 needs one. The Processes it calls are checked too, since
+     * they run inside its Run.
      */
     fun reasons(definition: ProcessDefinition, repos: List<String>): List<String> {
         val vault = settings.defaultVault() ?: return listOf(CONFIGURE_VAULT)
-        val xml = repository.getProcessModel(definition.id).readAllBytes().decodeToString()
-        val model = repository.getBpmnModelInstance(definition.id)
+        val processes = withCalled(definition)
         // Names, schemas, references and ants-uses: the deploy's Checks again, since files change after a deploy.
-        val failed = checks.of(xml).filterNot { it.warning }.map { it.message }
-        val agents = model.getModelElementsByType(ServiceTask::class.java).filter { it.operatonTopic == AgentLauncher.TOPIC }
+        val failed = processes.flatMap { process ->
+            val prefix = if (process.id == definition.id) "" else "${process.name ?: process.key}: "
+            checks.of(repository.getProcessModel(process.id).readAllBytes().decodeToString()).filterNot { it.warning }.map { prefix + it.message }
+        }
+        val agents = processes.flatMap { repository.getBpmnModelInstance(it.id).getModelElementsByType(ServiceTask::class.java) }
+            .filter { it.operatonTopic == AgentLauncher.TOPIC }
             .mapNotNull { task -> task.property("ants.agent")?.let { runCatching { catalogue.agent(it) }.getOrNull() } }.distinctBy { it.name }
         val sourceMap = settings.defaultSourceMap()
         val known = settings.repos().associateBy { it.name }
@@ -73,6 +78,19 @@ class PreRun(
                 if (failure(lsRemote, 20) != null) add("git ls-remote can't reach ${repo.name}'s remote ${repo.remote}.")
             }
         }
+    }
+
+    /** [definition] and every Process it calls, at any depth, each the latest version, as a call binds it. */
+    private fun withCalled(definition: ProcessDefinition): List<ProcessDefinition> {
+        val found = linkedMapOf(definition.key to definition)
+        val queue = ArrayDeque(listOf(definition))
+        while (queue.isNotEmpty()) for (call in repository.getBpmnModelInstance(queue.removeFirst().id).getModelElementsByType(CallActivity::class.java)) {
+            val key = call.calledElement?.takeIf { it !in found } ?: continue
+            val called = repository.createProcessDefinitionQuery().processDefinitionKey(key).latestVersion().singleResult() ?: continue // a Check says so
+            found[key] = called
+            queue += called
+        }
+        return found.values.toList()
     }
 
     /** What a launch of [cli] runs first: the command prefix's first word for an AI CLI, else the CLI's path. */

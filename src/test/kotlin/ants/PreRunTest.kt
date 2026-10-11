@@ -80,6 +80,34 @@ class PreRunTest : AntsTest() {
     }
 
     @Test
+    fun `a called Process is checked too, since it runs inside the caller's Run`() {
+        ready()
+        val caller = """<?xml version="1.0" encoding="UTF-8"?>
+            <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:operaton="http://operaton.org/schema/1.0/bpmn"
+                              id="definitions" targetNamespace="http://bpmn.io/schema/bpmn">
+              <bpmn:process id="caller" name="Caller" isExecutable="true" operaton:historyTimeToLive="180">
+                <bpmn:startEvent id="start">
+                  <bpmn:extensionElements><operaton:formData><operaton:formField id="prompt" label="Prompt" type="string" /></operaton:formData></bpmn:extensionElements>
+                </bpmn:startEvent>
+                <bpmn:callActivity id="call" calledElement="agent-task">
+                  <bpmn:extensionElements><operaton:in sourceExpression="${'$'}{prompt}" target="prompt" /></bpmn:extensionElements>
+                </bpmn:callActivity>
+                <bpmn:endEvent id="end" />
+                <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="call" />
+                <bpmn:sequenceFlow id="f2" sourceRef="call" targetRef="end" />
+              </bpmn:process>
+            </bpmn:definitions>"""
+        browser.get("/processes")
+        assertEquals("/processes/caller", browser.post("/processes/deploy", mapOf("bpmn" to caller)).path)
+        assertContains(status("caller"), "Ready")
+        cantStart("Agent Task: Draft (draft): No Agent named writer.", key = "caller") { home.resolve("agents/writer.md").deleteIfExists() }
+        cantStart("Ants' Claude login is missing or expired.", key = "caller") {
+            catalogue()
+            home.resolve("claude/auth-status.json").deleteIfExists()
+        }
+    }
+
+    @Test
     fun `a Skill's result schema that became invalid`() {
         ready()
         cantStart("The Skill draft's result.schema.json is invalid") { home.resolve("skills/draft/result.schema.json").writeText("""{"type":"thing"}""") }
