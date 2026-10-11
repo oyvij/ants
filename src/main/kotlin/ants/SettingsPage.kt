@@ -1,5 +1,6 @@
 package ants
 
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Controller
 import org.springframework.ui.Model
@@ -9,10 +10,21 @@ import org.springframework.web.bind.annotation.ModelAttribute
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestParam
 import tools.jackson.dataformat.toml.TomlMapper
+import java.nio.file.Path
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
+import kotlin.math.roundToInt
 
 /** The settings page: one form over `settings.yaml`. Detect and Fill from Varde fill the form; only Save writes. */
 @Controller
-class SettingsPage(private val settings: Settings, private val encoder: PasswordEncoder) {
+class SettingsPage(
+    private val settings: Settings,
+    private val encoder: PasswordEncoder,
+    private val launcher: AgentLauncher,
+    @Value("\${ants.home}") private val home: Path,
+) {
     @GetMapping("/settings")
     fun page(model: Model) = show(model, SettingsForm.of(settings))
 
@@ -36,7 +48,36 @@ class SettingsPage(private val settings: Settings, private val encoder: Password
         model.addAttribute("form", form)
         model.addAttribute("file", settings.file.toString())
         model.addAttribute("message", message)
+        model.addAttribute("login", ClaudeLogin(launcher.login(), home.resolve("claude"), launcher.usage()))
         return "settings"
+    }
+}
+
+/** Ants' own Claude login as `claude auth status` reports it, the command that logs it in, and the latest usage. */
+class ClaudeLogin(status: Map<*, *>, folder: Path, usage: Map<*, *>) {
+    val loggedIn = status["loggedIn"] == true
+
+    /** How it's logged in, such as `claude.ai, max`. */
+    val method = listOfNotNull(status["authMethod"], status["subscriptionType"]).joinToString(", ")
+
+    /** Where an API key comes from, when one is in use instead of the subscription login. */
+    val apiKeySource = status["apiKeySource"]?.toString()?.takeIf { it != "none" }
+
+    /** Run in a terminal; Ants never handles the credentials. */
+    val command = "CLAUDE_CONFIG_DIR=${shellQuoted(folder.toString())} claude auth login"
+
+    /** Such as `5-hour usage: 4%, resets Sun 11 Oct 19:00`, for each window claude last reported. */
+    val usage = listOf("five_hour" to "5-hour", "seven_day" to "7-day").mapNotNull { (key, name) ->
+        val window = usage[key] as? Map<*, *> ?: return@mapNotNull null
+        val used = (window["utilization"] as? Number ?: return@mapNotNull null).toDouble() * 100
+        val resets = (window["resetsAt"] as? Number)?.let { ", resets " + TIME.format(Instant.ofEpochSecond(it.toLong()).atZone(ZoneId.systemDefault())) }
+        "$name usage: ${used.roundToInt()}%${resets.orEmpty()}"
+    }
+
+    private companion object {
+        val TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("EEE d MMM HH:mm", Locale.ENGLISH)
+
+        fun shellQuoted(word: String) = if (Regex("""^[\w/.,:@%+=-]+$""").matches(word)) word else "'" + word.replace("'", "'\\''") + "'"
     }
 }
 

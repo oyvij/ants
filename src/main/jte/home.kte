@@ -1,3 +1,9 @@
+@param live: Long
+@param waiting: Int
+@param done: Long
+@param entries: List<ants.Entry>
+@param working: List<ants.Working>
+@param processes: List<org.operaton.bpm.engine.repository.ProcessDefinition>
 @param colorScheme: String = "light dark"
 <!doctype html>
 <html lang="en">
@@ -9,5 +15,17 @@
 <body>
 @template.nav()
 <h1>Home</h1>
+<div id="live">@template.dashboard(live = live, waiting = waiting, done = done, entries = entries, working = working)</div>
+<section id="start-a-run">
+<h2>Start a Run</h2>
+<ul>
+@for(process in processes)
+    <li><a href="/processes/${process.key}">${process.name ?: process.key}</a></li>
+@endfor
+</ul>
+</section>
+<script>
+    new EventSource('/home/live').onmessage = event => document.getElementById('live').innerHTML = event.data;
+</script>
 </body>
 </html>
