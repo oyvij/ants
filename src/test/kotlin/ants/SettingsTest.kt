@@ -5,11 +5,17 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.yaml.snakeyaml.Yaml
 import java.nio.file.Files
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 import kotlin.io.path.createDirectories
+import kotlin.io.path.deleteIfExists
 import kotlin.io.path.readText
 import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class SettingsTest : AntsTest() {
@@ -132,6 +138,55 @@ class SettingsTest : AntsTest() {
         file.writeText("password: by-hand\n")
         assertEquals("/", browser().login("by-hand").path)
     }
+
+    /** A fake claude as the command; its `auth status` answers [status] when it's in Ants' Claude config folder. */
+    private fun fakeClaude(status: String? = null) = FakeClaude().also { claude ->
+        file.writeText("claude:\n  command: [${claude.command}]\n")
+        home.resolve("claude").createDirectories().resolve("auth-status.json").run { if (status != null) writeText(status) else deleteIfExists() }
+    }
+
+    @Test
+    fun `settings shows logged in or not, and the exact login command`() {
+        fakeClaude()
+        val command = "<code>CLAUDE_CONFIG_DIR=${home.resolve("claude")} claude auth login</code>"
+        assertContains(browser.get("/settings").body, "Not logged in.")
+        assertContains(browser.get("/settings").body, command)
+
+        fakeClaude("""{"loggedIn":true,"authMethod":"claude.ai","subscriptionType":"max"}""")
+        val page = browser.get("/settings").body
+        assertContains(page, "Logged in (claude.ai, max).")
+        assertContains(page, command)
+        assertFalse("API key" in page)
+    }
+
+    @Test
+    fun `an apiKeySource other than none is flagged`() {
+        fakeClaude("""{"loggedIn":true,"authMethod":"api_key","apiKeySource":"apiKeyHelper"}""")
+        assertContains(browser.get("/settings").body, "An API key is in use (apiKeySource: apiKeyHelper)")
+        fakeClaude("""{"loggedIn":true,"authMethod":"claude.ai","apiKeySource":"none"}""")
+        assertFalse("API key" in browser.get("/settings").body)
+    }
+
+    @Test
+    fun `the latest 5-hour and 7-day usage shows next to the login`() {
+        val claude = fakeClaude("""{"loggedIn":true,"authMethod":"claude.ai"}""")
+        home.resolve("agents").createDirectories().resolve("writer.md").writeText("Write plainly.\n")
+        home.resolve("skills/draft").createDirectories().resolve("SKILL.md").writeText("---\nname: draft\ndescription: Drafts.\n---\nDraft.\n")
+        home.resolve("skills/draft/result.schema.json").deleteIfExists()
+        fun limit(fiveHour: Double) = """{"type":"rate_limit_event","rate_limit_info":{"status":"allowed","rateLimitType":"five_hour",""" +
+            """"unifiedWindows":{"five_hour":{"utilization":$fiveHour,"resetsAt":1791732000},"seven_day":{"utilization":0.07,"resetsAt":1792162800}}}}"""
+        claude.session("draft", limit(0.01), limit(0.04),
+            """{"type":"result","subtype":"success","structured_output":{"outcome":"done","summary":"Drafted.","output":{}}}""")
+        browser.import("agent-task.bpmn")
+        val run = browser.post("/processes/agent-task/runs", mapOf("prompt" to "Say hello")).path
+        eventually { assertContains(browser.get(run).body, "State: Completed") }
+        val page = browser.get("/settings").body
+        assertContains(page, "5-hour usage: 4%, resets ${local(1791732000)}")
+        assertContains(page, "7-day usage: 7%, resets ${local(1792162800)}")
+    }
+
+    private fun local(epochSecond: Long) =
+        DateTimeFormatter.ofPattern("EEE d MMM HH:mm", Locale.ENGLISH).format(Instant.ofEpochSecond(epochSecond).atZone(ZoneId.systemDefault()))
 
     @Test
     fun `dark mode follows the system until a choice is saved`() {
