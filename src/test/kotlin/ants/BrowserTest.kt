@@ -12,7 +12,10 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInfo
 import java.nio.file.Path
 import java.util.regex.Pattern
+import kotlin.io.path.createDirectories
 import kotlin.io.path.deleteExisting
+import kotlin.io.path.readText
+import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
@@ -156,6 +159,25 @@ class BrowserTest : AntsTest() {
         assertThat(shape("build")).isVisible()
         assertThat(shape("review")).hasCount(0)
         assertThat(page.locator("#trail")).isHidden()
+    }
+
+    @Test
+    fun `ticking a checkbox on a Ticket's page saves it, and the page follows the file as an Agent changes it`() = browse {
+        settings(null)
+        val (process, plane) = row("tracked", """<bpmn:startEvent id="start" />""", """<bpmn:userTask id="wait" name="Wait" />""", """<bpmn:endEvent id="end" />""")
+        deploy(definitions("tracked", "Tracked", process, plane))
+        val run = http.post("/processes/tracked/runs", mapOf()).path.removePrefix("/runs/")
+        val file = home.resolve("runs/$run/tickets/issues").createDirectories().resolve("01-hello.md")
+        file.writeText("# Say hello\n\nStatus: ready-for-agent\n\n- [ ] Says hello\n")
+
+        page.navigate(url("/runs/$run/tickets/01-hello"))
+        page.check("#ticket input[type=checkbox]")
+
+        eventually { assertEquals("# Say hello\n\nStatus: ready-for-agent\n\n- [x] Says hello\n", file.readText()) }
+        assertThat(page.locator("#ticket input[type=checkbox]")).isChecked()
+        file.writeText("# Say hello\n\nStatus: in-progress\n\n- [x] Says hello\n") // as an Agent would
+        assertThat(page.locator("#ticket")).containsText("Status: in-progress")
+        screenshot("ticket")
     }
 
     @Test
