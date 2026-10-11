@@ -102,8 +102,12 @@ class Notifications(
         return "notifications"
     }
 
+    /**
+     * An entry's page. A Review changes' has two tabs ([tab]): Story, the Story set of the Task its Walkthrough field
+     * names, first, and By repo; without a Walkthrough, By repo only.
+     */
     @GetMapping("/notifications/{id}")
-    fun entry(@PathVariable id: String, model: Model, response: HttpServletResponse): String {
+    fun entry(@PathVariable id: String, model: Model, response: HttpServletResponse, @RequestParam(required = false) tab: String? = null): String {
         tickets.waiting().firstOrNull { it.id == id }?.let { return "redirect:${it.href}" }
         val failed = failedStarts().firstOrNull { it.id == id }
         if (failed != null) {
@@ -119,7 +123,21 @@ class Notifications(
                 return "answer"
             }
             if (kind(task) == REVIEW_CHANGES) {
-                model.addAttribute("changes", changes(push.outgoing(entry.run), cloneRepos::git))
+                val shown = when {
+                    property(task, WALKTHROUGH) == null -> null // By repo, with no tabs
+                    tab == "repo" -> "repo"
+                    else -> "story"
+                }
+                val story = shown == "story"
+                model.addAttribute("tab", shown)
+                if (story) {
+                    try {
+                        model.addAttribute("stories", storySet(home.runWorkspace(entry.run)) { dir, args -> cloneRepos.git(dir, args, trim = false) })
+                    } catch (refused: StorySetRefused) {
+                        model.addAttribute("refused", refused.message)
+                    }
+                }
+                model.addAttribute("changes", if (story) emptyList() else changes(push.outgoing(entry.run), cloneRepos::git))
                 model.addAttribute("comments", comments(task))
                 return "review"
             }
@@ -214,10 +232,14 @@ class Notifications(
         return back(back, entry.run, "/notifications/next?run=${entry.run}")
     }
 
-    /** Adds a line comment to a Review changes, kept on its User Task until it completes, or takes out the [remove]th. */
+    /**
+     * Adds a line comment to a Review changes, kept on its User Task until it completes, or takes out the [remove]th; one
+     * on a story step names its [story] and [step], 1-based. Back to the [tab] it was made on.
+     */
     @PostMapping("/notifications/{id}/comments")
     fun comment(
-        @PathVariable id: String, @RequestParam(required = false) remove: Int?, @RequestParam(required = false) repo: String?,
+        @PathVariable id: String, @RequestParam(required = false) remove: Int?, @RequestParam(required = false) story: String?,
+        @RequestParam(required = false) step: Int?, @RequestParam(required = false) tab: String?, @RequestParam(required = false) repo: String?,
         @RequestParam(required = false) file: String?, @RequestParam(required = false) side: String?, @RequestParam(required = false) from: Int?,
         @RequestParam(required = false) to: Int?, @RequestParam(required = false) type: String?, @RequestParam(required = false) body: String?,
         model: Model, response: HttpServletResponse,
@@ -231,13 +253,13 @@ class Notifications(
             }
             if (body.isNullOrBlank()) {
                 model.addAttribute("error", "A line comment needs a body.")
-                return entry(id, model, response)
+                return entry(id, model, response, tab)
             }
             val last = to ?: from
-            comments += LineComment(null, null, repo, file, side!!, minOf(from, last), maxOf(from, last), type!!, body)
+            comments += LineComment(story?.takeIf { step != null }, step?.takeIf { story != null }, repo, file, side!!, minOf(from, last), maxOf(from, last), type!!, body)
         }
         userTasks.setVariableLocal(task.id, COMMENTS, JsonMapper.shared().writeValueAsString(comments.map(LineComment::toMap)))
-        return "redirect:/notifications/$id"
+        return "redirect:/notifications/$id" + if (tab in setOf("story", "repo")) "?tab=$tab" else ""
     }
 
     /** A Review changes' line comments so far. */
@@ -245,7 +267,7 @@ class Notifications(
         (userTasks.getVariableLocal(task.id, COMMENTS) as? String)?.let { JsonMapper.shared().readValue(it, List::class.java) }.orEmpty().map {
             val c = it as Map<*, *>
             LineComment(
-                (c["story"] as? Number)?.toInt(), (c["step"] as? Number)?.toInt(), c["repo"].toString(), c["file"].toString(), c["side"].toString(),
+                c["story"] as? String, (c["step"] as? Number)?.toInt(), c["repo"].toString(), c["file"].toString(), c["side"].toString(),
                 (c["from"] as Number).toInt(), (c["to"] as Number).toInt(), c["type"].toString(), c["body"].toString(),
             )
         }
