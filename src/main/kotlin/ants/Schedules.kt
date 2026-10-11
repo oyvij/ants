@@ -164,16 +164,16 @@ fun BpmnModelInstance.scheduleTimer(): TimerEventDefinition? = getModelElementsB
     .flatMap { it.getChildElementsByType(StartEvent::class.java) }
     .firstNotNullOfOrNull { it.getChildElementsByType(TimerEventDefinition::class.java).firstOrNull() }
 
-/** A Schedule's cron in words, as the modeler writes it: every hour, day, weekday, week or month at a time, else the cron itself. */
+/** A Schedule in words, as the modeler writes it: every hour, day, weekday, week or month at a time, else its six fields. */
 fun inWords(cron: String): String {
     val fields = cron.trim().split(Regex("\\s+"))
-    if (fields.size != 6 || fields[0] != "0" || fields[4] != "*") return "cron $cron"
+    if (fields.size != 6 || fields[0] != "0" || fields[4] != "*") return "At times $cron"
     val (minute, hour, day) = fields.subList(1, 4)
     val weekday = fields[5]
     if (minute == "0" && hour == "*" && day == "*" && weekday == "*") return "Every hour"
     val m = minute.toIntOrNull()
     val h = hour.toIntOrNull()
-    if (m == null || h == null || m !in 0..59 || h !in 0..23) return "cron $cron"
+    if (m == null || h == null || m !in 0..59 || h !in 0..23) return "At times $cron"
     val at = "at %02d:%02d".format(h, m)
     val days = mapOf("MON" to "Monday", "TUE" to "Tuesday", "WED" to "Wednesday", "THU" to "Thursday", "FRI" to "Friday", "SAT" to "Saturday", "SUN" to "Sunday")
     return when {
@@ -181,6 +181,6 @@ fun inWords(cron: String): String {
         day == "*" && weekday == "MON-FRI" -> "Every weekday $at"
         day == "*" && weekday in days -> "Every ${days[weekday]} $at"
         weekday == "*" && day.toIntOrNull() in 1..31 -> "Every month on day $day $at"
-        else -> "cron $cron"
+        else -> "At times $cron"
     }
 }

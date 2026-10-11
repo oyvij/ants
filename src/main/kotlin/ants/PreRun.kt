@@ -51,7 +51,7 @@ class PreRun(
         }
         val agents = processes.flatMap { repository.getBpmnModelInstance(it.id).getModelElementsByType(ServiceTask::class.java) }
             .filter { it.operatonTopic == AgentLauncher.TOPIC }
-            .mapNotNull { task -> task.property("ants.agent")?.let { runCatching { catalogue.agent(it) }.getOrNull() } }.distinctBy { it.name }
+            .mapNotNull { task -> task.property(AGENT)?.let { runCatching { catalogue.agent(it) }.getOrNull() } }.distinctBy { it.name }
         val sourceMap = settings.defaultSourceMap()
         val known = settings.repos().associateBy { it.name }
         val named = repos.distinct()

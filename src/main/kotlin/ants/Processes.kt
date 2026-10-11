@@ -121,15 +121,10 @@ class Processes(private val repository: RepositoryService, private val startForm
     @GetMapping("/processes/new.bpmn", produces = ["application/xml"])
     @ResponseBody
     fun newDiagram(@RequestParam name: String, @RequestParam(required = false) from: String?): String {
-        val document = parse(from?.let { repository.getProcessModel(latest(it).id).readAllBytes() } ?: javaClass.getResource("/blank.bpmn")!!.readBytes())
-        val process = process(document)
+        val document = parse(from?.let { repository.getProcessModel(latest(it).id).readAllBytes() } ?: blank())
         // `new` is the route to this page, so no Process may take it as its key.
         val key = freeName(name) { it == "new" || repository.createProcessDefinitionQuery().processDefinitionKey(it).count() > 0 }
-        for (plane in document.getElementsByTagNameNS(BPMNDI, "BPMNPlane").elements()) {
-            if (plane.getAttribute("bpmnElement") == process.getAttribute("id")) plane.setAttribute("bpmnElement", key)
-        }
-        process.setAttribute("id", key)
-        process.setAttribute("name", name)
+        rename(document, key, name)
         return serialize(document)
     }
 
@@ -241,6 +236,19 @@ internal fun serialize(document: Document) =
     StringWriter().also { TransformerFactory.newInstance().newTransformer().transform(DOMSource(document), StreamResult(it)) }.toString()
 
 internal fun NodeList.elements() = List(length) { item(it) as Element }
+
+/** A diagram with a start event alone, as **New Process** and **New Template** begin. */
+internal fun blank() = Processes::class.java.getResource("/blank.bpmn")!!.readBytes()
+
+/** Gives the Process in [document] the id [id] and the name [name], its diagram following. */
+internal fun rename(document: Document, id: String, name: String) {
+    val process = process(document)
+    for (plane in document.getElementsByTagNameNS(BPMNDI, "BPMNPlane").elements()) {
+        if (plane.getAttribute("bpmnElement") == process.getAttribute("id")) plane.setAttribute("bpmnElement", id)
+    }
+    process.setAttribute("id", id)
+    process.setAttribute("name", name)
+}
 
 /** The Process a diagram defines; Ants draws one per file. */
 internal fun process(document: Document) =

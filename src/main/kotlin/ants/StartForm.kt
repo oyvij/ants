@@ -11,12 +11,17 @@ enum class FieldType { TEXT, MARKDOWN, REPOS }
 
 /**
  * One start-form field, read from the start event's `operaton:formData`. The engine knows only its own form types, so
- * Ants' [type], [help] and [stored] value live in the field's properties `ants.type`, `ants.help` and `ants.stored`.
+ * Ants' [type], [help] and [stored] value live in the field's properties [FIELD_TYPE], [HELP] and [STORED].
  */
 data class Field(val name: String, val label: String, val type: FieldType, val required: Boolean, val help: String?, val stored: String?) {
     /** The stored value of a Repos field: Source map names, separated by commas or spaces. */
     val storedRepos: List<String> get() = stored.orEmpty().split(Regex("[,\\s]+")).filter(String::isNotEmpty)
 }
+
+// A start-form field's properties: its type, help and stored value.
+const val FIELD_TYPE = "ants.type"
+const val HELP = "ants.help"
+const val STORED = "ants.stored"
 
 /** A start form the user filled in wrong, such as a required field left empty. */
 class Unfilled(message: String) : Exception(message)
@@ -29,10 +34,10 @@ class StartForm(private val forms: FormService, private val runtime: RuntimeServ
         Field(
             name = field.id,
             label = field.label ?: field.id,
-            type = field.properties["ants.type"]?.let { type -> FieldType.entries.firstOrNull { it.name.equals(type, ignoreCase = true) } } ?: FieldType.TEXT,
+            type = field.properties[FIELD_TYPE]?.let { type -> FieldType.entries.firstOrNull { it.name.equals(type, ignoreCase = true) } } ?: FieldType.TEXT,
             required = field.validationConstraints.orEmpty().any { it.name == "required" },
-            help = field.properties["ants.help"]?.takeIf(String::isNotBlank),
-            stored = field.properties["ants.stored"],
+            help = field.properties[HELP]?.takeIf(String::isNotBlank),
+            stored = field.properties[STORED],
         )
     }
 

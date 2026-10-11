@@ -18,9 +18,9 @@ class Dependents(val processes: List<ProcessDefinition>, val older: Set<String> 
 /** **Used by**: the deployed Processes whose Agent Tasks name an Agent or a Skill, and the Skills that use a Skill. */
 @Component
 class UsedBy(private val repository: RepositoryService, private val runtime: RuntimeService, private val catalogue: Catalogue) {
-    fun agent(name: String) = dependents(processes("ants.agent", name))
+    fun agent(name: String) = dependents(processes(AGENT, name))
 
-    fun skill(name: String) = dependents(processes("ants.skill", name), catalogue.skills().filter { name in it.uses })
+    fun skill(name: String) = dependents(processes(SKILL, name), catalogue.skills().filter { name in it.uses })
 
     private fun dependents(processes: List<ProcessDefinition>, skills: List<Skill> = emptyList()): Dependents {
         val latest = repository.createProcessDefinitionQuery().latestVersion().list().map { it.id }.toSet()

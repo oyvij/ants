@@ -67,13 +67,10 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy) {
 
     @PostMapping("/skills/new")
     fun create(@RequestParam skill: String, @RequestParam schema: String, @RequestParam use: String?, model: Model): String {
-        val page = save(SkillForm(null, skill, schema), model.addAttribute("use", use))
         val agent = catalogue.agents().firstOrNull { it.name == use && it.file.parent == catalogue.yourAgents }
-        if (agent != null && page.startsWith("redirect:")) {
-            val skills = (agent.skills + page.substringAfterLast('/')).distinct().joinToString(", ")
-            agent.file.writeAtomically(AgentForm.of(agent).copy(skills = skills).text())
+        return save(SkillForm(null, skill, schema), model.addAttribute("use", use)) { name ->
+            if (agent != null) agent.file.writeAtomically(AgentForm.of(agent).copy(skills = (agent.skills + name).distinct().joinToString(", ")).text())
         }
-        return page
     }
 
     @GetMapping("/skills/{name}")
@@ -120,7 +117,8 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy) {
     @ResponseBody
     fun check(@RequestParam schema: String) = ResultContract.schemaErrors(schema)
 
-    private fun save(posted: SkillForm, model: Model, confirmed: Boolean = false): String {
+    /** Saves the Skill and opens it, calling [saved] with its name, else shows the form again with why not. */
+    private fun save(posted: SkillForm, model: Model, confirmed: Boolean = false, saved: (String) -> Unit = {}): String {
         val edited = posted.name?.let(::yours)
         val form = posted.copy(where = edited?.folder?.toString().orEmpty())
         val name = try {
@@ -152,6 +150,7 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy) {
         }
         folder.resolve("result.schema.json").run { if (form.schema.isBlank()) deleteIfExists() else writeAtomically(form.schema) }
         folder.resolve("SKILL.md").writeAtomically(form.skill)
+        saved(name)
         return "redirect:/skills/$name"
     }
 

@@ -13,7 +13,6 @@ import org.operaton.bpm.model.bpmn.instance.SequenceFlow
 import org.operaton.bpm.model.bpmn.instance.ServiceTask
 import org.operaton.bpm.model.bpmn.instance.operaton.OperatonFormField
 import org.operaton.bpm.model.bpmn.instance.operaton.OperatonIn
-import org.operaton.bpm.model.bpmn.instance.operaton.OperatonInputOutput
 import org.operaton.bpm.model.bpmn.instance.operaton.OperatonInputParameter
 import org.operaton.bpm.model.bpmn.instance.operaton.OperatonProperties
 import org.operaton.bpm.model.xml.instance.ModelElementInstance
@@ -21,17 +20,24 @@ import tools.jackson.databind.json.JsonMapper
 import kotlin.io.path.exists
 import kotlin.io.path.readText
 
-// The Checks on Agent Tasks and on what a Process's expressions read, two rules of [Checks].
+// The Checks on Agent Tasks and on what a Process's expressions read, two kinds of [Checks].
 
-/** The value of an element's extension property [name], such as an Agent Task's `ants.skill`. */
-fun BaseElement.property(name: String): String? = extensionElements?.elementsQuery?.filterByType(OperatonProperties::class.java)?.list().orEmpty()
-    .flatMap { it.operatonProperties }.firstOrNull { it.operatonName == name }?.operatonValue
+// An Agent Task's extension properties.
+const val AGENT = "ants.agent"
+const val SKILL = "ants.skill"
+/** "true" when the flow coming back to the Task resumes its last session. */
+const val RESUME = "ants.resume"
+/** "true" or "false": the Task's Vault toggle, over its Skill's opt-in. */
+const val VAULT = "ants.vault"
+/** "true" or "false": the Task's Answer History toggle, over its Skill's. */
+const val ANSWER_HISTORY = "ants.answer-history"
+/** JSON text that replaces the Skill's `result.schema.json`. */
+const val RESULT_SCHEMA = "ants.result-schema"
 
-private val BaseElement.label get() = getAttributeValue("name")?.let { "$it ($id)" } ?: id
+/** The value of an element's extension property [name], such as an Agent Task's [SKILL]. */
+fun BaseElement.property(name: String): String? = extensions<OperatonProperties>().flatMap { it.operatonProperties }.firstOrNull { it.operatonName == name }?.operatonValue
 
 private val BpmnModelInstance.agentTasks get() = getModelElementsByType(ServiceTask::class.java).filter { it.operatonTopic == AgentLauncher.TOPIC }
-
-private fun ServiceTask.inputs() = extensionElements?.elementsQuery?.filterByType(OperatonInputOutput::class.java)?.list().orEmpty().flatMap { it.operatonInputParameters }
 
 /**
  * Each Agent Task's Agent and Skill: unknown or ambiguous names, a Skill the Agent doesn't list, a used Skill that
@@ -40,8 +46,8 @@ private fun ServiceTask.inputs() = extensionElements?.elementsQuery?.filterByTyp
  */
 internal fun agentTasks(catalogue: Catalogue, model: BpmnModelInstance) = model.agentTasks.flatMap { task ->
     fun check(message: String) = Check(task.id, "${task.label}: $message")
-    val agentName = task.property("ants.agent")?.takeIf(String::isNotBlank)
-    val skillName = task.property("ants.skill")?.takeIf(String::isNotBlank)
+    val agentName = task.property(AGENT)?.takeIf(String::isNotBlank)
+    val skillName = task.property(SKILL)?.takeIf(String::isNotBlank)
     val agent = agentName?.let { runCatching { catalogue.agent(it) } }
     val skill = skillName?.let { runCatching { catalogue.skill(it) } }
     val found = skill?.getOrNull()
@@ -58,13 +64,10 @@ internal fun agentTasks(catalogue: Catalogue, model: BpmnModelInstance) = model.
     ) + found?.inputs.orEmpty().filter { it !in filled }.map { Check(task.id, "${task.label} has an empty input $it.", warning = true) }
 }
 
-/** The Task property holding a result-schema override, JSON text that replaces the Skill's `result.schema.json`. */
-const val RESULT_SCHEMA = "ants.result-schema"
-
 /** What an Agent Task promises in its Result's `output`: its override, else its Skill's schema; null when neither can be read. */
 private fun promised(catalogue: Catalogue, task: ServiceTask): Map<*, *>? {
     task.property(RESULT_SCHEMA)?.takeIf(String::isNotBlank)?.let { return runCatching { JsonMapper.shared().readValue(it, Map::class.java) }.getOrNull() }
-    return runCatching { catalogue.skill(task.property("ants.skill").orEmpty()).outputSchema }.getOrNull()
+    return runCatching { catalogue.skill(task.property(SKILL).orEmpty()).outputSchema }.getOrNull()
 }
 
 /** The names an expression anywhere may start with besides start-form fields and Task ids: Ants' Run variables and the engine's own. */

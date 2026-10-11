@@ -3,16 +3,12 @@ package ants
 import org.operaton.bpm.engine.RepositoryService
 import org.operaton.bpm.model.bpmn.BpmnModelInstance
 import org.operaton.bpm.model.bpmn.instance.Activity
-import org.operaton.bpm.model.bpmn.instance.BaseElement
 import org.operaton.bpm.model.bpmn.instance.CallActivity
 import org.operaton.bpm.model.bpmn.instance.Process
 import org.operaton.bpm.model.bpmn.instance.StartEvent
-import org.operaton.bpm.model.bpmn.instance.operaton.OperatonFormData
 import org.operaton.bpm.model.bpmn.instance.operaton.OperatonIn
 
-// The Checks on call activities, a rule of [Checks].
-
-private val BaseElement.label get() = getAttributeValue("name")?.let { "$it ($id)" } ?: id
+// The Checks on call activities, a kind of [Checks].
 
 private val BpmnModelInstance.calls get() = getModelElementsByType(CallActivity::class.java)
 
@@ -40,12 +36,11 @@ private fun needs(model: BpmnModelInstance, processes: Map<String, BpmnModelInst
     val unfilled = calls.flatMap { call ->
         val key = call.calledElement?.takeIf(String::isNotBlank) ?: return@flatMap listOf(Check(call.id, "${call.label} calls no Process."))
         val called = processes[key] ?: return@flatMap listOf(Check(call.id, "${call.label} calls $key, which isn't deployed."))
-        val filled = call.extensionElements?.elementsQuery?.filterByType(OperatonIn::class.java)?.list().orEmpty()
+        val filled = call.extensions<OperatonIn>()
             .filter { !(it.operatonSourceExpression ?: it.operatonSource).isNullOrBlank() }.map { it.operatonTarget }.toSet()
         called.getModelElementsByType(StartEvent::class.java).filter { it.parentElement is Process }
-            .flatMap { it.extensionElements?.elementsQuery?.filterByType(OperatonFormData::class.java)?.list().orEmpty() }
-            .flatMap { it.operatonFormFields }
-            .filter { field -> field.operatonId !in filled && field.operatonValidation?.operatonConstraints.orEmpty().any { it.operatonName == "required" } }
+            .flatMap { it.formFields() }
+            .filter { it.operatonId !in filled && it.required }
             .map { Check(call.id, "${call.label} leaves ${it.operatonLabel ?: it.operatonId} (${it.operatonId}), which $key requires, empty.") }
     }
     val byId = calls.associateBy { it.id }

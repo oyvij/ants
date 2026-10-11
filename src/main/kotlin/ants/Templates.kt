@@ -61,13 +61,9 @@ class Templates(@Value("\${ants.home}") home: Path) {
     fun create(@RequestParam name: String, model: Model): String {
         val error = nameError("A Template", name) ?: if (exists(name)) "A Template named $name already exists." else null
         if (error != null) return list(model, error)
-        val document = parse(javaClass.getResource("/blank.bpmn")!!.readBytes())
-        val process = process(document)
+        val document = parse(blank())
         // The id is the dropped sub-process's, which expressions read, so it is a JUEL name: no hyphens.
-        val id = name.replace('-', '_').replace(Regex("^(?=[0-9])"), "_")
-        for (plane in document.getElementsByTagNameNS(BPMNDI, "BPMNPlane").elements()) plane.setAttribute("bpmnElement", id)
-        process.setAttribute("id", id)
-        process.setAttribute("name", name)
+        rename(document, name.replace('-', '_').replace(Regex("^(?=[0-9])"), "_"), name)
         yours.resolve("$name.bpmn").writeAtomically(serialize(document))
         return "redirect:/templates/$name"
     }

@@ -454,7 +454,7 @@ panels["timer-boundary"] = timerPanel
 // The Schedule in words: every hour, day, weekday, week or month at a time, written as the cron Ants runs it on
 // (seconds first, as Schedules.kt reads it back); any other cron under Advanced.
 const weekdays = {MON: "Monday", TUE: "Tuesday", WED: "Wednesday", THU: "Thursday", FRI: "Friday", SAT: "Saturday", SUN: "Sunday"}
-const everies = {hour: "hour", day: "day", weekday: "weekday", week: "week", month: "month", advanced: "Advanced (cron)"}
+const everies = {hour: "hour", day: "day", weekday: "weekday", week: "week", month: "month", advanced: "Advanced (six fields)"}
 
 function readSchedule(cron) {
     const advanced = {every: "advanced", cron}

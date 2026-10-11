@@ -142,7 +142,7 @@ class ScheduleTest : AntsTest() {
         val refused = deploy(bpmn(stored = null))
         assertEquals(400, refused.status)
         assertContains(refused.body, "start has a Schedule, so its required start-form field Prompt needs a stored value.")
-        assertContains(deploy(bpmn(cron = "R/PT1H")).body, "start has a Schedule that isn't a cron")
+        assertContains(deploy(bpmn(cron = "R/PT1H")).body, "start has a Schedule whose times Ants can't read")
         assertEquals(404, browser.get("/processes/$key").status)
     }
 

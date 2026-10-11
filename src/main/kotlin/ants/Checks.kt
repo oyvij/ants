@@ -19,9 +19,11 @@ import org.operaton.bpm.model.bpmn.instance.SubProcess
 import org.operaton.bpm.model.bpmn.instance.TimerEventDefinition
 import org.operaton.bpm.model.bpmn.instance.UserTask
 import org.operaton.bpm.model.bpmn.instance.operaton.OperatonFormData
+import org.operaton.bpm.model.bpmn.instance.operaton.OperatonFormField
 import org.operaton.bpm.model.bpmn.instance.operaton.OperatonInputOutput
 import org.operaton.bpm.model.xml.ModelException
 import org.operaton.bpm.model.xml.instance.DomElement
+import org.operaton.bpm.model.xml.instance.ModelElementInstance
 import org.springframework.scheduling.support.CronExpression
 import org.springframework.stereotype.Component
 import org.operaton.bpm.engine.RepositoryService
@@ -30,12 +32,12 @@ import org.operaton.bpm.engine.RepositoryService
 data class Check(val element: String?, val message: String, val warning: Boolean = false)
 
 /**
- * The Checks: what **Save and deploy** refuses, shown live in the modeler and on import. Each rule reads the Process,
- * written with `operaton:` only, and gives its Checks; a new Check is one more rule in [rules].
+ * The Checks: what **Save and deploy** refuses, shown live in the modeler and on import. Each kind of Check reads the
+ * Process, written with `operaton:` only, and gives its Checks; a new kind is one more function in [kinds].
  */
 @Component
 class Checks(private val catalogue: Catalogue, private val repository: RepositoryService) {
-    private val rules: List<(BpmnModelInstance) -> List<Check>> = listOf(::refusedElements, ::refusedUses, ::oneStartEvent, ::startFormNames, ::emptyInputs, ::defaultPaths, ::timerTimes, ::schedules,
+    private val kinds: List<(BpmnModelInstance) -> List<Check>> = listOf(::refusedElements, ::refusedUses, ::oneStartEvent, ::startFormNames, ::emptyInputs, ::defaultPaths, ::timerTimes, ::schedules,
         { agentTasks(catalogue, it) }, { references(catalogue, it) }, // these two in AgentTaskChecks.kt
         { calls(repository, it) }) // in CallActivityChecks.kt
 
@@ -45,7 +47,7 @@ class Checks(private val catalogue: Catalogue, private val repository: Repositor
     }
 
     fun of(bpmn: String): List<Check> = try {
-        Bpmn.readModelFromStream(bpmn.byteInputStream()).let { model -> rules.flatMap { it(model) } }
+        Bpmn.readModelFromStream(bpmn.byteInputStream()).let { model -> kinds.flatMap { it(model) } }
     } catch (e: ModelException) {
         // The schema's own words are in the cause, such as which element isn't allowed where.
         listOf(Check(null, generateSequence<Throwable>(e) { it.cause }.last().message ?: "The file isn't BPMN."))
@@ -68,7 +70,20 @@ private val allowed = setOf(
 
 private fun label(name: String?, id: String?) = name?.let { "$it ($id)" } ?: id
 
-private val BaseElement.label get() = label(getAttributeValue("name"), id)
+/** How a Check names an element: its name and id, or its id alone. */
+internal val BaseElement.label get() = label(getAttributeValue("name"), id)
+
+/** The element's extension elements of type [T], such as an Agent Task's `operaton:properties`. */
+internal inline fun <reified T : ModelElementInstance> BaseElement.extensions(): List<T> =
+    extensionElements?.elementsQuery?.filterByType(T::class.java)?.list().orEmpty()
+
+/** A Task's input parameters. */
+internal fun BaseElement.inputs() = extensions<OperatonInputOutput>().flatMap { it.operatonInputParameters }
+
+/** A start event's start-form fields. */
+internal fun StartEvent.formFields() = extensions<OperatonFormData>().flatMap { it.operatonFormFields }
+
+internal val OperatonFormField.required get() = operatonValidation?.operatonConstraints.orEmpty().any { it.operatonName == "required" }
 
 /** `adHocSubProcess` as "ad hoc sub process". */
 private fun words(name: String) = name.replace(Regex("[A-Z]")) { " " + it.value.lowercase() }
@@ -130,7 +145,7 @@ private fun oneStartEvent(model: BpmnModelInstance) = (
 
 /** Each start-form field is a Run variable, so it needs a name of its own. */
 private fun startFormNames(model: BpmnModelInstance) = model.getModelElementsByType(StartEvent::class.java).flatMap { start ->
-    val fields = start.extensionElements?.elementsQuery?.filterByType(OperatonFormData::class.java)?.list().orEmpty().flatMap { it.operatonFormFields }
+    val fields = start.formFields()
     fields.groupBy { it.operatonId }.filter { (name, same) -> !name.isNullOrBlank() && same.size > 1 }.keys
         .map { Check(start.id, "${start.label} has more than one start-form field named $it.") } +
         fields.filter { it.operatonId.isNullOrBlank() }
@@ -141,8 +156,7 @@ private fun startFormNames(model: BpmnModelInstance) = model.getModelElementsByT
 private fun emptyInputs(model: BpmnModelInstance) = model.getModelElementsByType(ServiceTask::class.java)
     .filter { it.operatonTopic == AgentLauncher.TOPIC }
     .flatMap { task ->
-        task.extensionElements?.elementsQuery?.filterByType(OperatonInputOutput::class.java)?.list().orEmpty()
-            .flatMap { it.operatonInputParameters }
+        task.inputs()
             .filter { it.textContent.isBlank() && it.domElement.childElements.isEmpty() }
             .map { Check(task.id, "${task.label} has an empty input ${it.operatonName}.", warning = true) }
     }
@@ -168,13 +182,12 @@ private fun schedules(model: BpmnModelInstance): List<Check> {
     val cron = model.schedule()
     val time = when {
         cron == null && timer.timeDuration == null && timer.timeDate == null -> null // timerTimes says so
-        cron == null -> "${start.label} has a Schedule that isn't a cron: give it one, such as 0 0 8 * * * for every day at 08:00."
+        cron == null -> "${start.label} has a Schedule without times in six fields: give it some, such as 0 0 8 * * * for every day at 08:00."
         else -> runCatching { CronExpression.parse(cron) }.exceptionOrNull()
-            ?.let { "${start.label} has a Schedule that isn't a cron Ants can read (${it.message})." }
+            ?.let { "${start.label} has a Schedule whose times Ants can't read (${it.message})." }
     }
-    val fields = start.extensionElements?.elementsQuery?.filterByType(OperatonFormData::class.java)?.list().orEmpty().flatMap { it.operatonFormFields }
-    return listOfNotNull(time?.let { Check(start.id, it) }) + fields
-        .filter { field -> field.operatonValidation?.operatonConstraints.orEmpty().any { it.operatonName == "required" } }
-        .filter { field -> field.operatonProperties?.operatonProperties.orEmpty().none { it.operatonId == "ants.stored" && !it.operatonValue.isNullOrBlank() } }
+    return listOfNotNull(time?.let { Check(start.id, it) }) + start.formFields()
+        .filter { it.required }
+        .filter { field -> field.operatonProperties?.operatonProperties.orEmpty().none { it.operatonId == STORED && !it.operatonValue.isNullOrBlank() } }
         .map { Check(start.id, "${start.label} has a Schedule, so its required start-form field ${it.operatonLabel ?: it.operatonId} needs a stored value.") }
 }
