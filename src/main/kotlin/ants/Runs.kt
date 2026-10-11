@@ -291,6 +291,9 @@ class RunLifecycle(@Value("\${ants.home}") private val home: Path) : AbstractPro
         val ids = if (subProcess) inner.results() else listOf(inner.id)
         inner.addBuiltInListener(ExecutionListener.EVENTNAME_START, ExecutionListener { instance -> ids.forEach { instance.setVariableLocal(it, null) } })
         inner.addBuiltInListener(ExecutionListener.EVENTNAME_END, ExecutionListener { instance ->
+            // A cancelled instance, as when its Run is cancelled, has no Result and its list is never read; a list whose
+            // first item is null can't even be stored, which would make the Run impossible to cancel.
+            if (instance.isCanceled) return@ExecutionListener
             val result = if (subProcess) ids.associateWith { instance.getVariableLocal(it) } else instance.getVariableLocal(inner.id)
             // The body's own execution holds the loop's counts; a non-scope Task in a sequential loop runs on it too.
             val bodyExecution = generateSequence(instance as ExecutionEntity) { it.parent }.first { it.hasVariableLocal("nrOfInstances") }
@@ -301,7 +304,7 @@ class RunLifecycle(@Value("\${ants.home}") private val home: Path) : AbstractPro
             if (results.size < count) bodyExecution.setVariableLocal(RESULTS, results)
             else bodyExecution.parent.setVariable(inner.id, (0 until count).map { results["$it"] })
             // With Items are Tickets, the instance's Ticket goes in review once it ends, after its last landing.
-            if (body.getProperty(ITEMS_ARE_TICKETS) == true && !instance.isCanceled) {
+            if (body.getProperty(ITEMS_ARE_TICKETS) == true) {
                 val item = instance.getVariable(loop.collectionElementVariable)
                 val run = (instance as ExecutionEntity).rootProcessInstanceId
                 Context.getCommandContext().transactionContext.addTransactionListener(TransactionState.COMMITTED) {
