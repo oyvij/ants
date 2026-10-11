@@ -142,6 +142,52 @@ function AntsPopupMenus(popupMenu) {
 }
 AntsPopupMenus.$inject = ["popupMenu"]
 
+// The palette's Templates section: a searchable list of the Templates, and picking one drops a copy of it as a
+// collapsed sub-process in the middle of the view. Ants does the drop (keeping the Template's ids, suffixed only on a
+// clash) and the page loads the result.
+function AntsTemplates(palette, popupMenu, canvas) {
+    let templates = []
+    popupMenu.registerProvider("ants-templates", {
+        getPopupMenuEntries: () => Object.fromEntries(templates.map(({name, title, shipped}) => [`template-${name}`, {
+            label: title, description: name + (shipped ? " (shipped)" : ""), className: "bpmn-icon-subprocess-collapsed",
+            action: () => dropTemplate(name),
+        }])),
+    })
+    palette.registerProvider(LAST - 1, {
+        getPaletteEntries: () => entries => ({
+            ...entries,
+            "templates-separator": {group: "templates", separator: true},
+            "create.template": {
+                group: "templates", className: "bpmn-icon-subprocess-collapsed", title: "Templates: drop a copy of a Template as a collapsed sub-process",
+                action: {
+                    click: async event => {
+                        templates = await (await fetch("/templates.json")).json()
+                        const box = event.target.getBoundingClientRect()
+                        popupMenu.open(canvas.getRootElement(), "ants-templates", {x: box.right + 10, y: box.top},
+                            {title: "Templates", search: true, width: 300})
+                    },
+                },
+            },
+        }),
+    })
+}
+AntsTemplates.$inject = ["palette", "popupMenu", "canvas"]
+
+// ponytail: the drop replaces the whole diagram (importXML), so Cmd+Z can't undo it and it always lands in the
+// Process's own plane; building the shapes through `modeling` would keep undo but means the id work again in JS.
+async function dropTemplate(name) {
+    const canvas = modeler.get("canvas")
+    const viewbox = canvas.viewbox()
+    const {xml} = await modeler.saveXML()
+    const centre = {x: viewbox.x + viewbox.width / 2, y: viewbox.y + viewbox.height / 2}
+    const response = await fetch(`/templates/${name}/drop`, {method: "POST", body: new URLSearchParams({_csrf: csrf, bpmn: xml, ...centre})})
+    if (!response.ok) return document.getElementById("refusal").textContent = `The Template ${name} can't be dropped here.`
+    const {bpmn, element} = await response.json()
+    await modeler.importXML(bpmn.replaceAll(OPERATON, CAMUNDA))
+    canvas.viewbox(viewbox)
+    modeler.get("selection").select(modeler.get("elementRegistry").get(element))
+}
+
 const modeler = new BpmnModeler({
     container: "#canvas",
     elementTemplateChooser: false,
@@ -150,7 +196,7 @@ const modeler = new BpmnModeler({
         antsPalette: ["type", AntsPalette],
         antsContextPad: ["type", AntsContextPad],
         antsPopupMenus: ["type", AntsPopupMenus],
-    }],
+    }, {__init__: ["antsTemplates"], antsTemplates: ["type", AntsTemplates]}],
 })
 const canvas = document.getElementById("canvas")
 const panel = document.getElementById("explain")
@@ -404,7 +450,7 @@ fetch(canvas.dataset.src)
 
 document.getElementById("save").onclick = async () => {
     const {xml} = await modeler.saveXML({format: true})
-    const response = await fetch("/processes/deploy", {method: "POST", body: new URLSearchParams({_csrf: csrf, bpmn: xml})})
+    const response = await fetch(document.getElementById("save").dataset.action, {method: "POST", body: new URLSearchParams({_csrf: csrf, bpmn: xml})})
     if (response.ok) location = response.url
     else document.getElementById("refusal").textContent = await response.text()
 }
