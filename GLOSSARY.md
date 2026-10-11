@@ -101,8 +101,8 @@ Agent can answer a Round the way the user would.
 _Avoid_: answer log, memory
 
 **Spec**:
-What a Run is to build, written by an Agent and approved by the user; it holds the Run's Tickets
-and outlives the Run.
+What a Run is to build, written by an Agent and approved by the user where the Process draws an
+approval; it holds the Run's Tickets and outlives the Run.
 _Avoid_: PRD, plan, epic
 
 **Ticket**:
