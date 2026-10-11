@@ -286,7 +286,7 @@ class BrowserTest : AntsTest() {
         page.fill("section.story [name=body]", "Why?")
         page.screenshot("story")
         page.click("section.story button")
-        assertThat(page.locator("#comments")).containsText("ISSUE repos/api/hello.txt:1 (new), Greeting step 1: Why?")
+        assertThat(page.locator("#comments")).containsText("ISSUE repos/api/hello.txt:1-1 (new), Greeting step 1: Why?")
         assertThat(page.locator("#tabs b")).hasText("Story")
         page.click("#tabs a")
         assertThat(page.locator("#tabs b")).hasText("By repo")
