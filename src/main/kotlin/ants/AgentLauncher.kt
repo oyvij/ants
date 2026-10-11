@@ -96,13 +96,19 @@ class AgentLauncher(
         val agent = catalogue.agent(task.extensionProperties["ants.agent"] ?: error("${task.activityId} names no ants.agent"))
         val skill = catalogue.skill(task.extensionProperties["ants.skill"] ?: error("${task.activityId} names no ants.skill"))
         check(agent.cli == "claude") { "Agent ${agent.name} runs ${agent.cli}, and only claude runs for now" }
+        val used = catalogue.uses(skill)
+        // ponytail: until the Vault is handed to Tasks (its path in the hand-off line and an --add-dir), a Task that
+        // gets the Vault fails rather than run without it.
+        (listOf(skill) + used).firstOrNull { it.vault }?.let { error("The Task uses the Vault, as ${it.name} opts in, and no Vault can be handed to a Task yet") }
         val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult().rootProcessInstanceId
         val workspace = home.resolve("runs").resolve(run)
         refuseBareByDefault(agent.cli, workspace)
 
-        val prompt = "Follow the Skill in ${skill.file} for the workspace at $workspace.\n\n" + json.writeValueAsString(task.variables.toSortedMap())
+        val handOff = "Follow the Skill in ${skill.file} for the workspace at $workspace." +
+            (if (used.isEmpty()) "" else " It uses the Skills ${used.joinToString { "${it.name} (${it.file})" }}.")
+        val prompt = "$handOff\n\n" + json.writeValueAsString(task.variables.toSortedMap())
         val schema = ResultContract.schema(skill.outputSchema)
-        val process = cli(agent.cli, workspace, flags(agent, schema, skill)).start()
+        val process = cli(agent.cli, workspace, flags(agent, schema, listOf(skill) + used)).start()
         clis += process
         try {
             val stdin = process.outputWriter()
@@ -141,7 +147,7 @@ class AgentLauncher(
         }
     }
 
-    private fun flags(agent: Agent, schema: Map<*, *>, skill: Skill): List<String> {
+    private fun flags(agent: Agent, schema: Map<*, *>, skills: List<Skill>): List<String> {
         val tools = (agent.tools ?: DEFAULT_TOOLS).filter { it.substringBefore('(') != "Skill" }
         return listOf(
             "-p",
@@ -157,8 +163,7 @@ class AgentLauncher(
             "--forward-subagent-text",
             "--tools", tools.map { it.substringBefore('(') }.distinct().joinToString(","),
             "--allowedTools", tools.joinToString(","),
-            "--add-dir", skill.folder.toString(),
-        ) + (if (agent.model != null) listOf("--model", agent.model) else emptyList()) +
+        ) + skills.flatMap { listOf("--add-dir", it.folder.toString()) } + (if (agent.model != null) listOf("--model", agent.model) else emptyList()) +
             (if (agent.instructions.isNotEmpty()) listOf("--append-system-prompt", agent.instructions) else emptyList())
     }
 
