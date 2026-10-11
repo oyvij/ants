@@ -1,13 +1,16 @@
 @param processes: List<org.operaton.bpm.engine.repository.ProcessDefinition>
 @param error: String? = null
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
+@param colorScheme: String = "light dark"
 <!doctype html>
 <html lang="en">
 <head>
     <meta charset="utf-8">
+    <meta name="color-scheme" content="${colorScheme}">
     <title>Processes · Ants</title>
 </head>
 <body>
+@template.nav()
 <h1>Processes</h1>
 @if(error != null)<p role="alert">${error}</p>@endif
 <ul>

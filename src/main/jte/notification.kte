@@ -1,0 +1,32 @@
+@param entry: ants.Entry
+@param details: String?
+@param error: String? = null
+@param _csrf: org.springframework.security.web.csrf.CsrfToken
+@param colorScheme: String = "light dark"
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="color-scheme" content="${colorScheme}">
+    <title>${entry.icon} ${entry.tag} ${entry.task} · Ants</title>
+</head>
+<body>
+@template.nav()
+<p><a href="/notifications">Notification list</a></p>
+<h1>${entry.icon} ${entry.tag} ${entry.task}</h1>
+<p>${entry.process} · <a href="/runs/${entry.run}">Run ${entry.run}</a> · waiting ${entry.waited}</p>
+<p>${entry.summary}</p>
+@if(details != null)
+<h2>@if(entry.tag == "[stuck]")What the Agent needs@else Details@endif</h2>
+<pre>${details}</pre>
+@endif
+<p><a href="/runs/${entry.run}/tasks/${entry.taskId}/transcript">Transcript</a></p>
+@if(error != null)<p role="alert">${error}</p>@endif
+<form method="post">
+    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+    <label>Instruction <textarea name="instruction" required></textarea></label>
+    <button name="action" value="continue">Continue the session</button>
+    <button name="action" value="fresh" formnovalidate>Start fresh</button>
+</form>
+</body>
+</html>

@@ -1,12 +1,15 @@
 @import ants.stateName
 @param runs: List<org.operaton.bpm.engine.history.HistoricProcessInstance>
+@param colorScheme: String = "light dark"
 <!doctype html>
 <html lang="en">
 <head>
     <meta charset="utf-8">
+    <meta name="color-scheme" content="${colorScheme}">
     <title>Runs · Ants</title>
 </head>
 <body>
+@template.nav()
 <h1>Runs</h1>
 <table>
     <tr><th>Run</th><th>State</th><th>Started</th></tr>

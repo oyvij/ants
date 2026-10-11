@@ -1,14 +1,19 @@
 @import ants.stateName
+@import ants.tokens
 @param run: org.operaton.bpm.engine.history.HistoricProcessInstance
 @param variables: Map<String, String>
 @param agentTasks: Map<String, String>
+@param colorScheme: String = "light dark"
+@param transcripts: Map<String, Long>
 <!doctype html>
 <html lang="en">
 <head>
     <meta charset="utf-8">
+    <meta name="color-scheme" content="${colorScheme}">
     <title>${run.processDefinitionName ?: run.processDefinitionKey} · Ants</title>
 </head>
 <body>
+@template.nav()
 <p><a href="/runs">Runs</a></p>
 <h1><a href="/processes/${run.processDefinitionKey}">${run.processDefinitionName ?: run.processDefinitionKey}</a></h1>
 <p>State: ${run.stateName}</p>
@@ -19,6 +24,14 @@
     <dt>${task}</dt><dd>${state}</dd>
 @endfor
 </dl>
+@endif
+@if(transcripts.isNotEmpty())
+<h2>Transcripts · ${tokens(transcripts.values.sum())}</h2>
+<ul>
+@for((task, count) in transcripts)
+    <li><a href="/runs/${run.id}/tasks/${task}/transcript">${task}</a> · ${tokens(count)}</li>
+@endfor
+</ul>
 @endif
 <h2>Variables</h2>
 <dl>

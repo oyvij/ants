@@ -1,20 +1,21 @@
+@param colorScheme: String = "light dark"
 @param pauses: Map<String, String>
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 <!doctype html>
 <html lang="en">
 <head>
     <meta charset="utf-8">
+    <meta name="color-scheme" content="${colorScheme}">
     <title>Ants</title>
 </head>
 <body>
-<h1>Home</h1>
-<nav><a href="/processes">Processes</a> · <a href="/runs">Runs</a>
+@template.nav()
 @for((cli, until) in pauses)
-    <form method="post" action="/pauses/${cli}" style="display: inline">
-        <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
-        · ${cli} paused until ${until} <button>Try now</button>
-    </form>
+<form method="post" action="/pauses/${cli}">
+    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+    ${cli} paused until ${until} <button>Try now</button>
+</form>
 @endfor
-</nav>
+<h1>Home</h1>
 </body>
 </html>

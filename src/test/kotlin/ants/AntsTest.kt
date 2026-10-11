@@ -22,6 +22,8 @@ import java.time.Clock
 import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
+import java.util.concurrent.BlockingQueue
+import java.util.concurrent.LinkedBlockingQueue
 
 /** Boots Ants on a random port with a temporary ANTS_HOME (and so a temporary H2), driven over HTTP. */
 @SpringBootTest(webEnvironment = RANDOM_PORT)
@@ -36,6 +38,15 @@ abstract class AntsTest {
         /** Shared by every test in the JVM: a test that writes a file into it resets that file. */
         val home: Path = tempHome()
 
+        /** What only a login shell finds: Ants' login shell is a fake that puts this folder on PATH only with `-l`. */
+        val loginBin: Path = Files.createDirectories(Files.createTempDirectory("fake-shell").resolve("bin"))
+
+        /** The fake login shell. Only `-l` reads the "profile", the way only a login shell reads the user's. */
+        val shell: Path = loginBin.resolveSibling("sh").also {
+            Files.writeString(it, "#!/bin/sh\n[ \"$1\" = -l ] && PATH=\"$loginBin:\$PATH\" && shift\n[ \"$1\" = -c ] && exec /bin/sh -c \"$2\"\n")
+            it.toFile().setExecutable(true)
+        }
+
         /** A temporary ANTS_HOME that doesn't exist yet. */
         fun tempHome(): Path = Files.createTempDirectory("ants-test").resolve("ants")
 
@@ -45,6 +56,7 @@ abstract class AntsTest {
          */
         fun bootAnother(home: Path, vararg args: String) = SpringApplicationBuilder(AntsApplication::class.java).run(
             "--ants.home=$home",
+            "--ants.shell=$shell",
             "--server.port=0",
             "--operaton.bpm.process-engine-name=another",
             "--spring.autoconfigure.exclude=org.operaton.bpm.spring.boot.starter.webapp.OperatonBpmWebappAutoConfiguration",
@@ -56,7 +68,10 @@ abstract class AntsTest {
 
         @JvmStatic
         @DynamicPropertySource
-        fun antsHome(registry: DynamicPropertyRegistry) = registry.add("ants.home") { home.toString() }
+        fun antsHome(registry: DynamicPropertyRegistry) {
+            registry.add("ants.home") { home.toString() }
+            registry.add("ants.shell") { shell.toString() }
+        }
     }
 
     @TestConfiguration
@@ -114,6 +129,14 @@ class Browser(private val base: String) {
     fun import(file: String): Page {
         get("/processes")
         return upload("/processes", "file", file, javaClass.getResource("/$file")!!.readBytes())
+    }
+
+    /** Opens an SSE stream the way a page's `EventSource` does; each event's data arrives on the queue. */
+    fun events(path: String): BlockingQueue<String> {
+        val events = LinkedBlockingQueue<String>()
+        client.sendAsync(HttpRequest.newBuilder(URI("$base$path")).header("Accept", "text/event-stream").GET().build(), HttpResponse.BodyHandlers.ofLines())
+            .thenAccept { response -> response.body().forEach { if (it.startsWith("data:")) events += it.removePrefix("data:") } }
+        return events
     }
 
     fun login(password: String = "admin"): Page {

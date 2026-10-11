@@ -1,13 +1,16 @@
 @param process: org.operaton.bpm.engine.repository.ProcessDefinition
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
+@param colorScheme: String = "light dark"
 <!doctype html>
 <html lang="en">
 <head>
     <meta charset="utf-8">
+    <meta name="color-scheme" content="${colorScheme}">
     <title>${process.name ?: process.key} · Ants</title>
     <link rel="stylesheet" href="/vendor/camunda-bpmn-js/assets/base-navigated-viewer.css">
 </head>
 <body>
+@template.nav()
 <p><a href="/processes">Processes</a></p>
 <h1>${process.name ?: process.key}</h1>
 <div id="diagram" data-src="/processes/${process.key}/diagram.bpmn" style="height: 60vh"></div>

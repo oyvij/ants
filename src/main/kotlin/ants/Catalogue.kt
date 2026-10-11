@@ -20,8 +20,11 @@ import kotlin.io.path.writeBytes
 /** Who does a Task: the CLI it runs, its tools, its model and its standing instructions. */
 class Agent(val name: String, val cli: String, val tools: List<String>?, val model: String?, val instructions: String)
 
-/** A `SKILL.md` and the folder it lives in. */
-class Skill(val name: String, val file: Path) {
+/**
+ * A `SKILL.md` and the folder it lives in, with the Skills it names in `metadata.ants-uses` and whether it opts in to
+ * the Vault (`metadata.varde-vault: true`).
+ */
+class Skill(val name: String, val file: Path, val uses: List<String>, val vault: Boolean) {
     val folder: Path get() = file.parent
 
     /** The schema of the `output` the Skill promises, from `result.schema.json` beside it; without one, any output. */
@@ -31,14 +34,14 @@ class Skill(val name: String, val file: Path) {
 }
 
 /**
- * Agents and Skills by name, read from `agents/`, `skills/` and `shipped/` in ANTS_HOME each time they're asked for,
- * so an edit reaches the next launch. `shipped/` is Ants' own, replaced whole on start when any file differs.
+ * Agents and Skills by name, read from `agents/` and `skills/` in ANTS_HOME, then the extra folders in settings, then
+ * `shipped/`, each time they're asked for, so an edit reaches the next launch. `shipped/` is Ants' own, replaced whole on start when any file differs.
  */
 @Component
-class Catalogue(@Value("\${ants.home}") home: Path) {
+class Catalogue(@Value("\${ants.home}") private val home: Path, private val settings: Settings) {
     private val shipped = home.resolve("shipped")
-    private val agentFolders = listOf(home.resolve("agents"), shipped.resolve("agents"))
-    private val skillFolders = listOf(home.resolve("skills"), shipped.resolve("skills"))
+    private val agentFolders get() = listOf(home.resolve("agents")) + settings.agentFolders() + shipped.resolve("agents")
+    private val skillFolders get() = listOf(home.resolve("skills")) + settings.skillFolders() + shipped.resolve("skills")
 
     init {
         val resources = PathMatchingResourcePatternResolver()
@@ -76,10 +79,33 @@ class Catalogue(@Value("\${ants.home}") home: Path) {
     /** The Skill [name]; a shipped Skill wins its name. */
     fun skill(name: String): Skill {
         val skills = skillFolders.filter { it.exists() }.flatMap { folder ->
-            folder.walk().filter { it.fileName.toString() == "SKILL.md" }.map { Skill(frontmatter(it.readText()).first["name"]?.toString() ?: "", it) }
+            folder.walk().filter { it.fileName.toString() == "SKILL.md" }.map { file ->
+                val meta = frontmatter(file.readText()).first
+                val metadata = meta["metadata"] as? Map<*, *> ?: emptyMap<String, Any?>()
+                Skill(
+                    name = meta["name"]?.toString() ?: "",
+                    file = file,
+                    uses = metadata["ants-uses"]?.toString()?.split(Regex("\\s+"))?.filter(String::isNotEmpty) ?: emptyList(),
+                    vault = metadata["varde-vault"] == true,
+                )
+            }
         }.filter { it.name == name }
         return skills.singleOrNull() ?: skills.firstOrNull { it.file.startsWith(shipped) }
             ?: error(if (skills.isEmpty()) "No Skill named $name" else "More than one Skill is named $name")
+    }
+
+    /** Every Skill [skill] uses through `ants-uses`, at any depth, each once in the order first named; a cycle is refused, naming it. */
+    fun uses(skill: Skill): List<Skill> {
+        val closure = LinkedHashMap<String, Skill>()
+        fun visit(user: Skill, chain: List<String>) {
+            for (name in user.uses) {
+                check(name !in chain) { "The Skills ${(chain.dropWhile { it != name } + name).joinToString(" → ")} use each other in a cycle" }
+                val used = closure[name] ?: skill(name).also { closure[name] = it }
+                visit(used, chain + name)
+            }
+        }
+        visit(skill, listOf(skill.name))
+        return closure.values.toList()
     }
 }
 

@@ -25,8 +25,10 @@ import java.util.concurrent.atomic.AtomicInteger
 /**
  * The in-process worker. It fetches ready Agent Tasks (external tasks on topic `agent`) only for free slots under
  * the cap, oldest first across Runs, and runs each one's Skill through `claude -p`. A `done` Result completes the
- * task, stored as a process variable named after the Task's BPMN id; a `stuck` one or a failure is an incident.
- * A Task that hits the Usage limit pauses its CLI until the reset, then resumes its session.
+ * task, stored as a process variable named after the Task's BPMN id; a `stuck` one or a failure is an incident. When
+ * the user acts on it, the Notification list leaves their choice in the Task's local variables: Continue resumes the
+ * session with their instruction, Start fresh starts a new one with it under "From the user:". A Task that hits the
+ * Usage limit pauses its CLI until the reset, then continues its session the same way, with the reset message.
  */
 @Component
 class AgentLauncher(
@@ -106,58 +108,90 @@ class AgentLauncher(
 
     /**
      * Holds [task] while [cli] is paused, first pausing it [until] a reset if given, and returns false when [cli] isn't
-     * paused. The hold is a failure with retries left, so it is no incident, and its lock ends at the reset; it keeps
-     * the [session] to resume in its error details.
+     * paused. The hold is a failure with retries left, so it is no incident, and its lock ends at the reset.
      */
-    private fun hold(task: LockedExternalTask, cli: String, session: String?, until: Instant? = null): Boolean {
+    private fun hold(task: LockedExternalTask, cli: String, until: Instant? = null): Boolean {
         synchronized(gates) {
             if (until != null) gates.merge(cli, until, ::maxOf)
             val reset = gates[cli] ?: return false
             val wait = Duration.between(clock.instant(), reset).toMillis().coerceAtLeast(0)
-            externalTasks.handleFailure(task.id, WORKER, "$PAUSED $reset", session, 1, wait)
+            externalTasks.handleFailure(task.id, WORKER, "Paused until $reset", null, 1, wait)
             held[task.id] = cli
             return true
         }
     }
 
+    /** Runs [task] once, between a divider and a line saying how it ended in its Transcript. */
     private fun launch(task: LockedExternalTask) {
+        val resume = (task.variables[SESSION] as? String)?.takeIf { task.variables[ACTION] == CONTINUE }
+        val session = resume ?: UUID.randomUUID().toString()
+        var transcript: Transcript.Writer? = null
         try {
             val agent = catalogue.agent(task.extensionProperties["ants.agent"] ?: error("${task.activityId} names no ants.agent"))
-            val skill = catalogue.skill(task.extensionProperties["ants.skill"] ?: error("${task.activityId} names no ants.skill"))
-            val resume = if (task.errorMessage?.startsWith(PAUSED) == true) externalTasks.getExternalTaskErrorDetails(task.id) else null
-            if (hold(task, agent.cli, resume)) return
+            if (hold(task, agent.cli)) return // keeping its choice for the launch after the reset
+            runtime.removeVariablesLocal(task.executionId, listOf(ACTION, INSTRUCTION, SESSION)) // the choice is used once
+            val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult().rootProcessInstanceId
+            val workspace = home.resolve("runs").resolve(run)
+            transcript = Transcript.Writer(Transcript.file(workspace, task.activityId)).apply { ants("launch") }
             val result = try {
-                session(task, agent, skill, resume)
+                session(task, agent, workspace, transcript, session, resume != null, task.variables[INSTRUCTION] as? String)
             } catch (limit: UsageLimit) {
-                hold(task, agent.cli, limit.session, limit.resetsAt + Duration.ofMinutes(1))
+                val until = limit.resetsAt + Duration.ofMinutes(1)
+                transcript.ants("end", "Paused by the ${agent.cli} usage limit until ${clock.local(until)}.")
+                runtime.setVariablesLocal(task.executionId, mapOf(ACTION to CONTINUE, INSTRUCTION to RESET, SESSION to session))
+                hold(task, agent.cli, until)
                 return
             }
-            if (result["outcome"] == "done") externalTasks.complete(task.id, WORKER, mapOf(task.activityId to result))
-            else incident(task, "[stuck] ${result["summary"]}", result["needs"].toString())
+            if (result["outcome"] == "done") {
+                transcript.ants("end", "Done.")
+                externalTasks.complete(task.id, WORKER, mapOf(task.activityId to result))
+            } else {
+                val reason = "[stuck] ${result["summary"]}"
+                transcript.ants("end", reason)
+                incident(task, session, reason, result["needs"].toString())
+            }
         } catch (e: Exception) {
-            if (poller.isShutdown) return // Ants is stopping: the Task stays locked, and the next start unlocks it
+            val stopping = poller.isShutdown // the Task stays locked, and the next start unlocks it
+            val reason = if (stopping) "Ants stopped." else "[failed] ${e.message ?: e}"
+            runCatching { transcript?.ants("end", reason) }
+            if (stopping) return
             log.warn("Agent Task ${task.activityId} failed", e)
-            incident(task, "[failed] ${e.message ?: e}", (e as? InvalidResult)?.details)
+            incident(task, session, reason, (e as? InvalidResult)?.details)
         }
     }
 
-    /** Puts [task] on hold as an incident, its tag and reason in [message] and anything longer in [details]. */
-    private fun incident(task: LockedExternalTask, message: String, details: String?) =
-        runCatching { externalTasks.handleFailure(task.id, WORKER, message, details, 0, 0) }
-            .onFailure { log.warn("Agent Task ${task.activityId} couldn't be put on hold", it) }
+    /**
+     * Puts [task] on hold as an incident, its tag and reason in [message] and anything longer in [details], keeping
+     * its [session] for Continue.
+     */
+    private fun incident(task: LockedExternalTask, session: String, message: String, details: String?) = runCatching {
+        runtime.setVariableLocal(task.executionId, SESSION, session)
+        externalTasks.handleFailure(task.id, WORKER, message, details, 0, 0)
+    }.onFailure { log.warn("Agent Task ${task.activityId} couldn't be put on hold", it) }
 
-    /** Runs the Task's Skill in one CLI session, a new one or the [resume]d one, and returns its Result. */
-    private fun session(task: LockedExternalTask, agent: Agent, skill: Skill, resume: String?): Map<*, *> {
+    /**
+     * Runs the Task's Skill in one CLI session in [workspace], every line it prints going to [transcript], and returns
+     * its Result. A new [session] starts with the hand-off prompt and the user's [instruction], if any; a [resume]d one
+     * with the instruction alone.
+     */
+    private fun session(
+        task: LockedExternalTask, agent: Agent, workspace: Path, transcript: Transcript.Writer, session: String, resume: Boolean, instruction: String?,
+    ): Map<*, *> {
+        val skill = catalogue.skill(task.extensionProperties["ants.skill"] ?: error("${task.activityId} names no ants.skill"))
         check(agent.cli == "claude") { "Agent ${agent.name} runs ${agent.cli}, and only claude runs for now" }
-        val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult().rootProcessInstanceId
-        val workspace = home.resolve("runs").resolve(run)
+        val used = catalogue.uses(skill)
+        // ponytail: until the Vault is handed to Tasks (its path in the hand-off line and an --add-dir), a Task that
+        // gets the Vault fails rather than run without it.
+        (listOf(skill) + used).firstOrNull { it.vault }?.let { error("The Task uses the Vault, as ${it.name} opts in, and no Vault can be handed to a Task yet") }
         refuseBareByDefault(agent.cli, workspace)
 
-        val prompt = if (resume != null) RESET else
-            "Follow the Skill in ${skill.file} for the workspace at $workspace.\n\n" + json.writeValueAsString(task.variables.toSortedMap())
-        val session = resume ?: UUID.randomUUID().toString()
+        val handOff = "Follow the Skill in ${skill.file} for the workspace at $workspace." +
+            (if (used.isEmpty()) "" else " It uses the Skills ${used.joinToString { "${it.name} (${it.file})" }}.")
+        val inputs = task.variables.filterKeys { !it.startsWith("ants.") }.toSortedMap()
+        val prompt = if (resume) instruction.orEmpty()
+        else "$handOff\n\n" + json.writeValueAsString(inputs) + (if (instruction.isNullOrBlank()) "" else "\n\nFrom the user:\n$instruction")
         val schema = ResultContract.schema(skill.outputSchema)
-        val process = cli(agent.cli, workspace, flags(agent, schema, skill, session, resume != null)).start()
+        val process = cli(agent.cli, workspace, flags(agent, schema, listOf(skill) + used, session, resume)).start()
         clis += process
         try {
             val stdin = process.outputWriter()
@@ -171,9 +205,10 @@ class AgentLauncher(
             var failure: Exception? = null
             var retried = false
             process.inputReader().forEachLine { line ->
+                transcript.line(line)
                 if (valid != null || failure != null) return@forEachLine
                 val event = runCatching { json.readValue(line, Map::class.java) }.getOrNull() ?: return@forEachLine
-                usageLimit(event)?.let { throw UsageLimit(session, it) } // and the CLI is killed, to resume after the reset
+                usageLimit(event)?.let { throw UsageLimit(it) } // and the CLI is killed, to resume after the reset
                 if (event["type"] != "result") return@forEachLine
                 val result = event["structured_output"]
                 val errors = result?.let { ResultContract.errors(it, schema, workspace) }
@@ -218,7 +253,7 @@ class AgentLauncher(
         }
     }
 
-    private fun flags(agent: Agent, schema: Map<*, *>, skill: Skill, session: String, resume: Boolean): List<String> {
+    private fun flags(agent: Agent, schema: Map<*, *>, skills: List<Skill>, session: String, resume: Boolean): List<String> {
         val tools = (agent.tools ?: DEFAULT_TOOLS).filter { it.substringBefore('(') != "Skill" }
         return listOf(
             "-p",
@@ -234,8 +269,7 @@ class AgentLauncher(
             "--forward-subagent-text",
             "--tools", tools.map { it.substringBefore('(') }.distinct().joinToString(","),
             "--allowedTools", tools.joinToString(","),
-            "--add-dir", skill.folder.toString(),
-        ) + (if (agent.model != null) listOf("--model", agent.model) else emptyList()) +
+        ) + skills.flatMap { listOf("--add-dir", it.folder.toString()) } + (if (agent.model != null) listOf("--model", agent.model) else emptyList()) +
             (if (agent.instructions.isNotEmpty()) listOf("--append-system-prompt", agent.instructions) else emptyList())
     }
 
@@ -265,13 +299,21 @@ class AgentLauncher(
     /** A second invalid Result: its errors and the Result itself, kept whole for the `[failed]` page. */
     private class InvalidResult(message: String, val details: String) : Exception(message)
 
-    /** The Usage limit stopped [session]; it resumes once the limit resets at [resetsAt]. */
-    private class UsageLimit(val session: String, val resetsAt: Instant) : Exception("Usage limit")
+    /** The Usage limit cut the session short; it continues once the limit resets at [resetsAt]. */
+    private class UsageLimit(val resetsAt: Instant) : Exception("Usage limit")
 
     companion object {
         const val TOPIC = "agent"
+
+        /** The user's choice on a held Task, [CONTINUE] or [FRESH], and their instruction, as local variables. */
+        const val ACTION = "ants.action"
+        const val INSTRUCTION = "ants.instruction"
+        const val CONTINUE = "continue"
+        const val FRESH = "fresh"
+
+        /** The session id of a held Task's last launch. */
+        private const val SESSION = "ants.session"
         private const val WORKER = "ants"
-        private const val PAUSED = "Paused until"
         private const val RESET = "The usage limit has reset. Carry on where you stopped."
         private val LOCK = Duration.ofDays(365)
         private val DEFAULT_TOOLS = listOf("Bash", "Edit", "Glob", "Grep", "NotebookEdit", "Read", "TodoWrite", "WebFetch", "WebSearch", "Write")
