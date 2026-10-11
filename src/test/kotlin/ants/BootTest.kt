@@ -3,7 +3,6 @@ package ants
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.springframework.boot.builder.SpringApplicationBuilder
-import java.nio.file.Files
 import kotlin.io.path.exists
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
@@ -50,7 +49,7 @@ class BindTest {
     fun `a non-loopback bind is refused while the password is the default`() {
         val error = assertThrows<Exception> {
             SpringApplicationBuilder(AntsApplication::class.java).run(
-                "--ants.home=${Files.createTempDirectory("ants-home")}",
+                "--ants.home=${AntsTest.tempHome()}",
                 "--server.address=0.0.0.0",
                 "--server.port=0",
             ).close()

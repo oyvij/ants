@@ -23,7 +23,10 @@ abstract class AntsTest {
     fun browser() = Browser("http://127.0.0.1:$port")
 
     companion object {
-        val home: Path = Files.createTempDirectory("ants-home")
+        val home: Path = tempHome()
+
+        /** A temporary ANTS_HOME that doesn't exist yet. */
+        fun tempHome(): Path = Files.createTempDirectory("ants-test").resolve("ants")
 
         @JvmStatic
         @DynamicPropertySource
@@ -53,9 +56,9 @@ class Browser(private val base: String) {
         )
     }
 
-    fun login(username: String = "admin", password: String = "admin"): Page {
+    fun login(password: String = "admin"): Page {
         get("/login")
-        return post("/login", mapOf("username" to username, "password" to password))
+        return post("/login", mapOf("username" to "admin", "password" to password))
     }
 
     private fun send(request: HttpRequest.Builder): Page {

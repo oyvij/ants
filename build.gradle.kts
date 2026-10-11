@@ -14,19 +14,22 @@ kotlin {
     jvmToolchain(25)
 }
 
+val operaton = "2.1.5"
+val jte = "3.2.4"
+
 repositories {
     mavenCentral()
 }
 
 dependencies {
     implementation(platform(SpringBootPlugin.BOM_COORDINATES))
-    implementation(platform("org.operaton.bpm:operaton-bom:2.1.5"))
+    implementation(platform("org.operaton.bpm:operaton-bom:$operaton"))
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-security")
-    implementation("org.operaton.bpm.springboot:operaton-bpm-spring-boot-starter-rest:2.1.5")
-    implementation("org.operaton.bpm.springboot:operaton-bpm-spring-boot-starter-webapp:2.1.5")
-    implementation("gg.jte:jte-spring-boot-starter-4:3.2.4")
-    implementation("gg.jte:jte-kotlin:3.2.4")
+    implementation("org.operaton.bpm.springboot:operaton-bpm-spring-boot-starter-rest:$operaton")
+    implementation("org.operaton.bpm.springboot:operaton-bpm-spring-boot-starter-webapp:$operaton")
+    implementation("gg.jte:jte-spring-boot-starter-4:$jte")
+    implementation("gg.jte:jte-kotlin:$jte")
     implementation("org.jetbrains.kotlin:kotlin-reflect")
     runtimeOnly("com.h2database:h2")
 
