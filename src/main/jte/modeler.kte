@@ -1,5 +1,8 @@
 @param name: String
 @param src: String
+@param action: String = "/processes/deploy"
+@param saveLabel: String = "Save and deploy"
+@param copy: String? = null
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
 <!doctype html>
@@ -26,7 +29,13 @@
 @template.nav()
 <header>
     <h1>${name}</h1>
-    <button id="save">Save and deploy</button>
+    <button id="save" data-action="${action}" hidden="${copy != null}">${saveLabel}</button>
+@if(copy != null)
+    <form method="post" action="${copy}">
+        <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+        <p>Ants' own, read-only. <button>Copy</button> makes your own.</p>
+    </form>
+@endif
     <p id="refusal" role="alert"></p>
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
 </header>

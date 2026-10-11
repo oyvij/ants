@@ -205,14 +205,15 @@ val HistoricProcessInstance.stateName
  */
 @Component
 class RunLifecycle(@Value("\${ants.home}") private val home: Path) : AbstractProcessEnginePlugin() {
-    private fun started(tasks: List<String>) = ExecutionListener { run ->
+    private fun started(tasks: List<String>, fannedOut: List<String>) = ExecutionListener { run ->
         if (run.isTopRun) home.runWorkspace(run.processInstanceId).createDirectories()
-        for (task in tasks) run.setVariable(task, null)
+        for (id in tasks + fannedOut) run.setVariable(id, null)
         run.setVariable("runs", tasks.associateWith { 0 })
     }
 
     // ponytail: parallel Tasks starting in separate transactions clash on `runs` (optimistic locking) and the losing
-    // transaction rolls back; whoever drives it (the worker, a User Task's form) must retry once Tasks run in parallel.
+    // transaction rolls back; whoever drives it must retry, as the worker does (AgentLauncher.complete), and so must a
+    // User Task's form once wave 4 completes one.
     private val counted = ExecutionListener { task ->
         @Suppress("UNCHECKED_CAST")
         val counts = task.getVariable("runs") as Map<String, Int>
@@ -262,7 +263,7 @@ class RunLifecycle(@Value("\${ants.home}") private val home: Path) : AbstractPro
                     val tasks = process.tasks()
                     tasks.forEach { it.addBuiltInListener(ExecutionListener.EVENTNAME_START, counted) }
                     val fannedOut = process.multiInstanceBodies().map(::collect)
-                    process.addBuiltInListener(ExecutionListener.EVENTNAME_START, started((tasks.map { it.id } + fannedOut).distinct()))
+                    process.addBuiltInListener(ExecutionListener.EVENTNAME_START, started(tasks.map { it.id }, fannedOut))
                     process.addBuiltInListener(ExecutionListener.EVENTNAME_END, ended)
                 }
             }

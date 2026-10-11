@@ -230,16 +230,17 @@ class AgentLauncher(
     }
 
     /**
-     * Completes [task] with its [result], again when another Task's completion changed the same variables first (as
-     * parallel Tasks and multi-instances ending at once do), since the engine rolls back the whole completion.
+     * Completes [task] with its [result], retrying while another path's Task wins the race to a shared execution, such
+     * as a parallel join, to `runs` or to a multi-instance's Results: the engine rolls the loser back whole, so trying
+     * again is safe.
      */
     private fun complete(task: LockedExternalTask, result: Map<*, *>) {
-        for (attempt in 1..COMPLETE_ATTEMPTS) {
+        for (attempt in 1..COMPLETE_TRIES) {
             try {
                 return externalTasks.complete(task.id, WORKER, mapOf(task.activityId to result))
             } catch (e: OptimisticLockingException) {
-                if (attempt == COMPLETE_ATTEMPTS) throw e
-                Thread.sleep((10L..100L * attempt).random()) // apart, so the next attempts don't clash again
+                if (attempt == COMPLETE_TRIES) throw e
+                Thread.sleep((10L..100L).random()) // apart, so the losers don't clash again
             }
         }
     }
@@ -551,7 +552,7 @@ class AgentLauncher(
         private const val RESET = "The usage limit has reset. Carry on where you stopped."
         private val LOCK = Duration.ofDays(365)
         private const val STDERR_LINES = 20
-        private const val COMPLETE_ATTEMPTS = 10
+        private const val COMPLETE_TRIES = 10
         private const val LOST_LOGIN = "Ants' Claude login is missing or expired. Log in again (Settings)"
 
         /**
