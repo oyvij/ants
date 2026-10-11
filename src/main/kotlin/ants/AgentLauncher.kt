@@ -48,6 +48,7 @@ class AgentLauncher(
     private val repository: RepositoryService,
     private val settings: Settings,
     private val catalogue: Catalogue,
+    private val landing: Landing,
     private val clock: Clock,
     @Value("\${ants.home}") private val home: Path,
 ) {
@@ -191,6 +192,9 @@ class AgentLauncher(
             val used = catalogue.uses(skill)
             refuseBareByDefault(agent.cli, workspace)
             val instance = instance(task)
+            // An instance of a parallel multi-instance works in a folder of its own, and lands when done.
+            val parallel = runtime.inParallel(task.executionId, task.activityId)
+            val cwd = if (parallel) landing.folder(workspace, instance, fresh = task.variables[ACTION] == FRESH) else workspace
             // With [RESUME], a Task the flow comes back to, as in a loop, resumes its last session; the user's
             // Continue and Start fresh choose for themselves.
             val last = Transcript.file(workspace, instance).resolveSibling("session")
@@ -201,7 +205,7 @@ class AgentLauncher(
             val resumed = resume != null || again != null // claude knows the session already
             val continued = resume != null // the user's Continue: their instruction alone, no hand-off again
             val result = try {
-                session(task, instance, agent, skill, used, run, workspace, transcript, session, resumed, task.variables[INSTRUCTION] as? String, handedOff = !continued)
+                session(task, instance, agent, skill, used, run, workspace, cwd, transcript, session, resumed, task.variables[INSTRUCTION] as? String, handedOff = !continued)
             } catch (limit: UsageLimit) {
                 val until = limit.resetsAt + Duration.ofMinutes(1)
                 transcript.ants("end", "Paused by the ${agent.cli} usage limit until ${clock.local(until)}.")
@@ -210,6 +214,7 @@ class AgentLauncher(
                 return
             }
             if (result["outcome"] == "done") {
+                if (parallel) landing.land(workspace, instance)
                 transcript.ants("end", "Done.")
                 complete(task, result)
             } else {
@@ -273,22 +278,23 @@ class AgentLauncher(
     }.onFailure { log.warn("Agent Task ${task.activityId} couldn't be put on hold", it) }
 
     /**
-     * Runs [skill], which uses [used], in one CLI session in [workspace], every line it prints going to [transcript],
-     * and returns its Result: the last valid one, once every message written to the session has been read. A new
+     * Runs [skill], which uses [used], in one CLI session in [cwd] (the Run [workspace], or an instance's folder in it),
+     * every line it prints going to [transcript], and returns its Result: the last valid one, once every message written to the session has been read. A new
      * [session] starts with the hand-off prompt and the user's [instruction], if any; a [resume]d one with the
      * instruction alone, unless it is [handedOff] again, as when the flow comes back to the Task.
      */
     private fun session(
-        task: LockedExternalTask, instance: String, agent: Agent, skill: Skill, used: List<Skill>, run: String, workspace: Path, transcript: Transcript.Writer,
+        task: LockedExternalTask, instance: String, agent: Agent, skill: Skill, used: List<Skill>, run: String, workspace: Path, cwd: Path, transcript: Transcript.Writer,
         session: String, resume: Boolean, instruction: String?, handedOff: Boolean = !resume,
     ): Map<*, *> {
         val inputs = inputs(task)
         val prompt = if (!handedOff) instruction.orEmpty()
-        else handOff(task, skill, used, workspace) + "\n\n" + json.writeValueAsString(inputs) + (if (instruction.isNullOrBlank()) "" else "\n\nFrom the user:\n$instruction")
+        else handOff(task, skill, used, cwd) + "\n\n" + json.writeValueAsString(inputs) + (if (instruction.isNullOrBlank()) "" else "\n\nFrom the user:\n$instruction")
         // The Task's result-schema override replaces the Skill's result.schema.json; Checks refuse one that isn't valid.
         val override = task.extensionProperties[RESULT_SCHEMA]?.takeIf(String::isNotBlank)?.let { json.readValue(it, Map::class.java) }
         val schema = ResultContract.schema(override ?: skill.outputSchema)
-        val process = cli(agent.cli, workspace, flags(agent, schema, listOf(skill) + used, session, resume)).start()
+        val shared = if (cwd == workspace) emptyList() else listOf("--add-dir", "$workspace") // what an instance's links lead to
+        val process = cli(agent.cli, cwd, flags(agent, schema, listOf(skill) + used, session, resume) + shared).start()
         val stdin = Stdin(process.outputWriter(), name(task))
         clis[process] = workspace.fileName.toString() // the Run workspace is runs/<run>/
         val stderr = ArrayDeque<String>()

@@ -7,6 +7,7 @@ import org.operaton.bpm.engine.delegate.ExecutionListener
 import org.operaton.bpm.engine.externaltask.ExternalTask
 import org.operaton.bpm.engine.history.HistoricProcessInstance
 import org.operaton.bpm.engine.impl.bpmn.behavior.MultiInstanceActivityBehavior
+import org.operaton.bpm.engine.impl.bpmn.behavior.ParallelMultiInstanceActivityBehavior
 import org.operaton.bpm.engine.impl.bpmn.parser.BpmnParse
 import org.operaton.bpm.engine.impl.bpmn.parser.BpmnParseListener
 import org.operaton.bpm.engine.impl.ServiceImpl
@@ -48,7 +49,9 @@ import java.time.Clock
 import java.time.Instant
 import java.time.temporal.ChronoUnit.SECONDS
 import java.util.Date
+import kotlin.io.path.ExperimentalPathApi
 import kotlin.io.path.createDirectories
+import kotlin.io.path.deleteRecursively
 
 /** What the live diagram shows of one element: its state (done, running, queued or waiting), a badge and its Round. */
 class Shown(val state: String, val badge: String?, val round: Int?)
@@ -298,8 +301,10 @@ class RunLifecycle(@Value("\${ants.home}") private val home: Path) : AbstractPro
 }
 
 /** Deletes a Run workspace once its Run is done with it, all but the Transcripts (`tasks/`), which outlive the Run. */
+@OptIn(ExperimentalPathApi::class)
 fun cleanUp(workspace: File) {
-    workspace.listFiles()?.filter { it.name != "tasks" }?.forEach { it.deleteRecursively() }
+    // Not following links: an instance's folder links to the Transcripts (Landing).
+    workspace.listFiles()?.filter { it.name != "tasks" }?.forEach { it.toPath().deleteRecursively() }
     workspace.delete() // only if nothing was kept
 }
 
@@ -340,6 +345,18 @@ private fun key(execution: ExecutionEntity, activity: String) = (execution.getVa
  */
 fun RuntimeService.taskKey(execution: String, activity: String): String = (this as ServiceImpl).commandExecutor.execute { context ->
     key(checkNotNull(context.executionManager.findExecutionById(execution)) { "No execution $execution" }, activity)
+}
+
+/**
+ * Whether the Task [activity] on [execution] runs in an instance of a parallel multi-instance, in its own Process or
+ * in one calling it, and so lands ([Landing]).
+ */
+fun RuntimeService.inParallel(execution: String, activity: String): Boolean = (this as ServiceImpl).commandExecutor.execute { context ->
+    val task = checkNotNull(context.executionManager.findExecutionById(execution)) { "No execution $execution" }
+    generateSequence(task to activity) { (it, _) -> it.processInstance.superExecution?.let { call -> call to call.currentActivityId } }.any { (it, id) ->
+        generateSequence(it.processDefinition.findActivity(id) as ScopeImpl?) { (it as? ActivityImpl)?.flowScope }
+            .any { (it as? ActivityImpl)?.activityBehavior is ParallelMultiInstanceActivityBehavior }
+    }
 }
 
 /** The Results a multi-instance's instances have given so far, on its body's execution. */
