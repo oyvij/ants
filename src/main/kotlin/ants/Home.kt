@@ -73,7 +73,7 @@ class Home(
         val entries = notifications.entries()
         return mapOf(
             "live" to history.createHistoricProcessInstanceQuery().rootProcessInstances().active().count(),
-            "waiting" to entries.filter { it.run.isNotEmpty() }.distinctBy { it.run }.size, // a scheduled Run that didn't start isn't a Run
+            "waiting" to entries.filterIsInstance<TaskEntry>().distinctBy { it.run }.size, // a scheduled Run that didn't start isn't a Run
             "done" to history.createHistoricProcessInstanceQuery().rootProcessInstances().completed().count(),
             "entries" to entries,
             "working" to working(),

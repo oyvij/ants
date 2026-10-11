@@ -1,12 +1,12 @@
 package ants
 
-import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import org.operaton.bpm.engine.HistoryService
 import org.operaton.bpm.engine.ManagementService
-import org.operaton.bpm.engine.RuntimeService
+import org.operaton.bpm.engine.TaskService
 import org.springframework.beans.factory.annotation.Autowired
 import java.time.Duration
+import java.time.temporal.ChronoUnit
 import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
@@ -19,10 +19,10 @@ class ScheduleTest : AntsTest() {
     lateinit var history: HistoryService
 
     @Autowired
-    lateinit var runtime: RuntimeService
+    lateinit var management: ManagementService
 
     @Autowired
-    lateinit var management: ManagementService
+    lateinit var tasks: TaskService
 
     private val key = "nightly"
 
@@ -60,27 +60,8 @@ class ScheduleTest : AntsTest() {
 
     private fun runs() = history.createHistoricProcessInstanceQuery().processDefinitionKey(key).count()
 
-    /** Waits up to 5 s for [check], which the Schedule loop (every 200 ms in tests) should have made true. */
-    private fun eventually(check: () -> Boolean) {
-        val deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos()
-        while (!check()) {
-            if (System.nanoTime() > deadline) throw AssertionError("not within 5 seconds")
-            Thread.sleep(100)
-        }
-    }
-
     /** Lets the loop go round a few times, for what should not happen. */
     private fun settle() = Thread.sleep(1000)
-
-    @AfterEach
-    fun cleanUp() {
-        clock.offset = Duration.ZERO
-        // Removing the Schedule keeps it from starting Runs in other tests.
-        if (browser.get("/processes/$key").status == 200) browser.post("/processes/$key/schedule/remove", mapOf())
-        runtime.createProcessInstanceQuery().processDefinitionKey(key).list().forEach { runtime.deleteProcessInstance(it.id, "test over") }
-        history.createHistoricProcessInstanceQuery().processDefinitionKey(key).list().forEach { history.deleteHistoricProcessInstance(it.id) }
-        home.resolve("settings.yaml").writeText("")
-    }
 
     @Test
     fun `a Schedule starts a Run at its time, with the stored values`() {
@@ -90,7 +71,7 @@ class ScheduleTest : AntsTest() {
         settle()
         assertEquals(0, runs())
         clock.offset = Duration.ofHours(1)
-        eventually { runs() == 1L }
+        eventually { assertEquals(1, runs()) }
         val run = history.createHistoricProcessInstanceQuery().processDefinitionKey(key).singleResult()
         assertContains(browser.get("/runs/${run.id}").body, "<dt>prompt</dt><dd><code>Sweep</code></dd>")
     }
@@ -100,37 +81,45 @@ class ScheduleTest : AntsTest() {
         home.resolve("settings.yaml").writeText(vault)
         deploy()
         clock.offset = Duration.ofHours(5)
-        eventually { runs() == 1L }
+        eventually { assertEquals(1, runs()) }
         settle()
         assertEquals(1, runs())
     }
 
     @Test
-    fun `an overlapping time is skipped and noted on the Process page`() {
+    fun `an overlapping time is skipped and noted on the Process page, by the latest time skipped, until a Run starts again`() {
         home.resolve("settings.yaml").writeText(vault)
         deploy(bpmn(waits = true))
         clock.offset = Duration.ofHours(1)
-        eventually { runs() == 1L }
-        clock.offset = Duration.ofHours(2)
-        eventually { "the last Run from this Schedule was still going" in browser.get("/processes/$key").body }
+        eventually { assertEquals(1, runs()) }
+        clock.offset = Duration.ofHours(3) // two times come while the Run waits
+        eventually { assertContains(browser.get("/processes/$key").body, "the last Run from this Schedule was still going") }
         assertEquals(1, runs())
-        assertContains(browser.get("/processes/$key").body, "Skipped ")
+        val latest = clock.local(clock.instant().atZone(clock.zone).truncatedTo(ChronoUnit.HOURS).toInstant())
+        assertContains(browser.get("/processes/$key").body, "Skipped $latest:")
+
+        tasks.complete(tasks.createTaskQuery().processDefinitionKey(key).singleResult().id)
+        clock.offset = Duration.ofHours(4)
+        eventually { assertEquals(2, runs()) }
+        assertFalse("Skipped " in browser.get("/processes/$key").body)
     }
 
     @Test
     fun `a scheduled Run that can't start is a failed entry on the Notification list, with Start now and Dismiss`() {
-        deploy() // no Vault, so the pre-Run check refuses
+        home.resolve("settings.yaml").writeText("") // no Vault, so the pre-Run check refuses
+        deploy()
         clock.offset = Duration.ofHours(1)
-        eventually { "Configure a Vault" in browser.get("/notifications").body }
+        eventually { assertContains(browser.get("/notifications").body, "Configure a Vault") }
         val list = browser.get("/notifications").body
         assertContains(list, "✕ [failed]")
         assertContains(list, "Nightly")
-        assertContains(list, "href=\"/processes/$key\"")
+        assertContains(list, "href=\"/notifications/schedule-$key\"")
         assertEquals(0, runs())
 
-        val page = browser.get("/processes/$key").body
-        assertContains(page, "<button>Start now</button>")
-        assertContains(page, "<button>Dismiss</button>")
+        val entry = browser.get("/notifications/schedule-$key").body
+        assertContains(entry, "The scheduled Run didn't start: Configure a Vault")
+        assertContains(entry, """<form method="post" action="/processes/$key/schedule/start">""")
+        assertContains(entry, """<form method="post" action="/processes/$key/schedule/dismiss">""")
         home.resolve("settings.yaml").writeText(vault)
         val run = browser.post("/processes/$key/schedule/start", mapOf())
         assertContains(run.path, "/runs/")
@@ -139,11 +128,13 @@ class ScheduleTest : AntsTest() {
 
         home.resolve("settings.yaml").writeText("")
         clock.offset = Duration.ofHours(2)
-        eventually { "Configure a Vault" in browser.get("/notifications").body }
-        browser.get("/processes/$key")
-        browser.post("/processes/$key/schedule/dismiss", mapOf())
+        eventually { assertContains(browser.get("/notifications").body, "Configure a Vault") }
+        assertContains(browser.get("/processes/$key").body, "<button>Start now</button>") // the Process page has them too
+        browser.get("/notifications/schedule-$key")
+        assertEquals("/notifications", browser.post("/processes/$key/schedule/dismiss", mapOf("back" to "notifications")).path)
         assertFalse("Configure a Vault" in browser.get("/notifications").body)
         assertFalse("Start now" in browser.get("/processes/$key").body)
+        assertEquals(404, browser.get("/notifications/schedule-$key").status)
     }
 
     @Test

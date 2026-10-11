@@ -135,7 +135,7 @@ class Runs(
             val (lines, end) = Transcript.read(file, offset)
             offset = end
             lines.forEach(transcript::add)
-            val entry = notifications.entries().firstOrNull { it.instance == id && it.activity == task }
+            val entry = notifications.tasks().firstOrNull { it.instance == id && it.activity == task }
             val model = mapOf(
                 "run" to top, "task" to key, "name" to (element.name ?: task), "shown" to shown(id)[task], "transcript" to transcript,
                 "entry" to entry, "details" to entry?.let(notifications::details), "live" to launcher.live(top, key), "_csrf" to csrf,
@@ -150,7 +150,7 @@ class Runs(
      * Agent Task no worker holds yet. Its Round is its count in `runs`.
      */
     private fun shown(id: String): Map<String, Shown> {
-        val entries = notifications.entries().filter { it.instance == id }.associateBy { it.activity }
+        val entries = notifications.tasks().filter { it.instance == id }.associateBy { it.activity }
         val agentTasks = externalTasks.createExternalTaskQuery().processInstanceId(id).topicName(AgentLauncher.TOPIC).list().groupBy { it.activityId }
         val rounds = history.createHistoricVariableInstanceQuery().processInstanceId(id).variableName("runs").singleResult()?.value as? Map<*, *>
         return history.createHistoricActivityInstanceQuery().processInstanceId(id).list().groupBy { it.activityId }.mapValues { (activity, instances) ->

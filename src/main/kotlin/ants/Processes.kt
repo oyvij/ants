@@ -209,11 +209,11 @@ class Processes(private val repository: RepositoryService, private val startForm
         "redirect:/processes/$key" // which shows the reason
     }
 
-    /** **Dismiss** a scheduled Run that couldn't start. */
+    /** **Dismiss** a scheduled Run that couldn't start, then back to the Notification list when dismissed from there ([back]). */
     @PostMapping("/processes/{key}/schedule/dismiss")
-    fun dismiss(@PathVariable key: String): String {
+    fun dismiss(@PathVariable key: String, @RequestParam(required = false) back: String?): String {
         schedules.dismiss(latest(key).key)
-        return "redirect:/processes/$key"
+        return "redirect:" + if (back == "notifications") "/notifications" else "/processes/$key"
     }
 
     @GetMapping("/processes/{key}/diagram.bpmn", produces = ["application/xml"])

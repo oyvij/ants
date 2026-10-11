@@ -1,4 +1,4 @@
-@param entry: ants.Entry
+@param entry: ants.TaskEntry
 @param details: String?
 @param error: String? = null
 @param _csrf: org.springframework.security.web.csrf.CsrfToken

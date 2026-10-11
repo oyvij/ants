@@ -1,0 +1,20 @@
+@param entry: ants.StartEntry
+@param _csrf: org.springframework.security.web.csrf.CsrfToken
+@param colorScheme: String = "light dark"
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="color-scheme" content="${colorScheme}">
+    <title>${entry.icon} ${entry.tag} ${entry.task} · Ants</title>
+</head>
+<body>
+@template.nav()
+<p><a href="/notifications">Notification list</a></p>
+<h1>${entry.icon} ${entry.tag} ${entry.task}</h1>
+<p><a href="/processes/${entry.key}">${entry.process}</a> · waiting ${entry.waited}</p>
+<p>${entry.summary}</p>
+<form method="post" action="/processes/${entry.key}/schedule/start"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>Start now</button></form>
+<form method="post" action="/processes/${entry.key}/schedule/dismiss"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><input type="hidden" name="back" value="notifications"><button>Dismiss</button></form>
+</body>
+</html>

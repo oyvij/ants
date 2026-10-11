@@ -28,19 +28,37 @@ import kotlin.io.path.readText
  * The Process [key]'s Schedule as the user reads it: in words, when it [next] starts a Run ([at] on the clock), and
  * what Ants noted.
  */
-class Schedule(val key: String, val process: String, val cron: String, val paused: Boolean, val next: Instant?, val at: String?, val skipped: String?, val failed: Failed?) {
+class Schedule(val key: String, val process: String, val cron: String, val paused: Boolean, val next: Instant?, val at: String?, val skipped: String?, val failed: FailedStart?) {
     val words get() = inWords(cron)
 }
 
 /** A scheduled Run that couldn't start, [why], at [at]. */
-class Failed(val why: String, val at: Instant)
+class FailedStart(val why: String, val at: Instant)
+
+/**
+ * What Ants keeps of a Schedule besides its BPMN: whether it's [paused], when it [last] started a Run or was resumed,
+ * the [run] it last started, and its notes: the time it last [skipped] and a [failed] start.
+ */
+private data class State(val paused: Boolean = false, val last: Instant? = null, val run: String? = null, val skipped: String? = null, val failed: FailedStart? = null) {
+    fun toYaml(): Map<String, Any> = listOfNotNull(
+        "paused" to paused, last?.let { "last" to "$it" }, run?.let { "run" to it }, skipped?.let { "skipped" to it },
+        failed?.let { "failed" to it.why }, failed?.let { "failedAt" to "${it.at}" },
+    ).toMap()
+
+    companion object {
+        fun of(yaml: Map<*, *>) = State(
+            yaml["paused"] == true, (yaml["last"] as? String)?.let(Instant::parse), yaml["run"] as? String, yaml["skipped"] as? String,
+            (yaml["failed"] as? String)?.let { FailedStart(it, Instant.parse(yaml["failedAt"] as String)) },
+        )
+    }
+}
 
 /**
  * Ants runs Schedules itself: Operaton never sees the timer start (RunLifecycle drops it), and this loop starts a Run
- * through [StartForm.start], as **Start** does, with each field's stored value. Each time it finds the next cron time
- * after the last start due, it starts one Run, so times missed while Ants was off run once. A time that comes while
- * the Schedule's last Run is still going is skipped and noted, and a Run that can't start is kept as [Failed] for
- * the Notification list. What isn't in the BPMN (paused, the last start and Run, the notes) is `schedules.yaml`.
+ * through [StartForm.start], as **Start** does, with each field's stored value. Each time one or more of its times
+ * have come since the last start, it starts one Run, so times missed while Ants was off run once. A time that comes
+ * while the Schedule's last Run is still going is skipped and noted until a Run starts again, and a Run that can't
+ * start is kept as a [FailedStart] for the Notification list. What isn't in the BPMN (paused, the last start and Run, the notes) is `schedules.yaml`.
  */
 @Component
 class Schedules(
@@ -72,31 +90,26 @@ class Schedules(
     /** The Schedule of [definition], the latest version of its Process, or null without one. */
     fun of(definition: ProcessDefinition): Schedule? {
         val cron = repository.getBpmnModelInstance(definition.id).schedule() ?: return null
-        val state = state()[definition.key].orEmpty()
-        val paused = state["paused"] == true
-        val next = if (paused) null else runCatching { CronExpression.parse(cron).next(clock.instant().atZone(clock.zone))?.toInstant() }.getOrNull()
-        return Schedule(
-            definition.key, definition.name ?: definition.key, cron, paused, next, next?.let(clock::local),
-            state["skipped"] as? String,
-            (state["failed"] as? String)?.let { Failed(it, Instant.parse(state["failedAt"] as String)) },
-        )
+        val state = state(definition.key)
+        val next = if (state.paused) null else runCatching { CronExpression.parse(cron).next(clock.instant().atZone(clock.zone))?.toInstant() }.getOrNull()
+        return Schedule(definition.key, definition.name ?: definition.key, cron, state.paused, next, next?.let(clock::local), state.skipped, state.failed)
     }
 
     /** Pauses or resumes the Schedule of [key]; times that come while it is paused never run. */
-    fun pause(key: String, paused: Boolean) = update(key) { it + mapOf("paused" to paused, "last" to clock.instant().toString()) }
+    fun pause(key: String, paused: Boolean) = update(key) { it.copy(paused = paused, last = clock.instant()) }
 
     /** Forgets what Ants kept of [key]'s Schedule, once the Process has none. */
-    fun forget(key: String) = synchronized(this) { file.writeAtomically(yaml.dump(state() - key)) }
+    fun forget(key: String) = synchronized(this) { write(states() - key) }
 
     /** Dismisses the failed start of [key] from the Notification list. */
-    fun dismiss(key: String) = update(key) { it - "failed" - "failedAt" }
+    fun dismiss(key: String) = update(key) { it.copy(failed = null) }
 
     /** **Start now**: the scheduled Run of [definition], with the stored values, as the loop starts it. */
     fun startNow(definition: ProcessDefinition): ProcessInstance = synchronized(this) {
         try {
-            startForm.start(definition, stored(definition)).also { run -> update(definition.key) { it - "failed" - "failedAt" + ("run" to run.id) } }
+            startForm.start(definition, stored(definition)).also { run -> update(definition.key) { it.copy(run = run.id, skipped = null, failed = null) } }
         } catch (e: Exception) {
-            update(definition.key) { it + mapOf("failed" to (e.message ?: e.javaClass.simpleName), "failedAt" to clock.instant().toString()) }
+            update(definition.key) { it.copy(failed = FailedStart(e.message ?: e.javaClass.simpleName, clock.instant())) }
             throw e
         }
     }
@@ -110,17 +123,17 @@ class Schedules(
         log.warn("The Schedule loop failed", e) // and goes round again
     }
 
-    /** Starts a Run of [definition] if a time of [cron] came since the last start, or notes why not. */
+    /** Starts a Run of [definition] if a time of [cron] came since the last start, or notes the latest one skipped. */
     private fun due(definition: ProcessDefinition, cron: CronExpression): Unit = synchronized(this) {
-        val state = state()[definition.key].orEmpty()
-        if (state["paused"] == true) return
+        val state = state(definition.key)
+        if (state.paused) return
         val now = clock.instant()
-        val since = (state["last"] as? String)?.let(Instant::parse)
-            ?: repository.createDeploymentQuery().deploymentId(definition.deploymentId).singleResult().deploymentTime.toInstant()
-        val time = cron.next(since.atZone(clock.zone))?.toInstant()?.takeIf { it <= now } ?: return
-        update(definition.key) { it + ("last" to now.toString()) }
-        val last = (state["run"] as? String)?.let { history.createHistoricProcessInstanceQuery().processInstanceId(it).active().singleResult() }
-        if (last != null) update(definition.key) { it + ("skipped" to "Skipped ${clock.local(time)}: the last Run from this Schedule was still going.") }
+        val since = state.last ?: repository.createDeploymentQuery().deploymentId(definition.deploymentId).singleResult().deploymentTime.toInstant()
+        // ponytail: steps through every time missed, so a cron of every second missed for a month takes a while.
+        val time = generateSequence(cron.next(since.atZone(clock.zone))) { cron.next(it) }.takeWhile { it.toInstant() <= now }.lastOrNull() ?: return
+        update(definition.key) { it.copy(last = now) }
+        val last = state.run?.let { history.createHistoricProcessInstanceQuery().processInstanceId(it).active().singleResult() }
+        if (last != null) update(definition.key) { it.copy(skipped = "Skipped ${clock.local(time.toInstant())}: the last Run from this Schedule was still going.") }
         else runCatching { startNow(definition) }
         Unit
     }
@@ -130,12 +143,16 @@ class Schedules(
         field.name to if (field.type == FieldType.REPOS) field.storedRepos else listOfNotNull(field.stored)
     }
 
-    @Suppress("UNCHECKED_CAST")
-    private fun state(): Map<String, Map<String, Any>> = if (file.exists()) yaml.load<Map<String, Map<String, Any>>?>(file.readText()).orEmpty() else emptyMap()
+    private fun states(): Map<String, State> = if (!file.exists()) emptyMap()
+    else yaml.load<Map<String, Map<*, *>>?>(file.readText()).orEmpty().mapValues { State.of(it.value) }
 
-    private fun update(key: String, change: (Map<String, Any>) -> Map<String, Any>) = synchronized(this) {
-        val state = state()
-        file.writeAtomically(yaml.dump(state + (key to change(state[key].orEmpty()))))
+    private fun state(key: String) = states()[key] ?: State()
+
+    private fun write(states: Map<String, State>) = file.writeAtomically(yaml.dump(states.mapValues { it.value.toYaml() }))
+
+    private fun update(key: String, change: (State) -> State) = synchronized(this) {
+        val states = states()
+        write(states + (key to change(states[key] ?: State())))
     }
 }
 
