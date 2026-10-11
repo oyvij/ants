@@ -38,6 +38,9 @@
     <h3>@if(entry.tag == "[stuck]")What the Agent needs@else Details@endif</h3>
     <pre>${details}</pre>
 @endif
+    @if(entry.tag == "[approve]")
+    <p><a href="/notifications/${entry.id}">Approve or send back</a></p>
+    @else
     <form method="post" action="/notifications/${entry.id}">
         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
         <input type="hidden" name="back" value="run">
@@ -46,6 +49,7 @@
         <button name="action" value="fresh" formnovalidate>Start fresh</button>
         @if(entry.tag == "[failed]")<button name="action" value="cancel" formnovalidate>Cancel the Run</button>@endif
     </form>
+    @endif
 </section>
 @endif
 @if(live)
