@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="/vendor/camunda-bpmn-js/assets/base-navigated-viewer.css">
 </head>
 <body>
+@template.nav()
 <p><a href="/processes">Processes</a></p>
 <h1>${process.name ?: process.key}</h1>
 <div id="diagram" data-src="/processes/${process.key}/diagram.bpmn" style="height: 60vh"></div>

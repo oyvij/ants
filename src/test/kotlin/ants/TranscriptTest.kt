@@ -2,6 +2,7 @@ package ants
 
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import java.util.concurrent.BlockingQueue
 import kotlin.io.path.createDirectories
 import kotlin.io.path.writeText
 import kotlin.test.assertContains
@@ -117,17 +118,17 @@ class TranscriptTest : AntsTest() {
         assertContains(loaded, """<div class="tool" id="e2">⏺ <b>Read</b> <code>notes.md</code></div>""")
 
         val from = Regex("""data-from="(\d+)"""").find(loaded)!!.groupValues[1]
-        val tab = browser.events("$path/events?from=$from")
-        val secondTab = browser.events("$path/events?from=0")
+        val tab = Received(browser.events("$path/events?from=$from"))
+        val secondTab = Received(browser.events("$path/events?from=0"))
         claude.release("one")
-        eventually { assertContains(tab.toString(), """data:<div id="live"><p>Almost <strong>there</strong></p>""") }
+        eventually { assertContains(tab.toString(), """<div id="live"><p>Almost <strong>there</strong></p>""") }
         assertContains(tab.toString(), "Writing…")
         assertFalse("Read</b>" in tab.toString()) // this page had it already
         claude.release("two")
         eventually { assertContains(tab.toString(), Regex("""Writing… <span data-since="\d+">\d+s</span> · 330 tokens</div>""")) }
         claude.release("three")
-        eventually { assertContains(tab.toString(), """data:<div id="status"></div>""") }
-        assertContains(tab.toString(), """data:<div class="result" id="e""")
+        eventually { assertContains(tab.toString(), """<div id="status"></div>""") }
+        assertContains(tab.toString(), """<div class="result" id="e""")
 
         eventually { assertContains(secondTab.toString(), "<b>Result: done</b>") }
         for (text in listOf(page(path), secondTab.toString())) {
@@ -137,4 +138,11 @@ class TranscriptTest : AntsTest() {
         }
         assertEquals(page(path), page(path))
     }
+}
+
+/** Every data line an SSE stream has sent so far, one per line. */
+private class Received(private val events: BlockingQueue<String>) {
+    private val text = StringBuilder()
+
+    override fun toString() = text.apply { generateSequence { events.poll() }.forEach { appendLine(it) } }.toString()
 }

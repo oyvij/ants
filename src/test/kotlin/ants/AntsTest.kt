@@ -14,6 +14,8 @@ import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.BlockingQueue
+import java.util.concurrent.LinkedBlockingQueue
 
 /** Boots Ants on a random port with a temporary ANTS_HOME (and so a temporary H2), driven over HTTP. */
 @SpringBootTest(webEnvironment = RANDOM_PORT)
@@ -60,14 +62,6 @@ class Browser(private val base: String) {
 
     fun get(path: String) = send(HttpRequest.newBuilder(URI("$base$path")).GET())
 
-    /** Follows an SSE stream on a thread of its own, the way a page's EventSource does; it holds what arrived so far. */
-    fun events(path: String): StringBuffer {
-        val received = StringBuffer()
-        val request = HttpRequest.newBuilder(URI("$base$path")).header("Accept", "text/event-stream").GET().build()
-        Thread.ofVirtual().start { client.send(request, HttpResponse.BodyHandlers.ofLines()).body().forEach { received.append(it).append('\n') } }
-        return received
-    }
-
     fun post(path: String, form: Map<String, String>): Page {
         val body = (form + listOfNotNull(csrf?.let { "_csrf" to it }))
             .entries.joinToString("&") { (k, v) -> "${enc(k)}=${enc(v)}" }
@@ -96,6 +90,14 @@ class Browser(private val base: String) {
     fun import(file: String): Page {
         get("/processes")
         return upload("/processes", "file", file, javaClass.getResource("/$file")!!.readBytes())
+    }
+
+    /** Opens an SSE stream the way a page's `EventSource` does; each event's data arrives on the queue. */
+    fun events(path: String): BlockingQueue<String> {
+        val events = LinkedBlockingQueue<String>()
+        client.sendAsync(HttpRequest.newBuilder(URI("$base$path")).header("Accept", "text/event-stream").GET().build(), HttpResponse.BodyHandlers.ofLines())
+            .thenAccept { response -> response.body().forEach { if (it.startsWith("data:")) events += it.removePrefix("data:") } }
+        return events
     }
 
     fun login(password: String = "admin"): Page {
