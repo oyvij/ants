@@ -1,2 +1,8 @@
 # Per-user Varde state.
 /.varde/
+
+# Build output.
+/build/
+/.gradle/
+/.kotlin/
+.DS_Store

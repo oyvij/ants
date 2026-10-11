@@ -1,0 +1,29 @@
+ants:
+  # Everything Ants owns lives here. Set ANTS_HOME to move it.
+  home: ${user.home}/.ants
+
+server:
+  address: 127.0.0.1
+  port: 7323
+  servlet:
+    session:
+      cookie:
+        same-site: lax
+
+spring:
+  datasource:
+    url: jdbc:h2:file:${ants.home}/engine/ants;DB_CLOSE_ON_EXIT=FALSE
+
+gg:
+  jte:
+    usePrecompiledTemplates: true
+    templateSuffix: .kte
+
+operaton:
+  bpm:
+    # Cockpit's user. Ants' own login signs it in, so this password is never asked for.
+    admin-user:
+      id: admin
+      password: admin
+    webapp:
+      index-redirect-enabled: false
