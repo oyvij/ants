@@ -259,7 +259,8 @@ class AgentLauncher(
         private const val SESSION = "ants.session"
         private const val WORKER = "ants"
         private val LOCK = Duration.ofDays(365)
-        private val DEFAULT_TOOLS = listOf("Bash", "Edit", "Glob", "Grep", "NotebookEdit", "Read", "TodoWrite", "WebFetch", "WebSearch", "Write")
+        /** An Agent's tools when its file names none. */
+        val DEFAULT_TOOLS = listOf("Bash", "Edit", "Glob", "Grep", "NotebookEdit", "Read", "TodoWrite", "WebFetch", "WebSearch", "Write")
         private val json = JsonMapper.shared()
     }
 }
