@@ -1,6 +1,8 @@
 package ants
 
 import com.microsoft.playwright.BrowserType
+import com.microsoft.playwright.Locator
+import com.microsoft.playwright.options.KeyboardModifier
 import com.microsoft.playwright.Page
 import com.microsoft.playwright.Playwright
 import com.microsoft.playwright.assertions.PlaywrightAssertions.assertThat
@@ -218,6 +220,31 @@ class BrowserTest : AntsTest() {
         page.waitForURL { !it.contains(entry) }
         eventually { assertContains(http.get("/runs/$run").body, "State: Completed") }
         assertContains(claude.launches("grill")[1].stdin, """{\"id\":\"who\",\"answer\":\"Recommend who.\",\"source\":\"accepted\"},{\"id\":\"scope\",\"answer\":\"Only admins.\",\"source\":\"written\"}""")
+    }
+
+    @Test
+    fun `Review changes picks diff lines for a comment by clicking their numbers, and files it`() = browse {
+        agentTask(FakeClaude(), mapOf("fix-review" to null, "ship" to null), extra = reviewSourceMap())
+        http.upload("/processes", "file", "review.bpmn", javaClass.getResource("/review.bpmn")!!.readBytes())
+        val run = http.post("/processes/review/runs", listOf("repos" to "api", "repos" to "web")).path.removePrefix("/runs/")
+        var entry = ""
+        eventually { entry = assertNotNull(Regex("""href="(/notifications/[^"]+)"""").find(http.get("/notifications").body)).groupValues[1] }
+        commitFile(home.runWorkspace(run).resolve("repos/api"), "hello.txt", "hi\nthere\nworld\n", "Say hi")
+
+        page.navigate(url(entry))
+        val diff = page.locator("table.diff[data-file='repos/api/hello.txt']")
+        diff.locator("tr[data-side=new][data-line='1'] td").nth(1).click()
+        diff.locator("tr[data-side=new][data-line='2'] td").nth(1).click(Locator.ClickOptions().setModifiers(listOf(KeyboardModifier.SHIFT)))
+        assertThat(page.locator("#line-comment [name=repo]")).hasValue("api")
+        assertThat(page.locator("#line-comment [name=file]")).hasValue("repos/api/hello.txt")
+        assertThat(page.locator("#line-comment [name=from]")).hasValue("1")
+        assertThat(page.locator("#line-comment [name=to]")).hasValue("2")
+        assertThat(diff.locator("tr.picked")).hasCount(2)
+        page.selectOption("#line-comment [name=type]", "SUGGESTION")
+        page.fill("#line-comment [name=body]", "Say hello.")
+        screenshot("review")
+        page.click("#line-comment button")
+        assertThat(page.locator("#comments")).containsText("SUGGESTION repos/api/hello.txt:1-2 (new): Say hello.")
     }
 
     /** An Agent Task [id] running `writer`'s Skill `draft`. */

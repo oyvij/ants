@@ -2,6 +2,7 @@ package ants
 
 import org.operaton.bpm.engine.delegate.DelegateExecution
 import org.operaton.bpm.engine.impl.persistence.entity.ExecutionEntity
+import tools.jackson.databind.json.JsonMapper
 import java.nio.file.Path
 
 /** The Report's file in a Run workspace, kept by cleanup. */
@@ -28,5 +29,9 @@ fun report(run: DelegateExecution, workspace: Path): String = buildString {
     val rounds = rounds(workspace)
     if (rounds.isNotEmpty()) append("\n## Rounds\n\n")
     for ((heading, answers) in rounds) append("### $heading\n\n$answers\n\n")
+    // The implementers' and fixers' own reviews: a Result's `output.review`, the last of each Task's launches.
+    val reviews = transcripts.mapNotNull { (task, transcript) -> ((transcript.result?.get("output") as? Map<*, *>)?.get("review"))?.let { task to it } }
+    if (reviews.isNotEmpty()) append("\n## Review\n\n")
+    for ((task, review) in reviews) append("### $task\n\n${review as? String ?: JsonMapper.shared().writeValueAsString(review)}\n\n")
     append("\n" + ticketsReport(workspace, run.processInstanceId))
 }

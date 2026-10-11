@@ -1,0 +1,81 @@
+@param entry: ants.TaskEntry
+@param changes: List<ants.RepoChanges>
+@param comments: List<ants.LineComment>
+@param error: String? = null
+@param _csrf: org.springframework.security.web.csrf.CsrfToken
+@param colorScheme: String = "light dark"
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="color-scheme" content="${colorScheme}">
+    <title>${entry.icon} ${entry.tag} ${entry.task} · Ants</title>
+    <style>
+        table.diff { border-collapse: collapse; font-family: monospace; width: 100%; }
+        table.diff td { padding: 0 .5em; white-space: pre; vertical-align: top; }
+        table.diff td:nth-child(-n+2) { color: GrayText; text-align: right; width: 3em; cursor: pointer; user-select: none; }
+        tr.add { background: color-mix(in srgb, green 15%, Canvas); }
+        tr.del { background: color-mix(in srgb, red 15%, Canvas); }
+        tr.hunk { color: GrayText; }
+        tr.picked { outline: 2px solid Highlight; }
+    </style>
+    <script src="/review.js" defer></script>
+</head>
+<body>
+@template.nav()
+<p><a href="/notifications">Notification list</a></p>
+<p>${entry.icon} ${entry.tag} ${entry.task} · ${entry.process} · <a href="/runs/${entry.run}">Run ${entry.run}</a> · waiting ${entry.waited}</p>
+<h1>${entry.task}</h1>
+@if(error != null)<p role="alert">${error}</p>@endif
+<nav id="tabs"><b>By repo</b></nav>
+@for(repo in changes)
+<section class="repo" data-repo="${repo.name}">
+    <h2>${repo.name}</h2>
+    <p>${repo.branch} since ${repo.base.ifEmpty { "no base" }} · ${repo.commits.size} commits</p>
+    <ol class="commits">
+        @for(commit in repo.commits)<li><code>${commit.hash}</code> ${commit.subject}</li>
+        @endfor
+    </ol>
+    @for(file in repo.files)
+    <details open>
+        <summary>${file.path}</summary>
+        <table class="diff" data-file="${file.path}">
+            @for(line in file.lines)@if(line.kind == '@')<tr class="hunk"><td></td><td></td><td>${line.text}</td></tr>
+            @else<tr class="${line.css}" data-side="${line.side}" data-line="${line.line?.toString()}"><td>${line.old?.toString()}</td><td>${line.new?.toString()}</td><td>${line.text}</td></tr>
+            @endif@endfor
+        </table>
+    </details>
+    @endfor
+</section>
+@endfor
+<h2>Comments</h2>
+<ol id="comments">
+    @for(i in comments.indices)!{val comment = comments[i]}
+    <li>${comment.type} ${comment.file}:${comment.from}@if(comment.to != comment.from)-${comment.to}@endif (${comment.side}): ${comment.body}
+        <form method="post" action="/notifications/${entry.id}/comments" style="display: inline">
+            <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+            <button name="remove" value="${i}">Remove</button>
+        </form>
+    </li>
+    @endfor
+</ol>
+<form method="post" action="/notifications/${entry.id}/comments" id="line-comment">
+    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+    <p>Click a line number to comment on it, and shift-click another to take in the lines between.</p>
+    <label>Repo <input name="repo" required></label>
+    <label>File <input name="file" required size="40"></label>
+    <label>Side <select name="side"><option>new</option><option>old</option></select></label>
+    <label>Lines <input name="from" type="number" min="1" required size="4"></label>
+    <label>to <input name="to" type="number" min="1" size="4"></label>
+    <label>Type <select name="type">@for(type in ants.LineComment.TYPES)<option>${type}</option>@endfor</select></label>
+    <label>Comment <textarea name="body" required></textarea></label>
+    <button>Add the comment</button>
+</form>
+<form method="post" action="/notifications/${entry.id}">
+    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+    <label>Comment on the changes <textarea name="comment"></textarea></label>
+    <button name="action" value="approve">Approve</button>
+    <button name="action" value="send-back">Send back</button>
+</form>
+</body>
+</html>
