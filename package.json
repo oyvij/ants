@@ -1,6 +1,8 @@
 {
   "private": true,
   "dependencies": {
-    "camunda-bpmn-js": "5.36.0"
+    "@codemirror/lang-json": "6.0.2",
+    "camunda-bpmn-js": "5.36.0",
+    "codemirror": "6.0.2"
   }
 }
