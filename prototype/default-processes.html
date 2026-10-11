@@ -93,6 +93,10 @@ const I = {
   implementOne: { kind: "agent", agent: "implementer", skill: "implement", inputs: ["prompt = ${prompt}", "proposal = ${propose.output.proposal}"], result: "{commits[], review}",
     notes: ["A single Task with no Tickets: shared clones, commits on the work branch.", "Builds with <code>tdd</code>. Before <code>done</code> it runs the <code>code-review</code> Skill: two parallel Subagents, <b>Standards</b> and <b>Spec</b>, fixes the hard findings, and sums them up under <code>review</code> in its Result. Nothing drawn. The Spec Subagent checks against the prompt and the proposal."], src: "this ticket" },
   churnPr: { kind: "agent", agent: "pr", skill: "pr", inputs: ["push = ${push}", "proposal = ${propose.output.proposal}"], result: "[{repo, url}]", notes: ["The pull request is where a churn Run is reviewed."], src: "#22" },
+  updateKnowledge: { kind: "agent", agent: "knowledge", skill: "update-knowledge", inputs: ["rounds = 'rounds.md'", "clones = ${clones}"], toggles: "Vault on · resume on",
+    result: "{proposal} first, then {written: true}", notes: ["Learns from the Run's record: the Round log, your messages, the Spec or proposal, the review comments. Not the Transcripts.", "Proposes first; after Approve the flow comes back and it writes."], src: "#14" },
+  approveNotes: { kind: "user", what: "Approve", shows: "updateKnowledge", result: "{approved, comment}", notes: ["Approve and Send back both loop back to Update knowledge: it writes, or revises the proposal."], src: "#9, #14" },
+  gwWritten: { kind: "gateway", notes: ["yes: <code>${updateKnowledge.output.written}</code>, the loop ends", "no: default flow → Approve the Notes"] },
   walkthrough: { kind: "agent", agent: "storyteller", skill: "walkthrough", inputs: ["spec = ${totickets.output.spec}", "clones = ${clones}"], toggles: "resume on",
     result: "{stories: 'walkthrough/stories.json'}", notes: ["Ants runs Varde's four checks on done; Send back loops through here again for a whole new Story set."], src: "#22" },
   review: { kind: "user", what: "Review changes", fields: ["Walkthrough = walkthrough", "Send back resumes = fix"], result: "{approved, comment, comments[]}",
@@ -108,6 +112,7 @@ const TPL = {
   grillLoop: { name: "Grill until no questions", src: "#21", notes: ["Shipped Template, one per answerer: (you answer), (an Agent answers), (accept recommendations). The last two carry the cap, and only the first has Clone new repos.", "Fully automatic uses (an Agent answers) with the cap rerouted to end the loop."] },
   specApproval: { name: "To-spec and approve", src: "#21", notes: ["Shipped Template.", "In fully automatic it is dropped and its Approve deleted, leaving To-spec: the Spec is never approved there, and Review changes is the first wait."] },
   cutAndImplement: { name: "Cut and implement", q: true, notes: ["<b>New</b> Template proposed here <span class='tag q'>Q5</span>: the multi-instance is the fiddliest thing to set up by hand."] },
+  updateVault: { name: "Update the Vault", notes: ["<b>New</b> shipped Template (this ticket): the propose-then-accept loop from #14.", "Dropped into all five default Processes after Open pull request, so it never delays the pull request and learns from the whole Run.", "Its approval always waits for you, even in fully automatic and churn: an Agent never writes the Vault unseen."], src: "#14, this ticket" },
   reviewAndPush: { name: "Review and push", src: "#22, #24", notes: ["Shipped Template, with fix as Send back's target."] },
 }
 
@@ -146,13 +151,17 @@ const T = {
       ["fix", "serviceTask", "Fix", 470, 140]],
     flows: [["rp1", "rp_start", "walkthrough"], ["rp2", "walkthrough", "review"], ["rp3", "review", "gwReview"], ["rp4", "gwReview", "push", "yes", null, "${review.approved}"],
       ["rp5", "push", "pr"], ["rp6", "pr", "rp_end"], ["rp7", "gwReview", "fix", "send back", ["b", "t"], null, true], ["rp8", "fix", "walkthrough", "", ["l", [160, 140], "b"]]] }),
+  updateVault: () => ({ w: 480, nodes: [ev("uv"), ["updateKnowledge", "serviceTask", "Update knowledge", 160, 0], ["gwWritten", "exclusiveGateway", "Written?", 330, 0],
+      ["uv_end", "endEvent", "", 440, 0], ["approveNotes", "userTask", "Approve the Notes", 330, 140]],
+    flows: [["uv1", "uv_start", "updateKnowledge"], ["uv2", "updateKnowledge", "gwWritten"], ["uv3", "gwWritten", "uv_end", "yes", null, "${updateKnowledge.output.written}"],
+      ["uv4", "gwWritten", "approveNotes", "no", ["b", "t"], null, true], ["uv5", "approveNotes", "updateKnowledge", "", ["l", [160, 140], "b"]]] }),
 }
 const PROCS = {
   user: { name: "user-in-the-loop", grill: null },
   agent: { name: "agent answers", grill: ["answerer", "Answer the Round (Agent)"] },
   recs: { name: "recommendations", grill: ["accept", "Accept recommendations"] },
   churn: { name: "churn", items: [["scoutAndClone"], ["propose", "serviceTask", "Propose a solution"], ["implementOne", "serviceTask", "Implement"],
-    ["push", "serviceTask", "Push"], ["churnPr", "serviceTask", "Open pull request"]], rows: [[0, 1, 2, 3, 4]] },
+    ["push", "serviceTask", "Push"], ["churnPr", "serviceTask", "Open pull request"], ["updateVault"]], rows: [[0, 1, 2, 3, 4, 5]] },
   auto: { name: "fully automatic", grill: ["answerer", "Answer the Round (Agent)"], capEnds: true, noApprove: true },
 }
 
@@ -164,10 +173,10 @@ const side = (n, s) => ({ l: [n.cx - n.w / 2, n.cy], r: [n.cx + n.w / 2, n.cy], 
 function buildXml(key, view) {
   const P = PROCS[key], expanded = view === "expanded"
   // An item is a Template (an embedded sub-process) or a bare Task at the top level.
-  const items = (P.items || [["scoutAndClone"], ["grillLoop"], ["specApproval"], ["cutAndImplement"], ["reviewAndPush"]])
+  const items = (P.items || [["scoutAndClone"], ["grillLoop"], ["specApproval"], ["cutAndImplement"], ["reviewAndPush"], ["updateVault"]])
     .map(([id, type, name]) => type ? { id, type, name, bare: true } : { id, t: T[id](P) })
   // Expanded: rows of Templates. Saved: one row of collapsed boxes, children drawn on their own planes.
-  const rows = P.rows || [[0, 1, 2], [3, 4]], ROWY = [150, 680], N = {}, sps = items.filter(it => !it.bare)
+  const rows = P.rows || [[0, 1, 2], [3, 4, 5]], ROWY = [150, 680], N = {}, sps = items.filter(it => !it.bare)
   let shapes = { main: [] }, edges = { main: [] }
   items.forEach((it, i) => {
     const row = rows.findIndex(r => r.includes(i)), wOf = j => items[j].bare ? 120 : items[j].t.w
@@ -245,11 +254,11 @@ const tplOf = (tid, id) => { const t = T[tid](PROCS[cur]); return t.nodes.some(n
 const intro = () => cur === "churn" ? `<h2>churn</h2>
   <p>For small and medium tasks, many Runs at once. Prompt → Scout and clone → Propose a solution → Implement → Push → Open pull request. No grilling, no Spec, no Tickets, no walkthrough; every implementer still runs the code-review Subagents.</p>
   <p class="legend"><span class="tag agent">Agent Task</span><span class="tag user">User Task</span><span class="tag builtin">Built-in Task</span><span class="tag tpl">Template</span></p>
-  <h3>Waits on the user</h3><ul><li>Push</li><li>any <code>[stuck]</code> / <code>[failed]</code></li></ul>` : `<h2>${PROCS[cur].name}</h2>
-  <p>Prompt → five shipped Templates → Done. The Processes differ inside <b>Grill until no questions</b>; fully automatic also drops <b>Approve the Spec</b>.</p>
+  <h3>Waits on the user</h3><ul><li>Push</li><li>Approve the Notes</li><li>any <code>[stuck]</code> / <code>[failed]</code></li></ul>` : `<h2>${PROCS[cur].name}</h2>
+  <p>Prompt → six shipped Templates → Done. The Processes differ inside <b>Grill until no questions</b>; fully automatic also drops <b>Approve the Spec</b>.</p>
   <p class="legend"><span class="tag agent">Agent Task</span><span class="tag user">User Task</span><span class="tag builtin">Built-in Task</span><span class="tag tpl">Template</span><span class="tag q">open question</span></p>
   <p>Click any element for its Agent, Skill, inputs and Result. Red outline = depends on an open question (see the last tab).</p>
-  <h3>Waits on the user</h3><ul>${cur === "auto" ? "" : `<li>Answer a Round${cur === "user" ? " (every Round)" : " (only from Round 10 on)"}</li><li>Approve the Spec</li>`}<li>Review changes</li><li>Push</li><li>any <code>[stuck]</code> / <code>[failed]</code></li></ul>`
+  <h3>Waits on the user</h3><ul>${cur === "auto" ? "" : `<li>Answer a Round${cur === "user" ? " (every Round)" : " (only from Round 10 on)"}</li><li>Approve the Spec</li>`}<li>Review changes</li><li>Push</li><li>Approve the Notes</li><li>any <code>[stuck]</code> / <code>[failed]</code></li></ul>`
 
 // ---------- Building blocks & open questions page ----------
 const CHECK = [
@@ -279,7 +288,7 @@ const QS = [
   ["Q4 What switches on the Blocked-by hold?", "A tick box <b>Items are Tickets</b> on a multi-instance, ticked in the shipped Template: holds by Blocked by, skips ready-for-human, links the drawer to Tickets.", "Implicit: Ants notices the collection holds Ticket ids of the Run's tracker."],
   ["Q5 A fifth shipped Template, Cut and implement", "Yes: to-tickets → Implement each Ticket (parallel, over <code>${totickets.output.tickets}</code>, Items are Tickets). The default Processes are then five Templates in a row.", "Draw the two Tasks bare in the default Processes."],
   ["Q6 Shipped Agents", "<code>scout</code>, <code>griller</code> (Read, Grep, Glob), <code>answerer</code>, <code>planner</code> (to-spec and to-tickets; writes only <code>tickets/</code>), <code>implementer</code> (implement and fix-review), <code>storyteller</code> (walkthrough; Bash limited to git log/diff/show), <code>pr</code>, and for churn <code>architect</code> (propose-solution; writes only <code>proposal/</code>). The implementer lists implement, fix-review, tdd and code-review.", "A separate writer Agent for to-spec; fix on its own Agent."],
-  ["Q7 Updating the Vault at the end", "Not in the default Processes; stays in the fog with the rest of knowledge update.", "An Update knowledge Agent Task + Approve loop after Open pull request."],
+  ["Q7 Updating the Vault at the end", "<b>Decided:</b> a shipped Template <b>Update the Vault</b> (update-knowledge → Written? → Approve the Notes, looping). Proposed: in all five Processes after Open pull request; the approval always waits.", "Ship the Template only; leave it out of the defaults."],
 ]
 const checkPage = () => `<h2>Is every element a building block a user could draw?</h2>
   <table><tr><th>Element</th><th></th><th>Where</th></tr>${CHECK.map(([a, s, w]) => `<tr><td>${a}</td><td class="${s}">${s === "ok" ? "✓" : "?"}</td><td>${w}</td></tr>`).join("")}</table>
