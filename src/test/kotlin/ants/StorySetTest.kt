@@ -127,6 +127,17 @@ class StorySetTest : AntsTest() {
     }
 
     @Test
+    fun `a stuck walkthrough is stuck, its Story set unchecked`() {
+        claude.session(
+            "walkthrough", "wait commits",
+            """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":{"outcome":"stuck","summary":"Which repo?","needs":"Name the repo."}}""",
+        )
+        val run = start()
+        eventually { assertContains(assertNotNull(row(run)), "[stuck]") }
+        assertContains(row(run)!!, "Which repo?")
+    }
+
+    @Test
     fun `a comment on a story step carries story and step`() {
         walkthrough(valid)
         claude.session("ship", result("{}"))

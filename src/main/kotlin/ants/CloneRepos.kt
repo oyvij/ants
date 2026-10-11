@@ -18,6 +18,12 @@ import java.util.concurrent.TimeUnit.MILLISECONDS
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
+import kotlin.io.path.listDirectoryEntries
+import kotlin.io.path.name
+
+/** The Run's clones in [workspace], by name: each folder in `repos/` but one cut short, which [CloneRepos] keeps hidden. */
+fun clones(workspace: Path): List<Path> =
+    workspace.resolve("repos").takeIf { it.isDirectory() }?.listDirectoryEntries()?.filter { it.isDirectory() && !it.name.startsWith(".") }?.sorted().orEmpty()
 
 /**
  * The Built-in Task Clone repos (topic `clone-repos`). It clones each of its `repos` (Source map names or git URLs)
@@ -90,14 +96,15 @@ class CloneRepos(
         val onRemote = runCatching { git(partial, listOf("rev-parse", "--verify", "-q", "refs/remotes/origin/$branch")) }.isSuccess
         git(partial, if (onRemote) listOf("switch", "-q", branch) else listOf("switch", "-q", "-c", branch))
         git(partial, listOf("remote", "set-url", "--push", "origin", DEAD_PUSH_URL))
+        git(partial, "config", WORK_BRANCH, branch)
         val commit = git(partial, listOf("rev-parse", "HEAD"))
         Files.move(partial, repos.resolve(repo.name))
         return mapOf("name" to repo.name, "path" to "repos/${repo.name}", "commit" to commit)
     }
 
     /**
-     * The work branch of [run]: the branch its clones are on, else [asked], else `ants/<run>`, suffixed `-2`, `-3` …
-     * while another live Run's clones are on it.
+     * The work branch of [run]: the one its clones were put on, else [asked], else `ants/<run>`, suffixed `-2`, `-3` …
+     * while another live Run's clones were put on it.
      */
     private fun workBranch(run: String, asked: String?): String {
         branches(run).firstOrNull()?.let { return it }
@@ -106,11 +113,14 @@ class CloneRepos(
         return generateSequence(1) { it + 1 }.map { if (it == 1) wanted else "$wanted-$it" }.first { it !in held }
     }
 
-    /** The branches the clones in [run]'s Run workspace are on. */
-    private fun branches(run: String): List<String> =
-        home.runWorkspace(run).resolve("repos").toFile().listFiles().orEmpty().filter { !it.name.startsWith(".") }
-            .mapNotNull { File(it, ".git/HEAD").takeIf(File::exists)?.readText()?.let { head -> Regex("^ref: refs/heads/(.+)").find(head.trim())?.groupValues?.get(1) } }
-            .distinct()
+    /** The work branches the clones in [run]'s Run workspace were put on. */
+    private fun branches(run: String): List<String> = clones(home.runWorkspace(run)).mapNotNull { runCatching { workBranch(it) }.getOrNull() }.distinct()
+
+    /** The work branch Clone repos put [clone] on, which every landing and Push uses, wherever the clone is now. */
+    fun workBranch(clone: Path) = git(clone, "config", WORK_BRANCH)
+
+    /** The branch [clone] is on now, empty when its HEAD is detached. */
+    fun currentBranch(clone: Path) = git(clone, "branch", "--show-current")
 
     /** Runs git in [dir] with [args], giving its output, [trim]med; fails with git's message when git does. */
     fun git(dir: Path, args: List<String>, trim: Boolean = true): String {
@@ -118,9 +128,14 @@ class CloneRepos(
             .redirectInput(File("/dev/null")).redirectErrorStream(true)
             .apply { environment()["GIT_TERMINAL_PROMPT"] = "0" }.start()
         val output = process.inputReader().readText()
-        check(process.waitFor() == 0) { "git ${args.first()} failed: ${output.trim()}" }
+        check(process.waitFor() == 0) { "git ${args.first { !it.startsWith("-") && '=' !in it }} failed: ${output.trim()}" }
         return if (trim) output.trim() else output
     }
+
+    fun git(dir: Path, vararg args: String) = git(dir, args.toList())
+
+    /** [git] with its output as is, for file contents and diffs, whose leading spaces count. */
+    val untrimmed: (Path, List<String>) -> String = { dir, args -> git(dir, args, trim = false) }
 
     companion object {
         const val TOPIC = "clone-repos"
@@ -129,6 +144,9 @@ class CloneRepos(
 
         /** A push URL nothing answers at, so `git push` from a clone fails. */
         const val DEAD_PUSH_URL = "/dev/null/ants-pushes-only-from-push"
+
+        /** Where a clone keeps the work branch Clone repos put it on, in its git config. */
+        private const val WORK_BRANCH = "ants.workBranch"
 
         /**
          * A repo given by its git URL instead of a Source map name, named after the URL's last part, with no local

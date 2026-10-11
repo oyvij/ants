@@ -14,8 +14,8 @@ import kotlin.io.path.name
  * Landing, which no one draws: each instance of a parallel multi-instance works in its own folder,
  * `instances/<key>/` of the Run workspace, holding a `git worktree` of each clone on `<work-branch>--<key>`, branched
  * from the work branch head, and a link to every other top-level entry. When it is done, it lands: every instance
- * branch is rebased onto the work branch, then the shared clones fast-forward to it, so the work branch moves in every
- * repo or in none, with linear history. Then the folder and the instance branches go.
+ * branch is rebased onto the work branch, then the shared clones fast-forward to it, once every one of them can, so the
+ * work branch moves in every repo or in none, with linear history. Then the folder and the instance branches go.
  */
 // ponytail: one lock for every Run, so landings never interleave; a slow rebase holds up other Runs' landings. A lock
 // per Run if that ever shows.
@@ -29,7 +29,7 @@ class Landing(private val cloneRepos: CloneRepos) {
         if (folder.exists()) return folder
         folder.resolve("repos").createDirectories()
         for (clone in clones(workspace)) {
-            git(clone, "worktree", "add", "-q", "-b", "${branch(clone)}--$key", "${folder.resolve("repos/${clone.name}")}")
+            cloneRepos.git(clone, "worktree", "add", "-q", "-b", branch(clone, key), "${folder.resolve("repos/${clone.name}")}")
         }
         workspace.listDirectoryEntries().filter { it.name != "repos" && it.name != "instances" }
             .forEach { folder.resolve(it.name).createSymbolicLinkPointingTo(it) }
@@ -39,27 +39,45 @@ class Landing(private val cloneRepos: CloneRepos) {
     /**
      * Lands the instance [key] on the work branch of every clone, all or none, then removes its folder and branches,
      * and returns null. A rebase that conflicts is aborted, leaving every work branch where it was and the instance's
-     * folder for its session to resolve, and Ants gets back why it didn't land, naming every repo that conflicts.
+     * folder for its session to resolve, and Ants gets back why it didn't land, naming every repo that conflicts. A
+     * rebase that fails otherwise, or a shared clone that can't fast-forward, fails the landing ([AgentLauncher.Failed])
+     * with nothing moved and the folder kept.
      */
     @Synchronized
     fun land(workspace: Path, key: String): String? {
         val worktrees = clones(workspace).associateWith { folder(workspace, key).resolve("repos/${it.name}") }.filterValues { it.exists() }
         val conflicts = worktrees.mapNotNull { (clone, worktree) ->
+            val work = cloneRepos.workBranch(clone)
             // Rebasing writes commits; without an identity of the user's, they are Ants'.
-            val identity = if (runCatching { git(clone, "config", "user.email") }.isSuccess) emptyArray() else arrayOf("-c", "user.name=Ants", "-c", "user.email=ants@localhost")
+            val identity = if (runCatching { cloneRepos.git(clone, "config", "user.email") }.isSuccess) emptyArray() else arrayOf("-c", "user.name=Ants", "-c", "user.email=ants@localhost")
             try {
-                git(worktree, *identity, "rebase", "-q", branch(clone))
+                cloneRepos.git(worktree, *identity, "rebase", "-q", work)
                 null
             } catch (e: IllegalStateException) {
-                runCatching { git(worktree, "rebase", "--abort") }
-                "repos/${clone.name}" to "repos/${clone.name}, on ${branch(clone)}: ${e.message}"
+                val conflict = runCatching { cloneRepos.git(worktree, "ls-files", "--unmerged") }.getOrDefault("").isNotEmpty()
+                runCatching { cloneRepos.git(worktree, "rebase", "--abort") }
+                if (!conflict) throw AgentLauncher.Failed("$key didn't land: repos/${clone.name} doesn't rebase onto the work branch $work, so no repo moved.", e.message)
+                "repos/${clone.name}" to "repos/${clone.name}, on $work: ${e.message}"
             }
         }
         if (conflicts.isNotEmpty()) {
             return "$key didn't land: it doesn't rebase onto the work branch of ${conflicts.joinToString(" and ") { it.first }}, so no repo moved.\n\n" +
                 conflicts.joinToString("\n\n") { it.second }
         }
-        for ((clone, worktree) in worktrees) git(clone, "merge", "-q", "--ff-only", branch(worktree))
+        // Every shared clone must be able to fast-forward before any moves.
+        val stuck = worktrees.keys.mapNotNull { clone ->
+            val work = cloneRepos.workBranch(clone)
+            val on = cloneRepos.currentBranch(clone)
+            val dirty = cloneRepos.git(clone, "status", "--porcelain")
+            when {
+                on != work -> "repos/${clone.name} is on ${on.ifEmpty { "no branch" }}, not the work branch $work."
+                dirty.isNotEmpty() -> "repos/${clone.name} isn't clean:\n$dirty"
+                runCatching { cloneRepos.git(clone, "merge-base", "--is-ancestor", work, branch(clone, key)) }.isFailure -> "repos/${clone.name}'s work branch $work moved during the landing."
+                else -> null
+            }
+        }
+        if (stuck.isNotEmpty()) throw AgentLauncher.Failed("$key didn't land: a shared clone can't fast-forward, so no repo moved. ${stuck.joinToString(" ") { it.substringBefore('\n') }}", stuck.joinToString("\n\n"))
+        for (clone in worktrees.keys) cloneRepos.git(clone, "merge", "-q", "--ff-only", branch(clone, key))
         discard(workspace, key)
         return null
     }
@@ -70,18 +88,14 @@ class Landing(private val cloneRepos: CloneRepos) {
         val folder = folder(workspace, key)
         for (clone in clones(workspace)) {
             val worktree = folder.resolve("repos/${clone.name}")
-            if (worktree.exists()) git(clone, "worktree", "remove", "--force", "$worktree")
-            runCatching { git(clone, "branch", "-q", "-D", "${branch(clone)}--$key") }
+            if (worktree.exists()) cloneRepos.git(clone, "worktree", "remove", "--force", "$worktree")
+            runCatching { cloneRepos.git(clone, "branch", "-q", "-D", branch(clone, key)) }
         }
         folder.deleteRecursively() // leaves what the links lead to
     }
 
     private fun folder(workspace: Path, key: String) = workspace.resolve("instances").resolve(key)
 
-    /** The shared clones of the Run workspace, not one cut short ([CloneRepos] clones into a hidden folder first). */
-    private fun clones(workspace: Path) = workspace.resolve("repos").takeIf { it.exists() }?.listDirectoryEntries()?.filter { !it.name.startsWith(".") }.orEmpty().sorted()
-
-    private fun branch(clone: Path) = git(clone, "branch", "--show-current")
-
-    private fun git(dir: Path, vararg args: String) = cloneRepos.git(dir, args.toList())
+    /** The instance [key]'s branch in [clone]: `<work-branch>--<key>`. */
+    private fun branch(clone: Path, key: String) = "${cloneRepos.workBranch(clone)}--$key"
 }

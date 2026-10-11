@@ -30,7 +30,7 @@ data class LineComment(
      * As the fix Task's message and the Run log list it, Varde's way: `- ISSUE repos/api/a.kt:3-5 (new): body`, with
      * `, <story> step <n>` before the colon when it is on a story step.
      */
-    val summary get() = "- $type $file:$from${if (to != from) "-$to" else ""} ($side)${if (story != null) ", $story step $step" else ""}: ${body.trim().replace("\n", "\n  ")}"
+    val summary get() = "- $type $file:$from-$to ($side)${if (story != null) ", $story step $step" else ""}: ${body.trim().replace("\n", "\n  ")}"
 
     fun toMap() = mapOf("story" to story, "step" to step, "repo" to repo, "file" to file, "side" to side, "from" to from, "to" to to, "type" to type, "body" to body)
 

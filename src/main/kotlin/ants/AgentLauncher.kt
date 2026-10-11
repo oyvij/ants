@@ -408,7 +408,7 @@ class AgentLauncher(
                     )
                     errors.isEmpty() -> try {
                         // A walkthrough's Story set must pass Varde's checks, with one round to fix the failing steps.
-                        val problems = if (walkthrough) storyProblems(workspace) { dir, args -> cloneRepos.git(dir, args, trim = false) } else emptyList()
+                        val problems = if (walkthrough && (result as Map<*, *>)["outcome"] == "done") storyProblems(workspace, cloneRepos.untrimmed) else emptyList()
                         when {
                             problems.isEmpty() -> { valid = result as Map<*, *> }
                             !storyChecked -> {
@@ -639,7 +639,7 @@ class AgentLauncher(
     private class Stopped : Exception("Stopped by the user.")
 
     /** A failure of Ants' own, with what the `[failed]` page shows: the last stderr lines, or an invalid Result whole. */
-    private class Failed(override val message: String, val details: String? = null) : Exception(message)
+    class Failed(override val message: String, val details: String? = null) : Exception(message)
 
     /** The Usage limit cut the session short; it continues once the limit resets at [resetsAt]. */
     private class UsageLimit(val resetsAt: Instant) : Exception("Usage limit")

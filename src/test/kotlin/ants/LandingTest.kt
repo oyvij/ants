@@ -249,6 +249,64 @@ class LandingTest : AntsTest() {
     }
 
     @Test
+    fun `a rebase that fails without a conflict is failed at once, and the instance keeps its worktree`() {
+        val api = repo("api")
+        setUp(api, items = 1)
+        claude.session("implement", 1, init, commit("api", "one.txt"), "sh cd repos/api && printf x > staged.txt && git add staged.txt", done)
+        val run = start("api")
+
+        val entry = browser.get(entry(run)).body
+        assertContains(entry, "[failed]")
+        assertContains(entry, "uncommitted changes")
+        assertEquals(1, claude.launches("implement").size) // no round to resolve it
+        assertEquals(emptySet(), files(run, "api"))
+        assertTrue(workspace(run).resolve("instances/implement-1/repos/api/one.txt").exists())
+    }
+
+    @Test
+    fun `Cancel the Run cancels it while an instance waits on the user`() {
+        val api = repo("api")
+        setUp(api, items = 1)
+        claude.session("implement", 1, init, done.replace(""""outcome":"done","summary":"Done.","output":{}""", """"outcome":"stuck","summary":"Lost.","needs":"Help.""""))
+        val run = start("api")
+
+        val cancelled = browser.post(entry(run), mapOf("action" to "cancel", "instruction" to ""))
+        assertContains(cancelled.body, "State: Cancelled")
+    }
+
+    /** A Run whose one instance commits in api and web, then runs [meddle] in the shared clones' folder before it is done. */
+    private fun meddling(meddle: String): String {
+        val api = repo("api")
+        val web = repo("web")
+        setUp(api, web, items = 1)
+        claude.session("implement", 1, init, commit("api", "one.txt"), commit("web", "two.txt"), "sh cd ../../repos && $meddle", done)
+        return start("api", "web")
+    }
+
+    /** The landing of [run] is failed at once, saying [why] of web, with no repo moved and the worktrees kept. */
+    private fun refused(run: String, why: String) {
+        val entry = browser.get(entry(run)).body
+        assertContains(entry, "[failed]")
+        assertContains(entry, "repos/web")
+        assertContains(entry, why)
+        assertEquals(1, claude.launches("implement").size)
+        assertEquals(emptySet(), files(run, "api")) // api could fast-forward, but web can't: neither moves
+        assertTrue(workspace(run).resolve("instances/implement-1/repos/web/two.txt").exists())
+    }
+
+    @Test
+    fun `a shared clone that can't fast-forward moves no repo`() {
+        refused(meddling("printf mine > web/two.txt"), "isn't clean")
+    }
+
+    @Test
+    fun `a shared clone off the work branch moves no repo`() {
+        val run = meddling("cd web && git switch -q -c elsewhere")
+        refused(run, "is on elsewhere, not the work branch ants/$run")
+        assertEquals("1", git(clone(run, "web"), "rev-list", "--count", "ants/$run"))
+    }
+
+    @Test
     fun `Continue after Stop reuses the worktree, and Start fresh branches anew`() {
         val api = repo("api")
         setUp(api, items = 1)

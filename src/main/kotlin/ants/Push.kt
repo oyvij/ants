@@ -13,6 +13,7 @@ import java.nio.file.Path
 import java.time.Duration
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit.MILLISECONDS
+import kotlin.io.path.name
 
 /**
  * One of the Run's clones as Push sees it: its [remote] (the fetch URL, since the push URL is dead), its work
@@ -89,38 +90,36 @@ class Push(
     private fun push(repos: List<Outgoing>): Map<String, String> {
         fun push(repo: Outgoing, vararg dryRun: String): String? =
             if (repo.branch.isEmpty() || repo.branch == repo.base) "The work branch ${repo.branch} is the base, which Push never pushes to."
-            else runCatching {
+            else cloneRepos.currentBranch(repo.path).takeIf { it != repo.branch }?.let { "The clone is on ${it.ifEmpty { "no branch" }}, not the work branch ${repo.branch}." }
+            ?: runCatching {
                 // The refspec names the work branch alone, without `+`, so it is a fast-forward or nothing.
-                git(repo, "push", "--no-follow-tags", "--recurse-submodules=no", *dryRun, repo.remote, "refs/heads/${repo.branch}:refs/heads/${repo.branch}")
+                cloneRepos.git(repo.path, "push", "--no-follow-tags", "--recurse-submodules=no", *dryRun, repo.remote, "refs/heads/${repo.branch}:refs/heads/${repo.branch}")
             }.exceptionOrNull()?.let { it.message ?: "$it" }
         val refused = repos.mapNotNull { repo -> push(repo, "--dry-run")?.let { repo.repo to it } }.toMap()
         if (refused.isNotEmpty()) return repos.associate { it.repo to (refused[it.repo] ?: "Not pushed, since another repo's dry run failed.") }
         return repos.mapNotNull { repo -> push(repo)?.let { repo.repo to it } }.toMap()
     }
 
-    /** Whether [repo]'s remote has its work branch at the clone's HEAD. */
+    /** Whether [repo]'s remote has its work branch where the clone has it. */
     private fun onRemote(repo: Outgoing) =
-        git(repo, "ls-remote", repo.remote, "refs/heads/${repo.branch}").substringBefore('\t') == git(repo, "rev-parse", "HEAD")
+        cloneRepos.git(repo.path, "ls-remote", repo.remote, "refs/heads/${repo.branch}").substringBefore('\t') == cloneRepos.git(repo.path, "rev-parse", "refs/heads/${repo.branch}")
 
     private fun result(repo: Outgoing, error: String?) = mapOf(
         "repo" to repo.repo, "remote" to repo.remote, "branch" to repo.branch, "base" to repo.base,
         // Clone repos tracks the work branch when the remote had it, and Push pushes to the URL, so no tracking branch is ever added.
-        "isNew" to runCatching { git(repo, "rev-parse", "--verify", "-q", "refs/remotes/origin/${repo.branch}") }.isFailure,
+        "isNew" to runCatching { cloneRepos.git(repo.path, "rev-parse", "--verify", "-q", "refs/remotes/origin/${repo.branch}") }.isFailure,
         "commits" to repo.commits, "pushed" to (error == null), "error" to error, "compareUrl" to compareUrl(repo),
     )
 
-    /** The Run's clones, by name. */
-    fun outgoing(run: String): List<Outgoing> = home.runWorkspace(run).resolve("repos").toFile().listFiles().orEmpty()
-        .filter { it.isDirectory && !it.name.startsWith(".") }.sortedBy { it.name }.map { dir ->
-            val path = dir.toPath()
-            fun git(vararg args: String) = cloneRepos.git(path, args.toList())
-            val base = runCatching { git("symbolic-ref", "--short", "refs/remotes/origin/HEAD").removePrefix("origin/") }.getOrNull()
-            val commits = git("log", "--format=%H %s", if (base == null) "HEAD" else "origin/$base..HEAD").lines().filter(String::isNotBlank)
-                .map { mapOf("sha" to it.substringBefore(' '), "subject" to it.substringAfter(' ')) }
-            Outgoing(dir.name, path, git("config", "remote.origin.url"), git("branch", "--show-current"), base, commits)
-        }
+    /** The Run's clones, by name, each on the work branch Clone repos put it on. */
+    fun outgoing(run: String): List<Outgoing> = clones(home.runWorkspace(run)).map { path ->
+        val branch = cloneRepos.workBranch(path)
+        val base = runCatching { cloneRepos.git(path, "symbolic-ref", "--short", "refs/remotes/origin/HEAD").removePrefix("origin/") }.getOrNull()
+        val commits = cloneRepos.git(path, "log", "--format=%H %s", if (base == null) "refs/heads/$branch" else "origin/$base..refs/heads/$branch").lines().filter(String::isNotBlank)
+            .map { mapOf("sha" to it.substringBefore(' '), "subject" to it.substringAfter(' ')) }
+        Outgoing(path.name, path, cloneRepos.git(path, "config", "remote.origin.url"), branch, base, commits)
+    }
 
-    private fun git(repo: Outgoing, vararg args: String) = cloneRepos.git(repo.path, args.toList())
 
     companion object {
         const val TOPIC = "push"

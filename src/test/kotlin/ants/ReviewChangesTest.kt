@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test
 import tools.jackson.databind.json.JsonMapper
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.TimeUnit
 import kotlin.io.path.createDirectories
 import kotlin.io.path.readText
 import kotlin.io.path.writeText
@@ -131,6 +132,21 @@ class ReviewChangesTest : AntsTest() {
         )
         assertContains(issues.resolve("01-a.md").readText(), "Status: done")
         assertContains(issues.resolve("02-b.md").readText(), "Status: ready-for-human")
+    }
+
+    @Test
+    fun `a one-line comment's Send back line still gives its range, from-to`() {
+        val comment = LineComment(null, null, "api", "repos/api/hello.txt", "new", 3, 3, "ISSUE", "Say hello.")
+        assertEquals("- ISSUE repos/api/hello.txt:3-3 (new): Say hello.", comment.summary)
+        assertEquals("- ISSUE repos/api/hello.txt:3-3 (new), Greeting step 1: Say hello.", comment.copy(story = "Greeting", step = 1).summary)
+    }
+
+    @Test
+    fun `a Review changes' Task drawer leads to its page`() {
+        val run = start()
+        val drawer = assertNotNull(browser.events("/runs/$run/tasks/changes/drawer").poll(10, TimeUnit.SECONDS))
+        assertContains(drawer, """<a href="${entry(run)}">Review the changes</a>""")
+        assertFalse("Continue the session" in drawer)
     }
 
     @Test

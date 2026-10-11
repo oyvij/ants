@@ -130,6 +130,30 @@ class PushTest : AntsTest() {
     }
 
     @Test
+    fun `a clone off the work branch is refused, and nothing is pushed`() {
+        val api = repo("api")
+        val web = repo("web")
+        val run = start(api, web)
+        git(clone(run, "web"), "switch", "-q", "-c", "elsewhere")
+
+        push(run)
+        eventually { assertContains(assertNotNull(row(run)), "✕ [failed]") }
+        assertContains(row(run)!!, "Pushed: none. Not pushed: api, web.")
+        assertContains(browser.get(entry(run)).body, "web: The clone is on elsewhere, not the work branch feature-x.")
+        for (repo in listOf(api, web)) assertEquals("", git(repo.remote, "branch", "--list", "feature-x", "elsewhere"))
+    }
+
+    @Test
+    fun `a waiting Push takes no Continue, since there is no Skip`() {
+        val api = repo("api")
+        val run = start(api)
+        val refused = browser.post(entry(run), mapOf("action" to "continue", "instruction" to ""))
+        assertEquals(400, refused.status)
+        assertContains(assertNotNull(row(run)), "↑ [push]")
+        assertEquals("", git(api.remote, "branch", "--list", "feature-x"))
+    }
+
+    @Test
     fun `Cancel the Run pushes nothing and keeps the Run workspace`() {
         val api = repo("api")
         val run = start(api)

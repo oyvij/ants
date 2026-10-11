@@ -132,7 +132,7 @@ class Notifications(
                 model.addAttribute("tab", shown)
                 if (story) {
                     try {
-                        model.addAttribute("stories", storySet(home.runWorkspace(entry.run)) { dir, args -> cloneRepos.git(dir, args, trim = false) })
+                        model.addAttribute("stories", storySet(home.runWorkspace(entry.run), cloneRepos.untrimmed))
                     } catch (refused: StorySetRefused) {
                         model.addAttribute("refused", refused.message)
                     }
@@ -179,6 +179,8 @@ class Notifications(
         val entry = entry(incident)
         val pushing = isPush(incident)
         val name = when {
+            // Continue on a Push completes it with what the remotes hold, so only after a failed Push: there is no Skip.
+            action == AgentLauncher.CONTINUE && pushing && entry.tag != "[failed]" -> throw ResponseStatusException(HttpStatus.BAD_REQUEST, "A waiting Push has no Continue")
             action == AgentLauncher.CONTINUE -> if (pushing) "Continue" else "Continue the session"
             action == AgentLauncher.FRESH && !pushing -> "Start fresh"
             action == Push.PUSH && pushing -> "Push"

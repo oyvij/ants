@@ -45,6 +45,8 @@
     <p><a href="/notifications/${entry.id}">@if(entry.tag == "[push]")Push@else Continue@endif or cancel the Run</a></p>
     @elseif(entry.tag == "[questions]")
     <p><a href="/notifications/${entry.id}">Answer the Round</a></p>
+    @elseif(entry.tag == "[review]")
+    <p><a href="/notifications/${entry.id}">Review the changes</a></p>
     @else
     <form method="post" action="/notifications/${entry.id}">
         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
