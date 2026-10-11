@@ -13,6 +13,7 @@
 @template.nav()
 <p><a href="/processes">Processes</a></p>
 <h1>${process.name ?: process.key}</h1>
+<p><a href="/processes/${process.key}/edit">Edit</a> · <a href="/processes/new?from=${process.key}">Copy</a></p>
 <div id="diagram" data-src="/processes/${process.key}/diagram.bpmn" style="height: 60vh"></div>
 <form method="post" action="/processes/${process.key}/runs">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">

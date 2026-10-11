@@ -18,6 +18,16 @@
     <li><a href="/processes/${process.key}">${process.name ?: process.key}</a></li>
 @endfor
 </ul>
+<form method="get" action="/processes/new">
+    <label>Name <input name="name" placeholder="New Process"></label>
+    <label>Start from <select name="from">
+        <option value="">Blank</option>
+@for(process in processes)
+        <option value="${process.key}">${process.name ?: process.key}</option>
+@endfor
+    </select></label>
+    <button>＋ New Process</button>
+</form>
 <form method="post" action="/processes" enctype="multipart/form-data">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
     <label>Import a BPMN file <input type="file" name="file" accept=".bpmn" required></label>

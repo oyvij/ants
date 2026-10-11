@@ -4,6 +4,8 @@ import org.operaton.bpm.engine.ProcessEngineException
 import org.operaton.bpm.engine.RepositoryService
 import org.operaton.bpm.engine.RuntimeService
 import org.springframework.http.HttpStatus
+import org.springframework.http.MediaType
+import org.springframework.http.ResponseEntity
 import org.springframework.stereotype.Controller
 import org.springframework.ui.Model
 import org.springframework.web.bind.annotation.GetMapping
@@ -14,9 +16,13 @@ import org.springframework.web.bind.annotation.ResponseBody
 import org.springframework.web.multipart.MultipartFile
 import org.springframework.web.server.ResponseStatusException
 import org.w3c.dom.Attr
+import org.w3c.dom.Document
 import org.w3c.dom.Element
+import org.w3c.dom.NodeList
 import org.xml.sax.SAXException
 import java.io.StringWriter
+import java.net.URI
+import java.net.URLEncoder
 import javax.xml.XMLConstants.XMLNS_ATTRIBUTE_NS_URI
 import javax.xml.parsers.DocumentBuilderFactory
 import javax.xml.transform.TransformerFactory
@@ -31,18 +37,76 @@ class Processes(private val repository: RepositoryService, private val runtime: 
         return "processes"
     }
 
-    /** Ants' own deploy path: everything reaches Operaton through here, written with `operaton:` only. */
     @PostMapping("/processes")
     fun import(@RequestParam file: MultipartFile, model: Model): String {
         val name = file.originalFilename?.takeIf { it.endsWith(".bpmn") } ?: "process.bpmn"
         try {
-            repository.createDeployment().name(name).enableDuplicateFiltering(true).addString(name, operatonOnly(file.bytes)).deploy()
-        } catch (e: Exception) {
-            if (e !is ProcessEngineException && e !is SAXException) throw e
+            deploy(file.bytes, name)
+        } catch (e: Refused) {
             model.addAttribute("error", "$name: ${e.message}")
             return list(model)
         }
         return "redirect:/processes"
+    }
+
+    /** **Save and deploy** in the modeler: on to the Process page once deployed, else the reason as plain text. */
+    @PostMapping("/processes/deploy")
+    fun save(@RequestParam bpmn: String): ResponseEntity<String> = try {
+        ResponseEntity.status(HttpStatus.SEE_OTHER).location(URI("/processes/" + deploy(bpmn.toByteArray()))).build()
+    } catch (e: Refused) {
+        ResponseEntity.badRequest().contentType(MediaType.TEXT_PLAIN).body(e.message)
+    }
+
+    /** Ants' own deploy path: everything reaches Operaton through here, written with `operaton:` only. Gives the Process's key. */
+    private fun deploy(bpmn: ByteArray, name: String? = null): String = try {
+        val document = parse(bpmn).also(::operatonOnly)
+        val key = process(document).getAttribute("id")
+        val resource = name ?: "$key.bpmn"
+        repository.createDeployment().name(resource).enableDuplicateFiltering(true).addString(resource, serialize(document)).deploy()
+        key
+    } catch (e: SAXException) {
+        throw Refused(e.message)
+    } catch (e: ProcessEngineException) {
+        throw Refused(e.message)
+    }
+
+    /**
+     * **New Process**: the modeler on a blank Process, or on a copy of the Process [from], under a key of its own made
+     * from [name] (by default the copied Process's name and "copy").
+     */
+    @GetMapping("/processes/new")
+    fun new(@RequestParam(required = false) name: String?, @RequestParam(required = false) from: String?, model: Model): String {
+        val source = from?.takeIf(String::isNotBlank)?.let(::latest)
+        val title = name?.takeIf(String::isNotBlank) ?: source?.let { "${it.name ?: it.key} copy" } ?: "New Process"
+        val query = listOfNotNull("name" to title, source?.let { "from" to it.key })
+        model.addAttribute("name", title)
+        model.addAttribute("src", "/processes/new.bpmn?" + query.joinToString("&") { (k, v) -> "$k=" + URLEncoder.encode(v, Charsets.UTF_8) })
+        return "modeler"
+    }
+
+    /** The diagram **New Process** opens: blank, or a copy of [from], renamed to [name] under a free key. */
+    @GetMapping("/processes/new.bpmn", produces = ["application/xml"])
+    @ResponseBody
+    fun newDiagram(@RequestParam name: String, @RequestParam(required = false) from: String?): String {
+        val document = parse(from?.let { repository.getProcessModel(latest(it).id).readAllBytes() } ?: javaClass.getResource("/blank.bpmn")!!.readBytes())
+        val process = process(document)
+        // `new` is the route to this page, so no Process may take it as its key.
+        val key = freeName(name) { it == "new" || repository.createProcessDefinitionQuery().processDefinitionKey(it).count() > 0 }
+        for (plane in document.getElementsByTagNameNS(BPMNDI, "BPMNPlane").elements()) {
+            if (plane.getAttribute("bpmnElement") == process.getAttribute("id")) plane.setAttribute("bpmnElement", key)
+        }
+        process.setAttribute("id", key)
+        process.setAttribute("name", name)
+        return serialize(document)
+    }
+
+    /** The modeler on the latest version of a deployed Process; **Save and deploy** makes the next version. */
+    @GetMapping("/processes/{key}/edit")
+    fun edit(@PathVariable key: String, model: Model): String {
+        val process = latest(key)
+        model.addAttribute("name", process.name ?: process.key)
+        model.addAttribute("src", "/processes/$key/diagram.bpmn")
+        return "modeler"
     }
 
     @GetMapping("/processes/{key}")
@@ -67,14 +131,28 @@ class Processes(private val repository: RepositoryService, private val runtime: 
 
 private const val CAMUNDA = "http://camunda.org/schema/1.0/bpmn"
 private const val OPERATON = "http://operaton.org/schema/1.0/bpmn"
+private const val BPMN = "http://www.omg.org/spec/BPMN/20100524/MODEL"
+private const val BPMNDI = "http://www.omg.org/spec/BPMN/20100524/DI"
+
+/** Why a Process can't be deployed, in the XML parser's or the engine's words. */
+class Refused(message: String?) : Exception(message)
+
+private fun parse(bpmn: ByteArray): Document = DocumentBuilderFactory.newInstance().apply {
+    isNamespaceAware = true
+    setFeature("http://apache.org/xml/features/disallow-doctype-decl", true) // no external entities from an upload
+}.newDocumentBuilder().parse(bpmn.inputStream())
+
+private fun serialize(document: Document) =
+    StringWriter().also { TransformerFactory.newInstance().newTransformer().transform(DOMSource(document), StreamResult(it)) }.toString()
+
+private fun NodeList.elements() = List(length) { item(it) as Element }
+
+/** The Process a diagram defines; Ants draws one per file. */
+private fun process(document: Document) =
+    document.getElementsByTagNameNS(BPMN, "process").elements().firstOrNull() ?: throw Refused("The file defines no Process.")
 
 /** Moves every element and attribute in Camunda's namespace to Operaton's. */
-private fun operatonOnly(bpmn: ByteArray): String {
-    val document = DocumentBuilderFactory.newInstance().apply {
-        isNamespaceAware = true
-        setFeature("http://apache.org/xml/features/disallow-doctype-decl", true) // no external entities from an upload
-    }
-        .newDocumentBuilder().parse(bpmn.inputStream())
+private fun operatonOnly(document: Document) {
     fun rewrite(element: Element) {
         for (attribute in List(element.attributes.length) { element.attributes.item(it) as Attr }) when {
             attribute.namespaceURI == XMLNS_ATTRIBUTE_NS_URI && attribute.value == CAMUNDA -> element.removeAttributeNode(attribute)
@@ -89,5 +167,4 @@ private fun operatonOnly(bpmn: ByteArray): String {
     }
     rewrite(document.documentElement)
     document.documentElement.setAttributeNS(XMLNS_ATTRIBUTE_NS_URI, "xmlns:operaton", OPERATON)
-    return StringWriter().also { TransformerFactory.newInstance().newTransformer().transform(DOMSource(document), StreamResult(it)) }.toString()
 }

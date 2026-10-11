@@ -159,8 +159,11 @@ fun nameError(kind: String, name: String) = when {
 }
 
 /** The first free name of `<name>-copy`, `<name>-copy-2`, …, for a copy of [name], made a valid name first. */
-fun copyName(name: String, taken: (String) -> Boolean): String {
-    val base = name.lowercase().replace(Regex("[^a-z0-9-]+"), "-").trim('-') + "-copy"
+fun copyName(name: String, taken: (String) -> Boolean) = freeName("$name-copy", taken)
+
+/** The first free name of `<name>`, `<name>-2`, …, made of lowercase letters, digits and hyphens first. */
+fun freeName(name: String, taken: (String) -> Boolean): String {
+    val base = name.lowercase().replace(Regex("[^a-z0-9-]+"), "-").trim('-')
     return generateSequence(1, Int::inc).map { if (it == 1) base else "$base-$it" }.first { !taken(it) }
 }
 

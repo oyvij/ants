@@ -1,0 +1,36 @@
+@param name: String
+@param src: String
+@param _csrf: org.springframework.security.web.csrf.CsrfToken
+@param colorScheme: String = "light dark"
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="color-scheme" content="${colorScheme}">
+    <title>${name} · Modeler · Ants</title>
+    <link rel="stylesheet" href="/vendor/camunda-bpmn-js/assets/camunda-platform-modeler.css">
+    <style>
+        body { margin: 0; height: 100vh; display: flex; flex-direction: column; }
+        header { display: flex; gap: 1rem; align-items: baseline; padding: 0 1rem; }
+        main { flex: 1; display: flex; min-height: 0; }
+        /* bpmn-js draws black on the page's background, so the canvas stays light in dark mode. */
+        #canvas { flex: 1; background: white; color-scheme: light; }
+        #explain { width: 20rem; overflow: auto; padding: 0 1rem; border-left: 1px solid #888; }
+    </style>
+</head>
+<body>
+@template.nav()
+<header>
+    <h1>${name}</h1>
+    <button id="save">Save and deploy</button>
+    <p id="refusal" role="alert"></p>
+    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+</header>
+<main>
+    <div id="canvas" data-src="${src}"></div>
+    <aside id="explain"></aside>
+</main>
+<script src="/vendor/camunda-bpmn-js/camunda-platform-modeler.production.min.js"></script>
+<script src="/modeler.js"></script>
+</body>
+</html>
