@@ -4,8 +4,11 @@ import org.operaton.bpm.engine.ExternalTaskService
 import org.operaton.bpm.engine.HistoryService
 import org.operaton.bpm.engine.RepositoryService
 import org.operaton.bpm.engine.RuntimeService
+import org.operaton.bpm.engine.TaskService
 import org.operaton.bpm.engine.history.HistoricProcessInstance
 import org.operaton.bpm.engine.runtime.Incident
+import org.operaton.bpm.engine.task.Task
+import org.operaton.bpm.model.bpmn.instance.BaseElement
 import org.operaton.bpm.model.bpmn.instance.FlowElement
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpStatus
@@ -19,10 +22,16 @@ import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.ResponseBody
 import org.springframework.web.server.ResponseStatusException
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
+import tools.jackson.databind.json.JsonMapper
 import java.nio.file.Path
 import java.time.Duration
 import java.time.Instant
 import java.util.Date
+import kotlin.io.path.createDirectories
+import kotlin.io.path.deleteIfExists
+import kotlin.io.path.isRegularFile
+import kotlin.io.path.readText
+import kotlin.io.path.writeText
 
 /** One entry on the Notification list, waiting on the user since [since]: a [TaskEntry] or a [StartEntry]. */
 sealed class Entry(val id: String, val tag: String, val process: String, val task: String, val summary: String, val since: Date) {
@@ -43,8 +52,9 @@ sealed class Entry(val id: String, val tag: String, val process: String, val tas
 }
 
 /**
- * A Task of the Run [run] held by an incident. [taskId] is the Task's key in the Run ([taskKey]); the Task is the
- * element [activity] of the process instance [instance], which is the Run's own or, in a called Process, the called one's.
+ * A Task of the Run [run] waiting on the user: held by an incident, or a User Task. [taskId] is the Task's key in the
+ * Run ([taskKey]); the Task is the element [activity] of the process instance [instance], which is the Run's own or,
+ * in a called Process, the called one's.
  */
 class TaskEntry(
     id: String, tag: String, process: String, val run: String, task: String, val taskId: String, summary: String, since: Date,
@@ -57,7 +67,8 @@ class StartEntry(val key: String, process: String, failed: FailedStart) :
 
 /**
  * The Notification list: one query over what is waiting on the user, with no table of its own, so it can't drift.
- * For now that is every Agent Task held by an incident, its tag and summary read from the incident message.
+ * For now that is every Agent Task held by an incident, its tag and summary read from the incident message, and every
+ * open User Task, each an Approve.
  */
 @Controller
 class Notifications(
@@ -65,6 +76,7 @@ class Notifications(
     private val history: HistoryService,
     private val repository: RepositoryService,
     private val externalTasks: ExternalTaskService,
+    private val userTasks: TaskService,
     private val launcher: AgentLauncher,
     private val streams: Streams,
     private val schedules: Schedules,
@@ -74,7 +86,10 @@ class Notifications(
     fun entries(): List<Entry> = (tasks() + failedStarts()).sortedBy { it.since }
 
     /** The Tasks waiting on the user, oldest first. */
-    fun tasks(): List<TaskEntry> = rootCauses().map(::entry)
+    fun tasks(): List<TaskEntry> = (rootCauses().map(::entry) + approvals()).sortedBy { it.since }
+
+    // ponytail: every User Task is an Approve until Answer a Round (#63) and Review changes (#67) add their kinds.
+    private fun approvals() = userTasks.createTaskQuery().active().list().map(::entry)
 
     /** The scheduled Runs that couldn't start, until started or dismissed. */
     private fun failedStarts() = schedules.all().mapNotNull { schedule -> schedule.failed?.let { StartEntry(schedule.key, schedule.process, it) } }
@@ -91,6 +106,12 @@ class Notifications(
         if (failed != null) {
             model.addAttribute("entry", failed)
             return "failed-start"
+        }
+        userTask(id)?.let { task ->
+            val entry = entry(task)
+            model.addAttribute("entry", entry)
+            model.addAttribute("shown", shown(home.runWorkspace(entry.run), runtime.getVariableLocal(task.executionId, SHOW)))
+            return "approve"
         }
         val entry = entry(incident(id))
         model.addAttribute("entry", entry)
@@ -136,6 +157,40 @@ class Notifications(
         return back(back, entry.run, "/notifications/next?run=${entry.run}")
     }
 
+    /**
+     * Approve, which completes the Approve with `{approved: true, comment}`, or Send back (comment required), which
+     * completes it with `{approved: false, comment}` and leaves the comment for the Task its `ants.send-back` names,
+     * whose next launch resumes its session with it; then Next up, as for any entry.
+     */
+    @PostMapping("/notifications/{id}", params = ["comment"])
+    fun approve(@PathVariable id: String, @RequestParam action: String, @RequestParam comment: String, @RequestParam(required = false) back: String?, model: Model): String {
+        val task = userTask(id) ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "Nothing is waiting on you here any more")
+        val entry = entry(task)
+        val approved = when (action) {
+            APPROVE -> true
+            SEND_BACK -> false
+            else -> throw ResponseStatusException(HttpStatus.BAD_REQUEST, "No action $action")
+        }
+        if (!approved && comment.isBlank()) {
+            model.addAttribute("error", "Send back needs a comment.")
+            return entry(id, model)
+        }
+        val workspace = home.runWorkspace(entry.run)
+        runLog(workspace, entry.task, if (approved) "Approve" else "Send back", comment)
+        // Before completing: the named Task can launch the moment the completion commits.
+        val sentBack = repository.getBpmnModelInstance(task.processDefinitionId).getModelElementById<BaseElement>(task.taskDefinitionKey)
+            .property(SEND_BACK_PROPERTY)?.takeIf { !approved }
+            ?.let { AgentLauncher.sentBack(workspace, runtime.taskKey(task.executionId, it)) }
+            ?.also { it.parent.createDirectories(); it.writeText(comment) }
+        try {
+            onClash { userTasks.complete(id, mapOf(task.taskDefinitionKey to mapOf("approved" to approved, "comment" to comment))) }
+        } catch (e: Exception) {
+            sentBack?.deleteIfExists()
+            throw e
+        }
+        return back(back, entry.run, "/notifications/next?run=${entry.run}")
+    }
+
     /** Next up: the Run's next entry, if one turns up within a few seconds; else the Notification list. */
     // ponytail: holds the request, polling, for up to 5 s; push it over SSE if the wait ever needs to be longer.
     @GetMapping("/notifications/next")
@@ -165,26 +220,61 @@ class Notifications(
     private fun incident(id: String): Incident = incidents().incidentId(id).singleResult()
         ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "Nothing is waiting on you here any more")
 
+    private fun userTask(id: String): Task? = userTasks.createTaskQuery().taskId(id).active().singleResult()
+
     private fun entry(incident: Incident): TaskEntry {
-        val run = runtime.createProcessInstanceQuery().processInstanceId(incident.processInstanceId).singleResult().rootProcessInstanceId
-        val top = history.createHistoricProcessInstanceQuery().processInstanceId(run).singleResult()
-        val task = repository.getBpmnModelInstance(incident.processDefinitionId).getModelElementById<FlowElement>(incident.activityId)
         val tag = Regex("""^\[[\w-]+]""").find(incident.incidentMessage.orEmpty())?.value
+        val summary = incident.incidentMessage.orEmpty().removePrefix(tag.orEmpty()).trim()
+        return entry(incident.id, tag ?: "[failed]", summary, incident.incidentTimestamp, incident.processInstanceId, incident.processDefinitionId, incident.executionId, incident.activityId)
+    }
+
+    /** An Approve's entry: its Title is the summary. */
+    private fun entry(task: Task) = entry(
+        task.id, "[approve]", runtime.getVariableLocal(task.executionId, TITLE)?.toString().orEmpty(), task.createTime,
+        task.processInstanceId, task.processDefinitionId, task.executionId, task.taskDefinitionKey,
+    )
+
+    private fun entry(id: String, tag: String, summary: String, since: Date, instance: String, definition: String, execution: String, activity: String): TaskEntry {
+        val run = runtime.createProcessInstanceQuery().processInstanceId(instance).singleResult().rootProcessInstanceId
+        val top = history.createHistoricProcessInstanceQuery().processInstanceId(run).singleResult()
+        val task = repository.getBpmnModelInstance(definition).getModelElementById<FlowElement>(activity)
         return TaskEntry(
-            id = incident.id,
-            tag = tag ?: "[failed]",
+            id = id,
+            tag = tag,
             process = top.processDefinitionName ?: top.processDefinitionKey,
             run = run,
-            task = task?.name ?: incident.activityId,
-            taskId = runtime.taskKey(incident.executionId, incident.activityId),
-            summary = incident.incidentMessage.orEmpty().removePrefix(tag.orEmpty()).trim(),
-            since = incident.incidentTimestamp,
-            instance = incident.processInstanceId,
-            activity = incident.activityId,
+            task = task?.name ?: activity,
+            taskId = runtime.taskKey(execution, activity),
+            summary = summary,
+            since = since,
+            instance = instance,
+            activity = activity,
         )
     }
 
     private companion object {
         const val CANCEL = "cancel"
+        const val APPROVE = "approve"
+        const val SEND_BACK = "send-back"
+
+        /** An Approve's fields: its Title and Show are input parameters, so `${…}` in them works and Checks read them. */
+        const val TITLE = "title"
+        const val SHOW = "show"
+        const val SEND_BACK_PROPERTY = "ants.send-back"
     }
 }
+
+/**
+ * What an Approve shows, as HTML: the file in [workspace] that [show] names, else [show] itself, rendered as markdown;
+ * a Result that isn't text shows as JSON.
+ */
+fun shown(workspace: Path, show: Any?): String {
+    val text = show as? String ?: show?.let { "```json\n" + JsonMapper.shared().writerWithDefaultPrettyPrinter().writeValueAsString(it) + "\n```" }.orEmpty()
+    return Transcript.markdown(inWorkspace(workspace, text)?.readText() ?: text)
+}
+
+/** The regular file at the relative [path] inside [workspace], symlinks followed, or null when there is none. */
+private fun inWorkspace(workspace: Path, path: String): Path? = runCatching {
+    val root = workspace.toRealPath()
+    root.resolve(Path.of(path)).takeIf { path.isNotBlank() && !Path.of(path).isAbsolute && it.isRegularFile() }?.toRealPath()?.takeIf { it.startsWith(root) }
+}.getOrNull()

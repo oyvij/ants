@@ -372,7 +372,7 @@ class Transcript {
             }
         }
 
-        private fun markdown(text: CharSequence) = renderer.render(parser.parse(text.toString()))
+        fun markdown(text: CharSequence): String = renderer.render(parser.parse(text.toString()))
 
         private fun esc(value: Any?) = HtmlUtils.htmlEscape(value?.toString().orEmpty())
 
