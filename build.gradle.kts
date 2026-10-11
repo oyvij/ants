@@ -41,6 +41,7 @@ dependencies {
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation(kotlin("test"))
+    testImplementation("com.microsoft.playwright:playwright:1.63.0") // BrowserTest
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
@@ -80,13 +81,28 @@ tasks.withType<Test> {
     }
 }
 
+// What modeler.js writes as text, checked by Node's own test runner with no browser, as part of `test`.
+val nodeTest = tasks.register<com.github.gradle.node.task.NodeTask>("nodeTest") {
+    script = file("src/test/js/modeler-text.test.js")
+    options = listOf("--test")
+}
+
+// Playwright's CLI, such as `./gradlew playwright --args="install chromium"`, for the Chromium BrowserTest drives.
+tasks.register<JavaExec>("playwright") {
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass = "com.microsoft.playwright.CLI"
+}
+
 tasks.test {
+    dependsOn(nodeTest)
     useJUnitPlatform { excludeTags("live") }
     // Only the system folders and a fake gh, so a CLI run by its bare name, such as claude or nono, is never the real one.
     environment("PATH", "${projectDir}/src/test/resources/fake-gh:/usr/bin:/bin")
     // Ants must strip these from every Agent's environment, even when the allow-list names them.
     environment("ANTHROPIC_API_KEY", "sk-ant-test")
     environment("CLAUDE_CODE_RETRY_WATCHDOG", "1")
+    // BrowserTest drives the Chromium the playwright task installed; it never downloads one itself.
+    environment("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD", "1")
 }
 
 // The tests that run the real claude on your login, kept out of `test`: ./gradlew liveTest

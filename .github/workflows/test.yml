@@ -14,5 +14,23 @@ jobs:
         with:
           distribution: temurin
           java-version: 25
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      # One file per node --check: it checks only the first and passes the rest to it as arguments.
+      - run: for script in src/main/resources/static/*.js; do node --check "$script"; done
       - uses: gradle/actions/setup-gradle@v5
+      # BrowserTest's Chromium, cached by Playwright version; its system libraries come from apt every run.
+      - id: playwright
+        run: echo "version=$(grep -o 'com.microsoft.playwright:playwright:[0-9.]*' build.gradle.kts | cut -d: -f3)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+      - run: ./gradlew playwright --args="install --with-deps chromium"
       - run: ./gradlew test
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports
+          path: build/reports/
