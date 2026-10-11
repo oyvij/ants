@@ -124,13 +124,32 @@ function AntsContextPad(contextPad, autoPlace, create, elementFactory, bpmnFacto
 }
 AntsContextPad.$inject = ["contextPad", "autoPlace", "create", "elementFactory", "bpmnFactory"]
 
+// The create (N), append (A) and replace (wrench) menus offer only elements Ants runs, by their entry ids without the
+// `create-`, `append-` or `replace-with-` prefix. Agent and Built-in Tasks come from the palette and the hover menu.
+const offered = new Set([
+    "none-start-event", "none-start", "timer-start", "none-end-event", "none-end", "timer-intermediate-catch", "timer-boundary",
+    "exclusive-gateway", "parallel-gateway", "user-task", "call-activity", "expanded-subprocess", "subprocess", "collapsed-subprocess",
+    "sequence-flow", "default-flow", "conditional-flow",
+])
+
+function AntsPopupMenus(popupMenu) {
+    const provider = {
+        getPopupMenuEntries: () => entries => Object.fromEntries(Object.entries(entries)
+            .filter(([id]) => offered.has(id.replace(/^(create|append|replace-with)-/, "")))),
+    }
+    // 950: before Camunda's grouping (900) nests the entries.
+    for (const menu of ["bpmn-create", "bpmn-append", "bpmn-replace"]) popupMenu.registerProvider(menu, 950, provider)
+}
+AntsPopupMenus.$inject = ["popupMenu"]
+
 const modeler = new BpmnModeler({
     container: "#canvas",
     elementTemplateChooser: false,
     additionalModules: [{
-        __init__: ["antsPalette", "antsContextPad"],
+        __init__: ["antsPalette", "antsContextPad", "antsPopupMenus"],
         antsPalette: ["type", AntsPalette],
         antsContextPad: ["type", AntsContextPad],
+        antsPopupMenus: ["type", AntsPopupMenus],
     }],
 })
 const canvas = document.getElementById("canvas")
