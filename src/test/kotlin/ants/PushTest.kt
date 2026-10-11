@@ -190,6 +190,6 @@ class PushTest : AntsTest() {
             """<li><strong>api</strong> · pushed <code>feature-x</code> to <code>https://github.com/oyvij/api.git</code> · new branch off <code>main</code> · 1 commit · """ +
                 """<a rel="nofollow" href="https://github.com/oyvij/api/compare/main...feature-x">Compare</a></li>""",
         )
-        assertContains(report, "<li><strong>web</strong> · not pushed: The remote's feature-x isn't this clone's HEAD.</li>")
+        assertContains(report, "<li><strong>web</strong> · not pushed: The remote's feature-x isn't where this clone has it.</li>")
     }
 }

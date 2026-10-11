@@ -1,20 +1,14 @@
 package ants
 
-import jakarta.annotation.PreDestroy
 import org.operaton.bpm.engine.ExternalTaskService
 import org.operaton.bpm.engine.RuntimeService
 import org.operaton.bpm.engine.externaltask.LockedExternalTask
-import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
-import org.springframework.boot.context.event.ApplicationReadyEvent
-import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Component
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Duration
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit.MILLISECONDS
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
@@ -34,54 +28,25 @@ fun clones(workspace: Path): List<Path> =
  * Agent pushes; Push gives the real remote itself. A repo already cloned is left alone. The Result is the repos it
  * cloned, `[{name, path, commit}]`, `path` relative to the Run workspace, and they are added to the Run's `clones`.
  */
+// ponytail: one thread for every Run, so choosing a work branch never races another Run's; a slow clone holds up
+// the rest. A lock per branch name if Runs start together often.
 @Component
 class CloneRepos(
     private val externalTasks: ExternalTaskService,
     private val runtime: RuntimeService,
     private val settings: Settings,
     @Value("\${ants.home}") private val home: Path,
-) {
-    private val log = LoggerFactory.getLogger(javaClass)
-
-    // ponytail: one thread for every Run, so choosing a work branch never races another Run's; a slow clone holds up
-    // the rest. A lock per branch name if Runs start together often.
-    private val poller = Executors.newSingleThreadScheduledExecutor()
-
-    @EventListener(ApplicationReadyEvent::class)
-    fun start() {
-        poller.scheduleWithFixedDelay(::fetch, 0, 200, MILLISECONDS)
-    }
-
-    @PreDestroy
-    fun shutdown() {
-        poller.shutdownNow()
-    }
-
-    private fun fetch() {
-        try {
-            externalTasks.fetchAndLock(10, WORKER).topic(TOPIC, LOCK.toMillis())
-                .variables("repos", "branch", "clones").enableCustomObjectDeserialization().execute().forEach(::clone)
-        } catch (e: Exception) {
-            log.warn("Fetching Clone repos Tasks failed", e) // a failed fetch must not end the polling
-        }
-    }
-
-    private fun clone(task: LockedExternalTask) {
-        try {
-            val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult().rootProcessInstanceId
-            val repos = home.runWorkspace(run).resolve("repos").createDirectories()
-            val known = settings.repos().associateBy { it.name }
-            val wanted = Settings.strings(task.variables["repos"]).orEmpty().map { known[it] ?: url(it) ?: error("The Source map ${settings.defaultSourceMap()} has no repo $it") }.filter { !repos.resolve(it.name).exists() }
-            val branch by lazy { workBranch(run, task.variables["branch"]?.toString()) }
-            val cloned = wanted.map { repo -> cloneOne(repo, repos, branch) }
-            @Suppress("UNCHECKED_CAST")
-            val clones = (task.variables["clones"] as? List<Map<String, String>>).orEmpty() + cloned
-            externalTasks.complete(task.id, WORKER, mapOf(task.activityId to ArrayList(cloned), "clones" to ArrayList(clones)))
-        } catch (e: Exception) {
-            if (poller.isShutdown) return // the lock runs out, and the Task is tried again
-            log.warn("Clone repos ${task.activityId} failed", e)
-            runCatching { externalTasks.handleFailure(task.id, WORKER, "[failed] ${e.message ?: e}", null, 0, 0) }
-        }
+) : BuiltInWorker(externalTasks, "Clone repos", TOPIC, Duration.ofMinutes(30), { it.variables("repos", "branch", "clones").enableCustomObjectDeserialization() }) {
+    override fun handle(task: LockedExternalTask) {
+        val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult().rootProcessInstanceId
+        val repos = home.runWorkspace(run).resolve("repos").createDirectories()
+        val known = settings.repos().associateBy { it.name }
+        val wanted = Settings.strings(task.variables["repos"]).orEmpty().map { known[it] ?: url(it) ?: error("The Source map ${settings.defaultSourceMap()} has no repo $it") }.filter { !repos.resolve(it.name).exists() }
+        val branch by lazy { workBranch(run, task.variables["branch"]?.toString()) }
+        val cloned = wanted.map { repo -> cloneOne(repo, repos, branch) }
+        @Suppress("UNCHECKED_CAST")
+        val clones = (task.variables["clones"] as? List<Map<String, String>>).orEmpty() + cloned
+        externalTasks.complete(task.id, WORKER, mapOf(task.activityId to ArrayList(cloned), "clones" to ArrayList(clones)))
     }
 
     /**
@@ -93,11 +58,11 @@ class CloneRepos(
         partial.toFile().deleteRecursively()
         val local = repo.path.takeIf(String::isNotEmpty)?.let(Settings::expand)?.takeIf { it.isDirectory() }
         git(repos, listOf("clone", "-q") + (if (local == null) emptyList() else listOf("--reference", "$local", "--dissociate")) + listOf(repo.remote, partial.fileName.toString()))
-        val onRemote = runCatching { git(partial, listOf("rev-parse", "--verify", "-q", "refs/remotes/origin/$branch")) }.isSuccess
+        val onRemote = runCatching { git(partial, "rev-parse", "--verify", "-q", "refs/remotes/origin/$branch") }.isSuccess
         git(partial, if (onRemote) listOf("switch", "-q", branch) else listOf("switch", "-q", "-c", branch))
-        git(partial, listOf("remote", "set-url", "--push", "origin", DEAD_PUSH_URL))
+        git(partial, "remote", "set-url", "--push", "origin", DEAD_PUSH_URL)
         git(partial, "config", WORK_BRANCH, branch)
-        val commit = git(partial, listOf("rev-parse", "HEAD"))
+        val commit = git(partial, "rev-parse", "HEAD")
         Files.move(partial, repos.resolve(repo.name))
         return mapOf("name" to repo.name, "path" to "repos/${repo.name}", "commit" to commit)
     }
@@ -139,8 +104,6 @@ class CloneRepos(
 
     companion object {
         const val TOPIC = "clone-repos"
-        private const val WORKER = "ants"
-        private val LOCK = Duration.ofMinutes(30)
 
         /** A push URL nothing answers at, so `git push` from a clone fails. */
         const val DEAD_PUSH_URL = "/dev/null/ants-pushes-only-from-push"

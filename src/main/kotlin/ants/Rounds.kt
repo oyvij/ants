@@ -1,23 +1,18 @@
 package ants
 
-import jakarta.annotation.PreDestroy
 import org.operaton.bpm.engine.ExternalTaskService
 import org.operaton.bpm.engine.RepositoryService
 import org.operaton.bpm.engine.RuntimeService
 import org.operaton.bpm.engine.externaltask.LockedExternalTask
 import org.operaton.bpm.model.bpmn.instance.FlowElement
-import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
-import org.springframework.boot.context.event.ApplicationReadyEvent
-import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Component
 import tools.jackson.databind.json.JsonMapper
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit.MILLISECONDS
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption.APPEND
 import java.nio.file.StandardOpenOption.CREATE
+import java.time.Duration
 import java.time.LocalDate
 import kotlin.io.path.createDirectories
 import kotlin.io.path.deleteIfExists
@@ -128,45 +123,13 @@ class AcceptRecommendations(
     private val runtime: RuntimeService,
     private val repository: RepositoryService,
     @Value("\${ants.home}") private val home: Path,
-) {
-    private val log = LoggerFactory.getLogger(javaClass)
-    private val poller = Executors.newSingleThreadScheduledExecutor()
-
-    @EventListener(ApplicationReadyEvent::class)
-    fun start() {
-        poller.scheduleWithFixedDelay(::fetch, 0, 200, MILLISECONDS)
-    }
-
-    @PreDestroy
-    fun shutdown() {
-        poller.shutdownNow()
-    }
-
-    private fun fetch() {
-        try {
-            externalTasks.fetchAndLock(10, WORKER).topic(TOPIC, 60_000).includeExtensionProperties().execute().forEach(::accept)
-        } catch (e: Exception) {
-            log.warn("Fetching Accept recommendations Tasks failed", e) // a failed fetch must not end the polling
+) : BuiltInWorker(externalTasks, "Accept recommendations", "accept-recommendations", Duration.ofMinutes(1), { it.includeExtensionProperties() }) {
+    override fun handle(task: LockedExternalTask) {
+        val asker = task.extensionProperties[ASKER] ?: error("${task.activityId} names no asker ($ASKER)")
+        val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult().rootProcessInstanceId
+        val name = repository.getBpmnModelInstance(task.processDefinitionId).getModelElementById<FlowElement>(task.activityId)?.name ?: task.activityId
+        runtime.answerFor(home.runWorkspace(run), task.executionId, name, asker, emptyMap()) { answers ->
+            onClash { externalTasks.complete(task.id, WORKER, mapOf(task.activityId to answers)) }
         }
-    }
-
-    private fun accept(task: LockedExternalTask) {
-        try {
-            val asker = task.extensionProperties[ASKER] ?: error("${task.activityId} names no asker ($ASKER)")
-            val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult().rootProcessInstanceId
-            val name = repository.getBpmnModelInstance(task.processDefinitionId).getModelElementById<FlowElement>(task.activityId)?.name ?: task.activityId
-            runtime.answerFor(home.runWorkspace(run), task.executionId, name, asker, emptyMap()) { answers ->
-                onClash { externalTasks.complete(task.id, WORKER, mapOf(task.activityId to answers)) }
-            }
-        } catch (e: Exception) {
-            if (poller.isShutdown) return // the lock runs out, and the Task is tried again
-            log.warn("Accept recommendations ${task.activityId} failed", e)
-            runCatching { externalTasks.handleFailure(task.id, WORKER, "[failed] ${e.message ?: e}", null, 0, 0) }
-        }
-    }
-
-    private companion object {
-        const val TOPIC = "accept-recommendations"
-        const val WORKER = "ants"
     }
 }

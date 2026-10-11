@@ -39,12 +39,15 @@ data class LineComment(
     }
 }
 
+/** `git diff` as Ants reads it: plain, whatever the user's git config says, and a renamed file as a delete and an add. */
+val DIFF = listOf("diff", "--no-color", "--no-ext-diff", "--no-renames")
+
 /**
  * The changes in each of the Run's clones, [outgoing] as Push sees them: the commits on the work branch since the
  * base, the remote's default branch, and their diff, read with [git].
  */
 fun changes(outgoing: List<Outgoing>, git: (Path, List<String>) -> String): List<RepoChanges> = outgoing.map { repo ->
-    val diff = repo.base?.let { git(repo.path, listOf("-c", "core.quotePath=false", "diff", "--no-color", "--no-ext-diff", "--no-renames", "origin/$it...HEAD")) }
+    val diff = repo.base?.let { git(repo.path, listOf("-c", "core.quotePath=false") + DIFF + "origin/$it...HEAD") }
     RepoChanges(repo, files(diff.orEmpty(), "repos/${repo.repo}"))
 }
 

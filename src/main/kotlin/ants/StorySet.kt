@@ -154,7 +154,7 @@ private class Ranges(private val workspace: Path, set: Map<*, *>, private val gi
         val (repo, path) = locate(file) ?: return emptyList()
         val range = ranges[repo] ?: return emptyList()
         val diff = runCatching {
-            git(workspace.resolve("repos/$repo"), listOf("diff", "--no-color", "--no-ext-diff", "--no-renames", "${range["base"]}", "${range["head"]}", "--", path))
+            git(workspace.resolve("repos/$repo"), DIFF + listOf("${range["base"]}", "${range["head"]}", "--", path))
         }.getOrDefault("")
         return Regex("""^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@""", RegexOption.MULTILINE).findAll(diff).map { match ->
             val (oldStart, oldLines, newStart, newLines) = match.destructured
