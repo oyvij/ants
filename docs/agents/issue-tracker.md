@@ -9,7 +9,9 @@ transfer it or mirror it under an organisation. Use `gh`; it infers the repo fro
   is blocked by or blocks, each with its comments, and the whole spec (#27).
 - **Comment / close**: `gh issue comment <n> --body "..."`, `gh issue close <n> --comment "..."`
 - **Resolve a ticket**: comment what was built, then close. Where the code departs from the spec (#27), record an
-  ADR in `docs/adr/` and edit the spec's text to match, in the same pass.
+  ADR in `docs/adr/` and edit the spec's text to match, in the same pass. Where the spec is silent (a gap), give a
+  suggested spec sentence in the resolve comment or hand-back; the orchestrator applies spec edits before the code
+  review, so the reviewer reads the current spec.
 - **Labels**: `gh issue edit <n> --add-label "..."`; a missing label is created with `gh label create`
 
 ## Wayfinding operations
