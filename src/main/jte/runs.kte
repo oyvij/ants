@@ -1,0 +1,18 @@
+@import ants.stateName
+@param runs: List<org.operaton.bpm.engine.history.HistoricProcessInstance>
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Runs · Ants</title>
+</head>
+<body>
+<h1>Runs</h1>
+<table>
+    <tr><th>Run</th><th>State</th><th>Started</th></tr>
+@for(run in runs)
+    <tr><td><a href="/runs/${run.id}">${run.processDefinitionName ?: run.processDefinitionKey}</a></td><td>${run.stateName}</td><td>${run.startTime.toString()}</td></tr>
+@endfor
+</table>
+</body>
+</html>

@@ -18,9 +18,13 @@ gg:
   jte:
     usePrecompiledTemplates: true
     templateSuffix: .kte
+    # Forms read Spring Security's `_csrf` request attribute.
+    exposeRequestAttributes: true
 
 operaton:
   bpm:
+    # Results and `runs` are maps, kept as JSON (Spin) so expressions read them as `${runs.grill}`.
+    default-serialization-format: application/json
     # Cockpit's user. Ants' own login signs it in, so this password is never asked for.
     admin-user:
       id: admin

@@ -1,0 +1,982 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    dependencies:
+      camunda-bpmn-js:
+        specifier: 5.36.0
+        version: 5.36.0(bpmn-js-properties-panel@5.65.2(@bpmn-io/properties-panel@3.56.1)(bpmn-js@18.31.0)(camunda-bpmn-js-behaviors@1.18.0(bpmn-js@18.31.0)(camunda-bpmn-moddle@8.0.2)(zeebe-bpmn-moddle@2.0.0(moddle@8.2.1)))(diagram-js@15.28.1))(moddle@8.2.1)(preact@10.29.8)
+
+packages:
+
+  '@bpmn-io/align-to-origin@0.7.0':
+    resolution: {integrity: sha512-a8Ri5q2uhCrHJ415BR9ZulajvOw0SX2Eh0jxwoMZ/ynxcZPBbOKm6kW6HAQFJp0EFHwftMiJstcvIcSjyz0hZA==}
+
+  '@bpmn-io/cm-theme@0.2.2':
+    resolution: {integrity: sha512-9mD7fzzNDNBgseOUC6iRX4mi17LIO2es4zkcHt4e4owQC2Q3YPvqJTJaXqc7kkItloSFsqG2j/1iMJkpvjLv2A==}
+    engines: {node: '>= 20.12.0'}
+    peerDependencies:
+      '@codemirror/state': ^6.0.0
+      '@codemirror/view': ^6.0.0
+
+  '@bpmn-io/diagram-js-ui@0.2.4':
+    resolution: {integrity: sha512-I678ZGtoH7z7FgzFhzzppM9ThsJ3Lh83kW3GjhjG3xyYciIPYHMaHK1MABP8F69H9pFZpViM6t4qUo8dwrVz0w==}
+
+  '@bpmn-io/element-template-chooser@3.0.0':
+    resolution: {integrity: sha512-a+Nll5aj92rEaSuh+q7fRj/9rR6Uvxx5UuUqFSOl42y0FYB9k/lpUHPc3bRb0fuAqMHjJ0+c3haD34NT3/vNeg==}
+    peerDependencies:
+      bpmn-js: '>= 11'
+      diagram-js: '>= 15.15.0'
+
+  '@bpmn-io/element-template-icon-renderer@1.0.0':
+    resolution: {integrity: sha512-m0m3kKS1PvYqouogzxnHxf+iX+/HOUxJG/RBSy4uN5HqqNdK5fHtTUtFzuXVWIEkcDCFfwF0cqQg/qE7HLSCYA==}
+    peerDependencies:
+      bpmn-js: '>= 8'
+      diagram-js: '>= 7'
+
+  '@bpmn-io/element-templates-validator@2.26.0':
+    resolution: {integrity: sha512-ZHcEJtYX5GmaNHKXZqzJE96beN4d8xbCIsm+ynTLUZEg5Q4l8lpUOZmnwKF5npsdEg9L4hRuHMrgytU21zcXlQ==}
+
+  '@bpmn-io/extract-process-variables@2.2.1':
+    resolution: {integrity: sha512-1E5ydNzTqgx513NxA1nxk2CqDb9OkusfU9Tf6WejD1BiY+5u130XnZOFE/FQX0JB6ZmPOeFMx4IDEuHjrGhOzw==}
+
+  '@bpmn-io/feel-analyzer@0.3.0':
+    resolution: {integrity: sha512-TJjNDg9c8f3Vg9rPuUTMV1vKQfX2mZGejyTUAzOWy4KXjqMTRG1PxlpAma5P444niivnZPtEukHgvO8R3aGd3g==}
+    engines: {node: '>= 20'}
+
+  '@bpmn-io/feel-analyzer@0.5.1':
+    resolution: {integrity: sha512-On6hWdV9gwrXK/+VDqqllgbJtwSI4v98pA+3LhvcSKMMEy9IdlvcB8GntsPLg4ROLh4vrsu/o9opp/vIpdBSLA==}
+    engines: {node: '>= 20'}
+
+  '@bpmn-io/feel-editor@2.8.0':
+    resolution: {integrity: sha512-Rhv19co5pMs2TVoTqXsHrBa+fogPFctVxo/89Wzre4HlinXsToFYO0JX+5Ehkbm+9ho8DiYL03Vi2XO9df88qA==}
+
+  '@bpmn-io/feel-lint@3.2.0':
+    resolution: {integrity: sha512-f9xe7VNjdZ0kDzWeALmDEWXm7KtAzVSeLVESAhBZGxTbyGzbTGubRfl2cXMN+E/U0oFEcQDuxF0A1tD02DXiLw==}
+
+  '@bpmn-io/feelers-editor@1.2.0':
+    resolution: {integrity: sha512-Dt9JqqwWD2AxnOOTmm+Ck9jAVWLAa3+JIClgP9wmyvdjR0LcpO4b+h1P0y2HrUmRExcJNNzuus4Q00L8OqQGYQ==}
+
+  '@bpmn-io/feelers-lint@1.0.0':
+    resolution: {integrity: sha512-9McPCub8NBSD3gbAM9fu6laGVvb6U/D8Y5Ar/GGvOaAuJ6W34yP5jaV/on4MALTwmmXTDadZjO2RJJNub3JmwQ==}
+
+  '@bpmn-io/lang-feel@4.0.2':
+    resolution: {integrity: sha512-rTPeJ77/2nYKbJXpvDmrNXy+opoIpD3Rsch0grCUZAO6xF68r41QeV8SqOdr2yZxD/4gI6YXlQhqh4rqFRDJXA==}
+    engines: {node: '>= 20.12.0'}
+
+  '@bpmn-io/lang-feelers@1.0.0':
+    resolution: {integrity: sha512-VgBDw9cXr62e6Qs6LixQyLiBxxv7Kh8fxKFkYCmHPf/cO8beLQGjnF789wRlhK05yh/CuHi7oN7EYChrFQOHwg==}
+
+  '@bpmn-io/lezer-feel@2.5.0':
+    resolution: {integrity: sha512-09JlwNYeD5YYeFrl0dIFfgQKEL+NNiTyUwEtdcPhfftz1mYa7z+ylOPCv/8Z0GqG7X81uyMFvRZDFCRBFTiUPg==}
+    engines: {node: '>= 20.12.0'}
+
+  '@bpmn-io/lezer-feel@3.0.1':
+    resolution: {integrity: sha512-+wWg4DP2h8WOEQx2Bz51blsw9dCqKj3kIDKYccABuoAEhzZeDhmm0A2k4ANmm9lf0w5pJmVSYz2djtrbzOvzzA==}
+    engines: {node: '>= 20.12.0'}
+
+  '@bpmn-io/lezer-feelers@1.0.0':
+    resolution: {integrity: sha512-P0znH2SY85O7RmOr/FgveFiTREet9DSCf3nH3J/StkI5i7Q384o+GEeTmv58n91FlUknS20KE3T8Yk5Qmab+hg==}
+
+  '@bpmn-io/moddle-utils@0.3.0':
+    resolution: {integrity: sha512-0kz2PKfjIH3XFtO9Koxh7jV8e1DWWs4rgp0IczhJgluoRHf9Jhq8zX1H3wGJu6+lpg1Rkzc6YW1ezKz+2K8wTg==}
+
+  '@bpmn-io/properties-panel@3.56.1':
+    resolution: {integrity: sha512-H+iKBjKU6D0/lLMN02Bzqt/5mEEy6GnhW4yNpI5oxQXqYMDyf+hffT4xtPBl2D54LrMwzqWtInd1mJ6zRdvYdw==}
+
+  '@bpmn-io/semver-compat@0.1.0':
+    resolution: {integrity: sha512-hIcW42Ku92MUioL6aknDbRoW1jK8ZEqIe8qZZ+d3cjitDO+PMEFFXj/sezJYIHMe8elu4CBz9qpjkV8WIVG9qw==}
+
+  '@bpmn-io/svg-to-image@1.0.1':
+    resolution: {integrity: sha512-sS3+veihe+NMq/9JD6q5ynoIzc7q/5ANZNCuW4NNyFr0Ffs9yYjkfz+r85EPXArahefYlPdvYwSsbWWB2W96qw==}
+
+  '@bpmn-io/variable-resolver@3.3.0':
+    resolution: {integrity: sha512-8ydEGEYqxMtKj/W6sbxp/1d9Fx6Mvk/RHZFOjHfhrvEnzsqRRaP6lzKOQnoQt5fdUJjmU0j3qV7W4Qx4C3//1g==}
+    peerDependencies:
+      bpmn-js: '*'
+
+  '@camunda/element-templates-json-schema@0.22.1':
+    resolution: {integrity: sha512-nDmSI66Lt/YjuW/myemLH1j2Fgw9ldD9eK6vmhTdMW7lgn0V+8AaVL5lJyQCEQa4lVgTIXrqttyCn/EGwHP8+Q==}
+
+  '@camunda/example-data-properties-provider@1.5.2':
+    resolution: {integrity: sha512-2okkc2meZ97Rop4bZkgPFFQUOaBXExp7HmjZQGazJZwHSxgGksFIapQsovld03goqclX2TSoyQdqATeyiOYxoA==}
+    peerDependencies:
+      '@bpmn-io/properties-panel': '>=3.41.2'
+      '@bpmn-io/variable-resolver': '*'
+      bpmn-js: '*'
+      bpmn-js-properties-panel: '>= 1'
+
+  '@camunda/feel-builtins@1.4.1':
+    resolution: {integrity: sha512-nXIVbr8JHLzuPXSYs+VUy/4X1WiY7SlXtAqsgQ9R3mbXNNyorYUiw0YBeLXMrMCcg2yJWVSasramcTCeI9A6FQ==}
+
+  '@camunda/zeebe-configuration-templates-json-schema@0.2.0':
+    resolution: {integrity: sha512-H/ej903ai3dGDuZqYsr9pbCbkoseztoGvjo22Op+Ac8ZO3iS0pk38+I8DCqdtC80mQ7WAI7ZzHsv7hU1XLMyNA==}
+
+  '@camunda/zeebe-element-templates-json-schema@0.46.0':
+    resolution: {integrity: sha512-BrgDPX3JLUIg4Xkbn7n+0pxvBGYKZ9T3+Z49fnTnlgQXS5Ep9WTupJsBXr6WSW8hGrwAyKzWuoTuBel/Ze4nGQ==}
+
+  '@codemirror/autocomplete@6.20.3':
+    resolution: {integrity: sha512-tlosUqb+3BbxCxZdu4tKeRghPFC+QM7q4X5YhKV2eCmPG+1r2F3f4AaSz5sCrFqUtX4Jh20VFTKecl16MgiV9g==}
+
+  '@codemirror/commands@6.11.1':
+    resolution: {integrity: sha512-O/4hG3SC1YwcmQ0d2UVNDs+AsaNWd1iHVxbTeEBuqH+6bExAiPK3iS/BvpY6rZGURALv4ZD3sIgcCmRvw3ehBg==}
+
+  '@codemirror/lang-json@6.0.2':
+    resolution: {integrity: sha512-x2OtO+AvwEHrEwR0FyyPtfDUiloG3rnVTSZV1W8UteaLL8/MajQd8DpvUb2YVzC+/T18aSDv0H9mu+xw0EStoQ==}
+
+  '@codemirror/language@6.13.1':
+    resolution: {integrity: sha512-zfvU2r3TyylQLMj/te+5CnQ0rSqZi8B1oTCBbQkagcLW4Xc6imab6qN+pEJhsuNOLaJqiRyBXp9UhWA1DhVvDw==}
+
+  '@codemirror/lint@6.9.7':
+    resolution: {integrity: sha512-28/+iWLYxKxsvGYhSYL7zaCZqLz5+FFFDq9tVsvGv9kv8RY4fFAchJ5WX9M3YrrRlTIsECjsXPqeNgnSmNP2dg==}
+
+  '@codemirror/state@6.7.6':
+    resolution: {integrity: sha512-kAz+AncRtKuIknedxT1bq4XwXv4UowhbkHU1myPrtVb/jZtImWuV5BXzv5vK6i3kYACsdiZiQKFQQ5Mq7elW8w==}
+
+  '@codemirror/streamparser@6.0.0':
+    resolution: {integrity: sha512-JTFPF6xrfjt0mnfGPgzcLiMwYmvIyNaoizp8BYzv8FE8KrT6GBGDZ190rtt+O7Wke3gG/MFHyiY9YGNeimof4w==}
+
+  '@codemirror/view@6.43.14':
+    resolution: {integrity: sha512-hC45YnmJNR1rz42OF57BLoQNFMV12/13drnvibDsR2quNDmldcb4WvYVV81hFQg56i9lcqQMEDqilhX2QDcGQQ==}
+
+  '@lezer/common@1.5.3':
+    resolution: {integrity: sha512-H0iErY4e43LpXbYDyBci5W4v/RwTgGV3YzYOlJPiGZ8RY8w51kVE+xLn1tg3Z6UmSfyETvtsUK3r7YsgDQEI7Q==}
+
+  '@lezer/highlight@1.2.5':
+    resolution: {integrity: sha512-O1GMVKgtf5YspFaRzpmqkVgMtIk2HG9uMAbH6wdAIdNh3TVzCsch/+cRi+6l2//UGDKe6NB9BW3cvuR5ezMQ0w==}
+
+  '@lezer/html@1.3.13':
+    resolution: {integrity: sha512-oI7n6NJml729m7pjm9lvLvmXbdoMoi2f+1pwSDJkl9d68zGr7a9Btz8NdHTGQZtW2DA25ybeuv/SyDb9D5tseg==}
+
+  '@lezer/json@1.0.3':
+    resolution: {integrity: sha512-BP9KzdF9Y35PDpv04r0VeSTKDeox5vVr3efE7eBbx3r4s3oNLfunchejZhjArmeieBH+nVOpgIiBJpEAv8ilqQ==}
+
+  '@lezer/lr@1.4.11':
+    resolution: {integrity: sha512-UwgZcl1R66H2hDzBrA7kWyYmX6s8p5TQ+e/t7CuvgCtBEPxbEPaHYHu+pJBvTvDotEJpuQkJjbXuHiw5Cixxgw==}
+
+  '@lezer/markdown@1.8.0':
+    resolution: {integrity: sha512-X6w3A2NpyhdtGqTWRJB8gR4QDXBaFMbTOs780ZdZ15KKCfBXOQTKcB3Vr+W6tqJHVlealt53tLmHRvOqPTQgYA==}
+
+  '@marijn/find-cluster-break@1.0.4':
+    resolution: {integrity: sha512-Wy0V7+SGUjnF9/TkiM1hKVDPj7jKXduPNboMVtHTA8dySMURWqfg/JZ9E2Sq8JgSJmkl7k7Qe9FLeMSrSraWmQ==}
+
+  '@types/raf@3.4.3':
+    resolution: {integrity: sha512-c4YAvMedbPZ5tEyxzQdMoOhhJ4RD3rngZIdwC2/qDN3d7JpEhB6fiBRKVY1lg5B7Wk+uPBjn5f39j1/2MY1oOw==}
+
+  ansi-colors@4.1.3:
+    resolution: {integrity: sha512-/6w/C21Pm1A7aZitlI5Ni/2J6FFQN8i1Cvz3kHABAAbw93v/NlvKdVOqz7CCWz/3iv/JplRSEEZ83XION15ovw==}
+    engines: {node: '>=6'}
+
+  array-move@4.0.0:
+    resolution: {integrity: sha512-+RY54S8OuVvg94THpneQvFRmqWdAHeqtMzgMW6JNurHxe8rsS07cHQdfGkXnTUXiBcyZ0j3SiDIxxj0RPiqCkQ==}
+    engines: {node: ^12.20.0 || ^14.13.1 || >=16.0.0}
+
+  bpmn-js-color-picker@0.7.2:
+    resolution: {integrity: sha512-V3Gusxgx+Y6uEh3gg2Jpqd92au0kjfad6ETSNa7U0p2/hqlpYj8RWGwqjUui9tghkTg0mlKaqs6KZ8Lvxzn0pg==}
+    peerDependencies:
+      bpmn-js: '>= 14'
+
+  bpmn-js-copy-as-image@0.4.1:
+    resolution: {integrity: sha512-iY8f5bDbO+fM9mbIYQqPWFAtueqGf5Pq/hRs0yJmVcEv+nVOYBdrQOuky3fRcqS7hNwnxcxa2uwtdf2i+VMZ5Q==}
+    peerDependencies:
+      bpmn-js: '>= 18.0.0'
+
+  bpmn-js-create-append-anything@2.1.0:
+    resolution: {integrity: sha512-Qv67V5pypCvUKRSUiXA6QTGbk/aQD3NoV+E03k+ha9UqxxAzOkPZ0nS52fjQtPO+r9aj9rlKsoDCevH/dqAtKA==}
+    peerDependencies:
+      bpmn-js: '>= 18.27.0'
+      diagram-js: '>= 15.26.0'
+
+  bpmn-js-element-templates@2.37.1:
+    resolution: {integrity: sha512-A80hvvbIiStB05iUzth2SlHu3rQuaJUNjr3Iq+9BilopQuva1Mo3vz+t/hV5q1QqWJGmAbIPcXIdNECCTMxDbg==}
+    peerDependencies:
+      '@bpmn-io/properties-panel': '>= 3.55.0'
+      bpmn-js: '>= 11.5'
+      bpmn-js-properties-panel: '>= 2'
+      camunda-bpmn-js-behaviors: '>= 1.2.1'
+      diagram-js: '>= 11.9'
+
+  bpmn-js-executable-fix@0.2.2:
+    resolution: {integrity: sha512-+ZqH8JdIw5M0UBu+CdJGyiORMdMktyiVEDGm2Z6PjuzdU6PTS3RG+HDVFLCkkx6oIwej6Cgj8sIBXdYylOLdfQ==}
+    peerDependencies:
+      bpmn-js: '>= 6'
+
+  bpmn-js-native-copy-paste@0.3.0:
+    resolution: {integrity: sha512-qinthlYwiqlCak+TZB1niUPyzt/H1EuAfk2Whk2P8Jdj6LKyu3ADH08aGfC8aDhSd+sDrvdV6VEuIhwFmmSxRg==}
+    peerDependencies:
+      bpmn-js: '>= 18.10.0'
+
+  bpmn-js-properties-panel@5.65.2:
+    resolution: {integrity: sha512-VQrldSRso2uYK2ERLk/PTQL3Ft24sed4xqMTT6KOM66dcVYfFzIUQZiaakZrkFu3AwDvAv0ipqfUpwzbtPrkeA==}
+    peerDependencies:
+      '@bpmn-io/properties-panel': '>= 3.42.0'
+      bpmn-js: '>= 11.5'
+      camunda-bpmn-js-behaviors: '>= 0.4'
+      diagram-js: '>= 11.9'
+
+  bpmn-js@18.31.0:
+    resolution: {integrity: sha512-tGc6spNXC81858FXhk0NI9+CjfsPYDmKWSyiq0u2Rhk9J8l+DJtzZK1CYj4fqcek026PQDEwwUQwsr2Opfec/w==}
+
+  bpmn-moddle@10.3.1:
+    resolution: {integrity: sha512-xjJ8GzseRkjjM0MX/rODVB6iv+rhGLt8FCHJIovLAjJsDEAUjITfyiJZYczJ4pp3wmesbY3sQR7eRT+q5uroVA==}
+
+  bpmnlint-utils@1.1.1:
+    resolution: {integrity: sha512-Afdb77FmwNB3INyUfbzXW40yY+mc0qYU3SgDFeI4zTtduiVomOlfqoXiEaUIGI8Hyh7aVYpmf3O97P2w7x0DYQ==}
+
+  bpmnlint@11.14.0:
+    resolution: {integrity: sha512-SWZBV0B5vrjCbxKCuNrlZQSQ0gd6WwE79QaqYUI8nPAemteJuiz7vAHri22vvbem9EXCscuuQCwDaEsdMxS1tA==}
+    engines: {node: '>= 20'}
+    hasBin: true
+
+  camunda-bpmn-js-behaviors@1.18.0:
+    resolution: {integrity: sha512-ozmC9Btz7l6x0edBZaRxCUxF28mVbnTHO+v8ve8xGfhVRI0y8fFN/enAAILGk/eT2e+87BMx7uIUHGaxQBzbjQ==}
+    peerDependencies:
+      bpmn-js: '>= 9'
+      camunda-bpmn-moddle: '>= 7'
+      zeebe-bpmn-moddle: '>= 0.18'
+
+  camunda-bpmn-js@5.36.0:
+    resolution: {integrity: sha512-0SqMZ9fzT8cQS7P4jQ4dHEeN2yeCZ6Ldca5s0aAp7MzENDeJLzLpifm6D3dfyHFbxPlmA2qi4F1OwwiHdeWJzQ==}
+    peerDependencies:
+      bpmn-js-properties-panel: '>= 3.0.0'
+
+  camunda-bpmn-moddle@8.0.2:
+    resolution: {integrity: sha512-B+Lvg4oi8FKpuz9HPDme34Ynvik/Gjl3GJWR0Id5qjoYCg1LG635jLKl4dkiRIkxe2PH6be8b3P0GqORo2PjHA==}
+
+  canvg@4.0.3:
+    resolution: {integrity: sha512-fKzMoMBwus3CWo1Uy8XJc4tqqn98RoRrGV6CsIkaNiQT5lOeHuMh4fOt+LXLzn2Wqtr4p/c2TOLz4xtu4oBlFA==}
+    engines: {node: '>=12.0.0'}
+
+  classnames@2.5.1:
+    resolution: {integrity: sha512-saHYOzhIQs6wy2sVxTM6bUDsQO4F50V9RQ22qBpEdCW+I+/Wmke2HOl6lS6dTpdxVhb88/I6+Hs+438c3lfUow==}
+
+  cli-table@0.3.11:
+    resolution: {integrity: sha512-IqLQi4lO0nIB4tcdTpN4LCB9FI3uqrJZK7RC515EnhZ6qBaglkIgICb1wjeAqpdoOabm1+SuQtkXIPdYC93jhQ==}
+    engines: {node: '>= 0.2.0'}
+
+  clsx@2.1.1:
+    resolution: {integrity: sha512-eYm0QWBtUrBWZWG0d386OGAw16Z995PiOVo2B7bjWSbHedGl5e0ZWaq65kOGgUSNesEIDkB9ISbTg/JK9dhCZA==}
+    engines: {node: '>=6'}
+
+  color-support@1.1.3:
+    resolution: {integrity: sha512-qiBjkpbMLO/HL68y+lh4q0/O1MZFj2RX6X/KmMa3+gJD3z+WwI1ZzDHysvqHGS3mP6mznPckpXmw1nI9cJjyRg==}
+    hasBin: true
+
+  colors@1.0.3:
+    resolution: {integrity: sha512-pFGrxThWcWQ2MsAz6RtgeWe4NK2kUE1WfsrvvlctdII745EW9I0yflqhe7++M5LEc7bV2c/9/5zc8sFcpL0Drw==}
+    engines: {node: '>=0.1.90'}
+
+  crelt@1.0.7:
+    resolution: {integrity: sha512-aK6BbWfhf4U/wCcLHKPJl/xa6VkVstRaPywWtMKGwuOLc/wZTyQYuoxgvZnNsBvv7Kg3YTBQYYBCggcviQczuA==}
+
+  diagram-js-direct-editing@3.6.0:
+    resolution: {integrity: sha512-zaXChbFqLccq+rji1fnKD9dL90kO7XLJoaENMVqFOxslax8QD7eumwBBpLYS36br7zva9R4bz3YTu0ey3mbHAA==}
+    peerDependencies:
+      diagram-js: '*'
+
+  diagram-js-grid@2.1.0:
+    resolution: {integrity: sha512-kKWwoG0sFDW7oq1DUzPvXS0N9dtxtWKXqKcDRakLrMJ/b5UbRMhVHq//yr+shRmutED7A8V+3+FnTRqScocNng==}
+    engines: {node: '>= 20'}
+
+  diagram-js-minimap@5.6.0:
+    resolution: {integrity: sha512-PY/MmgqCvi78r5jreUaUuHz5I+fgFAnN/ldJqjHcKTILpqg0qVhuzbQaOGEjWcreuObxD/9zk1+fjtTzhOA77w==}
+
+  diagram-js-origin@1.4.1:
+    resolution: {integrity: sha512-UAvbw0+5ITpLVeIu9Fs6MQ+ILpegwmb5nMEeE+qIhAtuhhcA0wlOZL0BIYaR6dg1eEx8iYPFJ3SylfYZQ97bSw==}
+    peerDependencies:
+      diagram-js: '*'
+
+  diagram-js@15.28.1:
+    resolution: {integrity: sha512-R90PKnpRL9prdiYxc9ndtqkxnn1dIZacWgq0cpz4ABse1AwhrXexD8sRUZkNdxj9Adz4k04DUee/J6l/uTVDfw==}
+
+  didi@11.0.1:
+    resolution: {integrity: sha512-eEBvv5SHBhoCyDX/kOR8UozNfqEkjEXjNCTsE2vWWoxoJ5QC8KXYRTE78mrpdpvXNtSEriLhbgQdD0OkHvLFWQ==}
+    engines: {node: '>= 20.12'}
+
+  domify@3.0.0:
+    resolution: {integrity: sha512-bs2yO68JDFOm6rKv8f0EnrM2cENduhRkpqOtt/s5l5JBA/eqGBZCzLPmdYoHtJ6utgLGgcBajFsEQbl12pT0lQ==}
+    engines: {node: '>=20'}
+
+  focus-trap@8.2.3:
+    resolution: {integrity: sha512-LTNHZwcFM7bSdU1cG1ExoaTEzoGmdjw+EzDotolZmLTCbm0ll2k6J3NL+WfqP14nGLxAp+XDJgwlT2DtNhcukA==}
+
+  globalyzer@0.1.0:
+    resolution: {integrity: sha512-40oNTM9UfG6aBmuKxk/giHn5nQ8RVz/SS4Ir6zgzOv9/qC3kKZ9v4etGTcJbEl/NyVQH7FGU7d+X1egr57Md2Q==}
+
+  globrex@0.1.2:
+    resolution: {integrity: sha512-uHJgbwAMwNFf5mLst7IWLNg14x1CkeqglJb/K3doi4dw6q2IvAAmM/Y81kevy83wP+Sst+nutFTYOGg3d1lsxg==}
+
+  htm@3.1.1:
+    resolution: {integrity: sha512-983Vyg8NwUE7JkZ6NmOqpCZ+sh1bKv2iYTlUkzlWmA5JD2acKoxd4KVxbMmxX/85mtfdnDmTFoNKcg5DGAvxNQ==}
+
+  ids@3.0.2:
+    resolution: {integrity: sha512-t6YJP4mdC+GHF96Nbis/4FEANhP/8VWmYMvUuYpXvSdrhg5hpIVbq2XZlOA3UWTbtdwPCi0q7jEXOdHkAnqOnw==}
+    engines: {node: '>= 20.12'}
+
+  inherits-browser@0.1.0:
+    resolution: {integrity: sha512-CJHHvW3jQ6q7lzsXPpapLdMx5hDpSF3FSh45pwsj6bKxJJ8Nl8v43i5yXnr3BdfOimGHKyniewQtnAIp3vyJJw==}
+
+  json-source-map@0.6.1:
+    resolution: {integrity: sha512-1QoztHPsMQqhDq0hlXY5ZqcEdUzxQEIxgFkKl4WUp2pgShObl+9ovi4kRh2TfvAfxAoHOJ9vIMEqk3k4iex7tg==}
+
+  min-dash@5.1.0:
+    resolution: {integrity: sha512-HAvN6XzmCQj+js43G9sJRRw8kj/7DvoxN7qhoIN9Xo5ZN1NMljtpyKs/NunXmw0QSWwlgZzNv6tLeEa4xaZ0tg==}
+
+  min-dom@5.3.0:
+    resolution: {integrity: sha512-0w5FEBgPAyHhmFojW3zxd7we3D+m5XYS3E/06OyvxmbHJoiQVa4Nagj6RWvoAKYRw5xth6cP5TMePc5cR1M9hA==}
+
+  mitt@3.0.1:
+    resolution: {integrity: sha512-vKivATfr97l2/QBCYAkXYDbrIWPM2IIKEl7YPhjCvKlG3kE2gm+uBo6nEXK3M5/Ffh/FLpKExzOQ3JJoJGFKBw==}
+
+  moddle-xml@12.3.1:
+    resolution: {integrity: sha512-XbAQDWCG2ZRch3odmQigJ4GwTqrOVBx0+JHEAgdw0U3MkBsWa9LAbO//S5RPdYMcRO87E63r/R/I3CoMef6ncA==}
+    engines: {node: '>= 18'}
+    peerDependencies:
+      moddle: '>= 6.2.0'
+
+  moddle@8.2.1:
+    resolution: {integrity: sha512-20qzO/ZpMGO9j9gdQgXk9bfGxb9wA3JKnGth/21YZKODLrZE4RW/uVMIL5pTskYm34Z61DucBEPkq93qByNsBQ==}
+
+  mri@1.2.0:
+    resolution: {integrity: sha512-tzzskb3bG8LvYGFF/mDTpq3jpI6Q9wc3LEmBaghu+DdCssd1FakN7Bc0hVNmEyGq1bq3RgfkCb3cmQLpNPOroA==}
+    engines: {node: '>=4'}
+
+  object-refs@0.4.0:
+    resolution: {integrity: sha512-6kJqKWryKZmtte6QYvouas0/EIJKPI1/MMIuRsiBlNuhIMfqYTggzX2F1AJ2+cDs288xyi9GL7FyasHINR98BQ==}
+
+  path-intersection@4.2.1:
+    resolution: {integrity: sha512-D6sD8o/EkJdoSbfyn4oOWmJpNrOTFOvb4kfHKq3uiV+pwdkHV3n08kHS0B272+Advy7A25yVqrpTctjw/ExG3A==}
+    engines: {node: '>= 14.20'}
+
+  performance-now@2.1.0:
+    resolution: {integrity: sha512-7EAHlyLHI56VEIdK57uwHdHKIaAGbnXPiw0yWbarQZOKaKpvUIgW0jWRVLiatnM+XXlSwsanIBH/hzGMJulMow==}
+
+  pluralize@8.0.0:
+    resolution: {integrity: sha512-Nc3IT5yHzflTfbjgqWcCPpo7DaKy4FnpB0l/zCAW0Tc7jxAiuqSxHasntB3D7887LSrA93kDJ9IXovxJYxyLCA==}
+    engines: {node: '>=4'}
+
+  preact-markup@2.1.1:
+    resolution: {integrity: sha512-8JL2p36mzK8XkspOyhBxUSPjYwMxDM0L5BWBZWxsZMVW8WsGQrYQDgVuDKkRspt2hwrle+Cxr/053hpc9BJwfw==}
+    peerDependencies:
+      preact: '>=10'
+
+  preact@10.29.8:
+    resolution: {integrity: sha512-ej2aVZ+vZ8WO7tvlQWRM9N63A0KzF9q4mWJfDUHgYaIofWY9hu74QdnQrjoPMmZi2/nZ5gN0bJCQF49xQqx09Q==}
+    peerDependencies:
+      preact-render-to-string: '>=5'
+    peerDependenciesMeta:
+      preact-render-to-string:
+        optional: true
+
+  raf@3.4.1:
+    resolution: {integrity: sha512-Sq4CW4QhwOHE8ucn6J34MqtZCeWFP2aQSmrlroYgqAV1PjStIhJXxYuTgUIfkEk7zTLjmIjLmU5q+fbD1NnOJA==}
+
+  rgbcolor@1.0.1:
+    resolution: {integrity: sha512-9aZLIrhRaD97sgVhtJOW6ckOEh6/GnvQtdVNfdZ6s67+3/XwLS9lBcQYzEEhYVeUowN7pRzMLsyGhK2i/xvWbw==}
+    engines: {node: '>= 0.8.15'}
+
+  saxen@11.2.0:
+    resolution: {integrity: sha512-2bG564AAJcm/3vyZC0Uhs/mACrH+4AHMaKHKAB2M5xMqomUZa27FQ7MYaQGFKVcJk/MVzSEQ34A8QZWW+eiWEw==}
+    engines: {node: '>= 20.12'}
+
+  semver-compare@1.0.0:
+    resolution: {integrity: sha512-YM3/ITh2MJ5MtzaM429anh+x2jiLVjqILF4m4oyQB18W7Ggea7BfqdH/wGMK7dDiMghv/6WG7znWMwUDzJiXow==}
+
+  semver@7.8.5:
+    resolution: {integrity: sha512-Y7/KDsb8LjooZpwaqGyulO6DQlksgCncchHGk+sZIY4SBvUocMBEFH5Ur1fI4dV+Jvl0w6cjvucaIi40puRioA==}
+    engines: {node: '>=10'}
+    hasBin: true
+
+  stackblur-canvas@2.7.0:
+    resolution: {integrity: sha512-yf7OENo23AGJhBriGx0QivY5JP6Y1HbrrDI6WLt6C5auYZXlQrheoY8hD4ibekFKz1HOfE48Ww8kMWMnJD/zcQ==}
+    engines: {node: '>=0.1.14'}
+
+  style-mod@4.1.4:
+    resolution: {integrity: sha512-XXWIQt633/EpAFx8aZDOTjBzrCaGmhvEQlQo6MVPfa2OzO2cWo+4hV9h+6UkHYlXGfy+ODXKUdP7Pthmcu5ATw==}
+
+  svg-pathdata@6.0.3:
+    resolution: {integrity: sha512-qsjeeq5YjBZ5eMdFuUa4ZosMLxgr5RZ+F+Y1OrDhuOCEInRMA3x74XdBtggJcj9kOeInz0WE+LgCPDkZFlBYJw==}
+    engines: {node: '>=12.0.0'}
+
+  tabbable@6.5.0:
+    resolution: {integrity: sha512-wieBHXygIm7OyQOu5hQlkk62/WyCFYGlWg7L6/ZCUZwx0o398Zkn4pVmMyfYhfMG8kGrj/Krt8eIk6UKC6VzwA==}
+
+  tiny-glob@0.2.9:
+    resolution: {integrity: sha512-g/55ssRPUjShh+xkfx9UPDXqhckHEsHr4Vd9zX55oSdGZc/MD0m3sferOkwWtp98bv+kcVfEHtRJgBVJzelrzg==}
+
+  tiny-svg@3.1.3:
+    resolution: {integrity: sha512-9mwnPqXInRsBmH/DO6NMxBE++9LsqpVXQSSTZGc5bomoKKvL5OX/Hlotw7XVXP6XLRcHWIzZpxfovGqWKgCypQ==}
+
+  tiny-svg@4.1.4:
+    resolution: {integrity: sha512-cBaEACCbouYrQc9RG+eTXnPYosX1Ijqty/I6DdXovwDd89Pwu4jcmpOR7BuFEF9YCcd7/AWwasE0207WMK7hdw==}
+    engines: {node: '>= 20'}
+
+  uuid@14.0.3:
+    resolution: {integrity: sha512-Sc5u1VVln93y1Xnz4R+CunOZc7R9LUcTmhj7Rc7Eg3HVcf7rVn2FOoa812fe0W8p3jD7xeoGSYbfqCGGH2B6xw==}
+    hasBin: true
+
+  w3c-keyname@2.2.8:
+    resolution: {integrity: sha512-dpojBhNsCNN7T82Tm7k26A6G9ML3NkhDsnw9n/eoxSRlVBB4CEtIQ/KTCLI2Fwf3ataSXRhYFkQi3SlnFwPvPQ==}
+
+  zeebe-bpmn-moddle@2.0.0:
+    resolution: {integrity: sha512-n1wtWbvpWRA4ROgbjNpFt6SxvSGp+lJHuY+N6hXp7IrxV/VJnfnwrm+UMGY80IgZMdJVz9zgKyPC4QujijBH8w==}
+    peerDependencies:
+      moddle: '>=8.2.0'
+
+snapshots:
+
+  '@bpmn-io/align-to-origin@0.7.0': {}
+
+  '@bpmn-io/cm-theme@0.2.2(@codemirror/state@6.7.6)(@codemirror/view@6.43.14)':
+    dependencies:
+      '@codemirror/language': 6.13.1
+      '@codemirror/state': 6.7.6
+      '@codemirror/view': 6.43.14
+      '@lezer/highlight': 1.2.5
+
+  '@bpmn-io/diagram-js-ui@0.2.4':
+    dependencies:
+      htm: 3.1.1
+      preact: 10.29.8
+    transitivePeerDependencies:
+      - preact-render-to-string
+
+  '@bpmn-io/element-template-chooser@3.0.0(bpmn-js@18.31.0)(diagram-js@15.28.1)':
+    dependencies:
+      bpmn-js: 18.31.0
+      diagram-js: 15.28.1
+
+  '@bpmn-io/element-template-icon-renderer@1.0.0(bpmn-js@18.31.0)(diagram-js@15.28.1)':
+    dependencies:
+      bpmn-js: 18.31.0
+      diagram-js: 15.28.1
+      inherits-browser: 0.1.0
+      tiny-svg: 3.1.3
+
+  '@bpmn-io/element-templates-validator@2.26.0':
+    dependencies:
+      '@camunda/element-templates-json-schema': 0.22.1
+      '@camunda/zeebe-configuration-templates-json-schema': 0.2.0
+      '@camunda/zeebe-element-templates-json-schema': 0.46.0
+      json-source-map: 0.6.1
+      min-dash: 5.1.0
+
+  '@bpmn-io/extract-process-variables@2.2.1':
+    dependencies:
+      min-dash: 5.1.0
+
+  '@bpmn-io/feel-analyzer@0.3.0':
+    dependencies:
+      '@bpmn-io/lezer-feel': 2.5.0
+
+  '@bpmn-io/feel-analyzer@0.5.1':
+    dependencies:
+      '@bpmn-io/lezer-feel': 3.0.1
+      '@lezer/common': 1.5.3
+
+  '@bpmn-io/feel-editor@2.8.0':
+    dependencies:
+      '@bpmn-io/cm-theme': 0.2.2(@codemirror/state@6.7.6)(@codemirror/view@6.43.14)
+      '@bpmn-io/feel-lint': 3.2.0
+      '@bpmn-io/lang-feel': 4.0.2
+      '@bpmn-io/semver-compat': 0.1.0
+      '@camunda/feel-builtins': 1.4.1
+      '@codemirror/autocomplete': 6.20.3
+      '@codemirror/commands': 6.11.1
+      '@codemirror/language': 6.13.1
+      '@codemirror/lint': 6.9.7
+      '@codemirror/state': 6.7.6
+      '@codemirror/view': 6.43.14
+      '@lezer/highlight': 1.2.5
+      min-dom: 5.3.0
+      mitt: 3.0.1
+
+  '@bpmn-io/feel-lint@3.2.0':
+    dependencies:
+      '@bpmn-io/feel-analyzer': 0.5.1
+      '@bpmn-io/lezer-feel': 3.0.1
+      '@bpmn-io/semver-compat': 0.1.0
+      '@codemirror/language': 6.13.1
+
+  '@bpmn-io/feelers-editor@1.2.0':
+    dependencies:
+      '@bpmn-io/cm-theme': 0.2.2(@codemirror/state@6.7.6)(@codemirror/view@6.43.14)
+      '@bpmn-io/feelers-lint': 1.0.0
+      '@bpmn-io/lang-feelers': 1.0.0
+      '@codemirror/autocomplete': 6.20.3
+      '@codemirror/commands': 6.11.1
+      '@codemirror/language': 6.13.1
+      '@codemirror/lint': 6.9.7
+      '@codemirror/state': 6.7.6
+      '@codemirror/view': 6.43.14
+      '@lezer/common': 1.5.3
+      '@lezer/html': 1.3.13
+      '@lezer/markdown': 1.8.0
+      min-dom: 5.3.0
+      mitt: 3.0.1
+
+  '@bpmn-io/feelers-lint@1.0.0':
+    dependencies:
+      '@bpmn-io/feel-lint': 3.2.0
+      '@codemirror/language': 6.13.1
+      '@codemirror/lint': 6.9.7
+
+  '@bpmn-io/lang-feel@4.0.2':
+    dependencies:
+      '@bpmn-io/lezer-feel': 3.0.1
+      '@codemirror/autocomplete': 6.20.3
+      '@codemirror/language': 6.13.1
+      '@lezer/common': 1.5.3
+
+  '@bpmn-io/lang-feelers@1.0.0':
+    dependencies:
+      '@bpmn-io/lezer-feel': 3.0.1
+      '@bpmn-io/lezer-feelers': 1.0.0
+      '@codemirror/language': 6.13.1
+      '@lezer/common': 1.5.3
+
+  '@bpmn-io/lezer-feel@2.5.0':
+    dependencies:
+      '@lezer/highlight': 1.2.5
+      '@lezer/lr': 1.4.11
+      min-dash: 5.1.0
+
+  '@bpmn-io/lezer-feel@3.0.1':
+    dependencies:
+      '@lezer/highlight': 1.2.5
+      '@lezer/lr': 1.4.11
+      min-dash: 5.1.0
+
+  '@bpmn-io/lezer-feelers@1.0.0':
+    dependencies:
+      '@lezer/common': 1.5.3
+      '@lezer/highlight': 1.2.5
+      '@lezer/lr': 1.4.11
+
+  '@bpmn-io/moddle-utils@0.3.0':
+    dependencies:
+      min-dash: 5.1.0
+
+  '@bpmn-io/properties-panel@3.56.1':
+    dependencies:
+      '@bpmn-io/feel-editor': 2.8.0
+      '@bpmn-io/feelers-editor': 1.2.0
+      '@codemirror/autocomplete': 6.20.3
+      '@codemirror/commands': 6.11.1
+      '@codemirror/lang-json': 6.0.2
+      '@codemirror/language': 6.13.1
+      '@codemirror/lint': 6.9.7
+      '@codemirror/state': 6.7.6
+      '@codemirror/view': 6.43.14
+      classnames: 2.5.1
+      focus-trap: 8.2.3
+      min-dash: 5.1.0
+      min-dom: 5.3.0
+
+  '@bpmn-io/semver-compat@0.1.0':
+    dependencies:
+      semver: 7.8.5
+
+  '@bpmn-io/svg-to-image@1.0.1':
+    dependencies:
+      canvg: 4.0.3
+
+  '@bpmn-io/variable-resolver@3.3.0(bpmn-js@18.31.0)':
+    dependencies:
+      '@bpmn-io/extract-process-variables': 2.2.1
+      '@bpmn-io/feel-analyzer': 0.3.0
+      '@bpmn-io/lezer-feel': 3.0.1
+      '@camunda/feel-builtins': 1.4.1
+      '@lezer/common': 1.5.3
+      bpmn-js: 18.31.0
+      min-dash: 5.1.0
+
+  '@camunda/element-templates-json-schema@0.22.1': {}
+
+  '@camunda/example-data-properties-provider@1.5.2(@bpmn-io/properties-panel@3.56.1)(@bpmn-io/variable-resolver@3.3.0(bpmn-js@18.31.0))(bpmn-js-properties-panel@5.65.2(@bpmn-io/properties-panel@3.56.1)(bpmn-js@18.31.0)(camunda-bpmn-js-behaviors@1.18.0(bpmn-js@18.31.0)(camunda-bpmn-moddle@8.0.2)(zeebe-bpmn-moddle@2.0.0(moddle@8.2.1)))(diagram-js@15.28.1))(bpmn-js@18.31.0)':
+    dependencies:
+      '@bpmn-io/properties-panel': 3.56.1
+      '@bpmn-io/variable-resolver': 3.3.0(bpmn-js@18.31.0)
+      bpmn-js: 18.31.0
+      bpmn-js-properties-panel: 5.65.2(@bpmn-io/properties-panel@3.56.1)(bpmn-js@18.31.0)(camunda-bpmn-js-behaviors@1.18.0(bpmn-js@18.31.0)(camunda-bpmn-moddle@8.0.2)(zeebe-bpmn-moddle@2.0.0(moddle@8.2.1)))(diagram-js@15.28.1)
+      htm: 3.1.1
+      min-dash: 5.1.0
+
+  '@camunda/feel-builtins@1.4.1': {}
+
+  '@camunda/zeebe-configuration-templates-json-schema@0.2.0': {}
+
+  '@camunda/zeebe-element-templates-json-schema@0.46.0': {}
+
+  '@codemirror/autocomplete@6.20.3':
+    dependencies:
+      '@codemirror/language': 6.13.1
+      '@codemirror/state': 6.7.6
+      '@codemirror/view': 6.43.14
+      '@lezer/common': 1.5.3
+
+  '@codemirror/commands@6.11.1':
+    dependencies:
+      '@codemirror/language': 6.13.1
+      '@codemirror/state': 6.7.6
+      '@codemirror/view': 6.43.14
+      '@lezer/common': 1.5.3
+
+  '@codemirror/lang-json@6.0.2':
+    dependencies:
+      '@codemirror/language': 6.13.1
+      '@lezer/json': 1.0.3
+
+  '@codemirror/language@6.13.1':
+    dependencies:
+      '@codemirror/state': 6.7.6
+      '@codemirror/streamparser': 6.0.0
+      '@codemirror/view': 6.43.14
+      '@lezer/common': 1.5.3
+      '@lezer/highlight': 1.2.5
+      '@lezer/lr': 1.4.11
+      style-mod: 4.1.4
+
+  '@codemirror/lint@6.9.7':
+    dependencies:
+      '@codemirror/state': 6.7.6
+      '@codemirror/view': 6.43.14
+      crelt: 1.0.7
+
+  '@codemirror/state@6.7.6':
+    dependencies:
+      '@marijn/find-cluster-break': 1.0.4
+
+  '@codemirror/streamparser@6.0.0': {}
+
+  '@codemirror/view@6.43.14':
+    dependencies:
+      '@codemirror/state': 6.7.6
+      crelt: 1.0.7
+      style-mod: 4.1.4
+      w3c-keyname: 2.2.8
+
+  '@lezer/common@1.5.3': {}
+
+  '@lezer/highlight@1.2.5':
+    dependencies:
+      '@lezer/common': 1.5.3
+
+  '@lezer/html@1.3.13':
+    dependencies:
+      '@lezer/common': 1.5.3
+      '@lezer/highlight': 1.2.5
+      '@lezer/lr': 1.4.11
+
+  '@lezer/json@1.0.3':
+    dependencies:
+      '@lezer/common': 1.5.3
+      '@lezer/highlight': 1.2.5
+      '@lezer/lr': 1.4.11
+
+  '@lezer/lr@1.4.11':
+    dependencies:
+      '@lezer/common': 1.5.3
+
+  '@lezer/markdown@1.8.0':
+    dependencies:
+      '@lezer/common': 1.5.3
+      '@lezer/highlight': 1.2.5
+
+  '@marijn/find-cluster-break@1.0.4': {}
+
+  '@types/raf@3.4.3': {}
+
+  ansi-colors@4.1.3: {}
+
+  array-move@4.0.0: {}
+
+  bpmn-js-color-picker@0.7.2(bpmn-js@18.31.0):
+    dependencies:
+      bpmn-js: 18.31.0
+
+  bpmn-js-copy-as-image@0.4.1(bpmn-js@18.31.0):
+    dependencies:
+      '@bpmn-io/svg-to-image': 1.0.1
+      bpmn-js: 18.31.0
+
+  bpmn-js-create-append-anything@2.1.0(bpmn-js@18.31.0)(diagram-js@15.28.1):
+    dependencies:
+      bpmn-js: 18.31.0
+      diagram-js: 15.28.1
+
+  bpmn-js-element-templates@2.37.1(@bpmn-io/properties-panel@3.56.1)(bpmn-js-properties-panel@5.65.2(@bpmn-io/properties-panel@3.56.1)(bpmn-js@18.31.0)(camunda-bpmn-js-behaviors@1.18.0(bpmn-js@18.31.0)(camunda-bpmn-moddle@8.0.2)(zeebe-bpmn-moddle@2.0.0(moddle@8.2.1)))(diagram-js@15.28.1))(bpmn-js@18.31.0)(camunda-bpmn-js-behaviors@1.18.0(bpmn-js@18.31.0)(camunda-bpmn-moddle@8.0.2)(zeebe-bpmn-moddle@2.0.0(moddle@8.2.1)))(diagram-js@15.28.1)(preact@10.29.8):
+    dependencies:
+      '@bpmn-io/element-templates-validator': 2.26.0
+      '@bpmn-io/extract-process-variables': 2.2.1
+      '@bpmn-io/moddle-utils': 0.3.0
+      '@bpmn-io/properties-panel': 3.56.1
+      '@bpmn-io/semver-compat': 0.1.0
+      bpmn-js: 18.31.0
+      bpmn-js-properties-panel: 5.65.2(@bpmn-io/properties-panel@3.56.1)(bpmn-js@18.31.0)(camunda-bpmn-js-behaviors@1.18.0(bpmn-js@18.31.0)(camunda-bpmn-moddle@8.0.2)(zeebe-bpmn-moddle@2.0.0(moddle@8.2.1)))(diagram-js@15.28.1)
+      bpmnlint: 11.14.0
+      camunda-bpmn-js-behaviors: 1.18.0(bpmn-js@18.31.0)(camunda-bpmn-moddle@8.0.2)(zeebe-bpmn-moddle@2.0.0(moddle@8.2.1))
+      classnames: 2.5.1
+      diagram-js: 15.28.1
+      ids: 3.0.2
+      min-dash: 5.1.0
+      min-dom: 5.3.0
+      preact-markup: 2.1.1(preact@10.29.8)
+      semver-compare: 1.0.0
+      uuid: 14.0.3
+    transitivePeerDependencies:
+      - preact
+
+  bpmn-js-executable-fix@0.2.2(bpmn-js@18.31.0):
+    dependencies:
+      bpmn-js: 18.31.0
+
+  bpmn-js-native-copy-paste@0.3.0(bpmn-js@18.31.0):
+    dependencies:
+      bpmn-js: 18.31.0
+      min-dash: 5.1.0
+
+  bpmn-js-properties-panel@5.65.2(@bpmn-io/properties-panel@3.56.1)(bpmn-js@18.31.0)(camunda-bpmn-js-behaviors@1.18.0(bpmn-js@18.31.0)(camunda-bpmn-moddle@8.0.2)(zeebe-bpmn-moddle@2.0.0(moddle@8.2.1)))(diagram-js@15.28.1):
+    dependencies:
+      '@bpmn-io/extract-process-variables': 2.2.1
+      '@bpmn-io/properties-panel': 3.56.1
+      array-move: 4.0.0
+      bpmn-js: 18.31.0
+      camunda-bpmn-js-behaviors: 1.18.0(bpmn-js@18.31.0)(camunda-bpmn-moddle@8.0.2)(zeebe-bpmn-moddle@2.0.0(moddle@8.2.1))
+      diagram-js: 15.28.1
+      ids: 3.0.2
+      min-dash: 5.1.0
+      min-dom: 5.3.0
+
+  bpmn-js@18.31.0:
+    dependencies:
+      bpmn-moddle: 10.3.1
+      diagram-js: 15.28.1
+      diagram-js-direct-editing: 3.6.0(diagram-js@15.28.1)
+      ids: 3.0.2
+      inherits-browser: 0.1.0
+      min-dash: 5.1.0
+      min-dom: 5.3.0
+      tiny-svg: 4.1.4
+    transitivePeerDependencies:
+      - preact-render-to-string
+
+  bpmn-moddle@10.3.1:
+    dependencies:
+      min-dash: 5.1.0
+      moddle: 8.2.1
+      moddle-xml: 12.3.1(moddle@8.2.1)
+
+  bpmnlint-utils@1.1.1: {}
+
+  bpmnlint@11.14.0:
+    dependencies:
+      '@bpmn-io/moddle-utils': 0.3.0
+      ansi-colors: 4.1.3
+      bpmn-moddle: 10.3.1
+      bpmnlint-utils: 1.1.1
+      cli-table: 0.3.11
+      color-support: 1.1.3
+      min-dash: 5.1.0
+      mri: 1.2.0
+      pluralize: 8.0.0
+      tiny-glob: 0.2.9
+
+  camunda-bpmn-js-behaviors@1.18.0(bpmn-js@18.31.0)(camunda-bpmn-moddle@8.0.2)(zeebe-bpmn-moddle@2.0.0(moddle@8.2.1)):
+    dependencies:
+      bpmn-js: 18.31.0
+      camunda-bpmn-moddle: 8.0.2
+      ids: 3.0.2
+      min-dash: 5.1.0
+      zeebe-bpmn-moddle: 2.0.0(moddle@8.2.1)
+
+  camunda-bpmn-js@5.36.0(bpmn-js-properties-panel@5.65.2(@bpmn-io/properties-panel@3.56.1)(bpmn-js@18.31.0)(camunda-bpmn-js-behaviors@1.18.0(bpmn-js@18.31.0)(camunda-bpmn-moddle@8.0.2)(zeebe-bpmn-moddle@2.0.0(moddle@8.2.1)))(diagram-js@15.28.1))(moddle@8.2.1)(preact@10.29.8):
+    dependencies:
+      '@bpmn-io/align-to-origin': 0.7.0
+      '@bpmn-io/element-template-chooser': 3.0.0(bpmn-js@18.31.0)(diagram-js@15.28.1)
+      '@bpmn-io/element-template-icon-renderer': 1.0.0(bpmn-js@18.31.0)(diagram-js@15.28.1)
+      '@bpmn-io/properties-panel': 3.56.1
+      '@bpmn-io/variable-resolver': 3.3.0(bpmn-js@18.31.0)
+      '@camunda/example-data-properties-provider': 1.5.2(@bpmn-io/properties-panel@3.56.1)(@bpmn-io/variable-resolver@3.3.0(bpmn-js@18.31.0))(bpmn-js-properties-panel@5.65.2(@bpmn-io/properties-panel@3.56.1)(bpmn-js@18.31.0)(camunda-bpmn-js-behaviors@1.18.0(bpmn-js@18.31.0)(camunda-bpmn-moddle@8.0.2)(zeebe-bpmn-moddle@2.0.0(moddle@8.2.1)))(diagram-js@15.28.1))(bpmn-js@18.31.0)
+      bpmn-js: 18.31.0
+      bpmn-js-color-picker: 0.7.2(bpmn-js@18.31.0)
+      bpmn-js-copy-as-image: 0.4.1(bpmn-js@18.31.0)
+      bpmn-js-create-append-anything: 2.1.0(bpmn-js@18.31.0)(diagram-js@15.28.1)
+      bpmn-js-element-templates: 2.37.1(@bpmn-io/properties-panel@3.56.1)(bpmn-js-properties-panel@5.65.2(@bpmn-io/properties-panel@3.56.1)(bpmn-js@18.31.0)(camunda-bpmn-js-behaviors@1.18.0(bpmn-js@18.31.0)(camunda-bpmn-moddle@8.0.2)(zeebe-bpmn-moddle@2.0.0(moddle@8.2.1)))(diagram-js@15.28.1))(bpmn-js@18.31.0)(camunda-bpmn-js-behaviors@1.18.0(bpmn-js@18.31.0)(camunda-bpmn-moddle@8.0.2)(zeebe-bpmn-moddle@2.0.0(moddle@8.2.1)))(diagram-js@15.28.1)(preact@10.29.8)
+      bpmn-js-executable-fix: 0.2.2(bpmn-js@18.31.0)
+      bpmn-js-native-copy-paste: 0.3.0(bpmn-js@18.31.0)
+      bpmn-js-properties-panel: 5.65.2(@bpmn-io/properties-panel@3.56.1)(bpmn-js@18.31.0)(camunda-bpmn-js-behaviors@1.18.0(bpmn-js@18.31.0)(camunda-bpmn-moddle@8.0.2)(zeebe-bpmn-moddle@2.0.0(moddle@8.2.1)))(diagram-js@15.28.1)
+      camunda-bpmn-js-behaviors: 1.18.0(bpmn-js@18.31.0)(camunda-bpmn-moddle@8.0.2)(zeebe-bpmn-moddle@2.0.0(moddle@8.2.1))
+      camunda-bpmn-moddle: 8.0.2
+      diagram-js: 15.28.1
+      diagram-js-grid: 2.1.0
+      diagram-js-minimap: 5.6.0
+      diagram-js-origin: 1.4.1(diagram-js@15.28.1)
+      inherits-browser: 0.1.0
+      min-dash: 5.1.0
+      zeebe-bpmn-moddle: 2.0.0(moddle@8.2.1)
+    transitivePeerDependencies:
+      - moddle
+      - preact
+      - preact-render-to-string
+
+  camunda-bpmn-moddle@8.0.2:
+    dependencies:
+      bpmn-moddle: 10.3.1
+      moddle: 8.2.1
+
+  canvg@4.0.3:
+    dependencies:
+      '@types/raf': 3.4.3
+      raf: 3.4.1
+      rgbcolor: 1.0.1
+      stackblur-canvas: 2.7.0
+      svg-pathdata: 6.0.3
+
+  classnames@2.5.1: {}
+
+  cli-table@0.3.11:
+    dependencies:
+      colors: 1.0.3
+
+  clsx@2.1.1: {}
+
+  color-support@1.1.3: {}
+
+  colors@1.0.3: {}
+
+  crelt@1.0.7: {}
+
+  diagram-js-direct-editing@3.6.0(diagram-js@15.28.1):
+    dependencies:
+      diagram-js: 15.28.1
+      min-dash: 5.1.0
+      min-dom: 5.3.0
+
+  diagram-js-grid@2.1.0:
+    dependencies:
+      min-dash: 5.1.0
+      min-dom: 5.3.0
+      tiny-svg: 4.1.4
+
+  diagram-js-minimap@5.6.0:
+    dependencies:
+      min-dash: 5.1.0
+      min-dom: 5.3.0
+      tiny-svg: 4.1.4
+
+  diagram-js-origin@1.4.1(diagram-js@15.28.1):
+    dependencies:
+      diagram-js: 15.28.1
+      tiny-svg: 3.1.3
+
+  diagram-js@15.28.1:
+    dependencies:
+      '@bpmn-io/diagram-js-ui': 0.2.4
+      clsx: 2.1.1
+      didi: 11.0.1
+      inherits-browser: 0.1.0
+      min-dash: 5.1.0
+      min-dom: 5.3.0
+      object-refs: 0.4.0
+      path-intersection: 4.2.1
+      tiny-svg: 4.1.4
+    transitivePeerDependencies:
+      - preact-render-to-string
+
+  didi@11.0.1: {}
+
+  domify@3.0.0: {}
+
+  focus-trap@8.2.3:
+    dependencies:
+      tabbable: 6.5.0
+
+  globalyzer@0.1.0: {}
+
+  globrex@0.1.2: {}
+
+  htm@3.1.1: {}
+
+  ids@3.0.2: {}
+
+  inherits-browser@0.1.0: {}
+
+  json-source-map@0.6.1: {}
+
+  min-dash@5.1.0: {}
+
+  min-dom@5.3.0:
+    dependencies:
+      domify: 3.0.0
+      min-dash: 5.1.0
+
+  mitt@3.0.1: {}
+
+  moddle-xml@12.3.1(moddle@8.2.1):
+    dependencies:
+      min-dash: 5.1.0
+      moddle: 8.2.1
+      saxen: 11.2.0
+
+  moddle@8.2.1:
+    dependencies:
+      min-dash: 5.1.0
+
+  mri@1.2.0: {}
+
+  object-refs@0.4.0: {}
+
+  path-intersection@4.2.1: {}
+
+  performance-now@2.1.0: {}
+
+  pluralize@8.0.0: {}
+
+  preact-markup@2.1.1(preact@10.29.8):
+    dependencies:
+      preact: 10.29.8
+
+  preact@10.29.8: {}
+
+  raf@3.4.1:
+    dependencies:
+      performance-now: 2.1.0
+
+  rgbcolor@1.0.1: {}
+
+  saxen@11.2.0: {}
+
+  semver-compare@1.0.0: {}
+
+  semver@7.8.5: {}
+
+  stackblur-canvas@2.7.0: {}
+
+  style-mod@4.1.4: {}
+
+  svg-pathdata@6.0.3: {}
+
+  tabbable@6.5.0: {}
+
+  tiny-glob@0.2.9:
+    dependencies:
+      globalyzer: 0.1.0
+      globrex: 0.1.2
+
+  tiny-svg@3.1.3: {}
+
+  tiny-svg@4.1.4: {}
+
+  uuid@14.0.3: {}
+
+  w3c-keyname@2.2.8: {}
+
+  zeebe-bpmn-moddle@2.0.0(moddle@8.2.1):
+    dependencies:
+      moddle: 8.2.1

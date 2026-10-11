@@ -56,6 +56,26 @@ class Browser(private val base: String) {
         )
     }
 
+    /** Posts one file the way a form with an `<input type="file">` does. */
+    fun upload(path: String, field: String, filename: String, content: ByteArray): Page {
+        val boundary = "ants-${System.nanoTime()}"
+        val csrfPart = csrf?.let { "--$boundary\r\nContent-Disposition: form-data; name=\"_csrf\"\r\n\r\n$it\r\n" }.orEmpty()
+        val head = "$csrfPart--$boundary\r\nContent-Disposition: form-data; name=\"$field\"; filename=\"$filename\"\r\n" +
+            "Content-Type: application/octet-stream\r\n\r\n"
+        val body = head.toByteArray() + content + "\r\n--$boundary--\r\n".toByteArray()
+        return send(
+            HttpRequest.newBuilder(URI("$base$path"))
+                .header("Content-Type", "multipart/form-data; boundary=$boundary")
+                .POST(HttpRequest.BodyPublishers.ofByteArray(body)),
+        )
+    }
+
+    /** Imports a `.bpmn` from the test resources on the Processes page. */
+    fun import(file: String): Page {
+        get("/processes")
+        return upload("/processes", "file", file, javaClass.getResource("/$file")!!.readBytes())
+    }
+
     fun login(password: String = "admin"): Page {
         get("/login")
         return post("/login", mapOf("username" to "admin", "password" to password))

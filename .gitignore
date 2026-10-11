@@ -6,3 +6,4 @@
 /.gradle/
 /.kotlin/
 .DS_Store
+/node_modules/

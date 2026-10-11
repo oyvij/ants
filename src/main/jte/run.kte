@@ -1,0 +1,21 @@
+@import ants.stateName
+@param run: org.operaton.bpm.engine.history.HistoricProcessInstance
+@param variables: Map<String, String>
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>${run.processDefinitionName ?: run.processDefinitionKey} · Ants</title>
+</head>
+<body>
+<p><a href="/runs">Runs</a></p>
+<h1><a href="/processes/${run.processDefinitionKey}">${run.processDefinitionName ?: run.processDefinitionKey}</a></h1>
+<p>State: ${run.stateName}</p>
+<h2>Variables</h2>
+<dl>
+@for((name, value) in variables)
+    <dt>${name}</dt><dd><code>${value}</code></dd>
+@endfor
+</dl>
+</body>
+</html>
