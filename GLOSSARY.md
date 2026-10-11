@@ -100,6 +100,11 @@ Every question the user answered themselves, with their answer, kept across Runs
 Agent can answer a Round the way the user would.
 _Avoid_: answer log, memory
 
+**Story set**:
+A guided reading of what a Run changed across its repos: stories that follow the code in the order it
+runs, written for one review and never updated.
+_Avoid_: tour, walkthrough
+
 **Report**:
 What a Run leaves behind once its Run workspace is gone: what was done and which repos it changed.
 _Avoid_: summary, log
