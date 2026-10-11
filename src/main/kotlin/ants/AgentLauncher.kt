@@ -215,9 +215,8 @@ class AgentLauncher(
         val skill = catalogue.skill(task.extensionProperties["ants.skill"] ?: error("${task.activityId} names no ants.skill"))
         check(agent.cli == "claude") { "Agent ${agent.name} runs ${agent.cli}, and only claude runs for now" }
         val used = catalogue.uses(skill)
-        // ponytail: until the Vault is handed to Tasks (its path in the hand-off line and an --add-dir), a Task that
-        // gets the Vault fails rather than run without it.
-        (listOf(skill) + used).firstOrNull { it.vault }?.let { error("The Task uses the Vault, as ${it.name} opts in, and no Vault can be handed to a Task yet") }
+        // ponytail: a Task whose catalogue.vault(skill) is on runs without the Vault until #69 hands it over (its path in
+        // the hand-off line and an --add-dir).
         refuseBareByDefault(agent.cli, workspace)
 
         val handOff = "Follow the Skill in ${skill.file} for the workspace at $workspace." +

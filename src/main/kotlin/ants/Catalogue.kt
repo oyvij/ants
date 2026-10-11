@@ -138,6 +138,9 @@ class Catalogue(@Value("\${ants.home}") private val home: Path, private val sett
         visit(skill, listOf(skill.name))
         return closure.values.toList()
     }
+
+    /** Whether a Task running [skill] gets the Vault by default: when it or any Skill it uses opts in. */
+    fun vault(skill: Skill) = skill.vault || uses(skill).any { it.vault }
 }
 
 /** A markdown file's YAML frontmatter and its body; broken YAML throws. */
