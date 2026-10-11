@@ -132,10 +132,16 @@ const offered = new Set([
     "sequence-flow", "default-flow", "conditional-flow",
 ])
 
+// The kinds Ants runs as a multi-instance, whose wrench menu keeps the parallel and sequential toggles.
+const repeatable = new Set(["agent", "subprocess", "call"])
+
 function AntsPopupMenus(popupMenu) {
     const provider = {
         getPopupMenuEntries: () => entries => Object.fromEntries(Object.entries(entries)
             .filter(([id]) => offered.has(id.replace(/^(create|append|replace-with)-/, "")))),
+        // Never a standard loop, which Ants doesn't run: a loop is drawn with an exclusive gateway.
+        getPopupMenuHeaderEntries: target => entries => Object.fromEntries(Object.entries(entries)
+            .filter(([id]) => id !== "toggle-loop" && (repeatable.has(target?.businessObject && kindOf(target)) || !id.endsWith("-mi")))),
     }
     // 950: before Camunda's grouping (900) nests the entries.
     for (const menu of ["bpmn-create", "bpmn-append", "bpmn-replace"]) popupMenu.registerProvider(menu, 950, provider)
@@ -253,13 +259,35 @@ function startForm(element) {
         el("button", {textContent: "Add field", onclick: () => { fields.push({id: "", label: "", type: "text", help: "", stored: "", required: false}); redraw() }}))
 }
 panels.start = startForm
+
+// A multi-instance's collection and element variable, under the panel of an element that runs as one.
+function multiInstance(element) {
+    const loop = element.businessObject.loopCharacteristics
+    if (loop?.$type !== "bpmn:MultiInstanceLoopCharacteristics") return ""
+    const field = (attr, placeholder) => el("input", {
+        value: loop.get(attr) || "", placeholder,
+        oninput: event => {
+            quiet = true
+            try {
+                modeler.get("modeling").updateModdleProperties(element, loop, {[attr]: event.target.value || undefined})
+            } finally {
+                quiet = false
+            }
+        },
+    })
+    return el("div", {},
+        el("h3", {textContent: (loop.isSequential ? "Sequential" : "Parallel") + " multi-instance"}),
+        el("p", {textContent: "One instance per item of a list from an earlier Result. Each instance reads its item under the element variable, and the Result is a list in instance order: of Results for a Task, of {taskId: Result} for a sub-process or call activity."}),
+        el("label", {}, "Collection ", field("camunda:collection", "${totickets.output.tickets}")), el("br"),
+        el("label", {}, "Element variable ", field("camunda:elementVariable", "item")))
+}
 panels["timer-start"] = startForm
 
 function explain(element) {
     const target = element.labelTarget || element
     const kind = kindOf(target)
     panel.replaceChildren(kind
-        ? el("div", {}, el("h2", {textContent: kinds[kind].name}), el("p", {textContent: kinds[kind].explain}), panels[kind]?.(target) || "")
+        ? el("div", {}, el("h2", {textContent: kinds[kind].name}), el("p", {textContent: kinds[kind].explain}), panels[kind]?.(target) || "", multiInstance(target))
         : el("div", {}, el("h2", {textContent: target.type.replace("bpmn:", "")}), el("p", {textContent: "Ants doesn't run this element."})))
 }
 

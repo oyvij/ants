@@ -2,10 +2,13 @@ package ants
 
 import jakarta.annotation.PreDestroy
 import org.operaton.bpm.engine.ExternalTaskService
+import org.operaton.bpm.engine.OptimisticLockingException
 import org.operaton.bpm.engine.RepositoryService
 import org.operaton.bpm.engine.RuntimeService
 import org.operaton.bpm.engine.externaltask.LockedExternalTask
+import org.operaton.bpm.model.bpmn.instance.BaseElement
 import org.operaton.bpm.model.bpmn.instance.FlowElement
+import org.operaton.bpm.model.bpmn.instance.operaton.OperatonInputOutput
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.context.event.ApplicationReadyEvent
@@ -53,9 +56,7 @@ class AgentLauncher(
     /** Each live CLI process and the Run it works for. */
     private val clis = ConcurrentHashMap<Process, String>()
     private val live = AtomicInteger()
-    // ponytail: one live session per Task id in a Run; two live instances of one Task, as in a parallel multi-instance,
-    // need a key of their own, along with a Transcript of their own (both are by Task id).
-    private val stdins = ConcurrentHashMap<String, Stdin>() // by key(run, task id)
+    private val stdins = ConcurrentHashMap<String, Stdin>() // by key(run, instance(task))
 
     private fun key(run: String, task: String) = "$run/$task"
     private val usageFile = home.resolve("claude-usage.json")
@@ -192,9 +193,10 @@ class AgentLauncher(
             // path in the hand-off line and an --add-dir).
             refuseBareByDefault(agent.cli, workspace)
             session = session ?: UUID.randomUUID().toString()
-            transcript = Transcript.Writer(Transcript.file(workspace, task.activityId)).apply { ants("launch") }
+            val instance = instance(task)
+            transcript = Transcript.Writer(Transcript.file(workspace, instance)).apply { ants("launch") }
             val result = try {
-                session(task, agent, skill, used, run, workspace, transcript, session, resume != null, task.variables[INSTRUCTION] as? String)
+                session(task, instance, agent, skill, used, run, workspace, transcript, session, resume != null, task.variables[INSTRUCTION] as? String)
             } catch (limit: UsageLimit) {
                 val until = limit.resetsAt + Duration.ofMinutes(1)
                 transcript.ants("end", "Paused by the ${agent.cli} usage limit until ${clock.local(until)}.")
@@ -204,7 +206,7 @@ class AgentLauncher(
             }
             if (result["outcome"] == "done") {
                 transcript.ants("end", "Done.")
-                externalTasks.complete(task.id, WORKER, mapOf(task.activityId to result))
+                complete(task, result)
             } else {
                 val reason = "[stuck] ${result["summary"]}"
                 transcript.ants("end", reason)
@@ -228,6 +230,39 @@ class AgentLauncher(
     }
 
     /**
+     * Completes [task] with its [result], again when another Task's completion changed the same variables first (as
+     * parallel Tasks and multi-instances ending at once do), since the engine rolls back the whole completion.
+     */
+    private fun complete(task: LockedExternalTask, result: Map<*, *>) {
+        for (attempt in 1..COMPLETE_ATTEMPTS) {
+            try {
+                return externalTasks.complete(task.id, WORKER, mapOf(task.activityId to result))
+            } catch (e: OptimisticLockingException) {
+                if (attempt == COMPLETE_ATTEMPTS) throw e
+                Thread.sleep((10L..100L * attempt).random()) // apart, so the next attempts don't clash again
+            }
+        }
+    }
+
+    /**
+     * The key of [task] in its Run, for its Transcript and live session: its Task id, or `<task-id>-<n>` for the nth
+     * instance of a multi-instance (or of one inside a multi-instance sub-process), since instances run at once.
+     */
+    private fun instance(task: LockedExternalTask) =
+        (runtime.getVariable(task.executionId, "loopCounter") as? Int)?.let { "${task.activityId}-${it + 1}" } ?: task.activityId
+
+    /**
+     * The Task's inputs: its input parameters, not the other local variables its execution may hold, such as a
+     * multi-instance's loop variables or the Results its instance collects.
+     */
+    private fun inputs(task: LockedExternalTask): Map<String, Any?> {
+        val names = repository.getBpmnModelInstance(task.processDefinitionId).getModelElementById<BaseElement>(task.activityId)
+            ?.extensionElements?.elementsQuery?.filterByType(OperatonInputOutput::class.java)?.list().orEmpty()
+            .flatMap { it.operatonInputParameters }.map { it.operatonName }
+        return task.variables.filterKeys { it in names }.toSortedMap()
+    }
+
+    /**
      * Puts [task] on hold as an incident, its tag and reason in [message] and anything longer in [details], keeping
      * its [session], if claude ever started one, for Continue.
      */
@@ -243,12 +278,12 @@ class AgentLauncher(
      * instruction alone.
      */
     private fun session(
-        task: LockedExternalTask, agent: Agent, skill: Skill, used: List<Skill>, run: String, workspace: Path, transcript: Transcript.Writer,
+        task: LockedExternalTask, instance: String, agent: Agent, skill: Skill, used: List<Skill>, run: String, workspace: Path, transcript: Transcript.Writer,
         session: String, resume: Boolean, instruction: String?,
     ): Map<*, *> {
         val handOff = "Follow the Skill in ${skill.file} for the workspace at $workspace." +
             (if (used.isEmpty()) "" else " It uses the Skills ${used.joinToString { "${it.name} (${it.file})" }}.")
-        val inputs = task.variables.filterKeys { !it.startsWith("ants.") }.toSortedMap()
+        val inputs = inputs(task)
         val prompt = if (resume) instruction.orEmpty()
         else "$handOff\n\n" + json.writeValueAsString(inputs) + (if (instruction.isNullOrBlank()) "" else "\n\nFrom the user:\n$instruction")
         val schema = ResultContract.schema(skill.outputSchema)
@@ -261,7 +296,7 @@ class AgentLauncher(
         }
         try {
             stdin.say(prompt)
-            stdins[key(run, task.activityId)] = stdin // only now, so the prompt goes first
+            stdins[key(run, instance)] = stdin // only now, so the prompt goes first
             var valid: Map<*, *>? = null
             var failure: Failed? = null
             var stopped = false
@@ -319,7 +354,7 @@ class AgentLauncher(
             return valid ?: throw Failed("${agent.cli} ended without a Result", tail)
         } finally {
             stdin.close()
-            stdins.remove(key(run, task.activityId), stdin)
+            stdins.remove(key(run, instance), stdin)
             clis -= process
         }
     }
@@ -516,6 +551,7 @@ class AgentLauncher(
         private const val RESET = "The usage limit has reset. Carry on where you stopped."
         private val LOCK = Duration.ofDays(365)
         private const val STDERR_LINES = 20
+        private const val COMPLETE_ATTEMPTS = 10
         private const val LOST_LOGIN = "Ants' Claude login is missing or expired. Log in again (Settings)"
 
         /**
