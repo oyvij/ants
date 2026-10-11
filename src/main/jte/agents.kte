@@ -1,0 +1,36 @@
+@param agents: List<ants.Agent>
+@param folder: java.nio.file.Path
+@param error: String? = null
+@param _csrf: org.springframework.security.web.csrf.CsrfToken
+@param colorScheme: String = "light dark"
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="color-scheme" content="${colorScheme}">
+    <title>Agents · Ants</title>
+</head>
+<body>
+@template.nav()
+<h1>Agents</h1>
+@if(error != null)<p role="alert">${error}</p>@endif
+<p><a href="/agents/new">＋ New Agent</a></p>
+<table>
+    <thead><tr><th>Name</th><th>Description</th><th>From</th></tr></thead>
+    <tbody>
+@for(agent in agents)
+    <tr>
+        <td><a href="/agents/${agent.name}">${agent.name}</a></td>
+        <td>${agent.description}</td>
+        <td>@if(agent.file.parent == folder)yours@else<code>${agent.file.parent.toString()}</code>, read-only@endif</td>
+    </tr>
+@endfor
+    </tbody>
+</table>
+<form method="post" action="/agents/import" enctype="multipart/form-data">
+    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+    <label>Import an agent file <input type="file" name="file" accept=".md" required></label>
+    <button>Import</button> Fills the New Agent form.
+</form>
+</body>
+</html>

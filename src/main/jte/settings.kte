@@ -2,6 +2,7 @@
 @param form: ants.SettingsForm
 @param file: String
 @param message: String? = null
+@param login: ants.ClaudeLogin
 @param colorScheme: String = "light dark"
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 <!doctype html>
@@ -15,6 +16,24 @@
 @template.nav()
 <h1>Settings</h1>
 @if(message != null)<p role="alert">${message}</p>@endif
+<section aria-labelledby="claude-login">
+    <h2 id="claude-login">Claude login</h2>
+    <p>@if(login.loggedIn)Logged in (${login.method}).@else Not logged in.@endif
+        Agents run on Ants' own Claude login, never yours. To log in, run in a terminal: <code>${login.command}</code></p>
+@if(login.apiKeySource != null)
+    <p role="alert">An API key is in use (apiKeySource: ${login.apiKeySource}). Agents run on the subscription login only:
+        remove the key from Ants' Claude login and log in again.</p>
+@endif
+@if(login.usage.isEmpty())
+    <p>No usage reported yet; it shows after an Agent Task runs.</p>
+@else
+    <ul>
+@for(usage in login.usage)
+        <li>${usage}</li>
+@endfor
+    </ul>
+@endif
+</section>
 <form method="post" action="/settings">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
     <p><button name="action" value="save">Save</button> Written to <code>${file}</code>. A hand edit to it shows here.</p>
