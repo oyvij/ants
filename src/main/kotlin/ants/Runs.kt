@@ -9,6 +9,7 @@ import org.operaton.bpm.engine.history.HistoricProcessInstance
 import org.operaton.bpm.engine.impl.bpmn.behavior.MultiInstanceActivityBehavior
 import org.operaton.bpm.engine.impl.bpmn.parser.BpmnParse
 import org.operaton.bpm.engine.impl.bpmn.parser.BpmnParseListener
+import org.operaton.bpm.engine.impl.ServiceImpl
 import org.operaton.bpm.engine.impl.cfg.AbstractProcessEnginePlugin
 import org.operaton.bpm.engine.impl.cfg.ProcessEngineConfigurationImpl
 import org.operaton.bpm.engine.impl.cfg.TransactionState
@@ -251,14 +252,15 @@ class RunLifecycle(@Value("\${ants.home}") private val home: Path) : AbstractPro
      * repeats. Each instance keeps the Results it makes as its own local variables, so `${id}` inside it reads its own;
      * as it ends, they go into the list in the same transaction, so two instances ending at once clash (optimistic
      * locking) instead of losing one. A Task (or call activity) gives its Result, a sub-process `{taskId: Result}`.
-     * Each instance reads its item as `${item}` unless the loop names its element variable. Returns the activity's id.
+     * An empty collection gives an empty list. Each instance reads its item as `${item}` unless the loop names its
+     * element variable.
      */
-    private fun collect(body: ActivityImpl): String {
+    private fun collect(body: ActivityImpl) {
         val loop = body.activityBehavior as MultiInstanceActivityBehavior
         if (loop.collectionElementVariable == null) loop.collectionElementVariable = "item"
         val inner = body.activities.single()
         val subProcess = inner.getProperty("type") == "subProcess"
-        val ids = if (subProcess) inner.tasks().map { it.id } else listOf(inner.id)
+        val ids = if (subProcess) inner.results() else listOf(inner.id)
         inner.addBuiltInListener(ExecutionListener.EVENTNAME_START, ExecutionListener { instance -> ids.forEach { instance.setVariableLocal(it, null) } })
         inner.addBuiltInListener(ExecutionListener.EVENTNAME_END, ExecutionListener { instance ->
             val result = if (subProcess) ids.associateWith { instance.getVariableLocal(it) } else instance.getVariableLocal(inner.id)
@@ -271,7 +273,10 @@ class RunLifecycle(@Value("\${ants.home}") private val home: Path) : AbstractPro
             if (results.size < count) bodyExecution.setVariableLocal(RESULTS, results)
             else bodyExecution.parent.setVariable(inner.id, (0 until count).map { results["$it"] })
         })
-        return inner.id
+        // With no instances the loop never sets its count, and no instance ends to give the list.
+        body.addBuiltInListener(ExecutionListener.EVENTNAME_END, ExecutionListener { execution ->
+            if (execution.getVariableLocal("nrOfInstances") == null) execution.setVariable(inner.id, ArrayList<Any>())
+        })
     }
 
     override fun preInit(configuration: ProcessEngineConfigurationImpl) {
@@ -282,8 +287,8 @@ class RunLifecycle(@Value("\${ants.home}") private val home: Path) : AbstractPro
                     process.setProperty(BpmnParse.PROPERTYNAME_START_TIMER, null)
                     val tasks = process.tasks()
                     tasks.forEach { it.addBuiltInListener(ExecutionListener.EVENTNAME_START, counted) }
-                    val fannedOut = process.multiInstanceBodies().map(::collect)
-                    val results = (tasks.map { it.id } + process.calls().map { it.id } + fannedOut).distinct()
+                    process.multiInstanceBodies().forEach(::collect)
+                    val results = process.results()
                     process.addBuiltInListener(ExecutionListener.EVENTNAME_START, started(tasks.map { it.id }, results))
                     process.addBuiltInListener(ExecutionListener.EVENTNAME_END, ended(results))
                 }
@@ -303,6 +308,9 @@ private fun ScopeImpl.tasks(): List<ActivityImpl> = activities.flatMap { activit
     listOfNotNull(activity.takeIf { type == "task" || type?.endsWith("Task") == true }) + activity.tasks()
 }
 
+/** The ids of the Results this scope gives, each `null` until given: its Tasks', call activities' and multi-instances'. */
+private fun ScopeImpl.results() = (tasks() + calls() + multiInstanceBodies().map { it.activities.single() }).map { it.id }.distinct()
+
 /** Every call activity in this scope and the scopes inside it. */
 private fun ScopeImpl.calls(): List<ActivityImpl> =
     activities.flatMap { activity -> listOfNotNull(activity.takeIf { it.getProperty("type") == "callActivity" }) + activity.calls() }
@@ -314,17 +322,24 @@ private fun ScopeImpl.calls(): List<ActivityImpl> =
 const val CALLED = "ants.called"
 
 /** The key prefix of the Process [call] calls: its caller's own, then the call's key. */
-private fun called(call: DelegateExecution) =
-    (call.getVariable(CALLED) as? String).orEmpty() + call.currentActivityId + ((call.getVariable("loopCounter") as? Int)?.let { "-${it + 1}" } ?: "") + "."
+private fun called(call: DelegateExecution) = key(call as ExecutionEntity, call.currentActivityId) + "."
 
 /**
- * The key of the Task [activity] on [execution] in its Run, for its Transcript, live session and Notification entry:
- * its Task id, or `<task-id>-<n>` for the nth instance of a multi-instance (or of one inside a multi-instance
- * sub-process), since instances run at once; in a called Process, after its call's key, as in `build.draft`, since a
- * called Process's Task ids can be its caller's too.
+ * The key of [activity] on [execution] in its Run: its id, then `-<n>` for each multi-instance it is the nth instance
+ * of, outermost first, as in `draft-2-1` for the first `draft` in the second instance of a multi-instance sub-process;
+ * in a called Process, after its call's key ([CALLED]).
  */
-fun RuntimeService.taskKey(execution: String, activity: String) = (getVariable(execution, CALLED) as? String).orEmpty() +
-    ((getVariable(execution, "loopCounter") as? Int)?.let { "$activity-${it + 1}" } ?: activity)
+private fun key(execution: ExecutionEntity, activity: String) = (execution.getVariable(CALLED) as? String).orEmpty() + activity +
+    generateSequence(execution) { it.parent }.mapNotNull { it.getVariableLocal("loopCounter") as? Int }.toList().asReversed().joinToString("") { "-${it + 1}" }
+
+/**
+ * The key of the Task [activity] on [execution] in its Run, for its Transcript, live session and Notification entry,
+ * since instances of a multi-instance run at once and a called Process's Task ids can be its caller's too: `draft`,
+ * `draft-2`, `draft-2-1` or `build.draft`.
+ */
+fun RuntimeService.taskKey(execution: String, activity: String): String = (this as ServiceImpl).commandExecutor.execute { context ->
+    key(checkNotNull(context.executionManager.findExecutionById(execution)) { "No execution $execution" }, activity)
+}
 
 /** The Results a multi-instance's instances have given so far, on its body's execution. */
 private const val RESULTS = "ants.results"

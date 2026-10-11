@@ -3,6 +3,8 @@ package ants
 import org.junit.jupiter.api.Test
 import kotlin.io.path.createDirectories
 import kotlin.io.path.deleteIfExists
+import kotlin.io.path.listDirectoryEntries
+import kotlin.io.path.name
 import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
@@ -138,6 +140,41 @@ class MultiInstanceTest : AntsTest() {
             listOf(first, 3 - first).joinToString(",", "[", "]") { """{"draft":${drafted("$it")},"review":$reviewed}""" },
             variable(run, "fanout"),
         )
+    }
+
+    @Test
+    fun `a multi-instance Task in a multi-instance sub-process keeps each instance's Transcript apart`() {
+        setUp()
+        claude.session("plan", result("""{"items":["a","b"]}"""))
+        claude.session("draft", result("""{"text":"same"}"""))
+        val subProcess = """
+            <bpmn:subProcess id="fanout">
+              ${loop()}
+              <bpmn:startEvent id="inner-start" />
+              <bpmn:sequenceFlow id="s1" sourceRef="inner-start" targetRef="draft" />
+              ${agentTask("draft", "draft", loop = loop())}
+              <bpmn:sequenceFlow id="s2" sourceRef="draft" targetRef="inner-end" />
+              <bpmn:endEvent id="inner-end" />
+            </bpmn:subProcess>"""
+        val run = start("nested", subProcess, "fanout")
+
+        eventually { assertContains(page(run), "State: Completed") }
+        assertEquals(4, claude.launches("draft").size)
+        // Outer instance first, then the Task's own: draft-2-1 is the first draft of the second sub-process.
+        assertEquals(setOf("plan", "draft-1-1", "draft-1-2", "draft-2-1", "draft-2-2"), home.resolve("runs/$run/tasks").listDirectoryEntries().map { it.name }.toSet())
+        val drafts = List(2) { drafted("same") }.joinToString(",", "[", "]")
+        assertEquals("""[{"draft":$drafts},{"draft":$drafts}]""", variable(run, "fanout"))
+    }
+
+    @Test
+    fun `a multi-instance over an empty list gives an empty list`() {
+        setUp()
+        claude.session("plan", result("""{"items":[]}"""))
+        val run = start("none", agentTask("draft", "draft", loop = loop()), "draft")
+
+        eventually { assertContains(page(run), "State: Completed") }
+        assertEquals("[]", variable(run, "draft"))
+        assertEquals(0, claude.launches("draft").size)
     }
 
     @Test

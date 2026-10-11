@@ -158,6 +158,32 @@ class CallActivityTest : AntsTest() {
     }
 
     @Test
+    fun `a call activity in a multi-instance sub-process gives its Result to its own instance`() {
+        setUp()
+        claude.session("plan", result("""{"items":["a","b"]}"""))
+        claude.session("draft", 1, "wait go", result("""{"text":"1"}"""))
+        claude.session("draft", 2, "wait go", result("""{"text":"2"}"""))
+        deploy(spec())
+        val each = """
+            <bpmn:subProcess id="each">
+              <bpmn:multiInstanceLoopCharacteristics isSequential="false" operaton:collection="${'$'}{plan.output.items}" />
+              <bpmn:startEvent id="inner-start" />
+              ${call("build", "spec", mapOf("prompt" to "item"))}
+              <bpmn:endEvent id="inner-end" />
+              <bpmn:sequenceFlow id="s1" sourceRef="inner-start" targetRef="build" />
+              <bpmn:sequenceFlow id="s2" sourceRef="build" targetRef="inner-end" />
+            </bpmn:subProcess>"""
+        deploy(process("each-one", "plan" to agentTask("plan", "plan"), "each" to each))
+        val run = start("each-one")
+
+        eventually { assertEquals(2, claude.launches("draft").size) }
+        claude.release("go")
+        eventually { assertContains(page(run), "State: Completed") }
+        val first = claude.launches("draft").indexOfFirst { """{\"prompt\":\"a\"}""" in it.stdin } + 1
+        assertEquals(listOf(first, 3 - first).joinToString(",", "[", "]") { """{"build":{"draft":${done("$it")}}}""" }, variable(run, "each"))
+    }
+
+    @Test
     fun `a stuck Task in a called Process is one Notification entry, named after the top Run, and Continue goes on`() {
         setUp()
         claude.session("draft", 1, stuck)
