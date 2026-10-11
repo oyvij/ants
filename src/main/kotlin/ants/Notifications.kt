@@ -117,32 +117,36 @@ class Notifications(
         userTask(id)?.let { task ->
             val entry = entry(task)
             model.addAttribute("entry", entry)
-            if (kind(task) == ANSWER_ROUND) {
-                if (!model.containsAttribute("questions")) model.addAttribute("questions", Question.of(asked(task)))
-                model.addAttribute("round", round(task))
-                return "answer"
-            }
-            if (kind(task) == REVIEW_CHANGES) {
-                val shown = when {
-                    property(task, WALKTHROUGH) == null -> null // By repo, with no tabs
-                    tab == "repo" -> "repo"
-                    else -> "story"
+            return when (kind(task)) {
+                UserTaskKind.ANSWER_ROUND -> {
+                    if (!model.containsAttribute("questions")) model.addAttribute("questions", Question.of(asked(task)))
+                    model.addAttribute("round", round(task))
+                    "answer"
                 }
-                val story = shown == "story"
-                model.addAttribute("tab", shown)
-                if (story) {
-                    try {
-                        model.addAttribute("stories", storySet(home.runWorkspace(entry.run), cloneRepos.untrimmed))
-                    } catch (refused: StorySetRefused) {
-                        model.addAttribute("refused", refused.message)
+                UserTaskKind.REVIEW_CHANGES -> {
+                    val shown = when {
+                        property(task, WALKTHROUGH) == null -> null // By repo, with no tabs
+                        tab == "repo" -> "repo"
+                        else -> "story"
                     }
+                    val story = shown == "story"
+                    model.addAttribute("tab", shown)
+                    if (story) {
+                        try {
+                            model.addAttribute("stories", storySet(home.runWorkspace(entry.run), cloneRepos.untrimmed))
+                        } catch (refused: StorySetRefused) {
+                            model.addAttribute("refused", refused.message)
+                        }
+                    }
+                    model.addAttribute("changes", if (story) emptyList() else changes(push.outgoing(entry.run), cloneRepos::git))
+                    model.addAttribute("comments", comments(task))
+                    "review"
                 }
-                model.addAttribute("changes", if (story) emptyList() else changes(push.outgoing(entry.run), cloneRepos::git))
-                model.addAttribute("comments", comments(task))
-                return "review"
+                UserTaskKind.APPROVE -> {
+                    model.addAttribute("shown", shown(home.runWorkspace(entry.run), runtime.getVariableLocal(task.executionId, SHOW)))
+                    "approve"
+                }
             }
-            model.addAttribute("shown", shown(home.runWorkspace(entry.run), runtime.getVariableLocal(task.executionId, SHOW)))
-            return "approve"
         }
         val incident = incidents().incidentId(id).singleResult() ?: return gone(model, response)
         val entry = entry(incident)
@@ -213,12 +217,12 @@ class Notifications(
      */
     @PostMapping("/notifications/{id}", params = ["comment"])
     fun approve(@PathVariable id: String, @RequestParam action: String, @RequestParam comment: String, @RequestParam(required = false) back: String?, model: Model, response: HttpServletResponse): String {
-        val task = userTask(id)?.takeIf { kind(it) == null || kind(it) == REVIEW_CHANGES } ?: return gone(model, response)
-        val comments = if (kind(task) == REVIEW_CHANGES) comments(task) else null
+        val task = userTask(id, UserTaskKind.APPROVE, UserTaskKind.REVIEW_CHANGES) ?: return gone(model, response)
+        val comments = if (kind(task) == UserTaskKind.REVIEW_CHANGES) comments(task) else null
         val entry = entry(task)
         val approved = when (action) {
             APPROVE -> true
-            SEND_BACK -> false
+            SEND_BACK_ACTION -> false
             else -> throw ResponseStatusException(HttpStatus.BAD_REQUEST, "No action $action")
         }
         if (!approved && comment.isBlank() && comments.isNullOrEmpty()) {
@@ -229,8 +233,8 @@ class Notifications(
         val message = (listOf(comment.trim()) + comments.orEmpty().joinToString("\n") { it.summary }).filter(String::isNotEmpty).joinToString("\n\n")
         runLog(workspace, entry.task, if (approved) "Approve" else "Send back", message)
         val result = mapOf("approved" to approved, "comment" to comment) + (comments?.let { mapOf("comments" to ArrayList(it.map(LineComment::toMap))) } ?: emptyMap())
-        complete(task, workspace, result, property(task, SEND_BACK_PROPERTY)?.takeIf { !approved }, message)
-        if (approved && comments != null) ants.tickets(workspace, entry.run).filter { it.status == "in-review" }.forEach { it.status("done") }
+        complete(task, workspace, result, property(task, SEND_BACK)?.takeIf { !approved }, message)
+        if (approved && comments != null) ants.tickets(workspace, entry.run).filter { it.inReview }.forEach { it.status(Tracked.DONE) }
         return back(back, entry.run, "/notifications/next?run=${entry.run}")
     }
 
@@ -240,39 +244,26 @@ class Notifications(
      */
     @PostMapping("/notifications/{id}/comments")
     fun comment(
-        @PathVariable id: String, @RequestParam(required = false) remove: Int?, @RequestParam(required = false) story: String?,
-        @RequestParam(required = false) step: Int?, @RequestParam(required = false) tab: String?, @RequestParam(required = false) repo: String?,
-        @RequestParam(required = false) file: String?, @RequestParam(required = false) side: String?, @RequestParam(required = false) from: Int?,
-        @RequestParam(required = false) to: Int?, @RequestParam(required = false) type: String?, @RequestParam(required = false) body: String?,
-        model: Model, response: HttpServletResponse,
+        @PathVariable id: String, @RequestParam(required = false) remove: Int?, @RequestParam(required = false) tab: String?,
+        @RequestParam fields: Map<String, String>, model: Model, response: HttpServletResponse,
     ): String {
-        val task = userTask(id)?.takeIf { kind(it) == REVIEW_CHANGES } ?: return gone(model, response)
+        val task = userTask(id, UserTaskKind.REVIEW_CHANGES) ?: return gone(model, response)
         val comments = comments(task).toMutableList()
         if (remove != null) comments.removeAt(remove)
         else {
-            if (repo.isNullOrBlank() || file.isNullOrBlank() || side !in setOf("old", "new") || from == null || type !in LineComment.TYPES) {
-                throw ResponseStatusException(HttpStatus.BAD_REQUEST, "A line comment needs a repo, a file, a side, its lines and a type")
-            }
-            if (body.isNullOrBlank()) {
+            val comment = LineComment.of(fields) ?: throw ResponseStatusException(HttpStatus.BAD_REQUEST, "A line comment needs a repo, a file, a side, its lines and a type")
+            if (comment.body.isBlank()) {
                 model.addAttribute("error", "A line comment needs a body.")
                 return entry(id, model, response, tab)
             }
-            val last = to ?: from
-            comments += LineComment(story?.takeIf { step != null }, step?.takeIf { story != null }, repo, file, side!!, minOf(from, last), maxOf(from, last), type!!, body)
+            comments += comment
         }
-        userTasks.setVariableLocal(task.id, COMMENTS, JsonMapper.shared().writeValueAsString(comments.map(LineComment::toMap)))
+        userTasks.setVariableLocal(task.id, COMMENTS, LineComment.json(comments))
         return "redirect:/notifications/$id" + if (tab in setOf("story", "repo")) "?tab=$tab" else ""
     }
 
     /** A Review changes' line comments so far. */
-    private fun comments(task: Task): List<LineComment> =
-        (userTasks.getVariableLocal(task.id, COMMENTS) as? String)?.let { JsonMapper.shared().readValue(it, List::class.java) }.orEmpty().map {
-            val c = it as Map<*, *>
-            LineComment(
-                c["story"] as? String, (c["step"] as? Number)?.toInt(), c["repo"].toString(), c["file"].toString(), c["side"].toString(),
-                (c["from"] as Number).toInt(), (c["to"] as Number).toInt(), c["type"].toString(), c["body"].toString(),
-            )
-        }
+    private fun comments(task: Task) = LineComment.all(userTasks.getVariableLocal(task.id, COMMENTS) as? String)
 
     /**
      * Sends a Round: each question's answer (`answer.<id>`, every one required), stamped by Ants ([answers]), completes
@@ -282,7 +273,7 @@ class Notifications(
      */
     @PostMapping("/notifications/{id}/answers")
     fun answer(@PathVariable id: String, @RequestParam form: Map<String, String>, model: Model, response: HttpServletResponse): String {
-        val task = userTask(id)?.takeIf { kind(it) == ANSWER_ROUND } ?: return gone(model, response)
+        val task = userTask(id, UserTaskKind.ANSWER_ROUND) ?: return gone(model, response)
         val entry = entry(task)
         val questions = Question.of(asked(task), form.filterKeys { it.startsWith("answer.") }.mapKeys { it.key.removePrefix("answer.") })
         if (questions.any { it.answer.isBlank() }) {
@@ -325,8 +316,8 @@ class Notifications(
     private fun property(task: Task, name: String) =
         repository.getBpmnModelInstance(task.processDefinitionId).getModelElementById<BaseElement>(task.taskDefinitionKey).property(name)
 
-    /** A User Task's kind: [ANSWER_ROUND] or [REVIEW_CHANGES], or without [USER_TASK] an Approve. */
-    private fun kind(task: Task) = property(task, USER_TASK)
+    /** A User Task's kind, by its [USER_TASK]: an Approve without one. */
+    private fun kind(task: Task) = property(task, USER_TASK).let { value -> UserTaskKind.entries.firstOrNull { it.value == value } ?: UserTaskKind.APPROVE }
 
     /** The Result of the Agent Task an Answer a Round names as its asker, holding the Round's questions. */
     private fun asked(task: Task) = property(task, ASKER)?.let { runtime.getVariable(task.executionId, it) }
@@ -363,6 +354,9 @@ class Notifications(
 
     private fun userTask(id: String): Task? = userTasks.createTaskQuery().taskId(id).active().singleResult()
 
+    /** The open User Task [id], if it is one of [kinds]. */
+    private fun userTask(id: String, vararg kinds: UserTaskKind): Task? = userTask(id)?.takeIf { kind(it) in kinds }
+
     private fun entry(incident: Incident): TaskEntry {
         val tag = Regex("""^\[[\w-]+]""").find(incident.incidentMessage.orEmpty())?.value
         val summary = incident.incidentMessage.orEmpty().removePrefix(tag.orEmpty()).trim()
@@ -371,12 +365,13 @@ class Notifications(
 
     /** A User Task's entry: an Answer a Round's summary is its asker's, an Approve's is its Title. */
     private fun entry(task: Task): TaskEntry {
-        val (tag, summary) = when (kind(task)) {
-            ANSWER_ROUND -> "[questions]" to (asked(task) as? Map<*, *>)?.get("summary")
-            REVIEW_CHANGES -> "[review]" to "Review the changes on the work branch."
-            else -> "[approve]" to runtime.getVariableLocal(task.executionId, TITLE)
+        val kind = kind(task)
+        val summary = when (kind) {
+            UserTaskKind.ANSWER_ROUND -> (asked(task) as? Map<*, *>)?.get("summary")
+            UserTaskKind.REVIEW_CHANGES -> "Review the changes on the work branch."
+            UserTaskKind.APPROVE -> runtime.getVariableLocal(task.executionId, TITLE)
         }
-        return entry(task.id, tag, summary?.toString().orEmpty(), task.createTime, task.processInstanceId, task.processDefinitionId, task.executionId, task.taskDefinitionKey)
+        return entry(task.id, kind.tag, summary?.toString().orEmpty(), task.createTime, task.processInstanceId, task.processDefinitionId, task.executionId, task.taskDefinitionKey)
     }
 
     private fun entry(id: String, tag: String, summary: String, since: Date, instance: String, definition: String, execution: String, activity: String): TaskEntry {
@@ -400,22 +395,29 @@ class Notifications(
     private companion object {
         const val CANCEL = "cancel"
         const val APPROVE = "approve"
-        const val SEND_BACK = "send-back"
+        const val SEND_BACK_ACTION = "send-back"
 
         /** An Approve's fields: its Title and Show are input parameters, so `${…}` in them works and Checks read them. */
         const val TITLE = "title"
         const val SHOW = "show"
-        const val SEND_BACK_PROPERTY = "ants.send-back"
-
-        /** A User Task's kind ([ANSWER_ROUND]; without it, an Approve). */
-        const val USER_TASK = "ants.user-task"
-        const val ANSWER_ROUND = "answer-round"
-        const val REVIEW_CHANGES = "review-changes"
 
         /** A Review changes' line comments so far, as JSON, local to its User Task. */
         const val COMMENTS = "comments"
     }
 }
+
+/** A User Task's kind, its [USER_TASK] [value], and the tag of its entry on the Notification list. */
+enum class UserTaskKind(val value: String?, val tag: String) {
+    ANSWER_ROUND("answer-round", "[questions]"),
+    REVIEW_CHANGES("review-changes", "[review]"),
+    APPROVE(null, "[approve]"),
+}
+
+/** The extension property naming a User Task's [UserTaskKind]; an Approve has none. */
+const val USER_TASK = "ants.user-task"
+
+/** The extension property naming the Task an Approve's or a Review changes' Send back resumes. */
+const val SEND_BACK = "ants.send-back"
 
 /**
  * What an Approve shows, as HTML: the file in [workspace] that [show] names, else [show] itself, rendered as markdown;

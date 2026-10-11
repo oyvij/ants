@@ -305,11 +305,11 @@ class AgentLauncher(
     private fun ticketed(task: LockedExternalTask, run: String, workspace: Path): Boolean {
         val item = runtime.ticketItem(task.executionId, task.activityId) ?: return false
         val ticket = ticket(workspace, run, item) ?: error("The item $item names no Ticket in tickets/issues")
-        if (ticket.status == "done") {
+        if (ticket.done) {
             complete(task, mapOf("outcome" to "done", "summary" to "Done by the user.", "output" to emptyMap<String, Any>()))
             return true
         }
-        val check = { ticket(workspace, run, item)?.let { if (it.status == "done") null else held(it, tickets(workspace, run)) } }
+        val check = { ticket(workspace, run, item)?.let { if (it.done) null else held(it, tickets(workspace, run)) } }
         heldOnTickets[task.id] = Held(check() ?: return false, check)
         return true
     }

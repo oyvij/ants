@@ -308,7 +308,7 @@ class RunLifecycle(@Value("\${ants.home}") private val home: Path) : AbstractPro
                 val item = instance.getVariable(loop.collectionElementVariable)
                 val run = (instance as ExecutionEntity).rootProcessInstanceId
                 Context.getCommandContext().transactionContext.addTransactionListener(TransactionState.COMMITTED) {
-                    ticket(home.runWorkspace(run), run, item)?.takeIf { it.status !in setOf("done", "wontfix") }?.status("in-review")
+                    ticket(home.runWorkspace(run), run, item)?.takeIf { !it.closed }?.status(Tracked.IN_REVIEW)
                 }
             }
         })

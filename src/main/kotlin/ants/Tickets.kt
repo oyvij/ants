@@ -46,6 +46,21 @@ class Tracked(val run: String, val name: String, val file: Path) {
     val title = Regex("""^# +(.+)$""", RegexOption.MULTILINE).find(text)?.groupValues?.get(1)?.trim() ?: name
     val status = STATUS.find(text)?.groupValues?.get(1)
 
+    /** Done, by its implementer and the review, or by the user. */
+    val done get() = status == DONE
+
+    /** Waiting on the review of the changes. */
+    val inReview get() = status == IN_REVIEW
+
+    /** Its work is in, under review or done, so the Tickets it blocks may start. */
+    val landed get() = inReview || done
+
+    /** The user's to do, never an implementer's. */
+    val forHuman get() = status == READY_FOR_HUMAN
+
+    /** Finished one way or another: done, won't be done, or a Spec closed with its Run. */
+    val closed get() = status in setOf(DONE, WONTFIX, CLOSED)
+
     /** A Ticket's number, which `Blocked by:` lines name it by: 1 for `01-hello`. */
     val number = name.substringBefore('-').toIntOrNull()
 
@@ -65,6 +80,15 @@ class Tracked(val run: String, val name: String, val file: Path) {
             else -> "Status: $status\n\n$text"
         },
     )
+
+    /** The statuses Ants reads and sets; a Skill may write others, which Ants shows as they are. */
+    companion object {
+        const val DONE = "done"
+        const val IN_REVIEW = "in-review"
+        const val READY_FOR_HUMAN = "ready-for-human"
+        const val WONTFIX = "wontfix"
+        const val CLOSED = "closed"
+    }
 }
 
 /** A `ready-for-human` Ticket of a live Run, waiting on the user until they mark it done. */
@@ -79,16 +103,19 @@ class TicketEntry(ticket: Tracked, process: String) : Entry(
 
 /** A Spec on the Tickets page, with its Tickets, of the Run [run] of the Process [process]. */
 class SpecRow(val run: String, val process: String, val spec: Tracked, val tickets: List<Tracked>) {
-    val done = tickets.count { it.status == "done" }
+    val done = tickets.count { it.done }
 
     /** Open until the Run ends and closes it, or the user does. */
-    val open = spec.status !in setOf("closed", "wontfix", "done")
+    val open = !spec.closed
 }
 
 /** A `Status:` line, the first. */
 private val STATUS = Regex("""^Status:[ \t]*(\S+)""", RegexOption.MULTILINE)
 private val BLOCKED_BY = Regex("""^(Blocked by:)(.*)$""", RegexOption.MULTILINE)
 private val NUMBER = Regex("""\d+""")
+
+/** Where a Run workspace keeps its Tickets, one file each. */
+const val TICKETS = "tickets/issues"
 
 /**
  * The Ticket an item of an Items are Tickets multi-instance names, in the Run workspace [workspace] of the Run [run]: by
@@ -105,8 +132,8 @@ fun ticket(workspace: Path, run: String, item: Any?): Tracked? {
  * or `done` yet.
  */
 fun held(ticket: Tracked, tickets: List<Tracked>): String? {
-    if (ticket.status == "ready-for-human") return "Ready for human"
-    val open = ticket.blockedBy.filter { n -> tickets.any { it.number == n.toInt() && it.status !in setOf("in-review", "done") } }
+    if (ticket.forHuman) return "Ready for human"
+    val open = ticket.blockedBy.filter { n -> tickets.any { it.number == n.toInt() && !it.landed } }
     return if (open.isEmpty()) null else "Blocked by ${open.joinToString()}"
 }
 
@@ -114,7 +141,7 @@ fun held(ticket: Tracked, tickets: List<Tracked>): String? {
 fun spec(workspace: Path, run: String) = workspace.resolve("tickets/spec.md").takeIf { it.exists() }?.let { Tracked(run, "spec", it) }
 
 /** The Tickets in the Run workspace [workspace] of the Run [run], in file order. */
-fun tickets(workspace: Path, run: String): List<Tracked> = workspace.resolve("tickets/issues").takeIf { it.isDirectory() }
+fun tickets(workspace: Path, run: String): List<Tracked> = workspace.resolve(TICKETS).takeIf { it.isDirectory() }
     ?.listDirectoryEntries("*.md")?.sortedBy { it.name }?.map { Tracked(run, it.nameWithoutExtension, it) }.orEmpty()
 
 /** The Report's Tickets section, for the Run [run] in [workspace]: its Spec, then each Ticket and its status. */
@@ -137,7 +164,7 @@ fun trackerDoc(workspace: Path) {
 }
 
 /** As the Run in [workspace] ends, its Spec closes, or becomes `wontfix` when the Run was [cancelled]. */
-fun closeSpec(workspace: Path, cancelled: Boolean) = spec(workspace, "")?.status(if (cancelled) "wontfix" else "closed")
+fun closeSpec(workspace: Path, cancelled: Boolean) = spec(workspace, "")?.status(if (cancelled) Tracked.WONTFIX else Tracked.CLOSED)
 
 /**
  * The Tickets page, listing every Spec across Runs, open first, and a page per Spec and Ticket, rendered GitHub-style.
@@ -195,14 +222,14 @@ class Tickets(private val history: HistoryService, private val streams: Streams,
 
     /** The `ready-for-human` Tickets of live Runs, on the Notification list until marked done. */
     fun waiting(): List<TicketEntry> = history.createHistoricProcessInstanceQuery().rootProcessInstances().unfinished().list().flatMap { run ->
-        tickets(run.id).filter { it.status == "ready-for-human" }.map { TicketEntry(it, run.processDefinitionName ?: run.processDefinitionKey) }
+        tickets(run.id).filter { it.forHuman }.map { TicketEntry(it, run.processDefinitionName ?: run.processDefinitionKey) }
     }
 
     /** **Mark done**, on a Ticket that waits on the user. */
     @PostMapping("/runs/{run}/tickets/{name}/done")
     fun done(@PathVariable run: String, @PathVariable name: String): String {
         val file = tracked(run, name)
-        file.status("done")
+        file.status(Tracked.DONE)
         return "redirect:${file.href}"
     }
 

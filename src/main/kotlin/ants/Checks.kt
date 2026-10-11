@@ -62,10 +62,18 @@ val builtIns = mapOf(
     "push" to "Push: waits for you to push the work branch of every repo.",
 )
 
-/** What the modeler page knows of Ants from the server, as JSON on its canvas's `data-facts`: the Built-in Tasks and the start-form field types. */
+/**
+ * What the modeler page knows of Ants from the server, as JSON on its canvas's `data-facts`: the Built-in Tasks, the
+ * start-form field types, and Items are Tickets' property and what it does.
+ */
 val modelerFacts: String = JsonMapper.shared().writeValueAsString(mapOf(
     "builtIns" to builtIns,
     "fieldTypes" to FieldType.entries.associate { it.name.lowercase() to it.name.lowercase().replaceFirstChar(Char::uppercase) },
+    "itemsAreTickets" to mapOf(
+        "property" to ITEMS_ARE_TICKETS,
+        "help" to "Each item names a Ticket ($TICKETS/01-hello.md, or 01). An instance waits until its Ticket's Blocked by are " +
+            "${Tracked.IN_REVIEW} or ${Tracked.DONE}, a ${Tracked.READY_FOR_HUMAN} Ticket waits for you, and a landed instance's Ticket goes ${Tracked.IN_REVIEW}.",
+    ),
 ))
 
 /** The BPMN elements Ants runs, by their XML name; [refusedUses] refuses some uses of them. Anything else is refused. */
@@ -205,9 +213,9 @@ private fun schedules(model: BpmnModelInstance): List<Check> {
 
 /** A Review changes' Send back resumes one Agent Task, so it can't name a multi-instance one, or one inside one. */
 private fun reviewSendBacks(model: BpmnModelInstance) = model.getModelElementsByType(UserTask::class.java)
-    .filter { it.property("ants.user-task") == "review-changes" }
+    .filter { it.property(USER_TASK) == UserTaskKind.REVIEW_CHANGES.value }
     .mapNotNull { review ->
-        val named = review.property("ants.send-back")?.let { model.getModelElementById<BaseElement>(it) } ?: return@mapNotNull null
+        val named = review.property(SEND_BACK)?.let { model.getModelElementById<BaseElement>(it) } ?: return@mapNotNull null
         if (loops(named).isEmpty()) null
         else Check(review.id, "${review.label} sends back to ${named.label}, a multi-instance Task: Send back resumes one Agent Task.")
     }

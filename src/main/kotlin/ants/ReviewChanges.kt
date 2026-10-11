@@ -1,5 +1,6 @@
 package ants
 
+import tools.jackson.databind.json.JsonMapper
 import java.nio.file.Path
 
 /**
@@ -36,6 +37,31 @@ data class LineComment(
 
     companion object {
         val TYPES = listOf("ISSUE", "NOTE", "SUGGESTION", "COMMENT")
+
+        /**
+         * A line comment from its [fields], as the page's form or [json] gives them: `to` is `from` when missing, the
+         * two are put in order, and a story without a step (or a step without a story) is dropped. Null when it lacks a
+         * repo, a file, a side (`old` or `new`), its first line or a type.
+         */
+        fun of(fields: Map<*, *>): LineComment? {
+            fun text(key: String) = fields[key]?.toString()?.takeIf(String::isNotBlank)
+            val from = text("from")?.toIntOrNull() ?: return null
+            val to = text("to")?.toIntOrNull() ?: from
+            val story = text("story")
+            val step = text("step")?.toIntOrNull()
+            return LineComment(
+                story?.takeIf { step != null }, step?.takeIf { story != null }, text("repo") ?: return null, text("file") ?: return null,
+                text("side")?.takeIf { it == "old" || it == "new" } ?: return null, minOf(from, to), maxOf(from, to),
+                text("type")?.takeIf { it in TYPES } ?: return null, fields["body"]?.toString().orEmpty(),
+            )
+        }
+
+        /** [comments] as JSON, as a Review changes keeps them. */
+        fun json(comments: List<LineComment>): String = JsonMapper.shared().writeValueAsString(comments.map(LineComment::toMap))
+
+        /** The comments the JSON [json] holds, none when null. */
+        fun all(json: String?): List<LineComment> =
+            json?.let { JsonMapper.shared().readValue(it, List::class.java) }.orEmpty().mapNotNull { of(it as Map<*, *>) }
     }
 }
 

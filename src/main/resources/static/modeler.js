@@ -26,9 +26,9 @@ const kinds = {
     flow: {name: "Sequence flow", explain: "The path a Run takes from one element to the next."},
 }
 
-// From the server (modelerFacts in Checks.kt): the Built-in Tasks by topic, and the start-form field types by the
-// `ants.type` property each field carries (the engine only knows `string`).
-const {builtIns, fieldTypes} = JSON.parse(document.getElementById("canvas").dataset.facts)
+// From the server (modelerFacts in Checks.kt): the Built-in Tasks by topic, the start-form field types by the
+// `ants.type` property each field carries (the engine only knows `string`), and Items are Tickets' property and help.
+const {builtIns, fieldTypes, itemsAreTickets} = JSON.parse(document.getElementById("canvas").dataset.facts)
 
 // The three Tasks Ants runs, as the BPMN each one is.
 const tasks = {
@@ -316,10 +316,10 @@ function multiInstance(element) {
         el("p", {textContent: "One instance per item of a list from an earlier Result. Each instance reads its item under the element variable, and the Result is a list in instance order: of Results for a Task, of {taskId: Result} for a sub-process or call activity."}),
         el("label", {}, "Collection ", field("camunda:collection", "${totickets.output.tickets}")), el("br"),
         el("label", {}, "Element variable ", field("camunda:elementVariable", "item")),
-        el("p", {}, el("label", {title: "Each item names a Ticket (tickets/issues/01-hello.md, or 01). An instance waits until its Ticket's Blocked by are in-review or done, a ready-for-human Ticket waits for you, and a landed instance's Ticket goes in-review."},
+        el("p", {}, el("label", {title: itemsAreTickets.help},
             el("input", {
-                type: "checkbox", checked: agentProperties(element.businessObject)["ants.items-are-tickets"] === "true",
-                onchange: event => writeAgentTask(element, {"ants.items-are-tickets": event.target.checked ? "true" : undefined}),
+                type: "checkbox", checked: agentProperties(element.businessObject)[itemsAreTickets.property] === "true",
+                onchange: event => writeAgentTask(element, {[itemsAreTickets.property]: event.target.checked ? "true" : undefined}),
             }), " Items are Tickets")))
 }
 
