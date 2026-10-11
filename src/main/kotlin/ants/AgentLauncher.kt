@@ -30,6 +30,7 @@ import java.util.concurrent.TimeUnit.SECONDS
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.io.path.readText
 import kotlin.io.path.writeText
+import kotlin.io.path.deleteIfExists
 import kotlin.io.path.exists
 
 /**
@@ -113,7 +114,7 @@ class AgentLauncher(
                 val free = settings.agentTasks() - live.get()
                 if (free <= 0) return
                 externalTasks.fetchAndLock().workerId(WORKER).maxTasks(free).orderByCreateTime().asc()
-                    .subscribe().topic(TOPIC, LOCK.toMillis()).localVariables().includeExtensionProperties().execute()
+                    .subscribe().topic(TOPIC, LOCK.toMillis()).localVariables().enableCustomObjectDeserialization().includeExtensionProperties().execute()
                     .also { live.addAndGet(it.size) }
             }
             fetched.forEach { task ->
@@ -195,17 +196,21 @@ class AgentLauncher(
             // An instance of a parallel multi-instance works in a folder of its own, and lands when done.
             val parallel = runtime.inParallel(task.executionId, task.activityId)
             val cwd = if (parallel) landing.folder(workspace, instance, fresh = task.variables[ACTION] == FRESH) else workspace
-            // With [RESUME], a Task the flow comes back to, as in a loop, resumes its last session; the user's
-            // Continue and Start fresh choose for themselves.
+            // An Approve's Send back leaves its comment for the Task it names, used once.
+            val sent = sentBack(workspace, instance)
+            val comment = sent.takeIf { resume == null && task.variables[ACTION] == null && it.exists() }?.readText()?.also { sent.deleteIfExists() }
+            // With [RESUME], a Task the flow comes back to, as in a loop, resumes its last session, as one sent back
+            // does; the user's Continue and Start fresh choose for themselves.
             val last = Transcript.file(workspace, instance).resolveSibling("session")
-            val again = last.takeIf { resume == null && task.variables[ACTION] == null && task.extensionProperties[RESUME] == "true" && it.exists() }?.readText()
+            val again = last.takeIf { resume == null && task.variables[ACTION] == null && (task.extensionProperties[RESUME] == "true" || comment != null) && it.exists() }?.readText()
             session = session ?: again ?: UUID.randomUUID().toString()
             transcript = Transcript.Writer(Transcript.file(workspace, instance)).apply { ants("launch") }
             last.writeText(session)
             val resumed = resume != null || again != null // claude knows the session already
-            val continued = resume != null // the user's Continue: their instruction alone, no hand-off again
+            // The user's Continue, or a Send back to a session claude has: their words alone, no hand-off again.
+            val continued = resume != null || (comment != null && again != null)
             val result = try {
-                session(task, instance, agent, skill, used, run, workspace, cwd, transcript, session, resumed, task.variables[INSTRUCTION] as? String, handedOff = !continued)
+                session(task, instance, agent, skill, used, run, workspace, cwd, transcript, session, resumed, task.variables[INSTRUCTION] as? String ?: comment, handedOff = !continued)
             } catch (limit: UsageLimit) {
                 val until = limit.resetsAt + Duration.ofMinutes(1)
                 transcript.ants("end", "Paused by the ${agent.cli} usage limit until ${clock.local(until)}.")
@@ -239,21 +244,8 @@ class AgentLauncher(
         }
     }
 
-    /**
-     * Completes [task] with its [result], retrying while another path's Task wins the race to a shared execution, such
-     * as a parallel join, to `runs` or to a multi-instance's Results: the engine rolls the loser back whole, so trying
-     * again is safe.
-     */
-    private fun complete(task: LockedExternalTask, result: Map<*, *>) {
-        for (attempt in 1..COMPLETE_TRIES) {
-            try {
-                return externalTasks.complete(task.id, WORKER, mapOf(task.activityId to result))
-            } catch (e: OptimisticLockingException) {
-                if (attempt == COMPLETE_TRIES) throw e
-                Thread.sleep((10L..100L).random()) // apart, so the losers don't clash again
-            }
-        }
-    }
+    /** Completes [task] with its [result] ([onClash]). */
+    private fun complete(task: LockedExternalTask, result: Map<*, *>) = onClash { externalTasks.complete(task.id, WORKER, mapOf(task.activityId to result)) }
 
     /** The key of [task] in its Run, for its Transcript and live session ([taskKey]). */
     private fun instance(task: LockedExternalTask) = runtime.taskKey(task.executionId, task.activityId)
@@ -566,6 +558,9 @@ class AgentLauncher(
     companion object {
         const val TOPIC = "agent"
 
+        /** Where an Approve's Send back leaves its comment for the Task [key] of the Run in [workspace]. */
+        fun sentBack(workspace: Path, key: String): Path = Transcript.file(workspace, key).resolveSibling("send-back")
+
         /** The user's choice on a held Task, [CONTINUE] or [FRESH], and their instruction, as local variables. */
         const val ACTION = "ants.action"
         const val INSTRUCTION = "ants.instruction"
@@ -578,7 +573,6 @@ class AgentLauncher(
         private const val RESET = "The usage limit has reset. Carry on where you stopped."
         private val LOCK = Duration.ofDays(365)
         private const val STDERR_LINES = 20
-        private const val COMPLETE_TRIES = 10
         const val LOST_LOGIN = "Ants' Claude login is missing or expired. Log in again (Settings)"
 
         /**
@@ -595,6 +589,21 @@ class AgentLauncher(
         // Limit until it is added here.
         private val BUILT_IN_SUBAGENTS = listOf("claude", "Explore", "general-purpose", "Plan", "statusline-setup")
         private val json = JsonMapper.shared()
+    }
+}
+
+/**
+ * Runs [complete], again while another path's Task wins the race to a shared execution, such as a parallel join, to
+ * `runs` or to a multi-instance's Results: the engine rolls the loser back whole, so trying again is safe.
+ */
+fun onClash(complete: () -> Unit) {
+    for (attempt in 1..10) {
+        try {
+            return complete()
+        } catch (e: OptimisticLockingException) {
+            if (attempt == 10) throw e
+            Thread.sleep((10L..100L).random()) // apart, so the losers don't clash again
+        }
     }
 }
 

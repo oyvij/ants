@@ -1,11 +1,10 @@
 package ants
 
 import org.junit.jupiter.api.Test
-import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
 import kotlin.io.path.writeText
 import kotlin.test.assertContains
-import kotlin.test.assertFalse
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class RunTest : AntsTest() {
@@ -18,14 +17,14 @@ class RunTest : AntsTest() {
     }
 
     @Test
-    fun `Start creates a Run, whose workspace is gone once it ends`() {
+    fun `Start creates a Run, whose workspace is gone but for its Report once it ends`() {
         home.resolve("settings.yaml").writeText(vault)
         browser.import("start-end.bpmn")
         val run = start("start-end")
         val id = run.path.removePrefix("/runs/")
         assertContains(run.body, "Completed")
         assertContains(browser.get("/runs").body, """<a href="/runs/$id">Start to end</a>""")
-        assertFalse(home.resolve("runs/$id").exists())
+        assertEquals(listOf("report.md"), home.resolve("runs/$id").toFile().list()?.toList())
     }
 
     private val claude = FakeClaude()

@@ -1,0 +1,27 @@
+@param entry: ants.TaskEntry
+@param shown: String
+@param error: String? = null
+@param _csrf: org.springframework.security.web.csrf.CsrfToken
+@param colorScheme: String = "light dark"
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="color-scheme" content="${colorScheme}">
+    <title>${entry.icon} ${entry.tag} ${entry.task} · Ants</title>
+</head>
+<body>
+@template.nav()
+<p><a href="/notifications">Notification list</a></p>
+<p>${entry.icon} ${entry.tag} ${entry.task} · ${entry.process} · <a href="/runs/${entry.run}">Run ${entry.run}</a> · waiting ${entry.waited}</p>
+<h1>${entry.summary.ifEmpty { entry.task }}</h1>
+<article>$unsafe{shown}</article>
+@if(error != null)<p role="alert">${error}</p>@endif
+<form method="post">
+    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+    <label>Comment <textarea name="comment"></textarea></label>
+    <button name="action" value="approve">Approve</button>
+    <button name="action" value="send-back">Send back</button>
+</form>
+</body>
+</html>
