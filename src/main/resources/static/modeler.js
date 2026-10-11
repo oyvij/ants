@@ -1,10 +1,9 @@
 // The modeler page: camunda-bpmn-js with the palette trimmed to what Ants runs, "append Agent / User / Built-in Task"
 // on the context pad, a panel that explains the selected element, and Save and deploy through Ants' deploy path.
 // Each kind of element is one entry in `kinds`; a later panel for a kind (the Agent Task's Agent and Skill, a
-// gateway's conditions) is a function in `panels`.
+// gateway's conditions) is a function in `panels`. What it writes as text, with no page, is in modeler-text.js.
 
-const OPERATON = "http://operaton.org/schema/1.0/bpmn"
-const CAMUNDA = "http://camunda.org/schema/1.0/bpmn"
+import {camel, cronOf, everies, operators, readCondition, readSchedule, toCamunda, unary, weekdays} from "/modeler-text.js"
 
 // What Ants calls each element it runs, and what it does there: the palette's tooltip and the panel's explanation.
 const kinds = {
@@ -189,7 +188,7 @@ async function dropTemplate(name) {
     const response = await fetch(`/templates/${name}/drop`, {method: "POST", body: new URLSearchParams({_csrf: csrf, bpmn: xml, ...centre})})
     if (!response.ok) return document.getElementById("refusal").textContent = `The Template ${name} can't be dropped here.`
     const {bpmn, element} = await response.json()
-    await modeler.importXML(bpmn.replaceAll(OPERATON, CAMUNDA))
+    await modeler.importXML(toCamunda(bpmn))
     canvas.viewbox(viewbox)
     modeler.get("selection").select(modeler.get("elementRegistry").get(element))
 }
@@ -234,9 +233,6 @@ const panels = {
 
 // The start form's field types, by the `ants.type` property each field carries (the engine only knows `string`).
 const fieldTypes = {text: "Text", markdown: "Markdown", repos: "Repos"}
-
-// A field's variable name, derived from its label: "Work branch" is workBranch.
-const camel = label => label.toLowerCase().replace(/^[^a-z]+/, "").replace(/[^a-z0-9]+(.)?/g, (_, c) => c ? c.toUpperCase() : "")
 
 // True while the panel writes the diagram itself, so it isn't redrawn under the user's cursor.
 let quiet = false
@@ -330,37 +326,6 @@ function multiInstance(element) {
 
 // The condition builder: a Result field, an operator and a value write each path's JUEL, shown under it, and one path
 // is the default. A condition it can't read back shows as is, and the builder replaces it once the user edits it.
-const operators = {
-    "is true": f => `\${${f}}`,
-    "is false": f => `\${!${f}}`,
-    "is empty": f => `\${empty ${f}}`,
-    "is not empty": f => `\${not empty ${f}}`,
-    equals: (f, v) => `\${${f} == ${literal(v)}}`,
-    "does not equal": (f, v) => `\${${f} != ${literal(v)}}`,
-    "is more than": (f, v) => `\${${f} > ${literal(v)}}`,
-    "is less than": (f, v) => `\${${f} < ${literal(v)}}`,
-}
-const unary = new Set(["is true", "is false", "is empty", "is not empty"])
-const literal = v => /^-?\d+(\.\d+)?$/.test(v) ? v : `'${v.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}'`
-
-// The builder's {field, op, value} for an expression it wrote, else null.
-function readCondition(body) {
-    const field = "([\\w.]+)"
-    const shapes = [
-        [`^\\$\\{${field}\\}$`, "is true"], [`^\\$\\{!${field}\\}$`, "is false"],
-        [`^\\$\\{empty ${field}\\}$`, "is empty"], [`^\\$\\{not empty ${field}\\}$`, "is not empty"],
-        [`^\\$\\{${field} == (.+)\\}$`, "equals"], [`^\\$\\{${field} != (.+)\\}$`, "does not equal"],
-        [`^\\$\\{${field} > (.+)\\}$`, "is more than"], [`^\\$\\{${field} < (.+)\\}$`, "is less than"],
-    ]
-    for (const [shape, op] of shapes) {
-        const match = body.match(new RegExp(shape))
-        if (!match) continue
-        const value = match[2] === undefined ? "" : match[2].startsWith("'") && match[2].endsWith("'")
-            ? match[2].slice(1, -1).replace(/\\(.)/g, "$1") : match[2]
-        if (match[2] === undefined || literal(value) === match[2]) return {field: match[1], op, value}
-    }
-    return null
-}
 
 // What a condition can read: each Task's Result (an Agent Task's under `output`), its run count and the start form.
 function resultFields() {
@@ -451,32 +416,7 @@ function timerPanel(element) {
 panels.timer = timerPanel
 panels["timer-boundary"] = timerPanel
 
-// The Schedule in words: every hour, day, weekday, week or month at a time, written as the cron Ants runs it on
-// (seconds first, as Schedules.kt reads it back); any other cron under Advanced.
-const weekdays = {MON: "Monday", TUE: "Tuesday", WED: "Wednesday", THU: "Thursday", FRI: "Friday", SAT: "Saturday", SUN: "Sunday"}
-const everies = {hour: "hour", day: "day", weekday: "weekday", week: "week", month: "month", advanced: "Advanced (six fields)"}
-
-function readSchedule(cron) {
-    const advanced = {every: "advanced", cron}
-    const [s, m, h, dom, mon, dow, ...rest] = cron.trim().split(/\s+/)
-    if (rest.length || dow === undefined || s !== "0" || mon !== "*") return advanced
-    if (m === "0" && h === "*" && dom === "*" && dow === "*") return {every: "hour", cron}
-    if (!/^\d+$/.test(h) || !/^\d+$/.test(m) || +h > 23 || +m > 59) return advanced
-    const at = `${h.padStart(2, "0")}:${m.padStart(2, "0")}`
-    if (dom === "*" && dow === "*") return {every: "day", at, cron}
-    if (dom === "*" && dow === "MON-FRI") return {every: "weekday", at, cron}
-    if (dom === "*" && weekdays[dow]) return {every: "week", at, on: dow, cron}
-    if (dow === "*" && /^\d+$/.test(dom) && +dom >= 1 && +dom <= 31) return {every: "month", at, dom, cron}
-    return advanced
-}
-
-function cronOf({every, at, on, dom, cron}) {
-    if (every === "advanced") return cron
-    if (every === "hour") return "0 0 * * * *"
-    const [h, m] = (at || "08:00").split(":").map(Number)
-    return `0 ${m} ${h} ` + {day: "* * *", weekday: "* * MON-FRI", week: `* * ${on || "MON"}`, month: `${dom || 1} * *`}[every]
-}
-
+// The Schedule in words (readSchedule and cronOf), any other cron under Advanced.
 function schedulePanel(element) {
     const definition = element.businessObject.eventDefinitions[0]
     const schedule = readSchedule(definition.timeCycle?.body || "0 0 8 * * *")
@@ -712,8 +652,7 @@ modeler.on("element.changed", ({element}) => {
 
 fetch(canvas.dataset.src)
     .then(response => response.text())
-    // camunda-bpmn-js reads and writes camunda:; Ants' deploy path turns it back into operaton:.
-    .then(xml => modeler.importXML(xml.replaceAll(OPERATON, CAMUNDA)))
+    .then(xml => modeler.importXML(toCamunda(xml)))
     .then(() => {
         modeler.get("canvas").zoom("fit-viewport")
         explain(modeler.get("canvas").getRootElement())

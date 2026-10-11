@@ -45,6 +45,6 @@
     <aside id="explain"></aside>
 </main>
 <script src="/vendor/camunda-bpmn-js/camunda-platform-modeler.production.min.js"></script>
-<script src="/modeler.js"></script>
+<script type="module" src="/modeler.js"></script>
 </body>
 </html>
