@@ -13,12 +13,16 @@ import org.junit.jupiter.api.TestInfo
 import java.nio.file.Path
 import java.util.regex.Pattern
 import kotlin.io.path.deleteExisting
+import kotlin.test.assertContains
 import kotlin.test.assertEquals
+import kotlin.test.assertFails
 import kotlin.test.assertTrue
 
 /**
- * What only the pages' scripts do, in a real browser: Chromium through Playwright, on the running test Ants. CI installs
- * Chromium (test.yml); where it can't launch, such as in a sandbox, these tests are skipped, never passed.
+ * What only the pages' scripts do, in a real browser: Chromium through Playwright, on the running test Ants, logged in.
+ * CI installs Chromium (test.yml); where it can't launch, such as in nono's sandbox, these tests are skipped
+ * ([launchChromium]), never passed. A new test is a method that is
+ * `browse { page.navigate(url("/…")); … }`, and [screenshot] saves what the page looks like to build/reports/browser.
  */
 @Tag("browser")
 class BrowserTest : AntsTest() {
@@ -31,19 +35,8 @@ class BrowserTest : AntsTest() {
     @BeforeEach
     fun launch(info: TestInfo) {
         test = info.testMethod.get().name
-        var created: Playwright? = null
-        val chromium = try {
-            created = Playwright.create()
-            // Chromium's own sandbox stays off (--no-sandbox): it can't start inside a sandbox such as nono's Seatbelt.
-            created.chromium().launch(BrowserType.LaunchOptions().setChromiumSandbox(false).setArgs(listOf("--disable-gpu")))
-        } catch (e: RuntimeException) {
-            created?.close()
-            if (System.getenv("CI") != null) throw e
-            val reason = e.message.orEmpty().let { it.substringAfter("message='", it).lineSequence().first() }
-            abort<Nothing>("Chromium didn't launch here, so this browser test is skipped; CI runs it (./gradlew playwright --args=\"install chromium\" installs it). $reason")
-        }
-        playwright = created
-        page = chromium.newPage()
+        playwright = Playwright.create()
+        page = launchChromium(playwright).newPage()
         page.onConsoleMessage { if (it.type() == "error") errors += "console: ${it.text()}" }
         page.onPageError { errors += "page error: $it" }
         page.navigate(url("/login"))
@@ -205,5 +198,49 @@ class BrowserTest : AntsTest() {
     private fun deploy(bpmn: String) {
         val deployed = http.post("/processes/deploy", mapOf("bpmn" to bpmn))
         assertEquals(200, deployed.status, deployed.body)
+    }
+}
+
+/**
+ * Headless Chromium with its own sandbox off (`--no-sandbox`), [executable] or the one `./gradlew playwright` installed.
+ * Where it can't launch the test is skipped, or fails in CI, saying how to let it launch.
+ */
+internal fun launchChromium(playwright: Playwright, executable: Path? = null) = try {
+    playwright.chromium().launch(BrowserType.LaunchOptions().setChromiumSandbox(false).setArgs(listOf("--disable-gpu")).setExecutablePath(executable))
+} catch (e: RuntimeException) {
+    val reason = e.message.orEmpty().let { it.substringAfter("message='", it).lineSequence().first() }
+    val help = """
+        |Chromium didn't launch, so this browser test is skipped ($reason).
+        |It runs with Chromium's own sandbox off (--no-sandbox). Inside nono's Seatbelt sandbox, the nono profile also needs
+        |read access to ~/Library/Input Methods and ~/Library/Keyboard Layouts, and these unsafe_macos_seatbelt_rules:
+        |  (allow iokit-open-user-client (iokit-user-client-class "RootDomainUserClient"))
+        |  (allow mach-register (global-name-prefix "org.chromium.Chromium.MachPortRendezvousServer."))
+        |  (allow mach-lookup (global-name-prefix "org.chromium.Chromium.MachPortRendezvousServer."))
+        |  (allow mach-register (local-name "com.apple.axserver"))
+        |  (allow mach-register (local-name "com.apple.tsm.portname"))
+        |  (allow user-preference-read (preference-domain "com.apple.HIToolbox"))
+        |Without Chromium, ./gradlew playwright --args="install chromium" installs it. CI always runs these tests.
+    """.trimMargin()
+    if (System.getenv("CI") != null) throw AssertionError(help, e)
+    abort(help)
+}
+
+/** What a Chromium that can't launch says, without the test app. */
+@Tag("browser")
+class ChromiumLaunchTest {
+    @Test
+    fun `a Chromium that can't launch names nono's Seatbelt rules and --no-sandbox`() {
+        Playwright.create().use { playwright ->
+            val failed = assertFails { launchChromium(playwright, Path.of("build/no-chromium-here")) }
+            for (needed in listOf(
+                "--no-sandbox", "unsafe_macos_seatbelt_rules", "~/Library/Input Methods", "~/Library/Keyboard Layouts",
+                """(allow iokit-open-user-client (iokit-user-client-class "RootDomainUserClient"))""",
+                """(allow mach-register (global-name-prefix "org.chromium.Chromium.MachPortRendezvousServer."))""",
+                """(allow mach-lookup (global-name-prefix "org.chromium.Chromium.MachPortRendezvousServer."))""",
+                """(allow mach-register (local-name "com.apple.axserver"))""",
+                """(allow mach-register (local-name "com.apple.tsm.portname"))""",
+                """(allow user-preference-read (preference-domain "com.apple.HIToolbox"))""",
+            )) assertContains(failed.message.orEmpty(), needed)
+        }
     }
 }
