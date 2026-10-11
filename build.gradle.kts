@@ -61,12 +61,14 @@ tasks.processResources {
         include("*.production.min.js", "assets/**")
         into("static/vendor/camunda-bpmn-js")
     }
-    // CodeMirror 6 as plain ES modules, each package under its own name, for the import map in codemirror.kte.
-    for (packages in listOf("node_modules", "node_modules/.pnpm/node_modules")) from(packages) {
-        include("codemirror/dist/index.js", "@codemirror/*/dist/index.js", "@lezer/*/dist/index.js")
-        include("@marijn/find-cluster-break/src/index.js", "crelt/index.js", "style-mod/src/style-mod.js", "w3c-keyname/index.js")
-        into("static/vendor/codemirror")
-        duplicatesStrategy = DuplicatesStrategy.EXCLUDE // pnpm may hoist a direct dependency into both roots
+    // CodeMirror 6 as plain ES modules: each file the import map in codemirror.kte names, and only those, copied from
+    // the one place pnpm put it: a direct dependency in node_modules, any other package in the hoisted .pnpm root.
+    val importMap = file("src/main/jte/codemirror.kte")
+    inputs.file(importMap)
+    for (path in Regex(""""/vendor/codemirror/([^"]+)"""").findAll(importMap.readText()).map { it.groupValues[1] }) {
+        from({ listOf("node_modules", "node_modules/.pnpm/node_modules").map { file("$it/$path") }.first { it.exists() } }) {
+            into("static/vendor/codemirror/" + path.substringBeforeLast('/'))
+        }
     }
 }
 
