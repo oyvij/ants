@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:operaton="http://operaton.org/schema/1.0/bpmn"
+                  id="definitions" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="round" name="Grill" isExecutable="true" operaton:historyTimeToLive="180">
+    <bpmn:startEvent id="start" />
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="grill" />
+    <bpmn:serviceTask id="grill" name="Grill the idea" operaton:type="external" operaton:topic="agent">
+      <bpmn:extensionElements>
+        <operaton:properties>
+          <operaton:property name="ants.agent" value="writer" />
+          <operaton:property name="ants.skill" value="grill" />
+        </operaton:properties>
+      </bpmn:extensionElements>
+    </bpmn:serviceTask>
+    <bpmn:sequenceFlow id="f2" sourceRef="grill" targetRef="asked" />
+    <bpmn:exclusiveGateway id="asked" default="f4" />
+    <bpmn:sequenceFlow id="f3" sourceRef="asked" targetRef="answer">
+      <bpmn:conditionExpression>${not empty grill.output.questions}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="f4" sourceRef="asked" targetRef="end" />
+    <bpmn:userTask id="answer" name="Answer the Round">
+      <bpmn:extensionElements>
+        <operaton:properties>
+          <operaton:property name="ants.user-task" value="answer-round" />
+          <operaton:property name="ants.asker" value="grill" />
+        </operaton:properties>
+      </bpmn:extensionElements>
+    </bpmn:userTask>
+    <bpmn:sequenceFlow id="f5" sourceRef="answer" targetRef="grill" />
+    <bpmn:boundaryEvent id="late" attachedToRef="answer">
+      <bpmn:timerEventDefinition><bpmn:timeDuration>PT1H</bpmn:timeDuration></bpmn:timerEventDefinition>
+    </bpmn:boundaryEvent>
+    <bpmn:sequenceFlow id="f6" sourceRef="late" targetRef="end" />
+    <bpmn:endEvent id="end" />
+  </bpmn:process>
+</bpmn:definitions>

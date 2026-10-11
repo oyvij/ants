@@ -192,7 +192,7 @@ class AgentLauncher(
             val used = catalogue.uses(skill)
             refuseBareByDefault(agent.cli, workspace)
             val instance = instance(task)
-            // An Approve's Send back leaves its comment for the Task it names, used once.
+            // An Approve's Send back leaves its comment for the Task it names, and a Round its answers for its asker, used once.
             val sent = sentBack(workspace, instance)
             val comment = sent.takeIf { resume == null && task.variables[ACTION] == null && it.exists() }?.readText()?.also { sent.deleteIfExists() }
             // With [RESUME], a Task the flow comes back to, as in a loop, resumes its last session, as one sent back
@@ -552,7 +552,7 @@ class AgentLauncher(
     companion object {
         const val TOPIC = "agent"
 
-        /** Where an Approve's Send back leaves its comment for the Task [key] of the Run in [workspace]. */
+        /** Where an Approve's Send back, or a Round's answers, are left for the Task [key] of the Run in [workspace]. */
         fun sentBack(workspace: Path, key: String): Path = Transcript.file(workspace, key).resolveSibling("send-back")
 
         /** The user's choice on a held Task, [CONTINUE] or [FRESH], and their instruction, as local variables. */
