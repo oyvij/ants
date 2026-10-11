@@ -162,6 +162,19 @@ class RunPageTest : AntsTest() {
     }
 
     @Test
+    fun `So far takes a launch slot, so with every slot taken it waits`() {
+        setUp("agent-tasks: 1\nso-far: 1s\n")
+        claude.session("draft", """{"type":"assistant","message":{"id":"m1","content":[{"type":"text","text":"Looked."}]}}""", "wait full", done)
+        val rewrites = claude.launches("so-far").size
+        val run = start("agent-task")
+        browser.events("/runs/$run/tasks/draft/drawer").until { "Looked." in it }
+        Thread.sleep(2500)
+        assertEquals(rewrites, claude.launches("so-far").size)
+        claude.release("full")
+        eventually { assertContains(browser.get("/runs/$run").body, "State: Completed") }
+    }
+
+    @Test
     fun `a waiting Task's drawer offers its action, and acting from it stays on the Run page`() {
         setUp()
         claude.session("draft", stuck)

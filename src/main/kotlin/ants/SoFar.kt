@@ -66,23 +66,27 @@ class SoFar(
         val last = lines.indexOfLast { it.ants("so-far") }
         val new = lines.drop(last + 1).mapNotNull(::said).joinToString("\n").takeLast(MAX)
         if (new.isBlank()) return
-        tried[file] = Instant.now()
 
         val previous = lines.getOrNull(last)?.get("text") ?: "(none yet)"
         val prompt = "Rewrite the So far paragraph of an AI Agent's Task: what it has done and found so far, for the user who " +
             "waits on it, in at most four plain sentences. Answer with the paragraph alone.\n\nSo far until now:\n$previous\n\n" +
             "What the Agent did since, from its Transcript:\n$new\n"
-        val process = launcher.cli(
-            "claude", file.parent,
-            listOf(
-                "-p", "--model", "haiku", "--output-format", "json", "--tools", "", "--no-session-persistence", "--strict-mcp-config",
-                "--disable-slash-commands", "--settings", """{"disableAllHooks":true}""",
-            ),
-        ).redirectError(ProcessBuilder.Redirect.DISCARD).start()
-        process.outputWriter().use { it.write(prompt) }
-        if (!process.waitFor(2, MINUTES)) process.destroyForcibly()
+        // With every slot taken, the rewrite waits for a later tick.
+        val output = launcher.inSlot {
+            tried[file] = Instant.now()
+            val process = launcher.cli(
+                "claude", file.parent,
+                listOf(
+                    "-p", "--model", "haiku", "--output-format", "json", "--tools", "", "--no-session-persistence", "--strict-mcp-config",
+                    "--disable-slash-commands", "--settings", """{"disableAllHooks":true}""",
+                ),
+            ).redirectError(ProcessBuilder.Redirect.DISCARD).start()
+            process.outputWriter().use { it.write(prompt) }
+            if (!process.waitFor(2, MINUTES)) process.destroyForcibly()
+            process.inputReader().readLines()
+        } ?: return
         // claude 2.1.295 prints one `result` line, its text in `result` and its tokens in `modelUsage`.
-        val result = process.inputReader().readLines().firstNotNullOfOrNull { line ->
+        val result = output.firstNotNullOfOrNull { line ->
             runCatching { json.readValue(line, Map::class.java) }.getOrNull()?.takeIf { it["type"] == "result" }
         }
         val paragraph = result?.get("result")?.toString()?.trim()

@@ -3,8 +3,10 @@ package ants
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.springframework.beans.factory.annotation.Autowired
 import org.yaml.snakeyaml.Yaml
 import java.nio.file.Files
+import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -133,6 +135,17 @@ class SettingsTest : AntsTest() {
         assertTrue(yaml()["password"].toString().startsWith("{bcrypt}"))
         assertEquals("/login", browser().login("admin").path)
         assertEquals("/", browser().login("s3cret").path)
+    }
+
+    @Autowired
+    lateinit var settings: Settings
+
+    @Test
+    fun `so-far is off, a time, or the default 2 minutes, also for a value that isn't a time`() {
+        for ((value, every) in listOf("false" to null, "90s" to Duration.ofSeconds(90), "5m" to Duration.ofMinutes(5), "often" to Duration.ofMinutes(2))) {
+            file.writeText("so-far: $value\n")
+            assertEquals(every, settings.soFar(), value)
+        }
     }
 
     @Test

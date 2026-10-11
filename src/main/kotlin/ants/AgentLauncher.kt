@@ -103,22 +103,37 @@ class AgentLauncher(
     private fun fetch() {
         try {
             gates.filterValues { !it.isAfter(clock.instant()) }.keys.forEach(::tryNow)
-            val free = settings.agentTasks() - live.get()
-            if (free <= 0) return
-            externalTasks.fetchAndLock().workerId(WORKER).maxTasks(free).orderByCreateTime().asc()
-                .subscribe().topic(TOPIC, LOCK.toMillis()).localVariables().includeExtensionProperties().execute()
-                .forEach { task ->
-                    live.incrementAndGet()
-                    Thread.ofVirtual().start {
-                        try {
-                            launch(task)
-                        } finally {
-                            live.decrementAndGet()
-                        }
+            val fetched = synchronized(live) { // the slots So far takes too
+                val free = settings.agentTasks() - live.get()
+                if (free <= 0) return
+                externalTasks.fetchAndLock().workerId(WORKER).maxTasks(free).orderByCreateTime().asc()
+                    .subscribe().topic(TOPIC, LOCK.toMillis()).localVariables().includeExtensionProperties().execute()
+                    .also { live.addAndGet(it.size) }
+            }
+            fetched.forEach { task ->
+                Thread.ofVirtual().start {
+                    try {
+                        launch(task)
+                    } finally {
+                        live.decrementAndGet()
                     }
                 }
+            }
         } catch (e: Exception) {
             log.warn("Fetching Agent Tasks failed", e) // a failed fetch must not end the polling
+        }
+    }
+
+    /** Runs [cli] in a free slot under the cap, as every CLI process does, or returns null when every slot is taken. */
+    fun <T> inSlot(cli: () -> T): T? {
+        synchronized(live) {
+            if (live.get() >= settings.agentTasks()) return null
+            live.incrementAndGet()
+        }
+        try {
+            return cli()
+        } finally {
+            live.decrementAndGet()
         }
     }
 

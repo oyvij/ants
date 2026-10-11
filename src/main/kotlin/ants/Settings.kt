@@ -1,5 +1,6 @@
 package ants
 
+import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Component
@@ -13,6 +14,7 @@ import java.nio.file.StandardCopyOption.ATOMIC_MOVE
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 import java.time.Duration
 import java.util.concurrent.TimeUnit.SECONDS
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.readText
@@ -50,12 +52,20 @@ class Settings(
     // ponytail: one global cap, no per-CLI caps or priorities
     fun agentTasks(): Int = (read()["agent-tasks"] as? Int) ?: 3
 
-    /** How often a running Task's So far is rewritten (default 2 minutes), or null when it is switched off. */
+    /**
+     * How often a running Task's So far is rewritten (default 2 minutes), or null when it is switched off. A value
+     * that isn't a time, such as `90s` or `5m`, gives the default, with one warning per value.
+     */
     fun soFar(): Duration? = when (val value = read()["so-far"]) {
         false -> null
-        null, true -> Duration.ofMinutes(2)
-        else -> Duration.parse("PT$value".uppercase())
+        null, true -> SO_FAR
+        else -> runCatching { Duration.parse("PT$value".uppercase()) }.getOrNull()?.takeIf { it.isPositive } ?: SO_FAR.also {
+            if (badSoFar.getAndSet("$value") != "$value") log.warn("so-far: $value in $file isn't a time such as 90s or 5m; it is rewritten every 2m")
+        }
     }
+
+    private val log = LoggerFactory.getLogger(javaClass)
+    private val badSoFar = AtomicReference<String>()
 
     /** How deep claude's Subagents may nest: 1 lets a Task start Subagents, and them none of their own. */
     fun subagentDepth(): Int = (read()["subagent-depth"] as? Int) ?: 1
@@ -131,6 +141,8 @@ class Settings(
 
         /** The AI CLIs, which also have a command and an environment allow-list. */
         val AI_CLIS = listOf("claude", "codex")
+
+        private val SO_FAR: Duration = Duration.ofMinutes(2)
 
         val DEFAULT_ENV = listOf("PATH", "HOME", "USER", "LOGNAME", "SHELL", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE", "TERM")
 
