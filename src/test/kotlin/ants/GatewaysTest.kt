@@ -5,6 +5,8 @@ import tools.jackson.databind.json.JsonMapper
 import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 
 /** Gateways, timers and sub-processes (#50): their Checks, and how a Run takes them. */
 class GatewaysTest : AntsTest() {
@@ -81,11 +83,16 @@ class GatewaysTest : AntsTest() {
     /** Deploys the Process [key] drawn as [body] and starts a Run of it; the Run page's path. */
     private fun run(key: String, body: String): String {
         assertEquals("/processes/$key", browser.post("/processes/deploy", mapOf("bpmn" to diagram(key, body))).path)
-        return browser.post("/processes/$key/runs", mapOf()).path
+        val started = browser.post("/processes/$key/runs", mapOf())
+        assertTrue(started.path.startsWith("/runs/"), "no Run started: ${started.body}")
+        return started.path
     }
 
-    /** Each Task's run count in the Run, as the Run page shows `runs`. */
-    private fun runs(run: String) = Regex("""<dt>runs</dt><dd><code>(.*?)</code>""").find(browser.get(run).body.replace("&#34;", "\""))!!.groupValues[1]
+    /** Each Task's run count in the Run, as the Run page shows `runs`; an assertion until it does, so [eventually] waits. */
+    private fun runs(run: String): String {
+        val page = browser.get(run).body.replace("&#34;", "\"")
+        return assertNotNull(Regex("""<dt>runs</dt><dd><code>(.*?)</code>""").find(page), "no runs on $run: $page").groupValues[1]
+    }
 
     @Test
     fun `the condition builder's expression routes a Run on a Result field`() {

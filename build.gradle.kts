@@ -103,6 +103,14 @@ tasks.test {
     environment("CLAUDE_CODE_RETRY_WATCHDOG", "1")
     // BrowserTest drives the Chromium the playwright task installed; it never downloads one itself.
     environment("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD", "1")
+    // Test classes run in a random order (junit-platform.properties), from a seed it prints; -PtestSeed=… replays one.
+    // Set when the task runs, so a new seed never makes an up-to-date test task run again.
+    val testSeed = findProperty("testSeed")
+    doFirst {
+        val seed = testSeed ?: System.nanoTime()
+        systemProperty("junit.jupiter.execution.order.random.seed", seed)
+        logger.lifecycle("Test classes in random order, seed $seed")
+    }
 }
 
 // The tests that run the real claude on your login, kept out of `test`: ./gradlew liveTest
