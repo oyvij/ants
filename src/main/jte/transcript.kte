@@ -16,6 +16,8 @@
         .tool, .ants, .user, #status { font-family: ui-monospace, monospace; }
         .tool.error b { color: #c33; }
         .ants { color: #777; }
+        .subagent { margin-left: 1em; border-left: 2px solid #9996; padding-left: .5em; }
+        .chip { font-size: .85em; border: 1px solid #9996; border-radius: 1em; padding: 0 .5em; }
         .spinner { display: inline-block; animation: spin 2s linear infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
     </style>
@@ -25,12 +27,13 @@
 <p><a href="/runs/${run}">Run</a></p>
 <h1>${task} · $unsafe{transcript.html("tokens")}</h1>
 <div id="entries" data-from="${offset}">
-@for(entry in transcript.entries)
+@for(entry in transcript.roots)
 $unsafe{entry}
 @endfor
 </div>
 $unsafe{transcript.html("live")}
 $unsafe{transcript.html("status")}
+$unsafe{transcript.html("subagents")}
 @if(error != null)<p role="alert">${error}</p>@endif
 @if(live)
 <form method="post" action="/runs/${run}/tasks/${task}/transcript/send">
@@ -45,14 +48,14 @@ $unsafe{transcript.html("status")}
 </form>
 @endif
 <script>
-    // Follows the Transcript from where this page's copy ends, replacing each changed element or appending a new entry.
+    // Follows the Transcript from where this page's copy ends, replacing each changed element or appending a new entry, a Subagent's into its block.
     const entries = document.getElementById('entries');
     new EventSource(location.pathname + '/events?from=' + entries.dataset.from).addEventListener('entry', event => {
         const template = document.createElement('template');
         template.innerHTML = event.data;
         const element = template.content.firstElementChild;
         const old = document.getElementById(element.id);
-        old ? old.replaceWith(element) : entries.append(element);
+        old ? old.replaceWith(element) : (element.dataset.in ? document.querySelector('#' + element.dataset.in + ' > div') : entries).append(element);
     });
     setInterval(() => {
         for (const since of document.querySelectorAll('[data-since]')) {

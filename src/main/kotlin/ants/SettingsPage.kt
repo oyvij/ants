@@ -107,6 +107,7 @@ data class SettingsForm(
     val envs: Map<String, String>,
     val vardeConfig: String,
     val agentTasks: String,
+    val subagentDepth: String,
     val vaults: Named,
     val sourceMaps: Named,
     val agentFolders: String,
@@ -116,6 +117,7 @@ data class SettingsForm(
 ) {
     fun error() = when {
         agentTasks.isNotEmpty() && (agentTasks.toIntOrNull() ?: 0) < 1 -> "Agent Tasks at once must be a whole number, 1 or more."
+        subagentDepth.isNotEmpty() && (subagentDepth.toIntOrNull() ?: 0) < 1 -> "Subagent depth must be a whole number, 1 or more."
         else -> vaults.error("Vault") ?: sourceMaps.error("Source map")
     }
 
@@ -146,6 +148,7 @@ data class SettingsForm(
         }
         values.keep("varde-config", vardeConfig)
         values.keep("agent-tasks", agentTasks.toIntOrNull())
+        values.keep("subagent-depth", subagentDepth.toIntOrNull())
         values.keep("vaults", vaults.rows.toMap())
         values.keep("default-vault", vaults.rows.getOrNull(vaults.default)?.first)
         values.keep("source-maps", sourceMaps.rows.toMap())
@@ -171,6 +174,7 @@ data class SettingsForm(
                 envs = Settings.AI_CLIS.associateWith { words(cli(it)["env"]) },
                 vardeConfig = values["varde-config"]?.toString().orEmpty(),
                 agentTasks = values["agent-tasks"]?.toString().orEmpty(),
+                subagentDepth = values["subagent-depth"]?.toString().orEmpty(),
                 vaults = named(settings.vaults(), settings.defaultVault()),
                 sourceMaps = named(settings.sourceMaps(), settings.defaultSourceMap()),
                 agentFolders = lines(values["agent-folders"]),
@@ -195,6 +199,7 @@ data class SettingsForm(
                 envs = Settings.AI_CLIS.associateWith { param("$it.env") },
                 vardeConfig = param("varde-config"),
                 agentTasks = param("agent-tasks"),
+                subagentDepth = param("subagent-depth"),
                 vaults = named("vaults", "default-vault"),
                 sourceMaps = named("source-maps", "default-source-map"),
                 agentFolders = param("agent-folders"),
