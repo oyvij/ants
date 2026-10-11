@@ -2,8 +2,9 @@
 # A fake `claude` for tests, run from a copy in its own folder. `--help` prints ./help, if there is one. Otherwise it
 # records its argv, environment, working directory and stdin's first line under ./launches/<skill>.XXXX, appends its
 # working directory to ./launches.log, and plays ./sessions/<skill>.jsonl, picked by the Skill in the hand-off line.
-# A session line `wait <file>` waits until ./<file> exists, and `read` reads the next stdin line into the launch's stdin
-# record; every other line is printed, with $SESSION as the --session-id.
+# Like claude with --replay-user-messages, it echoes every stdin message with "isReplay":true. A session line
+# `wait <file>` waits until ./<file> exists, and `read` reads the next stdin line into the launch's stdin record; every
+# other line is printed, with $SESSION as the --session-id.
 dir=$(cd "$(dirname "$0")" && pwd)
 if [ "$1" = --help ]; then cat "$dir/help" 2>/dev/null; exit 0; fi
 session= previous=
@@ -17,10 +18,12 @@ env > "$launch/env"
 pwd > "$launch/cwd"
 printf '%s\n' "$prompt" > "$launch/stdin"
 pwd >> "$dir/launches.log"
+replay() { printf '%s\n' "${1%\}},\"isReplay\":true}"; }
+replay "$prompt"
 while IFS= read -r line <&3; do
     case $line in
         "wait "*) while [ ! -e "$dir/${line#wait }" ]; do sleep 0.05; done ;;
-        read) IFS= read -r message && printf '%s\n' "$message" >> "$launch/stdin" ;;
+        read) IFS= read -r message && printf '%s\n' "$message" >> "$launch/stdin" && replay "$message" ;;
         *) printf '%s\n' "${line//\$SESSION/$session}" ;;
     esac
 done 3< "$dir/sessions/$skill.jsonl"

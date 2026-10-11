@@ -74,15 +74,29 @@ class AgentLauncher(
         }
     }
 
+    /** Runs [task] once, between a divider and a line saying how it ended in its Transcript. */
     private fun launch(task: LockedExternalTask) {
+        var transcript: Transcript.Writer? = null
         try {
-            val result = session(task)
-            if (result["outcome"] == "done") externalTasks.complete(task.id, WORKER, mapOf(task.activityId to result))
-            else incident(task, "[stuck] ${result["summary"]}", result["needs"].toString())
+            val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult().rootProcessInstanceId
+            val workspace = home.resolve("runs").resolve(run)
+            transcript = Transcript.Writer(Transcript.file(workspace, task.activityId)).apply { ants("launch") }
+            val result = session(task, workspace, transcript)
+            if (result["outcome"] == "done") {
+                transcript.ants("end", "Done.")
+                externalTasks.complete(task.id, WORKER, mapOf(task.activityId to result))
+            } else {
+                val reason = "[stuck] ${result["summary"]}"
+                transcript.ants("end", reason)
+                incident(task, reason, result["needs"].toString())
+            }
         } catch (e: Exception) {
-            if (poller.isShutdown) return // Ants is stopping: the Task stays locked, and the next start unlocks it
+            val stopping = poller.isShutdown // the Task stays locked, and the next start unlocks it
+            val reason = if (stopping) "Ants stopped." else "[failed] ${e.message ?: e}"
+            runCatching { transcript?.ants("end", reason) }
+            if (stopping) return
             log.warn("Agent Task ${task.activityId} failed", e)
-            incident(task, "[failed] ${e.message ?: e}", (e as? InvalidResult)?.details)
+            incident(task, reason, (e as? InvalidResult)?.details)
         }
     }
 
@@ -91,13 +105,11 @@ class AgentLauncher(
         runCatching { externalTasks.handleFailure(task.id, WORKER, message, details, 0, 0) }
             .onFailure { log.warn("Agent Task ${task.activityId} couldn't be put on hold", it) }
 
-    /** Runs the Task's Skill in one CLI session and returns its Result. */
-    private fun session(task: LockedExternalTask): Map<*, *> {
+    /** Runs the Task's Skill in one CLI session in [workspace], every line it prints going to [transcript], and returns its Result. */
+    private fun session(task: LockedExternalTask, workspace: Path, transcript: Transcript.Writer): Map<*, *> {
         val agent = catalogue.agent(task.extensionProperties["ants.agent"] ?: error("${task.activityId} names no ants.agent"))
         val skill = catalogue.skill(task.extensionProperties["ants.skill"] ?: error("${task.activityId} names no ants.skill"))
         check(agent.cli == "claude") { "Agent ${agent.name} runs ${agent.cli}, and only claude runs for now" }
-        val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult().rootProcessInstanceId
-        val workspace = home.resolve("runs").resolve(run)
         refuseBareByDefault(agent.cli, workspace)
 
         val prompt = "Follow the Skill in ${skill.file} for the workspace at $workspace.\n\n" + json.writeValueAsString(task.variables.toSortedMap())
@@ -116,6 +128,7 @@ class AgentLauncher(
             var failure: Exception? = null
             var retried = false
             process.inputReader().forEachLine { line ->
+                transcript.line(line)
                 if (valid != null || failure != null) return@forEachLine
                 val event = runCatching { json.readValue(line, Map::class.java) }.getOrNull() ?: return@forEachLine
                 if (event["type"] != "result") return@forEachLine

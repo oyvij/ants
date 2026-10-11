@@ -1,7 +1,9 @@
 @import ants.stateName
+@import ants.tokens
 @param run: org.operaton.bpm.engine.history.HistoricProcessInstance
 @param variables: Map<String, String>
 @param agentTasks: Map<String, String>
+@param transcripts: Map<String, Long>
 <!doctype html>
 <html lang="en">
 <head>
@@ -19,6 +21,14 @@
     <dt>${task}</dt><dd>${state}</dd>
 @endfor
 </dl>
+@endif
+@if(transcripts.isNotEmpty())
+<h2>Transcripts · ${tokens(transcripts.values.sum())}</h2>
+<ul>
+@for((task, count) in transcripts)
+    <li><a href="/runs/${run.id}/tasks/${task}/transcript">${task}</a> · ${tokens(count)}</li>
+@endfor
+</ul>
 @endif
 <h2>Variables</h2>
 <dl>

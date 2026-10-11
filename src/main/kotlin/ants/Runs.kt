@@ -34,6 +34,7 @@ class Runs(
     private val externalTasks: ExternalTaskService,
     private val launcher: AgentLauncher,
     private val settings: Settings,
+    @Value("\${ants.home}") private val home: Path,
 ) {
     @GetMapping("/runs")
     fun list(model: Model): String {
@@ -54,6 +55,7 @@ class Runs(
                 .orderByVariableName().asc().list()
                 .associate { it.name to ((it.typedValue as? ObjectValue)?.valueSerialized ?: "${it.value}") },
         )
+        model.addAttribute("transcripts", Transcript.all(home.resolve("runs").resolve(id)).mapValues { it.value.tokens })
         model.addAttribute(
             "agentTasks",
             externalTasks.createExternalTaskQuery().processInstanceId(id).topicName(AgentLauncher.TOPIC).list().associate { it.activityId to state(it) },
@@ -103,7 +105,11 @@ class RunLifecycle(@Value("\${ants.home}") home: Path) : AbstractProcessEnginePl
         if (!run.isTopRun || run.isCanceled) return@ExecutionListener
         val workspace = workspaces.resolve(run.processInstanceId).toFile()
         // Only once the end is committed: a rolled-back end leaves the Run alive and needing its workspace.
-        Context.getCommandContext().transactionContext.addTransactionListener(TransactionState.COMMITTED) { workspace.deleteRecursively() }
+        // The Transcripts (`tasks/`) outlive the Run.
+        Context.getCommandContext().transactionContext.addTransactionListener(TransactionState.COMMITTED) {
+            workspace.listFiles()?.filter { it.name != "tasks" }?.forEach { it.deleteRecursively() }
+            workspace.delete() // only if nothing was kept
+        }
     }
 
     override fun preInit(configuration: ProcessEngineConfigurationImpl) {
