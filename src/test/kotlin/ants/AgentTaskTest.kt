@@ -520,14 +520,15 @@ class FakeClaude {
     /** The working directory of every launch, in launch order. */
     fun launchLog(): List<String> = dir.resolve("launches.log").let { if (Files.exists(it)) it.readLines() else emptyList() }
 
+    /** One launch's record, read when asked: a launch just started may not have written it yet. */
     class Launch(private val dir: Path) {
-        val argv = dir.resolve("argv").readLines()
+        val argv get() = dir.resolve("argv").readLines()
 
         /** The value after [flag] in argv, or null. */
-        fun flag(flag: String) = argv.indexOf(flag).takeIf { it >= 0 }?.let { argv[it + 1] }
-        val env = dir.resolve("env").readLines().associate { it.substringBefore('=') to it.substringAfter('=') }
-        val cwd = dir.resolve("cwd").readText().trim()
-        val stdin = dir.resolve("stdin").readText().trim()
+        fun flag(flag: String) = argv.let { argv -> argv.indexOf(flag).takeIf { it >= 0 }?.let { argv[it + 1] } }
+        val env get() = dir.resolve("env").readLines().associate { it.substringBefore('=') to it.substringAfter('=') }
+        val cwd get() = dir.resolve("cwd").readText().trim()
+        val stdin get() = dir.resolve("stdin").readText().trim()
 
         /** Whether Ants killed the launch. */
         val killed get() = dir.resolve("killed").exists()

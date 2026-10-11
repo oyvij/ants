@@ -68,7 +68,7 @@ abstract class AntsTest {
             Thread.sleep(50)
         }
         launcher.tryNow("claude")
-        for (folder in listOf("agents", "skills", "templates")) home.resolve(folder).toFile().deleteRecursively()
+        for (folder in listOf("agents", "skills", "templates")) home.resolve(folder).toFile().run { deleteRecursively(); mkdirs() }
         home.resolve("schedules.yaml").toFile().delete()
     }
 
