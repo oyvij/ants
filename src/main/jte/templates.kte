@@ -1,0 +1,28 @@
+@param templates: List<ants.TemplateRow>
+@param message: String? = null
+@param _csrf: org.springframework.security.web.csrf.CsrfToken
+@param colorScheme: String = "light dark"
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="color-scheme" content="${colorScheme}">
+    <title>Templates · Ants</title>
+</head>
+<body>
+@template.nav()
+<h1>Templates</h1>
+@if(message != null)<p role="alert">${message}</p>@endif
+<p>A Template is dropped into a Process from the modeler's palette as a collapsed sub-process, a copy: editing the Template afterwards doesn't change the Process.</p>
+<form method="post" action="/templates/new">
+    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+    <label>Name <input name="name" required pattern="[a-z0-9][a-z0-9\-]{0,63}"></label>
+    <button>New Template</button>
+</form>
+<ul>
+@for(row in templates)
+    <li><a href="/templates/${row.name}">${row.name}</a> ${row.title}@if(row.shipped) <small>shipped</small>@endif</li>
+@endfor
+</ul>
+</body>
+</html>
