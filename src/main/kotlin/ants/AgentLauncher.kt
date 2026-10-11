@@ -21,7 +21,7 @@ import java.util.concurrent.atomic.AtomicInteger
 /**
  * The in-process worker. It fetches ready Agent Tasks (external tasks on topic `agent`) only for free slots under
  * the cap, oldest first across Runs, and runs each one's Skill through `claude -p`. A `done` Result completes the
- * task, stored as a process variable named after the Task's BPMN id; anything else is an incident.
+ * task, stored as a process variable named after the Task's BPMN id; a `stuck` one or a failure is an incident.
  */
 @Component
 class AgentLauncher(
@@ -76,17 +76,23 @@ class AgentLauncher(
 
     private fun launch(task: LockedExternalTask) {
         try {
-            externalTasks.complete(task.id, WORKER, mapOf(task.activityId to session(task)))
+            val result = session(task)
+            if (result["outcome"] == "done") externalTasks.complete(task.id, WORKER, mapOf(task.activityId to result))
+            else incident(task, "[stuck] ${result["summary"]}", result["needs"].toString())
         } catch (e: Exception) {
             if (poller.isShutdown) return // Ants is stopping: the Task stays locked, and the next start unlocks it
             log.warn("Agent Task ${task.activityId} failed", e)
-            runCatching { externalTasks.handleFailure(task.id, WORKER, e.message ?: e.toString(), 0, 0) }
-                .onFailure { log.warn("Agent Task ${task.activityId} couldn't be marked failed", it) }
+            incident(task, "[failed] ${e.message ?: e}", (e as? InvalidResult)?.result)
         }
     }
 
+    /** Puts [task] on hold as an incident, its tag and reason in [message] and anything longer in [details]. */
+    private fun incident(task: LockedExternalTask, message: String, details: String?) =
+        runCatching { externalTasks.handleFailure(task.id, WORKER, message, details, 0, 0) }
+            .onFailure { log.warn("Agent Task ${task.activityId} couldn't be put on hold", it) }
+
     /** Runs the Task's Skill in one CLI session and returns its Result. */
-    private fun session(task: LockedExternalTask): Any {
+    private fun session(task: LockedExternalTask): Map<*, *> {
         val agent = catalogue.agent(task.extensionProperties["ants.agent"] ?: error("${task.activityId} names no ants.agent"))
         val skill = catalogue.skill(task.extensionProperties["ants.skill"] ?: error("${task.activityId} names no ants.skill"))
         check(agent.cli == "claude") { "Agent ${agent.name} runs ${agent.cli}, and only claude runs for now" }
@@ -95,37 +101,51 @@ class AgentLauncher(
         refuseBareByDefault(agent.cli, workspace)
 
         val prompt = "Follow the Skill in ${skill.file} for the workspace at $workspace.\n\n" + json.writeValueAsString(task.variables.toSortedMap())
-        val process = cli(agent.cli, workspace, flags(agent, skill)).start()
+        val schema = ResultContract.schema(skill.output)
+        val process = cli(agent.cli, workspace, flags(agent, schema, skill)).start()
         clis += process
         try {
             val stdin = process.outputWriter()
-            stdin.write(json.writeValueAsString(mapOf("type" to "user", "message" to mapOf("role" to "user", "content" to prompt))))
-            stdin.newLine()
-            stdin.flush()
-            var result: Map<*, *>? = null
+            fun say(content: String) {
+                stdin.write(json.writeValueAsString(mapOf("type" to "user", "message" to mapOf("role" to "user", "content" to content))))
+                stdin.newLine()
+                stdin.flush()
+            }
+            say(prompt)
+            var valid: Map<*, *>? = null
+            var invalid: InvalidResult? = null
+            var retried = false
             process.inputReader().forEachLine { line ->
                 val event = runCatching { json.readValue(line, Map::class.java) }.getOrNull() ?: return@forEachLine
-                if (event["type"] == "result") {
-                    result = event
-                    stdin.close() // the session ends once Ants holds its Result
+                if (event["type"] != "result") return@forEachLine
+                val result = event["structured_output"]
+                val errors = if (result == null) listOf("No Result came back.") else ResultContract.errors(result, schema, workspace)
+                if (errors.isEmpty()) {
+                    valid = result as Map<*, *>
+                } else if (!retried) {
+                    retried = true
+                    say("Your Result is invalid:\n${errors.joinToString("\n") { "- $it" }}\nAnswer again with a valid Result.")
+                } else {
+                    invalid = InvalidResult("The Result is invalid: ${errors.joinToString("; ")}", json.writeValueAsString(result))
                 }
+                if (valid != null || invalid != null) stdin.close() // the session ends once Ants holds its Result
             }
             val exit = process.waitFor()
+            invalid?.let { throw it }
             check(exit == 0) { "${agent.cli} exited with code $exit" }
-            val output = result?.get("structured_output") as? Map<*, *> ?: error("${agent.cli} ended without a Result")
-            check(output["outcome"] == "done") { "The Agent ended ${output["outcome"]}: ${output["summary"]}" }
-            return output
+            return valid ?: error("${agent.cli} ended without a Result")
         } finally {
             clis -= process
         }
     }
 
-    private fun flags(agent: Agent, skill: Skill): List<String> {
+    private fun flags(agent: Agent, schema: Map<*, *>, skill: Skill): List<String> {
         val tools = (agent.tools ?: DEFAULT_TOOLS).filter { it.substringBefore('(') != "Skill" }
         return listOf(
             "-p",
             "--output-format", "stream-json", "--verbose", "--include-partial-messages",
             "--input-format", "stream-json", "--replay-user-messages",
+            "--json-schema", json.writeValueAsString(schema),
             "--session-id", UUID.randomUUID().toString(),
             "--permission-mode", "dontAsk",
             "--setting-sources", "user,project",
@@ -162,6 +182,9 @@ class AgentLauncher(
         val bare = Regex("""^ *--bare\b.*?(?=^ {0,4}-|\z)""", setOf(RegexOption.MULTILINE, RegexOption.DOT_MATCHES_ALL)).find(help)?.value.orEmpty()
         check("default" !in bare.lowercase()) { "$cli -p now turns on --bare by default, which never reads Ants' login. Ants needs updating." }
     }
+
+    /** A second invalid Result, kept for the `[failed]` page. */
+    private class InvalidResult(message: String, val result: String) : Exception(message)
 
     companion object {
         const val TOPIC = "agent"

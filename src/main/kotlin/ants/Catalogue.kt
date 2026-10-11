@@ -4,6 +4,7 @@ import org.springframework.beans.factory.annotation.Value
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver
 import org.springframework.stereotype.Component
 import org.yaml.snakeyaml.Yaml
+import tools.jackson.databind.json.JsonMapper
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.exists
@@ -22,6 +23,11 @@ class Agent(val name: String, val cli: String, val tools: List<String>?, val mod
 /** A `SKILL.md` and the folder it lives in. */
 class Skill(val name: String, val file: Path) {
     val folder: Path get() = file.parent
+
+    /** The schema of the `output` the Skill promises, from `result.schema.json` beside it; without one, any output. */
+    val output: Map<*, *>
+        get() = folder.resolve("result.schema.json").takeIf { it.exists() }?.let { JsonMapper.shared().readValue(it.toFile(), Map::class.java) }
+            ?: emptyMap<String, Any?>()
 }
 
 /**

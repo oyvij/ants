@@ -34,6 +34,7 @@ dependencies {
     implementation("gg.jte:jte-spring-boot-starter-4:$jte")
     implementation("gg.jte:jte-kotlin:$jte")
     implementation("org.jetbrains.kotlin:kotlin-reflect")
+    implementation("com.networknt:json-schema-validator:2.0.4")
     runtimeOnly("com.h2database:h2")
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")

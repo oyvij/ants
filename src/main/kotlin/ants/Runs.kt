@@ -62,7 +62,7 @@ class Runs(
     }
 
     private fun state(task: ExternalTask) = when {
-        task.retries == 0 -> "Failed: ${task.errorMessage}"
+        task.retries == 0 -> listOfNotNull(task.errorMessage, externalTasks.getExternalTaskErrorDetails(task.id)).joinToString(" ")
         task.lockExpirationTime?.after(Date()) == true -> "Running"
         else -> "Queued: ${launcher.running} of ${settings.agentTasks()} Agent Tasks running"
     }

@@ -1,10 +1,12 @@
 package ants
 
 import org.junit.jupiter.api.Test
+import tools.jackson.databind.json.JsonMapper
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
 import kotlin.io.path.createFile
+import kotlin.io.path.deleteIfExists
 import kotlin.io.path.isDirectory
 import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.readLines
@@ -29,8 +31,14 @@ class AgentTaskTest : AntsTest() {
 
     private fun agent(text: String) = home.resolve("agents").createDirectories().resolve("writer.md").writeText(text)
 
-    private fun skill() = home.resolve("skills/draft").createDirectories().resolve("SKILL.md")
-        .writeText("---\nname: draft\ndescription: Drafts a text.\n---\nDraft the text.\n")
+    private fun skill(schema: String? = null) {
+        val folder = home.resolve("skills/draft").createDirectories()
+        folder.resolve("SKILL.md").writeText("---\nname: draft\ndescription: Drafts a text.\n---\nDraft the text.\n")
+        folder.resolve("result.schema.json").run { if (schema != null) writeText(schema) else deleteIfExists() }
+    }
+
+    /** The `--json-schema` the launch was given. */
+    private fun FakeClaude.Launch.schema(): Map<*, *> = JsonMapper.shared().readValue(argv[argv.indexOf("--json-schema") + 1], Map::class.java)
 
     private val done = """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION",""" +
         """"structured_output":{"outcome":"done","summary":"Drafted.","output":{"text":"Hello"}}}"""
@@ -55,14 +63,82 @@ class AgentTaskTest : AntsTest() {
     }
 
     @Test
-    fun `only a done Result completes the Task`() {
+    fun `--json-schema holds the envelope around the Skill's promised output`() {
+        settings()
+        agent("Write plainly.\n")
+        skill("""{"type":"object","properties":{"text":{"type":"string"}},"required":["text"]}""")
+        claude.session("draft", done)
+        val run = start()
+        eventually { assertContains(page(run), "State: Completed") }
+        val schema = claude.launches("draft").single().schema()
+        val properties = schema["properties"] as Map<*, *>
+        assertEquals(mapOf("type" to "object", "properties" to mapOf("text" to mapOf("type" to "string")), "required" to listOf("text")), properties["output"])
+        assertEquals(mapOf("enum" to listOf("done", "stuck")), properties["outcome"])
+        assertEquals(listOf("outcome", "summary"), schema["required"])
+        assertEquals(mapOf("required" to listOf("output"), "not" to mapOf("required" to listOf("needs"))), schema["then"])
+        assertEquals(mapOf("required" to listOf("needs"), "not" to mapOf("required" to listOf("output"))), schema["else"])
+    }
+
+    @Test
+    fun `a stuck Result raises an incident holding what the Agent needs, and never completes the Task`() {
         settings()
         agent("Write plainly.\n")
         skill()
-        claude.session("draft", done.replace(""""outcome":"done"""", """"outcome":"stuck""""))
+        claude.session("draft", done.replace(""""outcome":"done","summary":"Drafted.","output":{"text":"Hello"}""",
+            """"outcome":"stuck","summary":"No tone given.","needs":"Which tone, dry or warm?""""))
         val run = start()
-        eventually { assertContains(page(run), "<dt>draft</dt><dd>Failed: ") }
+        eventually { assertContains(page(run), "<dt>draft</dt><dd>[stuck] No tone given. Which tone, dry or warm?</dd>") }
         assertContains(page(run), "State: Running")
+    }
+
+    @Test
+    fun `an invalid Result resumes the same session once with the error, and a valid second Result completes the Task`() {
+        settings()
+        agent("Write plainly.\n")
+        skill("""{"type":"object","properties":{"text":{"type":"string"}},"required":["text"]}""")
+        claude.session("draft", done.replace(""""text":"Hello"""", """"words":"Hello""""), "read", done)
+        val run = start()
+        eventually { assertContains(page(run), "State: Completed") }
+        assertContains(page(run), """<dt>draft</dt><dd><code>{"outcome":"done","summary":"Drafted.","output":{"text":"Hello"}}</code></dd>""")
+        val retry = claude.launches("draft").single().stdin.lines()[1]
+        assertContains(retry, "Your Result is invalid")
+        assertContains(retry, "text")
+    }
+
+    @Test
+    fun `a second invalid Result raises an incident naming the error`() {
+        settings()
+        agent("Write plainly.\n")
+        skill()
+        val invalid = done.replace(""""summary":"Drafted.",""", "")
+        claude.session("draft", invalid, "read", invalid)
+        val run = start()
+        eventually { assertContains(page(run), "<dt>draft</dt><dd>[failed] The Result is invalid: ") }
+        assertContains(page(run), "required property 'summary' not found")
+        assertContains(page(run), "State: Running")
+    }
+
+    @Test
+    fun `a file reference in output that escapes the Run workspace is rejected as invalid`() {
+        settings()
+        agent("Write plainly.\n")
+        skill("""{"type":"object","properties":{"file":{"type":"string","format":"path"}},"required":["file"]}""")
+        val file = { path: String -> done.replace(""""text":"Hello"""", """"file":"$path"""") }
+        claude.session("draft", file("../other-run/notes.md"), "read", file("/etc/passwd"))
+        val run = start()
+        eventually { assertContains(page(run), "<dt>draft</dt><dd>[failed] The Result is invalid: ") }
+        assertContains(page(run), "/etc/passwd")
+        assertContains(claude.launches("draft").single().stdin.lines()[1], "/output/file: does not match the path pattern")
+    }
+
+    @Test
+    fun `a file reference inside the Run workspace is valid`() {
+        settings()
+        agent("Write plainly.\n")
+        skill("""{"type":"object","properties":{"file":{"type":"string","format":"path"}},"required":["file"]}""")
+        claude.session("draft", done.replace(""""text":"Hello"""", """"file":"tickets/../tickets/spec.md""""))
+        val run = start()
+        eventually { assertContains(page(run), "State: Completed") }
     }
 
     @Test
@@ -119,7 +195,7 @@ class AgentTaskTest : AntsTest() {
         claude.session("draft", done)
         claude.help("Options:\n  --bare      Minimal mode, the default with -p: never reads OAuth\n  --verbose   Says more\n")
         val run = start()
-        eventually { assertContains(page(run), "<dt>draft</dt><dd>Failed: claude -p now turns on --bare by default") }
+        eventually { assertContains(page(run), "<dt>draft</dt><dd>[failed] claude -p now turns on --bare by default") }
         assertEquals(emptyList(), claude.launches("draft"))
     }
 
@@ -146,6 +222,7 @@ class AgentTaskTest : AntsTest() {
         assertContains(argv, "--append-system-prompt Write plainly.")
         assertContains(argv, "--tools Bash,Edit,Glob,Grep,NotebookEdit,Read,TodoWrite,WebFetch,WebSearch,Write")
         assertFalse("--model" in argv)
+        assertEquals(emptyMap<String, Any>(), (claude.launches("draft").single().schema()["properties"] as Map<*, *>)["output"])
     }
 }
 
