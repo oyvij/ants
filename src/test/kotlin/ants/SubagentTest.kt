@@ -1,10 +1,8 @@
 package ants
 
 import org.junit.jupiter.api.AfterEach
-import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import tools.jackson.databind.json.JsonMapper
-import kotlin.io.path.createDirectories
 import kotlin.io.path.deleteIfExists
 import kotlin.io.path.writeText
 import kotlin.test.assertContains
@@ -18,21 +16,11 @@ class SubagentTest : AntsTest() {
     private val agents = home.resolve("agents")
     private val written = listOf("searcher", "reviewer", "private", "codex-helper", "lead").map { agents.resolve("$it.md") }
 
-    @BeforeEach
-    fun setUp() {
-        settings()
-        agents.createDirectories()
-        home.resolve("skills/draft").createDirectories().resolve("SKILL.md").writeText("---\nname: draft\ndescription: Drafts a text.\n---\nDraft the text.\n")
-        home.resolve("skills/draft/result.schema.json").deleteIfExists()
-    }
-
     @AfterEach
     fun tearDown() {
         written.forEach { it.deleteIfExists() }
         agents.resolve("writer.md").deleteIfExists()
     }
-
-    private fun settings(extra: String = "") = home.resolve("settings.yaml").writeText("claude:\n  command: [${claude.command}]\n$vault$extra")
 
     private fun agent(name: String, frontmatter: String, body: String = "Help.") =
         agents.resolve("$name.md").writeText("---\nname: $name\nskills: draft\n$frontmatter---\n$body\n")
@@ -55,12 +43,11 @@ class SubagentTest : AntsTest() {
 
     @Test
     fun `only offered claude Agents are passed through --agents, and the depth comes from settings`() {
-        agent("writer", "tools: Read, Agent\n", "Write plainly.")
+        agentTask(claude, agent = "name: writer\ntools: Read, Agent\n", extra = "subagent-depth: 2\n")
         agent("searcher", "description: Searches notes.\ntools: Read, Grep, Bash(git log *)\nmodel: haiku\nants-subagent: true\n", "Search the notes.")
         agent("reviewer", "description: Reviews.\nants-subagent: true\n", "Review.")
         agent("private", "description: Not offered.\n")
         agent("codex-helper", "description: Runs codex.\ncli: codex\nants-subagent: true\n")
-        settings("subagent-depth: 2\n")
 
         val launch = launch()
         val offered = JsonMapper.shared().readValue(launch.flag("--agents"), Map::class.java)
@@ -74,7 +61,7 @@ class SubagentTest : AntsTest() {
 
     @Test
     fun `an Agent without the Agent tool, such as one with the default tools, gets no Subagent types`() {
-        agent("writer", "description: Writes.\n", "Write plainly.")
+        agentTask(claude, agent = "name: writer\ndescription: Writes.\n")
         agent("searcher", "description: Searches.\nants-subagent: true\n")
         val launch = launch()
         assertNull(launch.flag("--agents"))
@@ -83,7 +70,7 @@ class SubagentTest : AntsTest() {
 
     @Test
     fun `the Agent tool's Limit denies every other Subagent type`() {
-        agent("writer", "tools: Read, Agent(searcher)\n", "Write plainly.")
+        agentTask(claude, agent = "name: writer\ntools: Read, Agent(searcher)\n")
         agent("searcher", "description: Searches.\nants-subagent: true\n")
         agent("reviewer", "description: Reviews.\nants-subagent: true\n")
 

@@ -80,13 +80,28 @@ tasks.withType<Test> {
     }
 }
 
+// What modeler.js writes as text, checked by Node's own test runner with no browser, as part of `test`.
+val nodeTest = tasks.register<com.github.gradle.node.task.NodeTask>("nodeTest") {
+    script = file("src/test/js/modeler-text.test.js")
+    options = listOf("--test")
+}
+
 tasks.test {
+    dependsOn(nodeTest)
     useJUnitPlatform { excludeTags("live") }
     // Only the system folders and a fake gh, so a CLI run by its bare name, such as claude or nono, is never the real one.
     environment("PATH", "${projectDir}/src/test/resources/fake-gh:/usr/bin:/bin")
     // Ants must strip these from every Agent's environment, even when the allow-list names them.
     environment("ANTHROPIC_API_KEY", "sk-ant-test")
     environment("CLAUDE_CODE_RETRY_WATCHDOG", "1")
+    // Test classes run in a random order (junit-platform.properties), from a seed it prints; -PtestSeed=… replays one.
+    // Set when the task runs, so a new seed never makes an up-to-date test task run again.
+    val testSeed = findProperty("testSeed")
+    doFirst {
+        val seed = testSeed ?: System.nanoTime()
+        systemProperty("junit.jupiter.execution.order.random.seed", seed)
+        logger.lifecycle("Test classes in random order, seed $seed")
+    }
 }
 
 // The tests that run the real claude on your login, kept out of `test`: ./gradlew liveTest

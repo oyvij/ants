@@ -4,9 +4,7 @@ import org.junit.jupiter.api.Test
 import tools.jackson.databind.json.JsonMapper
 import java.util.concurrent.BlockingQueue
 import java.util.concurrent.TimeUnit.SECONDS
-import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
-import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -17,16 +15,16 @@ class CallActivityTest : AntsTest() {
     private val browser by lazy { browser().also { it.login() } }
     private val claude = FakeClaude()
 
-    private fun setUp() {
-        home.resolve("settings.yaml").writeText("agent-tasks: 3\nclaude:\n  command: [${claude.command}]\n  env: [PATH, HOME]\n$vault")
-        home.resolve("agents").createDirectories().resolve("writer.md").writeText("---\nskills: plan, draft, proofread\n---\nWrite plainly.\n")
-        for (name in listOf("plan", "draft", "proofread")) {
-            home.resolve("skills/$name").createDirectories().resolve("SKILL.md").writeText("---\nname: $name\ndescription: $name.\n---\nDo it.\n")
-        }
-        home.resolve("skills/plan/result.schema.json").writeText("""{"type":"object","properties":{"items":{"type":"array"}}}""")
-        home.resolve("skills/draft/result.schema.json").writeText("""{"type":"object","properties":{"text":{}}}""")
-        home.resolve("skills/proofread/result.schema.json").writeText("""{"type":"object","properties":{"text":{}}}""")
-    }
+    private fun setUp() = agentTask(
+        claude,
+        mapOf(
+            "plan" to """{"type":"object","properties":{"items":{"type":"array"}}}""",
+            "draft" to """{"type":"object","properties":{"text":{}}}""",
+            "proofread" to """{"type":"object","properties":{"text":{}}}""",
+        ),
+        extra = "agent-tasks: 3\n",
+        env = listOf("PATH", "HOME"),
+    )
 
     private fun result(output: String) = """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION",""" +
         """"structured_output":{"outcome":"done","summary":"Done.","output":$output}}"""
