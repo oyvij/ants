@@ -41,11 +41,11 @@
 </style>
 <header>
   <b>Default Processes</b>
-  <button data-proc="user">user-in-the-loop</button>
-  <button data-proc="agent">agent answers</button>
-  <button data-proc="recs">recommendations</button>
-  <button data-proc="auto">fully automatic</button>
-  <button data-proc="churn">churn</button>
+  <button data-proc="user">Ship with me</button>
+  <button data-proc="agent">Ship by proxy</button>
+  <button data-proc="recs">Ship as proposed</button>
+  <button data-proc="auto">Ship overnight</button>
+  <button data-proc="churn">Ship small</button>
   <button data-proc="check">Building blocks &amp; open questions</button>
   <span class="spacer"></span>
   <button data-view="expanded">Expanded</button>
@@ -69,7 +69,7 @@ const I = {
   grill: { kind: "agent", agent: "griller", skill: "grilling", inputs: ["prompt = ${prompt}", "brief = ${scout.output.brief}", "clones = ${clones}"], toggles: "Vault on · resume on",
     result: "{questions[], repos[]}", notes: ["<code>repos</code> = repos it found it needs since the scout, Source map names only <span class='tag q'>Q2</span>"], src: "#7, #19" },
   cloneMore: { kind: "builtin", what: "Clone repos", inputs: ["repos = ${grill.output.repos}"], result: "[{name, path, commit}]",
-    notes: ["Skips repos already cloned; an empty list does nothing. Uses the Run's work branch, fixed by the first Clone repos.", "Only in user-in-the-loop, where you see every Round. The unattended Processes never widen the Run's repos; to-spec lists the ones not cloned in the Spec."], src: "#8, this ticket" },
+    notes: ["Skips repos already cloned; an empty list does nothing. Uses the Run's work branch, fixed by the first Clone repos.", "Only in Ship with me, where you see every Round. The unattended Processes never widen the Run's repos; to-spec lists the ones not cloned in the Spec."], src: "#8, this ticket" },
   gwQ: { kind: "gateway", notes: ["yes: <code>${not empty grill.output.questions}</code>", "no: default flow, the loop ends"] },
   answer: { kind: "user", what: "Answer a Round", answers: "grill", result: "{answers: [{id, answer, source: accepted|written}]}",
     notes: ["Appended to the Round log and the Answer History."], src: "#7, #15" },
@@ -77,8 +77,8 @@ const I = {
   answerer: { kind: "agent", agent: "answerer", skill: "answer-round", inputs: ["questions = ${grill.output.questions}"], toggles: "Vault on · Answer History on",
     answers: "grill", result: "{answers: [{id, answer, why}]}", notes: ["Ants stamps <code>source: agent</code>."], src: "#15" },
   accept: { kind: "builtin", what: "Accept recommendations", answers: "grill", result: "{answers}", notes: ["Ants stamps <code>source: recommended</code>."], src: "#15" },
-  answerAtCap: { kind: "user", what: "Answer a Round", answers: "grill", result: "{answers}", notes: ["Same page as user-in-the-loop."], src: "#15" },
-  gl_capEnd: { kind: "end", name: "Cap reached", notes: ["Fully automatic only: at the cap the loop ends and the Run goes on to to-spec, instead of handing the Round to you."], src: "this ticket" },
+  answerAtCap: { kind: "user", what: "Answer a Round", answers: "grill", result: "{answers}", notes: ["Same page as Ship with me."], src: "#15" },
+  gl_capEnd: { kind: "end", name: "Cap reached", notes: ["Ship overnight only: at the cap the loop ends and the Run goes on to to-spec, instead of handing the Round to you."], src: "this ticket" },
   gwMerge: { kind: "gateway", notes: ["Merge: both answerers lead back to the griller, which resumes its session with the answers."] },
   tospec: { kind: "agent", agent: "planner", skill: "to-spec", inputs: ["prompt = ${prompt}", "brief = ${scout.output.brief}", "rounds = 'rounds.md'", "clones = ${clones}"], toggles: "resume on",
     result: "{spec: 'tickets/spec.md'}", notes: ["A fresh session, reading the Round log, not the griller's session.", "Lists any repos the griller asked for that were not cloned (the unattended Processes never clone mid-loop)."], src: "#7, #23" },
@@ -109,10 +109,10 @@ const I = {
 }
 const TPL = {
   scoutAndClone: { name: "Scout and clone", src: "#21", notes: ["Shipped Template."] },
-  grillLoop: { name: "Grill until no questions", src: "#21", notes: ["Shipped Template, one per answerer: (you answer), (an Agent answers), (accept recommendations). The last two carry the cap, and only the first has Clone new repos.", "Fully automatic uses (an Agent answers) with the cap rerouted to end the loop."] },
-  specApproval: { name: "To-spec and approve", src: "#21", notes: ["Shipped Template.", "In fully automatic it is dropped and its Approve deleted, leaving To-spec: the Spec is never approved there, and Review changes is the first wait."] },
+  grillLoop: { name: "Grill until no questions", src: "#21", notes: ["Shipped Template, one per answerer: (you answer), (an Agent answers), (accept recommendations). The last two carry the cap, and only the first has Clone new repos.", "Ship overnight uses (an Agent answers) with the cap rerouted to end the loop."] },
+  specApproval: { name: "To-spec and approve", src: "#21", notes: ["Shipped Template.", "In Ship overnight it is dropped and its Approve deleted, leaving To-spec: the Spec is never approved there, and Review changes is the first wait."] },
   cutAndImplement: { name: "Cut and implement", q: true, notes: ["<b>New</b> Template proposed here <span class='tag q'>Q5</span>: the multi-instance is the fiddliest thing to set up by hand."] },
-  updateVault: { name: "Update the Vault", notes: ["<b>New</b> shipped Template (this ticket): the propose-then-accept loop from #14.", "Dropped into all five default Processes after Open pull request, so it never delays the pull request and learns from the whole Run.", "Its approval always waits for you, even in fully automatic and churn: an Agent never writes the Vault unseen."], src: "#14, this ticket" },
+  updateVault: { name: "Update the Vault", notes: ["<b>New</b> shipped Template (this ticket): the propose-then-accept loop from #14.", "Dropped into all five default Processes after Open pull request, so it never delays the pull request and learns from the whole Run.", "Its approval always waits for you, even in Ship overnight and Ship small: an Agent never writes the Vault unseen."], src: "#14, this ticket" },
   reviewAndPush: { name: "Review and push", src: "#22, #24", notes: ["Shipped Template, with fix as Send back's target."] },
 }
 
@@ -157,12 +157,12 @@ const T = {
       ["uv4", "gwWritten", "approveNotes", "no", ["b", "t"], null, true], ["uv5", "approveNotes", "updateKnowledge", "", ["l", [160, 140], "b"]]] }),
 }
 const PROCS = {
-  user: { name: "user-in-the-loop", grill: null },
-  agent: { name: "agent answers", grill: ["answerer", "Answer the Round (Agent)"] },
-  recs: { name: "recommendations", grill: ["accept", "Accept recommendations"] },
-  churn: { name: "churn", items: [["scoutAndClone"], ["propose", "serviceTask", "Propose a solution"], ["implementOne", "serviceTask", "Implement"],
+  user: { name: "Ship with me", grill: null },
+  agent: { name: "Ship by proxy", grill: ["answerer", "Answer the Round (Agent)"] },
+  recs: { name: "Ship as proposed", grill: ["accept", "Accept recommendations"] },
+  churn: { name: "Ship small", items: [["scoutAndClone"], ["propose", "serviceTask", "Propose a solution"], ["implementOne", "serviceTask", "Implement"],
     ["push", "serviceTask", "Push"], ["churnPr", "serviceTask", "Open pull request"], ["updateVault"]], rows: [[0, 1, 2, 3, 4, 5]] },
-  auto: { name: "fully automatic", grill: ["answerer", "Answer the Round (Agent)"], capEnds: true, noApprove: true },
+  auto: { name: "Ship overnight", grill: ["answerer", "Answer the Round (Agent)"], capEnds: true, noApprove: true },
 }
 
 // ---------- BPMN XML from the Templates ----------
@@ -251,7 +251,7 @@ function info(id) {
     ${e.notes ? `<ul>${e.notes.map(n => `<li>${n}</li>`).join("")}</ul>` : ""}${e.src ? `<p style="color:#64748b">Decided in ${e.src}</p>` : ""}`
 }
 const tplOf = (tid, id) => { const t = T[tid](PROCS[cur]); return t.nodes.some(n => n[0] === id) }
-const intro = () => cur === "churn" ? `<h2>churn</h2>
+const intro = () => cur === "churn" ? `<h2>Ship small</h2>
   <p>For small and medium tasks, many Runs at once. Prompt → Scout and clone → Propose a solution → Implement → Push → Open pull request. No grilling, no Spec, no Tickets, no walkthrough; every implementer still runs the code-review Subagents.</p>
   <p class="legend"><span class="tag agent">Agent Task</span><span class="tag user">User Task</span><span class="tag builtin">Built-in Task</span><span class="tag tpl">Template</span></p>
   <h3>Waits on the user</h3><ul><li>Push</li><li>Approve the Notes</li><li>any <code>[stuck]</code> / <code>[failed]</code></li></ul>` : `<h2>${PROCS[cur].name}</h2>
@@ -267,7 +267,7 @@ const CHECK = [
   ["User Tasks: Answer a Round, Approve, Review changes", "ok", "#7, #9, #22"],
   ["Built-in Tasks: Clone repos, Accept recommendations, Push", "ok", "#8, #15, #22"],
   ["The review in every implementer: <code>code-review</code>'s Standards and Spec Subagents inside implement and fix-review", "ok", "#18, this ticket"],
-  ["Bare Tasks at the top level (churn)", "ok", "#5"],
+  ["Bare Tasks at the top level (Ship small)", "ok", "#5"],
   ["Exclusive gateways on Results; the <code>runs</code> counter", "ok", "#15, #21"],
   ["Answering Tasks naming the asker; resume when the flow comes back", "ok", "#7, #15"],
   ["Embedded sub-processes (dropped Templates)", "ok", "#21"],
@@ -287,7 +287,7 @@ const QS = [
   ["Q3 Ids when a Template is dropped", "Keep the Template's ids; add a suffix only on a clash (and rewrite references inside it). Then <code>${scout.output.brief}</code> in Grill until no questions finds the scout from Scout and clone.", "Always fresh ids (as written in #21): every cross-Template reference has to be fixed by hand after a drop."],
   ["Q4 What switches on the Blocked-by hold?", "A tick box <b>Items are Tickets</b> on a multi-instance, ticked in the shipped Template: holds by Blocked by, skips ready-for-human, links the drawer to Tickets.", "Implicit: Ants notices the collection holds Ticket ids of the Run's tracker."],
   ["Q5 A fifth shipped Template, Cut and implement", "Yes: to-tickets → Implement each Ticket (parallel, over <code>${totickets.output.tickets}</code>, Items are Tickets). The default Processes are then five Templates in a row.", "Draw the two Tasks bare in the default Processes."],
-  ["Q6 Shipped Agents", "<code>scout</code>, <code>griller</code> (Read, Grep, Glob), <code>answerer</code>, <code>planner</code> (to-spec and to-tickets; writes only <code>tickets/</code>), <code>implementer</code> (implement and fix-review), <code>storyteller</code> (walkthrough; Bash limited to git log/diff/show), <code>pr</code>, and for churn <code>architect</code> (propose-solution; writes only <code>proposal/</code>). The implementer lists implement, fix-review, tdd and code-review.", "A separate writer Agent for to-spec; fix on its own Agent."],
+  ["Q6 Shipped Agents", "<code>scout</code>, <code>griller</code> (Read, Grep, Glob), <code>answerer</code>, <code>planner</code> (to-spec and to-tickets; writes only <code>tickets/</code>), <code>implementer</code> (implement and fix-review), <code>storyteller</code> (walkthrough; Bash limited to git log/diff/show), <code>pr</code>, and for Ship small <code>architect</code> (propose-solution; writes only <code>proposal/</code>). The implementer lists implement, fix-review, tdd and code-review.", "A separate writer Agent for to-spec; fix on its own Agent."],
   ["Q7 Updating the Vault at the end", "<b>Decided:</b> a shipped Template <b>Update the Vault</b> (update-knowledge → Written? → Approve the Notes, looping). Proposed: in all five Processes after Open pull request; the approval always waits.", "Ship the Template only; leave it out of the defaults."],
 ]
 const checkPage = () => `<h2>Is every element a building block a user could draw?</h2>
