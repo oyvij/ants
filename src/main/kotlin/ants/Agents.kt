@@ -146,8 +146,7 @@ data class AgentForm(
     val instructions: String,
     val kept: Map<*, *> = emptyMap<String, Any?>(),
 ) {
-    fun error() = when {
-        !Regex("[a-z0-9][a-z0-9-]*").matches(name) -> "A name is lowercase letters, digits and hyphens."
+    fun error() = nameError("An Agent", name) ?: when {
         cli !in CLIS -> "Ants runs only ${CLIS.joinToString(" or ")}, not $cli."
         subagent && cli != "claude" -> "Only a claude Agent can be offered as a Subagent."
         else -> null

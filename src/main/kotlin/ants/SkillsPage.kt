@@ -126,9 +126,7 @@ class SkillsPage(private val catalogue: Catalogue, private val usedBy: UsedBy) {
             edited.folder.fileName.toString() == edited.name -> edited.folder.resolveSibling(name)
             else -> edited.folder
         }
-        val error = when {
-            !Regex("[a-z0-9][a-z0-9-]{0,63}").matches(name) -> "A Skill's name is up to 64 lowercase letters, digits and hyphens."
-            name in setOf("new", "import", "schema") -> "The Skills page keeps the name $name for itself."
+        val error = nameError("A Skill", name) ?: when {
             name != form.name && taken != null -> "A Skill named $name already exists, in ${taken.folder}."
             folder != edited?.folder && folder.exists() -> "$folder already exists."
             schemaErrors.isNotEmpty() -> "result.schema.json is invalid: ${schemaErrors.joinToString("; ")}"

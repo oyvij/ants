@@ -77,7 +77,8 @@ class SkillsPageTest : AntsTest() {
     fun `a Skill needs a name and a description, and a name no other Skill has`() {
         assertContains(save("---\nname: nameless\n---\nNo description.\n").body, "needs a name and a description")
         assertContains(save("No frontmatter.\n").body, "needs a name and a description")
-        assertContains(save(skillMd("Not A Name")).body, "lowercase letters, digits and hyphens")
+        assertContains(save(skillMd("Not A Name")).body, "A Skill's name is up to 64 lowercase letters, digits and hyphens.")
+        assertContains(save(skillMd("schema")).body, "The Skills page keeps the name schema for itself.")
         assertContains(save(skillMd("shipped-draft")).body, "A Skill named shipped-draft already exists")
     }
 
