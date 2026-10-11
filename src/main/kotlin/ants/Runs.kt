@@ -233,7 +233,7 @@ val HistoricProcessInstance.stateName
 @Component
 class RunLifecycle(@Value("\${ants.home}") private val home: Path) : AbstractProcessEnginePlugin() {
     private fun started(tasks: List<String>, results: List<String>) = ExecutionListener { run ->
-        if (run.isTopRun) home.runWorkspace(run.processInstanceId).createDirectories()
+        if (run.isTopRun) trackerDoc(home.runWorkspace(run.processInstanceId).createDirectories())
         else run.setVariable(CALLED, called(run.superExecution))
         for (id in results) run.setVariable(id, null)
         run.setVariable("runs", tasks.associateWith { 0 })
@@ -259,6 +259,7 @@ class RunLifecycle(@Value("\${ants.home}") private val home: Path) : AbstractPro
         val report = report(run, workspace)
         // Only once the end is committed: a rolled-back end leaves the Run alive and needing its workspace.
         Context.getCommandContext().transactionContext.addTransactionListener(TransactionState.COMMITTED) {
+            closeSpec(workspace, cancelled)
             Files.writeString(workspace.resolve(REPORT), report)
             // A cancelled Run keeps its workspace, so no commits are lost.
             if (!cancelled) cleanUp(workspace.toFile())

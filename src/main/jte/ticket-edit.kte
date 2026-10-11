@@ -1,0 +1,27 @@
+@param file: ants.Tracked
+@param text: String
+@param article: String?
+@param error: String? = null
+@param _csrf: org.springframework.security.web.csrf.CsrfToken
+@param colorScheme: String = "light dark"
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="color-scheme" content="${colorScheme}">
+    <title>Edit ${file.title} · Ants</title>
+</head>
+<body>
+@template.nav()
+<p><a href="${file.href}">${file.title}</a></p>
+@if(error != null)<p role="alert">${error}</p>@endif
+@if(article != null)$unsafe{article}@endif
+<form method="post">
+    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+    <input type="hidden" name="version" value="${file.version}">
+    <textarea name="text" rows="30" cols="100">
+${text}</textarea>
+    <p><button>Save</button></p>
+</form>
+</body>
+</html>

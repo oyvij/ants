@@ -9,7 +9,8 @@ const val REPORT = "report.md"
 
 /**
  * The Report of the Run [run] as it ends, as markdown, written mechanically: its Process and how it ended, its start
- * form, and each Agent Task's Result summary, tokens and Transcript link, read from the Transcripts in [workspace].
+ * form, each Agent Task's Result summary, tokens and Transcript link, read from the Transcripts in [workspace], and
+ * its Spec and Tickets.
  */
 fun report(run: DelegateExecution, workspace: Path): String = buildString {
     val definition = (run as ExecutionEntity).processDefinition
@@ -24,4 +25,5 @@ fun report(run: DelegateExecution, workspace: Path): String = buildString {
         val result = transcript.result?.let { " · ${it["outcome"]}: ${it["summary"]}" }.orEmpty()
         append("- [$task](/runs/${run.processInstanceId}/tasks/$task/transcript)$result · ${tokens(transcript.tokens)}\n")
     }
+    append("\n" + ticketsReport(workspace, run.processInstanceId))
 }
