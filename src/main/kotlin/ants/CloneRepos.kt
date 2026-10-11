@@ -112,14 +112,14 @@ class CloneRepos(
             .mapNotNull { File(it, ".git/HEAD").takeIf(File::exists)?.readText()?.let { head -> Regex("^ref: refs/heads/(.+)").find(head.trim())?.groupValues?.get(1) } }
             .distinct()
 
-    /** Runs git in [dir] with [args], giving its output, trimmed; fails with git's message when git does. */
-    fun git(dir: Path, args: List<String>): String {
+    /** Runs git in [dir] with [args], giving its output, [trim]med; fails with git's message when git does. */
+    fun git(dir: Path, args: List<String>, trim: Boolean = true): String {
         val process = ProcessBuilder(listOf(settings.path("git") ?: "git") + args).directory(dir.toFile())
             .redirectInput(File("/dev/null")).redirectErrorStream(true)
             .apply { environment()["GIT_TERMINAL_PROMPT"] = "0" }.start()
-        val output = process.inputReader().readText().trim()
-        check(process.waitFor() == 0) { "git ${args.first()} failed: $output" }
-        return output
+        val output = process.inputReader().readText()
+        check(process.waitFor() == 0) { "git ${args.first()} failed: ${output.trim()}" }
+        return if (trim) output.trim() else output
     }
 
     companion object {

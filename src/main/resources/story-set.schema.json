@@ -1,0 +1,98 @@
+{
+  "$comment": "Varde's story format (varde-editor src/story.rs) widened to a Run: `ranges` replaces `range`, one per repo, and every file is relative to the Run workspace root.",
+  "type": "object",
+  "required": ["title", "ranges", "stories"],
+  "properties": {
+    "protocolVersion": { "type": "integer" },
+    "title": { "type": "string" },
+    "ranges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["repo", "base", "head"],
+        "properties": {
+          "repo": { "type": "string" },
+          "base": { "type": "string", "pattern": "^[^-]", "$comment": "never a git option" },
+          "head": { "type": "string", "pattern": "^[^-]" }
+        }
+      }
+    },
+    "stories": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "premise", "steps"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "premise": { "type": "string" },
+          "steps": { "type": "array", "items": { "$ref": "#/$defs/step" } }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "step": {
+      "type": "object",
+      "required": ["id", "name", "claim", "why", "site"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "claim": { "type": "string" },
+        "why": { "type": "string" },
+        "site": {
+          "type": "object",
+          "required": ["file", "side", "kind", "from", "to"],
+          "properties": {
+            "file": { "type": "string", "format": "path" },
+            "side": { "enum": ["old", "new"] },
+            "kind": { "enum": ["changed", "context"] },
+            "from": { "type": "integer", "minimum": 0 },
+            "to": { "type": "integer", "minimum": 0 },
+            "text": { "type": "string" }
+          }
+        },
+        "flow": {
+          "type": "object",
+          "required": ["in", "out"],
+          "properties": { "in": { "type": "string" }, "out": { "type": "string" } }
+        },
+        "values": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "value", "provenance"],
+            "properties": {
+              "name": { "type": "string" },
+              "value": { "type": "string" },
+              "provenance": { "enum": ["literal", "fixture", "invented"] },
+              "cite": {
+                "type": "object",
+                "required": ["file", "line"],
+                "properties": { "file": { "type": "string", "format": "path" }, "line": { "type": "integer", "minimum": 0 } }
+              }
+            }
+          }
+        },
+        "nudge": { "type": "string" },
+        "prediction": {
+          "type": "object",
+          "required": ["question", "choices"],
+          "properties": {
+            "question": { "type": "string" },
+            "choices": {
+              "type": "array",
+              "minItems": 3,
+              "maxItems": 3,
+              "items": {
+                "type": "object",
+                "required": ["text", "correct", "feedback"],
+                "properties": { "text": { "type": "string" }, "correct": { "type": "boolean" }, "feedback": { "type": "string" } }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

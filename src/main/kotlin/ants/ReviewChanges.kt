@@ -19,14 +19,18 @@ class FileDiff(val path: String, val lines: List<DiffLine>)
 class RepoChanges(val repo: Outgoing, val files: List<FileDiff>)
 
 /**
- * A line comment, in Varde's shape: [story] and [step] say which story step it is on, else null; [from] and [to] are
- * lines on the [side] (`old` or `new`) of [file], relative to the Run workspace root.
+ * A line comment, in Varde's shape: [story] and [step] say which story step it is on, as Varde does, by the story's
+ * name and the step's number, 1-based, else null; [from] and [to] are lines on the [side] (`old` or `new`) of [file],
+ * relative to the Run workspace root.
  */
 data class LineComment(
-    val story: Int?, val step: Int?, val repo: String, val file: String, val side: String, val from: Int, val to: Int, val type: String, val body: String,
+    val story: String?, val step: Int?, val repo: String, val file: String, val side: String, val from: Int, val to: Int, val type: String, val body: String,
 ) {
-    /** As the fix Task's message and the Run log list it, Varde's way: `- ISSUE repos/api/a.kt:3-5 (new): body`. */
-    val summary get() = "- $type $file:$from${if (to != from) "-$to" else ""} ($side): ${body.trim().replace("\n", "\n  ")}"
+    /**
+     * As the fix Task's message and the Run log list it, Varde's way: `- ISSUE repos/api/a.kt:3-5 (new): body`, with
+     * `, <story> step <n>` before the colon when it is on a story step.
+     */
+    val summary get() = "- $type $file:$from${if (to != from) "-$to" else ""} ($side)${if (story != null) ", $story step $step" else ""}: ${body.trim().replace("\n", "\n  ")}"
 
     fun toMap() = mapOf("story" to story, "step" to step, "repo" to repo, "file" to file, "side" to side, "from" to from, "to" to to, "type" to type, "body" to body)
 
