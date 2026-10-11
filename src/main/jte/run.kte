@@ -3,6 +3,8 @@
 @param run: org.operaton.bpm.engine.history.HistoricProcessInstance
 @param variables: Map<String, String>
 @param agentTasks: Map<String, String>
+@param kept: String?
+@param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
 @param transcripts: Map<String, Long>
 <!doctype html>
@@ -17,6 +19,12 @@
 <p><a href="/runs">Runs</a></p>
 <h1><a href="/processes/${run.processDefinitionKey}">${run.processDefinitionName ?: run.processDefinitionKey}</a></h1>
 <p>State: ${run.stateName}</p>
+@if(kept != null)
+<form method="post" action="/runs/${run.id}/dismiss">
+    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+    <p>The Run workspace is kept at <code>${kept}</code> until you dismiss it. <button>Dismiss</button></p>
+</form>
+@endif
 @if(agentTasks.isNotEmpty())
 <h2>Agent Tasks</h2>
 <dl>
