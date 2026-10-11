@@ -40,6 +40,8 @@
 @endif
     @if(entry.tag == "[approve]")
     <p><a href="/notifications/${entry.id}">Approve or send back</a></p>
+    @elseif(entry.tag == "[questions]")
+    <p><a href="/notifications/${entry.id}">Answer the Round</a></p>
     @else
     <form method="post" action="/notifications/${entry.id}">
         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">

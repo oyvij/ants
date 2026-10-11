@@ -19,6 +19,7 @@ import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
@@ -116,9 +117,8 @@ class BrowserTest : AntsTest() {
         assertThat(shape("outer")).hasClass(selected)
         assertThat(heading).hasText("Agent Task")
         page.click("#checks a[href='#inner']")
-        assertThat(shape("inner")).isVisible() // the sub-process's own plane is open
+        assertThat(shape("inner")).isVisible() // the sub-process's own plane is open, so Outer is off the page
         assertThat(shape("inner")).hasClass(selected)
-        assertThat(shape("outer")).not().hasClass(selected)
     }
 
     @Test
@@ -178,6 +178,46 @@ class BrowserTest : AntsTest() {
         file.writeText("# Say hello\n\nStatus: in-progress\n\n- [x] Says hello\n") // as an Agent would
         assertThat(page.locator("#ticket")).containsText("Status: in-progress")
         screenshot("ticket")
+    }
+
+    @Test
+    fun `Answer a Round shows one question at a time under tabs marking accepted and edited, then Review and send`() = browse {
+        val claude = FakeClaude()
+        agentTask(claude, mapOf("grill" to """{"type":"object","properties":{"questions":{"type":"array"}}}"""))
+        fun round(vararg ids: String) = """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":""" +
+            """{"outcome":"done","summary":"A Round.","output":{"questions":[""" + ids.joinToString(",") {
+                """{"id":"$it","title":"Title $it","ask":"Ask $it?","context":"Settles $it.","recommendation":"Recommend $it.","why":"Because $it."}"""
+            } + "]}}}"
+        claude.session("grill", 1, round("who", "scope"))
+        claude.session("grill", 2, round())
+        http.upload("/processes", "file", "round.bpmn", javaClass.getResource("/round.bpmn")!!.readBytes())
+        val run = http.post("/processes/round/runs", mapOf()).path.removePrefix("/runs/")
+        var entry = ""
+        eventually { entry = assertNotNull(Regex("""href="(/notifications/[^"]+)"""").find(http.get("/notifications").body)).groupValues[1] }
+
+        page.navigate(url(entry))
+        val tabs = page.locator("#tabs [role=tab]")
+        assertThat(tabs).hasText(arrayOf("· Title who", "· Title scope", "Review and send"))
+        assertThat(page.locator("#answer-who")).isVisible()
+        assertThat(page.locator("#answer-scope")).isHidden()
+        assertThat(page.locator("#back")).not().isVisible()
+        page.click("#next")
+        assertThat(tabs.nth(0)).hasText("✓ Title who")
+        assertThat(page.locator("#answer-scope")).isVisible()
+        page.fill("#answer-scope", "Only admins.")
+        assertThat(tabs.nth(1)).hasText("✎ Title scope")
+        page.click("#reset")
+        assertThat(page.locator("#answer-scope")).hasValue("Recommend scope.")
+        page.fill("#answer-scope", "Only admins.")
+        val buttons = page.locator("footer").boundingBox()
+        page.click("#next")
+        assertThat(page.locator("#review-list")).containsText("Only admins.")
+        assertThat(page.locator("#next")).hasText("Send the Round")
+        assertEquals(buttons.y, page.locator("footer").boundingBox().y) // the buttons never move
+        page.click("#next")
+        page.waitForURL { !it.contains(entry) }
+        eventually { assertContains(http.get("/runs/$run").body, "State: Completed") }
+        assertContains(claude.launches("grill")[1].stdin, """{\"id\":\"who\",\"answer\":\"Recommend who.\",\"source\":\"accepted\"},{\"id\":\"scope\",\"answer\":\"Only admins.\",\"source\":\"written\"}""")
     }
 
     /** An Agent Task [id] running `writer`'s Skill `draft`. */
