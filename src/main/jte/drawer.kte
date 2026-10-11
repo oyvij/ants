@@ -43,6 +43,7 @@
         <label>Comment <textarea name="instruction" required></textarea></label>
         <button name="action" value="continue">Continue the session</button>
         <button name="action" value="fresh" formnovalidate>Start fresh</button>
+        @if(entry.tag == "[failed]")<button name="action" value="cancel" formnovalidate>Cancel the Run</button>@endif
     </form>
 </section>
 @endif

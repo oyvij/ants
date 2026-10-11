@@ -67,6 +67,7 @@ class Notifications(
     private val history: HistoryService,
     private val repository: RepositoryService,
     private val externalTasks: ExternalTaskService,
+    private val launcher: AgentLauncher,
     @Value("\${ants.home}") private val home: Path,
 ) {
     /** Everything waiting on the user, oldest first. */
@@ -92,7 +93,8 @@ class Notifications(
 
     /**
      * Continue the session (instruction required) or Start fresh (instruction optional), then Next up, or back to
-     * the Run page when the user acted from its Task drawer ([back] is `run`).
+     * the Run page when the user acted from its Task drawer ([back] is `run`); or Cancel the Run, which ends it and
+     * keeps its Run workspace until the user dismisses it on the Run page.
      */
     @PostMapping("/notifications/{id}")
     fun act(
@@ -103,19 +105,26 @@ class Notifications(
         val name = when (action) {
             AgentLauncher.CONTINUE -> "Continue the session"
             AgentLauncher.FRESH -> "Start fresh"
+            CANCEL -> "Cancel the Run"
             else -> throw ResponseStatusException(HttpStatus.BAD_REQUEST, "No action $action")
         }
         if (action == AgentLauncher.CONTINUE && instruction.isBlank()) {
             model.addAttribute("error", "Continue the session needs an instruction.")
             return entry(id, model)
         }
-        // The choice first: the worker can fetch the Task again the moment its retries are back.
-        runtime.setVariablesLocal(incident.executionId, mapOf(AgentLauncher.ACTION to action, AgentLauncher.INSTRUCTION to instruction))
         Files.writeString(
             home.resolve("runs").resolve(entry.run).resolve("run-log.md"),
             "## ${Instant.now().truncatedTo(SECONDS)} · ${entry.task} · $name\n\n${instruction.trim()}\n\n",
             CREATE, APPEND,
         )
+        if (action == CANCEL) {
+            // A cancelled Run keeps its workspace; externally terminated is what its pages read as Cancelled.
+            runtime.deleteProcessInstance(entry.run, "Cancelled by the user", false, true)
+            launcher.cancel(entry.run)
+            return "redirect:/runs/${entry.run}"
+        }
+        // The choice first: the worker can fetch the Task again the moment its retries are back.
+        runtime.setVariablesLocal(incident.executionId, mapOf(AgentLauncher.ACTION to action, AgentLauncher.INSTRUCTION to instruction))
         externalTasks.setRetries(incident.configuration, 1)
         return if (back == "run") "redirect:/runs/${entry.run}" else "redirect:/notifications/next?run=${entry.run}"
     }
@@ -183,5 +192,9 @@ class Notifications(
             summary = incident.incidentMessage.orEmpty().removePrefix(tag.orEmpty()).trim(),
             since = incident.incidentTimestamp,
         )
+    }
+
+    private companion object {
+        const val CANCEL = "cancel"
     }
 }

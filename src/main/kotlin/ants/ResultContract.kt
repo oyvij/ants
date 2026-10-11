@@ -2,11 +2,14 @@ package ants
 
 import com.networknt.schema.ExecutionContext
 import com.networknt.schema.InputFormat
+import com.networknt.schema.SchemaLocation
+import com.networknt.schema.SpecificationVersion
 import com.networknt.schema.SchemaRegistry
 import com.networknt.schema.SchemaRegistryConfig
 import com.networknt.schema.dialect.Dialect
 import com.networknt.schema.dialect.Dialects
 import com.networknt.schema.format.Format
+import tools.jackson.core.JacksonException
 import tools.jackson.databind.json.JsonMapper
 import java.nio.file.InvalidPathException
 import java.nio.file.Path
@@ -42,6 +45,22 @@ object ResultContract {
         val registry = SchemaRegistry.withDialect(dialect) { it.schemaRegistryConfig(config) }
         return registry.getSchema(json.writeValueAsString(schema), InputFormat.JSON)
             .validate(json.writeValueAsString(result), InputFormat.JSON).map { it.toString() }
+    }
+
+    /** Why [text] isn't a valid `result.schema.json` (a JSON Schema object, draft 2020-12); empty when it is, or when it's blank. */
+    fun schemaErrors(text: String): List<String> {
+        if (text.isBlank()) return emptyList()
+        val node = try {
+            json.readTree(text)
+        } catch (e: JacksonException) {
+            return listOf("It's not JSON: ${e.originalMessage}")
+        }
+        if (!node.isObject) return listOf("A result schema is a JSON object.")
+        return metaSchema.validate(text, InputFormat.JSON).map { it.toString() }
+    }
+
+    private val metaSchema by lazy {
+        SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_2020_12).getSchema(SchemaLocation.of(Dialects.getDraft202012().id))
     }
 
     /** A relative path to something inside the workspace, symlinks followed where they exist. */

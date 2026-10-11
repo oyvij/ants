@@ -16,7 +16,10 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit.MILLISECONDS
+import java.util.concurrent.TimeUnit.SECONDS
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.io.path.readText
+import kotlin.io.path.writeText
 
 /**
  * The in-process worker. It fetches ready Agent Tasks (external tasks on topic `agent`) only for free slots under
@@ -35,8 +38,10 @@ class AgentLauncher(
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val poller = Executors.newSingleThreadScheduledExecutor()
-    private val clis = ConcurrentHashMap.newKeySet<Process>()
+    /** Each live CLI process and the Run it works for. */
+    private val clis = ConcurrentHashMap<Process, String>()
     private val live = AtomicInteger()
+    private val usageFile = home.resolve("claude-usage.json")
 
     /** How many Agent Tasks are running now. */
     val running get() = live.get()
@@ -52,8 +57,11 @@ class AgentLauncher(
     @PreDestroy
     fun stop() {
         poller.shutdownNow()
-        clis.forEach(Process::destroy)
+        clis.keys.forEach(Process::destroy)
     }
+
+    /** Kills the live CLI processes of [run], once the Run is cancelled. */
+    fun cancel(run: String) = clis.filterValues { it == run }.keys.forEach { it.toHandle().destroy() }
 
     private fun fetch() {
         try {
@@ -101,7 +109,7 @@ class AgentLauncher(
             runCatching { transcript?.ants("end", reason) }
             if (stopping) return
             log.warn("Agent Task ${task.activityId} failed", e)
-            incident(task, session, reason, (e as? InvalidResult)?.details)
+            incident(task, session, reason, (e as? Failed)?.details)
         }
     }
 
@@ -138,7 +146,11 @@ class AgentLauncher(
         else "$handOff\n\n" + json.writeValueAsString(inputs) + (if (instruction.isNullOrBlank()) "" else "\n\nFrom the user:\n$instruction")
         val schema = ResultContract.schema(skill.outputSchema)
         val process = cli(agent.cli, workspace, flags(agent, schema, listOf(skill) + used, session, resume)).start()
-        clis += process
+        clis[process] = workspace.fileName.toString() // the Run workspace is runs/<run>/
+        val stderr = ArrayDeque<String>()
+        val drain = Thread.ofVirtual().start {
+            process.errorReader().forEachLine { synchronized(stderr) { stderr += it; if (stderr.size > STDERR_LINES) stderr.removeFirst() } }
+        }
         try {
             val stdin = process.outputWriter()
             fun say(content: String) {
@@ -148,30 +160,45 @@ class AgentLauncher(
             }
             say(prompt)
             var valid: Map<*, *>? = null
-            var failure: Exception? = null
+            var failure: Failed? = null
             var retried = false
             process.inputReader().forEachLine { line ->
                 transcript.line(line)
                 if (valid != null || failure != null) return@forEachLine
                 val event = runCatching { json.readValue(line, Map::class.java) }.getOrNull() ?: return@forEachLine
+                if (event["type"] == "rate_limit_event") keepUsage(event)
+                // ponytail: claude sends system/init only once it has read the prompt, so with an API key the first
+                // request may already be on its way when Ants kills it.
+                val apiKey = (event["apiKeySource"] as? String)?.takeIf { event["subtype"] == "init" && it != "none" }
+                if (event["error"] == "authentication_failed" || apiKey != null) {
+                    failure = Failed(LOST_LOGIN, apiKey?.let { "${agent.cli} would use an API key (apiKeySource: $it), and Ants runs only on its own login." })
+                    stdin.close()
+                    process.toHandle().destroy() // unlike Process.destroy, leaves the rest of stdout to read
+                    return@forEachLine
+                }
                 if (event["type"] != "result") return@forEachLine
                 val result = event["structured_output"]
                 val errors = result?.let { ResultContract.errors(it, schema, workspace) }
                 when {
-                    errors == null -> failure = IllegalStateException("${agent.cli} ended without a Result: ${event["subtype"]} ${event["result"] ?: ""}".trim())
+                    errors == null -> failure = Failed(
+                        listOf("${agent.cli} ended without a Result:", event["subtype"], event["result"], (event["errors"] as? List<*>)?.joinToString("; "))
+                            .filter { it != null && it != "" }.joinToString(" "),
+                    )
                     errors.isEmpty() -> { valid = result as Map<*, *> }
                     !retried -> {
                         retried = true
                         say("Your Result is invalid:\n${errors.joinToString("\n") { "- $it" }}\nAnswer again with a valid Result.")
                     }
-                    else -> failure = InvalidResult("The Result is invalid: ${errors.joinToString("; ")}", errors.joinToString("\n") + "\n\n" + json.writeValueAsString(result))
+                    else -> failure = Failed("The Result is invalid: ${errors.joinToString("; ")}", errors.joinToString("\n") + "\n\n" + json.writeValueAsString(result))
                 }
                 if (valid != null || failure != null) stdin.close() // the session ends once Ants holds its Result
             }
             val exit = process.waitFor()
-            failure?.let { throw it }
-            check(exit == 0) { "${agent.cli} exited with code $exit" }
-            return valid ?: error("${agent.cli} ended without a Result")
+            drain.join()
+            val tail = synchronized(stderr) { stderr.joinToString("\n") }.ifEmpty { null }
+            failure?.let { throw Failed(it.message, it.details ?: tail) }
+            if (exit != 0) throw Failed("${agent.cli} exited with code $exit", tail)
+            return valid ?: throw Failed("${agent.cli} ended without a Result", tail)
         } finally {
             clis -= process
         }
@@ -197,10 +224,27 @@ class AgentLauncher(
             (if (agent.instructions.isNotEmpty()) listOf("--append-system-prompt", agent.instructions) else emptyList())
     }
 
+    /** What `claude auth status` says of Ants' own Claude login, asked the way a launch runs; empty when it can't tell. */
+    fun login(): Map<*, *> = runCatching {
+        val process = cli("claude", home, listOf("auth", "status", "--json")).start()
+        if (!process.waitFor(10, SECONDS)) process.destroyForcibly()
+        json.readValue(process.inputReader().readText(), Map::class.java)
+    }.getOrDefault(emptyMap<Any, Any>())
+
+    /**
+     * The latest usage claude reported: its `rate_limit_event`'s `unifiedWindows`, such as
+     * `{"five_hour":{"utilization":0.04,"resetsAt":<epoch s>},"seven_day":{…}}`, utilization a fraction. Empty until a launch reports one.
+     */
+    fun usage(): Map<*, *> = runCatching { json.readValue(usageFile.readText(), Map::class.java) }.getOrDefault(emptyMap<Any, Any>())
+
+    private fun keepUsage(event: Map<*, *>) {
+        val windows = (event["rate_limit_info"] as? Map<*, *>)?.get("unifiedWindows") ?: return
+        usageFile.writeText(json.writeValueAsString(windows))
+    }
+
     /** The CLI's command prefix with [args], in [workspace], on the narrowed environment. */
     fun cli(cli: String, workspace: Path, args: List<String>): ProcessBuilder = ProcessBuilder(settings.command(cli) + args)
         .directory(workspace.toFile())
-        .redirectError(ProcessBuilder.Redirect.INHERIT)
         .apply {
             environment().keys.retainAll(settings.env(cli).toSet())
             environment() -= listOf("ANTHROPIC_API_KEY", "CLAUDE_CODE_RETRY_WATCHDOG")
@@ -220,8 +264,8 @@ class AgentLauncher(
         check("default" !in bare.lowercase()) { "$cli -p now turns on --bare by default, which never reads Ants' login. Ants needs updating." }
     }
 
-    /** A second invalid Result: its errors and the Result itself, kept whole for the `[failed]` page. */
-    private class InvalidResult(message: String, val details: String) : Exception(message)
+    /** A failure of Ants' own, with what the `[failed]` page shows: the last stderr lines, or an invalid Result whole. */
+    private class Failed(override val message: String, val details: String? = null) : Exception(message)
 
     companion object {
         const val TOPIC = "agent"
@@ -236,8 +280,11 @@ class AgentLauncher(
         private const val SESSION = "ants.session"
         private const val WORKER = "ants"
         private val LOCK = Duration.ofDays(365)
-        // claude 2.1.295 has no TodoWrite; its task-list tools are TaskCreate, TaskGet, TaskList and TaskUpdate.
-        private val DEFAULT_TOOLS = listOf(
+        private const val STDERR_LINES = 20
+        private const val LOST_LOGIN = "Ants' Claude login is missing or expired. Log in again (Settings)"
+
+        /** An Agent's tools when its file names none. claude 2.1.295 has no TodoWrite; its task-list tools are these four Task*. */
+        val DEFAULT_TOOLS = listOf(
             "Bash", "Edit", "Glob", "Grep", "NotebookEdit", "Read", "TaskCreate", "TaskGet", "TaskList", "TaskUpdate", "WebFetch", "WebSearch", "Write",
         )
         private val json = JsonMapper.shared()

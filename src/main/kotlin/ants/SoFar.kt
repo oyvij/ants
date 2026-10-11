@@ -78,7 +78,7 @@ class SoFar(
                 "-p", "--model", "haiku", "--output-format", "json", "--tools", "", "--no-session-persistence", "--strict-mcp-config",
                 "--disable-slash-commands", "--settings", """{"disableAllHooks":true}""",
             ),
-        ).start()
+        ).redirectError(ProcessBuilder.Redirect.DISCARD).start()
         process.outputWriter().use { it.write(prompt) }
         if (!process.waitFor(2, MINUTES)) process.destroyForcibly()
         // claude 2.1.295 prints one `result` line, its text in `result` and its tokens in `modelUsage`.
