@@ -45,6 +45,7 @@
   <button data-proc="agent">agent answers</button>
   <button data-proc="recs">recommendations</button>
   <button data-proc="auto">fully automatic</button>
+  <button data-proc="churn">churn</button>
   <button data-proc="check">Building blocks &amp; open questions</button>
   <span class="spacer"></span>
   <button data-view="expanded">Expanded</button>
@@ -85,15 +86,20 @@ const I = {
   gwSpec: { kind: "gateway", notes: ["yes: <code>${approveSpec.approved}</code>", "send back: default flow, to-spec resumes with the comment"] },
   totickets: { kind: "agent", agent: "planner", skill: "to-tickets", inputs: ["spec = ${tospec.output.spec}", "clones = ${clones}"], result: "{spec, tickets[]}", src: "#23" },
   implement: { kind: "agent", agent: "implementer", skill: "implement", mi: "parallel over <code>${totickets.output.tickets}</code>, element variable <code>ticket</code>, Items are Tickets ☑ <span class='tag q'>Q4</span>",
-    inputs: ["ticket = ${ticket}", "spec = ${totickets.output.spec}"], result: "list of {ticket, commits[]}", q: true,
-    notes: ["Implicit, nothing drawn: a worktree per instance, landing on <code>done</code>, Ticket <code>in-review</code> on landing.", "Held per instance until its Blocked by Tickets are in-review or done."], src: "#23, #24" },
+    inputs: ["ticket = ${ticket}", "spec = ${totickets.output.spec}"], result: "list of {ticket, commits[], review}", q: true,
+    notes: ["Builds with <code>tdd</code>. Before <code>done</code> it runs the <code>code-review</code> Skill: two parallel Subagents, <b>Standards</b> and <b>Spec</b>, fixes the hard findings, and sums them up under <code>review</code> in its Result. Nothing drawn.", "Implicit, nothing drawn: a worktree per instance, landing on <code>done</code>, Ticket <code>in-review</code> on landing.", "Held per instance until its Blocked by Tickets are in-review or done."], src: "#23, #24" },
+  propose: { kind: "agent", agent: "architect", skill: "propose-solution", inputs: ["prompt = ${prompt}", "brief = ${scout.output.brief}", "clones = ${clones}"],
+    result: "{proposal: 'proposal/proposal.md'}", notes: ["The prompt extended with a proposed solution, the way a senior dev would hand it over.", "The architect reads the clones and writes only <code>proposal/</code>.", "A prompt too vague to propose from goes <code>stuck</code>."], src: "this ticket" },
+  implementOne: { kind: "agent", agent: "implementer", skill: "implement", inputs: ["prompt = ${prompt}", "proposal = ${propose.output.proposal}"], result: "{commits[], review}",
+    notes: ["A single Task with no Tickets: shared clones, commits on the work branch.", "Builds with <code>tdd</code>. Before <code>done</code> it runs the <code>code-review</code> Skill: two parallel Subagents, <b>Standards</b> and <b>Spec</b>, fixes the hard findings, and sums them up under <code>review</code> in its Result. Nothing drawn. The Spec Subagent checks against the prompt and the proposal."], src: "this ticket" },
+  churnPr: { kind: "agent", agent: "pr", skill: "pr", inputs: ["push = ${push}", "proposal = ${propose.output.proposal}"], result: "[{repo, url}]", notes: ["The pull request is where a churn Run is reviewed."], src: "#22" },
   walkthrough: { kind: "agent", agent: "storyteller", skill: "walkthrough", inputs: ["spec = ${totickets.output.spec}", "clones = ${clones}"], toggles: "resume on",
     result: "{stories: 'walkthrough/stories.json'}", notes: ["Ants runs Varde's four checks on done; Send back loops through here again for a whole new Story set."], src: "#22" },
   review: { kind: "user", what: "Review changes", fields: ["Walkthrough = walkthrough", "Send back resumes = fix"], result: "{approved, comment, comments[]}",
     notes: ["Approve sets every in-review Ticket done."], src: "#22" },
   gwReview: { kind: "gateway", notes: ["yes: <code>${review.approved}</code>", "send back: default flow → fix"] },
   fix: { kind: "agent", agent: "implementer", skill: "fix-review", inputs: ["review = ${review}", "spec = ${totickets.output.spec}", "stories = ${walkthrough.output.stories}"], toggles: "resume on (starts if none)",
-    result: "{commits[]}", notes: ["Shared clones, commits on the work branch, a Comment line on each Ticket it touched."], src: "#24" },
+    result: "{commits[], review}", notes: ["Runs <code>code-review</code> on its fixes too, the same way.", "Shared clones, commits on the work branch, a Comment line on each Ticket it touched."], src: "#24" },
   push: { kind: "builtin", what: "Push", result: "[{repo, remote, branch, base, isNew, commits, pushed, error, compareUrl}]", notes: ["Waits on the Notification list: Push / Cancel the Run."], src: "#22" },
   pr: { kind: "agent", agent: "pr", skill: "pr", inputs: ["push = ${push}", "spec = ${totickets.output.spec}"], result: "[{repo, url}]", src: "#22" },
 }
@@ -145,6 +151,8 @@ const PROCS = {
   user: { name: "user-in-the-loop", grill: null },
   agent: { name: "agent answers", grill: ["answerer", "Answer the Round (Agent)"] },
   recs: { name: "recommendations", grill: ["accept", "Accept recommendations"] },
+  churn: { name: "churn", items: [["scoutAndClone"], ["propose", "serviceTask", "Propose a solution"], ["implementOne", "serviceTask", "Implement"],
+    ["push", "serviceTask", "Push"], ["churnPr", "serviceTask", "Open pull request"]], rows: [[0, 1, 2, 3, 4]] },
   auto: { name: "fully automatic", grill: ["answerer", "Answer the Round (Agent)"], capEnds: true, noApprove: true },
 }
 
@@ -154,17 +162,22 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;",
 const side = (n, s) => ({ l: [n.cx - n.w / 2, n.cy], r: [n.cx + n.w / 2, n.cy], t: [n.cx, n.cy - n.h / 2], b: [n.cx, n.cy + n.h / 2] })[s]
 
 function buildXml(key, view) {
-  const P = PROCS[key], order = [["scoutAndClone", T.scoutAndClone()], ["grillLoop", T.grillLoop(P)], ["specApproval", T.specApproval(P)],
-    ["cutAndImplement", T.cutAndImplement()], ["reviewAndPush", T.reviewAndPush()]]
-  // Expanded: two rows of Templates. Saved: one row of collapsed boxes, children drawn on their own planes.
-  const rows = [[0, 1, 2], [3, 4]], ROWY = [150, 680], N = {}, sps = []
+  const P = PROCS[key], expanded = view === "expanded"
+  // An item is a Template (an embedded sub-process) or a bare Task at the top level.
+  const items = (P.items || [["scoutAndClone"], ["grillLoop"], ["specApproval"], ["cutAndImplement"], ["reviewAndPush"]])
+    .map(([id, type, name]) => type ? { id, type, name, bare: true } : { id, t: T[id](P) })
+  // Expanded: rows of Templates. Saved: one row of collapsed boxes, children drawn on their own planes.
+  const rows = P.rows || [[0, 1, 2], [3, 4]], ROWY = [150, 680], N = {}, sps = items.filter(it => !it.bare)
   let shapes = { main: [] }, edges = { main: [] }
-  order.forEach(([id, t], i) => {
-    const row = rows.findIndex(r => r.includes(i)), before = rows[row].filter(j => j < i).reduce((x, j) => x + order[j][1].w + 60, 120)
-    const ox = view === "expanded" ? before : 100, oy = view === "expanded" ? ROWY[row] : 200
-    t.nodes.forEach(([nid, type, name, x, y, extra]) => N[nid] = { id: nid, type, name, cx: ox + x, cy: oy + y, w: SZ[type][0], h: SZ[type][1], parent: id, ...(extra || {}) })
+  items.forEach((it, i) => {
+    const row = rows.findIndex(r => r.includes(i)), wOf = j => items[j].bare ? 120 : items[j].t.w
+    const before = rows[row].filter(j => j < i).reduce((x, j) => x + wOf(j) + 60, 120)
+    const cx = expanded ? before + wOf(i) / 2 : 200 + i * 170, cy = expanded ? ROWY[row] : 150
+    if (it.bare) { N[it.id] = { id: it.id, type: it.type, name: it.name, cx, cy, w: 120, h: 80 }; return }
+    const t = it.t, ox = expanded ? before : 100, oy = expanded ? ROWY[row] : 200
+    t.nodes.forEach(([nid, type, name, x, y, extra]) => N[nid] = { id: nid, type, name, cx: ox + x, cy: oy + y, w: SZ[type][0], h: SZ[type][1], parent: it.id, ...(extra || {}) })
     const bottom = Math.max(...t.nodes.map(n => n[4] + SZ[n[1]][1] / 2), ...t.flows.flatMap(f => (f[4] || []).filter(Array.isArray).map(p => p[1]))) + 30
-    sps.push({ id, name: id === "specApproval" && P.noApprove ? "To-spec" : TPL[id].name, t, x: before, y: ROWY[row] - 90, w: t.w, h: bottom + 90, cx: view === "expanded" ? before + t.w / 2 : 200 + i * 170, cy: view === "expanded" ? ROWY[row] : 150 })
+    Object.assign(it, { name: it.id === "specApproval" && P.noApprove ? "To-spec" : TPL[it.id].name, x: before, y: ROWY[row] - 90, w: t.w, h: bottom + 90, cx, cy })
   })
   const flowXml = (fid, a, b, label, cond, def) => `<bpmn:sequenceFlow id="${fid}" name="${esc(label || "")}" sourceRef="${a}" targetRef="${b}">${cond ? `<bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${esc(cond)}</bpmn:conditionExpression>` : ""}</bpmn:sequenceFlow>`
   const defaults = {}
@@ -174,9 +187,9 @@ function buildXml(key, view) {
   }
   sps.forEach(sp => sp.t.flows.forEach(f => { if (f[6]) defaults[f[1]] = f[0] }))
   const spXml = sps.map(sp => `<bpmn:subProcess id="${sp.id}" name="${esc(sp.name)}">${sp.t.nodes.map(n => nodeXml(N[n[0]])).join("")}${sp.t.flows.map(f => flowXml(f[0], f[1], f[2], f[3], f[5])).join("")}</bpmn:subProcess>`).join("")
-  const top = [["start", "startEvent", "Prompt"], ["end", "endEvent", "Done"]]
-  const topFlows = [["t0", "start", sps[0].id], ...sps.slice(1).map((sp, i) => ["t" + (i + 1), sps[i].id, sp.id]), ["t9", sps[4].id, "end"]]
-  const procXml = `<bpmn:process id="${key}" name="${esc(P.name)}" isExecutable="true">${top.map(([id, type, name]) => `<bpmn:${type} id="${id}" name="${name}"/>`).join("")}${spXml}${topFlows.map(([f, a, b]) => flowXml(f, a, b)).join("")}</bpmn:process>`
+  const top = [["start", "startEvent", "Prompt"], ["end", "endEvent", "Done"]], last = items[items.length - 1]
+  const topFlows = [["t0", "start", items[0].id], ...items.slice(1).map((it, i) => ["t" + (i + 1), items[i].id, it.id]), ["t99", last.id, "end"]]
+  const procXml = `<bpmn:process id="${key}" name="${esc(P.name)}" isExecutable="true">${top.map(([id, type, name]) => `<bpmn:${type} id="${id}" name="${name}"/>`).join("")}${items.filter(it => it.bare).map(it => nodeXml(N[it.id])).join("")}${spXml}${topFlows.map(([f, a, b]) => flowXml(f, a, b)).join("")}</bpmn:process>`
 
   // DI
   const shape = (n, plane, expanded) => {
@@ -189,7 +202,7 @@ function buildXml(key, view) {
     const [, a, b, , r] = f, rt = r || ["r", "l"]
     return [side(N[a], rt[0]), ...rt.slice(1, -1).map(([x, y]) => [ox + x, oy + y]), side(N[b], rt[rt.length - 1])]
   }
-  const expanded = view === "expanded"
+  items.filter(it => it.bare).forEach(it => shape(N[it.id], "main"))
   sps.forEach((sp, i) => {
     const ox = expanded ? sp.x : 100, oy = expanded ? sp.cy : 200, plane = expanded ? "main" : sp.id
     if (expanded) shape({ id: sp.id, type: "subProcess", cx: sp.x + sp.w / 2, cy: sp.y + sp.h / 2, w: sp.w, h: sp.h }, "main", true)
@@ -197,11 +210,12 @@ function buildXml(key, view) {
     sp.t.nodes.forEach(n => shape(N[n[0]], plane))
     sp.t.flows.forEach(f => edge(f[0], route(f, ox, oy), f[3], plane))
   })
-  const S = expanded ? { start: [60, 150], end: [sps[4].x + sps[4].w + 60, 680] } : { start: [80, 150], end: [200 + 5 * 170 - 20, 150] }
+  const lastRight = last.bare ? N[last.id].cx + 60 : last.x + last.w
+  const S = expanded ? { start: [60, 150], end: [lastRight + 60, ROWY[rows.length - 1]] } : { start: [80, 150], end: [200 + items.length * 170 - 20, 150] }
   ;[["start", "startEvent", "Prompt"], ["end", "endEvent", "Done"]].forEach(([id, type, name]) => { N[id] = { id, type, name, cx: S[id][0], cy: S[id][1], w: 36, h: 36 }; shape(N[id], "main") })
   const box = sp => expanded ? { l: [sp.x, sp.cy], r: [sp.x + sp.w, sp.cy] } : { l: [sp.cx - 60, sp.cy], r: [sp.cx + 60, sp.cy] }
   topFlows.forEach(([f, a, b]) => {
-    const A = sps.find(s => s.id === a), B = sps.find(s => s.id === b)
+    const A = sps.find(s => s.id === a), B = sps.find(s => s.id === b) // bare Tasks and events use their own sides
     const p1 = A ? box(A).r : side(N[a], "r"), p2 = B ? box(B).l : side(N[b], "l")
     const pts = expanded && p1[1] !== p2[1] ? [p1, [p1[0] + 30, p1[1]], [p1[0] + 30, 590], [p2[0] - 30, 590], [p2[0] - 30, p2[1]], p2] : [p1, p2]
     edge(f, pts, "", "main")
@@ -228,7 +242,10 @@ function info(id) {
     ${e.notes ? `<ul>${e.notes.map(n => `<li>${n}</li>`).join("")}</ul>` : ""}${e.src ? `<p style="color:#64748b">Decided in ${e.src}</p>` : ""}`
 }
 const tplOf = (tid, id) => { const t = T[tid](PROCS[cur]); return t.nodes.some(n => n[0] === id) }
-const intro = () => `<h2>${PROCS[cur].name}</h2>
+const intro = () => cur === "churn" ? `<h2>churn</h2>
+  <p>For small and medium tasks, many Runs at once. Prompt → Scout and clone → Propose a solution → Implement → Push → Open pull request. No grilling, no Spec, no Tickets, no walkthrough; every implementer still runs the code-review Subagents.</p>
+  <p class="legend"><span class="tag agent">Agent Task</span><span class="tag user">User Task</span><span class="tag builtin">Built-in Task</span><span class="tag tpl">Template</span></p>
+  <h3>Waits on the user</h3><ul><li>Push</li><li>any <code>[stuck]</code> / <code>[failed]</code></li></ul>` : `<h2>${PROCS[cur].name}</h2>
   <p>Prompt → five shipped Templates → Done. The Processes differ inside <b>Grill until no questions</b>; fully automatic also drops <b>Approve the Spec</b>.</p>
   <p class="legend"><span class="tag agent">Agent Task</span><span class="tag user">User Task</span><span class="tag builtin">Built-in Task</span><span class="tag tpl">Template</span><span class="tag q">open question</span></p>
   <p>Click any element for its Agent, Skill, inputs and Result. Red outline = depends on an open question (see the last tab).</p>
@@ -240,6 +257,8 @@ const CHECK = [
   ["Agent Tasks: scout, griller, answer-round, to-spec, to-tickets, implement, walkthrough, fix, pr", "ok", "#5"],
   ["User Tasks: Answer a Round, Approve, Review changes", "ok", "#7, #9, #22"],
   ["Built-in Tasks: Clone repos, Accept recommendations, Push", "ok", "#8, #15, #22"],
+  ["The review in every implementer: <code>code-review</code>'s Standards and Spec Subagents inside implement and fix-review", "ok", "#18, this ticket"],
+  ["Bare Tasks at the top level (churn)", "ok", "#5"],
   ["Exclusive gateways on Results; the <code>runs</code> counter", "ok", "#15, #21"],
   ["Answering Tasks naming the asker; resume when the flow comes back", "ok", "#7, #15"],
   ["Embedded sub-processes (dropped Templates)", "ok", "#21"],
@@ -253,11 +272,13 @@ const CHECK = [
 const QS = [
   ["Q1 Who writes the Report?", "Ants, mechanically, whenever a Run ends: the start form, each Task's summary, the Rounds with their <code>source</code> (non-user answers listed apart), Tickets, Push and PR Results. No Report Task drawn, so every Process gets one.", "A drawn <b>Write the Report</b> Agent Task (shipped report Skill) before Done; a Process without one gets no Report."],
   ["Q2 Repos the griller finds mid-loop", "<b>Decided:</b> Clone new repos in the loop of user-in-the-loop only. Unattended Processes never widen the repos; to-spec lists the uncloned ones in the Spec. Ants keeps a Run variable <code>clones</code>.", "Clone in every loop; or clone what the Spec adds after Approve the Spec."],
+  ["Q9 Churn", "<b>Decided:</b> a fifth shipped Process: Scout and clone → Propose a solution (new <code>architect</code> Agent, <code>propose-solution</code> Skill) → Implement → Push (waits) → Open pull request.", "Fully automatic through Push."],
+  ["Q10 Review in every Process", "<b>Decided:</b> as Subagents: <code>implement</code> and <code>fix-review</code> run <code>code-review</code> (Standards + Spec in parallel) before done; Ants ships <code>tdd</code> and <code>code-review</code>.", "A drawn Code review Task with a loop."],
   ["Q8 A fully automatic Process", "<b>Decided:</b> a fourth shipped Process. answer-round answers every Round, the cap ends the loop, no Approve the Spec; Review changes and Push still wait. Destination and the Spec glossary entry are reworded.", "Automatic through Push (breaks #8's rule)."],
   ["Q3 Ids when a Template is dropped", "Keep the Template's ids; add a suffix only on a clash (and rewrite references inside it). Then <code>${scout.output.brief}</code> in Grill until no questions finds the scout from Scout and clone.", "Always fresh ids (as written in #21): every cross-Template reference has to be fixed by hand after a drop."],
   ["Q4 What switches on the Blocked-by hold?", "A tick box <b>Items are Tickets</b> on a multi-instance, ticked in the shipped Template: holds by Blocked by, skips ready-for-human, links the drawer to Tickets.", "Implicit: Ants notices the collection holds Ticket ids of the Run's tracker."],
   ["Q5 A fifth shipped Template, Cut and implement", "Yes: to-tickets → Implement each Ticket (parallel, over <code>${totickets.output.tickets}</code>, Items are Tickets). The default Processes are then five Templates in a row.", "Draw the two Tasks bare in the default Processes."],
-  ["Q6 Shipped Agents", "<code>scout</code>, <code>griller</code> (Read, Grep, Glob), <code>answerer</code>, <code>planner</code> (to-spec and to-tickets; writes only <code>tickets/</code>), <code>implementer</code> (implement and fix-review), <code>storyteller</code> (walkthrough; Bash limited to git log/diff/show), <code>pr</code>.", "A separate writer Agent for to-spec; fix on its own Agent."],
+  ["Q6 Shipped Agents", "<code>scout</code>, <code>griller</code> (Read, Grep, Glob), <code>answerer</code>, <code>planner</code> (to-spec and to-tickets; writes only <code>tickets/</code>), <code>implementer</code> (implement and fix-review), <code>storyteller</code> (walkthrough; Bash limited to git log/diff/show), <code>pr</code>, and for churn <code>architect</code> (propose-solution; writes only <code>proposal/</code>). The implementer lists implement, fix-review, tdd and code-review.", "A separate writer Agent for to-spec; fix on its own Agent."],
   ["Q7 Updating the Vault at the end", "Not in the default Processes; stays in the fog with the rest of knowledge update.", "An Update knowledge Agent Task + Approve loop after Open pull request."],
 ]
 const checkPage = () => `<h2>Is every element a building block a user could draw?</h2>
