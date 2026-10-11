@@ -1,6 +1,6 @@
 # Ants writes Varde's Vault format
 
-Ants has knowledge Skills of its own (search, update, sweep and init-vault), written for Ants rather
+Ants has knowledge Skills of its own (search, update and init-vault), written for Ants rather
 than run from Varde's folder, because Varde's Skills converse, read "the session" and touch the user's
 checkouts, none of which fits a Task. But the Vault they read and write keeps Varde's format exactly:
 the same Note frontmatter, Topics, Kinds, index Notes and Bases, the same Vault rules at
@@ -22,3 +22,5 @@ both tools must write Notes the other can read; a Vault full of Notes is costly 
   into an environment variable or the Run workspace. A Skill whose frontmatter has
   `metadata.varde-vault: true` opts in by default; the Task's Vault toggle in the Process has the
   final say, either way (decided in "How does YOLO answer a round?").
+- `sweep-knowledge` is not in v1: nothing shipped runs it, and Varde already sweeps the same Vault
+  (decided in "Which building blocks does v1 ship, and how does one Skill use another?").
