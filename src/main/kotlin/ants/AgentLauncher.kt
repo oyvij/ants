@@ -224,7 +224,16 @@ class AgentLauncher(
             // The user's Continue, or a Send back to a session claude has: their words alone, no hand-off again.
             val continued = resume != null || (comment != null && again != null)
             val result = try {
-                session(task, instance, agent, skill, used, run, workspace, cwd, transcript, session, resumed, task.variables[INSTRUCTION] as? String ?: comment, handedOff = !continued)
+                var result = session(task, instance, agent, skill, used, run, workspace, cwd, transcript, session, resumed, task.variables[INSTRUCTION] as? String ?: comment, handedOff = !continued)
+                // A landing that conflicts resumes the session to resolve it, and is retried after each fix.
+                var rounds = 0
+                while (parallel && result["outcome"] == "done") {
+                    val conflict = landing.land(workspace, instance) ?: break
+                    if (rounds++ == CONFLICT_ROUNDS) throw Failed("${conflict.substringBefore("\n\n")} It still conflicts after $CONFLICT_ROUNDS rounds.", conflict.substringAfter("\n\n"))
+                    val resolve = "$conflict\n\nThe rebase was aborted. Rebase onto the work branch in each repo named, resolve the conflicts, and answer again with your Result."
+                    result = session(task, instance, agent, skill, used, run, workspace, cwd, transcript, session, true, resolve, handedOff = false)
+                }
+                result
             } catch (limit: UsageLimit) {
                 val until = limit.resetsAt + Duration.ofMinutes(1)
                 transcript.ants("end", "Paused by the ${agent.cli} usage limit until ${clock.local(until)}.")
@@ -233,7 +242,6 @@ class AgentLauncher(
                 return
             }
             if (result["outcome"] == "done") {
-                if (parallel) landing.land(workspace, instance)
                 transcript.ants("end", "Done.")
                 // An answer-round Agent: Ants stamps its answers and hands them to the asker it names.
                 val asker = task.extensionProperties[ASKER]
@@ -594,6 +602,8 @@ class AgentLauncher(
         private const val RESET = "The usage limit has reset. Carry on where you stopped."
         private val LOCK = Duration.ofDays(365)
         private const val STDERR_LINES = 20
+        /** How often a conflicting landing resumes the session before the Task is `[failed]`. */
+        private const val CONFLICT_ROUNDS = 2
         private val GRACE = Duration.ofSeconds(5)
         const val LOST_LOGIN = "Ants' Claude login is missing or expired. Log in again (Settings)"
 

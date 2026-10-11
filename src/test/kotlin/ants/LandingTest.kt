@@ -178,6 +178,7 @@ class LandingTest : AntsTest() {
         setUp(api, web)
         claude.session("implement", 1, init, "wait go-1", commit("web", "shared.txt", "first"), done)
         claude.session("implement", 2, init, "wait go-2", commit("api", "two.txt"), commit("web", "shared.txt", "second"), done)
+        claude.session("implement", init, done) // each round of resolving the conflict leaves it as it is
         val run = start("api", "web")
 
         eventually { assertEquals(2, claude.launches("implement").size) }
@@ -192,6 +193,57 @@ class LandingTest : AntsTest() {
         assertEquals("1", git(clone(run, "api"), "rev-list", "--count", "HEAD"))
         assertEquals("first", clone(run, "web").resolve("shared.txt").readText())
         for (repo in listOf("api", "web")) assertEquals("", git(clone(run, repo), "status", "--porcelain"))
+    }
+
+    /** Two instances that both write `shared.txt` in api: the one released second conflicts when it lands. */
+    private fun conflicting(): String {
+        val api = repo("api")
+        setUp(api)
+        claude.session("implement", 1, init, "wait go-1", commit("api", "shared.txt", "first"), done)
+        claude.session("implement", 2, init, "wait go-2", commit("api", "shared.txt", "second"), done)
+        val run = start("api")
+        eventually { assertEquals(2, claude.launches("implement").size) }
+        claude.release("go-1")
+        eventually { assertEquals(setOf("shared.txt"), files(run, "api")) }
+        claude.release("go-2")
+        return run
+    }
+
+    @Test
+    fun `a conflicting instance is resumed with the conflict, and lands after it resolves it`() {
+        // It rebases onto the work branch itself, keeping its own side of the conflict.
+        claude.session(
+            "implement", 3, init,
+            "sh cd repos/api && b=${'$'}(git branch --show-current) && git -c user.name=Agent -c user.email=agent@example.com -c commit.gpgsign=false rebase -q -X theirs ${'$'}{b%--*}",
+            done,
+        )
+        val run = conflicting()
+
+        eventually { assertEquals(3, claude.launches("implement").size) }
+        val (_, second, resumed) = claude.launches("implement")
+        assertEquals(second.flag("--session-id"), resumed.flag("--resume"))
+        assertEquals(second.cwd, resumed.cwd)
+        assertContains(resumed.stdin, "doesn't rebase onto the work branch")
+        assertContains(resumed.stdin, "repos/api")
+        landed(run)
+        assertEquals("second", clone(run, "api").resolve("shared.txt").readText())
+        assertEquals("", git(clone(run, "api"), "rev-list", "--merges", "HEAD"))
+        assertEquals("3", git(clone(run, "api"), "rev-list", "--count", "HEAD"))
+        cleanedUp(run, "api")
+    }
+
+    @Test
+    fun `two failed rounds give failed, and the instance keeps its worktree`() {
+        claude.session("implement", init, done) // each round leaves the conflict as it is
+        val run = conflicting()
+
+        val entry = browser.get(entry(run)).body
+        assertContains(entry, "[failed]")
+        assertContains(entry, "didn't land")
+        assertContains(entry, "after 2 rounds")
+        assertEquals(4, claude.launches("implement").size)
+        assertEquals("first", clone(run, "api").resolve("shared.txt").readText())
+        assertEquals(1, workspace(run).resolve("instances").listDirectoryEntries().size)
     }
 
     @Test

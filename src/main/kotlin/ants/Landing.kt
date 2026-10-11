@@ -37,24 +37,31 @@ class Landing(private val cloneRepos: CloneRepos) {
     }
 
     /**
-     * Lands the instance [key] on the work branch of every clone, all or none, then removes its folder and branches.
-     * A rebase that fails is aborted and leaves every work branch where it was, and the instance's folder for Continue.
+     * Lands the instance [key] on the work branch of every clone, all or none, then removes its folder and branches,
+     * and returns null. A rebase that conflicts is aborted, leaving every work branch where it was and the instance's
+     * folder for its session to resolve, and Ants gets back why it didn't land, naming every repo that conflicts.
      */
     @Synchronized
-    fun land(workspace: Path, key: String) {
+    fun land(workspace: Path, key: String): String? {
         val worktrees = clones(workspace).associateWith { folder(workspace, key).resolve("repos/${it.name}") }.filterValues { it.exists() }
-        for ((clone, worktree) in worktrees) {
+        val conflicts = worktrees.mapNotNull { (clone, worktree) ->
             // Rebasing writes commits; without an identity of the user's, they are Ants'.
             val identity = if (runCatching { git(clone, "config", "user.email") }.isSuccess) emptyArray() else arrayOf("-c", "user.name=Ants", "-c", "user.email=ants@localhost")
             try {
                 git(worktree, *identity, "rebase", "-q", branch(clone))
+                null
             } catch (e: IllegalStateException) {
                 runCatching { git(worktree, "rebase", "--abort") }
-                throw IllegalStateException("$key didn't land: it doesn't rebase onto the work branch of ${clone.name}, so no repo moved. ${e.message}", e)
+                "repos/${clone.name}" to "repos/${clone.name}, on ${branch(clone)}: ${e.message}"
             }
+        }
+        if (conflicts.isNotEmpty()) {
+            return "$key didn't land: it doesn't rebase onto the work branch of ${conflicts.joinToString(" and ") { it.first }}, so no repo moved.\n\n" +
+                conflicts.joinToString("\n\n") { it.second }
         }
         for ((clone, worktree) in worktrees) git(clone, "merge", "-q", "--ff-only", branch(worktree))
         discard(workspace, key)
+        return null
     }
 
     /** Removes the instance [key]'s folder, its worktrees and its branches, if it has them. */
