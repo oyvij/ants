@@ -7,13 +7,16 @@ import org.operaton.bpm.model.bpmn.instance.BaseElement
 import org.operaton.bpm.model.bpmn.instance.BoundaryEvent
 import org.operaton.bpm.model.bpmn.instance.CallActivity
 import org.operaton.bpm.model.bpmn.instance.EventDefinition
+import org.operaton.bpm.model.bpmn.instance.ExclusiveGateway
 import org.operaton.bpm.model.bpmn.instance.IntermediateCatchEvent
 import org.operaton.bpm.model.bpmn.instance.MultiInstanceLoopCharacteristics
 import org.operaton.bpm.model.bpmn.instance.Participant
 import org.operaton.bpm.model.bpmn.instance.Process
+import org.operaton.bpm.model.bpmn.instance.SequenceFlow
 import org.operaton.bpm.model.bpmn.instance.ServiceTask
 import org.operaton.bpm.model.bpmn.instance.StartEvent
 import org.operaton.bpm.model.bpmn.instance.SubProcess
+import org.operaton.bpm.model.bpmn.instance.TimerEventDefinition
 import org.operaton.bpm.model.bpmn.instance.UserTask
 import org.operaton.bpm.model.bpmn.instance.operaton.OperatonFormData
 import org.operaton.bpm.model.bpmn.instance.operaton.OperatonInputOutput
@@ -30,7 +33,7 @@ data class Check(val element: String?, val message: String, val warning: Boolean
  */
 @Component
 class Checks {
-    private val rules: List<(BpmnModelInstance) -> List<Check>> = listOf(::refusedElements, ::refusedUses, ::oneStartEvent, ::startFormNames, ::emptyInputs)
+    private val rules: List<(BpmnModelInstance) -> List<Check>> = listOf(::refusedElements, ::refusedUses, ::oneStartEvent, ::startFormNames, ::emptyInputs, ::defaultPaths, ::timerTimes)
 
     fun of(bpmn: String): List<Check> = try {
         Bpmn.readModelFromStream(bpmn.byteInputStream()).let { model -> rules.flatMap { it(model) } }
@@ -134,3 +137,14 @@ private fun emptyInputs(model: BpmnModelInstance) = model.getModelElementsByType
             .filter { it.textContent.isBlank() && it.domElement.childElements.isEmpty() }
             .map { Check(task.id, "${task.label} has an empty input ${it.operatonName}.", warning = true) }
     }
+
+/** An exclusive gateway that chooses between paths takes its default one when no condition holds; a merge needs none. */
+private fun defaultPaths(model: BpmnModelInstance) = model.getModelElementsByType(ExclusiveGateway::class.java)
+    // By sourceRef: a file need not list a gateway's `outgoing`.
+    .filter { gateway -> gateway.default == null && model.getModelElementsByType(SequenceFlow::class.java).count { it.source == gateway } > 1 }
+    .map { Check(it.id, "${it.label} has no default path.") }
+
+/** A timer waits for a duration, until a date or for a cron time, so it needs one of them. */
+private fun timerTimes(model: BpmnModelInstance) = model.getModelElementsByType(TimerEventDefinition::class.java)
+    .filter { listOfNotNull(it.timeDuration, it.timeDate, it.timeCycle).all { time -> time.textContent.isBlank() } }
+    .map { (it.parentElement as BaseElement).let { event -> Check(event.id, "${event.label} is a timer without a time.") } }

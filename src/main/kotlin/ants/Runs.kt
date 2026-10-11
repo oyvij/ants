@@ -208,7 +208,8 @@ class RunLifecycle(@Value("\${ants.home}") private val home: Path) : AbstractPro
     }
 
     // ponytail: parallel Tasks starting in separate transactions clash on `runs` (optimistic locking) and the losing
-    // transaction rolls back; whoever drives it (the worker, a User Task's form) must retry once Tasks run in parallel.
+    // transaction rolls back; whoever drives it must retry, as the worker does (AgentLauncher.complete), and so must a
+    // User Task's form once wave 4 completes one.
     private val counted = ExecutionListener { task ->
         @Suppress("UNCHECKED_CAST")
         val counts = task.getVariable("runs") as Map<String, Int>

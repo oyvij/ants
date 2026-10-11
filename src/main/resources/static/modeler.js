@@ -12,7 +12,7 @@ const kinds = {
     start: {name: "Start event", explain: "Where a Run begins. A Process has exactly one."},
     "timer-start": {name: "Timer start event", explain: "Where a Run begins; the Process's Schedule says when it starts on its own."},
     end: {name: "End event", explain: "Where a path ends. The Run ends when every path has."},
-    timer: {name: "Timer", explain: "Waits for a time or a duration, then goes on."},
+    timer: {name: "Timer", explain: "Waits for a time or a duration, then goes on. Dropped on the edge of a User Task, it becomes a timer boundary."},
     "timer-boundary": {name: "Timer boundary", explain: "On a User Task only: when it fires, the user's Task is cancelled and the Run takes this path instead, such as Accept recommendations."},
     exclusive: {name: "Exclusive gateway", explain: "Takes the one path whose condition holds, else the default path. Loops are drawn with it."},
     parallel: {name: "Parallel gateway", explain: "Fans out to every path at once, or waits for all of them to join."},
@@ -254,6 +254,129 @@ function startForm(element) {
 }
 panels.start = startForm
 panels["timer-start"] = startForm
+
+// The condition builder: a Result field, an operator and a value write each path's JUEL, shown under it, and one path
+// is the default. A condition it can't read back shows as is, and the builder replaces it once the user edits it.
+const operators = {
+    "is true": f => `\${${f}}`,
+    "is false": f => `\${!${f}}`,
+    "is empty": f => `\${empty ${f}}`,
+    "is not empty": f => `\${not empty ${f}}`,
+    equals: (f, v) => `\${${f} == ${literal(v)}}`,
+    "does not equal": (f, v) => `\${${f} != ${literal(v)}}`,
+    "is more than": (f, v) => `\${${f} > ${literal(v)}}`,
+    "is less than": (f, v) => `\${${f} < ${literal(v)}}`,
+}
+const unary = new Set(["is true", "is false", "is empty", "is not empty"])
+const literal = v => /^-?\d+(\.\d+)?$/.test(v) ? v : `'${v.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}'`
+
+// The builder's {field, op, value} for an expression it wrote, else null.
+function readCondition(body) {
+    const field = "([\\w.]+)"
+    const shapes = [
+        [`^\\$\\{${field}\\}$`, "is true"], [`^\\$\\{!${field}\\}$`, "is false"],
+        [`^\\$\\{empty ${field}\\}$`, "is empty"], [`^\\$\\{not empty ${field}\\}$`, "is not empty"],
+        [`^\\$\\{${field} == (.+)\\}$`, "equals"], [`^\\$\\{${field} != (.+)\\}$`, "does not equal"],
+        [`^\\$\\{${field} > (.+)\\}$`, "is more than"], [`^\\$\\{${field} < (.+)\\}$`, "is less than"],
+    ]
+    for (const [shape, op] of shapes) {
+        const match = body.match(new RegExp(shape))
+        if (!match) continue
+        const value = match[2] === undefined ? "" : match[2].startsWith("'") && match[2].endsWith("'")
+            ? match[2].slice(1, -1).replace(/\\(.)/g, "$1") : match[2]
+        if (match[2] === undefined || literal(value) === match[2]) return {field: match[1], op, value}
+    }
+    return null
+}
+
+// What a condition can read: each Task's Result (an Agent Task's under `output`), its run count and the start form.
+function resultFields() {
+    const fields = []
+    for (const element of modeler.get("elementRegistry").getAll()) {
+        const kind = kindOf(element)
+        if (kind === "agent") fields.push(`${element.id}.output.`)
+        if (kind === "user" || kind === "built-in" || kind === "call") fields.push(`${element.id}.`)
+        if (["agent", "user", "built-in"].includes(kind)) fields.push(`runs.${element.id}`)
+        if (kind === "start" || kind === "timer-start") fields.push(...readForm(element.businessObject).map(f => f.id).filter(Boolean))
+    }
+    return el("datalist", {id: "result-fields"}, ...fields.map(value => el("option", {value})))
+}
+
+// One path out of [gateway]: the default, or its condition.
+function conditionRow(gateway, flow) {
+    const modeling = modeler.get("modeling")
+    const isDefault = gateway.businessObject.default === flow.businessObject
+    const body = flow.businessObject.conditionExpression?.body || ""
+    const read = readCondition(body) || {field: "", op: "equals", value: ""}
+    const shown = el("code", {textContent: isDefault ? "(default: taken when no condition holds)" : body || "(no condition: always taken, so give it one)"})
+    const field = el("input", {value: read.field, placeholder: "review.output.verdict", size: 24})
+    field.setAttribute("list", "result-fields")
+    const op = el("select", {}, ...Object.keys(operators).map(name => el("option", {value: name, textContent: name, selected: name === read.op})))
+    const value = el("input", {value: read.value, size: 10})
+    const write = () => {
+        value.hidden = unary.has(op.value)
+        if (!field.value) return
+        const expression = operators[op.value](field.value.trim(), value.value)
+        shown.textContent = expression
+        quiet = true
+        try {
+            modeling.updateProperties(flow, {conditionExpression: modeler.get("bpmnFactory").create("bpmn:FormalExpression", {body: expression})})
+        } finally {
+            quiet = false
+        }
+    }
+    field.oninput = value.oninput = op.onchange = write
+    value.hidden = unary.has(read.op)
+    const makeDefault = el("input", {type: "radio", name: "default-" + gateway.id, checked: isDefault, onchange: () => {
+        modeling.updateProperties(flow, {conditionExpression: undefined})
+        modeling.updateProperties(gateway, {default: flow.businessObject})
+        explain(modeler.get("selection").get()[0] || gateway)
+    }})
+    const target = flow.target.businessObject.name || flow.target.id
+    return el("fieldset", {},
+        el("legend", {textContent: `To ${target}`}),
+        el("label", {}, makeDefault, " Default path"), el("br"),
+        isDefault ? "" : el("span", {}, field, " ", op, " ", value),
+        el("br"), shown)
+}
+
+panels.exclusive = gateway => {
+    const out = gateway.outgoing.filter(flow => flow.type === "bpmn:SequenceFlow")
+    if (out.length < 2) return el("p", {textContent: "With one path out it only merges, so it needs no conditions."})
+    return el("div", {}, el("h3", {textContent: "Conditions"}), resultFields(), ...out.map(flow => conditionRow(gateway, flow)))
+}
+panels.flow = flow => kindOf(flow.source) === "exclusive" && flow.source.outgoing.length > 1
+    ? el("div", {}, resultFields(), conditionRow(flow.source, flow)) : ""
+
+// A timer waits for a duration, until a date, or until a cron time comes round (Operaton's six fields, seconds first).
+const times = {
+    timeDuration: {name: "Wait for", hint: "An ISO 8601 duration: PT30M is 30 minutes, P1D a day."},
+    timeCycle: {name: "Wait until (cron)", hint: "sec min hour day month weekday: 0 0 8 * * * is the next 08:00, 0 0 8 * * MON-FRI the next weekday at 08:00."},
+    timeDate: {name: "Wait until (date)", hint: "An ISO 8601 date and time, such as 2026-12-24T08:00:00."},
+}
+
+function timerPanel(element) {
+    const definition = element.businessObject.eventDefinitions[0]
+    const current = Object.keys(times).find(key => definition[key]) || "timeDuration"
+    const kind = el("select", {}, ...Object.entries(times).map(([key, {name}]) => el("option", {value: key, textContent: name, selected: key === current})))
+    const hint = el("p", {textContent: times[current].hint})
+    const value = el("input", {value: definition[current]?.body || "", placeholder: "PT30M"})
+    const write = () => {
+        hint.textContent = times[kind.value].hint
+        const properties = Object.fromEntries(Object.keys(times).map(key => [key, undefined]))
+        if (value.value.trim()) properties[kind.value] = modeler.get("bpmnFactory").create("bpmn:FormalExpression", {body: value.value.trim()})
+        quiet = true
+        try {
+            modeler.get("modeling").updateModdleProperties(element, definition, properties)
+        } finally {
+            quiet = false
+        }
+    }
+    kind.onchange = value.oninput = write
+    return el("div", {}, el("label", {}, kind, " ", value), hint)
+}
+panels.timer = timerPanel
+panels["timer-boundary"] = timerPanel
 
 function explain(element) {
     const target = element.labelTarget || element
