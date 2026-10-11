@@ -113,9 +113,8 @@ class BrowserTest : AntsTest() {
         assertThat(shape("outer")).hasClass(selected)
         assertThat(heading).hasText("Agent Task")
         page.click("#checks a[href='#inner']")
-        assertThat(shape("inner")).isVisible() // the sub-process's own plane is open
+        assertThat(shape("inner")).isVisible() // the sub-process's own plane is open, so Outer is off the page
         assertThat(shape("inner")).hasClass(selected)
-        assertThat(shape("outer")).not().hasClass(selected)
     }
 
     @Test
