@@ -1,5 +1,6 @@
 package ants
 
+import com.microsoft.playwright.BrowserType
 import com.microsoft.playwright.Page
 import com.microsoft.playwright.Playwright
 import com.microsoft.playwright.assertions.PlaywrightAssertions.assertThat
@@ -33,7 +34,8 @@ class BrowserTest : AntsTest() {
         var created: Playwright? = null
         val chromium = try {
             created = Playwright.create()
-            created.chromium().launch()
+            // Chromium's own sandbox stays off (--no-sandbox): it can't start inside a sandbox such as nono's Seatbelt.
+            created.chromium().launch(BrowserType.LaunchOptions().setChromiumSandbox(false).setArgs(listOf("--disable-gpu")))
         } catch (e: RuntimeException) {
             created?.close()
             if (System.getenv("CI") != null) throw e
@@ -65,10 +67,12 @@ class BrowserTest : AntsTest() {
     private fun browse(steps: () -> Unit) = try {
         steps()
     } catch (e: Throwable) {
-        val shot = Path.of("build/reports/browser/$test.png")
-        runCatching { page.screenshot(Page.ScreenshotOptions().setPath(shot).setFullPage(true)) }
+        val shot = runCatching { screenshot("failed/$test") }.getOrNull()
         throw AssertionError("${e.message}\nAt ${page.url()}, screenshot $shot. The page's console errors:\n" + errors.joinToString("\n").ifEmpty { "(none)" }, e)
     }
+
+    /** Saves the page as it looks now to build/reports/browser/[name].png, for a person or an agent to look at. */
+    private fun screenshot(name: String): Path = Path.of("build/reports/browser/$name.png").also { page.screenshot(Page.ScreenshotOptions().setPath(it).setFullPage(true)) }
 
     /** An element's shape on the diagram, by its id. */
     private fun shape(id: String) = page.locator("#canvas .djs-element[data-element-id='$id'], #diagram .djs-element[data-element-id='$id']")
@@ -97,6 +101,7 @@ class BrowserTest : AntsTest() {
             pad.locator("[data-action='$action']").click()
             assertThat(heading).hasText(name)
         }
+        screenshot("modeler") // the modeler with the three Tasks drawn
     }
 
     @Test
