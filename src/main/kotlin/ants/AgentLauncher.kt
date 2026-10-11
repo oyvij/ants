@@ -21,7 +21,9 @@ import java.util.concurrent.atomic.AtomicInteger
 /**
  * The in-process worker. It fetches ready Agent Tasks (external tasks on topic `agent`) only for free slots under
  * the cap, oldest first across Runs, and runs each one's Skill through `claude -p`. A `done` Result completes the
- * task, stored as a process variable named after the Task's BPMN id; a `stuck` one or a failure is an incident.
+ * task, stored as a process variable named after the Task's BPMN id; a `stuck` one or a failure is an incident. When
+ * the user acts on it, the Notification list leaves their choice in the Task's local variables: Continue resumes the
+ * session with their instruction, Start fresh starts a new one with it under "From the user:".
  */
 @Component
 class AgentLauncher(
@@ -75,24 +77,34 @@ class AgentLauncher(
     }
 
     private fun launch(task: LockedExternalTask) {
+        val resume = (task.variables[SESSION] as? String)?.takeIf { task.variables[ACTION] == CONTINUE }
+        val session = resume ?: UUID.randomUUID().toString()
         try {
-            val result = session(task)
+            runtime.removeVariablesLocal(task.executionId, listOf(ACTION, INSTRUCTION, SESSION)) // the choice is used once
+            val result = session(task, session, resume != null, task.variables[INSTRUCTION] as? String)
             if (result["outcome"] == "done") externalTasks.complete(task.id, WORKER, mapOf(task.activityId to result))
-            else incident(task, "[stuck] ${result["summary"]}", result["needs"].toString())
+            else incident(task, session, "[stuck] ${result["summary"]}", result["needs"].toString())
         } catch (e: Exception) {
             if (poller.isShutdown) return // Ants is stopping: the Task stays locked, and the next start unlocks it
             log.warn("Agent Task ${task.activityId} failed", e)
-            incident(task, "[failed] ${e.message ?: e}", (e as? InvalidResult)?.details)
+            incident(task, session, "[failed] ${e.message ?: e}", (e as? InvalidResult)?.details)
         }
     }
 
-    /** Puts [task] on hold as an incident, its tag and reason in [message] and anything longer in [details]. */
-    private fun incident(task: LockedExternalTask, message: String, details: String?) =
-        runCatching { externalTasks.handleFailure(task.id, WORKER, message, details, 0, 0) }
-            .onFailure { log.warn("Agent Task ${task.activityId} couldn't be put on hold", it) }
+    /**
+     * Puts [task] on hold as an incident, its tag and reason in [message] and anything longer in [details], keeping
+     * its [session] for Continue.
+     */
+    private fun incident(task: LockedExternalTask, session: String, message: String, details: String?) = runCatching {
+        runtime.setVariableLocal(task.executionId, SESSION, session)
+        externalTasks.handleFailure(task.id, WORKER, message, details, 0, 0)
+    }.onFailure { log.warn("Agent Task ${task.activityId} couldn't be put on hold", it) }
 
-    /** Runs the Task's Skill in one CLI session and returns its Result. */
-    private fun session(task: LockedExternalTask): Map<*, *> {
+    /**
+     * Runs the Task's Skill in one CLI session and returns its Result. A new [session] starts with the hand-off prompt
+     * and the user's [instruction], if any; a [resume]d one with the instruction alone.
+     */
+    private fun session(task: LockedExternalTask, session: String, resume: Boolean, instruction: String?): Map<*, *> {
         val agent = catalogue.agent(task.extensionProperties["ants.agent"] ?: error("${task.activityId} names no ants.agent"))
         val skill = catalogue.skill(task.extensionProperties["ants.skill"] ?: error("${task.activityId} names no ants.skill"))
         check(agent.cli == "claude") { "Agent ${agent.name} runs ${agent.cli}, and only claude runs for now" }
@@ -100,9 +112,12 @@ class AgentLauncher(
         val workspace = home.resolve("runs").resolve(run)
         refuseBareByDefault(agent.cli, workspace)
 
-        val prompt = "Follow the Skill in ${skill.file} for the workspace at $workspace.\n\n" + json.writeValueAsString(task.variables.toSortedMap())
+        val inputs = task.variables.filterKeys { !it.startsWith("ants.") }.toSortedMap()
+        val prompt = if (resume) instruction.orEmpty()
+        else "Follow the Skill in ${skill.file} for the workspace at $workspace.\n\n" + json.writeValueAsString(inputs) +
+            (if (instruction.isNullOrBlank()) "" else "\n\nFrom the user:\n$instruction")
         val schema = ResultContract.schema(skill.outputSchema)
-        val process = cli(agent.cli, workspace, flags(agent, schema, skill)).start()
+        val process = cli(agent.cli, workspace, flags(agent, schema, skill, session, resume)).start()
         clis += process
         try {
             val stdin = process.outputWriter()
@@ -141,14 +156,14 @@ class AgentLauncher(
         }
     }
 
-    private fun flags(agent: Agent, schema: Map<*, *>, skill: Skill): List<String> {
+    private fun flags(agent: Agent, schema: Map<*, *>, skill: Skill, session: String, resume: Boolean): List<String> {
         val tools = (agent.tools ?: DEFAULT_TOOLS).filter { it.substringBefore('(') != "Skill" }
         return listOf(
             "-p",
             "--output-format", "stream-json", "--verbose", "--include-partial-messages",
             "--input-format", "stream-json", "--replay-user-messages",
             "--json-schema", json.writeValueAsString(schema),
-            "--session-id", UUID.randomUUID().toString(),
+            if (resume) "--resume" else "--session-id", session,
             "--permission-mode", "dontAsk",
             "--setting-sources", "user,project",
             "--settings", """{"disableAllHooks":true}""",
@@ -190,6 +205,15 @@ class AgentLauncher(
 
     companion object {
         const val TOPIC = "agent"
+
+        /** The user's choice on a held Task, [CONTINUE] or [FRESH], and their instruction, as local variables. */
+        const val ACTION = "ants.action"
+        const val INSTRUCTION = "ants.instruction"
+        const val CONTINUE = "continue"
+        const val FRESH = "fresh"
+
+        /** The session id of a held Task's last launch. */
+        private const val SESSION = "ants.session"
         private const val WORKER = "ants"
         private val LOCK = Duration.ofDays(365)
         private val DEFAULT_TOOLS = listOf("Bash", "Edit", "Glob", "Grep", "NotebookEdit", "Read", "TodoWrite", "WebFetch", "WebSearch", "Write")

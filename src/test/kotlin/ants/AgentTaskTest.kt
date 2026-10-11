@@ -268,18 +268,26 @@ class FakeClaude {
 
     fun session(skill: String, vararg lines: String) = dir.resolve("sessions/$skill.jsonl").writeText(lines.joinToString("\n", postfix = "\n"))
 
+    /** The session the [n]th launch of [skill] plays instead of its usual one. */
+    fun session(skill: String, n: Int, vararg lines: String) = dir.resolve("sessions/$skill.$n.jsonl").writeText(lines.joinToString("\n", postfix = "\n"))
+
     fun release(file: String) = dir.resolve(file).createFile()
 
     fun help(text: String) = dir.resolve("help").writeText(text)
 
+    /** The launches of [skill], in launch order. */
     fun launches(skill: String): List<Launch> =
-        if (dir.resolve("launches").isDirectory()) dir.resolve("launches").listDirectoryEntries("$skill.*").map(::Launch) else emptyList()
+        if (dir.resolve("launches").isDirectory()) dir.resolve("launches").listDirectoryEntries("$skill.*")
+            .sortedBy { it.fileName.toString().substringAfterLast('.').toInt() }.map(::Launch) else emptyList()
 
     /** The working directory of every launch, in launch order. */
     fun launchLog(): List<String> = dir.resolve("launches.log").let { if (Files.exists(it)) it.readLines() else emptyList() }
 
     class Launch(dir: Path) {
         val argv = dir.resolve("argv").readLines()
+
+        /** The value after [flag] in argv, or null. */
+        fun flag(flag: String) = argv.indexOf(flag).takeIf { it >= 0 }?.let { argv[it + 1] }
         val env = dir.resolve("env").readLines().associate { it.substringBefore('=') to it.substringAfter('=') }
         val cwd = dir.resolve("cwd").readText().trim()
         val stdin = dir.resolve("stdin").readText().trim()

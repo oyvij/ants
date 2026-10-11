@@ -9,6 +9,7 @@
     <title>${run.processDefinitionName ?: run.processDefinitionKey} · Ants</title>
 </head>
 <body>
+@template.nav()
 <p><a href="/runs">Runs</a></p>
 <h1><a href="/processes/${run.processDefinitionKey}">${run.processDefinitionName ?: run.processDefinitionKey}</a></h1>
 <p>State: ${run.stateName}</p>
