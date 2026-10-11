@@ -105,7 +105,21 @@ class AgentLauncher(
     }
 
     /** Kills the live CLI processes of [run], once the Run is cancelled. */
-    fun cancel(run: String) = clis.filterValues { it == run }.keys.forEach { it.toHandle().destroy() }
+    fun cancel(run: String) = clis.filterValues { it == run }.keys.forEach(::kill)
+
+    /**
+     * Ends [process] and every process under it: asks them all to stop, then kills whichever are still alive after
+     * [GRACE]. A CLI may ignore SIGTERM, or wait on a child that does, and its launch keeps its slot until the output of
+     * every one of them has closed. Unlike [Process.destroy], it leaves the rest of stdout to read.
+     */
+    private fun kill(process: Process) {
+        val all = listOf(process.toHandle()) + process.descendants().toList() // while they still have their parent
+        all.forEach(ProcessHandle::destroy)
+        Thread.ofVirtual().start {
+            process.waitFor(GRACE.toMillis(), MILLISECONDS)
+            all.filter(ProcessHandle::isAlive).forEach(ProcessHandle::destroyForcibly)
+        }
+    }
 
     private fun fetch() {
         try {
@@ -321,13 +335,13 @@ class AgentLauncher(
                 if (event["error"] == "authentication_failed" || apiKey != null) {
                     failure = Failed(LOST_LOGIN, apiKey?.let { "${agent.cli} would use an API key (apiKeySource: $it), and Ants runs only on its own login." })
                     stdin.close()
-                    process.toHandle().destroy() // unlike Process.destroy, leaves the rest of stdout to read
+                    kill(process)
                     return@forEachLine
                 }
                 usageLimit(event)?.let {
                     limit = it // the session continues after the reset
                     stdin.close()
-                    process.toHandle().destroy()
+                    kill(process)
                     return@forEachLine
                 }
                 if (event["type"] != "result") return@forEachLine
@@ -580,6 +594,7 @@ class AgentLauncher(
         private const val RESET = "The usage limit has reset. Carry on where you stopped."
         private val LOCK = Duration.ofDays(365)
         private const val STDERR_LINES = 20
+        private val GRACE = Duration.ofSeconds(5)
         const val LOST_LOGIN = "Ants' Claude login is missing or expired. Log in again (Settings)"
 
         /**
