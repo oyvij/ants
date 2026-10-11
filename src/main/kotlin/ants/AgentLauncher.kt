@@ -155,7 +155,7 @@ class AgentLauncher(
     /** Runs [task] once, between a divider and a line saying how it ended in its Transcript. */
     private fun launch(task: LockedExternalTask) {
         val resume = (task.variables[SESSION] as? String)?.takeIf { task.variables[ACTION] == CONTINUE }
-        val session = resume ?: UUID.randomUUID().toString()
+        var session = resume // a new one only once claude starts, so Continue never resumes a session claude never saw
         var transcript: Transcript.Writer? = null
         try {
             val agent = catalogue.agent(task.extensionProperties["ants.agent"] ?: error("${task.activityId} names no ants.agent"))
@@ -163,9 +163,16 @@ class AgentLauncher(
             runtime.removeVariablesLocal(task.executionId, listOf(ACTION, INSTRUCTION, SESSION)) // the choice is used once
             val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult().rootProcessInstanceId
             val workspace = home.resolve("runs").resolve(run)
+            val skill = catalogue.skill(task.extensionProperties["ants.skill"] ?: error("${task.activityId} names no ants.skill"))
+            check(agent.cli == "claude") { "Agent ${agent.name} runs ${agent.cli}, and only claude runs for now" }
+            val used = catalogue.uses(skill)
+            // ponytail: a Task whose catalogue.vault(skill) is on runs without the Vault until #69 hands it over (its
+            // path in the hand-off line and an --add-dir).
+            refuseBareByDefault(agent.cli, workspace)
+            session = session ?: UUID.randomUUID().toString()
             transcript = Transcript.Writer(Transcript.file(workspace, task.activityId)).apply { ants("launch") }
             val result = try {
-                session(task, agent, run, workspace, transcript, session, resume != null, task.variables[INSTRUCTION] as? String)
+                session(task, agent, skill, used, run, workspace, transcript, session, resume != null, task.variables[INSTRUCTION] as? String)
             } catch (limit: UsageLimit) {
                 val until = limit.resetsAt + Duration.ofMinutes(1)
                 transcript.ants("end", "Paused by the ${agent.cli} usage limit until ${clock.local(until)}.")
@@ -183,13 +190,16 @@ class AgentLauncher(
             }
         } catch (e: Exception) {
             val stopping = poller.isShutdown // the Task stays locked, and the next start unlocks it
+            // Cancel the Run deletes it, then kills its CLIs.
+            val cancelled = runCatching { runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).count() == 0L }.getOrDefault(false)
             val reason = when {
                 stopping -> "Ants stopped."
+                cancelled -> "Cancelled with the Run."
                 e is Stopped -> "[stopped] ${e.message}"
                 else -> "[failed] ${e.message ?: e}"
             }
             runCatching { transcript?.ants("end", reason) }
-            if (stopping) return
+            if (stopping || cancelled) return
             if (e !is Stopped) log.warn("Agent Task ${task.activityId} failed", e)
             incident(task, session, reason, (e as? Failed)?.details)
         }
@@ -197,28 +207,23 @@ class AgentLauncher(
 
     /**
      * Puts [task] on hold as an incident, its tag and reason in [message] and anything longer in [details], keeping
-     * its [session] for Continue.
+     * its [session], if claude ever started one, for Continue.
      */
-    private fun incident(task: LockedExternalTask, session: String, message: String, details: String?) = runCatching {
-        runtime.setVariableLocal(task.executionId, SESSION, session)
+    private fun incident(task: LockedExternalTask, session: String?, message: String, details: String?) = runCatching {
+        if (session != null) runtime.setVariableLocal(task.executionId, SESSION, session)
         externalTasks.handleFailure(task.id, WORKER, message, details, 0, 0)
     }.onFailure { log.warn("Agent Task ${task.activityId} couldn't be put on hold", it) }
 
     /**
-     * Runs the Task's Skill in one CLI session in [workspace], every line it prints going to [transcript], and returns
-     * its Result: the last valid one, once every message written to the session has been read. A new [session] starts
-     * with the hand-off prompt and the user's [instruction], if any; a [resume]d one with the instruction alone.
+     * Runs [skill], which uses [used], in one CLI session in [workspace], every line it prints going to [transcript],
+     * and returns its Result: the last valid one, once every message written to the session has been read. A new
+     * [session] starts with the hand-off prompt and the user's [instruction], if any; a [resume]d one with the
+     * instruction alone.
      */
     private fun session(
-        task: LockedExternalTask, agent: Agent, run: String, workspace: Path, transcript: Transcript.Writer, session: String, resume: Boolean, instruction: String?,
+        task: LockedExternalTask, agent: Agent, skill: Skill, used: List<Skill>, run: String, workspace: Path, transcript: Transcript.Writer,
+        session: String, resume: Boolean, instruction: String?,
     ): Map<*, *> {
-        val skill = catalogue.skill(task.extensionProperties["ants.skill"] ?: error("${task.activityId} names no ants.skill"))
-        check(agent.cli == "claude") { "Agent ${agent.name} runs ${agent.cli}, and only claude runs for now" }
-        val used = catalogue.uses(skill)
-        // ponytail: a Task whose catalogue.vault(skill) is on runs without the Vault until #69 hands it over (its path in
-        // the hand-off line and an --add-dir).
-        refuseBareByDefault(agent.cli, workspace)
-
         val handOff = "Follow the Skill in ${skill.file} for the workspace at $workspace." +
             (if (used.isEmpty()) "" else " It uses the Skills ${used.joinToString { "${it.name} (${it.file})" }}.")
         val inputs = task.variables.filterKeys { !it.startsWith("ants.") }.toSortedMap()
