@@ -31,11 +31,17 @@ class AgentTaskTest : AntsTest() {
 
     private fun agent(text: String) = home.resolve("agents").createDirectories().resolve("writer.md").writeText(text)
 
-    private fun skill(schema: String? = null) {
+    private fun skill(schema: String? = null, metadata: String = "") {
         val folder = home.resolve("skills/draft").createDirectories()
-        folder.resolve("SKILL.md").writeText("---\nname: draft\ndescription: Drafts a text.\n---\nDraft the text.\n")
+        folder.resolve("SKILL.md").writeText("---\nname: draft\ndescription: Drafts a text.\n$metadata---\nDraft the text.\n")
         folder.resolve("result.schema.json").run { if (schema != null) writeText(schema) else deleteIfExists() }
     }
+
+    /** A Skill [name] that only other Skills use, its frontmatter carrying [metadata]. */
+    private fun usedSkill(name: String, metadata: String = ""): Path = home.resolve("skills/used/$name").createDirectories().resolve("SKILL.md")
+        .also { it.writeText("---\nname: $name\ndescription: Used.\n$metadata---\nUse it.\n") }
+
+    private fun uses(names: String) = "metadata:\n  ants-uses: $names\n"
 
     /** The `--json-schema` the launch was given. */
     private fun FakeClaude.Launch.schema(): Map<*, *> = JsonMapper.shared().readValue(argv[argv.indexOf("--json-schema") + 1], Map::class.java)
@@ -199,6 +205,48 @@ class AgentTaskTest : AntsTest() {
         val prompt = "Follow the Skill in ${home.resolve("skills/draft/SKILL.md")} for the workspace at ${home.resolve("runs/$run")}." +
             """\n\n{\"prompt\":\"Say hello\",\"tone\":\"dry\"}"""
         assertEquals("""{"type":"user","message":{"role":"user","content":"$prompt"}}""", launch.stdin)
+    }
+
+    @Test
+    fun `a two-level ants-uses chain puts every used Skill in the hand-off line and in --add-dir`() {
+        settings()
+        agent("Write plainly.\n")
+        skill(metadata = uses("implement-tdd"))
+        val tdd = usedSkill("implement-tdd", uses("seams review"))
+        val seams = usedSkill("seams")
+        val review = usedSkill("review", uses("seams"))
+        claude.session("draft", done)
+        val run = start()
+        eventually { assertContains(page(run), "State: Completed") }
+        val launch = claude.launches("draft").single()
+        assertContains(launch.stdin, "for the workspace at ${home.resolve("runs/$run")}. It uses the Skills implement-tdd ($tdd), seams ($seams), review ($review).")
+        val argv = launch.argv.joinToString(" ")
+        for (folder in listOf(home.resolve("skills/draft"), tdd.parent, seams.parent, review.parent)) assertContains(argv, "--add-dir $folder")
+    }
+
+    @Test
+    fun `an ants-uses cycle fails before launch, naming the cycle`() {
+        settings()
+        agent("Write plainly.\n")
+        skill(metadata = uses("implement-tdd"))
+        usedSkill("implement-tdd", uses("seams"))
+        usedSkill("seams", uses("draft"))
+        claude.session("draft", done)
+        val run = start()
+        eventually { assertContains(page(run), "<dt>draft</dt><dd>[failed] The Skills draft → implement-tdd → seams → draft use each other in a cycle</dd>") }
+        assertEquals(emptyList(), claude.launches("draft"))
+    }
+
+    @Test
+    fun `a used Skill's Vault opt-in turns the Task's Vault on`() {
+        settings()
+        agent("Write plainly.\n")
+        skill(metadata = uses("search"))
+        usedSkill("search", "metadata:\n  varde-vault: true\n")
+        claude.session("draft", done)
+        val run = start()
+        eventually { assertContains(page(run), "<dt>draft</dt><dd>[failed] The Task uses the Vault, as search opts in, and no Vault can be handed to a Task yet</dd>") }
+        assertEquals(emptyList(), claude.launches("draft"))
     }
 
     @Test

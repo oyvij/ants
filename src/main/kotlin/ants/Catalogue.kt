@@ -20,8 +20,11 @@ import kotlin.io.path.writeBytes
 /** Who does a Task: the CLI it runs, its tools, its model and its standing instructions. */
 class Agent(val name: String, val cli: String, val tools: List<String>?, val model: String?, val instructions: String)
 
-/** A `SKILL.md` and the folder it lives in. */
-class Skill(val name: String, val file: Path) {
+/**
+ * A `SKILL.md` and the folder it lives in, with the Skills it names in `metadata.ants-uses` and whether it opts in to
+ * the Vault (`metadata.varde-vault: true`).
+ */
+class Skill(val name: String, val file: Path, val uses: List<String>, val vault: Boolean) {
     val folder: Path get() = file.parent
 
     /** The schema of the `output` the Skill promises, from `result.schema.json` beside it; without one, any output. */
@@ -76,10 +79,33 @@ class Catalogue(@Value("\${ants.home}") private val home: Path, private val sett
     /** The Skill [name]; a shipped Skill wins its name. */
     fun skill(name: String): Skill {
         val skills = skillFolders.filter { it.exists() }.flatMap { folder ->
-            folder.walk().filter { it.fileName.toString() == "SKILL.md" }.map { Skill(frontmatter(it.readText()).first["name"]?.toString() ?: "", it) }
+            folder.walk().filter { it.fileName.toString() == "SKILL.md" }.map { file ->
+                val meta = frontmatter(file.readText()).first
+                val metadata = meta["metadata"] as? Map<*, *> ?: emptyMap<String, Any?>()
+                Skill(
+                    name = meta["name"]?.toString() ?: "",
+                    file = file,
+                    uses = metadata["ants-uses"]?.toString()?.split(Regex("\\s+"))?.filter(String::isNotEmpty) ?: emptyList(),
+                    vault = metadata["varde-vault"] == true,
+                )
+            }
         }.filter { it.name == name }
         return skills.singleOrNull() ?: skills.firstOrNull { it.file.startsWith(shipped) }
             ?: error(if (skills.isEmpty()) "No Skill named $name" else "More than one Skill is named $name")
+    }
+
+    /** Every Skill [skill] uses through `ants-uses`, at any depth, each once in the order first named; a cycle is refused, naming it. */
+    fun uses(skill: Skill): List<Skill> {
+        val closure = LinkedHashMap<String, Skill>()
+        fun visit(user: Skill, chain: List<String>) {
+            for (name in user.uses) {
+                check(name !in chain) { "The Skills ${(chain.dropWhile { it != name } + name).joinToString(" → ")} use each other in a cycle" }
+                val used = closure[name] ?: skill(name).also { closure[name] = it }
+                visit(used, chain + name)
+            }
+        }
+        visit(skill, listOf(skill.name))
+        return closure.values.toList()
     }
 }
 
