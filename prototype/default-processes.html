@@ -44,6 +44,7 @@
   <button data-proc="user">user-in-the-loop</button>
   <button data-proc="agent">agent answers</button>
   <button data-proc="recs">recommendations</button>
+  <button data-proc="auto">fully automatic</button>
   <button data-proc="check">Building blocks &amp; open questions</button>
   <span class="spacer"></span>
   <button data-view="expanded">Expanded</button>
@@ -66,8 +67,8 @@ const I = {
     notes: ["Also sets the Run variable <code>clones</code>: every repo cloned so far in this Run <span class='tag q'>Q2</span>"], src: "#8" },
   grill: { kind: "agent", agent: "griller", skill: "grilling", inputs: ["prompt = ${prompt}", "brief = ${scout.output.brief}", "clones = ${clones}"], toggles: "Vault on · resume on",
     result: "{questions[], repos[]}", notes: ["<code>repos</code> = repos it found it needs since the scout, Source map names only <span class='tag q'>Q2</span>"], src: "#7, #19" },
-  cloneMore: { kind: "builtin", what: "Clone repos", inputs: ["repos = ${grill.output.repos}"], result: "[{name, path, commit}]", q: true,
-    notes: ["Skips repos already cloned; an empty list does nothing. Uses the Run's work branch, fixed by the first Clone repos.", "Exists only if Q2 says yes <span class='tag q'>Q2</span>"], src: "#8" },
+  cloneMore: { kind: "builtin", what: "Clone repos", inputs: ["repos = ${grill.output.repos}"], result: "[{name, path, commit}]",
+    notes: ["Skips repos already cloned; an empty list does nothing. Uses the Run's work branch, fixed by the first Clone repos.", "Only in user-in-the-loop, where you see every Round. The unattended Processes never widen the Run's repos; to-spec lists the ones not cloned in the Spec."], src: "#8, this ticket" },
   gwQ: { kind: "gateway", notes: ["yes: <code>${not empty grill.output.questions}</code>", "no: default flow, the loop ends"] },
   answer: { kind: "user", what: "Answer a Round", answers: "grill", result: "{answers: [{id, answer, source: accepted|written}]}",
     notes: ["Appended to the Round log and the Answer History."], src: "#7, #15" },
@@ -76,9 +77,10 @@ const I = {
     answers: "grill", result: "{answers: [{id, answer, why}]}", notes: ["Ants stamps <code>source: agent</code>."], src: "#15" },
   accept: { kind: "builtin", what: "Accept recommendations", answers: "grill", result: "{answers}", notes: ["Ants stamps <code>source: recommended</code>."], src: "#15" },
   answerAtCap: { kind: "user", what: "Answer a Round", answers: "grill", result: "{answers}", notes: ["Same page as user-in-the-loop."], src: "#15" },
+  gl_capEnd: { kind: "end", name: "Cap reached", notes: ["Fully automatic only: at the cap the loop ends and the Run goes on to to-spec, instead of handing the Round to you."], src: "this ticket" },
   gwMerge: { kind: "gateway", notes: ["Merge: both answerers lead back to the griller, which resumes its session with the answers."] },
   tospec: { kind: "agent", agent: "planner", skill: "to-spec", inputs: ["prompt = ${prompt}", "brief = ${scout.output.brief}", "rounds = 'rounds.md'", "clones = ${clones}"], toggles: "resume on",
-    result: "{spec: 'tickets/spec.md'}", notes: ["A fresh session, reading the Round log, not the griller's session."], src: "#7, #23" },
+    result: "{spec: 'tickets/spec.md'}", notes: ["A fresh session, reading the Round log, not the griller's session.", "Lists any repos the griller asked for that were not cloned (the unattended Processes never clone mid-loop)."], src: "#7, #23" },
   approveSpec: { kind: "user", what: "Approve", shows: "tospec", result: "{approved, comment}", src: "#9" },
   gwSpec: { kind: "gateway", notes: ["yes: <code>${approveSpec.approved}</code>", "send back: default flow, to-spec resumes with the comment"] },
   totickets: { kind: "agent", agent: "planner", skill: "to-tickets", inputs: ["spec = ${tospec.output.spec}", "clones = ${clones}"], result: "{spec, tickets[]}", src: "#23" },
@@ -97,8 +99,8 @@ const I = {
 }
 const TPL = {
   scoutAndClone: { name: "Scout and clone", src: "#21", notes: ["Shipped Template."] },
-  grillLoop: { name: "Grill until no questions", src: "#21", notes: ["Shipped Template, one per answerer: (you answer), (an Agent answers), (accept recommendations). The last two carry the cap."] },
-  specApproval: { name: "To-spec and approve", src: "#21", notes: ["Shipped Template."] },
+  grillLoop: { name: "Grill until no questions", src: "#21", notes: ["Shipped Template, one per answerer: (you answer), (an Agent answers), (accept recommendations). The last two carry the cap, and only the first has Clone new repos.", "Fully automatic uses (an Agent answers) with the cap rerouted to end the loop."] },
+  specApproval: { name: "To-spec and approve", src: "#21", notes: ["Shipped Template.", "In fully automatic it is dropped and its Approve deleted, leaving To-spec: the Spec is never approved there, and Review changes is the first wait."] },
   cutAndImplement: { name: "Cut and implement", q: true, notes: ["<b>New</b> Template proposed here <span class='tag q'>Q5</span>: the multi-instance is the fiddliest thing to set up by hand."] },
   reviewAndPush: { name: "Review and push", src: "#22, #24", notes: ["Shipped Template, with fix as Send back's target."] },
 }
@@ -110,23 +112,24 @@ const ev = (pre, x) => [pre + "_start", "startEvent", "", 40, 0]
 const T = {
   scoutAndClone: () => ({ w: 460, nodes: [ev("sc"), ["scout", "serviceTask", "Scout", 150, 0], ["clone", "serviceTask", "Clone repos", 310, 0], ["sc_end", "endEvent", "", 420, 0]],
     flows: [["sc1", "sc_start", "scout"], ["sc2", "scout", "clone"], ["sc3", "clone", "sc_end"]] }),
-  grillLoop: answerer => {
-    const nodes = [ev("gl"), ["grill", "serviceTask", "Grill", 160, 0], ["cloneMore", "serviceTask", "Clone new repos", 330, 0],
-      ["gwQ", "exclusiveGateway", "Any questions?", 470, 0], ["gl_end", "endEvent", "", 580, 0]]
-    const flows = [["gl1", "gl_start", "grill"], ["gl2", "grill", "cloneMore"], ["gl3", "cloneMore", "gwQ"],
+  grillLoop: P => {
+    const answerer = P.grill
+    const nodes = [ev("gl"), ["grill", "serviceTask", "Grill", 160, 0], ["gwQ", "exclusiveGateway", "Any questions?", 470, 0], ["gl_end", "endEvent", "", 580, 0]]
+    const flows = [["gl1", "gl_start", "grill"], ...(answerer ? [["gl2", "grill", "gwQ"]] : [["gl2", "grill", "cloneMore"], ["gl3", "cloneMore", "gwQ"]]),
       ["gl4", "gwQ", "gl_end", "no", null, null, true], ["gl5", "gwQ", answerer ? "gwCap" : "answer", "yes", ["b", "t"], "${not empty grill.output.questions}"]]
     if (!answerer) {
-      nodes.push(["answer", "userTask", "Answer a Round", 470, 140])
+      nodes.push(["answer", "userTask", "Answer a Round", 470, 140], ["cloneMore", "serviceTask", "Clone new repos", 330, 0])
       flows.push(["gl6", "answer", "grill", "", ["l", [160, 140], "b"]])
     } else {
       nodes.push(["gwCap", "exclusiveGateway", "Asked 10 Rounds?", 470, 140], [answerer[0], "serviceTask", answerer[1], 330, 140],
-        ["answerAtCap", "userTask", "Answer a Round", 470, 270], ["gwMerge", "exclusiveGateway", "", 160, 140])
-      flows.push(["gl6", "gwCap", answerer[0], "no", ["l", "r"], null, true], ["gl7", "gwCap", "answerAtCap", "yes", ["b", "t"], "${runs.grill >= 10}"],
-        ["gl8", answerer[0], "gwMerge", "", ["l", "r"]], ["gl9", "answerAtCap", "gwMerge", "", ["l", [160, 270], "b"]], ["gl10", "gwMerge", "grill", "", ["t", "b"]])
+        P.capEnds ? ["gl_capEnd", "endEvent", "Cap reached", 470, 270] : ["answerAtCap", "userTask", "Answer a Round", 470, 270], ["gwMerge", "exclusiveGateway", "", 160, 140])
+      flows.push(["gl6", "gwCap", answerer[0], "no", ["l", "r"], null, true], ["gl7", "gwCap", P.capEnds ? "gl_capEnd" : "answerAtCap", "yes", ["b", "t"], "${runs.grill >= 10}"],
+        ["gl8", answerer[0], "gwMerge", "", ["l", "r"]], ["gl10", "gwMerge", "grill", "", ["t", "b"]], ...(P.capEnds ? [] : [["gl9", "answerAtCap", "gwMerge", "", ["l", [160, 270], "b"]]]))
     }
     return { w: 620, nodes, flows }
   },
-  specApproval: () => ({ w: 620, nodes: [ev("sa"), ["tospec", "serviceTask", "To-spec", 160, 0], ["approveSpec", "userTask", "Approve the Spec", 330, 0],
+  specApproval: P => P.noApprove ? { w: 400, nodes: [ev("sa"), ["tospec", "serviceTask", "To-spec", 160, 0], ["sa_end", "endEvent", "", 290, 0]],
+    flows: [["sa1", "sa_start", "tospec"], ["sa2", "tospec", "sa_end"]] } : ({ w: 620, nodes: [ev("sa"), ["tospec", "serviceTask", "To-spec", 160, 0], ["approveSpec", "userTask", "Approve the Spec", 330, 0],
       ["gwSpec", "exclusiveGateway", "Approved?", 470, 0], ["sa_end", "endEvent", "", 580, 0]],
     flows: [["sa1", "sa_start", "tospec"], ["sa2", "tospec", "approveSpec"], ["sa3", "approveSpec", "gwSpec"], ["sa4", "gwSpec", "sa_end", "yes", null, "${approveSpec.approved}"],
       ["sa5", "gwSpec", "tospec", "send back", ["b", [470, 120], [160, 120], "b"], null, true]] }),
@@ -142,6 +145,7 @@ const PROCS = {
   user: { name: "user-in-the-loop", grill: null },
   agent: { name: "agent answers", grill: ["answerer", "Answer the Round (Agent)"] },
   recs: { name: "recommendations", grill: ["accept", "Accept recommendations"] },
+  auto: { name: "fully automatic", grill: ["answerer", "Answer the Round (Agent)"], capEnds: true, noApprove: true },
 }
 
 // ---------- BPMN XML from the Templates ----------
@@ -150,7 +154,7 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;",
 const side = (n, s) => ({ l: [n.cx - n.w / 2, n.cy], r: [n.cx + n.w / 2, n.cy], t: [n.cx, n.cy - n.h / 2], b: [n.cx, n.cy + n.h / 2] })[s]
 
 function buildXml(key, view) {
-  const P = PROCS[key], order = [["scoutAndClone", T.scoutAndClone()], ["grillLoop", T.grillLoop(P.grill)], ["specApproval", T.specApproval()],
+  const P = PROCS[key], order = [["scoutAndClone", T.scoutAndClone()], ["grillLoop", T.grillLoop(P)], ["specApproval", T.specApproval(P)],
     ["cutAndImplement", T.cutAndImplement()], ["reviewAndPush", T.reviewAndPush()]]
   // Expanded: two rows of Templates. Saved: one row of collapsed boxes, children drawn on their own planes.
   const rows = [[0, 1, 2], [3, 4]], ROWY = [150, 680], N = {}, sps = []
@@ -160,7 +164,7 @@ function buildXml(key, view) {
     const ox = view === "expanded" ? before : 100, oy = view === "expanded" ? ROWY[row] : 200
     t.nodes.forEach(([nid, type, name, x, y, extra]) => N[nid] = { id: nid, type, name, cx: ox + x, cy: oy + y, w: SZ[type][0], h: SZ[type][1], parent: id, ...(extra || {}) })
     const bottom = Math.max(...t.nodes.map(n => n[4] + SZ[n[1]][1] / 2), ...t.flows.flatMap(f => (f[4] || []).filter(Array.isArray).map(p => p[1]))) + 30
-    sps.push({ id, name: TPL[id].name, t, x: before, y: ROWY[row] - 90, w: t.w, h: bottom + 90, cx: view === "expanded" ? before + t.w / 2 : 200 + i * 170, cy: view === "expanded" ? ROWY[row] : 150 })
+    sps.push({ id, name: id === "specApproval" && P.noApprove ? "To-spec" : TPL[id].name, t, x: before, y: ROWY[row] - 90, w: t.w, h: bottom + 90, cx: view === "expanded" ? before + t.w / 2 : 200 + i * 170, cy: view === "expanded" ? ROWY[row] : 150 })
   })
   const flowXml = (fid, a, b, label, cond, def) => `<bpmn:sequenceFlow id="${fid}" name="${esc(label || "")}" sourceRef="${a}" targetRef="${b}">${cond ? `<bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${esc(cond)}</bpmn:conditionExpression>` : ""}</bpmn:sequenceFlow>`
   const defaults = {}
@@ -223,12 +227,12 @@ function info(id) {
     ${row("Settings", e.toggles)}${row("Result", e.result && `<code>${esc(e.result)}</code>`)}</dl>
     ${e.notes ? `<ul>${e.notes.map(n => `<li>${n}</li>`).join("")}</ul>` : ""}${e.src ? `<p style="color:#64748b">Decided in ${e.src}</p>` : ""}`
 }
-const tplOf = (tid, id) => { const t = tid === "grillLoop" ? T.grillLoop(PROCS[cur].grill) : T[tid](); return t.nodes.some(n => n[0] === id) }
+const tplOf = (tid, id) => { const t = T[tid](PROCS[cur]); return t.nodes.some(n => n[0] === id) }
 const intro = () => `<h2>${PROCS[cur].name}</h2>
-  <p>Prompt → five shipped Templates → Done. The three Processes differ only inside <b>Grill until no questions</b>.</p>
+  <p>Prompt → five shipped Templates → Done. The Processes differ inside <b>Grill until no questions</b>; fully automatic also drops <b>Approve the Spec</b>.</p>
   <p class="legend"><span class="tag agent">Agent Task</span><span class="tag user">User Task</span><span class="tag builtin">Built-in Task</span><span class="tag tpl">Template</span><span class="tag q">open question</span></p>
   <p>Click any element for its Agent, Skill, inputs and Result. Red outline = depends on an open question (see the last tab).</p>
-  <h3>Waits on the user</h3><ul><li>Answer a Round${cur === "user" ? " (every Round)" : " (only from Round 10 on)"}</li><li>Approve the Spec</li><li>Review changes</li><li>Push</li><li>any <code>[stuck]</code> / <code>[failed]</code></li></ul>`
+  <h3>Waits on the user</h3><ul>${cur === "auto" ? "" : `<li>Answer a Round${cur === "user" ? " (every Round)" : " (only from Round 10 on)"}</li><li>Approve the Spec</li>`}<li>Review changes</li><li>Push</li><li>any <code>[stuck]</code> / <code>[failed]</code></li></ul>`
 
 // ---------- Building blocks & open questions page ----------
 const CHECK = [
@@ -248,7 +252,8 @@ const CHECK = [
 ]
 const QS = [
   ["Q1 Who writes the Report?", "Ants, mechanically, whenever a Run ends: the start form, each Task's summary, the Rounds with their <code>source</code> (non-user answers listed apart), Tickets, Push and PR Results. No Report Task drawn, so every Process gets one.", "A drawn <b>Write the Report</b> Agent Task (shipped report Skill) before Done; a Process without one gets no Report."],
-  ["Q2 Repos the griller finds mid-loop", "The griller's Result gains <code>repos[]</code>; a second <b>Clone repos</b> sits in the loop (empty = no-op); Ants keeps a Run variable <code>clones</code> (every clone so far) that Tasks read, instead of one Clone repos' Result.", "No Clone repos in the loop: scout's repos are final, and a griller needing another one asks in a Round or goes stuck."],
+  ["Q2 Repos the griller finds mid-loop", "<b>Decided:</b> Clone new repos in the loop of user-in-the-loop only. Unattended Processes never widen the repos; to-spec lists the uncloned ones in the Spec. Ants keeps a Run variable <code>clones</code>.", "Clone in every loop; or clone what the Spec adds after Approve the Spec."],
+  ["Q8 A fully automatic Process", "<b>Decided:</b> a fourth shipped Process. answer-round answers every Round, the cap ends the loop, no Approve the Spec; Review changes and Push still wait. Destination and the Spec glossary entry are reworded.", "Automatic through Push (breaks #8's rule)."],
   ["Q3 Ids when a Template is dropped", "Keep the Template's ids; add a suffix only on a clash (and rewrite references inside it). Then <code>${scout.output.brief}</code> in Grill until no questions finds the scout from Scout and clone.", "Always fresh ids (as written in #21): every cross-Template reference has to be fixed by hand after a drop."],
   ["Q4 What switches on the Blocked-by hold?", "A tick box <b>Items are Tickets</b> on a multi-instance, ticked in the shipped Template: holds by Blocked by, skips ready-for-human, links the drawer to Tickets.", "Implicit: Ants notices the collection holds Ticket ids of the Run's tracker."],
   ["Q5 A fifth shipped Template, Cut and implement", "Yes: to-tickets → Implement each Ticket (parallel, over <code>${totickets.output.tickets}</code>, Items are Tickets). The default Processes are then five Templates in a row.", "Draw the two Tasks bare in the default Processes."],
