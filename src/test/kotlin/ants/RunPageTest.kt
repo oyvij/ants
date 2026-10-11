@@ -86,7 +86,7 @@ class RunPageTest : AntsTest() {
         assertNotNull(Regex("""<(\w+) id="$id"[^>]*>(.*?)</\1>""", RegexOption.DOT_MATCHES_ALL).find(html), "no part $id in $html").groupValues[2]
 
     @Test
-    fun `a Task's drawer shows the latest output and the Agent's task list, live`() {
+    fun `a Task's drawer shows the latest output and the Agent's checklist, live`() {
         setUp()
         fun tool(id: String, name: String, input: String) =
             """{"type":"assistant","message":{"id":"m$id","content":[{"type":"tool_use","id":"t$id","name":"$name","input":$input}]}}"""
@@ -111,7 +111,7 @@ class RunPageTest : AntsTest() {
         assertContains(part(html, "drawer-head"), "running")
         assertContains(part(html, "drawer-output"), "<p>The notes say <strong>dry</strong>.</p>")
         assertFalse("First a look" in part(html, "drawer-output"))
-        val tasks = part(html, "drawer-tasks")
+        val tasks = part(html, "drawer-checklist")
         assertContains(tasks, """<li class="completed">Read the notes</li>""")
         assertContains(tasks, """<li class="in_progress">Write the draft</li>""")
         assertContains(part(html, "drawer-links"), """href="/runs/$run/tasks/draft/transcript"""")

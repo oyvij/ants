@@ -102,8 +102,8 @@ class Runs(
     }
 
     /**
-     * The drawer of the Run's Task [task] as HTML, sent on connect and whenever it changes: its state, So far, task
-     * list, latest output, and the comment box and action when it waits on the user.
+     * The drawer of the Run's Task [task] as HTML, sent on connect and whenever it changes: its state, So far, the
+     * Agent's checklist, latest output, and the comment box and action when it waits on the user.
      */
     @GetMapping("/runs/{id}/tasks/{task}/drawer", produces = [TEXT_EVENT_STREAM_VALUE])
     @ResponseBody

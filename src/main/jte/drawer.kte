@@ -16,10 +16,10 @@
     <h3>So far</h3>
     <p>${transcript.soFar ?: "Nothing yet."}</p>
 </section>
-<section id="drawer-tasks">
-    <h3>Tasks</h3>
+<section id="drawer-checklist">
+    <h3>The Agent's checklist</h3>
 @if(transcript.todos.isEmpty())
-    <p>No task list.</p>
+    <p>No checklist yet.</p>
 @else
     <ul>
 @for(todo in transcript.todos.values)

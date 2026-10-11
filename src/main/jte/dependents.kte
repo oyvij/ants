@@ -1,13 +1,13 @@
-@param users: ants.Users
+@param dependents: ants.Dependents
 <h2>Used by</h2>
-@if(users.none)
+@if(dependents.none)
 <p>Nothing uses it.</p>
 @else
 <ul>
-@for(process in users.processes)
-    <li>Process <a href="/processes/${process.key}">${process.name ?: process.key}</a>@if(process.id in users.older) · version ${process.version}, which live Runs still run@endif</li>
+@for(process in dependents.processes)
+    <li>Process <a href="/processes/${process.key}">${process.name ?: process.key}</a>@if(process.id in dependents.older) · version ${process.version}, which live Runs still run@endif</li>
 @endfor
-@for(skill in users.skills)
+@for(skill in dependents.skills)
     <li>Skill <a href="/skills/${skill.name}">${skill.name}</a></li>
 @endfor
 </ul>

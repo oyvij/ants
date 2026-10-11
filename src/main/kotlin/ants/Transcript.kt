@@ -58,7 +58,7 @@ class Transcript {
     var output: String? = null
         private set
 
-    /** The Agent's task list in this launch, from the task-list tools, by task id. */
+    /** The Agent's checklist in this launch, its todos from claude's Task* tools, by their id. */
     val todos = linkedMapOf<String, Todo>()
 
     class Todo(val subject: String, val status: String)

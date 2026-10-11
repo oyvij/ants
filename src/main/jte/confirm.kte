@@ -1,5 +1,5 @@
 @param question: String
-@param users: ants.Users
+@param dependents: ants.Dependents
 @param action: String
 @param fields: Map<String, String>
 @param back: String
@@ -15,8 +15,8 @@
 <body>
 @template.nav()
 <h1>${question}</h1>
-@if(!users.none)<p role="alert">These use it by name and will break. Ants doesn't change them.</p>@endif
-@template.users(users = users)
+@if(!dependents.none)<p role="alert">These use it by name and will break. Ants doesn't change them.</p>@endif
+@template.dependents(dependents = dependents)
 <form method="post" action="${action}">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
 @for(field in fields.entries)

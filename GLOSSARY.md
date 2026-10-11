@@ -60,6 +60,11 @@ The folder a Run works in, holding its clones and intermediate files, deleted wh
 until the user dismisses it if the Run failed.
 _Avoid_: sandbox, scratch dir
 
+**Run log**:
+What the user and the answerers told a Run's Tasks, in order: every Round, every instruction to a stuck Task and
+every message sent into a session; kept in the Run workspace.
+_Avoid_: history, audit log, journal
+
 **Source map**:
 A list, configured in Ants, giving each repo a short name and saying where it lives, so Processes
 and Tasks can name repos by that name.
@@ -79,6 +84,10 @@ _Avoid_: response, return value
 Everything an Agent Task's Agent said and did across all its launches, readable while it works and
 after the Run ends.
 _Avoid_: log, session, output
+
+**Checklist**:
+The steps an Agent sets itself while it works a Task, each ticked off as it goes.
+_Avoid_: task list, tasks, plan
 
 **Subagent**:
 A helper an Agent's AI CLI starts inside its own session to do part of a Task; not an Agent, and

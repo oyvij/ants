@@ -519,7 +519,7 @@ class AgentLauncher(
         private const val LOST_LOGIN = "Ants' Claude login is missing or expired. Log in again (Settings)"
 
         /**
-         * An Agent's tools when its file names none. claude 2.1.295 has no TodoWrite; its task-list tools are these four
+         * An Agent's tools when its file names none. claude 2.1.295 has no TodoWrite; its checklist tools are these four
          * Task*. Not `Agent`: an Agent starts Subagents only when its file names the Agent tool, as the implementer's does.
          */
         val DEFAULT_TOOLS = listOf(

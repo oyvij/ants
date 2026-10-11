@@ -165,7 +165,7 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy) {
     private fun show(model: Model, form: SkillForm, message: String? = null): String {
         model.addAttribute("form", form)
         model.addAttribute("message", message)
-        model.addAttribute("users", form.name?.let(usedBy::skill))
+        model.addAttribute("dependents", form.name?.let(usedBy::skill))
         return "skill"
     }
 }

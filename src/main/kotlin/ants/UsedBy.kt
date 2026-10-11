@@ -11,20 +11,20 @@ import org.springframework.ui.Model
  * What uses an Agent or a Skill, and so would break if it were renamed or deleted: Process versions, of which [older]
  * are the ids of those that aren't the latest, and Skills. Ants never rewrites a Process.
  */
-class Users(val processes: List<ProcessDefinition>, val older: Set<String> = emptySet(), val skills: List<Skill> = emptyList()) {
+class Dependents(val processes: List<ProcessDefinition>, val older: Set<String> = emptySet(), val skills: List<Skill> = emptyList()) {
     val none get() = processes.isEmpty() && skills.isEmpty()
 }
 
 /** **Used by**: the deployed Processes whose Agent Tasks name an Agent or a Skill, and the Skills that use a Skill. */
 @Component
 class UsedBy(private val repository: RepositoryService, private val runtime: RuntimeService, private val catalogue: Catalogue) {
-    fun agent(name: String) = users(processes("ants.agent", name))
+    fun agent(name: String) = dependents(processes("ants.agent", name))
 
-    fun skill(name: String) = users(processes("ants.skill", name), catalogue.skills().filter { name in it.uses })
+    fun skill(name: String) = dependents(processes("ants.skill", name), catalogue.skills().filter { name in it.uses })
 
-    private fun users(processes: List<ProcessDefinition>, skills: List<Skill> = emptyList()): Users {
+    private fun dependents(processes: List<ProcessDefinition>, skills: List<Skill> = emptyList()): Dependents {
         val latest = repository.createProcessDefinitionQuery().latestVersion().list().map { it.id }.toSet()
-        return Users(processes, processes.map { it.id }.filter { it !in latest }.toSet(), skills)
+        return Dependents(processes, processes.map { it.id }.filter { it !in latest }.toSet(), skills)
     }
 
     /**
@@ -42,10 +42,10 @@ class UsedBy(private val repository: RepositoryService, private val runtime: Run
     }
 }
 
-/** The page asking to confirm [question], listing the [users] that would break; confirming re-posts [fields] to [action]. */
-fun confirm(model: Model, question: String, users: Users, action: String, fields: Map<String, String>, back: String): String {
+/** The page asking to confirm [question], listing the [dependents] that would break; confirming re-posts [fields] to [action]. */
+fun confirm(model: Model, question: String, dependents: Dependents, action: String, fields: Map<String, String>, back: String): String {
     model.addAttribute("question", question)
-    model.addAttribute("users", users)
+    model.addAttribute("dependents", dependents)
     model.addAttribute("action", action)
     model.addAttribute("fields", fields)
     model.addAttribute("back", back)

@@ -103,7 +103,7 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, @Valu
         model.addAttribute("action", agent?.let { "/agents/${it.name}" } ?: "/agents/new")
         model.addAttribute("file", agent?.file?.toString())
         model.addAttribute("readOnly", agent != null && agent.file.parent != folder)
-        model.addAttribute("users", agent?.let { usedBy.agent(it.name) })
+        model.addAttribute("dependents", agent?.let { usedBy.agent(it.name) })
         model.addAttribute("error", error)
         model.addAttribute("notice", notice)
         return "agent"
