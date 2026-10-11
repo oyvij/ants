@@ -3,7 +3,20 @@
                   xmlns:operaton="http://operaton.org/schema/1.0/bpmn"
                   id="definitions" targetNamespace="http://bpmn.io/schema/bpmn">
   <bpmn:process id="agent-task" name="Agent Task" isExecutable="true" operaton:historyTimeToLive="180">
-    <bpmn:startEvent id="start" />
+    <bpmn:startEvent id="start">
+      <bpmn:extensionElements>
+        <operaton:formData>
+          <operaton:formField id="prompt" label="Prompt" type="string">
+            <operaton:properties>
+              <operaton:property id="ants.type" value="markdown" />
+            </operaton:properties>
+            <operaton:validation>
+              <operaton:constraint name="required" />
+            </operaton:validation>
+          </operaton:formField>
+        </operaton:formData>
+      </bpmn:extensionElements>
+    </bpmn:startEvent>
     <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="draft" />
     <bpmn:serviceTask id="draft" name="Draft" operaton:type="external" operaton:topic="agent">
       <bpmn:extensionElements>

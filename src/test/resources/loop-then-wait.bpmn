@@ -5,7 +5,14 @@
   <bpmn:process id="loop-then-wait" name="Loop then wait" isExecutable="true" operaton:historyTimeToLive="180">
     <bpmn:startEvent id="start" />
     <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="a" />
-    <bpmn:task id="a" />
+    <bpmn:serviceTask id="a" operaton:type="external" operaton:topic="agent">
+      <bpmn:extensionElements>
+        <operaton:properties>
+          <operaton:property name="ants.agent" value="writer" />
+          <operaton:property name="ants.skill" value="draft" />
+        </operaton:properties>
+      </bpmn:extensionElements>
+    </bpmn:serviceTask>
     <bpmn:sequenceFlow id="f2" sourceRef="a" targetRef="again" />
     <bpmn:exclusiveGateway id="again" default="f4" />
     <bpmn:sequenceFlow id="f3" sourceRef="again" targetRef="a">

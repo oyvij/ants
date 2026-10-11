@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+                  id="definitions" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="start-form" name="Start form" isExecutable="true" camunda:historyTimeToLive="180">
+    <bpmn:startEvent id="start">
+      <bpmn:extensionElements>
+        <camunda:formData>
+          <camunda:formField id="prompt" label="Prompt" type="string">
+            <camunda:properties>
+              <camunda:property id="ants.type" value="markdown" />
+              <camunda:property id="ants.help" value="What the Run should build" />
+            </camunda:properties>
+            <camunda:validation>
+              <camunda:constraint name="required" />
+            </camunda:validation>
+          </camunda:formField>
+          <camunda:formField id="workBranch" label="Work branch" type="string">
+            <camunda:properties>
+              <camunda:property id="ants.help" value="Leave it empty for the scout to name one" />
+            </camunda:properties>
+          </camunda:formField>
+          <camunda:formField id="repos" label="Repos" type="string">
+            <camunda:properties>
+              <camunda:property id="ants.type" value="repos" />
+            </camunda:properties>
+          </camunda:formField>
+        </camunda:formData>
+      </bpmn:extensionElements>
+    </bpmn:startEvent>
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="end" />
+    <bpmn:endEvent id="end" />
+  </bpmn:process>
+</bpmn:definitions>

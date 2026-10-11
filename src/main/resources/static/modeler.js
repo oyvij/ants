@@ -180,6 +180,81 @@ const panels = {
     },
 }
 
+// The start form's field types, by the `ants.type` property each field carries (the engine only knows `string`).
+const fieldTypes = {text: "Text", markdown: "Markdown", repos: "Repos"}
+
+// A field's variable name, derived from its label: "Work branch" is workBranch.
+const camel = label => label.toLowerCase().replace(/^[^a-z]+/, "").replace(/[^a-z0-9]+(.)?/g, (_, c) => c ? c.toUpperCase() : "")
+
+// True while the panel writes the diagram itself, so it isn't redrawn under the user's cursor.
+let quiet = false
+
+// The start event's `camunda:formData` fields as plain objects, and back.
+function readForm(bo) {
+    const data = (bo.extensionElements?.values || []).find(value => value.$type === "camunda:FormData")
+    return (data?.fields || []).map(field => {
+        const props = Object.fromEntries((field.properties?.values || []).map(p => [p.id, p.value]))
+        return {
+            id: field.id || "", label: field.label || "", type: props["ants.type"] || "text", help: props["ants.help"] || "",
+            stored: props["ants.stored"] || "", required: (field.validation?.constraints || []).some(c => c.name === "required"),
+        }
+    })
+}
+
+function writeForm(element, fields) {
+    const factory = modeler.get("bpmnFactory")
+    const field = f => {
+        const props = [["ants.type", f.type], ["ants.help", f.help], ["ants.stored", f.stored]].filter(([, value]) => value)
+        const attrs = {id: f.id, label: f.label, type: "string"}
+        if (props.length) attrs.properties = factory.create("camunda:Properties", {values: props.map(([id, value]) => factory.create("camunda:Property", {id, value}))})
+        if (f.required) attrs.validation = factory.create("camunda:Validation", {constraints: [factory.create("camunda:Constraint", {name: "required"})]})
+        return factory.create("camunda:FormField", attrs)
+    }
+    const others = (element.businessObject.extensionElements?.values || []).filter(value => value.$type !== "camunda:FormData")
+    const values = fields.length ? [...others, factory.create("camunda:FormData", {fields: fields.map(field)})] : others
+    quiet = true
+    try {
+        modeler.get("modeling").updateProperties(element, {extensionElements: factory.create("bpmn:ExtensionElements", {values})})
+    } finally {
+        quiet = false
+    }
+}
+
+// The start form: each field's label, variable name, type, required, help and stored value, in order.
+function startForm(element) {
+    const fields = readForm(element.businessObject)
+    const save = () => writeForm(element, fields)
+    const redraw = () => { save(); explain(element) }
+    const input = (f, key, props = {}) => el("input", {value: f[key], ...props, oninput: event => { f[key] = event.target.value; save() }})
+    return el("div", {},
+        el("h3", {textContent: "Start form"}),
+        ...fields.map((f, i) => {
+            const name = input(f, "id")
+            const label = input(f, "label", {
+                oninput: event => {
+                    if (f.id === camel(f.label)) name.value = f.id = camel(event.target.value) // derived until the user renames it
+                    f.label = event.target.value
+                    save()
+                },
+            })
+            const type = el("select", {onchange: () => { f.type = type.value; save() }},
+                ...Object.entries(fieldTypes).map(([value, text]) => el("option", {value, textContent: text, selected: value === f.type})))
+            const move = (to, text) => el("button", {textContent: text, disabled: !fields[to], onclick: () => { [fields[i], fields[to]] = [fields[to], fields[i]]; redraw() }})
+            return el("fieldset", {},
+                el("label", {}, "Label ", label), el("br"),
+                el("label", {}, "Variable ", name), el("br"),
+                el("label", {}, "Type ", type), " ",
+                el("label", {}, el("input", {type: "checkbox", checked: f.required, onchange: event => { f.required = event.target.checked; save() }}), " Required"), el("br"),
+                el("label", {}, "Help ", input(f, "help")), el("br"),
+                el("label", {title: "Used by the Schedule; Repos as names separated by commas"}, "Stored value ", input(f, "stored")), el("br"),
+                move(i - 1, "Up"), move(i + 1, "Down"),
+                el("button", {textContent: "Remove", onclick: () => { fields.splice(i, 1); redraw() }}))
+        }),
+        el("button", {textContent: "Add field", onclick: () => { fields.push({id: "", label: "", type: "text", help: "", stored: "", required: false}); redraw() }}))
+}
+panels.start = startForm
+panels["timer-start"] = startForm
+
 function explain(element) {
     const target = element.labelTarget || element
     const kind = kindOf(target)
@@ -190,6 +265,7 @@ function explain(element) {
 
 modeler.on("selection.changed", ({newSelection}) => explain(newSelection.length === 1 ? newSelection[0] : modeler.get("canvas").getRootElement()))
 modeler.on("element.changed", ({element}) => {
+    if (quiet) return
     const selection = modeler.get("selection").get()
     if (selection.length === 1 && selection[0] === element) explain(element)
 })

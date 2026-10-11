@@ -15,6 +15,7 @@ import org.operaton.bpm.model.bpmn.instance.ServiceTask
 import org.operaton.bpm.model.bpmn.instance.StartEvent
 import org.operaton.bpm.model.bpmn.instance.SubProcess
 import org.operaton.bpm.model.bpmn.instance.UserTask
+import org.operaton.bpm.model.bpmn.instance.operaton.OperatonFormData
 import org.operaton.bpm.model.bpmn.instance.operaton.OperatonInputOutput
 import org.operaton.bpm.model.xml.ModelException
 import org.operaton.bpm.model.xml.instance.DomElement
@@ -29,7 +30,7 @@ data class Check(val element: String?, val message: String, val warning: Boolean
  */
 @Component
 class Checks {
-    private val rules: List<(BpmnModelInstance) -> List<Check>> = listOf(::refusedElements, ::refusedUses, ::oneStartEvent, ::emptyInputs)
+    private val rules: List<(BpmnModelInstance) -> List<Check>> = listOf(::refusedElements, ::refusedUses, ::oneStartEvent, ::startFormNames, ::emptyInputs)
 
     fun of(bpmn: String): List<Check> = try {
         Bpmn.readModelFromStream(bpmn.byteInputStream()).let { model -> rules.flatMap { it(model) } }
@@ -114,6 +115,15 @@ private fun oneStartEvent(model: BpmnModelInstance) = (
         if (starts.isEmpty()) listOf(Check(scope.id, "${scope.label} has no start event."))
         else starts.drop(1).map { Check(it.id, "${it.label} is a second start event; a Process starts at exactly one.") }
     }
+
+/** Each start-form field is a Run variable, so it needs a name of its own. */
+private fun startFormNames(model: BpmnModelInstance) = model.getModelElementsByType(StartEvent::class.java).flatMap { start ->
+    val fields = start.extensionElements?.elementsQuery?.filterByType(OperatonFormData::class.java)?.list().orEmpty().flatMap { it.operatonFormFields }
+    fields.groupBy { it.operatonId }.filter { (name, same) -> !name.isNullOrBlank() && same.size > 1 }.keys
+        .map { Check(start.id, "${start.label} has more than one start-form field named $it.") } +
+        fields.filter { it.operatonId.isNullOrBlank() }
+            .map { Check(start.id, "${start.label} has a start-form field, ${it.operatonLabel}, without a variable name.") }
+}
 
 /** An Agent Task input left empty: allowed, but likely a slip. */
 private fun emptyInputs(model: BpmnModelInstance) = model.getModelElementsByType(ServiceTask::class.java)

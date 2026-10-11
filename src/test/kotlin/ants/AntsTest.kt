@@ -107,9 +107,12 @@ class Browser(private val base: String) {
 
     fun get(path: String) = send(HttpRequest.newBuilder(URI("$base$path")).GET())
 
-    fun post(path: String, form: Map<String, String>): Page {
+    fun post(path: String, form: Map<String, String>): Page = post(path, form.toList())
+
+    /** Posts a form whose fields may repeat, such as a multi-select's. */
+    fun post(path: String, form: List<Pair<String, String>>): Page {
         val body = (form + listOfNotNull(csrf?.let { "_csrf" to it }))
-            .entries.joinToString("&") { (k, v) -> "${enc(k)}=${enc(v)}" }
+            .joinToString("&") { (k, v) -> "${enc(k)}=${enc(v)}" }
         return send(
             HttpRequest.newBuilder(URI("$base$path"))
                 .header("Content-Type", "application/x-www-form-urlencoded")

@@ -103,6 +103,27 @@ class ChecksTest : AntsTest() {
     }
 
     @Test
+    fun `start-form fields need a variable name, each its own`() {
+        val bpmn = diagram("").replace(
+            """<bpmn:startEvent id="start" />""",
+            """
+            <bpmn:startEvent id="start" name="Begin"><bpmn:extensionElements><operaton:formData>
+              <operaton:formField id="prompt" label="Prompt" type="string" />
+              <operaton:formField id="prompt" label="Prompt again" type="string" />
+              <operaton:formField id=" " label="Nameless" type="string" />
+            </operaton:formData></bpmn:extensionElements></bpmn:startEvent>
+            """,
+        )
+        assertEquals(
+            listOf(
+                mapOf("element" to "start", "message" to "Begin (start) has more than one start-form field named prompt.", "warning" to false),
+                mapOf("element" to "start", "message" to "Begin (start) has a start-form field, Nameless, without a variable name.", "warning" to false),
+            ),
+            checks(bpmn),
+        )
+    }
+
+    @Test
     fun `a pool is refused`() {
         val checks = checks(diagram("", """<bpmn:collaboration id="c"><bpmn:participant id="pool" processRef="checked" /></bpmn:collaboration>"""))
         assertEquals(listOf(mapOf("element" to "pool", "message" to "pool is a participant, which Ants doesn't run.", "warning" to false)), checks)
