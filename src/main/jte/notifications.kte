@@ -1,0 +1,15 @@
+@param entries: List<ants.Entry>
+@param colorScheme: String = "light dark"
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="color-scheme" content="${colorScheme}">
+    <title>Notification list · Ants</title>
+</head>
+<body>
+@template.nav()
+<h1>Notification list</h1>
+@template.entries(entries = entries)
+</body>
+</html>

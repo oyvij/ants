@@ -1,0 +1,238 @@
+package ants
+
+import org.junit.jupiter.api.Test
+import java.nio.file.Files
+import java.nio.file.Path
+import kotlin.io.path.createDirectories
+import kotlin.io.path.deleteIfExists
+import kotlin.io.path.exists
+import kotlin.io.path.readText
+import kotlin.io.path.writeText
+import kotlin.test.assertContains
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
+
+class AgentsTest : AntsTest() {
+    private val browser by lazy { browser().also { it.login() } }
+    private val agents = home.resolve("agents").createDirectories()
+
+    /** The page, with JTE's escaped quotes read back. */
+    private fun get(path: String) = browser.get(path).body.replace("&#34;", "\"")
+
+    private fun post(path: String, form: Map<String, String>): Browser.Page {
+        browser.get(path)
+        return browser.post(path, form)
+    }
+
+    private val reviewer = mapOf(
+        "name" to "reviewer",
+        "description" to "Reviews changes.",
+        "cli" to "claude",
+        "skills" to "code-review, tdd",
+        "tool.Read" to "on",
+        "tool.Grep" to "on",
+        "tool.Bash" to "on",
+        "limit.Bash" to "git log *, git diff *",
+        "other-tools" to "mcp__github__get_issue",
+        "model" to "claude-sonnet-5-5",
+        "instructions" to "Review carefully.",
+    )
+
+    private val reviewerFile = """
+        ---
+        name: reviewer
+        description: Reviews changes.
+        cli: claude
+        skills: code-review, tdd
+        tools: Bash(git log *), Bash(git diff *), Grep, Read, mcp__github__get_issue
+        model: claude-sonnet-5-5
+        ---
+        Review carefully.
+
+        """.trimIndent()
+
+    @Test
+    fun `creating and editing an Agent writes the agent file, and the form round-trips it`() {
+        agents.resolve("reviewer.md").deleteIfExists()
+        val created = post("/agents/new", reviewer)
+        assertEquals("/agents/reviewer", created.path)
+        assertEquals(reviewerFile, agents.resolve("reviewer.md").readText())
+
+        val page = get("/agents/reviewer")
+        assertContains(page, """name="description" value="Reviews changes."""")
+        assertContains(page, """name="tool.Bash" checked""")
+        assertContains(page, """name="limit.Bash" value="git log *, git diff *"""")
+        assertContains(page, """name="other-tools" value="mcp__github__get_issue"""")
+        assertContains(page, """value="claude-sonnet-5-5" selected""")
+        assertContains(page, ">Review carefully.</textarea>")
+
+        post("/agents/reviewer", reviewer)
+        assertEquals(reviewerFile, agents.resolve("reviewer.md").readText())
+
+        post("/agents/reviewer", reviewer + ("model" to "other") + ("model-other" to "claude-opus-5-5[1m]") + ("instructions" to "Review harder."))
+        val edited = agents.resolve("reviewer.md").readText()
+        assertContains(edited, "model: claude-opus-5-5[1m]\n")
+        assertContains(edited, "---\nReview harder.\n")
+        assertContains(get("/agents/reviewer"), """name="model-other" value="claude-opus-5-5[1m]"""")
+    }
+
+    @Test
+    fun `a hand-written agent file shows on the form, its limits under Limit and its other keys kept`() {
+        agents.resolve("scout.md").writeText("---\nname: scout\ncolor: blue\ntools: Agent(knowledge-searcher, worker), Read\n---\nScout.\n")
+        val page = get("/agents/scout")
+        assertContains(page, """name="tool.Agent" checked""")
+        assertContains(page, """name="limit.Agent" value="knowledge-searcher, worker"""")
+        post("/agents/scout", mapOf("name" to "scout", "cli" to "claude", "tool.Read" to "on", "instructions" to "Scout."))
+        assertEquals("---\nname: scout\ncli: claude\ntools: Read\ncolor: blue\n---\nScout.\n", agents.resolve("scout.md").readText())
+    }
+
+    /** Runs [check] with [folder] as an extra Agent folder in settings. */
+    private fun withExtraFolder(folder: Path, check: () -> Unit) {
+        val settings = home.resolve("settings.yaml")
+        val before = settings.readText()
+        settings.writeText("agent-folders: [$folder]\n")
+        try {
+            check()
+        } finally {
+            settings.writeText(before)
+        }
+    }
+
+    @Test
+    fun `shipped Agents and Agents from extra folders are read-only, and Copy makes an editable one`() {
+        val extra = Files.createTempDirectory("extra-agents")
+        extra.resolve("outsider.md").writeText("---\nname: outsider\ndescription: From Varde.\ncolor: red\n---\nLook around.\n")
+        agents.resolve("outsider-copy.md").deleteIfExists()
+        agents.resolve("shipped-writer-copy.md").deleteIfExists()
+        withExtraFolder(extra) {
+            val list = get("/agents")
+            assertContains(list, """<a href="/agents/shipped-writer">shipped-writer</a>""")
+            assertContains(list, """<a href="/agents/outsider">outsider</a>""")
+            for (name in listOf("shipped-writer", "outsider")) {
+                val page = get("/agents/$name")
+                assertContains(page, "<fieldset disabled>")
+                assertFalse("<button>Save</button>" in page)
+                assertEquals(403, post("/agents/$name", mapOf("name" to name, "instructions" to "Changed.")).status)
+            }
+            assertEquals("/agents/outsider-copy", post("/agents/outsider/copy", emptyMap()).path)
+            assertEquals("---\nname: outsider-copy\ndescription: From Varde.\ncli: claude\ntools: ${AgentLauncher.DEFAULT_TOOLS.joinToString(", ")}\ncolor: red\n---\nLook around.\n",
+                agents.resolve("outsider-copy.md").readText())
+            assertFalse("<fieldset disabled>" in get("/agents/outsider-copy"))
+            post("/agents/outsider-copy", mapOf("name" to "outsider-copy", "cli" to "claude", "instructions" to "Look closer."))
+            assertContains(agents.resolve("outsider-copy.md").readText(), "Look closer.")
+            assertEquals("Look around.\n", extra.resolve("outsider.md").readText().substringAfterLast("---\n"))
+            assertEquals("/agents/shipped-writer-copy", post("/agents/shipped-writer/copy", emptyMap()).path)
+        }
+    }
+
+    @Test
+    fun `names are unique across all folders`() {
+        val extra = Files.createTempDirectory("extra-agents")
+        extra.resolve("outsider.md").writeText("Look around.\n")
+        agents.resolve("mine.md").writeText("---\nname: mine\n---\nMine.\n")
+        agents.resolve("other.md").deleteIfExists()
+        withExtraFolder(extra) {
+            for (taken in listOf("shipped-writer", "outsider", "mine")) {
+                val refused = post("/agents/new", mapOf("name" to taken, "cli" to "claude"))
+                assertContains(refused.body, "An Agent named $taken already exists.")
+            }
+            post("/agents/new", mapOf("name" to "other", "cli" to "claude"))
+            assertContains(post("/agents/other", mapOf("name" to "mine", "cli" to "claude")).body, "An Agent named mine already exists.")
+            assertTrue(agents.resolve("other.md").exists())
+        }
+        assertContains(post("/agents/new", mapOf("name" to "../escape", "cli" to "claude")).body, "An Agent's name is up to 64 lowercase letters, digits and hyphens.")
+        assertContains(post("/agents/new", mapOf("name" to "a".repeat(65), "cli" to "claude")).body, "up to 64 lowercase letters")
+        for (route in listOf("new", "import")) {
+            assertContains(post("/agents/new", mapOf("name" to route, "cli" to "claude")).body, "The Agents page keeps the name $route for itself.")
+            assertFalse(agents.resolve("$route.md").exists())
+        }
+    }
+
+    @Test
+    fun `renaming an Agent moves its file`() {
+        agents.resolve("old-name.md").writeText("---\nname: old-name\n---\nHi.\n")
+        agents.resolve("new-name.md").deleteIfExists()
+        assertEquals("/agents/new-name", post("/agents/old-name", mapOf("name" to "new-name", "cli" to "claude", "instructions" to "Hi.", "confirm" to "on")).path)
+        assertFalse(agents.resolve("old-name.md").exists())
+        assertContains(agents.resolve("new-name.md").readText(), "name: new-name\n")
+    }
+
+    private fun import(name: String, text: String): String {
+        browser.get("/agents")
+        return browser.upload("/agents/import", "file", name, text.toByteArray()).body.replace("&#34;", "\"")
+    }
+
+    @Test
+    fun `Import fills the create form and drops unknown keys with a notice, or refuses with a reason`() {
+        val filled = import("helper.md", "---\nname: helper\ndescription: Helps.\ncolor: green\nmemory: user\ntools: Read, Grep\nmodel: haiku\n---\nHelp out.\n")
+        assertContains(filled, "<h1>New Agent</h1>")
+        assertContains(filled, """action="/agents/new"""")
+        assertContains(filled, """name="name" value="helper"""")
+        assertContains(filled, """name="tool.Grep" checked""")
+        assertContains(filled, """value="haiku" selected""")
+        assertContains(filled, ">Help out.</textarea>")
+        assertContains(filled, "Dropped the keys Ants doesn't use: color, memory.")
+
+        assertContains(import("broken.md", "---\nname: [broken\n---\nBody.\n"), "broken.md has broken YAML")
+        assertContains(import("gemini.md", "---\nname: gemini\ncli: gemini\n---\nBody.\n"), "gemini.md runs cli gemini, and Ants runs only claude or codex.")
+    }
+
+    @Test
+    fun `ticking Offer as a Subagent on a codex Agent is refused`() {
+        agents.resolve("searcher.md").deleteIfExists()
+        val refused = post("/agents/new", mapOf("name" to "searcher", "cli" to "codex", "subagent" to "on"))
+        assertContains(refused.body, "Only a claude Agent can be offered as a Subagent.")
+        assertFalse(agents.resolve("searcher.md").exists())
+        post("/agents/new", mapOf("name" to "searcher", "cli" to "claude", "subagent" to "on"))
+        assertContains(agents.resolve("searcher.md").readText(), "ants-subagent: true\n")
+        assertContains(get("/agents/searcher"), """name="subagent" checked""")
+    }
+
+    @Test
+    fun `the model dropdown lists current models and aliases, and a deprecated model warns`() {
+        val page = get("/agents/new")
+        assertContains(page, ">opus → claude-opus-5-5</option>")
+        assertContains(page, "sonnet → claude-sonnet-5-5</option>")
+        assertContains(page, ">claude-haiku-5-5</option>")
+        assertContains(page, ">claude-sonnet-4-5-20250929 (deprecated, retires November 30, 2026)</option>")
+        assertFalse("claude-opus-4-1-20250805" in page) // retired
+        assertContains(page, ">Other model ID…</option>")
+
+        agents.resolve("old.md").writeText("---\nname: old\nmodel: claude-sonnet-4-5-20250929\n---\n")
+        assertContains(get("/agents/old"), "claude-sonnet-4-5-20250929 is deprecated and retires November 30, 2026.")
+    }
+
+    @Test
+    fun `an edit reaches a live Run at its next Task launch`() {
+        val claude = FakeClaude()
+        val settings = home.resolve("settings.yaml")
+        val before = settings.readText()
+        settings.writeText("claude:\n  command: [${claude.command}]\n")
+        try {
+            agents.resolve("writer.md").deleteIfExists()
+            post("/agents/new", mapOf("name" to "writer", "cli" to "claude", "tool.Read" to "on", "model" to "sonnet", "instructions" to "Write plainly."))
+            val skill = home.resolve("skills/draft").createDirectories()
+            skill.resolve("SKILL.md").writeText("---\nname: draft\ndescription: Drafts a text.\n---\nDraft the text.\n")
+            skill.resolve("result.schema.json").deleteIfExists()
+            fun result(result: String) = """{"type":"result","subtype":"success","session_id":"${'$'}SESSION","structured_output":$result}"""
+            claude.session("draft", result("""{"outcome":"stuck","summary":"No tone.","needs":"Which tone?"}"""))
+            claude.session("draft", 2, result("""{"outcome":"done","summary":"Drafted.","output":{}}"""))
+            browser.import("agent-task.bpmn")
+            val run = browser.post("/processes/agent-task/runs", mapOf("prompt" to "Say hello")).path
+            var entry = ""
+            val row = Regex("""<tr>(?:(?!</tr>).)*?"$run"(?:(?!</tr>).)*?href="(/notifications/[^"]+)"""",RegexOption.DOT_MATCHES_ALL)
+            eventually { entry = assertNotNull(row.find(browser.get("/notifications").body)).groupValues[1] }
+
+            post("/agents/writer", mapOf("name" to "writer", "cli" to "claude", "tool.Read" to "on", "tool.Grep" to "on", "model" to "opus", "instructions" to "Write warmly."))
+            browser.post(entry, mapOf("action" to "fresh", "instruction" to ""))
+            eventually { assertContains(browser.get(run).body, "State: Completed") }
+            val (first, second) = claude.launches("draft")
+            assertEquals(listOf("sonnet", "Write plainly.", "Read"), listOf(first.flag("--model"), first.flag("--append-system-prompt"), first.flag("--tools")))
+            assertEquals(listOf("opus", "Write warmly.", "Grep,Read"), listOf(second.flag("--model"), second.flag("--append-system-prompt"), second.flag("--tools")))
+        } finally {
+            settings.writeText(before)
+        }
+    }
+}

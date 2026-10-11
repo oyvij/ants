@@ -3,7 +3,11 @@ package ants
 import org.springframework.boot.builder.SpringApplicationBuilder
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.test.context.SpringBootTest.WebEnvironment.RANDOM_PORT
+import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.boot.test.web.server.LocalServerPort
+import org.springframework.context.annotation.Bean
+import org.springframework.context.annotation.Import
+import org.springframework.context.annotation.Primary
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
 import java.net.CookieManager
@@ -14,9 +18,16 @@ import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.Clock
+import java.time.Duration
+import java.time.Instant
+import java.time.ZoneId
+import java.util.concurrent.BlockingQueue
+import java.util.concurrent.LinkedBlockingQueue
 
 /** Boots Ants on a random port with a temporary ANTS_HOME (and so a temporary H2), driven over HTTP. */
 @SpringBootTest(webEnvironment = RANDOM_PORT)
+@Import(AntsTest.Time::class)
 abstract class AntsTest {
     @LocalServerPort
     var port = 0
@@ -27,6 +38,18 @@ abstract class AntsTest {
         /** Shared by every test in the JVM: a test that writes a file into it resets that file. */
         val home: Path = tempHome()
 
+        /** What only a login shell finds: Ants' login shell is a fake that puts this folder on PATH only with `-l`. */
+        val loginBin: Path = Files.createDirectories(Files.createTempDirectory("fake-shell").resolve("bin"))
+
+        /**
+         * The fake login shell. Only `-l` reads the "profile", the way only a login shell reads the user's, and puts
+         * [loginBin] before the system folders alone, so Detect never finds a real claude or nono.
+         */
+        val shell: Path = loginBin.resolveSibling("sh").also {
+            Files.writeString(it, "#!/bin/sh\n[ \"$1\" = -l ] && PATH=\"$loginBin:/usr/bin:/bin\" && shift\n[ \"$1\" = -c ] && exec /bin/sh -c \"$2\"\n")
+            it.toFile().setExecutable(true)
+        }
+
         /** A temporary ANTS_HOME that doesn't exist yet. */
         fun tempHome(): Path = Files.createTempDirectory("ants-test").resolve("ants")
 
@@ -34,18 +57,42 @@ abstract class AntsTest {
          * Boots and closes a second Ants on [home]. Operaton keeps engines and Cockpit's runtime JVM-wide, so it runs
          * without the webapp and with an engine of its own, or closing it would break the shared Ants' Cockpit.
          */
-        fun bootAnother(home: Path, vararg args: String) = SpringApplicationBuilder(AntsApplication::class.java).run(
+        fun bootAnother(home: Path, vararg args: String) = startAnother(home, *args).close()
+
+        /** Starts a second Ants on [home], as [bootAnother] does, and leaves it running. */
+        fun startAnother(home: Path, vararg args: String) = SpringApplicationBuilder(AntsApplication::class.java).run(
             "--ants.home=$home",
+            "--ants.shell=$shell",
             "--server.port=0",
             "--operaton.bpm.process-engine-name=another",
             "--spring.autoconfigure.exclude=org.operaton.bpm.spring.boot.starter.webapp.OperatonBpmWebappAutoConfiguration",
             *args,
-        ).close()
+        )
+
+        /** Ants' clock, shared like [home]: a test that moves it puts it back. */
+        val clock = MovableClock()
 
         @JvmStatic
         @DynamicPropertySource
-        fun antsHome(registry: DynamicPropertyRegistry) = registry.add("ants.home") { home.toString() }
+        fun antsHome(registry: DynamicPropertyRegistry) {
+            registry.add("ants.home") { home.toString() }
+            registry.add("ants.shell") { shell.toString() }
+        }
     }
+
+    @TestConfiguration
+    class Time {
+        @Bean
+        @Primary
+        fun movableClock(): Clock = clock
+    }
+}
+
+/** The system clock, moved forward by [offset], so tests reach a time without waiting for it. */
+class MovableClock(@Volatile var offset: Duration = Duration.ZERO) : Clock() {
+    override fun instant(): Instant = Instant.now() + offset
+    override fun getZone(): ZoneId = ZoneId.systemDefault()
+    override fun withZone(zone: ZoneId) = throw UnsupportedOperationException()
 }
 
 /** A user with a browser: keeps cookies, follows redirects and posts forms with their CSRF token. */
@@ -88,6 +135,14 @@ class Browser(private val base: String) {
     fun import(file: String): Page {
         get("/processes")
         return upload("/processes", "file", file, javaClass.getResource("/$file")!!.readBytes())
+    }
+
+    /** Opens an SSE stream the way a page's `EventSource` does; each event's data arrives on the queue. */
+    fun events(path: String): BlockingQueue<String> {
+        val events = LinkedBlockingQueue<String>()
+        client.sendAsync(HttpRequest.newBuilder(URI("$base$path")).header("Accept", "text/event-stream").GET().build(), HttpResponse.BodyHandlers.ofLines())
+            .thenAccept { response -> response.body().forEach { if (it.startsWith("data:")) events += it.removePrefix("data:") } }
+        return events
     }
 
     fun login(password: String = "admin"): Page {

@@ -35,6 +35,8 @@ dependencies {
     implementation("gg.jte:jte-kotlin:$jte")
     implementation("org.jetbrains.kotlin:kotlin-reflect")
     implementation("com.networknt:json-schema-validator:2.0.4")
+    implementation("tools.jackson.dataformat:jackson-dataformat-toml") // reads Varde's config.toml
+    implementation("org.commonmark:commonmark:0.30.1")
     runtimeOnly("com.h2database:h2")
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
@@ -59,6 +61,16 @@ tasks.processResources {
         include("*.production.min.js", "assets/**")
         into("static/vendor/camunda-bpmn-js")
     }
+    // CodeMirror 6 as plain ES modules: each file the import map in codemirror.kte names, and only those, copied from
+    // the one place pnpm put it: a direct dependency in node_modules, any other package in the hoisted .pnpm root.
+    val importMap = file("src/main/jte/codemirror.kte")
+    inputs.file(importMap)
+    for (path in Regex(""""/vendor/codemirror/([^"]+)"""").findAll(importMap.readText()).map { it.groupValues[1] }) {
+        // Gradle also asks before pnpmInstall has run, when neither exists yet; the answer at copy time is what counts.
+        from({ listOf("node_modules", "node_modules/.pnpm/node_modules").map { file("$it/$path") }.firstOrNull { it.exists() } ?: emptyList<File>() }) {
+            into("static/vendor/codemirror/" + path.substringBeforeLast('/'))
+        }
+    }
 }
 
 tasks.withType<Test> {
@@ -70,6 +82,8 @@ tasks.withType<Test> {
 
 tasks.test {
     useJUnitPlatform { excludeTags("live") }
+    // Only the system folders, so a CLI run by its bare name, such as claude or nono, is never the real one.
+    environment("PATH", "/usr/bin:/bin")
     // Ants must strip these from every Agent's environment, even when the allow-list names them.
     environment("ANTHROPIC_API_KEY", "sk-ant-test")
     environment("CLAUDE_CODE_RETRY_WATCHDOG", "1")

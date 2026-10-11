@@ -1,0 +1,45 @@
+@param form: ants.SkillForm
+@param message: String? = null
+@param dependents: ants.Dependents?
+@param _csrf: org.springframework.security.web.csrf.CsrfToken
+@param colorScheme: String = "light dark"
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="color-scheme" content="${colorScheme}">
+    <title>${form.name ?: "New Skill"} · Skills · Ants</title>
+</head>
+<body>
+@template.nav()
+<h1>${form.name ?: "New Skill"}</h1>
+@if(message != null)<p role="alert">${message}</p>@endif
+@if(form.readOnly)
+<form method="post" action="/skills/${form.name}/copy">
+    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+    <p>From <code>${form.where}</code>, read-only. <button>Copy</button> makes your own.</p>
+</form>
+@elseif(form.name != null)
+<p>In <code>${form.where}</code>. Edits reach live Runs at their next launch.</p>
+@endif
+<form method="post" action="/skills/${form.name ?: "new"}" class="skill">
+    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+    <p><label>SKILL.md<br><textarea name="skill" rows="20" cols="80" readonly="${form.readOnly}">${form.skill}</textarea></label></p>
+    <p><label>result.schema.json, the <code>output</code> the Skill promises; empty for any output<br><textarea name="schema" rows="12" cols="80" readonly="${form.readOnly}">${form.schema}</textarea></label></p>
+@if(!form.readOnly)
+    <p><button>Save</button></p>
+@endif
+</form>
+@if(dependents != null)
+@template.dependents(dependents = dependents)
+@endif
+@if(form.name != null && !form.readOnly)
+<form method="post" action="/skills/${form.name}/delete">
+    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+    <button>Delete…</button>
+</form>
+@endif
+@template.codemirror()
+<script type="module" src="/skill-editor.js"></script>
+</body>
+</html>

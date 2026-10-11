@@ -1,0 +1,69 @@
+@param run: String
+@param task: String
+@param transcript: ants.Transcript
+@param offset: Long
+@param live: Boolean
+@param error: String? = null
+@param _csrf: org.springframework.security.web.csrf.CsrfToken
+@param colorScheme: String = "light dark"
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="color-scheme" content="${colorScheme}">
+    <title>${task} · Transcript · Ants</title>
+    <style>
+        .tool, .ants, .user, #status { font-family: ui-monospace, monospace; }
+        .tool.error b { color: #c33; }
+        .ants { color: #777; }
+        .subagent { margin-left: 1em; border-left: 2px solid #9996; padding-left: .5em; }
+        .chip { font-size: .85em; border: 1px solid #9996; border-radius: 1em; padding: 0 .5em; }
+        .spinner { display: inline-block; animation: spin 2s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+@template.nav()
+<p><a href="/runs/${run}">Run</a></p>
+<h1>${task} · $unsafe{transcript.html("tokens")}</h1>
+<div id="entries" data-from="${offset}">
+@for(entry in transcript.roots)
+$unsafe{entry}
+@endfor
+</div>
+$unsafe{transcript.html("live")}
+$unsafe{transcript.html("status")}
+$unsafe{transcript.html("subagents")}
+@if(error != null)<p role="alert">${error}</p>@endif
+@if(live)
+<form method="post" action="/runs/${run}/tasks/${task}/transcript/send">
+    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+    <label>Message <textarea name="message" required></textarea></label>
+    <button>Send</button>
+    <small>The Agent reads it at its next tool call.</small>
+</form>
+<form method="post" action="/runs/${run}/tasks/${task}/transcript/stop">
+    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+    <button>■ Stop</button>
+</form>
+@endif
+<script>
+    // Follows the Transcript from where this page's copy ends, replacing each changed element or appending a new entry, a Subagent's into its block.
+    const entries = document.getElementById('entries');
+    new EventSource(location.pathname + '/events?from=' + entries.dataset.from).addEventListener('entry', event => {
+        const template = document.createElement('template');
+        template.innerHTML = event.data;
+        const element = template.content.firstElementChild;
+        const old = document.getElementById(element.id);
+        old ? old.replaceWith(element) : (element.dataset.in ? document.querySelector('#' + element.dataset.in + ' > div') : entries).append(element);
+    });
+    setInterval(() => {
+        for (const since of document.querySelectorAll('[data-since]')) {
+            const s = Math.floor((Date.now() - Number(since.dataset.since)) / 1000);
+            since.textContent = s >= 3600 ? Math.floor(s / 3600) + 'h ' + Math.floor(s / 60) % 60 + 'm'
+                : s >= 60 ? Math.floor(s / 60) + 'm ' + s % 60 + 's' : s + 's';
+        }
+    }, 1000);
+</script>
+</body>
+</html>

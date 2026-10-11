@@ -1,0 +1,91 @@
+@import ants.AgentForm
+@import ants.Models
+@param form: AgentForm
+@param action: String
+@param file: String?
+@param readOnly: Boolean
+@param dependents: ants.Dependents?
+@param error: String? = null
+@param notice: String? = null
+@param _csrf: org.springframework.security.web.csrf.CsrfToken
+@param colorScheme: String = "light dark"
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="color-scheme" content="${colorScheme}">
+    <title>${if (file == null) "New Agent" else form.name} · Agents · Ants</title>
+</head>
+<body>
+@template.nav()
+<p><a href="/agents">Agents</a></p>
+<h1>${if (file == null) "New Agent" else form.name}</h1>
+@if(file != null)<p>In <code>${file}</code>.@if(readOnly) Read-only: Ants edits only the Agents in its own folder.@endif</p>@endif
+@if(readOnly)
+<form method="post" action="${action}/copy">
+    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+    <button>Copy</button> Makes an Agent of your own from this one.
+</form>
+@endif
+@if(error != null)<p role="alert">${error}</p>@endif
+@if(notice != null)<p role="status">${notice}</p>@endif
+!{val deprecated = Models.deprecated(form.model)}
+@if(deprecated != null)<p role="alert">${deprecated.id} is deprecated and retires ${deprecated.retires}.</p>@endif
+<form method="post" action="${action}">
+    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+    <fieldset disabled="${readOnly}">
+        <p><label>Name <input name="name" value="${form.name}" required pattern="[a-z0-9][a-z0-9\-]*"></label> Lowercase letters, digits and hyphens, unique across all Agent folders.</p>
+        <p><label>Description <input name="description" value="${form.description}" size="80"></label></p>
+        <p><label>CLI <select name="cli">
+@for(cli in AgentForm.CLIS)
+            <option selected="${cli == form.cli}">${cli}</option>
+@endfor
+        </select></label></p>
+        <p><label>Skills it runs <input name="skills" value="${form.skills}" size="60"></label> Skill names, comma-separated.</p>
+        <fieldset>
+            <legend>Tools</legend>
+@for(tool in AgentForm.TOOLS)
+            <div>
+                <label><input type="checkbox" name="tool.${tool}" checked="${tool in form.tools}"> ${tool}</label>
+                <details open="${!form.tools[tool].isNullOrEmpty()}">
+                    <summary>Limit…</summary>
+                    <label>Only <input name="limit.${tool}" value="${form.tools[tool].orEmpty()}" size="50"></label>
+                    @if(tool == "Agent")Subagent types@else Rule specifiers, such as <code>git log *</code>@endif, comma-separated.
+                </details>
+            </div>
+@endfor
+            <p><label>Other tools <input name="other-tools" value="${form.otherTools}" size="60"></label> Such as <code>mcp__github__get_issue</code>, comma-separated.</p>
+        </fieldset>
+        <p><label>Model <select name="model">
+            <option value="" selected="${form.model.isEmpty()}">The CLI's default</option>
+            <optgroup label="Aliases">
+@for(alias in Models.aliases)
+                <option value="${alias.key}" selected="${form.model == alias.key}">${alias.key} → ${alias.value ?: "?"}</option>
+@endfor
+            </optgroup>
+            <optgroup label="Models">
+@for(model in Models.all)
+                <option value="${model.id}" selected="${form.model == model.id}">${model.id}@if(model.retires != null) (deprecated, retires ${model.retires})@endif</option>
+@endfor
+            </optgroup>
+            <option value="other" selected="${form.otherModel}">Other model ID…</option>
+        </select></label>
+            <label>Other model ID <input name="model-other" value="${if (form.otherModel) form.model else ""}"></label></p>
+        <p><label><input type="checkbox" name="subagent" checked="${form.subagent}"> Offer as a Subagent</label> Other Agents may start it as a Subagent. claude Agents only.</p>
+        <p><label>Standing instructions<br><textarea name="instructions" rows="12" cols="80">${form.instructions}</textarea></label></p>
+@if(!readOnly)
+        <p><button>Save</button></p>
+@endif
+    </fieldset>
+</form>
+@if(dependents != null)
+@template.dependents(dependents = dependents)
+@endif
+@if(file != null && !readOnly)
+<form method="post" action="${action}/delete">
+    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+    <button>Delete…</button>
+</form>
+@endif
+</body>
+</html>

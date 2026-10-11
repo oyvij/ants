@@ -16,24 +16,52 @@ import org.operaton.bpm.engine.impl.pvm.process.ActivityImpl
 import org.operaton.bpm.engine.impl.pvm.process.ScopeImpl
 import org.operaton.bpm.engine.impl.util.xml.Element
 import org.operaton.bpm.engine.variable.value.ObjectValue
+import gg.jte.TemplateEngine
+import gg.jte.output.StringOutput
+import org.operaton.bpm.model.bpmn.instance.FlowElement
+import org.springframework.security.web.csrf.CsrfToken
+import org.operaton.bpm.engine.RepositoryService
+import org.operaton.bpm.engine.RuntimeService
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.http.MediaType.TEXT_EVENT_STREAM_VALUE
+import org.springframework.web.bind.annotation.ResponseBody
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
+import tools.jackson.databind.json.JsonMapper
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Component
 import org.springframework.stereotype.Controller
 import org.springframework.ui.Model
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
+import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.server.ResponseStatusException
+import java.io.File
+import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardOpenOption.APPEND
+import java.nio.file.StandardOpenOption.CREATE
+import java.time.Clock
+import java.time.Instant
+import java.time.temporal.ChronoUnit.SECONDS
 import java.util.Date
 import kotlin.io.path.createDirectories
+
+/** What the live diagram shows of one element: its state (done, running, queued or waiting), a badge and its Round. */
+class Shown(val state: String, val badge: String?, val round: Int?)
 
 @Controller
 class Runs(
     private val history: HistoryService,
+    private val runtime: RuntimeService,
+    private val repository: RepositoryService,
     private val externalTasks: ExternalTaskService,
+    private val notifications: Notifications,
     private val launcher: AgentLauncher,
     private val settings: Settings,
+    private val clock: Clock,
+    private val templates: TemplateEngine,
+    private val streams: Streams,
+    @Value("\${ants.home}") private val home: Path,
 ) {
     @GetMapping("/runs")
     fun list(model: Model): String {
@@ -43,17 +71,16 @@ class Runs(
 
     @GetMapping("/runs/{id}")
     fun run(@PathVariable id: String, model: Model): String {
-        model.addAttribute(
-            "run",
-            history.createHistoricProcessInstanceQuery().processInstanceId(id).singleResult()
-                ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No Run $id"),
-        )
+        val run = run(id)
+        model.addAttribute("run", run)
+        model.addAttribute("kept", keptWorkspace(run)?.toString())
         model.addAttribute(
             "variables",
             history.createHistoricVariableInstanceQuery().processInstanceId(id).disableCustomObjectDeserialization()
                 .orderByVariableName().asc().list()
                 .associate { it.name to ((it.typedValue as? ObjectValue)?.valueSerialized ?: "${it.value}") },
         )
+        model.addAttribute("transcripts", Transcript.all(home.runWorkspace(id)).mapValues { it.value.tokens })
         model.addAttribute(
             "agentTasks",
             externalTasks.createExternalTaskQuery().processInstanceId(id).topicName(AgentLauncher.TOPIC).list().associate { it.activityId to state(it) },
@@ -61,11 +88,103 @@ class Runs(
         return "run"
     }
 
-    private fun state(task: ExternalTask) = when {
+    /** The diagram of the Process version the Run runs. */
+    @GetMapping("/runs/{id}/diagram.bpmn", produces = ["application/xml"])
+    @ResponseBody
+    fun diagram(@PathVariable id: String): ByteArray = repository.getProcessModel(run(id).processDefinitionId).readAllBytes()
+
+    /** The Run's state and each element's [Shown], as JSON, sent on connect and whenever it changes. */
+    @GetMapping("/runs/{id}/live", produces = [TEXT_EVENT_STREAM_VALUE])
+    @ResponseBody
+    fun live(@PathVariable id: String): SseEmitter {
+        run(id)
+        return streams.changes { json.writeValueAsString(mapOf("state" to run(id).stateName, "elements" to shown(id))) }
+    }
+
+    /**
+     * The drawer of the Run's Task [task] as HTML, sent on connect and whenever it changes: its state, So far, the
+     * Agent's checklist, latest output, and the comment box and action when it waits on the user.
+     */
+    @GetMapping("/runs/{id}/tasks/{task}/drawer", produces = [TEXT_EVENT_STREAM_VALUE])
+    @ResponseBody
+    fun drawer(@PathVariable id: String, @PathVariable task: String, csrf: CsrfToken): SseEmitter {
+        val element = repository.getBpmnModelInstance(run(id).processDefinitionId).getModelElementById<FlowElement>(task)
+            ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No Task $task")
+        val file = Transcript.file(home.runWorkspace(id), task)
+        val transcript = Transcript()
+        var offset = 0L
+        csrf.token // loads the token while the request is still here
+        return streams.changes {
+            val (lines, end) = Transcript.read(file, offset)
+            offset = end
+            lines.forEach(transcript::add)
+            val entry = notifications.entries().firstOrNull { it.run == id && it.taskId == task }
+            val model = mapOf(
+                "run" to id, "task" to task, "name" to (element.name ?: task), "shown" to shown(id)[task], "transcript" to transcript,
+                "entry" to entry, "details" to entry?.let(notifications::details), "live" to launcher.live(id, task), "_csrf" to csrf,
+            )
+            StringOutput().also { templates.render("drawer.kte", model, it) }.toString()
+        }
+    }
+
+    /**
+     * Each element the Run has reached: done once every instance of it ended, else waiting when it has a Notification
+     * list entry, else queued with a badge while a usage limit pauses its Agent Task, else running, or queued for an
+     * Agent Task no worker holds yet. Its Round is its count in `runs`.
+     */
+    private fun shown(id: String): Map<String, Shown> {
+        val entries = notifications.entries().filter { it.run == id }.associateBy { it.taskId }
+        val agentTasks = externalTasks.createExternalTaskQuery().processInstanceId(id).topicName(AgentLauncher.TOPIC).list().groupBy { it.activityId }
+        val rounds = history.createHistoricVariableInstanceQuery().processInstanceId(id).variableName("runs").singleResult()?.value as? Map<*, *>
+        return history.createHistoricActivityInstanceQuery().processInstanceId(id).list().groupBy { it.activityId }.mapValues { (activity, instances) ->
+            val round = (rounds?.get(activity) as? Number)?.toInt()
+            val entry = entries[activity]
+            val tasks = agentTasks[activity].orEmpty()
+            val paused = tasks.firstNotNullOfOrNull { launcher.pausedUntil(it.id) }
+            when {
+                instances.all { it.endTime != null } -> Shown("done", null, round)
+                entry != null -> Shown("waiting", "${entry.icon} ${entry.tag}", round)
+                paused != null -> Shown("queued", "Paused until ${clock.local(paused)}", round)
+                tasks.isNotEmpty() && tasks.none { it.lockExpirationTime?.after(Date()) == true } -> Shown("queued", "Queued", round)
+                else -> Shown("running", null, round)
+            }
+        }
+    }
+
+    /** Dismiss: cleans up the Run workspace a cancelled Run kept, as if the Run had ended. */
+    @PostMapping("/runs/{id}/dismiss")
+    fun dismiss(@PathVariable id: String): String {
+        keptWorkspace(run(id))?.let { cleanUp(it.toFile()) }
+        return "redirect:/runs/$id"
+    }
+
+    private fun run(id: String) = history.createHistoricProcessInstanceQuery().processInstanceId(id).singleResult()
+        ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No Run $id")
+
+    /** The workspace of a cancelled Run, until it is dismissed. */
+    private fun keptWorkspace(run: HistoricProcessInstance) = home.runWorkspace(run.id).takeIf { workspace ->
+        run.state == HistoricProcessInstance.STATE_EXTERNALLY_TERMINATED && workspace.toFile().listFiles()?.any { it.name != "tasks" } == true
+    }
+
+    private fun state(task: ExternalTask, paused: Instant? = launcher.pausedUntil(task.id)) = when {
         task.retries == 0 -> listOfNotNull(task.errorMessage, externalTasks.getExternalTaskErrorDetails(task.id)).joinToString(" ")
+        paused != null -> "Paused until ${clock.local(paused)}"
         task.lockExpirationTime?.after(Date()) == true -> "Running"
         else -> "Queued: ${launcher.running} of ${settings.agentTasks()} Agent Tasks running"
     }
+}
+
+private val json = JsonMapper.shared()
+
+/** The Run workspace of [run] in this ANTS_HOME: `runs/<run>/`. */
+fun Path.runWorkspace(run: String): Path = resolve("runs").resolve(run)
+
+/** Back to the Run page of [run] when the user acted from its Task drawer ([back] is `run`), else to [otherwise]. */
+fun back(back: String?, run: String, otherwise: String) = "redirect:" + if (back == "run") "/runs/$run" else otherwise
+
+/** Appends one entry to the Run log, `run-log.md` in the Run workspace [workspace]: [what] the user did on [task], and [text]. */
+fun runLog(workspace: Path, task: String, what: String, text: String) {
+    Files.writeString(workspace.resolve("run-log.md"), "## ${Instant.now().truncatedTo(SECONDS)} · $task · $what\n\n${text.trim()}\n\n", CREATE, APPEND)
 }
 
 /** How a Run's state reads on its pages. */
@@ -81,11 +200,9 @@ val HistoricProcessInstance.stateName
  * Task-id variable is `null`, so forward references read `null`, and `runs` counts each Task's runs.
  */
 @Component
-class RunLifecycle(@Value("\${ants.home}") home: Path) : AbstractProcessEnginePlugin() {
-    private val workspaces = home.resolve("runs")
-
+class RunLifecycle(@Value("\${ants.home}") private val home: Path) : AbstractProcessEnginePlugin() {
     private fun started(tasks: List<String>) = ExecutionListener { run ->
-        if (run.isTopRun) workspaces.resolve(run.processInstanceId).createDirectories()
+        if (run.isTopRun) home.runWorkspace(run.processInstanceId).createDirectories()
         for (task in tasks) run.setVariable(task, null)
         run.setVariable("runs", tasks.associateWith { 0 })
     }
@@ -101,9 +218,9 @@ class RunLifecycle(@Value("\${ants.home}") home: Path) : AbstractProcessEnginePl
     private val ended = ExecutionListener { run ->
         // A cancelled Run keeps its workspace, so no commits are lost.
         if (!run.isTopRun || run.isCanceled) return@ExecutionListener
-        val workspace = workspaces.resolve(run.processInstanceId).toFile()
+        val workspace = home.runWorkspace(run.processInstanceId).toFile()
         // Only once the end is committed: a rolled-back end leaves the Run alive and needing its workspace.
-        Context.getCommandContext().transactionContext.addTransactionListener(TransactionState.COMMITTED) { workspace.deleteRecursively() }
+        Context.getCommandContext().transactionContext.addTransactionListener(TransactionState.COMMITTED) { cleanUp(workspace) }
     }
 
     override fun preInit(configuration: ProcessEngineConfigurationImpl) {
@@ -117,6 +234,12 @@ class RunLifecycle(@Value("\${ants.home}") home: Path) : AbstractProcessEnginePl
                 }
             }
     }
+}
+
+/** Deletes a Run workspace once its Run is done with it, all but the Transcripts (`tasks/`), which outlive the Run. */
+fun cleanUp(workspace: File) {
+    workspace.listFiles()?.filter { it.name != "tasks" }?.forEach { it.deleteRecursively() }
+    workspace.delete() // only if nothing was kept
 }
 
 /** Every Task in this scope and the scopes inside it, such as embedded sub-processes and multi-instance bodies. */

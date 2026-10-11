@@ -1,0 +1,10 @@
+@param list: String
+@param default: String
+@param named: ants.Named
+@for(i in named.shown.indices)
+    <p>
+        <input name="${list}[${i}].name" value="${named.shown[i].first}" aria-label="Name">
+        <input name="${list}[${i}].path" value="${named.shown[i].second}" aria-label="Path" size="50">
+        <label><input type="radio" name="${default}" value="${i}" checked="${i == named.default}"> default</label>
+    </p>
+@endfor

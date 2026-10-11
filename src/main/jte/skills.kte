@@ -1,0 +1,32 @@
+@param skills: List<ants.SkillRow>
+@param message: String? = null
+@param _csrf: org.springframework.security.web.csrf.CsrfToken
+@param colorScheme: String = "light dark"
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="color-scheme" content="${colorScheme}">
+    <title>Skills · Ants</title>
+</head>
+<body>
+@template.nav()
+<h1>Skills</h1>
+@if(message != null)<p role="alert">${message}</p>@endif
+<p><a href="/skills/new">＋ New Skill</a></p>
+<form method="post" action="/skills/import" enctype="multipart/form-data">
+    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+    <label>Import one SKILL.md into the create form <input type="file" name="file" accept=".md" required></label>
+    <button>Import</button>
+</form>
+<ul>
+@for(row in skills)
+@if(row.hidden)
+    <li style="color: GrayText">${row.skill.name} ${row.skill.description} <small>${row.where}, hidden by the shipped Skill</small></li>
+@else
+    <li><a href="/skills/${row.skill.name}">${row.skill.name}</a> ${row.skill.description} <small>${row.where}</small></li>
+@endif
+@endfor
+</ul>
+</body>
+</html>
