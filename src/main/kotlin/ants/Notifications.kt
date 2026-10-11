@@ -69,7 +69,8 @@ class StartEntry(val key: String, process: String, failed: FailedStart) :
 /**
  * The Notification list: one query over what is waiting on the user, with no table of its own, so it can't drift.
  * For now that is every Agent Task held by an incident, its tag and summary read from the incident message, and every
- * open User Task: an Answer a Round, or an Approve.
+ * open User Task: an Answer a Round, or an Approve; plus failed scheduled starts and the `ready-for-human` Tickets of
+ * live Runs.
  */
 @Controller
 class Notifications(
@@ -81,10 +82,11 @@ class Notifications(
     private val launcher: AgentLauncher,
     private val streams: Streams,
     private val schedules: Schedules,
+    private val tickets: Tickets,
     @Value("\${ants.home}") private val home: Path,
 ) {
     /** Everything waiting on the user, oldest first. */
-    fun entries(): List<Entry> = (tasks() + failedStarts()).sortedBy { it.since }
+    fun entries(): List<Entry> = (tasks() + failedStarts() + tickets.waiting()).sortedBy { it.since }
 
     /** The Tasks waiting on the user, oldest first. */
     fun tasks(): List<TaskEntry> = (rootCauses().map(::entry) + userTasks.createTaskQuery().active().list().map(::entry)).sortedBy { it.since }
@@ -100,6 +102,7 @@ class Notifications(
 
     @GetMapping("/notifications/{id}")
     fun entry(@PathVariable id: String, model: Model, response: HttpServletResponse): String {
+        tickets.waiting().firstOrNull { it.id == id }?.let { return "redirect:${it.href}" }
         val failed = failedStarts().firstOrNull { it.id == id }
         if (failed != null) {
             model.addAttribute("entry", failed)

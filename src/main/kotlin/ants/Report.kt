@@ -10,7 +10,7 @@ const val REPORT = "report.md"
 /**
  * The Report of the Run [run] as it ends, as markdown, written mechanically: its Process and how it ended, its start
  * form, each Agent Task's Result summary, tokens and Transcript link, read from the Transcripts in [workspace], and
- * each Round's answers and their sources, read from its Run log.
+ * each Round's answers and their sources, read from its Run log, and its Spec and Tickets.
  */
 fun report(run: DelegateExecution, workspace: Path): String = buildString {
     val definition = (run as ExecutionEntity).processDefinition
@@ -28,4 +28,5 @@ fun report(run: DelegateExecution, workspace: Path): String = buildString {
     val rounds = rounds(workspace)
     if (rounds.isNotEmpty()) append("\n## Rounds\n\n")
     for ((heading, answers) in rounds) append("### $heading\n\n$answers\n\n")
+    append("\n" + ticketsReport(workspace, run.processInstanceId))
 }
