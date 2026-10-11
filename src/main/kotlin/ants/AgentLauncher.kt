@@ -8,6 +8,7 @@ import org.operaton.bpm.engine.RuntimeService
 import org.operaton.bpm.engine.externaltask.LockedExternalTask
 import org.operaton.bpm.model.bpmn.instance.BaseElement
 import org.operaton.bpm.model.bpmn.instance.FlowElement
+import org.operaton.bpm.model.bpmn.instance.UserTask
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.context.event.ApplicationReadyEvent
@@ -40,7 +41,8 @@ import kotlin.io.path.exists
  * the user acts on it, the Notification list leaves their choice in the Task's local variables: Continue resumes the
  * session with their instruction, Start fresh starts a new one with it under "From the user:". While a session runs,
  * the user can [send] it a message or [stop] it. A Task that hits the Usage limit pauses its CLI until the reset, then
- * continues its session the same way, with the reset message.
+ * continues its session the same way, with the reset message. A Task a Review changes names as its Walkthrough is done
+ * only once its Story set passes Varde's checks ([storyProblems]).
  */
 @Component
 class AgentLauncher(
@@ -50,6 +52,7 @@ class AgentLauncher(
     private val settings: Settings,
     private val catalogue: Catalogue,
     private val landing: Landing,
+    private val cloneRepos: CloneRepos,
     private val clock: Clock,
     @Value("\${ants.home}") private val home: Path,
 ) {
@@ -321,6 +324,8 @@ class AgentLauncher(
             var failure: Failed? = null
             var stopped = false
             var retried = false
+            var storyChecked = false // a walkthrough's Story set failed the checks once already
+            val walkthrough = walkthrough(task)
             var limit: Instant? = null
             var answered = false // a result line came after the user's Stop
             process.inputReader().forEachLine { line ->
@@ -355,7 +360,20 @@ class AgentLauncher(
                         listOf("${agent.cli} ended without a Result:", event["subtype"], event["result"], (event["errors"] as? List<*>)?.joinToString("; "))
                             .filter { it != null && it != "" }.joinToString(" "),
                     )
-                    errors.isEmpty() -> { valid = result as Map<*, *> }
+                    errors.isEmpty() -> try {
+                        // A walkthrough's Story set must pass Varde's checks, with one round to fix the failing steps.
+                        val problems = if (walkthrough) storyProblems(workspace) { dir, args -> cloneRepos.git(dir, args, trim = false) } else emptyList()
+                        when {
+                            problems.isEmpty() -> { valid = result as Map<*, *> }
+                            !storyChecked -> {
+                                storyChecked = true
+                                stdin.say(fixRequest(problems))
+                            }
+                            else -> failure = Failed("The Story set in $STORIES fails its checks: ${problems.joinToString()}", fixRequest(problems))
+                        }
+                    } catch (refused: StorySetRefused) {
+                        failure = Failed(refused.message!!)
+                    }
                     !retried -> {
                         retried = true
                         stdin.say("Your Result is invalid:\n${errors.joinToString("\n") { "- $it" }}\nAnswer again with a valid Result.")
@@ -418,6 +436,10 @@ class AgentLauncher(
             else -> null
         }
     }
+
+    /** Whether a Review changes names [task] as its Walkthrough, so its Story set is checked when it is done. */
+    private fun walkthrough(task: LockedExternalTask) = repository.getBpmnModelInstance(task.processDefinitionId).getModelElementsByType(UserTask::class.java)
+        .any { it.property(WALKTHROUGH) == task.activityId }
 
     /** The Task's name in its Process, for the Run log. */
     private fun name(task: LockedExternalTask) =

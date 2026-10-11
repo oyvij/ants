@@ -2,6 +2,9 @@
 @param changes: List<ants.RepoChanges>
 @param comments: List<ants.LineComment>
 @param error: String? = null
+@param tab: String? = null
+@param stories: ants.StorySet? = null
+@param refused: String? = null
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
 <!doctype html>
@@ -18,6 +21,9 @@
         tr.del { background: color-mix(in srgb, red 15%, Canvas); }
         tr.hunk { color: GrayText; }
         tr.picked { outline: 2px solid Highlight; }
+        table.site { border-collapse: collapse; font-family: monospace; }
+        table.site td { padding: 0 .5em; white-space: pre; }
+        table.site td:first-child { color: GrayText; text-align: right; }
     </style>
     <script src="/review.js" defer></script>
 </head>
@@ -27,7 +33,57 @@
 <p>${entry.icon} ${entry.tag} ${entry.task} · ${entry.process} · <a href="/runs/${entry.run}">Run ${entry.run}</a> · waiting ${entry.waited}</p>
 <h1>${entry.task}</h1>
 @if(error != null)<p role="alert">${error}</p>@endif
-<nav id="tabs"><b>By repo</b></nav>
+@if(tab == null)<nav id="tabs"><b>By repo</b></nav>
+@elseif(tab == "story")<nav id="tabs"><b>Story</b> <a href="?tab=repo">By repo</a></nav>
+@else<nav id="tabs"><a href="?tab=story">Story</a> <b>By repo</b></nav>
+@endif
+@if(refused != null)<p role="alert">${refused}</p>@endif
+@if(stories != null)
+<h2>${stories.title}</h2>
+@for(story in stories.stories)
+<section class="story">
+    <h3>${story.name}</h3>
+    <p>${story.premise}</p>
+    <ol class="steps">
+        @for(i in story.steps.indices)!{val step = story.steps[i]}
+        <li>
+            <h4>${i + 1}. ${step.name}</h4>
+            <p><code>${step.at}</code> (${step.side}, ${step.kind})</p>
+            <table class="site">
+                @for(line in step.lines)<tr><td>${line.first}</td><td>${line.second}</td></tr>
+                @endfor
+            </table>
+            <p>${step.claim}</p>
+            <p>Why: ${step.why}</p>
+            @if(step.flow != null)<p>${step.flow}</p>@endif
+            @if(step.nudge != null)<p>${step.nudge}</p>@endif
+            @if(step.values.isNotEmpty())<ul>
+                @for(value in step.values)<li>${value.name} = <code>${value.value}</code> (${value.source})</li>
+                @endfor
+            </ul>@endif
+            <details>
+                <summary>Comment on this step</summary>
+                <form method="post" action="/notifications/${entry.id}/comments">
+                    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+                    <input type="hidden" name="story" value="${story.name}">
+                    <input type="hidden" name="step" value="${i + 1}">
+                    <input type="hidden" name="repo" value="${step.repo}">
+                    <input type="hidden" name="file" value="${step.file}">
+                    <input type="hidden" name="side" value="${step.side}">
+                    <input type="hidden" name="from" value="${step.from}">
+                    <input type="hidden" name="to" value="${step.to}">
+                    <input type="hidden" name="tab" value="story">
+                    <label>Type <select name="type">@for(type in ants.LineComment.TYPES)<option>${type}</option>@endfor</select></label>
+                    <label>Comment <textarea name="body" required></textarea></label>
+                    <button>Add the comment</button>
+                </form>
+            </details>
+        </li>
+        @endfor
+    </ol>
+</section>
+@endfor
+@endif
 @for(changed in changes)
 <section class="repo" data-repo="${changed.repo.repo}">
     <h2>${changed.repo.repo}</h2>
@@ -51,7 +107,7 @@
 <h2>Comments</h2>
 <ol id="comments">
     @for(i in comments.indices)!{val comment = comments[i]}
-    <li>${comment.type} ${comment.file}:${comment.from}@if(comment.to != comment.from)-${comment.to}@endif (${comment.side}): ${comment.body}
+    <li>${comment.summary.removePrefix("- ")}
         <form method="post" action="/notifications/${entry.id}/comments" style="display: inline">
             <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
             <button name="remove" value="${i}">Remove</button>
@@ -59,6 +115,7 @@
     </li>
     @endfor
 </ol>
+@if(tab != "story")
 <form method="post" action="/notifications/${entry.id}/comments" id="line-comment">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
     <p>Click a line number to comment on it, and shift-click another to take in the lines between.</p>
@@ -71,6 +128,7 @@
     <label>Comment <textarea name="body" required></textarea></label>
     <button>Add the comment</button>
 </form>
+@endif
 <form method="post" action="/notifications/${entry.id}">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
     <label>Comment on the changes <textarea name="comment"></textarea></label>

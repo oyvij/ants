@@ -247,6 +247,39 @@ class BrowserTest : AntsTest() {
         assertThat(page.locator("#comments")).containsText("SUGGESTION repos/api/hello.txt:1-2 (new): Say hello.")
     }
 
+    @Test
+    fun `Review changes opens on the Story tab, comments on a story step, and switches to By repo`() = browse {
+        val claude = FakeClaude()
+        agentTask(claude, mapOf("walkthrough" to null, "fix-review" to null, "ship" to null), extra = reviewSourceMap())
+        val set = """{"title":"Nothing changes","ranges":[{"repo":"api","base":"origin/main","head":"HEAD"}],"stories":[{"id":"s","name":"Greeting",""" +
+            """"premise":"Hello stays.","steps":[{"id":"hello","name":"Hello","claim":"It greets.","why":"Politeness.",""" +
+            """"site":{"file":"repos/api/hello.txt","side":"new","kind":"context","from":1,"to":1}}]}]}"""
+        claude.session("walkthrough", "write walkthrough/stories.json $set", """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":{"outcome":"done","summary":"Done.","output":{}}}""")
+        http.upload("/processes", "file", "story-set.bpmn", javaClass.getResource("/story-set.bpmn")!!.readBytes())
+        val run = http.post("/processes/story-set/runs", listOf("repos" to "api", "repos" to "web")).path.removePrefix("/runs/")
+        var entry = ""
+        eventually {
+            val list = http.get("/notifications").body
+            assertContains(list, "[review]") // the walkthrough is done
+            entry = Regex("""href="(/notifications/[^"]+)"""").find(list)!!.groupValues[1]
+        }
+        assertContains(http.get(entry).body, "/runs/$run")
+
+        page.navigate(url(entry))
+        assertThat(page.locator("#tabs b")).hasText("Story")
+        assertThat(page.locator("section.story h4")).hasText("1. Hello")
+        page.click("section.story summary")
+        page.selectOption("section.story [name=type]", "ISSUE")
+        page.fill("section.story [name=body]", "Why?")
+        screenshot("story")
+        page.click("section.story button")
+        assertThat(page.locator("#comments")).containsText("ISSUE repos/api/hello.txt:1 (new), Greeting step 1: Why?")
+        assertThat(page.locator("#tabs b")).hasText("Story")
+        page.click("#tabs a")
+        assertThat(page.locator("#tabs b")).hasText("By repo")
+        assertThat(page.locator("section.repo h2").first()).hasText("api")
+    }
+
     /** An Agent Task [id] running `writer`'s Skill `draft`. */
     private fun agentTaskXml(id: String, name: String) = """<bpmn:serviceTask id="$id" name="$name" operaton:type="external" operaton:topic="agent">""" +
         """<bpmn:extensionElements><operaton:properties><operaton:property name="ants.agent" value="writer" />""" +
