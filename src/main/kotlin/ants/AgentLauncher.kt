@@ -198,7 +198,7 @@ class AgentLauncher(
     }
 
     /** The CLI's command prefix with [args], in [workspace], on the narrowed environment. */
-    private fun cli(cli: String, workspace: Path, args: List<String>) = ProcessBuilder(settings.command(cli) + args)
+    fun cli(cli: String, workspace: Path, args: List<String>): ProcessBuilder = ProcessBuilder(settings.command(cli) + args)
         .directory(workspace.toFile())
         .redirectError(ProcessBuilder.Redirect.INHERIT)
         .apply {
@@ -236,7 +236,10 @@ class AgentLauncher(
         private const val SESSION = "ants.session"
         private const val WORKER = "ants"
         private val LOCK = Duration.ofDays(365)
-        private val DEFAULT_TOOLS = listOf("Bash", "Edit", "Glob", "Grep", "NotebookEdit", "Read", "TodoWrite", "WebFetch", "WebSearch", "Write")
+        // claude 2.1.295 has no TodoWrite; its task-list tools are TaskCreate, TaskGet, TaskList and TaskUpdate.
+        private val DEFAULT_TOOLS = listOf(
+            "Bash", "Edit", "Glob", "Grep", "NotebookEdit", "Read", "TaskCreate", "TaskGet", "TaskList", "TaskUpdate", "WebFetch", "WebSearch", "Write",
+        )
         private val json = JsonMapper.shared()
     }
 }

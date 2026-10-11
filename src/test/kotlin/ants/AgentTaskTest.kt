@@ -297,7 +297,7 @@ class AgentTaskTest : AntsTest() {
         eventually { assertContains(page(run), "State: Completed") }
         val argv = claude.launches("draft").single().argv.joinToString(" ")
         assertContains(argv, "--append-system-prompt Write plainly.")
-        assertContains(argv, "--tools Bash,Edit,Glob,Grep,NotebookEdit,Read,TodoWrite,WebFetch,WebSearch,Write")
+        assertContains(argv, "--tools Bash,Edit,Glob,Grep,NotebookEdit,Read,TaskCreate,TaskGet,TaskList,TaskUpdate,WebFetch,WebSearch,Write")
         assertFalse("--model" in argv)
         assertEquals(emptyMap<String, Any>(), (claude.launches("draft").single().schema()["properties"] as Map<*, *>)["output"])
     }
