@@ -78,7 +78,7 @@ class HomeTest : AntsTest() {
 
     @Test
     fun `Start a Run leads to a Process's start form`() {
-        browser.import("agent-task.bpmn")
+        setUp()
         val home = browser.get("/").body
         val link = assertNotNull(Regex("""<section id="start-a-run">.*?href="([^"]*agent-task)"""", RegexOption.DOT_MATCHES_ALL).find(home)).groupValues[1]
         assertContains(browser.get(link).body, """<form method="post" action="/processes/agent-task/runs">""")

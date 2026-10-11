@@ -1,5 +1,9 @@
 package ants
 
+import org.junit.jupiter.api.BeforeEach
+import org.operaton.bpm.engine.RepositoryService
+import org.operaton.bpm.engine.RuntimeService
+import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.builder.SpringApplicationBuilder
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.test.context.SpringBootTest.WebEnvironment.RANDOM_PORT
@@ -33,6 +37,40 @@ abstract class AntsTest {
     var port = 0
 
     fun browser() = Browser("http://127.0.0.1:$port")
+
+    @Autowired
+    private lateinit var repository: RepositoryService
+
+    @Autowired
+    private lateinit var runtime: RuntimeService
+
+    @Autowired
+    private lateinit var launcher: AgentLauncher
+
+    /**
+     * Every test starts on a clean Ants, whatever ran before it in this JVM: no Processes, Runs or Schedules, no live
+     * CLI holding a launch slot, no Agents, Skills or Templates of the user's, the clock where it belongs and claude's
+     * gate open. A test writes its own `settings.yaml`.
+     */
+    @BeforeEach
+    fun cleanSlate() {
+        clock.offset = Duration.ZERO
+        val runs = runtime.createProcessInstanceQuery().rootProcessInstances().list().map { it.id }
+        // Deleting a deployment deletes its Runs and their history too; Schedules read the deployed Processes.
+        for (deployment in repository.createDeploymentQuery().list()) {
+            // A worker may be completing one of its Tasks at the same time.
+            for (attempt in 1..10) if (runCatching { repository.deleteDeployment(deployment.id, true, true) }.isSuccess) break else Thread.sleep(50)
+        }
+        // Only once their Runs are gone, so no worker launches the Task again; each slot frees as its CLI ends.
+        val deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos()
+        while (launcher.running > 0 && System.nanoTime() < deadline) {
+            runs.forEach(launcher::cancel)
+            Thread.sleep(50)
+        }
+        launcher.tryNow("claude")
+        for (folder in listOf("agents", "skills", "templates")) home.resolve(folder).toFile().deleteRecursively()
+        home.resolve("schedules.yaml").toFile().delete()
+    }
 
     companion object {
         /** Shared by every test in the JVM: a test that writes a file into it resets that file. */
