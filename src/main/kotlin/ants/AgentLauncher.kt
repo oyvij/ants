@@ -49,6 +49,7 @@ class AgentLauncher(
     private val repository: RepositoryService,
     private val settings: Settings,
     private val catalogue: Catalogue,
+    private val landing: Landing,
     private val clock: Clock,
     @Value("\${ants.home}") private val home: Path,
 ) {
@@ -104,7 +105,21 @@ class AgentLauncher(
     }
 
     /** Kills the live CLI processes of [run], once the Run is cancelled. */
-    fun cancel(run: String) = clis.filterValues { it == run }.keys.forEach { it.toHandle().destroy() }
+    fun cancel(run: String) = clis.filterValues { it == run }.keys.forEach(::kill)
+
+    /**
+     * Ends [process] and every process under it: asks them all to stop, then kills whichever are still alive after
+     * [GRACE]. A CLI may ignore SIGTERM, or wait on a child that does, and its launch keeps its slot until the output of
+     * every one of them has closed. Unlike [Process.destroy], it leaves the rest of stdout to read.
+     */
+    private fun kill(process: Process) {
+        val all = listOf(process.toHandle()) + process.descendants().toList() // while they still have their parent
+        all.forEach(ProcessHandle::destroy)
+        Thread.ofVirtual().start {
+            process.waitFor(GRACE.toMillis(), MILLISECONDS)
+            all.filter(ProcessHandle::isAlive).forEach(ProcessHandle::destroyForcibly)
+        }
+    }
 
     private fun fetch() {
         try {
@@ -192,6 +207,9 @@ class AgentLauncher(
             val used = catalogue.uses(skill)
             refuseBareByDefault(agent.cli, workspace)
             val instance = instance(task)
+            // An instance of a parallel multi-instance works in a folder of its own, and lands when done.
+            val parallel = runtime.inParallel(task.executionId, task.activityId)
+            val cwd = if (parallel) landing.folder(workspace, instance, fresh = task.variables[ACTION] == FRESH) else workspace
             // An Approve's Send back leaves its comment for the Task it names, and a Round its answers for its asker, used once.
             val sent = sentBack(workspace, instance)
             val comment = sent.takeIf { resume == null && task.variables[ACTION] == null && it.exists() }?.readText()?.also { sent.deleteIfExists() }
@@ -206,7 +224,7 @@ class AgentLauncher(
             // The user's Continue, or a Send back to a session claude has: their words alone, no hand-off again.
             val continued = resume != null || (comment != null && again != null)
             val result = try {
-                session(task, instance, agent, skill, used, run, workspace, transcript, session, resumed, task.variables[INSTRUCTION] as? String ?: comment, handedOff = !continued)
+                session(task, instance, agent, skill, used, run, workspace, cwd, transcript, session, resumed, task.variables[INSTRUCTION] as? String ?: comment, handedOff = !continued)
             } catch (limit: UsageLimit) {
                 val until = limit.resetsAt + Duration.ofMinutes(1)
                 transcript.ants("end", "Paused by the ${agent.cli} usage limit until ${clock.local(until)}.")
@@ -215,6 +233,7 @@ class AgentLauncher(
                 return
             }
             if (result["outcome"] == "done") {
+                if (parallel) landing.land(workspace, instance)
                 transcript.ants("end", "Done.")
                 // An answer-round Agent: Ants stamps its answers and hands them to the asker it names.
                 val asker = task.extensionProperties[ASKER]
@@ -272,22 +291,23 @@ class AgentLauncher(
     }.onFailure { log.warn("Agent Task ${task.activityId} couldn't be put on hold", it) }
 
     /**
-     * Runs [skill], which uses [used], in one CLI session in [workspace], every line it prints going to [transcript],
-     * and returns its Result: the last valid one, once every message written to the session has been read. A new
+     * Runs [skill], which uses [used], in one CLI session in [cwd] (the Run [workspace], or an instance's folder in it),
+     * every line it prints going to [transcript], and returns its Result: the last valid one, once every message written to the session has been read. A new
      * [session] starts with the hand-off prompt and the user's [instruction], if any; a [resume]d one with the
      * instruction alone, unless it is [handedOff] again, as when the flow comes back to the Task.
      */
     private fun session(
-        task: LockedExternalTask, instance: String, agent: Agent, skill: Skill, used: List<Skill>, run: String, workspace: Path, transcript: Transcript.Writer,
+        task: LockedExternalTask, instance: String, agent: Agent, skill: Skill, used: List<Skill>, run: String, workspace: Path, cwd: Path, transcript: Transcript.Writer,
         session: String, resume: Boolean, instruction: String?, handedOff: Boolean = !resume,
     ): Map<*, *> {
         val inputs = inputs(task)
         val prompt = if (!handedOff) instruction.orEmpty()
-        else handOff(task, skill, used, workspace) + "\n\n" + json.writeValueAsString(inputs) + (if (instruction.isNullOrBlank()) "" else "\n\nFrom the user:\n$instruction")
+        else handOff(task, skill, used, cwd) + "\n\n" + json.writeValueAsString(inputs) + (if (instruction.isNullOrBlank()) "" else "\n\nFrom the user:\n$instruction")
         // The Task's result-schema override replaces the Skill's result.schema.json; Checks refuse one that isn't valid.
         val override = task.extensionProperties[RESULT_SCHEMA]?.takeIf(String::isNotBlank)?.let { json.readValue(it, Map::class.java) }
         val schema = ResultContract.schema(override ?: skill.outputSchema)
-        val process = cli(agent.cli, workspace, flags(agent, schema, listOf(skill) + used, session, resume)).start()
+        val shared = if (cwd == workspace) emptyList() else listOf("--add-dir", "$workspace") // what an instance's links lead to
+        val process = cli(agent.cli, cwd, flags(agent, schema, listOf(skill) + used, session, resume) + shared).start()
         val stdin = Stdin(process.outputWriter(), name(task))
         clis[process] = workspace.fileName.toString() // the Run workspace is runs/<run>/
         val stderr = ArrayDeque<String>()
@@ -315,13 +335,13 @@ class AgentLauncher(
                 if (event["error"] == "authentication_failed" || apiKey != null) {
                     failure = Failed(LOST_LOGIN, apiKey?.let { "${agent.cli} would use an API key (apiKeySource: $it), and Ants runs only on its own login." })
                     stdin.close()
-                    process.toHandle().destroy() // unlike Process.destroy, leaves the rest of stdout to read
+                    kill(process)
                     return@forEachLine
                 }
                 usageLimit(event)?.let {
                     limit = it // the session continues after the reset
                     stdin.close()
-                    process.toHandle().destroy()
+                    kill(process)
                     return@forEachLine
                 }
                 if (event["type"] != "result") return@forEachLine
@@ -574,6 +594,7 @@ class AgentLauncher(
         private const val RESET = "The usage limit has reset. Carry on where you stopped."
         private val LOCK = Duration.ofDays(365)
         private const val STDERR_LINES = 20
+        private val GRACE = Duration.ofSeconds(5)
         const val LOST_LOGIN = "Ants' Claude login is missing or expired. Log in again (Settings)"
 
         /**

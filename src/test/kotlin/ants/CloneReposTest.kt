@@ -16,25 +16,8 @@ class CloneReposTest : AntsTest() {
     @Autowired
     lateinit var runtime: RuntimeService
 
-    /** A repo in the Source map: a bare remote with one commit on `main`, and a local checkout of it. */
-    private class Repo(val name: String, val remote: Path, val local: Path)
-
-    private fun repo(name: String): Repo {
-        val remote = Files.createTempDirectory("remote").resolve("$name.git")
-        git(remote.parent, "init", "-q", "--bare", "-b", "main", "$remote")
-        val local = Files.createTempDirectory("local").resolve(name)
-        git(local.parent, "clone", "-q", "$remote", "$local")
-        git(local, "commit", "-q", "--allow-empty", "-m", "First")
-        git(local, "push", "-q", "origin", "HEAD:main")
-        return Repo(name, remote, local)
-    }
-
     /** `settings.yaml` with a Source map of [repos]. */
-    private fun sourceMap(vararg repos: Repo) {
-        val map = Files.createTempDirectory("source-map").resolve("work.md")
-        map.writeText(repos.joinToString("") { "- ${it.name}: ${it.local} (${it.remote})\n" })
-        settings(null, "source-maps:\n  work: $map\n")
-    }
+    private fun sourceMap(vararg repos: Remote) = settings(null, sourceMapLines(*repos))
 
     /** Starts a Run of `clone-repos.bpmn` with [repos] and [branch], and waits until both its Clone repos Tasks are done. */
     private fun start(repos: List<String>, branch: String = ""): String {
@@ -112,6 +95,26 @@ class CloneReposTest : AntsTest() {
         assertFails { git(clone, "push") }
         assertEquals("", git(api.remote, "branch", "--list", "fix"))
     }
+}
+
+/** A repo for the Source map: a bare remote with one commit on `main`, and a local checkout of it. */
+class Remote(val name: String, val remote: Path, val local: Path)
+
+fun repo(name: String): Remote {
+    val remote = Files.createTempDirectory("remote").resolve("$name.git")
+    git(remote.parent, "init", "-q", "--bare", "-b", "main", "$remote")
+    val local = Files.createTempDirectory("local").resolve(name)
+    git(local.parent, "clone", "-q", "$remote", "$local")
+    git(local, "commit", "-q", "--allow-empty", "-m", "First")
+    git(local, "push", "-q", "origin", "HEAD:main")
+    return Remote(name, remote, local)
+}
+
+/** `settings.yaml` lines for a Source map `work` of [repos]. */
+fun sourceMapLines(vararg repos: Remote): String {
+    val map = Files.createTempDirectory("source-map").resolve("work.md")
+    map.writeText(repos.joinToString("") { "- ${it.name}: ${it.local} (${it.remote})\n" })
+    return "source-maps:\n  work: $map\n"
 }
 
 /** Runs git in [dir] and gives its output, trimmed; fails with the output when git does. */

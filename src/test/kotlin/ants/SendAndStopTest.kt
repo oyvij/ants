@@ -2,6 +2,7 @@ package ants
 
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import kotlin.io.path.exists
 import kotlin.io.path.readText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
@@ -130,5 +131,34 @@ class SendAndStopTest : AntsTest() {
     @Test
     fun `a CLI that exits with no result after Stop is stopped`() {
         assertContains(stopThen("exit 1"), "■ [stopped]")
+    }
+
+    @Test
+    fun `Cancel the Run kills its CLIs and their children, even ones that ignore SIGTERM, and frees their slots`() {
+        agentTask(claude, mapOf("draft" to null, "check" to null))
+        claude.session("check", init, """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":{"outcome":"stuck","summary":"Lost.","needs":"A hint."}}""")
+        // Children that ignore SIGTERM, which claude waits on, so claude never gets to its own TERM trap.
+        claude.session("draft", 1, init, """sh trap '' TERM; sleep 600 & echo ${'$'}${'$'} ${'$'}! > "${'$'}launch/pids"; wait""")
+        claude.session("draft", 2, init, done)
+        browser.import("parallel-tasks.bpmn")
+        browser.get("/processes/parallel-tasks")
+        val cancelled = browser.post("/processes/parallel-tasks/runs", emptyMap()).path.removePrefix("/runs/")
+        val record = claude.dir.resolve("launches/draft.1/pids")
+        eventually { assertEquals(2, record.takeIf { it.exists() }?.readText()?.trim()?.split(" ")?.size) }
+        val pids = record.readText().trim().split(" ").map(String::toLong)
+        var row = ""
+        eventually {
+            row = assertNotNull(Regex("""<tr>((?:(?!</tr>).)*?/runs/$cancelled"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
+                .find(browser.get("/notifications").body)).groupValues[1]
+        }
+        // One slot now, which the hanging draft holds, so the next Run's Task waits for it.
+        agentTask(claude, mapOf("draft" to null, "check" to null), extra = "agent-tasks: 1\n")
+        val next = start()
+        Thread.sleep(500)
+        assertEquals(1, claude.launches("draft").size)
+
+        browser.post(Regex("""href="(/notifications/[^"]+)"""").find(row)!!.groupValues[1], mapOf("action" to "cancel", "instruction" to ""))
+        eventually { assertContains(browser.get("/runs/$next").body, "State: Completed") }
+        for (pid in pids) assertFalse(ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false), "process $pid")
     }
 }

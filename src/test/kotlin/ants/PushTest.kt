@@ -3,7 +3,6 @@ package ants
 import org.junit.jupiter.api.Test
 import org.operaton.bpm.engine.HistoryService
 import org.springframework.beans.factory.annotation.Autowired
-import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
 import kotlin.io.path.writeText
@@ -19,27 +18,12 @@ class PushTest : AntsTest() {
     @Autowired
     lateinit var history: HistoryService
 
-    /** A repo in the Source map: a bare remote with one commit on `main`, and a local checkout of it. */
-    private class Repo(val name: String, val remote: Path, val local: Path)
-
-    private fun repo(name: String): Repo {
-        val remote = Files.createTempDirectory("remote").resolve("$name.git")
-        git(remote.parent, "init", "-q", "--bare", "-b", "main", "$remote")
-        val local = Files.createTempDirectory("local").resolve(name)
-        git(local.parent, "clone", "-q", "$remote", "$local")
-        git(local, "commit", "-q", "--allow-empty", "-m", "First")
-        git(local, "push", "-q", "origin", "HEAD:main")
-        return Repo(name, remote, local)
-    }
-
     /**
      * Starts a Run of `push.bpmn` with a Source map of [repos] on the work branch `feature-x`, commits "Mine in <repo>"
      * in each clone once Push waits, and gives the Run.
      */
-    private fun start(vararg repos: Repo): String {
-        val map = Files.createTempDirectory("source-map").resolve("work.md")
-        map.writeText(repos.joinToString("") { "- ${it.name}: ${it.local} (${it.remote})\n" })
-        settings(null, "source-maps:\n  work: $map\n")
+    private fun start(vararg repos: Remote): String {
+        settings(null, sourceMapLines(*repos))
         browser.import("push.bpmn")
         browser.get("/processes/ship")
         val run = browser.post("/processes/ship/runs", repos.map { "repos" to it.name } + ("branch" to "feature-x")).path.removePrefix("/runs/")
@@ -68,7 +52,7 @@ class PushTest : AntsTest() {
     /** The Push Result of the ended Run [run]. */
     private fun result(run: String) = history.createHistoricVariableInstanceQuery().processInstanceId(run).variableName("push").singleResult().value as List<*>
 
-    private fun refs(repo: Repo) = git(repo.remote, "for-each-ref", "--format=%(refname) %(objectname)").lines().toSet()
+    private fun refs(repo: Remote) = git(repo.remote, "for-each-ref", "--format=%(refname) %(objectname)").lines().toSet()
 
     @Test
     fun `Push waits on its own page with each repo's remote, branch, base and commits, and fast-forwards only the work branch`() {
