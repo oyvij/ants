@@ -215,8 +215,8 @@ val HistoricProcessInstance.stateName
 
 /**
  * Gives each Run its Run workspace, `runs/<run>/` in ANTS_HOME, for as long as it lives. At Run start every
- * Task-id (and call activity id) variable is `null`, so forward references read `null`, and `runs` counts each Task's
- * runs. A multi-instance collects its instances' Results into one list ([collect]). A called Process runs inside its
+ * Task-id (and call activity id) variable is `null`, so forward references read `null`, `runs` counts each Task's
+ * runs and `clones` is empty. A multi-instance collects its instances' Results into one list ([collect]). A called Process runs inside its
  * caller's Run: it ends by giving its call activity every Result in it, by id.
  */
 @Component
@@ -226,6 +226,7 @@ class RunLifecycle(@Value("\${ants.home}") private val home: Path) : AbstractPro
         else run.setVariable(CALLED, called(run.superExecution))
         for (id in results) run.setVariable(id, null)
         run.setVariable("runs", tasks.associateWith { 0 })
+        run.setVariable("clones", ArrayList<Any>()) // Clone repos adds to it
     }
 
     // ponytail: parallel Tasks starting in separate transactions clash on `runs` (optimistic locking) and the losing
