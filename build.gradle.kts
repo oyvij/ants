@@ -66,7 +66,8 @@ tasks.processResources {
     val importMap = file("src/main/jte/codemirror.kte")
     inputs.file(importMap)
     for (path in Regex(""""/vendor/codemirror/([^"]+)"""").findAll(importMap.readText()).map { it.groupValues[1] }) {
-        from({ listOf("node_modules", "node_modules/.pnpm/node_modules").map { file("$it/$path") }.first { it.exists() } }) {
+        // Gradle also asks before pnpmInstall has run, when neither exists yet; the answer at copy time is what counts.
+        from({ listOf("node_modules", "node_modules/.pnpm/node_modules").map { file("$it/$path") }.firstOrNull { it.exists() } ?: emptyList<File>() }) {
             into("static/vendor/codemirror/" + path.substringBeforeLast('/'))
         }
     }
