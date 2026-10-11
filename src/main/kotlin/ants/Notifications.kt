@@ -48,7 +48,7 @@ sealed class Entry(val id: String, val tag: String, val process: String, val tas
         }
 
     private companion object {
-        val ICONS = mapOf("[failed]" to "✕", "[stuck]" to "⚠", "[stopped]" to "■", "[questions]" to "?", "[approve]" to "✓", "[push]" to "↑")
+        val ICONS = mapOf("[failed]" to "✕", "[stuck]" to "⚠", "[stopped]" to "■", "[questions]" to "?", "[approve]" to "✓", "[review]" to "±", "[push]" to "↑")
     }
 }
 
@@ -84,6 +84,7 @@ class Notifications(
     private val streams: Streams,
     private val schedules: Schedules,
     private val tickets: Tickets,
+    private val cloneRepos: CloneRepos,
     @Value("\${ants.home}") private val home: Path,
 ) {
     /** Everything waiting on the user, oldest first. */
@@ -116,6 +117,11 @@ class Notifications(
                 if (!model.containsAttribute("questions")) model.addAttribute("questions", Question.of(asked(task)))
                 model.addAttribute("round", round(task))
                 return "answer"
+            }
+            if (kind(task) == REVIEW_CHANGES) {
+                model.addAttribute("changes", changes(push.outgoing(entry.run), cloneRepos::git))
+                model.addAttribute("comments", comments(task))
+                return "review"
             }
             model.addAttribute("shown", shown(home.runWorkspace(entry.run), runtime.getVariableLocal(task.executionId, SHOW)))
             return "approve"
@@ -181,26 +187,68 @@ class Notifications(
     /**
      * Approve, which completes the Approve with `{approved: true, comment}`, or Send back (comment required), which
      * completes it with `{approved: false, comment}` and leaves the comment for the Task its `ants.send-back` names,
-     * whose next launch resumes its session with it; then Next up, as for any entry.
+     * whose next launch resumes its session with it; then Next up, as for any entry. A Review changes completes the
+     * same way with its line comments too, `{approved, comment, comments[]}`; its Send back needs a comment or a line
+     * comment and sends both, and its Approve sets every `in-review` Ticket `done`.
      */
     @PostMapping("/notifications/{id}", params = ["comment"])
     fun approve(@PathVariable id: String, @RequestParam action: String, @RequestParam comment: String, @RequestParam(required = false) back: String?, model: Model, response: HttpServletResponse): String {
-        val task = userTask(id)?.takeIf { kind(it) == null } ?: return gone(model, response)
+        val task = userTask(id)?.takeIf { kind(it) == null || kind(it) == REVIEW_CHANGES } ?: return gone(model, response)
+        val comments = if (kind(task) == REVIEW_CHANGES) comments(task) else null
         val entry = entry(task)
         val approved = when (action) {
             APPROVE -> true
             SEND_BACK -> false
             else -> throw ResponseStatusException(HttpStatus.BAD_REQUEST, "No action $action")
         }
-        if (!approved && comment.isBlank()) {
-            model.addAttribute("error", "Send back needs a comment.")
+        if (!approved && comment.isBlank() && comments.isNullOrEmpty()) {
+            model.addAttribute("error", if (comments == null) "Send back needs a comment." else "Send back needs a comment, on the changes or on a line.")
             return entry(id, model, response)
         }
         val workspace = home.runWorkspace(entry.run)
-        runLog(workspace, entry.task, if (approved) "Approve" else "Send back", comment)
-        complete(task, workspace, mapOf("approved" to approved, "comment" to comment), property(task, SEND_BACK_PROPERTY)?.takeIf { !approved }, comment)
+        val message = (listOf(comment.trim()) + comments.orEmpty().joinToString("\n") { it.summary }).filter(String::isNotEmpty).joinToString("\n\n")
+        runLog(workspace, entry.task, if (approved) "Approve" else "Send back", message)
+        val result = mapOf("approved" to approved, "comment" to comment) + (comments?.let { mapOf("comments" to ArrayList(it.map(LineComment::toMap))) } ?: emptyMap())
+        complete(task, workspace, result, property(task, SEND_BACK_PROPERTY)?.takeIf { !approved }, message)
+        if (approved && comments != null) ants.tickets(workspace, entry.run).filter { it.status == "in-review" }.forEach { it.status("done") }
         return back(back, entry.run, "/notifications/next?run=${entry.run}")
     }
+
+    /** Adds a line comment to a Review changes, kept on its User Task until it completes, or takes out the [remove]th. */
+    @PostMapping("/notifications/{id}/comments")
+    fun comment(
+        @PathVariable id: String, @RequestParam(required = false) remove: Int?, @RequestParam(required = false) repo: String?,
+        @RequestParam(required = false) file: String?, @RequestParam(required = false) side: String?, @RequestParam(required = false) from: Int?,
+        @RequestParam(required = false) to: Int?, @RequestParam(required = false) type: String?, @RequestParam(required = false) body: String?,
+        model: Model, response: HttpServletResponse,
+    ): String {
+        val task = userTask(id)?.takeIf { kind(it) == REVIEW_CHANGES } ?: return gone(model, response)
+        val comments = comments(task).toMutableList()
+        if (remove != null) comments.removeAt(remove)
+        else {
+            if (repo.isNullOrBlank() || file.isNullOrBlank() || side !in setOf("old", "new") || from == null || type !in LineComment.TYPES) {
+                throw ResponseStatusException(HttpStatus.BAD_REQUEST, "A line comment needs a repo, a file, a side, its lines and a type")
+            }
+            if (body.isNullOrBlank()) {
+                model.addAttribute("error", "A line comment needs a body.")
+                return entry(id, model, response)
+            }
+            val last = to ?: from
+            comments += LineComment(null, null, repo, file, side!!, minOf(from, last), maxOf(from, last), type!!, body)
+        }
+        userTasks.setVariableLocal(task.id, COMMENTS, JsonMapper.shared().writeValueAsString(comments.map(LineComment::toMap)))
+        return "redirect:/notifications/$id"
+    }
+
+    /** A Review changes' line comments so far. */
+    private fun comments(task: Task): List<LineComment> =
+        (userTasks.getVariableLocal(task.id, COMMENTS) as? String)?.let { JsonMapper.shared().readValue(it, List::class.java) }.orEmpty().map {
+            val c = it as Map<*, *>
+            LineComment(
+                (c["story"] as? Number)?.toInt(), (c["step"] as? Number)?.toInt(), c["repo"].toString(), c["file"].toString(), c["side"].toString(),
+                (c["from"] as Number).toInt(), (c["to"] as Number).toInt(), c["type"].toString(), c["body"].toString(),
+            )
+        }
 
     /**
      * Sends a Round: each question's answer (`answer.<id>`, every one required), stamped by Ants ([answers]), completes
@@ -253,7 +301,7 @@ class Notifications(
     private fun property(task: Task, name: String) =
         repository.getBpmnModelInstance(task.processDefinitionId).getModelElementById<BaseElement>(task.taskDefinitionKey).property(name)
 
-    /** A User Task's kind: [ANSWER_ROUND], or without [USER_TASK] an Approve. */
+    /** A User Task's kind: [ANSWER_ROUND] or [REVIEW_CHANGES], or without [USER_TASK] an Approve. */
     private fun kind(task: Task) = property(task, USER_TASK)
 
     /** The Result of the Agent Task an Answer a Round names as its asker, holding the Round's questions. */
@@ -299,8 +347,11 @@ class Notifications(
 
     /** A User Task's entry: an Answer a Round's summary is its asker's, an Approve's is its Title. */
     private fun entry(task: Task): TaskEntry {
-        val (tag, summary) = if (kind(task) == ANSWER_ROUND) "[questions]" to (asked(task) as? Map<*, *>)?.get("summary")
-        else "[approve]" to runtime.getVariableLocal(task.executionId, TITLE)
+        val (tag, summary) = when (kind(task)) {
+            ANSWER_ROUND -> "[questions]" to (asked(task) as? Map<*, *>)?.get("summary")
+            REVIEW_CHANGES -> "[review]" to "Review the changes on the work branch."
+            else -> "[approve]" to runtime.getVariableLocal(task.executionId, TITLE)
+        }
         return entry(task.id, tag, summary?.toString().orEmpty(), task.createTime, task.processInstanceId, task.processDefinitionId, task.executionId, task.taskDefinitionKey)
     }
 
@@ -335,6 +386,10 @@ class Notifications(
         /** A User Task's kind ([ANSWER_ROUND]; without it, an Approve). */
         const val USER_TASK = "ants.user-task"
         const val ANSWER_ROUND = "answer-round"
+        const val REVIEW_CHANGES = "review-changes"
+
+        /** A Review changes' line comments so far, as JSON, local to its User Task. */
+        const val COMMENTS = "comments"
     }
 }
 

@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:operaton="http://operaton.org/schema/1.0/bpmn"
+                  id="definitions" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="review" name="Review" isExecutable="true" operaton:historyTimeToLive="180">
+    <bpmn:startEvent id="start">
+      <bpmn:extensionElements>
+        <operaton:formData>
+          <operaton:formField id="repos" label="Repos" type="string">
+            <operaton:properties>
+              <operaton:property id="ants.type" value="repos" />
+            </operaton:properties>
+          </operaton:formField>
+        </operaton:formData>
+      </bpmn:extensionElements>
+    </bpmn:startEvent>
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="clone" />
+    <bpmn:serviceTask id="clone" name="Clone repos" operaton:type="external" operaton:topic="clone-repos">
+      <bpmn:extensionElements>
+        <operaton:inputOutput>
+          <operaton:inputParameter name="repos">${repos}</operaton:inputParameter>
+        </operaton:inputOutput>
+      </bpmn:extensionElements>
+    </bpmn:serviceTask>
+    <bpmn:sequenceFlow id="f2" sourceRef="clone" targetRef="changes" />
+    <bpmn:userTask id="changes" name="Review the changes">
+      <bpmn:extensionElements>
+        <operaton:properties>
+          <operaton:property name="ants.user-task" value="review-changes" />
+          <operaton:property name="ants.send-back" value="fix" />
+        </operaton:properties>
+      </bpmn:extensionElements>
+    </bpmn:userTask>
+    <bpmn:sequenceFlow id="f3" sourceRef="changes" targetRef="approved" />
+    <bpmn:exclusiveGateway id="approved" default="f5" />
+    <bpmn:sequenceFlow id="f4" sourceRef="approved" targetRef="ship">
+      <bpmn:conditionExpression>${changes.approved}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="f5" sourceRef="approved" targetRef="fix" />
+    <bpmn:serviceTask id="fix" name="Fix" operaton:type="external" operaton:topic="agent">
+      <bpmn:extensionElements>
+        <operaton:properties>
+          <operaton:property name="ants.agent" value="writer" />
+          <operaton:property name="ants.skill" value="fix-review" />
+        </operaton:properties>
+      </bpmn:extensionElements>
+    </bpmn:serviceTask>
+    <bpmn:sequenceFlow id="f6" sourceRef="fix" targetRef="changes" />
+    <bpmn:serviceTask id="ship" name="Ship" operaton:type="external" operaton:topic="agent">
+      <bpmn:extensionElements>
+        <operaton:properties>
+          <operaton:property name="ants.agent" value="writer" />
+          <operaton:property name="ants.skill" value="ship" />
+        </operaton:properties>
+        <operaton:inputOutput>
+          <operaton:inputParameter name="verdict">${changes}</operaton:inputParameter>
+        </operaton:inputOutput>
+      </bpmn:extensionElements>
+    </bpmn:serviceTask>
+    <bpmn:sequenceFlow id="f7" sourceRef="ship" targetRef="end" />
+    <bpmn:endEvent id="end" />
+  </bpmn:process>
+</bpmn:definitions>

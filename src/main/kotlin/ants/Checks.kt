@@ -38,7 +38,7 @@ data class Check(val element: String?, val message: String, val warning: Boolean
  */
 @Component
 class Checks(private val catalogue: Catalogue, private val repository: RepositoryService) {
-    private val kinds: List<(BpmnModelInstance) -> List<Check>> = listOf(::refusedElements, ::refusedUses, ::oneStartEvent, ::startFormNames, ::emptyInputs, ::defaultPaths, ::timerTimes, ::schedules,
+    private val kinds: List<(BpmnModelInstance) -> List<Check>> = listOf(::refusedElements, ::refusedUses, ::oneStartEvent, ::startFormNames, ::emptyInputs, ::defaultPaths, ::timerTimes, ::schedules, ::reviewSendBacks,
         { agentTasks(catalogue, it) }, { references(catalogue, it) }, // these two in AgentTaskChecks.kt
         { calls(repository, it) }) // in CallActivityChecks.kt
 
@@ -202,3 +202,12 @@ private fun schedules(model: BpmnModelInstance): List<Check> {
         .filter { field -> field.operatonProperties?.operatonProperties.orEmpty().none { it.operatonId == STORED && !it.operatonValue.isNullOrBlank() } }
         .map { Check(start.id, "${start.label} has a Schedule, so its required start-form field ${it.operatonLabel ?: it.operatonId} needs a stored value.") }
 }
+
+/** A Review changes' Send back resumes one Agent Task, so it can't name a multi-instance one, or one inside one. */
+private fun reviewSendBacks(model: BpmnModelInstance) = model.getModelElementsByType(UserTask::class.java)
+    .filter { it.property("ants.user-task") == "review-changes" }
+    .mapNotNull { review ->
+        val named = review.property("ants.send-back")?.let { model.getModelElementById<BaseElement>(it) } ?: return@mapNotNull null
+        if (loops(named).isEmpty()) null
+        else Check(review.id, "${review.label} sends back to ${named.label}, a multi-instance Task: Send back resumes one Agent Task.")
+    }
