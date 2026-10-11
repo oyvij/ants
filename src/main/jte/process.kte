@@ -1,4 +1,8 @@
+@import ants.FieldType
 @param process: org.operaton.bpm.engine.repository.ProcessDefinition
+@param fields: List<ants.Field>
+@param repos: List<String>
+@param error: String? = null
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
 <!doctype html>
@@ -17,7 +21,22 @@
 <div id="diagram" data-src="/processes/${process.key}/diagram.bpmn" style="height: 60vh"></div>
 <form method="post" action="/processes/${process.key}/runs">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
-    <label>Prompt <textarea name="prompt" required></textarea></label>
+@if(error != null)<p role="alert">${error}</p>@endif
+@for(field in fields)
+    <p><label>${field.label}<br>
+    @if(field.type == FieldType.MARKDOWN)
+        <textarea name="${field.name}" required="${field.required}">${field.stored}</textarea>
+    @elseif(field.type == FieldType.REPOS)
+        <select name="${field.name}" multiple required="${field.required}">
+        @for(repo in repos)
+            <option selected="${repo in field.storedRepos}">${repo}</option>
+        @endfor
+        </select>
+    @else
+        <input name="${field.name}" value="${field.stored ?: ""}" required="${field.required}">
+    @endif
+    </label>@if(field.help != null)<br><small>${field.help}</small>@endif</p>
+@endfor
     <button>Start</button>
 </form>
 <script src="/vendor/camunda-bpmn-js/base-navigated-viewer.production.min.js"></script>

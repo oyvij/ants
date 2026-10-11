@@ -1,13 +1,14 @@
 package ants
 
 import org.operaton.bpm.engine.ProcessEngineException
+import jakarta.servlet.http.HttpServletResponse
 import org.operaton.bpm.engine.RepositoryService
-import org.operaton.bpm.engine.RuntimeService
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.stereotype.Controller
 import org.springframework.ui.Model
+import org.springframework.util.MultiValueMap
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
@@ -30,7 +31,7 @@ import javax.xml.transform.dom.DOMSource
 import javax.xml.transform.stream.StreamResult
 
 @Controller
-class Processes(private val repository: RepositoryService, private val runtime: RuntimeService) {
+class Processes(private val repository: RepositoryService, private val startForm: StartForm, private val settings: Settings) {
     @GetMapping("/processes")
     fun list(model: Model): String {
         model.addAttribute("processes", repository.createProcessDefinitionQuery().latestVersion().orderByProcessDefinitionName().asc().list())
@@ -111,14 +112,21 @@ class Processes(private val repository: RepositoryService, private val runtime: 
 
     @GetMapping("/processes/{key}")
     fun process(@PathVariable key: String, model: Model): String {
-        model.addAttribute("process", latest(key))
+        val process = latest(key)
+        model.addAttribute("process", process)
+        model.addAttribute("fields", startForm.fields(process))
+        model.addAttribute("repos", settings.repos().map(Repo::name))
         return "process"
     }
 
+    /** **Start**: a Run with the start form's values, else the Process page again with what's missing. */
     @PostMapping("/processes/{key}/runs")
-    fun start(@PathVariable key: String, @RequestParam prompt: String): String {
-        if (prompt.isBlank()) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "A Run needs a prompt")
-        return "redirect:/runs/" + runtime.startProcessInstanceById(latest(key).id, mapOf("prompt" to prompt)).id
+    fun start(@PathVariable key: String, @RequestParam values: MultiValueMap<String, String>, model: Model, response: HttpServletResponse): String = try {
+        "redirect:/runs/" + startForm.start(latest(key), values).id
+    } catch (e: Unfilled) {
+        response.status = HttpStatus.BAD_REQUEST.value()
+        model.addAttribute("error", e.message)
+        process(key, model)
     }
 
     @GetMapping("/processes/{key}/diagram.bpmn", produces = ["application/xml"])
