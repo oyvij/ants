@@ -5,7 +5,7 @@
 @else
 <ul>
 @for(process in users.processes)
-    <li>Process <a href="/processes/${process.key}">${process.name ?: process.key}</a></li>
+    <li>Process <a href="/processes/${process.key}">${process.name ?: process.key}</a>@if(process.id in users.older) · version ${process.version}, which live Runs still run@endif</li>
 @endfor
 @for(skill in users.skills)
     <li>Skill <a href="/skills/${skill.name}">${skill.name}</a></li>

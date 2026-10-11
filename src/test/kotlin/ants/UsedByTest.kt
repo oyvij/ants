@@ -56,6 +56,20 @@ class UsedByTest : AntsTest() {
     }
 
     @Test
+    fun `Used by also lists an older Process version that live Runs still run`() {
+        agent("old-keeper")
+        deploy("old-keeper", "old-keeper-skill")
+        browser.get("/processes/used-by")
+        val run = browser.post("/processes/used-by/runs", mapOf("prompt" to "Keep it")).path.removePrefix("/runs/")
+        assertContains(get("/runs/$run"), "State: Running") // its Skill is missing, so its Task waits on the user
+        deploy("new-keeper", "old-keeper-skill")
+
+        val page = get("/agents/old-keeper")
+        assertContains(page, keepNotes)
+        assertContains(page, Regex("""version \d+, which live Runs still run"""))
+    }
+
+    @Test
     fun `renaming an Agent asks for confirmation, lists what would break and leaves deployed Processes unchanged`() {
         val file = agent("renamed-agent")
         deploy("renamed-agent", "renamed-agent-skill")
