@@ -20,8 +20,24 @@ class NotificationListTest : AntsTest() {
     private val browser by lazy { browser().also { it.login() } }
     private val claude = FakeClaude()
 
+    private fun settings(extra: String = "") = home.resolve("settings.yaml").writeText("claude:\n  command: [${claude.command}]\n$vault$extra")
+
+    /**
+     * Starts a Run of [process] while the Skill [skill] is there, as the pre-Run check needs, and deletes it before the
+     * Run's Tasks launch.
+     */
+    private fun startWithout(skill: String, process: String = "agent-task"): String {
+        settings("agent-tasks: 0\n") // nothing launches yet
+        browser.import("$process.bpmn")
+        browser.get("/processes/$process")
+        val run = browser.post("/processes/$process/runs", mapOf("prompt" to "Say hello")).path.removePrefix("/runs/")
+        home.resolve("skills/$skill").toFile().deleteRecursively()
+        settings()
+        return run
+    }
+
     private fun setUp() {
-        home.resolve("settings.yaml").writeText("claude:\n  command: [${claude.command}]\n")
+        settings()
         home.resolve("agents").createDirectories().resolve("writer.md").writeText("---\nskills: draft\n---\nWrite plainly.\n")
         val skill = home.resolve("skills/draft").createDirectories()
         skill.resolve("SKILL.md").writeText("---\nname: draft\ndescription: Drafts a text.\n---\nDraft the text.\n")
@@ -200,9 +216,7 @@ class NotificationListTest : AntsTest() {
     @Test
     fun `a missing Skill fails before launching`() {
         setUp()
-        browser.import("agent-task.bpmn") // deployed while the Skill exists
-        home.resolve("skills/draft").toFile().deleteRecursively()
-        val run = start()
+        val run = startWithout("draft")
         entry(run)
         assertContains(row(run)!!, "✕ [failed]")
         assertContains(row(run)!!, "No Skill named draft")
@@ -212,9 +226,7 @@ class NotificationListTest : AntsTest() {
     @Test
     fun `a launch that never started writes no divider and keeps no session, so Continue starts afresh once the cause is fixed`() {
         setUp()
-        browser.import("agent-task.bpmn") // deployed while the Skill exists
-        home.resolve("skills/draft").toFile().deleteRecursively()
-        val run = start()
+        val run = startWithout("draft")
         val entry = entry(run)
         assertFalse(home.resolve("runs/$run/tasks/draft/transcript.jsonl").exists())
 
@@ -254,10 +266,7 @@ class NotificationListTest : AntsTest() {
         // Deployed with the Skill check, which is then deleted, so the Task check fails at launch.
         home.resolve("agents/writer.md").writeText("---\nskills: draft, check\n---\nWrite plainly.\n")
         home.resolve("skills/check").createDirectories().resolve("SKILL.md").writeText("---\nname: check\ndescription: Checks.\n---\nCheck.\n")
-        browser.import("parallel-tasks.bpmn")
-        home.resolve("skills/check").toFile().deleteRecursively()
-        browser.get("/processes/parallel-tasks")
-        val run = browser.post("/processes/parallel-tasks/runs", mapOf("prompt" to "Say hello")).path.removePrefix("/runs/")
+        val run = startWithout("check", "parallel-tasks")
         eventually { assertEquals(1, claude.launches("draft").size) }
         val entry = entry(run) // Check fails: its Skill is missing
         assertContains(browser.get(entry).body, "Cancel the Run")

@@ -61,9 +61,12 @@ class UsedByTest : AntsTest() {
     fun `Used by also lists an older Process version that live Runs still run`() {
         agent("old-keeper")
         deploy("old-keeper", "old-keeper-skill")
-        home.resolve("skills/old-keeper-skill").toFile().deleteRecursively()
+        val settings = "claude:\n  command: [${FakeClaude().command}]\n$vault"
+        home.resolve("settings.yaml").writeText("agent-tasks: 0\n$settings") // started while the Skill is there, launched once it's gone
         browser.get("/processes/used-by")
         val run = browser.post("/processes/used-by/runs", mapOf("prompt" to "Keep it")).path.removePrefix("/runs/")
+        home.resolve("skills/old-keeper-skill").toFile().deleteRecursively()
+        home.resolve("settings.yaml").writeText(settings)
         assertContains(get("/runs/$run"), "State: Running") // its Skill is missing, so its Task waits on the user
         deploy("new-keeper", "old-keeper-skill")
 

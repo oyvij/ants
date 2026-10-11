@@ -16,7 +16,7 @@ class HomeTest : AntsTest() {
     private val claude = FakeClaude()
 
     private fun setUp() {
-        home.resolve("settings.yaml").writeText("claude:\n  command: [${claude.command}]\n")
+        home.resolve("settings.yaml").writeText("claude:\n  command: [${claude.command}]\n$vault")
         home.resolve("agents").createDirectories().resolve("writer.md").writeText("---\nskills: draft\n---\nWrite plainly.\n")
         val skill = home.resolve("skills/draft").createDirectories()
         skill.resolve("SKILL.md").writeText("---\nname: draft\ndescription: Drafts a text.\n---\nDraft the text.\n")

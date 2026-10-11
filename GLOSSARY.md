@@ -60,6 +60,12 @@ One execution of a Process, including any Processes it calls, from its starting 
 many Runs of one Process may be live at once.
 _Avoid_: instance, job, execution
 
+**Pre-Run check**:
+What the Process page runs before **Start**: the Checks again, plus the settings, logins, CLIs and
+remotes a Run needs. It shows **Ready** or **Can't start** with every reason, and a Run never starts
+while it has one.
+_Avoid_: preflight, validation
+
 **Run workspace**:
 The folder a Run works in, holding its clones and intermediate files, deleted when the Run ends, or kept
 until the user dismisses it if the Run failed.

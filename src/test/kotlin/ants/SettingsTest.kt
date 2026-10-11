@@ -93,6 +93,7 @@ class SettingsTest : AntsTest() {
             "claude.env" to "PATH",
             "agent-folders" to "$extra/agents",
             "skill-folders" to "$extra/skills",
+            "vaults[0].name" to "notes", "vaults[0].path" to "$extra",
         ))
         browser.import("agent-task.bpmn")
         val run = browser.post("/processes/agent-task/runs", mapOf("prompt" to "Say hello")).path
@@ -156,7 +157,7 @@ class SettingsTest : AntsTest() {
 
     /** A fake claude as the command; its `auth status` answers [status] when it's in Ants' Claude config folder. */
     private fun fakeClaude(status: String? = null) = FakeClaude().also { claude ->
-        file.writeText("claude:\n  command: [${claude.command}]\n")
+        file.writeText("claude:\n  command: [${claude.command}]\n$vault")
         home.resolve("claude").createDirectories().resolve("auth-status.json").run { if (status != null) writeText(status) else deleteIfExists() }
     }
 

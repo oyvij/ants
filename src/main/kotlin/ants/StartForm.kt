@@ -23,7 +23,7 @@ class Unfilled(message: String) : Exception(message)
 
 /** A Process's start form, and the one way a Run starts: with the form's values as its variables. */
 @Component
-class StartForm(private val forms: FormService, private val runtime: RuntimeService) {
+class StartForm(private val forms: FormService, private val runtime: RuntimeService, private val preRun: PreRun) {
     /** The start-form fields of the Process version [definition], in order. */
     fun fields(definition: ProcessDefinition): List<Field> = forms.getStartFormData(definition.id).formFields.map { field ->
         Field(
@@ -38,7 +38,8 @@ class StartForm(private val forms: FormService, private val runtime: RuntimeServ
 
     /**
      * Starts a Run of [definition] with [values] from its start form, each field under its variable name: Text and
-     * Markdown as a string, Repos as a list of Source map names. Values for anything else are ignored.
+     * Markdown as a string, Repos as a list of Source map names. Values for anything else are ignored. Refused with
+     * [CantStart] while the pre-Run check gives reasons.
      */
     fun start(definition: ProcessDefinition, values: Map<String, List<String>>): ProcessInstance {
         val variables = fields(definition).associate { field ->
@@ -46,6 +47,8 @@ class StartForm(private val forms: FormService, private val runtime: RuntimeServ
             if (field.required && given.isEmpty()) throw Unfilled("${field.label} is required")
             field.name to if (field.type == FieldType.REPOS) given else given.firstOrNull().orEmpty()
         }
+        val reasons = preRun.reasons(definition, variables.values.filterIsInstance<List<*>>().flatten().map(Any?::toString))
+        if (reasons.isNotEmpty()) throw CantStart(reasons)
         return runtime.startProcessInstanceById(definition.id, variables)
     }
 }

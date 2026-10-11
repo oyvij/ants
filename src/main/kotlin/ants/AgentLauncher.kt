@@ -577,7 +577,7 @@ class AgentLauncher(
         private val LOCK = Duration.ofDays(365)
         private const val STDERR_LINES = 20
         private const val COMPLETE_TRIES = 10
-        private const val LOST_LOGIN = "Ants' Claude login is missing or expired. Log in again (Settings)"
+        const val LOST_LOGIN = "Ants' Claude login is missing or expired. Log in again (Settings)"
 
         /**
          * An Agent's tools when its file names none. claude 2.1.295 has no TodoWrite; its checklist tools are these four

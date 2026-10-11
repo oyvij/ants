@@ -31,7 +31,7 @@ import javax.xml.transform.dom.DOMSource
 import javax.xml.transform.stream.StreamResult
 
 @Controller
-class Processes(private val repository: RepositoryService, private val startForm: StartForm, private val settings: Settings, private val checks: Checks) {
+class Processes(private val repository: RepositoryService, private val startForm: StartForm, private val settings: Settings, private val checks: Checks, private val preRun: PreRun) {
     @GetMapping("/processes")
     fun list(model: Model): String {
         model.addAttribute("processes", repository.createProcessDefinitionQuery().latestVersion().orderByProcessDefinitionName().asc().list())
@@ -138,18 +138,25 @@ class Processes(private val repository: RepositoryService, private val startForm
     fun process(@PathVariable key: String, model: Model): String {
         val process = latest(key)
         model.addAttribute("process", process)
-        model.addAttribute("fields", startForm.fields(process))
+        val fields = startForm.fields(process)
+        model.addAttribute("fields", fields)
         model.addAttribute("repos", settings.repos().map(Repo::name))
+        // A refused Start has already checked what was posted.
+        if (!model.containsAttribute("reasons")) model.addAttribute("reasons", preRun.reasons(process, fields.filter { it.type == FieldType.REPOS }.flatMap { it.storedRepos }))
         return "process"
     }
 
-    /** **Start**: a Run with the start form's values, else the Process page again with what's missing. */
+    /** **Start**: a Run with the start form's values, else the Process page again with what's missing or why it can't start. */
     @PostMapping("/processes/{key}/runs")
     fun start(@PathVariable key: String, @RequestParam values: MultiValueMap<String, String>, model: Model, response: HttpServletResponse): String = try {
         "redirect:/runs/" + startForm.start(latest(key), values).id
     } catch (e: Unfilled) {
         response.status = HttpStatus.BAD_REQUEST.value()
         model.addAttribute("error", e.message)
+        process(key, model)
+    } catch (e: CantStart) {
+        response.status = HttpStatus.BAD_REQUEST.value()
+        model.addAttribute("reasons", e.reasons)
         process(key, model)
     }
 

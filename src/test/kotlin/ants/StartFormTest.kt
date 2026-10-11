@@ -53,6 +53,9 @@ class StartFormTest : AntsTest() {
 
     @Test
     fun `field values reach the Run as variables under their names`() {
+        val map = Files.createTempDirectory("source-maps").resolve("work.md")
+        map.writeText("- api-in: /code/api-in (${bare()})\n- web: /code/web (${bare()})\n")
+        home.resolve("settings.yaml").writeText("source-maps:\n  work: $map\n$vault")
         browser.import("start-form.bpmn")
         browser.get("/processes/start-form")
         val run = browser.post(

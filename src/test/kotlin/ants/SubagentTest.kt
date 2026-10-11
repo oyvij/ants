@@ -32,7 +32,7 @@ class SubagentTest : AntsTest() {
         agents.resolve("writer.md").deleteIfExists()
     }
 
-    private fun settings(extra: String = "") = home.resolve("settings.yaml").writeText("claude:\n  command: [${claude.command}]\n$extra")
+    private fun settings(extra: String = "") = home.resolve("settings.yaml").writeText("claude:\n  command: [${claude.command}]\n$vault$extra")
 
     private fun agent(name: String, frontmatter: String, body: String = "Help.") =
         agents.resolve("$name.md").writeText("---\nname: $name\nskills: draft\n$frontmatter---\n$body\n")

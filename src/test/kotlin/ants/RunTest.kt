@@ -21,6 +21,7 @@ class RunTest : AntsTest() {
 
     @Test
     fun `Start creates a Run, whose workspace is gone once it ends`() {
+        home.resolve("settings.yaml").writeText(vault)
         browser.import("start-end.bpmn")
         val run = start("start-end")
         val id = run.path.removePrefix("/runs/")
@@ -33,7 +34,7 @@ class RunTest : AntsTest() {
 
     /** loop-then-wait's Agent Task `a` is done at once, so the Run loops through it twice, then waits on User Task `b`. */
     private fun importLoopThenWait() {
-        home.resolve("settings.yaml").writeText("claude:\n  command: [${claude.command}]\n")
+        home.resolve("settings.yaml").writeText("claude:\n  command: [${claude.command}]\n$vault")
         home.resolve("agents").createDirectories().resolve("writer.md").writeText("---\nskills: draft\n---\nWrite plainly.\n")
         val skill = home.resolve("skills/draft").createDirectories()
         skill.resolve("SKILL.md").writeText("---\nname: draft\ndescription: Drafts a text.\n---\nDraft the text.\n")

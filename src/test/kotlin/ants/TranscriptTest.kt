@@ -16,7 +16,7 @@ class TranscriptTest : AntsTest() {
 
     @BeforeEach
     fun setUp() {
-        home.resolve("settings.yaml").writeText("claude:\n  command: [${claude.command}]\n")
+        home.resolve("settings.yaml").writeText("claude:\n  command: [${claude.command}]\n$vault")
         home.resolve("agents").createDirectories().resolve("writer.md").writeText("---\nskills: draft\n---\nWrite plainly.\n")
         home.resolve("skills/draft").createDirectories().resolve("SKILL.md").writeText("---\nname: draft\ndescription: Drafts a text.\n---\nDraft the text.\n")
         home.resolve("skills/draft/result.schema.json").toFile().delete()

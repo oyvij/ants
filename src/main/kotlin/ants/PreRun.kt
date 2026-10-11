@@ -1,0 +1,108 @@
+package ants
+
+import org.operaton.bpm.engine.RepositoryService
+import org.operaton.bpm.engine.repository.ProcessDefinition
+import org.operaton.bpm.model.bpmn.instance.ServiceTask
+import org.springframework.beans.factory.annotation.Value
+import org.springframework.stereotype.Component
+import java.io.File
+import java.nio.file.Files
+import java.nio.file.Path
+import java.time.Duration
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit.SECONDS
+import kotlin.io.path.exists
+
+/** Why a Run can't start: the pre-Run check's reasons. */
+class CantStart(val reasons: List<String>) : Exception(reasons.joinToString("\n"))
+
+/**
+ * The pre-Run check: everything a Run of a Process needs that can be checked before it starts. The Process page shows
+ * its reasons, and [StartForm.start] refuses while there are any, so **Start**, and Schedules through it, never start
+ * a Run that would fail on something checkable.
+ */
+// ponytail: runs whole on every Process page load, the probes one after another (seconds with real remotes); render
+// it async or cache it briefly if the page gets slow.
+@Component
+class PreRun(
+    private val repository: RepositoryService,
+    private val checks: Checks,
+    private val catalogue: Catalogue,
+    private val settings: Settings,
+    private val launcher: AgentLauncher,
+    @Value("\${ants.home}") private val home: Path,
+) {
+    // ponytail: in memory, so a custom model ID is tried once per Ants start; a bad one stays bad until then.
+    private val models = ConcurrentHashMap<String, String>() // model ID -> why it failed, empty when it answered
+
+    /**
+     * Why a Run of [definition] with the Repos [repos] (Source map names) can't start; empty when it's Ready. Without
+     * a Vault the only reason is [CONFIGURE_VAULT], since v1 needs one.
+     */
+    fun reasons(definition: ProcessDefinition, repos: List<String>): List<String> {
+        val vault = settings.defaultVault() ?: return listOf(CONFIGURE_VAULT)
+        val xml = repository.getProcessModel(definition.id).readAllBytes().decodeToString()
+        val model = repository.getBpmnModelInstance(definition.id)
+        // Names, schemas, references and ants-uses: the deploy's Checks again, since files change after a deploy.
+        val failed = checks.of(xml).filterNot { it.warning }.map { it.message }
+        val agents = model.getModelElementsByType(ServiceTask::class.java).filter { it.operatonTopic == AgentLauncher.TOPIC }
+            .mapNotNull { task -> task.property("ants.agent")?.let { runCatching { catalogue.agent(it) }.getOrNull() } }.distinctBy { it.name }
+        val sourceMap = settings.defaultSourceMap()
+        val known = settings.repos().associateBy { it.name }
+        val named = repos.distinct()
+        val gh = agents.any { agent -> agent.tools.orEmpty().any { it.replace(" ", "").startsWith("Bash(gh") } }
+        val missing = (agents.map { it.cli } + listOfNotNull("git".takeIf { named.isNotEmpty() }, "gh".takeIf { gh }))
+            .distinct().associateWith { cli -> command(cli) }.filterValues { !executable(it) }
+        return buildList {
+            settings.vaults()[vault]?.let(Settings::expand)?.takeIf { !it.exists() }?.let { add("The Vault $vault isn't there: $it.") }
+            sourceMap?.let { settings.sourceMaps()[it] }?.let(Settings::expand)?.takeIf { !it.exists() }?.let { add("The Source map $sourceMap isn't there: $it.") }
+            addAll(failed)
+            missing.forEach { (cli, command) -> add("$cli: $command isn't an executable.") }
+            for (name in named) if (name !in known) add(if (sourceMap == null) "$name: no Source map is configured (Settings)." else "The Source map $sourceMap has no repo $name.")
+            if (agents.any { it.cli == "claude" } && "claude" !in missing) {
+                val login = launcher.login()
+                val apiKey = login["apiKeySource"]?.toString()?.takeIf { it != "none" }
+                if (login["loggedIn"] != true) add("${AgentLauncher.LOST_LOGIN}.")
+                else if (apiKey != null) add("An API key is in use (apiKeySource: $apiKey).")
+                else for (agent in agents) agent.model?.takeIf { agent.cli == "claude" && custom(it) }
+                    ?.let { model -> tryModel(model)?.let { add("The Agent ${agent.name}'s model $model doesn't work: $it") } }
+            }
+            if (gh && "gh" !in missing && failure(ProcessBuilder(command("gh"), "auth", "status"), 20) != null) add("gh isn't logged in: run gh auth login.")
+            if ("git" !in missing) for (repo in named.mapNotNull(known::get)) {
+                val lsRemote = ProcessBuilder(command("git"), "ls-remote", "--heads", repo.remote).apply { environment()["GIT_TERMINAL_PROMPT"] = "0" }
+                if (failure(lsRemote, 20) != null) add("git ls-remote can't reach ${repo.name}'s remote ${repo.remote}.")
+            }
+        }
+    }
+
+    /** What a launch of [cli] runs first: the command prefix's first word for an AI CLI, else the CLI's path. */
+    private fun command(cli: String) = if (cli in Settings.AI_CLIS) settings.command(cli).first() else settings.path(cli) ?: cli
+
+    /** Whether [command] runs: a path to an executable, or a name on Ants' PATH. */
+    private fun executable(command: String) = if ('/' in command) Files.isExecutable(Settings.expand(command))
+    else System.getenv("PATH").orEmpty().split(File.pathSeparator).any { it.isNotEmpty() && Files.isExecutable(Path.of(it, command)) }
+
+    /** A model ID that is neither in Anthropic's table nor an alias; `[1m]` asks for the long context of a listed one. */
+    private fun custom(model: String) = model.substringBefore('[').let { id -> id !in Models.aliases && Models.all.none { it.id == id } }
+
+    /** Tries [model] once with a one-line prompt, the way a launch runs claude: null when it answers, else its last words. */
+    private fun tryModel(model: String): String? = models.computeIfAbsent(model) {
+        failure(launcher.cli("claude", home, listOf("-p", "--model", model, "Reply with OK.")), 60).orEmpty()
+    }.ifEmpty { null }
+
+    /** Runs [command] for at most [seconds]: null when it exits 0, else its last line of output. */
+    private fun failure(command: ProcessBuilder, seconds: Long): String? = runCatching {
+        val process = command.redirectInput(File("/dev/null")).redirectErrorStream(true).start()
+        val lines = mutableListOf<String>()
+        val drain = Thread.ofVirtual().start { process.inputReader().forEachLine { synchronized(lines) { lines += it } } }
+        val ok = process.waitFor(seconds, SECONDS) && process.exitValue() == 0
+        if (!ok) process.destroyForcibly()
+        drain.join(Duration.ofSeconds(1))
+        if (ok) null else synchronized(lines) { lines.lastOrNull(String::isNotBlank) } ?: "${command.command().first()} failed."
+    }.getOrElse { it.message ?: "${command.command().first()} failed." }
+
+    companion object {
+        /** The one reason without a Vault; the Process page links it to the settings. */
+        const val CONFIGURE_VAULT = "Configure a Vault"
+    }
+}

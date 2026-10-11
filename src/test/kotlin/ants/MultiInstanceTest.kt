@@ -12,7 +12,7 @@ class MultiInstanceTest : AntsTest() {
     private val claude = FakeClaude()
 
     private fun setUp(agentTasks: Int = 3) {
-        home.resolve("settings.yaml").writeText("agent-tasks: $agentTasks\nclaude:\n  command: [${claude.command}]\n  env: [PATH, HOME]\n")
+        home.resolve("settings.yaml").writeText("agent-tasks: $agentTasks\nclaude:\n  command: [${claude.command}]\n  env: [PATH, HOME]\n$vault")
         home.resolve("agents").createDirectories().resolve("writer.md").writeText("---\nskills: plan, draft, proofread\n---\nWrite plainly.\n")
         for (name in listOf("plan", "draft", "proofread")) {
             home.resolve("skills/$name").createDirectories().resolve("SKILL.md").writeText("---\nname: $name\ndescription: $name.\n---\nDo it.\n")

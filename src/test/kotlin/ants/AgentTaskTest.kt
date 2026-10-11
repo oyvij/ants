@@ -39,7 +39,7 @@ class AgentTaskTest : AntsTest() {
         claude:
           command: [${claude.command}]
           env: [PATH, HOME, ANTHROPIC_API_KEY, CLAUDE_CODE_RETRY_WATCHDOG]
-        """.trimIndent() + "\n" + extra,
+        """.trimIndent() + "\n" + vault + extra,
     )
 
     /** The Agent `writer` from [text], listing the Skill `draft` so a Process can pick it; frontmatter is added when [text] has none. */
@@ -102,14 +102,15 @@ class AgentTaskTest : AntsTest() {
 
     @Test
     fun `the Vault and Answer History toggles reach the hand-off line only when on, defaulting from the Skill`() {
-        settings(extra = "vaults:\n  notes: /tmp/vault\nsource-maps:\n  mine: /tmp/source-map.md\n")
+        val map = Files.createTempFile("source-map", ".md")
+        settings(extra = "source-maps:\n  mine: $map\n")
         agent("Write plainly.\n")
         skill(metadata = "metadata:\n  varde-vault: true\n")
         claude.session("draft", done)
         val byDefault = startWith("toggles-default", "")
         eventually { assertContains(page(byDefault), "State: Completed") }
         val defaults = claude.launches("draft").last().stdin
-        assertContains(defaults, "for the workspace at ${home.resolve("runs/$byDefault")}. The Vault is /tmp/vault and the Source map is /tmp/source-map.md.\\n")
+        assertContains(defaults, "for the workspace at ${home.resolve("runs/$byDefault")}. The Vault is $vaultPath and the Source map is $map.\\n")
         assertFalse("Answer History" in defaults)
 
         val flipped = startWith("toggles-flipped", property("ants.vault", "false") + property("ants.answer-history", "true"))
@@ -301,13 +302,15 @@ class AgentTaskTest : AntsTest() {
 
     @Test
     fun `an ants-uses cycle fails before launch, naming the cycle`() {
-        settings()
+        settings(agentTasks = 0) // the pre-Run check refuses a cycle, so it closes after the Run starts
         agent("Write plainly.\n")
         skill(metadata = uses("implement-tdd"))
         usedSkill("implement-tdd", uses("seams"))
-        usedSkill("seams", uses("draft"))
+        usedSkill("seams")
         claude.session("draft", done)
         val run = start()
+        usedSkill("seams", uses("draft"))
+        settings()
         eventually { assertContains(page(run), "<dt>draft</dt><dd>[failed] The Skills draft → implement-tdd → seams → draft use each other in a cycle</dd>") }
         assertEquals(emptyList(), claude.launches("draft"))
     }
@@ -370,10 +373,10 @@ class AgentTaskTest : AntsTest() {
         agent("Write plainly.\n") // listing draft, so the Process deploys
         skill()
         claude.session("draft", done)
-        browser.import("agent-task.bpmn")
-        home.resolve("agents/writer.md").writeText("Write plainly.\n") // what the launch reads
-        browser.get("/processes/agent-task")
-        val run = browser.post("/processes/agent-task/runs", mapOf("prompt" to "Say hello")).path.removePrefix("/runs/")
+        settings(agentTasks = 0) // the pre-Run check needs the Agent to list draft; the launch, once allowed, reads the file without
+        val run = start()
+        home.resolve("agents/writer.md").writeText("Write plainly.\n")
+        settings()
         eventually { assertContains(page(run), "State: Completed") }
         val argv = claude.launches("draft").single().argv.joinToString(" ")
         assertContains(argv, "--append-system-prompt Write plainly.")
@@ -495,6 +498,9 @@ class FakeClaude {
         Files.copy(javaClass.getResourceAsStream("/fake-claude/claude")!!, command)
         command.toFile().setExecutable(true)
         dir.resolve("sessions").createDirectories()
+        // Logged in, as the pre-Run check needs; a test of the login writes its own status over this.
+        AntsTest.home.resolve("claude").createDirectories().resolve("auth-status.json")
+            .writeText("""{"loggedIn":true,"authMethod":"claude.ai","apiKeySource":"none"}""")
     }
 
     fun session(skill: String, vararg lines: String) = dir.resolve("sessions/$skill.jsonl").writeText(lines.joinToString("\n", postfix = "\n"))

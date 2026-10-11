@@ -50,6 +50,11 @@ abstract class AntsTest {
             it.toFile().setExecutable(true)
         }
 
+        val vaultPath: Path = Files.createTempDirectory("vault")
+
+        /** `settings.yaml` lines for a Vault at [vaultPath], which the pre-Run check needs before any Run starts. */
+        val vault = "vaults:\n  notes: $vaultPath\n"
+
         /** A temporary ANTS_HOME that doesn't exist yet. */
         fun tempHome(): Path = Files.createTempDirectory("ants-test").resolve("ants")
 

@@ -1,7 +1,9 @@
 @import ants.FieldType
+@import ants.PreRun
 @param process: org.operaton.bpm.engine.repository.ProcessDefinition
 @param fields: List<ants.Field>
 @param repos: List<String>
+@param reasons: List<String>
 @param error: String? = null
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
@@ -37,7 +39,19 @@
     @endif
     </label>@if(field.help != null)<br><small>${field.help}</small>@endif</p>
 @endfor
-    <button>Start</button>
+<section id="pre-run">
+@if(reasons.isEmpty())
+    <p><strong>Ready</strong></p>
+@else
+    <p><strong>Can't start</strong></p>
+    <ul>
+    @for(reason in reasons)
+        <li>@if(reason == PreRun.CONFIGURE_VAULT)<a href="/settings">${reason}</a>@else${reason}@endif</li>
+    @endfor
+    </ul>
+@endif
+</section>
+    <button disabled="${reasons.isNotEmpty()}">Start</button>
 </form>
 <script src="/vendor/camunda-bpmn-js/base-navigated-viewer.production.min.js"></script>
 <script>

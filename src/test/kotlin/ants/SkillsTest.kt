@@ -152,7 +152,7 @@ class SkillsTest : AntsTest() {
         val settings = home.resolve("settings.yaml")
         val before = settings.readText()
         try {
-            settings.writeText("claude:\n  command: [${claude.command}]\n")
+            settings.writeText("claude:\n  command: [${claude.command}]\n$vault")
             home.resolve("agents").createDirectories().resolve("writer.md").writeText("---\nskills: draft\n---\nWrite plainly.\n")
             home.resolve("skills/draft").toFile().deleteRecursively()
             claude.session("draft", """{"type":"result","subtype":"success","structured_output":{"outcome":"done","summary":"Drafted.","output":{}}}""")

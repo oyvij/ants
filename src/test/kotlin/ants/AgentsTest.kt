@@ -209,7 +209,7 @@ class AgentsTest : AntsTest() {
         val claude = FakeClaude()
         val settings = home.resolve("settings.yaml")
         val before = settings.readText()
-        settings.writeText("claude:\n  command: [${claude.command}]\n")
+        settings.writeText("claude:\n  command: [${claude.command}]\n$vault")
         try {
             agents.resolve("writer.md").deleteIfExists()
             post("/agents/new", mapOf("name" to "writer", "cli" to "claude", "skills" to "draft", "tool.Read" to "on", "model" to "sonnet", "instructions" to "Write plainly."))
