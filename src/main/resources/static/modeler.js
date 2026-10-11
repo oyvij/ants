@@ -631,6 +631,9 @@ async function callPanel(element, box) {
 
 function explain(element) {
     const target = element.labelTarget || element
+    // Importing clears the diagram first, which selects the implicit root: no BPMN behind it yet, so nothing to explain.
+    // Throwing here would abort the import.
+    if (!target.businessObject) return
     const kind = kindOf(target)
     panel.replaceChildren(kind
         ? el("div", {}, el("h2", {textContent: kinds[kind].name}), el("p", {textContent: kinds[kind].explain}), panels[kind]?.(target) || "", multiInstance(target))
