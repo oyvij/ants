@@ -1,8 +1,9 @@
 # Ants
 
-Runs BPMN Processes whose Tasks are AI agents. Early: the spec is being charted, nothing is built.
+Runs BPMN Processes whose Tasks are AI agents. The v1 spec is written; nothing is built yet.
 
-- Vocabulary: `GLOSSARY.md`. Decisions: `docs/adr/`, created when the first one is needed.
+- Vocabulary: `GLOSSARY.md`. Decisions: `docs/adr/`.
 - Issues live on the private GitHub repo `oyvij/ants` (personal account, never an org), driven with
   `gh`. See `docs/agents/issue-tracker.md`.
-- The spec is being found through a `/wayfinder` map: the open issue labelled `wayfinder:map`.
+- The spec is issue #27, "Spec: Ants v1". It collapses the closed `/wayfinder` map #1 and its
+  sub-issues.
