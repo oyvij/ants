@@ -212,7 +212,7 @@ class AgentsTest : AntsTest() {
         settings.writeText("claude:\n  command: [${claude.command}]\n")
         try {
             agents.resolve("writer.md").deleteIfExists()
-            post("/agents/new", mapOf("name" to "writer", "cli" to "claude", "tool.Read" to "on", "model" to "sonnet", "instructions" to "Write plainly."))
+            post("/agents/new", mapOf("name" to "writer", "cli" to "claude", "skills" to "draft", "tool.Read" to "on", "model" to "sonnet", "instructions" to "Write plainly."))
             val skill = home.resolve("skills/draft").createDirectories()
             skill.resolve("SKILL.md").writeText("---\nname: draft\ndescription: Drafts a text.\n---\nDraft the text.\n")
             skill.resolve("result.schema.json").deleteIfExists()

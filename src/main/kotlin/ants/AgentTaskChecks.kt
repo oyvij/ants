@@ -3,7 +3,10 @@ package ants
 import org.operaton.bpm.model.bpmn.BpmnModelInstance
 import org.operaton.bpm.model.bpmn.instance.Activity
 import org.operaton.bpm.model.bpmn.instance.BaseElement
+import org.operaton.bpm.model.bpmn.instance.BoundaryEvent
 import org.operaton.bpm.model.bpmn.instance.FlowElement
+import org.operaton.bpm.model.bpmn.instance.FlowNode
+import org.operaton.bpm.model.bpmn.instance.SubProcess
 import org.operaton.bpm.model.bpmn.instance.MultiInstanceLoopCharacteristics
 import org.operaton.bpm.model.bpmn.instance.SequenceFlow
 import org.operaton.bpm.model.bpmn.instance.ServiceTask
@@ -115,4 +118,30 @@ private fun problem(catalogue: Catalogue, path: List<String>, names: Set<String>
             null
         }
     }
+}
+
+/**
+ * What an input picker on the Task [id] offers: the start-form fields, the Run variables, and the Results of the Tasks
+ * before it, an Agent Task's by field (its `summary`, its `output` and each field its schema promises). A Task is
+ * before it when a path leads from it to [id], so a loop puts later Tasks before it too; they read `null` until run.
+ */
+internal fun offered(catalogue: Catalogue, model: BpmnModelInstance, id: String): List<String> {
+    val target = model.getModelElementById<FlowNode>(id) ?: return emptyList()
+    val before = mutableSetOf<String>() // ids: the model hands out a new object for an element each time
+    // From the sequence flows, since a file need not list a node's `incoming`.
+    val incoming = model.getModelElementsByType(SequenceFlow::class.java).groupBy({ it.target.id }, { it.source })
+    fun walk(node: FlowNode) {
+        val sources = incoming[node.id].orEmpty() + listOfNotNull((node as? BoundaryEvent)?.attachedTo, node.parentElement as? SubProcess)
+        for (source in sources) if (before.add(source.id)) walk(source)
+    }
+    walk(target)
+    before -= generateSequence(target.parentElement) { it.parentElement }.filterIsInstance<SubProcess>().map { it.id }.toSet() // still running, no Result yet
+    val fields = model.getModelElementsByType(OperatonFormField::class.java).map { it.operatonId }
+    val results = model.getModelElementsByType(Activity::class.java).filter { it.id in before }
+        .flatMap { task ->
+            if (task !is ServiceTask || task.operatonTopic != AgentLauncher.TOPIC) listOf(task.id)
+            else listOf("${task.id}.summary", "${task.id}.output") +
+                (promised(catalogue, task)?.get("properties") as? Map<*, *>).orEmpty().keys.map { "${task.id}.output.$it" }
+        }
+    return (fields + listOf("runs", "clones") + results).distinct().map { "\${$it}" }
 }

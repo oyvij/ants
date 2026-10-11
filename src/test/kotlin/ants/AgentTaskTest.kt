@@ -22,6 +22,7 @@ import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -32,16 +33,18 @@ class AgentTaskTest : AntsTest() {
     @Autowired
     lateinit var catalogue: Catalogue
 
-    private fun settings(agentTasks: Int = 3) = home.resolve("settings.yaml").writeText(
+    private fun settings(agentTasks: Int = 3, extra: String = "") = home.resolve("settings.yaml").writeText(
         """
         agent-tasks: $agentTasks
         claude:
           command: [${claude.command}]
           env: [PATH, HOME, ANTHROPIC_API_KEY, CLAUDE_CODE_RETRY_WATCHDOG]
-        """.trimIndent(),
+        """.trimIndent() + "\n" + extra,
     )
 
-    private fun agent(text: String) = home.resolve("agents").createDirectories().resolve("writer.md").writeText(text)
+    /** The Agent `writer` from [text], listing the Skill `draft` so a Process can pick it; frontmatter is added when [text] has none. */
+    private fun agent(text: String) = home.resolve("agents").createDirectories().resolve("writer.md")
+        .writeText(if (text.startsWith("---\n")) "---\nskills: draft\n" + text.removePrefix("---\n") else "---\nskills: draft\n---\n$text")
 
     private fun skill(schema: String? = null, metadata: String = "") {
         val folder = home.resolve("skills/draft").createDirectories()
@@ -70,6 +73,66 @@ class AgentTaskTest : AntsTest() {
         browser.import("agent-task.bpmn")
         browser.get("/processes/agent-task")
         return browser.post("/processes/agent-task/runs", mapOf("prompt" to "Say hello")).path.removePrefix("/runs/")
+    }
+
+    /** Deploys [file] as the Process [key], its first Agent Task given [properties] too, and starts a Run of it. */
+    private fun startWith(key: String, properties: String, file: String = "agent-task") : String {
+        val bpmn = javaClass.getResource("/$file.bpmn")!!.readText().replace("\"$file\"", "\"$key\"")
+            .replaceFirst("""<operaton:property name="ants.skill" value="draft" />""", """<operaton:property name="ants.skill" value="draft" />$properties""")
+        browser.get("/processes")
+        assertFalse("role=\"alert\"" in browser.upload("/processes", "file", "$key.bpmn", bpmn.toByteArray()).body)
+        browser.get("/processes/$key")
+        return browser.post("/processes/$key/runs", mapOf("prompt" to "Say hello")).path.removePrefix("/runs/")
+    }
+
+    private fun property(name: String, value: String) = """<operaton:property name="$name" value="${value.replace("\"", "&quot;")}" />"""
+
+    @Test
+    fun `a result-schema override replaces the Skill's schema in --json-schema`() {
+        settings()
+        agent("Write plainly.\n")
+        skill(textSchema)
+        claude.session("draft", done("""{"verdict":"ship"}"""))
+        val verdict = """{"type":"object","properties":{"verdict":{"type":"string"}},"required":["verdict"]}"""
+        val run = startWith("overridden", property("ants.result-schema", verdict))
+        eventually { assertContains(page(run), "State: Completed") }
+        val output = (claude.launches("draft").single().schema()["properties"] as Map<*, *>)["output"]
+        assertEquals(JsonMapper.shared().readValue(verdict, Map::class.java), output)
+    }
+
+    @Test
+    fun `the Vault and Answer History toggles reach the hand-off line only when on, defaulting from the Skill`() {
+        settings(extra = "vaults:\n  notes: /tmp/vault\nsource-maps:\n  mine: /tmp/source-map.md\n")
+        agent("Write plainly.\n")
+        skill(metadata = "metadata:\n  varde-vault: true\n")
+        claude.session("draft", done)
+        val byDefault = startWith("toggles-default", "")
+        eventually { assertContains(page(byDefault), "State: Completed") }
+        val defaults = claude.launches("draft").last().stdin
+        assertContains(defaults, "for the workspace at ${home.resolve("runs/$byDefault")}. The Vault is /tmp/vault and the Source map is /tmp/source-map.md.\\n")
+        assertFalse("Answer History" in defaults)
+
+        val flipped = startWith("toggles-flipped", property("ants.vault", "false") + property("ants.answer-history", "true"))
+        eventually { assertContains(page(flipped), "State: Completed") }
+        val toggled = claude.launches("draft").last().stdin
+        assertContains(toggled, "for the workspace at ${home.resolve("runs/$flipped")}. The Answer History is ${home.resolve("answer-history")}.\\n")
+        assertFalse("Vault" in toggled)
+    }
+
+    @Test
+    fun `with resume on, a Task the flow comes back to resumes its session with its inputs`() {
+        settings()
+        agent("Write plainly.\n")
+        skill()
+        claude.session("draft", done)
+        val run = startWith("resumed", property("ants.resume", "true"), file = "agent-loop") // on Draft, which loops once; not on Polish
+        eventually { assertContains(page(run), "State: Completed") }
+        val (first, again, polish) = claude.launches("draft")
+        assertEquals(first.flag("--session-id"), again.flag("--resume"))
+        assertEquals(null, again.flag("--session-id"))
+        assertEquals(first.stdin, again.stdin) // the hand-off and the inputs, read afresh
+        assertEquals(null, polish.flag("--resume"))
+        assertNotEquals(first.flag("--session-id"), polish.flag("--session-id"))
     }
 
     private fun page(run: String) = browser.get("/runs/$run").body.replace("&#34;", "\"")
@@ -304,10 +367,13 @@ class AgentTaskTest : AntsTest() {
     @Test
     fun `a file without frontmatter is an Agent with defaults, named after the file`() {
         settings()
-        agent("Write plainly.\n")
+        agent("Write plainly.\n") // listing draft, so the Process deploys
         skill()
         claude.session("draft", done)
-        val run = start()
+        browser.import("agent-task.bpmn")
+        home.resolve("agents/writer.md").writeText("Write plainly.\n") // what the launch reads
+        browser.get("/processes/agent-task")
+        val run = browser.post("/processes/agent-task/runs", mapOf("prompt" to "Say hello")).path.removePrefix("/runs/")
         eventually { assertContains(page(run), "State: Completed") }
         val argv = claude.launches("draft").single().argv.joinToString(" ")
         assertContains(argv, "--append-system-prompt Write plainly.")

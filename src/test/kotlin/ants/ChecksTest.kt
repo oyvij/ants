@@ -344,6 +344,44 @@ class ChecksTest : AntsTest() {
     }
 
     @Test
+    fun `the Agent Task panel's catalogue lists each Agent's Skills and each Skill's declared inputs, toggles and schema`() {
+        writerAndDraft(inputs = "tone length")
+        skill("other", metadata = "metadata:\n  ants-answer-history: true\n  varde-vault: true\n")
+        val catalogue = JsonMapper.shared().readValue(browser.get("/catalogue.json").body, Map::class.java)
+        val writer = (catalogue["agents"] as List<*>).single { (it as Map<*, *>)["name"] == "writer" }
+        assertEquals(listOf("draft", "other"), (writer as Map<*, *>)["skills"])
+        val skills = (catalogue["skills"] as List<*>).associateBy { (it as Map<*, *>)["name"] }
+        val draft = skills["draft"] as Map<*, *>
+        assertEquals(listOf("tone", "length"), draft["inputs"])
+        assertEquals(listOf(false, false), listOf(draft["vault"], draft["answerHistory"]))
+        assertEquals(setOf("text", "meta"), ((draft["output"] as Map<*, *>)["properties"] as Map<*, *>).keys)
+        val other = skills["other"] as Map<*, *>
+        assertEquals(listOf(emptyList<String>(), true, true, null), listOf(other["inputs"], other["vault"], other["answerHistory"], other["output"]))
+    }
+
+    @Test
+    fun `input pickers offer only start-form fields, Run variables and the Results of earlier Tasks`() {
+        writerAndDraft()
+        val bpmn = twoTasks("").replace(
+            """<bpmn:sequenceFlow id="f2" sourceRef="draft" targetRef="review" />""",
+            """
+            <bpmn:sequenceFlow id="f2" sourceRef="draft" targetRef="ask" />
+            <bpmn:userTask id="ask" />
+            <bpmn:sequenceFlow id="f3" sourceRef="ask" targetRef="review" />
+            <bpmn:sequenceFlow id="f4" sourceRef="review" targetRef="after" />
+            <bpmn:userTask id="after" />
+            <bpmn:sequenceFlow id="f5" sourceRef="start" targetRef="aside" />
+            <bpmn:userTask id="aside" />
+            """,
+        )
+        val offered = JsonMapper.shared().readValue(browser.post("/processes/inputs", mapOf("bpmn" to bpmn, "element" to "review")).body, List::class.java)
+        assertEquals(
+            setOf("${'$'}{prompt}", "${'$'}{runs}", "${'$'}{clones}", "${'$'}{draft.summary}", "${'$'}{draft.output}", "${'$'}{draft.output.text}", "${'$'}{draft.output.meta}", "${'$'}{ask}"),
+            offered.toSet(),
+        )
+    }
+
+    @Test
     fun `a declared input with no value is a warning`() {
         writerAndDraft(inputs = "tone length")
         assertEquals(

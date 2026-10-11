@@ -30,6 +30,7 @@ import java.util.concurrent.TimeUnit.MILLISECONDS
 import java.util.concurrent.TimeUnit.SECONDS
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.io.path.readText
+import kotlin.io.path.writeText
 import kotlin.io.path.exists
 
 /**
@@ -189,14 +190,17 @@ class AgentLauncher(
             val skill = catalogue.skill(task.extensionProperties["ants.skill"] ?: error("${task.activityId} names no ants.skill"))
             check(agent.cli == "claude") { "Agent ${agent.name} runs ${agent.cli}, and only claude runs for now" }
             val used = catalogue.uses(skill)
-            // ponytail: a Task whose catalogue.vault(skill) is on runs without the Vault until #69 hands it over (its
-            // path in the hand-off line and an --add-dir).
             refuseBareByDefault(agent.cli, workspace)
-            session = session ?: UUID.randomUUID().toString()
             val instance = instance(task)
+            // With `ants.resume`, a Task the flow comes back to, as in a loop, resumes its last session; the user's
+            // Continue and Start fresh choose for themselves.
+            val last = Transcript.file(workspace, instance).resolveSibling("session")
+            val again = last.takeIf { resume == null && task.variables[ACTION] == null && task.extensionProperties["ants.resume"] == "true" && it.exists() }?.readText()
+            session = session ?: again ?: UUID.randomUUID().toString()
             transcript = Transcript.Writer(Transcript.file(workspace, instance)).apply { ants("launch") }
+            last.writeText(session)
             val result = try {
-                session(task, instance, agent, skill, used, run, workspace, transcript, session, resume != null, task.variables[INSTRUCTION] as? String)
+                session(task, instance, agent, skill, used, run, workspace, transcript, session, resume != null || again != null, task.variables[INSTRUCTION] as? String, resume == null)
             } catch (limit: UsageLimit) {
                 val until = limit.resetsAt + Duration.ofMinutes(1)
                 transcript.ants("end", "Paused by the ${agent.cli} usage limit until ${clock.local(until)}.")
@@ -276,18 +280,18 @@ class AgentLauncher(
      * Runs [skill], which uses [used], in one CLI session in [workspace], every line it prints going to [transcript],
      * and returns its Result: the last valid one, once every message written to the session has been read. A new
      * [session] starts with the hand-off prompt and the user's [instruction], if any; a [resume]d one with the
-     * instruction alone.
+     * instruction alone, unless it is [handedOff] again, as when the flow comes back to the Task.
      */
     private fun session(
         task: LockedExternalTask, instance: String, agent: Agent, skill: Skill, used: List<Skill>, run: String, workspace: Path, transcript: Transcript.Writer,
-        session: String, resume: Boolean, instruction: String?,
+        session: String, resume: Boolean, instruction: String?, handedOff: Boolean = !resume,
     ): Map<*, *> {
-        val handOff = "Follow the Skill in ${skill.file} for the workspace at $workspace." +
-            (if (used.isEmpty()) "" else " It uses the Skills ${used.joinToString { "${it.name} (${it.file})" }}.")
         val inputs = inputs(task)
-        val prompt = if (resume) instruction.orEmpty()
-        else "$handOff\n\n" + json.writeValueAsString(inputs) + (if (instruction.isNullOrBlank()) "" else "\n\nFrom the user:\n$instruction")
-        val schema = ResultContract.schema(skill.outputSchema)
+        val prompt = if (!handedOff) instruction.orEmpty()
+        else handOff(task, skill, used, workspace) + "\n\n" + json.writeValueAsString(inputs) + (if (instruction.isNullOrBlank()) "" else "\n\nFrom the user:\n$instruction")
+        // The Task's result-schema override replaces the Skill's result.schema.json; Checks refuse one that isn't valid.
+        val override = task.extensionProperties[RESULT_SCHEMA]?.takeIf(String::isNotBlank)?.let { json.readValue(it, Map::class.java) }
+        val schema = ResultContract.schema(override ?: skill.outputSchema)
         val process = cli(agent.cli, workspace, flags(agent, schema, listOf(skill) + used, session, resume)).start()
         val stdin = Stdin(process.outputWriter(), name(task))
         clis[process] = workspace.fileName.toString() // the Run workspace is runs/<run>/
@@ -358,6 +362,26 @@ class AgentLauncher(
             stdins.remove(key(run, instance), stdin)
             clis -= process
         }
+    }
+
+    /**
+     * The hand-off line: the Skill and the workspace, the Skills it [used], and where the Vault and Source map and the
+     * Answer History are, each only when on: the Task's toggle (`ants.vault`, `ants.answer-history`) has the final
+     * say, else the Skill's opt-in.
+     */
+    // ponytail: the default Vault and Source map, until a Process picks its own; with none configured the sentence is
+    // left out, and the pre-Run check (#55) is what refuses to start. The Vault's --add-dir is #69's.
+    private fun handOff(task: LockedExternalTask, skill: Skill, used: List<Skill>, workspace: Path): String {
+        val vault = task.extensionProperties["ants.vault"]?.toBooleanStrictOrNull() ?: catalogue.vault(skill)
+        val answerHistory = task.extensionProperties["ants.answer-history"]?.toBooleanStrictOrNull() ?: skill.answerHistory
+        val places = listOfNotNull(
+            settings.vaults()[settings.defaultVault()]?.let { "the Vault is $it" },
+            settings.sourceMaps()[settings.defaultSourceMap()]?.let { "the Source map is $it" },
+        ).takeIf { vault }.orEmpty()
+        return "Follow the Skill in ${skill.file} for the workspace at $workspace." +
+            (if (used.isEmpty()) "" else " It uses the Skills ${used.joinToString { "${it.name} (${it.file})" }}.") +
+            (if (places.isEmpty()) "" else " " + places.joinToString(" and ").replaceFirstChar(Char::uppercase) + ".") +
+            (if (answerHistory) " The Answer History is ${home.resolve("answer-history")}." else "")
     }
 
     /**

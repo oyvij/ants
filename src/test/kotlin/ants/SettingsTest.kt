@@ -85,7 +85,7 @@ class SettingsTest : AntsTest() {
         // The Agent and Skill come from extra folders; drop any same-named ones another test left in Ants' own.
         home.resolve("agents/writer.md").toFile().delete()
         home.resolve("skills/draft").toFile().deleteRecursively()
-        extra.resolve("agents").createDirectories().resolve("writer.md").writeText("Write plainly.\n")
+        extra.resolve("agents").createDirectories().resolve("writer.md").writeText("---\nskills: draft\n---\nWrite plainly.\n")
         extra.resolve("skills/draft").createDirectories().resolve("SKILL.md").writeText("---\nname: draft\ndescription: Drafts.\n---\nDraft.\n")
         claude.session("draft", """{"type":"result","subtype":"success","structured_output":{"outcome":"done","summary":"Drafted.","output":{}}}""")
         press("save", mapOf(
@@ -185,7 +185,7 @@ class SettingsTest : AntsTest() {
     @Test
     fun `the latest 5-hour and 7-day usage shows next to the login`() {
         val claude = fakeClaude("""{"loggedIn":true,"authMethod":"claude.ai"}""")
-        home.resolve("agents").createDirectories().resolve("writer.md").writeText("Write plainly.\n")
+        home.resolve("agents").createDirectories().resolve("writer.md").writeText("---\nskills: draft\n---\nWrite plainly.\n")
         home.resolve("skills/draft").createDirectories().resolve("SKILL.md").writeText("---\nname: draft\ndescription: Drafts.\n---\nDraft.\n")
         home.resolve("skills/draft/result.schema.json").deleteIfExists()
         fun limit(fiveHour: Double) = """{"type":"rate_limit_event","rate_limit_info":{"status":"allowed","rateLimitType":"five_hour",""" +

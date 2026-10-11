@@ -153,10 +153,9 @@ class SkillsTest : AntsTest() {
         val before = settings.readText()
         try {
             settings.writeText("claude:\n  command: [${claude.command}]\n")
-            home.resolve("agents").createDirectories().resolve("writer.md").writeText("Write plainly.\n")
+            home.resolve("agents").createDirectories().resolve("writer.md").writeText("---\nskills: draft\n---\nWrite plainly.\n")
             home.resolve("skills/draft").toFile().deleteRecursively()
             claude.session("draft", """{"type":"result","subtype":"success","structured_output":{"outcome":"done","summary":"Drafted.","output":{}}}""")
-            browser.import("agent-task.bpmn")
             fun run(): Any? {
                 val run = browser.post("/processes/agent-task/runs", mapOf("prompt" to "Say hello")).path
                 eventually { assertContains(browser.get(run).body, "State: Completed") }
@@ -165,6 +164,7 @@ class SkillsTest : AntsTest() {
             }
 
             save(skillMd("draft"), """{"type": "object"}""")
+            browser.import("agent-task.bpmn") // once the Skill exists
             assertEquals(mapOf("type" to "object"), run())
             save(skillMd("draft"), """{"type": "object", "required": []}""", name = "draft")
             assertEquals(mapOf("type" to "object", "required" to emptyList<Any>()), run())

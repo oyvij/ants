@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestParam
+import org.springframework.web.bind.annotation.ResponseBody
 import org.springframework.web.multipart.MultipartFile
 import org.springframework.web.server.ResponseStatusException
 import org.yaml.snakeyaml.error.YAMLException
@@ -53,6 +54,23 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, @Valu
         val notice = form.kept.keys.takeIf { it.isNotEmpty() }?.let { "Dropped the keys Ants doesn't use: ${it.joinToString(", ")}." }
         return show(model, form.copy(kept = emptyMap<String, Any?>()), null, notice = notice)
     }
+
+    /**
+     * The Agents and Skills as the modeler's Agent Task panel picks them, read afresh each time so a new one shows up:
+     * each Agent's Skills, and each Skill's declared inputs, its Vault and Answer History defaults and its result schema.
+     */
+    @GetMapping("/catalogue.json")
+    @ResponseBody
+    fun catalogue() = mapOf(
+        "agents" to catalogue.agents().map { mapOf("name" to it.name, "description" to it.description, "skills" to it.skills) },
+        "skills" to catalogue.skills().map { skill ->
+            mapOf(
+                "name" to skill.name, "description" to skill.description, "inputs" to skill.inputs,
+                "vault" to runCatching { catalogue.vault(skill) }.getOrDefault(skill.vault), "answerHistory" to skill.answerHistory,
+                "output" to runCatching { skill.outputSchema.takeIf { it.isNotEmpty() } }.getOrNull(),
+            )
+        },
+    )
 
     @GetMapping("/agents/{name}")
     fun agent(@PathVariable name: String, model: Model) = find(name).let { show(model, AgentForm.of(it), it) }

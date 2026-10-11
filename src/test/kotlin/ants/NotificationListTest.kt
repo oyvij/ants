@@ -22,7 +22,7 @@ class NotificationListTest : AntsTest() {
 
     private fun setUp() {
         home.resolve("settings.yaml").writeText("claude:\n  command: [${claude.command}]\n")
-        home.resolve("agents").createDirectories().resolve("writer.md").writeText("Write plainly.\n")
+        home.resolve("agents").createDirectories().resolve("writer.md").writeText("---\nskills: draft\n---\nWrite plainly.\n")
         val skill = home.resolve("skills/draft").createDirectories()
         skill.resolve("SKILL.md").writeText("---\nname: draft\ndescription: Drafts a text.\n---\nDraft the text.\n")
         skill.resolve("result.schema.json").deleteIfExists()
@@ -200,6 +200,7 @@ class NotificationListTest : AntsTest() {
     @Test
     fun `a missing Skill fails before launching`() {
         setUp()
+        browser.import("agent-task.bpmn") // deployed while the Skill exists
         home.resolve("skills/draft").toFile().deleteRecursively()
         val run = start()
         entry(run)
@@ -211,6 +212,7 @@ class NotificationListTest : AntsTest() {
     @Test
     fun `a launch that never started writes no divider and keeps no session, so Continue starts afresh once the cause is fixed`() {
         setUp()
+        browser.import("agent-task.bpmn") // deployed while the Skill exists
         home.resolve("skills/draft").toFile().deleteRecursively()
         val run = start()
         val entry = entry(run)
@@ -249,7 +251,11 @@ class NotificationListTest : AntsTest() {
     fun `Cancel the Run ends the Run, kills its live Agent Tasks and keeps its Run workspace until the user dismisses it`() {
         setUp()
         claude.session("draft", "wait never", done)
+        // Deployed with the Skill check, which is then deleted, so the Task check fails at launch.
+        home.resolve("agents/writer.md").writeText("---\nskills: draft, check\n---\nWrite plainly.\n")
+        home.resolve("skills/check").createDirectories().resolve("SKILL.md").writeText("---\nname: check\ndescription: Checks.\n---\nCheck.\n")
         browser.import("parallel-tasks.bpmn")
+        home.resolve("skills/check").toFile().deleteRecursively()
         browser.get("/processes/parallel-tasks")
         val run = browser.post("/processes/parallel-tasks/runs", mapOf("prompt" to "Say hello")).path.removePrefix("/runs/")
         eventually { assertEquals(1, claude.launches("draft").size) }

@@ -36,6 +36,9 @@ class Checks(private val catalogue: Catalogue) {
     private val rules: List<(BpmnModelInstance) -> List<Check>> = listOf(::refusedElements, ::refusedUses, ::oneStartEvent, ::startFormNames, ::emptyInputs, ::defaultPaths, ::timerTimes,
         { agentTasks(catalogue, it) }, { references(catalogue, it) }) // the last two in AgentTaskChecks.kt
 
+    /** What the input pickers of the Task [element] in [bpmn] offer, as `${…}` references; see [offered]. */
+    fun inputs(bpmn: String, element: String) = offered(catalogue, Bpmn.readModelFromStream(bpmn.byteInputStream()), element)
+
     fun of(bpmn: String): List<Check> = try {
         Bpmn.readModelFromStream(bpmn.byteInputStream()).let { model -> rules.flatMap { it(model) } }
     } catch (e: ModelException) {

@@ -35,7 +35,7 @@ class SubagentTest : AntsTest() {
     private fun settings(extra: String = "") = home.resolve("settings.yaml").writeText("claude:\n  command: [${claude.command}]\n$extra")
 
     private fun agent(name: String, frontmatter: String, body: String = "Help.") =
-        agents.resolve("$name.md").writeText("---\nname: $name\n$frontmatter---\n$body\n")
+        agents.resolve("$name.md").writeText("---\nname: $name\nskills: draft\n$frontmatter---\n$body\n")
 
     private val done = """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION",""" +
         """"structured_output":{"outcome":"done","summary":"Drafted.","output":{}}}"""

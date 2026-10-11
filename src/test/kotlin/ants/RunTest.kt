@@ -34,7 +34,7 @@ class RunTest : AntsTest() {
     /** loop-then-wait's Agent Task `a` is done at once, so the Run loops through it twice, then waits on User Task `b`. */
     private fun importLoopThenWait() {
         home.resolve("settings.yaml").writeText("claude:\n  command: [${claude.command}]\n")
-        home.resolve("agents").createDirectories().resolve("writer.md").writeText("Write plainly.\n")
+        home.resolve("agents").createDirectories().resolve("writer.md").writeText("---\nskills: draft\n---\nWrite plainly.\n")
         val skill = home.resolve("skills/draft").createDirectories()
         skill.resolve("SKILL.md").writeText("---\nname: draft\ndescription: Drafts a text.\n---\nDraft the text.\n")
         skill.resolve("result.schema.json").deleteIfExists()

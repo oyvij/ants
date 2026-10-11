@@ -2,6 +2,7 @@ package ants
 
 import org.junit.jupiter.api.Test
 import kotlin.io.path.createDirectories
+import kotlin.io.path.deleteIfExists
 import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
@@ -12,10 +13,13 @@ class MultiInstanceTest : AntsTest() {
 
     private fun setUp(agentTasks: Int = 3) {
         home.resolve("settings.yaml").writeText("agent-tasks: $agentTasks\nclaude:\n  command: [${claude.command}]\n  env: [PATH, HOME]\n")
-        home.resolve("agents").createDirectories().resolve("writer.md").writeText("Write plainly.\n")
+        home.resolve("agents").createDirectories().resolve("writer.md").writeText("---\nskills: plan, draft, proofread\n---\nWrite plainly.\n")
         for (name in listOf("plan", "draft", "proofread")) {
             home.resolve("skills/$name").createDirectories().resolve("SKILL.md").writeText("---\nname: $name\ndescription: $name.\n---\nDo it.\n")
         }
+        home.resolve("skills/plan/result.schema.json").writeText("""{"type":"object","properties":{"items":{"type":"array"}}}""")
+        home.resolve("skills/draft/result.schema.json").writeText("""{"type":"object","properties":{"text":{}}}""")
+        home.resolve("skills/proofread/result.schema.json").deleteIfExists()
     }
 
     private fun result(output: String) = """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION",""" +

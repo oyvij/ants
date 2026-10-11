@@ -452,6 +452,101 @@ function timerPanel(element) {
 panels.timer = timerPanel
 panels["timer-boundary"] = timerPanel
 
+// The Agent Task: its Agent from a live dropdown, then one of the Skills that Agent lists, one input per name the Skill
+// declares (its pickers offer only start-form fields, Run variables and earlier Results), the Vault and Answer History
+// toggles (defaulting from the Skill), resume, and a result-schema override. All of it lives in the Task's
+// `camunda:properties` (ants.*) and `camunda:inputOutput`.
+function agentProperties(bo) {
+    const properties = (bo.extensionElements?.values || []).find(value => value.$type === "camunda:Properties")
+    return Object.fromEntries((properties?.values || []).map(p => [p.name, p.value]))
+}
+
+function agentInputs(bo) {
+    const io = (bo.extensionElements?.values || []).find(value => value.$type === "camunda:InputOutput")
+    return (io?.inputParameters || []).map(p => [p.name, p.value || ""])
+}
+
+// Writes [changes] into the Task's properties (undefined removes one) and, when given, replaces its inputs.
+function writeAgentTask(element, changes, inputs, redraw = false) {
+    const factory = modeler.get("bpmnFactory")
+    const bo = element.businessObject
+    const properties = Object.entries({...agentProperties(bo), ...changes}).filter(([, value]) => value !== undefined)
+    const values = (bo.extensionElements?.values || []).filter(value => value.$type !== "camunda:Properties" && (!inputs || value.$type !== "camunda:InputOutput"))
+    values.unshift(factory.create("camunda:Properties", {values: properties.map(([name, value]) => factory.create("camunda:Property", {name, value}))}))
+    if (inputs) values.push(factory.create("camunda:InputOutput", {inputParameters: inputs.map(([name, value]) => factory.create("camunda:InputParameter", {name, value}))}))
+    quiet = !redraw
+    try {
+        modeler.get("modeling").updateProperties(element, {extensionElements: factory.create("bpmn:ExtensionElements", {values})})
+    } finally {
+        quiet = false
+    }
+}
+
+panels.agent = element => {
+    const box = el("div", {}, el("p", {textContent: "Loading the Agents and Skills…"}))
+    agentPanel(element, box)
+    return box
+}
+
+async function agentPanel(element, box) {
+    const {xml} = await modeler.saveXML()
+    const [catalogue, offered] = await Promise.all([
+        fetch("/catalogue.json").then(response => response.json()),
+        fetch("/processes/inputs", {method: "POST", body: new URLSearchParams({_csrf: csrf, bpmn: xml, element: element.id})}).then(response => response.json()),
+    ])
+    const bo = element.businessObject
+    const props = agentProperties(bo)
+    const agent = catalogue.agents.find(a => a.name === props["ants.agent"])
+    const skill = catalogue.skills.find(s => s.name === props["ants.skill"])
+    const options = (names, current, missing) => [el("option", {value: "", textContent: "Pick one", selected: !current}),
+        ...(current && !names.includes(current) ? [el("option", {value: current, textContent: `${current} (${missing})`, selected: true})] : []),
+        ...names.map(name => el("option", {value: name, textContent: name, selected: name === current}))]
+    const agentSelect = el("select", {onchange: () => writeAgentTask(element, {"ants.agent": agentSelect.value || undefined}, undefined, true)},
+        ...options(catalogue.agents.map(a => a.name), props["ants.agent"], "not found"))
+    const skillSelect = el("select", {
+        disabled: !agent,
+        onchange: () => {
+            const picked = catalogue.skills.find(s => s.name === skillSelect.value)
+            const kept = Object.fromEntries(agentInputs(bo))
+            // One input per declared name, keeping what the user already filled in.
+            writeAgentTask(element, {"ants.skill": skillSelect.value || undefined}, (picked?.inputs || []).map(name => [name, kept[name] || ""]), true)
+        },
+    }, ...options(agent?.skills || [], props["ants.skill"], "not listed by this Agent"))
+    const references = el("datalist", {id: "ants-references"}, ...offered.map(value => el("option", {value})))
+    const inputs = agentInputs(bo).map(([name, value], i) => {
+        const field = el("input", {value, size: 28, oninput: () => {
+            const all = agentInputs(bo)
+            all[i][1] = field.value
+            writeAgentTask(element, {}, all)
+        }})
+        field.setAttribute("list", "ants-references")
+        return el("p", {}, el("label", {}, name, " ", field))
+    })
+    const toggle = (name, label, fallback) => el("label", {}, el("input", {
+        type: "checkbox", checked: props[name] === undefined ? fallback : props[name] === "true",
+        onchange: event => writeAgentTask(element, {[name]: String(event.target.checked)}),
+    }), " ", label)
+    const override = el("textarea", {
+        rows: 4, cols: 32, value: props["ants.result-schema"] || "",
+        placeholder: skill?.output ? JSON.stringify(skill.output) : "The Skill promises no result schema: give one here to read its Result's fields",
+        oninput: () => writeAgentTask(element, {"ants.result-schema": override.value.trim() || undefined}),
+    })
+    box.replaceChildren(
+        el("p", {}, el("label", {}, "Agent ", agentSelect)),
+        el("p", {}, el("label", {}, "Skill ", skillSelect)),
+        skill?.description ? el("p", {textContent: skill.description}) : "",
+        el("h3", {textContent: "Inputs"}), references,
+        ...(inputs.length ? inputs : [el("p", {textContent: skill ? "The Skill declares no inputs." : "Pick a Skill to see its inputs."})]),
+        el("h3", {textContent: "Context"}),
+        el("p", {}, toggle("ants.vault", "Vault and Source map", skill?.vault || false)), el("p", {}, toggle("ants.answer-history", "Answer History", skill?.answerHistory || false)),
+        el("p", {}, el("label", {}, el("input", {
+            type: "checkbox", checked: props["ants.resume"] === "true",
+            onchange: event => writeAgentTask(element, {"ants.resume": event.target.checked ? "true" : undefined}),
+        }), " Resume its session when the flow comes back")),
+        el("h3", {textContent: "Result schema override"}), override,
+    )
+}
+
 function explain(element) {
     const target = element.labelTarget || element
     const kind = kindOf(target)

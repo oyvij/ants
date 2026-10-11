@@ -77,7 +77,7 @@ class GatewaysTest : AntsTest() {
         home.resolve("agents").createDirectories().resolve("writer.md").writeText("---\nname: writer\nskills: draft\n---\nWrite plainly.\n")
         val skill = home.resolve("skills/draft").createDirectories()
         skill.resolve("SKILL.md").writeText("---\nname: draft\ndescription: Drafts a text.\n---\nDraft the text.\n")
-        skill.resolve("result.schema.json").deleteIfExists()
+        skill.resolve("result.schema.json").writeText("""{"type":"object","properties":{"verdict":{}}}""")
         claude.session(
             "draft", *lines,
             """{"type":"result","subtype":"success","is_error":false,"session_id":"s","structured_output":{"outcome":"done","summary":"Drafted.","output":$output}}""",

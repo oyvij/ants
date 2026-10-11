@@ -67,6 +67,11 @@ class Processes(private val repository: RepositoryService, private val startForm
         listOf(Check(null, e.message ?: "The file can't be read."))
     }
 
+    /** What an Agent Task's input pickers offer: start-form fields, Run variables and the Results of earlier Tasks. */
+    @PostMapping("/processes/inputs")
+    @ResponseBody
+    fun inputs(@RequestParam bpmn: String, @RequestParam element: String): List<String> = checks.inputs(operatonOnly(bpmn.toByteArray()), element)
+
     /**
      * Ants' own deploy path: everything reaches Operaton through here, written with `operaton:` only, and only when no
      * Check fails. Gives the Process's key.

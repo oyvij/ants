@@ -1,6 +1,8 @@
 package ants
 
 import org.junit.jupiter.api.Test
+import kotlin.io.path.createDirectories
+import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 
@@ -38,10 +40,13 @@ class ModelerTest : AntsTest() {
 
     @Test
     fun `Save and deploy writes operaton only`() {
+        home.resolve("agents").createDirectories().resolve("writer.md").writeText("---\nskills: draft\n---\nWrite plainly.\n")
+        home.resolve("skills/draft").createDirectories().resolve("SKILL.md").writeText("---\nname: draft\ndescription: Drafts a text.\n---\nDraft the text.\n")
         val (_, blank) = open("/processes/new?name=Topic+in+the+modeler")
         // camunda-bpmn-js writes camunda:, such as an Agent Task's topic.
         val drawn = blank.replace("<bpmn:definitions ", """<bpmn:definitions xmlns:camunda="http://camunda.org/schema/1.0/bpmn" """)
-            .replace("</bpmn:process>", """<bpmn:serviceTask id="draft" camunda:type="external" camunda:topic="agent" /></bpmn:process>""")
+            .replace("</bpmn:process>", """<bpmn:serviceTask id="draft" camunda:type="external" camunda:topic="agent"><bpmn:extensionElements><camunda:properties>""" +
+                """<camunda:property name="ants.agent" value="writer" /><camunda:property name="ants.skill" value="draft" /></camunda:properties></bpmn:extensionElements></bpmn:serviceTask></bpmn:process>""")
         browser.post("/processes/deploy", mapOf("bpmn" to drawn))
         val diagram = browser.get("/processes/topic-in-the-modeler/diagram.bpmn").body
         assertContains(diagram, """operaton:topic="agent"""")
