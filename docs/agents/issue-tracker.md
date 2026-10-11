@@ -6,6 +6,8 @@ transfer it or mirror it under an organisation. Use `gh`; it infers the repo fro
 - **Create**: `gh issue create --title "..." --body "..."` (heredoc for multi-line bodies)
 - **Read**: `gh issue view <n> --comments`
 - **Comment / close**: `gh issue comment <n> --body "..."`, `gh issue close <n> --comment "..."`
+- **Resolve a ticket**: comment what was built, then close. Where the code departs from the spec (#27), record an
+  ADR in `docs/adr/` and edit the spec's text to match, in the same pass.
 - **Labels**: `gh issue edit <n> --add-label "..."`; a missing label is created with `gh label create`
 
 ## Wayfinding operations

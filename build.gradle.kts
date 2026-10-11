@@ -61,9 +61,23 @@ tasks.processResources {
     }
 }
 
+tasks.withType<Test> {
+    testLogging {
+        events("failed")
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+    }
+}
+
 tasks.test {
-    useJUnitPlatform()
+    useJUnitPlatform { excludeTags("live") }
     // Ants must strip these from every Agent's environment, even when the allow-list names them.
     environment("ANTHROPIC_API_KEY", "sk-ant-test")
     environment("CLAUDE_CODE_RETRY_WATCHDOG", "1")
+}
+
+// The tests that run the real claude on your login, kept out of `test`: ./gradlew liveTest
+tasks.register<Test>("liveTest") {
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    useJUnitPlatform { includeTags("live") }
 }

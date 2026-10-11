@@ -24,6 +24,7 @@ abstract class AntsTest {
     fun browser() = Browser("http://127.0.0.1:$port")
 
     companion object {
+        /** Shared by every test in the JVM: a test that writes a file into it resets that file. */
         val home: Path = tempHome()
 
         /** A temporary ANTS_HOME that doesn't exist yet. */
