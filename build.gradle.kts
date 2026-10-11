@@ -66,6 +66,7 @@ tasks.processResources {
         include("codemirror/dist/index.js", "@codemirror/*/dist/index.js", "@lezer/*/dist/index.js")
         include("@marijn/find-cluster-break/src/index.js", "crelt/index.js", "style-mod/src/style-mod.js", "w3c-keyname/index.js")
         into("static/vendor/codemirror")
+        duplicatesStrategy = DuplicatesStrategy.EXCLUDE // pnpm may hoist a direct dependency into both roots
     }
 }
 
