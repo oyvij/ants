@@ -66,12 +66,9 @@ class BrowserTest : AntsTest() {
     private fun browse(steps: () -> Unit) = try {
         steps()
     } catch (e: Throwable) {
-        val shot = runCatching { screenshot("failed/$test") }.getOrNull()
+        val shot = runCatching { page.screenshot("failed/$test") }.getOrNull()
         throw AssertionError("${e.message}\nAt ${page.url()}, screenshot $shot. The page's console errors:\n" + errors.joinToString("\n").ifEmpty { "(none)" }, e)
     }
-
-    /** Saves the page as it looks now to build/reports/browser/[name].png, for a person or an agent to look at. */
-    private fun screenshot(name: String): Path = Path.of("build/reports/browser/$name.png").also { page.screenshot(Page.ScreenshotOptions().setPath(it).setFullPage(true)) }
 
     /** An element's shape on the diagram, by its id. */
     private fun shape(id: String) = page.locator("#canvas .djs-element[data-element-id='$id'], #diagram .djs-element[data-element-id='$id']")
@@ -100,7 +97,7 @@ class BrowserTest : AntsTest() {
             pad.locator("[data-action='$action']").click()
             assertThat(heading).hasText(name)
         }
-        screenshot("modeler") // the modeler with the three Tasks drawn
+        page.screenshot("modeler") // the modeler with the three Tasks drawn
     }
 
     @Test
@@ -179,7 +176,7 @@ class BrowserTest : AntsTest() {
         assertThat(page.locator("#ticket input[type=checkbox]")).isChecked()
         file.writeText("# Say hello\n\nStatus: in-progress\n\n- [x] Says hello\n") // as an Agent would
         assertThat(page.locator("#ticket")).containsText("Status: in-progress")
-        screenshot("ticket")
+        page.screenshot("ticket")
     }
 
     @Test
@@ -242,7 +239,7 @@ class BrowserTest : AntsTest() {
         assertThat(diff.locator("tr.picked")).hasCount(2)
         page.selectOption("#line-comment [name=type]", "SUGGESTION")
         page.fill("#line-comment [name=body]", "Say hello.")
-        screenshot("review")
+        page.screenshot("review")
         page.click("#line-comment button")
         assertThat(page.locator("#comments")).containsText("SUGGESTION repos/api/hello.txt:1-2 (new): Say hello.")
     }
@@ -287,7 +284,7 @@ class BrowserTest : AntsTest() {
         page.click("section.story summary")
         page.selectOption("section.story [name=type]", "ISSUE")
         page.fill("section.story [name=body]", "Why?")
-        screenshot("story")
+        page.screenshot("story")
         page.click("section.story button")
         assertThat(page.locator("#comments")).containsText("ISSUE repos/api/hello.txt:1 (new), Greeting step 1: Why?")
         assertThat(page.locator("#tabs b")).hasText("Story")
@@ -362,6 +359,12 @@ internal fun launchChromium(playwright: Playwright, executable: Path? = null) = 
     if (System.getenv("CI") != null) throw AssertionError(help, e)
     abort(help)
 }
+
+/**
+ * Saves the page as it looks now to build/reports/browser/[name].png, for a person or an agent to look at; any test with
+ * a Playwright [Page] can call it. CI keeps build/reports.
+ */
+internal fun Page.screenshot(name: String): Path = Path.of("build/reports/browser/$name.png").also { screenshot(Page.ScreenshotOptions().setPath(it).setFullPage(true)) }
 
 /** What a Chromium that can't launch says, without the test app. */
 @Tag("browser")
