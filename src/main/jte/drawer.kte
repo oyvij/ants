@@ -6,6 +6,7 @@
 @param transcript: ants.Transcript
 @param entry: ants.Entry?
 @param details: String?
+@param live: Boolean
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 <section id="drawer-head">
     <h2>${name}</h2>
@@ -44,6 +45,21 @@
         <button name="action" value="continue">Continue the session</button>
         <button name="action" value="fresh" formnovalidate>Start fresh</button>
         @if(entry.tag == "[failed]")<button name="action" value="cancel" formnovalidate>Cancel the Run</button>@endif
+    </form>
+</section>
+@endif
+@if(live)
+<section id="drawer-send">
+    <form method="post" action="/runs/${run}/tasks/${task}/transcript/send">
+        <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+        <input type="hidden" name="back" value="run">
+        <label>Comment <textarea name="message" required></textarea></label>
+        <button>Send</button>
+    </form>
+    <form method="post" action="/runs/${run}/tasks/${task}/transcript/stop">
+        <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+        <input type="hidden" name="back" value="run">
+        <button>■ Stop</button>
     </form>
 </section>
 @endif

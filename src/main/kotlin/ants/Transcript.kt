@@ -8,6 +8,7 @@ import org.springframework.stereotype.Controller
 import org.springframework.ui.Model
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
+import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.server.ResponseStatusException
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
@@ -294,9 +295,9 @@ class Transcript {
 /** A token count as the pages show it. */
 fun tokens(count: Long) = String.format(Locale.ROOT, "%,d tokens", count)
 
-/** The Transcript page, which replays the file and then follows it over SSE. */
+/** The Transcript page, which replays the file and then follows it over SSE, with Send and Stop while the Task runs. */
 @Controller
-class Transcripts(@Value("\${ants.home}") home: Path) {
+class Transcripts(@Value("\${ants.home}") home: Path, private val launcher: AgentLauncher) {
     private val runs = home.resolve("runs")
 
     @GetMapping("/runs/{run}/tasks/{task}/transcript")
@@ -306,7 +307,33 @@ class Transcripts(@Value("\${ants.home}") home: Path) {
         model.addAttribute("task", task)
         model.addAttribute("transcript", Transcript().apply { lines.forEach(::add) })
         model.addAttribute("offset", offset)
+        model.addAttribute("live", launcher.live(run, task))
         return "transcript"
+    }
+
+    /**
+     * Send: a message into the Task's live session, refused once the session takes no more. From the Run page's Task
+     * drawer ([back] is `run`) it returns to the Run page.
+     */
+    @PostMapping("/runs/{run}/tasks/{task}/transcript/send")
+    fun send(
+        @PathVariable run: String, @PathVariable task: String, @RequestParam message: String, @RequestParam(required = false) back: String?, model: Model,
+    ): String {
+        val error = when {
+            message.isBlank() -> "Write a message to send."
+            !launcher.send(run, task, message) -> "Not sent: the Agent's session has ended, as Ants holds its Result or it is not running."
+            else -> return if (back == "run") "redirect:/runs/$run" else "redirect:/runs/$run/tasks/$task/transcript"
+        }
+        model.addAttribute("error", error)
+        return page(run, task, model)
+    }
+
+    /** Stop: interrupts the Task's live session, which puts it on the Notification list as `[stopped]`. */
+    @PostMapping("/runs/{run}/tasks/{task}/transcript/stop")
+    fun stop(@PathVariable run: String, @PathVariable task: String, @RequestParam(required = false) back: String?, model: Model): String {
+        if (launcher.stop(run, task)) return if (back == "run") "redirect:/runs/$run" else "redirect:/runs/$run/tasks/$task/transcript"
+        model.addAttribute("error", "Not stopped: the Agent's session has already ended.")
+        return page(run, task, model)
     }
 
     /** The changed elements of the Transcript from byte [from] on, as `entry` events, for as long as the page is open. */

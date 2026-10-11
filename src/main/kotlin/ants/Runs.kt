@@ -38,7 +38,12 @@ import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.server.ResponseStatusException
 import java.io.File
+import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardOpenOption.APPEND
+import java.nio.file.StandardOpenOption.CREATE
+import java.time.Instant
+import java.time.temporal.ChronoUnit.SECONDS
 import java.util.Date
 import kotlin.io.path.createDirectories
 
@@ -115,7 +120,7 @@ class Runs(
             val entry = notifications.entries().firstOrNull { it.run == id && it.taskId == task }
             val model = mapOf(
                 "run" to id, "task" to task, "name" to (element.name ?: task), "shown" to shown(id)[task], "transcript" to transcript,
-                "entry" to entry, "details" to entry?.let(notifications::details), "_csrf" to csrf,
+                "entry" to entry, "details" to entry?.let(notifications::details), "live" to launcher.live(id, task), "_csrf" to csrf,
             )
             // One data line: a newline as a character reference still reads as one, in a <pre> too.
             StringOutput().also { templates.render("drawer.kte", model, it) }.toString().replace("\n", "&#10;")
@@ -193,6 +198,11 @@ class Runs(
 }
 
 private val json = JsonMapper.shared()
+
+/** Appends one entry to the Run log, `run-log.md` in the Run workspace [workspace]: [what] the user did on [task], and [text]. */
+fun runLog(workspace: Path, task: String, what: String, text: String) {
+    Files.writeString(workspace.resolve("run-log.md"), "## ${Instant.now().truncatedTo(SECONDS)} · $task · $what\n\n${text.trim()}\n\n", CREATE, APPEND)
+}
 
 /** How a Run's state reads on its pages. */
 val HistoricProcessInstance.stateName

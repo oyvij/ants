@@ -102,7 +102,7 @@ class RunPageTest : AntsTest() {
             tool("4", "TaskUpdate", """{"taskId":"2","status":"in_progress"}"""),
             """{"type":"assistant","message":{"id":"m5","content":[{"type":"text","text":"First a look."}]}}""",
             """{"type":"assistant","message":{"id":"m6","content":[{"type":"text","text":"The notes say **dry**."}]}}""",
-            "wait release", done,
+            "read", done,
         )
         val run = start("agent-task")
         val drawer = browser.events("/runs/$run/tasks/draft/drawer")
@@ -116,9 +116,16 @@ class RunPageTest : AntsTest() {
         assertContains(tasks, """<li class="in_progress">Write the draft</li>""")
         assertContains(part(html, "drawer-links"), """href="/runs/$run/tasks/draft/transcript"""")
 
-        claude.release("release")
+        // The comment box of a running Task sends into its live session, and the user stays on the Run page.
+        val send = part(html, "drawer-send")
+        assertContains(send, """<form method="post" action="/runs/$run/tasks/draft/transcript/send">""")
+        assertContains(send, """<form method="post" action="/runs/$run/tasks/draft/transcript/stop">""")
+        browser.get("/runs/$run")
+        assertEquals("/runs/$run", browser.post("/runs/$run/tasks/draft/transcript/send", mapOf("message" to "Keep it dry.", "back" to "run")).path)
         html = drawer.until { "done" in part(it, "drawer-head") }
         assertContains(part(html, "drawer-output"), "dry")
+        assertFalse("drawer-send" in html)
+        assertContains(claude.launches("draft").single().stdin, "Keep it dry.")
     }
 
     @Test

@@ -7,8 +7,9 @@
 # session's first launch; a launch with neither, a So far rewrite, plays the Skill `so-far`. Like claude with
 # --replay-user-messages, it echoes every stdin message with "isReplay":true.
 # A session line `wait <file>` waits until ./<file> exists, `read` reads the next stdin line into the launch's stdin
-# record, `stderr <text>` prints to stderr and `exit <code>` exits; every other line is printed. $SESSION stands for
-# the --session-id or --resume. A launch that is killed leaves ./launches/<skill>.<n>/killed.
+# record (a control request, such as Stop's interrupt, is not echoed), `stderr <text>` prints to stderr and `exit <code>`
+# exits; every other line is printed. $SESSION stands for the --session-id or --resume. A launch that is killed leaves
+# ./launches/<skill>.<n>/killed.
 dir=$(cd "$(dirname "$0")" && pwd)
 if [ "$1" = --help ]; then cat "$dir/help" 2>/dev/null; exit 0; fi
 if [ "$1 $2" = "auth status" ]; then cat "$CLAUDE_CONFIG_DIR/auth-status.json" 2>/dev/null || { echo '{"loggedIn":false,"authMethod":"none"}'; exit 1; }; exit 0; fi
@@ -37,7 +38,8 @@ while IFS= read -r line <&3; do
     line=${line//\$SESSION/$session}
     case $line in
         "wait "*) while [ ! -e "$dir/${line#wait }" ]; do sleep 0.05; done ;;
-        read) IFS= read -r message && printf '%s\n' "$message" >> "$launch/stdin" && replay "$message" ;;
+        read) IFS= read -r message && printf '%s\n' "$message" >> "$launch/stdin" &&
+            case $message in *'"type":"control_request"'*) ;; *) replay "$message" ;; esac ;;
         "stderr "*) printf '%s\n' "${line#stderr }" >&2 ;;
         "exit "*) exit "${line#exit }" ;;
         *) printf '%s\n' "$line" ;;
