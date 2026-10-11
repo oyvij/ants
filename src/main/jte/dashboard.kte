@@ -1,0 +1,30 @@
+@param live: Long
+@param waiting: Int
+@param done: Long
+@param entries: List<ants.Entry>
+@param working: List<ants.Working>
+<section id="stats">
+<h2>Runs</h2>
+<dl>
+    <dt>Live</dt> <dd>${live}</dd>
+    <dt>Waiting</dt> <dd>${waiting}</dd>
+    <dt>Done</dt> <dd>${done}</dd>
+</dl>
+</section>
+<section id="waiting-on-you">
+<h2>Waiting on you</h2>
+@template.entries(entries = entries)
+</section>
+<section id="working-now">
+<h2>Working now</h2>
+@if(working.isEmpty())
+<p>No Agent Task is running.</p>
+@else
+<table>
+    <tr><th>Process</th><th>Run</th><th>Task</th></tr>
+@for(task in working)
+    <tr><td>${task.process}</td><td><a href="/runs/${task.run}">${task.run}</a></td><td>${task.task}</td></tr>
+@endfor
+</table>
+@endif
+</section>

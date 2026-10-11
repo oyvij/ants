@@ -247,7 +247,8 @@ class NotificationListTest : AntsTest() {
 
         val dismissed = browser.post("/runs/$run/dismiss", emptyMap())
         assertEquals("/runs/$run", dismissed.path)
-        assertFalse(home.resolve("runs/$run").exists())
+        assertFalse(home.resolve("runs/$run/run-log.md").exists())
+        assertTrue(home.resolve("runs/$run/tasks/draft/transcript.jsonl").exists()) // Transcripts outlive the Run
         assertFalse("Dismiss" in dismissed.body)
     }
 

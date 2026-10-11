@@ -2,10 +2,12 @@
 @param details: String?
 @param error: String? = null
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
+@param colorScheme: String = "light dark"
 <!doctype html>
 <html lang="en">
 <head>
     <meta charset="utf-8">
+    <meta name="color-scheme" content="${colorScheme}">
     <title>${entry.icon} ${entry.tag} ${entry.task} · Ants</title>
 </head>
 <body>

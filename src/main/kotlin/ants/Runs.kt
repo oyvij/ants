@@ -25,10 +25,10 @@ import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.server.ResponseStatusException
+import java.io.File
 import java.nio.file.Path
 import java.util.Date
 import kotlin.io.path.createDirectories
-import kotlin.io.path.exists
 
 @Controller
 class Runs(
@@ -55,6 +55,7 @@ class Runs(
                 .orderByVariableName().asc().list()
                 .associate { it.name to ((it.typedValue as? ObjectValue)?.valueSerialized ?: "${it.value}") },
         )
+        model.addAttribute("transcripts", Transcript.all(home.resolve("runs").resolve(id)).mapValues { it.value.tokens })
         model.addAttribute(
             "agentTasks",
             externalTasks.createExternalTaskQuery().processInstanceId(id).topicName(AgentLauncher.TOPIC).list().associate { it.activityId to state(it) },
@@ -62,18 +63,20 @@ class Runs(
         return "run"
     }
 
-    /** Dismiss: deletes the Run workspace an ended Run kept, such as a cancelled one's. */
+    /** Dismiss: cleans up the Run workspace a cancelled Run kept, as if the Run had ended. */
     @PostMapping("/runs/{id}/dismiss")
     fun dismiss(@PathVariable id: String): String {
-        keptWorkspace(run(id))?.toFile()?.deleteRecursively()
+        keptWorkspace(run(id))?.let { cleanUp(it.toFile()) }
         return "redirect:/runs/$id"
     }
 
     private fun run(id: String) = history.createHistoricProcessInstanceQuery().processInstanceId(id).singleResult()
         ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No Run $id")
 
-    private fun keptWorkspace(run: HistoricProcessInstance) =
-        home.resolve("runs").resolve(run.id).takeIf { run.state != HistoricProcessInstance.STATE_ACTIVE && it.exists() }
+    /** The workspace of a cancelled Run, until it is dismissed. */
+    private fun keptWorkspace(run: HistoricProcessInstance) = home.resolve("runs").resolve(run.id).takeIf { workspace ->
+        run.state == HistoricProcessInstance.STATE_EXTERNALLY_TERMINATED && workspace.toFile().listFiles()?.any { it.name != "tasks" } == true
+    }
 
     private fun state(task: ExternalTask) = when {
         task.retries == 0 -> listOfNotNull(task.errorMessage, externalTasks.getExternalTaskErrorDetails(task.id)).joinToString(" ")
@@ -117,7 +120,7 @@ class RunLifecycle(@Value("\${ants.home}") home: Path) : AbstractProcessEnginePl
         if (!run.isTopRun || run.isCanceled) return@ExecutionListener
         val workspace = workspaces.resolve(run.processInstanceId).toFile()
         // Only once the end is committed: a rolled-back end leaves the Run alive and needing its workspace.
-        Context.getCommandContext().transactionContext.addTransactionListener(TransactionState.COMMITTED) { workspace.deleteRecursively() }
+        Context.getCommandContext().transactionContext.addTransactionListener(TransactionState.COMMITTED) { cleanUp(workspace) }
     }
 
     override fun preInit(configuration: ProcessEngineConfigurationImpl) {
@@ -131,6 +134,12 @@ class RunLifecycle(@Value("\${ants.home}") home: Path) : AbstractProcessEnginePl
                 }
             }
     }
+}
+
+/** Deletes a Run workspace once its Run is done with it, all but the Transcripts (`tasks/`), which outlive the Run. */
+fun cleanUp(workspace: File) {
+    workspace.listFiles()?.filter { it.name != "tasks" }?.forEach { it.deleteRecursively() }
+    workspace.delete() // only if nothing was kept
 }
 
 /** Every Task in this scope and the scopes inside it, such as embedded sub-processes and multi-instance bodies. */

@@ -1,0 +1,93 @@
+@import ants.Settings
+@param form: ants.SettingsForm
+@param file: String
+@param message: String? = null
+@param login: ants.ClaudeLogin
+@param colorScheme: String = "light dark"
+@param _csrf: org.springframework.security.web.csrf.CsrfToken
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="color-scheme" content="${colorScheme}">
+    <title>Settings · Ants</title>
+</head>
+<body>
+@template.nav()
+<h1>Settings</h1>
+@if(message != null)<p role="alert">${message}</p>@endif
+<section aria-labelledby="claude-login">
+    <h2 id="claude-login">Claude login</h2>
+    <p>@if(login.loggedIn)Logged in (${login.method}).@else Not logged in.@endif
+        Agents run on Ants' own Claude login, never yours. To log in, run in a terminal: <code>${login.command}</code></p>
+@if(login.apiKeySource != null)
+    <p role="alert">An API key is in use (apiKeySource: ${login.apiKeySource}). Agents run on the subscription login only:
+        remove the key from Ants' Claude login and log in again.</p>
+@endif
+@if(login.usage.isEmpty())
+    <p>No usage reported yet; it shows after an Agent Task runs.</p>
+@else
+    <ul>
+@for(usage in login.usage)
+        <li>${usage}</li>
+@endfor
+    </ul>
+@endif
+</section>
+<form method="post" action="/settings">
+    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+    <p><button name="action" value="save">Save</button> Written to <code>${file}</code>. A hand edit to it shows here.</p>
+
+    <fieldset>
+        <legend>Commands</legend>
+@for(cli in Settings.CLIS)
+        <p><label>${cli} <input name="${cli}.path" value="${form.paths[cli]}" size="50"></label></p>
+@endfor
+        <p><button name="action" value="detect">Detect</button> Finds them through your login shell.</p>
+@for(cli in Settings.AI_CLIS)
+        <p><label>${cli} command <input name="${cli}.command" value="${form.commands[cli]}" placeholder="${cli}'s path" size="50"></label>
+            Ants appends its flags, for example <code>nono run --profile ${cli} -- ${cli}</code>.</p>
+        <p><label>${cli} environment allow-list <input name="${cli}.env" value="${form.envs[cli]}" placeholder="${Settings.DEFAULT_ENV.joinToString(" ")}" size="50"></label></p>
+@endfor
+        <p><label>Varde's config.toml <input name="varde-config" value="${form.vardeConfig}" placeholder="~/.varde/config.toml" size="50"></label>
+            <button name="action" value="varde">Fill from Varde</button> Fills a command and allow-list from its <code>[ai]</code>.</p>
+    </fieldset>
+
+    <fieldset>
+        <legend>Agent Tasks at once</legend>
+        <p><input type="number" min="1" name="agent-tasks" value="${form.agentTasks}" placeholder="3" aria-label="Agent Tasks at once">
+            Live CLI processes across all Runs. More wait as Queued.</p>
+    </fieldset>
+
+    <fieldset>
+        <legend>Vaults</legend>
+        @template.named(list = "vaults", default = "default-vault", named = form.vaults)
+    </fieldset>
+
+    <fieldset>
+        <legend>Source maps</legend>
+        @template.named(list = "source-maps", default = "default-source-map", named = form.sourceMaps)
+    </fieldset>
+
+    <fieldset>
+        <legend>Extra folders, one per line</legend>
+        <p><label>Agent folders, after <code>agents/</code><br><textarea name="agent-folders" rows="3" cols="60">${form.agentFolders}</textarea></label></p>
+        <p><label>Skill folders, after <code>skills/</code><br><textarea name="skill-folders" rows="3" cols="60">${form.skillFolders}</textarea></label></p>
+    </fieldset>
+
+    <fieldset>
+        <legend>Password</legend>
+        <p><label>New password <input type="password" name="password" autocomplete="new-password"></label> Takes effect at the next login.</p>
+    </fieldset>
+
+    <fieldset>
+        <legend>Theme</legend>
+@for(theme in listOf("system", "light", "dark"))
+        <label><input type="radio" name="theme" value="${theme}" checked="${theme == form.theme}"> ${theme}</label>
+@endfor
+    </fieldset>
+
+    <p><button name="action" value="save">Save</button></p>
+</form>
+</body>
+</html>
