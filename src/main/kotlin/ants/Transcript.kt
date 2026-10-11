@@ -37,13 +37,17 @@ import kotlin.io.path.name
  * says which elements it changed, so a page following the file patches only those.
  */
 class Transcript {
-    /** The entries in order, as HTML; entry i is the element with id `e<i>`. */
-    val entries = mutableListOf<String>()
+    /** The entries in order, as HTML; entry i is the element with id `e<i>`. A Subagent's block is composed in [html]. */
+    private val entries = mutableListOf<String>()
     private val launches = mutableListOf<Launch>()
     private val tools = mutableMapOf<Any?, Int>() // a tool_use id → its entry
+    private val blocks = mutableMapOf<Int, Subagent>() // a block's entry → its Subagent
+    private val subagents = mutableMapOf<Any?, Subagent>() // its tool_use id and its agent_id → a Subagent
+    private val nested = mutableSetOf<Int>() // the entries inside a block
     private val changed = linkedSetOf<String>()
     private val live = StringBuilder() // the text block streaming in now
     private var verb = "Starting"
+    private var seen = Instant.EPOCH // the latest time a line carried
 
     private class Launch(val entry: Int, val number: Int, val start: Instant) {
         var end: Instant? = null
@@ -53,6 +57,16 @@ class Transcript {
         val tokens get() = modelUsage ?: usage.values.sum()
     }
 
+    /** A Subagent the session started, shown as a block of the entries it added, [entries]. */
+    private class Subagent(val entry: Int, val type: String, val description: String, val start: Instant) {
+        val entries = mutableListOf<Int>()
+        var end: Instant? = null
+        var status = "running"
+    }
+
+    /** The top-level entries, as the page first shows them. */
+    val roots get() = entries.indices.filter { it !in nested }.map { html("e$it") }
+
     /** Every launch's tokens: the last `result`'s `modelUsage`, which counts Subagents too, or so far the messages'. */
     val tokens get() = launches.sumOf { it.tokens }
 
@@ -61,22 +75,27 @@ class Transcript {
     /** Folds in one line of the file and returns the ids of the elements it changed. */
     fun add(line: String): Set<String> {
         val event = runCatching { json.readValue(line, Map::class.java) }.getOrNull() ?: return emptySet()
-        val before = FIXED.associateWith(::html)
+        val watched = FIXED + blocks.keys.map { "e${it}s" }
+        val before = watched.associateWith(::html)
         changed.clear()
+        (event["timestamp"] ?: event["at"])?.let { seen = runCatching { Instant.parse(it.toString()) }.getOrDefault(seen) }
         val launch = launches.lastOrNull()
         when (event["type"]) {
             "ants" -> ants(event)
             "user" -> user(event, launch)
             "assistant" -> assistant(event, launch)
             "stream_event" -> stream(event["event"] as? Map<*, *> ?: emptyMap<Any, Any>())
-            "system" -> if (event["subtype"] == "status") verb = "Thinking"
+            "system" -> system(event)
             "result" -> result(event, launch)
         }
         launches.lastOrNull()?.let { put(it.entry, divider(it)) }
-        return changed + FIXED.filter { html(it) != before[it] }
+        return changed + watched.filter { html(it) != before[it] }
     }
 
-    /** The element with [id]: an entry, or `live`, `status` or `tokens`. */
+    /**
+     * The element with [id]: an entry, a Subagent block's summary (`e<i>s`), or `live`, `status`, `tokens` or
+     * `subagents`, the count and a chip per running Subagent.
+     */
     fun html(id: String): String = when (id) {
         "live" -> """<div id="live">${if (live.isEmpty()) "" else markdown(live)}</div>"""
         "tokens" -> """<span id="tokens">${tokens(tokens)}</span>"""
@@ -84,8 +103,25 @@ class Transcript {
             """<div id="status"><span class="spinner">✻</span> $verb… <span data-since="${it.start.toEpochMilli()}">""" +
                 """${elapsed(Duration.between(it.start, Instant.now()))}</span> · ${tokens(it.tokens)}</div>"""
         }
-        else -> entries[id.removePrefix("e").toInt()]
+        "subagents" -> """<div id="subagents">""" + (if (blocks.isEmpty()) "" else "⑂ ${blocks.size}") +
+            blocks.values.filter { running && it.end == null }.joinToString("") {
+                """ <span class="chip">⑂ ${esc(it.type)} · ${esc(it.description)} · ${time(it)}</span>"""
+            } + "</div>"
+        else -> if (id.endsWith("s")) summary(blocks.getValue(id.removePrefix("e").removeSuffix("s").toInt()))
+        else id.removePrefix("e").toInt().let { entry ->
+            blocks[entry]?.let { block ->
+                """<details class="subagent" id="$id"${if (running && block.end == null) " open" else ""}>${summary(block)}""" +
+                    """<div>${block.entries.joinToString("") { html("e$it") }}</div></details>"""
+            } ?: entries[entry]
+        }
     }
+
+    private fun summary(block: Subagent) = """<summary id="e${block.entry}s">⑂ <b>${esc(block.type)}</b> ${esc(block.description)}""" +
+        (if (block.end != null || running) " · ${time(block)}" else "") + (if (block.status in OK) "" else " · ${esc(block.status)}") + "</summary>"
+
+    /** How long [block] ran, or a ticking time while it runs. */
+    private fun time(block: Subagent) = block.end?.let { elapsed(Duration.between(block.start, it)) }
+        ?: """<span data-since="${block.start.toEpochMilli()}">${elapsed(Duration.between(block.start, Instant.now()))}</span>"""
 
     private fun ants(event: Map<*, *>) {
         val at = Instant.parse(event["at"].toString())
@@ -106,8 +142,11 @@ class Transcript {
     }
 
     private fun user(event: Map<*, *>, launch: Launch?) {
+        val parent = subagent(event)
         fun said(text: Any?) {
-            if (launch != null && !launch.prompted) {
+            if (parent != null) {
+                append(parent) { """<details class="prompt" id="$it"><summary>Prompt</summary><pre>${esc(text)}</pre></details>""" }
+            } else if (launch != null && !launch.prompted) {
                 launch.prompted = true
                 append { """<details class="prompt" id="$it"><summary>Prompt</summary><pre>${esc(text)}</pre></details>""" }
             } else {
@@ -119,7 +158,12 @@ class Transcript {
             is List<*> -> for (block in content.filterIsInstance<Map<*, *>>()) when (block["type"]) {
                 "text" -> said(block["text"])
                 "tool_result" -> {
-                    verb = "Thinking"
+                    if (parent == null) verb = "Thinking"
+                    // without task_* events, such as for a type the Limit denies, the tool's result ends the Subagent
+                    subagents[block["tool_use_id"]]?.takeIf { it.end == null }?.let {
+                        it.end = seen
+                        if (block["is_error"] == true) it.status = "failed" else if (it.status == "running") it.status = "completed"
+                    }
                     val entry = tools[block["tool_use_id"]] ?: continue
                     if (block["is_error"] == true) put(entry, entries[entry].replaceFirst("""class="tool"""", """class="tool error""""))
                 }
@@ -132,22 +176,60 @@ class Transcript {
         (message["usage"] as? Map<*, *>)?.let {
             launch?.usage?.set(message["id"], sum(it, "input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"))
         }
+        val parent = subagent(event) // a Subagent's own messages go into its block, and leave the live text and verb alone
         for (block in (message["content"] as? List<*>).orEmpty().filterIsInstance<Map<*, *>>()) when (block["type"]) {
             "text" -> {
-                live.clear()
-                append { """<div class="text" id="$it">${markdown(block["text"].toString())}</div>""" }
+                if (parent == null) live.clear()
+                append(parent) { """<div class="text" id="$it">${markdown(block["text"].toString())}</div>""" }
             }
-            "thinking" -> append { """<details class="thinking" id="$it"><summary>✻ Thinking</summary>${esc(block["thinking"])}</details>""" }
+            "thinking" -> append(parent) { """<details class="thinking" id="$it"><summary>✻ Thinking</summary>${esc(block["thinking"])}</details>""" }
             "tool_use" -> {
                 val name = block["name"].toString()
-                val argument = (block["input"] as? Map<*, *>)?.values?.firstOrNull { it is String }?.toString().orEmpty()
-                tools[block["id"]] = append {
-                    """<div class="tool" id="$it">⏺ <b>${esc(name)}</b> <code>${esc(argument.lines().first().take(120))}</code></div>"""
+                val input = block["input"] as? Map<*, *> ?: emptyMap<Any, Any>()
+                if (parent == null && name in AgentLauncher.SUBAGENT_TOOLS) {
+                    spawn(block["id"], input["subagent_type"]?.toString() ?: "general-purpose", input["description"]?.toString().orEmpty())
+                } else {
+                    val argument = input.values.firstOrNull { it is String }?.toString().orEmpty()
+                    tools[block["id"]] = append(parent) {
+                        """<div class="tool" id="$it">⏺ <b>${esc(name)}</b> <code>${esc(argument.lines().first().take(120))}</code></div>"""
+                    }
                 }
-                verb = VERBS[name] ?: "Working"
+                if (parent == null) verb = VERBS[name] ?: "Working"
             }
         }
     }
+
+    /** A Subagent's lifecycle: `task_started` ties its agent_id to its block, `task_updated` and `task_notification` end it. */
+    private fun system(event: Map<*, *>) {
+        when (event["subtype"]) {
+            "status" -> verb = "Thinking"
+            "task_started" -> {
+                val block = subagents[event["tool_use_id"]]
+                    ?: spawn(event["tool_use_id"], event["subagent_type"]?.toString() ?: "general-purpose", event["description"]?.toString().orEmpty())
+                subagents[event["task_id"]] = block
+            }
+            "task_updated", "task_notification" -> {
+                val block = subagents[event["task_id"]] ?: return
+                val patch = event["patch"] as? Map<*, *> ?: event
+                patch["status"]?.let { block.status = it.toString() }
+                (patch["end_time"] as? Number)?.let { block.end = Instant.ofEpochMilli(it.toLong()) }
+                if (block.status != "running" && block.end == null) block.end = seen
+            }
+        }
+    }
+
+    /** Opens a block for the Subagent the tool call [id] starts. */
+    private fun spawn(id: Any?, type: String, description: String): Subagent {
+        val entry = entries.size
+        val block = Subagent(entry, type, description, seen)
+        blocks[entry] = block
+        append { "" } // the block's HTML is composed from its entries
+        subagents[id] = block
+        return block
+    }
+
+    /** The Subagent whose block [event] belongs in: by `agent_id`, else by `parent_tool_use_id`; null for the session's own. */
+    private fun subagent(event: Map<*, *>) = event["agent_id"]?.let(subagents::get) ?: event["parent_tool_use_id"]?.let(subagents::get)
 
     private fun stream(event: Map<*, *>) {
         when (event["type"]) {
@@ -184,6 +266,15 @@ class Transcript {
         return entry
     }
 
+    /** Appends an entry inside [parent]'s block, marked so a page following the file puts it there; or at the top. */
+    private fun append(parent: Subagent?, html: (id: String) -> String): Int {
+        if (parent == null) return append(html)
+        val entry = append { id -> html(id).replaceFirst(""" id="$id"""", """ id="$id" data-in="e${parent.entry}"""") }
+        nested += entry
+        parent.entries += entry
+        return entry
+    }
+
     private fun put(entry: Int, html: String) {
         if (entries[entry] == html) return
         entries[entry] = html
@@ -206,7 +297,8 @@ class Transcript {
     }
 
     companion object {
-        private val FIXED = listOf("live", "status", "tokens")
+        private val FIXED = listOf("live", "status", "tokens", "subagents")
+        private val OK = setOf("running", "completed") // a Subagent's statuses its summary leaves unsaid
         private val VERBS = mapOf(
             "Read" to "Reading", "Edit" to "Editing", "Write" to "Writing", "NotebookEdit" to "Editing", "Grep" to "Searching",
             "Glob" to "Searching", "Bash" to "Running", "WebFetch" to "Browsing", "WebSearch" to "Browsing", "Agent" to "Delegating",

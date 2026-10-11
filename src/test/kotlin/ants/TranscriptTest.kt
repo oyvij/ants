@@ -138,6 +138,57 @@ class TranscriptTest : AntsTest() {
         }
         assertEquals(page(path), page(path))
     }
+
+    @Test
+    fun `Subagents show as a count, live chips with type, description and time, and nested blocks, their tokens in the Task's`() {
+        fun spawn(id: String, type: String, description: String) =
+            """{"type":"assistant","message":{"id":"m1","content":[{"type":"tool_use","id":"$id","name":"Agent","input":""" +
+                """{"description":"$description","prompt":"Look it up","subagent_type":"$type"}}],"usage":{"input_tokens":10}},""" +
+                """"parent_tool_use_id":null,"timestamp":"2026-10-11T12:00:00Z"}"""
+        fun started(task: String, id: String, type: String) =
+            """{"type":"system","subtype":"task_started","task_id":"$task","tool_use_id":"$id","description":"x","subagent_type":"$type"}"""
+        claude.session(
+            "draft", init,
+            spawn("tA", "searcher", "Search the notes"),
+            started("a1", "tA", "searcher"),
+            spawn("tB", "general-purpose", "Check facts"),
+            started("b1", "tB", "general-purpose"),
+            """{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Find the tone"}]},"parent_tool_use_id":"tA","agent_id":"a1"}""",
+            """{"type":"assistant","message":{"id":"s1","content":[{"type":"tool_use","id":"tR","name":"Read","input":{"file_path":"tone.md"}}],"usage":{"input_tokens":100}},"parent_tool_use_id":"tA","agent_id":"a1"}""",
+            // without an agent_id, the parent_tool_use_id still finds the block
+            """{"type":"assistant","message":{"id":"s2","content":[{"type":"text","text":"Facts **hold**."}],"usage":{"input_tokens":1000}},"parent_tool_use_id":"tB"}""",
+            "wait one",
+            """{"type":"system","subtype":"task_updated","task_id":"a1","patch":{"status":"completed","end_time":1791720007000}}""",
+            """{"type":"system","subtype":"task_notification","task_id":"a1","tool_use_id":"tA","status":"completed","summary":"Warm."}""",
+            """{"type":"user","message":{"role":"user","content":[{"tool_use_id":"tA","type":"tool_result","content":"Warm."}]},"parent_tool_use_id":null}""",
+            """{"type":"user","message":{"role":"user","content":[{"tool_use_id":"tB","type":"tool_result","content":"Denied","is_error":true}]},"parent_tool_use_id":null,"timestamp":"2026-10-11T12:01:05Z"}""",
+            done,
+        )
+        val run = start("agent-task")
+        val path = "/runs/$run/tasks/draft/transcript"
+        eventually { assertContains(page(path), "Facts <strong>hold</strong>.") }
+        val running = page(path)
+        assertContains(running, """<div id="subagents">⑂ 2""")
+        assertContains(running, Regex("""<span class="chip">⑂ searcher · Search the notes · <span data-since="\d+">[\dhms ]+</span></span>"""))
+        assertContains(running, Regex("""<span class="chip">⑂ general-purpose · Check facts · <span data-since="\d+">[\dhms ]+</span></span>"""))
+        val searcher = Regex("""(?s)<details class="subagent" id="(e\d+)" open><summary id="\1s">⑂ <b>searcher</b> Search the notes · <span data-since""" +
+            """.*?<div>(.*?)</div></details>""").find(running)!!.groupValues[2]
+        assertContains(searcher, """<summary>Prompt</summary><pre>Find the tone</pre>""")
+        assertContains(searcher, """⏺ <b>Read</b> <code>tone.md</code>""")
+        assertFalse("Facts" in searcher)
+        assertContains(running, Regex("""(?s)<details class="subagent" id="e\d+" open><summary id="e\d+s">⑂ <b>general-purpose</b> Check facts.*?Facts <strong>hold</strong>.*?</details>"""))
+        assertContains(running, Regex("""<div id="status">.*· 1,110 tokens</div>""")) // the Subagents' messages count while they run
+
+        val tab = Received(browser.events("$path/events?from=${Regex("""data-from="(\d+)"""").find(running)!!.groupValues[1]}"))
+        claude.release("one")
+        eventually { assertContains(page(path), "<b>Result: done</b>") }
+        val ended = page(path)
+        assertContains(ended, """<div id="subagents">⑂ 2</div>""") // no running Subagents, no chips
+        assertContains(ended, """⑂ <b>searcher</b> Search the notes · 7s</summary>""")
+        assertContains(ended, """⑂ <b>general-purpose</b> Check facts · 1m 5s · failed</summary>""")
+        eventually { assertContains(tab.toString(), """⑂ <b>searcher</b> Search the notes · 7s</summary>""") }
+        assertContains(tab.toString(), """<div id="subagents">⑂ 2</div>""")
+    }
 }
 
 /** Every data line an SSE stream has sent so far, one per line. */

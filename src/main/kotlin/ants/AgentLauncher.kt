@@ -198,8 +198,29 @@ class AgentLauncher(
             "--forward-subagent-text",
             "--tools", tools.map { it.substringBefore('(') }.distinct().joinToString(","),
             "--allowedTools", tools.joinToString(","),
-        ) + skills.flatMap { listOf("--add-dir", it.folder.toString()) } + (if (agent.model != null) listOf("--model", agent.model) else emptyList()) +
+        ) + subagents(tools) + skills.flatMap { listOf("--add-dir", it.folder.toString()) } + (if (agent.model != null) listOf("--model", agent.model) else emptyList()) +
             (if (agent.instructions.isNotEmpty()) listOf("--append-system-prompt", agent.instructions) else emptyList())
+    }
+
+    /**
+     * Every offered claude Agent as a Subagent type (`--agents`), and when the Agent tool among [tools] has a Limit,
+     * such as `Agent(searcher)`, every other type denied: claude lets the Agent tool start any type that isn't denied.
+     */
+    private fun subagents(tools: List<String>): List<String> {
+        val offered = catalogue.agents().filter { it.subagent && it.cli == "claude" }.associate { agent ->
+            agent.name to listOfNotNull(
+                "description" to agent.description,
+                "prompt" to agent.instructions,
+                agent.tools?.let { rules -> "tools" to rules.map { it.substringBefore('(') }.distinct().filter { it != "Skill" } },
+                agent.model?.let { "model" to it },
+            ).toMap()
+        }
+        val agentTool = tools.filter { it.substringBefore('(') in SUBAGENT_TOOLS }
+        val allowed = agentTool.takeIf { rules -> rules.isNotEmpty() && rules.all { '(' in it } }
+            ?.flatMap { it.substringAfter('(').removeSuffix(")").split(',').map(String::trim) }
+        val denied = allowed?.let { (BUILT_IN_SUBAGENTS + offered.keys).filter { it !in allowed }.map { "Agent($it)" } }.orEmpty()
+        return (if (offered.isEmpty()) emptyList() else listOf("--agents", json.writeValueAsString(offered))) +
+            (if (denied.isEmpty()) emptyList() else listOf("--disallowedTools", denied.joinToString(",")))
     }
 
     /** What `claude auth status` says of Ants' own Claude login, asked the way a launch runs; empty when it can't tell. */
@@ -230,7 +251,7 @@ class AgentLauncher(
             environment() += mapOf(
                 "CLAUDE_CONFIG_DIR" to home.resolve("claude").toString(),
                 "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS" to "1",
-                "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH" to "1",
+                "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH" to settings.subagentDepth().toString(),
             )
         }
 
@@ -261,6 +282,12 @@ class AgentLauncher(
         private val LOCK = Duration.ofDays(365)
         /** An Agent's tools when its file names none. */
         val DEFAULT_TOOLS = listOf("Bash", "Edit", "Glob", "Grep", "NotebookEdit", "Read", "TodoWrite", "WebFetch", "WebSearch", "Write")
+        /** The tool that starts Subagents: `Agent`, formerly `Task`. */
+        val SUBAGENT_TOOLS = setOf("Agent", "Task")
+
+        // ponytail: the types claude 2.1.295 builds in, as its system/init lists them; a new built-in type escapes a
+        // Limit until it is added here.
+        private val BUILT_IN_SUBAGENTS = listOf("claude", "Explore", "general-purpose", "Plan", "statusline-setup")
         private val json = JsonMapper.shared()
     }
 }

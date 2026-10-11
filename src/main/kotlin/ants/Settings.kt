@@ -49,6 +49,9 @@ class Settings(
     // ponytail: one global cap, no per-CLI caps or priorities
     fun agentTasks(): Int = (read()["agent-tasks"] as? Int) ?: 3
 
+    /** How deep claude's Subagents may nest: 1 lets a Task start Subagents, and them none of their own. */
+    fun subagentDepth(): Int = (read()["subagent-depth"] as? Int) ?: 1
+
     /** Where [cli] lives, as Detect found it or the user set it. */
     fun path(cli: String): String? = cli(cli)["path"]?.toString()
 
@@ -140,6 +143,7 @@ class Settings(
             # Ants settings. Ants reads this file as it goes, so hand edits count. Saving the settings page rewrites it.
             # password: the login password, plain or encoded ({bcrypt}…). Until it is set, the login is admin/admin.
             # agent-tasks: how many Agent Tasks run at once, across every Run (default 3).
+            # subagent-depth: how deep claude's Subagents may nest (default 1: a Task's Subagents start none of their own).
             # claude, codex, git, gh:
             #   path: where the CLI lives, as Detect found it through the login shell
             #   command: [claude]  claude and codex only: the command Ants appends its flags to, e.g. [nono, run, --, claude]

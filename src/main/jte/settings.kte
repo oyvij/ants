@@ -60,6 +60,12 @@
     </fieldset>
 
     <fieldset>
+        <legend>Subagent depth</legend>
+        <p><input type="number" min="1" name="subagent-depth" value="${form.subagentDepth}" placeholder="1" aria-label="Subagent depth">
+            How deep claude's Subagents may nest. At 1 a Task's Subagents start none of their own.</p>
+    </fieldset>
+
+    <fieldset>
         <legend>Vaults</legend>
         @template.named(list = "vaults", default = "default-vault", named = form.vaults)
     </fieldset>
