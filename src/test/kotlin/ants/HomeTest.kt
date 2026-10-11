@@ -3,9 +3,6 @@ package ants
 import org.junit.jupiter.api.Test
 import java.util.concurrent.BlockingQueue
 import java.util.concurrent.TimeUnit.SECONDS
-import kotlin.io.path.createDirectories
-import kotlin.io.path.deleteIfExists
-import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -16,11 +13,7 @@ class HomeTest : AntsTest() {
     private val claude = FakeClaude()
 
     private fun setUp() {
-        home.resolve("settings.yaml").writeText("claude:\n  command: [${claude.command}]\n$vault")
-        home.resolve("agents").createDirectories().resolve("writer.md").writeText("---\nskills: draft\n---\nWrite plainly.\n")
-        val skill = home.resolve("skills/draft").createDirectories()
-        skill.resolve("SKILL.md").writeText("---\nname: draft\ndescription: Drafts a text.\n---\nDraft the text.\n")
-        skill.resolve("result.schema.json").deleteIfExists()
+        agentTask(claude)
         browser.import("agent-task.bpmn")
     }
 

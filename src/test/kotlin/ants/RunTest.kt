@@ -1,8 +1,6 @@
 package ants
 
 import org.junit.jupiter.api.Test
-import kotlin.io.path.createDirectories
-import kotlin.io.path.deleteIfExists
 import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
 import kotlin.io.path.writeText
@@ -34,11 +32,7 @@ class RunTest : AntsTest() {
 
     /** loop-then-wait's Agent Task `a` is done at once, so the Run loops through it twice, then waits on User Task `b`. */
     private fun importLoopThenWait() {
-        home.resolve("settings.yaml").writeText("claude:\n  command: [${claude.command}]\n$vault")
-        home.resolve("agents").createDirectories().resolve("writer.md").writeText("---\nskills: draft\n---\nWrite plainly.\n")
-        val skill = home.resolve("skills/draft").createDirectories()
-        skill.resolve("SKILL.md").writeText("---\nname: draft\ndescription: Drafts a text.\n---\nDraft the text.\n")
-        skill.resolve("result.schema.json").deleteIfExists()
+        agentTask(claude)
         claude.session("draft", """{"type":"result","subtype":"success","is_error":false,"session_id":"s","structured_output":{"outcome":"done","summary":"Drafted.","output":{}}}""")
         browser.import("loop-then-wait.bpmn")
     }

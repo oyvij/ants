@@ -2,8 +2,6 @@ package ants
 
 import org.junit.jupiter.api.Test
 import tools.jackson.databind.json.JsonMapper
-import kotlin.io.path.createDirectories
-import kotlin.io.path.deleteIfExists
 import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
@@ -73,11 +71,7 @@ class GatewaysTest : AntsTest() {
 
     /** The Skill `draft` plays [lines], then hands back [output]. */
     private fun draft(output: String, vararg lines: String) {
-        home.resolve("settings.yaml").writeText("claude:\n  command: [${claude.command}]\n$vault")
-        home.resolve("agents").createDirectories().resolve("writer.md").writeText("---\nname: writer\nskills: draft\n---\nWrite plainly.\n")
-        val skill = home.resolve("skills/draft").createDirectories()
-        skill.resolve("SKILL.md").writeText("---\nname: draft\ndescription: Drafts a text.\n---\nDraft the text.\n")
-        skill.resolve("result.schema.json").writeText("""{"type":"object","properties":{"verdict":{}}}""")
+        agentTask(claude, mapOf("draft" to """{"type":"object","properties":{"verdict":{}}}"""), agent = "name: writer\n")
         claude.session(
             "draft", *lines,
             """{"type":"result","subtype":"success","is_error":false,"session_id":"s","structured_output":{"outcome":"done","summary":"Drafted.","output":$output}}""",

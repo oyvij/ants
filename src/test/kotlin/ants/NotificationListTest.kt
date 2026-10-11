@@ -3,12 +3,9 @@ package ants
 import org.junit.jupiter.api.Test
 import java.util.concurrent.BlockingQueue
 import java.util.concurrent.TimeUnit.SECONDS
-import kotlin.io.path.createDirectories
-import kotlin.io.path.deleteIfExists
 import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
 import kotlin.io.path.readText
-import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -20,29 +17,21 @@ class NotificationListTest : AntsTest() {
     private val browser by lazy { browser().also { it.login() } }
     private val claude = FakeClaude()
 
-    private fun settings(extra: String = "") = home.resolve("settings.yaml").writeText("claude:\n  command: [${claude.command}]\n$vault$extra")
-
     /**
      * Starts a Run of [process] while the Skill [skill] is there, as the pre-Run check needs, and deletes it before the
      * Run's Tasks launch.
      */
     private fun startWithout(skill: String, process: String = "agent-task"): String {
-        settings("agent-tasks: 0\n") // nothing launches yet
+        settings(claude, "agent-tasks: 0\n") // nothing launches yet
         browser.import("$process.bpmn")
         browser.get("/processes/$process")
         val run = browser.post("/processes/$process/runs", mapOf("prompt" to "Say hello")).path.removePrefix("/runs/")
         home.resolve("skills/$skill").toFile().deleteRecursively()
-        settings()
+        settings(claude)
         return run
     }
 
-    private fun setUp() {
-        settings()
-        home.resolve("agents").createDirectories().resolve("writer.md").writeText("---\nskills: draft\n---\nWrite plainly.\n")
-        val skill = home.resolve("skills/draft").createDirectories()
-        skill.resolve("SKILL.md").writeText("---\nname: draft\ndescription: Drafts a text.\n---\nDraft the text.\n")
-        skill.resolve("result.schema.json").deleteIfExists()
-    }
+    private fun setUp() = agentTask(claude)
 
     private fun result(result: String) = """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":$result}"""
     private val stuck = result("""{"outcome":"stuck","summary":"No tone given.","needs":"Which tone, dry or warm?"}""")
@@ -261,11 +250,9 @@ class NotificationListTest : AntsTest() {
 
     @Test
     fun `Cancel the Run ends the Run, kills its live Agent Tasks and keeps its Run workspace until the user dismisses it`() {
-        setUp()
-        claude.session("draft", "wait never", done)
         // Deployed with the Skill check, which is then deleted, so the Task check fails at launch.
-        home.resolve("agents/writer.md").writeText("---\nskills: draft, check\n---\nWrite plainly.\n")
-        home.resolve("skills/check").createDirectories().resolve("SKILL.md").writeText("---\nname: check\ndescription: Checks.\n---\nCheck.\n")
+        agentTask(claude, mapOf("draft" to null, "check" to null))
+        claude.session("draft", "wait never", done)
         val run = startWithout("check", "parallel-tasks")
         eventually { assertEquals(1, claude.launches("draft").size) }
         val entry = entry(run) // Check fails: its Skill is missing

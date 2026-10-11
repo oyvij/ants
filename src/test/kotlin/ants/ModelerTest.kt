@@ -1,7 +1,6 @@
 package ants
 
 import org.junit.jupiter.api.Test
-import kotlin.io.path.createDirectories
 import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
@@ -41,8 +40,7 @@ class ModelerTest : AntsTest() {
 
     @Test
     fun `Save and deploy writes operaton only`() {
-        home.resolve("agents").createDirectories().resolve("writer.md").writeText("---\nskills: draft\n---\nWrite plainly.\n")
-        home.resolve("skills/draft").createDirectories().resolve("SKILL.md").writeText("---\nname: draft\ndescription: Drafts a text.\n---\nDraft the text.\n")
+        agentTask(null)
         val (_, blank) = open("/processes/new?name=Topic+in+the+modeler")
         // camunda-bpmn-js writes camunda:, such as an Agent Task's topic.
         val drawn = blank.replace("<bpmn:definitions ", """<bpmn:definitions xmlns:camunda="http://camunda.org/schema/1.0/bpmn" """)

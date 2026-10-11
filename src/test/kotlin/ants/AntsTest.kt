@@ -28,6 +28,9 @@ import java.time.Instant
 import java.time.ZoneId
 import java.util.concurrent.BlockingQueue
 import java.util.concurrent.LinkedBlockingQueue
+import kotlin.io.path.createDirectories
+import kotlin.io.path.deleteIfExists
+import kotlin.io.path.writeText
 
 /** Boots Ants on a random port with a temporary ANTS_HOME (and so a temporary H2), driven over HTTP. */
 @SpringBootTest(webEnvironment = RANDOM_PORT)
@@ -71,6 +74,33 @@ abstract class AntsTest {
         for (folder in listOf("agents", "skills", "templates")) home.resolve(folder).toFile().run { deleteRecursively(); mkdirs() }
         home.resolve("schedules.yaml").toFile().delete()
     }
+
+    /**
+     * What a Run of an Agent Task needs, in one place: the Agent `writer` listing the [skills] (with [agent] lines in its
+     * frontmatter), each Skill with its result schema, none when null (and [metadata] lines in its frontmatter), and
+     * [settings] with [claude] and [extra]. gh is the fake on the tests' PATH, logged in; a [FakeClaude] logs claude in.
+     */
+    fun agentTask(
+        claude: FakeClaude?,
+        skills: Map<String, String?> = mapOf("draft" to null),
+        agent: String = "",
+        metadata: String = "",
+        extra: String = "",
+        env: List<String>? = null,
+    ) {
+        settings(claude, extra, env)
+        home.resolve("agents/writer.md").writeText("---\n${agent}skills: ${skills.keys.joinToString(", ")}\n---\nWrite plainly.\n")
+        for ((name, schema) in skills) {
+            val folder = home.resolve("skills/$name").createDirectories()
+            folder.resolve("SKILL.md").writeText("---\nname: $name\ndescription: Does $name.\n$metadata---\nDo it.\n")
+            folder.resolve("result.schema.json").run { if (schema != null) writeText(schema) else deleteIfExists() }
+        }
+    }
+
+    /** `settings.yaml`: a Vault, which the pre-Run check needs, [claude]'s command and [env] allow-list when given, and [extra]. */
+    fun settings(claude: FakeClaude?, extra: String = "", env: List<String>? = null) = home.resolve("settings.yaml").writeText(
+        (if (claude == null) "" else "claude:\n  command: [${claude.command}]\n" + (env?.let { "  env: [${it.joinToString(", ")}]\n" } ?: "")) + vault + extra,
+    )
 
     companion object {
         /** Shared by every test in the JVM: a test that writes a file into it resets that file. */

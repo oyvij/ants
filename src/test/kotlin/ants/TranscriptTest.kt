@@ -3,8 +3,6 @@ package ants
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import java.util.concurrent.BlockingQueue
-import kotlin.io.path.createDirectories
-import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -16,10 +14,7 @@ class TranscriptTest : AntsTest() {
 
     @BeforeEach
     fun setUp() {
-        home.resolve("settings.yaml").writeText("claude:\n  command: [${claude.command}]\n$vault")
-        home.resolve("agents").createDirectories().resolve("writer.md").writeText("---\nskills: draft\n---\nWrite plainly.\n")
-        home.resolve("skills/draft").createDirectories().resolve("SKILL.md").writeText("---\nname: draft\ndescription: Drafts a text.\n---\nDraft the text.\n")
-        home.resolve("skills/draft/result.schema.json").toFile().delete()
+        agentTask(claude)
     }
 
     private val init = """{"type":"system","subtype":"init","session_id":"${'$'}SESSION","apiKeySource":"none"}"""
