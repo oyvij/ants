@@ -69,8 +69,11 @@ private const val CAMUNDA = "http://camunda.org/schema/1.0/bpmn"
 private const val OPERATON = "http://operaton.org/schema/1.0/bpmn"
 
 /** Moves every element and attribute in Camunda's namespace to Operaton's. */
-fun operatonOnly(bpmn: ByteArray): String {
-    val document = DocumentBuilderFactory.newInstance().apply { isNamespaceAware = true }
+private fun operatonOnly(bpmn: ByteArray): String {
+    val document = DocumentBuilderFactory.newInstance().apply {
+        isNamespaceAware = true
+        setFeature("http://apache.org/xml/features/disallow-doctype-decl", true) // no external entities from an upload
+    }
         .newDocumentBuilder().parse(bpmn.inputStream())
     fun rewrite(element: Element) {
         for (attribute in List(element.attributes.length) { element.attributes.item(it) as Attr }) when {

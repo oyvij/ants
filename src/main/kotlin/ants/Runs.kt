@@ -64,15 +64,16 @@ val HistoricProcessInstance.stateName
  */
 @Component
 class RunLifecycle(@Value("\${ants.home}") home: Path) : AbstractProcessEnginePlugin() {
-    private val runs = home.resolve("runs")
+    private val workspaces = home.resolve("runs")
 
     private fun started(tasks: List<String>) = ExecutionListener { run ->
-        if (run.isTopRun) runs.resolve(run.processInstanceId).createDirectories()
+        if (run.isTopRun) workspaces.resolve(run.processInstanceId).createDirectories()
         for (task in tasks) run.setVariable(task, null)
         run.setVariable("runs", tasks.associateWith { 0 })
     }
 
-    // ponytail: parallel Tasks bumping `runs` in separate transactions clash on optimistic locking; the worker retries.
+    // ponytail: parallel Tasks starting in separate transactions clash on `runs` (optimistic locking) and the losing
+    // transaction rolls back; whoever drives it (the worker, a User Task's form) must retry once Tasks run in parallel.
     private val counted = ExecutionListener { task ->
         @Suppress("UNCHECKED_CAST")
         val counts = task.getVariable("runs") as Map<String, Int>
@@ -80,8 +81,9 @@ class RunLifecycle(@Value("\${ants.home}") home: Path) : AbstractProcessEnginePl
     }
 
     private val ended = ExecutionListener { run ->
-        if (!run.isTopRun) return@ExecutionListener
-        val workspace = runs.resolve(run.processInstanceId).toFile()
+        // A cancelled Run keeps its workspace, so no commits are lost.
+        if (!run.isTopRun || run.isCanceled) return@ExecutionListener
+        val workspace = workspaces.resolve(run.processInstanceId).toFile()
         // Only once the end is committed: a rolled-back end leaves the Run alive and needing its workspace.
         Context.getCommandContext().transactionContext.addTransactionListener(TransactionState.COMMITTED) { workspace.deleteRecursively() }
     }
