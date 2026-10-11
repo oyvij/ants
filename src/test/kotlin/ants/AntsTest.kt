@@ -1,5 +1,6 @@
 package ants
 
+import org.springframework.boot.builder.SpringApplicationBuilder
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.test.context.SpringBootTest.WebEnvironment.RANDOM_PORT
 import org.springframework.boot.test.web.server.LocalServerPort
@@ -28,6 +29,18 @@ abstract class AntsTest {
         /** A temporary ANTS_HOME that doesn't exist yet. */
         fun tempHome(): Path = Files.createTempDirectory("ants-test").resolve("ants")
 
+        /**
+         * Boots and closes a second Ants on [home]. Operaton keeps engines and Cockpit's runtime JVM-wide, so it runs
+         * without the webapp and with an engine of its own, or closing it would break the shared Ants' Cockpit.
+         */
+        fun bootAnother(home: Path, vararg args: String) = SpringApplicationBuilder(AntsApplication::class.java).run(
+            "--ants.home=$home",
+            "--server.port=0",
+            "--operaton.bpm.process-engine-name=another",
+            "--spring.autoconfigure.exclude=org.operaton.bpm.spring.boot.starter.webapp.OperatonBpmWebappAutoConfiguration",
+            *args,
+        ).close()
+
         @JvmStatic
         @DynamicPropertySource
         fun antsHome(registry: DynamicPropertyRegistry) = registry.add("ants.home") { home.toString() }
@@ -54,6 +67,26 @@ class Browser(private val base: String) {
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .POST(HttpRequest.BodyPublishers.ofString(body)),
         )
+    }
+
+    /** Posts one file the way a form with an `<input type="file">` does. */
+    fun upload(path: String, field: String, filename: String, content: ByteArray): Page {
+        val boundary = "ants-${System.nanoTime()}"
+        val csrfPart = csrf?.let { "--$boundary\r\nContent-Disposition: form-data; name=\"_csrf\"\r\n\r\n$it\r\n" }.orEmpty()
+        val head = "$csrfPart--$boundary\r\nContent-Disposition: form-data; name=\"$field\"; filename=\"$filename\"\r\n" +
+            "Content-Type: application/octet-stream\r\n\r\n"
+        val body = head.toByteArray() + content + "\r\n--$boundary--\r\n".toByteArray()
+        return send(
+            HttpRequest.newBuilder(URI("$base$path"))
+                .header("Content-Type", "multipart/form-data; boundary=$boundary")
+                .POST(HttpRequest.BodyPublishers.ofByteArray(body)),
+        )
+    }
+
+    /** Imports a `.bpmn` from the test resources on the Processes page. */
+    fun import(file: String): Page {
+        get("/processes")
+        return upload("/processes", "file", file, javaClass.getResource("/$file")!!.readBytes())
     }
 
     fun login(password: String = "admin"): Page {

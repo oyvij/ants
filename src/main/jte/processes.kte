@@ -1,0 +1,24 @@
+@param processes: List<org.operaton.bpm.engine.repository.ProcessDefinition>
+@param error: String? = null
+@param _csrf: org.springframework.security.web.csrf.CsrfToken
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Processes · Ants</title>
+</head>
+<body>
+<h1>Processes</h1>
+@if(error != null)<p role="alert">${error}</p>@endif
+<ul>
+@for(process in processes)
+    <li><a href="/processes/${process.key}">${process.name ?: process.key}</a></li>
+@endfor
+</ul>
+<form method="post" action="/processes" enctype="multipart/form-data">
+    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+    <label>Import a BPMN file <input type="file" name="file" accept=".bpmn" required></label>
+    <button>Import</button>
+</form>
+</body>
+</html>

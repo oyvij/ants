@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:operaton="http://operaton.org/schema/1.0/bpmn"
+                  id="definitions" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="loop-then-wait" name="Loop then wait" isExecutable="true" operaton:historyTimeToLive="180">
+    <bpmn:startEvent id="start" />
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="a" />
+    <bpmn:task id="a" />
+    <bpmn:sequenceFlow id="f2" sourceRef="a" targetRef="again" />
+    <bpmn:exclusiveGateway id="again" default="f4" />
+    <bpmn:sequenceFlow id="f3" sourceRef="again" targetRef="a">
+      <bpmn:conditionExpression>${runs.a &lt; 2}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="f4" sourceRef="again" targetRef="b" />
+    <bpmn:userTask id="b" />
+    <bpmn:sequenceFlow id="f5" sourceRef="b" targetRef="end" />
+    <bpmn:endEvent id="end" />
+  </bpmn:process>
+</bpmn:definitions>

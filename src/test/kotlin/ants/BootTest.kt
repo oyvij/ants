@@ -2,10 +2,13 @@ package ants
 
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
-import org.springframework.boot.builder.SpringApplicationBuilder
+import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
+import kotlin.io.path.readText
+import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class BootTest : AntsTest() {
@@ -48,12 +51,21 @@ class BindTest {
     @Test
     fun `a non-loopback bind is refused while the password is the default`() {
         val error = assertThrows<Exception> {
-            SpringApplicationBuilder(AntsApplication::class.java).run(
-                "--ants.home=${AntsTest.tempHome()}",
-                "--server.address=0.0.0.0",
-                "--server.port=0",
-            ).close()
+            AntsTest.bootAnother(AntsTest.tempHome(), "--server.address=0.0.0.0")
         }
         assertContains(generateSequence<Throwable>(error) { it.cause }.joinToString { it.message.orEmpty() }, "default password")
+    }
+}
+
+class ShippedTest {
+    @Test
+    fun `shipped is replaced whole on start when any file differs`() {
+        val home = AntsTest.tempHome()
+        val agents = home.resolve("shipped/agents").createDirectories()
+        agents.resolve("shipped-writer.md").writeText("edited by hand")
+        agents.resolve("removed.md").writeText("shipped by an older Ants")
+        AntsTest.bootAnother(home)
+        assertEquals(javaClass.getResource("/shipped/agents/shipped-writer.md")!!.readText(), agents.resolve("shipped-writer.md").readText())
+        assertFalse(agents.resolve("removed.md").exists())
     }
 }

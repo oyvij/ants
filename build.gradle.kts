@@ -5,6 +5,7 @@ plugins {
     kotlin("plugin.spring") version "2.4.21"
     id("org.springframework.boot") version "4.0.8"
     id("gg.jte.gradle") version "3.2.4"
+    id("com.github.node-gradle.node") version "7.1.0"
 }
 
 group = "no.oyvij"
@@ -28,9 +29,12 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-security")
     implementation("org.operaton.bpm.springboot:operaton-bpm-spring-boot-starter-rest:$operaton")
     implementation("org.operaton.bpm.springboot:operaton-bpm-spring-boot-starter-webapp:$operaton")
+    implementation("org.operaton.bpm:operaton-engine-plugin-spin")
+    implementation("org.operaton.spin:operaton-spin-dataformat-json-jackson")
     implementation("gg.jte:jte-spring-boot-starter-4:$jte")
     implementation("gg.jte:jte-kotlin:$jte")
     implementation("org.jetbrains.kotlin:kotlin-reflect")
+    implementation("com.networknt:json-schema-validator:2.0.4")
     runtimeOnly("com.h2database:h2")
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
@@ -42,6 +46,24 @@ jte {
     generate()
 }
 
+// Node runs only in the build: pnpm fetches the front-end libraries, whose dist/ goes into the static resources.
+node {
+    download = true
+    version = "24.21.0"
+    pnpmVersion = "10.34.6"
+}
+
+tasks.processResources {
+    dependsOn(tasks.named("pnpmInstall"))
+    from("node_modules/camunda-bpmn-js/dist") {
+        include("*.production.min.js", "assets/**")
+        into("static/vendor/camunda-bpmn-js")
+    }
+}
+
 tasks.test {
     useJUnitPlatform()
+    // Ants must strip these from every Agent's environment, even when the allow-list names them.
+    environment("ANTHROPIC_API_KEY", "sk-ant-test")
+    environment("CLAUDE_CODE_RETRY_WATCHDOG", "1")
 }

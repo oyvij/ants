@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:operaton="http://operaton.org/schema/1.0/bpmn"
+                  id="definitions" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="agent-task" name="Agent Task" isExecutable="true" operaton:historyTimeToLive="180">
+    <bpmn:startEvent id="start" />
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="draft" />
+    <bpmn:serviceTask id="draft" name="Draft" operaton:type="external" operaton:topic="agent">
+      <bpmn:extensionElements>
+        <operaton:properties>
+          <operaton:property name="ants.agent" value="writer" />
+          <operaton:property name="ants.skill" value="draft" />
+        </operaton:properties>
+        <operaton:inputOutput>
+          <operaton:inputParameter name="prompt">${prompt}</operaton:inputParameter>
+          <operaton:inputParameter name="tone">dry</operaton:inputParameter>
+        </operaton:inputOutput>
+      </bpmn:extensionElements>
+    </bpmn:serviceTask>
+    <bpmn:sequenceFlow id="f2" sourceRef="draft" targetRef="end" />
+    <bpmn:endEvent id="end" />
+  </bpmn:process>
+</bpmn:definitions>
