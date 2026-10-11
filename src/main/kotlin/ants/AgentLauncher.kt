@@ -196,7 +196,7 @@ class AgentLauncher(
             // An instance of a parallel multi-instance works in a folder of its own, and lands when done.
             val parallel = runtime.inParallel(task.executionId, task.activityId)
             val cwd = if (parallel) landing.folder(workspace, instance, fresh = task.variables[ACTION] == FRESH) else workspace
-            // An Approve's Send back leaves its comment for the Task it names, used once.
+            // An Approve's Send back leaves its comment for the Task it names, and a Round its answers for its asker, used once.
             val sent = sentBack(workspace, instance)
             val comment = sent.takeIf { resume == null && task.variables[ACTION] == null && it.exists() }?.readText()?.also { sent.deleteIfExists() }
             // With [RESUME], a Task the flow comes back to, as in a loop, resumes its last session, as one sent back
@@ -221,7 +221,14 @@ class AgentLauncher(
             if (result["outcome"] == "done") {
                 if (parallel) landing.land(workspace, instance)
                 transcript.ants("end", "Done.")
-                complete(task, result)
+                // An answer-round Agent: Ants stamps its answers and hands them to the asker it names.
+                val asker = task.extensionProperties[ASKER]
+                if (asker == null) complete(task, result)
+                else {
+                    val given = (((result["output"] as? Map<*, *>)?.get("answers")) as? List<*>).orEmpty()
+                        .mapNotNull { it as? Map<*, *> }.associate { it["id"].toString() to it["answer"].toString() }
+                    runtime.answerFor(workspace, task.executionId, name(task), asker, given) { complete(task, result + ("output" to it)) }
+                }
             } else {
                 val reason = "[stuck] ${result["summary"]}"
                 transcript.ants("end", reason)
@@ -558,7 +565,7 @@ class AgentLauncher(
     companion object {
         const val TOPIC = "agent"
 
-        /** Where an Approve's Send back leaves its comment for the Task [key] of the Run in [workspace]. */
+        /** Where an Approve's Send back, or a Round's answers, are left for the Task [key] of the Run in [workspace]. */
         fun sentBack(workspace: Path, key: String): Path = Transcript.file(workspace, key).resolveSibling("send-back")
 
         /** The user's choice on a held Task, [CONTINUE] or [FRESH], and their instruction, as local variables. */

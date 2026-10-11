@@ -1,0 +1,44 @@
+@param entry: ants.TaskEntry
+@param details: String?
+@param repos: List<ants.Outgoing>
+@param error: String? = null
+@param _csrf: org.springframework.security.web.csrf.CsrfToken
+@param colorScheme: String = "light dark"
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="color-scheme" content="${colorScheme}">
+    <title>${entry.icon} ${entry.tag} ${entry.task} · Ants</title>
+</head>
+<body>
+@template.nav()
+<p><a href="/notifications">Notification list</a></p>
+<h1>${entry.icon} ${entry.tag} ${entry.task}</h1>
+<p>${entry.process} · <a href="/runs/${entry.run}">Run ${entry.run}</a> · waiting ${entry.waited}</p>
+<p>${entry.summary}</p>
+@if(details != null)
+<h2>What git said</h2>
+<pre>${details}</pre>
+@endif
+<table>
+    <tr><th>Repo</th><th>Remote</th><th>Branch</th><th>Base</th><th>Commits</th></tr>
+@for(repo in repos)
+    <tr><td>${repo.repo}</td><td>${repo.remote}</td><td>${repo.branch}</td><td>${repo.base ?: "none"}</td>
+        <td><ul>@for(commit in repo.commits)<li><code>${commit.getValue("sha").take(7)}</code> ${commit.getValue("subject")}</li>@endfor</ul></td></tr>
+@endfor
+</table>
+@if(entry.tag == "[failed]")
+<p>To push by hand from the kept clone, then Continue:</p>
+<pre>@for(repo in repos)git -C ${repo.path.toString()} push ${repo.remote} ${repo.branch}
+@endfor</pre>
+@endif
+@if(error != null)<p role="alert">${error}</p>@endif
+<form method="post">
+    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+    <input type="hidden" name="instruction" value="">
+    @if(entry.tag == "[failed]")<button name="action" value="continue">Continue</button>@else<button name="action" value="push">Push</button>@endif
+    <button name="action" value="cancel">Cancel the Run</button>
+</form>
+</body>
+</html>

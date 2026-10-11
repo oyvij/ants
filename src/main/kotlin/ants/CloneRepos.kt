@@ -112,7 +112,15 @@ class CloneRepos(
             .mapNotNull { File(it, ".git/HEAD").takeIf(File::exists)?.readText()?.let { head -> Regex("^ref: refs/heads/(.+)").find(head.trim())?.groupValues?.get(1) } }
             .distinct()
 
-    private fun git(dir: Path, args: List<String>) = settings.git(dir, args)
+    /** Runs git in [dir] with [args], giving its output, trimmed; fails with git's message when git does. */
+    fun git(dir: Path, args: List<String>): String {
+        val process = ProcessBuilder(listOf(settings.path("git") ?: "git") + args).directory(dir.toFile())
+            .redirectInput(File("/dev/null")).redirectErrorStream(true)
+            .apply { environment()["GIT_TERMINAL_PROMPT"] = "0" }.start()
+        val output = process.inputReader().readText().trim()
+        check(process.waitFor() == 0) { "git ${args.first()} failed: $output" }
+        return output
+    }
 
     companion object {
         const val TOPIC = "clone-repos"
@@ -128,14 +136,4 @@ class CloneRepos(
          */
         private fun url(url: String) = if ('/' !in url && ':' !in url) null else Repo(url.trimEnd('/').substringAfterLast('/').substringAfterLast(':').removeSuffix(".git"), "", url)
     }
-}
-
-/** Runs git in [dir] with [args], giving its output, trimmed; fails with git's message when git does. */
-fun Settings.git(dir: Path, args: List<String>): String {
-    val process = ProcessBuilder(listOf(path("git") ?: "git") + args).directory(dir.toFile())
-        .redirectInput(File("/dev/null")).redirectErrorStream(true)
-        .apply { environment()["GIT_TERMINAL_PROMPT"] = "0" }.start()
-    val output = process.inputReader().readText().trim()
-    check(process.waitFor() == 0) { "git ${args.first()} failed: $output" }
-    return output
 }

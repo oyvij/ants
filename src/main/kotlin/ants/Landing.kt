@@ -20,7 +20,7 @@ import kotlin.io.path.name
 // ponytail: one lock for every Run, so landings never interleave; a slow rebase holds up other Runs' landings. A lock
 // per Run if that ever shows.
 @Component
-class Landing(private val settings: Settings) {
+class Landing(private val cloneRepos: CloneRepos) {
     /** The folder the instance [key] works in: made at its first launch, kept for Continue, and made anew when [fresh]. */
     @Synchronized
     fun folder(workspace: Path, key: String, fresh: Boolean): Path {
@@ -76,5 +76,5 @@ class Landing(private val settings: Settings) {
 
     private fun branch(clone: Path) = git(clone, "branch", "--show-current")
 
-    private fun git(dir: Path, vararg args: String) = settings.git(dir, args.toList())
+    private fun git(dir: Path, vararg args: String) = cloneRepos.git(dir, args.toList())
 }

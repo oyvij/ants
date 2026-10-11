@@ -77,7 +77,7 @@ private val runVariables = setOf("runs", "clones", "execution")
 private val loopVariables = setOf("loopCounter", "nrOfInstances", "nrOfActiveInstances", "nrOfCompletedInstances")
 
 /** The multi-instances [element] runs as an instance of, itself or a sub-process it is in. */
-private fun loops(element: ModelElementInstance) =
+internal fun loops(element: ModelElementInstance) =
     generateSequence(element) { it.parentElement }.mapNotNull { (it as? Activity)?.loopCharacteristics as? MultiInstanceLoopCharacteristics }.toList()
 
 /** The variable each instance reads its item from: the one the loop names, else `item`. */

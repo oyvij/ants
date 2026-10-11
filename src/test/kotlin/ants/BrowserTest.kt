@@ -1,6 +1,8 @@
 package ants
 
 import com.microsoft.playwright.BrowserType
+import com.microsoft.playwright.Locator
+import com.microsoft.playwright.options.KeyboardModifier
 import com.microsoft.playwright.Page
 import com.microsoft.playwright.Playwright
 import com.microsoft.playwright.assertions.PlaywrightAssertions.assertThat
@@ -12,10 +14,14 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInfo
 import java.nio.file.Path
 import java.util.regex.Pattern
+import kotlin.io.path.createDirectories
 import kotlin.io.path.deleteExisting
+import kotlin.io.path.readText
+import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
@@ -113,9 +119,8 @@ class BrowserTest : AntsTest() {
         assertThat(shape("outer")).hasClass(selected)
         assertThat(heading).hasText("Agent Task")
         page.click("#checks a[href='#inner']")
-        assertThat(shape("inner")).isVisible() // the sub-process's own plane is open
+        assertThat(shape("inner")).isVisible() // the sub-process's own plane is open, so Outer is off the page
         assertThat(shape("inner")).hasClass(selected)
-        assertThat(shape("outer")).not().hasClass(selected)
     }
 
     @Test
@@ -156,6 +161,90 @@ class BrowserTest : AntsTest() {
         assertThat(shape("build")).isVisible()
         assertThat(shape("review")).hasCount(0)
         assertThat(page.locator("#trail")).isHidden()
+    }
+
+    @Test
+    fun `ticking a checkbox on a Ticket's page saves it, and the page follows the file as an Agent changes it`() = browse {
+        settings(null)
+        val (process, plane) = row("tracked", """<bpmn:startEvent id="start" />""", """<bpmn:userTask id="wait" name="Wait" />""", """<bpmn:endEvent id="end" />""")
+        deploy(definitions("tracked", "Tracked", process, plane))
+        val run = http.post("/processes/tracked/runs", mapOf()).path.removePrefix("/runs/")
+        val file = home.resolve("runs/$run/tickets/issues").createDirectories().resolve("01-hello.md")
+        file.writeText("# Say hello\n\nStatus: ready-for-agent\n\n- [ ] Says hello\n")
+
+        page.navigate(url("/runs/$run/tickets/01-hello"))
+        page.check("#ticket input[type=checkbox]")
+
+        eventually { assertEquals("# Say hello\n\nStatus: ready-for-agent\n\n- [x] Says hello\n", file.readText()) }
+        assertThat(page.locator("#ticket input[type=checkbox]")).isChecked()
+        file.writeText("# Say hello\n\nStatus: in-progress\n\n- [x] Says hello\n") // as an Agent would
+        assertThat(page.locator("#ticket")).containsText("Status: in-progress")
+        screenshot("ticket")
+    }
+
+    @Test
+    fun `Answer a Round shows one question at a time under tabs marking accepted and edited, then Review and send`() = browse {
+        val claude = FakeClaude()
+        agentTask(claude, mapOf("grill" to """{"type":"object","properties":{"questions":{"type":"array"}}}"""))
+        fun round(vararg ids: String) = """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":""" +
+            """{"outcome":"done","summary":"A Round.","output":{"questions":[""" + ids.joinToString(",") {
+                """{"id":"$it","title":"Title $it","ask":"Ask $it?","context":"Settles $it.","recommendation":"Recommend $it.","why":"Because $it."}"""
+            } + "]}}}"
+        claude.session("grill", 1, round("who", "scope"))
+        claude.session("grill", 2, round())
+        http.upload("/processes", "file", "round.bpmn", javaClass.getResource("/round.bpmn")!!.readBytes())
+        val run = http.post("/processes/round/runs", mapOf()).path.removePrefix("/runs/")
+        var entry = ""
+        eventually { entry = assertNotNull(Regex("""href="(/notifications/[^"]+)"""").find(http.get("/notifications").body)).groupValues[1] }
+
+        page.navigate(url(entry))
+        val tabs = page.locator("#tabs [role=tab]")
+        assertThat(tabs).hasText(arrayOf("· Title who", "· Title scope", "Review and send"))
+        assertThat(page.locator("#answer-who")).isVisible()
+        assertThat(page.locator("#answer-scope")).isHidden()
+        assertThat(page.locator("#back")).not().isVisible()
+        page.click("#next")
+        assertThat(tabs.nth(0)).hasText("✓ Title who")
+        assertThat(page.locator("#answer-scope")).isVisible()
+        page.fill("#answer-scope", "Only admins.")
+        assertThat(tabs.nth(1)).hasText("✎ Title scope")
+        page.click("#reset")
+        assertThat(page.locator("#answer-scope")).hasValue("Recommend scope.")
+        page.fill("#answer-scope", "Only admins.")
+        val buttons = page.locator("footer").boundingBox()
+        page.click("#next")
+        assertThat(page.locator("#review-list")).containsText("Only admins.")
+        assertThat(page.locator("#next")).hasText("Send the Round")
+        assertEquals(buttons.y, page.locator("footer").boundingBox().y) // the buttons never move
+        page.click("#next")
+        page.waitForURL { !it.contains(entry) }
+        eventually { assertContains(http.get("/runs/$run").body, "State: Completed") }
+        assertContains(claude.launches("grill")[1].stdin, """{\"id\":\"who\",\"answer\":\"Recommend who.\",\"source\":\"accepted\"},{\"id\":\"scope\",\"answer\":\"Only admins.\",\"source\":\"written\"}""")
+    }
+
+    @Test
+    fun `Review changes picks diff lines for a comment by clicking their numbers, and files it`() = browse {
+        agentTask(FakeClaude(), mapOf("fix-review" to null, "ship" to null), extra = reviewSourceMap())
+        http.upload("/processes", "file", "review.bpmn", javaClass.getResource("/review.bpmn")!!.readBytes())
+        val run = http.post("/processes/review/runs", listOf("repos" to "api", "repos" to "web")).path.removePrefix("/runs/")
+        var entry = ""
+        eventually { entry = assertNotNull(Regex("""href="(/notifications/[^"]+)"""").find(http.get("/notifications").body)).groupValues[1] }
+        commitFile(home.runWorkspace(run).resolve("repos/api"), "hello.txt", "hi\nthere\nworld\n", "Say hi")
+
+        page.navigate(url(entry))
+        val diff = page.locator("table.diff[data-file='repos/api/hello.txt']")
+        diff.locator("tr[data-side=new][data-line='1'] td").nth(1).click()
+        diff.locator("tr[data-side=new][data-line='2'] td").nth(1).click(Locator.ClickOptions().setModifiers(listOf(KeyboardModifier.SHIFT)))
+        assertThat(page.locator("#line-comment [name=repo]")).hasValue("api")
+        assertThat(page.locator("#line-comment [name=file]")).hasValue("repos/api/hello.txt")
+        assertThat(page.locator("#line-comment [name=from]")).hasValue("1")
+        assertThat(page.locator("#line-comment [name=to]")).hasValue("2")
+        assertThat(diff.locator("tr.picked")).hasCount(2)
+        page.selectOption("#line-comment [name=type]", "SUGGESTION")
+        page.fill("#line-comment [name=body]", "Say hello.")
+        screenshot("review")
+        page.click("#line-comment button")
+        assertThat(page.locator("#comments")).containsText("SUGGESTION repos/api/hello.txt:1-2 (new): Say hello.")
     }
 
     /** An Agent Task [id] running `writer`'s Skill `draft`. */
