@@ -38,16 +38,21 @@ _Avoid_: worker, bot, ant
 A `SKILL.md` saying how to do one job; the instructions a Task hands its Agent.
 _Avoid_: prompt, task instructions
 
+**Template**:
+A named piece of a Process, kept in a library, that is copied into another Process and changed there;
+editing a Template never changes the Processes it was copied into.
+_Avoid_: pattern, snippet, fragment
+
 **Schedule**:
-When a Process starts Runs on its own, such as every night at midnight; it says only when, so a Process that needs
-input from the user can't have one.
+When a Process starts Runs on its own, such as every night at midnight; it says only when, so a Process can have
+one only when every required start-form field has a stored value.
 _Avoid_: cron, timer, trigger
 
 ### Running work
 
 **Run**:
-One execution of a Process, from its starting input to its end; many Runs of one Process may be
-live at once.
+One execution of a Process, including any Processes it calls, from its starting input to its end;
+many Runs of one Process may be live at once.
 _Avoid_: instance, job, execution
 
 **Run workspace**:
@@ -100,6 +105,6 @@ What a Run leaves behind once its Run workspace is gone: what was done and which
 _Avoid_: summary, log
 
 **Notification list**:
-The one list where every Run posts a Task that is waiting on the user, each entry leading to that
-Task.
+The one list of everything waiting on the user: a Task of any Run, or a scheduled Run that couldn't
+start; each entry leads to it.
 _Avoid_: inbox, alerts
