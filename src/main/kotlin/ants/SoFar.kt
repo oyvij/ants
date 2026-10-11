@@ -51,7 +51,7 @@ class SoFar(
             val every = settings.soFar() ?: return
             for (task in externalTasks.createExternalTaskQuery().topicName(AgentLauncher.TOPIC).locked().withRetriesLeft().list()) {
                 val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult()?.rootProcessInstanceId ?: continue
-                rewrite(Transcript.file(home.runWorkspace(run), task.activityId), every)
+                rewrite(Transcript.file(home.runWorkspace(run), runtime.taskKey(task.executionId, task.activityId)), every)
             }
         } catch (e: Exception) {
             log.warn("So far failed", e) // a failed tick must not end the polling

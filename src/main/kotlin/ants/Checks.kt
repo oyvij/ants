@@ -23,6 +23,7 @@ import org.operaton.bpm.model.bpmn.instance.operaton.OperatonInputOutput
 import org.operaton.bpm.model.xml.ModelException
 import org.operaton.bpm.model.xml.instance.DomElement
 import org.springframework.stereotype.Component
+import org.operaton.bpm.engine.RepositoryService
 
 /** One thing wrong with a Process, on the element it names (a BPMN id, or null for the whole file). A warning doesn't stop Save and deploy. */
 data class Check(val element: String?, val message: String, val warning: Boolean = false)
@@ -32,9 +33,10 @@ data class Check(val element: String?, val message: String, val warning: Boolean
  * written with `operaton:` only, and gives its Checks; a new Check is one more rule in [rules].
  */
 @Component
-class Checks(private val catalogue: Catalogue) {
+class Checks(private val catalogue: Catalogue, private val repository: RepositoryService) {
     private val rules: List<(BpmnModelInstance) -> List<Check>> = listOf(::refusedElements, ::refusedUses, ::oneStartEvent, ::startFormNames, ::emptyInputs, ::defaultPaths, ::timerTimes,
-        { agentTasks(catalogue, it) }, { references(catalogue, it) }) // the last two in AgentTaskChecks.kt
+        { agentTasks(catalogue, it) }, { references(catalogue, it) }, // these two in AgentTaskChecks.kt
+        { calls(repository, it) }) // in CallActivityChecks.kt
 
     /** What the input pickers of the Task [element] in [bpmn] offer, as `${…}` references; see [offered]. */
     fun inputs(bpmn: String, element: String) = offered(catalogue, Bpmn.readModelFromStream(bpmn.byteInputStream()), element)

@@ -71,7 +71,7 @@ private val runVariables = setOf("runs", "clones", "item", "execution", "loopCou
 private val juelWords = setOf("and", "or", "not", "eq", "ne", "lt", "gt", "le", "ge", "empty", "div", "mod", "true", "false", "null", "instanceof")
 
 /** The names [expression] reads, such as `draft.output.text`: dotted names outside quotes, less a method called on them. */
-private fun reads(expression: String): List<List<String>> =
+internal fun reads(expression: String): List<List<String>> =
     Regex("""\$\{(.*?)}""", RegexOption.DOT_MATCHES_ALL).findAll(expression).flatMap { inside ->
         val code = inside.groupValues[1].replace(Regex("""'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*""""), "''")
         Regex("""(?<![\w.])[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*(\s*\()?""").findAll(code).map { match ->
@@ -89,13 +89,17 @@ internal fun references(catalogue: Catalogue, model: BpmnModelInstance): List<Ch
     val activities = model.getModelElementsByType(Activity::class.java).associateBy { it.id }
     val names = model.getModelElementsByType(OperatonFormField::class.java).map { it.operatonId }.toSet() + activities.keys + runVariables +
         model.getModelElementsByType(MultiInstanceLoopCharacteristics::class.java).mapNotNull { it.operatonElementVariable }
+    return expressions(model).flatMap { (owner, text) -> reads(text).mapNotNull { path -> problem(catalogue, path, names, activities)?.let { owner to it } } }
+        .distinct().map { (owner, problem) -> Check(owner.id, "${owner.label} reads $problem") }
+}
+
+/** Each expression in [model], in an input, a condition, a multi-instance collection or a call activity's input, and the element it is on. */
+internal fun expressions(model: BpmnModelInstance): List<Pair<FlowElement, String>> {
     fun owner(element: ModelElementInstance) = generateSequence(element) { it.parentElement }.first { it is FlowElement } as FlowElement
-    val expressions = model.getModelElementsByType(OperatonInputParameter::class.java).map { owner(it) to it.textContent } +
+    return model.getModelElementsByType(OperatonInputParameter::class.java).map { owner(it) to it.textContent } +
         model.getModelElementsByType(SequenceFlow::class.java).mapNotNull { flow -> flow.conditionExpression?.let { flow to it.textContent } } +
         model.getModelElementsByType(MultiInstanceLoopCharacteristics::class.java).mapNotNull { mi -> mi.operatonCollection?.let { owner(mi) to it } } +
         model.getModelElementsByType(OperatonIn::class.java).mapNotNull { binding -> binding.operatonSourceExpression?.let { owner(binding) to it } }
-    return expressions.flatMap { (owner, text) -> reads(text).mapNotNull { path -> problem(catalogue, path, names, activities)?.let { owner to it } } }
-        .distinct().map { (owner, problem) -> Check(owner.id, "${owner.label} reads $problem") }
 }
 
 /** What's wrong with reading [path], or null when it names something that exists. */

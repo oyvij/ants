@@ -547,6 +547,66 @@ async function agentPanel(element, box) {
     )
 }
 
+// The call activity: the Process it calls (bound latest, so a fix to it reaches every caller), and one input per
+// start-form field of that Process, filled like an Agent Task's input and written as one `camunda:in` each.
+function callInputs(bo) {
+    return (bo.extensionElements?.values || []).filter(value => value.$type === "camunda:In").map(i => [i.target, i.sourceExpression || ""])
+}
+
+function writeCall(element, changes, inputs, redraw = false) {
+    const factory = modeler.get("bpmnFactory")
+    const values = (element.businessObject.extensionElements?.values || []).filter(value => value.$type !== "camunda:In")
+    values.push(...inputs.map(([target, sourceExpression]) => factory.create("camunda:In", {target, sourceExpression})))
+    quiet = !redraw
+    try {
+        modeler.get("modeling").updateProperties(element, {...changes, extensionElements: factory.create("bpmn:ExtensionElements", {values})})
+    } finally {
+        quiet = false
+    }
+}
+
+panels.call = element => {
+    const box = el("div", {}, el("p", {textContent: "Loading the Processes…"}))
+    callPanel(element, box)
+    return box
+}
+
+async function callPanel(element, box) {
+    const {xml} = await modeler.saveXML()
+    const [processes, offered] = await Promise.all([
+        fetch("/processes.json").then(response => response.json()),
+        fetch("/processes/inputs", {method: "POST", body: new URLSearchParams({_csrf: csrf, bpmn: xml, element: element.id})}).then(response => response.json()),
+    ])
+    const bo = element.businessObject
+    const current = bo.calledElement
+    const called = processes.find(p => p.key === current)
+    const select = el("select", {
+        onchange: () => {
+            const picked = processes.find(p => p.key === select.value)
+            const kept = Object.fromEntries(callInputs(bo))
+            writeCall(element, {calledElement: select.value || undefined}, (picked?.fields || []).map(f => [f.name, kept[f.name] || ""]), true)
+        },
+    }, el("option", {value: "", textContent: "Pick one", selected: !current}),
+        ...(current && !called ? [el("option", {value: current, textContent: `${current} (not deployed)`, selected: true})] : []),
+        ...processes.map(p => el("option", {value: p.key, textContent: p.name, selected: p.key === current})))
+    const labels = Object.fromEntries((called?.fields || []).map(f => [f.name, f.label + (f.required ? " (required)" : "")]))
+    const references = el("datalist", {id: "ants-call-references"}, ...offered.map(value => el("option", {value})))
+    const inputs = callInputs(bo).map(([name, value], i) => {
+        const field = el("input", {value, size: 28, oninput: () => {
+            const all = callInputs(bo)
+            all[i][1] = field.value
+            writeCall(element, {}, all)
+        }})
+        field.setAttribute("list", "ants-call-references")
+        return el("p", {}, el("label", {}, labels[name] || name, " ", field))
+    })
+    box.replaceChildren(
+        el("p", {}, el("label", {}, "Process ", select)),
+        el("h3", {textContent: "Inputs"}), references,
+        ...(inputs.length ? inputs : [el("p", {textContent: called ? "The Process's start form has no fields." : "Pick a Process to see its start-form fields."})]),
+    )
+}
+
 function explain(element) {
     const target = element.labelTarget || element
     const kind = kindOf(target)

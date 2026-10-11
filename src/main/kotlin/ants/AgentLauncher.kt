@@ -249,12 +249,8 @@ class AgentLauncher(
         }
     }
 
-    /**
-     * The key of [task] in its Run, for its Transcript and live session: its Task id, or `<task-id>-<n>` for the nth
-     * instance of a multi-instance (or of one inside a multi-instance sub-process), since instances run at once.
-     */
-    private fun instance(task: LockedExternalTask) =
-        (runtime.getVariable(task.executionId, "loopCounter") as? Int)?.let { "${task.activityId}-${it + 1}" } ?: task.activityId
+    /** The key of [task] in its Run, for its Transcript and live session ([taskKey]). */
+    private fun instance(task: LockedExternalTask) = runtime.taskKey(task.executionId, task.activityId)
 
     /**
      * The Task's inputs: its input parameters, not the other local variables its execution may hold, such as a
