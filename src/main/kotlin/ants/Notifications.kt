@@ -24,7 +24,11 @@ import java.time.Duration
 import java.time.Instant
 import java.util.Date
 
-/** One entry on the Notification list: a Task of a Run waiting on the user since [since]. */
+/**
+ * One entry on the Notification list: a Task of a Run waiting on the user since [since]. [taskId] is the Task's key in
+ * the Run ([taskKey]); the Task is the element [activity] of the process instance [instance], which is the Run's own
+ * or, in a called Process, the called one's.
+ */
 class Entry(
     val id: String,
     val tag: String,
@@ -34,6 +38,8 @@ class Entry(
     val taskId: String,
     val summary: String,
     val since: Date,
+    val instance: String,
+    val activity: String,
 ) {
     val icon get() = ICONS[tag] ?: "•"
 
@@ -66,7 +72,7 @@ class Notifications(
     @Value("\${ants.home}") private val home: Path,
 ) {
     /** Everything waiting on the user, oldest first. */
-    fun entries(): List<Entry> = incidents().orderByIncidentTimestamp().asc().list().map(::entry)
+    fun entries(): List<Entry> = rootCauses().map(::entry)
 
     @GetMapping("/notifications")
     fun list(model: Model): String {
@@ -136,9 +142,15 @@ class Notifications(
     /** The count for the nav and the tab title, sent on connect and whenever it changes. */
     @GetMapping("/notifications/count", produces = [TEXT_EVENT_STREAM_VALUE])
     @ResponseBody
-    fun count(): SseEmitter = streams.changes { incidents().count().toString() }
+    fun count(): SseEmitter = streams.changes { rootCauses().size.toString() }
 
     private fun incidents() = runtime.createIncidentQuery().incidentType(Incident.EXTERNAL_TASK_HANDLER_TYPE)
+
+    /**
+     * The incidents on Tasks, oldest first. An incident in a called Process also puts one on each call activity above
+     * it, the same Task waiting, so only the root cause counts.
+     */
+    private fun rootCauses() = incidents().orderByIncidentTimestamp().asc().list().filter { it.id == it.rootCauseIncidentId }
 
     private fun incident(id: String): Incident = incidents().incidentId(id).singleResult()
         ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "Nothing is waiting on you here any more")
@@ -154,9 +166,11 @@ class Notifications(
             process = top.processDefinitionName ?: top.processDefinitionKey,
             run = run,
             task = task?.name ?: incident.activityId,
-            taskId = incident.activityId,
+            taskId = runtime.taskKey(incident.executionId, incident.activityId),
             summary = incident.incidentMessage.orEmpty().removePrefix(tag.orEmpty()).trim(),
             since = incident.incidentTimestamp,
+            instance = incident.processInstanceId,
+            activity = incident.activityId,
         )
     }
 

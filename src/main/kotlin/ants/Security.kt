@@ -22,6 +22,8 @@ class Security {
         .formLogin(withDefaults())
         // Cockpit sends its own CSRF token, checked by Operaton.
         .csrf { it.ignoringRequestMatchers("/operaton/**") }
+        // The modeler opens the New Agent and New Skill forms in a frame.
+        .headers { it.frameOptions { frame -> frame.sameOrigin() } }
         .build()
 
     @Bean

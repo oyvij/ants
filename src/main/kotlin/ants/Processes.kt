@@ -38,6 +38,14 @@ class Processes(private val repository: RepositoryService, private val startForm
         return "processes"
     }
 
+    /** The deployed Processes as the modeler's call activity panel picks them: each one's start-form fields are the call's inputs. */
+    @GetMapping("/processes.json")
+    @ResponseBody
+    fun processes() = repository.createProcessDefinitionQuery().latestVersion().orderByProcessDefinitionName().asc().list().map { process ->
+        mapOf("key" to process.key, "name" to (process.name ?: process.key),
+            "fields" to startForm.fields(process).map { mapOf("name" to it.name, "label" to it.label, "required" to it.required) })
+    }
+
     @PostMapping("/processes")
     fun import(@RequestParam file: MultipartFile, model: Model): String {
         val name = file.originalFilename?.takeIf { it.endsWith(".bpmn") } ?: "process.bpmn"

@@ -144,6 +144,8 @@ class ChecksTest : AntsTest() {
 
     @Test
     fun `every allowed element passes and deploys`() {
+        // The Process the call activity calls.
+        assertEquals("/processes/other", browser.post("/processes/deploy", mapOf("bpmn" to diagram("").replace("\"checked\"", "\"other\""))).path)
         val bpmn = diagram(
             """
             <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="draft" />

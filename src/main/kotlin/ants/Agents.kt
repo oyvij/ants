@@ -34,11 +34,13 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, @Valu
         return "agents"
     }
 
+    /** The create form; with `use`, as the modeler's New Agent modal shows it, whose Create and use picks it on the Task. */
     @GetMapping("/agents/new")
-    fun new(model: Model) = show(model, AgentForm.of(Agent(folder.resolve("new.md"), ""), name = ""), null)
+    fun new(@RequestParam use: String?, model: Model) =
+        show(model.addAttribute("use", use != null), AgentForm.of(Agent(folder.resolve("new.md"), ""), name = ""), null)
 
     @PostMapping("/agents/new")
-    fun create(@RequestParam params: Map<String, String>, model: Model) = save(model, AgentForm.of(params), null)
+    fun create(@RequestParam params: Map<String, String>, model: Model) = save(model.addAttribute("use", "use" in params), AgentForm.of(params), null)
 
     /** Fills the create form from one agent file, dropping the keys Ants doesn't use, or refuses it with a reason. */
     @PostMapping("/agents/import")

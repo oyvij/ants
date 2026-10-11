@@ -1,6 +1,7 @@
 @param form: ants.SkillForm
 @param message: String? = null
 @param dependents: ants.Dependents?
+@param use: String? = null
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
 <!doctype html>
@@ -11,7 +12,9 @@
     <title>${form.name ?: "New Skill"} · Skills · Ants</title>
 </head>
 <body>
+@if(use == null)
 @template.nav()
+@endif
 <h1>${form.name ?: "New Skill"}</h1>
 @if(message != null)<p role="alert">${message}</p>@endif
 @if(form.readOnly)
@@ -24,10 +27,13 @@
 @endif
 <form method="post" action="/skills/${form.name ?: "new"}" class="skill">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+@if(use != null)
+    <input type="hidden" name="use" value="${use}">
+@endif
     <p><label>SKILL.md<br><textarea name="skill" rows="20" cols="80" readonly="${form.readOnly}">${form.skill}</textarea></label></p>
     <p><label>result.schema.json, the <code>output</code> the Skill promises; empty for any output<br><textarea name="schema" rows="12" cols="80" readonly="${form.readOnly}">${form.schema}</textarea></label></p>
 @if(!form.readOnly)
-    <p><button>Save</button></p>
+    <p><button>${if (use != null) "Create and use" else "Save"}</button></p>
 @endif
 </form>
 @if(dependents != null)

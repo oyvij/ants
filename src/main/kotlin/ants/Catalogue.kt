@@ -112,6 +112,9 @@ class Catalogue(@Value("\${ants.home}") private val home: Path, private val sett
     /** The user's own Skills, the one Skill folder the Skills page writes to. */
     val yourSkills: Path = home.resolve("skills")
 
+    /** The user's own Agents, the one Agent folder Ants writes to. */
+    val yourAgents: Path = home.resolve("agents")
+
     /** Every Skill in every Skill folder, a folder holding a `SKILL.md` at any depth, in folder order. */
     fun skills(): List<Skill> = skillFolders.filter { it.exists() }.flatMap { folder ->
         folder.walk().filter { it.fileName.toString() == "SKILL.md" }.sorted().map { file ->
