@@ -1,19 +1,15 @@
 #!/usr/bin/env python3
-"""Everything a ticket's implementer reads first, in one call.
+"""Everything a ticket's implementer must read, in one call, with nothing filtered out.
 
-    scripts/ticket-context <n> [term ...]
+    scripts/ticket-context <n>
 
-Prints the ticket (without its Parent section) and its comments, then What to build of every ticket it is
-blocked by and every ticket it blocks (the downstream tickets settle scope), then every spec (#27) section that
-mentions any term, whole: a section is everything under one heading, so the rules around a match come with it.
-Terms are case-insensitive substrings. The full spec is saved to /tmp/ants-spec.md, and the headings it holds are
-listed with their line numbers, so a section no term reached is one Read away.
+Prints the ticket and its comments, then every ticket it is blocked by and every ticket it blocks, each whole with
+its comments (the upstream ones say what exists, the downstream ones settle scope), then the whole spec (#27). It
+saves calls, never content: everything the manual path would read is printed.
 """
 import json
-import re
 import subprocess
 import sys
-from pathlib import Path
 
 REPO = "oyvij/ants"
 SPEC = 27
@@ -23,47 +19,25 @@ def gh(*args):
     return json.loads(subprocess.run(["gh", *args], check=True, capture_output=True, text=True).stdout)
 
 
-def issue(n):
-    return gh("issue", "view", str(n), "-R", REPO, "--json", "number,title,state,body,comments")
-
-
-def section(body, heading):
-    match = re.search(rf"^## {heading}\s*\n(.*?)(?=^## |\Z)", body, re.M | re.S)
-    return match.group(1).strip() if match else ""
+def show(n, level="#"):
+    issue = gh("issue", "view", str(n), "-R", REPO, "--json", "number,title,state,body,comments")
+    print(f"{level} #{n} {issue['title']} [{issue['state'].lower()}]\n\n{(issue['body'] or '').strip()}\n")
+    for comment in issue["comments"]:
+        print(f"{level}# Comment on #{n} by {comment['author']['login']}\n\n{comment['body'].strip()}\n")
 
 
 def main():
-    if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help"):
+    if len(sys.argv) != 2 or sys.argv[1] in ("-h", "--help"):
         sys.exit(__doc__.strip())
-    n, terms = int(sys.argv[1]), [t.lower() for t in sys.argv[2:]]
-
-    ticket = issue(n)
-    body = re.sub(r"^## Parent\s*\n.*?(?=^## |\Z)", "", ticket["body"], flags=re.M | re.S).strip()
-    print(f"# #{n} {ticket['title']} [{ticket['state'].lower()}]\n\n{body}\n")
-    for comment in ticket["comments"]:
-        print(f"## Comment by {comment['author']['login']}\n\n{comment['body'].strip()}\n")
-
+    n = int(sys.argv[1])
+    show(n)
     for relation in ("blocked_by", "blocking"):
-        related = gh("api", f"repos/{REPO}/issues/{n}/dependencies/{relation}")
-        if related:
-            print(f"## {relation.replace('_', ' ').capitalize()}\n")
-        for other in related:
-            what = section(other["body"] or "", "What to build") or "(no What to build)"
-            print(f"### #{other['number']} {other['title']} [{other['state']}]\n{what}\n")
+        for other in gh("api", f"repos/{REPO}/issues/{n}/dependencies/{relation}"):
+            print(f"---\n\n**{relation.replace('_', ' ').capitalize()}:**\n")
+            show(other["number"], "##")
+    print("---\n\n**The spec:**\n")
+    show(SPEC, "##")
 
-    spec = issue(SPEC)["body"]
-    Path("/tmp/ants-spec.md").write_text(spec)
-    lines = spec.splitlines()
-    starts = [i for i, line in enumerate(lines) if line.startswith("#")] + [len(lines)]
-    parts = [(starts[k], lines[starts[k]:starts[k + 1]]) for k in range(len(starts) - 1)]
-    hits = [start for start, part in parts if terms and any(t in "\n".join(part).lower() for t in terms)]
-    print(f"## Spec #{SPEC}, saved whole to /tmp/ants-spec.md (* = printed below)\n")
-    for start, part in parts:
-        print(f"{'*' if start in hits else ' '} {start + 1:4}  {part[0]}")
-    for start, part in parts:
-        if start in hits:
-            print(f"\n<!-- /tmp/ants-spec.md line {start + 1} -->")
-            print("\n".join(part).rstrip())
 
 if __name__ == "__main__":
     main()

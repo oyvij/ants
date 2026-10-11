@@ -25,10 +25,16 @@ session reaches for it.
    Before proposing new tooling, check `scripts/` and `.claude/skills/`: a repeat that an existing script
    covers is a pointer problem; sharpen the pointer instead.
 
-3. **Weigh each one.** For every candidate, write down: the calls and output characters it cost, how many
-   sessions it appeared in, and whether upcoming work hits it again (open tickets, the next wave in
-   `docs/agents/implementation-waves.md`). Drop any candidate that won't recur. A build-config fix or a one-line
-   doc pointer beats a script whenever it removes the repeat.
+3. **Weigh each one.** A tool saves calls, never content: precision and correctness come before speed and
+   tokens. A script that replaces reading for implementation work (tickets, the spec, code, docs) prints
+   everything the manual path would have read. Filtering by search terms, truncating or summarising is for
+   digests that only point to material, like `session-tools`; a candidate that only pays off by filtering
+   what an implementer reads is a skip.
+
+   For every candidate, write down: the calls and output characters it cost, how many sessions it appeared in,
+   and whether upcoming work hits it again (open tickets, the next wave in `docs/agents/implementation-waves.md`).
+   Drop any candidate that won't recur. A build-config fix or a one-line doc pointer beats a script whenever it
+   removes the repeat.
 
 4. **Present them ranked** by expected savings: for each, the evidence (counts and sizes), the proposed tool, and
    how a future session will find it.
