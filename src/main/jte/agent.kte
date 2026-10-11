@@ -4,7 +4,7 @@
 @param action: String
 @param file: String?
 @param readOnly: Boolean
-@param users: ants.Users?
+@param dependents: ants.Dependents?
 @param error: String? = null
 @param notice: String? = null
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
@@ -78,8 +78,8 @@
 @endif
     </fieldset>
 </form>
-@if(users != null)
-@template.users(users = users)
+@if(dependents != null)
+@template.dependents(dependents = dependents)
 @endif
 @if(file != null && !readOnly)
 <form method="post" action="${action}/delete">

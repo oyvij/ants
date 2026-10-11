@@ -189,6 +189,39 @@ class TranscriptTest : AntsTest() {
         eventually { assertContains(tab.toString(), """⑂ <b>searcher</b> Search the notes · 7s</summary>""") }
         assertContains(tab.toString(), """<div id="subagents">⑂ 2</div>""")
     }
+
+    @Test
+    fun `a Subagent's own Subagent nests inside its block, and Subagent tokens stay in the Task's once the launch ends`() {
+        claude.session(
+            "draft", init,
+            """{"type":"assistant","message":{"id":"m1","content":[{"type":"tool_use","id":"tA","name":"Agent","input":{"description":"Search","subagent_type":"searcher"}}],""" +
+                """"usage":{"input_tokens":10}},"parent_tool_use_id":null}""",
+            """{"type":"system","subtype":"task_started","task_id":"a1","tool_use_id":"tA","description":"Search","subagent_type":"searcher"}""",
+            // with subagent-depth 2, the searcher starts a Subagent of its own
+            """{"type":"assistant","message":{"id":"s1","content":[{"type":"tool_use","id":"tN","name":"Agent","input":{"description":"Dig","subagent_type":"Explore"}}],""" +
+                """"usage":{"input_tokens":100}},"parent_tool_use_id":"tA","agent_id":"a1"}""",
+            """{"type":"system","subtype":"task_started","task_id":"n1","tool_use_id":"tN","description":"Dig","subagent_type":"Explore"}""",
+            """{"type":"assistant","message":{"id":"n1m","content":[{"type":"text","text":"Deep **find**."}],"usage":{"input_tokens":1000}},"parent_tool_use_id":"tN","agent_id":"n1"}""",
+            "wait one",
+            """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":{"outcome":"done","summary":"Drafted.","output":{}},""" +
+                """"modelUsage":{"claude-haiku-5-5":{"inputTokens":1200,"outputTokens":30},"claude-sonnet-5-5":{"inputTokens":300,"outputTokens":7}}}""",
+        )
+        val run = start("agent-task")
+        val path = "/runs/$run/tasks/draft/transcript"
+        eventually { assertContains(page(path), "Deep <strong>find</strong>.") }
+        val running = page(path)
+        assertContains(
+            running,
+            Regex("""(?s)<details class="subagent" id="(e\d+)" open><summary id="\1s">⑂ <b>searcher</b>.*?</summary><div><details class="subagent" id="(e\d+)" data-in="\1" open>""" +
+                """<summary id="\2s">⑂ <b>Explore</b> Dig.*?</summary><div><div class="text" id="e\d+" data-in="\2"><p>Deep <strong>find</strong>.</p>"""),
+        )
+        assertContains(running, Regex("""<div id="status">.*· 1,110 tokens</div>"""))
+
+        claude.release("one")
+        eventually { assertContains(page(path), "<b>Result: done</b>") }
+        assertContains(page(path), """<span id="tokens">1,537 tokens</span>""") // modelUsage, which counts the Subagents
+        assertContains(page("/runs/$run"), "Transcripts · 1,537 tokens")
+    }
 }
 
 /** Every data line an SSE stream has sent so far, one per line. */

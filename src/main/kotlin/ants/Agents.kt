@@ -10,16 +10,10 @@ import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.multipart.MultipartFile
 import org.springframework.web.server.ResponseStatusException
-import org.yaml.snakeyaml.DumperOptions
-import org.yaml.snakeyaml.Yaml
 import org.yaml.snakeyaml.error.YAMLException
-import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.StandardCopyOption.ATOMIC_MOVE
-import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 import kotlin.io.path.deleteIfExists
 import kotlin.io.path.exists
-import kotlin.io.path.writeText
 
 /**
  * The Agents page: a form over one agent file. Only Agents in ANTS_HOME's `agents/` are edited; shipped Agents and
@@ -82,10 +76,9 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, @Valu
     @PostMapping("/agents/{name}/copy")
     fun copy(@PathVariable name: String): String {
         val agent = find(name)
-        val base = agent.name.lowercase().replace(Regex("[^a-z0-9-]+"), "-").trim('-') + "-copy"
         val taken = catalogue.agents().map { it.name }.toSet()
-        val copy = generateSequence(1, Int::inc).map { if (it == 1) base else "$base-$it" }.first { it !in taken && !folder.resolve("$it.md").exists() }
-        write(folder.resolve("$copy.md"), AgentForm.of(agent, copy).text())
+        val copy = copyName(agent.name) { it in taken || folder.resolve("$it.md").exists() }
+        folder.resolve("$copy.md").writeAtomically(AgentForm.of(agent, copy).text())
         return "redirect:/agents/$copy"
     }
 
@@ -100,7 +93,7 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, @Valu
         if (agent != null && form.name != agent.name && "confirm" !in params) {
             return confirm(model, "Rename the Agent ${agent.name} to ${form.name}?", usedBy.agent(agent.name), "/agents/${agent.name}", params, "/agents/${agent.name}")
         }
-        write(target, form.text())
+        target.writeAtomically(form.text())
         if (agent != null && target != agent.file) agent.file.deleteIfExists()
         return "redirect:/agents/${form.name}"
     }
@@ -110,7 +103,7 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, @Valu
         model.addAttribute("action", agent?.let { "/agents/${it.name}" } ?: "/agents/new")
         model.addAttribute("file", agent?.file?.toString())
         model.addAttribute("readOnly", agent != null && agent.file.parent != folder)
-        model.addAttribute("users", agent?.let { usedBy.agent(it.name) })
+        model.addAttribute("dependents", agent?.let { usedBy.agent(it.name) })
         model.addAttribute("error", error)
         model.addAttribute("notice", notice)
         return "agent"
@@ -120,14 +113,6 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, @Valu
 
     private fun editable(agent: Agent) = agent.takeIf { it.file.parent == folder }
         ?: throw ResponseStatusException(HttpStatus.FORBIDDEN, "${agent.name} is read-only. Copy it to make one you can edit.")
-
-    /** Written beside it and moved over, so a launch reading it meanwhile never sees half a file. */
-    private fun write(file: Path, text: String) {
-        Files.createDirectories(folder)
-        val next = Files.createTempFile(folder, ".agent", ".tmp")
-        next.writeText(text)
-        Files.move(next, file, ATOMIC_MOVE, REPLACE_EXISTING)
-    }
 }
 
 /**
@@ -146,8 +131,7 @@ data class AgentForm(
     val instructions: String,
     val kept: Map<*, *> = emptyMap<String, Any?>(),
 ) {
-    fun error() = when {
-        !Regex("[a-z0-9][a-z0-9-]*").matches(name) -> "A name is lowercase letters, digits and hyphens."
+    fun error() = nameError("An Agent", name) ?: when {
         cli !in CLIS -> "Ants runs only ${CLIS.joinToString(" or ")}, not $cli."
         subagent && cli != "claude" -> "Only a claude Agent can be offered as a Subagent."
         else -> null
@@ -161,9 +145,9 @@ data class AgentForm(
         val meta = linkedMapOf<Any?, Any?>("name" to name)
         if (description.isNotEmpty()) meta["description"] = description
         meta["cli"] = cli
-        if (skills.isNotBlank()) meta["skills"] = skills.split(Regex("[\\s,]+")).filter(String::isNotEmpty).joinToString(", ")
-        val rules = TOOLS.filter { it in tools }.flatMap { tool -> commas(tools.getValue(tool)).map { "$tool($it)" }.ifEmpty { listOf(tool) } }
-        meta["tools"] = (rules + commas(otherTools)).joinToString(", ")
+        if (skills.isNotBlank()) meta["skills"] = words(skills).joinToString(", ")
+        val limited = TOOLS.filter { it in tools }.flatMap { tool -> rules(tools.getValue(tool)).map { "$tool($it)" }.ifEmpty { listOf(tool) } }
+        meta["tools"] = (limited + rules(otherTools)).joinToString(", ")
         if (model.isNotEmpty()) meta["model"] = model
         if (subagent) meta["ants-subagent"] = true
         meta.putAll(kept)
@@ -177,10 +161,6 @@ data class AgentForm(
         val TOOLS = (AgentLauncher.DEFAULT_TOOLS + "Agent").sorted()
 
         private val KEYS = setOf("name", "description", "cli", "skills", "tools", "model", "ants-subagent")
-
-        private val yaml = Yaml(DumperOptions().apply { defaultFlowStyle = DumperOptions.FlowStyle.BLOCK; splitLines = false })
-
-        private fun commas(text: String) = text.split(',').map(String::trim).filter(String::isNotEmpty)
 
         fun of(agent: Agent, name: String = agent.name): AgentForm {
             val rules = agent.tools ?: AgentLauncher.DEFAULT_TOOLS

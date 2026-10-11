@@ -209,8 +209,6 @@ data class SettingsForm(
             )
         }
 
-        private fun words(text: String?) = text.orEmpty().split(Regex("[\\s,]+")).filter(String::isNotEmpty)
-
         /** Sets [key] to [value], or removes it when the value is empty, so an empty field leaves the default. */
         private fun <K> MutableMap<K, Any?>.keep(key: K, value: Any?) {
             val empty = value == null || value == "" || (value is Collection<*> && value.isEmpty()) || (value is Map<*, *> && value.isEmpty())

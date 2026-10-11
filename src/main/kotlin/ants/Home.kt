@@ -7,8 +7,6 @@ import org.operaton.bpm.engine.HistoryService
 import org.operaton.bpm.engine.RepositoryService
 import org.operaton.bpm.engine.RuntimeService
 import org.operaton.bpm.model.bpmn.instance.FlowElement
-import org.springframework.context.event.ContextClosedEvent
-import org.springframework.context.event.EventListener
 import org.springframework.http.MediaType.TEXT_EVENT_STREAM_VALUE
 import org.springframework.stereotype.Controller
 import org.springframework.ui.Model
@@ -37,6 +35,7 @@ class Home(
     private val templates: TemplateEngine,
     private val launcher: AgentLauncher,
     private val clock: Clock,
+    private val streams: Streams,
 ) {
     @GetMapping("/")
     fun home(model: Model): String {
@@ -66,33 +65,8 @@ class Home(
     }
 
     /** Streams [template] rendered with [params], sent on connect and whenever it changes. */
-    // ponytail: polls every second per open tab, like the Notification list count; the stream ends after a minute and
-    // EventSource reconnects.
-    private fun stream(template: String, params: () -> Map<String, Any>) = SseEmitter(60_000).also { emitter ->
-        Thread.ofVirtual().start {
-            var last: String? = null
-            try {
-                while (!closing) {
-                    val html = StringOutput().also { templates.render(template, params(), it) }.toString()
-                        .replace('\n', ' ').trim() // one SSE data line
-                    if (html != last) emitter.send(html).also { last = html }
-                    Thread.sleep(1000)
-                }
-                emitter.complete()
-            } catch (_: Exception) {
-                // the tab went away or the stream timed out
-            }
-        }
-    }
-
-    @Volatile
-    private var closing = false
-
-    /** Ends the open streams, or a graceful shutdown would wait for them. */
-    @EventListener(ContextClosedEvent::class)
-    fun close() {
-        closing = true
-    }
+    private fun stream(template: String, params: () -> Map<String, Any>) =
+        streams.changes { StringOutput().also { templates.render(template, params(), it) }.toString().trim() }
 
     private fun dashboard(): Map<String, Any> {
         val entries = notifications.entries()

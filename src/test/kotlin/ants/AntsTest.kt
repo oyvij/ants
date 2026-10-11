@@ -41,9 +41,12 @@ abstract class AntsTest {
         /** What only a login shell finds: Ants' login shell is a fake that puts this folder on PATH only with `-l`. */
         val loginBin: Path = Files.createDirectories(Files.createTempDirectory("fake-shell").resolve("bin"))
 
-        /** The fake login shell. Only `-l` reads the "profile", the way only a login shell reads the user's. */
+        /**
+         * The fake login shell. Only `-l` reads the "profile", the way only a login shell reads the user's, and puts
+         * [loginBin] before the system folders alone, so Detect never finds a real claude or nono.
+         */
         val shell: Path = loginBin.resolveSibling("sh").also {
-            Files.writeString(it, "#!/bin/sh\n[ \"$1\" = -l ] && PATH=\"$loginBin:\$PATH\" && shift\n[ \"$1\" = -c ] && exec /bin/sh -c \"$2\"\n")
+            Files.writeString(it, "#!/bin/sh\n[ \"$1\" = -l ] && PATH=\"$loginBin:/usr/bin:/bin\" && shift\n[ \"$1\" = -c ] && exec /bin/sh -c \"$2\"\n")
             it.toFile().setExecutable(true)
         }
 
@@ -54,14 +57,17 @@ abstract class AntsTest {
          * Boots and closes a second Ants on [home]. Operaton keeps engines and Cockpit's runtime JVM-wide, so it runs
          * without the webapp and with an engine of its own, or closing it would break the shared Ants' Cockpit.
          */
-        fun bootAnother(home: Path, vararg args: String) = SpringApplicationBuilder(AntsApplication::class.java).run(
+        fun bootAnother(home: Path, vararg args: String) = startAnother(home, *args).close()
+
+        /** Starts a second Ants on [home], as [bootAnother] does, and leaves it running. */
+        fun startAnother(home: Path, vararg args: String) = SpringApplicationBuilder(AntsApplication::class.java).run(
             "--ants.home=$home",
             "--ants.shell=$shell",
             "--server.port=0",
             "--operaton.bpm.process-engine-name=another",
             "--spring.autoconfigure.exclude=org.operaton.bpm.spring.boot.starter.webapp.OperatonBpmWebappAutoConfiguration",
             *args,
-        ).close()
+        )
 
         /** Ants' clock, shared like [home]: a test that moves it puts it back. */
         val clock = MovableClock()

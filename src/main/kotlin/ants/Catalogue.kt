@@ -3,10 +3,14 @@ package ants
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver
 import org.springframework.stereotype.Component
+import org.yaml.snakeyaml.DumperOptions
 import org.yaml.snakeyaml.Yaml
 import tools.jackson.databind.json.JsonMapper
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption.ATOMIC_MOVE
+import java.nio.file.StandardCopyOption.REPLACE_EXISTING
+import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.isRegularFile
 import kotlin.io.path.listDirectoryEntries
@@ -16,6 +20,7 @@ import kotlin.io.path.readText
 import kotlin.io.path.relativeTo
 import kotlin.io.path.walk
 import kotlin.io.path.writeBytes
+import kotlin.io.path.writeText
 
 /**
  * Who does a Task, read from its agent file: the CLI it runs, its tools, its model and its standing instructions. A
@@ -47,7 +52,7 @@ class Agent(val file: Path, text: String = file.readText()) {
     private fun list(value: Any?) = when (value) {
         null -> null
         is List<*> -> value.map(Any?::toString)
-        else -> value.toString().split(Regex(""",(?![^(]*\))""")).map(String::trim).filter(String::isNotEmpty)
+        else -> rules(value.toString())
     }
 }
 
@@ -110,7 +115,7 @@ class Catalogue(@Value("\${ants.home}") private val home: Path, private val sett
                 name = meta["name"]?.toString() ?: "",
                 description = meta["description"]?.toString() ?: "",
                 file = file,
-                uses = metadata["ants-uses"]?.toString()?.split(Regex("\\s+"))?.filter(String::isNotEmpty) ?: emptyList(),
+                uses = Settings.strings(metadata["ants-uses"]?.toString()).orEmpty(),
                 vault = metadata["varde-vault"] == true,
             )
         }
@@ -138,7 +143,45 @@ class Catalogue(@Value("\${ants.home}") private val home: Path, private val sett
         visit(skill, listOf(skill.name))
         return closure.values.toList()
     }
+
+    /** Whether a Task running [skill] gets the Vault by default: when it or any Skill it uses opts in. */
+    fun vault(skill: Skill) = skill.vault || uses(skill).any { it.vault }
 }
+
+/**
+ * Why [name] can't name an Agent or a Skill ([kind], "An Agent" or "A Skill"), or null: a name is up to 64 lowercase letters, digits and hyphens,
+ * and none the pages keep for their own routes, such as `/agents/new`.
+ */
+fun nameError(kind: String, name: String) = when {
+    !Regex("[a-z0-9][a-z0-9-]{0,63}").matches(name) -> "$kind's name is up to 64 lowercase letters, digits and hyphens."
+    name in setOf("new", "import", "schema") -> "The ${kind.substringAfter(' ')}s page keeps the name $name for itself."
+    else -> null
+}
+
+/** The first free name of `<name>-copy`, `<name>-copy-2`, …, for a copy of [name], made a valid name first. */
+fun copyName(name: String, taken: (String) -> Boolean): String {
+    val base = name.lowercase().replace(Regex("[^a-z0-9-]+"), "-").trim('-') + "-copy"
+    return generateSequence(1, Int::inc).map { if (it == 1) base else "$base-$it" }.first { !taken(it) }
+}
+
+/**
+ * Writes [text] beside this file and moves it over, so whoever reads it meanwhile, such as a launch reading a
+ * `SKILL.md` or the settings, never sees half a file.
+ */
+fun Path.writeAtomically(text: String) {
+    val next = Files.createTempFile(parent.createDirectories(), ".$fileName", ".tmp")
+    next.writeText(text)
+    Files.move(next, this, ATOMIC_MOVE, REPLACE_EXISTING)
+}
+
+/** The YAML Ants writes: block style, a long value kept on one line. */
+val yaml = Yaml(DumperOptions().apply { defaultFlowStyle = DumperOptions.FlowStyle.BLOCK; splitLines = false })
+
+/** A list as a form's field holds it: words separated by commas or white space, such as `code-review, tdd`. */
+fun words(text: String?) = text.orEmpty().split(Regex("[\\s,]+")).filter(String::isNotEmpty)
+
+/** A comma-separated list of tool rules, whose commas inside `( )` stay, as in `Bash(git log *), Agent(a, b)`. */
+fun rules(text: String) = text.split(Regex(""",(?![^(]*\))""")).map(String::trim).filter(String::isNotEmpty)
 
 /** A markdown file's YAML frontmatter and its body; broken YAML throws. */
 internal fun frontmatter(text: String): Pair<Map<*, *>, String> {

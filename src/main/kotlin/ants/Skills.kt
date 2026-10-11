@@ -19,7 +19,6 @@ import kotlin.io.path.exists
 import kotlin.io.path.readText
 import kotlin.io.path.relativeTo
 import kotlin.io.path.walk
-import kotlin.io.path.writeText
 
 /** A Skill's two files as the Skills page shows them; [name] is null on the create form. */
 data class SkillForm(val name: String?, val skill: String, val schema: String, val readOnly: Boolean = false, val where: String = "")
@@ -32,7 +31,7 @@ data class SkillRow(val skill: Skill, val where: String, val hidden: Boolean)
  * Catalogue reads the files at every launch, so an edit reaches live Runs at their next one.
  */
 @Controller
-class SkillsPage(private val catalogue: Catalogue, private val usedBy: UsedBy) {
+class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy) {
     @GetMapping("/skills")
     fun list(model: Model) = list(model, null)
 
@@ -78,15 +77,14 @@ class SkillsPage(private val catalogue: Catalogue, private val usedBy: UsedBy) {
     fun copy(@PathVariable name: String): String {
         val source = find(name)
         val taken = catalogue.skills().map { it.name }.toSet()
-        val copy = generateSequence(1, Int::inc).map { if (it == 1) "$name-copy" else "$name-copy-$it" }
-            .first { it !in taken && !catalogue.yourSkills.resolve(it).exists() }
+        val copy = copyName(name) { it in taken || catalogue.yourSkills.resolve(it).exists() }
         val folder = catalogue.yourSkills.resolve(copy)
-        // A Skill folder can hold other Skills' folders; those stay where they are.
+        // A Skill folder can hold other Skills' folders; those stay where they are. SKILL.md goes last, so a launch
+        // finds the copy only once it is whole.
         for (file in source.folder.walk().filter { file -> generateSequence(file.parent) { it.parent }.takeWhile { it != source.folder }.none { it.resolve("SKILL.md").exists() } }) {
-            folder.resolve(file.relativeTo(source.folder).toString()).also { it.parent.createDirectories() }.let { file.copyTo(it) }
+            if (file != source.file) folder.resolve(file.relativeTo(source.folder).toString()).also { it.parent.createDirectories() }.let { file.copyTo(it) }
         }
-        val skill = folder.resolve("SKILL.md")
-        skill.writeText(Regex("(?m)^name:.*$").replaceFirst(skill.readText(), "name: $copy"))
+        folder.resolve("SKILL.md").writeAtomically(Regex("(?m)^name:.*$").replaceFirst(source.file.readText(), "name: $copy"))
         return "redirect:/skills/$copy"
     }
 
@@ -126,9 +124,7 @@ class SkillsPage(private val catalogue: Catalogue, private val usedBy: UsedBy) {
             edited.folder.fileName.toString() == edited.name -> edited.folder.resolveSibling(name)
             else -> edited.folder
         }
-        val error = when {
-            !Regex("[a-z0-9][a-z0-9-]{0,63}").matches(name) -> "A Skill's name is up to 64 lowercase letters, digits and hyphens."
-            name in setOf("new", "import", "schema") -> "The Skills page keeps the name $name for itself."
+        val error = nameError("A Skill", name) ?: when {
             name != form.name && taken != null -> "A Skill named $name already exists, in ${taken.folder}."
             folder != edited?.folder && folder.exists() -> "$folder already exists."
             schemaErrors.isNotEmpty() -> "result.schema.json is invalid: ${schemaErrors.joinToString("; ")}"
@@ -142,8 +138,8 @@ class SkillsPage(private val catalogue: Catalogue, private val usedBy: UsedBy) {
             }
             if (folder != edited.folder) Files.move(edited.folder, folder)
         }
-        folder.createDirectories().resolve("SKILL.md").writeText(form.skill)
-        folder.resolve("result.schema.json").run { if (form.schema.isBlank()) deleteIfExists() else writeText(form.schema) }
+        folder.resolve("result.schema.json").run { if (form.schema.isBlank()) deleteIfExists() else writeAtomically(form.schema) }
+        folder.resolve("SKILL.md").writeAtomically(form.skill)
         return "redirect:/skills/$name"
     }
 
@@ -169,7 +165,7 @@ class SkillsPage(private val catalogue: Catalogue, private val usedBy: UsedBy) {
     private fun show(model: Model, form: SkillForm, message: String? = null): String {
         model.addAttribute("form", form)
         model.addAttribute("message", message)
-        model.addAttribute("users", form.name?.let(usedBy::skill))
+        model.addAttribute("dependents", form.name?.let(usedBy::skill))
         return "skill"
     }
 }

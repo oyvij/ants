@@ -27,7 +27,7 @@ import java.util.concurrent.TimeUnit.MILLISECONDS
 import java.util.concurrent.TimeUnit.SECONDS
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.io.path.readText
-import kotlin.io.path.writeText
+import kotlin.io.path.exists
 
 /**
  * The in-process worker. It fetches ready Agent Tasks (external tasks on topic `agent`) only for free slots under
@@ -53,7 +53,11 @@ class AgentLauncher(
     /** Each live CLI process and the Run it works for. */
     private val clis = ConcurrentHashMap<Process, String>()
     private val live = AtomicInteger()
-    private val stdins = ConcurrentHashMap<String, Stdin>() // by `<run>/<task id>`
+    // ponytail: one live session per Task id in a Run; two live instances of one Task, as in a parallel multi-instance,
+    // need a key of their own, along with a Transcript of their own (both are by Task id).
+    private val stdins = ConcurrentHashMap<String, Stdin>() // by key(run, task id)
+
+    private fun key(run: String, task: String) = "$run/$task"
     private val usageFile = home.resolve("claude-usage.json")
 
     // ponytail: one pause gate per CLI, not per model, kept in memory; after a restart the held Tasks wait out
@@ -65,20 +69,20 @@ class AgentLauncher(
     val running get() = live.get()
 
     /** Whether [task] of [run] has a session that still takes messages. */
-    fun live(run: String, task: String) = stdins["$run/$task"]?.open == true
+    fun live(run: String, task: String) = stdins[key(run, task)]?.open == true
 
     /**
      * Writes [message] into the live session of [task] in [run], which reads it at its next tool boundary, and appends
      * it to the Run log. False when no session takes it any more, such as once Ants holds the Task's Result.
      */
     fun send(run: String, task: String, message: String): Boolean {
-        val stdin = stdins["$run/$task"]?.takeIf { it.say(message) } ?: return false
-        runLog(home.resolve("runs").resolve(run), stdin.task, "Send", message)
+        val stdin = stdins[key(run, task)]?.takeIf { it.say(message) } ?: return false
+        runLog(home.runWorkspace(run), stdin.task, "Send", message)
         return true
     }
 
     /** Interrupts the live session of [task] in [run], which leaves the Task `[stopped]`. False when there is none. */
-    fun stop(run: String, task: String) = stdins["$run/$task"]?.interrupt() == true
+    fun stop(run: String, task: String) = stdins[key(run, task)]?.interrupt() == true
 
     @EventListener(ApplicationReadyEvent::class)
     fun start() {
@@ -92,7 +96,7 @@ class AgentLauncher(
     }
 
     @PreDestroy
-    fun stop() {
+    fun shutdown() {
         poller.shutdownNow()
         clis.keys.forEach(Process::destroy)
     }
@@ -102,23 +106,38 @@ class AgentLauncher(
 
     private fun fetch() {
         try {
-            gates.filterValues { !it.isAfter(clock.instant()) }.keys.forEach(::tryNow)
-            val free = settings.agentTasks() - live.get()
-            if (free <= 0) return
-            externalTasks.fetchAndLock().workerId(WORKER).maxTasks(free).orderByCreateTime().asc()
-                .subscribe().topic(TOPIC, LOCK.toMillis()).localVariables().includeExtensionProperties().execute()
-                .forEach { task ->
-                    live.incrementAndGet()
-                    Thread.ofVirtual().start {
-                        try {
-                            launch(task)
-                        } finally {
-                            live.decrementAndGet()
-                        }
+            gates.filterValues { !it.isAfter(clock.instant()) }.forEach { (cli, reset) -> tryNow(cli, reset) }
+            val fetched = synchronized(live) { // the slots So far takes too
+                val free = settings.agentTasks() - live.get()
+                if (free <= 0) return
+                externalTasks.fetchAndLock().workerId(WORKER).maxTasks(free).orderByCreateTime().asc()
+                    .subscribe().topic(TOPIC, LOCK.toMillis()).localVariables().includeExtensionProperties().execute()
+                    .also { live.addAndGet(it.size) }
+            }
+            fetched.forEach { task ->
+                Thread.ofVirtual().start {
+                    try {
+                        launch(task)
+                    } finally {
+                        live.decrementAndGet()
                     }
                 }
+            }
         } catch (e: Exception) {
             log.warn("Fetching Agent Tasks failed", e) // a failed fetch must not end the polling
+        }
+    }
+
+    /** Runs [cli] in a free slot under the cap, as every CLI process does, or returns null when every slot is taken. */
+    fun <T> inSlot(cli: () -> T): T? {
+        synchronized(live) {
+            if (live.get() >= settings.agentTasks()) return null
+            live.incrementAndGet()
+        }
+        try {
+            return cli()
+        } finally {
+            live.decrementAndGet()
         }
     }
 
@@ -128,9 +147,12 @@ class AgentLauncher(
     /** When the Task with external task [id] resumes, if a pause holds it. */
     fun pausedUntil(id: String): Instant? = held[id]?.let(gates::get)
 
-    /** Opens [cli]'s gate and unlocks the Tasks it held, so they launch as slots free up. */
-    fun tryNow(cli: String) = synchronized(gates) {
-        gates.remove(cli)
+    /**
+     * Opens [cli]'s gate and unlocks the Tasks it held, so they launch as slots free up; with [reset], only if the
+     * gate still opens then, so a later reset a Task has just hit keeps it shut.
+     */
+    fun tryNow(cli: String, reset: Instant? = null) = synchronized(gates) {
+        if (reset == null) gates.remove(cli) else if (!gates.remove(cli, reset)) return@synchronized
         held.filterValues { it == cli }.keys.forEach { id ->
             held.remove(id)
             runCatching { externalTasks.unlock(id) } // gone if its Run ended meanwhile
@@ -155,17 +177,24 @@ class AgentLauncher(
     /** Runs [task] once, between a divider and a line saying how it ended in its Transcript. */
     private fun launch(task: LockedExternalTask) {
         val resume = (task.variables[SESSION] as? String)?.takeIf { task.variables[ACTION] == CONTINUE }
-        val session = resume ?: UUID.randomUUID().toString()
+        var session = resume // a new one only once claude starts, so Continue never resumes a session claude never saw
         var transcript: Transcript.Writer? = null
         try {
             val agent = catalogue.agent(task.extensionProperties["ants.agent"] ?: error("${task.activityId} names no ants.agent"))
             if (hold(task, agent.cli)) return // keeping its choice for the launch after the reset
             runtime.removeVariablesLocal(task.executionId, listOf(ACTION, INSTRUCTION, SESSION)) // the choice is used once
             val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult().rootProcessInstanceId
-            val workspace = home.resolve("runs").resolve(run)
+            val workspace = home.runWorkspace(run)
+            val skill = catalogue.skill(task.extensionProperties["ants.skill"] ?: error("${task.activityId} names no ants.skill"))
+            check(agent.cli == "claude") { "Agent ${agent.name} runs ${agent.cli}, and only claude runs for now" }
+            val used = catalogue.uses(skill)
+            // ponytail: a Task whose catalogue.vault(skill) is on runs without the Vault until #69 hands it over (its
+            // path in the hand-off line and an --add-dir).
+            refuseBareByDefault(agent.cli, workspace)
+            session = session ?: UUID.randomUUID().toString()
             transcript = Transcript.Writer(Transcript.file(workspace, task.activityId)).apply { ants("launch") }
             val result = try {
-                session(task, agent, run, workspace, transcript, session, resume != null, task.variables[INSTRUCTION] as? String)
+                session(task, agent, skill, used, run, workspace, transcript, session, resume != null, task.variables[INSTRUCTION] as? String)
             } catch (limit: UsageLimit) {
                 val until = limit.resetsAt + Duration.ofMinutes(1)
                 transcript.ants("end", "Paused by the ${agent.cli} usage limit until ${clock.local(until)}.")
@@ -183,13 +212,16 @@ class AgentLauncher(
             }
         } catch (e: Exception) {
             val stopping = poller.isShutdown // the Task stays locked, and the next start unlocks it
+            // Cancel the Run deletes it, then kills its CLIs.
+            val cancelled = runCatching { runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).count() == 0L }.getOrDefault(false)
             val reason = when {
                 stopping -> "Ants stopped."
+                cancelled -> "Cancelled with the Run."
                 e is Stopped -> "[stopped] ${e.message}"
                 else -> "[failed] ${e.message ?: e}"
             }
             runCatching { transcript?.ants("end", reason) }
-            if (stopping) return
+            if (stopping || cancelled) return
             if (e !is Stopped) log.warn("Agent Task ${task.activityId} failed", e)
             incident(task, session, reason, (e as? Failed)?.details)
         }
@@ -197,29 +229,23 @@ class AgentLauncher(
 
     /**
      * Puts [task] on hold as an incident, its tag and reason in [message] and anything longer in [details], keeping
-     * its [session] for Continue.
+     * its [session], if claude ever started one, for Continue.
      */
-    private fun incident(task: LockedExternalTask, session: String, message: String, details: String?) = runCatching {
-        runtime.setVariableLocal(task.executionId, SESSION, session)
+    private fun incident(task: LockedExternalTask, session: String?, message: String, details: String?) = runCatching {
+        if (session != null) runtime.setVariableLocal(task.executionId, SESSION, session)
         externalTasks.handleFailure(task.id, WORKER, message, details, 0, 0)
     }.onFailure { log.warn("Agent Task ${task.activityId} couldn't be put on hold", it) }
 
     /**
-     * Runs the Task's Skill in one CLI session in [workspace], every line it prints going to [transcript], and returns
-     * its Result: the last valid one, once every message written to the session has been read. A new [session] starts
-     * with the hand-off prompt and the user's [instruction], if any; a [resume]d one with the instruction alone.
+     * Runs [skill], which uses [used], in one CLI session in [workspace], every line it prints going to [transcript],
+     * and returns its Result: the last valid one, once every message written to the session has been read. A new
+     * [session] starts with the hand-off prompt and the user's [instruction], if any; a [resume]d one with the
+     * instruction alone.
      */
     private fun session(
-        task: LockedExternalTask, agent: Agent, run: String, workspace: Path, transcript: Transcript.Writer, session: String, resume: Boolean, instruction: String?,
+        task: LockedExternalTask, agent: Agent, skill: Skill, used: List<Skill>, run: String, workspace: Path, transcript: Transcript.Writer,
+        session: String, resume: Boolean, instruction: String?,
     ): Map<*, *> {
-        val skill = catalogue.skill(task.extensionProperties["ants.skill"] ?: error("${task.activityId} names no ants.skill"))
-        check(agent.cli == "claude") { "Agent ${agent.name} runs ${agent.cli}, and only claude runs for now" }
-        val used = catalogue.uses(skill)
-        // ponytail: until the Vault is handed to Tasks (its path in the hand-off line and an --add-dir), a Task that
-        // gets the Vault fails rather than run without it.
-        (listOf(skill) + used).firstOrNull { it.vault }?.let { error("The Task uses the Vault, as ${it.name} opts in, and no Vault can be handed to a Task yet") }
-        refuseBareByDefault(agent.cli, workspace)
-
         val handOff = "Follow the Skill in ${skill.file} for the workspace at $workspace." +
             (if (used.isEmpty()) "" else " It uses the Skills ${used.joinToString { "${it.name} (${it.file})" }}.")
         val inputs = task.variables.filterKeys { !it.startsWith("ants.") }.toSortedMap()
@@ -235,12 +261,13 @@ class AgentLauncher(
         }
         try {
             stdin.say(prompt)
-            stdins["$run/${task.activityId}"] = stdin // only now, so the prompt goes first
+            stdins[key(run, task.activityId)] = stdin // only now, so the prompt goes first
             var valid: Map<*, *>? = null
             var failure: Failed? = null
             var stopped = false
             var retried = false
             var limit: Instant? = null
+            var answered = false // a result line came after the user's Stop
             process.inputReader().forEachLine { line ->
                 transcript.line(line)
                 if (failure != null || stopped || limit != null || (valid != null && !stdin.open)) return@forEachLine
@@ -263,11 +290,12 @@ class AgentLauncher(
                     return@forEachLine
                 }
                 if (event["type"] != "result") return@forEachLine
+                if (stdin.stopping) answered = true
                 val result = event["structured_output"]
                 val errors = result?.let { ResultContract.errors(it, schema, workspace) }
                 valid = null // the last result line is the one that counts
                 when {
-                    errors == null && stdin.stopping -> stopped = true
+                    errors == null && stdin.stopping && event["subtype"] == "error_during_execution" -> stopped = true
                     errors == null -> failure = Failed(
                         listOf("${agent.cli} ended without a Result:", event["subtype"], event["result"], (event["errors"] as? List<*>)?.joinToString("; "))
                             .filter { it != null && it != "" }.joinToString(" "),
@@ -285,13 +313,13 @@ class AgentLauncher(
             drain.join()
             limit?.let { throw UsageLimit(it) }
             val tail = synchronized(stderr) { stderr.joinToString("\n") }.ifEmpty { null }
-            if (stopped) throw Stopped()
+            if (stopped || (stdin.stopping && !answered && failure == null)) throw Stopped()
             failure?.let { throw Failed(it.message, it.details ?: tail) }
             if (exit != 0) throw Failed("${agent.cli} exited with code $exit", tail)
             return valid ?: throw Failed("${agent.cli} ended without a Result", tail)
         } finally {
             stdin.close()
-            stdins.remove("$run/${task.activityId}", stdin)
+            stdins.remove(key(run, task.activityId), stdin)
             clis -= process
         }
     }
@@ -397,20 +425,24 @@ class AgentLauncher(
     }
 
     /**
-     * Every offered claude Agent as a Subagent type (`--agents`), and when the Agent tool among [tools] has a Limit,
-     * such as `Agent(searcher)`, every other type denied: claude lets the Agent tool start any type that isn't denied.
+     * When the Agent tool is among [tools], every offered claude Agent as a Subagent type (`--agents`), and when the
+     * Agent tool has a Limit, such as `Agent(searcher)`, every other type denied: claude lets the Agent tool start any
+     * type that isn't denied.
      */
     private fun subagents(tools: List<String>): List<String> {
+        val agentTool = tools.filter { it.substringBefore('(') in SUBAGENT_TOOLS }
+        if (agentTool.isEmpty()) return emptyList()
+        // Probed on claude 2.1.295 against a fake API: rules such as `Bash(git log *)` are accepted in `--agents`
+        // tools, but a Subagent's permissions are its Task's (`--allowedTools` under dontAsk), so they narrow nothing more.
         val offered = catalogue.agents().filter { it.subagent && it.cli == "claude" }.associate { agent ->
             agent.name to listOfNotNull(
                 "description" to agent.description,
                 "prompt" to agent.instructions,
-                agent.tools?.let { rules -> "tools" to rules.map { it.substringBefore('(') }.distinct().filter { it != "Skill" } },
+                agent.tools?.let { rules -> "tools" to rules.filter { it.substringBefore('(') != "Skill" } },
                 agent.model?.let { "model" to it },
             ).toMap()
         }
-        val agentTool = tools.filter { it.substringBefore('(') in SUBAGENT_TOOLS }
-        val allowed = agentTool.takeIf { rules -> rules.isNotEmpty() && rules.all { '(' in it } }
+        val allowed = agentTool.takeIf { rules -> rules.all { '(' in it } }
             ?.flatMap { it.substringAfter('(').removeSuffix(")").split(',').map(String::trim) }
         val denied = allowed?.let { (BUILT_IN_SUBAGENTS + offered.keys).filter { it !in allowed }.map { "Agent($it)" } }.orEmpty()
         return (if (offered.isEmpty()) emptyList() else listOf("--agents", json.writeValueAsString(offered))) +
@@ -428,11 +460,14 @@ class AgentLauncher(
      * The latest usage claude reported: its `rate_limit_event`'s `unifiedWindows`, such as
      * `{"five_hour":{"utilization":0.04,"resetsAt":<epoch s>},"seven_day":{…}}`, utilization a fraction. Empty until a launch reports one.
      */
-    fun usage(): Map<*, *> = runCatching { json.readValue(usageFile.readText(), Map::class.java) }.getOrDefault(emptyMap<Any, Any>())
+    fun usage(): Map<*, *> = if (!usageFile.exists()) emptyMap<Any, Any>()
+    else runCatching { json.readValue(usageFile.readText(), Map::class.java) }
+        .onFailure { log.warn("$usageFile isn't the usage claude last reported", it) }.getOrDefault(emptyMap<Any, Any>())
 
+    /** Keeps the usage [event] reports; launches running at once each write it whole, and the last one wins. */
     private fun keepUsage(event: Map<*, *>) {
         val windows = (event["rate_limit_info"] as? Map<*, *>)?.get("unifiedWindows") ?: return
-        usageFile.writeText(json.writeValueAsString(windows))
+        usageFile.writeAtomically(json.writeValueAsString(windows))
     }
 
     /** The CLI's command prefix with [args], in [workspace], on the narrowed environment. */
@@ -483,7 +518,10 @@ class AgentLauncher(
         private const val STDERR_LINES = 20
         private const val LOST_LOGIN = "Ants' Claude login is missing or expired. Log in again (Settings)"
 
-        /** An Agent's tools when its file names none. claude 2.1.295 has no TodoWrite; its task-list tools are these four Task*. */
+        /**
+         * An Agent's tools when its file names none. claude 2.1.295 has no TodoWrite; its checklist tools are these four
+         * Task*. Not `Agent`: an Agent starts Subagents only when its file names the Agent tool, as the implementer's does.
+         */
         val DEFAULT_TOOLS = listOf(
             "Bash", "Edit", "Glob", "Grep", "NotebookEdit", "Read", "TaskCreate", "TaskGet", "TaskList", "TaskUpdate", "WebFetch", "WebSearch", "Write",
         )

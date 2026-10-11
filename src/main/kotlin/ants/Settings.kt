@@ -1,22 +1,18 @@
 package ants
 
+import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Component
-import org.yaml.snakeyaml.DumperOptions
 import org.yaml.snakeyaml.Yaml
 import java.io.File
 import java.net.InetAddress
-import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.StandardCopyOption.ATOMIC_MOVE
-import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 import java.time.Duration
 import java.util.concurrent.TimeUnit.SECONDS
-import kotlin.io.path.createDirectories
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.io.path.exists
 import kotlin.io.path.readText
-import kotlin.io.path.writeText
 
 /** `settings.yaml` in ANTS_HOME, created on first start and read fresh each time, so hand edits count. */
 @Component
@@ -31,9 +27,8 @@ class Settings(
 
     init {
         if (!file.exists()) {
-            home.createDirectories()
             val found = detect().mapValues { mapOf("path" to it.value) }
-            file.writeText(HEADER + if (found.isEmpty()) "" else yaml.dump(found))
+            file.writeAtomically(HEADER + if (found.isEmpty()) "" else yaml.dump(found))
         }
         val loopback = address.isNotEmpty() && InetAddress.getByName(address).isLoopbackAddress
         check(loopback || !encoder.matches("admin", password())) {
@@ -50,12 +45,20 @@ class Settings(
     // ponytail: one global cap, no per-CLI caps or priorities
     fun agentTasks(): Int = (read()["agent-tasks"] as? Int) ?: 3
 
-    /** How often a running Task's So far is rewritten (default 2 minutes), or null when it is switched off. */
+    /**
+     * How often a running Task's So far is rewritten (default 2 minutes), or null when it is switched off. A value
+     * that isn't a time, such as `90s` or `5m`, gives the default, with one warning per value.
+     */
     fun soFar(): Duration? = when (val value = read()["so-far"]) {
         false -> null
-        null, true -> Duration.ofMinutes(2)
-        else -> Duration.parse("PT$value".uppercase())
+        null, true -> SO_FAR
+        else -> runCatching { Duration.parse("PT$value".uppercase()) }.getOrNull()?.takeIf { it.isPositive } ?: SO_FAR.also {
+            if (badSoFar.getAndSet("$value") != "$value") log.warn("so-far: $value in $file isn't a time such as 90s or 5m; it is rewritten every 2m")
+        }
     }
+
+    private val log = LoggerFactory.getLogger(javaClass)
+    private val badSoFar = AtomicReference<String>()
 
     /** How deep claude's Subagents may nest: 1 lets a Task start Subagents, and them none of their own. */
     fun subagentDepth(): Int = (read()["subagent-depth"] as? Int) ?: 1
@@ -96,11 +99,7 @@ class Settings(
     /** Rewrites the file with [change] applied to its keys. Keys it doesn't touch are kept; comments are not. */
     @Synchronized
     fun save(change: (MutableMap<String, Any?>) -> Unit) {
-        val values = LinkedHashMap(read()).also(change)
-        // Written beside it and moved over, so a launch reading it meanwhile never sees half a file.
-        val next = Files.createTempFile(file.parent, "settings", ".yaml")
-        next.writeText(HEADER + yaml.dump(values))
-        Files.move(next, file, ATOMIC_MOVE, REPLACE_EXISTING)
+        file.writeAtomically(HEADER + yaml.dump(LinkedHashMap(read()).also(change)))
     }
 
     /** Finds each CLI through the user's login shell, which sees the PATH their profile sets. A missing one is left out. */
@@ -132,20 +131,23 @@ class Settings(
         /** The AI CLIs, which also have a command and an environment allow-list. */
         val AI_CLIS = listOf("claude", "codex")
 
+        private val SO_FAR: Duration = Duration.ofMinutes(2)
+
         val DEFAULT_ENV = listOf("PATH", "HOME", "USER", "LOGNAME", "SHELL", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE", "TERM")
 
-        /** A YAML list, or a string read as space-separated words, so `command: claude` works too. */
+        /**
+         * A YAML list, or a string read as space-separated words, so `command: claude` works too, as do a Skill's
+         * `ants-uses` names.
+         */
         // ponytail: a string splits on spaces, so a path with a space in it needs the YAML list form
         fun strings(value: Any?) = when (value) {
             null -> null
             is List<*> -> value.map(Any?::toString)
-            else -> value.toString().split(' ').filter(String::isNotEmpty)
+            else -> value.toString().split(Regex("\\s+")).filter(String::isNotEmpty)
         }
 
         /** [path] with a leading `~` read as the user's home. */
         fun expand(path: String): Path = Path.of(path.replaceFirst(Regex("^~(?=/|$)"), Regex.escapeReplacement(System.getProperty("user.home"))))
-
-        private val yaml = Yaml(DumperOptions().apply { defaultFlowStyle = DumperOptions.FlowStyle.BLOCK })
 
         private val HEADER = """
             # Ants settings. Ants reads this file as it goes, so hand edits count. Saving the settings page rewrites it.

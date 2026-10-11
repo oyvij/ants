@@ -24,7 +24,6 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
@@ -59,7 +58,7 @@ class Transcript {
     var output: String? = null
         private set
 
-    /** The Agent's task list in this launch, from the task-list tools, by task id. */
+    /** The Agent's checklist in this launch, its todos from claude's Task* tools, by their id. */
     val todos = linkedMapOf<String, Todo>()
 
     class Todo(val subject: String, val status: String)
@@ -72,8 +71,8 @@ class Transcript {
         val tokens get() = modelUsage ?: usage.values.sum()
     }
 
-    /** A Subagent the session started, shown as a block of the entries it added, [entries]. */
-    private class Subagent(val entry: Int, val type: String, val description: String, val start: Instant) {
+    /** A Subagent the session, or the Subagent [parent], started, shown as a block of the entries it added, [entries]. */
+    private class Subagent(val entry: Int, val type: String, val description: String, val start: Instant, val parent: Subagent?) {
         val entries = mutableListOf<Int>()
         var end: Instant? = null
         var status = "running"
@@ -128,7 +127,8 @@ class Transcript {
         else -> if (id.endsWith("s")) summary(blocks.getValue(id.removePrefix("e").removeSuffix("s").toInt()))
         else id.removePrefix("e").toInt().let { entry ->
             blocks[entry]?.let { block ->
-                """<details class="subagent" id="$id"${if (running && block.end == null) " open" else ""}>${summary(block)}""" +
+                val inside = block.parent?.let { """ data-in="e${it.entry}"""" }.orEmpty()
+                """<details class="subagent" id="$id"$inside${if (running && block.end == null) " open" else ""}>${summary(block)}""" +
                     """<div>${block.entries.joinToString("") { html("e$it") }}</div></details>"""
             } ?: entries[entry]
         }
@@ -215,8 +215,8 @@ class Transcript {
             "tool_use" -> {
                 val name = block["name"].toString()
                 val input = block["input"] as? Map<*, *> ?: emptyMap<Any, Any>()
-                if (parent == null && name in AgentLauncher.SUBAGENT_TOOLS) {
-                    spawn(block["id"], input["subagent_type"]?.toString() ?: "general-purpose", input["description"]?.toString().orEmpty())
+                if (name in AgentLauncher.SUBAGENT_TOOLS) {
+                    spawn(block["id"], input["subagent_type"]?.toString() ?: "general-purpose", input["description"]?.toString().orEmpty(), parent)
                 } else {
                     val argument = input.values.firstOrNull { it is String }?.toString().orEmpty()
                     tools[block["id"]] = append(parent) {
@@ -256,12 +256,11 @@ class Transcript {
         }
     }
 
-    /** Opens a block for the Subagent the tool call [id] starts. */
-    private fun spawn(id: Any?, type: String, description: String): Subagent {
-        val entry = entries.size
-        val block = Subagent(entry, type, description, seen)
-        blocks[entry] = block
-        append { "" } // the block's HTML is composed from its entries
+    /** Opens a block for the Subagent the tool call [id] starts, inside [parent]'s block when a Subagent started it. */
+    private fun spawn(id: Any?, type: String, description: String, parent: Subagent? = null): Subagent {
+        val block = Subagent(entries.size, type, description, seen, parent)
+        blocks[block.entry] = block
+        append(parent) { "" } // the block's HTML is composed from its entries
         subagents[id] = block
         return block
     }
@@ -392,7 +391,7 @@ fun tokens(count: Long) = String.format(Locale.ROOT, "%,d tokens", count)
 
 /** The Transcript page, which replays the file and then follows it over SSE, with Send and Stop while the Task runs. */
 @Controller
-class Transcripts(@Value("\${ants.home}") home: Path, private val launcher: AgentLauncher) {
+class Transcripts(@Value("\${ants.home}") home: Path, private val launcher: AgentLauncher, private val streams: Streams) {
     private val runs = home.resolve("runs")
 
     @GetMapping("/runs/{run}/tasks/{task}/transcript")
@@ -417,7 +416,7 @@ class Transcripts(@Value("\${ants.home}") home: Path, private val launcher: Agen
         val error = when {
             message.isBlank() -> "Write a message to send."
             !launcher.send(run, task, message) -> "Not sent: the Agent's session has ended, as Ants holds its Result or it is not running."
-            else -> return if (back == "run") "redirect:/runs/$run" else "redirect:/runs/$run/tasks/$task/transcript"
+            else -> return back(back, run, "/runs/$run/tasks/$task/transcript")
         }
         model.addAttribute("error", error)
         return page(run, task, model)
@@ -426,7 +425,7 @@ class Transcripts(@Value("\${ants.home}") home: Path, private val launcher: Agen
     /** Stop: interrupts the Task's live session, which puts it on the Notification list as `[stopped]`. */
     @PostMapping("/runs/{run}/tasks/{task}/transcript/stop")
     fun stop(@PathVariable run: String, @PathVariable task: String, @RequestParam(required = false) back: String?, model: Model): String {
-        if (launcher.stop(run, task)) return if (back == "run") "redirect:/runs/$run" else "redirect:/runs/$run/tasks/$task/transcript"
+        if (launcher.stop(run, task)) return back(back, run, "/runs/$run/tasks/$task/transcript")
         model.addAttribute("error", "Not stopped: the Agent's session has already ended.")
         return page(run, task, model)
     }
@@ -435,29 +434,13 @@ class Transcripts(@Value("\${ants.home}") home: Path, private val launcher: Agen
     @GetMapping("/runs/{run}/tasks/{task}/transcript/events")
     fun events(@PathVariable run: String, @PathVariable task: String, @RequestParam from: Long): SseEmitter {
         val file = file(run, task)
-        val emitter = SseEmitter(0L)
-        val open = AtomicBoolean(true)
-        emitter.onCompletion { open.set(false) }
-        emitter.onError { open.set(false) }
-        Thread.ofVirtual().start {
-            try {
-                val transcript = Transcript()
-                var offset = Transcript.read(file, 0, from).let { (lines, end) -> lines.forEach(transcript::add); end }
-                var quiet = 0
-                // ponytail: each open page polls its file every 250 ms; an in-process notification once pages are many
-                while (open.get()) {
-                    val (lines, end) = Transcript.read(file, offset)
-                    offset = end
-                    val changed = lines.flatMapTo(linkedSetOf()) { transcript.add(it) }
-                    for (id in changed) emitter.send(SseEmitter.event().name("entry").data(transcript.html(id)))
-                    if (changed.isEmpty() && ++quiet % 40 == 0) emitter.send(SseEmitter.event().comment("")) // finds a closed page
-                    Thread.sleep(250)
-                }
-            } catch (_: Exception) {
-                emitter.complete() // the page went away
-            }
+        val transcript = Transcript()
+        var offset = Transcript.read(file, 0, from).let { (lines, end) -> lines.forEach(transcript::add); end }
+        return streams.poll(Duration.ofMillis(250), "entry") {
+            val (lines, end) = Transcript.read(file, offset)
+            offset = end
+            lines.flatMapTo(linkedSetOf()) { transcript.add(it) }.map(transcript::html)
         }
-        return emitter
     }
 
     private fun file(run: String, task: String) = Transcript.file(runs.resolve(run), task).normalize()

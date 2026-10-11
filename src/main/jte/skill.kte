@@ -1,6 +1,6 @@
 @param form: ants.SkillForm
 @param message: String? = null
-@param users: ants.Users?
+@param dependents: ants.Dependents?
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
 <!doctype html>
@@ -30,8 +30,8 @@
     <p><button>Save</button></p>
 @endif
 </form>
-@if(users != null)
-@template.users(users = users)
+@if(dependents != null)
+@template.dependents(dependents = dependents)
 @endif
 @if(form.name != null && !form.readOnly)
 <form method="post" action="/skills/${form.name}/delete">

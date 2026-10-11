@@ -2,6 +2,9 @@ package ants
 
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import org.springframework.boot.web.server.context.WebServerApplicationContext
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.measureTime
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.readText
@@ -21,6 +24,14 @@ class BootTest : AntsTest() {
     fun `every page needs a login`() {
         for (path in listOf("/", "/operaton/app/cockpit/", "/engine-rest/engine")) {
             assertEquals("/login", browser().get(path).path, path)
+        }
+    }
+
+    @Test
+    fun `tests never reach a real claude or nono, by its bare name or through the login shell`() {
+        for (shell in listOf(listOf("/bin/sh", "-c"), listOf("$shell", "-l", "-c"))) {
+            val found = ProcessBuilder(shell + "command -v claude nono").start().inputReader().readLines()
+            assertEquals(emptyList(), found.filter { !it.startsWith("$loginBin") }, "found by $shell")
         }
     }
 
@@ -54,6 +65,18 @@ class BindTest {
             AntsTest.bootAnother(AntsTest.tempHome(), "--server.address=0.0.0.0")
         }
         assertContains(generateSequence<Throwable>(error) { it.cause }.joinToString { it.message.orEmpty() }, "default password")
+    }
+}
+
+class ShutdownTest {
+    @Test
+    fun `an open Transcript stream doesn't hold up shutdown`() {
+        val ants = AntsTest.startAnother(AntsTest.tempHome())
+        val browser = Browser("http://127.0.0.1:${(ants as WebServerApplicationContext).webServer!!.port}").also { it.login() }
+        browser.events("/runs/r/tasks/t/transcript/events?from=0")
+        Thread.sleep(1000)
+        val took = measureTime { ants.close() }
+        assertTrue(took < 10.seconds, "shutdown took $took")
     }
 }
 

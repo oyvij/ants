@@ -2,6 +2,7 @@ package ants
 
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
+import org.springframework.beans.factory.annotation.Autowired
 import tools.jackson.databind.json.JsonMapper
 import java.nio.file.Files
 import java.nio.file.Path
@@ -22,10 +23,14 @@ import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 
 class AgentTaskTest : AntsTest() {
     private val browser by lazy { browser().also { it.login() } }
     private val claude = FakeClaude()
+
+    @Autowired
+    lateinit var catalogue: Catalogue
 
     private fun settings(agentTasks: Int = 3) = home.resolve("settings.yaml").writeText(
         """
@@ -251,9 +256,11 @@ class AgentTaskTest : AntsTest() {
         skill(metadata = uses("search"))
         usedSkill("search", "metadata:\n  varde-vault: true\n")
         claude.session("draft", done)
+        assertTrue(catalogue.vault(catalogue.skill("draft")))
         val run = start()
-        eventually { assertContains(page(run), "<dt>draft</dt><dd>[failed] The Task uses the Vault, as search opts in, and no Vault can be handed to a Task yet</dd>") }
-        assertEquals(emptyList(), claude.launches("draft"))
+        eventually { assertContains(page(run), "State: Completed") } // handing the Vault over is #69's
+        usedSkill("search")
+        assertFalse(catalogue.vault(catalogue.skill("draft")))
     }
 
     @Test

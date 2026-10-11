@@ -142,7 +142,12 @@ class AgentsTest : AntsTest() {
             assertContains(post("/agents/other", mapOf("name" to "mine", "cli" to "claude")).body, "An Agent named mine already exists.")
             assertTrue(agents.resolve("other.md").exists())
         }
-        assertContains(post("/agents/new", mapOf("name" to "../escape", "cli" to "claude")).body, "A name is lowercase letters, digits and hyphens.")
+        assertContains(post("/agents/new", mapOf("name" to "../escape", "cli" to "claude")).body, "An Agent's name is up to 64 lowercase letters, digits and hyphens.")
+        assertContains(post("/agents/new", mapOf("name" to "a".repeat(65), "cli" to "claude")).body, "up to 64 lowercase letters")
+        for (route in listOf("new", "import")) {
+            assertContains(post("/agents/new", mapOf("name" to route, "cli" to "claude")).body, "The Agents page keeps the name $route for itself.")
+            assertFalse(agents.resolve("$route.md").exists())
+        }
     }
 
     @Test

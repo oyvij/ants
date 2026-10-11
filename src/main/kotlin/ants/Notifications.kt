@@ -8,8 +8,6 @@ import org.operaton.bpm.engine.history.HistoricProcessInstance
 import org.operaton.bpm.engine.runtime.Incident
 import org.operaton.bpm.model.bpmn.instance.FlowElement
 import org.springframework.beans.factory.annotation.Value
-import org.springframework.context.event.ContextClosedEvent
-import org.springframework.context.event.EventListener
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType.TEXT_EVENT_STREAM_VALUE
 import org.springframework.stereotype.Controller
@@ -64,6 +62,7 @@ class Notifications(
     private val repository: RepositoryService,
     private val externalTasks: ExternalTaskService,
     private val launcher: AgentLauncher,
+    private val streams: Streams,
     @Value("\${ants.home}") private val home: Path,
 ) {
     /** Everything waiting on the user, oldest first. */
@@ -108,7 +107,7 @@ class Notifications(
             model.addAttribute("error", "Continue the session needs an instruction.")
             return entry(id, model)
         }
-        runLog(home.resolve("runs").resolve(entry.run), entry.task, name, instruction)
+        runLog(home.runWorkspace(entry.run), entry.task, name, instruction)
         if (action == CANCEL) {
             // A cancelled Run keeps its workspace; externally terminated is what its pages read as Cancelled.
             runtime.deleteProcessInstance(entry.run, "Cancelled by the user", false, true)
@@ -118,7 +117,7 @@ class Notifications(
         // The choice first: the worker can fetch the Task again the moment its retries are back.
         runtime.setVariablesLocal(incident.executionId, mapOf(AgentLauncher.ACTION to action, AgentLauncher.INSTRUCTION to instruction))
         externalTasks.setRetries(incident.configuration, 1)
-        return if (back == "run") "redirect:/runs/${entry.run}" else "redirect:/notifications/next?run=${entry.run}"
+        return back(back, entry.run, "/notifications/next?run=${entry.run}")
     }
 
     /** Next up: the Run's next entry, if one turns up within a few seconds; else the Notification list. */
@@ -135,34 +134,9 @@ class Notifications(
     }
 
     /** The count for the nav and the tab title, sent on connect and whenever it changes. */
-    // ponytail: a virtual thread per open tab polls the count every second; the stream ends after a minute and
-    // EventSource reconnects, so a closed tab's poller stops by then.
     @GetMapping("/notifications/count", produces = [TEXT_EVENT_STREAM_VALUE])
     @ResponseBody
-    fun count(): SseEmitter = SseEmitter(60_000).also { emitter ->
-        Thread.ofVirtual().start {
-            var last = -1L
-            try {
-                while (!closing) {
-                    val count = incidents().count()
-                    if (count != last) emitter.send(count).also { last = count }
-                    Thread.sleep(1000)
-                }
-                emitter.complete()
-            } catch (_: Exception) {
-                // the tab went away or the stream timed out
-            }
-        }
-    }
-
-    @Volatile
-    private var closing = false
-
-    /** Ends the open count streams, or a graceful shutdown would wait for them. */
-    @EventListener(ContextClosedEvent::class)
-    fun close() {
-        closing = true
-    }
+    fun count(): SseEmitter = streams.changes { incidents().count().toString() }
 
     private fun incidents() = runtime.createIncidentQuery().incidentType(Incident.EXTERNAL_TASK_HANDLER_TYPE)
 

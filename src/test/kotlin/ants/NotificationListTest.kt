@@ -209,6 +209,25 @@ class NotificationListTest : AntsTest() {
     }
 
     @Test
+    fun `a launch that never started writes no divider and keeps no session, so Continue starts afresh once the cause is fixed`() {
+        setUp()
+        home.resolve("skills/draft").toFile().deleteRecursively()
+        val run = start()
+        val entry = entry(run)
+        assertFalse(home.resolve("runs/$run/tasks/draft/transcript.jsonl").exists())
+
+        setUp()
+        claude.session("draft", done)
+        browser.get(entry)
+        browser.post(entry, mapOf("action" to "continue", "instruction" to "Dry."))
+        eventually { assertContains(page(run), "State: Completed") }
+        val launch = claude.launches("draft").single()
+        assertNotNull(launch.flag("--session-id"))
+        assertEquals(null, launch.flag("--resume"))
+        assertContains(launch.stdin, "From the user:\\nDry.")
+    }
+
+    @Test
     fun `a failed resume gives ✕ failed with claude's reason`() {
         setUp()
         claude.session("draft", stuck)
@@ -242,6 +261,9 @@ class NotificationListTest : AntsTest() {
         assertContains(cancelled.body, "State: Cancelled")
         assertEquals(null, row(run))
         eventually { assertTrue(claude.launches("draft").single().killed) }
+        val transcript = home.resolve("runs/$run/tasks/draft/transcript.jsonl")
+        eventually { assertContains(transcript.readText(), "Cancelled with the Run.") }
+        assertFalse("[failed]" in transcript.readText())
         assertTrue(home.resolve("runs/$run").isDirectory())
         assertContains(runLog(run), "Check · Cancel the Run")
 
