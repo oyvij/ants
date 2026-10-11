@@ -8,7 +8,6 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Duration
 import java.time.Instant
-import java.time.format.DateTimeFormatter
 import java.util.concurrent.TimeUnit.SECONDS
 import kotlin.io.path.createDirectories
 import kotlin.io.path.createFile
@@ -345,8 +344,6 @@ class AgentTaskTest : AntsTest() {
     private fun rejected(resetsAt: Instant) = """{"type":"rate_limit_event","rate_limit_info":{"status":"rejected",""" +
         """"resetsAt":${resetsAt.epochSecond},"rateLimitType":"five_hour","isUsingOverage":false},"session_id":"${'$'}SESSION"}"""
 
-    private fun hhmm(instant: Instant) = DateTimeFormatter.ofPattern("HH:mm").withZone(clock.zone).format(instant)
-
     /** The nav's pill as [page] shows it: the nav fills its slot from the stream it names. */
     private fun pill(page: String): String {
         val slot = Regex("""<span id="paused" data-src="([^"]+)"></span>""").find(browser.get(page).body)
@@ -360,7 +357,7 @@ class AgentTaskTest : AntsTest() {
         claude.session("draft", 1, rejected(resetsAt), "wait never") // claude carries on; Ants kills it
         claude.session("draft", done)
         val run = start()
-        val until = hhmm(Instant.ofEpochSecond(resetsAt.epochSecond).plusSeconds(60))
+        val until = clock.local(Instant.ofEpochSecond(resetsAt.epochSecond).plusSeconds(60))
         eventually { assertContains(page(run), "<dt>draft</dt><dd>Paused until $until</dd>") }
         assertContains(pill("/runs/$run"), "claude paused until $until")
         assertContains(browser.events("/runs/$run/live").poll(10, SECONDS).orEmpty(), "\"badge\":\"Paused until $until\"") // the diagram's badge
@@ -386,7 +383,7 @@ class AgentTaskTest : AntsTest() {
         claude.session("draft", 1, rejected(resetsAt), "wait never")
         claude.session("draft", done)
         val first = start()
-        val paused = "<dt>draft</dt><dd>Paused until ${hhmm(Instant.ofEpochSecond(resetsAt.epochSecond).plusSeconds(60))}</dd>"
+        val paused = "<dt>draft</dt><dd>Paused until ${clock.local(Instant.ofEpochSecond(resetsAt.epochSecond).plusSeconds(60))}</dd>"
         eventually { assertContains(page(first), paused) }
         val second = start()
         eventually { assertContains(page(second), paused) }
@@ -412,7 +409,7 @@ class AgentTaskTest : AntsTest() {
         val run = start()
         eventually { assertContains(page(run), "<dt>draft</dt><dd>Paused until ") }
         val after = clock.instant()
-        assertContains(setOf(hhmm(before.plusSeconds(31 * 60)), hhmm(after.plusSeconds(31 * 60))), page(run).substringAfter("Paused until ").take(5))
+        assertContains(setOf(clock.local(before.plusSeconds(31 * 60)), clock.local(after.plusSeconds(31 * 60))), page(run).substringAfter("Paused until ").substringBefore("<"))
         clock.offset = Duration.ofMinutes(32)
         eventually { assertContains(page(run), "State: Completed") }
         assertContains(claude.launches("draft").last().argv, "--resume")
