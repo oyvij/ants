@@ -1,6 +1,8 @@
 ants:
   # Everything Ants owns lives here. Set ANTS_HOME to move it.
   home: ${user.home}/.ants
+  # The login shell Detect asks where the CLIs are.
+  shell: ${SHELL:/bin/zsh}
 
 server:
   address: 127.0.0.1

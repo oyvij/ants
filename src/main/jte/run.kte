@@ -2,10 +2,12 @@
 @param run: org.operaton.bpm.engine.history.HistoricProcessInstance
 @param variables: Map<String, String>
 @param agentTasks: Map<String, String>
+@param colorScheme: String = "light dark"
 <!doctype html>
 <html lang="en">
 <head>
     <meta charset="utf-8">
+    <meta name="color-scheme" content="${colorScheme}">
     <title>${run.processDefinitionName ?: run.processDefinitionKey} · Ants</title>
 </head>
 <body>

@@ -1,11 +1,13 @@
+@param colorScheme: String = "light dark"
 <!doctype html>
 <html lang="en">
 <head>
     <meta charset="utf-8">
+    <meta name="color-scheme" content="${colorScheme}">
     <title>Ants</title>
 </head>
 <body>
 <h1>Home</h1>
-<nav><a href="/processes">Processes</a> · <a href="/runs">Runs</a></nav>
+<nav><a href="/processes">Processes</a> · <a href="/runs">Runs</a> · <a href="/settings">Settings</a></nav>
 </body>
 </html>

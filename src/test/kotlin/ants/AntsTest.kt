@@ -27,6 +27,15 @@ abstract class AntsTest {
         /** Shared by every test in the JVM: a test that writes a file into it resets that file. */
         val home: Path = tempHome()
 
+        /** What only a login shell finds: Ants' login shell is a fake that puts this folder on PATH only with `-l`. */
+        val loginBin: Path = Files.createDirectories(Files.createTempDirectory("fake-shell").resolve("bin"))
+
+        /** The fake login shell. Only `-l` reads the "profile", the way only a login shell reads the user's. */
+        val shell: Path = loginBin.resolveSibling("sh").also {
+            Files.writeString(it, "#!/bin/sh\n[ \"$1\" = -l ] && PATH=\"$loginBin:\$PATH\" && shift\n[ \"$1\" = -c ] && exec /bin/sh -c \"$2\"\n")
+            it.toFile().setExecutable(true)
+        }
+
         /** A temporary ANTS_HOME that doesn't exist yet. */
         fun tempHome(): Path = Files.createTempDirectory("ants-test").resolve("ants")
 
@@ -36,6 +45,7 @@ abstract class AntsTest {
          */
         fun bootAnother(home: Path, vararg args: String) = SpringApplicationBuilder(AntsApplication::class.java).run(
             "--ants.home=$home",
+            "--ants.shell=$shell",
             "--server.port=0",
             "--operaton.bpm.process-engine-name=another",
             "--spring.autoconfigure.exclude=org.operaton.bpm.spring.boot.starter.webapp.OperatonBpmWebappAutoConfiguration",
@@ -44,7 +54,10 @@ abstract class AntsTest {
 
         @JvmStatic
         @DynamicPropertySource
-        fun antsHome(registry: DynamicPropertyRegistry) = registry.add("ants.home") { home.toString() }
+        fun antsHome(registry: DynamicPropertyRegistry) {
+            registry.add("ants.home") { home.toString() }
+            registry.add("ants.shell") { shell.toString() }
+        }
     }
 }
 
