@@ -1,0 +1,16 @@
+@param run: String
+@param html: String
+@param colorScheme: String = "light dark"
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="color-scheme" content="${colorScheme}">
+    <title>Report · Ants</title>
+</head>
+<body>
+@template.nav()
+<p><a href="/runs/${run}">Run</a></p>
+$unsafe{html}
+</body>
+</html>

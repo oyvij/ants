@@ -54,6 +54,10 @@ class Transcript {
     var soFar: String? = null
         private set
 
+    /** The latest Result, the last `result` line's `structured_output`, if one has come. */
+    var result: Map<*, *>? = null
+        private set
+
     /** The latest text block, as HTML. */
     var output: String? = null
         private set
@@ -285,6 +289,7 @@ class Transcript {
                 .sumOf { sum(it, "inputTokens", "outputTokens", "cacheReadInputTokens", "cacheCreationInputTokens") }
         }
         val result = event["structured_output"] as? Map<*, *>
+        if (result != null) this.result = result
         append { id ->
             if (result == null) """<div class="result" id="$id"><b>Result: ${esc(event["subtype"])}</b> ${esc(event["result"] ?: "")}</div>"""
             else """<div class="result" id="$id"><b>Result: ${esc(result["outcome"])}</b> ${esc(result["summary"])}""" +
@@ -372,7 +377,8 @@ class Transcript {
             }
         }
 
-        private fun markdown(text: CharSequence) = renderer.render(parser.parse(text.toString()))
+        /** [text] as HTML, its own HTML escaped and its URLs sanitized. */
+        fun markdown(text: CharSequence) = renderer.render(parser.parse(text.toString()))
 
         private fun esc(value: Any?) = HtmlUtils.htmlEscape(value?.toString().orEmpty())
 
