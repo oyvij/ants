@@ -2,14 +2,18 @@ package ants
 
 import jakarta.annotation.PreDestroy
 import org.operaton.bpm.engine.ExternalTaskService
+import org.operaton.bpm.engine.RepositoryService
 import org.operaton.bpm.engine.RuntimeService
 import org.operaton.bpm.engine.externaltask.LockedExternalTask
+import org.operaton.bpm.model.bpmn.instance.FlowElement
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.context.event.ApplicationReadyEvent
 import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Component
 import tools.jackson.databind.json.JsonMapper
+import java.io.BufferedWriter
+import java.io.IOException
 import java.nio.file.Path
 import java.time.Clock
 import java.time.Duration
@@ -30,13 +34,15 @@ import kotlin.io.path.writeText
  * the cap, oldest first across Runs, and runs each one's Skill through `claude -p`. A `done` Result completes the
  * task, stored as a process variable named after the Task's BPMN id; a `stuck` one or a failure is an incident. When
  * the user acts on it, the Notification list leaves their choice in the Task's local variables: Continue resumes the
- * session with their instruction, Start fresh starts a new one with it under "From the user:". A Task that hits the
- * Usage limit pauses its CLI until the reset, then continues its session the same way, with the reset message.
+ * session with their instruction, Start fresh starts a new one with it under "From the user:". While a session runs,
+ * the user can [send] it a message or [stop] it. A Task that hits the Usage limit pauses its CLI until the reset, then
+ * continues its session the same way, with the reset message.
  */
 @Component
 class AgentLauncher(
     private val externalTasks: ExternalTaskService,
     private val runtime: RuntimeService,
+    private val repository: RepositoryService,
     private val settings: Settings,
     private val catalogue: Catalogue,
     private val clock: Clock,
@@ -47,6 +53,7 @@ class AgentLauncher(
     /** Each live CLI process and the Run it works for. */
     private val clis = ConcurrentHashMap<Process, String>()
     private val live = AtomicInteger()
+    private val stdins = ConcurrentHashMap<String, Stdin>() // by `<run>/<task id>`
     private val usageFile = home.resolve("claude-usage.json")
 
     // ponytail: one pause gate per CLI, not per model, kept in memory; after a restart the held Tasks wait out
@@ -56,6 +63,22 @@ class AgentLauncher(
 
     /** How many Agent Tasks are running now. */
     val running get() = live.get()
+
+    /** Whether [task] of [run] has a session that still takes messages. */
+    fun live(run: String, task: String) = stdins["$run/$task"]?.open == true
+
+    /**
+     * Writes [message] into the live session of [task] in [run], which reads it at its next tool boundary, and appends
+     * it to the Run log. False when no session takes it any more, such as once Ants holds the Task's Result.
+     */
+    fun send(run: String, task: String, message: String): Boolean {
+        val stdin = stdins["$run/$task"]?.takeIf { it.say(message) } ?: return false
+        runLog(home.resolve("runs").resolve(run), stdin.task, "Send", message)
+        return true
+    }
+
+    /** Interrupts the live session of [task] in [run], which leaves the Task `[stopped]`. False when there is none. */
+    fun stop(run: String, task: String) = stdins["$run/$task"]?.interrupt() == true
 
     @EventListener(ApplicationReadyEvent::class)
     fun start() {
@@ -142,7 +165,7 @@ class AgentLauncher(
             val workspace = home.resolve("runs").resolve(run)
             transcript = Transcript.Writer(Transcript.file(workspace, task.activityId)).apply { ants("launch") }
             val result = try {
-                session(task, agent, workspace, transcript, session, resume != null, task.variables[INSTRUCTION] as? String)
+                session(task, agent, run, workspace, transcript, session, resume != null, task.variables[INSTRUCTION] as? String)
             } catch (limit: UsageLimit) {
                 val until = limit.resetsAt + Duration.ofMinutes(1)
                 transcript.ants("end", "Paused by the ${agent.cli} usage limit until ${clock.local(until)}.")
@@ -160,10 +183,14 @@ class AgentLauncher(
             }
         } catch (e: Exception) {
             val stopping = poller.isShutdown // the Task stays locked, and the next start unlocks it
-            val reason = if (stopping) "Ants stopped." else "[failed] ${e.message ?: e}"
+            val reason = when {
+                stopping -> "Ants stopped."
+                e is Stopped -> "[stopped] ${e.message}"
+                else -> "[failed] ${e.message ?: e}"
+            }
             runCatching { transcript?.ants("end", reason) }
             if (stopping) return
-            log.warn("Agent Task ${task.activityId} failed", e)
+            if (e !is Stopped) log.warn("Agent Task ${task.activityId} failed", e)
             incident(task, session, reason, (e as? Failed)?.details)
         }
     }
@@ -179,11 +206,11 @@ class AgentLauncher(
 
     /**
      * Runs the Task's Skill in one CLI session in [workspace], every line it prints going to [transcript], and returns
-     * its Result. A new [session] starts with the hand-off prompt and the user's [instruction], if any; a [resume]d one
-     * with the instruction alone.
+     * its Result: the last valid one, once every message written to the session has been read. A new [session] starts
+     * with the hand-off prompt and the user's [instruction], if any; a [resume]d one with the instruction alone.
      */
     private fun session(
-        task: LockedExternalTask, agent: Agent, workspace: Path, transcript: Transcript.Writer, session: String, resume: Boolean, instruction: String?,
+        task: LockedExternalTask, agent: Agent, run: String, workspace: Path, transcript: Transcript.Writer, session: String, resume: Boolean, instruction: String?,
     ): Map<*, *> {
         val skill = catalogue.skill(task.extensionProperties["ants.skill"] ?: error("${task.activityId} names no ants.skill"))
         check(agent.cli == "claude") { "Agent ${agent.name} runs ${agent.cli}, and only claude runs for now" }
@@ -200,27 +227,25 @@ class AgentLauncher(
         else "$handOff\n\n" + json.writeValueAsString(inputs) + (if (instruction.isNullOrBlank()) "" else "\n\nFrom the user:\n$instruction")
         val schema = ResultContract.schema(skill.outputSchema)
         val process = cli(agent.cli, workspace, flags(agent, schema, listOf(skill) + used, session, resume)).start()
+        val stdin = Stdin(process.outputWriter(), name(task))
         clis[process] = workspace.fileName.toString() // the Run workspace is runs/<run>/
         val stderr = ArrayDeque<String>()
         val drain = Thread.ofVirtual().start {
             process.errorReader().forEachLine { synchronized(stderr) { stderr += it; if (stderr.size > STDERR_LINES) stderr.removeFirst() } }
         }
         try {
-            val stdin = process.outputWriter()
-            fun say(content: String) {
-                stdin.write(json.writeValueAsString(mapOf("type" to "user", "message" to mapOf("role" to "user", "content" to content))))
-                stdin.newLine()
-                stdin.flush()
-            }
-            say(prompt)
+            stdin.say(prompt)
+            stdins["$run/${task.activityId}"] = stdin // only now, so the prompt goes first
             var valid: Map<*, *>? = null
             var failure: Failed? = null
+            var stopped = false
             var retried = false
             var limit: Instant? = null
             process.inputReader().forEachLine { line ->
                 transcript.line(line)
-                if (valid != null || failure != null || limit != null) return@forEachLine
+                if (failure != null || stopped || limit != null || (valid != null && !stdin.open)) return@forEachLine
                 val event = runCatching { json.readValue(line, Map::class.java) }.getOrNull() ?: return@forEachLine
+                if (event["type"] == "user" && event["isReplay"] == true) stdin.read()
                 if (event["type"] == "rate_limit_event") keepUsage(event)
                 // ponytail: claude sends system/init only once it has read the prompt, so with an API key the first
                 // request may already be on its way when Ants kills it.
@@ -240,7 +265,9 @@ class AgentLauncher(
                 if (event["type"] != "result") return@forEachLine
                 val result = event["structured_output"]
                 val errors = result?.let { ResultContract.errors(it, schema, workspace) }
+                valid = null // the last result line is the one that counts
                 when {
+                    errors == null && stdin.stopping -> stopped = true
                     errors == null -> failure = Failed(
                         listOf("${agent.cli} ended without a Result:", event["subtype"], event["result"], (event["errors"] as? List<*>)?.joinToString("; "))
                             .filter { it != null && it != "" }.joinToString(" "),
@@ -248,20 +275,23 @@ class AgentLauncher(
                     errors.isEmpty() -> { valid = result as Map<*, *> }
                     !retried -> {
                         retried = true
-                        say("Your Result is invalid:\n${errors.joinToString("\n") { "- $it" }}\nAnswer again with a valid Result.")
+                        stdin.say("Your Result is invalid:\n${errors.joinToString("\n") { "- $it" }}\nAnswer again with a valid Result.")
                     }
                     else -> failure = Failed("The Result is invalid: ${errors.joinToString("; ")}", errors.joinToString("\n") + "\n\n" + json.writeValueAsString(result))
                 }
-                if (valid != null || failure != null) stdin.close() // the session ends once Ants holds its Result
+                if (failure != null || stopped) stdin.close() else if (valid != null) stdin.closeWhenRead()
             }
             val exit = process.waitFor()
             drain.join()
             limit?.let { throw UsageLimit(it) }
             val tail = synchronized(stderr) { stderr.joinToString("\n") }.ifEmpty { null }
+            if (stopped) throw Stopped()
             failure?.let { throw Failed(it.message, it.details ?: tail) }
             if (exit != 0) throw Failed("${agent.cli} exited with code $exit", tail)
             return valid ?: throw Failed("${agent.cli} ended without a Result", tail)
         } finally {
+            stdin.close()
+            stdins.remove("$run/${task.activityId}", stdin)
             clis -= process
         }
     }
@@ -283,6 +313,66 @@ class AgentLauncher(
             (event["subagent_retry"] as? Map<*, *>)?.get("error_category") == "rate_limit" -> fallback
             event["type"] == "result" && event["api_error_status"] == 429 -> fallback
             else -> null
+        }
+    }
+
+    /** The Task's name in its Process, for the Run log. */
+    private fun name(task: LockedExternalTask) =
+        repository.getBpmnModelInstance(task.processDefinitionId).getModelElementById<FlowElement>(task.activityId)?.name ?: task.activityId
+
+    /**
+     * A session's stdin. It stays open for the user's messages until Ants holds a valid Result and every message
+     * written has been read. A message counts as read when the CLI replays it (`--replay-user-messages`), which claude
+     * does as it takes the message in: at the next tool boundary, or in a turn of its own after a `result` line.
+     */
+    private class Stdin(private val writer: BufferedWriter, val task: String) {
+        private var unread = 0
+
+        @Volatile
+        var open = true
+            private set
+
+        /** Whether the user stopped the session, so the `error_during_execution` that follows is `[stopped]`. */
+        @Volatile
+        var stopping = false
+            private set
+
+        @Synchronized
+        fun say(message: String) = write(mapOf("type" to "user", "message" to mapOf("role" to "user", "content" to message)))
+            .also { if (it) unread++ }
+
+        @Synchronized
+        fun interrupt() = write(mapOf("type" to "control_request", "request_id" to UUID.randomUUID().toString(), "request" to mapOf("subtype" to "interrupt")))
+            .also { if (it) stopping = true }
+
+        @Synchronized
+        fun read() {
+            unread--
+        }
+
+        /** Closes stdin once every message written has been read; until then the session goes on to another Result. */
+        @Synchronized
+        fun closeWhenRead() {
+            if (unread <= 0) close()
+        }
+
+        @Synchronized
+        fun close() {
+            if (open) runCatching { writer.close() } // a CLI that already exited leaves a broken pipe
+            open = false
+        }
+
+        private fun write(message: Map<String, Any>): Boolean {
+            if (!open) return false
+            try {
+                writer.write(json.writeValueAsString(message))
+                writer.newLine()
+                writer.flush()
+                return true
+            } catch (_: IOException) {
+                close() // the CLI has exited
+                return false
+            }
         }
     }
 
@@ -345,6 +435,9 @@ class AgentLauncher(
         val bare = Regex("""^ *--bare\b.*?(?=^ {0,4}-|\z)""", setOf(RegexOption.MULTILINE, RegexOption.DOT_MATCHES_ALL)).find(help)?.value.orEmpty()
         check("default" !in bare.lowercase()) { "$cli -p now turns on --bare by default, which never reads Ants' login. Ants needs updating." }
     }
+
+    /** The user stopped the session: `[stopped]`, not a failure. */
+    private class Stopped : Exception("Stopped by the user.")
 
     /** A failure of Ants' own, with what the `[failed]` page shows: the last stderr lines, or an invalid Result whole. */
     private class Failed(override val message: String, val details: String? = null) : Exception(message)
