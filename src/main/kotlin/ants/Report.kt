@@ -25,7 +25,13 @@ fun report(run: DelegateExecution, workspace: Path): String = buildString {
         val result = transcript.result?.let { " · ${it["outcome"]}: ${it["summary"]}" }.orEmpty()
         append("- [$task](/runs/${run.processInstanceId}/tasks/$task/transcript)$result · ${tokens(transcript.tokens)}\n")
     }
-    val rounds = rounds(workspace)
-    if (rounds.isNotEmpty()) append("\n## Rounds\n\n")
-    for ((heading, answers) in rounds) append("### $heading\n\n$answers\n\n")
+    // Each Round's answers ([roundLog]), split into the user's own and the ones they didn't give, by the source each ends on.
+    val rounds = rounds(workspace).map { (heading, answers) ->
+        heading to answers.split(Regex("""\n(?=- )""")).partition { Regex("""\((accepted|written)\)$""").containsMatchIn(it) }
+    }
+    for ((title, mine) in listOf("Rounds" to true, "Answers you didn't give" to false)) {
+        val shown = rounds.map { (heading, split) -> heading to if (mine) split.first else split.second }.filter { it.second.isNotEmpty() }
+        if (shown.isNotEmpty()) append("\n## $title\n\n")
+        for ((heading, answers) in shown) append("### $heading\n\n${answers.joinToString("\n")}\n\n")
+    }
 }

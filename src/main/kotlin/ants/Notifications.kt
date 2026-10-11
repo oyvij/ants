@@ -243,8 +243,8 @@ class Notifications(
     /** The Result of the Agent Task an Answer a Round names as its asker, holding the Round's questions. */
     private fun asked(task: Task) = property(task, ASKER)?.let { runtime.getVariable(task.executionId, it) }
 
-    /** Which Round [task] is: its run count in the Run's `runs`. */
-    private fun round(task: Task) = ((runtime.getVariable(task.executionId, "runs") as? Map<*, *>)?.get(task.taskDefinitionKey) as? Number)?.toInt() ?: 1
+    /** Which Round [task] answers: its asker's, whoever answered the earlier ones. */
+    private fun round(task: Task) = runtime.round(task.executionId, property(task, ASKER) ?: task.taskDefinitionKey)
 
     /** Next up: the Run's next entry, if one turns up within a few seconds; else the Notification list. */
     // ponytail: holds the request, polling, for up to 5 s; push it over SSE if the wait ever needs to be longer.
@@ -316,10 +316,9 @@ class Notifications(
         const val SHOW = "show"
         const val SEND_BACK_PROPERTY = "ants.send-back"
 
-        /** A User Task's kind ([ANSWER_ROUND]; without it, an Approve), and the Agent Task an Answer a Round answers. */
+        /** A User Task's kind ([ANSWER_ROUND]; without it, an Approve). */
         const val USER_TASK = "ants.user-task"
         const val ANSWER_ROUND = "answer-round"
-        const val ASKER = "ants.asker"
     }
 }
 

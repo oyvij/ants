@@ -216,7 +216,14 @@ class AgentLauncher(
             }
             if (result["outcome"] == "done") {
                 transcript.ants("end", "Done.")
-                complete(task, result)
+                // An answer-round Agent: Ants stamps its answers and hands them to the asker it names.
+                val asker = task.extensionProperties[ASKER]
+                if (asker == null) complete(task, result)
+                else {
+                    val given = (((result["output"] as? Map<*, *>)?.get("answers")) as? List<*>).orEmpty()
+                        .mapNotNull { it as? Map<*, *> }.associate { it["id"].toString() to it["answer"].toString() }
+                    runtime.answerFor(workspace, task.executionId, name(task), asker, given) { complete(task, result + ("output" to it)) }
+                }
             } else {
                 val reason = "[stuck] ${result["summary"]}"
                 transcript.ants("end", reason)

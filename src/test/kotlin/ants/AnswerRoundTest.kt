@@ -23,13 +23,26 @@ class AnswerRoundTest : AntsTest() {
      * Starts a Run of `round.bpmn`: Grill the idea → Asked? → Answer the Round → back to Grill the idea, until a Round
      * asks nothing; the Round's timer boundary is [timer] (an hour in the file).
      */
-    private fun start(timer: String = "PT1H"): String {
-        agentTask(claude, mapOf("grill" to """{"type":"object","properties":{"questions":{"type":"array"}}}"""))
+    private fun start(timer: String = "PT1H", process: String = "round", cap: Int = 10): String {
+        agentTask(
+            claude,
+            mapOf(
+                "grill" to """{"type":"object","properties":{"questions":{"type":"array"}}}""",
+                "answer-round" to """{"type":"object","properties":{"answers":{"type":"array"}}}""",
+            ),
+        )
         browser.get("/processes")
-        browser.upload("/processes", "file", "round.bpmn", javaClass.getResource("/round.bpmn")!!.readText().replace("PT1H", timer).toByteArray())
-        browser.get("/processes/round")
-        return browser.post("/processes/round/runs", emptyMap()).path.removePrefix("/runs/")
+        val bpmn = javaClass.getResource("/$process.bpmn")!!.readText().replace("PT1H", timer).replace("runs.grill >= 10", "runs.grill >= $cap")
+        browser.upload("/processes", "file", "$process.bpmn", bpmn.toByteArray())
+        browser.get("/processes/$process")
+        return browser.post("/processes/$process/runs", emptyMap()).path.removePrefix("/runs/")
     }
+
+    /** The answer-round Skill's Result: [answers] as `{id, answer, why}`. */
+    private fun answered(vararg answers: String) =
+        """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":{"outcome":"done","summary":"Answered.","output":{"answers":[${answers.joinToString(",")}]}}}"""
+
+    private fun historyOf(run: String) = if (history.exists()) history.listDirectoryEntries("*$run*") else emptyList()
 
     private fun row(run: String) = Regex("""<tr>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
         .find(browser.get("/notifications").body)?.groupValues?.get(1)
@@ -121,5 +134,77 @@ class AnswerRoundTest : AntsTest() {
         assertContains(gone.body, "Nothing is waiting on you here any more")
         assertFalse(history.exists() && history.listDirectoryEntries("*$run*").isNotEmpty())
         assertEquals(1, claude.launches("grill").size)
+    }
+
+    @Test
+    fun `an answer-round Agent answers a Round, its answers stamped agent, resumes the asker and keeps them out of the Answer History`() {
+        claude.session("grill", 1, round("First round.", question("who", "Who exports"), question("scope", "Which invoices")))
+        // It leaves `scope` unanswered, so that one gets its recommendation.
+        claude.session("answer-round", answered("""{"id":"who","answer":"Admins.","why":"The Vault says so."}"""))
+        claude.session("grill", 2, round("Nothing left."))
+        val run = start(process = "proxy")
+        eventually { assertContains(page(run), "State: Completed") }
+
+        val prompt = claude.launches("answer-round").single().stdin
+        assertContains(prompt, "The Answer History is ${home.resolve("answer-history")}.")
+        assertContains(prompt, "Ask who?")
+        val (one, two) = claude.launches("grill")
+        assertEquals(one.flag("--session-id"), two.flag("--resume"))
+        assertEquals(
+            """{"type":"user","message":{"role":"user","content":"{\"answers\":[{\"id\":\"who\",\"answer\":\"Admins.\",\"source\":\"agent\"},""" +
+                """{\"id\":\"scope\",\"answer\":\"Recommend scope.\",\"source\":\"recommended\"}]}"}}""",
+            two.stdin,
+        )
+        assertEquals(emptyList(), historyOf(run))
+        val report = browser.get("/runs/$run/report").body
+        for (text in listOf("Answer for me · Round 1", "Who exports: Admins. (agent)", "Which invoices: Recommend scope. (recommended)")) assertContains(report, text)
+    }
+
+    @Test
+    fun `a timer boundary on an unanswered Round falls back to Accept recommendations, which resumes the asker`() {
+        claude.session("grill", 1, round("First round.", question("who", "Who exports"), question("scope", "Which invoices")))
+        claude.session("grill", 2, round("Nothing left."))
+        val run = start(timer = "PT2S", process = "proposed", cap = 1)
+        val entry = entry(run)
+        eventually { assertContains(page(run), "State: Completed") }
+
+        val (one, two) = claude.launches("grill")
+        assertEquals(one.flag("--session-id"), two.flag("--resume"))
+        assertEquals(
+            """{"type":"user","message":{"role":"user","content":"{\"answers\":[{\"id\":\"who\",\"answer\":\"Recommend who.\",\"source\":\"recommended\"},""" +
+                """{\"id\":\"scope\",\"answer\":\"Recommend scope.\",\"source\":\"recommended\"}]}"}}""",
+            two.stdin,
+        )
+        assertContains(browser.post("$entry/answers", mapOf("answer.who" to "Everyone.", "answer.scope" to "All.")).body, "Nothing is waiting on you here any more")
+        assertEquals(emptyList(), historyOf(run))
+        val report = browser.get("/runs/$run/report").body
+        for (text in listOf("Accept recommendations · Round 1", "Who exports: Recommend who. (recommended)")) assertContains(report, text)
+    }
+
+    @Test
+    fun `the cap hands a loop Accept recommendations paces to the user at Round 10, and only the user's Round enters the Answer History`() {
+        claude.session("grill", round("Another round.", question("who", "Who exports")))
+        claude.session("grill", 11, round("Nothing left."))
+        val run = start(process = "proposed")
+
+        val entry = entry(run)
+        assertEquals(10, claude.launches("grill").size)
+        assertContains(browser.get(entry).body, "Round 10")
+        browser.post("$entry/answers", mapOf("answer.who" to "Only admins."))
+        eventually { assertContains(page(run), "State: Completed") }
+
+        assertEquals(11, claude.launches("grill").size)
+        val file = historyOf(run).single()
+        assertContains(file.fileName.toString(), "-10.md")
+        assertContains(file.readText(), "Only admins.")
+        assertFalse("Recommend who." in file.readText().substringAfter("**Answer**"))
+
+        val report = browser.get("/runs/$run/report").body
+        val (mine, others) = report.substringAfter("<h2>Rounds</h2>").split("<h2>Answers you didn't give</h2>")
+        for (text in listOf("Answer the Round · Round 10", "Who exports: Only admins. (written)")) assertContains(mine, text)
+        assertFalse("recommended" in mine)
+        for (n in 1..9) assertContains(others, "Accept recommendations · Round $n<")
+        assertContains(others, "Who exports: Recommend who. (recommended)")
+        assertFalse("Only admins." in others)
     }
 }
