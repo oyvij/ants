@@ -48,7 +48,7 @@ sealed class Entry(val id: String, val tag: String, val process: String, val tas
         }
 
     private companion object {
-        val ICONS = mapOf("[failed]" to "✕", "[stuck]" to "⚠", "[stopped]" to "■", "[questions]" to "?", "[approve]" to "✓")
+        val ICONS = mapOf("[failed]" to "✕", "[stuck]" to "⚠", "[stopped]" to "■", "[questions]" to "?", "[approve]" to "✓", "[push]" to "↑")
     }
 }
 
@@ -69,7 +69,8 @@ class StartEntry(val key: String, process: String, failed: FailedStart) :
 /**
  * The Notification list: one query over what is waiting on the user, with no table of its own, so it can't drift.
  * For now that is every Agent Task held by an incident, its tag and summary read from the incident message, and every
- * open User Task: an Answer a Round, or an Approve.
+ * open User Task: an Answer a Round, or an Approve; plus failed scheduled starts and the `ready-for-human` Tickets of
+ * live Runs.
  */
 @Controller
 class Notifications(
@@ -79,12 +80,14 @@ class Notifications(
     private val externalTasks: ExternalTaskService,
     private val userTasks: TaskService,
     private val launcher: AgentLauncher,
+    private val push: Push,
     private val streams: Streams,
     private val schedules: Schedules,
+    private val tickets: Tickets,
     @Value("\${ants.home}") private val home: Path,
 ) {
     /** Everything waiting on the user, oldest first. */
-    fun entries(): List<Entry> = (tasks() + failedStarts()).sortedBy { it.since }
+    fun entries(): List<Entry> = (tasks() + failedStarts() + tickets.waiting()).sortedBy { it.since }
 
     /** The Tasks waiting on the user, oldest first. */
     fun tasks(): List<TaskEntry> = (rootCauses().map(::entry) + userTasks.createTaskQuery().active().list().map(::entry)).sortedBy { it.since }
@@ -100,6 +103,7 @@ class Notifications(
 
     @GetMapping("/notifications/{id}")
     fun entry(@PathVariable id: String, model: Model, response: HttpServletResponse): String {
+        tickets.waiting().firstOrNull { it.id == id }?.let { return "redirect:${it.href}" }
         val failed = failedStarts().firstOrNull { it.id == id }
         if (failed != null) {
             model.addAttribute("entry", failed)
@@ -120,6 +124,10 @@ class Notifications(
         val entry = entry(incident)
         model.addAttribute("entry", entry)
         model.addAttribute("details", details(entry))
+        if (isPush(incident)) {
+            model.addAttribute("repos", push.outgoing(entry.run))
+            return "push"
+        }
         return "notification"
     }
 
@@ -127,10 +135,16 @@ class Notifications(
     fun details(entry: TaskEntry): String? = runtime.createIncidentQuery().incidentId(entry.id).singleResult()
         ?.let { externalTasks.getExternalTaskErrorDetails(it.configuration) }
 
+    /** Whether [entry] is a Push waiting or failed, whose page is Push's own. */
+    fun isPush(entry: TaskEntry) = runtime.createIncidentQuery().incidentId(entry.id).singleResult()?.let(::isPush) == true
+
+    private fun isPush(incident: Incident) = externalTasks.createExternalTaskQuery().externalTaskId(incident.configuration).topicName(Push.TOPIC).count() > 0
+
     /**
      * Continue the session (instruction required) or Start fresh (instruction optional), then Next up, or back to
      * the Run page when the user acted from its Task drawer ([back] is `run`); or Cancel the Run, which ends it and
-     * keeps its Run workspace until the user dismisses it on the Run page.
+     * keeps its Run workspace until the user dismisses it on the Run page. A Push offers Push, and Continue (no
+     * instruction) after the user pushed by hand, instead.
      */
     @PostMapping("/notifications/{id}")
     fun act(
@@ -139,13 +153,15 @@ class Notifications(
     ): String {
         val incident = incidents().incidentId(id).singleResult() ?: return gone(model, response)
         val entry = entry(incident)
-        val name = when (action) {
-            AgentLauncher.CONTINUE -> "Continue the session"
-            AgentLauncher.FRESH -> "Start fresh"
-            CANCEL -> "Cancel the Run"
+        val pushing = isPush(incident)
+        val name = when {
+            action == AgentLauncher.CONTINUE -> if (pushing) "Continue" else "Continue the session"
+            action == AgentLauncher.FRESH && !pushing -> "Start fresh"
+            action == Push.PUSH && pushing -> "Push"
+            action == CANCEL -> "Cancel the Run"
             else -> throw ResponseStatusException(HttpStatus.BAD_REQUEST, "No action $action")
         }
-        if (action == AgentLauncher.CONTINUE && instruction.isBlank()) {
+        if (action == AgentLauncher.CONTINUE && instruction.isBlank() && !pushing) {
             model.addAttribute("error", "Continue the session needs an instruction.")
             return entry(id, model, response)
         }

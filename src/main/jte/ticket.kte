@@ -1,0 +1,54 @@
+@param file: ants.Tracked
+@param article: String
+@param tickets: List<ants.Tracked>
+@param error: String? = null
+@param _csrf: org.springframework.security.web.csrf.CsrfToken
+@param colorScheme: String = "light dark"
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="color-scheme" content="${colorScheme}">
+    <title>${file.title} · Ants</title>
+</head>
+<body>
+@template.nav()
+<p><a href="/tickets">Tickets</a> · <a href="/runs/${file.run}">Run</a>@if(file.name != "spec") · <a href="/runs/${file.run}/tickets/spec">Spec</a>@endif · <a href="${file.href}/edit">Edit</a></p>
+@if(error != null)<p role="alert">${error}</p>@endif
+$unsafe{article}
+@if(file.status == "ready-for-human")
+<form method="post" action="${file.href}/done">
+    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+    <p>This Ticket is yours to do. <button>Mark done</button></p>
+</form>
+@endif
+@if(tickets.isNotEmpty())
+<h2>Tickets</h2>
+<ul>
+@for(ticket in tickets)
+    <li><a href="${ticket.href}">${ticket.title}</a> · ${ticket.status ?: ""}</li>
+@endfor
+</ul>
+@endif
+<form id="tick" method="post" action="${file.href}/tick" hidden>
+    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+    <input type="hidden" name="line">
+    <input type="hidden" name="version">
+</form>
+<script>
+    // Ticking a checkbox saves it, saying which version of the file the page showed; the page follows the file as it changes.
+    const tick = document.getElementById('tick');
+    document.addEventListener('change', event => {
+        if (!event.target.matches('#ticket input[type=checkbox]')) return;
+        tick.line.value = event.target.dataset.line;
+        tick.version.value = document.getElementById('ticket').dataset.version;
+        tick.submit();
+    });
+    new EventSource('${file.href}/live').onmessage = event => {
+        const template = document.createElement('template');
+        template.innerHTML = event.data;
+        document.getElementById('ticket').replaceWith(template.content.firstElementChild);
+    };
+</script>
+</body>
+</html>

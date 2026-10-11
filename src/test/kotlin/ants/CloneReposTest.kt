@@ -115,7 +115,7 @@ class CloneReposTest : AntsTest() {
 }
 
 /** Runs git in [dir] and gives its output, trimmed; fails with the output when git does. */
-private fun git(dir: Path, vararg args: String): String {
+fun git(dir: Path, vararg args: String): String {
     val process = ProcessBuilder(listOf("git", "-c", "user.name=Ants", "-c", "user.email=ants@example.com") + args)
         .directory(dir.toFile()).redirectErrorStream(true).start()
     val output = process.inputReader().readText().trim()

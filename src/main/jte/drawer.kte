@@ -6,6 +6,7 @@
 @param transcript: ants.Transcript
 @param entry: ants.TaskEntry?
 @param details: String?
+@param push: Boolean
 @param live: Boolean
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 <section id="drawer-head">
@@ -40,6 +41,8 @@
 @endif
     @if(entry.tag == "[approve]")
     <p><a href="/notifications/${entry.id}">Approve or send back</a></p>
+    @elseif(push)
+    <p><a href="/notifications/${entry.id}">@if(entry.tag == "[push]")Push@else Continue@endif or cancel the Run</a></p>
     @elseif(entry.tag == "[questions]")
     <p><a href="/notifications/${entry.id}">Answer the Round</a></p>
     @else
