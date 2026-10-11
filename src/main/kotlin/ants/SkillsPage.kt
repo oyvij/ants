@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.ResponseBody
 import org.springframework.web.multipart.MultipartFile
 import org.springframework.web.server.ResponseStatusException
 import org.yaml.snakeyaml.error.YAMLException
+import java.nio.file.Files
 import kotlin.io.path.copyTo
 import kotlin.io.path.createDirectories
 import kotlin.io.path.deleteIfExists
@@ -31,7 +32,7 @@ data class SkillRow(val skill: Skill, val where: String, val hidden: Boolean)
  * Catalogue reads the files at every launch, so an edit reaches live Runs at their next one.
  */
 @Controller
-class SkillsPage(private val catalogue: Catalogue) {
+class SkillsPage(private val catalogue: Catalogue, private val usedBy: UsedBy) {
     @GetMapping("/skills")
     fun list(model: Model) = list(model, null)
 
@@ -90,15 +91,26 @@ class SkillsPage(private val catalogue: Catalogue) {
     }
 
     @PostMapping("/skills/{name}")
-    fun edit(@PathVariable name: String, @RequestParam skill: String, @RequestParam schema: String, model: Model) =
-        save(SkillForm(name, skill, schema), model)
+    fun edit(@PathVariable name: String, @RequestParam skill: String, @RequestParam schema: String, @RequestParam confirm: String?, model: Model) =
+        save(SkillForm(name, skill, schema), model, confirm != null)
+
+    /** Deletes one of the user's Skills with its folder, once the user has confirmed it, seeing what uses it. */
+    @PostMapping("/skills/{name}/delete")
+    fun delete(@PathVariable name: String, @RequestParam confirm: String?, model: Model): String {
+        val skill = yours(name)
+        val inside = catalogue.skills().filter { it.file != skill.file && it.file.startsWith(skill.folder) }
+        if (inside.isNotEmpty()) return list(model, "${skill.folder} holds other Skills (${inside.joinToString { it.name }}); move or delete them first.")
+        if (confirm == null) return confirm(model, "Delete the Skill $name?", usedBy.skill(name), "/skills/$name/delete", emptyMap(), "/skills/$name")
+        skill.folder.toFile().deleteRecursively()
+        return "redirect:/skills"
+    }
 
     /** The schema editor's check as you type: why the schema is invalid, as a JSON list; empty when it's valid. */
     @PostMapping("/skills/schema")
     @ResponseBody
     fun check(@RequestParam schema: String) = ResultContract.schemaErrors(schema)
 
-    private fun save(posted: SkillForm, model: Model): String {
+    private fun save(posted: SkillForm, model: Model, confirmed: Boolean = false): String {
         val edited = posted.name?.let(::yours)
         val form = posted.copy(where = edited?.folder?.toString().orEmpty())
         val name = try {
@@ -108,17 +120,28 @@ class SkillsPage(private val catalogue: Catalogue) {
         }
         val schemaErrors = ResultContract.schemaErrors(form.schema)
         val taken = catalogue.skills().firstOrNull { it.name == name }
+        // A renamed Skill's folder follows the name when it was named after the Skill.
+        val folder = when {
+            edited == null -> catalogue.yourSkills.resolve(name)
+            edited.folder.fileName.toString() == edited.name -> edited.folder.resolveSibling(name)
+            else -> edited.folder
+        }
         val error = when {
             !Regex("[a-z0-9][a-z0-9-]{0,63}").matches(name) -> "A Skill's name is up to 64 lowercase letters, digits and hyphens."
             name in setOf("new", "import", "schema") -> "The Skills page keeps the name $name for itself."
-            form.name == null && taken != null -> "A Skill named $name already exists, in ${taken.folder}."
-            form.name == null && catalogue.yourSkills.resolve(name).exists() -> "${catalogue.yourSkills.resolve(name)} already exists."
-            form.name != null && name != form.name -> "Renaming isn't supported here yet; keep the name ${form.name}."
+            name != form.name && taken != null -> "A Skill named $name already exists, in ${taken.folder}."
+            folder != edited?.folder && folder.exists() -> "$folder already exists."
             schemaErrors.isNotEmpty() -> "result.schema.json is invalid: ${schemaErrors.joinToString("; ")}"
             else -> null
         }
         if (error != null) return show(model, form, error)
-        val folder = edited?.folder ?: catalogue.yourSkills.resolve(name)
+        if (edited != null && name != edited.name) {
+            if (!confirmed) {
+                val params = mapOf("skill" to form.skill, "schema" to form.schema)
+                return confirm(model, "Rename the Skill ${edited.name} to $name?", usedBy.skill(edited.name), "/skills/${edited.name}", params, "/skills/${edited.name}")
+            }
+            if (folder != edited.folder) Files.move(edited.folder, folder)
+        }
         folder.createDirectories().resolve("SKILL.md").writeText(form.skill)
         folder.resolve("result.schema.json").run { if (form.schema.isBlank()) deleteIfExists() else writeText(form.schema) }
         return "redirect:/skills/$name"
@@ -146,6 +169,7 @@ class SkillsPage(private val catalogue: Catalogue) {
     private fun show(model: Model, form: SkillForm, message: String? = null): String {
         model.addAttribute("form", form)
         model.addAttribute("message", message)
+        model.addAttribute("users", form.name?.let(usedBy::skill))
         return "skill"
     }
 }

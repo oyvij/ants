@@ -149,7 +149,7 @@ class AgentsTest : AntsTest() {
     fun `renaming an Agent moves its file`() {
         agents.resolve("old-name.md").writeText("---\nname: old-name\n---\nHi.\n")
         agents.resolve("new-name.md").deleteIfExists()
-        assertEquals("/agents/new-name", post("/agents/old-name", mapOf("name" to "new-name", "cli" to "claude", "instructions" to "Hi.")).path)
+        assertEquals("/agents/new-name", post("/agents/old-name", mapOf("name" to "new-name", "cli" to "claude", "instructions" to "Hi.", "confirm" to "on")).path)
         assertFalse(agents.resolve("old-name.md").exists())
         assertContains(agents.resolve("new-name.md").readText(), "name: new-name\n")
     }

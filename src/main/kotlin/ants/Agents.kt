@@ -26,7 +26,7 @@ import kotlin.io.path.writeText
  * those from extra folders are read-only, with Copy. Nothing is cached, so an edit reaches the next launch.
  */
 @Controller
-class Agents(private val catalogue: Catalogue, @Value("\${ants.home}") home: Path) {
+class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, @Value("\${ants.home}") home: Path) {
     private val folder = home.resolve("agents")
 
     @GetMapping("/agents")
@@ -66,7 +66,16 @@ class Agents(private val catalogue: Catalogue, @Value("\${ants.home}") home: Pat
     @PostMapping("/agents/{name}")
     fun edit(@PathVariable name: String, @RequestParam params: Map<String, String>, model: Model): String {
         val agent = editable(find(name))
-        return save(model, AgentForm.of(params).copy(kept = AgentForm.of(agent).kept), agent)
+        return save(model, AgentForm.of(params).copy(kept = AgentForm.of(agent).kept), agent, params)
+    }
+
+    /** Deletes one of the user's Agents, once the user has confirmed it, seeing what uses it. */
+    @PostMapping("/agents/{name}/delete")
+    fun delete(@PathVariable name: String, @RequestParam params: Map<String, String>, model: Model): String {
+        val agent = editable(find(name))
+        if ("confirm" !in params) return confirm(model, "Delete the Agent $name?", usedBy.agent(name), "/agents/$name/delete", emptyMap(), "/agents/$name")
+        agent.file.deleteIfExists()
+        return "redirect:/agents"
     }
 
     /** Writes an editable copy of a read-only Agent into Ants' own folder, under the first free `<name>-copy`. */
@@ -80,7 +89,7 @@ class Agents(private val catalogue: Catalogue, @Value("\${ants.home}") home: Pat
         return "redirect:/agents/$copy"
     }
 
-    private fun save(model: Model, form: AgentForm, agent: Agent?): String {
+    private fun save(model: Model, form: AgentForm, agent: Agent?, params: Map<String, String> = emptyMap()): String {
         val target = if (agent != null && form.name == agent.name) agent.file else folder.resolve("${form.name}.md")
         val error = form.error() ?: when {
             catalogue.agents().any { it.name == form.name && it.file != agent?.file } -> "An Agent named ${form.name} already exists."
@@ -88,6 +97,9 @@ class Agents(private val catalogue: Catalogue, @Value("\${ants.home}") home: Pat
             else -> null
         }
         if (error != null) return show(model, form, agent, error)
+        if (agent != null && form.name != agent.name && "confirm" !in params) {
+            return confirm(model, "Rename the Agent ${agent.name} to ${form.name}?", usedBy.agent(agent.name), "/agents/${agent.name}", params, "/agents/${agent.name}")
+        }
         write(target, form.text())
         if (agent != null && target != agent.file) agent.file.deleteIfExists()
         return "redirect:/agents/${form.name}"
@@ -98,6 +110,7 @@ class Agents(private val catalogue: Catalogue, @Value("\${ants.home}") home: Pat
         model.addAttribute("action", agent?.let { "/agents/${it.name}" } ?: "/agents/new")
         model.addAttribute("file", agent?.file?.toString())
         model.addAttribute("readOnly", agent != null && agent.file.parent != folder)
+        model.addAttribute("users", agent?.let { usedBy.agent(it.name) })
         model.addAttribute("error", error)
         model.addAttribute("notice", notice)
         return "agent"
