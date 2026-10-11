@@ -37,7 +37,7 @@ class Question(val id: String, val title: String, val ask: String, val context: 
  * The Round's Result: each question's answer, stamped by Ants, never by the Agent, with its [source]; by default the
  * user's: `accepted` when it is the recommendation, else `written`.
  */
-fun answers(questions: List<Question>, source: (Question) -> String = { if (it.answer == it.recommendation) "accepted" else "written" }) = mapOf(
+fun answers(questions: List<Question>, source: (Question) -> String = { if (it.answer == it.recommendation) ACCEPTED else WRITTEN }) = mapOf(
     "answers" to questions.map { mapOf("id" to it.id, "answer" to it.answer, "source" to source(it)) },
 )
 
@@ -56,7 +56,7 @@ fun RuntimeService.round(execution: String, asker: String) = ((getVariable(execu
  */
 fun RuntimeService.answerFor(workspace: Path, execution: String, name: String, asker: String, given: Map<String, String>, complete: (Map<String, Any>) -> Unit) {
     val questions = Question.of(getVariable(execution, asker), given)
-    val answers = answers(questions) { if (it.id in given) "agent" else "recommended" }
+    val answers = answers(questions) { if (it.id in given) BY_AGENT else RECOMMENDED }
     runLog(workspace, name, "Round ${round(execution, asker)}", roundLog(questions, answers))
     val sent = AgentLauncher.sentBack(workspace, taskKey(execution, asker))
     sent.parent.createDirectories()
@@ -76,13 +76,34 @@ fun roundLog(questions: List<Question>, answers: Map<String, Any>) = questions.z
 
 /** The Rounds in the Run log of [workspace], in order: each one's Task and Round, and its [roundLog]. */
 // ponytail: read back from the Run log, so a user's instruction holding a line like a Run log heading splits it there.
-fun rounds(workspace: Path): List<Pair<String, String>> {
+private fun rounds(workspace: Path): List<Pair<String, String>> {
     val log = workspace.resolve("run-log.md").takeIf { it.exists() }?.readText() ?: return emptyList()
     return log.split(Regex("""(?m)^(?=## \S+ · )""")).mapNotNull { entry ->
         val heading = entry.substringBefore('\n').substringAfter(" · ")
         if (Regex(""".+ · Round \d+""").matches(heading)) heading to entry.substringAfter("\n\n").trim() else null
     }
 }
+
+/**
+ * The Report's Rounds, read from the Run log of [workspace]: each Round's answers the user gave themselves, then under
+ * "Answers you didn't give" the ones an Agent or the recommendations gave, each by the source its [roundLog] line ends on.
+ */
+fun roundsReport(workspace: Path): String = buildString {
+    val rounds = rounds(workspace).map { (heading, answers) ->
+        heading to answers.split(Regex("""\n(?=- )""")).partition { Regex("""\((\w+)\)$""").find(it)?.groupValues?.get(1) in setOf(ACCEPTED, WRITTEN) }
+    }
+    for ((title, mine) in listOf("Rounds" to true, "Answers you didn't give" to false)) {
+        val shown = rounds.map { (heading, split) -> heading to if (mine) split.first else split.second }.filter { it.second.isNotEmpty() }
+        if (shown.isNotEmpty()) append("\n## $title\n\n")
+        for ((heading, answers) in shown) append("### $heading\n\n${answers.joinToString("\n")}\n\n")
+    }
+}
+
+/** Who gave an answer: the user, [ACCEPTED] the recommendation or [WRITTEN] their own, an Agent ([BY_AGENT]), or the [RECOMMENDED] answer itself. */
+private const val ACCEPTED = "accepted"
+private const val WRITTEN = "written"
+private const val BY_AGENT = "agent"
+private const val RECOMMENDED = "recommended"
 
 /**
  * Keeps the user's own [questions] and answers of one Round in the Answer History in [home]: one markdown file per

@@ -2,7 +2,9 @@ package ants
 
 import org.operaton.bpm.engine.ExternalTaskService
 import org.operaton.bpm.engine.RuntimeService
+import org.operaton.bpm.engine.delegate.DelegateExecution
 import org.operaton.bpm.engine.externaltask.LockedExternalTask
+import org.operaton.bpm.model.bpmn.instance.ServiceTask
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
 import java.nio.file.Path
@@ -104,5 +106,19 @@ class Push(
             if (repo.base == null) return null
             return "https://$host/$path/${if ("gitlab" in host) "-/" else ""}compare/${repo.base}...${repo.branch}"
         }
+    }
+}
+
+/** The Report's Push section: the Push Results of the Run [run], one line per repo, or nothing when no Push ran. */
+fun pushReport(run: DelegateExecution): String {
+    val results = run.bpmnModelInstance.getModelElementsByType(ServiceTask::class.java).filter { it.operatonTopic == Push.TOPIC }
+        .flatMap { run.getVariable(it.id) as? List<*> ?: emptyList() }.map { it as Map<*, *> }
+    if (results.isEmpty()) return ""
+    return "\n## Push\n\n" + results.joinToString("") { repo ->
+        if (repo["pushed"] != true) return@joinToString "- **${repo["repo"]}** · not pushed: ${"${repo["error"]}".replace('\n', ' ')}\n"
+        val branch = (if (repo["isNew"] == true) "new branch" else "existing branch") + (repo["base"]?.let { " off `$it`" }.orEmpty())
+        val commits = (repo["commits"] as List<*>).size.let { if (it == 1) "1 commit" else "$it commits" }
+        val compare = repo["compareUrl"]?.let { " · [Compare]($it)" }.orEmpty()
+        "- **${repo["repo"]}** · pushed `${repo["branch"]}` to `${repo["remote"]}` · $branch · $commits$compare\n"
     }
 }
