@@ -156,7 +156,7 @@ class Runs(
             val entry = notifications.tasks().firstOrNull { it.instance == id && it.activity == task }
             val model = mapOf(
                 "run" to top, "task" to key, "name" to (element.name ?: task), "shown" to shown(id)[task], "transcript" to transcript,
-                "entry" to entry, "details" to entry?.let(notifications::details), "push" to (entry?.let(notifications::isPush) == true), "live" to launcher.live(top, key), "_csrf" to csrf,
+                "entry" to entry, "details" to entry?.let(notifications::details), "push" to (entry?.let(notifications::isPush) == true), "send" to launcher.sending(top, key), "_csrf" to csrf,
             )
             StringOutput().also { templates.render("drawer.kte", model, it) }.toString()
         }

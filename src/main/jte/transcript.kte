@@ -2,7 +2,7 @@
 @param task: String
 @param transcript: ants.Transcript
 @param offset: Long
-@param live: Boolean
+@param send: String?
 @param error: String? = null
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
@@ -35,12 +35,12 @@ $unsafe{transcript.html("live")}
 $unsafe{transcript.html("status")}
 $unsafe{transcript.html("subagents")}
 @if(error != null)<p role="alert">${error}</p>@endif
-@if(live)
+@if(send != null)
 <form method="post" action="/runs/${run}/tasks/${task}/transcript/send">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
     <label>Message <textarea name="message" required></textarea></label>
     <button>Send</button>
-    <small>The Agent reads it at its next tool call.</small>
+    <small>${send}</small>
 </form>
 <form method="post" action="/runs/${run}/tasks/${task}/transcript/stop">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">

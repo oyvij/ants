@@ -104,6 +104,8 @@ tasks.test {
     // Ants must strip these from every Agent's environment, even when the allow-list names them.
     environment("ANTHROPIC_API_KEY", "sk-ant-test")
     environment("CLAUDE_CODE_RETRY_WATCHDOG", "1")
+    environment("OPENAI_API_KEY", "sk-openai-test")
+    environment("CODEX_API_KEY", "sk-codex-test")
     // BrowserTest drives the Chromium the playwright task installed; it never downloads one itself.
     environment("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD", "1")
     // Test classes run in a random order (junit-platform.properties), from a seed it prints; -PtestSeed=… replays one.
