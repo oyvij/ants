@@ -38,6 +38,8 @@ start() {
   # version an update or a rollback left there, as `ants restart` does.
   local program=$root/bin/ants
   [ "$(realpath "$ANTS_HOME/current" 2> /dev/null)" = "$root" ] && program=$ANTS_HOME/current/bin/ants
+  # PATH is the one `ants start` runs with: launchd's own lacks Homebrew's and ~/.local/bin, so a CLI or a command
+  # prefix such as nono wouldn't be found by name.
   # ponytail: launchd appends to one log file that never rotates; rotate if it grows too big
   cat > "$plist" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -55,6 +57,8 @@ start() {
     <dict>
         <key>ANTS_HOME</key>
         <string>$ANTS_HOME</string>
+        <key>PATH</key>
+        <string>$PATH</string>
     </dict>
     <key>RunAtLoad</key>
     <true/>

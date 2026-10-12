@@ -65,6 +65,8 @@ class LauncherTest {
         assertContains(agent, "<string>$install/bin/ants</string>\n        <string>run</string>")
         assertContains(agent, "<key>RunAtLoad</key>\n    <true/>")
         assertContains(agent, "<key>ANTS_HOME</key>\n        <string>$antsHome</string>")
+        // launchd's own PATH is /usr/bin:/bin:/usr/sbin:/sbin, where a CLI such as Homebrew's nono isn't found.
+        assertContains(agent, "<key>PATH</key>\n        <string>$fakeLaunchctl:/usr/bin:/bin</string>")
         assertContains(agent, "<string>$antsHome/logs/ants.log</string>")
         assertEquals("bootstrap gui/$uid $plist", launchctl().last())
     }
