@@ -181,8 +181,12 @@ class TranscriptTest : AntsTest() {
         assertContains(ended, """<div id="subagents">⑂ 2</div>""") // no running Subagents, no chips
         assertContains(ended, """⑂ <b>searcher</b> Search the notes · 7s</summary>""")
         assertContains(ended, """⑂ <b>general-purpose</b> Check facts · 1m 5s · failed</summary>""")
-        eventually { assertContains(tab.toString(), """⑂ <b>searcher</b> Search the notes · 7s</summary>""") }
-        assertContains(tab.toString(), """<div id="subagents">⑂ 2</div>""")
+        // The tab's events come as the stream sees the file grow: the searcher's end can come before the other's.
+        eventually {
+            val seen = tab.toString()
+            assertContains(seen, """⑂ <b>searcher</b> Search the notes · 7s</summary>""")
+            assertContains(seen, """<div id="subagents">⑂ 2</div>""")
+        }
     }
 
     @Test

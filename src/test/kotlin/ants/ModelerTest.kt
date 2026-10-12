@@ -86,12 +86,14 @@ class ModelerTest : AntsTest() {
     }
 
     @Test
-    fun `the modeler gets the Built-in Tasks and field types from the server`() {
+    fun `the modeler gets the Built-in Tasks, field types and Items are Tickets from the server`() {
         val (modeler, _) = open("/processes/new?name=Facts")
-        val facts = Regex("""data-facts="([^"]+)"""").find(modeler.body)!!.groupValues[1].replace("&#34;", "\"")
+        val facts = Regex("""data-facts="([^"]+)"""").find(modeler.body)!!.groupValues[1].replace("&#34;", "\"").replace("&#39;", "'")
         val read = JsonMapper.shared().readValue(facts, Map::class.java)
         assertEquals(builtIns, read["builtIns"])
         assertEquals(mapOf("text" to "Text", "markdown" to "Markdown", "repos" to "Repos"), read["fieldTypes"])
-        assertEquals(false, "Clone repos:" in browser.get("/modeler.js").body)
+        assertEquals("ants.items-are-tickets", (read["itemsAreTickets"] as Map<*, *>)["property"])
+        assertContains((read["itemsAreTickets"] as Map<*, *>)["help"].toString(), "Each item names a Ticket (tickets/issues/01-hello.md, or 01).")
+        for (fact in listOf("Clone repos:", "ready-for-human", "ants.items-are-tickets")) assertEquals(false, fact in browser.get("/modeler.js").body, fact)
     }
 }

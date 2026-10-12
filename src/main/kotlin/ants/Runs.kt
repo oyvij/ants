@@ -7,8 +7,11 @@ import org.operaton.bpm.engine.delegate.ExecutionListener
 import org.operaton.bpm.engine.externaltask.ExternalTask
 import org.operaton.bpm.engine.history.HistoricProcessInstance
 import org.operaton.bpm.engine.impl.bpmn.behavior.MultiInstanceActivityBehavior
+import org.operaton.bpm.engine.impl.bpmn.behavior.ParallelMultiInstanceActivityBehavior
 import org.operaton.bpm.engine.impl.bpmn.parser.BpmnParse
 import org.operaton.bpm.engine.impl.bpmn.parser.BpmnParseListener
+import org.operaton.bpm.engine.impl.bpmn.parser.BpmnParseUtil
+import org.operaton.bpm.engine.impl.interceptor.CommandContext
 import org.operaton.bpm.engine.impl.ServiceImpl
 import org.operaton.bpm.engine.impl.cfg.AbstractProcessEnginePlugin
 import org.operaton.bpm.engine.impl.cfg.ProcessEngineConfigurationImpl
@@ -48,7 +51,9 @@ import java.time.Clock
 import java.time.Instant
 import java.time.temporal.ChronoUnit.SECONDS
 import java.util.Date
+import kotlin.io.path.ExperimentalPathApi
 import kotlin.io.path.createDirectories
+import kotlin.io.path.deleteRecursively
 
 /** What the live diagram shows of one element: its state (done, running, queued or waiting), a badge and its Round. */
 class Shown(val state: String, val badge: String?, val round: Int?)
@@ -86,11 +91,23 @@ class Runs(
                 .associate { it.name to ((it.typedValue as? ObjectValue)?.valueSerialized ?: "${it.value}") },
         )
         model.addAttribute("transcripts", Transcript.all(home.runWorkspace(id)).mapValues { it.value.tokens })
+        model.addAttribute("report", Files.exists(home.runWorkspace(id).resolve(REPORT)))
         model.addAttribute(
             "agentTasks",
-            externalTasks.createExternalTaskQuery().processInstanceId(id).topicName(AgentLauncher.TOPIC).list().associate { it.activityId to state(it) },
+            externalTasks.createExternalTaskQuery().processInstanceId(id).topicName(AgentLauncher.TOPIC).list()
+                .associate { runCatching { runtime.taskKey(it.executionId, it.activityId) }.getOrDefault(it.activityId) to state(it) }.toSortedMap(),
         )
         return "run"
+    }
+
+    /** The Report the Run left as it ended, rendered. */
+    @GetMapping("/runs/{id}/report")
+    fun report(@PathVariable id: String, model: Model): String {
+        val file = home.runWorkspace(run(id).id).resolve(REPORT)
+        if (!Files.exists(file)) throw ResponseStatusException(HttpStatus.NOT_FOUND, "Run $id has no Report yet")
+        model.addAttribute("run", id)
+        model.addAttribute("html", Transcript.markdown(Files.readString(file)))
+        return "report"
     }
 
     /** The diagram of the Process version the Run runs. */
@@ -139,7 +156,7 @@ class Runs(
             val entry = notifications.tasks().firstOrNull { it.instance == id && it.activity == task }
             val model = mapOf(
                 "run" to top, "task" to key, "name" to (element.name ?: task), "shown" to shown(id)[task], "transcript" to transcript,
-                "entry" to entry, "details" to entry?.let(notifications::details), "live" to launcher.live(top, key), "_csrf" to csrf,
+                "entry" to entry, "details" to entry?.let(notifications::details), "push" to (entry?.let(notifications::isPush) == true), "live" to launcher.live(top, key), "_csrf" to csrf,
             )
             StringOutput().also { templates.render("drawer.kte", model, it) }.toString()
         }
@@ -159,10 +176,12 @@ class Runs(
             val entry = entries[activity]
             val tasks = agentTasks[activity].orEmpty()
             val paused = tasks.firstNotNullOfOrNull { launcher.pausedUntil(it.id) }
+            val held = tasks.map { launcher.heldBy(it.id) }
             when {
                 instances.all { it.endTime != null } -> Shown("done", null, round)
                 entry != null -> Shown("waiting", "${entry.icon} ${entry.tag}", round)
                 paused != null -> Shown("queued", "Paused until ${clock.local(paused)}", round)
+                held.isNotEmpty() && held.all { it != null } -> Shown("queued", held.first(), round)
                 tasks.isNotEmpty() && tasks.none { it.lockExpirationTime?.after(Date()) == true } -> Shown("queued", "Queued", round)
                 else -> Shown("running", null, round)
             }
@@ -181,12 +200,13 @@ class Runs(
 
     /** The workspace of a cancelled Run, until it is dismissed. */
     private fun keptWorkspace(run: HistoricProcessInstance) = home.runWorkspace(run.id).takeIf { workspace ->
-        run.state == HistoricProcessInstance.STATE_EXTERNALLY_TERMINATED && workspace.toFile().listFiles()?.any { it.name != "tasks" } == true
+        run.state == HistoricProcessInstance.STATE_EXTERNALLY_TERMINATED && workspace.toFile().listFiles()?.any { it.name !in KEPT } == true
     }
 
-    private fun state(task: ExternalTask, paused: Instant? = launcher.pausedUntil(task.id)) = when {
+    private fun state(task: ExternalTask, paused: Instant? = launcher.pausedUntil(task.id), held: String? = launcher.heldBy(task.id)) = when {
         task.retries == 0 -> listOfNotNull(task.errorMessage, externalTasks.getExternalTaskErrorDetails(task.id)).joinToString(" ")
         paused != null -> "Paused until ${clock.local(paused)}"
+        held != null -> held
         task.lockExpirationTime?.after(Date()) == true -> "Running"
         else -> "Queued: ${launcher.running} of ${settings.agentTasks()} Agent Tasks running"
     }
@@ -215,22 +235,22 @@ val HistoricProcessInstance.stateName
 
 /**
  * Gives each Run its Run workspace, `runs/<run>/` in ANTS_HOME, for as long as it lives. At Run start every
- * Task-id (and call activity id) variable is `null`, so forward references read `null`, and `runs` counts each Task's
- * runs. A multi-instance collects its instances' Results into one list ([collect]). A called Process runs inside its
+ * Task-id (and call activity id) variable is `null`, so forward references read `null`, `runs` counts each Task's
+ * runs and `clones` is empty. A multi-instance collects its instances' Results into one list ([collect]). A called Process runs inside its
  * caller's Run: it ends by giving its call activity every Result in it, by id.
  */
 @Component
 class RunLifecycle(@Value("\${ants.home}") private val home: Path) : AbstractProcessEnginePlugin() {
     private fun started(tasks: List<String>, results: List<String>) = ExecutionListener { run ->
-        if (run.isTopRun) home.runWorkspace(run.processInstanceId).createDirectories()
+        if (run.isTopRun) trackerDoc(home.runWorkspace(run.processInstanceId).createDirectories())
         else run.setVariable(CALLED, called(run.superExecution))
         for (id in results) run.setVariable(id, null)
         run.setVariable("runs", tasks.associateWith { 0 })
+        run.setVariable("clones", ArrayList<Any>()) // Clone repos adds to it
     }
 
     // ponytail: parallel Tasks starting in separate transactions clash on `runs` (optimistic locking) and the losing
-    // transaction rolls back; whoever drives it must retry, as the worker does (AgentLauncher.complete), and so must a
-    // User Task's form once wave 4 completes one.
+    // transaction rolls back; whoever drives it must retry, as the worker and the Approve page do ([onClash]).
     private val counted = ExecutionListener { task ->
         @Suppress("UNCHECKED_CAST")
         val counts = task.getVariable("runs") as Map<String, Int>
@@ -238,13 +258,21 @@ class RunLifecycle(@Value("\${ants.home}") private val home: Path) : AbstractPro
     }
 
     private fun ended(results: List<String>) = ExecutionListener { run ->
-        // A cancelled Run keeps its workspace, so no commits are lost.
-        if (run.isCanceled) return@ExecutionListener
+        val cancelled = run.isCanceled
         // A called Process's Result is every Result in it, by id, on its call activity, as a Task's is on the Task.
-        run.superExecution?.let { call -> return@ExecutionListener call.setVariable(call.currentActivityId, results.associateWith { run.getVariable(it) }) }
-        val workspace = home.runWorkspace(run.processInstanceId).toFile()
+        run.superExecution?.let { call ->
+            if (!cancelled) call.setVariable(call.currentActivityId, results.associateWith { run.getVariable(it) })
+            return@ExecutionListener
+        }
+        val workspace = home.runWorkspace(run.processInstanceId)
+        val report = report(run, workspace)
         // Only once the end is committed: a rolled-back end leaves the Run alive and needing its workspace.
-        Context.getCommandContext().transactionContext.addTransactionListener(TransactionState.COMMITTED) { cleanUp(workspace) }
+        Context.getCommandContext().transactionContext.addTransactionListener(TransactionState.COMMITTED) {
+            closeSpec(workspace, cancelled)
+            Files.writeString(workspace.resolve(REPORT), report)
+            // A cancelled Run keeps its workspace, so no commits are lost.
+            if (!cancelled) cleanUp(workspace.toFile())
+        }
     }
 
     /**
@@ -263,6 +291,9 @@ class RunLifecycle(@Value("\${ants.home}") private val home: Path) : AbstractPro
         val ids = if (subProcess) inner.results() else listOf(inner.id)
         inner.addBuiltInListener(ExecutionListener.EVENTNAME_START, ExecutionListener { instance -> ids.forEach { instance.setVariableLocal(it, null) } })
         inner.addBuiltInListener(ExecutionListener.EVENTNAME_END, ExecutionListener { instance ->
+            // A cancelled instance, as when its Run is cancelled, has no Result and its list is never read; a list whose
+            // first item is null can't even be stored, which would make the Run impossible to cancel.
+            if (instance.isCanceled) return@ExecutionListener
             val result = if (subProcess) ids.associateWith { instance.getVariableLocal(it) } else instance.getVariableLocal(inner.id)
             // The body's own execution holds the loop's counts; a non-scope Task in a sequential loop runs on it too.
             val bodyExecution = generateSequence(instance as ExecutionEntity) { it.parent }.first { it.hasVariableLocal("nrOfInstances") }
@@ -272,6 +303,14 @@ class RunLifecycle(@Value("\${ants.home}") private val home: Path) : AbstractPro
             val count = bodyExecution.getVariableLocal("nrOfInstances") as Int
             if (results.size < count) bodyExecution.setVariableLocal(RESULTS, results)
             else bodyExecution.parent.setVariable(inner.id, (0 until count).map { results["$it"] })
+            // With Items are Tickets, the instance's Ticket goes in review once it ends, after its last landing.
+            if (body.getProperty(ITEMS_ARE_TICKETS) == true) {
+                val item = instance.getVariable(loop.collectionElementVariable)
+                val run = (instance as ExecutionEntity).rootProcessInstanceId
+                Context.getCommandContext().transactionContext.addTransactionListener(TransactionState.COMMITTED) {
+                    ticket(home.runWorkspace(run), run, item)?.takeIf { !it.closed }?.status(Tracked.IN_REVIEW)
+                }
+            }
         })
         // With no instances the loop never sets its count, and no instance ends to give the list.
         body.addBuiltInListener(ExecutionListener.EVENTNAME_END, ExecutionListener { execution ->
@@ -292,13 +331,22 @@ class RunLifecycle(@Value("\${ants.home}") private val home: Path) : AbstractPro
                     process.addBuiltInListener(ExecutionListener.EVENTNAME_START, started(tasks.map { it.id }, results))
                     process.addBuiltInListener(ExecutionListener.EVENTNAME_END, ended(results))
                 }
+
+                override fun parseMultiInstanceLoopCharacteristics(activity: Element, loop: Element, body: ActivityImpl) {
+                    if (BpmnParseUtil.parseOperatonExtensionProperties(activity)?.get(ITEMS_ARE_TICKETS) == "true") body.setProperty(ITEMS_ARE_TICKETS, true)
+                }
             }
     }
 }
 
-/** Deletes a Run workspace once its Run is done with it, all but the Transcripts (`tasks/`), which outlive the Run. */
+/** What outlives the Run in its workspace: the Transcripts (`tasks/`), the Spec and Tickets (`tickets/`) and the Report. */
+private val KEPT = setOf("tasks", "tickets", REPORT)
+
+/** Deletes a Run workspace once its Run is done with it, all but what is [KEPT]. */
+@OptIn(ExperimentalPathApi::class)
 fun cleanUp(workspace: File) {
-    workspace.listFiles()?.filter { it.name != "tasks" }?.forEach { it.deleteRecursively() }
+    // Not following links: an instance's folder links to what is kept (Landing).
+    workspace.listFiles()?.filter { it.name !in KEPT }?.forEach { it.toPath().deleteRecursively() }
     workspace.delete() // only if nothing was kept
 }
 
@@ -340,6 +388,39 @@ private fun key(execution: ExecutionEntity, activity: String) = (execution.getVa
 fun RuntimeService.taskKey(execution: String, activity: String): String = (this as ServiceImpl).commandExecutor.execute { context ->
     key(checkNotNull(context.executionManager.findExecutionById(execution)) { "No execution $execution" }, activity)
 }
+
+/**
+ * Whether the Task [activity] on [execution] runs in an instance of a parallel multi-instance, in its own Process or
+ * in one calling it, and so lands ([Landing]).
+ */
+fun RuntimeService.inParallel(execution: String, activity: String): Boolean = (this as ServiceImpl).commandExecutor.execute { context ->
+    context.scopes(execution, activity).any { (_, scope) -> (scope as? ActivityImpl)?.activityBehavior is ParallelMultiInstanceActivityBehavior }
+}
+
+/**
+ * The item of the Items are Tickets multi-instance the Task [activity] on [execution] runs an instance of, in its own
+ * Process or in one calling it: the innermost such; null when it runs in none.
+ */
+fun RuntimeService.ticketItem(execution: String, activity: String): Any? = (this as ServiceImpl).commandExecutor.execute { context ->
+    context.scopes(execution, activity).firstNotNullOfOrNull { (level, scope) ->
+        (scope as? ActivityImpl)?.takeIf { it.getProperty(ITEMS_ARE_TICKETS) == true }
+            ?.let { body -> level.getVariable((body.activityBehavior as MultiInstanceActivityBehavior).collectionElementVariable) }
+    }
+}
+
+/**
+ * Every scope the Task [activity] on [execution] runs in, innermost first, in its own Process and then in those calling
+ * it, each with the execution at that level: the Task's, then each call activity's.
+ */
+private fun CommandContext.scopes(execution: String, activity: String): Sequence<Pair<ExecutionEntity, ScopeImpl>> {
+    val task = checkNotNull(executionManager.findExecutionById(execution)) { "No execution $execution" }
+    return generateSequence(task to activity) { (it, _) -> it.processInstance.superExecution?.let { call -> call to call.currentActivityId } }.flatMap { (level, id) ->
+        generateSequence(level.processDefinition.findActivity(id) as ScopeImpl?) { (it as? ActivityImpl)?.flowScope }.map { level to it }
+    }
+}
+
+/** The extension property ticking **Items are Tickets** on a multi-instance, and the mark Ants leaves on its body. */
+const val ITEMS_ARE_TICKETS = "ants.items-are-tickets"
 
 /** The Results a multi-instance's instances have given so far, on its body's execution. */
 private const val RESULTS = "ants.results"

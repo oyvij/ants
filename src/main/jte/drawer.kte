@@ -6,6 +6,7 @@
 @param transcript: ants.Transcript
 @param entry: ants.TaskEntry?
 @param details: String?
+@param push: Boolean
 @param live: Boolean
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 <section id="drawer-head">
@@ -38,6 +39,15 @@
     <h3>@if(entry.tag == "[stuck]")What the Agent needs@else Details@endif</h3>
     <pre>${details}</pre>
 @endif
+    @if(entry.tag == "[approve]")
+    <p><a href="/notifications/${entry.id}">Approve or send back</a></p>
+    @elseif(push)
+    <p><a href="/notifications/${entry.id}">@if(entry.tag == "[push]")Push@else Continue@endif or cancel the Run</a></p>
+    @elseif(entry.tag == "[questions]")
+    <p><a href="/notifications/${entry.id}">Answer the Round</a></p>
+    @elseif(entry.tag == "[review]")
+    <p><a href="/notifications/${entry.id}">Review the changes</a></p>
+    @else
     <form method="post" action="/notifications/${entry.id}">
         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
         <input type="hidden" name="back" value="run">
@@ -46,6 +56,7 @@
         <button name="action" value="fresh" formnovalidate>Start fresh</button>
         @if(entry.tag == "[failed]")<button name="action" value="cancel" formnovalidate>Cancel the Run</button>@endif
     </form>
+    @endif
 </section>
 @endif
 @if(live)

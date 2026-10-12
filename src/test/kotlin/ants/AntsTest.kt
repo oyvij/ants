@@ -61,8 +61,14 @@ abstract class AntsTest {
         val runs = runtime.createProcessInstanceQuery().rootProcessInstances().list().map { it.id }
         // Deleting a deployment deletes its Runs and their history too; Schedules read the deployed Processes.
         for (deployment in repository.createDeploymentQuery().list()) {
-            // A worker may be completing one of its Tasks at the same time.
-            for (attempt in 1..10) if (runCatching { repository.deleteDeployment(deployment.id, true, true) }.isSuccess) break else Thread.sleep(50)
+            // A worker may be completing one of its Tasks at the same time. One that never deletes would leave its Runs
+            // live for every later test, so it fails this one instead.
+            for (attempt in 1..10) {
+                val deleted = runCatching { repository.deleteDeployment(deployment.id, true, true) }
+                if (deleted.isSuccess) break
+                if (attempt == 10) throw AssertionError("The last test's Runs can't be deleted", deleted.exceptionOrNull())
+                Thread.sleep(50)
+            }
         }
         // Only once their Runs are gone, so no worker launches the Task again; each slot frees as its CLI ends.
         val deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos()

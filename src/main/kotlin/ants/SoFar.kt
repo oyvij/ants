@@ -61,6 +61,8 @@ class SoFar(
     /** Rewrites the So far of the Transcript [file] if [every] has passed since the last one, or since the launch. */
     private fun rewrite(file: Path, every: Duration) {
         val lines = Transcript.read(file).first.map { runCatching { json.readValue(it, Map::class.java) }.getOrNull() ?: emptyMap<Any, Any>() }
+        // A session that gave its Result, or a launch that ended, is still locked until Ants completes the Task: nothing to rewrite.
+        if (lines.lastOrNull()?.let { it["type"] == "result" || it.ants("end") } == true) return
         val since = lines.lastOrNull { it.ants("so-far") || it.ants("launch") }?.let { Instant.parse(it["at"].toString()) } ?: return
         if (Duration.between(maxOf(since, tried[file] ?: since), Instant.now()) < every) return
         val last = lines.indexOfLast { it.ants("so-far") }

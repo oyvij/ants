@@ -1,0 +1,24 @@
+@param specs: List<ants.SpecRow>
+@param colorScheme: String = "light dark"
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="color-scheme" content="${colorScheme}">
+    <title>Tickets · Ants</title>
+</head>
+<body>
+@template.nav()
+<h1>Tickets</h1>
+@if(specs.isEmpty())
+<p>No Run has written a Spec yet.</p>
+@else
+<table>
+    <tr><th>Spec</th><th>Status</th><th>Tickets</th><th>Run</th></tr>
+@for(row in specs)
+    <tr><td><a href="${row.spec.href}">${row.spec.title}</a></td><td>${row.spec.status ?: "open"}</td><td>${row.done}/${row.tickets.size} done</td><td><a href="/runs/${row.run}">${row.process}</a></td></tr>
+@endfor
+</table>
+@endif
+</body>
+</html>

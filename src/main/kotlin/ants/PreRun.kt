@@ -110,12 +110,16 @@ class PreRun(
 
     /** Runs [command] for at most [seconds]: null when it exits 0, else its last line of output. */
     private fun failure(command: ProcessBuilder, seconds: Long): String? = runCatching {
+        val deadline = System.nanoTime() + SECONDS.toNanos(seconds)
         val process = command.redirectInput(File("/dev/null")).redirectErrorStream(true).start()
         val lines = mutableListOf<String>()
         val drain = Thread.ofVirtual().start { process.inputReader().forEachLine { synchronized(lines) { lines += it } } }
-        val ok = process.waitFor(seconds, SECONDS) && process.exitValue() == 0
-        if (!ok) process.destroyForcibly()
-        drain.join(Duration.ofSeconds(1))
+        val exited = process.waitFor(seconds, SECONDS)
+        // Unlike Process.destroy, which closes stdout and so drops what the drain hasn't read yet, as on a busy machine.
+        if (!exited) process.toHandle().destroyForcibly()
+        val ok = exited && process.exitValue() == 0
+        // The drain may lag the exit, so a failure waits for its last line until the deadline.
+        if (!ok) drain.join(Duration.ofNanos(deadline - System.nanoTime()).coerceAtLeast(Duration.ofSeconds(1)))
         if (ok) null else synchronized(lines) { lines.lastOrNull(String::isNotBlank) } ?: "${command.command().first()} failed."
     }.getOrElse { it.message ?: "${command.command().first()} failed." }
 

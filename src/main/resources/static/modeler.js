@@ -26,9 +26,9 @@ const kinds = {
     flow: {name: "Sequence flow", explain: "The path a Run takes from one element to the next."},
 }
 
-// From the server (modelerFacts in Checks.kt): the Built-in Tasks by topic, and the start-form field types by the
-// `ants.type` property each field carries (the engine only knows `string`).
-const {builtIns, fieldTypes} = JSON.parse(document.getElementById("canvas").dataset.facts)
+// From the server (modelerFacts in Checks.kt): the Built-in Tasks by topic, the start-form field types by the
+// `ants.type` property each field carries (the engine only knows `string`), and Items are Tickets' property and help.
+const {builtIns, fieldTypes, itemsAreTickets} = JSON.parse(document.getElementById("canvas").dataset.facts)
 
 // The three Tasks Ants runs, as the BPMN each one is.
 const tasks = {
@@ -315,7 +315,12 @@ function multiInstance(element) {
         el("h3", {textContent: (loop.isSequential ? "Sequential" : "Parallel") + " multi-instance"}),
         el("p", {textContent: "One instance per item of a list from an earlier Result. Each instance reads its item under the element variable, and the Result is a list in instance order: of Results for a Task, of {taskId: Result} for a sub-process or call activity."}),
         el("label", {}, "Collection ", field("camunda:collection", "${totickets.output.tickets}")), el("br"),
-        el("label", {}, "Element variable ", field("camunda:elementVariable", "item")))
+        el("label", {}, "Element variable ", field("camunda:elementVariable", "item")),
+        el("p", {}, el("label", {title: itemsAreTickets.help},
+            el("input", {
+                type: "checkbox", checked: agentProperties(element.businessObject)[itemsAreTickets.property] === "true",
+                onchange: event => writeAgentTask(element, {[itemsAreTickets.property]: event.target.checked ? "true" : undefined}),
+            }), " Items are Tickets")))
 }
 
 // The condition builder: a Result field, an operator and a value write each path's JUEL, shown under it, and one path
@@ -631,6 +636,9 @@ async function callPanel(element, box) {
 
 function explain(element) {
     const target = element.labelTarget || element
+    // Importing clears the diagram first, which selects the implicit root: no BPMN behind it yet, so nothing to explain.
+    // Throwing here would abort the import.
+    if (!target.businessObject) return
     const kind = kindOf(target)
     panel.replaceChildren(kind
         ? el("div", {}, el("h2", {textContent: kinds[kind].name}), el("p", {textContent: kinds[kind].explain}), panels[kind]?.(target) || "", multiInstance(target))

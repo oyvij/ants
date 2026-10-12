@@ -8,6 +8,7 @@ import org.operaton.bpm.engine.RuntimeService
 import org.operaton.bpm.engine.externaltask.LockedExternalTask
 import org.operaton.bpm.model.bpmn.instance.BaseElement
 import org.operaton.bpm.model.bpmn.instance.FlowElement
+import org.operaton.bpm.model.bpmn.instance.UserTask
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.context.event.ApplicationReadyEvent
@@ -30,6 +31,7 @@ import java.util.concurrent.TimeUnit.SECONDS
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.io.path.readText
 import kotlin.io.path.writeText
+import kotlin.io.path.deleteIfExists
 import kotlin.io.path.exists
 
 /**
@@ -39,7 +41,8 @@ import kotlin.io.path.exists
  * the user acts on it, the Notification list leaves their choice in the Task's local variables: Continue resumes the
  * session with their instruction, Start fresh starts a new one with it under "From the user:". While a session runs,
  * the user can [send] it a message or [stop] it. A Task that hits the Usage limit pauses its CLI until the reset, then
- * continues its session the same way, with the reset message.
+ * continues its session the same way, with the reset message. A Task a Review changes names as its Walkthrough is done
+ * only once its Story set passes Varde's checks ([storyProblems]).
  */
 @Component
 class AgentLauncher(
@@ -48,6 +51,8 @@ class AgentLauncher(
     private val repository: RepositoryService,
     private val settings: Settings,
     private val catalogue: Catalogue,
+    private val landing: Landing,
+    private val cloneRepos: CloneRepos,
     private val clock: Clock,
     @Value("\${ants.home}") private val home: Path,
 ) {
@@ -65,6 +70,19 @@ class AgentLauncher(
     // their locks, which end at the reset, and the first Task to hit the limit again shuts the gate again.
     private val gates = ConcurrentHashMap<String, Instant>() // CLI -> when its gate opens
     private val held = ConcurrentHashMap<String, String>() // external task id -> the CLI holding it
+
+    /**
+     * Instances of an Items are Tickets multi-instance held before launch, by external task id: each keeps its lock
+     * while held, and is unlocked to launch once [Held.check] finds its Ticket free. After a restart, [start] unlocks
+     * them with every other long lock, and each is held again at its next fetch.
+     */
+    // ponytail: every poll (200 ms) re-reads each held instance's Tickets; watch tickets/ instead if many are ever held.
+    private val heldOnTickets = ConcurrentHashMap<String, Held>()
+
+    private class Held(val reason: String, val check: () -> String?)
+
+    /** Why the Task with external task [id] is held before launch, such as `Blocked by 01`, if it is. */
+    fun heldBy(id: String): String? = heldOnTickets[id]?.reason
 
     /** How many Agent Tasks are running now. */
     val running get() = live.get()
@@ -103,16 +121,38 @@ class AgentLauncher(
     }
 
     /** Kills the live CLI processes of [run], once the Run is cancelled. */
-    fun cancel(run: String) = clis.filterValues { it == run }.keys.forEach { it.toHandle().destroy() }
+    fun cancel(run: String) = clis.filterValues { it == run }.keys.forEach(::kill)
+
+    /**
+     * Ends [process] and every process under it: asks them all to stop, then kills whichever are still alive after
+     * [GRACE]. A CLI may ignore SIGTERM, or wait on a child that does, and its launch keeps its slot until the output of
+     * every one of them has closed. Unlike [Process.destroy], it leaves the rest of stdout to read.
+     */
+    private fun kill(process: Process) {
+        val all = listOf(process.toHandle()) + process.descendants().toList() // while they still have their parent
+        all.forEach(ProcessHandle::destroy)
+        Thread.ofVirtual().start {
+            process.waitFor(GRACE.toMillis(), MILLISECONDS)
+            all.filter(ProcessHandle::isAlive).forEach(ProcessHandle::destroyForcibly)
+        }
+    }
 
     private fun fetch() {
         try {
             gates.filterValues { !it.isAfter(clock.instant()) }.forEach { (cli, reset) -> tryNow(cli, reset) }
+            if (heldOnTickets.isNotEmpty()) { // ended with their Runs, else released once their Ticket is free
+                heldOnTickets.keys.retainAll(externalTasks.createExternalTaskQuery().externalTaskIdIn(heldOnTickets.keys.toSet()).list().map { it.id }.toSet())
+                heldOnTickets.forEach { (id, held) ->
+                    val reason = held.check()
+                    if (reason == null && heldOnTickets.remove(id) != null) runCatching { externalTasks.unlock(id) }
+                    else if (reason != null) heldOnTickets[id] = Held(reason, held.check)
+                }
+            }
             val fetched = synchronized(live) { // the slots So far takes too
                 val free = settings.agentTasks() - live.get()
                 if (free <= 0) return
                 externalTasks.fetchAndLock().workerId(WORKER).maxTasks(free).orderByCreateTime().asc()
-                    .subscribe().topic(TOPIC, LOCK.toMillis()).localVariables().includeExtensionProperties().execute()
+                    .subscribe().topic(TOPIC, LOCK.toMillis()).localVariables().enableCustomObjectDeserialization().includeExtensionProperties().execute()
                     .also { live.addAndGet(it.size) }
             }
             fetched.forEach { task ->
@@ -181,27 +221,44 @@ class AgentLauncher(
         var session = resume // a new one only once claude starts, so Continue never resumes a session claude never saw
         var transcript: Transcript.Writer? = null
         try {
+            val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult().rootProcessInstanceId
+            val workspace = home.runWorkspace(run)
+            if (ticketed(task, run, workspace)) return
             val agent = catalogue.agent(task.extensionProperties[AGENT] ?: error("${task.activityId} names no $AGENT"))
             if (hold(task, agent.cli)) return // keeping its choice for the launch after the reset
             runtime.removeVariablesLocal(task.executionId, listOf(ACTION, INSTRUCTION, SESSION)) // the choice is used once
-            val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult().rootProcessInstanceId
-            val workspace = home.runWorkspace(run)
             val skill = catalogue.skill(task.extensionProperties[SKILL] ?: error("${task.activityId} names no $SKILL"))
             check(agent.cli == "claude") { "Agent ${agent.name} runs ${agent.cli}, and only claude runs for now" }
             val used = catalogue.uses(skill)
             refuseBareByDefault(agent.cli, workspace)
             val instance = instance(task)
-            // With [RESUME], a Task the flow comes back to, as in a loop, resumes its last session; the user's
-            // Continue and Start fresh choose for themselves.
+            // An instance of a parallel multi-instance works in a folder of its own, and lands when done.
+            val parallel = runtime.inParallel(task.executionId, task.activityId)
+            val cwd = if (parallel) landing.folder(workspace, instance, fresh = task.variables[ACTION] == FRESH) else workspace
+            // An Approve's Send back leaves its comment for the Task it names, and a Round its answers for its asker, used once.
+            val sent = sentBack(workspace, instance)
+            val comment = sent.takeIf { resume == null && task.variables[ACTION] == null && it.exists() }?.readText()?.also { sent.deleteIfExists() }
+            // With [RESUME], a Task the flow comes back to, as in a loop, resumes its last session, as one sent back
+            // does; the user's Continue and Start fresh choose for themselves.
             val last = Transcript.file(workspace, instance).resolveSibling("session")
-            val again = last.takeIf { resume == null && task.variables[ACTION] == null && task.extensionProperties[RESUME] == "true" && it.exists() }?.readText()
+            val again = last.takeIf { resume == null && task.variables[ACTION] == null && (task.extensionProperties[RESUME] == "true" || comment != null) && it.exists() }?.readText()
             session = session ?: again ?: UUID.randomUUID().toString()
             transcript = Transcript.Writer(Transcript.file(workspace, instance)).apply { ants("launch") }
             last.writeText(session)
             val resumed = resume != null || again != null // claude knows the session already
-            val continued = resume != null // the user's Continue: their instruction alone, no hand-off again
+            // The user's Continue, or a Send back to a session claude has: their words alone, no hand-off again.
+            val continued = resume != null || (comment != null && again != null)
             val result = try {
-                session(task, instance, agent, skill, used, run, workspace, transcript, session, resumed, task.variables[INSTRUCTION] as? String, handedOff = !continued)
+                var result = session(task, instance, agent, skill, used, run, workspace, cwd, transcript, session, resumed, task.variables[INSTRUCTION] as? String ?: comment, handedOff = !continued)
+                // A landing that conflicts resumes the session to resolve it, and is retried after each fix.
+                var rounds = 0
+                while (parallel && result["outcome"] == "done") {
+                    val conflict = landing.land(workspace, instance) ?: break
+                    if (rounds++ == CONFLICT_ROUNDS) throw Failed("${conflict.substringBefore("\n\n")} It still conflicts after $CONFLICT_ROUNDS rounds.", conflict.substringAfter("\n\n"))
+                    val resolve = "$conflict\n\nThe rebase was aborted. Rebase onto the work branch in each repo named, resolve the conflicts, and answer again with your Result."
+                    result = session(task, instance, agent, skill, used, run, workspace, cwd, transcript, session, true, resolve, handedOff = false)
+                }
+                result
             } catch (limit: UsageLimit) {
                 val until = limit.resetsAt + Duration.ofMinutes(1)
                 transcript.ants("end", "Paused by the ${agent.cli} usage limit until ${clock.local(until)}.")
@@ -211,7 +268,14 @@ class AgentLauncher(
             }
             if (result["outcome"] == "done") {
                 transcript.ants("end", "Done.")
-                complete(task, result)
+                // An answer-round Agent: Ants stamps its answers and hands them to the asker it names.
+                val asker = task.extensionProperties[ASKER]
+                if (asker == null) complete(task, result)
+                else {
+                    val given = (((result["output"] as? Map<*, *>)?.get("answers")) as? List<*>).orEmpty()
+                        .mapNotNull { it as? Map<*, *> }.associate { it["id"].toString() to it["answer"].toString() }
+                    runtime.answerFor(workspace, task.executionId, name(task), asker, given) { complete(task, result + ("output" to it)) }
+                }
             } else {
                 val reason = "[stuck] ${result["summary"]}"
                 transcript.ants("end", reason)
@@ -235,20 +299,23 @@ class AgentLauncher(
     }
 
     /**
-     * Completes [task] with its [result], retrying while another path's Task wins the race to a shared execution, such
-     * as a parallel join, to `runs` or to a multi-instance's Results: the engine rolls the loser back whole, so trying
-     * again is safe.
+     * Whether [task] of [run], an instance of an Items are Tickets multi-instance, launches nothing now: held while its
+     * Ticket is the user's or blocked ([ants.held]), or done without a launch once the user has marked it done.
      */
-    private fun complete(task: LockedExternalTask, result: Map<*, *>) {
-        for (attempt in 1..COMPLETE_TRIES) {
-            try {
-                return externalTasks.complete(task.id, WORKER, mapOf(task.activityId to result))
-            } catch (e: OptimisticLockingException) {
-                if (attempt == COMPLETE_TRIES) throw e
-                Thread.sleep((10L..100L).random()) // apart, so the losers don't clash again
-            }
+    private fun ticketed(task: LockedExternalTask, run: String, workspace: Path): Boolean {
+        val item = runtime.ticketItem(task.executionId, task.activityId) ?: return false
+        val ticket = ticket(workspace, run, item) ?: error("The item $item names no Ticket in tickets/issues")
+        if (ticket.done) {
+            complete(task, mapOf("outcome" to "done", "summary" to "Done by the user.", "output" to emptyMap<String, Any>()))
+            return true
         }
+        val check = { ticket(workspace, run, item)?.let { if (it.done) null else held(it, tickets(workspace, run)) } }
+        heldOnTickets[task.id] = Held(check() ?: return false, check)
+        return true
     }
+
+    /** Completes [task] with its [result] ([onClash]). */
+    private fun complete(task: LockedExternalTask, result: Map<*, *>) = onClash { externalTasks.complete(task.id, WORKER, mapOf(task.activityId to result)) }
 
     /** The key of [task] in its Run, for its Transcript and live session ([taskKey]). */
     private fun instance(task: LockedExternalTask) = runtime.taskKey(task.executionId, task.activityId)
@@ -273,22 +340,23 @@ class AgentLauncher(
     }.onFailure { log.warn("Agent Task ${task.activityId} couldn't be put on hold", it) }
 
     /**
-     * Runs [skill], which uses [used], in one CLI session in [workspace], every line it prints going to [transcript],
-     * and returns its Result: the last valid one, once every message written to the session has been read. A new
+     * Runs [skill], which uses [used], in one CLI session in [cwd] (the Run [workspace], or an instance's folder in it),
+     * every line it prints going to [transcript], and returns its Result: the last valid one, once every message written to the session has been read. A new
      * [session] starts with the hand-off prompt and the user's [instruction], if any; a [resume]d one with the
      * instruction alone, unless it is [handedOff] again, as when the flow comes back to the Task.
      */
     private fun session(
-        task: LockedExternalTask, instance: String, agent: Agent, skill: Skill, used: List<Skill>, run: String, workspace: Path, transcript: Transcript.Writer,
+        task: LockedExternalTask, instance: String, agent: Agent, skill: Skill, used: List<Skill>, run: String, workspace: Path, cwd: Path, transcript: Transcript.Writer,
         session: String, resume: Boolean, instruction: String?, handedOff: Boolean = !resume,
     ): Map<*, *> {
         val inputs = inputs(task)
         val prompt = if (!handedOff) instruction.orEmpty()
-        else handOff(task, skill, used, workspace) + "\n\n" + json.writeValueAsString(inputs) + (if (instruction.isNullOrBlank()) "" else "\n\nFrom the user:\n$instruction")
+        else handOff(task, skill, used, cwd) + "\n\n" + json.writeValueAsString(inputs) + (if (instruction.isNullOrBlank()) "" else "\n\nFrom the user:\n$instruction")
         // The Task's result-schema override replaces the Skill's result.schema.json; Checks refuse one that isn't valid.
         val override = task.extensionProperties[RESULT_SCHEMA]?.takeIf(String::isNotBlank)?.let { json.readValue(it, Map::class.java) }
         val schema = ResultContract.schema(override ?: skill.outputSchema)
-        val process = cli(agent.cli, workspace, flags(agent, schema, listOf(skill) + used, session, resume)).start()
+        val shared = if (cwd == workspace) emptyList() else listOf("--add-dir", "$workspace") // what an instance's links lead to
+        val process = cli(agent.cli, cwd, flags(agent, schema, listOf(skill) + used, session, resume) + shared).start()
         val stdin = Stdin(process.outputWriter(), name(task))
         clis[process] = workspace.fileName.toString() // the Run workspace is runs/<run>/
         val stderr = ArrayDeque<String>()
@@ -302,6 +370,8 @@ class AgentLauncher(
             var failure: Failed? = null
             var stopped = false
             var retried = false
+            var storyChecked = false // a walkthrough's Story set failed the checks once already
+            val walkthrough = walkthrough(task)
             var limit: Instant? = null
             var answered = false // a result line came after the user's Stop
             process.inputReader().forEachLine { line ->
@@ -316,13 +386,13 @@ class AgentLauncher(
                 if (event["error"] == "authentication_failed" || apiKey != null) {
                     failure = Failed(LOST_LOGIN, apiKey?.let { "${agent.cli} would use an API key (apiKeySource: $it), and Ants runs only on its own login." })
                     stdin.close()
-                    process.toHandle().destroy() // unlike Process.destroy, leaves the rest of stdout to read
+                    kill(process)
                     return@forEachLine
                 }
                 usageLimit(event)?.let {
                     limit = it // the session continues after the reset
                     stdin.close()
-                    process.toHandle().destroy()
+                    kill(process)
                     return@forEachLine
                 }
                 if (event["type"] != "result") return@forEachLine
@@ -336,7 +406,20 @@ class AgentLauncher(
                         listOf("${agent.cli} ended without a Result:", event["subtype"], event["result"], (event["errors"] as? List<*>)?.joinToString("; "))
                             .filter { it != null && it != "" }.joinToString(" "),
                     )
-                    errors.isEmpty() -> { valid = result as Map<*, *> }
+                    errors.isEmpty() -> try {
+                        // A walkthrough's Story set must pass Varde's checks, with one round to fix the failing steps.
+                        val problems = if (walkthrough && (result as Map<*, *>)["outcome"] == "done") storyProblems(workspace, cloneRepos.untrimmed) else emptyList()
+                        when {
+                            problems.isEmpty() -> { valid = result as Map<*, *> }
+                            !storyChecked -> {
+                                storyChecked = true
+                                stdin.say(fixRequest(problems))
+                            }
+                            else -> failure = Failed("The Story set in $STORIES fails its checks: ${problems.joinToString()}", fixRequest(problems))
+                        }
+                    } catch (refused: StorySetRefused) {
+                        failure = Failed(refused.message!!)
+                    }
                     !retried -> {
                         retried = true
                         stdin.say("Your Result is invalid:\n${errors.joinToString("\n") { "- $it" }}\nAnswer again with a valid Result.")
@@ -399,6 +482,10 @@ class AgentLauncher(
             else -> null
         }
     }
+
+    /** Whether a Review changes names [task] as its Walkthrough, so its Story set is checked when it is done. */
+    private fun walkthrough(task: LockedExternalTask) = repository.getBpmnModelInstance(task.processDefinitionId).getModelElementsByType(UserTask::class.java)
+        .any { it.property(WALKTHROUGH) == task.activityId }
 
     /** The Task's name in its Process, for the Run log. */
     private fun name(task: LockedExternalTask) =
@@ -552,13 +639,16 @@ class AgentLauncher(
     private class Stopped : Exception("Stopped by the user.")
 
     /** A failure of Ants' own, with what the `[failed]` page shows: the last stderr lines, or an invalid Result whole. */
-    private class Failed(override val message: String, val details: String? = null) : Exception(message)
+    class Failed(override val message: String, val details: String? = null) : Exception(message)
 
     /** The Usage limit cut the session short; it continues once the limit resets at [resetsAt]. */
     private class UsageLimit(val resetsAt: Instant) : Exception("Usage limit")
 
     companion object {
         const val TOPIC = "agent"
+
+        /** Where an Approve's Send back, or a Round's answers, are left for the Task [key] of the Run in [workspace]. */
+        fun sentBack(workspace: Path, key: String): Path = Transcript.file(workspace, key).resolveSibling("send-back")
 
         /** The user's choice on a held Task, [CONTINUE] or [FRESH], and their instruction, as local variables. */
         const val ACTION = "ants.action"
@@ -572,7 +662,9 @@ class AgentLauncher(
         private const val RESET = "The usage limit has reset. Carry on where you stopped."
         private val LOCK = Duration.ofDays(365)
         private const val STDERR_LINES = 20
-        private const val COMPLETE_TRIES = 10
+        /** How often a conflicting landing resumes the session before the Task is `[failed]`. */
+        private const val CONFLICT_ROUNDS = 2
+        private val GRACE = Duration.ofSeconds(5)
         const val LOST_LOGIN = "Ants' Claude login is missing or expired. Log in again (Settings)"
 
         /**
@@ -589,6 +681,21 @@ class AgentLauncher(
         // Limit until it is added here.
         private val BUILT_IN_SUBAGENTS = listOf("claude", "Explore", "general-purpose", "Plan", "statusline-setup")
         private val json = JsonMapper.shared()
+    }
+}
+
+/**
+ * Runs [complete], again while another path's Task wins the race to a shared execution, such as a parallel join, to
+ * `runs` or to a multi-instance's Results: the engine rolls the loser back whole, so trying again is safe.
+ */
+fun onClash(complete: () -> Unit) {
+    for (attempt in 1..10) {
+        try {
+            return complete()
+        } catch (e: OptimisticLockingException) {
+            if (attempt == 10) throw e
+            Thread.sleep((10L..100L).random()) // apart, so the losers don't clash again
+        }
     }
 }
 
