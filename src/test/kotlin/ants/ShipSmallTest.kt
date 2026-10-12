@@ -43,11 +43,14 @@ class ShipSmallTest : AntsTest() {
         claude.session("propose-solution", "write proposal/proposal.md # Hello\\n\\nOne endpoint.\\n", result("""{"proposal":"proposal/proposal.md"}"""))
         claude.session("implement", "sh git -C repos/api -c user.name=Ants -c user.email=ants@example.com -c commit.gpgsign=false commit -q --allow-empty -m 'Add hello'", result("""{"review":"No findings."}"""))
         claude.session("pr", result("""{"pullRequests":[{"repo":"api","url":"https://github.com/oyvij/api/pull/7"}]}"""))
-        claude.session("update-knowledge", result("""{"written":true}"""))
+        claude.session("update-knowledge", 1, "write vault/proposal.md One Note.\\n", result("""{"proposal":"vault/proposal.md","written":false}"""))
+        claude.session("update-knowledge", 2, result("""{"written":true}"""))
         val run = start("Add a hello endpoint to api")
         val push = entry(run)
         assertContains(row(run)!!, "↑ [push]")
         browser.post(push, mapOf("action" to "push", "instruction" to ""))
+        eventually(20) { assertContains(assertNotNull(row(run)), "✓ [approve]") } // the Notes
+        browser.post(entry(run), mapOf("action" to "approve", "comment" to ""))
         eventually(20) { assertContains(browser.get("/runs/$run").body, "State: Completed") }
         return run
     }
@@ -62,7 +65,9 @@ class ShipSmallTest : AntsTest() {
         assertContains(scout.stdin, """\"sourceMap\":[{\"name\":\"api\",\"remote\":\"${api.remote}\"}]""")
         assertContains(claude.launches("implement").single().stdin, """\"proposal\":\"proposal/proposal.md\"""")
         assertContains(claude.launches("pr").single().stdin, """\"pushed\":true""")
-        assertContains(claude.launches("update-knowledge").single().stdin, """\"spec\":\"proposal/proposal.md\"""")
+        val (proposed, written) = claude.launches("update-knowledge")
+        for (text in listOf("""\"spec\":\"proposal/proposal.md\"""", """\"review\":\"No findings.\"""", """\"approval\":null""")) assertContains(proposed.stdin, text)
+        assertContains(written.stdin, """\"approval\":{\"approved\":true""")
         val report = browser.get("/runs/$run/report").body
         assertContains(report, "<h2>Push</h2>")
         assertContains(report, "<h2>Pull requests</h2>")

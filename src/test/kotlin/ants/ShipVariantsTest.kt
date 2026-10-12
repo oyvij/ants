@@ -30,12 +30,18 @@ class ShipVariantsTest : AntsTest() {
     /** Every tag the Run's Notification entries have shown while a test waited. */
     private val waited = mutableListOf<String>()
 
-    /** The Run's entry on the Notification list, once it is the one tagged [tag]. */
+    /**
+     * The Run's entry on the Notification list, once it is the one tagged [tag]. An entry tagged otherwise, other than
+     * the one just answered, is a wait the test didn't expect, and fails at once, naming it.
+     */
     private fun entry(run: String, tag: String, seconds: Long = 20): String {
         var path = ""
         eventually(seconds) {
             val row = assertNotNull(row(run))
-            Regex("""\[[a-z-]+]""").find(row)?.value?.let { if (waited.lastOrNull() != it) waited += it }
+            Regex("""\[[a-z-]+]""").find(row)?.value?.let {
+                check(it in tag || it == waited.lastOrNull()) { "The Run waits at $it, after ${waited.ifEmpty { "nothing" }}, where $tag was expected: $row" }
+                if (waited.lastOrNull() != it) waited += it
+            }
             assertContains(row, tag)
             path = Regex("""href="(/notifications/[^"]+)"""").find(row)!!.groupValues[1]
         }
