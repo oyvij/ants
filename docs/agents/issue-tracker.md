@@ -1,6 +1,6 @@
 # Issue tracker: GitHub
 
-Issues live on `oyvij/ants`, a **private** repo on the personal account `oyvij`. Never create it,
+Issues live on `oyvij/ants`, a **public** repo on the personal account `oyvij`. Never create it,
 transfer it or mirror it under an organisation. Use `gh`; it infers the repo from `git remote -v`.
 
 - **Create**: `gh issue create --title "..." --body "..."` (heredoc for multi-line bodies)
