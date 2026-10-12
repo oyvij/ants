@@ -1,7 +1,7 @@
 name: soak
 
-# Five test runs at once, each under CPU load and in its own random class order, to find timing flakes before a
-# wave's implementers trip on them. Run it with `gh workflow run soak.yml`.
+# Five test runs at once, each under CPU load and in its own random class order, to find timing flakes before
+# parallel agents trip on them. Run it with `gh workflow run soak.yml`.
 on:
   workflow_dispatch:
 

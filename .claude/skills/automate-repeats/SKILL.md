@@ -38,7 +38,7 @@ did the job by hand.
 
 3. **Weigh each one against the rule first:** say whether it is a reading tool or a digest, and skip it if it
    breaks the rule. For every remaining candidate, write down: the calls and output characters it cost, how many sessions it appeared in,
-   and whether upcoming work hits it again (open tickets, the next wave in `docs/agents/implementation-waves.md`).
+   and whether upcoming work hits it again (open tickets).
    Drop any candidate that won't recur. A build-config fix or a one-line doc pointer beats a script whenever it
    removes the repeat.
 
