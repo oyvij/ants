@@ -92,7 +92,7 @@ class CodexTest : AntsTest() {
         assertContains(transcript, "<strong>short</strong> draft.")
         assertContains(transcript, "<b>Shell</b> <code>bash -lc ls</code>")
         assertContains(transcript, "<b>Result: done</b> Drafted.")
-        assertContains(transcript, "1,234 tokens")
+        assertContains(transcript, "1.2k tokens")
     }
 
     @Test
@@ -271,9 +271,9 @@ class CodexTest : AntsTest() {
         val (first, resumed) = codex.launches("draft")
         assertEquals(first.thread, resumed.flag("resume"))
         val transcript = browser.get(transcript(run)).body
-        assertTrue(Regex("""Launch 1 · [^<]* · 1,000 tokens""").containsMatchIn(transcript), transcript)
+        assertTrue(Regex("""Launch 1 · [^<]* · 1k tokens""").containsMatchIn(transcript), transcript)
         assertTrue(Regex("""Launch 2 · [^<]* · 500 tokens""").containsMatchIn(transcript), transcript)
-        assertContains(transcript, """<span id="tokens">1,500 tokens</span>""")
+        assertContains(transcript, """<span id="tokens">1.5k tokens</span>""")
     }
 
     @AfterEach

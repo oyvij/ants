@@ -30,6 +30,15 @@ class TranscriptTest : AntsTest() {
     private fun page(path: String) = browser.get(path).body.replace("&#34;", "\"").replace("&quot;", "\"")
 
     @Test
+    fun `token counts read short, as they are under a thousand, then in k, then in M`() {
+        assertEquals("999 tokens", tokens(999))
+        assertEquals("1k tokens", tokens(1_000))
+        assertEquals("1.5k tokens", tokens(1_537))
+        assertEquals("134k tokens", tokens(133_998))
+        assertEquals("1.3M tokens", tokens(1_333_998))
+    }
+
+    @Test
     fun `the Transcript page shows the prompt collapsed, streamed markdown, one line per tool call, thinking collapsed and the Result`() {
         claude.session(
             "draft", init,
@@ -172,7 +181,7 @@ class TranscriptTest : AntsTest() {
         assertContains(searcher, """⏺ <b>Read</b> <code>tone.md</code>""")
         assertFalse("Facts" in searcher)
         assertContains(running, Regex("""(?s)<details class="subagent" id="e\d+" open><summary id="e\d+s">⑂ <b>general-purpose</b> Check facts.*?Facts <strong>hold</strong>.*?</details>"""))
-        assertContains(running, Regex("""<div id="status">.*· 1,110 tokens</div>""")) // the Subagents' messages count while they run
+        assertContains(running, Regex("""<div id="status">.*· 1.1k tokens</div>""")) // the Subagents' messages count while they run
 
         val tab = Received(browser.events("$path/events?from=${Regex("""data-from="(\d+)"""").find(running)!!.groupValues[1]}"))
         claude.release("one")
@@ -214,12 +223,12 @@ class TranscriptTest : AntsTest() {
             Regex("""(?s)<details class="subagent" id="(e\d+)" open><summary id="\1s">⑂ <b>searcher</b>.*?</summary><div><details class="subagent" id="(e\d+)" data-in="\1" open>""" +
                 """<summary id="\2s">⑂ <b>Explore</b> Dig.*?</summary><div><div class="text" id="e\d+" data-in="\2"><p>Deep <strong>find</strong>.</p>"""),
         )
-        assertContains(running, Regex("""<div id="status">.*· 1,110 tokens</div>"""))
+        assertContains(running, Regex("""<div id="status">.*· 1.1k tokens</div>"""))
 
         claude.release("one")
         eventually { assertContains(page(path), "<b>Result: done</b>") }
-        assertContains(page(path), """<span id="tokens">1,537 tokens</span>""") // modelUsage, which counts the Subagents
-        assertContains(page("/runs/$run"), "Transcripts · 1,537 tokens")
+        assertContains(page(path), """<span id="tokens">1.5k tokens</span>""") // modelUsage, which counts the Subagents
+        assertContains(page("/runs/$run"), "Transcripts · 1.5k tokens")
     }
 }
 

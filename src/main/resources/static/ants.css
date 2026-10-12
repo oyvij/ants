@@ -59,6 +59,10 @@ body > nav:first-child > small { font-size: 11px; text-transform: uppercase; let
 body > nav:first-child > a { display: flex; align-items: center; gap: 10px; color: var(--sideText); padding: 7px 10px; border-radius: 8px; font-weight: 500; }
 body > nav:first-child > a:hover { background: var(--side2); color: #e5e7eb; text-decoration: none; }
 body > nav:first-child > a[aria-current] { background: #232733; color: #fff; }
+/* The installed app has no browser bar, so the sidebar carries back, forward and reload; a browser tab has its own. */
+#history { display: none; gap: 4px; padding: 0 10px 12px; }
+@media (display-mode: standalone) { #history { display: flex; } }
+#history button { min-height: 0; padding: 3px 10px; font-size: 14px; background: #262a35; border-color: #333846; color: #e5e7eb; }
 #waiting:not(:empty) { margin-left: auto; background: var(--wait); color: #fff; font-size: 11px; font-weight: 700; border-radius: 10px; padding: 0 7px; line-height: 18px; }
 #paused { margin-top: auto; }
 #paused form, #update:not(:empty) {

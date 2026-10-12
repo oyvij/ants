@@ -446,7 +446,16 @@ class Transcript {
 }
 
 /** A token count as the pages show it. */
-fun tokens(count: Long) = String.format(Locale.ROOT, "%,d tokens", count)
+/** A token count, short: as it is under a thousand, then in k (one decimal under ten thousand), then in M. */
+fun tokens(count: Long): String {
+    fun short(n: Double) = String.format(Locale.ROOT, "%.1f", n).removeSuffix(".0")
+    return when {
+        count < 1_000 -> "$count tokens"
+        count < 10_000 -> "${short(count / 1_000.0)}k tokens"
+        count < 1_000_000 -> "${(count + 500) / 1_000}k tokens"
+        else -> "${short(count / 1_000_000.0)}M tokens"
+    }
+}
 
 /** The Transcript page, which replays the file and then follows it over SSE, with Send and Stop while the Task runs. */
 @Controller
