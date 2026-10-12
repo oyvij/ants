@@ -431,7 +431,8 @@ class AgentLauncher(
         task: LockedExternalTask, instance: String, agent: Agent, run: String, workspace: Path, cwd: Path, vault: Path?, transcript: Transcript.Writer,
         session: String?, started: (String) -> Unit, prompt: String, schema: Map<*, *>, judge: Judge,
     ): Map<*, *> {
-        val schemaFile = Transcript.file(workspace, instance).resolveSibling("result.schema.json").apply { writeText(json.writeValueAsString(schema)) }
+        Agent.sandboxError(agent.cli, agent.sandbox)?.let { throw Failed(it) } // never passed on to --sandbox
+        val schemaFile =Transcript.file(workspace, instance).resolveSibling("result.schema.json").apply { writeText(json.writeValueAsString(schema)) }
         val turns = Turns(name(task))
         stdins[key(run, instance)] = turns
         var thread = session

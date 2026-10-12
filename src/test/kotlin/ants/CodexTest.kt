@@ -96,6 +96,31 @@ class CodexTest : AntsTest() {
     }
 
     @Test
+    fun `a codex Agent with an unknown sandbox can't start a Run, and fails its Task if it changes after the start`() {
+        codexTask("sandbox: yolo\n")
+        start("refused")
+        assertContains(browser.get("/processes/refused").body, "The Agent writer: codex takes the sandbox read-only, workspace-write or danger-full-access, not yolo.")
+
+        codexTask()
+        codex.session("draft", started, turn, "wait never")
+        val run = start()
+        eventually { assertEquals(1, codex.launches("draft").size) }
+        codexTask("sandbox: yolo\n")
+        eventually { assertContains(browser.get(transcript(run)).body, "■ Stop") }
+        browser.post("${transcript(run)}/stop", emptyMap())
+        var entry = ""
+        eventually {
+            val row = assertNotNull(Regex("""<tr>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
+                .find(browser.get("/notifications").body)).groupValues[1]
+            assertContains(row, "■ [stopped]")
+            entry = Regex("""href="(/notifications/[^"]+)"""").find(row)!!.groupValues[1]
+        }
+        browser.post(entry, mapOf("action" to "continue", "instruction" to "Go on."))
+        eventually { assertContains(browser.get(entry).body, "codex takes the sandbox read-only, workspace-write or danger-full-access, not yolo.") }
+        assertEquals(1, codex.launches("draft").size)
+    }
+
+    @Test
     fun `a codex Task with the Vault on may write it, and one without has no Vault`() {
         codexTask(metadata = "metadata:\n  varde-vault: true\n")
         codex.session("draft", started, turn, answer(), completed)

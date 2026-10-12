@@ -52,6 +52,7 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, @Valu
             return list(model, "$filename has broken YAML: ${e.message}")
         }
         if (agent.cli !in AgentForm.CLIS) return list(model, "$filename runs cli ${agent.cli}, and Ants runs only ${AgentForm.CLIS.joinToString(" or ")}.")
+        Agent.sandboxError(agent.cli, agent.sandbox)?.let { return list(model, "$filename: $it") }
         val form = AgentForm.of(agent)
         val notice = form.kept.keys.takeIf { it.isNotEmpty() }?.let { "Dropped the keys Ants doesn't use: ${it.joinToString(", ")}." }
         return show(model, form.copy(kept = emptyMap<String, Any?>()), null, notice = notice)
@@ -137,7 +138,8 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, @Valu
 
 /**
  * The Agents page's form, one field per key of the agent file. [tools] holds each ticked tool with its Limit…, the
- * rule specifiers comma-separated (empty for no limit); [kept] holds the frontmatter keys the form doesn't own.
+ * rule specifiers comma-separated (empty for no limit), and a codex Agent has its [sandbox] in their place; [kept]
+ * holds the frontmatter keys the form doesn't own.
  */
 data class AgentForm(
     val name: String,
@@ -146,6 +148,7 @@ data class AgentForm(
     val skills: String,
     val tools: Map<String, String>,
     val otherTools: String,
+    val sandbox: String,
     val model: String,
     val subagent: Boolean,
     val instructions: String,
@@ -154,7 +157,7 @@ data class AgentForm(
     fun error() = nameError("An Agent", name) ?: when {
         cli !in CLIS -> "Ants runs only ${CLIS.joinToString(" or ")}, not $cli."
         subagent && cli != "claude" -> "Only a claude Agent can be offered as a Subagent."
-        else -> null
+        else -> Agent.sandboxError(cli, sandbox)
     }
 
     /** The model is none of the dropdown's, so it shows under Other model ID…. */
@@ -166,8 +169,11 @@ data class AgentForm(
         if (description.isNotEmpty()) meta["description"] = description
         meta["cli"] = cli
         if (skills.isNotBlank()) meta["skills"] = words(skills).joinToString(", ")
-        val limited = TOOLS.filter { it in tools }.flatMap { tool -> rules(tools.getValue(tool)).map { "$tool($it)" }.ifEmpty { listOf(tool) } }
-        meta["tools"] = (limited + rules(otherTools)).joinToString(", ")
+        if (cli == "codex") meta["sandbox"] = sandbox
+        else {
+            val limited = TOOLS.filter { it in tools }.flatMap { tool -> rules(tools.getValue(tool)).map { "$tool($it)" }.ifEmpty { listOf(tool) } }
+            meta["tools"] = (limited + rules(otherTools)).joinToString(", ")
+        }
         if (model.isNotEmpty()) meta["model"] = model
         if (subagent) meta["ants-subagent"] = true
         meta.putAll(kept)
@@ -180,7 +186,7 @@ data class AgentForm(
         /** The tools offered as tick boxes; any other tool goes under Other tools. */
         val TOOLS = (AgentLauncher.DEFAULT_TOOLS + "Agent").sorted()
 
-        private val KEYS = setOf("name", "description", "cli", "skills", "tools", "model", "ants-subagent")
+        private val KEYS = setOf("name", "description", "cli", "skills", "tools", "sandbox", "model", "ants-subagent")
 
         fun of(agent: Agent, name: String = agent.name): AgentForm {
             val rules = agent.tools ?: AgentLauncher.DEFAULT_TOOLS
@@ -193,6 +199,7 @@ data class AgentForm(
                 tools = rules.filter { tool(it) in TOOLS }.groupBy(::tool) { it.substringAfter('(', "").removeSuffix(")") }
                     .mapValues { (_, limits) -> limits.filter(String::isNotEmpty).joinToString(", ") },
                 otherTools = rules.filter { tool(it) !in TOOLS }.joinToString(", "),
+                sandbox = agent.sandbox,
                 model = agent.model.orEmpty(),
                 subagent = agent.subagent,
                 instructions = agent.instructions,
@@ -209,6 +216,7 @@ data class AgentForm(
                 skills = param("skills"),
                 tools = TOOLS.filter { "tool.$it" in params }.associateWith { param("limit.$it") },
                 otherTools = param("other-tools"),
+                sandbox = param("sandbox").ifEmpty { "workspace-write" },
                 model = param("model").let { if (it == "other") param("model-other") else it },
                 subagent = "subagent" in params,
                 instructions = params["instructions"].orEmpty(),

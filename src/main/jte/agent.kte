@@ -16,6 +16,9 @@
     <meta charset="utf-8">
     <meta name="color-scheme" content="${colorScheme}">
     <title>${if (file == null) "New Agent" else form.name} · Agents · Ants</title>
+    <style>
+        form:has(option[value=codex]:checked) .tools, form:has(option[value=claude]:checked) .sandbox { display: none; }
+    </style>
 </head>
 <body>
 @if(!use)
@@ -44,11 +47,16 @@
         <p><label>Description <input name="description" value="${form.description}" size="80"></label></p>
         <p><label>CLI <select name="cli">
 @for(cli in AgentForm.CLIS)
-            <option selected="${cli == form.cli}">${cli}</option>
+            <option value="${cli}" selected="${cli == form.cli}">${cli}</option>
 @endfor
         </select></label></p>
         <p><label>Skills it runs <input name="skills" value="${form.skills}" size="60"></label> Skill names, comma-separated.</p>
-        <fieldset>
+        <p class="sandbox"><label>Sandbox <select name="sandbox">
+@for(sandbox in ants.Agent.SANDBOXES)
+            <option value="${sandbox}" selected="${sandbox == form.sandbox}">${sandbox}</option>
+@endfor
+        </select></label> What codex may do, in place of tools.</p>
+        <fieldset class="tools">
             <legend>Tools</legend>
 @for(tool in AgentForm.TOOLS)
             <div>
