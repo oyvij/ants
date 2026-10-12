@@ -76,6 +76,12 @@ class AgentTaskTest : AntsTest() {
     private fun property(name: String, value: String) = """<operaton:property name="$name" value="${value.replace("\"", "&quot;")}" />"""
 
     @Test
+    fun `a test's Skill named like a shipped one fails at once, since the shipped Skill would hide it`() {
+        val failure = kotlin.test.assertFailsWith<IllegalArgumentException> { agentTask(claude, mapOf("grill" to null)) }
+        assertEquals("grill is hidden by the shipped Skill of that name; give the test's Skill another name.", failure.message)
+    }
+
+    @Test
     fun `a result-schema override replaces the Skill's schema in --json-schema`() {
         agentTask(textSchema)
         claude.session("draft", done("""{"verdict":"ship"}"""))

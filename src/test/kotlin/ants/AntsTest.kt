@@ -53,6 +53,9 @@ abstract class AntsTest {
     @Autowired
     private lateinit var schedules: Schedules
 
+    @Autowired
+    private lateinit var catalogue: Catalogue
+
     /**
      * Every test starts on a clean Ants, whatever ran before it in this JVM: no Processes, Runs or Schedules, no live
      * CLI holding a launch slot, no Agents, Skills or Templates of the user's, the clock where it belongs and every CLI's
@@ -90,6 +93,7 @@ abstract class AntsTest {
      * What a Run of an Agent Task needs, in one place: the Agent `writer` listing the [skills] (with [agent] lines in its
      * frontmatter), each Skill with its result schema, none when null (and [metadata] lines in its frontmatter), and
      * [settings] with [claude] and [extra]. gh is the fake on the tests' PATH, logged in; a [FakeClaude] logs claude in.
+     * A Skill named like a shipped one fails at once: the shipped Skill wins its name, so the test's would never launch.
      */
     fun agentTask(
         claude: FakeClaude?,
@@ -99,6 +103,8 @@ abstract class AntsTest {
         extra: String = "",
         env: List<String>? = null,
     ) {
+        val shipped = catalogue.skills().filter(catalogue::shipped).map { it.name }
+        for (name in skills.keys) require(name !in shipped) { "$name is hidden by the shipped Skill of that name; give the test's Skill another name." }
         settings(claude, extra, env)
         home.resolve("agents/writer.md").writeText("---\n${agent}skills: ${skills.keys.joinToString(", ")}\n---\nWrite plainly.\n")
         for ((name, schema) in skills) {
