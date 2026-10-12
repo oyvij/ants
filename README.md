@@ -6,19 +6,18 @@ it must. The spec is `docs/spec.md`; the vocabulary is `GLOSSARY.md`.
 
 ## Getting started
 
-There is no installer yet (`install.sh` and the `ants` launcher arrive with the packaging tickets, #74–#78), so run
-Ants from source.
-
-You need:
-
-- Java 25. Gradle and Node are fetched by the build.
-- `claude` (and `codex`, if you use it), `git` and `gh` on your login shell's `PATH`.
-
-Start it:
+Ants runs on macOS on Apple silicon. Install it, with its own Java runtime, and start it:
 
 ```sh
-./gradlew bootRun
+curl -fsSL https://github.com/oyvij/ants/releases/latest/download/install.sh | bash
 ```
+
+The installer checks the download against the release's checksums, puts it in `~/.ants/versions/<version>` and links
+`~/.local/bin/ants` (add `~/.local/bin` to your `PATH`). Ants runs as a launchd agent, so it keeps going after you
+close the terminal and comes back after you log in. `ants start` starts it again after an `ants stop`; the launcher
+also has `restart`, `status`, `logs`, `run` (in the foreground), `rollback` and `password`.
+
+You also need `claude` (and `codex`, if you use it), `git` and `gh` on your login shell's `PATH`.
 
 Open <http://127.0.0.1:7323> and log in as `admin` / `admin`. Then, on **Settings**:
 
@@ -32,6 +31,12 @@ Then start a Run from one of the shipped Processes, such as **Ship small** or **
 **Notification list** for anything waiting on you.
 
 Everything Ants owns lives in `~/.ants`. Set `ANTS_HOME` to move it. `settings.yaml` there takes hand edits.
+
+## Developing
+
+Run Ants from source with Java 25 (Gradle and Node are fetched by the build): `./gradlew bootRun`.
+`./gradlew tarball` builds the release, `build/dist/ants-<version>-macos-arm64.tar.gz` and its `SHA256SUMS`. CI
+releases it when `build.gradle.kts`' version becomes a new major or minor (`x.y.0`).
 
 ## Tests
 

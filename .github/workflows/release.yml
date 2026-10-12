@@ -1,0 +1,57 @@
+name: release
+
+# Releases Ants when main's build.gradle.kts version is a major or minor bump (x.y.0) with no release yet: the tests,
+# then a GitHub release holding the macOS arm64 tarball, its SHA256SUMS and install.sh, then the image (image.yml,
+# called here, since a release made with GITHUB_TOKEN starts no other workflow). A patch version releases nothing.
+on:
+  push:
+    branches: [main]
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      bump: ${{ steps.version.outputs.bump }}
+    steps:
+      - uses: actions/checkout@v5
+      - id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(grep -o '^version = "[^"]*"' build.gradle.kts | cut -d '"' -f 2)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [[ $version == *.*.0 ]] && ! gh release view "v$version" > /dev/null 2>&1; then
+            echo "bump=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  test:
+    needs: version
+    if: needs.version.outputs.bump == 'true'
+    uses: ./.github/workflows/test.yml
+
+  release:
+    needs: [version, test]
+    # Apple silicon: the tarball's Java runtime is the build machine's.
+    runs-on: macos-15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 25
+      - uses: gradle/actions/setup-gradle@v5
+      - run: ./gradlew tarball
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: gh release create "v$VERSION" build/dist/* install.sh --target "$GITHUB_SHA" --title "Ants $VERSION" --generate-notes
+
+  image:
+    needs: release
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/image.yml
