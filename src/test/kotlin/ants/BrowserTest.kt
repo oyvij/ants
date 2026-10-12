@@ -196,6 +196,26 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `the Notification list asks for notification permission on a click, since macOS badges an app only with it`() = browse {
+        page.addInitScript(
+            """
+            navigator.setAppBadge = async () => {};
+            Object.defineProperty(Notification, 'permission', { get: () => window.asked ? 'granted' : 'default' });
+            Notification.requestPermission = async () => { window.asked = true; return 'granted' };
+            """,
+        )
+        page.navigate(url("/notifications"))
+        val ask = page.getByText("Show the count on the app icon")
+
+        ask.click()
+
+        eventually { assertEquals(true, page.evaluate("window.asked")) }
+        assertThat(ask).isHidden()
+        page.reload()
+        assertThat(ask).isHidden()
+    }
+
+    @Test
     fun `Answer a Round shows one question at a time under tabs marking accepted and edited, then Review and send`() = browse {
         val claude = FakeClaude()
         agentTask(claude, mapOf("quiz" to """{"type":"object","properties":{"questions":{"type":"array"}}}"""))

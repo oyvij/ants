@@ -220,7 +220,7 @@ Review changes, pushes and Vault writes always wait for the user. The Spec is ap
 - The Docker image carries claude, codex, git and gh, runs as a non-root user, and keeps everything, the CLIs' logins included, on its one volume `/data`. Postgres is set with `SPRING_DATASOURCE_URL`, `_USERNAME` and `_PASSWORD`; without them the engine is H2 on the volume.
 - `ANTS_HOME` (default `~/.ants`) holds everything Ants owns: `settings.yaml`, the lock file, logs, `shipped/`, the user's `agents/`, `skills/` and `templates/`, `claude/` and `codex/` config folders, `answer-history/`, and `runs/<run>/` (Report, Transcripts, kept `tickets/`, and the Run workspace while it lives). Nothing hard-codes `~/.varde`.
 - Single-user login on every address. The password defaults to admin/admin, changed in settings or with `ants password`. A non-loopback bind is refused while the password is the default. Docker requires `ANTS_PASSWORD` or `ANTS_PASSWORD_FILE`, which override `settings.yaml`'s password (while one is set, the settings page says so in place of its password field, and `ants password` refuses), and its UI shows an available update without an **Update** button.
-- The PWA has a manifest and an icon. The manifest and icon are served without login; every other page needs it. The badge carries the Notification list count where the browser supports it.
+- The PWA has a manifest and an icon. The manifest and icon are served without login; every other page needs it. The badge carries the Notification list count where the browser supports it; on macOS the browser badges only with notification permission, which the Notification list page asks for on a click.
 
 ### Process model and deploy (the Checks)
 
