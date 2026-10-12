@@ -9,6 +9,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
+    @template.app()
     <meta name="color-scheme" content="${colorScheme}">
     <title>${question} · Ants</title>
 </head>

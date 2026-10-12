@@ -6,6 +6,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
+    @template.app()
     <meta name="color-scheme" content="${colorScheme}">
     <title>Processes · Ants</title>
     <style>[role=alert] { white-space: pre-line; }</style>
