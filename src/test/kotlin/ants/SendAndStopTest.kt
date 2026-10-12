@@ -45,7 +45,7 @@ class SendAndStopTest : AntsTest() {
         val sent = browser.post("${transcript(run)}/send", mapOf("message" to "Keep it short."))
         assertEquals(transcript(run), sent.path)
         eventually { assertContains(browser.get(transcript(run)).body, """<p class="user" id="e2">› Keep it short.</p>""") }
-        assertContains(home.resolve("runs/$run/run-log.md").readText(), "Draft · Send\n\nKeep it short.\n")
+        assertContains(workspace(run).resolve("run-log.md").readText(), "Draft · Send\n\nKeep it short.\n")
         claude.release("release")
         eventually { assertContains(browser.get("/runs/$run").body, "State: Completed") }
         assertContains(claude.launches("draft").single().stdin, """{"type":"user","message":{"role":"user","content":"Keep it short."}}""")

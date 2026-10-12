@@ -113,9 +113,9 @@ class CallActivityTest : AntsTest() {
         assertContains(claude.launches("draft").single().stdin, """{\"prompt\":\"Say hello\"}""")
         assertContains(claude.launches("proofread").single().stdin, """{\"text\":\"called\"}""")
         // One Run workspace, the top Run's, with a Transcript of each, kept apart.
-        assertEquals(listOf(home.resolve("runs/$run").toRealPath().toString()), claude.launchLog().distinct())
-        assertTrue(home.resolve("runs/$run/tasks/build.draft/transcript.jsonl").exists())
-        assertTrue(home.resolve("runs/$run/tasks/draft/transcript.jsonl").exists())
+        assertEquals(listOf(workspace(run).toRealPath().toString()), claude.launchLog().distinct())
+        assertTrue(workspace(run).resolve("tasks/build.draft/transcript.jsonl").exists())
+        assertTrue(workspace(run).resolve("tasks/draft/transcript.jsonl").exists())
         assertFalse(browser.get("/runs").body.contains("Spec</a>"), "the called Process is no Run of its own")
     }
 
@@ -151,8 +151,8 @@ class CallActivityTest : AntsTest() {
         eventually { assertContains(page(run), "State: Completed") }
         val first = claude.launches("draft").indexOfFirst { """{\"prompt\":\"a\"}""" in it.stdin } + 1
         assertEquals(listOf(first, 3 - first).joinToString(",", "[", "]") { """{"draft":${done("$it")}}""" }, variable(run, "build"))
-        assertTrue(home.resolve("runs/$run/tasks/build-1.draft/transcript.jsonl").exists())
-        assertTrue(home.resolve("runs/$run/tasks/build-2.draft/transcript.jsonl").exists())
+        assertTrue(workspace(run).resolve("tasks/build-1.draft/transcript.jsonl").exists())
+        assertTrue(workspace(run).resolve("tasks/build-2.draft/transcript.jsonl").exists())
     }
 
     @Test

@@ -1,4 +1,5 @@
 @param run: String
+@param name: String
 @param html: String
 @param colorScheme: String = "light dark"
 <!doctype html>
@@ -7,11 +8,11 @@
     <meta charset="utf-8">
     @template.app()
     <meta name="color-scheme" content="${colorScheme}">
-    <title>Report · Ants</title>
+    <title>Report · ${name} · Ants</title>
 </head>
 <body>
 @template.nav()
-<p><a href="/runs/${run}">Run</a></p>
+<p><a href="/runs/${run}">${name}</a></p>
 $unsafe{html}
 </body>
 </html>

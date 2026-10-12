@@ -154,7 +154,7 @@ class MultiInstanceTest : AntsTest() {
         eventually { assertContains(page(run), "State: Completed") }
         assertEquals(4, claude.launches("draft").size)
         // Outer instance first, then the Task's own: draft-2-1 is the first draft of the second sub-process.
-        assertEquals(setOf("plan", "draft-1-1", "draft-1-2", "draft-2-1", "draft-2-2"), home.resolve("runs/$run/tasks").listDirectoryEntries().map { it.name }.toSet())
+        assertEquals(setOf("plan", "draft-1-1", "draft-1-2", "draft-2-1", "draft-2-2"), workspace(run).resolve("tasks").listDirectoryEntries().map { it.name }.toSet())
         val drafts = List(2) { drafted("same") }.joinToString(",", "[", "]")
         assertEquals("""[{"draft":$drafts},{"draft":$drafts}]""", variable(run, "fanout"))
     }

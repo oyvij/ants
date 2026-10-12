@@ -17,7 +17,7 @@
 <table>
     <tr><th>Spec</th><th>Status</th><th>Tickets</th><th>Run</th></tr>
 @for(row in specs)
-    <tr><td><a href="${row.spec.href}">${row.spec.title}</a></td><td>${row.spec.status ?: "open"}</td><td>${row.done}/${row.tickets.size} done</td><td><a href="/runs/${row.run}">${row.process}</a></td></tr>
+    <tr><td><a href="${row.spec.href}">${row.spec.title}</a></td><td>${row.spec.status ?: "open"}</td><td>${row.done}/${row.tickets.size} done</td><td><a href="/runs/${row.run}">${row.name}</a> · ${row.process}</td></tr>
 @endfor
 </table>
 @endif

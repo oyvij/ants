@@ -56,6 +56,12 @@ abstract class AntsTest {
     @Autowired
     private lateinit var catalogue: Catalogue
 
+    @Autowired
+    private lateinit var names: RunNames
+
+    /** The Run workspace of [run], wherever its name put it. */
+    fun workspace(run: String): Path = names.runWorkspace(run)
+
     /**
      * Every test starts on a clean Ants, whatever ran before it in this JVM: no Processes, Runs or Schedules, no live
      * CLI holding a launch slot, no Agents, Skills or Templates of the user's, the clock where it belongs and every CLI's

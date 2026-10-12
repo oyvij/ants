@@ -49,7 +49,7 @@ internal fun AgentLauncher.codex(
             // codex doesn't print what it was told, so Ants writes it the way claude replays it.
             transcript.line(json.writeValueAsString(mapOf("type" to "user", "message" to mapOf("role" to "user", "content" to message))))
             val process = cli(agent.cli, cwd, codexFlags(agent, schemaFile, listOfNotNull(workspace.takeIf { cwd != workspace }, vault)) + resume + "-").start()
-            clis[process] = workspace.fileName.toString()
+            clis[process] = run
             val stderr = drain(process)
             val fixes = mutableListOf<String>()
             var limit: Instant? = null

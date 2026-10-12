@@ -40,8 +40,8 @@ class ReportTest : AntsTest() {
         eventually { assertContains(browser.get("/runs/$run").body, """<a href="/runs/$run/report">Report</a>""") }
 
         val report = browser.get("/runs/$run/report").body
-        assertContains(report, "<h1>Agent Task</h1>")
-        assertContains(report, "Completed")
+        assertContains(report, Regex("<h1>Agent Task, [^<]+</h1>"))
+        assertContains(report, "<p>Agent Task · Completed</p>")
         assertContains(report, "<h2>Start form</h2>")
         assertContains(report, "<p><strong>Prompt</strong></p>\n<p>Say <em>hello</em></p>")
         assertContains(report, "<h2>Tasks · 10 tokens</h2>")
@@ -52,7 +52,7 @@ class ReportTest : AntsTest() {
     fun `cleanup leaves only the Tickets, the Report and the Transcripts`() {
         claude.session("draft", init, "wait go", done)
         val run = start()
-        val workspace = home.resolve("runs/$run")
+        val workspace = workspace(run)
         eventually { assertEquals(1, claude.launches("draft").size) }
         workspace.resolve("tickets/issues").createDirectories().resolve("01-hello.md").writeText("Status: done\n")
         workspace.resolve("repos/app").createDirectories().resolve("README.md").writeText("app\n")

@@ -96,9 +96,9 @@ class LandingTest : AntsTest() {
           $loop
         </bpmn:serviceTask>"""
 
-    private fun workspace(run: String): Path = home.runWorkspace(run).toRealPath()
+    private fun real(run: String): Path = workspace(run).toRealPath()
 
-    private fun clone(run: String, repo: String) = workspace(run).resolve("repos/$repo")
+    private fun clone(run: String, repo: String) = real(run).resolve("repos/$repo")
 
     /** Waits until every instance of `implement` has landed and the Run waits after it. */
     private fun landed(run: String) = eventually { assertNotNull(runtime.getVariable(run, "implement"), browser.get("/runs/$run").body) }
@@ -115,7 +115,7 @@ class LandingTest : AntsTest() {
             assertEquals(1, git(clone(run, repo), "worktree", "list").lines().size)
             assertEquals("", git(clone(run, repo), "branch", "--list", "*--*"))
         }
-        assertTrue(workspace(run).resolve("instances").let { !it.exists() || it.listDirectoryEntries().isEmpty() })
+        assertTrue(real(run).resolve("instances").let { !it.exists() || it.listDirectoryEntries().isEmpty() })
     }
 
     /** The Notification list entry of [run], once there is one. */
@@ -139,17 +139,17 @@ class LandingTest : AntsTest() {
 
         eventually { assertEquals(2, claude.launches("build").size) }
         // Each works in its own folder, a worktree of each clone beside links to the rest of the Run workspace.
-        val instances = workspace(run).resolve("instances")
+        val instances = real(run).resolve("instances")
         eventually { // a launch just started may not have written its cwd and stdin yet
             assertEquals(setOf("implement-1", "implement-2").map { "${instances.resolve(it)}" }.toSet(), claude.launches("build").map { it.cwd }.toSet())
             for (launch in claude.launches("build")) {
-                assertEquals("${home.runWorkspace(run)}", launch.argv.zipWithNext().filter { it.first == "--add-dir" }.map { it.second }.first { "skills" !in it })
-                assertContains(launch.stdin, "for the workspace at ${home.runWorkspace(run)}/instances/${launch.cwd.substringAfterLast('/')}.")
+                assertEquals("${workspace(run)}", launch.argv.zipWithNext().filter { it.first == "--add-dir" }.map { it.second }.first { "skills" !in it })
+                assertContains(launch.stdin, "for the workspace at ${workspace(run)}/instances/${launch.cwd.substringAfterLast('/')}.")
             }
         }
         val one = instances.resolve("implement-1")
         assertEquals("ants/$run--implement-1", git(one.resolve("repos/api"), "branch", "--show-current"))
-        assertEquals(workspace(run).resolve("tasks"), one.resolve("tasks").toRealPath())
+        assertEquals(real(run).resolve("tasks"), one.resolve("tasks").toRealPath())
         assertFalse(one.resolve("instances").exists())
 
         claude.release("go")
@@ -161,8 +161,8 @@ class LandingTest : AntsTest() {
         cleanedUp(run, "api")
         // The Run page says where the work lives, in full: the Run workspace and each repo in it.
         val page = browser.get("/runs/$run").body
-        assertContains(page, "<code>${home.runWorkspace(run)}</code>")
-        assertContains(page, "<code>${home.runWorkspace(run)}/repos/api</code>")
+        assertContains(page, "<code>${workspace(run)}</code>")
+        assertContains(page, "<code>${workspace(run)}/repos/api</code>")
     }
 
     @Test
@@ -249,7 +249,7 @@ class LandingTest : AntsTest() {
         assertContains(entry, "after 2 rounds")
         assertEquals(4, claude.launches("build").size)
         assertEquals("first", clone(run, "api").resolve("shared.txt").readText())
-        assertEquals(1, workspace(run).resolve("instances").listDirectoryEntries().size)
+        assertEquals(1, real(run).resolve("instances").listDirectoryEntries().size)
     }
 
     @Test
@@ -264,7 +264,7 @@ class LandingTest : AntsTest() {
         assertContains(entry, "uncommitted changes")
         assertEquals(1, claude.launches("build").size) // no round to resolve it
         assertEquals(emptySet(), files(run, "api"))
-        assertTrue(workspace(run).resolve("instances/implement-1/repos/api/one.txt").exists())
+        assertTrue(real(run).resolve("instances/implement-1/repos/api/one.txt").exists())
     }
 
     @Test
@@ -277,8 +277,8 @@ class LandingTest : AntsTest() {
         val entry = browser.get(entry(run)).body
         assertContains(entry, "[failed]")
         assertContains(entry, "repos/tiny isn't a clone of this Run")
-        assertTrue(workspace(run).resolve("instances/implement-1/repos/tiny/index.html").exists())
-        assertContains(browser.get("/runs/$run").body, "<code>${home.runWorkspace(run)}/instances/implement-1/repos/tiny</code>")
+        assertTrue(real(run).resolve("instances/implement-1/repos/tiny/index.html").exists())
+        assertContains(browser.get("/runs/$run").body, "<code>${workspace(run)}/instances/implement-1/repos/tiny</code>")
     }
 
     @Test
@@ -309,7 +309,7 @@ class LandingTest : AntsTest() {
         assertContains(entry, why)
         assertEquals(1, claude.launches("build").size)
         assertEquals(emptySet(), files(run, "api")) // api could fast-forward, but web can't: neither moves
-        assertTrue(workspace(run).resolve("instances/implement-1/repos/web/two.txt").exists())
+        assertTrue(real(run).resolve("instances/implement-1/repos/web/two.txt").exists())
     }
 
     @Test

@@ -16,7 +16,7 @@
 <body>
 @template.nav()
 <p><a href="/notifications">Notification list</a></p>
-<p>${entry.icon} ${entry.tag} ${entry.task} · Round ${round} · ${entry.process} · <a href="/runs/${entry.run}">Run ${entry.run}</a> · waiting ${entry.waited}</p>
+<p>${entry.icon} ${entry.tag} ${entry.task} · Round ${round} · ${entry.process} · <a href="/runs/${entry.run}">${entry.runName}</a> · waiting ${entry.waited}</p>
 <h1>${entry.summary.ifEmpty { entry.task }}</h1>
 <nav id="tabs" role="tablist" hidden></nav>
 @if(error != null)<p role="alert">${error}</p>@endif

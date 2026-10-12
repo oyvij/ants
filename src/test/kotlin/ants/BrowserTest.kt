@@ -144,7 +144,7 @@ class BrowserTest : AntsTest() {
         deploy(definitions("called", "Called", called, calledPlane))
         val (caller, callerPlane) = row("caller", """<bpmn:startEvent id="start" />""", """<bpmn:callActivity id="build" name="Build" calledElement="called" />""", """<bpmn:endEvent id="end" />""")
         deploy(definitions("caller", "Caller", caller, callerPlane))
-        val run = http.post("/processes/caller/runs", mapOf()).path
+        val run = http.post("/processes/caller/runs", mapOf(NAME to "Tiny caller")).path
         assertTrue(run.startsWith("/runs/"), run)
 
         page.navigate(url(run))
@@ -154,7 +154,7 @@ class BrowserTest : AntsTest() {
             assertTrue(page.isVisible("#trail"), "no breadcrumb after clicking the call activity")
         }
         assertThat(shape("review")).isVisible()
-        assertThat(page.locator("#trail")).hasText("Caller › Build")
+        assertThat(page.locator("#trail")).hasText("Tiny caller › Build") // the Run by its name
         page.click("#trail a")
         assertThat(shape("build")).isVisible()
         assertThat(shape("review")).hasCount(0)
@@ -167,7 +167,7 @@ class BrowserTest : AntsTest() {
         val (process, plane) = row("tracked", """<bpmn:startEvent id="start" />""", """<bpmn:userTask id="wait" name="Wait" />""", """<bpmn:endEvent id="end" />""")
         deploy(definitions("tracked", "Tracked", process, plane))
         val run = http.post("/processes/tracked/runs", mapOf()).path.removePrefix("/runs/")
-        val file = home.resolve("runs/$run/tickets/issues").createDirectories().resolve("01-hello.md")
+        val file = workspace(run).resolve("tickets/issues").createDirectories().resolve("01-hello.md")
         file.writeText("# Say hello\n\nStatus: ready-for-agent\n\n- [ ] Says hello\n")
 
         page.navigate(url("/runs/$run/tickets/01-hello"))
@@ -310,7 +310,7 @@ class BrowserTest : AntsTest() {
         val run = http.post("/processes/review/runs", listOf("repos" to "api", "repos" to "web")).path.removePrefix("/runs/")
         var entry = ""
         eventually { entry = assertNotNull(Regex("""href="(/notifications/[^"]+)"""").find(http.get("/notifications").body)).groupValues[1] }
-        commitFile(home.runWorkspace(run).resolve("repos/api"), "hello.txt", "hi\nthere\nworld\n", "Say hi")
+        commitFile(workspace(run).resolve("repos/api"), "hello.txt", "hi\nthere\nworld\n", "Say hi")
 
         page.navigate(url(entry))
         val diff = page.locator("table.diff[data-file='repos/api/hello.txt']")

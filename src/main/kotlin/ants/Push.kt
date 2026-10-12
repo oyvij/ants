@@ -5,7 +5,6 @@ import org.operaton.bpm.engine.RuntimeService
 import org.operaton.bpm.engine.delegate.DelegateExecution
 import org.operaton.bpm.engine.externaltask.LockedExternalTask
 import org.operaton.bpm.model.bpmn.instance.ServiceTask
-import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
 import java.nio.file.Path
 import java.time.Duration
@@ -30,7 +29,7 @@ class Push(
     private val externalTasks: ExternalTaskService,
     private val runtime: RuntimeService,
     private val cloneRepos: CloneRepos,
-    @Value("\${ants.home}") private val home: Path,
+    private val names: RunNames,
 ) : BuiltInWorker(externalTasks, "Push", TOPIC, Duration.ofMinutes(30), { it.variables(AgentLauncher.ACTION) }) {
     /** Waits on the user at first; then pushes, or after a push by hand (Continue) completes with what the remotes hold. */
     override fun handle(task: LockedExternalTask) {
@@ -81,7 +80,7 @@ class Push(
     )
 
     /** The Run's clones, by name, each on the work branch Clone repos put it on. */
-    fun outgoing(run: String): List<Outgoing> = clones(home.runWorkspace(run)).map { path ->
+    fun outgoing(run: String): List<Outgoing> = clones(names.runWorkspace(run)).map { path ->
         val branch = cloneRepos.workBranch(path)
         val base = runCatching { cloneRepos.git(path, "symbolic-ref", "--short", "refs/remotes/origin/HEAD").removePrefix("origin/") }.getOrNull()
         val commits = cloneRepos.git(path, "log", "--format=%H %s", if (base == null) "refs/heads/$branch" else "origin/$base..refs/heads/$branch").lines().filter(String::isNotBlank)

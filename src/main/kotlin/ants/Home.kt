@@ -18,8 +18,8 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
 import java.net.URI
 import java.time.Clock
 
-/** An Agent Task running now, in a Run of a Process. */
-class Working(val process: String, val run: String, val task: String)
+/** An Agent Task running now, in the Run [run], named [runName], of a Process. */
+class Working(val process: String, val run: String, val runName: String, val task: String)
 
 /** Redirects back to the page a nav button was pressed on, as its Referer names it, else Home. */
 fun back(from: String?) = "redirect:" + (from?.let { runCatching { URI(it).path }.getOrNull() }?.ifEmpty { null } ?: "/")
@@ -36,6 +36,7 @@ class Home(
     private val clock: Clock,
     private val streams: Streams,
     private val schedules: Schedules,
+    private val names: RunNames,
 ) {
     @GetMapping("/")
     fun home(model: Model): String {
@@ -81,6 +82,6 @@ class Home(
         val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult()?.rootProcessInstanceId ?: return@mapNotNull null
         val top = history.createHistoricProcessInstanceQuery().processInstanceId(run).singleResult() ?: return@mapNotNull null
         val element = repository.getBpmnModelInstance(task.processDefinitionId).getModelElementById<FlowElement>(task.activityId)
-        Working(top.processDefinitionName ?: top.processDefinitionKey, run, element?.name ?: task.activityId)
+        Working(top.processDefinitionName ?: top.processDefinitionKey, run, names.name(run), element?.name ?: task.activityId)
     }
 }

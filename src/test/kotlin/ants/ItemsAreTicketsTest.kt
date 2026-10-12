@@ -92,7 +92,7 @@ class ItemsAreTicketsTest : AntsTest() {
 
     /** The Ticket [name]'s `Status:`. */
     private fun status(run: String, name: String) =
-        Regex("""Status: (\S+)""").find(home.runWorkspace(run).resolve("tickets/issues/$name.md").readText())!!.groupValues[1]
+        Regex("""Status: (\S+)""").find(workspace(run).resolve("tickets/issues/$name.md").readText())!!.groupValues[1]
 
     /** Waits until every instance of `implement` has ended and the Run waits after it. */
     private fun implemented(run: String) = eventually { assertNotNull(runtime.getVariable(run, "implement"), browser.get("/runs/$run").body) }

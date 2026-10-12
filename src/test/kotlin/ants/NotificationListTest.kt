@@ -58,7 +58,7 @@ class NotificationListTest : AntsTest() {
 
     private fun page(run: String) = browser.get("/runs/$run").body
 
-    private fun runLog(run: String) = home.resolve("runs/$run/run-log.md").readText()
+    private fun runLog(run: String) = workspace(run).resolve("run-log.md").readText()
 
     @Test
     fun `a stuck Agent Task appears on the Notification list as ⚠ stuck with its summary`() {
@@ -219,7 +219,7 @@ class NotificationListTest : AntsTest() {
         setUp()
         val run = startWithout("draft")
         val entry = entry(run)
-        assertFalse(home.resolve("runs/$run/tasks/draft/transcript.jsonl").exists())
+        assertFalse(workspace(run).resolve("tasks/draft/transcript.jsonl").exists())
 
         setUp()
         claude.session("draft", done)
@@ -265,19 +265,19 @@ class NotificationListTest : AntsTest() {
         assertContains(cancelled.body, "State: Cancelled")
         assertEquals(null, row(run))
         eventually { assertTrue(claude.launches("draft").single().killed) }
-        val transcript = home.resolve("runs/$run/tasks/draft/transcript.jsonl")
+        val transcript = workspace(run).resolve("tasks/draft/transcript.jsonl")
         eventually { assertContains(transcript.readText(), "Cancelled with the Run.") }
         assertFalse("[failed]" in transcript.readText())
-        assertTrue(home.resolve("runs/$run").isDirectory())
+        assertTrue(workspace(run).isDirectory())
         assertContains(runLog(run), "Check · Cancel the Run")
         assertContains(browser.get("/runs/$run/report").body, "<p>Cancelled</p>") // the Report is written as the Run ends
-        home.resolve("runs/$run/tickets").createDirectories().resolve("spec.md").writeText("# Hello\n")
+        workspace(run).resolve("tickets").createDirectories().resolve("spec.md").writeText("# Hello\n")
 
         val dismissed = browser.post("/runs/$run/dismiss", emptyMap())
         assertEquals("/runs/$run", dismissed.path)
-        assertFalse(home.resolve("runs/$run/run-log.md").exists())
-        assertTrue(home.resolve("runs/$run/tasks/draft/transcript.jsonl").exists()) // Transcripts outlive the Run
-        assertTrue(home.resolve("runs/$run/tickets/spec.md").exists())
+        assertFalse(workspace(run).resolve("run-log.md").exists())
+        assertTrue(workspace(run).resolve("tasks/draft/transcript.jsonl").exists()) // Transcripts outlive the Run
+        assertTrue(workspace(run).resolve("tickets/spec.md").exists())
         assertContains(browser.get(dismissed.path).body, """<a href="/runs/$run/report">Report</a>""")
         assertFalse("Dismiss" in dismissed.body)
     }

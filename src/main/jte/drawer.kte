@@ -1,5 +1,6 @@
 @import ants.tokens
 @param run: String
+@param runName: String
 @param task: String
 @param name: String
 @param shown: ants.Shown?
@@ -11,6 +12,7 @@
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 <section id="drawer-head">
     <h2>${name}</h2>
+    <p>${runName}</p>
     <p>@if(entry != null)${entry.icon} ${entry.tag} ${entry.summary}@elseif(shown != null)${shown.badge ?: shown.state}@else not reached@endif · ${tokens(transcript.tokens)}</p>
 </section>
 <section id="drawer-so-far">

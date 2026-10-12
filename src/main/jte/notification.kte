@@ -15,7 +15,7 @@
 @template.nav()
 <p><a href="/notifications">Notification list</a></p>
 <h1>${entry.icon} ${entry.tag} ${entry.task}</h1>
-<p>${entry.process} · <a href="/runs/${entry.run}">Run ${entry.run}</a> · waiting ${entry.waited}</p>
+<p>${entry.process} · <a href="/runs/${entry.run}">${entry.runName}</a> · waiting ${entry.waited}</p>
 <p>${entry.summary}</p>
 @if(details != null)
 <h2>@if(entry.tag == "[stuck]")What the Agent needs@else Details@endif</h2>

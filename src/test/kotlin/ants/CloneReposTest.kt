@@ -19,16 +19,16 @@ class CloneReposTest : AntsTest() {
     /** `settings.yaml` with a Source map of [repos]. */
     private fun sourceMap(vararg repos: Remote) = settings(null, sourceMapLines(*repos))
 
-    /** Starts a Run of `clone-repos.bpmn` with [repos] and [branch], and waits until both its Clone repos Tasks are done. */
-    private fun start(repos: List<String>, branch: String = ""): String {
+    /** Starts a Run of `clone-repos.bpmn` named [name] with [repos] and [branch], and waits until both its Clone repos Tasks are done. */
+    private fun start(repos: List<String>, branch: String = "", name: String = ""): String {
         browser.import("clone-repos.bpmn")
         browser.get("/processes/clone-repos")
-        val run = browser.post("/processes/clone-repos/runs", repos.map { "repos" to it } + ("branch" to branch)).path.removePrefix("/runs/")
+        val run = browser.post("/processes/clone-repos/runs", repos.map { "repos" to it } + ("branch" to branch) + (NAME to name)).path.removePrefix("/runs/")
         eventually { assertNotNull(runtime.getVariable(run, "again"), browser.get("/runs/$run").body) }
         return run
     }
 
-    private fun clone(run: String, name: String): Path = home.runWorkspace(run).resolve("repos/$name")
+    private fun clone(run: String, name: String): Path = workspace(run).resolve("repos/$name")
 
     @Test
     fun `Clone repos clones every named repo on the work branch, and gives its Result and clones`() {
@@ -48,12 +48,12 @@ class CloneReposTest : AntsTest() {
     fun `running it again with the same repos does nothing, and nor does an empty list`() {
         val api = repo("api")
         sourceMap(api)
-        val run = start(listOf("api"))
+        val run = start(listOf("api"), name = "Tiny todo app")
         val clones = runtime.getVariable(run, "clones")
         assertEquals(emptyList<Any>(), runtime.getVariable(run, "again"))
         assertEquals(clones, runtime.getVariable(run, "clones"))
         assertEquals(1, (clones as List<*>).size)
-        assertEquals("ants/$run", git(clone(run, "api"), "branch", "--show-current")) // no branch given
+        assertEquals("ants/tiny-todo-app", git(clone(run, "api"), "branch", "--show-current")) // no branch given
 
         val none = start(emptyList())
         assertEquals(emptyList<Any>(), runtime.getVariable(none, "clone"))
@@ -68,6 +68,8 @@ class CloneReposTest : AntsTest() {
         val second = start(listOf("api"), "shared")
         val third = start(listOf("api"), "shared")
         assertEquals(listOf("shared", "shared-2", "shared-3"), listOf(first, second, third).map { git(clone(it, "api"), "branch", "--show-current") })
+        val named = List(2) { start(listOf("api"), name = "Same name") }
+        assertEquals(listOf("ants/same-name", "ants/same-name-2"), named.map { git(clone(it, "api"), "branch", "--show-current") })
     }
 
     @Test

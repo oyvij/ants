@@ -1,6 +1,7 @@
 @import ants.stateName
 @import ants.tokens
 @param run: org.operaton.bpm.engine.history.HistoricProcessInstance
+@param name: String
 @param variables: Map<String, String>
 @param agentTasks: Map<String, String>
 @param kept: String?
@@ -16,13 +17,20 @@
     <meta charset="utf-8">
     @template.app()
     <meta name="color-scheme" content="${colorScheme}">
-    <title>${run.processDefinitionName ?: run.processDefinitionKey} · Ants</title>
+    <title>${name} · Ants</title>
     <link rel="stylesheet" href="/vendor/camunda-bpmn-js/assets/base-navigated-viewer.css">
 </head>
 <body>
 @template.nav()
 <p><a href="/runs">Runs</a></p>
-<h1><a href="/processes/${run.processDefinitionKey}">${run.processDefinitionName ?: run.processDefinitionKey}</a></h1>
+<h1>${name}</h1>
+<p><a href="/processes/${run.processDefinitionKey}">${run.processDefinitionName ?: run.processDefinitionKey}</a> · <small>${run.id}</small></p>
+@if(run.endTime == null || variables.containsKey(ants.NAME))
+<form method="post" action="/runs/${run.id}/name">
+    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+    <p><label>Name <input name="name" value="${name}" required></label> <button>Rename</button></p>
+</form>
+@endif
 <p id="state">State: ${run.stateName}</p>
 @if(run.endTime == null)
 <form method="post" action="/runs/${run.id}/cancel">
