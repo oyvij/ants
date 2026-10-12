@@ -1,11 +1,14 @@
 # Implementation waves
 
-The v1 spec (#27) is cut into 51 tickets, #28–#78, linked with native blocking edges. Build them in
+The v1 spec (`docs/spec.md`, issue #27) is cut into 51 tickets, #28–#78, linked with native blocking edges. Build them in
 waves, not in one `/implement-spec` run over the whole spec. Each wave has its own integration branch
 and its own code review, and the user merges it to `main` before the next wave starts. Every ticket's
 blockers sit in an earlier wave or in the same wave.
 
 Run each command in a fresh session (`/clear` first). Paste it as written.
+
+Before each wave, run `gh workflow run soak.yml` and fix any test it finds flaky, so the implementers start
+from a suite that fails only on real bugs.
 
 ## Wave 1: Foundation (#28–#31), by hand
 

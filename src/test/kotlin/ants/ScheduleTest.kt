@@ -101,7 +101,7 @@ class ScheduleTest : AntsTest() {
         tasks.complete(tasks.createTaskQuery().processDefinitionKey(key).singleResult().id)
         clock.offset = Duration.ofHours(4)
         eventually { assertEquals(2, runs()) }
-        assertFalse("Skipped " in browser.get("/processes/$key").body)
+        eventually { assertFalse("Skipped " in browser.get("/processes/$key").body) } // cleared just after the Run starts
     }
 
     @Test

@@ -4,6 +4,15 @@ on:
   pull_request:
   push:
     branches: [main, "wave-*"]
+  # soak.yml runs this job several times at once, under CPU load, to shake out timing flakes.
+  workflow_call:
+    inputs:
+      load:
+        type: boolean
+        default: false
+      run:
+        type: string
+        default: ""
 
 jobs:
   test:
@@ -28,9 +37,12 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
       - run: ./gradlew playwright --args="install --with-deps chromium"
+      # One busy loop per CPU for the rest of the job, as when parallel implementers each run the suite.
+      - if: inputs.load
+        run: for i in $(seq "$(nproc)"); do nohup yes > /dev/null 2>&1 & done
       - run: ./gradlew test
       - if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: reports
+          name: reports${{ inputs.run && format('-{0}', inputs.run) || '' }}
           path: build/reports/
