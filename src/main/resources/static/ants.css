@@ -207,6 +207,9 @@ form .cm-editor .cm-selectionBackground { background: color-mix(in srgb, var(--a
 @media (prefers-color-scheme: dark) {
     :root:has(meta[name=color-scheme][content="light dark"]) :is(.djs-container > svg, .djs-palette, .djs-context-pad, .djs-popup, .djs-minimap) { filter: invert(.9) hue-rotate(180deg); }
 }
+/* A filtered svg paints with the positioned elements, in page order, so it would lie over the overlays that come
+   before it: the drill-down buttons, the context pad, the Run's badges. */
+.djs-overlay-container { z-index: 1; }
 .djs-palette { border-radius: 8px; }
 /* bpmn-js's own buttons keep its light look, inverted with it in dark. */
 .djs-minimap button { color: #0f172a; background: #fff; }
