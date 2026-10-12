@@ -1,0 +1,3 @@
+# The image needs only the jar; the rest would be sent to Docker for nothing.
+*
+!build/libs/ants.jar
