@@ -45,6 +45,13 @@ class Landing(private val cloneRepos: CloneRepos) {
      */
     @Synchronized
     fun land(workspace: Path, key: String): String? {
+        // A repo the Agent made itself, say with no clone to work in, has nowhere to land: removing the folder would
+        // lose it.
+        val names = clones(workspace).map { it.name }.toSet()
+        val strangers = folder(workspace, key).resolve("repos").takeIf { it.exists() }?.listDirectoryEntries()
+            ?.map { "repos/${it.name}" }?.filter { it.substringAfter('/') !in names }.orEmpty()
+        if (strangers.isNotEmpty()) throw AgentLauncher.Failed("$key didn't land: ${strangers.joinToString(" and ")} " +
+            "${if (strangers.size == 1) "isn't a clone" else "aren't clones"} of this Run, so nothing moved and its folder is kept.")
         val worktrees = clones(workspace).associateWith { folder(workspace, key).resolve("repos/${it.name}") }.filterValues { it.exists() }
         val conflicts = worktrees.mapNotNull { (clone, worktree) ->
             val work = cloneRepos.workBranch(clone)

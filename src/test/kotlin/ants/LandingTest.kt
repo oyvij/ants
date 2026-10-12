@@ -264,6 +264,19 @@ class LandingTest : AntsTest() {
     }
 
     @Test
+    fun `an instance that made a repo of its own, not a clone of the Run, doesn't land and keeps it`() {
+        setUp(items = 1)
+        claude.session("build", 1, init, "sh mkdir -p repos/tiny && cd repos/tiny && git init -q && printf x > index.html && git add index.html && " +
+            "git -c user.name=Agent -c user.email=agent@example.com -c commit.gpgsign=false commit -qm index", done)
+        val run = start()
+
+        val entry = browser.get(entry(run)).body
+        assertContains(entry, "[failed]")
+        assertContains(entry, "repos/tiny isn't a clone of this Run")
+        assertTrue(workspace(run).resolve("instances/implement-1/repos/tiny/index.html").exists())
+    }
+
+    @Test
     fun `Cancel the Run cancels it while an instance waits on the user`() {
         val api = repo("api")
         setUp(api, items = 1)
