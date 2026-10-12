@@ -231,8 +231,24 @@ class LauncherTest {
 
     @Test
     fun `password refuses two passwords that differ, or an empty one`() {
-        assertEquals(Ran(1, "The passwords differ; the password is unchanged\n"), ants("password", input = "one\ntwo\n"))
-        assertEquals(Ran(1, "The password is empty; the password is unchanged\n"), ants("password", input = "\n\n"))
+        val noShell = mapOf("SHELL" to "/no/such/shell") // as on a Linux CI runner without zsh
+        assertEquals(Ran(1, "The passwords differ; the password is unchanged\n"), ants("password", input = "one\ntwo\n", env = noShell))
+        assertEquals(Ran(1, "The password is empty; the password is unchanged\n"), ants("password", input = "\n\n", env = noShell))
+    }
+
+    @Test
+    fun `password on a new ANTS_HOME runs no login shell, and the first start still detects the CLIs`() {
+        assertEquals(Ran(0, "Password changed\n"), ants("password", input = "s3cret\ns3cret\n", env = mapOf("SHELL" to "/no/such/shell")))
+        assertContains(antsHome.resolve("settings.yaml").readText(), "password: '{bcrypt}")
+
+        val run = launch("run", "--server.port=0", "--ants.shell=/bin/sh")
+        try {
+            listening(run, antsHome.resolve("ants.lock"))
+            assertContains(antsHome.resolve("settings.yaml").readText(), "git:\n  path: /usr/bin/git")
+        } finally {
+            run.destroy()
+        }
+        run.waitFor()
     }
 
     companion object {

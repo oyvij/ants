@@ -21,7 +21,7 @@ import kotlin.io.path.readText
 /** One repo in a Source map: its short name, its local checkout and its git remote. */
 data class Repo(val name: String, val path: String, val remote: String)
 
-/** `settings.yaml` in ANTS_HOME, created on first start and read fresh each time, so hand edits count. */
+/** `settings.yaml` in ANTS_HOME, created on first start ([start]) and read fresh each time, so hand edits count. */
 @Component
 class Settings(
     @Value("\${ants.home}") home: Path,
@@ -46,16 +46,17 @@ class Settings(
     /** The file itself, as the settings page names it. */
     val file: Path = home.resolve("settings.yaml")
 
-    init {
-        if (!file.exists()) {
-            val found = detect().mapValues { mapOf("path" to it.value) }
-            file.writeAtomically(HEADER + if (found.isEmpty()) "" else yaml.dump(found))
-        }
-    }
-
-    /** Refuses to start Ants in Docker without a password from the environment, or off loopback with the default one. */
+    /**
+     * At start, Ants creates the file, with the CLIs Detect finds while none is in it yet (`ants password` may have
+     * written only a password), and refuses to start in Docker without a password from the environment, or off
+     * loopback with the default one. `ants password` runs none of this, so it never runs the login shell.
+     */
     @PostConstruct
-    fun refuseUnsafeStart() {
+    fun start() {
+        if (CLIS.none { it in read() }) {
+            val found = detect()
+            save { values -> found.forEach { (cli, path) -> values[cli] = mapOf("path" to path) } }
+        }
         check(!docker || passwordFromEnv) { "Ants in Docker needs a password: set ANTS_PASSWORD or ANTS_PASSWORD_FILE." }
         val loopback = address.isNotEmpty() && InetAddress.getByName(address).isLoopbackAddress
         check(loopback || !encoder.matches("admin", password())) {
@@ -135,12 +136,13 @@ class Settings(
     fun colorScheme(): String = read()["theme"]?.toString()?.takeIf { it in listOf("light", "dark") } ?: "light dark"
 
     /** Every key in the file, as YAML reads it. */
-    fun read(): Map<String, Any?> = Yaml().load(file.readText()) ?: emptyMap()
+    fun read(): Map<String, Any?> = if (file.exists()) Yaml().load(file.readText()) ?: emptyMap() else emptyMap()
 
     /** Rewrites the file with [change] applied to its keys. Keys it doesn't touch are kept; comments are not. */
     @Synchronized
     fun save(change: (MutableMap<String, Any?>) -> Unit) {
-        file.writeAtomically(HEADER + yaml.dump(LinkedHashMap(read()).also(change)))
+        val values = LinkedHashMap(read()).also(change)
+        file.writeAtomically(HEADER + if (values.isEmpty()) "" else yaml.dump(values))
     }
 
     /** Finds each CLI through the user's login shell, which sees the PATH their profile sets. A missing one is left out. */

@@ -197,11 +197,12 @@ class BrowserTest : AntsTest() {
 
     @Test
     fun `the Notification list asks for notification permission on a click, since macOS badges an app only with it`() = browse {
+        // The browser's answer outlives the page, as a real one's does, so the reload below finds it.
         page.addInitScript(
             """
             navigator.setAppBadge = async () => {};
-            Object.defineProperty(Notification, 'permission', { get: () => window.asked ? 'granted' : 'default' });
-            Notification.requestPermission = async () => { window.asked = true; return 'granted' };
+            Object.defineProperty(Notification, 'permission', { get: () => localStorage.getItem('permission') ?? 'default' });
+            Notification.requestPermission = async () => { localStorage.setItem('permission', 'granted'); return 'granted' };
             """,
         )
         page.navigate(url("/notifications"))
@@ -209,7 +210,7 @@ class BrowserTest : AntsTest() {
 
         ask.click()
 
-        eventually { assertEquals(true, page.evaluate("window.asked")) }
+        eventually { assertEquals("granted", page.evaluate("Notification.permission")) }
         assertThat(ask).isHidden()
         page.reload()
         assertThat(ask).isHidden()
