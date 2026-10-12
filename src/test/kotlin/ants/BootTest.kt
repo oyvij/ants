@@ -3,6 +3,7 @@ package ants
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.springframework.boot.web.server.context.WebServerApplicationContext
+import java.nio.file.Files
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.measureTime
 import kotlin.io.path.createDirectories
@@ -65,6 +66,34 @@ class BindTest {
             AntsTest.bootAnother(AntsTest.tempHome(), "--server.address=0.0.0.0")
         }
         assertContains(generateSequence<Throwable>(error) { it.cause }.joinToString { it.message.orEmpty() }, "default password")
+    }
+}
+
+class PasswordFromEnvTest {
+    private fun loginsOn(vararg args: String, password: String): List<String> =
+        AntsTest.startAnother(AntsTest.tempHome(), *args).use { ants ->
+            val url = "http://127.0.0.1:${(ants as WebServerApplicationContext).webServer!!.port}"
+            listOf(Browser(url).login().path, Browser(url).login(password).path)
+        }
+
+    @Test
+    fun `ANTS_PASSWORD is the login password, not admin`() {
+        assertEquals(listOf("/login", "/"), loginsOn("--ants.password=s3cret", password = "s3cret"))
+    }
+
+    @Test
+    fun `ANTS_PASSWORD_FILE holds the login password, without its last newline`() {
+        val file = Files.createTempFile("password", "").apply { writeText("from-file\n") }
+        assertEquals(listOf("/login", "/"), loginsOn("--ants.password-file=$file", password = "from-file"))
+    }
+
+    @Test
+    fun `in Docker, Ants refuses to start without ANTS_PASSWORD or ANTS_PASSWORD_FILE, even with one in settings yaml`() {
+        val home = AntsTest.tempHome().createDirectories()
+        home.resolve("settings.yaml").writeText("password: s3cret\n")
+        val error = assertThrows<Exception> { AntsTest.bootAnother(home, "--ants.docker=true") }
+        assertContains(generateSequence<Throwable>(error) { it.cause }.joinToString { it.message.orEmpty() }, "ANTS_PASSWORD or ANTS_PASSWORD_FILE")
+        AntsTest.bootAnother(AntsTest.tempHome(), "--ants.docker=true", "--ants.password=s3cret")
     }
 }
 

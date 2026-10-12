@@ -57,7 +57,7 @@ fun changePassword(): Int {
     if (refused != null) return 1.also { System.err.println("$refused; the password is unchanged") }
     val home = Path.of(System.getenv("ANTS_HOME") ?: "${System.getProperty("user.home")}/.ants").createDirectories()
     val encoder = PasswordEncoderFactories.createDelegatingPasswordEncoder()
-    Settings(home, "127.0.0.1", System.getenv("SHELL") ?: "/bin/zsh", encoder).save { it["password"] = encoder.encode(password) }
+    Settings(home, "127.0.0.1", System.getenv("SHELL") ?: "/bin/zsh", encoder, "", "", false).save { it["password"] = encoder.encode(password) }
     println("Password changed")
     return 0
 }

@@ -42,6 +42,7 @@ dependencies {
     implementation("org.commonmark:commonmark-ext-task-list-items:0.30.1") // a Ticket's ticking checkboxes
     implementation("org.commonmark:commonmark-ext-gfm-tables:0.30.1")
     runtimeOnly("com.h2database:h2")
+    runtimeOnly("org.postgresql:postgresql") // engine state on a server, such as in the Docker image
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation(kotlin("test"))
@@ -52,6 +53,11 @@ dependencies {
 
 jte {
     generate()
+}
+
+// The Dockerfile copies it by this name.
+tasks.bootJar {
+    archiveFileName = "ants.jar"
 }
 
 // Node runs only in the build: pnpm fetches the front-end libraries, whose dist/ goes into the static resources.
@@ -139,6 +145,7 @@ val tarball = tasks.register<Exec>("tarball") {
 
 tasks.test {
     dependsOn(nodeTest)
+    dependsOn(tasks.bootJar) // DockerTest builds the image from it
     useJUnitPlatform { excludeTags("live") }
     // LauncherTest runs the boot jar as the tarball's lib/ants.jar; InstallTest installs the tarball itself.
     val bootJar = tasks.bootJar.flatMap { it.archiveFile }
