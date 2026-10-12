@@ -564,8 +564,11 @@ class AgentLauncher(
             .also { if (it) unread++ }
 
         @Synchronized
-        override fun interrupt() = write(mapOf("type" to "control_request", "request_id" to UUID.randomUUID().toString(), "request" to mapOf("subtype" to "interrupt")))
-            .also { if (it) stopping = true }
+        override fun interrupt(): Boolean {
+            stopping = true // before the write, so the reader never sees the interrupt's result first
+            return write(mapOf("type" to "control_request", "request_id" to UUID.randomUUID().toString(), "request" to mapOf("subtype" to "interrupt")))
+                .also { if (!it) stopping = false }
+        }
 
         @Synchronized
         fun read() {
