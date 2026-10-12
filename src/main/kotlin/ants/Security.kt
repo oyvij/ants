@@ -18,7 +18,8 @@ import org.springframework.security.web.SecurityFilterChain
 class Security {
     @Bean
     fun filterChain(http: HttpSecurity): SecurityFilterChain = http
-        .authorizeHttpRequests { it.anyRequest().authenticated() }
+        // A browser fetches the app's manifest and icons without the login cookie.
+        .authorizeHttpRequests { it.requestMatchers("/manifest.webmanifest", "/icon-*.png").permitAll().anyRequest().authenticated() }
         .formLogin(withDefaults())
         // Cockpit sends its own CSRF token, checked by Operaton.
         .csrf { it.ignoringRequestMatchers("/operaton/**") }

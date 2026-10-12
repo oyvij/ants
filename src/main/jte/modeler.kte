@@ -10,6 +10,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
+    @template.app()
     <meta name="color-scheme" content="${colorScheme}">
     <title>${name} · Modeler · Ants</title>
     <link rel="stylesheet" href="/vendor/camunda-bpmn-js/assets/camunda-platform-modeler.css">

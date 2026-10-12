@@ -180,6 +180,22 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `the app badge carries the Notification list count`() = browse {
+        settings(null)
+        page.addInitScript("navigator.setAppBadge = async count => window.badge = count")
+        val (process, plane) = row("badged", """<bpmn:startEvent id="start" />""", """<bpmn:userTask id="wait" name="Wait" />""", """<bpmn:endEvent id="end" />""")
+        deploy(definitions("badged", "Badged", process, plane))
+        page.navigate(url("/"))
+        fun badge() = (page.evaluate("window.badge") as Number?)?.toInt()
+        eventually { assertNotNull(badge()) } // the first count has come
+        val before = badge()!!
+
+        http.post("/processes/badged/runs", mapOf())
+        assertThat(page.locator("#waiting")).hasText("(${before + 1})")
+        eventually { assertEquals(before + 1, badge()) }
+    }
+
+    @Test
     fun `Answer a Round shows one question at a time under tabs marking accepted and edited, then Review and send`() = browse {
         val claude = FakeClaude()
         agentTask(claude, mapOf("quiz" to """{"type":"object","properties":{"questions":{"type":"array"}}}"""))
