@@ -4,6 +4,7 @@ import org.operaton.bpm.engine.ExternalTaskService
 import org.operaton.bpm.engine.RuntimeService
 import org.operaton.bpm.engine.externaltask.LockedExternalTask
 import org.springframework.stereotype.Component
+import tools.jackson.databind.json.JsonMapper
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
@@ -26,6 +27,7 @@ fun clones(workspace: Path): List<Path> =
  * Run holds it. The work branch is checked out when the remote has it, otherwise created. The push URL is dead, so no
  * Agent pushes; Push gives the real remote itself. A repo already cloned is left alone. The Result is the repos it
  * cloned, `[{name, path, commit}]`, `path` relative to the Run workspace, and they are added to the Run's `clones`.
+ * A scoped Run ([SCOPE]) clones its scope instead, whatever `repos` names, first creating each new repo on GitHub.
  */
 // ponytail: one thread for every Run, so choosing a work branch never races another Run's; a slow clone holds up
 // the rest. A lock per branch name if Runs start together often.
@@ -35,12 +37,18 @@ class CloneRepos(
     private val runtime: RuntimeService,
     private val settings: Settings,
     private val names: RunNames,
+    private val scopes: Scopes,
 ) : BuiltInWorker(externalTasks, "Clone repos", TOPIC, Duration.ofMinutes(30), { it.variables("repos", "branch", "clones").enableCustomObjectDeserialization() }) {
     override fun handle(task: LockedExternalTask) {
         val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult().rootProcessInstanceId
         val repos = names.runWorkspace(run).resolve("repos").createDirectories()
-        val known = settings.repos().associateBy { it.name }
-        val wanted = Settings.strings(task.variables["repos"]).orEmpty().map { known[it] ?: url(it) ?: error("The Source map ${settings.defaultSourceMap()} has no repo $it") }.filter { !repos.resolve(it.name).exists() }
+        // A scoped Run clones exactly its scope, whatever the Task names; its new repos are created only now.
+        val scope = scopes.of(run)
+        val known = settings.runRepos(scope).associateBy { it.name }
+        val wanted = (scope ?: Settings.strings(task.variables["repos"]).orEmpty())
+            .map { known[it] ?: url(it) ?: error("The Source map ${settings.defaultSourceMap()} has no repo $it") }
+            .filter { !repos.resolve(it.name).exists() }
+            .map { if (scope != null && newRepo(it.remote)) it.copy(remote = create(it.remote)) else it }
         val branch by lazy { workBranch(run, task.variables["branch"]?.toString()) }
         val cloned = wanted.map { repo -> cloneOne(repo, repos, branch) }
         @Suppress("UNCHECKED_CAST")
@@ -87,13 +95,30 @@ class CloneRepos(
     fun currentBranch(clone: Path) = git(clone, "branch", "--show-current")
 
     /** Runs git in [dir] with [args], giving its output, [trim]med; fails with git's message when git does. */
-    fun git(dir: Path, args: List<String>, trim: Boolean = true): String {
-        val process = ProcessBuilder(listOf(settings.path("git") ?: "git") + args).directory(dir.toFile())
+    fun git(dir: Path, args: List<String>, trim: Boolean = true) = command("git", dir, args, trim)
+
+    /** Runs [cli] (git or gh) in [dir] with [args], giving its output, [trim]med; fails with its message when it does. */
+    private fun command(cli: String, dir: Path, args: List<String>, trim: Boolean = true): String {
+        val process = ProcessBuilder(listOf(settings.path(cli) ?: cli) + args).directory(dir.toFile())
             .redirectInput(File("/dev/null")).redirectErrorStream(true)
             .apply { environment()["GIT_TERMINAL_PROMPT"] = "0" }.start()
         val output = process.inputReader().readText()
-        check(process.waitFor() == 0) { "git ${args.first { !it.startsWith("-") && '=' !in it }} failed: ${output.trim()}" }
+        check(process.waitFor() == 0) { "$cli ${args.first { !it.startsWith("-") && '=' !in it }} failed: ${output.trim()}" }
         return if (trim) output.trim() else output
+    }
+
+    /**
+     * Creates the new repo [name] (`owner/name`) on GitHub on the user's gh login, private and with a README so it has
+     * a default branch, and gives its remote in gh's git protocol. A repo of that name already there is taken as made
+     * by an earlier try of this Task.
+     */
+    // ponytail: the pre-Run check found the name free, so one made since by anyone else is cloned too; push still needs its rights.
+    private fun create(name: String): String {
+        val home = Path.of(System.getProperty("user.home"))
+        fun view() = runCatching { command("gh", home, listOf("repo", "view", name, "--json", "url,sshUrl")) }.getOrNull()
+        val urls = JsonMapper.shared().readValue(view() ?: command("gh", home, listOf("repo", "create", name, "--private", "--add-readme")).let { view() ?: error("gh can't find the repo $name it created") }, Map::class.java)
+        val ssh = runCatching { command("gh", home, listOf("config", "get", "git_protocol")) }.getOrNull() == "ssh"
+        return urls[if (ssh) "sshUrl" else "url"].toString()
     }
 
     fun git(dir: Path, vararg args: String) = git(dir, args.toList())
@@ -114,6 +139,6 @@ class CloneRepos(
          * A repo given by its git URL instead of a Source map name, named after the URL's last part, with no local
          * checkout; null when [url] isn't one.
          */
-        private fun url(url: String) = if ('/' !in url && ':' !in url) null else Repo(url.trimEnd('/').substringAfterLast('/').substringAfterLast(':').removeSuffix(".git"), "", url)
+        fun url(url: String) = if ('/' !in url && ':' !in url) null else Repo(url.trimEnd('/').substringAfterLast('/').substringAfterLast(':').removeSuffix(".git"), "", url)
     }
 }

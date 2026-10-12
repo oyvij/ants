@@ -24,7 +24,7 @@ class StartFormTest : AntsTest() {
         assertTrue(order.all { it >= 0 } && order == order.sorted(), form)
         assertContains(form, """<textarea name="prompt" required>""")
         assertContains(form, """<input name="workBranch" value="">""")
-        assertContains(form, """<select name="repos" multiple>""")
+        assertContains(form, """<input name="repos" id="field-repos" value="" placeholder""") // no Source map, so no list to pick from
     }
 
     @Test

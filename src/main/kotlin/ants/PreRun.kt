@@ -38,12 +38,17 @@ class PreRun(
     private val tried = ConcurrentHashMap<Pair<List<String>, String>, String>() // (claude command, model ID) -> why it failed, empty when it answered
 
     /**
-     * Why a Run of [definition] with the Repos [repos] (Source map names) can't start; empty when it's Ready. Without
-     * a Vault the only reason is [CONFIGURE_VAULT], since v1 needs one. The Processes it calls are checked too, since
+     * Why a Run of [definition] with the Repos [repos] (Source map names, git URLs and new repos' `owner/name`) can't
+     * start; empty when it's Ready. With no Repos, without a Vault the only reason is [CONFIGURE_VAULT], since such a
+     * Run needs one; with Repos the Run is scoped to them, and needs neither the Vault nor the Source map. Each repo
+     * must answer `git ls-remote`, and each new repo's name must be free. The Processes it calls are checked too, since
      * they run inside its Run.
      */
     fun reasons(definition: ProcessDefinition, repos: List<String>): List<String> {
-        val vault = settings.defaultVault() ?: return listOf(CONFIGURE_VAULT)
+        val named = repos.distinct()
+        val scope = named.takeIf { it.isNotEmpty() }
+        val vault = settings.runVault(scope)
+        if (scope == null && vault == null) return listOf(CONFIGURE_VAULT)
         val processes = withCalled(definition)
         // Names, schemas, references and ants-uses: the deploy's Checks again, since files change after a deploy.
         val failed = processes.flatMap { process ->
@@ -54,18 +59,20 @@ class PreRun(
             .filter { it.operatonTopic == AgentLauncher.TOPIC }
             .mapNotNull { task -> task.property(AGENT)?.let { runCatching { catalogue.agent(it) }.getOrNull() } }.distinctBy { it.name }
         val sourceMap = settings.defaultSourceMap()
-        val known = settings.repos().associateBy { it.name }
-        val named = repos.distinct()
+        val known = settings.runRepos(null).associateBy { it.name } // the Repos field's choices
+        val created = named.filter { it !in known && newRepo(it) }
+        // Each repo to clone, by its remote: a Source map name's, else the git URL itself.
+        val remotes = named.filter { it !in created }.mapNotNull { known[it]?.let { repo -> repo.remote to "${repo.name}'s remote ${repo.remote}" } ?: CloneRepos.url(it)?.let { _ -> it to it } }
         // gh for every Process: any Agent with Bash, which the default tools have, can run it.
         val missing = (agents.map { it.cli } + listOfNotNull("git".takeIf { named.isNotEmpty() }) + "gh")
             .distinct().associateWith { cli -> command(cli) }.filterValues { !executable(it) }
         return buildList {
-            settings.vaults()[vault]?.let(Settings::expand)?.takeIf { !it.exists() }?.let { add("The Vault $vault isn't there: $it.") }
-            sourceMap?.let(settings::sourceMap)?.takeIf { !it.exists() }?.let { add("The Source map $sourceMap isn't there: $it.") }
+            vault?.takeIf { !it.exists() }?.let { add("The Vault ${settings.defaultVault()} isn't there: $it.") }
+            settings.runSourceMap(scope)?.takeIf { !it.exists() }?.let { add("The Source map $sourceMap isn't there: $it.") }
             addAll(failed)
             missing.forEach { (cli, command) -> add("$cli: $command isn't an executable.") }
             for (agent in agents) Agent.sandboxError(agent.cli, agent.sandbox)?.let { add("The Agent ${agent.name}: $it") }
-            for (name in named) if (name !in known) add(if (sourceMap == null) "$name: no Source map is configured (Settings)." else "The Source map $sourceMap has no repo $name.")
+            for (name in named) if (name !in known && name !in created && CloneRepos.url(name) == null) add(if (sourceMap == null) "$name: no Source map is configured (Settings)." else "The Source map $sourceMap has no repo $name.")
             if (agents.any { it.cli == "claude" } && "claude" !in missing) {
                 val login = launcher.login()
                 val apiKey = login["apiKeySource"]?.toString()?.takeIf { it != "none" }
@@ -74,11 +81,14 @@ class PreRun(
                 else for (agent in agents) agent.model?.takeIf { agent.cli == "claude" && custom(it) }
                     ?.let { model -> tryModel(model)?.let { add("The Agent ${agent.name}'s model $model doesn't work: $it") } }
             }
-            if ("gh" !in missing && failure(ProcessBuilder(command("gh"), "auth", "status"), 20) != null) add("gh isn't logged in: run gh auth login.")
-            if ("git" !in missing) for (repo in named.mapNotNull(known::get)) {
-                val lsRemote = ProcessBuilder(command("git"), "ls-remote", "--heads", repo.remote).apply { environment()["GIT_TERMINAL_PROMPT"] = "0" }
-                if (failure(lsRemote, 20) != null) add("git ls-remote can't reach ${repo.name}'s remote ${repo.remote}.")
+            val gh = "gh" !in missing && failure(ProcessBuilder(command("gh"), "auth", "status"), 20) == null
+            if ("gh" !in missing && !gh) add("gh isn't logged in: run gh auth login.")
+            if ("git" !in missing) for ((remote, what) in remotes) {
+                val lsRemote = ProcessBuilder(command("git"), "ls-remote", "--heads", remote).apply { environment()["GIT_TERMINAL_PROMPT"] = "0" }
+                if (failure(lsRemote, 20) != null) add("git ls-remote can't reach $what.")
             }
+            // ponytail: any failure of gh repo view reads as a free name, a network error too; Clone repos' gh repo create says otherwise.
+            if (gh) for (repo in created) if (failure(ProcessBuilder(command("gh"), "repo", "view", repo, "--json", "name"), 20) == null) add("The repo $repo already exists on GitHub.")
         }
     }
 

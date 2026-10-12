@@ -179,7 +179,7 @@ class Processes(
         model.addAttribute("process", process)
         val fields = startForm.fields(process)
         model.addAttribute("fields", fields)
-        model.addAttribute("repos", settings.repos().map(Repo::name))
+        model.addAttribute("repos", settings.runRepos(null).map(Repo::name)) // the Repos field's choices
         model.addAttribute("schedule", schedules.of(process))
         // A refused Start has already checked what was posted.
         if (!model.containsAttribute("reasons")) model.addAttribute("reasons", preRun.reasons(process, fields.filter { it.type == FieldType.REPOS }.flatMap { it.storedRepos }))

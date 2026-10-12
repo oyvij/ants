@@ -16,7 +16,9 @@ const val REPORT = "report.md"
 fun report(run: DelegateExecution, workspace: Path): String = buildString {
     val definition = (run as ExecutionEntity).processDefinition
     val process = definition.name ?: definition.key
-    append("# ${run.getVariable(NAME) ?: process}\n\n$process · ${if (run.isCanceled) "Cancelled" else "Completed"}\n\n## Start form\n\n")
+    append("# ${run.getVariable(NAME) ?: process}\n\n$process · ${if (run.isCanceled) "Cancelled" else "Completed"}\n\n")
+    (run.getVariable(SCOPE) as? List<*>)?.let { scope -> append("Scoped to its repos: ${scope.joinToString { "`$it`" }}. No scout, no Vault and no Source map.\n\n") }
+    append("## Start form\n\n")
     for (field in run.processEngineServices.formService.getStartFormData(run.processDefinitionId).formFields) {
         val value = run.getVariable(field.id).let { if (it is List<*>) it.joinToString(", ") else it?.toString().orEmpty() }
         append("**${field.label ?: field.id}**\n\n$value\n\n")
