@@ -364,10 +364,13 @@ class AgentLauncher(
         val output = override ?: skill.outputSchema
         val schema = ResultContract.schema(output)
         val judge = Judge(agent.cli, schema, workspace, walkthrough(task))
-        if (agent.cli == "codex") return codex(task, instance, agent, run, workspace, cwd, vault, transcript, session, started, prompt, ResultContract.strict(output), judge)
+        // A knowledge Task, one with an `approval` input, may write the Vault only once it holds the user's approval
+        // (ADR 0007): until then the Vault is read-only to it, but for Bash. codex can read it without an --add-dir.
+        val gated = vault?.takeIf { "approval" in inputs && (inputs["approval"] as? Map<*, *>)?.get("approved") != true }
+        if (agent.cli == "codex") return codex(task, instance, agent, run, workspace, cwd, vault.takeIf { gated == null }, transcript, session, started, prompt, ResultContract.strict(output), judge)
         val shared = if (cwd == workspace) emptyList() else listOf("--add-dir", "$workspace") // what an instance's links lead to
         val vaultDir = vault?.let { listOf("--add-dir", "$it") }.orEmpty() // the Vault's path goes nowhere else (ADR 0002)
-        val process = cli(agent.cli, cwd, flags(agent, schema, listOf(skill) + used, session!!, resume) + shared + vaultDir).start()
+        val process = cli(agent.cli, cwd, flags(agent, schema, listOf(skill) + used, session!!, resume, gated?.let { listOf("Write(/$it/**)", "Edit(/$it/**)") }.orEmpty()) + shared + vaultDir).start()
         val stdin = Stdin(process.outputWriter(), name(task))
         clis[process] = workspace.fileName.toString() // the Run workspace is runs/<run>/
         val stderr = drain(process)
@@ -726,8 +729,11 @@ class AgentLauncher(
             .forEach { runCatching { ProcessBuilder("kill", "-INT", "${it.pid()}").start() } }
     }
 
-    private fun flags(agent: Agent, schema: Map<*, *>, skills: List<Skill>, session: String, resume: Boolean): List<String> {
+    /** claude's flags, with the permission rules [denied] besides the Subagent types a Limit leaves out. */
+    private fun flags(agent: Agent, schema: Map<*, *>, skills: List<Skill>, session: String, resume: Boolean, denied: List<String>): List<String> {
         val tools = (agent.tools ?: DEFAULT_TOOLS).filter { it.substringBefore('(') != "Skill" }
+        val (subagents, types) = subagents(tools)
+        val disallowed = types + denied
         return listOf(
             "-p",
             "--output-format", "stream-json", "--verbose", "--include-partial-messages",
@@ -742,7 +748,7 @@ class AgentLauncher(
             "--forward-subagent-text",
             "--tools", tools.map { it.substringBefore('(') }.distinct().joinToString(","),
             "--allowedTools", tools.joinToString(","),
-        ) + subagents(tools) + skills.flatMap { listOf("--add-dir", it.folder.toString()) } + (if (agent.model != null) listOf("--model", agent.model) else emptyList()) +
+        ) + subagents + (if (disallowed.isEmpty()) emptyList() else listOf("--disallowedTools", disallowed.joinToString(","))) + skills.flatMap { listOf("--add-dir", it.folder.toString()) } + (if (agent.model != null) listOf("--model", agent.model) else emptyList()) +
             (if (agent.instructions.isNotEmpty()) listOf("--append-system-prompt", agent.instructions) else emptyList())
     }
 
@@ -776,12 +782,12 @@ class AgentLauncher(
 
     /**
      * When the Agent tool is among [tools], every offered claude Agent as a Subagent type (`--agents`), and when the
-     * Agent tool has a Limit, such as `Agent(searcher)`, every other type denied: claude lets the Agent tool start any
-     * type that isn't denied.
+     * Agent tool has a Limit, such as `Agent(searcher)`, every other type as a rule to deny: claude lets the Agent tool
+     * start any type that isn't denied.
      */
-    private fun subagents(tools: List<String>): List<String> {
+    private fun subagents(tools: List<String>): Pair<List<String>, List<String>> {
         val agentTool = tools.filter { it.substringBefore('(') in SUBAGENT_TOOLS }
-        if (agentTool.isEmpty()) return emptyList()
+        if (agentTool.isEmpty()) return emptyList<String>() to emptyList()
         // Probed on claude 2.1.295 against a fake API: rules such as `Bash(git log *)` are accepted in `--agents`
         // tools, but a Subagent's permissions are its Task's (`--allowedTools` under dontAsk), so they narrow nothing more.
         val offered = catalogue.agents().filter { it.subagent && it.cli == "claude" }.associate { agent ->
@@ -795,8 +801,7 @@ class AgentLauncher(
         val allowed = agentTool.takeIf { rules -> rules.all { '(' in it } }
             ?.flatMap { it.substringAfter('(').removeSuffix(")").split(',').map(String::trim) }
         val denied = allowed?.let { (BUILT_IN_SUBAGENTS + offered.keys).filter { it !in allowed }.map { "Agent($it)" } }.orEmpty()
-        return (if (offered.isEmpty()) emptyList() else listOf("--agents", json.writeValueAsString(offered))) +
-            (if (denied.isEmpty()) emptyList() else listOf("--disallowedTools", denied.joinToString(",")))
+        return (if (offered.isEmpty()) emptyList() else listOf("--agents", json.writeValueAsString(offered))) to denied
     }
 
     /** What `claude auth status` says of Ants' own Claude login, asked the way a launch runs; empty when it can't tell. */
