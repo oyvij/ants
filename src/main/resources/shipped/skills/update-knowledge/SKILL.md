@@ -2,7 +2,7 @@
 name: update-knowledge
 description: Propose what a Run learned as Notes in the user's knowledge Vault, and write them once the user approves.
 metadata:
-  ants-inputs: rounds spec clones approval
+  ants-inputs: rounds spec review clones approval
   ants-uses: search-knowledge
   varde-vault: true
 ---
@@ -20,6 +20,8 @@ search-knowledge Skill, whose folder holds `vault-format.md` and `leak-check.sh`
 
 - `rounds`: the Run log, relative to the Run workspace: every Round, instruction and message.
 - `spec`: what the Run built, relative to the Run workspace (a Spec or a proposal), if any.
+- `review`: the implementers' review of their commits, if any: a summary, or their Results, each
+  with the summary as `output.review`.
 - `clones`: the repos the Run cloned, `[{name, path, commit}]`.
 - `approval`: the user's answer to your last proposal, `{approved, comment}`, or null before you
   have proposed.
@@ -43,7 +45,7 @@ then Continue."
 1. Read `vault-format.md` in full. It fixes the shape of every Note and how Notes reach the Vault.
 2. Read the Vault rules. They decide what is worth keeping, how much detail a Note carries, and
    how Topics, Kinds and audiences are chosen.
-3. Read the Run: `rounds`, `spec`, and the commits on each clone's work branch. Find what was
+3. Read the Run: `rounds`, `spec`, `review`, and the commits on each clone's work branch. Find what was
    learned: decisions and their reasons, how something behaves, answers to questions somebody
    asked, mistakes and what fixed them.
 4. Find what the Vault already holds on the Run's subject by following the search-knowledge Skill.

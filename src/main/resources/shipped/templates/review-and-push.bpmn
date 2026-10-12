@@ -72,6 +72,7 @@
           <operaton:inputParameter name="push">${push}</operaton:inputParameter>
           <operaton:inputParameter name="spec">${tospec.output.spec}</operaton:inputParameter>
           <operaton:inputParameter name="review">${implement}</operaton:inputParameter>
+          <operaton:inputParameter name="fixes">${execution.hasVariable('fix') ? fix.output.review : null}</operaton:inputParameter>
         </operaton:inputOutput>
       </bpmn:extensionElements>
       <bpmn:incoming>f4</bpmn:incoming>

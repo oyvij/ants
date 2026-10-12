@@ -113,11 +113,17 @@ class ShipWithMeTest : AntsTest() {
         val three = claude.launches("implement").single { "issues/03" in it.stdin }
         assertContains(three.file("seen"), "01.txt")
         assertContains(claude.launches("fix-review").single().stdin, "From the user:\\nShout one.")
+        // pr reads the implementers' reviews and the fixer's; update-knowledge reads the implementers'.
+        for (text in listOf("Reviewed the Ticket.", "Shouted one.")) assertContains(claude.launches("pr").single().stdin, text)
+        assertContains(claude.launches("update-knowledge").single().stdin, """\"review\":[{""")
+        assertContains(claude.launches("update-knowledge").single().stdin, "Reviewed the Ticket.")
 
         val report = browser.get("/runs/$run/report").body
         for (text in listOf("<h2>Rounds</h2>", "Title who: Recommend who. (accepted)", "Title format: Recommend format. (accepted)", "<h2>Tickets</h2>", "<h2>Review</h2>", "Shouted one.", "Reviewed the Ticket.", "<h2>Push</h2>", "<h2>Pull requests</h2>", "https://github.com/oyvij/api/pull/8")) {
             assertContains(report, text)
         }
+        for (ticket in listOf("01-one", "02-two", "03-three")) assertContains(report, Regex("""$ticket[^>]*>[^<]*</a> · done"""), ticket)
+        for (repo in listOf("api", "web")) assertContains(report, Regex("""<strong>$repo</strong> · pushed <code>add-hello</code>"""), repo)
     }
 
     @Test

@@ -301,6 +301,7 @@
             <operaton:inputParameter name="push">${push}</operaton:inputParameter>
             <operaton:inputParameter name="spec">${tospec.output.spec}</operaton:inputParameter>
             <operaton:inputParameter name="review">${implement}</operaton:inputParameter>
+            <operaton:inputParameter name="fixes">${execution.hasVariable('fix') ? fix.output.review : null}</operaton:inputParameter>
           </operaton:inputOutput>
         </bpmn:extensionElements>
         <bpmn:incoming>f4</bpmn:incoming>
@@ -321,7 +322,7 @@
       <bpmn:sequenceFlow id="f5" sourceRef="pr" targetRef="end_6"/>
     </bpmn:subProcess>
     <bpmn:subProcess id="update_the_vault" name="Update the Vault">
-      <bpmn:documentation>update-knowledge proposes what the Run learned as Notes; until it says written, the user approves the Notes and it is resumed, writing them only once approved. Fill spec with the Run's Spec or proposal.</bpmn:documentation>
+      <bpmn:documentation>update-knowledge proposes what the Run learned as Notes; until it says written, the user approves the Notes and it is resumed, writing them only once approved. Fill spec with the Run's Spec or proposal, and review with the implementers' review.</bpmn:documentation>
       <bpmn:incoming>s6</bpmn:incoming>
       <bpmn:outgoing>s7</bpmn:outgoing>
       <bpmn:startEvent id="start_7">
@@ -337,6 +338,7 @@
           <operaton:inputOutput>
             <operaton:inputParameter name="rounds">run-log.md</operaton:inputParameter>
             <operaton:inputParameter name="spec">tickets/spec.md</operaton:inputParameter>
+            <operaton:inputParameter name="review">${implement}</operaton:inputParameter>
             <operaton:inputParameter name="clones">${clones}</operaton:inputParameter>
             <operaton:inputParameter name="approval">${approvenotes}</operaton:inputParameter>
           </operaton:inputOutput>

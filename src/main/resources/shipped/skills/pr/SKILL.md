@@ -2,7 +2,7 @@
 name: pr
 description: Open a pull request on GitHub for each repo the Run pushed, with a body written from the commits, the Spec or proposal and the review.
 metadata:
-  ants-inputs: push spec proposal review
+  ants-inputs: push spec proposal review fixes
 ---
 
 <!-- The body's shape is adapted from Matt Pocock's pr Skill (https://github.com/mattpocock/skills).
@@ -20,6 +20,7 @@ Your inputs; paths are relative to the Run workspace:
 - `spec` or `proposal`: what the Run built, `tickets/spec.md` or `proposal/proposal.md`.
 - `review`: the implementers' review of their commits, if any: a summary, or their Results, each
   with the summary as `output.review`.
+- `fixes`: the review of the fixes made after the user sent the changes back, if any.
 
 You run `gh` on the user's own login, and `git log` and `git diff` in the clones. You change
 nothing in the repos and push nothing.
@@ -36,7 +37,7 @@ keep it: don't open a second one.
 
 ## 2. Write the body
 
-Read the spec or proposal, the review, and `git log` and `git diff` from `<base>` in the clone.
+Read the spec or proposal, the review and the fixes, and `git log` and `git diff` from `<base>` in the clone.
 Write the body briefly, in the repo's own terms:
 
 ```markdown
@@ -50,7 +51,7 @@ Write the body briefly, in the repo's own terms:
 
 ## Review
 
-<what the review found and what was fixed; what was left>
+<what the review found and what was fixed, after the user's review too; what was left>
 
 ## Merge Danger
 

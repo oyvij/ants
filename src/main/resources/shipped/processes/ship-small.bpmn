@@ -116,7 +116,7 @@
       <bpmn:outgoing>tovault</bpmn:outgoing>
     </bpmn:serviceTask>
     <bpmn:subProcess id="update_the_vault" name="Update the Vault">
-      <bpmn:documentation>update-knowledge proposes what the Run learned as Notes; until it says written, the user approves the Notes and it is resumed, writing them only once approved. Fill spec with the Run's Spec or proposal.</bpmn:documentation>
+      <bpmn:documentation>update-knowledge proposes what the Run learned as Notes; until it says written, the user approves the Notes and it is resumed, writing them only once approved. Fill spec with the Run's Spec or proposal, and review with the implementers' review.</bpmn:documentation>
       <bpmn:incoming>tovault</bpmn:incoming>
       <bpmn:outgoing>toend</bpmn:outgoing>
       <bpmn:startEvent id="start_3">
@@ -132,6 +132,7 @@
           <operaton:inputOutput>
             <operaton:inputParameter name="rounds">run-log.md</operaton:inputParameter>
             <operaton:inputParameter name="spec">${proposesolution.output.proposal}</operaton:inputParameter>
+            <operaton:inputParameter name="review">${implement.output.review}</operaton:inputParameter>
             <operaton:inputParameter name="clones">${clones}</operaton:inputParameter>
             <operaton:inputParameter name="approval">${approvenotes}</operaton:inputParameter>
           </operaton:inputOutput>

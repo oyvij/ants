@@ -7,7 +7,7 @@
                   xmlns:operaton="http://operaton.org/schema/1.0/bpmn"
                   id="definitions" targetNamespace="http://bpmn.io/schema/bpmn">
   <bpmn:process id="update_the_vault" name="Update the Vault" isExecutable="true" operaton:historyTimeToLive="180">
-    <bpmn:documentation>update-knowledge proposes what the Run learned as Notes; until it says written, the user approves the Notes and it is resumed, writing them only once approved. Fill spec with the Run's Spec or proposal.</bpmn:documentation>
+    <bpmn:documentation>update-knowledge proposes what the Run learned as Notes; until it says written, the user approves the Notes and it is resumed, writing them only once approved. Fill spec with the Run's Spec or proposal, and review with the implementers' review.</bpmn:documentation>
     <bpmn:startEvent id="start">
       <bpmn:outgoing>f1</bpmn:outgoing>
     </bpmn:startEvent>
@@ -21,6 +21,7 @@
         <operaton:inputOutput>
           <operaton:inputParameter name="rounds">run-log.md</operaton:inputParameter>
           <operaton:inputParameter name="spec">tickets/spec.md</operaton:inputParameter>
+          <operaton:inputParameter name="review">${execution.getVariable('implement')}</operaton:inputParameter>
           <operaton:inputParameter name="clones">${clones}</operaton:inputParameter>
           <operaton:inputParameter name="approval">${approvenotes}</operaton:inputParameter>
         </operaton:inputOutput>

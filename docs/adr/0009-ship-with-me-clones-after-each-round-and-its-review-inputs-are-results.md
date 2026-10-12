@@ -12,8 +12,9 @@ only Bash limited to `git log`, `diff` and `show`, or what a dropped Template's 
 - **fix-review's `review` is the Review changes Result**, `${reviewchanges}`: the same comments its Send back message
   carries, as `{approved, comment, comments[]}`, so the fixer can read them as data.
 - **pr's `review` is `${implement}`**, the list of the implementers' Results, each holding its `output.review`: JUEL
-  can't map a list, and a Ticket's review stays beside the Ticket it was for. The fixers' reviews reach the Report, not
-  the pull request.
+  can't map a list, and a Ticket's review stays beside the Ticket it was for. pr's `fixes` is the fixer's review,
+  `${execution.hasVariable('fix') ? fix.output.review : null}`, null when nothing was sent back, so the pull request
+  says what the user's review changed too, as the spec's "pr | push, spec or proposal, review" asks.
 - **The storyteller's tools are `Read, Grep, Glob, Write(walkthrough/**), Edit(walkthrough/**)`** and Bash limited to
   `git log`, `git diff`, `git show` and `git merge-base`, the last for a range's `base`. It reads `story-set.schema.json`
   from the walkthrough Skill's folder, which is also where Ants checks Story sets against it: one copy.
@@ -24,10 +25,13 @@ only Bash limited to `git log`, `diff` and `show`, or what a dropped Template's 
 
 - **Clone after the user answers** (Answer → Clone → Grill): the griller would see the clone at its next Round, but a
   repo named in the Round that ends the loop would never be cloned.
-- **pr reads the fixer's review** (`${fix.output.review}`): `null` when nothing was sent back, and it holds only the
-  last fix.
+- **pr's `review` holds both**: JUEL can't join the implementers' list and the fixer's Result into one value.
+- **The fixers' reviews reach the Report only**: the pull request's reviewers would not see what the user's review
+  changed.
 
 ## Consequences
+
+- After two Send backs, pr's `fixes` is the last fixer's review only; the earlier ones are in the Report.
 
 - A Clone new repos that fails (an unknown repo name) is `[failed]` before the user sees that Round.
 - The storyteller's Bash rules, like pr's, rely on `cd repos/<name> && git log …` matching `git log *`; they have not
