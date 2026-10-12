@@ -356,15 +356,17 @@ class AgentLauncher(
         session: String?, started: (String) -> Unit, resume: Boolean, instruction: String?, handedOff: Boolean = !resume,
     ): Map<*, *> {
         val inputs = inputs(task)
+        val vault = vault(task, skill)
         val prompt = if (!handedOff) instruction.orEmpty()
-        else handOff(task, skill, used, cwd) + "\n\n" + json.writeValueAsString(inputs) + (if (instruction.isNullOrBlank()) "" else "\n\nFrom the user:\n$instruction")
+        else handOff(task, skill, used, cwd, vault) + "\n\n" + json.writeValueAsString(inputs) + (if (instruction.isNullOrBlank()) "" else "\n\nFrom the user:\n$instruction")
         // The Task's result-schema override replaces the Skill's result.schema.json; Checks refuse one that isn't valid.
         val override = task.extensionProperties[RESULT_SCHEMA]?.takeIf(String::isNotBlank)?.let { json.readValue(it, Map::class.java) }
         val schema = ResultContract.schema(override ?: skill.outputSchema)
         val judge = Judge(agent.cli, schema, workspace, walkthrough(task))
-        if (agent.cli == "codex") return codex(task, instance, agent, run, workspace, cwd, transcript, session, started, prompt, schema, judge)
+        if (agent.cli == "codex") return codex(task, instance, agent, run, workspace, cwd, vault, transcript, session, started, prompt, schema, judge)
         val shared = if (cwd == workspace) emptyList() else listOf("--add-dir", "$workspace") // what an instance's links lead to
-        val process = cli(agent.cli, cwd, flags(agent, schema, listOf(skill) + used, session!!, resume) + shared).start()
+        val vaultDir = vault?.let { listOf("--add-dir", "$it") }.orEmpty() // the Vault's path goes nowhere else (ADR 0002)
+        val process = cli(agent.cli, cwd, flags(agent, schema, listOf(skill) + used, session!!, resume) + shared + vaultDir).start()
         val stdin = Stdin(process.outputWriter(), name(task))
         clis[process] = workspace.fileName.toString() // the Run workspace is runs/<run>/
         val stderr = drain(process)
@@ -425,7 +427,7 @@ class AgentLauncher(
      * prints no `turn.completed` and exits 1.
      */
     private fun codex(
-        task: LockedExternalTask, instance: String, agent: Agent, run: String, workspace: Path, cwd: Path, transcript: Transcript.Writer,
+        task: LockedExternalTask, instance: String, agent: Agent, run: String, workspace: Path, cwd: Path, vault: Path?, transcript: Transcript.Writer,
         session: String?, started: (String) -> Unit, prompt: String, schema: Map<*, *>, judge: Judge,
     ): Map<*, *> {
         val schemaFile = Transcript.file(workspace, instance).resolveSibling("result.schema.json").apply { writeText(json.writeValueAsString(schema)) }
@@ -438,7 +440,7 @@ class AgentLauncher(
                 val resume = thread?.let { listOf("resume", it) }.orEmpty()
                 // codex doesn't print what it was told, so Ants writes it the way claude replays it.
                 transcript.line(json.writeValueAsString(mapOf("type" to "user", "message" to mapOf("role" to "user", "content" to message))))
-                val process = cli(agent.cli, cwd, codexFlags(agent, schemaFile, workspace.takeIf { cwd != workspace }) + resume + "-").start()
+                val process = cli(agent.cli, cwd, codexFlags(agent, schemaFile, listOfNotNull(workspace.takeIf { cwd != workspace }, vault)) + resume + "-").start()
                 clis[process] = workspace.fileName.toString()
                 val stderr = drain(process)
                 val fixes = mutableListOf<String>()
@@ -538,19 +540,24 @@ class AgentLauncher(
     }
 
     /**
-     * The hand-off line: the Skill and the workspace, the Skills it [used], and where the Vault and Source map and the
-     * Answer History are, each only when on: the Task's toggle ([VAULT], [ANSWER_HISTORY]) has the final
-     * say, else the Skill's opt-in.
+     * The Vault's folder when [task] gets the Vault: its toggle ([VAULT]) has the final say, else its [skill]'s opt-in.
+     * Null when off, or with no Vault configured, which the pre-Run check (#55) refuses.
      */
-    // ponytail: the default Vault and Source map, until a Process picks its own; with none configured the sentence is
-    // left out, and the pre-Run check (#55) is what refuses to start. The Vault's --add-dir is #69's.
-    private fun handOff(task: LockedExternalTask, skill: Skill, used: List<Skill>, workspace: Path): String {
-        val vault = task.extensionProperties[VAULT]?.toBooleanStrictOrNull() ?: catalogue.vault(skill)
+    // ponytail: the default Vault, until a Process picks its own.
+    private fun vault(task: LockedExternalTask, skill: Skill): Path? = settings.vaults()[settings.defaultVault()]?.let(Settings::expand)
+        ?.takeIf { task.extensionProperties[VAULT]?.toBooleanStrictOrNull() ?: catalogue.vault(skill) }
+
+    /**
+     * The hand-off line: the Skill and the workspace, the Skills it [used], and where the [vault] and Source map and the
+     * Answer History are, each only when on: the Task's [ANSWER_HISTORY] toggle has the final say, else the Skill's opt-in.
+     */
+    // ponytail: the default Source map, until a Process picks its own.
+    private fun handOff(task: LockedExternalTask, skill: Skill, used: List<Skill>, workspace: Path, vault: Path?): String {
         val answerHistory = task.extensionProperties[ANSWER_HISTORY]?.toBooleanStrictOrNull() ?: skill.answerHistory
-        val places = listOfNotNull(
-            settings.vaults()[settings.defaultVault()]?.let { "the Vault is $it" },
-            settings.sourceMaps()[settings.defaultSourceMap()]?.let { "the Source map is $it" },
-        ).takeIf { vault }.orEmpty()
+        val places = if (vault == null) emptyList() else listOfNotNull(
+            "the Vault is $vault",
+            settings.sourceMaps()[settings.defaultSourceMap()]?.let { "the Source map is ${Settings.expand(it)}" },
+        )
         return "Follow the Skill in ${skill.file} for the workspace at $workspace." +
             (if (used.isEmpty()) "" else " It uses the Skills ${used.joinToString { "${it.name} (${it.file})" }}.") +
             (if (places.isEmpty()) "" else " " + places.joinToString(" and ").replaceFirstChar(Char::uppercase) + ".") +
@@ -740,13 +747,13 @@ class AgentLauncher(
     /**
      * codex's flags: JSON lines out, the Result's [schema] file, the Agent's sandbox setting instead of tools, its model,
      * and its standing instructions as `developer_instructions` (a JSON string is a TOML one too). The Run workspace
-     * isn't a git repository, and an instance's [shared] Run workspace is writable as well.
+     * isn't a git repository. The [writable] folders besides the working one are an instance's Run workspace and the Vault.
      */
-    private fun codexFlags(agent: Agent, schema: Path, shared: Path?): List<String> =
+    private fun codexFlags(agent: Agent, schema: Path, writable: List<Path>): List<String> =
         listOf("exec", "--json", "--skip-git-repo-check", "--output-schema", "$schema", "--sandbox", agent.sandbox) +
             (if (agent.model != null) listOf("-m", agent.model) else emptyList()) +
             (if (agent.instructions.isNotEmpty()) listOf("-c", "developer_instructions=" + json.writeValueAsString(agent.instructions)) else emptyList()) +
-            (if (shared != null) listOf("--add-dir", "$shared") else emptyList())
+            writable.flatMap { listOf("--add-dir", "$it") }
 
     /**
      * When codex's Usage limit resets, from its [message], or null when the message isn't one. codex says

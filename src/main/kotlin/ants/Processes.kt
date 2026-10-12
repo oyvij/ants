@@ -3,6 +3,10 @@ package ants
 import org.operaton.bpm.engine.ProcessEngineException
 import jakarta.servlet.http.HttpServletResponse
 import org.operaton.bpm.engine.RepositoryService
+import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Value
+import org.springframework.boot.context.event.ApplicationReadyEvent
+import org.springframework.context.event.EventListener
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
@@ -24,6 +28,10 @@ import org.xml.sax.SAXException
 import java.io.StringWriter
 import java.net.URI
 import java.net.URLEncoder
+import java.nio.file.Path
+import kotlin.io.path.exists
+import kotlin.io.path.listDirectoryEntries
+import kotlin.io.path.readBytes
 import javax.xml.XMLConstants.XMLNS_ATTRIBUTE_NS_URI
 import javax.xml.parsers.DocumentBuilderFactory
 import javax.xml.transform.TransformerFactory
@@ -31,7 +39,27 @@ import javax.xml.transform.dom.DOMSource
 import javax.xml.transform.stream.StreamResult
 
 @Controller
-class Processes(private val repository: RepositoryService, private val startForm: StartForm, private val settings: Settings, private val checks: Checks, private val preRun: PreRun, private val schedules: Schedules) {
+class Processes(
+    private val repository: RepositoryService, private val startForm: StartForm, private val settings: Settings, private val checks: Checks, private val preRun: PreRun,
+    private val schedules: Schedules, @Value("\${ants.home}") private val home: Path,
+) {
+    private val log = LoggerFactory.getLogger(javaClass)
+
+    /**
+     * Deploys the shipped Processes, such as Set up Vault, through the Checks like any other. Each is its own
+     * deployment, `shipped/<file>`, so a start deploys it again only when Ants ships a change, and a user's Save of
+     * it, deployed under its key, survives a restart.
+     */
+    @EventListener(ApplicationReadyEvent::class)
+    fun deployShipped() {
+        val folder = home.resolve("shipped/processes").takeIf { it.exists() } ?: return
+        for (file in folder.listDirectoryEntries("*.bpmn")) try {
+            deploy(file.readBytes(), "shipped/${file.fileName}")
+        } catch (e: Refused) {
+            log.warn("The shipped Process $file can't be deployed: ${e.message}")
+        }
+    }
+
     @GetMapping("/processes")
     fun list(model: Model): String {
         model.addAttribute("processes", repository.createProcessDefinitionQuery().latestVersion().orderByProcessDefinitionName().asc().list())

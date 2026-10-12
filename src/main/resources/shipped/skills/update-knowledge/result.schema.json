@@ -1,0 +1,16 @@
+{
+  "type": "object",
+  "properties": {
+    "proposal": {
+      "type": "string",
+      "format": "path",
+      "description": "The proposal for the user to approve, vault/proposal.md; only while written is false."
+    },
+    "written": {
+      "type": "boolean",
+      "description": "True once the approved Notes are in the Vault, or when there was nothing to propose."
+    }
+  },
+  "required": ["written"],
+  "additionalProperties": false
+}

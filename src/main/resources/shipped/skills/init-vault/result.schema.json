@@ -1,0 +1,33 @@
+{
+  "type": "object",
+  "properties": {
+    "questions": {
+      "type": "array",
+      "description": "The Round: the decisions still open, empty once every one is settled.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "ask": { "type": "string" },
+          "context": { "type": "string", "description": "What the answer settles." },
+          "recommendation": { "type": "string" },
+          "why": { "type": "string" }
+        },
+        "required": ["id", "title", "ask", "context", "recommendation", "why"],
+        "additionalProperties": false
+      }
+    },
+    "proposal": {
+      "type": "string",
+      "format": "path",
+      "description": "The rule Notes in full for the user to approve, vault/proposal.md; only while written is false."
+    },
+    "written": {
+      "type": "boolean",
+      "description": "True once the approved rule Notes are in the Vault."
+    }
+  },
+  "required": ["written"],
+  "additionalProperties": false
+}

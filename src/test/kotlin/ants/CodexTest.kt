@@ -32,8 +32,8 @@ class CodexTest : AntsTest() {
     private val env = listOf("PATH", "HOME", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "CODEX_API_KEY")
 
     /** The Agent `writer` on codex, with [agent] lines in its frontmatter, listing the Skill `draft`. */
-    private fun codexTask(agent: String = "", claude: FakeClaude? = null) {
-        agentTask(claude, agent = "cli: codex\n$agent")
+    private fun codexTask(agent: String = "", claude: FakeClaude? = null, metadata: String = "") {
+        agentTask(claude, agent = "cli: codex\n$agent", metadata = metadata)
         home.resolve("settings.yaml").writeText(
             "codex:\n  command: [${codex.command}]\n  env: [${env.joinToString(", ")}]\n" +
                 (if (claude == null) "" else "claude:\n  command: [${claude.command}]\n") + vault,
@@ -92,6 +92,20 @@ class CodexTest : AntsTest() {
         assertContains(transcript, "<b>Shell</b> <code>bash -lc ls</code>")
         assertContains(transcript, "<b>Result: done</b> Drafted.")
         assertContains(transcript, "1,234 tokens")
+    }
+
+    @Test
+    fun `a codex Task with the Vault on may write it, and one without has no Vault`() {
+        codexTask(metadata = "metadata:\n  varde-vault: true\n")
+        codex.session("draft", started, turn, answer(), completed)
+        val run = start()
+        eventually { assertContains(page(run), "State: Completed") }
+        assertEquals(vaultPath.toString(), codex.launches("draft").single().flag("--add-dir"))
+
+        codexTask()
+        val without = start("no-vault")
+        eventually { assertContains(page(without), "State: Completed") }
+        assertFalse("--add-dir" in codex.launches("draft").last().argv)
     }
 
     /** codex's Usage limit [message], as an `error` and the `turn.failed` it ends, and the exit that follows. */
