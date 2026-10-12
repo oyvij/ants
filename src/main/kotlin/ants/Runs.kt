@@ -156,7 +156,7 @@ class Runs(
             val entry = notifications.tasks().firstOrNull { it.instance == id && it.activity == task }
             val model = mapOf(
                 "run" to top, "task" to key, "name" to (element.name ?: task), "shown" to shown(id)[task], "transcript" to transcript,
-                "entry" to entry, "details" to entry?.let(notifications::details), "push" to (entry?.let(notifications::isPush) == true), "send" to launcher.sending(top, key), "_csrf" to csrf,
+                "entry" to entry, "details" to entry?.let(notifications::details), "push" to (entry?.let(notifications::isPush) == true), "sendHint" to launcher.sendHint(top, key), "_csrf" to csrf,
             )
             StringOutput().also { templates.render("drawer.kte", model, it) }.toString()
         }
@@ -239,6 +239,9 @@ val HistoricProcessInstance.stateName
  * runs, `clones` is empty and `sourceMap` holds the default Source map's repos, `[{name, remote}]`. A multi-instance collects its instances' Results into one list ([collect]). A called Process runs inside its
  * caller's Run: it ends by giving its call activity every Result in it, by id.
  */
+/** The variables [RunLifecycle] gives every Run besides its Results, which any expression may read. */
+val RUN_VARIABLES = listOf("runs", "clones", "sourceMap")
+
 @Component
 class RunLifecycle(@Value("\${ants.home}") private val home: Path, private val settings: Settings) : AbstractProcessEnginePlugin() {
     private fun started(tasks: List<String>, results: List<String>) = ExecutionListener { run ->
@@ -247,7 +250,6 @@ class RunLifecycle(@Value("\${ants.home}") private val home: Path, private val s
         for (id in results) run.setVariable(id, null)
         run.setVariable("runs", tasks.associateWith { 0 })
         run.setVariable("clones", ArrayList<Any>()) // Clone repos adds to it
-        // ponytail: the default Source map, until a Process picks its own.
         run.setVariable("sourceMap", ArrayList(settings.repos().map { linkedMapOf("name" to it.name, "remote" to it.remote) }))
     }
 

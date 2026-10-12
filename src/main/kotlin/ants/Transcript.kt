@@ -112,7 +112,8 @@ class Transcript {
             "system" -> system(event)
             "result" -> result(event, launch)
             // codex exec --json
-            "item.started", "item.completed" -> item(event["item"] as? Map<*, *> ?: emptyMap<Any, Any>(), event["type"] == "item.completed", launch)
+            "item.started", "item.completed" -> codexMessage(event)?.let { message(it, launch) }
+                ?: item(event["item"] as? Map<*, *> ?: emptyMap<Any, Any>(), event["type"] == "item.completed")
             "thread.started" -> {
                 thread = event["thread_id"]
                 if (launch != null && launch.before == null) launch.before = threadTotals[thread] ?: 0
@@ -124,7 +125,7 @@ class Transcript {
                 threadTotals[thread] = total
                 launch?.modelUsage = total - (launch?.before ?: 0)
             }
-            "error", "turn.failed" -> (event["message"] ?: (event["error"] as? Map<*, *>)?.get("message"))?.let { message ->
+            "error", "turn.failed" -> codexError(event)?.let { message ->
                 append { """<div class="result" id="$it"><b>Error</b> ${esc(message)}</div>""" }
             }
         }
@@ -301,23 +302,21 @@ class Transcript {
         }
     }
 
-    /**
-     * A codex item: its message as text, or as the Result when it is one (JSON under `--output-schema`), its reasoning,
-     * or a command, file change, search or MCP call as one tool line, marked when it fails.
-     */
-    private fun item(item: Map<*, *>, completed: Boolean, launch: Launch?) {
+    /** A codex message ([codexMessage]) as text, or as the Result when it is one (JSON under `--output-schema`). */
+    private fun message(text: String, launch: Launch?) {
+        val result = runCatching { json.readValue(text, Map::class.java) }.getOrNull()?.takeIf { "outcome" in it }
+        if (result != null) result(mapOf("structured_output" to result), launch)
+        else {
+            live.clear()
+            output = markdown(text)
+            append { """<div class="text" id="$it">$output</div>""" }
+        }
+    }
+
+    /** A codex item but a message: its reasoning, or a command, file change, search or MCP call as one tool line, marked when it fails. */
+    private fun item(item: Map<*, *>, completed: Boolean) {
         val id = item["id"]
         when (item["type"]) {
-            "agent_message" -> if (completed) {
-                val text = item["text"].toString()
-                val result = runCatching { json.readValue(text, Map::class.java) }.getOrNull()?.takeIf { "outcome" in it }
-                if (result != null) result(mapOf("structured_output" to result), launch)
-                else {
-                    live.clear()
-                    output = markdown(text)
-                    append { """<div class="text" id="$it">$output</div>""" }
-                }
-            }
             "reasoning" -> if (completed) append { """<details class="thinking" id="$it"><summary>✻ Thinking</summary>${esc(item["text"])}</details>""" }
             else -> {
                 val (name, argument) = when (item["type"]) {
@@ -461,7 +460,7 @@ class Transcripts(@Value("\${ants.home}") home: Path, private val launcher: Agen
         model.addAttribute("task", task)
         model.addAttribute("transcript", Transcript().apply { lines.forEach(::add) })
         model.addAttribute("offset", offset)
-        model.addAttribute("send", launcher.sending(run, task))
+        model.addAttribute("sendHint", launcher.sendHint(run, task))
         return "transcript"
     }
 
