@@ -10,7 +10,8 @@ hands Round 10 to the user, yet Ship overnight's cap ends the loop. And it gives
 - **to-spec reads `repos`, `${grill.output.repos}`.** A repo in `repos` that isn't in `clones` was not cloned, and the
   Spec lists it under Further Notes as one the Run doesn't change. In Ship with me every one of them was cloned.
 - **Four Grill Templates:** Grill (you answer), Grill (by proxy) and Grill (as proposed), whose Round 10 goes to the
-  user, and Grill (overnight), the answerer every Round with Round 10 ending the loop unanswered. None but the first
+  user, and Grill (overnight), the answerer every Round, its cap checked after each answer, so the loop ends once
+  Round 9 is answered and no Round 10 is asked, which the griller would ask only to have it thrown away. None but the first
   clones; the user answering Round 10 in the by-proxy and as-proposed ones doesn't clone either.
 - **Ship overnight's to-spec is a bare Task**, `tospec`, not To-spec and approve with its Approve removed, so Cut and
   implement and Review and push read `${tospec.output.spec}` as in the others.

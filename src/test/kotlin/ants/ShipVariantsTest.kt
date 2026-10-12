@@ -139,7 +139,7 @@ class ShipVariantsTest : AntsTest() {
         finish(run, spec = false)
 
         assertEquals(listOf("[review]", "[push]", "[approve]"), waited)
-        assertEquals(10, claude.launches("grill").size)
+        assertEquals(9, claude.launches("grill").size) // no Round 10 is asked
         assertEquals(9, claude.launches("answer-round").size)
         assertEquals("refs/heads/main", git(web.remote, "for-each-ref", "--format=%(refname)"))
         assertContains(claude.launches("to-spec").single().stdin, """\"repos\":[\"web\"]""")

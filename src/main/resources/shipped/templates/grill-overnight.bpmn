@@ -7,7 +7,7 @@
                   xmlns:operaton="http://operaton.org/schema/1.0/bpmn"
                   id="definitions" targetNamespace="http://bpmn.io/schema/bpmn">
   <bpmn:process id="grill_overnight" name="Grill (overnight)" isExecutable="true" operaton:historyTimeToLive="180">
-    <bpmn:documentation>The griller asks a Round at a time until it asks nothing; the answerer answers each Round from your Answer History and the Vault, and Round 10 ends the grilling unanswered. Repos a Round names are not cloned. Needs start-form field prompt, and the scout's brief.</bpmn:documentation>
+    <bpmn:documentation>The griller asks a Round at a time until it asks nothing; the answerer answers each Round from your Answer History and the Vault, and the grilling ends once Round 9 is answered, so no Round 10 is asked. Repos a Round names are not cloned. Needs start-form field prompt, and the scout's brief.</bpmn:documentation>
     <bpmn:startEvent id="start">
       <bpmn:outgoing>f1</bpmn:outgoing>
     </bpmn:startEvent>
@@ -24,7 +24,7 @@
         </operaton:inputOutput>
       </bpmn:extensionElements>
       <bpmn:incoming>f1</bpmn:incoming>
-      <bpmn:incoming>byagent</bpmn:incoming>
+      <bpmn:incoming>under</bpmn:incoming>
       <bpmn:outgoing>f2</bpmn:outgoing>
     </bpmn:serviceTask>
     <bpmn:exclusiveGateway id="asked" name="Asked?" default="nothing">
@@ -32,8 +32,8 @@
       <bpmn:outgoing>questions</bpmn:outgoing>
       <bpmn:outgoing>nothing</bpmn:outgoing>
     </bpmn:exclusiveGateway>
-    <bpmn:exclusiveGateway id="capped" name="Round 10?" default="under">
-      <bpmn:incoming>questions</bpmn:incoming>
+    <bpmn:exclusiveGateway id="capped" name="Round 9?" default="under">
+      <bpmn:incoming>byagent</bpmn:incoming>
       <bpmn:outgoing>cap</bpmn:outgoing>
       <bpmn:outgoing>under</bpmn:outgoing>
     </bpmn:exclusiveGateway>
@@ -48,7 +48,7 @@
           <operaton:inputParameter name="questions">${grill.output.questions}</operaton:inputParameter>
         </operaton:inputOutput>
       </bpmn:extensionElements>
-      <bpmn:incoming>under</bpmn:incoming>
+      <bpmn:incoming>questions</bpmn:incoming>
       <bpmn:outgoing>byagent</bpmn:outgoing>
     </bpmn:serviceTask>
     <bpmn:endEvent id="end">
@@ -57,15 +57,15 @@
     </bpmn:endEvent>
     <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="grill" />
     <bpmn:sequenceFlow id="f2" sourceRef="grill" targetRef="asked" />
-    <bpmn:sequenceFlow id="questions" name="yes" sourceRef="asked" targetRef="capped">
+    <bpmn:sequenceFlow id="questions" name="yes" sourceRef="asked" targetRef="answerer">
       <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${not empty grill.output.questions}</bpmn:conditionExpression>
     </bpmn:sequenceFlow>
     <bpmn:sequenceFlow id="nothing" name="no" sourceRef="asked" targetRef="end" />
     <bpmn:sequenceFlow id="cap" name="yes" sourceRef="capped" targetRef="end">
-      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${runs.grill &gt;= 10}</bpmn:conditionExpression>
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${runs.grill &gt;= 9}</bpmn:conditionExpression>
     </bpmn:sequenceFlow>
-    <bpmn:sequenceFlow id="under" name="no" sourceRef="capped" targetRef="answerer" />
-    <bpmn:sequenceFlow id="byagent" sourceRef="answerer" targetRef="grill" />
+    <bpmn:sequenceFlow id="under" name="no" sourceRef="capped" targetRef="grill" />
+    <bpmn:sequenceFlow id="byagent" sourceRef="answerer" targetRef="capped" />
   </bpmn:process>
   <bpmndi:BPMNDiagram id="diagram">
     <bpmndi:BPMNPlane id="plane" bpmnElement="grill_overnight">
@@ -79,10 +79,10 @@
         <dc:Bounds x="425" y="153" width="50" height="50" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="capped_di" bpmnElement="capped" isMarkerVisible="true">
-        <dc:Bounds x="425" y="275" width="50" height="50" />
+        <dc:Bounds x="295" y="275" width="50" height="50" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="answerer_di" bpmnElement="answerer">
-        <dc:Bounds x="270" y="260" width="100" height="80" />
+        <dc:Bounds x="400" y="260" width="100" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="end_di" bpmnElement="end">
         <dc:Bounds x="532" y="160" width="36" height="36" />
@@ -97,24 +97,25 @@
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="questions_di" bpmnElement="questions">
         <di:waypoint x="450" y="203" />
-        <di:waypoint x="450" y="275" />
+        <di:waypoint x="450" y="260" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="nothing_di" bpmnElement="nothing">
         <di:waypoint x="475" y="178" />
         <di:waypoint x="532" y="178" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="cap_di" bpmnElement="cap">
-        <di:waypoint x="475" y="300" />
-        <di:waypoint x="550" y="300" />
+        <di:waypoint x="320" y="325" />
+        <di:waypoint x="320" y="360" />
+        <di:waypoint x="550" y="360" />
         <di:waypoint x="550" y="196" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="under_di" bpmnElement="under">
-        <di:waypoint x="425" y="300" />
-        <di:waypoint x="370" y="300" />
+        <di:waypoint x="320" y="275" />
+        <di:waypoint x="320" y="218" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="byagent_di" bpmnElement="byagent">
-        <di:waypoint x="320" y="260" />
-        <di:waypoint x="320" y="218" />
+        <di:waypoint x="400" y="300" />
+        <di:waypoint x="345" y="300" />
       </bpmndi:BPMNEdge>
     </bpmndi:BPMNPlane>
   </bpmndi:BPMNDiagram>

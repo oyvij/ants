@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:operaton="http://operaton.org/schema/1.0/bpmn" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" id="definitions" targetNamespace="http://bpmn.io/schema/bpmn">
   <bpmn:process id="ship_overnight" isExecutable="true" name="Ship overnight" operaton:historyTimeToLive="180">
-    <bpmn:documentation>Scout and clone, grill a Round at a time with the answerer answering each from your Answer History and the Vault until Round 10 ends the grilling, write the Spec, cut it into Tickets and implement each in parallel, walk through the changes for your review, then Push, open the pull request and update the Vault. Repos a Round names are not cloned; the Spec lists them. Unattended up to Review changes: waits on the user for Review changes, Push and the Notes.</bpmn:documentation>
+    <bpmn:documentation>Scout and clone, grill a Round at a time with the answerer answering each from your Answer History and the Vault until Round 9 is answered, write the Spec, cut it into Tickets and implement each in parallel, walk through the changes for your review, then Push, open the pull request and update the Vault. Repos a Round names are not cloned; the Spec lists them. Unattended up to Review changes: waits on the user for Review changes, Push and the Notes.</bpmn:documentation>
     <bpmn:startEvent id="start">
       <bpmn:extensionElements>
         <operaton:formData>
@@ -22,7 +22,6 @@
         </operaton:formData>
       </bpmn:extensionElements>
       <bpmn:outgoing>s1</bpmn:outgoing>
-      <bpmn:outgoing>toscout</bpmn:outgoing>
     </bpmn:startEvent>
     <bpmn:serviceTask id="tospec" name="Write the Spec" operaton:topic="agent" operaton:type="external">
       <bpmn:extensionElements>
@@ -80,7 +79,7 @@
       <bpmn:sequenceFlow id="f3" sourceRef="clone" targetRef="end_2"/>
     </bpmn:subProcess>
     <bpmn:subProcess id="grill_overnight" name="Grill (overnight)">
-      <bpmn:documentation>The griller asks a Round at a time until it asks nothing; the answerer answers each Round from your Answer History and the Vault, and Round 10 ends the grilling unanswered. Repos a Round names are not cloned. Needs start-form field prompt, and the scout's brief.</bpmn:documentation>
+      <bpmn:documentation>The griller asks a Round at a time until it asks nothing; the answerer answers each Round from your Answer History and the Vault, and the grilling ends once Round 9 is answered, so no Round 10 is asked. Repos a Round names are not cloned. Needs start-form field prompt, and the scout's brief.</bpmn:documentation>
       <bpmn:incoming>s2</bpmn:incoming>
       <bpmn:outgoing>s3</bpmn:outgoing>
       <bpmn:startEvent id="start_3">
@@ -99,7 +98,7 @@
           </operaton:inputOutput>
         </bpmn:extensionElements>
         <bpmn:incoming>f1_2</bpmn:incoming>
-        <bpmn:incoming>byagent</bpmn:incoming>
+        <bpmn:incoming>under</bpmn:incoming>
         <bpmn:outgoing>f2_2</bpmn:outgoing>
       </bpmn:serviceTask>
       <bpmn:exclusiveGateway default="nothing" id="asked" name="Asked?">
@@ -107,8 +106,8 @@
         <bpmn:outgoing>questions</bpmn:outgoing>
         <bpmn:outgoing>nothing</bpmn:outgoing>
       </bpmn:exclusiveGateway>
-      <bpmn:exclusiveGateway default="under" id="capped" name="Round 10?">
-        <bpmn:incoming>questions</bpmn:incoming>
+      <bpmn:exclusiveGateway default="under" id="capped" name="Round 9?">
+        <bpmn:incoming>byagent</bpmn:incoming>
         <bpmn:outgoing>cap</bpmn:outgoing>
         <bpmn:outgoing>under</bpmn:outgoing>
       </bpmn:exclusiveGateway>
@@ -123,7 +122,7 @@
             <operaton:inputParameter name="questions">${grill.output.questions}</operaton:inputParameter>
           </operaton:inputOutput>
         </bpmn:extensionElements>
-        <bpmn:incoming>under</bpmn:incoming>
+        <bpmn:incoming>questions</bpmn:incoming>
         <bpmn:outgoing>byagent</bpmn:outgoing>
       </bpmn:serviceTask>
       <bpmn:endEvent id="end_3">
@@ -132,15 +131,15 @@
       </bpmn:endEvent>
       <bpmn:sequenceFlow id="f1_2" sourceRef="start_3" targetRef="grill"/>
       <bpmn:sequenceFlow id="f2_2" sourceRef="grill" targetRef="asked"/>
-      <bpmn:sequenceFlow id="questions" name="yes" sourceRef="asked" targetRef="capped">
+      <bpmn:sequenceFlow id="questions" name="yes" sourceRef="asked" targetRef="answerer">
         <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${not empty grill.output.questions}</bpmn:conditionExpression>
       </bpmn:sequenceFlow>
       <bpmn:sequenceFlow id="nothing" name="no" sourceRef="asked" targetRef="end_3"/>
       <bpmn:sequenceFlow id="cap" name="yes" sourceRef="capped" targetRef="end_3">
-        <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${runs.grill &gt;= 10}</bpmn:conditionExpression>
+        <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${runs.grill &gt;= 9}</bpmn:conditionExpression>
       </bpmn:sequenceFlow>
-      <bpmn:sequenceFlow id="under" name="no" sourceRef="capped" targetRef="answerer"/>
-      <bpmn:sequenceFlow id="byagent" sourceRef="answerer" targetRef="grill"/>
+      <bpmn:sequenceFlow id="under" name="no" sourceRef="capped" targetRef="grill"/>
+      <bpmn:sequenceFlow id="byagent" sourceRef="answerer" targetRef="capped"/>
     </bpmn:subProcess>
     <bpmn:subProcess id="cut_and_implement" name="Cut and implement">
       <bpmn:documentation>The planner cuts the Spec into Tickets; an implementer builds each Ticket in parallel, in its own worktree, once its blockers have landed. Needs the Spec, tospec's.</bpmn:documentation>
@@ -434,10 +433,10 @@
         <dc:Bounds height="50" width="50" x="425" y="153"/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape bpmnElement="capped" id="capped_di" isMarkerVisible="true">
-        <dc:Bounds height="50" width="50" x="425" y="275"/>
+        <dc:Bounds height="50" width="50" x="295" y="275"/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape bpmnElement="answerer" id="answerer_di">
-        <dc:Bounds height="80" width="100" x="270" y="260"/>
+        <dc:Bounds height="80" width="100" x="400" y="260"/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape bpmnElement="end_3" id="end_di_3">
         <dc:Bounds height="36" width="36" x="532" y="160"/>
@@ -452,24 +451,25 @@
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge bpmnElement="questions" id="questions_di">
         <di:waypoint x="450" y="203"/>
-        <di:waypoint x="450" y="275"/>
+        <di:waypoint x="450" y="260"/>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge bpmnElement="nothing" id="nothing_di">
         <di:waypoint x="475" y="178"/>
         <di:waypoint x="532" y="178"/>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge bpmnElement="cap" id="cap_di">
-        <di:waypoint x="475" y="300"/>
-        <di:waypoint x="550" y="300"/>
+        <di:waypoint x="320" y="325"/>
+        <di:waypoint x="320" y="360"/>
+        <di:waypoint x="550" y="360"/>
         <di:waypoint x="550" y="196"/>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge bpmnElement="under" id="under_di">
-        <di:waypoint x="425" y="300"/>
-        <di:waypoint x="370" y="300"/>
+        <di:waypoint x="320" y="275"/>
+        <di:waypoint x="320" y="218"/>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge bpmnElement="byagent" id="byagent_di">
-        <di:waypoint x="320" y="260"/>
-        <di:waypoint x="320" y="218"/>
+        <di:waypoint x="400" y="300"/>
+        <di:waypoint x="345" y="300"/>
       </bpmndi:BPMNEdge>
     </bpmndi:BPMNPlane>
   </bpmndi:BPMNDiagram>
