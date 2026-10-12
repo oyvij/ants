@@ -228,15 +228,26 @@ data class AgentForm(
 /** A Claude model from Anthropic's model status table; [retires] is set once it is deprecated. */
 class ClaudeModel(val id: String, val retires: String?)
 
-/** The model dropdown's choices: Anthropic's public model status table, without the retired models. */
-// ponytail: the table is a copy bundled with Ants (models.md); the update check (#76) is to refresh it.
+/**
+ * The model dropdown's choices: Anthropic's public model status table, without the retired models. It starts as the
+ * copy bundled with Ants (models.md), and the update check refreshes it.
+ */
 object Models {
-    val all = Models::class.java.getResource("/models.md")!!.readText().lines().mapNotNull {
+    @Volatile
+    var all = read(Models::class.java.getResource("/models.md")!!.readText())
+        private set
+
+    /** Replaces the list with the models in [table], the status table as markdown; a table with none changes nothing. */
+    fun refresh(table: String) {
+        all = read(table).ifEmpty { all }
+    }
+
+    private fun read(table: String) = table.lines().mapNotNull {
         Regex("""^\|\s*(claude-\S+)\s*\|\s*(Active|Deprecated)\s*\|[^|]*\|\s*(.*?)\s*\|""").find(it)?.destructured
     }.map { (id, state, retires) -> ClaudeModel(id, retires.takeIf { state == "Deprecated" }) }
 
     /** Claude Code's aliases, each with what it resolves to on Anthropic's API: the newest active model of its family. */
-    val aliases = listOf("fable", "opus", "sonnet", "haiku").associateWith { alias -> all.firstOrNull { "-$alias-" in "${it.id}-" && it.retires == null }?.id }
+    val aliases get() = listOf("fable", "opus", "sonnet", "haiku").associateWith { alias -> all.firstOrNull { "-$alias-" in "${it.id}-" && it.retires == null }?.id }
 
     /** The model [id], if it is deprecated. */
     fun deprecated(id: String) = all.firstOrNull { it.id == id && it.retires != null }

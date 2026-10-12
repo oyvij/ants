@@ -1,0 +1,152 @@
+package ants
+
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.Test
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.boot.web.server.context.WebServerApplicationContext
+import java.nio.file.Files
+import java.nio.file.Path
+import java.security.MessageDigest
+import java.util.HexFormat
+import java.util.concurrent.TimeUnit.SECONDS
+import kotlin.io.path.copyTo
+import kotlin.io.path.createDirectories
+import kotlin.io.path.createSymbolicLinkPointingTo
+import kotlin.io.path.deleteIfExists
+import kotlin.io.path.exists
+import kotlin.io.path.readBytes
+import kotlin.io.path.readSymbolicLink
+import kotlin.io.path.writeText
+import kotlin.test.assertContains
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
+
+/** The update check against a release folder on disk ([AntsTest.releases]), never GitHub, and Update in the nav. */
+class UpdateTest : AntsTest() {
+    @Autowired
+    private lateinit var updates: Updates
+
+    private val browser by lazy { browser().also { it.login() } }
+
+    /** A release of [version] in the release folder, as the check reads it: its SHA256SUMS names the tarball. */
+    private fun release(version: String) {
+        releases.resolve("SHA256SUMS").writeText("${"0".repeat(64)}  ants-$version-macos-arm64.tar.gz\n")
+        updates.check()
+    }
+
+    /**
+     * A release of [version] as CI publishes one: a tarball (here holding only `bin/ants`), its SHA256SUMS and the
+     * install.sh Update runs.
+     */
+    private fun published(version: String) {
+        val tarball = releases.resolve("ants-$version-macos-arm64.tar.gz")
+        val image = Files.createTempDirectory("image")
+        image.resolve("bin").createDirectories().resolve("ants").writeText("#!/bin/bash\n")
+        assertEquals(0, ProcessBuilder("tar", "-czf", "$tarball", "-C", "$image", "bin").start().waitFor())
+        val sha = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(tarball.readBytes()))
+        Path.of("install.sh").copyTo(releases.resolve("install.sh"), overwrite = true)
+        releases.resolve("SHA256SUMS").writeText("$sha  ${tarball.fileName}\n")
+        updates.check()
+    }
+
+    /** Puts the release folder back as other tests expect it: no release newer than this Ants. */
+    @AfterEach
+    fun noNewerRelease() {
+        models.writeText(javaClass.getResource("/models.md")!!.readText()) // the bundled table back, then none
+        release("0.0.1")
+        models.deleteIfExists()
+        for (name in listOf("current", "previous")) home.resolve(name).deleteIfExists()
+        home.resolve("versions").toFile().deleteRecursively()
+    }
+
+    /** The nav's update notice as [page] shows it: the nav fills its slot from the stream it names. */
+    private fun notice(page: String = "/"): String {
+        val slot = Regex("""<span id="update" data-src="([^"]+)"></span>""").find(browser.get(page).body)
+        return browser.events(assertNotNull(slot, "$page has no update notice in its nav").groupValues[1]).poll(10, SECONDS).orEmpty()
+    }
+
+    @Test
+    fun `a newer release shows in the nav with Update`() {
+        release("99.0.0")
+
+        val notice = notice("/runs")
+
+        assertContains(notice, "Ants 99.0.0 is available")
+        assertContains(notice, """<form method="post" action="/update"""")
+        assertContains(notice, "<button>Update</button>")
+    }
+
+    @Test
+    fun `an older release shows nothing`() {
+        release("0.0.1")
+
+        assertEquals("", notice())
+    }
+
+    @Test
+    fun `in Docker the update notice shows without an Update button, and Update is refused`() {
+        releases.resolve("SHA256SUMS").writeText("${"0".repeat(64)}  ants-99.0.0-macos-arm64.tar.gz\n")
+        startAnother(tempHome(), "--ants.docker=true", "--ants.password=s3cret").use { ants ->
+            val docker = Browser("http://127.0.0.1:${(ants as WebServerApplicationContext).webServer!!.port}").also { it.login("s3cret") }
+
+            val events = docker.events("/update")
+            val notice = generateSequence { events.poll(10, SECONDS) }.first { it.isNotEmpty() } // once its first check is done
+
+            assertContains(notice, "Ants 99.0.0 is available")
+            assertFalse("<button>" in notice, notice)
+            assertEquals(403, docker.post("/update", emptyMap()).status)
+        }
+    }
+
+    @Test
+    fun `Update installs the newer release beside this one without stopping a running Run, and it runs from the next restart`() {
+        val claude = FakeClaude()
+        agentTask(claude)
+        claude.session("draft", "wait release", DONE)
+        browser.import("agent-task.bpmn")
+        browser.get("/processes/agent-task")
+        val run = browser.post("/processes/agent-task/runs", mapOf("prompt" to "Say hello")).path.removePrefix("/runs/")
+        eventually { assertEquals(1, claude.launches("draft").size) }
+        home.resolve("versions/0.1.0").createDirectories()
+        home.resolve("current").createSymbolicLinkPointingTo(Path.of("versions/0.1.0"))
+        published("99.0.0")
+
+        browser.post("/update", emptyMap())
+
+        eventually { assertContains(notice(), "Ants 99.0.0 runs from the next ants restart") }
+        assertTrue(home.resolve("versions/99.0.0/bin/ants").exists())
+        assertEquals(Path.of("versions/99.0.0"), home.resolve("current").readSymbolicLink())
+        assertEquals(Path.of("versions/0.1.0"), home.resolve("previous").readSymbolicLink())
+        assertContains(browser.get("/runs/$run").body, "State: Running")
+        claude.release("release")
+        eventually { assertContains(browser.get("/runs/$run").body, "State: Completed") }
+    }
+
+    @Test
+    fun `the model list refreshes with the update check`() {
+        models.writeText(
+            """
+            | API model name     | Current state | Deprecated     | Tentative retirement date |
+            | :----------------- | :------------ | :------------- | :------------------------ |
+            | claude-opus-9      | Active        | N/A            | Not sooner than 2030      |
+            | claude-sonnet-8    | Deprecated    | March 1, 2029  | June 1, 2029              |
+            | claude-opus-5-5    | Retired       | March 1, 2028  | June 1, 2028              |
+            """.trimIndent(),
+        )
+
+        updates.check()
+
+        val form = browser.get("/agents/new").body
+        assertContains(form, ">claude-opus-9</option>")
+        assertContains(form, "claude-sonnet-8 (deprecated, retires June 1, 2029)")
+        assertContains(form, "opus → claude-opus-9")
+        assertFalse("claude-opus-5-5" in form, "a retired model is off the list")
+    }
+
+    private companion object {
+        const val DONE = """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION",""" +
+            """"structured_output":{"outcome":"done","summary":"Drafted.","output":{"text":"Hello"}}}"""
+    }
+}

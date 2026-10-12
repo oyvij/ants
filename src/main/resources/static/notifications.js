@@ -1,5 +1,5 @@
 // The Notification list count, live in the nav, the tab title and the app badge (where the browser has one; 0 clears
-// it), and the Usage limit pill, live in the nav.
+// it), and the nav's live slots, the Usage limit pill and the update notice, each from the stream it names.
 const title = document.title;
 new EventSource('/notifications/count').onmessage = event => {
     const count = event.data === '0' ? '' : `(${event.data})`;
@@ -7,5 +7,6 @@ new EventSource('/notifications/count').onmessage = event => {
     document.title = (count && `${count} `) + title;
     navigator.setAppBadge?.(Number(event.data)).catch(() => {}); // Safari refuses without notification permission
 };
-const paused = document.getElementById('paused');
-new EventSource(paused.dataset.src).onmessage = event => paused.innerHTML = event.data;
+for (const slot of document.querySelectorAll('nav [data-src]')) {
+    new EventSource(slot.dataset.src).onmessage = event => slot.innerHTML = event.data;
+}

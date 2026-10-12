@@ -55,6 +55,12 @@ jte {
     generate()
 }
 
+// META-INF/build-info.properties: the version the update check compares a release with. No build time, so a build
+// that changed nothing stays up to date.
+springBoot {
+    buildInfo { excludes = setOf("time") }
+}
+
 // The Dockerfile copies it by this name.
 tasks.bootJar {
     archiveFileName = "ants.jar"

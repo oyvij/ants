@@ -46,6 +46,8 @@ class DockerTest {
             docker(
                 "run", "--detach", "--name", id, "--network", id, "--volume", "$id:/data", "--publish", "127.0.0.1::7323",
                 "--env", "ANTS_PASSWORD=s3cret",
+                "--env", "ANTS_RELEASES=", // no update check out of the container
+                "--env", "ANTS_MODELS=",
                 "--env", "SPRING_DATASOURCE_URL=jdbc:postgresql://$id-db/ants",
                 "--env", "SPRING_DATASOURCE_USERNAME=postgres",
                 "--env", "SPRING_DATASOURCE_PASSWORD=pg",

@@ -1,9 +1,13 @@
 #!/bin/bash
 # Installs Ants, with its own Java runtime, and starts it:
 #   curl -fsSL https://github.com/oyvij/ants/releases/latest/download/install.sh | bash
-# Each version goes in its own folder, $ANTS_HOME/versions/<version>; $ANTS_HOME/current links the one in use and
-# ~/.local/bin/ants links its launcher. ANTS_RELEASES names another release folder to install from.
+# Each version goes in its own folder, $ANTS_HOME/versions/<version>; $ANTS_HOME/current links the one in use,
+# $ANTS_HOME/previous the one before it, for `ants rollback`, and ~/.local/bin/ants links the launcher. ANTS_RELEASES
+# names another release folder to install from. Ants' Update runs it with --update, which only installs the version:
+# the running Ants goes on and the new one runs from the next restart.
 set -euo pipefail
+
+update=${1:-}
 
 releases=${ANTS_RELEASES:-https://github.com/oyvij/ants/releases/latest/download}
 releases=${releases%/}
@@ -25,13 +29,18 @@ if ! shasum -a 256 -c SHA256SUMS > /dev/null 2>&1; then
   exit 1
 fi
 
-mkdir -p unpacked "$ANTS_HOME/versions" "$(dirname "$link")"
+mkdir -p unpacked "$ANTS_HOME/versions"
 tar -xzf "$tarball" -C unpacked
 rm -rf "${ANTS_HOME:?}/versions/$version"
 mv unpacked "$ANTS_HOME/versions/$version"
+was=$(readlink "$ANTS_HOME/current" || true)
+if [ -n "$was" ] && [ "$was" != "versions/$version" ]; then ln -sfn "$was" "$ANTS_HOME/previous"; fi
 ln -sfn "versions/$version" "$ANTS_HOME/current"
-ln -sfn "$ANTS_HOME/current/bin/ants" "$link"
 echo "Installed Ants $version in $ANTS_HOME/versions/$version"
+if [ "$update" = --update ]; then exit 0; fi
+
+mkdir -p "$(dirname "$link")"
+ln -sfn "$ANTS_HOME/current/bin/ants" "$link"
 
 case ":$PATH:" in
   *":$(dirname "$link"):"*) ;;

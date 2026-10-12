@@ -24,6 +24,10 @@ running() {
 start() {
   if running; then echo "Ants is already running at $url (pid $pid)"; return; fi
   mkdir -p "$ANTS_HOME/logs" "$(dirname "$plist")"
+  # The version current links, when that is this one, so launchd's own relaunches, at login or after a crash, run the
+  # version an update or a rollback left there, as `ants restart` does.
+  local program=$root/bin/ants
+  [ "$(realpath "$ANTS_HOME/current" 2> /dev/null)" = "$root" ] && program=$ANTS_HOME/current/bin/ants
   # ponytail: launchd appends to one log file that never rotates; rotate if it grows too big
   cat > "$plist" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -34,7 +38,7 @@ start() {
     <string>$label</string>
     <key>ProgramArguments</key>
     <array>
-        <string>$root/bin/ants</string>
+        <string>$program</string>
         <string>run</string>
     </array>
     <key>EnvironmentVariables</key>
@@ -91,7 +95,16 @@ case "${1:-}" in
     exec "$java" -jar "$root/lib/ants.jar" "$@" ;;
   password) exec "$java" -jar "$root/lib/ants.jar" password ;;
   logs) shift; exec tail -n 100 "$@" "$ANTS_HOME/logs/ants.log" ;;
-  rollback) echo "There is no previous version to roll back to" >&2; exit 1 ;;
+  rollback)
+    # Swaps current and previous, so a second rollback goes forward again; a running Ants restarts on the version now current.
+    previous=$(readlink "$ANTS_HOME/previous") || { echo "There is no previous version to roll back to" >&2; exit 1; }
+    ln -sfn "$(readlink "$ANTS_HOME/current")" "$ANTS_HOME/previous"
+    ln -sfn "$previous" "$ANTS_HOME/current"
+    if running; then
+      echo "Rolled back to Ants ${previous#versions/}"
+      exec "$ANTS_HOME/current/bin/ants" restart
+    fi
+    echo "Rolled back to Ants ${previous#versions/}; it runs from the next ants start" ;;
   status)
     if running; then echo "Ants is running at $url (pid $pid)"; else echo "Ants is not running"; exit 3; fi ;;
   -h | --help | help) echo "$usage" ;;

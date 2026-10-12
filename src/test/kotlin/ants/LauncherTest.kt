@@ -7,8 +7,10 @@ import java.nio.file.Path
 import java.nio.file.StandardCopyOption.COPY_ATTRIBUTES
 import kotlin.io.path.createDirectories
 import kotlin.io.path.createSymbolicLinkPointingTo
+import kotlin.io.path.deleteIfExists
 import kotlin.io.path.exists
 import kotlin.io.path.readLines
+import kotlin.io.path.readSymbolicLink
 import kotlin.io.path.readText
 import kotlin.io.path.writeText
 import kotlin.test.assertContains
@@ -41,7 +43,8 @@ class LauncherTest {
 
     private fun launch(vararg command: String) = ProcessBuilder(link.toString(), *command).redirectErrorStream(true).also {
         it.environment().clear()
-        it.environment() += mapOf("HOME" to "$home", "PATH" to "$fakeLaunchctl:/usr/bin:/bin")
+        // No update check reaches GitHub or Anthropic: Ants run here finds no release and no model table.
+        it.environment() += mapOf("HOME" to "$home", "PATH" to "$fakeLaunchctl:/usr/bin:/bin", "ANTS_RELEASES" to "", "ANTS_MODELS" to "")
     }.start()
 
     private fun ants(vararg command: String, input: String = ""): Ran {
@@ -137,6 +140,53 @@ class LauncherTest {
     @Test
     fun `rollback says there is no previous version yet`() {
         assertEquals(Ran(1, "There is no previous version to roll back to\n"), ants("rollback"))
+    }
+
+    /** Installs [versions] as install.sh and Update lay them out, the last one `current` and the one before `previous`. */
+    private fun installed(vararg versions: String) {
+        for (version in versions) {
+            val folder = antsHome.resolve("versions/$version")
+            Files.copy(Path.of("src/dist/bin/ants"), folder.resolve("bin").createDirectories().resolve("ants"), COPY_ATTRIBUTES)
+        }
+        antsHome.resolve("current").createSymbolicLinkPointingTo(Path.of("versions/${versions.last()}"))
+        antsHome.resolve("previous").createSymbolicLinkPointingTo(Path.of("versions/${versions[versions.size - 2]}"))
+        link.deleteIfExists()
+        link.createSymbolicLinkPointingTo(antsHome.resolve("current/bin/ants"))
+    }
+
+    @Test
+    fun `the launchd agent runs the version current links, so after an update a relaunch by launchd runs the new one too`() {
+        installed("0.1.0", "0.2.0")
+
+        ants("start")
+
+        assertContains(plist.readText(), "<string>$antsHome/current/bin/ants</string>\n        <string>run</string>")
+    }
+
+    @Test
+    fun `rollback returns to the previous version and restarts Ants on it`() {
+        installed("0.1.0", "0.2.0")
+        ants("start")
+        val pid = antsHome.resolve("ants.lock").readLines().first()
+
+        val rollback = ants("rollback")
+
+        assertEquals(0, rollback.exit, rollback.output)
+        assertContains(rollback.output, "Rolled back to Ants 0.1.0")
+        assertContains(rollback.output, "Ants is running at http://127.0.0.1:7323")
+        assertEquals(Path.of("versions/0.1.0"), antsHome.resolve("current").readSymbolicLink())
+        assertEquals(Path.of("versions/0.2.0"), antsHome.resolve("previous").readSymbolicLink())
+        assertEquals(listOf("bootout", "bootstrap"), launchctl().takeLast(2).map { it.substringBefore(' ') })
+        assertNotEquals(pid, antsHome.resolve("ants.lock").readLines().first())
+    }
+
+    @Test
+    fun `rollback while Ants is stopped leaves it stopped`() {
+        installed("0.1.0", "0.2.0")
+
+        assertEquals(Ran(0, "Rolled back to Ants 0.1.0; it runs from the next ants start\n"), ants("rollback"))
+        assertEquals(Path.of("versions/0.1.0"), antsHome.resolve("current").readSymbolicLink())
+        assertEquals(emptyList(), launchctl())
     }
 
     @Test

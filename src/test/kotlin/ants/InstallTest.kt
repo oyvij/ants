@@ -42,6 +42,7 @@ class InstallTest {
             "HOME" to "$home",
             "PATH" to "${LauncherTest.fakeLaunchctl}:/usr/bin:/bin",
             "ANTS_RELEASES" to release.toUri().toString(),
+            "ANTS_MODELS" to "", // the installed Ants' update check reads no model table from Anthropic
         )
     }.start()
 
