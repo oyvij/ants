@@ -1,6 +1,6 @@
 ---
 name: claude-probe
-description: Probe the real claude CLI with Ants' headless flags and record its stream-json events. Use when a ticket depends on how claude behaves (event shapes, schema acceptance, follow-up messages, interrupts, rate limits, login loss) or when a fake-claude session should mirror a real one.
+description: Probe the real claude CLI with Ants' headless flags and record its stream-json events. Use when a ticket depends on how claude behaves (event shapes, schema acceptance, tool permission rules such as `--allowedTools`/`--disallowedTools` path patterns and `--add-dir`, follow-up messages, interrupts, rate limits, login loss) or when a fake-claude session should mirror a real one.
 ---
 
 # claude-probe

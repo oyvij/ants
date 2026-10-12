@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
-"""Everything a ticket's implementer must read, in one call, by default with nothing filtered out.
+"""What a ticket's implementer must read, in one call.
 
-    scripts/ticket-context [--lean] <n>
+    scripts/ticket-context [--full] <n>
 
 Prints the ticket and its comments, then every ticket it is blocked by and every ticket it blocks, each whole with
-its comments (the upstream ones say what exists, the downstream ones settle scope), then the whole spec
-(`docs/spec.md`). It saves calls, never content: everything the manual path would read is printed.
+its comments (the upstream ones say what exists, the downstream ones settle scope), then the spec sections the ticket
+cites: the user stories it names by number ("story 12", "stories 51-53"), and each section whose heading's words (or
+the words in its parentheses) all appear in the ticket, then the headings it left out (for #71, 41 KB against 92 KB).
+Read the whole of `docs/spec.md` when a left-out section bears on the ticket.
 
---lean prints only the spec sections the ticket cites instead of the whole spec: the user stories it names by number
-("story 12", "stories 51-53"), and each section whose heading's words (or the words in its parentheses) all appear in
-the ticket, then the headings it left out (for #46, 24 KB against 68 KB). Read the whole of `docs/spec.md`
-when a left-out section bears on the ticket.
+--full prints the whole spec instead of the cited sections.
 """
 import json
 import re
@@ -64,8 +63,8 @@ def cited(spec, ticket):
 
 def main():
     args = sys.argv[1:]
-    lean = "--lean" in args
-    args = [a for a in args if a != "--lean"]
+    full = "--full" in args
+    args = [a for a in args if a not in ("--full", "--lean")]
     if len(args) != 1 or args[0] in ("-h", "--help"):
         sys.exit(__doc__.strip())
     n = int(args[0])
@@ -76,7 +75,7 @@ def main():
             print(f"---\n\n**{relation.replace('_', ' ').capitalize()}:**\n")
             show(issue(other["number"]), "##")
     spec = SPEC.read_text()
-    if lean:
+    if not full:
         text = " ".join([ticket["title"], ticket["body"] or ""] + [c["body"] for c in ticket["comments"]])
         print(f"---\n\n**The spec (docs/spec.md), only what #{n} cites:**\n\n{cited(spec, text)}")
     else:

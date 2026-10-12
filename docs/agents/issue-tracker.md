@@ -5,9 +5,9 @@ transfer it or mirror it under an organisation. Use `gh`; it infers the repo fro
 
 - **Create**: `gh issue create --title "..." --body "..."` (heredoc for multi-line bodies)
 - **Read**: `gh issue view <n> --comments`
-- **Start a ticket**: `scripts/ticket-context <n>` prints, in one call and unfiltered, the ticket, every ticket it
-  is blocked by or blocks, each with its comments, and the whole spec (`docs/spec.md`); `--lean` keeps only the spec
-  sections the ticket cites.
+- **Start a ticket**: `scripts/ticket-context <n>` prints, in one call, the ticket, every ticket it is blocked by or
+  blocks, each with its comments, and the spec sections the ticket cites; `--full` prints the whole spec
+  (`docs/spec.md`).
 - **Comment / close**: `gh issue comment <n> --body "..."`, `gh issue close <n> --comment "..."`
 - **Resolve a ticket**: comment what was built, then close. Where the code departs from the spec (`docs/spec.md`),
   record an ADR in `docs/adr/` and edit the spec's text to match, in the same commit. Where the spec is silent (a
