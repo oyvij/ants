@@ -55,7 +55,7 @@ class RunTest : AntsTest() {
         val ids = List(2) { start("loop-then-wait").path.removePrefix("/runs/") }
         val runs = browser.get("/runs").body
         for (id in ids) {
-            assertContains(runs, Regex("""<a href="/runs/$id">Loop then wait</a></td><td>Running</td>"""))
+            assertContains(runs, Regex("""<a href="/runs/$id">Loop then wait</a></td><td><span data-state="Running">Running</span></td>"""))
             assertTrue(home.resolve("runs/$id").isDirectory())
         }
     }
