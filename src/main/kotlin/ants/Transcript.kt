@@ -49,6 +49,8 @@ class Transcript {
     private var verb = "Starting"
     private var seen = Instant.EPOCH // the latest time a line carried
     private var soFarTokens = 0L
+    private var thread: Any? = null // the codex session the lines are of
+    private val threadTotals = mutableMapOf<Any?, Long>() // a codex session → its total tokens, as its last turn.completed gave it
 
     /** The latest So far paragraph, if one has been written. */
     var soFar: String? = null
@@ -72,6 +74,7 @@ class Transcript {
         var prompted = false
         val usage = mutableMapOf<Any?, Long>() // a message id → its tokens, while no `result` has said better
         var modelUsage: Long? = null
+        var before: Long? = null // its codex session's total tokens before it
         val tokens get() = modelUsage ?: usage.values.sum()
     }
 
@@ -110,9 +113,17 @@ class Transcript {
             "result" -> result(event, launch)
             // codex exec --json
             "item.started", "item.completed" -> item(event["item"] as? Map<*, *> ?: emptyMap<Any, Any>(), event["type"] == "item.completed", launch)
-            // ponytail: usage is the session's total so far (`usage_from_last_total` in codex-rs/exec), taken as the
-            // launch's like modelUsage; a launch that resumes a session counts its earlier turns again.
-            "turn.completed" -> (event["usage"] as? Map<*, *>)?.let { launch?.modelUsage = sum(it, "input_tokens", "output_tokens") }
+            "thread.started" -> {
+                thread = event["thread_id"]
+                if (launch != null && launch.before == null) launch.before = threadTotals[thread] ?: 0
+            }
+            // usage is the session's total so far (`usage_from_last_total` in codex-rs/exec), so a launch counts it
+            // less the session's total before the launch.
+            "turn.completed" -> (event["usage"] as? Map<*, *>)?.let {
+                val total = sum(it, "input_tokens", "output_tokens")
+                threadTotals[thread] = total
+                launch?.modelUsage = total - (launch?.before ?: 0)
+            }
             "error", "turn.failed" -> (event["message"] ?: (event["error"] as? Map<*, *>)?.get("message"))?.let { message ->
                 append { """<div class="result" id="$it"><b>Error</b> ${esc(message)}</div>""" }
             }
