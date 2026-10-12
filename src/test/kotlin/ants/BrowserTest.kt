@@ -182,13 +182,13 @@ class BrowserTest : AntsTest() {
     @Test
     fun `Answer a Round shows one question at a time under tabs marking accepted and edited, then Review and send`() = browse {
         val claude = FakeClaude()
-        agentTask(claude, mapOf("grill" to """{"type":"object","properties":{"questions":{"type":"array"}}}"""))
+        agentTask(claude, mapOf("quiz" to """{"type":"object","properties":{"questions":{"type":"array"}}}"""))
         fun round(vararg ids: String) = """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":""" +
             """{"outcome":"done","summary":"A Round.","output":{"questions":[""" + ids.joinToString(",") {
                 """{"id":"$it","title":"Title $it","ask":"Ask $it?","context":"Settles $it.","recommendation":"Recommend $it.","why":"Because $it."}"""
             } + "]}}}"
-        claude.session("grill", 1, round("who", "scope"))
-        claude.session("grill", 2, round())
+        claude.session("quiz", 1, round("who", "scope"))
+        claude.session("quiz", 2, round())
         http.upload("/processes", "file", "round.bpmn", javaClass.getResource("/round.bpmn")!!.readBytes())
         val run = http.post("/processes/round/runs", mapOf()).path.removePrefix("/runs/")
         var entry = ""
@@ -216,7 +216,7 @@ class BrowserTest : AntsTest() {
         page.click("#next")
         page.waitForURL { !it.contains(entry) }
         eventually { assertContains(http.get("/runs/$run").body, "State: Completed") }
-        assertContains(claude.launches("grill")[1].stdin, """{\"id\":\"who\",\"answer\":\"Recommend who.\",\"source\":\"accepted\"},{\"id\":\"scope\",\"answer\":\"Only admins.\",\"source\":\"written\"}""")
+        assertContains(claude.launches("quiz")[1].stdin, """{\"id\":\"who\",\"answer\":\"Recommend who.\",\"source\":\"accepted\"},{\"id\":\"scope\",\"answer\":\"Only admins.\",\"source\":\"written\"}""")
     }
 
     @Test
