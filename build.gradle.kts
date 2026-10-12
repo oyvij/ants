@@ -40,6 +40,7 @@ dependencies {
     implementation("org.commonmark:commonmark-ext-task-list-items:0.30.1") // a Ticket's ticking checkboxes
     implementation("org.commonmark:commonmark-ext-gfm-tables:0.30.1")
     runtimeOnly("com.h2database:h2")
+    runtimeOnly("org.postgresql:postgresql") // engine state on a server, such as in the Docker image
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation(kotlin("test"))
@@ -50,6 +51,11 @@ dependencies {
 
 jte {
     generate()
+}
+
+// The Dockerfile copies it by this name.
+tasks.bootJar {
+    archiveFileName = "ants.jar"
 }
 
 // Node runs only in the build: pnpm fetches the front-end libraries, whose dist/ goes into the static resources.
@@ -98,6 +104,7 @@ tasks.register<JavaExec>("playwright") {
 
 tasks.test {
     dependsOn(nodeTest)
+    dependsOn(tasks.bootJar) // DockerTest builds the image from it
     useJUnitPlatform { excludeTags("live") }
     // Only the system folders and a fake gh, so a CLI run by its bare name, such as claude or nono, is never the real one.
     environment("PATH", "${projectDir}/src/test/resources/fake-gh:/usr/bin:/bin")
