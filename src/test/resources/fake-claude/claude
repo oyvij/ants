@@ -29,7 +29,8 @@ launch=$dir/launches/$skill.$n
 printf '%s\n' "$@" > "$launch/argv"
 env > "$launch/env"
 pwd > "$launch/cwd"
-printf '%s\n' "$prompt" > "$launch/stdin"
+# stdin comes last and whole (renamed into place), so a launch whose stdin exists has its full record.
+printf '%s\n' "$prompt" > "$launch/stdin.tmp" && mv "$launch/stdin.tmp" "$launch/stdin"
 pwd >> "$dir/launches.log"
 trap 'touch "$launch/killed"; exit 143' TERM
 replay() { printf '%s\n' "${1%\}},\"isReplay\":true}"; }

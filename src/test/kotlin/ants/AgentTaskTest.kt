@@ -452,9 +452,10 @@ class FakeClaude {
 
     fun help(text: String) = dir.resolve("help").writeText(text)
 
-    /** The launches of [skill], in launch order. */
+    /** The launches of [skill], in launch order, each once its record is written (its `stdin` comes last). */
     fun launches(skill: String): List<Launch> =
         if (dir.resolve("launches").isDirectory()) dir.resolve("launches").listDirectoryEntries("$skill.*")
+            .filter { it.resolve("stdin").exists() }
             .sortedBy { it.fileName.toString().substringAfterLast('.').toInt() }.map(::Launch) else emptyList()
 
     /** The working directory of every launch, in launch order. */
