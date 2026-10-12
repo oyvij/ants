@@ -15,7 +15,7 @@
 <body>
 @template.nav(shell = shell)
 <main>
-<div class="crumbs"><a href="/notifications">Notification list</a> / <a href="/runs/${entry.run}">Run ${entry.run}</a> / ${entry.task}</div>
+<div class="crumbs"><a href="/notifications">Notification list</a> / <a href="/runs/${entry.run}">${entry.runName}</a> / ${entry.task}</div>
 <div class="ph"><h1>${entry.summary.ifEmpty { entry.task }}</h1><div class="acts"><span data-tag="${entry.tag}">${entry.icon} ${entry.tag}</span><span class="muted small">${entry.process} · waiting ${entry.waited}</span></div></div>
 <article>$unsafe{shown}</article>
 @if(error != null)<p role="alert">${error}</p>@endif

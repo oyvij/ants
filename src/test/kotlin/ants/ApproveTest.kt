@@ -22,7 +22,7 @@ class ApproveTest : AntsTest() {
         browser.import("approve.bpmn")
         browser.get("/processes/approve")
         val run = browser.post("/processes/approve/runs", emptyMap()).path.removePrefix("/runs/")
-        home.resolve("runs/$run/notes.md").writeText("# Notes\n\nThe *draft* reads well.\n")
+        workspace(run).resolve("notes.md").writeText("# Notes\n\nThe *draft* reads well.\n")
         return run
     }
 
@@ -39,7 +39,7 @@ class ApproveTest : AntsTest() {
 
     private fun page(run: String) = browser.get("/runs/$run").body
 
-    private fun runLog(run: String) = home.resolve("runs/$run/run-log.md").readText()
+    private fun runLog(run: String) = workspace(run).resolve("run-log.md").readText()
 
     @Test
     fun `an Approve appears as ✓ approve and its page renders the shown file as markdown`() {

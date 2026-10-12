@@ -1,4 +1,5 @@
 @param file: ants.Tracked
+@param runName: String
 @param article: String
 @param tickets: List<ants.Tracked>
 @param error: String? = null
@@ -16,7 +17,7 @@
 <body>
 @template.nav(shell = shell)
 <main>
-<div class="ph"><div class="crumbs"><a href="/tickets">Tickets</a> / <a href="/runs/${file.run}">Run</a>@if(file.name != "spec") / <a href="/runs/${file.run}/tickets/spec">Spec</a>@endif</div>
+<div class="ph"><div class="crumbs"><a href="/tickets">Tickets</a> / <a href="/runs/${file.run}">${runName}</a>@if(file.name != "spec") / <a href="/runs/${file.run}/tickets/spec">Spec</a>@endif</div>
     <div class="acts"><a class="btn" href="${file.href}/edit">Edit</a></div></div>
 @if(error != null)<p role="alert">${error}</p>@endif
 $unsafe{article}

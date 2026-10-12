@@ -43,7 +43,7 @@ class StartForm(private val forms: FormService, private val runtime: RuntimeServ
 
     /**
      * Starts a Run of [definition] with [values] from its start form, each field under its variable name: Text and
-     * Markdown as a string, Repos as a list of Source map names. Values for anything else are ignored. Refused with
+     * Markdown as a string, Repos as a list of Source map names, and the Run's name under [NAME]. Values for anything else are ignored. Refused with
      * [CantStart] while the pre-Run check gives reasons.
      */
     fun start(definition: ProcessDefinition, values: Map<String, List<String>>): ProcessInstance {
@@ -54,6 +54,7 @@ class StartForm(private val forms: FormService, private val runtime: RuntimeServ
         }
         val reasons = preRun.reasons(definition, variables.values.filterIsInstance<List<*>>().flatten().map(Any?::toString))
         if (reasons.isNotEmpty()) throw CantStart(reasons)
-        return runtime.startProcessInstanceById(definition.id, variables)
+        // The Name field's, empty when not given: RunLifecycle names the Run then.
+        return runtime.startProcessInstanceById(definition.id, variables + (NAME to values[NAME]?.firstOrNull().orEmpty()))
     }
 }

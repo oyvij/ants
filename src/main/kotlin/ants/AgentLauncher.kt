@@ -55,6 +55,7 @@ class AgentLauncher(
     private val landing: Landing,
     private val cloneRepos: CloneRepos,
     internal val clock: Clock,
+    private val names: RunNames,
     @Value("\${ants.home}") private val home: Path,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -98,7 +99,7 @@ class AgentLauncher(
      */
     fun send(run: String, task: String, message: String): Boolean {
         val stdin = stdins[key(run, task)]?.takeIf { it.say(message) } ?: return false
-        runLog(home.runWorkspace(run), stdin.task, "Send", message)
+        runLog(names.runWorkspace(run), stdin.task, "Send", message)
         return true
     }
 
@@ -224,7 +225,7 @@ class AgentLauncher(
         var transcript: Transcript.Writer? = null
         try {
             val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult().rootProcessInstanceId
-            val workspace = home.runWorkspace(run)
+            val workspace = names.runWorkspace(run)
             if (ticketed(task, run, workspace)) return
             val agent = catalogue.agent(task.extensionProperties[AGENT] ?: error("${task.activityId} names no $AGENT"))
             if (hold(task, agent.cli)) return // keeping its choice for the launch after the reset
@@ -371,7 +372,7 @@ class AgentLauncher(
             .plus(answerHistory(task, skill)?.let { listOf("--add-dir", "${it.createDirectories()}") }.orEmpty()) // so a Read reaches it (ADR 0010)
         val process = cli(agent.cli, cwd, flags(agent, schema, listOf(skill) + used, session!!, resume, gated?.let { listOf("Write(/$it/**)", "Edit(/$it/**)") }.orEmpty()) + shared + places).start()
         val stdin = Stdin(process.outputWriter(), name(task))
-        clis[process] = workspace.fileName.toString() // the Run workspace is runs/<run>/
+        clis[process] = run
         val stderr = drain(process)
         try {
             stdin.say(prompt)

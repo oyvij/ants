@@ -1,4 +1,5 @@
 @param run: String
+@param name: String
 @param html: String
 @param colorScheme: String = "light dark"
 @param shell: ants.Shell
@@ -8,12 +9,12 @@
     <meta charset="utf-8">
     @template.app()
     <meta name="color-scheme" content="${colorScheme}">
-    <title>Report · Ants</title>
+    <title>Report · ${name} · Ants</title>
 </head>
 <body>
 @template.nav(shell = shell)
 <main>
-<div class="crumbs"><a href="/runs">Runs</a> / <a href="/runs/${run}">Run ${run}</a> / Report</div>
+<div class="crumbs"><a href="/runs">Runs</a> / <a href="/runs/${run}">${name}</a> / Report</div>
 $unsafe{html}
 </main>
 </body>

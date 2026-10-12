@@ -4,7 +4,6 @@ import jakarta.annotation.PreDestroy
 import org.operaton.bpm.engine.ExternalTaskService
 import org.operaton.bpm.engine.RuntimeService
 import org.slf4j.LoggerFactory
-import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.context.event.ApplicationReadyEvent
 import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Component
@@ -28,7 +27,7 @@ class SoFar(
     private val runtime: RuntimeService,
     private val settings: Settings,
     private val launcher: AgentLauncher,
-    @Value("\${ants.home}") private val home: Path,
+    private val names: RunNames,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val poller = Executors.newSingleThreadScheduledExecutor()
@@ -51,7 +50,7 @@ class SoFar(
             val every = settings.soFar() ?: return
             for (task in externalTasks.createExternalTaskQuery().topicName(AgentLauncher.TOPIC).locked().withRetriesLeft().list()) {
                 val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult()?.rootProcessInstanceId ?: continue
-                rewrite(Transcript.file(home.runWorkspace(run), runtime.taskKey(task.executionId, task.activityId)), every)
+                rewrite(Transcript.file(names.runWorkspace(run), runtime.taskKey(task.executionId, task.activityId)), every)
             }
         } catch (e: Exception) {
             log.warn("So far failed", e) // a failed tick must not end the polling

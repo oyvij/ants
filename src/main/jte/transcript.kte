@@ -1,4 +1,5 @@
 @param run: String
+@param runName: String
 @param task: String
 @param transcript: ants.Transcript
 @param offset: Long
@@ -18,7 +19,7 @@
 <body>
 @template.nav(shell = shell)
 <main>
-<div class="crumbs"><a href="/runs">Runs</a> / <a href="/runs/${run}">Run ${run}</a> / ${task}</div>
+<div class="crumbs"><a href="/runs">Runs</a> / <a href="/runs/${run}">${runName}</a> / ${task}</div>
 <div class="ph"><h1>${task} · $unsafe{transcript.html("tokens")}</h1></div>
 <div id="entries" data-from="${offset}">
 @for(entry in transcript.roots)

@@ -47,7 +47,7 @@ class StorySetTest : AntsTest() {
         browser.get("/processes/story-set")
         val run = browser.post("/processes/story-set/runs", listOf("repos" to "api", "repos" to "web")).path.removePrefix("/runs/")
         eventually { assertEquals(1, claude.launches("narrate").size) } // the clones are there
-        val api = home.runWorkspace(run).resolve("repos/api")
+        val api = workspace(run).resolve("repos/api")
         commitFile(api, "long.txt", WORDS.joinToString("\n", postfix = "\n"), "Count to ten")
         commitFile(api, "long.txt", WORDS.joinToString("\n", postfix = "\n").replaceFirst("one", "ONE"), "Shout")
         claude.release("commits")

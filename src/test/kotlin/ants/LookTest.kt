@@ -128,7 +128,7 @@ class LookTest : AntsTest() {
         // An Approve showing a file: Draft → Check the draft.
         claude.session("draft", 1, result("""{"outcome":"done","summary":"Drafted the release notes.","output":{"notes":"notes.md"}}"""))
         http.import("approve.bpmn")
-        runs["approve"] = start("approve").also { home.resolve("runs/$it/notes.md").writeText("# Release notes\n\nRetries a failed card payment **three times**, with backoff.\n") }
+        runs["approve"] = start("approve").also { workspace(it).resolve("notes.md").writeText("# Release notes\n\nRetries a failed card payment **three times**, with backoff.\n") }
         entry(runs.getValue("approve"))
 
         // A stuck Agent Task.
@@ -154,7 +154,7 @@ class LookTest : AntsTest() {
         http.import("review.bpmn")
         runs["review"] = start("review", listOf("repos" to "api", "repos" to "web"))
         entry(runs.getValue("review"))
-        commitFile(home.runWorkspace(runs.getValue("review")).resolve("repos/api"), "hello.txt", "hello\nthere\nworld\n", "Greet them")
+        commitFile(workspace(runs.getValue("review")).resolve("repos/api"), "hello.txt", "hello\nthere\nworld\n", "Greet them")
 
         // A Round of questions.
         claude.session("quiz", 1, result("""{"outcome":"done","summary":"Round 1 on the invoice CSV export.","output":{"questions":[""" + listOf(

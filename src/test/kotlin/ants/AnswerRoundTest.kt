@@ -105,7 +105,7 @@ class AnswerRoundTest : AntsTest() {
         claude.session("quiz", 2, "wait release", round("Nothing left."))
         val run = start()
         browser.post("${entry(run)}/answers", mapOf("answer.who" to "Recommend who.", "answer.scope" to "Only admins."))
-        eventually { assertContains(home.resolve("runs/$run/run-log.md").readText(), "Answer the Round · Round 1\n\n- Who exports: Recommend who. (accepted)\n- Which invoices: Only admins. (written)\n") }
+        eventually { assertContains(workspace(run).resolve("run-log.md").readText(), "Answer the Round · Round 1\n\n- Who exports: Recommend who. (accepted)\n- Which invoices: Only admins. (written)\n") }
         claude.release("release")
         eventually { assertContains(page(run), "State: Completed") }
 

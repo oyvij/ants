@@ -3,7 +3,6 @@ package ants
 import org.operaton.bpm.engine.ExternalTaskService
 import org.operaton.bpm.engine.RuntimeService
 import org.operaton.bpm.engine.externaltask.LockedExternalTask
-import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
 import java.io.File
 import java.nio.file.Files
@@ -23,7 +22,7 @@ fun clones(workspace: Path): List<Path> =
  * The Built-in Task Clone repos (topic `clone-repos`). It clones each of its `repos` (Source map names or git URLs)
  * into `<Run workspace>/repos/<name>/` at the remote's default branch, borrowing the Source map's local checkout's
  * objects (`--reference … --dissociate`), and puts it on the Run's work branch: the branch the Run's clones are
- * already on, else the `branch` input, else `ants/<run-id>`, with a counter suffix (`-2`, `-3` …) while another live
+ * already on, else the `branch` input, else `ants/<slug>` of the Run's name, with a counter suffix (`-2`, `-3` …) while another live
  * Run holds it. The work branch is checked out when the remote has it, otherwise created. The push URL is dead, so no
  * Agent pushes; Push gives the real remote itself. A repo already cloned is left alone. The Result is the repos it
  * cloned, `[{name, path, commit}]`, `path` relative to the Run workspace, and they are added to the Run's `clones`.
@@ -35,11 +34,11 @@ class CloneRepos(
     private val externalTasks: ExternalTaskService,
     private val runtime: RuntimeService,
     private val settings: Settings,
-    @Value("\${ants.home}") private val home: Path,
+    private val names: RunNames,
 ) : BuiltInWorker(externalTasks, "Clone repos", TOPIC, Duration.ofMinutes(30), { it.variables("repos", "branch", "clones").enableCustomObjectDeserialization() }) {
     override fun handle(task: LockedExternalTask) {
         val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult().rootProcessInstanceId
-        val repos = home.runWorkspace(run).resolve("repos").createDirectories()
+        val repos = names.runWorkspace(run).resolve("repos").createDirectories()
         val known = settings.repos().associateBy { it.name }
         val wanted = Settings.strings(task.variables["repos"]).orEmpty().map { known[it] ?: url(it) ?: error("The Source map ${settings.defaultSourceMap()} has no repo $it") }.filter { !repos.resolve(it.name).exists() }
         val branch by lazy { workBranch(run, task.variables["branch"]?.toString()) }
@@ -68,18 +67,18 @@ class CloneRepos(
     }
 
     /**
-     * The work branch of [run]: the one its clones were put on, else [asked], else `ants/<run>`, suffixed `-2`, `-3` …
+     * The work branch of [run]: the one its clones were put on, else [asked], else `ants/<slug>` ([RunNames.defaultBranch]), suffixed `-2`, `-3` …
      * while another live Run's clones were put on it.
      */
     private fun workBranch(run: String, asked: String?): String {
         branches(run).firstOrNull()?.let { return it }
-        val wanted = asked?.takeIf(String::isNotBlank)?.trim() ?: "ants/$run"
+        val wanted = asked?.takeIf(String::isNotBlank)?.trim() ?: names.defaultBranch(run)
         val held = runtime.createProcessInstanceQuery().rootProcessInstances().list().map { it.id }.filter { it != run }.flatMap(::branches).toSet()
         return generateSequence(1) { it + 1 }.map { if (it == 1) wanted else "$wanted-$it" }.first { it !in held }
     }
 
     /** The work branches the clones in [run]'s Run workspace were put on. */
-    private fun branches(run: String): List<String> = clones(home.runWorkspace(run)).mapNotNull { runCatching { workBranch(it) }.getOrNull() }.distinct()
+    private fun branches(run: String): List<String> = clones(names.runWorkspace(run)).mapNotNull { runCatching { workBranch(it) }.getOrNull() }.distinct()
 
     /** The work branch Clone repos put [clone] on, which every landing and Push uses, wherever the clone is now. */
     fun workBranch(clone: Path) = git(clone, "config", WORK_BRANCH)

@@ -41,6 +41,7 @@
 <form method="post" action="/processes/${process.key}/runs">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
 @if(error != null)<p role="alert">${error}</p>@endif
+    <p><label>Name<br><input name="${ants.NAME}"></label><br><small>Optional. Left empty, the Run is named after its Process and start time.</small></p>
 @for(field in fields)
     <p><label>${field.label}<br>
     @if(field.type == FieldType.MARKDOWN)

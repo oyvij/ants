@@ -32,7 +32,7 @@ class PushTest : AntsTest() {
         return run
     }
 
-    private fun clone(run: String, name: String): Path = home.runWorkspace(run).resolve("repos/$name")
+    private fun clone(run: String, name: String): Path = workspace(run).resolve("repos/$name")
 
     /** The Run's row on the Notification list, or null. */
     private fun row(run: String) = Regex("""<tr>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)

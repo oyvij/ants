@@ -100,14 +100,14 @@ class AgentTaskTest : AntsTest() {
         val byDefault = startWith("toggles-default", "")
         eventually { assertContains(page(byDefault), "State: Completed") }
         val defaults = claude.launches("draft").last().stdin
-        assertContains(defaults, "for the workspace at ${home.resolve("runs/$byDefault")}. The Vault is $vaultPath and the Source map is $map.\\n")
+        assertContains(defaults, "for the workspace at ${workspace(byDefault)}. The Vault is $vaultPath and the Source map is $map.\\n")
         assertFalse("Answer History" in defaults)
         assertContains(claude.launches("draft").last().argv.zipWithNext(), "--add-dir" to "$vaultPath")
 
         val flipped = startWith("toggles-flipped", property("ants.vault", "false") + property("ants.answer-history", "true"))
         eventually { assertContains(page(flipped), "State: Completed") }
         val toggled = claude.launches("draft").last().stdin
-        assertContains(toggled, "for the workspace at ${home.resolve("runs/$flipped")}. The Answer History is ${home.resolve("answer-history")}.\\n")
+        assertContains(toggled, "for the workspace at ${workspace(flipped)}. The Answer History is ${home.resolve("answer-history")}.\\n")
         assertFalse("Vault" in toggled)
         // Off, the Task learns the Vault and Source map from nowhere: not its prompt, environment or --add-dir.
         val off = claude.launches("draft").last()
@@ -219,7 +219,7 @@ class AgentTaskTest : AntsTest() {
         val outside = Files.createTempDirectory("outside").also { it.resolve("secret.md").writeText("secret") }
         claude.session("draft", "wait release", done("""{"file":"link/secret.md"}"""), "read", done("""{"file":"."}"""))
         val run = start()
-        Files.createSymbolicLink(home.resolve("runs/$run/link"), outside)
+        Files.createSymbolicLink(workspace(run).resolve("link"), outside)
         claude.release("release")
         eventually { assertContains(page(run), "<dt>draft</dt><dd>[failed] The Result is invalid: ") }
         assertContains(claude.launches("draft").single().stdin.lines()[1], "/output/file: does not match the path pattern")
@@ -249,7 +249,7 @@ class AgentTaskTest : AntsTest() {
             "--tools Read,Grep,Bash", "--allowedTools Read,Grep,Bash(git log:*)", "--add-dir ${home.resolve("skills/draft")}",
         )) assertContains(argv, flags)
         assertContains(argv, Regex("--session-id [0-9a-f-]{36}"))
-        assertEquals(home.resolve("runs").toRealPath().resolve(run).toString(), launch.cwd)
+        assertEquals(workspace(run).toRealPath().toString(), launch.cwd)
 
         assertEquals(null, launch.env["ANTHROPIC_API_KEY"])
         assertEquals(null, launch.env["CLAUDE_CODE_RETRY_WATCHDOG"])
@@ -258,7 +258,7 @@ class AgentTaskTest : AntsTest() {
         assertEquals("1", launch.env["CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH"])
         assertEquals(null, launch.env["JAVA_HOME"]) // outside the allow-list
 
-        val prompt = "Follow the Skill in ${home.resolve("skills/draft/SKILL.md")} for the workspace at ${home.resolve("runs/$run")}." +
+        val prompt = "Follow the Skill in ${home.resolve("skills/draft/SKILL.md")} for the workspace at ${workspace(run)}." +
             """\n\n{\"prompt\":\"Say hello\",\"tone\":\"dry\"}"""
         assertEquals("""{"type":"user","message":{"role":"user","content":"$prompt"}}""", launch.stdin)
     }
@@ -273,7 +273,7 @@ class AgentTaskTest : AntsTest() {
         val run = start()
         eventually { assertContains(page(run), "State: Completed") }
         val launch = claude.launches("draft").single()
-        assertContains(launch.stdin, "for the workspace at ${home.resolve("runs/$run")}. It uses the Skills implement-tdd ($tdd), seams ($seams), review ($review).")
+        assertContains(launch.stdin, "for the workspace at ${workspace(run)}. It uses the Skills implement-tdd ($tdd), seams ($seams), review ($review).")
         val argv = launch.argv.joinToString(" ")
         for (folder in listOf(home.resolve("skills/draft"), tdd.parent, seams.parent, review.parent)) assertContains(argv, "--add-dir $folder")
     }
@@ -314,7 +314,7 @@ class AgentTaskTest : AntsTest() {
         assertContains(page(runs[1]), "<dt>draft</dt><dd>Queued: 1 of 1 Agent Tasks running</dd>")
         claude.release("release")
         for (run in runs) eventually { assertContains(page(run), "State: Completed") }
-        assertEquals(runs.map { home.resolve("runs").toRealPath().resolve(it).toString() }, claude.launchLog())
+        assertEquals(runs.map { workspace(it).toRealPath().toString() }, claude.launchLog())
     }
 
     @Test

@@ -9,7 +9,6 @@ import org.commonmark.parser.Parser
 import org.commonmark.renderer.html.AttributeProvider
 import org.commonmark.renderer.html.HtmlRenderer
 import org.operaton.bpm.engine.HistoryService
-import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Controller
 import org.springframework.ui.Model
@@ -90,7 +89,7 @@ class Tracked(val run: String, val name: String, val file: Path) {
 
 /** A `ready-for-human` Ticket of a live Run, waiting on the user until they mark it done. */
 // ponytail: waiting since the file last changed, not since it became ready-for-human; nothing records that moment.
-class TicketEntry(ticket: Tracked, process: String) : Entry(
+class TicketEntry(ticket: Tracked, process: String, val runName: String) : Entry(
     "ticket-${ticket.run}-${ticket.name}", "[ready-for-human]", process, ticket.title, "Yours to do; mark it done when it is.",
     Date(ticket.file.getLastModifiedTime().toMillis()),
 ) {
@@ -98,8 +97,8 @@ class TicketEntry(ticket: Tracked, process: String) : Entry(
     val href = ticket.href
 }
 
-/** A Spec on the Tickets page, with its Tickets, of the Run [run] of the Process [process]. */
-class SpecRow(val run: String, val process: String, val spec: Tracked, val tickets: List<Tracked>) {
+/** A Spec on the Tickets page, with its Tickets, of the Run [run], named [name], of the Process [process]. */
+class SpecRow(val run: String, val name: String, val process: String, val spec: Tracked, val tickets: List<Tracked>) {
     val done = tickets.count { it.done }
 
     /** Open until the Run ends and closes it, or the user does. */
@@ -167,18 +166,16 @@ fun closeSpec(workspace: Path, cancelled: Boolean) = spec(workspace, "")?.status
  * The Tickets page, listing every Spec across Runs, open first, and a page per Spec and Ticket, rendered GitHub-style.
  */
 @Controller
-class Tickets(private val history: HistoryService, private val streams: Streams, @Value("\${ants.home}") private val home: Path) {
-    private fun spec(run: String) = ants.spec(home.runWorkspace(run), run)
+class Tickets(private val history: HistoryService, private val streams: Streams, private val names: RunNames) {
+    private fun spec(run: String) = ants.spec(names.runWorkspace(run), run)
 
-    private fun tickets(run: String) = ants.tickets(home.runWorkspace(run), run)
+    private fun tickets(run: String) = ants.tickets(names.runWorkspace(run), run)
 
     @GetMapping("/tickets")
     fun list(model: Model): String {
-        val runs = home.resolve("runs").takeIf { it.isDirectory() }?.listDirectoryEntries().orEmpty().map { it.name }
-        val specs = runs.mapNotNull { run ->
-            val spec = spec(run) ?: return@mapNotNull null
-            val process = history.createHistoricProcessInstanceQuery().processInstanceId(run).singleResult() ?: return@mapNotNull null
-            SpecRow(run, process.processDefinitionName ?: process.processDefinitionKey, spec, tickets(run))
+        val specs = history.createHistoricProcessInstanceQuery().rootProcessInstances().list().mapNotNull { run ->
+            val spec = spec(run.id) ?: return@mapNotNull null
+            SpecRow(run.id, names.name(run.id), run.processDefinitionName ?: run.processDefinitionKey, spec, tickets(run.id))
         }
         model.addAttribute("specs", specs.sortedWith(compareBy<SpecRow> { !it.open }.thenByDescending { it.spec.file.getLastModifiedTime() }))
         return "tickets"
@@ -189,6 +186,7 @@ class Tickets(private val history: HistoryService, private val streams: Streams,
     fun page(@PathVariable run: String, @PathVariable name: String, model: Model): String {
         val file = tracked(run, name)
         model.addAttribute("file", file)
+        model.addAttribute("runName", names.name(run))
         model.addAttribute("article", article(file))
         model.addAttribute("tickets", if (name == "spec") tickets(run) else emptyList())
         return "ticket"
@@ -217,7 +215,7 @@ class Tickets(private val history: HistoryService, private val streams: Streams,
 
     /** The `ready-for-human` Tickets of live Runs, on the Notification list until marked done. */
     fun waiting(): List<TicketEntry> = history.createHistoricProcessInstanceQuery().rootProcessInstances().unfinished().list().flatMap { run ->
-        tickets(run.id).filter { it.forHuman }.map { TicketEntry(it, run.processDefinitionName ?: run.processDefinitionKey) }
+        tickets(run.id).filter { it.forHuman }.map { TicketEntry(it, run.processDefinitionName ?: run.processDefinitionKey, names.name(run.id)) }
     }
 
     /** **Mark done**, on a Ticket that waits on the user. */
