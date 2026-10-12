@@ -99,6 +99,10 @@ tasks.register<JavaExec>("playwright") {
 tasks.test {
     dependsOn(nodeTest)
     useJUnitPlatform { excludeTags("live") }
+    // LauncherTest runs the boot jar as the tarball's lib/ants.jar.
+    val bootJar = tasks.bootJar.flatMap { it.archiveFile }
+    inputs.file(bootJar)
+    systemProperty("ants.jar", bootJar.get().asFile.path)
     // Only the system folders and a fake gh, so a CLI run by its bare name, such as claude or nono, is never the real one.
     environment("PATH", "${projectDir}/src/test/resources/fake-gh:/usr/bin:/bin")
     // Ants must strip these from every Agent's environment, even when the allow-list names them.

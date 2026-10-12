@@ -1,0 +1,13 @@
+#!/bin/bash
+# A fake `launchctl` for tests, first on their PATH: it logs each call to $HOME/launchctl.log. `bootstrap` starts a
+# stand-in for Ants, a sleep that writes the lock file as Ants does; `bootout` stops it, as launchd stops Ants.
+echo "$*" >> "$HOME/launchctl.log"
+case "$1" in
+  bootstrap)
+    sleep 300 > /dev/null 2>&1 &
+    printf '%s\nhttp://127.0.0.1:7323\n' $! > "$ANTS_HOME/ants.lock" ;;
+  bootout)
+    [ -f "$ANTS_HOME/ants.lock" ] || exit 3
+    kill "$(head -1 "$ANTS_HOME/ants.lock")" 2> /dev/null
+    rm -f "$ANTS_HOME/ants.lock" ;;
+esac

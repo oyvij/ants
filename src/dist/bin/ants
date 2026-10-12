@@ -1,0 +1,99 @@
+#!/bin/bash
+# The ants launcher. It lives in bin/ of an Ants install, beside runtime/ (the Java runtime) and lib/ants.jar.
+set -u
+
+usage="usage: ants start | stop | restart | status | logs [-f] | run [args] | rollback | password"
+root=$(dirname "$(dirname "$(realpath "$0")")")
+export ANTS_HOME=${ANTS_HOME:-$HOME/.ants}
+lock=$ANTS_HOME/ants.lock
+label=no.oyvij.ants
+plist=$HOME/Library/LaunchAgents/$label.plist
+service=gui/$(id -u)
+
+java=$root/runtime/bin/java
+[ -x "$java" ] || java=java
+
+# The pid and URL in the lock file Ants writes, when that Ants is still alive.
+# ponytail: a pid check only, so a stale lock whose pid was reused reads as running; check the command if it bites
+running() {
+  [ -f "$lock" ] || return 1
+  { read -r pid; read -r url; } < "$lock"
+  kill -0 "$pid" 2> /dev/null
+}
+
+start() {
+  if running; then echo "Ants is already running at $url (pid $pid)"; return; fi
+  mkdir -p "$ANTS_HOME/logs" "$(dirname "$plist")"
+  # ponytail: launchd appends to one log file that never rotates; rotate if it grows too big
+  cat > "$plist" << EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>$label</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>$root/bin/ants</string>
+        <string>run</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>ANTS_HOME</key>
+        <string>$ANTS_HOME</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>$ANTS_HOME/logs/ants.log</string>
+    <key>StandardErrorPath</key>
+    <string>$ANTS_HOME/logs/ants.log</string>
+</dict>
+</plist>
+EOF
+  launchctl bootout "$service/$label" 2> /dev/null # a crashed one launchd still holds
+  launchctl bootstrap "$service" "$plist" || return
+  for _ in $(seq 120); do
+    if running; then echo "Ants is running at $url"; return; fi
+    sleep 0.5
+  done
+  echo "Ants is starting; ants logs shows how far it got"
+}
+
+# Uninstalls the launchd agent, so Ants stays stopped after logging in again, and stops an `ants run` too.
+stop() {
+  running; local was=$?
+  launchctl bootout "$service/$label" 2> /dev/null
+  rm -f "$plist"
+  running && kill "$pid"
+  for _ in $(seq 60); do
+    if ! running; then
+      if [ $was = 0 ]; then echo "Ants stopped"; else echo "Ants is not running"; fi
+      return
+    fi
+    sleep 0.5
+  done
+  echo "Ants (pid $pid) is still stopping" >&2; return 1
+}
+
+case "${1:-}" in
+  start) start ;;
+  stop) stop ;;
+  restart) stop > /dev/null && start ;;
+  run)
+    shift
+    if running; then echo "Ants is already running at $url (pid $pid)" >&2; exit 1; fi
+    exec "$java" -jar "$root/lib/ants.jar" "$@" ;;
+  password) exec "$java" -jar "$root/lib/ants.jar" password ;;
+  logs) shift; exec tail -n 100 "$@" "$ANTS_HOME/logs/ants.log" ;;
+  rollback) echo "There is no previous version to roll back to" >&2; exit 1 ;;
+  status)
+    if running; then echo "Ants is running at $url (pid $pid)"; else echo "Ants is not running"; exit 3; fi ;;
+  -h | --help | help) echo "$usage" ;;
+  *) echo "$usage" >&2; exit 2 ;;
+esac
