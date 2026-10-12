@@ -27,12 +27,16 @@ wait meanwhile, or how the Skills reach `vault-format.md`.
   the Vault, but Approve would become a Vault-only User Task, and the leak check and the move removals would be Ants'
   code, not the Skill's.
 - **Deny Write and Edit on the Vault until approval** (`--disallowedTools`): Ants would have to read the approval out
-  of an input it otherwise never interprets, and Bash would still reach the Vault.
+  of an input it otherwise never interprets, and Bash would still reach the Vault. Taken as well, after review: the
+  Skill's prose alone narrowed story 121, so Ants backs it up where it cheaply can.
 
 ## Consequences
 
-- Ants itself doesn't stop a knowledge Agent writing the Vault before approval: the Vault's `--add-dir` is read and
-  write. The Skills, and their Approve in the drawn Process, are what hold a write back.
+- Ants holds back what it can: a Task with an `approval` input, until the launch where `approval.approved` is true,
+  gets `--disallowedTools Write(/<vault>/**),Edit(/<vault>/**)` (claude's `//` absolute-path rules) on claude, and
+  no `--add-dir` for the Vault on codex, whose sandbox still lets it read. Bash is still a hole: a knowledge Agent
+  with Bash can write the Vault before approval, so the Skills and their Approve hold that back. The path rules are
+  unprobed against a real claude, and a Vault reached through a symlink may slip them.
 - A Template using update-knowledge must keep its `approval` input naming the Approve that follows it.
 - A user's Save of a shipped Process deploys under its key and survives a restart, and a changed shipped file is not
   deployed over it (story 128: updates never overwrite my changes): once the latest version under the key is not a

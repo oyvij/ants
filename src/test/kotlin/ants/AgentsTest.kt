@@ -180,6 +180,24 @@ class AgentsTest : AntsTest() {
     }
 
     @Test
+    fun `a codex Agent has a Sandbox select in place of the tools, kept on import, and an unknown sandbox is refused`() {
+        agents.resolve("coder.md").deleteIfExists()
+        assertContains(get("/agents/new"), """name="sandbox"""")
+        post("/agents/new", mapOf("name" to "coder", "cli" to "codex", "sandbox" to "read-only", "tool.Read" to "on", "instructions" to "Code."))
+        assertEquals("---\nname: coder\ncli: codex\nsandbox: read-only\n---\nCode.\n", agents.resolve("coder.md").readText())
+        assertContains(get("/agents/coder"), """value="read-only" selected""")
+
+        val refused = post("/agents/new", mapOf("name" to "yolo", "cli" to "codex", "sandbox" to "yolo"))
+        assertContains(refused.body, "codex takes the sandbox read-only, workspace-write or danger-full-access, not yolo.")
+        assertFalse(agents.resolve("yolo.md").exists())
+
+        val imported = import("coder.md", "---\nname: coder2\ncli: codex\nsandbox: danger-full-access\n---\nCode.\n")
+        assertContains(imported, """value="danger-full-access" selected""")
+        assertFalse("Dropped the keys" in imported)
+        assertContains(import("yolo.md", "---\nname: yolo\ncli: codex\nsandbox: yolo\n---\n"), "yolo.md: codex takes the sandbox read-only, workspace-write or danger-full-access, not yolo.")
+    }
+
+    @Test
     fun `ticking Offer as a Subagent on a codex Agent is refused`() {
         agents.resolve("searcher.md").deleteIfExists()
         val refused = post("/agents/new", mapOf("name" to "searcher", "cli" to "codex", "subagent" to "on"))

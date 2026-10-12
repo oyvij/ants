@@ -49,6 +49,8 @@ class Transcript {
     private var verb = "Starting"
     private var seen = Instant.EPOCH // the latest time a line carried
     private var soFarTokens = 0L
+    private var thread: Any? = null // the codex session the lines are of
+    private val threadTotals = mutableMapOf<Any?, Long>() // a codex session → its total tokens, as its last turn.completed gave it
 
     /** The latest So far paragraph, if one has been written. */
     var soFar: String? = null
@@ -72,6 +74,7 @@ class Transcript {
         var prompted = false
         val usage = mutableMapOf<Any?, Long>() // a message id → its tokens, while no `result` has said better
         var modelUsage: Long? = null
+        var before: Long? = null // its codex session's total tokens before it
         val tokens get() = modelUsage ?: usage.values.sum()
     }
 
@@ -109,11 +112,20 @@ class Transcript {
             "system" -> system(event)
             "result" -> result(event, launch)
             // codex exec --json
-            "item.started", "item.completed" -> item(event["item"] as? Map<*, *> ?: emptyMap<Any, Any>(), event["type"] == "item.completed", launch)
-            // ponytail: usage is the session's total so far (`usage_from_last_total` in codex-rs/exec), taken as the
-            // launch's like modelUsage; a launch that resumes a session counts its earlier turns again.
-            "turn.completed" -> (event["usage"] as? Map<*, *>)?.let { launch?.modelUsage = sum(it, "input_tokens", "output_tokens") }
-            "error", "turn.failed" -> (event["message"] ?: (event["error"] as? Map<*, *>)?.get("message"))?.let { message ->
+            "item.started", "item.completed" -> codexMessage(event)?.let { message(it, launch) }
+                ?: item(event["item"] as? Map<*, *> ?: emptyMap<Any, Any>(), event["type"] == "item.completed")
+            "thread.started" -> {
+                thread = event["thread_id"]
+                if (launch != null && launch.before == null) launch.before = threadTotals[thread] ?: 0
+            }
+            // usage is the session's total so far (`usage_from_last_total` in codex-rs/exec), so a launch counts it
+            // less the session's total before the launch.
+            "turn.completed" -> (event["usage"] as? Map<*, *>)?.let {
+                val total = sum(it, "input_tokens", "output_tokens")
+                threadTotals[thread] = total
+                launch?.modelUsage = total - (launch?.before ?: 0)
+            }
+            "error", "turn.failed" -> codexError(event)?.let { message ->
                 append { """<div class="result" id="$it"><b>Error</b> ${esc(message)}</div>""" }
             }
         }
@@ -290,23 +302,21 @@ class Transcript {
         }
     }
 
-    /**
-     * A codex item: its message as text, or as the Result when it is one (JSON under `--output-schema`), its reasoning,
-     * or a command, file change, search or MCP call as one tool line, marked when it fails.
-     */
-    private fun item(item: Map<*, *>, completed: Boolean, launch: Launch?) {
+    /** A codex message ([codexMessage]) as text, or as the Result when it is one (JSON under `--output-schema`). */
+    private fun message(text: String, launch: Launch?) {
+        val result = runCatching { json.readValue(text, Map::class.java) }.getOrNull()?.takeIf { "outcome" in it }
+        if (result != null) result(mapOf("structured_output" to result), launch)
+        else {
+            live.clear()
+            output = markdown(text)
+            append { """<div class="text" id="$it">$output</div>""" }
+        }
+    }
+
+    /** A codex item but a message: its reasoning, or a command, file change, search or MCP call as one tool line, marked when it fails. */
+    private fun item(item: Map<*, *>, completed: Boolean) {
         val id = item["id"]
         when (item["type"]) {
-            "agent_message" -> if (completed) {
-                val text = item["text"].toString()
-                val result = runCatching { json.readValue(text, Map::class.java) }.getOrNull()?.takeIf { "outcome" in it }
-                if (result != null) result(mapOf("structured_output" to result), launch)
-                else {
-                    live.clear()
-                    output = markdown(text)
-                    append { """<div class="text" id="$it">$output</div>""" }
-                }
-            }
             "reasoning" -> if (completed) append { """<details class="thinking" id="$it"><summary>✻ Thinking</summary>${esc(item["text"])}</details>""" }
             else -> {
                 val (name, argument) = when (item["type"]) {
@@ -450,7 +460,7 @@ class Transcripts(@Value("\${ants.home}") home: Path, private val launcher: Agen
         model.addAttribute("task", task)
         model.addAttribute("transcript", Transcript().apply { lines.forEach(::add) })
         model.addAttribute("offset", offset)
-        model.addAttribute("send", launcher.sending(run, task))
+        model.addAttribute("sendHint", launcher.sendHint(run, task))
         return "transcript"
     }
 

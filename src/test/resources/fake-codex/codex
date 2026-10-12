@@ -6,10 +6,15 @@
 # Skill is picked by the hand-off line, or for `resume` by the thread's first launch. $SESSION stands for the thread id.
 # A session line `wait <file>` waits until ./<file> exists, `stderr <text>` prints to stderr, `exit <code>` exits;
 # every other line is printed. SIGINT, which interrupts codex's turn, leaves ./launches/<skill>.<n>/interrupted and
-# exits 1, as codex does; SIGTERM leaves ./launches/<skill>.<n>/killed.
+# exits 1, as codex does; SIGTERM leaves ./launches/<skill>.<n>/killed. An `--output-schema` with `if`, `then`, `else` or
+# `not` is refused, as codex's strict mode refuses it.
 dir=$(cd "$(dirname "$0")" && pwd)
-thread= previous=
-for arg; do [ "$previous" = resume ] && thread=$arg; previous=$arg; done
+thread= schema= previous=
+for arg; do
+    [ "$previous" = resume ] && thread=$arg
+    [ "$previous" = --output-schema ] && schema=$arg
+    previous=$arg
+done
 prompt=$(cat)
 skill=$(basename "$(printf '%s' "$prompt" | sed -n 's|.*Follow the Skill in \(.*\)/SKILL.md for.*|\1|p')")
 mkdir -p "$dir/launches" "$dir/skills"
@@ -27,6 +32,11 @@ printf '%s' "$thread" > "$launch/thread"
 printf '%s\n' "$prompt" > "$launch/stdin.tmp" && mv "$launch/stdin.tmp" "$launch/stdin"
 trap 'touch "$launch/interrupted"; exit 1' INT
 trap 'touch "$launch/killed"; exit 143' TERM
+if [ -n "$schema" ] && grep -Eq '"(if|then|else|not)":' "$schema"; then
+    echo '{"type":"error","message":"Invalid schema for response_format '"'codex_output_schema'"': In context=(), '"'if'"' is not permitted."}'
+    echo '{"type":"turn.failed","error":{"message":"Invalid schema for response_format"}}'
+    exit 1
+fi
 script=$dir/sessions/$skill.$n.jsonl
 [ -e "$script" ] || script=$dir/sessions/$skill.jsonl
 while IFS= read -r line <&3; do

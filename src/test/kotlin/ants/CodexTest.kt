@@ -43,9 +43,9 @@ class CodexTest : AntsTest() {
     private val started = """{"type":"thread.started","thread_id":"${'$'}SESSION"}"""
     private val turn = """{"type":"turn.started"}"""
 
-    /** The Agent's final message, its Result as JSON text, as codex gives it under `--output-schema`. */
+    /** The Agent's final message, its Result as JSON text, as codex gives it under the strict `--output-schema`: every key, `needs` null. */
     private fun answer(summary: String = "Drafted.") = """{"type":"item.completed","item":{"id":"item_9","type":"agent_message",""" +
-        """"text":"{\"outcome\":\"done\",\"summary\":\"$summary\",\"output\":{\"text\":\"Hello\"}}"}}"""
+        """"text":"{\"outcome\":\"done\",\"summary\":\"$summary\",\"output\":{\"text\":\"Hello\"},\"needs\":null}"}}"""
     private val completed = """{"type":"turn.completed","usage":{"input_tokens":1200,"cached_input_tokens":200,"output_tokens":34}}"""
 
     private fun start(key: String = "agent-task", agent: String = "writer"): String {
@@ -83,6 +83,7 @@ class CodexTest : AntsTest() {
         assertFalse(argv.any { it.startsWith("--tools") || it == "--allowedTools" })
         val schema = JsonMapper.shared().readValue(Path.of(launch.flag("--output-schema")!!).toFile(), Map::class.java)
         assertEquals(listOf("done", "stuck"), ((schema["properties"] as Map<*, *>)["outcome"] as Map<*, *>)["enum"])
+        assertEquals(listOf("outcome", "summary", "output", "needs"), schema["required"]) // codex's strict mode: every key required
         assertEquals(home.resolve("codex").toString(), launch.env["CODEX_HOME"])
         for (key in listOf("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "CODEX_API_KEY")) assertEquals(null, launch.env[key], key)
         assertContains(launch.stdin, "Follow the Skill in ${home.resolve("skills/draft/SKILL.md")} for the workspace at ${home.resolve("runs/$run")}.")
@@ -92,6 +93,31 @@ class CodexTest : AntsTest() {
         assertContains(transcript, "<b>Shell</b> <code>bash -lc ls</code>")
         assertContains(transcript, "<b>Result: done</b> Drafted.")
         assertContains(transcript, "1,234 tokens")
+    }
+
+    @Test
+    fun `a codex Agent with an unknown sandbox can't start a Run, and fails its Task if it changes after the start`() {
+        codexTask("sandbox: yolo\n")
+        start("refused")
+        assertContains(browser.get("/processes/refused").body, "The Agent writer: codex takes the sandbox read-only, workspace-write or danger-full-access, not yolo.")
+
+        codexTask()
+        codex.session("draft", started, turn, "wait never")
+        val run = start()
+        eventually { assertEquals(1, codex.launches("draft").size) }
+        codexTask("sandbox: yolo\n")
+        eventually { assertContains(browser.get(transcript(run)).body, "■ Stop") }
+        browser.post("${transcript(run)}/stop", emptyMap())
+        var entry = ""
+        eventually {
+            val row = assertNotNull(Regex("""<tr>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
+                .find(browser.get("/notifications").body)).groupValues[1]
+            assertContains(row, "■ [stopped]")
+            entry = Regex("""href="(/notifications/[^"]+)"""").find(row)!!.groupValues[1]
+        }
+        browser.post(entry, mapOf("action" to "continue", "instruction" to "Go on."))
+        eventually { assertContains(browser.get(entry).body, "codex takes the sandbox read-only, workspace-write or danger-full-access, not yolo.") }
+        assertEquals(1, codex.launches("draft").size)
     }
 
     @Test
@@ -224,6 +250,30 @@ class CodexTest : AntsTest() {
         assertTrue(cut.interrupted)
         assertEquals(cut.thread, resumed.flag("resume"))
         assertEquals("Go on.", resumed.stdin)
+    }
+
+    @Test
+    fun `a codex launch that resumes its session counts only its own tokens`() {
+        codexTask()
+        val stuck = """{"type":"item.completed","item":{"id":"item_9","type":"agent_message",""" +
+            """"text":"{\"outcome\":\"stuck\",\"summary\":\"Blocked.\",\"output\":null,\"needs\":\"A topic.\"}"}}"""
+        codex.session("draft", 1, started, turn, stuck, """{"type":"turn.completed","usage":{"input_tokens":900,"cached_input_tokens":0,"output_tokens":100}}""")
+        codex.session("draft", started, turn, answer(), """{"type":"turn.completed","usage":{"input_tokens":1350,"cached_input_tokens":0,"output_tokens":150}}""")
+        val run = start()
+        var entry = ""
+        eventually {
+            val row = assertNotNull(Regex("""<tr>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
+                .find(browser.get("/notifications").body)).groupValues[1]
+            entry = Regex("""href="(/notifications/[^"]+)"""").find(row)!!.groupValues[1]
+        }
+        browser.post(entry, mapOf("action" to "continue", "instruction" to "Pick billing."))
+        eventually { assertContains(page(run), "State: Completed") }
+        val (first, resumed) = codex.launches("draft")
+        assertEquals(first.thread, resumed.flag("resume"))
+        val transcript = browser.get(transcript(run)).body
+        assertTrue(Regex("""Launch 1 · [^<]* · 1,000 tokens""").containsMatchIn(transcript), transcript)
+        assertTrue(Regex("""Launch 2 · [^<]* · 500 tokens""").containsMatchIn(transcript), transcript)
+        assertContains(transcript, """<span id="tokens">1,500 tokens</span>""")
     }
 
     @AfterEach

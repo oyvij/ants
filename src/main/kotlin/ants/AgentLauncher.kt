@@ -22,9 +22,7 @@ import java.time.Clock
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
-import java.time.LocalTime
 import java.time.format.DateTimeFormatter
-import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
@@ -56,17 +54,17 @@ class AgentLauncher(
     private val catalogue: Catalogue,
     private val landing: Landing,
     private val cloneRepos: CloneRepos,
-    private val clock: Clock,
+    internal val clock: Clock,
     @Value("\${ants.home}") private val home: Path,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val poller = Executors.newSingleThreadScheduledExecutor()
     /** Each live CLI process and the Run it works for. */
-    private val clis = ConcurrentHashMap<Process, String>()
+    internal val clis = ConcurrentHashMap<Process, String>()
     private val live = AtomicInteger()
-    private val stdins = ConcurrentHashMap<String, Live>() // by key(run, instance(task))
+    internal val stdins = ConcurrentHashMap<String, Live>() // by key(run, instance(task))
 
-    private fun key(run: String, task: String) = "$run/$task"
+    internal fun key(run: String, task: String) = "$run/$task"
     private val usageFile = home.resolve("claude-usage.json")
 
     // ponytail: one pause gate per CLI, not per model, kept in memory; after a restart the held Tasks wait out
@@ -91,7 +89,7 @@ class AgentLauncher(
     val running get() = live.get()
 
     /** How a message Sent to [task] of [run] reaches its session, or null when no session takes messages. */
-    fun sending(run: String, task: String) = stdins[key(run, task)]?.takeIf { it.open }?.hint
+    fun sendHint(run: String, task: String) = stdins[key(run, task)]?.takeIf { it.open }?.hint
 
     /**
      * Sends [message] into the live session of [task] in [run], where claude reads it at its next tool boundary and
@@ -132,7 +130,7 @@ class AgentLauncher(
      * [GRACE]. A CLI may ignore SIGTERM, or wait on a child that does, and its launch keeps its slot until the output of
      * every one of them has closed. Unlike [Process.destroy], it leaves the rest of stdout to read.
      */
-    private fun kill(process: Process) {
+    internal fun kill(process: Process) {
         val all = listOf(process.toHandle()) + process.descendants().toList() // while they still have their parent
         all.forEach(ProcessHandle::destroy)
         Thread.ofVirtual().start {
@@ -361,12 +359,17 @@ class AgentLauncher(
         else handOff(task, skill, used, cwd, vault) + "\n\n" + json.writeValueAsString(inputs) + (if (instruction.isNullOrBlank()) "" else "\n\nFrom the user:\n$instruction")
         // The Task's result-schema override replaces the Skill's result.schema.json; Checks refuse one that isn't valid.
         val override = task.extensionProperties[RESULT_SCHEMA]?.takeIf(String::isNotBlank)?.let { json.readValue(it, Map::class.java) }
-        val schema = ResultContract.schema(override ?: skill.outputSchema)
+        val output = override ?: skill.outputSchema
+        val schema = ResultContract.schema(output)
         val judge = Judge(agent.cli, schema, workspace, walkthrough(task))
-        if (agent.cli == "codex") return codex(task, instance, agent, run, workspace, cwd, vault, transcript, session, started, prompt, schema, judge)
+        // A knowledge Task, one with an `approval` input, may write the Vault only once it holds the user's approval
+        // (ADR 0007): until then the Vault is read-only to it, but for Bash. codex can read it without an --add-dir.
+        val gated = vault?.takeIf { "approval" in inputs && (inputs["approval"] as? Map<*, *>)?.get("approved") != true }
+        if (agent.cli == "codex") return codex(task, instance, agent, run, workspace, cwd, vault.takeIf { gated == null }, transcript, session, started, prompt, ResultContract.strict(output), judge)
         val shared = if (cwd == workspace) emptyList() else listOf("--add-dir", "$workspace") // what an instance's links lead to
-        val vaultDir = vault?.let { listOf("--add-dir", "$it") }.orEmpty() // the Vault's path goes nowhere else (ADR 0002)
-        val process = cli(agent.cli, cwd, flags(agent, schema, listOf(skill) + used, session!!, resume) + shared + vaultDir).start()
+        val places = vault?.let { listOf("--add-dir", "$it") }.orEmpty() // the Vault's path goes nowhere else (ADR 0002)
+            .plus(answerHistory(task, skill)?.let { listOf("--add-dir", "${it.createDirectories()}") }.orEmpty()) // so a Read reaches it (ADR 0010)
+        val process = cli(agent.cli, cwd, flags(agent, schema, listOf(skill) + used, session!!, resume, gated?.let { listOf("Write(/$it/**)", "Edit(/$it/**)") }.orEmpty()) + shared + places).start()
         val stdin = Stdin(process.outputWriter(), name(task))
         clis[process] = workspace.fileName.toString() // the Run workspace is runs/<run>/
         val stderr = drain(process)
@@ -418,77 +421,8 @@ class AgentLauncher(
         }
     }
 
-    /**
-     * Runs a codex session, one `codex exec` per turn, each after the first resuming the session (codex's thread) the
-     * first one started. codex reads its prompt from stdin to the end and takes nothing more while a turn runs, so a
-     * message the user Sends interrupts the turn (SIGINT, as Ctrl-C does) and resumes the session with it, as does a
-     * Result sent back to fix. Its Result is its last message, JSON under `--output-schema`. Settled from codex-rs's
-     * source (#73): `read_prompt_from_stdin` in exec/src/lib.rs reads stdin with `read_to_end`, and an interrupted turn
-     * prints no `turn.completed` and exits 1.
-     */
-    private fun codex(
-        task: LockedExternalTask, instance: String, agent: Agent, run: String, workspace: Path, cwd: Path, vault: Path?, transcript: Transcript.Writer,
-        session: String?, started: (String) -> Unit, prompt: String, schema: Map<*, *>, judge: Judge,
-    ): Map<*, *> {
-        val schemaFile = Transcript.file(workspace, instance).resolveSibling("result.schema.json").apply { writeText(json.writeValueAsString(schema)) }
-        val turns = Turns(name(task))
-        stdins[key(run, instance)] = turns
-        var thread = session
-        var message = prompt
-        try {
-            while (true) {
-                val resume = thread?.let { listOf("resume", it) }.orEmpty()
-                // codex doesn't print what it was told, so Ants writes it the way claude replays it.
-                transcript.line(json.writeValueAsString(mapOf("type" to "user", "message" to mapOf("role" to "user", "content" to message))))
-                val process = cli(agent.cli, cwd, codexFlags(agent, schemaFile, listOfNotNull(workspace.takeIf { cwd != workspace }, vault)) + resume + "-").start()
-                clis[process] = workspace.fileName.toString()
-                val stderr = drain(process)
-                val fixes = mutableListOf<String>()
-                var limit: Instant? = null
-                var error: String? = null // the last error codex printed
-                try {
-                    turns.running(process)
-                    runCatching { process.outputWriter().use { it.write(message) } } // a codex that already exited leaves a broken pipe
-                    var answer: String? = null // its last message
-                    process.inputReader().forEachLine { line ->
-                        transcript.line(line)
-                        if (judge.failure != null || limit != null) return@forEachLine
-                        val event = runCatching { json.readValue(line, Map::class.java) }.getOrNull() ?: return@forEachLine
-                        val item = event["item"] as? Map<*, *>
-                        when (event["type"]) {
-                            "thread.started" -> event["thread_id"]?.toString()?.takeIf { it != thread }?.let { thread = it; started(it) }
-                            "item.completed" -> if (item?.get("type") == "agent_message") answer = item["text"]?.toString()
-                            "turn.completed" -> judge.judge(answer?.let { runCatching { json.readValue(it, Map::class.java) }.getOrNull() }, listOf(answer), fixes::add)
-                            "error", "turn.failed" -> {
-                                error = (event["message"] ?: (event["error"] as? Map<*, *>)?.get("message"))?.toString()
-                                limit = error?.let(::codexLimit)?.also { kill(process) } // the session continues after the reset
-                            }
-                        }
-                    }
-                    val exit = process.waitFor()
-                    limit?.let { throw UsageLimit(it) }
-                    val tail = stderr()
-                    val sent = turns.ended(judge.valid != null && fixes.isEmpty())
-                    if (turns.stopping) return judge.valid ?: throw Stopped()
-                    judge.failure?.let { throw Failed(it.message, it.details ?: tail) }
-                    if (fixes.isEmpty() && sent.isEmpty()) {
-                        judge.valid?.let { return it }
-                        throw Failed(if (exit != 0) "${agent.cli} exited with code $exit" + (error?.let { ": $it" } ?: "") else "${agent.cli} ended without a Result", tail)
-                    }
-                    if (thread == null) throw Failed("${agent.cli} started no session to resume", tail)
-                    message = (fixes + sent).joinToString("\n\n")
-                } finally {
-                    clis -= process
-                }
-            }
-        } finally {
-            turns.close()
-            stdins.remove(key(run, instance), turns)
-        }
-    }
-
     /** Reads [process]'s stderr as it comes, and returns what gives its last lines once it has ended. */
-    private fun drain(process: Process): () -> String? {
+    internal fun drain(process: Process): () -> String? {
         val stderr = ArrayDeque<String>()
         val drain = Thread.ofVirtual().start {
             process.errorReader().forEachLine { synchronized(stderr) { stderr += it; if (stderr.size > STDERR_LINES) stderr.removeFirst() } }
@@ -503,7 +437,7 @@ class AgentLauncher(
      * Judges each Result a session gives as it comes, the last valid one counting. An invalid one, or a walkthrough's
      * Story set failing its checks, is sent back into the session once; the second is a [failure].
      */
-    private inner class Judge(private val cli: String, private val schema: Map<*, *>, private val workspace: Path, private val walkthrough: Boolean) {
+    internal inner class Judge(private val cli: String, private val schema: Map<*, *>, private val workspace: Path, private val walkthrough: Boolean) {
         var valid: Map<*, *>? = null
             private set
         var failure: Failed? = null
@@ -551,18 +485,20 @@ class AgentLauncher(
      * The hand-off line: the Skill and the workspace, the Skills it [used], and where the [vault] and Source map and the
      * Answer History are, each only when on: the Task's [ANSWER_HISTORY] toggle has the final say, else the Skill's opt-in.
      */
-    // ponytail: the default Source map, until a Process picks its own.
     private fun handOff(task: LockedExternalTask, skill: Skill, used: List<Skill>, workspace: Path, vault: Path?): String {
-        val answerHistory = task.extensionProperties[ANSWER_HISTORY]?.toBooleanStrictOrNull() ?: skill.answerHistory
         val places = if (vault == null) emptyList() else listOfNotNull(
             "the Vault is $vault",
-            settings.sourceMaps()[settings.defaultSourceMap()]?.let { "the Source map is ${Settings.expand(it)}" },
+            settings.sourceMap()?.let { "the Source map is $it" },
         )
         return "Follow the Skill in ${skill.file} for the workspace at $workspace." +
             (if (used.isEmpty()) "" else " It uses the Skills ${used.joinToString { "${it.name} (${it.file})" }}.") +
             (if (places.isEmpty()) "" else " " + places.joinToString(" and ").replaceFirstChar(Char::uppercase) + ".") +
-            (if (answerHistory) " The Answer History is ${home.resolve("answer-history")}." else "")
+            (answerHistory(task, skill)?.let { " The Answer History is $it." } ?: "")
     }
+
+    /** The Answer History's folder when [task] gets it: its toggle ([ANSWER_HISTORY]) has the final say, else its [skill]'s opt-in. */
+    private fun answerHistory(task: LockedExternalTask, skill: Skill): Path? = home.resolve("answer-history")
+        .takeIf { task.extensionProperties[ANSWER_HISTORY]?.toBooleanStrictOrNull() ?: skill.answerHistory }
 
     /**
      * When the Usage limit that [event] reports resets, or null if it reports none: a `rate_limit_event` rejection
@@ -589,11 +525,11 @@ class AgentLauncher(
         .any { it.property(WALKTHROUGH) == task.activityId }
 
     /** The Task's name in its Process, for the Run log. */
-    private fun name(task: LockedExternalTask) =
+    internal fun name(task: LockedExternalTask) =
         repository.getBpmnModelInstance(task.processDefinitionId).getModelElementById<FlowElement>(task.activityId)?.name ?: task.activityId
 
     /** A running session the user can Send a message into ([say]) or Stop ([interrupt]) while it is [open]. */
-    private interface Live {
+    internal interface Live {
         /** The Task's name, for the Run log. */
         val task: String
         val open: Boolean
@@ -662,70 +598,11 @@ class AgentLauncher(
         }
     }
 
-    /**
-     * A codex session's turns, one process each. A message Sent, or Stop, interrupts the running turn as Ctrl-C does;
-     * the session resumes with the messages once the turn has [ended]. It stays open until Ants holds a valid Result
-     * and no message came during the turn that gave it.
-     */
-    private class Turns(override val task: String) : Live {
-        private val sent = mutableListOf<String>()
-        private var process: Process? = null
-
-        @Volatile
-        override var open = true
-            private set
-
-        override val hint = "codex takes no message while it works: Send stops it and resumes its session with your message."
-
-        @Volatile
-        var stopping = false
-            private set
-
-        @Synchronized
-        override fun say(message: String): Boolean {
-            if (!open) return false
-            sent += message
-            process?.let(::interrupt)
-            return true
-        }
-
-        @Synchronized
-        override fun interrupt(): Boolean {
-            if (!open) return false
-            stopping = true
-            process?.let(::interrupt)
-            return true
-        }
-
-        /** The next turn runs in [process], interrupted at once if a message or Stop came since the last one ended. */
-        @Synchronized
-        fun running(process: Process) {
-            this.process = process
-            if (sent.isNotEmpty() || stopping) interrupt(process)
-        }
-
-        /** The messages Sent during the turn that has just ended; with none, a turn that gave a valid Result ([done]) closes the session. */
-        @Synchronized
-        fun ended(done: Boolean): List<String> {
-            process = null
-            val taken = sent.toList()
-            sent.clear()
-            if (taken.isEmpty() && done) open = false
-            return taken
-        }
-
-        @Synchronized
-        fun close() {
-            open = false
-        }
-
-        /** SIGINT to [process] and every process under it, as Ctrl-C in a terminal: codex ends its turn and exits. */
-        private fun interrupt(process: Process) = (listOf(process.toHandle()) + process.descendants().toList())
-            .forEach { runCatching { ProcessBuilder("kill", "-INT", "${it.pid()}").start() } }
-    }
-
-    private fun flags(agent: Agent, schema: Map<*, *>, skills: List<Skill>, session: String, resume: Boolean): List<String> {
+    /** claude's flags, with the permission rules [denied] besides the Subagent types a Limit leaves out. */
+    private fun flags(agent: Agent, schema: Map<*, *>, skills: List<Skill>, session: String, resume: Boolean, denied: List<String>): List<String> {
         val tools = (agent.tools ?: DEFAULT_TOOLS).filter { it.substringBefore('(') != "Skill" }
+        val (subagents, types) = subagents(tools)
+        val disallowed = types + denied
         return listOf(
             "-p",
             "--output-format", "stream-json", "--verbose", "--include-partial-messages",
@@ -740,46 +617,18 @@ class AgentLauncher(
             "--forward-subagent-text",
             "--tools", tools.map { it.substringBefore('(') }.distinct().joinToString(","),
             "--allowedTools", tools.joinToString(","),
-        ) + subagents(tools) + skills.flatMap { listOf("--add-dir", it.folder.toString()) } + (if (agent.model != null) listOf("--model", agent.model) else emptyList()) +
+        ) + subagents + (if (disallowed.isEmpty()) emptyList() else listOf("--disallowedTools", disallowed.joinToString(","))) + skills.flatMap { listOf("--add-dir", it.folder.toString()) } + (if (agent.model != null) listOf("--model", agent.model) else emptyList()) +
             (if (agent.instructions.isNotEmpty()) listOf("--append-system-prompt", agent.instructions) else emptyList())
     }
 
     /**
-     * codex's flags: JSON lines out, the Result's [schema] file, the Agent's sandbox setting instead of tools, its model,
-     * and its standing instructions as `developer_instructions` (a JSON string is a TOML one too). The Run workspace
-     * isn't a git repository. The [writable] folders besides the working one are an instance's Run workspace and the Vault.
-     */
-    private fun codexFlags(agent: Agent, schema: Path, writable: List<Path>): List<String> =
-        listOf("exec", "--json", "--skip-git-repo-check", "--output-schema", "$schema", "--sandbox", agent.sandbox) +
-            (if (agent.model != null) listOf("-m", agent.model) else emptyList()) +
-            (if (agent.instructions.isNotEmpty()) listOf("-c", "developer_instructions=" + json.writeValueAsString(agent.instructions)) else emptyList()) +
-            writable.flatMap { listOf("--add-dir", "$it") }
-
-    /**
-     * When codex's Usage limit resets, from its [message], or null when the message isn't one. codex says
-     * "You’ve hit your usage limit. … Try again at 3:45 PM." (or "… or try again at …"), with the date in front,
-     * "Oct 13th, 2026 3:45 PM", when it isn't today, in local time; "Try again later." means 30 minutes
-     * (`UsageLimitReachedError` and `format_retry_timestamp` in codex-rs/protocol/src/error.rs).
-     */
-    private fun codexLimit(message: String): Instant? {
-        if (!message.contains("usage limit", ignoreCase = true)) return null
-        val at = Regex("""(?i)try again at (?:(\w{3}) (\d{1,2})(?:st|nd|rd|th), (\d{4}) )?(\d{1,2}:\d{2} [AP]M)""").find(message)
-        return at?.destructured?.let { (month, day, year, time) ->
-            runCatching {
-                val date = if (year.isEmpty()) LocalDate.now(clock) else LocalDate.parse("$month $day $year", DateTimeFormatter.ofPattern("MMM d yyyy", Locale.ENGLISH))
-                LocalTime.parse(time.uppercase(), DateTimeFormatter.ofPattern("h:mm a", Locale.ENGLISH)).atDate(date).atZone(clock.zone).toInstant()
-            }.getOrNull()
-        } ?: (clock.instant() + Duration.ofMinutes(30))
-    }
-
-    /**
      * When the Agent tool is among [tools], every offered claude Agent as a Subagent type (`--agents`), and when the
-     * Agent tool has a Limit, such as `Agent(searcher)`, every other type denied: claude lets the Agent tool start any
-     * type that isn't denied.
+     * Agent tool has a Limit, such as `Agent(searcher)`, every other type as a rule to deny: claude lets the Agent tool
+     * start any type that isn't denied.
      */
-    private fun subagents(tools: List<String>): List<String> {
+    private fun subagents(tools: List<String>): Pair<List<String>, List<String>> {
         val agentTool = tools.filter { it.substringBefore('(') in SUBAGENT_TOOLS }
-        if (agentTool.isEmpty()) return emptyList()
+        if (agentTool.isEmpty()) return emptyList<String>() to emptyList()
         // Probed on claude 2.1.295 against a fake API: rules such as `Bash(git log *)` are accepted in `--agents`
         // tools, but a Subagent's permissions are its Task's (`--allowedTools` under dontAsk), so they narrow nothing more.
         val offered = catalogue.agents().filter { it.subagent && it.cli == "claude" }.associate { agent ->
@@ -793,8 +642,7 @@ class AgentLauncher(
         val allowed = agentTool.takeIf { rules -> rules.all { '(' in it } }
             ?.flatMap { it.substringAfter('(').removeSuffix(")").split(',').map(String::trim) }
         val denied = allowed?.let { (BUILT_IN_SUBAGENTS + offered.keys).filter { it !in allowed }.map { "Agent($it)" } }.orEmpty()
-        return (if (offered.isEmpty()) emptyList() else listOf("--agents", json.writeValueAsString(offered))) +
-            (if (denied.isEmpty()) emptyList() else listOf("--disallowedTools", denied.joinToString(",")))
+        return (if (offered.isEmpty()) emptyList() else listOf("--agents", json.writeValueAsString(offered))) to denied
     }
 
     /** What `claude auth status` says of Ants' own Claude login, asked the way a launch runs; empty when it can't tell. */
@@ -842,13 +690,13 @@ class AgentLauncher(
     }
 
     /** The user stopped the session: `[stopped]`, not a failure. */
-    private class Stopped : Exception("Stopped by the user.")
+    internal class Stopped : Exception("Stopped by the user.")
 
     /** A failure of Ants' own, with what the `[failed]` page shows: the last stderr lines, or an invalid Result whole. */
     class Failed(override val message: String, val details: String? = null) : Exception(message)
 
     /** The Usage limit cut the session short; it continues once the limit resets at [resetsAt]. */
-    private class UsageLimit(val resetsAt: Instant) : Exception("Usage limit")
+    internal class UsageLimit(val resetsAt: Instant) : Exception("Usage limit")
 
     companion object {
         const val TOPIC = "agent"

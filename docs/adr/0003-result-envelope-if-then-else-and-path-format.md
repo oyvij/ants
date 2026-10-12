@@ -21,5 +21,10 @@ accepts; Ants rejects one that is absolute, is the Run workspace root, or leads 
 
 - A Skill whose output carries file references must mark each one `"format": "path"`, or Ants never checks it.
   The shipped Skills' schemas must; the Skills page and the result-schema override should say so.
+- codex sends `--output-schema` in strict mode, which refuses `if`/`then`/`else`/`not` and any key not required. So
+  codex gets the considered loose schema after all: every envelope key required, `output` and `needs` nullable, no
+  conditionals. Ants drops a null `output` or `needs` and judges the Result against the full envelope, so a codex slip
+  costs the one retry. A Skill's own `output` schema goes to codex as it is; one with optional keys or `"format":
+  "path"` may still be refused by strict mode, which no real codex run has settled.
 - A `claude` update could tighten what the API accepts again. The `live` test (`./gradlew liveTest`) runs the real
   envelope through the real `claude`.

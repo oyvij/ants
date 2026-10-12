@@ -87,12 +87,16 @@ class Settings(
     /** The default Source map's name: the one the user picked, else the first. */
     fun defaultSourceMap(): String? = default("source-maps", "default-source-map")
 
+    /** The Source map [name]'s file, by default the default one's, which every Run and launch uses. */
+    // ponytail: the default Source map, until a Process picks its own.
+    fun sourceMap(name: String? = defaultSourceMap()): Path? = sourceMaps()[name]?.let(::expand)
+
     /**
      * The repos in the Source map [name] (by default the default one), read from its file in Varde's format, one
      * `- <name>: <local path> (<git remote>)` line per repo. Other lines, and a file that isn't there, give none.
      */
     fun repos(name: String? = defaultSourceMap()): List<Repo> {
-        val file = sourceMaps()[name]?.let(::expand)?.takeIf { it.exists() } ?: return emptyList()
+        val file = sourceMap(name)?.takeIf { it.exists() } ?: return emptyList()
         return file.readText().lines().mapNotNull { Regex("""^- ([^:]+): (.+?) \((.+)\)$""").find(it.trim())?.destructured }
             .map { (repo, path, remote) -> Repo(repo.trim(), path, remote) }
     }
