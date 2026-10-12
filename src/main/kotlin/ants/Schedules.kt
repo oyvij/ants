@@ -125,6 +125,8 @@ class Schedules(
 
     /** Starts a Run of [definition] if a time of [cron] came since the last start, or notes the latest one skipped. */
     private fun due(definition: ProcessDefinition, cron: CronExpression): Unit = synchronized(this) {
+        // A version the loop listed before a Save or Remove replaced it: its key's state is the new version's now.
+        if (repository.createProcessDefinitionQuery().processDefinitionKey(definition.key).latestVersion().singleResult()?.id != definition.id) return
         val state = state(definition.key)
         if (state.paused) return
         val now = clock.instant()

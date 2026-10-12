@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  xmlns:operaton="http://operaton.org/schema/1.0/bpmn"
+                  id="definitions" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="to_spec_and_approve" name="To-spec and approve" isExecutable="true" operaton:historyTimeToLive="180">
+    <bpmn:documentation>The planner writes the Spec, tickets/spec.md, from the prompt, the brief and every Round; you approve it, or send it back and it is revised. Needs start-form field prompt, and the scout's brief.</bpmn:documentation>
+    <bpmn:startEvent id="start">
+      <bpmn:outgoing>f1</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:serviceTask id="tospec" name="Write the Spec" operaton:type="external" operaton:topic="agent">
+      <bpmn:extensionElements>
+        <operaton:properties>
+          <operaton:property name="ants.agent" value="planner" />
+          <operaton:property name="ants.skill" value="to-spec" />
+        </operaton:properties>
+        <operaton:inputOutput>
+          <operaton:inputParameter name="prompt">${prompt}</operaton:inputParameter>
+          <operaton:inputParameter name="brief">${scout.output.brief}</operaton:inputParameter>
+          <operaton:inputParameter name="rounds">run-log.md</operaton:inputParameter>
+          <operaton:inputParameter name="clones">${clones}</operaton:inputParameter>
+          <operaton:inputParameter name="repos">${grill.output.repos}</operaton:inputParameter>
+        </operaton:inputOutput>
+      </bpmn:extensionElements>
+      <bpmn:incoming>f1</bpmn:incoming>
+      <bpmn:incoming>sentback</bpmn:incoming>
+      <bpmn:outgoing>f2</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:userTask id="approvespec" name="Approve the Spec">
+      <bpmn:extensionElements>
+        <operaton:properties>
+          <operaton:property name="ants.send-back" value="tospec" />
+        </operaton:properties>
+        <operaton:inputOutput>
+          <operaton:inputParameter name="title">Approve the Spec</operaton:inputParameter>
+          <operaton:inputParameter name="show">${tospec.output.spec}</operaton:inputParameter>
+        </operaton:inputOutput>
+      </bpmn:extensionElements>
+      <bpmn:incoming>f2</bpmn:incoming>
+      <bpmn:outgoing>f3</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:exclusiveGateway id="specapproved" name="Approved?" default="sentback">
+      <bpmn:incoming>f3</bpmn:incoming>
+      <bpmn:outgoing>approved</bpmn:outgoing>
+      <bpmn:outgoing>sentback</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:endEvent id="end">
+      <bpmn:incoming>approved</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="tospec" />
+    <bpmn:sequenceFlow id="f2" sourceRef="tospec" targetRef="approvespec" />
+    <bpmn:sequenceFlow id="f3" sourceRef="approvespec" targetRef="specapproved" />
+    <bpmn:sequenceFlow id="approved" name="yes" sourceRef="specapproved" targetRef="end">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${approvespec.approved}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="sentback" name="no" sourceRef="specapproved" targetRef="tospec" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="diagram">
+    <bpmndi:BPMNPlane id="plane" bpmnElement="to_spec_and_approve">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start">
+        <dc:Bounds x="180" y="160" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="tospec_di" bpmnElement="tospec">
+        <dc:Bounds x="270" y="138" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="approvespec_di" bpmnElement="approvespec">
+        <dc:Bounds x="420" y="138" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="specapproved_di" bpmnElement="specapproved" isMarkerVisible="true">
+        <dc:Bounds x="575" y="153" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_di" bpmnElement="end">
+        <dc:Bounds x="682" y="160" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1">
+        <di:waypoint x="216" y="178" />
+        <di:waypoint x="270" y="178" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2">
+        <di:waypoint x="370" y="178" />
+        <di:waypoint x="420" y="178" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f3_di" bpmnElement="f3">
+        <di:waypoint x="520" y="178" />
+        <di:waypoint x="575" y="178" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="approved_di" bpmnElement="approved">
+        <di:waypoint x="625" y="178" />
+        <di:waypoint x="682" y="178" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sentback_di" bpmnElement="sentback">
+        <di:waypoint x="600" y="203" />
+        <di:waypoint x="600" y="280" />
+        <di:waypoint x="320" y="280" />
+        <di:waypoint x="320" y="218" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

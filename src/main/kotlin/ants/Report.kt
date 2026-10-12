@@ -11,7 +11,7 @@ const val REPORT = "report.md"
 /**
  * The Report of the Run [run] as it ends, as markdown, written mechanically: its Process and how it ended, its start
  * form, each Agent Task's Result summary, tokens and Transcript link, read from the Transcripts in [workspace], and
- * each Round's answers and their sources, read from its Run log, its Spec and Tickets, and the Push Results.
+ * each Round's answers and their sources, read from its Run log, its Spec and Tickets, the Push Results and the pull requests.
  */
 fun report(run: DelegateExecution, workspace: Path): String = buildString {
     val definition = (run as ExecutionEntity).processDefinition
@@ -33,4 +33,7 @@ fun report(run: DelegateExecution, workspace: Path): String = buildString {
     for ((task, review) in reviews) append("### $task\n\n${review as? String ?: JsonMapper.shared().writeValueAsString(review)}\n\n")
     append("\n" + ticketsReport(workspace, run.processInstanceId))
     append(pushReport(run))
+    // What the pr Tasks opened: a Result's `output.pullRequests`, the last of each Task's launches.
+    val pullRequests = transcripts.values.flatMap { ((it.result?.get("output") as? Map<*, *>)?.get("pullRequests") as? List<*>).orEmpty() }.map { it as Map<*, *> }
+    if (pullRequests.isNotEmpty()) append("\n## Pull requests\n\n" + pullRequests.joinToString("") { "- **${it["repo"]}** · [${it["url"]}](${it["url"]})\n" })
 }

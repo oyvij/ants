@@ -156,7 +156,7 @@ class Runs(
             val entry = notifications.tasks().firstOrNull { it.instance == id && it.activity == task }
             val model = mapOf(
                 "run" to top, "task" to key, "name" to (element.name ?: task), "shown" to shown(id)[task], "transcript" to transcript,
-                "entry" to entry, "details" to entry?.let(notifications::details), "push" to (entry?.let(notifications::isPush) == true), "live" to launcher.live(top, key), "_csrf" to csrf,
+                "entry" to entry, "details" to entry?.let(notifications::details), "push" to (entry?.let(notifications::isPush) == true), "sendHint" to launcher.sendHint(top, key), "_csrf" to csrf,
             )
             StringOutput().also { templates.render("drawer.kte", model, it) }.toString()
         }
@@ -236,17 +236,21 @@ val HistoricProcessInstance.stateName
 /**
  * Gives each Run its Run workspace, `runs/<run>/` in ANTS_HOME, for as long as it lives. At Run start every
  * Task-id (and call activity id) variable is `null`, so forward references read `null`, `runs` counts each Task's
- * runs and `clones` is empty. A multi-instance collects its instances' Results into one list ([collect]). A called Process runs inside its
+ * runs, `clones` is empty and `sourceMap` holds the default Source map's repos, `[{name, remote}]`. A multi-instance collects its instances' Results into one list ([collect]). A called Process runs inside its
  * caller's Run: it ends by giving its call activity every Result in it, by id.
  */
+/** The variables [RunLifecycle] gives every Run besides its Results, which any expression may read. */
+val RUN_VARIABLES = listOf("runs", "clones", "sourceMap")
+
 @Component
-class RunLifecycle(@Value("\${ants.home}") private val home: Path) : AbstractProcessEnginePlugin() {
+class RunLifecycle(@Value("\${ants.home}") private val home: Path, private val settings: Settings) : AbstractProcessEnginePlugin() {
     private fun started(tasks: List<String>, results: List<String>) = ExecutionListener { run ->
         if (run.isTopRun) trackerDoc(home.runWorkspace(run.processInstanceId).createDirectories())
         else run.setVariable(CALLED, called(run.superExecution))
         for (id in results) run.setVariable(id, null)
         run.setVariable("runs", tasks.associateWith { 0 })
         run.setVariable("clones", ArrayList<Any>()) // Clone repos adds to it
+        run.setVariable("sourceMap", ArrayList(settings.repos().map { linkedMapOf("name" to it.name, "remote" to it.remote) }))
     }
 
     // ponytail: parallel Tasks starting in separate transactions clash on `runs` (optimistic locking) and the losing

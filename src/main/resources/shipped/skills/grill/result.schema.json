@@ -1,0 +1,29 @@
+{
+  "type": "object",
+  "properties": {
+    "questions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "Short and unique across the Run." },
+          "title": { "type": "string", "description": "A few words." },
+          "ask": { "type": "string", "description": "The question, one decision." },
+          "context": { "type": "string", "description": "What it settles, and why it matters now." },
+          "recommendation": { "type": "string", "description": "The answer you would give." },
+          "why": { "type": "string", "description": "The reason for the recommendation." }
+        },
+        "required": ["id", "title", "ask", "context", "recommendation", "why"],
+        "additionalProperties": false
+      },
+      "description": "This Round's questions; empty when nothing is left to settle."
+    },
+    "repos": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Every repo the work needs beyond the clones you started with, named again each Round: Source map names or git URLs the user gave; empty when none."
+    }
+  },
+  "required": ["questions", "repos"],
+  "additionalProperties": false
+}

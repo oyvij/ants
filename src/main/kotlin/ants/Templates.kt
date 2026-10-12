@@ -133,6 +133,9 @@ private const val DC = "http://www.omg.org/spec/DD/20100524/DC"
 /** The attributes that name another element by its id. */
 private val references = setOf("sourceRef", "targetRef", "default", "attachedToRef", "bpmnElement", "sourceElement", "targetElement", "categoryValueRef")
 
+/** The extension properties whose value is a Task's id. */
+private val namesATask = setOf(ASKER, SEND_BACK, WALKTHROUGH)
+
 private fun Node.children() = List(childNodes.length) { childNodes.item(it) }.filterIsInstance<Element>()
 
 private fun Element.prefixed(name: String) = prefix?.let { "$it:$name" } ?: name
@@ -164,8 +167,8 @@ internal fun drop(target: Document, template: Document, name: String, x: Int, y:
             val diagram = element.namespaceURI == BPMN || element.namespaceURI == BPMNDI
             for (attribute in List(element.attributes.length) { element.attributes.item(it) }) attribute.nodeValue = when {
                 attribute.localName == "id" && diagram || attribute.localName in references -> renamed[attribute.nodeValue]
-                // ponytail: no `operaton:property` names a Task yet, and `ants.agent` or `ants.skill` may equal a Task's id;
-                // rename the values of the ones that will (wave 4's Send back resumes) by property name.
+                // The properties that name a Task; `ants.agent` and `ants.skill` may equal a Task's id but never name one.
+                attribute.localName == "value" && element.getAttribute("name") in namesATask -> renamed[attribute.nodeValue]
                 else -> null
             } ?: expressions(attribute.nodeValue)
             if (element.children().isEmpty() && element.textContent.isNotEmpty()) element.textContent =

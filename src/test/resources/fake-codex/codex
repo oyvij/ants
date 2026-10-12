@@ -1,0 +1,50 @@
+#!/bin/bash
+# A fake `codex` for tests, run from a copy in its own folder, played like the fake claude. `codex exec … -` reads its
+# prompt from stdin to the end, as codex does, and `resume <thread>` resumes that thread; a new one gets a thread id of
+# its own. It records its argv, environment, working directory, thread and prompt under ./launches/<skill>.<n> for the nth
+# launch of that Skill, and plays ./sessions/<skill>.<n>.jsonl, or ./sessions/<skill>.jsonl when there is none. The
+# Skill is picked by the hand-off line, or for `resume` by the thread's first launch. $SESSION stands for the thread id.
+# A session line `wait <file>` waits until ./<file> exists, `stderr <text>` prints to stderr, `exit <code>` exits;
+# every other line is printed. SIGINT, which interrupts codex's turn, leaves ./launches/<skill>.<n>/interrupted and
+# exits 1, as codex does; SIGTERM leaves ./launches/<skill>.<n>/killed. An `--output-schema` with `if`, `then`, `else` or
+# `not` is refused, as codex's strict mode refuses it.
+dir=$(cd "$(dirname "$0")" && pwd)
+thread= schema= previous=
+for arg; do
+    [ "$previous" = resume ] && thread=$arg
+    [ "$previous" = --output-schema ] && schema=$arg
+    previous=$arg
+done
+prompt=$(cat)
+skill=$(basename "$(printf '%s' "$prompt" | sed -n 's|.*Follow the Skill in \(.*\)/SKILL.md for.*|\1|p')")
+mkdir -p "$dir/launches" "$dir/skills"
+[ -n "$thread" ] || thread=thread-$$-$RANDOM
+if [ -n "$skill" ]; then printf '%s' "$skill" > "$dir/skills/$thread"
+else skill=$(cat "$dir/skills/$thread"); fi
+n=1
+while ! mkdir "$dir/launches/$skill.$n" 2>/dev/null; do n=$((n + 1)); done
+launch=$dir/launches/$skill.$n
+printf '%s\n' "$@" > "$launch/argv"
+env > "$launch/env"
+pwd > "$launch/cwd"
+printf '%s' "$thread" > "$launch/thread"
+# stdin comes last and whole (renamed into place), so a launch whose stdin exists has its full record.
+printf '%s\n' "$prompt" > "$launch/stdin.tmp" && mv "$launch/stdin.tmp" "$launch/stdin"
+trap 'touch "$launch/interrupted"; exit 1' INT
+trap 'touch "$launch/killed"; exit 143' TERM
+if [ -n "$schema" ] && grep -Eq '"(if|then|else|not)":' "$schema"; then
+    echo '{"type":"error","message":"Invalid schema for response_format '"'codex_output_schema'"': In context=(), '"'if'"' is not permitted."}'
+    echo '{"type":"turn.failed","error":{"message":"Invalid schema for response_format"}}'
+    exit 1
+fi
+script=$dir/sessions/$skill.$n.jsonl
+[ -e "$script" ] || script=$dir/sessions/$skill.jsonl
+while IFS= read -r line <&3; do
+    line=${line//\$SESSION/$thread}
+    case $line in
+        "wait "*) while [ ! -e "$dir/${line#wait }" ]; do sleep 0.05; done ;;
+        "stderr "*) printf '%s\n' "${line#stderr }" >&2 ;;
+        "exit "*) exit "${line#exit }" ;;
+        *) printf '%s\n' "$line" ;;
+    esac
+done 3< "$script"

@@ -87,7 +87,7 @@ class AgentTaskTest : AntsTest() {
     }
 
     @Test
-    fun `the Vault and Answer History toggles reach the hand-off line only when on, defaulting from the Skill`() {
+    fun `the Vault and Answer History toggles reach the hand-off line and --add-dir only when on, defaulting from the Skill`() {
         val map = Files.createTempFile("source-map", ".md")
         agentTask(metadata = "metadata:\n  varde-vault: true\n", extra = "source-maps:\n  mine: $map\n")
         claude.session("draft", done)
@@ -96,12 +96,24 @@ class AgentTaskTest : AntsTest() {
         val defaults = claude.launches("draft").last().stdin
         assertContains(defaults, "for the workspace at ${home.resolve("runs/$byDefault")}. The Vault is $vaultPath and the Source map is $map.\\n")
         assertFalse("Answer History" in defaults)
+        assertContains(claude.launches("draft").last().argv.zipWithNext(), "--add-dir" to "$vaultPath")
 
         val flipped = startWith("toggles-flipped", property("ants.vault", "false") + property("ants.answer-history", "true"))
         eventually { assertContains(page(flipped), "State: Completed") }
         val toggled = claude.launches("draft").last().stdin
         assertContains(toggled, "for the workspace at ${home.resolve("runs/$flipped")}. The Answer History is ${home.resolve("answer-history")}.\\n")
         assertFalse("Vault" in toggled)
+        // Off, the Task learns the Vault and Source map from nowhere: not its prompt, environment or --add-dir.
+        val off = claude.launches("draft").last()
+        for (place in listOf("$vaultPath", "$map")) {
+            assertFalse(place in off.stdin)
+            assertFalse(off.argv.any { place in it })
+            assertFalse(off.env.values.any { place in it })
+        }
+        // On, the Answer History is an --add-dir, so a Read reaches it outside the workspace.
+        val history = home.resolve("answer-history").toString()
+        assertContains(off.argv.zipWithNext(), "--add-dir" to history)
+        assertFalse(history in claude.launches("draft").first().argv)
     }
 
     @Test
@@ -280,7 +292,8 @@ class AgentTaskTest : AntsTest() {
         claude.session("draft", done)
         assertTrue(catalogue.vault(catalogue.skill("draft")))
         val run = start()
-        eventually { assertContains(page(run), "State: Completed") } // handing the Vault over is #69's
+        eventually { assertContains(page(run), "State: Completed") }
+        assertContains(claude.launches("draft").single().argv.zipWithNext(), "--add-dir" to "$vaultPath")
         usedSkill("search")
         assertFalse(catalogue.vault(catalogue.skill("draft")))
     }
@@ -470,6 +483,9 @@ class FakeClaude {
         val env get() = dir.resolve("env").readLines().associate { it.substringBefore('=') to it.substringAfter('=') }
         val cwd get() = dir.resolve("cwd").readText().trim()
         val stdin get() = dir.resolve("stdin").readText().trim()
+
+        /** A file the launch's session wrote into its record (`$launch`). */
+        fun file(name: String) = dir.resolve(name).readText()
 
         /** Whether Ants killed the launch. */
         val killed get() = dir.resolve("killed").exists()

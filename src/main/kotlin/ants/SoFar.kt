@@ -113,6 +113,8 @@ class SoFar(
                 }
             }.joinToString("\n")
             "result" -> (event["structured_output"] as? Map<*, *>)?.let { "Result: ${it["outcome"]}. ${it["summary"]}" }
+            "item.completed" -> codexMessage(event) ?: (event["item"] as? Map<*, *>) // codex
+                ?.takeIf { it["type"] == "command_execution" }?.let { "Tool Shell: " + it["command"].toString().take(200) }
             else -> null
         }?.takeIf(String::isNotBlank)
     }

@@ -50,9 +50,12 @@ abstract class AntsTest {
     @Autowired
     private lateinit var launcher: AgentLauncher
 
+    @Autowired
+    private lateinit var schedules: Schedules
+
     /**
      * Every test starts on a clean Ants, whatever ran before it in this JVM: no Processes, Runs or Schedules, no live
-     * CLI holding a launch slot, no Agents, Skills or Templates of the user's, the clock where it belongs and claude's
+     * CLI holding a launch slot, no Agents, Skills or Templates of the user's, the clock where it belongs and every CLI's
      * gate open. A test writes its own `settings.yaml`.
      */
     @BeforeEach
@@ -76,9 +79,11 @@ abstract class AntsTest {
             runs.forEach(launcher::cancel)
             Thread.sleep(50)
         }
-        launcher.tryNow("claude")
+        Settings.AI_CLIS.forEach { launcher.tryNow(it) }
         for (folder in listOf("agents", "skills", "templates")) home.resolve(folder).toFile().run { deleteRecursively(); mkdirs() }
-        home.resolve("schedules.yaml").toFile().delete()
+        // Under the Schedule loop's lock: a Run it was starting for the last test, at that test's clock, writes its state
+        // once started, which would bring back that test's last start and leave this test's first time not yet due.
+        synchronized(schedules) { home.resolve("schedules.yaml").toFile().delete() }
     }
 
     /**

@@ -182,13 +182,13 @@ class BrowserTest : AntsTest() {
     @Test
     fun `Answer a Round shows one question at a time under tabs marking accepted and edited, then Review and send`() = browse {
         val claude = FakeClaude()
-        agentTask(claude, mapOf("grill" to """{"type":"object","properties":{"questions":{"type":"array"}}}"""))
+        agentTask(claude, mapOf("quiz" to """{"type":"object","properties":{"questions":{"type":"array"}}}"""))
         fun round(vararg ids: String) = """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":""" +
             """{"outcome":"done","summary":"A Round.","output":{"questions":[""" + ids.joinToString(",") {
                 """{"id":"$it","title":"Title $it","ask":"Ask $it?","context":"Settles $it.","recommendation":"Recommend $it.","why":"Because $it."}"""
             } + "]}}}"
-        claude.session("grill", 1, round("who", "scope"))
-        claude.session("grill", 2, round())
+        claude.session("quiz", 1, round("who", "scope"))
+        claude.session("quiz", 2, round())
         http.upload("/processes", "file", "round.bpmn", javaClass.getResource("/round.bpmn")!!.readBytes())
         val run = http.post("/processes/round/runs", mapOf()).path.removePrefix("/runs/")
         var entry = ""
@@ -216,12 +216,12 @@ class BrowserTest : AntsTest() {
         page.click("#next")
         page.waitForURL { !it.contains(entry) }
         eventually { assertContains(http.get("/runs/$run").body, "State: Completed") }
-        assertContains(claude.launches("grill")[1].stdin, """{\"id\":\"who\",\"answer\":\"Recommend who.\",\"source\":\"accepted\"},{\"id\":\"scope\",\"answer\":\"Only admins.\",\"source\":\"written\"}""")
+        assertContains(claude.launches("quiz")[1].stdin, """{\"id\":\"who\",\"answer\":\"Recommend who.\",\"source\":\"accepted\"},{\"id\":\"scope\",\"answer\":\"Only admins.\",\"source\":\"written\"}""")
     }
 
     @Test
     fun `Review changes picks diff lines for a comment by clicking their numbers, and files it`() = browse {
-        agentTask(FakeClaude(), mapOf("fix-review" to null, "ship" to null), extra = reviewSourceMap())
+        agentTask(FakeClaude(), mapOf("mend" to null, "ship" to null), extra = reviewSourceMap())
         http.upload("/processes", "file", "review.bpmn", javaClass.getResource("/review.bpmn")!!.readBytes())
         val run = http.post("/processes/review/runs", listOf("repos" to "api", "repos" to "web")).path.removePrefix("/runs/")
         var entry = ""
@@ -263,11 +263,11 @@ class BrowserTest : AntsTest() {
     @Test
     fun `Review changes opens on the Story tab, comments on a story step, and switches to By repo`() = browse {
         val claude = FakeClaude()
-        agentTask(claude, mapOf("walkthrough" to null, "fix-review" to null, "ship" to null), extra = reviewSourceMap())
+        agentTask(claude, mapOf("narrate" to null, "mend" to null, "ship" to null), extra = reviewSourceMap())
         val set = """{"title":"Nothing changes","ranges":[{"repo":"api","base":"origin/main","head":"HEAD"}],"stories":[{"id":"s","name":"Greeting",""" +
             """"premise":"Hello stays.","steps":[{"id":"hello","name":"Hello","claim":"It greets.","why":"Politeness.",""" +
             """"site":{"file":"repos/api/hello.txt","side":"new","kind":"context","from":1,"to":1}}]}]}"""
-        claude.session("walkthrough", "write walkthrough/stories.json $set", """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":{"outcome":"done","summary":"Done.","output":{}}}""")
+        claude.session("narrate", "write walkthrough/stories.json $set", """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":{"outcome":"done","summary":"Done.","output":{}}}""")
         http.upload("/processes", "file", "story-set.bpmn", javaClass.getResource("/story-set.bpmn")!!.readBytes())
         val run = http.post("/processes/story-set/runs", listOf("repos" to "api", "repos" to "web")).path.removePrefix("/runs/")
         var entry = ""

@@ -45,6 +45,9 @@ class Agent(val file: Path, text: String = file.readText()) {
     val tools = list(meta["tools"])
     val model = meta["model"]?.toString()
 
+    /** What a codex Agent may do instead of tools: its `--sandbox`, one of [SANDBOXES]. */
+    val sandbox = meta["sandbox"]?.toString() ?: "workspace-write"
+
     /** Offered as a Subagent (`ants-subagent: true`). */
     val subagent = meta["ants-subagent"] == true
 
@@ -53,6 +56,15 @@ class Agent(val file: Path, text: String = file.readText()) {
         null -> null
         is List<*> -> value.map(Any?::toString)
         else -> rules(value.toString())
+    }
+
+    companion object {
+        /** codex's `--sandbox` values. */
+        val SANDBOXES = listOf("read-only", "workspace-write", "danger-full-access")
+
+        /** Why an Agent on [cli] can't run with [sandbox]; null when it can. */
+        fun sandboxError(cli: String, sandbox: String) =
+            if (cli == "codex" && sandbox !in SANDBOXES) "codex takes the sandbox read-only, workspace-write or danger-full-access, not $sandbox." else null
     }
 }
 

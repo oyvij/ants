@@ -7,7 +7,7 @@
 @param entry: ants.TaskEntry?
 @param details: String?
 @param push: Boolean
-@param live: Boolean
+@param sendHint: String?
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 <section id="drawer-head">
     <h2>${name}</h2>
@@ -59,13 +59,14 @@
     @endif
 </section>
 @endif
-@if(live)
+@if(sendHint != null)
 <section id="drawer-send">
     <form method="post" action="/runs/${run}/tasks/${task}/transcript/send">
         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
         <input type="hidden" name="back" value="run">
         <label>Comment <textarea name="message" required></textarea></label>
         <button>Send</button>
+        <small>${sendHint}</small>
     </form>
     <form method="post" action="/runs/${run}/tasks/${task}/transcript/stop">
         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">

@@ -60,9 +60,10 @@ class PreRun(
             .distinct().associateWith { cli -> command(cli) }.filterValues { !executable(it) }
         return buildList {
             settings.vaults()[vault]?.let(Settings::expand)?.takeIf { !it.exists() }?.let { add("The Vault $vault isn't there: $it.") }
-            sourceMap?.let { settings.sourceMaps()[it] }?.let(Settings::expand)?.takeIf { !it.exists() }?.let { add("The Source map $sourceMap isn't there: $it.") }
+            sourceMap?.let(settings::sourceMap)?.takeIf { !it.exists() }?.let { add("The Source map $sourceMap isn't there: $it.") }
             addAll(failed)
             missing.forEach { (cli, command) -> add("$cli: $command isn't an executable.") }
+            for (agent in agents) Agent.sandboxError(agent.cli, agent.sandbox)?.let { add("The Agent ${agent.name}: $it") }
             for (name in named) if (name !in known) add(if (sourceMap == null) "$name: no Source map is configured (Settings)." else "The Source map $sourceMap has no repo $name.")
             if (agents.any { it.cli == "claude" } && "claude" !in missing) {
                 val login = launcher.login()

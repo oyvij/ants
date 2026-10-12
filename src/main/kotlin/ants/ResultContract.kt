@@ -38,6 +38,26 @@ object ResultContract {
         "else" to mapOf("required" to listOf("needs"), "not" to mapOf("required" to listOf("output"))),
     )
 
+    /**
+     * The `--output-schema` codex gets for [outputSchema]: codex sends it in strict mode, which refuses `if`/`then`/
+     * `else`/`not` and optional keys, so every key is required and `output` and `needs` may be null. Ants still
+     * judges the Result against [schema], with the null ones dropped ([withoutNulls]) (ADR 0003).
+     */
+    fun strict(outputSchema: Map<*, *>): Map<String, Any> = mapOf(
+        "type" to "object",
+        "properties" to mapOf(
+            "outcome" to mapOf("type" to "string", "enum" to listOf("done", "stuck")),
+            "summary" to mapOf("type" to "string", "description" to "One sentence, for people."),
+            "output" to mapOf("anyOf" to listOf(outputSchema, mapOf("type" to "null")), "description" to "Null when stuck."),
+            "needs" to mapOf("type" to listOf("string", "null"), "description" to "What blocks you, and what would unblock you. Null when done."),
+        ),
+        "required" to listOf("outcome", "summary", "output", "needs"),
+        "additionalProperties" to false,
+    )
+
+    /** A Result given under [strict], as [schema] judges it: without a null `output` or `needs`. */
+    fun withoutNulls(result: Map<*, *>): Map<*, *> = result.filterNot { (key, value) -> value == null && key in setOf("output", "needs") }
+
     /** Why [result] breaks [schema], with every file reference checked against [workspace]; empty when it's valid. */
     fun errors(result: Any?, schema: Map<*, *>, workspace: Path): List<String> {
         val dialect = Dialect.builder(Dialects.getDraft202012()).format(InWorkspace(workspace)).build()

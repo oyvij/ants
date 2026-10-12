@@ -20,7 +20,7 @@ class StorySetTest : AntsTest() {
 
     /** The walkthrough's session: once the test has committed, it writes each of [sets] in turn, a Result after each. */
     private fun walkthrough(vararg sets: String) = claude.session(
-        "walkthrough", "wait commits",
+        "narrate", "wait commits",
         *sets.mapIndexed { i, set -> listOfNotNull("read".takeIf { i > 0 }, "write walkthrough/stories.json $set", walked) }.flatten().toTypedArray(),
     )
 
@@ -40,13 +40,13 @@ class StorySetTest : AntsTest() {
     private fun start(): String {
         agentTask(
             claude,
-            mapOf("walkthrough" to """{"type":"object","properties":{"stories":{"type":"string","format":"path"}}}""", "fix-review" to null, "ship" to null),
+            mapOf("narrate" to """{"type":"object","properties":{"stories":{"type":"string","format":"path"}}}""", "mend" to null, "ship" to null),
             extra = reviewSourceMap(),
         )
         browser.import("story-set.bpmn")
         browser.get("/processes/story-set")
         val run = browser.post("/processes/story-set/runs", listOf("repos" to "api", "repos" to "web")).path.removePrefix("/runs/")
-        eventually { assertEquals(1, claude.launches("walkthrough").size) } // the clones are there
+        eventually { assertEquals(1, claude.launches("narrate").size) } // the clones are there
         val api = home.runWorkspace(run).resolve("repos/api")
         commitFile(api, "long.txt", WORDS.joinToString("\n", postfix = "\n"), "Count to ten")
         commitFile(api, "long.txt", WORDS.joinToString("\n", postfix = "\n").replaceFirst("one", "ONE"), "Shout")
@@ -86,7 +86,7 @@ class StorySetTest : AntsTest() {
         val byRepo = browser.get(entry(run) + "?tab=repo").body
         assertContains(byRepo, """<nav id="tabs"><a href="?tab=story">Story</a> <b>By repo</b></nav>""")
         assertContains(byRepo, "<h2>web</h2>")
-        assertEquals(1, claude.launches("walkthrough").single().stdin.lines().size) // nothing to fix
+        assertEquals(1, claude.launches("narrate").single().stdin.lines().size) // nothing to fix
     }
 
     @ParameterizedTest(name = "{0}")
@@ -102,7 +102,7 @@ class StorySetTest : AntsTest() {
         val run = start()
         val page = browser.get(entry(run)).body
         assertContains(page, "<h4>1. Shout</h4>")
-        val fix = JsonMapper.shared().readTree(claude.launches("walkthrough").single().stdin.lines()[1])["message"]["content"].asString()
+        val fix = JsonMapper.shared().readTree(claude.launches("narrate").single().stdin.lines()[1])["message"]["content"].asString()
         assertContains(fix, "Ants checked the Story set in walkthrough/stories.json")
         assertContains(fix, "- `$step`: $fault: ")
         assertEquals(1, Regex("- `").findAll(fix).count()) // only the failing step
@@ -123,13 +123,13 @@ class StorySetTest : AntsTest() {
         val run = start()
         eventually { assertContains(assertNotNull(row(run)), "[failed]") }
         assertContains(row(run)!!, "The Story set in walkthrough/stories.json is refused:")
-        assertEquals(1, claude.launches("walkthrough").single().stdin.lines().size)
+        assertEquals(1, claude.launches("narrate").single().stdin.lines().size)
     }
 
     @Test
     fun `a stuck walkthrough is stuck, its Story set unchecked`() {
         claude.session(
-            "walkthrough", "wait commits",
+            "narrate", "wait commits",
             """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":{"outcome":"stuck","summary":"Which repo?","needs":"Name the repo."}}""",
         )
         val run = start()

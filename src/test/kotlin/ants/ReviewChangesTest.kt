@@ -26,7 +26,7 @@ class ReviewChangesTest : AntsTest() {
      * back. Gives the Run once its clones are there.
      */
     private fun start(): String {
-        agentTask(claude, mapOf("fix-review" to """{"type":"object","properties":{"review":{"type":"string"}}}""", "ship" to null), extra = reviewSourceMap())
+        agentTask(claude, mapOf("mend" to """{"type":"object","properties":{"review":{"type":"string"}}}""", "ship" to null), extra = reviewSourceMap())
         browser.import("review.bpmn")
         browser.get("/processes/review")
         val run = browser.post("/processes/review/runs", listOf("repos" to "api", "repos" to "web")).path.removePrefix("/runs/")
@@ -74,7 +74,7 @@ class ReviewChangesTest : AntsTest() {
 
     @Test
     fun `a typed line comment reaches the fix Task's resume message, which starts it fresh, then resumes it`() {
-        claude.session("fix-review", result("""{"review":"Put hello back."}"""))
+        claude.session("mend", result("""{"review":"Put hello back."}"""))
         claude.session("ship", result("{}"))
         val run = start()
         val entry = entry(run)
@@ -92,15 +92,15 @@ class ReviewChangesTest : AntsTest() {
         browser.post(entry, mapOf("action" to "send-back", "comment" to ""))
         val again = entry(run) // the fix is done, and the changes wait for review again
         assertNotEquals(entry, again)
-        val first = claude.launches("fix-review").single()
+        val first = claude.launches("mend").single()
         assertContains(first.stdin, "From the user:\\n- ISSUE repos/api/hello.txt:1-2 (new): Say hello, not hi.")
         assertContains(home.resolve("runs/$run/run-log.md").readText(), "Review the changes · Send back\n\n- ISSUE repos/api/hello.txt:1-2 (new): Say hello, not hi.\n")
 
-        claude.session("fix-review", 2, result("""{"review":"Shortened it."}"""))
+        claude.session("mend", 2, result("""{"review":"Shortened it."}"""))
         browser.post(again, mapOf("action" to "send-back", "comment" to "Shorter."))
         browser.post(entry(run), mapOf("action" to "approve", "comment" to ""))
         eventually { assertContains(page(run), "State: Completed") }
-        val second = claude.launches("fix-review")[1]
+        val second = claude.launches("mend")[1]
         assertEquals(first.flag("--session-id"), second.flag("--resume"))
         assertEquals("""{"type":"user","message":{"role":"user","content":"Shorter."}}""", second.stdin)
 
@@ -151,12 +151,12 @@ class ReviewChangesTest : AntsTest() {
 
     @Test
     fun `Send back naming a multi-instance Task is a Check error`() {
-        agentTask(null, mapOf("fix-review" to null, "ship" to null))
+        agentTask(null, mapOf("mend" to null, "ship" to null))
         browser.get("/processes")
         val bpmn = javaClass.getResource("/review.bpmn")!!.readText()
-            .replace("""<operaton:property name="ants.skill" value="fix-review" />
+            .replace("""<operaton:property name="ants.skill" value="mend" />
         </operaton:properties>
-      </bpmn:extensionElements>""", """<operaton:property name="ants.skill" value="fix-review" />
+      </bpmn:extensionElements>""", """<operaton:property name="ants.skill" value="mend" />
         </operaton:properties>
       </bpmn:extensionElements>
       <bpmn:multiInstanceLoopCharacteristics operaton:collection="${'$'}{repos}" />""")

@@ -80,12 +80,12 @@ class AgentsTest : AntsTest() {
 
     @Test
     fun `a hand-written agent file shows on the form, its limits under Limit and its other keys kept`() {
-        agents.resolve("scout.md").writeText("---\nname: scout\ncolor: blue\ntools: Agent(knowledge-searcher, worker), Read\n---\nScout.\n")
-        val page = get("/agents/scout")
+        agents.resolve("seeker.md").writeText("---\nname: seeker\ncolor: blue\ntools: Agent(knowledge-searcher, worker), Read\n---\nScout.\n")
+        val page = get("/agents/seeker")
         assertContains(page, """name="tool.Agent" checked""")
         assertContains(page, """name="limit.Agent" value="knowledge-searcher, worker"""")
-        post("/agents/scout", mapOf("name" to "scout", "cli" to "claude", "tool.Read" to "on", "instructions" to "Scout."))
-        assertEquals("---\nname: scout\ncli: claude\ntools: Read\ncolor: blue\n---\nScout.\n", agents.resolve("scout.md").readText())
+        post("/agents/seeker", mapOf("name" to "seeker", "cli" to "claude", "tool.Read" to "on", "instructions" to "Scout."))
+        assertEquals("---\nname: seeker\ncli: claude\ntools: Read\ncolor: blue\n---\nScout.\n", agents.resolve("seeker.md").readText())
     }
 
     /** Runs [check] with [folder] as an extra Agent folder in settings. */
@@ -177,6 +177,24 @@ class AgentsTest : AntsTest() {
 
         assertContains(import("broken.md", "---\nname: [broken\n---\nBody.\n"), "broken.md has broken YAML")
         assertContains(import("gemini.md", "---\nname: gemini\ncli: gemini\n---\nBody.\n"), "gemini.md runs cli gemini, and Ants runs only claude or codex.")
+    }
+
+    @Test
+    fun `a codex Agent has a Sandbox select in place of the tools, kept on import, and an unknown sandbox is refused`() {
+        agents.resolve("coder.md").deleteIfExists()
+        assertContains(get("/agents/new"), """name="sandbox"""")
+        post("/agents/new", mapOf("name" to "coder", "cli" to "codex", "sandbox" to "read-only", "tool.Read" to "on", "instructions" to "Code."))
+        assertEquals("---\nname: coder\ncli: codex\nsandbox: read-only\n---\nCode.\n", agents.resolve("coder.md").readText())
+        assertContains(get("/agents/coder"), """value="read-only" selected""")
+
+        val refused = post("/agents/new", mapOf("name" to "yolo", "cli" to "codex", "sandbox" to "yolo"))
+        assertContains(refused.body, "codex takes the sandbox read-only, workspace-write or danger-full-access, not yolo.")
+        assertFalse(agents.resolve("yolo.md").exists())
+
+        val imported = import("coder.md", "---\nname: coder2\ncli: codex\nsandbox: danger-full-access\n---\nCode.\n")
+        assertContains(imported, """value="danger-full-access" selected""")
+        assertFalse("Dropped the keys" in imported)
+        assertContains(import("yolo.md", "---\nname: yolo\ncli: codex\nsandbox: yolo\n---\n"), "yolo.md: codex takes the sandbox read-only, workspace-write or danger-full-access, not yolo.")
     }
 
     @Test

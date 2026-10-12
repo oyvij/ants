@@ -21,13 +21,13 @@ class ItemsAreTicketsTest : AntsTest() {
         """"structured_output":{"outcome":"done","summary":"Done.","output":{}}}"""
 
     /**
-     * The Agent `writer` with `plan` and `implement`, and a Source map of [repo]. `plan` writes two Tickets, `01-one`
+     * The Agent `writer` with `plan` and `build`, and a Source map of [repo]. `plan` writes two Tickets, `01-one`
      * with [one]'s status and `02-two` blocked by it, and gives their paths.
      */
     private fun setUp(repo: Remote, one: String = "ready-for-agent") {
         agentTask(
             claude,
-            mapOf("plan" to """{"type":"object","properties":{"tickets":{"type":"array"}}}""", "implement" to null),
+            mapOf("plan" to """{"type":"object","properties":{"tickets":{"type":"array"}}}""", "build" to null),
             extra = sourceMapLines(repo),
             env = listOf("PATH", "HOME"),
         )
@@ -64,7 +64,7 @@ class ItemsAreTicketsTest : AntsTest() {
                 <bpmn:sequenceFlow id="f2" sourceRef="clone" targetRef="plan" />
                 ${agentTask("plan", "plan")}
                 <bpmn:sequenceFlow id="f3" sourceRef="plan" targetRef="implement" />
-                ${agentTask("implement", "implement", """<operaton:property name="ants.items-are-tickets" value="true" />""",
+                ${agentTask("implement", "build", """<operaton:property name="ants.items-are-tickets" value="true" />""",
                     """<bpmn:multiInstanceLoopCharacteristics isSequential="false" operaton:collection="${'$'}{plan.output.tickets}" operaton:elementVariable="ticket" />""")}
                 <bpmn:sequenceFlow id="f4" sourceRef="implement" targetRef="wait" />
                 <bpmn:userTask id="wait" name="Wait" />
@@ -101,18 +101,18 @@ class ItemsAreTicketsTest : AntsTest() {
     fun `a Ticket blocked by another launches only after its blocker lands, and landing sets each in-review`() {
         val api = repo("api")
         setUp(api)
-        claude.session("implement", 1, init, "wait go", "sh cd repos/api && echo one > one.txt && git add one.txt && git -c user.name=A -c user.email=a@b -c commit.gpgsign=false commit -qm one", done)
-        claude.session("implement", 2, init, """sh ls repos/api > "${'$'}launch/seen"""", done)
+        claude.session("build", 1, init, "wait go", "sh cd repos/api && echo one > one.txt && git add one.txt && git -c user.name=A -c user.email=a@b -c commit.gpgsign=false commit -qm one", done)
+        claude.session("build", 2, init, """sh ls repos/api > "${'$'}launch/seen"""", done)
         val run = start("api")
 
         eventually { assertContains(browser.get("/runs/$run").body, "<dt>implement-2</dt><dd>Blocked by 01</dd>") }
-        eventually { assertEquals(1, claude.launches("implement").size) }
+        eventually { assertEquals(1, claude.launches("build").size) }
         assertEquals("ready-for-agent", status(run, "01-one"))
 
         claude.release("go")
         implemented(run)
-        assertEquals(2, claude.launches("implement").size)
-        assertEquals("one.txt", claude.dir.resolve("launches/implement.2/seen").readText().trim())
+        assertEquals(2, claude.launches("build").size)
+        assertEquals("one.txt", claude.dir.resolve("launches/build.2/seen").readText().trim())
         assertEquals("in-review", status(run, "01-one"))
         assertEquals("in-review", status(run, "02-two"))
     }
@@ -121,7 +121,7 @@ class ItemsAreTicketsTest : AntsTest() {
     fun `a ready-for-human Ticket is not implemented, and its dependents launch once the user marks it done`() {
         val api = repo("api")
         setUp(api, one = "ready-for-human")
-        claude.session("implement", init, done)
+        claude.session("build", init, done)
         val run = start("api")
 
         eventually {
@@ -129,11 +129,11 @@ class ItemsAreTicketsTest : AntsTest() {
             assertContains(page, "<dt>implement-1</dt><dd>Ready for human</dd>")
             assertContains(page, "<dt>implement-2</dt><dd>Blocked by 01</dd>")
         }
-        assertEquals(0, claude.launches("implement").size)
+        assertEquals(0, claude.launches("build").size)
 
         browser.post("/runs/$run/tickets/01-one/done", emptyMap())
         implemented(run)
-        assertEquals(1, claude.launches("implement").size)
+        assertEquals(1, claude.launches("build").size)
         assertEquals("done", status(run, "01-one"))
         assertEquals("in-review", status(run, "02-two"))
     }
