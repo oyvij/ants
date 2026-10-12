@@ -56,24 +56,25 @@ class DockerTest {
             val browser = Browser("http://${docker("port", id, "7323").lines().first().trim()}")
             try {
                 eventually(180) { assertEquals(200, runCatching { browser.get("/login").status }.getOrNull()) }
-            } catch (e: AssertionError) {
-                throw AssertionError("Ants didn't come up in its container:\n" + run("docker", "logs", id).output, e)
-            }
-            assertEquals("/", browser.login("s3cret").path)
-            assertContains(browser.get("/processes").body, "Ship small")
+                assertEquals("/", browser.login("s3cret").path)
+                // The server, and so the login page, is up before Ants deploys the shipped Processes (on ApplicationReady).
+                eventually(60) { assertContains(browser.get("/processes").body, "Ship small") }
 
-            // The shipped Processes Ants deployed on start are in Postgres, and everything else on the volume.
-            assertContains(docker("exec", "$id-db", "psql", "--username", "postgres", "--dbname", "ants", "--tuples-only", "--command", "select name_ from act_re_procdef"), "Ship small")
-            val data = docker("exec", id, "ls", "/data")
-            assertContains(data, "settings.yaml")
-            assertContains(data, "shipped")
-            assertFalse("engine" in data, "an H2 engine on the volume: $data")
+                // The shipped Processes Ants deployed on start are in Postgres, and everything else on the volume.
+                assertContains(docker("exec", "$id-db", "psql", "--username", "postgres", "--dbname", "ants", "--tuples-only", "--command", "select name_ from act_re_procdef"), "Ship small")
+                val data = docker("exec", id, "ls", "/data")
+                assertContains(data, "settings.yaml")
+                assertContains(data, "shipped")
+                assertFalse("engine" in data, "an H2 engine on the volume: $data")
 
-            // Detect found the CLIs the image carries, and they run.
-            val settings = docker("exec", id, "cat", "/data/settings.yaml")
-            for (cli in listOf("claude", "codex", "git", "gh")) {
-                assertContains(settings, Regex("bin/$cli\\b"))
-                docker("exec", id, cli, "--version")
+                // Detect found the CLIs the image carries, and they run.
+                val settings = docker("exec", id, "cat", "/data/settings.yaml")
+                for (cli in listOf("claude", "codex", "git", "gh")) {
+                    assertContains(settings, Regex("bin/$cli\\b"))
+                    docker("exec", id, cli, "--version")
+                }
+            } catch (e: Throwable) {
+                throw AssertionError("${e.message}\nAnts' log in its container:\n" + run("docker", "logs", id).output, e)
             }
         } finally {
             run("docker", "rm", "--force", id, "$id-db")
