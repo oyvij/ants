@@ -22,7 +22,6 @@
         </operaton:formData>
       </bpmn:extensionElements>
       <bpmn:outgoing>s1</bpmn:outgoing>
-      <bpmn:outgoing>toscout</bpmn:outgoing>
     </bpmn:startEvent>
     <bpmn:subProcess id="scout_and_clone" name="Scout and clone">
       <bpmn:documentation>The scout reads the prompt, the Vault and the Source map, never code, and names the repos; Clone repos clones them on the work branch: the start form's branch, else the scout's. Needs start-form fields prompt and branch.</bpmn:documentation>
