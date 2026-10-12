@@ -42,11 +42,14 @@ later answer reopens it, and then say so in its `context`.
 
 ## Repos
 
-When the answers show the work needs a repo that isn't cloned, name it in `repos`, as the user's
-Source map names it in the brief or as a git URL the user gave. It is cloned at
-`repos/<name>/` before your next Round. Otherwise `repos` is `[]`.
+When the answers show the work needs a repo that wasn't in `clones` when you started, name it in
+`repos`, as the user's Source map names it in the brief or as a git URL the user gave. Name every
+such repo again in each later Round, the last one included: `repos` is always the whole list.
+Where the user answers the Rounds, each is cloned at `repos/<name>/` before your next Round;
+otherwise it is not cloned, and the Spec lists it as a repo the Run doesn't change. With none,
+`repos` is `[]`.
 
 ## The end
 
-When nothing is left that the Spec would have to guess, answer `done` with `questions: []` and
-`repos: []`. The Run then writes the Spec from the Run log, which holds every Round.
+When nothing is left that the Spec would have to guess, answer `done` with `questions: []`, and
+`repos` as before. The Run then writes the Spec from the Run log, which holds every Round.

@@ -138,6 +138,7 @@
             <operaton:inputParameter name="brief">${scout.output.brief}</operaton:inputParameter>
             <operaton:inputParameter name="rounds">run-log.md</operaton:inputParameter>
             <operaton:inputParameter name="clones">${clones}</operaton:inputParameter>
+            <operaton:inputParameter name="repos">${grill.output.repos}</operaton:inputParameter>
           </operaton:inputOutput>
         </bpmn:extensionElements>
         <bpmn:incoming>f1_3</bpmn:incoming>

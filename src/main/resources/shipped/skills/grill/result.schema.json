@@ -21,7 +21,7 @@
     "repos": {
       "type": "array",
       "items": { "type": "string" },
-      "description": "Repos to clone before the next Round: Source map names or git URLs the user gave; empty when none."
+      "description": "Every repo the work needs beyond the clones you started with, named again each Round: Source map names or git URLs the user gave; empty when none."
     }
   },
   "required": ["questions", "repos"],

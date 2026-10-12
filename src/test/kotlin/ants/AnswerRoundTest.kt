@@ -28,7 +28,7 @@ class AnswerRoundTest : AntsTest() {
             claude,
             mapOf(
                 "quiz" to """{"type":"object","properties":{"questions":{"type":"array"}}}""",
-                "answer-round" to """{"type":"object","properties":{"answers":{"type":"array"}}}""",
+                "stand-in" to """{"type":"object","properties":{"answers":{"type":"array"}}}""",
             ),
         )
         browser.get("/processes")
@@ -140,12 +140,12 @@ class AnswerRoundTest : AntsTest() {
     fun `an answer-round Agent answers a Round, its answers stamped agent, resumes the asker and keeps them out of the Answer History`() {
         claude.session("quiz", 1, round("First round.", question("who", "Who exports"), question("scope", "Which invoices")))
         // It leaves `scope` unanswered, so that one gets its recommendation.
-        claude.session("answer-round", answered("""{"id":"who","answer":"Admins.","why":"The Vault says so."}"""))
+        claude.session("stand-in", answered("""{"id":"who","answer":"Admins.","why":"The Vault says so."}"""))
         claude.session("quiz", 2, round("Nothing left."))
         val run = start(process = "proxy")
         eventually { assertContains(page(run), "State: Completed") }
 
-        val prompt = claude.launches("answer-round").single().stdin
+        val prompt = claude.launches("stand-in").single().stdin
         assertContains(prompt, "The Answer History is ${home.resolve("answer-history")}.")
         assertContains(prompt, "Ask who?")
         val (one, two) = claude.launches("quiz")

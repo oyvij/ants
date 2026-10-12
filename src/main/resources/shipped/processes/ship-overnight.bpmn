@@ -1,0 +1,606 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:operaton="http://operaton.org/schema/1.0/bpmn" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" id="definitions" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="ship_overnight" isExecutable="true" name="Ship overnight" operaton:historyTimeToLive="180">
+    <bpmn:documentation>Scout and clone, grill a Round at a time with the answerer answering each from your Answer History and the Vault until Round 10 ends the grilling, write the Spec, cut it into Tickets and implement each in parallel, walk through the changes for your review, then Push, open the pull request and update the Vault. Repos a Round names are not cloned; the Spec lists them. Unattended up to Review changes: waits on the user for Review changes, Push and the Notes.</bpmn:documentation>
+    <bpmn:startEvent id="start">
+      <bpmn:extensionElements>
+        <operaton:formData>
+          <operaton:formField id="prompt" label="Prompt" type="string">
+            <operaton:properties>
+              <operaton:property id="ants.type" value="markdown"/>
+              <operaton:property id="ants.help" value="What the Run should build, naming its repos"/>
+            </operaton:properties>
+            <operaton:validation>
+              <operaton:constraint name="required"/>
+            </operaton:validation>
+          </operaton:formField>
+          <operaton:formField id="branch" label="Work branch" type="string">
+            <operaton:properties>
+              <operaton:property id="ants.help" value="Leave it empty for the scout to name one"/>
+            </operaton:properties>
+          </operaton:formField>
+        </operaton:formData>
+      </bpmn:extensionElements>
+      <bpmn:outgoing>s1</bpmn:outgoing>
+      <bpmn:outgoing>toscout</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:serviceTask id="tospec" name="Write the Spec" operaton:topic="agent" operaton:type="external">
+      <bpmn:extensionElements>
+        <operaton:properties>
+          <operaton:property name="ants.agent" value="planner"/>
+          <operaton:property name="ants.skill" value="to-spec"/>
+        </operaton:properties>
+        <operaton:inputOutput>
+          <operaton:inputParameter name="prompt">${prompt}</operaton:inputParameter>
+          <operaton:inputParameter name="brief">${scout.output.brief}</operaton:inputParameter>
+          <operaton:inputParameter name="rounds">run-log.md</operaton:inputParameter>
+          <operaton:inputParameter name="clones">${clones}</operaton:inputParameter>
+          <operaton:inputParameter name="repos">${grill.output.repos}</operaton:inputParameter>
+        </operaton:inputOutput>
+      </bpmn:extensionElements>
+      <bpmn:incoming>s3</bpmn:incoming>
+      <bpmn:outgoing>s4</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:subProcess id="scout_and_clone" name="Scout and clone">
+      <bpmn:documentation>The scout reads the prompt, the Vault and the Source map, never code, and names the repos; Clone repos clones them on the work branch: the start form's branch, else the scout's. Needs start-form fields prompt and branch.</bpmn:documentation>
+      <bpmn:incoming>s1</bpmn:incoming>
+      <bpmn:outgoing>s2</bpmn:outgoing>
+      <bpmn:startEvent id="start_2">
+        <bpmn:outgoing>f1</bpmn:outgoing>
+      </bpmn:startEvent>
+      <bpmn:serviceTask id="scout" name="Scout" operaton:topic="agent" operaton:type="external">
+        <bpmn:extensionElements>
+          <operaton:properties>
+            <operaton:property name="ants.agent" value="scout"/>
+            <operaton:property name="ants.skill" value="scout"/>
+          </operaton:properties>
+          <operaton:inputOutput>
+            <operaton:inputParameter name="prompt">${prompt}</operaton:inputParameter>
+            <operaton:inputParameter name="sourceMap">${sourceMap}</operaton:inputParameter>
+          </operaton:inputOutput>
+        </bpmn:extensionElements>
+        <bpmn:incoming>f1</bpmn:incoming>
+        <bpmn:outgoing>f2</bpmn:outgoing>
+      </bpmn:serviceTask>
+      <bpmn:serviceTask id="clone" name="Clone repos" operaton:topic="clone-repos" operaton:type="external">
+        <bpmn:extensionElements>
+          <operaton:inputOutput>
+            <operaton:inputParameter name="repos">${scout.output.repos}</operaton:inputParameter>
+            <operaton:inputParameter name="branch">${not empty branch ? branch : scout.output.branch}</operaton:inputParameter>
+          </operaton:inputOutput>
+        </bpmn:extensionElements>
+        <bpmn:incoming>f2</bpmn:incoming>
+        <bpmn:outgoing>f3</bpmn:outgoing>
+      </bpmn:serviceTask>
+      <bpmn:endEvent id="end_2">
+        <bpmn:incoming>f3</bpmn:incoming>
+      </bpmn:endEvent>
+      <bpmn:sequenceFlow id="f1" sourceRef="start_2" targetRef="scout"/>
+      <bpmn:sequenceFlow id="f2" sourceRef="scout" targetRef="clone"/>
+      <bpmn:sequenceFlow id="f3" sourceRef="clone" targetRef="end_2"/>
+    </bpmn:subProcess>
+    <bpmn:subProcess id="grill_overnight" name="Grill (overnight)">
+      <bpmn:documentation>The griller asks a Round at a time until it asks nothing; the answerer answers each Round from your Answer History and the Vault, and Round 10 ends the grilling unanswered. Repos a Round names are not cloned. Needs start-form field prompt, and the scout's brief.</bpmn:documentation>
+      <bpmn:incoming>s2</bpmn:incoming>
+      <bpmn:outgoing>s3</bpmn:outgoing>
+      <bpmn:startEvent id="start_3">
+        <bpmn:outgoing>f1_2</bpmn:outgoing>
+      </bpmn:startEvent>
+      <bpmn:serviceTask id="grill" name="Grill" operaton:topic="agent" operaton:type="external">
+        <bpmn:extensionElements>
+          <operaton:properties>
+            <operaton:property name="ants.agent" value="griller"/>
+            <operaton:property name="ants.skill" value="grill"/>
+          </operaton:properties>
+          <operaton:inputOutput>
+            <operaton:inputParameter name="prompt">${prompt}</operaton:inputParameter>
+            <operaton:inputParameter name="brief">${scout.output.brief}</operaton:inputParameter>
+            <operaton:inputParameter name="clones">${clones}</operaton:inputParameter>
+          </operaton:inputOutput>
+        </bpmn:extensionElements>
+        <bpmn:incoming>f1_2</bpmn:incoming>
+        <bpmn:incoming>byagent</bpmn:incoming>
+        <bpmn:outgoing>f2_2</bpmn:outgoing>
+      </bpmn:serviceTask>
+      <bpmn:exclusiveGateway default="nothing" id="asked" name="Asked?">
+        <bpmn:incoming>f2_2</bpmn:incoming>
+        <bpmn:outgoing>questions</bpmn:outgoing>
+        <bpmn:outgoing>nothing</bpmn:outgoing>
+      </bpmn:exclusiveGateway>
+      <bpmn:exclusiveGateway default="under" id="capped" name="Round 10?">
+        <bpmn:incoming>questions</bpmn:incoming>
+        <bpmn:outgoing>cap</bpmn:outgoing>
+        <bpmn:outgoing>under</bpmn:outgoing>
+      </bpmn:exclusiveGateway>
+      <bpmn:serviceTask id="answerer" name="Answer for me" operaton:topic="agent" operaton:type="external">
+        <bpmn:extensionElements>
+          <operaton:properties>
+            <operaton:property name="ants.agent" value="answerer"/>
+            <operaton:property name="ants.skill" value="answer-round"/>
+            <operaton:property name="ants.asker" value="grill"/>
+          </operaton:properties>
+          <operaton:inputOutput>
+            <operaton:inputParameter name="questions">${grill.output.questions}</operaton:inputParameter>
+          </operaton:inputOutput>
+        </bpmn:extensionElements>
+        <bpmn:incoming>under</bpmn:incoming>
+        <bpmn:outgoing>byagent</bpmn:outgoing>
+      </bpmn:serviceTask>
+      <bpmn:endEvent id="end_3">
+        <bpmn:incoming>nothing</bpmn:incoming>
+        <bpmn:incoming>cap</bpmn:incoming>
+      </bpmn:endEvent>
+      <bpmn:sequenceFlow id="f1_2" sourceRef="start_3" targetRef="grill"/>
+      <bpmn:sequenceFlow id="f2_2" sourceRef="grill" targetRef="asked"/>
+      <bpmn:sequenceFlow id="questions" name="yes" sourceRef="asked" targetRef="capped">
+        <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${not empty grill.output.questions}</bpmn:conditionExpression>
+      </bpmn:sequenceFlow>
+      <bpmn:sequenceFlow id="nothing" name="no" sourceRef="asked" targetRef="end_3"/>
+      <bpmn:sequenceFlow id="cap" name="yes" sourceRef="capped" targetRef="end_3">
+        <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${runs.grill &gt;= 10}</bpmn:conditionExpression>
+      </bpmn:sequenceFlow>
+      <bpmn:sequenceFlow id="under" name="no" sourceRef="capped" targetRef="answerer"/>
+      <bpmn:sequenceFlow id="byagent" sourceRef="answerer" targetRef="grill"/>
+    </bpmn:subProcess>
+    <bpmn:subProcess id="cut_and_implement" name="Cut and implement">
+      <bpmn:documentation>The planner cuts the Spec into Tickets; an implementer builds each Ticket in parallel, in its own worktree, once its blockers have landed. Needs the Spec, tospec's.</bpmn:documentation>
+      <bpmn:incoming>s4</bpmn:incoming>
+      <bpmn:outgoing>s5</bpmn:outgoing>
+      <bpmn:startEvent id="start_4">
+        <bpmn:outgoing>f1_3</bpmn:outgoing>
+      </bpmn:startEvent>
+      <bpmn:serviceTask id="totickets" name="Cut the Tickets" operaton:topic="agent" operaton:type="external">
+        <bpmn:extensionElements>
+          <operaton:properties>
+            <operaton:property name="ants.agent" value="planner"/>
+            <operaton:property name="ants.skill" value="to-tickets"/>
+          </operaton:properties>
+          <operaton:inputOutput>
+            <operaton:inputParameter name="spec">${tospec.output.spec}</operaton:inputParameter>
+            <operaton:inputParameter name="clones">${clones}</operaton:inputParameter>
+          </operaton:inputOutput>
+        </bpmn:extensionElements>
+        <bpmn:incoming>f1_3</bpmn:incoming>
+        <bpmn:outgoing>f2_3</bpmn:outgoing>
+      </bpmn:serviceTask>
+      <bpmn:serviceTask id="implement" name="Implement" operaton:topic="agent" operaton:type="external">
+        <bpmn:extensionElements>
+          <operaton:properties>
+            <operaton:property name="ants.agent" value="implementer"/>
+            <operaton:property name="ants.skill" value="implement"/>
+            <operaton:property name="ants.items-are-tickets" value="true"/>
+          </operaton:properties>
+          <operaton:inputOutput>
+            <operaton:inputParameter name="ticket">${ticket}</operaton:inputParameter>
+            <operaton:inputParameter name="spec">${tospec.output.spec}</operaton:inputParameter>
+          </operaton:inputOutput>
+        </bpmn:extensionElements>
+        <bpmn:incoming>f2_3</bpmn:incoming>
+        <bpmn:outgoing>f3_2</bpmn:outgoing>
+        <bpmn:multiInstanceLoopCharacteristics operaton:collection="${totickets.output.tickets}" operaton:elementVariable="ticket"/>
+      </bpmn:serviceTask>
+      <bpmn:endEvent id="end_4">
+        <bpmn:incoming>f3_2</bpmn:incoming>
+      </bpmn:endEvent>
+      <bpmn:sequenceFlow id="f1_3" sourceRef="start_4" targetRef="totickets"/>
+      <bpmn:sequenceFlow id="f2_3" sourceRef="totickets" targetRef="implement"/>
+      <bpmn:sequenceFlow id="f3_2" sourceRef="implement" targetRef="end_4"/>
+    </bpmn:subProcess>
+    <bpmn:subProcess id="review_and_push" name="Review and push">
+      <bpmn:documentation>The storyteller writes a Story set, and you review the changes; sent back, an implementer fixes them and the Story set is written again. Once approved, you Push and the pr Agent opens the pull requests. Needs the Spec, tospec's, and the implementers' Results, implement's.</bpmn:documentation>
+      <bpmn:incoming>s5</bpmn:incoming>
+      <bpmn:outgoing>s6</bpmn:outgoing>
+      <bpmn:startEvent id="start_5">
+        <bpmn:outgoing>f1_4</bpmn:outgoing>
+      </bpmn:startEvent>
+      <bpmn:serviceTask id="walkthrough" name="Walk through" operaton:topic="agent" operaton:type="external">
+        <bpmn:extensionElements>
+          <operaton:properties>
+            <operaton:property name="ants.agent" value="storyteller"/>
+            <operaton:property name="ants.skill" value="walkthrough"/>
+            <operaton:property name="ants.resume" value="true"/>
+          </operaton:properties>
+          <operaton:inputOutput>
+            <operaton:inputParameter name="spec">${tospec.output.spec}</operaton:inputParameter>
+            <operaton:inputParameter name="clones">${clones}</operaton:inputParameter>
+          </operaton:inputOutput>
+        </bpmn:extensionElements>
+        <bpmn:incoming>f1_4</bpmn:incoming>
+        <bpmn:incoming>fixed</bpmn:incoming>
+        <bpmn:outgoing>f2_4</bpmn:outgoing>
+      </bpmn:serviceTask>
+      <bpmn:userTask id="reviewchanges" name="Review the changes">
+        <bpmn:extensionElements>
+          <operaton:properties>
+            <operaton:property name="ants.user-task" value="review-changes"/>
+            <operaton:property name="ants.walkthrough" value="walkthrough"/>
+            <operaton:property name="ants.send-back" value="fix"/>
+          </operaton:properties>
+        </bpmn:extensionElements>
+        <bpmn:incoming>f2_4</bpmn:incoming>
+        <bpmn:outgoing>f3_3</bpmn:outgoing>
+      </bpmn:userTask>
+      <bpmn:exclusiveGateway default="sentback" id="changesapproved" name="Approved?">
+        <bpmn:incoming>f3_3</bpmn:incoming>
+        <bpmn:outgoing>approved</bpmn:outgoing>
+        <bpmn:outgoing>sentback</bpmn:outgoing>
+      </bpmn:exclusiveGateway>
+      <bpmn:serviceTask id="fix" name="Fix the review" operaton:topic="agent" operaton:type="external">
+        <bpmn:extensionElements>
+          <operaton:properties>
+            <operaton:property name="ants.agent" value="implementer"/>
+            <operaton:property name="ants.skill" value="fix-review"/>
+          </operaton:properties>
+          <operaton:inputOutput>
+            <operaton:inputParameter name="review">${reviewchanges}</operaton:inputParameter>
+            <operaton:inputParameter name="spec">${tospec.output.spec}</operaton:inputParameter>
+            <operaton:inputParameter name="stories">${walkthrough.output.stories}</operaton:inputParameter>
+          </operaton:inputOutput>
+        </bpmn:extensionElements>
+        <bpmn:incoming>sentback</bpmn:incoming>
+        <bpmn:outgoing>fixed</bpmn:outgoing>
+      </bpmn:serviceTask>
+      <bpmn:serviceTask id="push" name="Push" operaton:topic="push" operaton:type="external">
+        <bpmn:incoming>approved</bpmn:incoming>
+        <bpmn:outgoing>f4</bpmn:outgoing>
+      </bpmn:serviceTask>
+      <bpmn:serviceTask id="pr" name="Open pull request" operaton:topic="agent" operaton:type="external">
+        <bpmn:extensionElements>
+          <operaton:properties>
+            <operaton:property name="ants.agent" value="pr"/>
+            <operaton:property name="ants.skill" value="pr"/>
+          </operaton:properties>
+          <operaton:inputOutput>
+            <operaton:inputParameter name="push">${push}</operaton:inputParameter>
+            <operaton:inputParameter name="spec">${tospec.output.spec}</operaton:inputParameter>
+            <operaton:inputParameter name="review">${implement}</operaton:inputParameter>
+          </operaton:inputOutput>
+        </bpmn:extensionElements>
+        <bpmn:incoming>f4</bpmn:incoming>
+        <bpmn:outgoing>f5</bpmn:outgoing>
+      </bpmn:serviceTask>
+      <bpmn:endEvent id="end_5">
+        <bpmn:incoming>f5</bpmn:incoming>
+      </bpmn:endEvent>
+      <bpmn:sequenceFlow id="f1_4" sourceRef="start_5" targetRef="walkthrough"/>
+      <bpmn:sequenceFlow id="f2_4" sourceRef="walkthrough" targetRef="reviewchanges"/>
+      <bpmn:sequenceFlow id="f3_3" sourceRef="reviewchanges" targetRef="changesapproved"/>
+      <bpmn:sequenceFlow id="approved" name="yes" sourceRef="changesapproved" targetRef="push">
+        <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${reviewchanges.approved}</bpmn:conditionExpression>
+      </bpmn:sequenceFlow>
+      <bpmn:sequenceFlow id="sentback" name="no" sourceRef="changesapproved" targetRef="fix"/>
+      <bpmn:sequenceFlow id="fixed" sourceRef="fix" targetRef="walkthrough"/>
+      <bpmn:sequenceFlow id="f4" sourceRef="push" targetRef="pr"/>
+      <bpmn:sequenceFlow id="f5" sourceRef="pr" targetRef="end_5"/>
+    </bpmn:subProcess>
+    <bpmn:subProcess id="update_the_vault" name="Update the Vault">
+      <bpmn:documentation>update-knowledge proposes what the Run learned as Notes; until it says written, the user approves the Notes and it is resumed, writing them only once approved. Fill spec with the Run's Spec or proposal.</bpmn:documentation>
+      <bpmn:incoming>s6</bpmn:incoming>
+      <bpmn:outgoing>s7</bpmn:outgoing>
+      <bpmn:startEvent id="start_6">
+        <bpmn:outgoing>f1_5</bpmn:outgoing>
+      </bpmn:startEvent>
+      <bpmn:serviceTask id="updateknowledge" name="Update the Vault" operaton:topic="agent" operaton:type="external">
+        <bpmn:extensionElements>
+          <operaton:properties>
+            <operaton:property name="ants.agent" value="knowledge"/>
+            <operaton:property name="ants.skill" value="update-knowledge"/>
+            <operaton:property name="ants.resume" value="true"/>
+          </operaton:properties>
+          <operaton:inputOutput>
+            <operaton:inputParameter name="rounds">run-log.md</operaton:inputParameter>
+            <operaton:inputParameter name="spec">tickets/spec.md</operaton:inputParameter>
+            <operaton:inputParameter name="clones">${clones}</operaton:inputParameter>
+            <operaton:inputParameter name="approval">${approvenotes}</operaton:inputParameter>
+          </operaton:inputOutput>
+        </bpmn:extensionElements>
+        <bpmn:incoming>f1_5</bpmn:incoming>
+        <bpmn:incoming>again</bpmn:incoming>
+        <bpmn:outgoing>f2_5</bpmn:outgoing>
+      </bpmn:serviceTask>
+      <bpmn:exclusiveGateway default="no" id="written" name="Written?">
+        <bpmn:incoming>f2_5</bpmn:incoming>
+        <bpmn:outgoing>yes</bpmn:outgoing>
+        <bpmn:outgoing>no</bpmn:outgoing>
+      </bpmn:exclusiveGateway>
+      <bpmn:userTask id="approvenotes" name="Approve the Notes">
+        <bpmn:extensionElements>
+          <operaton:properties>
+            <operaton:property name="ants.send-back" value="updateknowledge"/>
+          </operaton:properties>
+          <operaton:inputOutput>
+            <operaton:inputParameter name="title">Approve the Notes</operaton:inputParameter>
+            <operaton:inputParameter name="show">${updateknowledge.output.proposal}</operaton:inputParameter>
+          </operaton:inputOutput>
+        </bpmn:extensionElements>
+        <bpmn:incoming>no</bpmn:incoming>
+        <bpmn:outgoing>again</bpmn:outgoing>
+      </bpmn:userTask>
+      <bpmn:endEvent id="end_6">
+        <bpmn:incoming>yes</bpmn:incoming>
+      </bpmn:endEvent>
+      <bpmn:sequenceFlow id="f1_5" sourceRef="start_6" targetRef="updateknowledge"/>
+      <bpmn:sequenceFlow id="f2_5" sourceRef="updateknowledge" targetRef="written"/>
+      <bpmn:sequenceFlow id="yes" name="yes" sourceRef="written" targetRef="end_6">
+        <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${updateknowledge.output.written}</bpmn:conditionExpression>
+      </bpmn:sequenceFlow>
+      <bpmn:sequenceFlow id="no" name="no" sourceRef="written" targetRef="approvenotes"/>
+      <bpmn:sequenceFlow id="again" sourceRef="approvenotes" targetRef="updateknowledge"/>
+    </bpmn:subProcess>
+    <bpmn:endEvent id="end">
+      <bpmn:incoming>s7</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="s1" sourceRef="start" targetRef="scout_and_clone"/>
+    <bpmn:sequenceFlow id="s2" sourceRef="scout_and_clone" targetRef="grill_overnight"/>
+    <bpmn:sequenceFlow id="s3" sourceRef="grill_overnight" targetRef="tospec"/>
+    <bpmn:sequenceFlow id="s4" sourceRef="tospec" targetRef="cut_and_implement"/>
+    <bpmn:sequenceFlow id="s5" sourceRef="cut_and_implement" targetRef="review_and_push"/>
+    <bpmn:sequenceFlow id="s6" sourceRef="review_and_push" targetRef="update_the_vault"/>
+    <bpmn:sequenceFlow id="s7" sourceRef="update_the_vault" targetRef="end"/>
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="diagram">
+    <bpmndi:BPMNPlane bpmnElement="ship_overnight" id="plane">
+      <bpmndi:BPMNShape bpmnElement="start" id="start_di">
+        <dc:Bounds height="36" width="36" x="152" y="160"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="end" id="end_di">
+        <dc:Bounds height="36" width="36" x="1132" y="160"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="tospec" id="tospec_di">
+        <dc:Bounds height="80" width="100" x="530" y="138"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="scout_and_clone" id="scout_and_clone_di" isExpanded="false">
+        <dc:Bounds height="80" width="100" x="230" y="138"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="grill_overnight" id="grill_overnight_di" isExpanded="false">
+        <dc:Bounds height="80" width="100" x="380" y="138"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="cut_and_implement" id="cut_and_implement_di" isExpanded="false">
+        <dc:Bounds height="80" width="100" x="680" y="138"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="review_and_push" id="review_and_push_di" isExpanded="false">
+        <dc:Bounds height="80" width="100" x="830" y="138"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="update_the_vault" id="update_the_vault_di" isExpanded="false">
+        <dc:Bounds height="80" width="100" x="980" y="138"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="s1_di" bpmnElement="s1">
+        <di:waypoint x="188" y="178"/>
+        <di:waypoint x="230" y="178"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="s2_di" bpmnElement="s2">
+        <di:waypoint x="330" y="178"/>
+        <di:waypoint x="380" y="178"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="s3_di" bpmnElement="s3">
+        <di:waypoint x="480" y="178"/>
+        <di:waypoint x="530" y="178"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="s4_di" bpmnElement="s4">
+        <di:waypoint x="630" y="178"/>
+        <di:waypoint x="680" y="178"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="s5_di" bpmnElement="s5">
+        <di:waypoint x="780" y="178"/>
+        <di:waypoint x="830" y="178"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="s6_di" bpmnElement="s6">
+        <di:waypoint x="930" y="178"/>
+        <di:waypoint x="980" y="178"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="s7_di" bpmnElement="s7">
+        <di:waypoint x="1080" y="178"/>
+        <di:waypoint x="1132" y="178"/>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+  <bpmndi:BPMNDiagram id="diagram_2">
+    <bpmndi:BPMNPlane bpmnElement="scout_and_clone" id="plane_2">
+      <bpmndi:BPMNShape bpmnElement="start_2" id="start_di_2">
+        <dc:Bounds height="36" width="36" x="180" y="160"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="scout" id="scout_di">
+        <dc:Bounds height="80" width="100" x="270" y="138"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="clone" id="clone_di">
+        <dc:Bounds height="80" width="100" x="420" y="138"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="end_2" id="end_di_2">
+        <dc:Bounds height="36" width="36" x="572" y="160"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge bpmnElement="f1" id="f1_di">
+        <di:waypoint x="216" y="178"/>
+        <di:waypoint x="270" y="178"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge bpmnElement="f2" id="f2_di">
+        <di:waypoint x="370" y="178"/>
+        <di:waypoint x="420" y="178"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge bpmnElement="f3" id="f3_di">
+        <di:waypoint x="520" y="178"/>
+        <di:waypoint x="572" y="178"/>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+  <bpmndi:BPMNDiagram id="diagram_3">
+    <bpmndi:BPMNPlane bpmnElement="grill_overnight" id="plane_3">
+      <bpmndi:BPMNShape bpmnElement="start_3" id="start_di_3">
+        <dc:Bounds height="36" width="36" x="180" y="160"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="grill" id="grill_di">
+        <dc:Bounds height="80" width="100" x="270" y="138"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="asked" id="asked_di" isMarkerVisible="true">
+        <dc:Bounds height="50" width="50" x="425" y="153"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="capped" id="capped_di" isMarkerVisible="true">
+        <dc:Bounds height="50" width="50" x="425" y="275"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="answerer" id="answerer_di">
+        <dc:Bounds height="80" width="100" x="270" y="260"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="end_3" id="end_di_3">
+        <dc:Bounds height="36" width="36" x="532" y="160"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge bpmnElement="f1_2" id="f1_di_2">
+        <di:waypoint x="216" y="178"/>
+        <di:waypoint x="270" y="178"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge bpmnElement="f2_2" id="f2_di_2">
+        <di:waypoint x="370" y="178"/>
+        <di:waypoint x="425" y="178"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge bpmnElement="questions" id="questions_di">
+        <di:waypoint x="450" y="203"/>
+        <di:waypoint x="450" y="275"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge bpmnElement="nothing" id="nothing_di">
+        <di:waypoint x="475" y="178"/>
+        <di:waypoint x="532" y="178"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge bpmnElement="cap" id="cap_di">
+        <di:waypoint x="475" y="300"/>
+        <di:waypoint x="550" y="300"/>
+        <di:waypoint x="550" y="196"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge bpmnElement="under" id="under_di">
+        <di:waypoint x="425" y="300"/>
+        <di:waypoint x="370" y="300"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge bpmnElement="byagent" id="byagent_di">
+        <di:waypoint x="320" y="260"/>
+        <di:waypoint x="320" y="218"/>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+  <bpmndi:BPMNDiagram id="diagram_4">
+    <bpmndi:BPMNPlane bpmnElement="cut_and_implement" id="plane_4">
+      <bpmndi:BPMNShape bpmnElement="start_4" id="start_di_4">
+        <dc:Bounds height="36" width="36" x="180" y="160"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="totickets" id="totickets_di">
+        <dc:Bounds height="80" width="100" x="270" y="138"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="implement" id="implement_di">
+        <dc:Bounds height="80" width="100" x="420" y="138"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="end_4" id="end_di_4">
+        <dc:Bounds height="36" width="36" x="572" y="160"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge bpmnElement="f1_3" id="f1_di_3">
+        <di:waypoint x="216" y="178"/>
+        <di:waypoint x="270" y="178"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge bpmnElement="f2_3" id="f2_di_3">
+        <di:waypoint x="370" y="178"/>
+        <di:waypoint x="420" y="178"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge bpmnElement="f3_2" id="f3_di_2">
+        <di:waypoint x="520" y="178"/>
+        <di:waypoint x="572" y="178"/>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+  <bpmndi:BPMNDiagram id="diagram_5">
+    <bpmndi:BPMNPlane bpmnElement="review_and_push" id="plane_5">
+      <bpmndi:BPMNShape bpmnElement="start_5" id="start_di_5">
+        <dc:Bounds height="36" width="36" x="180" y="160"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="walkthrough" id="walkthrough_di">
+        <dc:Bounds height="80" width="100" x="270" y="138"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="reviewchanges" id="reviewchanges_di">
+        <dc:Bounds height="80" width="100" x="420" y="138"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="changesapproved" id="changesapproved_di" isMarkerVisible="true">
+        <dc:Bounds height="50" width="50" x="575" y="153"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="fix" id="fix_di">
+        <dc:Bounds height="80" width="100" x="420" y="280"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="push" id="push_di">
+        <dc:Bounds height="80" width="100" x="680" y="138"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="pr" id="pr_di">
+        <dc:Bounds height="80" width="100" x="830" y="138"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="end_5" id="end_di_5">
+        <dc:Bounds height="36" width="36" x="982" y="160"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge bpmnElement="f1_4" id="f1_di_4">
+        <di:waypoint x="216" y="178"/>
+        <di:waypoint x="270" y="178"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge bpmnElement="f2_4" id="f2_di_4">
+        <di:waypoint x="370" y="178"/>
+        <di:waypoint x="420" y="178"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge bpmnElement="f3_3" id="f3_di_3">
+        <di:waypoint x="520" y="178"/>
+        <di:waypoint x="575" y="178"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge bpmnElement="approved" id="approved_di">
+        <di:waypoint x="625" y="178"/>
+        <di:waypoint x="680" y="178"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge bpmnElement="sentback" id="sentback_di">
+        <di:waypoint x="600" y="203"/>
+        <di:waypoint x="600" y="320"/>
+        <di:waypoint x="520" y="320"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge bpmnElement="fixed" id="fixed_di">
+        <di:waypoint x="420" y="320"/>
+        <di:waypoint x="320" y="320"/>
+        <di:waypoint x="320" y="218"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge bpmnElement="f4" id="f4_di">
+        <di:waypoint x="780" y="178"/>
+        <di:waypoint x="830" y="178"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge bpmnElement="f5" id="f5_di">
+        <di:waypoint x="930" y="178"/>
+        <di:waypoint x="982" y="178"/>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+  <bpmndi:BPMNDiagram id="diagram_6">
+    <bpmndi:BPMNPlane bpmnElement="update_the_vault" id="plane_6">
+      <bpmndi:BPMNShape bpmnElement="start_6" id="start_di_6">
+        <dc:Bounds height="36" width="36" x="180" y="160"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="updateknowledge" id="updateknowledge_di">
+        <dc:Bounds height="80" width="100" x="270" y="138"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="written" id="written_di" isMarkerVisible="true">
+        <dc:Bounds height="50" width="50" x="425" y="153"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="approvenotes" id="approvenotes_di">
+        <dc:Bounds height="80" width="100" x="400" y="260"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape bpmnElement="end_6" id="end_di_6">
+        <dc:Bounds height="36" width="36" x="532" y="160"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge bpmnElement="f1_5" id="f1_di_5">
+        <di:waypoint x="216" y="178"/>
+        <di:waypoint x="270" y="178"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge bpmnElement="f2_5" id="f2_di_5">
+        <di:waypoint x="370" y="178"/>
+        <di:waypoint x="425" y="178"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge bpmnElement="yes" id="yes_di">
+        <di:waypoint x="475" y="178"/>
+        <di:waypoint x="532" y="178"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge bpmnElement="no" id="no_di">
+        <di:waypoint x="450" y="203"/>
+        <di:waypoint x="450" y="260"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge bpmnElement="again" id="again_di">
+        <di:waypoint x="400" y="300"/>
+        <di:waypoint x="320" y="300"/>
+        <di:waypoint x="320" y="218"/>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

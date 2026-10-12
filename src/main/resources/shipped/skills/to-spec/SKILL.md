@@ -2,7 +2,7 @@
 name: to-spec
 description: Write the Run's Spec, tickets/spec.md, from the prompt, the brief, every Round and the clones.
 metadata:
-  ants-inputs: prompt brief rounds clones
+  ants-inputs: prompt brief rounds clones repos
 ---
 
 <!-- Adapted from Matt Pocock's to-prd Skill (https://github.com/mattpocock/skills).
@@ -19,6 +19,7 @@ Your inputs; paths are relative to the Run workspace:
 - `brief`: the scout's brief.
 - `rounds`: the Run log, every Round with its answers and who gave them.
 - `clones`: the repos cloned for the Run, `[{name, path, commit}]`.
+- `repos`: the repos the grilling found the work needs, as the griller named them.
 
 You read the clones; you write only in `tickets/`. Read `docs/agents/issue-tracker.md` first: it
 says how the Spec's file looks.
@@ -56,7 +57,8 @@ no file paths or code, which go stale>
 ## Further Notes
 ```
 
-A repo the Rounds named that isn't cloned goes under Further Notes as one the Run doesn't change.
+A repo in `repos` that isn't in `clones` was not cloned, so the Run can't change it: list it
+under Further Notes, with what it would need to change there.
 
 ## When the user sends it back
 

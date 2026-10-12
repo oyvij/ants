@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  xmlns:operaton="http://operaton.org/schema/1.0/bpmn"
+                  id="definitions" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="grill_as_proposed" name="Grill (as proposed)" isExecutable="true" operaton:historyTimeToLive="180">
+    <bpmn:documentation>The griller asks a Round at a time until it asks nothing; each Round takes its recommendations, and from Round 10 you answer. Repos a Round names are not cloned. Needs start-form field prompt, and the scout's brief.</bpmn:documentation>
+    <bpmn:startEvent id="start">
+      <bpmn:outgoing>f1</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:serviceTask id="grill" name="Grill" operaton:type="external" operaton:topic="agent">
+      <bpmn:extensionElements>
+        <operaton:properties>
+          <operaton:property name="ants.agent" value="griller" />
+          <operaton:property name="ants.skill" value="grill" />
+        </operaton:properties>
+        <operaton:inputOutput>
+          <operaton:inputParameter name="prompt">${prompt}</operaton:inputParameter>
+          <operaton:inputParameter name="brief">${scout.output.brief}</operaton:inputParameter>
+          <operaton:inputParameter name="clones">${clones}</operaton:inputParameter>
+        </operaton:inputOutput>
+      </bpmn:extensionElements>
+      <bpmn:incoming>f1</bpmn:incoming>
+      <bpmn:incoming>byagent</bpmn:incoming>
+      <bpmn:incoming>byyou</bpmn:incoming>
+      <bpmn:outgoing>f2</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:exclusiveGateway id="asked" name="Asked?" default="nothing">
+      <bpmn:incoming>f2</bpmn:incoming>
+      <bpmn:outgoing>questions</bpmn:outgoing>
+      <bpmn:outgoing>nothing</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:exclusiveGateway id="capped" name="Round 10?" default="under">
+      <bpmn:incoming>questions</bpmn:incoming>
+      <bpmn:outgoing>cap</bpmn:outgoing>
+      <bpmn:outgoing>under</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:serviceTask id="accept" name="Accept recommendations" operaton:type="external" operaton:topic="accept-recommendations">
+      <bpmn:extensionElements>
+        <operaton:properties>
+          <operaton:property name="ants.asker" value="grill" />
+        </operaton:properties>
+      </bpmn:extensionElements>
+      <bpmn:incoming>under</bpmn:incoming>
+      <bpmn:outgoing>byagent</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:userTask id="answerround" name="Answer the Round">
+      <bpmn:extensionElements>
+        <operaton:properties>
+          <operaton:property name="ants.user-task" value="answer-round" />
+          <operaton:property name="ants.asker" value="grill" />
+        </operaton:properties>
+      </bpmn:extensionElements>
+      <bpmn:incoming>cap</bpmn:incoming>
+      <bpmn:outgoing>byyou</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:endEvent id="end">
+      <bpmn:incoming>nothing</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="grill" />
+    <bpmn:sequenceFlow id="f2" sourceRef="grill" targetRef="asked" />
+    <bpmn:sequenceFlow id="questions" name="yes" sourceRef="asked" targetRef="capped">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${not empty grill.output.questions}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="nothing" name="no" sourceRef="asked" targetRef="end" />
+    <bpmn:sequenceFlow id="cap" name="yes" sourceRef="capped" targetRef="answerround">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${runs.grill &gt;= 10}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="under" name="no" sourceRef="capped" targetRef="accept" />
+    <bpmn:sequenceFlow id="byagent" sourceRef="accept" targetRef="grill" />
+    <bpmn:sequenceFlow id="byyou" sourceRef="answerround" targetRef="grill" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="diagram">
+    <bpmndi:BPMNPlane id="plane" bpmnElement="grill_as_proposed">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start">
+        <dc:Bounds x="180" y="160" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="grill_di" bpmnElement="grill">
+        <dc:Bounds x="270" y="138" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="asked_di" bpmnElement="asked" isMarkerVisible="true">
+        <dc:Bounds x="425" y="153" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="capped_di" bpmnElement="capped" isMarkerVisible="true">
+        <dc:Bounds x="425" y="275" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="accept_di" bpmnElement="accept">
+        <dc:Bounds x="270" y="260" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="answerround_di" bpmnElement="answerround">
+        <dc:Bounds x="400" y="380" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_di" bpmnElement="end">
+        <dc:Bounds x="532" y="160" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1">
+        <di:waypoint x="216" y="178" />
+        <di:waypoint x="270" y="178" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2">
+        <di:waypoint x="370" y="178" />
+        <di:waypoint x="425" y="178" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="questions_di" bpmnElement="questions">
+        <di:waypoint x="450" y="203" />
+        <di:waypoint x="450" y="275" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="nothing_di" bpmnElement="nothing">
+        <di:waypoint x="475" y="178" />
+        <di:waypoint x="532" y="178" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="cap_di" bpmnElement="cap">
+        <di:waypoint x="450" y="325" />
+        <di:waypoint x="450" y="380" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="under_di" bpmnElement="under">
+        <di:waypoint x="425" y="300" />
+        <di:waypoint x="370" y="300" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="byagent_di" bpmnElement="byagent">
+        <di:waypoint x="320" y="260" />
+        <di:waypoint x="320" y="218" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="byyou_di" bpmnElement="byyou">
+        <di:waypoint x="400" y="420" />
+        <di:waypoint x="230" y="420" />
+        <di:waypoint x="230" y="200" />
+        <di:waypoint x="270" y="200" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>
