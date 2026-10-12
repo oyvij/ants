@@ -1,6 +1,6 @@
 @import ants.AgentForm
-@import ants.Models
 @param form: AgentForm
+@param models: ants.Models
 @param action: String
 @param file: String?
 @param readOnly: Boolean
@@ -36,7 +36,8 @@
 @endif
 @if(error != null)<p role="alert">${error}</p>@endif
 @if(notice != null)<p role="status">${notice}</p>@endif
-!{val deprecated = Models.deprecated(form.model)}
+!{val deprecated = models.deprecated(form.model)}
+!{val other = form.model.isNotEmpty() && models.unlisted(form.model)}
 @if(deprecated != null)<p role="alert">${deprecated.id} is deprecated and retires ${deprecated.retires}.</p>@endif
 <form method="post" action="${action}">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
@@ -74,18 +75,18 @@
         <p><label>Model <select name="model">
             <option value="" selected="${form.model.isEmpty()}">The CLI's default</option>
             <optgroup label="Aliases">
-@for(alias in Models.aliases)
+@for(alias in models.aliases)
                 <option value="${alias.key}" selected="${form.model == alias.key}">${alias.key} → ${alias.value ?: "?"}</option>
 @endfor
             </optgroup>
             <optgroup label="Models">
-@for(model in Models.all)
+@for(model in models.all)
                 <option value="${model.id}" selected="${form.model == model.id}">${model.id}@if(model.retires != null) (deprecated, retires ${model.retires})@endif</option>
 @endfor
             </optgroup>
-            <option value="other" selected="${form.otherModel}">Other model ID…</option>
+            <option value="other" selected="${other}">Other model ID…</option>
         </select></label>
-            <label>Other model ID <input name="model-other" value="${if (form.otherModel) form.model else ""}"></label></p>
+            <label>Other model ID <input name="model-other" value="${if (other) form.model else ""}"></label></p>
         <p><label><input type="checkbox" name="subagent" checked="${form.subagent}"> Offer as a Subagent</label> Other Agents may start it as a Subagent. claude Agents only.</p>
         <p><label>Standing instructions<br><textarea name="instructions" rows="12" cols="80">${form.instructions}</textarea></label></p>
 @if(!readOnly)

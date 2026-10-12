@@ -2,6 +2,7 @@ package ants
 
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpStatus
+import org.springframework.stereotype.Component
 import org.springframework.stereotype.Controller
 import org.springframework.ui.Model
 import org.springframework.web.bind.annotation.GetMapping
@@ -21,7 +22,7 @@ import kotlin.io.path.exists
  * those from extra folders are read-only, with Copy. Nothing is cached, so an edit reaches the next launch.
  */
 @Controller
-class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, @Value("\${ants.home}") home: Path) {
+class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, private val models: Models, @Value("\${ants.home}") home: Path) {
     private val folder = home.resolve("agents")
 
     @GetMapping("/agents")
@@ -127,6 +128,7 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, @Valu
         model.addAttribute("dependents", agent?.let { usedBy.agent(it.name) })
         model.addAttribute("error", error)
         model.addAttribute("notice", notice)
+        model.addAttribute("models", models)
         return "agent"
     }
 
@@ -160,8 +162,6 @@ data class AgentForm(
         else -> Agent.sandboxError(cli, sandbox)
     }
 
-    /** The model is none of the dropdown's, so it shows under Other model ID…. */
-    val otherModel get() = model.isNotEmpty() && model !in Models.aliases && Models.all.none { it.id == model }
 
     /** The agent file: Claude Code's format, with `cli`, `skills` and `ants-subagent` for Ants. */
     fun text(): String {
@@ -232,9 +232,10 @@ class ClaudeModel(val id: String, val retires: String?)
  * The model dropdown's choices: Anthropic's public model status table, without the retired models. It starts as the
  * copy bundled with Ants (models.md), and the update check refreshes it.
  */
-object Models {
+@Component
+class Models {
     @Volatile
-    var all = read(Models::class.java.getResource("/models.md")!!.readText())
+    final var all = read(javaClass.getResource("/models.md")!!.readText())
         private set
 
     /** Replaces the list with the models in [table], the status table as markdown; a table with none changes nothing. */
@@ -251,4 +252,7 @@ object Models {
 
     /** The model [id], if it is deprecated. */
     fun deprecated(id: String) = all.firstOrNull { it.id == id && it.retires != null }
+
+    /** [id] is neither a listed model nor an alias, such as a model ID the user typed. */
+    fun unlisted(id: String) = id !in aliases && all.none { it.id == id }
 }

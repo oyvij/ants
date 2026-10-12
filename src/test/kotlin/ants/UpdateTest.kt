@@ -2,7 +2,6 @@ package ants
 
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
-import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.web.server.context.WebServerApplicationContext
 import java.nio.file.Files
 import java.nio.file.Path
@@ -23,59 +22,66 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
-/** The update check against a release folder on disk ([AntsTest.releases]), never GitHub, and Update in the nav. */
+/**
+ * The update check against a release folder on disk ([AntsTest.releases]), never GitHub, and Update in the nav. The
+ * test Ants checks every 200 ms, so a test changes the folder and waits for the nav to follow.
+ */
 class UpdateTest : AntsTest() {
-    @Autowired
-    private lateinit var updates: Updates
-
     private val browser by lazy { browser().also { it.login() } }
 
     /** A release of [version] in the release folder, as the check reads it: its SHA256SUMS names the tarball. */
-    private fun release(version: String) {
-        releases.resolve("SHA256SUMS").writeText("${"0".repeat(64)}  ants-$version-macos-arm64.tar.gz\n")
-        updates.check()
-    }
+    private fun release(version: String) = releases.resolve("SHA256SUMS").writeText(sums(version))
 
     /**
      * A release of [version] as CI publishes one: a tarball (here holding only `bin/ants`), its SHA256SUMS and the
      * install.sh Update runs.
      */
     private fun published(version: String) {
-        val tarball = releases.resolve("ants-$version-macos-arm64.tar.gz")
+        val tarball = releases.resolve(tarball(version))
         val image = Files.createTempDirectory("image")
         image.resolve("bin").createDirectories().resolve("ants").writeText("#!/bin/bash\n")
         assertEquals(0, ProcessBuilder("tar", "-czf", "$tarball", "-C", "$image", "bin").start().waitFor())
         val sha = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(tarball.readBytes()))
         Path.of("install.sh").copyTo(releases.resolve("install.sh"), overwrite = true)
         releases.resolve("SHA256SUMS").writeText("$sha  ${tarball.fileName}\n")
-        updates.check()
     }
 
-    /** Puts the release folder back as other tests expect it: no release newer than this Ants. */
+    /** Puts the release folder back as other tests expect it: no release newer than this Ants, and the bundled models. */
     @AfterEach
     fun noNewerRelease() {
-        models.writeText(javaClass.getResource("/models.md")!!.readText()) // the bundled table back, then none
         release("0.0.1")
-        models.deleteIfExists()
+        models.writeText(javaClass.getResource("/models.md")!!.readText())
+        eventually {
+            assertEquals("", notice())
+            assertFalse("claude-opus-9" in browser.get("/agents/new").body)
+        }
+        models.writeText("")
         for (name in listOf("current", "previous")) home.resolve(name).deleteIfExists()
         home.resolve("versions").toFile().deleteRecursively()
     }
 
     /** The nav's update notice as [page] shows it: the nav fills its slot from the stream it names. */
-    private fun notice(page: String = "/"): String {
+    private fun notice(page: String = "/", browser: Browser = this.browser): String {
         val slot = Regex("""<span id="update" data-src="([^"]+)"></span>""").find(browser.get(page).body)
         return browser.events(assertNotNull(slot, "$page has no update notice in its nav").groupValues[1]).poll(10, SECONDS).orEmpty()
+    }
+
+    /** Presses the nav's **Update** on Home, as [browser] sees it. */
+    private fun update(browser: Browser = this.browser) {
+        val action = Regex("""<form method="post" action="([^"]+)"""").find(notice(browser = browser))
+        browser.post(assertNotNull(action, "no Update in the nav").groupValues[1], emptyMap())
     }
 
     @Test
     fun `a newer release shows in the nav with Update`() {
         release("99.0.0")
 
-        val notice = notice("/runs")
-
-        assertContains(notice, "Ants 99.0.0 is available")
-        assertContains(notice, """<form method="post" action="/update"""")
-        assertContains(notice, "<button>Update</button>")
+        eventually {
+            val notice = notice("/runs")
+            assertContains(notice, "Ants 99.0.0 is available")
+            assertContains(notice, """<form method="post" action="/updates/99.0.0"""")
+            assertContains(notice, "<button>Update</button>")
+        }
     }
 
     @Test
@@ -87,16 +93,16 @@ class UpdateTest : AntsTest() {
 
     @Test
     fun `in Docker the update notice shows without an Update button, and Update is refused`() {
-        releases.resolve("SHA256SUMS").writeText("${"0".repeat(64)}  ants-99.0.0-macos-arm64.tar.gz\n")
+        release("99.0.0")
         startAnother(tempHome(), "--ants.docker=true", "--ants.password=s3cret").use { ants ->
             val docker = Browser("http://127.0.0.1:${(ants as WebServerApplicationContext).webServer!!.port}").also { it.login("s3cret") }
 
-            val events = docker.events("/update")
+            val events = docker.events("/updates")
             val notice = generateSequence { events.poll(10, SECONDS) }.first { it.isNotEmpty() } // once its first check is done
 
             assertContains(notice, "Ants 99.0.0 is available")
             assertFalse("<button>" in notice, notice)
-            assertEquals(403, docker.post("/update", emptyMap()).status)
+            assertEquals(403, docker.post("/updates/99.0.0", emptyMap()).status)
         }
     }
 
@@ -111,13 +117,14 @@ class UpdateTest : AntsTest() {
         eventually { assertEquals(1, claude.launches("draft").size) }
         home.resolve("versions/0.1.0").createDirectories()
         home.resolve("current").createSymbolicLinkPointingTo(Path.of("versions/0.1.0"))
-        published("99.0.0")
+        published("96.0.0")
+        eventually { assertContains(notice(), "Ants 96.0.0 is available") }
 
-        browser.post("/update", emptyMap())
+        update()
 
-        eventually { assertContains(notice(), "Ants 99.0.0 runs from the next ants restart") }
-        assertTrue(home.resolve("versions/99.0.0/bin/ants").exists())
-        assertEquals(Path.of("versions/99.0.0"), home.resolve("current").readSymbolicLink())
+        eventually { assertContains(notice(), "Ants 96.0.0 runs from the next ants restart") }
+        assertTrue(home.resolve("versions/96.0.0/bin/ants").exists())
+        assertEquals(Path.of("versions/96.0.0"), home.resolve("current").readSymbolicLink())
         assertEquals(Path.of("versions/0.1.0"), home.resolve("previous").readSymbolicLink())
         assertContains(browser.get("/runs/$run").body, "State: Running")
         claude.release("release")
@@ -136,13 +143,13 @@ class UpdateTest : AntsTest() {
             """.trimIndent(),
         )
 
-        updates.check()
-
-        val form = browser.get("/agents/new").body
-        assertContains(form, ">claude-opus-9</option>")
-        assertContains(form, "claude-sonnet-8 (deprecated, retires June 1, 2029)")
-        assertContains(form, "opus → claude-opus-9")
-        assertFalse("claude-opus-5-5" in form, "a retired model is off the list")
+        eventually {
+            val form = browser.get("/agents/new").body
+            assertContains(form, ">claude-opus-9</option>")
+            assertContains(form, "claude-sonnet-8 (deprecated, retires June 1, 2029)")
+            assertContains(form, "opus → claude-opus-9")
+            assertFalse("claude-opus-5-5" in form, "a retired model is off the list")
+        }
     }
 
     private companion object {
