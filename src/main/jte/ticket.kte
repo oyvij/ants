@@ -4,6 +4,7 @@
 @param error: String? = null
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
+@param shell: ants.Shell
 <!doctype html>
 <html lang="en">
 <head>
@@ -13,8 +14,10 @@
     <title>${file.title} · Ants</title>
 </head>
 <body>
-@template.nav()
-<p><a href="/tickets">Tickets</a> · <a href="/runs/${file.run}">Run</a>@if(file.name != "spec") · <a href="/runs/${file.run}/tickets/spec">Spec</a>@endif · <a href="${file.href}/edit">Edit</a></p>
+@template.nav(shell = shell)
+<main>
+<div class="ph"><div class="crumbs"><a href="/tickets">Tickets</a> / <a href="/runs/${file.run}">Run</a>@if(file.name != "spec") / <a href="/runs/${file.run}/tickets/spec">Spec</a>@endif</div>
+    <div class="acts"><a class="btn" href="${file.href}/edit">Edit</a></div></div>
 @if(error != null)<p role="alert">${error}</p>@endif
 $unsafe{article}
 @if(file.forHuman)
@@ -51,5 +54,6 @@ $unsafe{article}
         document.getElementById('ticket').replaceWith(template.content.firstElementChild);
     };
 </script>
+</main>
 </body>
 </html>

@@ -10,6 +10,7 @@ import org.operaton.bpm.engine.runtime.Incident
 import org.operaton.bpm.engine.task.Task
 import org.operaton.bpm.model.bpmn.instance.BaseElement
 import org.operaton.bpm.model.bpmn.instance.FlowElement
+import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpStatus
@@ -177,7 +178,7 @@ class Notifications(
     @PostMapping("/notifications/{id}")
     fun act(
         @PathVariable id: String, @RequestParam action: String, @RequestParam instruction: String, @RequestParam(required = false) back: String?, model: Model,
-        response: HttpServletResponse,
+        response: HttpServletResponse, request: HttpServletRequest,
     ): String {
         val incident = incidents().incidentId(id).singleResult() ?: return gone(model, response)
         val entry = entry(incident)
@@ -205,6 +206,7 @@ class Notifications(
         // The choice first: the worker can fetch the Task again the moment its retries are back.
         runtime.setVariablesLocal(incident.executionId, mapOf(AgentLauncher.ACTION to action, AgentLauncher.INSTRUCTION to instruction))
         externalTasks.setRetries(incident.configuration, 1)
+        if (action == Push.PUSH) Shell.toast(request, Toast("Pushing", "${entry.summary}. The Run goes on once it is pushed."))
         return back(back, entry.run, "/notifications/next?run=${entry.run}")
     }
 

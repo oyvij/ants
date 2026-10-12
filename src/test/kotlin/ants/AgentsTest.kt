@@ -260,7 +260,7 @@ class AgentsTest : AntsTest() {
         val form = browser.get("/agents/new?use")
         assertEquals("SAMEORIGIN", form.headers?.firstValue("X-Frame-Options")?.orElse(null)) // the modeler frames it
         assertContains(form.body, """<button class="primary">Create and use</button>""")
-        assertFalse("<nav>" in form.body) // the modeler's own page is behind the modal
+        assertFalse("""<nav class="side">""" in form.body) // the modeler's own page is behind the modal
 
         val refused = browser.post("/agents/new", mapOf("name" to "Helper!", "cli" to "claude", "use" to ""))
         assertContains(refused.body, """<button class="primary">Create and use</button>""") // a refusal stays in the modal

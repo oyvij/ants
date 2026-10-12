@@ -143,7 +143,7 @@ class NotificationListTest : AntsTest() {
         setUp()
         claude.session("draft", stuck)
         claude.session("draft", 2, done)
-        assertContains(browser.get("/notifications").body, """<script src="/notifications.js"""")
+        assertContains(browser.get("/notifications").body, """<script src="/shell.js"""")
         val counts = browser.events("/notifications/count")
         val before = counts.next().toInt()
         val run = start()

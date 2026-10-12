@@ -201,6 +201,7 @@ const modeler = new BpmnModeler({
     }, {__init__: ["antsTemplates"], antsTemplates: ["type", AntsTemplates]}],
 })
 const canvas = document.getElementById("canvas")
+canvas.canvas = modeler.get("canvas") // the diagram box's zoom buttons (shell.js)
 const panel = document.getElementById("explain")
 const csrf = document.querySelector("input[name=_csrf]").value
 
@@ -490,9 +491,13 @@ function writeAgentTask(element, changes, inputs, redraw = false) {
 // page never navigates, so the diagram, its unsaved changes and the selection stay. Create and use lands the frame on
 // the new one's page; [use] then picks that name on the Task.
 function createAndUse(kind, src, use) {
-    const frame = el("iframe", {src, title: kind === "agents" ? "New Agent" : "New Skill"})
-    frame.style = "width: min(64rem, 90vw); height: 80vh; border: 0; display: block"
-    const dialog = el("dialog", {}, el("form", {method: "dialog"}, el("button", {textContent: "Cancel"})), frame)
+    const title = kind === "agents" ? "New Agent" : "New Skill"
+    const frame = el("iframe", {src, title, className: "mb"})
+    frame.style = "border: 0; display: block; padding: 0; width: 100%"
+    const close = el("button", {className: "ghost", title: "Close", ariaLabel: "Close", textContent: "✕"})
+    const header = el("form", {method: "dialog", className: "mh"}, el("b", {textContent: title}), el("span", {className: "sp"}),
+        el("span", {className: "muted small", textContent: "Esc to close"}), close)
+    const dialog = el("dialog", {className: "modal"}, header, frame)
     dialog.onclose = () => dialog.remove()
     frame.onload = () => {
         const name = frame.contentWindow.location.pathname.match(new RegExp(`^/${kind}/([^/]+)$`))?.[1]

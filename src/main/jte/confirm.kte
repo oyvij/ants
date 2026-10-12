@@ -5,6 +5,7 @@
 @param back: String
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
+@param shell: ants.Shell
 <!doctype html>
 <html lang="en">
 <head>
@@ -14,8 +15,9 @@
     <title>${question} · Ants</title>
 </head>
 <body>
-@template.nav()
-<h1>${question}</h1>
+@template.nav(shell = shell)
+<main>
+<div class="ph"><h1>${question}</h1></div>
 @if(!dependents.none)<p role="alert">These use it by name and will break. Ants doesn't change them.</p>@endif
 @template.dependents(dependents = dependents)
 <form method="post" action="${action}">
@@ -26,5 +28,6 @@
     <input type="hidden" name="confirm" value="on">
     !{val verb = question.substringBefore(' ')}<button class="${if (verb == "Delete") "danger" else "primary"}">${verb}</button> <a href="${back}">Cancel</a>
 </form>
+</main>
 </body>
 </html>

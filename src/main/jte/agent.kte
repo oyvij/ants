@@ -10,6 +10,7 @@
 @param use: Boolean = false
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
+@param shell: ants.Shell
 <!doctype html>
 <html lang="en">
 <head>
@@ -23,11 +24,13 @@
 </head>
 <body>
 @if(!use)
-@template.nav()
-<p><a href="/agents">Agents</a></p>
+@template.nav(shell = shell)
 @endif
-<h1>${if (file == null) "New Agent" else form.name}</h1>
-@if(file != null)<p>In <code>${file}</code>.@if(readOnly) Read-only: Ants edits only the Agents in its own folder.@endif</p>@endif
+<main>
+@if(!use)<div class="crumbs"><a href="/agents">Agents</a> / ${form.name.ifEmpty { "New" }}</div>@endif
+<div class="ph"><h1>${if (file == null) "New Agent" else form.name}</h1>
+@if(file != null)    <div class="sub">In <code>${file}</code>.@if(readOnly) Read-only: Ants edits only the Agents in its own folder.@endif</div>@endif
+</div>
 @if(readOnly)
 <form method="post" action="${action}/copy">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
@@ -103,5 +106,6 @@
     <button class="danger">Delete…</button>
 </form>
 @endif
+</main>
 </body>
 </html>

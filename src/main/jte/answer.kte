@@ -4,6 +4,7 @@
 @param error: String? = null
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
+@param shell: ants.Shell
 <!doctype html>
 <html lang="en">
 <head>
@@ -14,10 +15,10 @@
     <script src="/answer.js" defer></script>
 </head>
 <body>
-@template.nav()
-<p><a href="/notifications">Notification list</a></p>
-<p>${entry.icon} ${entry.tag} ${entry.task} · Round ${round} · ${entry.process} · <a href="/runs/${entry.run}">Run ${entry.run}</a> · waiting ${entry.waited}</p>
-<h1>${entry.summary.ifEmpty { entry.task }}</h1>
+@template.nav(shell = shell)
+<main>
+<div class="crumbs"><a href="/notifications">Notification list</a> / <a href="/runs/${entry.run}">Run ${entry.run}</a> / ${entry.task}</div>
+<div class="ph"><h1>${entry.summary.ifEmpty { entry.task }}</h1><div class="acts"><span data-tag="${entry.tag}">${entry.icon} ${entry.tag}</span><span class="muted small">Round ${round} · ${entry.process} · waiting ${entry.waited}</span></div></div>
 <nav id="tabs" role="tablist" hidden></nav>
 @if(error != null)<p role="alert">${error}</p>@endif
 <form method="post" action="/notifications/${entry.id}/answers" id="round">
@@ -48,5 +49,6 @@
         <button id="next">Send the Round</button>
     </footer>
 </form>
+</main>
 </body>
 </html>

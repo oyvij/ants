@@ -1,6 +1,7 @@
 @param entries: List<ants.Entry>
 @param error: String? = null
 @param colorScheme: String = "light dark"
+@param shell: ants.Shell
 <!doctype html>
 <html lang="en">
 <head>
@@ -10,10 +11,12 @@
     <title>Notification list · Ants</title>
 </head>
 <body>
-@template.nav()
-<h1>Notification list</h1>
+@template.nav(shell = shell)
+<main>
+<div class="ph"><h1>Notification list</h1><div class="sub">Every Task waiting on you, oldest first. An entry goes the moment you act.</div></div>
 <p id="badge-permission" hidden><button>Show the count on the app icon</button> macOS badges an installed app only with notification permission.</p>
 @if(error != null)<p role="alert">${error}</p>@endif
 @template.entries(entries = entries)
+</main>
 </body>
 </html>

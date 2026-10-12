@@ -10,6 +10,7 @@
 @param report: Boolean
 @param workspace: String?
 @param repos: List<String>
+@param shell: ants.Shell
 <!doctype html>
 <html lang="en">
 <head>
@@ -20,16 +21,17 @@
     <link rel="stylesheet" href="/vendor/camunda-bpmn-js/assets/base-navigated-viewer.css">
 </head>
 <body>
-@template.nav()
-<p><a href="/runs">Runs</a></p>
-<h1><a href="/processes/${run.processDefinitionKey}">${run.processDefinitionName ?: run.processDefinitionKey}</a></h1>
-<p id="state">State: ${run.stateName}</p>
+@template.nav(shell = shell)
+<main>
+<div class="crumbs"><a href="/runs">Runs</a> / ${run.id}</div>
+<div class="ph"><h1><a href="/processes/${run.processDefinitionKey}">${run.processDefinitionName ?: run.processDefinitionKey}</a></h1>
 @if(run.endTime == null)
-<form method="post" action="/runs/${run.id}/cancel">
-    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
-    <button class="danger" onclick="return confirm('Cancel this Run? Its running Agents stop, and its Run workspace is kept until you dismiss it.')">Cancel the Run</button>
-</form>
+    <div class="acts"><form method="post" action="/runs/${run.id}/cancel">
+        <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+        <button class="danger" onclick="return confirm('Cancel this Run? Its running Agents stop, and its Run workspace is kept until you dismiss it.')">Cancel the Run</button>
+    </form></div>
 @endif
+    <div class="sub" id="state">State: ${run.stateName}</div></div>
 @if(workspace != null)
 <section id="where">
     <p>Run workspace <code>${workspace}</code></p>
@@ -52,7 +54,7 @@
 </form>
 @endif
 <nav id="trail" hidden></nav>
-<div id="diagram" style="height: 60vh"></div>
+<div id="diagram" class="dia"><div class="legend"><span class="pill p-running">Running</span><span class="pill p-waiting">Waiting on you</span><span class="pill p-done">Done</span><span class="pill p-quiet">Queued / paused</span></div></div>
 <aside id="drawer" hidden><button id="close" aria-label="Close">✕</button><div id="parts"></div></aside>
 @if(agentTasks.isNotEmpty())
 <h2>Agent Tasks</h2>
@@ -82,7 +84,7 @@
     // Clicking a call activity shows the called Process's live diagram in its place; the trail above it leads back.
     const run = '${run.id}';
     const viewer = new BpmnNavigatedViewer({ container: '#diagram' });
-    const canvas = viewer.get('canvas'), overlays = viewer.get('overlays'), registry = viewer.get('elementRegistry');
+    const canvas = document.getElementById('diagram').canvas = viewer.get('canvas'), overlays = viewer.get('overlays'), registry = viewer.get('elementRegistry');
     const trail = [{ id: run, name: document.querySelector('h1').textContent }], nav = document.getElementById('trail');
     let current = run, shown = {}, called = {}, updates = null;
     function show(instance) {
@@ -163,5 +165,6 @@
     document.getElementById('close').onclick = () => { following?.close(); drawer.hidden = true; };
     show(run);
 </script>
+</main>
 </body>
 </html>

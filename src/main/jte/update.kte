@@ -2,4 +2,4 @@
 @param docker: Boolean
 @param csrf: org.springframework.security.web.csrf.CsrfToken
 !{val newer = notice.newer}
-@if(newer == null)@elseif(notice.installed == newer)Ants ${newer} runs from the next ants restart@elseif(notice.downloading)Downloading Ants ${newer}…@elseif(docker)Ants ${newer} is available@else<form method="post" action="/updates/${newer}">Ants ${newer} is available@if(notice.failed != null) (Update failed: ${notice.failed})@endif <input type="hidden" name="${csrf.parameterName}" value="${csrf.token}"><button>Update</button></form>@endif
+@if(newer == null)@elseif(notice.installed == newer)<b>Ants ${newer} runs from the next ants restart</b>@elseif(notice.downloading)<b>Downloading Ants ${newer}…</b>@elseif(docker)<b>Ants ${newer} is available</b>@else<form method="post" action="/updates/${newer}"><b>Ants ${newer} is available</b>@if(notice.failed != null)<br>Update failed: ${notice.failed}@endif <input type="hidden" name="${csrf.parameterName}" value="${csrf.token}"><button>Update</button></form>@endif

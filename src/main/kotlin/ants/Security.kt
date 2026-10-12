@@ -5,7 +5,6 @@ import org.operaton.bpm.webapp.impl.security.auth.ContainerBasedAuthenticationFi
 import org.springframework.boot.web.servlet.FilterRegistrationBean
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
-import org.springframework.security.config.Customizer.withDefaults
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
 import org.springframework.security.core.userdetails.User
 import org.springframework.security.core.userdetails.UserDetailsService
@@ -18,9 +17,11 @@ import org.springframework.security.web.SecurityFilterChain
 class Security {
     @Bean
     fun filterChain(http: HttpSecurity): SecurityFilterChain = http
-        // A browser fetches the app's manifest and icons without the login cookie.
-        .authorizeHttpRequests { it.requestMatchers("/manifest.webmanifest", "/icon-*.png").permitAll().anyRequest().authenticated() }
-        .formLogin(withDefaults())
+        // A browser fetches the app's manifest and icons without the login cookie; the login page needs its stylesheet.
+        .authorizeHttpRequests { it.requestMatchers("/manifest.webmanifest", "/icon-*.png", "/ants.css").permitAll().anyRequest().authenticated() }
+        // Ants' own login page (login.kte); Log out, in the sidebar, lands back on it.
+        .formLogin { it.loginPage("/login").failureUrl("/login?error").permitAll() }
+        .logout { it.logoutSuccessUrl("/login?logout").permitAll() }
         // Cockpit sends its own CSRF token, checked by Operaton.
         .csrf { it.ignoringRequestMatchers("/operaton/**") }
         // The modeler opens the New Agent and New Skill forms in a frame.

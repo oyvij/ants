@@ -1,6 +1,7 @@
 @import ants.stateName
 @param runs: List<org.operaton.bpm.engine.history.HistoricProcessInstance>
 @param colorScheme: String = "light dark"
+@param shell: ants.Shell
 <!doctype html>
 <html lang="en">
 <head>
@@ -10,13 +11,15 @@
     <title>Runs · Ants</title>
 </head>
 <body>
-@template.nav()
-<h1>Runs</h1>
+@template.nav(shell = shell)
+<main>
+<div class="ph"><h1>Runs</h1><div class="acts"><a class="btn primary" href="/processes">Start a Run</a></div></div>
 <table>
     <tr><th>Run</th><th>State</th><th>Started</th></tr>
 @for(run in runs)
     <tr><td><a href="/runs/${run.id}">${run.processDefinitionName ?: run.processDefinitionKey}</a></td><td><span data-state="${run.stateName}">${run.stateName}</span></td><td>${run.startTime.toString()}</td></tr>
 @endfor
 </table>
+</main>
 </body>
 </html>

@@ -192,7 +192,7 @@ class BrowserTest : AntsTest() {
         val before = badge()!!
 
         http.post("/processes/badged/runs", mapOf())
-        assertThat(page.locator("#waiting")).hasText("(${before + 1})")
+        assertThat(page.locator("#waiting")).hasText("${before + 1}")
         eventually { assertEquals(before + 1, badge()) }
     }
 
@@ -375,6 +375,52 @@ class BrowserTest : AntsTest() {
         page.click("#tabs a")
         assertThat(page.locator("#tabs b")).hasText("By repo")
         assertThat(page.locator("section.repo h2").first()).hasText("api")
+    }
+
+    @Test
+    fun `the diagram box zooms with ＋ and －, and Fit fits the diagram again`() = browse {
+        settings(null)
+        val (process, plane) = row("zoomed", """<bpmn:startEvent id="start" />""", """<bpmn:userTask id="wait" name="Wait" />""", """<bpmn:endEvent id="end" />""")
+        deploy(definitions("zoomed", "Zoomed", process, plane))
+        page.navigate(url("/processes/zoomed"))
+        assertThat(shape("wait")).isVisible()
+        fun zoom() = (page.evaluate("document.querySelector('.dia').canvas.zoom()") as Number).toDouble()
+        val fit = zoom()
+
+        page.click(".dia .zoom [title='Zoom in']")
+        assertEquals(fit * 1.25, zoom(), 0.001)
+        page.click(".dia .zoom [title='Zoom out']")
+        page.click(".dia .zoom [title='Zoom out']")
+        assertEquals(fit / 1.25, zoom(), 0.001)
+        page.click(".dia .zoom [title='Fit']")
+        assertEquals(fit, zoom(), 0.001)
+    }
+
+    @Test
+    fun `a modal closes on Esc, on its ✕ and on a click outside it`() = browse {
+        appendAgentTask()
+        val newAgent = page.locator("#explain button", Page.LocatorOptions().setHasText("New Agent"))
+        val modal = page.locator("dialog.modal")
+        for (close in listOf<() -> Unit>({ page.keyboard().press("Escape") }, { modal.locator("[title=Close]").click() }, { page.mouse().click(5.0, 5.0) })) {
+            newAgent.click()
+            assertThat(modal).isVisible()
+            assertThat(modal.locator(".mh")).containsText("New Agent")
+            close()
+            assertThat(modal).hasCount(0)
+        }
+    }
+
+    @Test
+    fun `Dark mode and Light mode in the sidebar switch the theme and stay on the page`() = browse {
+        settings(null, "theme: light\n")
+        page.navigate(url("/agents"))
+        assertThat(page.getByText("Light mode")).isHidden()
+        page.getByText("Dark mode").click()
+        page.waitForURL { it.endsWith("/agents") }
+        assertEquals("rgb(11, 13, 18)", page.evaluate("getComputedStyle(document.documentElement).backgroundColor"))
+        assertThat(page.getByText("Dark mode")).isHidden()
+        page.getByText("Light mode").click()
+        assertThat(page.locator("meta[name=color-scheme]")).hasAttribute("content", "light")
     }
 
     /** An Agent Task [id] running `writer`'s Skill `draft`. */

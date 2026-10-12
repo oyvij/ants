@@ -4,6 +4,7 @@
 @param error: String? = null
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
+@param shell: ants.Shell
 <!doctype html>
 <html lang="en">
 <head>
@@ -13,8 +14,9 @@
     <title>Edit ${file.title} · Ants</title>
 </head>
 <body>
-@template.nav()
-<p><a href="${file.href}">${file.title}</a></p>
+@template.nav(shell = shell)
+<main>
+<div class="crumbs"><a href="/tickets">Tickets</a> / <a href="${file.href}">${file.title}</a> / Edit</div>
 @if(error != null)<p role="alert">${error}</p>@endif
 @if(article != null)$unsafe{article}@endif
 <form method="post">
@@ -24,5 +26,6 @@
 ${text}</textarea>
     <p><button class="primary">Save</button></p>
 </form>
+</main>
 </body>
 </html>

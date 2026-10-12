@@ -1,5 +1,6 @@
 @param specs: List<ants.SpecRow>
 @param colorScheme: String = "light dark"
+@param shell: ants.Shell
 <!doctype html>
 <html lang="en">
 <head>
@@ -9,8 +10,9 @@
     <title>Tickets · Ants</title>
 </head>
 <body>
-@template.nav()
-<h1>Tickets</h1>
+@template.nav(shell = shell)
+<main>
+<div class="ph"><h1>Tickets</h1><div class="sub">Every Spec across Runs, open first, with its Tickets.</div></div>
 @if(specs.isEmpty())
 <p>No Run has written a Spec yet.</p>
 @else
@@ -21,5 +23,6 @@
 @endfor
 </table>
 @endif
+</main>
 </body>
 </html>
