@@ -104,19 +104,27 @@ class Updates(
         return back(from)
     }
 
-    /** Runs [release]'s install.sh as `curl … | bash -s -- --update`, the way the user installed Ants. */
+    /**
+     * Runs the newest release's install.sh as `curl … | bash -s -- --update <this version>`, the way the user installed
+     * Ants. The release it installed is the one install.sh names, which is newer than [release] if one came out since the check.
+     */
     private fun install(release: String) {
         val failed = try {
-            val install = ProcessBuilder("/bin/bash", "-o", "pipefail", "-c", "curl -fsSL \"\$ANTS_RELEASES/install.sh\" | bash -s -- --update")
+            val install = ProcessBuilder("/bin/bash", "-o", "pipefail", "-c", "curl -fsSL \"\$ANTS_RELEASES/install.sh\" | bash -s -- --update $version")
                 .redirectErrorStream(true)
                 .apply { environment() += mapOf("ANTS_HOME" to "$home", "ANTS_RELEASES" to releases) }
                 .start()
             val output = install.inputReader().readText()
-            if (install.waitFor() == 0) null else output.lines().lastOrNull { it.isNotBlank() } ?: "install.sh exited ${install.exitValue()}"
+            val installed = Regex("""^Installed Ants (\S+)""", RegexOption.MULTILINE).find(output)?.groupValues?.get(1)
+            if (install.waitFor() == 0 && installed != null) {
+                synchronized(this) { notice = UpdateNotice(newer = installed, installed = installed) }
+                return
+            }
+            output.lines().lastOrNull { it.isNotBlank() } ?: "install.sh exited ${install.exitValue()}"
         } catch (e: Exception) {
             "$e"
         }
-        failed?.let { log.warn("Update to Ants $release failed: $it") }
-        synchronized(this) { notice = notice.copy(downloading = false, installed = release.takeIf { failed == null } ?: notice.installed, failed = failed) }
+        log.warn("Update to Ants $release failed: $failed")
+        synchronized(this) { notice = notice.copy(downloading = false, failed = failed) }
     }
 }

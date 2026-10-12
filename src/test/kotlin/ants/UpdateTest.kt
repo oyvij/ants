@@ -66,10 +66,11 @@ class UpdateTest : AntsTest() {
         return browser.events(assertNotNull(slot, "$page has no update notice in its nav").groupValues[1]).poll(10, SECONDS).orEmpty()
     }
 
-    /** Presses the nav's **Update** on Home, as [browser] sees it. */
+    /** Presses the nav's **Update** on Home, as [browser] sees it, posting its form's fields. */
     private fun update(browser: Browser = this.browser) {
-        val action = Regex("""<form method="post" action="([^"]+)"""").find(notice(browser = browser))
-        browser.post(assertNotNull(action, "no Update in the nav").groupValues[1], emptyMap())
+        val form = Regex("""<form method="post" action="([^"]+)".*name="_csrf" value="([^"]+)"""").find(notice(browser = browser))
+        val (action, csrf) = assertNotNull(form, "no Update in the nav").destructured
+        browser.post(action, mapOf("_csrf" to csrf))
     }
 
     @Test
@@ -129,6 +130,38 @@ class UpdateTest : AntsTest() {
         assertContains(browser.get("/runs/$run").body, "State: Running")
         claude.release("release")
         eventually { assertContains(browser.get("/runs/$run").body, "State: Completed") }
+    }
+
+    @Test
+    fun `a second Update before a restart keeps the running version as the one to roll back to`() {
+        home.resolve("versions/0.1.0").createDirectories()
+        home.resolve("current").createSymbolicLinkPointingTo(Path.of("versions/0.1.0"))
+        published("97.0.0")
+        eventually { assertContains(notice(), "Ants 97.0.0 is available") }
+        update()
+        eventually { assertContains(notice(), "Ants 97.0.0 runs from the next ants restart") }
+        published("98.0.0")
+        eventually { assertContains(notice(), "Ants 98.0.0 is available") }
+
+        update()
+
+        eventually { assertContains(notice(), "Ants 98.0.0 runs from the next ants restart") }
+        assertEquals(Path.of("versions/98.0.0"), home.resolve("current").readSymbolicLink())
+        assertEquals(Path.of("versions/0.1.0"), home.resolve("previous").readSymbolicLink())
+    }
+
+    @Test
+    fun `Update says which release it installed when a newer one came out after the check`() {
+        published("94.0.0")
+        startAnother(tempHome()).use { ants -> // it checks at start, and then not for six hours
+            val another = Browser("http://127.0.0.1:${(ants as WebServerApplicationContext).webServer!!.port}").also { it.login() }
+            eventually { assertContains(notice(browser = another), "Ants 94.0.0 is available") }
+            published("95.0.0")
+
+            update(another)
+
+            eventually { assertContains(notice(browser = another), "Ants 95.0.0 runs from the next ants restart") }
+        }
     }
 
     @Test
