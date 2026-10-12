@@ -19,7 +19,7 @@
     --cite: light-dark(#0e7490, #67e8f9); --dotgrid: light-dark(#d9dde5, #252b38); --footer: light-dark(rgba(255, 255, 255, .96), rgba(19, 22, 29, .94));
     /* The Answer page's sections: the question, what it settles, the recommendation and your answer. */
     --ask: light-dark(#3b5bdb, #91a7ff); --ctx: light-dark(#ae3ec9, #e599f7); --rec: light-dark(#e67700, #ffc078); --ans: light-dark(#2b8a3e, #69db7c);
-    --r: 10px; --sh: 0 1px 2px rgba(16, 24, 40, .05), 0 1px 3px rgba(16, 24, 40, .06);
+    --side-width: 232px; --r: 10px; --sh: 0 1px 2px rgba(16, 24, 40, .05), 0 1px 3px rgba(16, 24, 40, .06);
     --chev: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237b8495' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
     --mono: ui-monospace, "SF Mono", Menlo, monospace;
     font: 14px/1.5 Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
@@ -44,9 +44,9 @@ hr { border: 0; border-top: 1px solid var(--line); }
 img { max-width: 100%; }
 
 /* The sidebar: the nav every page opens with, holding the Notification list count and the pause and update notices. */
-body:has(> nav:first-child) { padding-left: 272px; }
+body:has(> nav:first-child) { padding-left: calc(var(--side-width) + 40px); }
 body > nav:first-child {
-    position: fixed; inset: 0 auto 0 0; width: 232px; z-index: 10; overflow: auto;
+    position: fixed; inset: 0 auto 0 0; width: var(--side-width); z-index: 10; overflow: auto;
     display: flex; flex-direction: column; gap: 2px; padding: 16px 12px;
     background: var(--side); color: var(--sideText); color-scheme: dark;
 }
@@ -59,7 +59,7 @@ body > nav:first-child > small { font-size: 11px; text-transform: uppercase; let
 body > nav:first-child > a { display: flex; align-items: center; gap: 10px; color: var(--sideText); padding: 7px 10px; border-radius: 8px; font-weight: 500; }
 body > nav:first-child > a:hover { background: var(--side2); color: #e5e7eb; text-decoration: none; }
 body > nav:first-child > a[aria-current] { background: #232733; color: #fff; }
-#waiting:not(:empty) { margin-left: auto; background: #d97706; color: #fff; font-size: 11px; font-weight: 700; border-radius: 10px; padding: 0 7px; line-height: 18px; }
+#waiting:not(:empty) { margin-left: auto; background: var(--wait); color: #fff; font-size: 11px; font-weight: 700; border-radius: 10px; padding: 0 7px; line-height: 18px; }
 #paused { margin-top: auto; }
 #paused form, #update:not(:empty) {
     display: block; margin: 4px 0; padding: 8px 10px; border-radius: 9px; font-size: 12px;
@@ -148,7 +148,7 @@ body > ul:has(> li > a), #start-a-run > ul {
 [data-tag="[stuck]"], [data-tag="[stopped]"] { background: var(--vioSoft); color: var(--vio); border-color: color-mix(in srgb, var(--vio) 35%, transparent); }
 [data-tag="[failed]"] { background: var(--badSoft); color: var(--bad); border-color: color-mix(in srgb, var(--bad) 35%, transparent); }
 
-/* Buttons: primary for the step forward, danger for the one that throws work away, ghost for the quiet ones. */
+/* Buttons: primary for the step forward, danger for the one that throws work away. */
 button {
     font: inherit; font-weight: 600; font-size: 13px; padding: 7px 14px; border-radius: 8px; cursor: pointer;
     display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; line-height: 1.2; white-space: nowrap; vertical-align: middle;
@@ -158,7 +158,6 @@ button:hover { background: var(--hover); }
 button.primary { background: var(--acc); border-color: var(--acc); color: #fff; }
 button.primary:hover { background: var(--accHover); }
 button.danger { color: var(--bad); }
-button.ghost { border-color: transparent; box-shadow: none; background: none; color: var(--acc); padding: 4px 6px; }
 button:disabled { opacity: .45; cursor: not-allowed; }
 form { margin: 0 0 16px; }
 /* A form that is only a button, such as Pause or Dismiss, sits in a row with its neighbours. */
@@ -250,7 +249,7 @@ form .cm-editor .cm-selectionBackground { background: color-mix(in srgb, var(--a
 .spinner { display: inline-block; animation: spin 2s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* Review changes: the diffs, and a Story's steps. */
+/* Review changes: the diffs, and the Story set's steps. */
 nav#tabs { display: flex; gap: 4px; margin-bottom: 18px; border-bottom: 1px solid var(--line); }
 nav#tabs > :is(a, b, button) {
     padding: 10px 16px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; box-shadow: none; background: none;
@@ -299,14 +298,16 @@ section.question > textarea:focus { outline: 2px solid var(--ans); }
 #review-list > button { width: 100%; justify-content: flex-start; white-space: pre-wrap; text-align: left; font-weight: 500; margin-bottom: 8px; padding: 10px 12px; }
 #review-list > button:hover { border-color: var(--ask); background: var(--panel); }
 #round > footer {
-    position: fixed; bottom: 0; left: 232px; right: 0; z-index: 5; display: flex; gap: 8px; padding: 12px 40px;
+    position: fixed; bottom: 0; left: var(--side-width); right: 0; z-index: 5; display: flex; gap: 8px; padding: 12px 40px;
     background: var(--footer); backdrop-filter: blur(6px); border-top: 1px solid var(--line);
 }
 #round > footer > #next { margin-left: auto; min-width: 140px; background: var(--ans); border-color: var(--ans); color: #fff; }
 
-/* The modeler's panel beside the canvas and its Checks. */
+/* The modeler's panel beside the canvas, its Checks, and the dialog it opens the New Agent and New Skill forms in. */
 #explain { border-radius: var(--r); margin: 0; }
 #explain h2:first-child { margin-top: 0; }
 #checks { list-style-position: inside; padding: 0; }
 #checks .error::marker { content: "✖ "; color: var(--bad); }
 #checks .warning::marker { content: "⚠ "; color: var(--wait); }
+dialog { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 24px 60px rgba(0, 0, 0, .3); padding: 12px; }
+dialog::backdrop { background: rgba(15, 23, 42, .5); }

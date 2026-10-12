@@ -24,7 +24,7 @@
     @if(field.key != _csrf.parameterName)<input type="hidden" name="${field.key}" value="${field.value}">@endif
 @endfor
     <input type="hidden" name="confirm" value="on">
-    <button class="danger">${question.substringBefore(' ')}</button> <a href="${back}">Cancel</a>
+    !{val verb = question.substringBefore(' ')}<button class="${if (verb == "Delete") "danger" else "primary"}">${verb}</button> <a href="${back}">Cancel</a>
 </form>
 </body>
 </html>
