@@ -197,6 +197,22 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `in dark, the drill-down button opens a collapsed sub-process on the Process page, in the modeler and on the Run page`() = browse {
+        val (inside, groupPlane) = row("group", """<bpmn:startEvent id="inner-start" />""", """<bpmn:userTask id="inner" name="Inner" />""", """<bpmn:endEvent id="inner-end" />""")
+        val (process, plane) = row("drilled", """<bpmn:startEvent id="start" />""", """<bpmn:subProcess id="group" name="Group">$inside</bpmn:subProcess>""", """<bpmn:endEvent id="end" />""")
+        deploy(definitions("drilled", "Drilled", process, plane + groupPlane))
+        val run = http.post("/processes/drilled/runs", mapOf()).path
+        settings(null, "theme: dark\n")
+        for (path in listOf("/processes/drilled", "/processes/drilled/edit", run)) {
+            page.navigate(url(path))
+            assertThat(shape("group")).isVisible()
+            // The inverted svg must not lie over the overlays: a covered button fails Playwright's click.
+            page.click(".bjs-drilldown", Page.ClickOptions().setTimeout(5000.0))
+            assertThat(shape("inner")).isVisible()
+        }
+    }
+
+    @Test
     fun `the theme setting switches light, dark and system on every page, the modeler and the diagrams included`() = browse {
         val (process, plane) = row("themed", """<bpmn:startEvent id="start" />""", """<bpmn:userTask id="wait" name="Wait" />""", """<bpmn:endEvent id="end" />""")
         deploy(definitions("themed", "Themed", process, plane))
