@@ -43,9 +43,9 @@ class CodexTest : AntsTest() {
     private val started = """{"type":"thread.started","thread_id":"${'$'}SESSION"}"""
     private val turn = """{"type":"turn.started"}"""
 
-    /** The Agent's final message, its Result as JSON text, as codex gives it under `--output-schema`. */
+    /** The Agent's final message, its Result as JSON text, as codex gives it under the strict `--output-schema`: every key, `needs` null. */
     private fun answer(summary: String = "Drafted.") = """{"type":"item.completed","item":{"id":"item_9","type":"agent_message",""" +
-        """"text":"{\"outcome\":\"done\",\"summary\":\"$summary\",\"output\":{\"text\":\"Hello\"}}"}}"""
+        """"text":"{\"outcome\":\"done\",\"summary\":\"$summary\",\"output\":{\"text\":\"Hello\"},\"needs\":null}"}}"""
     private val completed = """{"type":"turn.completed","usage":{"input_tokens":1200,"cached_input_tokens":200,"output_tokens":34}}"""
 
     private fun start(key: String = "agent-task", agent: String = "writer"): String {
@@ -83,6 +83,7 @@ class CodexTest : AntsTest() {
         assertFalse(argv.any { it.startsWith("--tools") || it == "--allowedTools" })
         val schema = JsonMapper.shared().readValue(Path.of(launch.flag("--output-schema")!!).toFile(), Map::class.java)
         assertEquals(listOf("done", "stuck"), ((schema["properties"] as Map<*, *>)["outcome"] as Map<*, *>)["enum"])
+        assertEquals(listOf("outcome", "summary", "output", "needs"), schema["required"]) // codex's strict mode: every key required
         assertEquals(home.resolve("codex").toString(), launch.env["CODEX_HOME"])
         for (key in listOf("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "CODEX_API_KEY")) assertEquals(null, launch.env[key], key)
         assertContains(launch.stdin, "Follow the Skill in ${home.resolve("skills/draft/SKILL.md")} for the workspace at ${home.resolve("runs/$run")}.")

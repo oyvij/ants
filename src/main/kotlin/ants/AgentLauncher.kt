@@ -361,9 +361,10 @@ class AgentLauncher(
         else handOff(task, skill, used, cwd, vault) + "\n\n" + json.writeValueAsString(inputs) + (if (instruction.isNullOrBlank()) "" else "\n\nFrom the user:\n$instruction")
         // The Task's result-schema override replaces the Skill's result.schema.json; Checks refuse one that isn't valid.
         val override = task.extensionProperties[RESULT_SCHEMA]?.takeIf(String::isNotBlank)?.let { json.readValue(it, Map::class.java) }
-        val schema = ResultContract.schema(override ?: skill.outputSchema)
+        val output = override ?: skill.outputSchema
+        val schema = ResultContract.schema(output)
         val judge = Judge(agent.cli, schema, workspace, walkthrough(task))
-        if (agent.cli == "codex") return codex(task, instance, agent, run, workspace, cwd, vault, transcript, session, started, prompt, schema, judge)
+        if (agent.cli == "codex") return codex(task, instance, agent, run, workspace, cwd, vault, transcript, session, started, prompt, ResultContract.strict(output), judge)
         val shared = if (cwd == workspace) emptyList() else listOf("--add-dir", "$workspace") // what an instance's links lead to
         val vaultDir = vault?.let { listOf("--add-dir", "$it") }.orEmpty() // the Vault's path goes nowhere else (ADR 0002)
         val process = cli(agent.cli, cwd, flags(agent, schema, listOf(skill) + used, session!!, resume) + shared + vaultDir).start()
@@ -458,7 +459,7 @@ class AgentLauncher(
                         when (event["type"]) {
                             "thread.started" -> event["thread_id"]?.toString()?.takeIf { it != thread }?.let { thread = it; started(it) }
                             "item.completed" -> if (item?.get("type") == "agent_message") answer = item["text"]?.toString()
-                            "turn.completed" -> judge.judge(answer?.let { runCatching { json.readValue(it, Map::class.java) }.getOrNull() }, listOf(answer), fixes::add)
+                            "turn.completed" -> judge.judge(answer?.let { runCatching { ResultContract.withoutNulls(json.readValue(it, Map::class.java)) }.getOrNull() }, listOf(answer), fixes::add)
                             "error", "turn.failed" -> {
                                 error = (event["message"] ?: (event["error"] as? Map<*, *>)?.get("message"))?.toString()
                                 limit = error?.let(::codexLimit)?.also { kill(process) } // the session continues after the reset
