@@ -79,19 +79,44 @@
 @endfor
 </dl>
 <script src="/vendor/camunda-bpmn-js/base-navigated-viewer.production.min.js"></script>
-<script>
+<script type="module">
     // The live diagram: each update patches only the elements whose state, badge or Round changed, so an open drawer stays.
     // Clicking a call activity shows the called Process's live diagram in its place; the trail above it leads back.
+    // The page's stream follows the instance shown, and the Task whose drawer is open.
     const run = '${run.id}';
     const viewer = new BpmnNavigatedViewer({ container: '#diagram' });
     const canvas = document.getElementById('diagram').canvas = viewer.get('canvas'), overlays = viewer.get('overlays'), registry = viewer.get('elementRegistry');
     const trail = [{ id: run, name: document.querySelector('h1').textContent }], nav = document.getElementById('trail');
-    let current = run, shown = {}, called = {}, updates = null;
+    let current = run, drawn = null, latest = null, shown = {}, called = {}, task = null;
+    const follow = () => stream.follow('run=' + current + (task === null ? '' : '&drawer=' + encodeURIComponent(task)));
+    // Paints the latest update once the diagram it is for is drawn.
+    function paint() {
+        if (!latest || drawn !== current) return;
+        called = latest.called;
+        if (current === run) document.getElementById('state').textContent = 'State: ' + latest.state;
+        for (const [id, now] of Object.entries(latest.elements)) {
+            const before = shown[id];
+            if (!registry.get(id) || JSON.stringify(before) === JSON.stringify(now)) continue;
+            if (before) canvas.removeMarker(id, 'ants-' + before.state);
+            canvas.addMarker(id, 'ants-' + now.state);
+            overlays.remove({ element: id, type: 'ants' });
+            const badge = [now.badge, now.round > 1 ? '↻ ' + now.round : null].filter(Boolean).join(' · ');
+            if (badge) {
+                const span = document.createElement('span');
+                span.className = 'ants-badge';
+                span.textContent = badge;
+                overlays.add(id, 'ants', { position: { bottom: 8, right: 8 }, html: span });
+            }
+            shown[id] = now;
+        }
+    }
+    stream.on('run', data => { latest = JSON.parse(data); paint(); });
     function show(instance) {
-        updates?.close();
-        following?.close();
         drawer.hidden = true;
+        task = null;
         current = instance;
+        drawn = null;
+        latest = null;
         shown = {};
         called = {};
         nav.hidden = trail.length < 2;
@@ -102,30 +127,12 @@
             link.textContent = step.name;
             return i ? [' › ', link] : [link];
         }));
+        follow();
         fetch('/runs/' + instance + '/diagram.bpmn').then(response => response.text()).then(xml => viewer.importXML(xml)).then(() => {
             if (current !== instance) return;
             canvas.zoom('fit-viewport');
-            updates = new EventSource('/runs/' + instance + '/live');
-            updates.onmessage = event => {
-                const live = JSON.parse(event.data);
-                called = live.called;
-                if (instance === run) document.getElementById('state').textContent = 'State: ' + live.state;
-                for (const [id, now] of Object.entries(live.elements)) {
-                    const before = shown[id];
-                    if (!registry.get(id) || JSON.stringify(before) === JSON.stringify(now)) continue;
-                    if (before) canvas.removeMarker(id, 'ants-' + before.state);
-                    canvas.addMarker(id, 'ants-' + now.state);
-                    overlays.remove({ element: id, type: 'ants' });
-                    const badge = [now.badge, now.round > 1 ? '↻ ' + now.round : null].filter(Boolean).join(' · ');
-                    if (badge) {
-                        const span = document.createElement('span');
-                        span.className = 'ants-badge';
-                        span.textContent = badge;
-                        overlays.add(id, 'ants', { position: { bottom: 8, right: 8 }, html: span });
-                    }
-                    shown[id] = now;
-                }
-            };
+            drawn = instance;
+            paint();
         });
     }
     viewer.on('element.click', ({ element }) => {
@@ -135,34 +142,34 @@
         } else if (element.type.endsWith('Task')) open(element.id);
     });
 
-    // The Task drawer follows its Task over SSE, replacing only the parts that changed, so a comment being typed stays,
-    // and removing the parts that are gone, such as Send once the session ends or the action once it is handled.
+    // The Task drawer follows its Task, replacing only the parts that changed, so a comment being typed stays, and
+    // removing the parts that are gone, such as Send once the session ends or the action once it is handled.
     const drawer = document.getElementById('drawer'), parts = document.getElementById('parts');
-    let following = null, received = {};
-    function open(task) {
-        following?.close();
+    let received = {};
+    function open(id) {
+        task = id;
         received = {};
         parts.replaceChildren();
         drawer.hidden = false;
-        following = new EventSource('/runs/' + current + '/tasks/' + encodeURIComponent(task) + '/drawer');
-        following.onmessage = event => {
-            const template = document.createElement('template');
-            template.innerHTML = event.data;
-            const now = [...template.content.children];
-            for (const old of [...parts.children]) {
-                if (now.some(part => part.id === old.id)) continue;
-                old.remove();
-                delete received[old.id];
-            }
-            now.forEach((part, i) => {
-                if (received[part.id] === part.outerHTML) return;
-                received[part.id] = part.outerHTML;
-                const old = document.getElementById(part.id);
-                old ? old.replaceWith(part) : parts.insertBefore(part, parts.children[i] ?? null);
-            });
-        };
+        follow();
     }
-    document.getElementById('close').onclick = () => { following?.close(); drawer.hidden = true; };
+    stream.on('drawer', html => {
+        const template = document.createElement('template');
+        template.innerHTML = html;
+        const now = [...template.content.children];
+        for (const old of [...parts.children]) {
+            if (now.some(part => part.id === old.id)) continue;
+            old.remove();
+            delete received[old.id];
+        }
+        now.forEach((part, i) => {
+            if (received[part.id] === part.outerHTML) return;
+            received[part.id] = part.outerHTML;
+            const old = document.getElementById(part.id);
+            old ? old.replaceWith(part) : parts.insertBefore(part, parts.children[i] ?? null);
+        });
+    });
+    document.getElementById('close').onclick = () => { task = null; drawer.hidden = true; follow(); };
     show(run);
 </script>
 </main>

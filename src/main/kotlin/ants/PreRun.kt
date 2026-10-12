@@ -36,6 +36,7 @@ class PreRun(
 ) {
     // ponytail: in memory, so a custom model ID is tried once per Ants start and claude command; a bad one stays bad until then.
     private val tried = ConcurrentHashMap<Pair<List<String>, String>, String>() // (claude command, model ID) -> why it failed, empty when it answered
+    private val ghAsked = ConcurrentHashMap<String, Long>() // gh command -> when gh last said it is logged in (System.nanoTime)
 
     /**
      * Why a Run of [definition] with the Repos [repos] (Source map names) can't start; empty when it's Ready. Without
@@ -74,12 +75,21 @@ class PreRun(
                 else for (agent in agents) agent.model?.takeIf { agent.cli == "claude" && custom(it) }
                     ?.let { model -> tryModel(model)?.let { add("The Agent ${agent.name}'s model $model doesn't work: $it") } }
             }
-            if ("gh" !in missing && failure(ProcessBuilder(command("gh"), "auth", "status"), 20) != null) add("gh isn't logged in: run gh auth login.")
+            if ("gh" !in missing && !ghLoggedIn(command("gh"))) add("gh isn't logged in: run gh auth login.")
             if ("git" !in missing) for (repo in named.mapNotNull(known::get)) {
                 val lsRemote = ProcessBuilder(command("git"), "ls-remote", "--heads", repo.remote).apply { environment()["GIT_TERMINAL_PROMPT"] = "0" }
                 if (failure(lsRemote, 20) != null) add("git ls-remote can't reach ${repo.name}'s remote ${repo.remote}.")
             }
         }
+    }
+
+    /**
+     * Whether `gh auth status` says [gh] is logged in. It asks GitHub, about 0.4 s on every Process page, so a yes holds
+     * for [GH_LOGIN] (a logout shows within it) and a no is asked again on the next check.
+     */
+    private fun ghLoggedIn(gh: String): Boolean {
+        if (ghAsked[gh]?.let { System.nanoTime() - it < GH_LOGIN.toNanos() } == true) return true
+        return (failure(ProcessBuilder(gh, "auth", "status"), 20) == null).also { if (it) ghAsked[gh] = System.nanoTime() else ghAsked -= gh }
     }
 
     /** [definition] and every Process it calls, at any depth, each the latest version, as a call binds it. */
@@ -128,5 +138,8 @@ class PreRun(
     companion object {
         /** The one reason without a Vault; the Process page links it to the settings. */
         const val CONFIGURE_VAULT = "Configure a Vault"
+
+        /** How long a logged-in gh is trusted. */
+        val GH_LOGIN: Duration = Duration.ofMinutes(1)
     }
 }

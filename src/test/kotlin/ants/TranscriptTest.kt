@@ -122,8 +122,8 @@ class TranscriptTest : AntsTest() {
         assertContains(loaded, """<div class="tool" id="e2">⏺ <b>Read</b> <code>notes.md</code></div>""")
 
         val from = Regex("""data-from="(\d+)"""").find(loaded)!!.groupValues[1]
-        val tab = Received(browser.events("$path/events?from=$from"))
-        val secondTab = Received(browser.events("$path/events?from=0"))
+        val tab = Received(browser.events("transcript=$run/draft&from=$from", "transcript"))
+        val secondTab = Received(browser.events("transcript=$run/draft&from=0", "transcript"))
         claude.release("one")
         eventually { assertContains(tab.toString(), """<div id="live"><p>Almost <strong>there</strong></p>""") }
         assertContains(tab.toString(), "Writing…")
@@ -184,7 +184,7 @@ class TranscriptTest : AntsTest() {
         assertContains(running, Regex("""(?s)<details class="subagent" id="e\d+" open><summary id="e\d+s">⑂ <b>general-purpose</b> Check facts.*?Facts <strong>hold</strong>.*?</details>"""))
         assertContains(running, Regex("""<div id="status">.*· 1.1k tokens</div>""")) // the Subagents' messages count while they run
 
-        val tab = Received(browser.events("$path/events?from=${Regex("""data-from="(\d+)"""").find(running)!!.groupValues[1]}"))
+        val tab = Received(browser.events("transcript=$run/draft&from=${Regex("""data-from="(\d+)"""").find(running)!!.groupValues[1]}", "transcript"))
         claude.release("one")
         eventually { assertContains(page(path), "<b>Result: done</b>") }
         val ended = page(path)

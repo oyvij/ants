@@ -17,7 +17,8 @@ import org.springframework.web.bind.annotation.RequestParam
 /**
  * What the sidebar shows on every page, read only when a page renders it: the Notification list count, the Runs line
  * ("✻ 2 working" while Agent Tasks run, else "3 live"), the running version, and a toast left by an action that moved
- * on to another page. The pause and update notices come over their own streams.
+ * on to another page. The page's stream ([Live]) keeps the count and the Runs line live, and brings the pause and
+ * update notices.
  */
 class Shell(val csrf: CsrfToken?, val version: String, waiting: () -> Int, working: () -> Int, live: () -> Long, session: HttpSession?) {
     val waiting by lazy(waiting)
@@ -39,6 +40,9 @@ class Shell(val csrf: CsrfToken?, val version: String, waiting: () -> Int, worki
     }
 }
 
+/** How many Runs are live. */
+fun HistoryService.liveRuns() = createHistoricProcessInstanceQuery().rootProcessInstances().active().count()
+
 /** A toast: its [title] in bold, then its [text]. */
 data class Toast(val title: String, val text: String) : java.io.Serializable
 
@@ -55,7 +59,7 @@ class ShellAdvice(
         build.version.orEmpty(),
         { notifications.entries().size },
         { launcher.running },
-        { history.createHistoricProcessInstanceQuery().rootProcessInstances().active().count() },
+        { history.liveRuns() },
         request.getSession(false),
     )
 }

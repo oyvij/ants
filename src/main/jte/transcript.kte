@@ -41,16 +41,17 @@ $unsafe{transcript.html("subagents")}
     <button class="danger">■ Stop</button>
 </form>
 @endif
-<script>
+<script type="module">
     // Follows the Transcript from where this page's copy ends, replacing each changed element or appending a new entry, a Subagent's into its block.
     const entries = document.getElementById('entries');
-    new EventSource(location.pathname + '/events?from=' + entries.dataset.from).addEventListener('entry', event => {
+    stream.on('transcript', html => {
         const template = document.createElement('template');
-        template.innerHTML = event.data;
+        template.innerHTML = html;
         const element = template.content.firstElementChild;
         const old = document.getElementById(element.id);
         old ? old.replaceWith(element) : (element.dataset.in ? document.querySelector('#' + element.dataset.in + ' > div') : entries).append(element);
     });
+    stream.follow('transcript=' + encodeURIComponent('${run}/${task}') + '&from=' + entries.dataset.from);
     setInterval(() => {
         for (const since of document.querySelectorAll('[data-since]')) {
             const s = Math.floor((Date.now() - Number(since.dataset.since)) / 1000);

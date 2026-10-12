@@ -118,7 +118,7 @@ class ShutdownTest {
     fun `an open Transcript stream doesn't hold up shutdown`() {
         val ants = AntsTest.startAnother(AntsTest.tempHome())
         val browser = Browser("http://127.0.0.1:${(ants as WebServerApplicationContext).webServer!!.port}").also { it.login() }
-        browser.events("/runs/r/tasks/t/transcript/events?from=0")
+        browser.events("transcript=r/t&from=0", "transcript")
         Thread.sleep(1000)
         val took = measureTime { ants.close() }
         assertTrue(took < 10.seconds, "shutdown took $took")

@@ -160,7 +160,7 @@ class PushTest : AntsTest() {
     fun `Cancel the Run pushes nothing and keeps the Run workspace`() {
         val api = repo("api")
         val run = start(api)
-        val drawer = assertNotNull(browser.events("/runs/$run/tasks/push/drawer").poll(10, TimeUnit.SECONDS))
+        val drawer = assertNotNull(browser.events("run=$run&drawer=push", "drawer").poll(10, TimeUnit.SECONDS))
         assertContains(drawer, """<a href="${entry(run)}">Push or cancel the Run</a>""")
         assertFalse("Continue the session" in drawer)
         val cancelled = browser.post(entry(run), mapOf("action" to "cancel", "instruction" to ""))

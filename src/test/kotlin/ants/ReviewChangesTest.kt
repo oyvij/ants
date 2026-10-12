@@ -144,7 +144,7 @@ class ReviewChangesTest : AntsTest() {
     @Test
     fun `a Review changes' Task drawer leads to its page`() {
         val run = start()
-        val drawer = assertNotNull(browser.events("/runs/$run/tasks/changes/drawer").poll(10, TimeUnit.SECONDS))
+        val drawer = assertNotNull(browser.events("run=$run&drawer=changes", "drawer").poll(10, TimeUnit.SECONDS))
         assertContains(drawer, """<a href="${entry(run)}">Review the changes</a>""")
         assertFalse("Continue the session" in drawer)
     }

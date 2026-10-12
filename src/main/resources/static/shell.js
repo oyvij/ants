@@ -1,21 +1,42 @@
-// What every page's shell does: the Notification list count, live in the sidebar, the tab title and the app badge
-// (where the browser has one; 0 clears it); the sidebar's live slots, the Usage limit notice and the update notice,
-// each from the stream it names; the modal's click outside; the toast's timeout; and the diagram box's buttons.
+// What every page's shell does: the page's one stream; the Notification list count, live in the sidebar, the tab title
+// and the app badge (where the browser has one; 0 clears it); the sidebar's Runs line, Usage limit notice and update
+// notice, live too; the modal's click outside; the toast's timeout; and the diagram box's buttons.
+
+// A page holds one SSE connection, /live (a browser opens at most 6 per host, shared by all its tabs): the sidebar's
+// events on every page, and the page's own. A page script (a module, so it runs after this one) handles its events with
+// stream.on(name, data => …) and names what it follows with stream.follow(query), which reconnects; a page that names
+// nothing gets the sidebar's events once it has loaded. A page in a frame, such as a modal's, leaves them to its parent.
+const handlers = {};
+let source = null;
+const listen = name => source.addEventListener(name, event => handlers[name](event.data));
+window.stream = {
+    on(name, handler) {
+        if (!(name in handlers) && source) listen(name);
+        handlers[name] = handler;
+    },
+    follow(query = '') {
+        source?.close();
+        source = new EventSource('/live' + (query && '?' + query));
+        Object.keys(handlers).forEach(listen);
+    },
+};
+if (window.top === window) addEventListener('DOMContentLoaded', () => source || stream.follow());
+
 const title = document.title.replace(/^\(\d+\) /, '');
-new EventSource('/notifications/count').onmessage = event => {
-    const count = event.data === '0' ? '' : event.data;
+stream.on('count', data => {
+    const count = data === '0' ? '' : data;
     document.getElementById('waiting').textContent = count;
     document.title = (count && `(${count}) `) + title;
-    navigator.setAppBadge?.(Number(event.data)).catch(() => {}); // Safari refuses without notification permission
-};
+    navigator.setAppBadge?.(Number(data)).catch(() => {}); // Safari refuses without notification permission
+});
+stream.on('runs', html => document.getElementById('runs').innerHTML = html);
+stream.on('pauses', html => document.getElementById('paused').innerHTML = html);
+stream.on('update', html => document.getElementById('update').innerHTML = html);
 // macOS badges an installed app only with notification permission, which a page may ask for only on a click.
 const ask = document.getElementById('badge-permission');
 if (ask && navigator.setAppBadge && window.Notification?.permission === 'default') {
     ask.hidden = false;
     ask.querySelector('button').onclick = () => Notification.requestPermission().then(() => ask.hidden = true);
-}
-for (const slot of document.querySelectorAll('nav [data-src]')) {
-    new EventSource(slot.dataset.src).onmessage = event => slot.innerHTML = event.data;
 }
 // The sidebar marks the page it is on, or the page a deeper one sits under.
 for (const link of document.querySelectorAll('nav.side > a')) {

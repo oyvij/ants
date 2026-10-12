@@ -50,7 +50,7 @@ class HomeTest : AntsTest() {
         val before = stats(browser.get("/").body)
         fun stats(live: Int, waiting: Int, done: Int) =
             mapOf("Live" to before.getValue("Live") + live, "Waiting" to before.getValue("Waiting") + waiting, "Done" to before.getValue("Done") + done)
-        val live = browser.events("/home/live")
+        val live = browser.events("home", "home")
 
         val waiting = start()
         var html = live.until { "/runs/$waiting" in section(it, "waiting-on-you") }

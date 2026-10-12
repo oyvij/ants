@@ -209,10 +209,10 @@ class CallActivityTest : AntsTest() {
         val run = start("caller")
 
         // The breadcrumb leads back to the Run's own diagram, which the page holds; the called one is by its instance.
-        val called = browser.events("/runs/$run/live").until { (it["called"] as Map<*, *>)["build"] != null }.let { (it["called"] as Map<*, *>)["build"] }
+        val called = browser.events("run=$run", "run").until { (it["called"] as Map<*, *>)["build"] != null }.let { (it["called"] as Map<*, *>)["build"] }
         assertContains(browser.get("/runs/$called/diagram.bpmn").body, """id="spec"""")
-        browser.events("/runs/$called/live").until { ((it["elements"] as Map<*, *>)["draft"] as? Map<*, *>)?.get("state") == "running" }
-        val drawer = browser.events("/runs/$called/tasks/draft/drawer")
+        browser.events("run=$called", "run").until { ((it["elements"] as Map<*, *>)["draft"] as? Map<*, *>)?.get("state") == "running" }
+        val drawer = browser.events("run=$called&drawer=draft", "drawer")
         assertContains(assertNotNull(drawer.poll(10, SECONDS)), """href="/runs/$run/tasks/build.draft/transcript"""")
         claude.release("go")
         eventually { assertContains(page(run), "State: Completed") }
