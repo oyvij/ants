@@ -7,6 +7,8 @@ blockers sit in an earlier wave or in the same wave.
 
 Run each command in a fresh session (`/clear` first). Paste it as written.
 
+One agent per ticket or task, never reused for the next one; no token limits in agent prompts.
+
 Before each wave, run `gh workflow run soak.yml` and fix any test it finds flaky, so the implementers start
 from a suite that fails only on real bugs.
 
