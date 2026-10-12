@@ -22,13 +22,16 @@ import java.time.Clock
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
+import java.time.LocalTime
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit.MILLISECONDS
 import java.util.concurrent.TimeUnit.SECONDS
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.io.path.createDirectories
 import kotlin.io.path.readText
 import kotlin.io.path.writeText
 import kotlin.io.path.deleteIfExists
@@ -36,7 +39,7 @@ import kotlin.io.path.exists
 
 /**
  * The in-process worker. It fetches ready Agent Tasks (external tasks on topic `agent`) only for free slots under
- * the cap, oldest first across Runs, and runs each one's Skill through `claude -p`. A `done` Result completes the
+ * the cap, oldest first across Runs, and runs each one's Skill through its Agent's CLI, `claude -p` or `codex exec`. A `done` Result completes the
  * task, stored as a process variable named after the Task's BPMN id; a `stuck` one or a failure is an incident. When
  * the user acts on it, the Notification list leaves their choice in the Task's local variables: Continue resumes the
  * session with their instruction, Start fresh starts a new one with it under "From the user:". While a session runs,
@@ -61,7 +64,7 @@ class AgentLauncher(
     /** Each live CLI process and the Run it works for. */
     private val clis = ConcurrentHashMap<Process, String>()
     private val live = AtomicInteger()
-    private val stdins = ConcurrentHashMap<String, Stdin>() // by key(run, instance(task))
+    private val stdins = ConcurrentHashMap<String, Live>() // by key(run, instance(task))
 
     private fun key(run: String, task: String) = "$run/$task"
     private val usageFile = home.resolve("claude-usage.json")
@@ -87,11 +90,12 @@ class AgentLauncher(
     /** How many Agent Tasks are running now. */
     val running get() = live.get()
 
-    /** Whether [task] of [run] has a session that still takes messages. */
-    fun live(run: String, task: String) = stdins[key(run, task)]?.open == true
+    /** How a message Sent to [task] of [run] reaches its session, or null when no session takes messages. */
+    fun sending(run: String, task: String) = stdins[key(run, task)]?.takeIf { it.open }?.hint
 
     /**
-     * Writes [message] into the live session of [task] in [run], which reads it at its next tool boundary, and appends
+     * Sends [message] into the live session of [task] in [run], where claude reads it at its next tool boundary and
+     * codex has its turn stopped and resumes with it ([Live.hint]), and appends
      * it to the Run log. False when no session takes it any more, such as once Ants holds the Task's Result.
      */
     fun send(run: String, task: String, message: String): Boolean {
@@ -228,9 +232,8 @@ class AgentLauncher(
             if (hold(task, agent.cli)) return // keeping its choice for the launch after the reset
             runtime.removeVariablesLocal(task.executionId, listOf(ACTION, INSTRUCTION, SESSION)) // the choice is used once
             val skill = catalogue.skill(task.extensionProperties[SKILL] ?: error("${task.activityId} names no $SKILL"))
-            check(agent.cli == "claude") { "Agent ${agent.name} runs ${agent.cli}, and only claude runs for now" }
             val used = catalogue.uses(skill)
-            refuseBareByDefault(agent.cli, workspace)
+            if (agent.cli == "claude") refuseBareByDefault(agent.cli, workspace)
             val instance = instance(task)
             // An instance of a parallel multi-instance works in a folder of its own, and lands when done.
             val parallel = runtime.inParallel(task.executionId, task.activityId)
@@ -242,21 +245,23 @@ class AgentLauncher(
             // does; the user's Continue and Start fresh choose for themselves.
             val last = Transcript.file(workspace, instance).resolveSibling("session")
             val again = last.takeIf { resume == null && task.variables[ACTION] == null && (task.extensionProperties[RESUME] == "true" || comment != null) && it.exists() }?.readText()
-            session = session ?: again ?: UUID.randomUUID().toString()
+            // codex names a new session itself, once it starts ([started]).
+            session = session ?: again ?: UUID.randomUUID().toString().takeIf { agent.cli == "claude" }
             transcript = Transcript.Writer(Transcript.file(workspace, instance)).apply { ants("launch") }
-            last.writeText(session)
+            session?.let(last::writeText)
+            val started = { id: String -> session = id; last.writeText(id) }
             val resumed = resume != null || again != null // claude knows the session already
             // The user's Continue, or a Send back to a session claude has: their words alone, no hand-off again.
             val continued = resume != null || (comment != null && again != null)
             val result = try {
-                var result = session(task, instance, agent, skill, used, run, workspace, cwd, transcript, session, resumed, task.variables[INSTRUCTION] as? String ?: comment, handedOff = !continued)
+                var result = session(task, instance, agent, skill, used, run, workspace, cwd, transcript, session, started, resumed, task.variables[INSTRUCTION] as? String ?: comment, handedOff = !continued)
                 // A landing that conflicts resumes the session to resolve it, and is retried after each fix.
                 var rounds = 0
                 while (parallel && result["outcome"] == "done") {
                     val conflict = landing.land(workspace, instance) ?: break
                     if (rounds++ == CONFLICT_ROUNDS) throw Failed("${conflict.substringBefore("\n\n")} It still conflicts after $CONFLICT_ROUNDS rounds.", conflict.substringAfter("\n\n"))
                     val resolve = "$conflict\n\nThe rebase was aborted. Rebase onto the work branch in each repo named, resolve the conflicts, and answer again with your Result."
-                    result = session(task, instance, agent, skill, used, run, workspace, cwd, transcript, session, true, resolve, handedOff = false)
+                    result = session(task, instance, agent, skill, used, run, workspace, cwd, transcript, session, started, true, resolve, handedOff = false)
                 }
                 result
             } catch (limit: UsageLimit) {
@@ -343,11 +348,12 @@ class AgentLauncher(
      * Runs [skill], which uses [used], in one CLI session in [cwd] (the Run [workspace], or an instance's folder in it),
      * every line it prints going to [transcript], and returns its Result: the last valid one, once every message written to the session has been read. A new
      * [session] starts with the hand-off prompt and the user's [instruction], if any; a [resume]d one with the
-     * instruction alone, unless it is [handedOff] again, as when the flow comes back to the Task.
+     * instruction alone, unless it is [handedOff] again, as when the flow comes back to the Task. A CLI that names its
+     * own sessions, codex, tells Ants a new one's id through [started].
      */
     private fun session(
         task: LockedExternalTask, instance: String, agent: Agent, skill: Skill, used: List<Skill>, run: String, workspace: Path, cwd: Path, transcript: Transcript.Writer,
-        session: String, resume: Boolean, instruction: String?, handedOff: Boolean = !resume,
+        session: String?, started: (String) -> Unit, resume: Boolean, instruction: String?, handedOff: Boolean = !resume,
     ): Map<*, *> {
         val inputs = inputs(task)
         val vault = vault(task, skill)
@@ -356,29 +362,23 @@ class AgentLauncher(
         // The Task's result-schema override replaces the Skill's result.schema.json; Checks refuse one that isn't valid.
         val override = task.extensionProperties[RESULT_SCHEMA]?.takeIf(String::isNotBlank)?.let { json.readValue(it, Map::class.java) }
         val schema = ResultContract.schema(override ?: skill.outputSchema)
+        val judge = Judge(agent.cli, schema, workspace, walkthrough(task))
+        if (agent.cli == "codex") return codex(task, instance, agent, run, workspace, cwd, vault, transcript, session, started, prompt, schema, judge)
         val shared = if (cwd == workspace) emptyList() else listOf("--add-dir", "$workspace") // what an instance's links lead to
         val vaultDir = vault?.let { listOf("--add-dir", "$it") }.orEmpty() // the Vault's path goes nowhere else (ADR 0002)
-        val process = cli(agent.cli, cwd, flags(agent, schema, listOf(skill) + used, session, resume) + shared + vaultDir).start()
+        val process = cli(agent.cli, cwd, flags(agent, schema, listOf(skill) + used, session!!, resume) + shared + vaultDir).start()
         val stdin = Stdin(process.outputWriter(), name(task))
         clis[process] = workspace.fileName.toString() // the Run workspace is runs/<run>/
-        val stderr = ArrayDeque<String>()
-        val drain = Thread.ofVirtual().start {
-            process.errorReader().forEachLine { synchronized(stderr) { stderr += it; if (stderr.size > STDERR_LINES) stderr.removeFirst() } }
-        }
+        val stderr = drain(process)
         try {
             stdin.say(prompt)
             stdins[key(run, instance)] = stdin // only now, so the prompt goes first
-            var valid: Map<*, *>? = null
-            var failure: Failed? = null
             var stopped = false
-            var retried = false
-            var storyChecked = false // a walkthrough's Story set failed the checks once already
-            val walkthrough = walkthrough(task)
             var limit: Instant? = null
             var answered = false // a result line came after the user's Stop
             process.inputReader().forEachLine { line ->
                 transcript.line(line)
-                if (failure != null || stopped || limit != null || (valid != null && !stdin.open)) return@forEachLine
+                if (judge.failure != null || stopped || limit != null || (judge.valid != null && !stdin.open)) return@forEachLine
                 val event = runCatching { json.readValue(line, Map::class.java) }.getOrNull() ?: return@forEachLine
                 if (event["type"] == "user" && event["isReplay"] == true) stdin.read()
                 if (event["type"] == "rate_limit_event") keepUsage(event)
@@ -386,7 +386,7 @@ class AgentLauncher(
                 // request may already be on its way when Ants kills it.
                 val apiKey = (event["apiKeySource"] as? String)?.takeIf { event["subtype"] == "init" && it != "none" }
                 if (event["error"] == "authentication_failed" || apiKey != null) {
-                    failure = Failed(LOST_LOGIN, apiKey?.let { "${agent.cli} would use an API key (apiKeySource: $it), and Ants runs only on its own login." })
+                    judge.failure = Failed(LOST_LOGIN, apiKey?.let { "${agent.cli} would use an API key (apiKeySource: $it), and Ants runs only on its own login." })
                     stdin.close()
                     kill(process)
                     return@forEachLine
@@ -400,48 +400,142 @@ class AgentLauncher(
                 if (event["type"] != "result") return@forEachLine
                 if (stdin.stopping) answered = true
                 val result = event["structured_output"]
-                val errors = result?.let { ResultContract.errors(it, schema, workspace) }
-                valid = null // the last result line is the one that counts
-                when {
-                    errors == null && stdin.stopping && event["subtype"] == "error_during_execution" -> stopped = true
-                    errors == null -> failure = Failed(
-                        listOf("${agent.cli} ended without a Result:", event["subtype"], event["result"], (event["errors"] as? List<*>)?.joinToString("; "))
-                            .filter { it != null && it != "" }.joinToString(" "),
-                    )
-                    errors.isEmpty() -> try {
-                        // A walkthrough's Story set must pass Varde's checks, with one round to fix the failing steps.
-                        val problems = if (walkthrough && (result as Map<*, *>)["outcome"] == "done") storyProblems(workspace, cloneRepos.untrimmed) else emptyList()
-                        when {
-                            problems.isEmpty() -> { valid = result as Map<*, *> }
-                            !storyChecked -> {
-                                storyChecked = true
-                                stdin.say(fixRequest(problems))
-                            }
-                            else -> failure = Failed("The Story set in $STORIES fails its checks: ${problems.joinToString()}", fixRequest(problems))
-                        }
-                    } catch (refused: StorySetRefused) {
-                        failure = Failed(refused.message!!)
-                    }
-                    !retried -> {
-                        retried = true
-                        stdin.say("Your Result is invalid:\n${errors.joinToString("\n") { "- $it" }}\nAnswer again with a valid Result.")
-                    }
-                    else -> failure = Failed("The Result is invalid: ${errors.joinToString("; ")}", errors.joinToString("\n") + "\n\n" + json.writeValueAsString(result))
-                }
-                if (failure != null || stopped) stdin.close() else if (valid != null) stdin.closeWhenRead()
+                if (result == null && stdin.stopping && event["subtype"] == "error_during_execution") stopped = true
+                else judge.judge(result, listOf(event["subtype"], event["result"], (event["errors"] as? List<*>)?.joinToString("; "))) { stdin.say(it) }
+                if (judge.failure != null || stopped) stdin.close() else if (judge.valid != null) stdin.closeWhenRead()
             }
             val exit = process.waitFor()
-            drain.join()
             limit?.let { throw UsageLimit(it) }
-            val tail = synchronized(stderr) { stderr.joinToString("\n") }.ifEmpty { null }
-            if (stopped || (stdin.stopping && !answered && failure == null)) throw Stopped()
-            failure?.let { throw Failed(it.message, it.details ?: tail) }
+            val tail = stderr()
+            if (stopped || (stdin.stopping && !answered && judge.failure == null)) throw Stopped()
+            judge.failure?.let { throw Failed(it.message, it.details ?: tail) }
             if (exit != 0) throw Failed("${agent.cli} exited with code $exit", tail)
-            return valid ?: throw Failed("${agent.cli} ended without a Result", tail)
+            return judge.valid ?: throw Failed("${agent.cli} ended without a Result", tail)
         } finally {
             stdin.close()
             stdins.remove(key(run, instance), stdin)
             clis -= process
+        }
+    }
+
+    /**
+     * Runs a codex session, one `codex exec` per turn, each after the first resuming the session (codex's thread) the
+     * first one started. codex reads its prompt from stdin to the end and takes nothing more while a turn runs, so a
+     * message the user Sends interrupts the turn (SIGINT, as Ctrl-C does) and resumes the session with it, as does a
+     * Result sent back to fix. Its Result is its last message, JSON under `--output-schema`. Settled from codex-rs's
+     * source (#73): `read_prompt_from_stdin` in exec/src/lib.rs reads stdin with `read_to_end`, and an interrupted turn
+     * prints no `turn.completed` and exits 1.
+     */
+    private fun codex(
+        task: LockedExternalTask, instance: String, agent: Agent, run: String, workspace: Path, cwd: Path, vault: Path?, transcript: Transcript.Writer,
+        session: String?, started: (String) -> Unit, prompt: String, schema: Map<*, *>, judge: Judge,
+    ): Map<*, *> {
+        val schemaFile = Transcript.file(workspace, instance).resolveSibling("result.schema.json").apply { writeText(json.writeValueAsString(schema)) }
+        val turns = Turns(name(task))
+        stdins[key(run, instance)] = turns
+        var thread = session
+        var message = prompt
+        try {
+            while (true) {
+                val resume = thread?.let { listOf("resume", it) }.orEmpty()
+                // codex doesn't print what it was told, so Ants writes it the way claude replays it.
+                transcript.line(json.writeValueAsString(mapOf("type" to "user", "message" to mapOf("role" to "user", "content" to message))))
+                val process = cli(agent.cli, cwd, codexFlags(agent, schemaFile, listOfNotNull(workspace.takeIf { cwd != workspace }, vault)) + resume + "-").start()
+                clis[process] = workspace.fileName.toString()
+                val stderr = drain(process)
+                val fixes = mutableListOf<String>()
+                var limit: Instant? = null
+                var error: String? = null // the last error codex printed
+                try {
+                    turns.running(process)
+                    runCatching { process.outputWriter().use { it.write(message) } } // a codex that already exited leaves a broken pipe
+                    var answer: String? = null // its last message
+                    process.inputReader().forEachLine { line ->
+                        transcript.line(line)
+                        if (judge.failure != null || limit != null) return@forEachLine
+                        val event = runCatching { json.readValue(line, Map::class.java) }.getOrNull() ?: return@forEachLine
+                        val item = event["item"] as? Map<*, *>
+                        when (event["type"]) {
+                            "thread.started" -> event["thread_id"]?.toString()?.takeIf { it != thread }?.let { thread = it; started(it) }
+                            "item.completed" -> if (item?.get("type") == "agent_message") answer = item["text"]?.toString()
+                            "turn.completed" -> judge.judge(answer?.let { runCatching { json.readValue(it, Map::class.java) }.getOrNull() }, listOf(answer), fixes::add)
+                            "error", "turn.failed" -> {
+                                error = (event["message"] ?: (event["error"] as? Map<*, *>)?.get("message"))?.toString()
+                                limit = error?.let(::codexLimit)?.also { kill(process) } // the session continues after the reset
+                            }
+                        }
+                    }
+                    val exit = process.waitFor()
+                    limit?.let { throw UsageLimit(it) }
+                    val tail = stderr()
+                    val sent = turns.ended(judge.valid != null && fixes.isEmpty())
+                    if (turns.stopping) return judge.valid ?: throw Stopped()
+                    judge.failure?.let { throw Failed(it.message, it.details ?: tail) }
+                    if (fixes.isEmpty() && sent.isEmpty()) {
+                        judge.valid?.let { return it }
+                        throw Failed(if (exit != 0) "${agent.cli} exited with code $exit" + (error?.let { ": $it" } ?: "") else "${agent.cli} ended without a Result", tail)
+                    }
+                    if (thread == null) throw Failed("${agent.cli} started no session to resume", tail)
+                    message = (fixes + sent).joinToString("\n\n")
+                } finally {
+                    clis -= process
+                }
+            }
+        } finally {
+            turns.close()
+            stdins.remove(key(run, instance), turns)
+        }
+    }
+
+    /** Reads [process]'s stderr as it comes, and returns what gives its last lines once it has ended. */
+    private fun drain(process: Process): () -> String? {
+        val stderr = ArrayDeque<String>()
+        val drain = Thread.ofVirtual().start {
+            process.errorReader().forEachLine { synchronized(stderr) { stderr += it; if (stderr.size > STDERR_LINES) stderr.removeFirst() } }
+        }
+        return {
+            drain.join()
+            synchronized(stderr) { stderr.joinToString("\n") }.ifEmpty { null }
+        }
+    }
+
+    /**
+     * Judges each Result a session gives as it comes, the last valid one counting. An invalid one, or a walkthrough's
+     * Story set failing its checks, is sent back into the session once; the second is a [failure].
+     */
+    private inner class Judge(private val cli: String, private val schema: Map<*, *>, private val workspace: Path, private val walkthrough: Boolean) {
+        var valid: Map<*, *>? = null
+            private set
+        var failure: Failed? = null
+        private var retried = false
+        private var storyChecked = false // a walkthrough's Story set failed the checks once already
+
+        /** Judges [result], null when a turn ended without one, as [ended] tells; [say] sends a fix into the session. */
+        fun judge(result: Any?, ended: List<Any?>, say: (String) -> Unit) {
+            val errors = result?.let { ResultContract.errors(it, schema, workspace) }
+            valid = null // the last result is the one that counts
+            when {
+                errors == null -> failure = Failed((listOf("$cli ended without a Result:") + ended).filter { it != null && it != "" }.joinToString(" "))
+                errors.isEmpty() -> try {
+                    // A walkthrough's Story set must pass Varde's checks, with one round to fix the failing steps.
+                    val problems = if (walkthrough && (result as Map<*, *>)["outcome"] == "done") storyProblems(workspace, cloneRepos.untrimmed) else emptyList()
+                    when {
+                        problems.isEmpty() -> { valid = result as Map<*, *> }
+                        !storyChecked -> {
+                            storyChecked = true
+                            say(fixRequest(problems))
+                        }
+                        else -> failure = Failed("The Story set in $STORIES fails its checks: ${problems.joinToString()}", fixRequest(problems))
+                    }
+                } catch (refused: StorySetRefused) {
+                    failure = Failed(refused.message!!)
+                }
+                !retried -> {
+                    retried = true
+                    say("Your Result is invalid:\n${errors.joinToString("\n") { "- $it" }}\nAnswer again with a valid Result.")
+                }
+                else -> failure = Failed("The Result is invalid: ${errors.joinToString("; ")}", errors.joinToString("\n") + "\n\n" + json.writeValueAsString(result))
+            }
         }
     }
 
@@ -498,17 +592,31 @@ class AgentLauncher(
     private fun name(task: LockedExternalTask) =
         repository.getBpmnModelInstance(task.processDefinitionId).getModelElementById<FlowElement>(task.activityId)?.name ?: task.activityId
 
+    /** A running session the user can Send a message into ([say]) or Stop ([interrupt]) while it is [open]. */
+    private interface Live {
+        /** The Task's name, for the Run log. */
+        val task: String
+        val open: Boolean
+
+        /** How a message Sent reaches the session, as the page says. */
+        val hint: String
+        fun say(message: String): Boolean
+        fun interrupt(): Boolean
+    }
+
     /**
      * A session's stdin. It stays open for the user's messages until Ants holds a valid Result and every message
      * written has been read. A message counts as read when the CLI replays it (`--replay-user-messages`), which claude
      * does as it takes the message in: at the next tool boundary, or in a turn of its own after a `result` line.
      */
-    private class Stdin(private val writer: BufferedWriter, val task: String) {
+    private class Stdin(private val writer: BufferedWriter, override val task: String) : Live {
         private var unread = 0
 
         @Volatile
-        var open = true
+        override var open = true
             private set
+
+        override val hint = "The Agent reads it at its next tool call."
 
         /** Whether the user stopped the session, so the `error_during_execution` that follows is `[stopped]`. */
         @Volatile
@@ -516,11 +624,11 @@ class AgentLauncher(
             private set
 
         @Synchronized
-        fun say(message: String) = write(mapOf("type" to "user", "message" to mapOf("role" to "user", "content" to message)))
+        override fun say(message: String) = write(mapOf("type" to "user", "message" to mapOf("role" to "user", "content" to message)))
             .also { if (it) unread++ }
 
         @Synchronized
-        fun interrupt() = write(mapOf("type" to "control_request", "request_id" to UUID.randomUUID().toString(), "request" to mapOf("subtype" to "interrupt")))
+        override fun interrupt() = write(mapOf("type" to "control_request", "request_id" to UUID.randomUUID().toString(), "request" to mapOf("subtype" to "interrupt")))
             .also { if (it) stopping = true }
 
         @Synchronized
@@ -554,6 +662,68 @@ class AgentLauncher(
         }
     }
 
+    /**
+     * A codex session's turns, one process each. A message Sent, or Stop, interrupts the running turn as Ctrl-C does;
+     * the session resumes with the messages once the turn has [ended]. It stays open until Ants holds a valid Result
+     * and no message came during the turn that gave it.
+     */
+    private class Turns(override val task: String) : Live {
+        private val sent = mutableListOf<String>()
+        private var process: Process? = null
+
+        @Volatile
+        override var open = true
+            private set
+
+        override val hint = "codex takes no message while it works: Send stops it and resumes its session with your message."
+
+        @Volatile
+        var stopping = false
+            private set
+
+        @Synchronized
+        override fun say(message: String): Boolean {
+            if (!open) return false
+            sent += message
+            process?.let(::interrupt)
+            return true
+        }
+
+        @Synchronized
+        override fun interrupt(): Boolean {
+            if (!open) return false
+            stopping = true
+            process?.let(::interrupt)
+            return true
+        }
+
+        /** The next turn runs in [process], interrupted at once if a message or Stop came since the last one ended. */
+        @Synchronized
+        fun running(process: Process) {
+            this.process = process
+            if (sent.isNotEmpty() || stopping) interrupt(process)
+        }
+
+        /** The messages Sent during the turn that has just ended; with none, a turn that gave a valid Result ([done]) closes the session. */
+        @Synchronized
+        fun ended(done: Boolean): List<String> {
+            process = null
+            val taken = sent.toList()
+            sent.clear()
+            if (taken.isEmpty() && done) open = false
+            return taken
+        }
+
+        @Synchronized
+        fun close() {
+            open = false
+        }
+
+        /** SIGINT to [process] and every process under it, as Ctrl-C in a terminal: codex ends its turn and exits. */
+        private fun interrupt(process: Process) = (listOf(process.toHandle()) + process.descendants().toList())
+            .forEach { runCatching { ProcessBuilder("kill", "-INT", "${it.pid()}").start() } }
+    }
+
     private fun flags(agent: Agent, schema: Map<*, *>, skills: List<Skill>, session: String, resume: Boolean): List<String> {
         val tools = (agent.tools ?: DEFAULT_TOOLS).filter { it.substringBefore('(') != "Skill" }
         return listOf(
@@ -572,6 +742,34 @@ class AgentLauncher(
             "--allowedTools", tools.joinToString(","),
         ) + subagents(tools) + skills.flatMap { listOf("--add-dir", it.folder.toString()) } + (if (agent.model != null) listOf("--model", agent.model) else emptyList()) +
             (if (agent.instructions.isNotEmpty()) listOf("--append-system-prompt", agent.instructions) else emptyList())
+    }
+
+    /**
+     * codex's flags: JSON lines out, the Result's [schema] file, the Agent's sandbox setting instead of tools, its model,
+     * and its standing instructions as `developer_instructions` (a JSON string is a TOML one too). The Run workspace
+     * isn't a git repository. The [writable] folders besides the working one are an instance's Run workspace and the Vault.
+     */
+    private fun codexFlags(agent: Agent, schema: Path, writable: List<Path>): List<String> =
+        listOf("exec", "--json", "--skip-git-repo-check", "--output-schema", "$schema", "--sandbox", agent.sandbox) +
+            (if (agent.model != null) listOf("-m", agent.model) else emptyList()) +
+            (if (agent.instructions.isNotEmpty()) listOf("-c", "developer_instructions=" + json.writeValueAsString(agent.instructions)) else emptyList()) +
+            writable.flatMap { listOf("--add-dir", "$it") }
+
+    /**
+     * When codex's Usage limit resets, from its [message], or null when the message isn't one. codex says
+     * "You’ve hit your usage limit. … Try again at 3:45 PM." (or "… or try again at …"), with the date in front,
+     * "Oct 13th, 2026 3:45 PM", when it isn't today, in local time; "Try again later." means 30 minutes
+     * (`UsageLimitReachedError` and `format_retry_timestamp` in codex-rs/protocol/src/error.rs).
+     */
+    private fun codexLimit(message: String): Instant? {
+        if (!message.contains("usage limit", ignoreCase = true)) return null
+        val at = Regex("""(?i)try again at (?:(\w{3}) (\d{1,2})(?:st|nd|rd|th), (\d{4}) )?(\d{1,2}:\d{2} [AP]M)""").find(message)
+        return at?.destructured?.let { (month, day, year, time) ->
+            runCatching {
+                val date = if (year.isEmpty()) LocalDate.now(clock) else LocalDate.parse("$month $day $year", DateTimeFormatter.ofPattern("MMM d yyyy", Locale.ENGLISH))
+                LocalTime.parse(time.uppercase(), DateTimeFormatter.ofPattern("h:mm a", Locale.ENGLISH)).atDate(date).atZone(clock.zone).toInstant()
+            }.getOrNull()
+        } ?: (clock.instant() + Duration.ofMinutes(30))
     }
 
     /**
@@ -625,8 +823,9 @@ class AgentLauncher(
         .directory(workspace.toFile())
         .apply {
             environment().keys.retainAll(settings.env(cli).toSet())
-            environment() -= listOf("ANTHROPIC_API_KEY", "CLAUDE_CODE_RETRY_WATCHDOG")
-            environment() += mapOf(
+            environment() -= listOf("ANTHROPIC_API_KEY", "CLAUDE_CODE_RETRY_WATCHDOG", "OPENAI_API_KEY", "CODEX_API_KEY") // never paid per token
+            environment() += if (cli == "codex") mapOf("CODEX_HOME" to home.resolve("codex").createDirectories().toString()) // codex refuses one that isn't there
+            else mapOf(
                 "CLAUDE_CONFIG_DIR" to home.resolve("claude").toString(),
                 "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS" to "1",
                 "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH" to settings.subagentDepth().toString(),

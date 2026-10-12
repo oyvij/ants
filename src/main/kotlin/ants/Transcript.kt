@@ -108,6 +108,14 @@ class Transcript {
             "stream_event" -> stream(event["event"] as? Map<*, *> ?: emptyMap<Any, Any>())
             "system" -> system(event)
             "result" -> result(event, launch)
+            // codex exec --json
+            "item.started", "item.completed" -> item(event["item"] as? Map<*, *> ?: emptyMap<Any, Any>(), event["type"] == "item.completed", launch)
+            // ponytail: usage is the session's total so far (`usage_from_last_total` in codex-rs/exec), taken as the
+            // launch's like modelUsage; a launch that resumes a session counts its earlier turns again.
+            "turn.completed" -> (event["usage"] as? Map<*, *>)?.let { launch?.modelUsage = sum(it, "input_tokens", "output_tokens") }
+            "error", "turn.failed" -> (event["message"] ?: (event["error"] as? Map<*, *>)?.get("message"))?.let { message ->
+                append { """<div class="result" id="$it"><b>Error</b> ${esc(message)}</div>""" }
+            }
         }
         launches.lastOrNull()?.let { put(it.entry, divider(it)) }
         return changed + watched.filter { html(it) != before[it] }
@@ -282,6 +290,41 @@ class Transcript {
         }
     }
 
+    /**
+     * A codex item: its message as text, or as the Result when it is one (JSON under `--output-schema`), its reasoning,
+     * or a command, file change, search or MCP call as one tool line, marked when it fails.
+     */
+    private fun item(item: Map<*, *>, completed: Boolean, launch: Launch?) {
+        val id = item["id"]
+        when (item["type"]) {
+            "agent_message" -> if (completed) {
+                val text = item["text"].toString()
+                val result = runCatching { json.readValue(text, Map::class.java) }.getOrNull()?.takeIf { "outcome" in it }
+                if (result != null) result(mapOf("structured_output" to result), launch)
+                else {
+                    live.clear()
+                    output = markdown(text)
+                    append { """<div class="text" id="$it">$output</div>""" }
+                }
+            }
+            "reasoning" -> if (completed) append { """<details class="thinking" id="$it"><summary>✻ Thinking</summary>${esc(item["text"])}</details>""" }
+            else -> {
+                val (name, argument) = when (item["type"]) {
+                    "command_execution" -> "Shell" to item["command"]
+                    "file_change" -> "Edit" to (item["changes"] as? List<*>)?.joinToString(", ") { (it as? Map<*, *>)?.get("path").toString() }
+                    "web_search" -> "WebSearch" to item["query"]
+                    "mcp_tool_call" -> "${item["server"]}.${item["tool"]}" to item["arguments"]
+                    else -> return
+                }
+                verb = VERBS[name] ?: "Working"
+                val entry = tools.getOrPut(id) {
+                    append { """<div class="tool" id="$it">⏺ <b>${esc(name)}</b> <code>${esc(argument?.toString().orEmpty().lines().first().take(120))}</code></div>""" }
+                }
+                if (completed && item["status"] == "failed") put(entry, entries[entry].replaceFirst("""class="tool"""", """class="tool error""""))
+            }
+        }
+    }
+
     private fun result(event: Map<*, *>, launch: Launch?) {
         // modelUsage is cumulative for the process, so the last result line of a launch holds the launch's tokens.
         (event["modelUsage"] as? Map<*, *>)?.let { models ->
@@ -348,7 +391,7 @@ class Transcript {
         private val OK = setOf("running", "completed") // a Subagent's statuses its summary leaves unsaid
         private val VERBS = mapOf(
             "Read" to "Reading", "Edit" to "Editing", "Write" to "Writing", "NotebookEdit" to "Editing", "Grep" to "Searching",
-            "Glob" to "Searching", "Bash" to "Running", "WebFetch" to "Browsing", "WebSearch" to "Browsing", "Agent" to "Delegating",
+            "Glob" to "Searching", "Bash" to "Running", "Shell" to "Running", "WebFetch" to "Browsing", "WebSearch" to "Browsing", "Agent" to "Delegating",
             "Task" to "Delegating", "TaskCreate" to "Planning", "TaskUpdate" to "Planning",
         )
         private val TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault())
@@ -407,7 +450,7 @@ class Transcripts(@Value("\${ants.home}") home: Path, private val launcher: Agen
         model.addAttribute("task", task)
         model.addAttribute("transcript", Transcript().apply { lines.forEach(::add) })
         model.addAttribute("offset", offset)
-        model.addAttribute("live", launcher.live(run, task))
+        model.addAttribute("send", launcher.sending(run, task))
         return "transcript"
     }
 

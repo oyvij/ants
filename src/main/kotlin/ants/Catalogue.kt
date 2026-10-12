@@ -45,6 +45,9 @@ class Agent(val file: Path, text: String = file.readText()) {
     val tools = list(meta["tools"])
     val model = meta["model"]?.toString()
 
+    /** What a codex Agent may do instead of tools: its `--sandbox`, read-only, workspace-write or danger-full-access. */
+    val sandbox = meta["sandbox"]?.toString() ?: "workspace-write"
+
     /** Offered as a Subagent (`ants-subagent: true`). */
     val subagent = meta["ants-subagent"] == true
 

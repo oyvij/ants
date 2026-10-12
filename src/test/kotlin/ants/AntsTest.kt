@@ -52,7 +52,7 @@ abstract class AntsTest {
 
     /**
      * Every test starts on a clean Ants, whatever ran before it in this JVM: no Processes, Runs or Schedules, no live
-     * CLI holding a launch slot, no Agents, Skills or Templates of the user's, the clock where it belongs and claude's
+     * CLI holding a launch slot, no Agents, Skills or Templates of the user's, the clock where it belongs and every CLI's
      * gate open. A test writes its own `settings.yaml`.
      */
     @BeforeEach
@@ -76,7 +76,7 @@ abstract class AntsTest {
             runs.forEach(launcher::cancel)
             Thread.sleep(50)
         }
-        launcher.tryNow("claude")
+        Settings.AI_CLIS.forEach { launcher.tryNow(it) }
         for (folder in listOf("agents", "skills", "templates")) home.resolve(folder).toFile().run { deleteRecursively(); mkdirs() }
         home.resolve("schedules.yaml").toFile().delete()
     }
