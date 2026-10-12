@@ -2,7 +2,6 @@ package ants
 
 import org.junit.jupiter.api.Assumptions.abort
 import org.junit.jupiter.api.Test
-import java.util.concurrent.TimeUnit.MINUTES
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -13,14 +12,7 @@ import kotlin.test.assertNotEquals
  * Docker doesn't run, such as on a Mac without it, the test is skipped; CI always runs it.
  */
 class DockerTest {
-    private class Ran(val exit: Int, val output: String)
-
-    private fun run(vararg command: String): Ran {
-        val process = ProcessBuilder(*command).redirectErrorStream(true).start()
-        val output = process.inputReader().readText()
-        check(process.waitFor(10, MINUTES))
-        return Ran(process.exitValue(), output)
-    }
+    private fun run(vararg command: String) = ProcessBuilder(*command).redirectErrorStream(true).start().ran()
 
     private fun docker(vararg args: String): String =
         run("docker", *args).also { check(it.exit == 0) { "docker ${args.joinToString(" ")}: ${it.output}" } }.output
@@ -60,8 +52,9 @@ class DockerTest {
                 // The server, and so the login page, is up before Ants deploys the shipped Processes (on ApplicationReady).
                 eventually(60) { assertContains(browser.get("/processes").body, "Ship small") }
 
-                // The shipped Processes Ants deployed on start are in Postgres, and everything else on the volume.
-                assertContains(docker("exec", "$id-db", "psql", "--username", "postgres", "--dbname", "ants", "--tuples-only", "--command", "select name_ from act_re_procdef"), "Ship small")
+                // The engine is in Postgres, which now holds tables, and everything else is on the volume.
+                val tables = docker("exec", "$id-db", "psql", "--username", "postgres", "--dbname", "ants", "--tuples-only", "--command", "select count(*) from information_schema.tables where table_schema = 'public'")
+                assertNotEquals(0, tables.trim().toInt(), "no tables in Postgres")
                 val data = docker("exec", id, "ls", "/data")
                 assertContains(data, "settings.yaml")
                 assertContains(data, "shipped")

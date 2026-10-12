@@ -39,20 +39,13 @@ class LauncherTest {
         link.createSymbolicLinkPointingTo(install.resolve("bin/ants"))
     }
 
-    data class Ran(val exit: Int, val output: String)
-
     private fun launch(vararg command: String, env: Map<String, String> = emptyMap()) = ProcessBuilder(link.toString(), *command).redirectErrorStream(true).also {
         it.environment().clear()
         // No update check reaches GitHub or Anthropic: Ants run here finds no release and no model table.
         it.environment() += mapOf("HOME" to "$home", "PATH" to "$fakeLaunchctl:/usr/bin:/bin", "ANTS_RELEASES" to "", "ANTS_MODELS" to "") + env
     }.start()
 
-    private fun ants(vararg command: String, input: String = "", env: Map<String, String> = emptyMap()): Ran {
-        val process = launch(*command, env = env)
-        process.outputWriter().use { it.write(input) }
-        val output = process.inputReader().readText()
-        return Ran(process.waitFor(), output)
-    }
+    private fun ants(vararg command: String, input: String = "", env: Map<String, String> = emptyMap()) = launch(*command, env = env).ran(input)
 
     private fun launchctl() = home.resolve("launchctl.log").takeIf { it.exists() }?.readLines().orEmpty()
 
@@ -192,16 +185,9 @@ class LauncherTest {
     @Test
     fun `run runs Ants in the foreground, which start then finds, and ants password changes its password`() {
         val run = launch("run", "--server.port=0", "--ants.shell=/bin/sh")
-        val output = StringBuffer()
-        Thread { run.inputReader().forEachLine { output.appendLine(it) } }.start()
         val lock = antsHome.resolve("ants.lock")
         try {
-            val started = System.nanoTime()
-            while (!lock.exists() || lock.readLines().size < 2) {
-                check(run.isAlive && System.nanoTime() - started < 120e9) { "Ants never wrote its lock file:\n$output" }
-                Thread.sleep(200)
-            }
-            val (pid, url) = lock.readLines()
+            val (pid, url) = listening(run, lock)
             assertEquals(run.pid(), pid.toLong())
             assertEquals("/", Browser(url).login().path)
 
@@ -252,4 +238,26 @@ class LauncherTest {
     companion object {
         val fakeLaunchctl: Path = Path.of("src/test/resources/fake-launchctl").toAbsolutePath()
     }
+}
+
+/** How a command ended: its exit code and what it printed. */
+data class Ran(val exit: Int, val output: String)
+
+/** Writes [input] to this process, then waits for it to end. */
+fun Process.ran(input: String = ""): Ran {
+    outputWriter().use { it.write(input) }
+    val output = inputReader().readText()
+    return Ran(waitFor(), output)
+}
+
+/** The pid and URL that [ants], started with `ants run`, writes into [lock] once it listens; it fails with what Ants printed if it never does. */
+fun listening(ants: Process, lock: Path): List<String> {
+    val output = StringBuffer()
+    Thread { ants.inputReader().forEachLine { output.appendLine(it) } }.start()
+    val started = System.nanoTime()
+    while (!lock.exists() || lock.readLines().size < 2) {
+        check(ants.isAlive && System.nanoTime() - started < 120e9) { "Ants never wrote its URL into its lock file:\n$output" }
+        Thread.sleep(200)
+    }
+    return lock.readLines()
 }

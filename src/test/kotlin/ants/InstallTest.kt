@@ -9,7 +9,6 @@ import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.name
-import kotlin.io.path.readLines
 import kotlin.io.path.readSymbolicLink
 import kotlin.io.path.writeText
 import kotlin.test.assertContains
@@ -26,15 +25,13 @@ class InstallTest {
     private val antsHome = home.resolve(".ants")
     private val release = home.resolve("release").createDirectories()
     private val tarball = Path.of(System.getProperty("ants.tarball"))
-    private val version = tarball.name.removePrefix("ants-").removeSuffix("-macos-arm64.tar.gz")
+    private val version = Regex(tarball("(.+)")).matchEntire(tarball.name)!!.groupValues[1]
     private val link = home.resolve(".local/bin/ants")
 
     init {
         tarball.copyTo(release.resolve(tarball.name))
         tarball.resolveSibling("SHA256SUMS").copyTo(release.resolve("SHA256SUMS"))
     }
-
-    data class Ran(val exit: Int, val output: String)
 
     private fun run(vararg command: String) = ProcessBuilder(*command).redirectErrorStream(true).also {
         it.environment().clear()
@@ -46,11 +43,7 @@ class InstallTest {
         )
     }.start()
 
-    private fun install(): Ran {
-        val process = run("/bin/bash", "-c", "curl -fsSL ${Path.of("install.sh").toAbsolutePath().toUri()} | bash")
-        val output = process.inputReader().readText()
-        return Ran(process.waitFor(), output)
-    }
+    private fun install() = run("/bin/bash", "-c", "curl -fsSL ${Path.of("install.sh").toAbsolutePath().toUri()} | bash").ran()
 
     @AfterEach
     fun stopTheStandIn() {
@@ -75,16 +68,8 @@ class InstallTest {
         run(link.toString(), "stop").waitFor()
 
         val ants = run(link.toString(), "run", "--server.port=0", "--ants.shell=/bin/sh")
-        val output = StringBuffer()
-        Thread { ants.inputReader().forEachLine { output.appendLine(it) } }.start()
-        val lock = antsHome.resolve("ants.lock")
         try {
-            val started = System.nanoTime()
-            while (!lock.exists() || lock.readLines().size < 2) {
-                check(ants.isAlive && System.nanoTime() - started < 120e9) { "Ants never wrote its lock file:\n$output" }
-                Thread.sleep(200)
-            }
-            val (pid, url) = lock.readLines()
+            val (pid, url) = listening(ants, antsHome.resolve("ants.lock"))
             val java = ProcessHandle.of(pid.toLong()).get().info().command().get()
             assertEquals(antsHome.resolve("versions/$version/runtime/bin/java").toString(), java)
             assertEquals("/", Browser(url).login().path)

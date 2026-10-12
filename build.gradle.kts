@@ -126,10 +126,12 @@ val jlink = tasks.register<Exec>("jlink") {
         "--strip-debug", "--no-header-files", "--no-man-pages",
     )
 }
+// Updates.kt's tarball() names it the same way.
+val tarballFile = layout.buildDirectory.file("dist/ants-$version-macos-arm64.tar.gz")
 val tarball = tasks.register<Exec>("tarball") {
     val bootJar = tasks.bootJar.flatMap { it.archiveFile }
     val dist = layout.buildDirectory.dir("dist").get()
-    val file = dist.file("ants-$version-macos-arm64.tar.gz").asFile
+    val file = tarballFile.get().asFile
     dependsOn(jlink)
     inputs.file(bootJar)
     inputs.dir("src/dist")
@@ -158,7 +160,7 @@ tasks.test {
     inputs.file(bootJar)
     systemProperty("ants.jar", bootJar.get().asFile.path)
     inputs.files(tarball)
-    systemProperty("ants.tarball", layout.buildDirectory.file("dist/ants-$version-macos-arm64.tar.gz").get().asFile.path)
+    systemProperty("ants.tarball", tarballFile.get().asFile.path)
     // Only the system folders and a fake gh, so a CLI run by its bare name, such as claude or nono, is never the real one.
     environment("PATH", "${projectDir}/src/test/resources/fake-gh:/usr/bin:/bin")
     // Ants must strip these from every Agent's environment, even when the allow-list names them.

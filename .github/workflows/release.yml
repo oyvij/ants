@@ -50,8 +50,10 @@ jobs:
         run: gh release create "v$VERSION" build/dist/* install.sh --target "$GITHUB_SHA" --title "Ants $VERSION" --generate-notes
 
   image:
-    needs: release
+    needs: [version, release]
     permissions:
       contents: read
       packages: write
     uses: ./.github/workflows/image.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
