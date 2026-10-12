@@ -1,0 +1,12 @@
+filters:
+  and:
+    - file.inFolder("<Topic>")
+    - file.ext == "md"
+views:
+  - type: table
+    name: <Topic>
+    order:
+      - file.name
+      - kind
+      - audience
+      - updated

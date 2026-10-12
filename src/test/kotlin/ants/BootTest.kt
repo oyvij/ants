@@ -91,4 +91,15 @@ class ShippedTest {
         assertEquals(javaClass.getResource("/shipped/agents/shipped-writer.md")!!.readText(), agents.resolve("shipped-writer.md").readText())
         assertFalse(agents.resolve("removed.md").exists())
     }
+
+    @Test
+    fun `the shipped Processes are deployed on every start`() {
+        val home = AntsTest.tempHome()
+        repeat(2) {
+            AntsTest.startAnother(home).use { ants ->
+                val browser = Browser("http://127.0.0.1:${(ants as WebServerApplicationContext).webServer!!.port}").also { it.login() }
+                assertContains(browser.get("/processes").body, "Set up Vault")
+            }
+        }
+    }
 }

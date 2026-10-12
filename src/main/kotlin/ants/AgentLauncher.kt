@@ -350,13 +350,15 @@ class AgentLauncher(
         session: String, resume: Boolean, instruction: String?, handedOff: Boolean = !resume,
     ): Map<*, *> {
         val inputs = inputs(task)
+        val vault = vault(task, skill)
         val prompt = if (!handedOff) instruction.orEmpty()
-        else handOff(task, skill, used, cwd) + "\n\n" + json.writeValueAsString(inputs) + (if (instruction.isNullOrBlank()) "" else "\n\nFrom the user:\n$instruction")
+        else handOff(task, skill, used, cwd, vault) + "\n\n" + json.writeValueAsString(inputs) + (if (instruction.isNullOrBlank()) "" else "\n\nFrom the user:\n$instruction")
         // The Task's result-schema override replaces the Skill's result.schema.json; Checks refuse one that isn't valid.
         val override = task.extensionProperties[RESULT_SCHEMA]?.takeIf(String::isNotBlank)?.let { json.readValue(it, Map::class.java) }
         val schema = ResultContract.schema(override ?: skill.outputSchema)
         val shared = if (cwd == workspace) emptyList() else listOf("--add-dir", "$workspace") // what an instance's links lead to
-        val process = cli(agent.cli, cwd, flags(agent, schema, listOf(skill) + used, session, resume) + shared).start()
+        val vaultDir = vault?.let { listOf("--add-dir", "$it") }.orEmpty() // the Vault's path goes nowhere else (ADR 0002)
+        val process = cli(agent.cli, cwd, flags(agent, schema, listOf(skill) + used, session, resume) + shared + vaultDir).start()
         val stdin = Stdin(process.outputWriter(), name(task))
         clis[process] = workspace.fileName.toString() // the Run workspace is runs/<run>/
         val stderr = ArrayDeque<String>()
@@ -444,19 +446,24 @@ class AgentLauncher(
     }
 
     /**
-     * The hand-off line: the Skill and the workspace, the Skills it [used], and where the Vault and Source map and the
-     * Answer History are, each only when on: the Task's toggle ([VAULT], [ANSWER_HISTORY]) has the final
-     * say, else the Skill's opt-in.
+     * The Vault's folder when [task] gets the Vault: its toggle ([VAULT]) has the final say, else its [skill]'s opt-in.
+     * Null when off, or with no Vault configured, which the pre-Run check (#55) refuses.
      */
-    // ponytail: the default Vault and Source map, until a Process picks its own; with none configured the sentence is
-    // left out, and the pre-Run check (#55) is what refuses to start. The Vault's --add-dir is #69's.
-    private fun handOff(task: LockedExternalTask, skill: Skill, used: List<Skill>, workspace: Path): String {
-        val vault = task.extensionProperties[VAULT]?.toBooleanStrictOrNull() ?: catalogue.vault(skill)
+    // ponytail: the default Vault, until a Process picks its own.
+    private fun vault(task: LockedExternalTask, skill: Skill): Path? = settings.vaults()[settings.defaultVault()]?.let(Settings::expand)
+        ?.takeIf { task.extensionProperties[VAULT]?.toBooleanStrictOrNull() ?: catalogue.vault(skill) }
+
+    /**
+     * The hand-off line: the Skill and the workspace, the Skills it [used], and where the [vault] and Source map and the
+     * Answer History are, each only when on: the Task's [ANSWER_HISTORY] toggle has the final say, else the Skill's opt-in.
+     */
+    // ponytail: the default Source map, until a Process picks its own.
+    private fun handOff(task: LockedExternalTask, skill: Skill, used: List<Skill>, workspace: Path, vault: Path?): String {
         val answerHistory = task.extensionProperties[ANSWER_HISTORY]?.toBooleanStrictOrNull() ?: skill.answerHistory
-        val places = listOfNotNull(
-            settings.vaults()[settings.defaultVault()]?.let { "the Vault is $it" },
-            settings.sourceMaps()[settings.defaultSourceMap()]?.let { "the Source map is $it" },
-        ).takeIf { vault }.orEmpty()
+        val places = if (vault == null) emptyList() else listOfNotNull(
+            "the Vault is $vault",
+            settings.sourceMaps()[settings.defaultSourceMap()]?.let { "the Source map is ${Settings.expand(it)}" },
+        )
         return "Follow the Skill in ${skill.file} for the workspace at $workspace." +
             (if (used.isEmpty()) "" else " It uses the Skills ${used.joinToString { "${it.name} (${it.file})" }}.") +
             (if (places.isEmpty()) "" else " " + places.joinToString(" and ").replaceFirstChar(Char::uppercase) + ".") +
