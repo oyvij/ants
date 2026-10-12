@@ -2,6 +2,7 @@
 @param error: String? = null
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
+@param shell: ants.Shell
 <!doctype html>
 <html lang="en">
 <head>
@@ -11,8 +12,9 @@
     <title>Processes · Ants</title>
 </head>
 <body>
-@template.nav()
-<h1>Processes</h1>
+@template.nav(shell = shell)
+<main>
+<div class="ph"><h1>Processes</h1><div class="acts"><a class="btn primary" href="/processes/new">New Process</a></div></div>
 @if(error != null)<p role="alert">${error}</p>@endif
 <ul>
 @for(process in processes)
@@ -34,5 +36,6 @@
     <label>Import a BPMN file <input type="file" name="file" accept=".bpmn" required></label>
     <button>Import</button>
 </form>
+</main>
 </body>
 </html>

@@ -2,6 +2,7 @@
 @param name: String
 @param html: String
 @param colorScheme: String = "light dark"
+@param shell: ants.Shell
 <!doctype html>
 <html lang="en">
 <head>
@@ -11,8 +12,10 @@
     <title>Report · ${name} · Ants</title>
 </head>
 <body>
-@template.nav()
-<p><a href="/runs/${run}">${name}</a></p>
+@template.nav(shell = shell)
+<main>
+<div class="crumbs"><a href="/runs">Runs</a> / <a href="/runs/${run}">${name}</a> / Report</div>
 $unsafe{html}
+</main>
 </body>
 </html>

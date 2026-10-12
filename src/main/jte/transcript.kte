@@ -7,6 +7,7 @@
 @param error: String? = null
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
+@param shell: ants.Shell
 <!doctype html>
 <html lang="en">
 <head>
@@ -16,9 +17,10 @@
     <title>${task} · Transcript · Ants</title>
 </head>
 <body>
-@template.nav()
-<p><a href="/runs/${run}">${runName}</a></p>
-<h1>${task} · $unsafe{transcript.html("tokens")}</h1>
+@template.nav(shell = shell)
+<main>
+<div class="crumbs"><a href="/runs">Runs</a> / <a href="/runs/${run}">${runName}</a> / ${task}</div>
+<div class="ph"><h1>${task} · $unsafe{transcript.html("tokens")}</h1></div>
 <div id="entries" data-from="${offset}">
 @for(entry in transcript.roots)
 $unsafe{entry}
@@ -58,5 +60,6 @@ $unsafe{transcript.html("subagents")}
         }
     }, 1000);
 </script>
+</main>
 </body>
 </html>

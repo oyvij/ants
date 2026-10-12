@@ -3,6 +3,7 @@
 @param error: String? = null
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
+@param shell: ants.Shell
 <!doctype html>
 <html lang="en">
 <head>
@@ -12,10 +13,11 @@
     <title>Agents · Ants</title>
 </head>
 <body>
-@template.nav()
-<h1>Agents</h1>
+@template.nav(shell = shell)
+<main>
+<div class="ph"><h1>Agents</h1><div class="acts"><a class="btn primary" href="/agents/new">New Agent</a></div>
+    <div class="sub">From the folders in <a href="/settings">Settings</a>. Ants writes only into its own <code>agents/</code>; the rest are read-only, with Copy.</div></div>
 @if(error != null)<p role="alert">${error}</p>@endif
-<p><a href="/agents/new">＋ New Agent</a></p>
 <table>
     <thead><tr><th>Name</th><th>Description</th><th>From</th></tr></thead>
     <tbody>
@@ -33,5 +35,6 @@
     <label>Import an agent file <input type="file" name="file" accept=".md" required></label>
     <button>Import</button> Fills the New Agent form.
 </form>
+</main>
 </body>
 </html>

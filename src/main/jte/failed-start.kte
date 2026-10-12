@@ -1,6 +1,7 @@
 @param entry: ants.StartEntry
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
+@param shell: ants.Shell
 <!doctype html>
 <html lang="en">
 <head>
@@ -10,12 +11,13 @@
     <title>${entry.icon} ${entry.tag} ${entry.task} · Ants</title>
 </head>
 <body>
-@template.nav()
-<p><a href="/notifications">Notification list</a></p>
-<h1>${entry.icon} ${entry.tag} ${entry.task}</h1>
-<p><a href="/processes/${entry.key}">${entry.process}</a> · waiting ${entry.waited}</p>
-<p>${entry.summary}</p>
+@template.nav(shell = shell)
+<main>
+<div class="crumbs"><a href="/notifications">Notification list</a> / <a href="/processes/${entry.key}">${entry.process}</a></div>
+<div class="ph"><h1>${entry.icon} ${entry.tag} ${entry.task}</h1><div class="acts"><span class="muted small">waiting ${entry.waited}</span></div>
+    <div class="sub">${entry.summary}</div></div>
 <form method="post" action="/processes/${entry.key}/schedule/start"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button class="primary">Start now</button></form>
 <form method="post" action="/processes/${entry.key}/schedule/dismiss"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><input type="hidden" name="back" value="notifications"><button>Dismiss</button></form>
+</main>
 </body>
 </html>

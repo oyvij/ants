@@ -140,7 +140,8 @@ class TranscriptTest : AntsTest() {
             assertContains(text, """<p>Almost <strong>there</strong>.</p>""")
             assertContains(text, "<b>Result: done</b> Drafted.")
         }
-        assertEquals(page(path), page(path))
+        fun unmasked() = page(path).replace(Regex("""name="_csrf" value="[^"]*""""), "") // the sidebar's token is masked anew each time
+        assertEquals(unmasked(), unmasked())
     }
 
     @Test

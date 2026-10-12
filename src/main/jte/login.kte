@@ -1,0 +1,25 @@
+@param _csrf: org.springframework.security.web.csrf.CsrfToken
+@param error: Boolean
+@param loggedOut: Boolean
+@param colorScheme: String = "light dark"
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    @template.app()
+    <meta name="color-scheme" content="${colorScheme}">
+    <title>Log in · Ants</title>
+</head>
+<body class="login">
+<form class="card" method="post" action="/login">
+    <div class="logo"><b>🐜</b>Ants</div>
+    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+@if(error)<div role="alert">Wrong password.</div>@endif
+@if(loggedOut)<div role="status">You are logged out.</div>@endif
+    <label class="f" for="username">User</label><input id="username" name="username" value="admin" autocomplete="username" required>
+    <label class="f" for="password">Password</label><input id="password" type="password" name="password" autocomplete="current-password" autofocus required>
+    <p><button class="primary" type="submit">Log in</button></p>
+    <div class="help">Single user. The session lasts until you log out.</div>
+</form>
+</body>
+</html>

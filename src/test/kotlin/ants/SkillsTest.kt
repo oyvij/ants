@@ -180,7 +180,7 @@ class SkillsTest : AntsTest() {
         home.resolve("skills/chosen").toFile().deleteRecursively()
         val form = browser.get("/skills/new?use=picker").body
         assertContains(form, """<button class="primary">Create and use</button>""")
-        assertFalse("<nav>" in form) // the modeler's own page is behind the modal
+        assertFalse("""<nav class="side">""" in form) // the modeler's own page is behind the modal
 
         val refused = browser.post("/skills/new", mapOf("skill" to "no frontmatter", "schema" to "", "use" to "picker"))
         assertContains(refused.body, """<button class="primary">Create and use</button>""") // a refusal stays in the modal

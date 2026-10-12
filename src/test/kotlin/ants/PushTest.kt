@@ -66,7 +66,10 @@ class PushTest : AntsTest() {
         assertFalse("Skip" in page)
 
         val heads = listOf(api, web).associateWith { git(clone(run, it.name), "rev-parse", "HEAD") }
-        assertEquals("/notifications", push(run).path)
+        val landed = push(run)
+        assertEquals("/notifications", landed.path)
+        assertContains(landed.body, """<div class="toast" role="status"><b>Pushing</b> Push feature-x to api, web. The Run goes on once it is pushed.""")
+        assertFalse("class=\"toast\"" in browser.get("/notifications").body) // shown once
         completed(run)
         for (repo in listOf(api, web)) assertEquals(before.getValue(repo) + "refs/heads/feature-x ${heads[repo]}", refs(repo))
         assertEquals(

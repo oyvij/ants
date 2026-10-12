@@ -6,6 +6,7 @@
 @param login: ants.ClaudeLogin
 @param colorScheme: String = "light dark"
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
+@param shell: ants.Shell
 <!doctype html>
 <html lang="en">
 <head>
@@ -15,8 +16,10 @@
     <title>Settings · Ants</title>
 </head>
 <body>
-@template.nav()
-<h1>Settings</h1>
+@template.nav(shell = shell)
+<main>
+<div class="ph"><h1>Settings</h1><div class="acts"><button class="primary" form="settings" name="action" value="save">Save</button></div>
+    <div class="sub">Written to <code>${file}</code>. A hand edit to it shows here.</div></div>
 @if(message != null)<p role="alert">${message}</p>@endif
 <section aria-labelledby="claude-login">
     <h2 id="claude-login">Claude login</h2>
@@ -36,10 +39,8 @@
     </ul>
 @endif
 </section>
-<form method="post" action="/settings">
+<form method="post" action="/settings" id="settings">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
-    <p><button class="primary" name="action" value="save">Save</button> Written to <code>${file}</code>. A hand edit to it shows here.</p>
-
     <fieldset>
         <legend>Commands</legend>
 @for(cli in Settings.CLIS)
@@ -107,5 +108,6 @@
 
     <p><button class="primary" name="action" value="save">Save</button></p>
 </form>
+</main>
 </body>
 </html>

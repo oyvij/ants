@@ -8,6 +8,7 @@
 @param error: String? = null
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
+@param shell: ants.Shell
 <!doctype html>
 <html lang="en">
 <head>
@@ -18,10 +19,10 @@
     <link rel="stylesheet" href="/vendor/camunda-bpmn-js/assets/base-navigated-viewer.css">
 </head>
 <body>
-@template.nav()
-<p><a href="/processes">Processes</a></p>
-<h1>${process.name ?: process.key}</h1>
-<p><a href="/processes/${process.key}/edit">Edit</a> · <a href="/processes/new?from=${process.key}">Copy</a></p>
+@template.nav(shell = shell)
+<main>
+<div class="crumbs"><a href="/processes">Processes</a> / ${process.name ?: process.key}</div>
+<div class="ph"><h1>${process.name ?: process.key}</h1><div class="acts"><a class="btn" href="/processes/new?from=${process.key}">Copy</a><a class="btn" href="/processes/${process.key}/edit">Edit diagram</a></div></div>
 @if(schedule != null)
 <section id="schedule">
     <h2>Schedule</h2>
@@ -36,7 +37,7 @@
     <form method="post" action="/processes/${process.key}/schedule/remove"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button class="danger">Remove</button></form>
 </section>
 @endif
-<div id="diagram" data-src="/processes/${process.key}/diagram.bpmn" style="height: 60vh"></div>
+<div id="diagram" class="dia" data-src="/processes/${process.key}/diagram.bpmn"></div>
 <form method="post" action="/processes/${process.key}/runs">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
 @if(error != null)<p role="alert">${error}</p>@endif
@@ -72,11 +73,12 @@
 </form>
 <script src="/vendor/camunda-bpmn-js/base-navigated-viewer.production.min.js"></script>
 <script>
-    const viewer = new BpmnNavigatedViewer({ container: '#diagram' });
-    fetch(document.getElementById('diagram').dataset.src)
+    const box = document.getElementById('diagram'), viewer = new BpmnNavigatedViewer({ container: box });
+    fetch(box.dataset.src)
         .then(response => response.text())
         .then(xml => viewer.importXML(xml))
-        .then(() => viewer.get('canvas').zoom('fit-viewport'));
+        .then(() => (box.canvas = viewer.get('canvas')).zoom('fit-viewport'));
 </script>
+</main>
 </body>
 </html>

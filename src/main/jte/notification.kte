@@ -3,6 +3,7 @@
 @param error: String? = null
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
+@param shell: ants.Shell
 <!doctype html>
 <html lang="en">
 <head>
@@ -12,11 +13,11 @@
     <title>${entry.icon} ${entry.tag} ${entry.task} · Ants</title>
 </head>
 <body>
-@template.nav()
-<p><a href="/notifications">Notification list</a></p>
-<h1>${entry.icon} ${entry.tag} ${entry.task}</h1>
-<p>${entry.process} · <a href="/runs/${entry.run}">${entry.runName}</a> · waiting ${entry.waited}</p>
-<p>${entry.summary}</p>
+@template.nav(shell = shell)
+<main>
+<div class="crumbs"><a href="/notifications">Notification list</a> / <a href="/runs/${entry.run}">${entry.runName}</a> / ${entry.task}</div>
+<div class="ph"><h1>${entry.icon} ${entry.tag} ${entry.task}</h1><div class="acts"><span class="muted small">${entry.process} · waiting ${entry.waited}</span></div>
+    <div class="sub">${entry.summary}</div></div>
 @if(details != null)
 <h2>@if(entry.tag == "[stuck]")What the Agent needs@else Details@endif</h2>
 <pre>${details}</pre>
@@ -30,5 +31,6 @@
     <button name="action" value="fresh" formnovalidate>Start fresh</button>
     @if(entry.tag == "[failed]")<button class="danger" name="action" value="cancel" formnovalidate>Cancel the Run</button>@endif
 </form>
+</main>
 </body>
 </html>
