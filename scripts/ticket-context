@@ -4,21 +4,22 @@
     scripts/ticket-context [--lean] <n>
 
 Prints the ticket and its comments, then every ticket it is blocked by and every ticket it blocks, each whole with
-its comments (the upstream ones say what exists, the downstream ones settle scope), then the whole spec (#27). It
-saves calls, never content: everything the manual path would read is printed.
+its comments (the upstream ones say what exists, the downstream ones settle scope), then the whole spec
+(`docs/spec.md`). It saves calls, never content: everything the manual path would read is printed.
 
 --lean prints only the spec sections the ticket cites instead of the whole spec: the user stories it names by number
 ("story 12", "stories 51-53"), and each section whose heading's words (or the words in its parentheses) all appear in
-the ticket, then the headings it left out (for #46, 24 KB against 68 KB). Read the whole spec with `gh issue view 27`
+the ticket, then the headings it left out (for #46, 24 KB against 68 KB). Read the whole of `docs/spec.md`
 when a left-out section bears on the ticket.
 """
 import json
 import re
 import subprocess
 import sys
+from pathlib import Path
 
 REPO = "oyvij/ants"
-SPEC = 27
+SPEC = Path(__file__).resolve().parent.parent / "docs/spec.md"
 
 
 def gh(*args):
@@ -74,13 +75,12 @@ def main():
         for other in gh("api", f"repos/{REPO}/issues/{n}/dependencies/{relation}"):
             print(f"---\n\n**{relation.replace('_', ' ').capitalize()}:**\n")
             show(issue(other["number"]), "##")
-    spec = issue(SPEC)
+    spec = SPEC.read_text()
     if lean:
         text = " ".join([ticket["title"], ticket["body"] or ""] + [c["body"] for c in ticket["comments"]])
-        print(f"---\n\n**The spec (#{SPEC}), only what #{n} cites:**\n\n{cited(spec['body'], text)}")
+        print(f"---\n\n**The spec (docs/spec.md), only what #{n} cites:**\n\n{cited(spec, text)}")
     else:
-        print("---\n\n**The spec:**\n")
-        show(spec, "##")
+        print(f"---\n\n**The spec (docs/spec.md):**\n\n{spec}")
 
 
 if __name__ == "__main__":
