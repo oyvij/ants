@@ -159,6 +159,10 @@ class LandingTest : AntsTest() {
         assertEquals("3", git(clone(run, "api"), "rev-list", "--count", "HEAD"))
         assertEquals("", git(clone(run, "api"), "status", "--porcelain"))
         cleanedUp(run, "api")
+        // The Run page says where the work lives, in full: the Run workspace and each repo in it.
+        val page = browser.get("/runs/$run").body
+        assertContains(page, "<code>${home.runWorkspace(run)}</code>")
+        assertContains(page, "<code>${home.runWorkspace(run)}/repos/api</code>")
     }
 
     @Test
@@ -274,6 +278,7 @@ class LandingTest : AntsTest() {
         assertContains(entry, "[failed]")
         assertContains(entry, "repos/tiny isn't a clone of this Run")
         assertTrue(workspace(run).resolve("instances/implement-1/repos/tiny/index.html").exists())
+        assertContains(browser.get("/runs/$run").body, "<code>${home.runWorkspace(run)}/instances/implement-1/repos/tiny</code>")
     }
 
     @Test

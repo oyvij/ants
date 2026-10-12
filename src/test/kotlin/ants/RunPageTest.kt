@@ -8,6 +8,7 @@ import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 
 class RunPageTest : AntsTest() {
     private val browser by lazy { browser().also { it.login() } }
@@ -75,6 +76,22 @@ class RunPageTest : AntsTest() {
     /** The drawer's part [id], from one drawer update. */
     private fun part(html: String, id: String) =
         assertNotNull(Regex("""<(\w+) id="$id"[^>]*>(.*?)</\1>""", RegexOption.DOT_MATCHES_ALL).find(html), "no part $id in $html").groupValues[2]
+
+    @Test
+    fun `Cancel the Run on a live Run's page ends it and kills its live Agent Tasks, keeping its Run workspace`() {
+        setUp()
+        claude.session("draft", "wait never", done)
+        val run = start("agent-task")
+        eventually { assertEquals(1, claude.launches("draft").size) }
+        assertContains(browser.get("/runs/$run").body, "Cancel the Run")
+
+        val cancelled = browser.post("/runs/$run/cancel", mapOf())
+        assertEquals("/runs/$run", cancelled.path)
+        assertContains(cancelled.body, "State: Cancelled")
+        assertFalse("Cancel the Run" in cancelled.body)
+        assertContains(cancelled.body, "until you dismiss it")
+        eventually { assertTrue(claude.launches("draft").single().killed) }
+    }
 
     @Test
     fun `a Task's drawer shows the latest output and the Agent's checklist, live`() {

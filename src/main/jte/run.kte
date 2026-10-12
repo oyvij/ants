@@ -8,6 +8,8 @@
 @param colorScheme: String = "light dark"
 @param transcripts: Map<String, Long>
 @param report: Boolean
+@param workspace: String?
+@param repos: List<String>
 <!doctype html>
 <html lang="en">
 <head>
@@ -22,6 +24,24 @@
 <p><a href="/runs">Runs</a></p>
 <h1><a href="/processes/${run.processDefinitionKey}">${run.processDefinitionName ?: run.processDefinitionKey}</a></h1>
 <p id="state">State: ${run.stateName}</p>
+@if(run.endTime == null)
+<form method="post" action="/runs/${run.id}/cancel">
+    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+    <button class="danger" onclick="return confirm('Cancel this Run? Its running Agents stop, and its Run workspace is kept until you dismiss it.')">Cancel the Run</button>
+</form>
+@endif
+@if(workspace != null)
+<section id="where">
+    <p>Run workspace <code>${workspace}</code></p>
+@if(repos.isNotEmpty())
+    <ul>
+@for(repo in repos)
+        <li><code>${repo}</code></li>
+@endfor
+    </ul>
+@endif
+</section>
+@endif
 @if(report)
 <p><a href="/runs/${run.id}/report">Report</a></p>
 @endif

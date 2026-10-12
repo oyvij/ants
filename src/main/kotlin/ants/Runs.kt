@@ -83,6 +83,11 @@ class Runs(
         val run = run(id)
         model.addAttribute("run", run)
         model.addAttribute("kept", keptWorkspace(run)?.toString())
+        // Where the work lives, in full, as long as it is on disk: the shared clones, then each instance's worktrees.
+        val workspace = home.runWorkspace(id)
+        model.addAttribute("workspace", workspace.takeIf { Files.isDirectory(it) }?.toString())
+        model.addAttribute("repos", (listOf(workspace.resolve("repos")) + workspace.resolve("instances").folders().map { it.resolve("repos") })
+            .flatMap { it.folders() }.map { it.toString() })
         model.addAttribute(
             "variables",
             history.createHistoricVariableInstanceQuery().processInstanceId(id).disableCustomObjectDeserialization()
@@ -188,6 +193,17 @@ class Runs(
         }
     }
 
+    /** Cancel the Run, from its page: as the Notification list's Cancel the Run does, whatever the Run is doing. */
+    @PostMapping("/runs/{id}/cancel")
+    fun cancel(@PathVariable id: String): String {
+        if (run(id).endTime == null) {
+            // A cancelled Run keeps its workspace; externally terminated is what its pages read as Cancelled.
+            runtime.deleteProcessInstance(id, "Cancelled by the user", false, true)
+            launcher.cancel(id)
+        }
+        return "redirect:/runs/$id"
+    }
+
     /** Dismiss: cleans up the Run workspace a cancelled Run kept, as if the Run had ended. */
     @PostMapping("/runs/{id}/dismiss")
     fun dismiss(@PathVariable id: String): String {
@@ -199,6 +215,10 @@ class Runs(
         ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No Run $id")
 
     /** The workspace of a cancelled Run, until it is dismissed. */
+    /** The folders in this one, by name, leaving out hidden ones such as a clone still being made; none when it is missing. */
+    private fun Path.folders(): List<Path> = if (!Files.isDirectory(this)) emptyList()
+    else Files.list(this).use { all -> all.filter { Files.isDirectory(it) && !it.fileName.toString().startsWith(".") }.sorted().toList() }
+
     private fun keptWorkspace(run: HistoricProcessInstance) = home.runWorkspace(run.id).takeIf { workspace ->
         run.state == HistoricProcessInstance.STATE_EXTERNALLY_TERMINATED && workspace.toFile().listFiles()?.any { it.name !in KEPT } == true
     }
