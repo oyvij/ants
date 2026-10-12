@@ -394,7 +394,7 @@ class ChecksTest : AntsTest() {
         val caller = twoTasks("").replace("""<bpmn:serviceTask id="draft"""", """<bpmn:callActivity id="build" calledElement="called" /><bpmn:serviceTask id="unused"""")
             .replace("""sourceRef="draft"""", """sourceRef="build"""").replace("""targetRef="draft"""", """targetRef="build"""")
         assertEquals(
-            setOf("${'$'}{prompt}", "${'$'}{runs}", "${'$'}{clones}", "${'$'}{build.draft.summary}", "${'$'}{build.draft.output}", "${'$'}{build.draft.output.text}", "${'$'}{build.draft.output.meta}"),
+            setOf("${'$'}{prompt}", "${'$'}{runs}", "${'$'}{clones}", "${'$'}{sourceMap}", "${'$'}{build.draft.summary}", "${'$'}{build.draft.output}", "${'$'}{build.draft.output.text}", "${'$'}{build.draft.output.meta}"),
             offered(caller),
         )
     }
@@ -416,7 +416,7 @@ class ChecksTest : AntsTest() {
         )
         val offered = JsonMapper.shared().readValue(browser.post("/processes/inputs", mapOf("bpmn" to bpmn, "element" to "review")).body, List::class.java)
         assertEquals(
-            setOf("${'$'}{prompt}", "${'$'}{runs}", "${'$'}{clones}", "${'$'}{draft.summary}", "${'$'}{draft.output}", "${'$'}{draft.output.text}", "${'$'}{draft.output.meta}", "${'$'}{ask}"),
+            setOf("${'$'}{prompt}", "${'$'}{runs}", "${'$'}{clones}", "${'$'}{sourceMap}", "${'$'}{draft.summary}", "${'$'}{draft.output}", "${'$'}{draft.output.text}", "${'$'}{draft.output.meta}", "${'$'}{ask}"),
             offered.toSet(),
         )
     }

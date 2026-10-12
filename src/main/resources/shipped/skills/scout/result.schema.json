@@ -1,0 +1,21 @@
+{
+  "type": "object",
+  "properties": {
+    "repos": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Source map names, or git URLs word for word from the prompt; empty when the prompt names none."
+    },
+    "branch": {
+      "type": "string",
+      "description": "A suggested work branch, such as add-hello-endpoint."
+    },
+    "brief": {
+      "type": "string",
+      "format": "path",
+      "description": "The brief, scout/brief.md."
+    }
+  },
+  "required": ["repos", "branch", "brief"],
+  "additionalProperties": false
+}

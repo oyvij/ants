@@ -32,11 +32,11 @@ class LandingTest : AntsTest() {
         "exit 1",
     )
 
-    /** The Agent `writer` with `plan` and `implement`, and a Source map of [repos]; `plan` gives [items]. */
+    /** The Agent `writer` with `plan` and `build`, and a Source map of [repos]; `plan` gives [items]. */
     private fun setUp(vararg repos: Remote, items: Int = 2, agentTasks: Int = 3) {
         agentTask(
             claude,
-            mapOf("plan" to """{"type":"object","properties":{"items":{"type":"array"}}}""", "implement" to null),
+            mapOf("plan" to """{"type":"object","properties":{"items":{"type":"array"}}}""", "build" to null),
             extra = "agent-tasks: $agentTasks\n" + sourceMapLines(*repos),
             env = listOf("PATH", "HOME"),
         )
@@ -72,7 +72,7 @@ class LandingTest : AntsTest() {
                 <bpmn:sequenceFlow id="f2" sourceRef="clone" targetRef="plan" />
                 ${agentTask("plan", "plan")}
                 <bpmn:sequenceFlow id="f3" sourceRef="plan" targetRef="implement" />
-                ${agentTask("implement", "implement", """<bpmn:multiInstanceLoopCharacteristics isSequential="false" operaton:collection="${'$'}{plan.output.items}" />""")}
+                ${agentTask("implement", "build", """<bpmn:multiInstanceLoopCharacteristics isSequential="false" operaton:collection="${'$'}{plan.output.items}" />""")}
                 <bpmn:sequenceFlow id="f4" sourceRef="implement" targetRef="wait" />
                 <bpmn:userTask id="wait" name="Wait" />
                 <bpmn:sequenceFlow id="f5" sourceRef="wait" targetRef="end" />
@@ -106,8 +106,8 @@ class LandingTest : AntsTest() {
     /** The files on the work branch of [run]'s clone of [repo]. */
     private fun files(run: String, repo: String) = git(clone(run, repo), "ls-tree", "--name-only", "HEAD").lines().filter(String::isNotEmpty).toSet()
 
-    /** What `sh ls … > "$launch/seen"` saw in the [n]th launch of `implement`. */
-    private fun seen(n: Int) = claude.dir.resolve("launches/implement.$n/seen").readText().lines().filter(String::isNotEmpty).toSet()
+    /** What `sh ls … > "$launch/seen"` saw in the [n]th launch of `build`. */
+    private fun seen(n: Int) = claude.dir.resolve("launches/build.$n/seen").readText().lines().filter(String::isNotEmpty).toSet()
 
     /** The worktrees and instance branches are gone: each clone has its own worktree and no instance branch. */
     private fun cleanedUp(run: String, vararg repos: String) {
@@ -133,16 +133,16 @@ class LandingTest : AntsTest() {
     fun `two parallel instances committing to different files both land, with linear history on the work branch`() {
         val api = repo("api")
         setUp(api)
-        claude.session("implement", 1, init, "wait go", commit("api", "one.txt"), done)
-        claude.session("implement", 2, init, "wait go", commit("api", "two.txt"), done)
+        claude.session("build", 1, init, "wait go", commit("api", "one.txt"), done)
+        claude.session("build", 2, init, "wait go", commit("api", "two.txt"), done)
         val run = start("api")
 
-        eventually { assertEquals(2, claude.launches("implement").size) }
+        eventually { assertEquals(2, claude.launches("build").size) }
         // Each works in its own folder, a worktree of each clone beside links to the rest of the Run workspace.
         val instances = workspace(run).resolve("instances")
         eventually { // a launch just started may not have written its cwd and stdin yet
-            assertEquals(setOf("implement-1", "implement-2").map { "${instances.resolve(it)}" }.toSet(), claude.launches("implement").map { it.cwd }.toSet())
-            for (launch in claude.launches("implement")) {
+            assertEquals(setOf("implement-1", "implement-2").map { "${instances.resolve(it)}" }.toSet(), claude.launches("build").map { it.cwd }.toSet())
+            for (launch in claude.launches("build")) {
                 assertEquals("${home.runWorkspace(run)}", launch.argv.zipWithNext().filter { it.first == "--add-dir" }.map { it.second }.first { "skills" !in it })
                 assertContains(launch.stdin, "for the workspace at ${home.runWorkspace(run)}/instances/${launch.cwd.substringAfterLast('/')}.")
             }
@@ -165,8 +165,8 @@ class LandingTest : AntsTest() {
     fun `an instance launched after a landing sees the landed commits`() {
         val api = repo("api")
         setUp(api, agentTasks = 1)
-        claude.session("implement", 1, init, commit("api", "one.txt"), done)
-        claude.session("implement", 2, init, """sh ls repos/api > "${'$'}launch/seen"""", done)
+        claude.session("build", 1, init, commit("api", "one.txt"), done)
+        claude.session("build", 2, init, """sh ls repos/api > "${'$'}launch/seen"""", done)
         val run = start("api")
 
         landed(run)
@@ -178,12 +178,12 @@ class LandingTest : AntsTest() {
         val api = repo("api")
         val web = repo("web")
         setUp(api, web)
-        claude.session("implement", 1, init, "wait go-1", commit("web", "shared.txt", "first"), done)
-        claude.session("implement", 2, init, "wait go-2", commit("api", "two.txt"), commit("web", "shared.txt", "second"), done)
-        claude.session("implement", init, done) // each round of resolving the conflict leaves it as it is
+        claude.session("build", 1, init, "wait go-1", commit("web", "shared.txt", "first"), done)
+        claude.session("build", 2, init, "wait go-2", commit("api", "two.txt"), commit("web", "shared.txt", "second"), done)
+        claude.session("build", init, done) // each round of resolving the conflict leaves it as it is
         val run = start("api", "web")
 
-        eventually { assertEquals(2, claude.launches("implement").size) }
+        eventually { assertEquals(2, claude.launches("build").size) }
         claude.release("go-1")
         eventually { assertEquals(setOf("shared.txt"), files(run, "web")) }
         claude.release("go-2")
@@ -201,10 +201,10 @@ class LandingTest : AntsTest() {
     private fun conflicting(): String {
         val api = repo("api")
         setUp(api)
-        claude.session("implement", 1, init, "wait go-1", commit("api", "shared.txt", "first"), done)
-        claude.session("implement", 2, init, "wait go-2", commit("api", "shared.txt", "second"), done)
+        claude.session("build", 1, init, "wait go-1", commit("api", "shared.txt", "first"), done)
+        claude.session("build", 2, init, "wait go-2", commit("api", "shared.txt", "second"), done)
         val run = start("api")
-        eventually { assertEquals(2, claude.launches("implement").size) }
+        eventually { assertEquals(2, claude.launches("build").size) }
         claude.release("go-1")
         eventually { assertEquals(setOf("shared.txt"), files(run, "api")) }
         claude.release("go-2")
@@ -215,14 +215,14 @@ class LandingTest : AntsTest() {
     fun `a conflicting instance is resumed with the conflict, and lands after it resolves it`() {
         // It rebases onto the work branch itself, keeping its own side of the conflict.
         claude.session(
-            "implement", 3, init,
+            "build", 3, init,
             "sh cd repos/api && b=${'$'}(git branch --show-current) && git -c user.name=Agent -c user.email=agent@example.com -c commit.gpgsign=false rebase -q -X theirs ${'$'}{b%--*}",
             done,
         )
         val run = conflicting()
 
-        eventually { assertEquals(3, claude.launches("implement").size) }
-        val (_, second, resumed) = claude.launches("implement")
+        eventually { assertEquals(3, claude.launches("build").size) }
+        val (_, second, resumed) = claude.launches("build")
         assertEquals(second.flag("--session-id"), resumed.flag("--resume"))
         assertEquals(second.cwd, resumed.cwd)
         assertContains(resumed.stdin, "doesn't rebase onto the work branch")
@@ -236,14 +236,14 @@ class LandingTest : AntsTest() {
 
     @Test
     fun `two failed rounds give failed, and the instance keeps its worktree`() {
-        claude.session("implement", init, done) // each round leaves the conflict as it is
+        claude.session("build", init, done) // each round leaves the conflict as it is
         val run = conflicting()
 
         val entry = browser.get(entry(run)).body
         assertContains(entry, "[failed]")
         assertContains(entry, "didn't land")
         assertContains(entry, "after 2 rounds")
-        assertEquals(4, claude.launches("implement").size)
+        assertEquals(4, claude.launches("build").size)
         assertEquals("first", clone(run, "api").resolve("shared.txt").readText())
         assertEquals(1, workspace(run).resolve("instances").listDirectoryEntries().size)
     }
@@ -252,13 +252,13 @@ class LandingTest : AntsTest() {
     fun `a rebase that fails without a conflict is failed at once, and the instance keeps its worktree`() {
         val api = repo("api")
         setUp(api, items = 1)
-        claude.session("implement", 1, init, commit("api", "one.txt"), "sh cd repos/api && printf x > staged.txt && git add staged.txt", done)
+        claude.session("build", 1, init, commit("api", "one.txt"), "sh cd repos/api && printf x > staged.txt && git add staged.txt", done)
         val run = start("api")
 
         val entry = browser.get(entry(run)).body
         assertContains(entry, "[failed]")
         assertContains(entry, "uncommitted changes")
-        assertEquals(1, claude.launches("implement").size) // no round to resolve it
+        assertEquals(1, claude.launches("build").size) // no round to resolve it
         assertEquals(emptySet(), files(run, "api"))
         assertTrue(workspace(run).resolve("instances/implement-1/repos/api/one.txt").exists())
     }
@@ -267,7 +267,7 @@ class LandingTest : AntsTest() {
     fun `Cancel the Run cancels it while an instance waits on the user`() {
         val api = repo("api")
         setUp(api, items = 1)
-        claude.session("implement", 1, init, done.replace(""""outcome":"done","summary":"Done.","output":{}""", """"outcome":"stuck","summary":"Lost.","needs":"Help.""""))
+        claude.session("build", 1, init, done.replace(""""outcome":"done","summary":"Done.","output":{}""", """"outcome":"stuck","summary":"Lost.","needs":"Help.""""))
         val run = start("api")
 
         val cancelled = browser.post(entry(run), mapOf("action" to "cancel", "instruction" to ""))
@@ -279,7 +279,7 @@ class LandingTest : AntsTest() {
         val api = repo("api")
         val web = repo("web")
         setUp(api, web, items = 1)
-        claude.session("implement", 1, init, commit("api", "one.txt"), commit("web", "two.txt"), "sh cd ../../repos && $meddle", done)
+        claude.session("build", 1, init, commit("api", "one.txt"), commit("web", "two.txt"), "sh cd ../../repos && $meddle", done)
         return start("api", "web")
     }
 
@@ -289,7 +289,7 @@ class LandingTest : AntsTest() {
         assertContains(entry, "[failed]")
         assertContains(entry, "repos/web")
         assertContains(entry, why)
-        assertEquals(1, claude.launches("implement").size)
+        assertEquals(1, claude.launches("build").size)
         assertEquals(emptySet(), files(run, "api")) // api could fast-forward, but web can't: neither moves
         assertTrue(workspace(run).resolve("instances/implement-1/repos/web/two.txt").exists())
     }
@@ -311,14 +311,14 @@ class LandingTest : AntsTest() {
         val api = repo("api")
         setUp(api, items = 1)
         val transcript = "/runs/%s/tasks/implement-1/transcript"
-        claude.session("implement", 1, init, "sh cd repos/api && printf wip > wip.txt", *stopped)
-        claude.session("implement", 2, init, """sh ls repos/api > "${'$'}launch/seen"""", *stopped)
-        claude.session("implement", 3, init, """sh ls repos/api > "${'$'}launch/seen"""", commit("api", "three.txt"), done)
+        claude.session("build", 1, init, "sh cd repos/api && printf wip > wip.txt", *stopped)
+        claude.session("build", 2, init, """sh ls repos/api > "${'$'}launch/seen"""", *stopped)
+        claude.session("build", 3, init, """sh ls repos/api > "${'$'}launch/seen"""", commit("api", "three.txt"), done)
         val run = start("api")
         val page = transcript.format(run)
 
         fun stop(launches: Int) {
-            eventually { assertEquals(launches, claude.launches("implement").size) }
+            eventually { assertEquals(launches, claude.launches("build").size) }
             eventually { assertContains(browser.get(page).body, "<button>Send</button>") }
             browser.post("$page/stop", emptyMap())
         }
@@ -327,7 +327,7 @@ class LandingTest : AntsTest() {
         browser.post(entry(run), mapOf("action" to "continue", "instruction" to "Carry on."))
         stop(2)
         assertEquals(setOf("wip.txt"), seen(2))
-        assertEquals(claude.launches("implement")[0].cwd, claude.launches("implement")[1].cwd)
+        assertEquals(claude.launches("build")[0].cwd, claude.launches("build")[1].cwd)
 
         browser.post(entry(run), mapOf("action" to "fresh", "instruction" to ""))
         landed(run)

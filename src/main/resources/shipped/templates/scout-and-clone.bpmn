@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  xmlns:operaton="http://operaton.org/schema/1.0/bpmn"
+                  id="definitions" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="scout_and_clone" name="Scout and clone" isExecutable="true" operaton:historyTimeToLive="180">
+    <bpmn:documentation>The scout reads the prompt, the Vault and the Source map, never code, and names the repos; Clone repos clones them on the work branch: the start form's branch, else the scout's. Needs start-form fields prompt and branch.</bpmn:documentation>
+    <bpmn:startEvent id="start">
+      <bpmn:outgoing>f1</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:serviceTask id="scout" name="Scout" operaton:type="external" operaton:topic="agent">
+      <bpmn:extensionElements>
+        <operaton:properties>
+          <operaton:property name="ants.agent" value="scout" />
+          <operaton:property name="ants.skill" value="scout" />
+        </operaton:properties>
+        <operaton:inputOutput>
+          <operaton:inputParameter name="prompt">${prompt}</operaton:inputParameter>
+          <operaton:inputParameter name="sourceMap">${sourceMap}</operaton:inputParameter>
+        </operaton:inputOutput>
+      </bpmn:extensionElements>
+      <bpmn:incoming>f1</bpmn:incoming>
+      <bpmn:outgoing>f2</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="clone" name="Clone repos" operaton:type="external" operaton:topic="clone-repos">
+      <bpmn:extensionElements>
+        <operaton:inputOutput>
+          <operaton:inputParameter name="repos">${scout.output.repos}</operaton:inputParameter>
+          <operaton:inputParameter name="branch">${not empty branch ? branch : scout.output.branch}</operaton:inputParameter>
+        </operaton:inputOutput>
+      </bpmn:extensionElements>
+      <bpmn:incoming>f2</bpmn:incoming>
+      <bpmn:outgoing>f3</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:endEvent id="end">
+      <bpmn:incoming>f3</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="scout" />
+    <bpmn:sequenceFlow id="f2" sourceRef="scout" targetRef="clone" />
+    <bpmn:sequenceFlow id="f3" sourceRef="clone" targetRef="end" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="diagram">
+    <bpmndi:BPMNPlane id="plane" bpmnElement="scout_and_clone">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start">
+        <dc:Bounds x="180" y="160" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="scout_di" bpmnElement="scout">
+        <dc:Bounds x="270" y="138" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="clone_di" bpmnElement="clone">
+        <dc:Bounds x="420" y="138" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_di" bpmnElement="end">
+        <dc:Bounds x="572" y="160" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1">
+        <di:waypoint x="216" y="178" />
+        <di:waypoint x="270" y="178" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2">
+        <di:waypoint x="370" y="178" />
+        <di:waypoint x="420" y="178" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f3_di" bpmnElement="f3">
+        <di:waypoint x="520" y="178" />
+        <di:waypoint x="572" y="178" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

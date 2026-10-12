@@ -236,17 +236,19 @@ val HistoricProcessInstance.stateName
 /**
  * Gives each Run its Run workspace, `runs/<run>/` in ANTS_HOME, for as long as it lives. At Run start every
  * Task-id (and call activity id) variable is `null`, so forward references read `null`, `runs` counts each Task's
- * runs and `clones` is empty. A multi-instance collects its instances' Results into one list ([collect]). A called Process runs inside its
+ * runs, `clones` is empty and `sourceMap` holds the default Source map's repos, `[{name, remote}]`. A multi-instance collects its instances' Results into one list ([collect]). A called Process runs inside its
  * caller's Run: it ends by giving its call activity every Result in it, by id.
  */
 @Component
-class RunLifecycle(@Value("\${ants.home}") private val home: Path) : AbstractProcessEnginePlugin() {
+class RunLifecycle(@Value("\${ants.home}") private val home: Path, private val settings: Settings) : AbstractProcessEnginePlugin() {
     private fun started(tasks: List<String>, results: List<String>) = ExecutionListener { run ->
         if (run.isTopRun) trackerDoc(home.runWorkspace(run.processInstanceId).createDirectories())
         else run.setVariable(CALLED, called(run.superExecution))
         for (id in results) run.setVariable(id, null)
         run.setVariable("runs", tasks.associateWith { 0 })
         run.setVariable("clones", ArrayList<Any>()) // Clone repos adds to it
+        // ponytail: the default Source map, until a Process picks its own.
+        run.setVariable("sourceMap", ArrayList(settings.repos().map { linkedMapOf("name" to it.name, "remote" to it.remote) }))
     }
 
     // ponytail: parallel Tasks starting in separate transactions clash on `runs` (optimistic locking) and the losing

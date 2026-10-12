@@ -80,12 +80,12 @@ class AgentsTest : AntsTest() {
 
     @Test
     fun `a hand-written agent file shows on the form, its limits under Limit and its other keys kept`() {
-        agents.resolve("scout.md").writeText("---\nname: scout\ncolor: blue\ntools: Agent(knowledge-searcher, worker), Read\n---\nScout.\n")
-        val page = get("/agents/scout")
+        agents.resolve("seeker.md").writeText("---\nname: seeker\ncolor: blue\ntools: Agent(knowledge-searcher, worker), Read\n---\nScout.\n")
+        val page = get("/agents/seeker")
         assertContains(page, """name="tool.Agent" checked""")
         assertContains(page, """name="limit.Agent" value="knowledge-searcher, worker"""")
-        post("/agents/scout", mapOf("name" to "scout", "cli" to "claude", "tool.Read" to "on", "instructions" to "Scout."))
-        assertEquals("---\nname: scout\ncli: claude\ntools: Read\ncolor: blue\n---\nScout.\n", agents.resolve("scout.md").readText())
+        post("/agents/seeker", mapOf("name" to "seeker", "cli" to "claude", "tool.Read" to "on", "instructions" to "Scout."))
+        assertEquals("---\nname: seeker\ncli: claude\ntools: Read\ncolor: blue\n---\nScout.\n", agents.resolve("seeker.md").readText())
     }
 
     /** Runs [check] with [folder] as an extra Agent folder in settings. */

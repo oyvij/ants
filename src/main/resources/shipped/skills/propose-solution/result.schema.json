@@ -1,0 +1,12 @@
+{
+  "type": "object",
+  "properties": {
+    "proposal": {
+      "type": "string",
+      "format": "path",
+      "description": "The proposal, proposal/proposal.md."
+    }
+  },
+  "required": ["proposal"],
+  "additionalProperties": false
+}

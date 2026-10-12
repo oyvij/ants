@@ -71,7 +71,7 @@ private fun promised(catalogue: Catalogue, task: ServiceTask): Map<*, *>? {
 }
 
 /** The names an expression anywhere may start with besides start-form fields and Task ids: Ants' Run variables and the engine's own. */
-private val runVariables = setOf("runs", "clones", "execution")
+private val runVariables = setOf("runs", "clones", "sourceMap", "execution")
 
 /** What an instance of a multi-instance reads besides its element variable. */
 private val loopVariables = setOf("loopCounter", "nrOfInstances", "nrOfActiveInstances", "nrOfCompletedInstances")
@@ -165,7 +165,7 @@ internal fun offered(catalogue: Catalogue, model: BpmnModelInstance, id: String,
         val process = (task as? CallActivity)?.calledElement?.let(called)
         process?.getModelElementsByType(Activity::class.java)?.filter { it.givesResult }?.flatMap { results(it, "${task.id}.${it.id}") } ?: results(task, task.id)
     }
-    return (fields + listOf("runs", "clones") + loops(target).map { it.element } + results).distinct().map { "\${$it}" }
+    return (fields + listOf("runs", "clones", "sourceMap") + loops(target).map { it.element } + results).distinct().map { "\${$it}" }
 }
 
 /** Whether a Result is kept under the activity's id: anything but a sub-process that runs once. */

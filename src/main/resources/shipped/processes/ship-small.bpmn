@@ -1,0 +1,307 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  xmlns:operaton="http://operaton.org/schema/1.0/bpmn"
+                  id="definitions" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="ship_small" name="Ship small" isExecutable="true" operaton:historyTimeToLive="180">
+    <bpmn:documentation>Scout and clone, propose a solution, implement it in the shared clones, then Push, open the pull request and update the Vault. Waits on the user for Push and the Notes.</bpmn:documentation>
+    <bpmn:startEvent id="start">
+      <bpmn:extensionElements>
+        <operaton:formData>
+          <operaton:formField id="prompt" label="Prompt" type="string">
+            <operaton:properties>
+              <operaton:property id="ants.type" value="markdown" />
+              <operaton:property id="ants.help" value="What the Run should build, naming its repos" />
+            </operaton:properties>
+            <operaton:validation>
+              <operaton:constraint name="required" />
+            </operaton:validation>
+          </operaton:formField>
+          <operaton:formField id="branch" label="Work branch" type="string">
+            <operaton:properties>
+              <operaton:property id="ants.help" value="Leave it empty for the scout to name one" />
+            </operaton:properties>
+          </operaton:formField>
+        </operaton:formData>
+      </bpmn:extensionElements>
+      <bpmn:outgoing>toscout</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:subProcess id="scout_and_clone" name="Scout and clone">
+      <bpmn:documentation>The scout reads the prompt, the Vault and the Source map, never code, and names the repos; Clone repos clones them on the work branch: the start form's branch, else the scout's. Needs start-form fields prompt and branch.</bpmn:documentation>
+      <bpmn:incoming>toscout</bpmn:incoming>
+      <bpmn:outgoing>topropose</bpmn:outgoing>
+      <bpmn:startEvent id="start_2">
+        <bpmn:outgoing>f1</bpmn:outgoing>
+      </bpmn:startEvent>
+      <bpmn:serviceTask id="scout" name="Scout" operaton:type="external" operaton:topic="agent">
+        <bpmn:extensionElements>
+          <operaton:properties>
+            <operaton:property name="ants.agent" value="scout" />
+            <operaton:property name="ants.skill" value="scout" />
+          </operaton:properties>
+          <operaton:inputOutput>
+            <operaton:inputParameter name="prompt">${prompt}</operaton:inputParameter>
+            <operaton:inputParameter name="sourceMap">${sourceMap}</operaton:inputParameter>
+          </operaton:inputOutput>
+        </bpmn:extensionElements>
+        <bpmn:incoming>f1</bpmn:incoming>
+        <bpmn:outgoing>f2</bpmn:outgoing>
+      </bpmn:serviceTask>
+      <bpmn:serviceTask id="clone" name="Clone repos" operaton:type="external" operaton:topic="clone-repos">
+        <bpmn:extensionElements>
+          <operaton:inputOutput>
+            <operaton:inputParameter name="repos">${scout.output.repos}</operaton:inputParameter>
+            <operaton:inputParameter name="branch">${not empty branch ? branch : scout.output.branch}</operaton:inputParameter>
+          </operaton:inputOutput>
+        </bpmn:extensionElements>
+        <bpmn:incoming>f2</bpmn:incoming>
+        <bpmn:outgoing>f3</bpmn:outgoing>
+      </bpmn:serviceTask>
+      <bpmn:endEvent id="end_2">
+        <bpmn:incoming>f3</bpmn:incoming>
+      </bpmn:endEvent>
+      <bpmn:sequenceFlow id="f1" sourceRef="start_2" targetRef="scout" />
+      <bpmn:sequenceFlow id="f2" sourceRef="scout" targetRef="clone" />
+      <bpmn:sequenceFlow id="f3" sourceRef="clone" targetRef="end_2" />
+    </bpmn:subProcess>
+    <bpmn:serviceTask id="proposesolution" name="Propose a solution" operaton:type="external" operaton:topic="agent">
+      <bpmn:extensionElements>
+        <operaton:properties>
+          <operaton:property name="ants.agent" value="architect" />
+          <operaton:property name="ants.skill" value="propose-solution" />
+        </operaton:properties>
+        <operaton:inputOutput>
+          <operaton:inputParameter name="prompt">${prompt}</operaton:inputParameter>
+          <operaton:inputParameter name="brief">${scout.output.brief}</operaton:inputParameter>
+          <operaton:inputParameter name="clones">${clones}</operaton:inputParameter>
+        </operaton:inputOutput>
+      </bpmn:extensionElements>
+      <bpmn:incoming>topropose</bpmn:incoming>
+      <bpmn:outgoing>toimplement</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="implement" name="Implement" operaton:type="external" operaton:topic="agent">
+      <bpmn:extensionElements>
+        <operaton:properties>
+          <operaton:property name="ants.agent" value="implementer" />
+          <operaton:property name="ants.skill" value="implement" />
+        </operaton:properties>
+        <operaton:inputOutput>
+          <operaton:inputParameter name="prompt">${prompt}</operaton:inputParameter>
+          <operaton:inputParameter name="proposal">${proposesolution.output.proposal}</operaton:inputParameter>
+        </operaton:inputOutput>
+      </bpmn:extensionElements>
+      <bpmn:incoming>toimplement</bpmn:incoming>
+      <bpmn:outgoing>topush</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="push" name="Push" operaton:type="external" operaton:topic="push">
+      <bpmn:incoming>topush</bpmn:incoming>
+      <bpmn:outgoing>topr</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="pr" name="Open pull request" operaton:type="external" operaton:topic="agent">
+      <bpmn:extensionElements>
+        <operaton:properties>
+          <operaton:property name="ants.agent" value="pr" />
+          <operaton:property name="ants.skill" value="pr" />
+        </operaton:properties>
+        <operaton:inputOutput>
+          <operaton:inputParameter name="push">${push}</operaton:inputParameter>
+          <operaton:inputParameter name="proposal">${proposesolution.output.proposal}</operaton:inputParameter>
+          <operaton:inputParameter name="review">${implement.output.review}</operaton:inputParameter>
+        </operaton:inputOutput>
+      </bpmn:extensionElements>
+      <bpmn:incoming>topr</bpmn:incoming>
+      <bpmn:outgoing>tovault</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:subProcess id="update_the_vault" name="Update the Vault">
+      <bpmn:documentation>update-knowledge proposes what the Run learned as Notes; until it says written, the user approves the Notes and it is resumed, writing them only once approved. Fill spec with the Run's Spec or proposal.</bpmn:documentation>
+      <bpmn:incoming>tovault</bpmn:incoming>
+      <bpmn:outgoing>toend</bpmn:outgoing>
+      <bpmn:startEvent id="start_3">
+        <bpmn:outgoing>f1_2</bpmn:outgoing>
+      </bpmn:startEvent>
+      <bpmn:serviceTask id="updateknowledge" name="Update the Vault" operaton:type="external" operaton:topic="agent">
+        <bpmn:extensionElements>
+          <operaton:properties>
+            <operaton:property name="ants.agent" value="knowledge" />
+            <operaton:property name="ants.skill" value="update-knowledge" />
+            <operaton:property name="ants.resume" value="true" />
+          </operaton:properties>
+          <operaton:inputOutput>
+            <operaton:inputParameter name="rounds">run-log.md</operaton:inputParameter>
+            <operaton:inputParameter name="spec">${proposesolution.output.proposal}</operaton:inputParameter>
+            <operaton:inputParameter name="clones">${clones}</operaton:inputParameter>
+            <operaton:inputParameter name="approval">${approvenotes}</operaton:inputParameter>
+          </operaton:inputOutput>
+        </bpmn:extensionElements>
+        <bpmn:incoming>f1_2</bpmn:incoming>
+        <bpmn:incoming>again</bpmn:incoming>
+        <bpmn:outgoing>f2_2</bpmn:outgoing>
+      </bpmn:serviceTask>
+      <bpmn:exclusiveGateway id="written" name="Written?" default="no">
+        <bpmn:incoming>f2_2</bpmn:incoming>
+        <bpmn:outgoing>yes</bpmn:outgoing>
+        <bpmn:outgoing>no</bpmn:outgoing>
+      </bpmn:exclusiveGateway>
+      <bpmn:userTask id="approvenotes" name="Approve the Notes">
+        <bpmn:extensionElements>
+          <operaton:properties>
+            <operaton:property name="ants.send-back" value="updateknowledge" />
+          </operaton:properties>
+          <operaton:inputOutput>
+            <operaton:inputParameter name="title">Approve the Notes</operaton:inputParameter>
+            <operaton:inputParameter name="show">${updateknowledge.output.proposal}</operaton:inputParameter>
+          </operaton:inputOutput>
+        </bpmn:extensionElements>
+        <bpmn:incoming>no</bpmn:incoming>
+        <bpmn:outgoing>again</bpmn:outgoing>
+      </bpmn:userTask>
+      <bpmn:endEvent id="end_3">
+        <bpmn:incoming>yes</bpmn:incoming>
+      </bpmn:endEvent>
+      <bpmn:sequenceFlow id="f1_2" sourceRef="start_3" targetRef="updateknowledge" />
+      <bpmn:sequenceFlow id="f2_2" sourceRef="updateknowledge" targetRef="written" />
+      <bpmn:sequenceFlow id="yes" name="yes" sourceRef="written" targetRef="end_3">
+        <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${updateknowledge.output.written}</bpmn:conditionExpression>
+      </bpmn:sequenceFlow>
+      <bpmn:sequenceFlow id="no" name="no" sourceRef="written" targetRef="approvenotes" />
+      <bpmn:sequenceFlow id="again" sourceRef="approvenotes" targetRef="updateknowledge" />
+    </bpmn:subProcess>
+    <bpmn:endEvent id="end">
+      <bpmn:incoming>toend</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="toscout" sourceRef="start" targetRef="scout_and_clone" />
+    <bpmn:sequenceFlow id="topropose" sourceRef="scout_and_clone" targetRef="proposesolution" />
+    <bpmn:sequenceFlow id="toimplement" sourceRef="proposesolution" targetRef="implement" />
+    <bpmn:sequenceFlow id="topush" sourceRef="implement" targetRef="push" />
+    <bpmn:sequenceFlow id="topr" sourceRef="push" targetRef="pr" />
+    <bpmn:sequenceFlow id="tovault" sourceRef="pr" targetRef="update_the_vault" />
+    <bpmn:sequenceFlow id="toend" sourceRef="update_the_vault" targetRef="end" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="diagram">
+    <bpmndi:BPMNPlane id="plane" bpmnElement="ship_small">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start">
+        <dc:Bounds x="152" y="160" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="scout_and_clone_di" bpmnElement="scout_and_clone" isExpanded="false">
+        <dc:Bounds x="230" y="138" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="proposesolution_di" bpmnElement="proposesolution">
+        <dc:Bounds x="380" y="138" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="implement_di" bpmnElement="implement">
+        <dc:Bounds x="530" y="138" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="push_di" bpmnElement="push">
+        <dc:Bounds x="680" y="138" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="pr_di" bpmnElement="pr">
+        <dc:Bounds x="830" y="138" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="update_the_vault_di" bpmnElement="update_the_vault" isExpanded="false">
+        <dc:Bounds x="980" y="138" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_di" bpmnElement="end">
+        <dc:Bounds x="1132" y="160" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="toscout_di" bpmnElement="toscout">
+        <di:waypoint x="188" y="178" />
+        <di:waypoint x="230" y="178" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="topropose_di" bpmnElement="topropose">
+        <di:waypoint x="330" y="178" />
+        <di:waypoint x="380" y="178" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="toimplement_di" bpmnElement="toimplement">
+        <di:waypoint x="480" y="178" />
+        <di:waypoint x="530" y="178" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="topush_di" bpmnElement="topush">
+        <di:waypoint x="630" y="178" />
+        <di:waypoint x="680" y="178" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="topr_di" bpmnElement="topr">
+        <di:waypoint x="780" y="178" />
+        <di:waypoint x="830" y="178" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="tovault_di" bpmnElement="tovault">
+        <di:waypoint x="930" y="178" />
+        <di:waypoint x="980" y="178" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="toend_di" bpmnElement="toend">
+        <di:waypoint x="1080" y="178" />
+        <di:waypoint x="1132" y="178" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+  <bpmndi:BPMNDiagram id="diagram_scout_and_clone">
+    <bpmndi:BPMNPlane id="plane_scout_and_clone" bpmnElement="scout_and_clone">
+      <bpmndi:BPMNShape id="start_di_2" bpmnElement="start_2">
+        <dc:Bounds x="180" y="160" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="scout_di" bpmnElement="scout">
+        <dc:Bounds x="270" y="138" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="clone_di" bpmnElement="clone">
+        <dc:Bounds x="420" y="138" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_di_2" bpmnElement="end_2">
+        <dc:Bounds x="572" y="160" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1">
+        <di:waypoint x="216" y="178" />
+        <di:waypoint x="270" y="178" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2">
+        <di:waypoint x="370" y="178" />
+        <di:waypoint x="420" y="178" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f3_di" bpmnElement="f3">
+        <di:waypoint x="520" y="178" />
+        <di:waypoint x="572" y="178" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+  <bpmndi:BPMNDiagram id="diagram_update_the_vault">
+    <bpmndi:BPMNPlane id="plane_update_the_vault" bpmnElement="update_the_vault">
+      <bpmndi:BPMNShape id="start_di_3" bpmnElement="start_3">
+        <dc:Bounds x="180" y="160" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="updateknowledge_di" bpmnElement="updateknowledge">
+        <dc:Bounds x="270" y="138" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="written_di" bpmnElement="written" isMarkerVisible="true">
+        <dc:Bounds x="425" y="153" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="approvenotes_di" bpmnElement="approvenotes">
+        <dc:Bounds x="400" y="260" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_di_3" bpmnElement="end_3">
+        <dc:Bounds x="532" y="160" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f1_di_2" bpmnElement="f1_2">
+        <di:waypoint x="216" y="178" />
+        <di:waypoint x="270" y="178" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di_2" bpmnElement="f2_2">
+        <di:waypoint x="370" y="178" />
+        <di:waypoint x="425" y="178" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="yes_di" bpmnElement="yes">
+        <di:waypoint x="475" y="178" />
+        <di:waypoint x="532" y="178" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="no_di" bpmnElement="no">
+        <di:waypoint x="450" y="203" />
+        <di:waypoint x="450" y="260" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="again_di" bpmnElement="again">
+        <di:waypoint x="400" y="300" />
+        <di:waypoint x="320" y="300" />
+        <di:waypoint x="320" y="218" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>
