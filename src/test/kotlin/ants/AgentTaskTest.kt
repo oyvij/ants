@@ -110,6 +110,10 @@ class AgentTaskTest : AntsTest() {
             assertFalse(off.argv.any { place in it })
             assertFalse(off.env.values.any { place in it })
         }
+        // On, the Answer History is an --add-dir, so a Read reaches it outside the workspace.
+        val history = home.resolve("answer-history").toString()
+        assertContains(off.argv.zipWithNext(), "--add-dir" to history)
+        assertFalse(history in claude.launches("draft").first().argv)
     }
 
     @Test

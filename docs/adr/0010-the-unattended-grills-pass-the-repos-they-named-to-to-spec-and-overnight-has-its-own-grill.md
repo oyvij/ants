@@ -14,8 +14,8 @@ hands Round 10 to the user, yet Ship overnight's cap ends the loop. And it gives
   clones; the user answering Round 10 in the by-proxy and as-proposed ones doesn't clone either.
 - **Ship overnight's to-spec is a bare Task**, `tospec`, not To-spec and approve with its Approve removed, so Cut and
   implement and Review and push read `${tospec.output.spec}` as in the others.
-- **The answerer's tools are `Read, Grep, Glob`.** It only reads: the Answer History, at the path its hand-off line
-  names, and the Vault, on `--add-dir`.
+- **The answerer's tools are `Read, Grep, Glob`.** It only reads: the Answer History and the Vault, each at the path
+  its hand-off line names and on `--add-dir`. Every claude Task with the Answer History on gets its `--add-dir`.
 
 ## Considered Options
 
@@ -27,5 +27,5 @@ hands Round 10 to the user, yet Ship overnight's cap ends the loop. And it gives
 ## Consequences
 
 - A griller that drops a repo from a later Round's `repos` drops it from the Spec too.
-- The Answer History is not an `--add-dir`; that a bare `Read` reaches it outside the workspace has not been probed
-  against a real claude.
+- The Answer History's `--add-dir` is read and write for claude, as the Vault's is; the answerer has no tool that
+  writes. codex reads it without one, since its sandbox reads everywhere.

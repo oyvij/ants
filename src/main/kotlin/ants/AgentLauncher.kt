@@ -369,8 +369,9 @@ class AgentLauncher(
         val gated = vault?.takeIf { "approval" in inputs && (inputs["approval"] as? Map<*, *>)?.get("approved") != true }
         if (agent.cli == "codex") return codex(task, instance, agent, run, workspace, cwd, vault.takeIf { gated == null }, transcript, session, started, prompt, ResultContract.strict(output), judge)
         val shared = if (cwd == workspace) emptyList() else listOf("--add-dir", "$workspace") // what an instance's links lead to
-        val vaultDir = vault?.let { listOf("--add-dir", "$it") }.orEmpty() // the Vault's path goes nowhere else (ADR 0002)
-        val process = cli(agent.cli, cwd, flags(agent, schema, listOf(skill) + used, session!!, resume, gated?.let { listOf("Write(/$it/**)", "Edit(/$it/**)") }.orEmpty()) + shared + vaultDir).start()
+        val places = vault?.let { listOf("--add-dir", "$it") }.orEmpty() // the Vault's path goes nowhere else (ADR 0002)
+            .plus(answerHistory(task, skill)?.let { listOf("--add-dir", "${it.createDirectories()}") }.orEmpty()) // so a Read reaches it (ADR 0010)
+        val process = cli(agent.cli, cwd, flags(agent, schema, listOf(skill) + used, session!!, resume, gated?.let { listOf("Write(/$it/**)", "Edit(/$it/**)") }.orEmpty()) + shared + places).start()
         val stdin = Stdin(process.outputWriter(), name(task))
         clis[process] = workspace.fileName.toString() // the Run workspace is runs/<run>/
         val stderr = drain(process)
@@ -558,7 +559,6 @@ class AgentLauncher(
      */
     // ponytail: the default Source map, until a Process picks its own.
     private fun handOff(task: LockedExternalTask, skill: Skill, used: List<Skill>, workspace: Path, vault: Path?): String {
-        val answerHistory = task.extensionProperties[ANSWER_HISTORY]?.toBooleanStrictOrNull() ?: skill.answerHistory
         val places = if (vault == null) emptyList() else listOfNotNull(
             "the Vault is $vault",
             settings.sourceMaps()[settings.defaultSourceMap()]?.let { "the Source map is ${Settings.expand(it)}" },
@@ -566,8 +566,12 @@ class AgentLauncher(
         return "Follow the Skill in ${skill.file} for the workspace at $workspace." +
             (if (used.isEmpty()) "" else " It uses the Skills ${used.joinToString { "${it.name} (${it.file})" }}.") +
             (if (places.isEmpty()) "" else " " + places.joinToString(" and ").replaceFirstChar(Char::uppercase) + ".") +
-            (if (answerHistory) " The Answer History is ${home.resolve("answer-history")}." else "")
+            (answerHistory(task, skill)?.let { " The Answer History is $it." } ?: "")
     }
+
+    /** The Answer History's folder when [task] gets it: its toggle ([ANSWER_HISTORY]) has the final say, else its [skill]'s opt-in. */
+    private fun answerHistory(task: LockedExternalTask, skill: Skill): Path? = home.resolve("answer-history")
+        .takeIf { task.extensionProperties[ANSWER_HISTORY]?.toBooleanStrictOrNull() ?: skill.answerHistory }
 
     /**
      * When the Usage limit that [event] reports resets, or null if it reports none: a `rate_limit_event` rejection
