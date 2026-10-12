@@ -2,6 +2,8 @@ package ants
 
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.boot.info.BuildProperties
 import org.springframework.boot.web.server.context.WebServerApplicationContext
 import java.nio.file.Files
 import java.nio.file.Path
@@ -28,6 +30,12 @@ import kotlin.test.assertTrue
  */
 class UpdateTest : AntsTest() {
     private val browser by lazy { browser().also { it.login() } }
+
+    @Autowired
+    lateinit var build: BuildProperties
+
+    /** The version this Ants runs, which Update hands install.sh as the one to roll back to. */
+    private val running get() = build.version
 
     /** A release of [version] in the release folder, as the check reads it: its SHA256SUMS names the tarball. */
     private fun release(version: String) = releases.resolve("SHA256SUMS").writeText(sums(version))
@@ -116,8 +124,8 @@ class UpdateTest : AntsTest() {
         browser.get("/processes/agent-task")
         val run = browser.post("/processes/agent-task/runs", mapOf("prompt" to "Say hello")).path.removePrefix("/runs/")
         eventually { assertEquals(1, claude.launches("draft").size) }
-        home.resolve("versions/0.1.0").createDirectories()
-        home.resolve("current").createSymbolicLinkPointingTo(Path.of("versions/0.1.0"))
+        home.resolve("versions/$running").createDirectories()
+        home.resolve("current").createSymbolicLinkPointingTo(Path.of("versions/$running"))
         published("96.0.0")
         eventually { assertContains(notice(), "Ants 96.0.0 is available") }
 
@@ -126,7 +134,7 @@ class UpdateTest : AntsTest() {
         eventually { assertContains(notice(), "Ants 96.0.0 runs from the next ants restart") }
         assertTrue(home.resolve("versions/96.0.0/bin/ants").exists())
         assertEquals(Path.of("versions/96.0.0"), home.resolve("current").readSymbolicLink())
-        assertEquals(Path.of("versions/0.1.0"), home.resolve("previous").readSymbolicLink())
+        assertEquals(Path.of("versions/$running"), home.resolve("previous").readSymbolicLink())
         assertContains(browser.get("/runs/$run").body, "State: Running")
         claude.release("release")
         eventually { assertContains(browser.get("/runs/$run").body, "State: Completed") }
@@ -134,8 +142,8 @@ class UpdateTest : AntsTest() {
 
     @Test
     fun `a second Update before a restart keeps the running version as the one to roll back to`() {
-        home.resolve("versions/0.1.0").createDirectories()
-        home.resolve("current").createSymbolicLinkPointingTo(Path.of("versions/0.1.0"))
+        home.resolve("versions/$running").createDirectories()
+        home.resolve("current").createSymbolicLinkPointingTo(Path.of("versions/$running"))
         published("97.0.0")
         eventually { assertContains(notice(), "Ants 97.0.0 is available") }
         update()
@@ -147,7 +155,7 @@ class UpdateTest : AntsTest() {
 
         eventually { assertContains(notice(), "Ants 98.0.0 runs from the next ants restart") }
         assertEquals(Path.of("versions/98.0.0"), home.resolve("current").readSymbolicLink())
-        assertEquals(Path.of("versions/0.1.0"), home.resolve("previous").readSymbolicLink())
+        assertEquals(Path.of("versions/$running"), home.resolve("previous").readSymbolicLink())
     }
 
     @Test
