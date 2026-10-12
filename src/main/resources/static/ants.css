@@ -105,7 +105,7 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 fieldset fieldset:has(> legend) { box-shadow: none; padding: 12px 16px; }
 legend { float: left; width: 100%; padding: 0; margin-bottom: 8px; font-weight: 600; }
 legend + * { clear: both; }
-#stats dl { display: grid; grid-auto-flow: column; grid-template-rows: auto auto; grid-auto-columns: 1fr; gap: 0 20px; margin: 0; }
+#stats dl { grid-auto-flow: column; grid-template: auto auto / repeat(3, 1fr); gap: 0 20px; margin: 0; }
 #stats dt { color: var(--muted); font-size: 12.5px; }
 #stats dd { margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -.02em; }
 dl { display: grid; grid-template-columns: max-content 1fr; gap: 8px 16px; align-items: baseline; }
@@ -184,7 +184,10 @@ form > label, form > p > label { margin-right: 8px; }
 [role=alert]:empty { display: none; }
 [role=status] { background: var(--okSoft); color: var(--okText); border-radius: 8px; padding: 8px 12px; }
 details > summary { cursor: pointer; color: var(--muted); }
-:is(details, fieldset) > div:has(> details) { padding: 4px 0; }
+fieldset.tools { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 4px 16px; }
+fieldset.tools > :is(legend, p) { grid-column: 1 / -1; }
+fieldset.tools details[open] { grid-column: 1 / -1; }
+::file-selector-button { font: inherit; font-weight: 600; font-size: 13px; color: var(--text); background: var(--panel2); border: 1px solid var(--fieldLine); border-radius: 6px; padding: 4px 10px; margin-right: 8px; cursor: pointer; }
 
 /* The code editors: CodeMirror, mounted after each Skill text area. */
 .cm-editor { border: 1px solid var(--fieldLine); border-radius: 8px; background: var(--field); color: var(--text); overflow: hidden; margin-top: 4px; max-height: 520px; }
@@ -201,11 +204,13 @@ form .cm-editor .cm-selectionBackground { background: color-mix(in srgb, var(--a
     position: relative; isolation: isolate; overflow: hidden; border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sh);
     background: var(--panel) radial-gradient(var(--dotgrid) 1px, transparent 1px) 0 0 / 18px 18px; margin-bottom: 16px;
 }
-:root:has(meta[name=color-scheme][content=dark]) :is(.djs-container > svg, .djs-palette, .djs-context-pad, .djs-popup) { filter: invert(.9) hue-rotate(180deg); }
+:root:has(meta[name=color-scheme][content=dark]) :is(.djs-container > svg, .djs-palette, .djs-context-pad, .djs-popup, .djs-minimap) { filter: invert(.9) hue-rotate(180deg); }
 @media (prefers-color-scheme: dark) {
-    :root:has(meta[name=color-scheme][content="light dark"]) :is(.djs-container > svg, .djs-palette, .djs-context-pad, .djs-popup) { filter: invert(.9) hue-rotate(180deg); }
+    :root:has(meta[name=color-scheme][content="light dark"]) :is(.djs-container > svg, .djs-palette, .djs-context-pad, .djs-popup, .djs-minimap) { filter: invert(.9) hue-rotate(180deg); }
 }
 .djs-palette { border-radius: 8px; }
+/* bpmn-js's own buttons keep its light look, inverted with it in dark. */
+.djs-minimap button { color: #0f172a; background: #fff; }
 .ants-done .djs-visual > :first-child { stroke: #16a34a !important; fill: #ecfdf3 !important; }
 .ants-running .djs-visual > :first-child { stroke: #2563eb !important; fill: #e0ecff !important; stroke-width: 3px !important; }
 .ants-queued .djs-visual > :first-child { stroke: #475569 !important; stroke-dasharray: 5 4 !important; stroke-width: 2px !important; }
@@ -264,7 +269,8 @@ tr.hunk > td { color: var(--muted); background: var(--panel2) !important; }
 tr.picked { outline: 2px solid var(--acc); outline-offset: -2px; }
 section.repo details { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; margin: 10px 0; }
 section.repo summary { padding: 10px 16px; font: 12.5px var(--mono); color: var(--text); background: var(--panel2); }
-ol.commits, ol.steps { padding-left: 20px; }
+ol.commits { padding-left: 20px; }
+ol.steps { list-style: none; padding: 0; }
 ol.steps > li { margin: 16px 0; padding-top: 12px; border-top: 1px solid var(--line2); }
 ol.steps h4 { margin: 0 0 6px; font-size: 15px; }
 #comments > li { margin: 6px 0; }
