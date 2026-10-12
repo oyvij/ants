@@ -298,8 +298,12 @@ class RunLifecycle(@Value("\${ants.home}") private val home: Path) : AbstractPro
             // The body's own execution holds the loop's counts; a non-scope Task in a sequential loop runs on it too.
             val bodyExecution = generateSequence(instance as ExecutionEntity) { it.parent }.first { it.hasVariableLocal("nrOfInstances") }
             // Until the last instance ends, the Results so far wait on the body by instance number: a list with gaps can't
-            // be stored, since the JSON serializer types a list by its first item.
-            val results = (bodyExecution.getVariableLocal(RESULTS) as? Map<*, *>).orEmpty() + ("${instance.getVariable("loopCounter")}" to result)
+            // be stored, since the JSON serializer types a list by its first item. Always a LinkedHashMap, never the
+            // SingletonMap `emptyMap() + pair` gives: the engine keeps a variable's type and its JSON in two rows, so an
+            // instance ending beside another can read the old type with the new JSON, and only a type that never
+            // changes still reads it.
+            val results = LinkedHashMap(bodyExecution.getVariableLocal(RESULTS) as? Map<*, *> ?: emptyMap<Any, Any>())
+                .apply { put("${instance.getVariable("loopCounter")}", result) }
             val count = bodyExecution.getVariableLocal("nrOfInstances") as Int
             if (results.size < count) bodyExecution.setVariableLocal(RESULTS, results)
             else bodyExecution.parent.setVariable(inner.id, (0 until count).map { results["$it"] })
