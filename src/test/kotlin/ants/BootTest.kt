@@ -88,6 +88,22 @@ class PasswordFromEnvTest {
     }
 
     @Test
+    fun `with ANTS_PASSWORD the settings page says the password comes from it, and saving changes no password`() {
+        val home = AntsTest.tempHome()
+        AntsTest.startAnother(home, "--ants.password=s3cret").use { ants ->
+            val url = "http://127.0.0.1:${(ants as WebServerApplicationContext).webServer!!.port}"
+            val browser = Browser(url).also { it.login("s3cret") }
+            val page = browser.get("/settings").body
+            assertContains(page, "ANTS_PASSWORD or ANTS_PASSWORD_FILE sets the password")
+            assertFalse("""name="password"""" in page, "a password field the login ignores")
+
+            browser.post("/settings", mapOf("action" to "save", "password" to "other"))
+            assertFalse("password" in home.resolve("settings.yaml").readText().lines().filter { !it.startsWith("#") }.joinToString())
+            assertEquals("/", Browser(url).login("s3cret").path)
+        }
+    }
+
+    @Test
     fun `in Docker, Ants refuses to start without ANTS_PASSWORD or ANTS_PASSWORD_FILE, even with one in settings yaml`() {
         val home = AntsTest.tempHome().createDirectories()
         home.resolve("settings.yaml").writeText("password: s3cret\n")

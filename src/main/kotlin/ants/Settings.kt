@@ -1,7 +1,10 @@
 package ants
 
+import jakarta.annotation.PostConstruct
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.core.env.Environment
+import org.springframework.security.crypto.factory.PasswordEncoderFactories
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Component
 import org.yaml.snakeyaml.Yaml
@@ -11,6 +14,7 @@ import java.nio.file.Path
 import java.time.Duration
 import java.util.concurrent.TimeUnit.SECONDS
 import java.util.concurrent.atomic.AtomicReference
+import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.readText
 
@@ -21,26 +25,38 @@ data class Repo(val name: String, val path: String, val remote: String)
 @Component
 class Settings(
     @Value("\${ants.home}") home: Path,
-    @Value("\${server.address:}") address: String,
+    @Value("\${server.address:}") private val address: String,
     @Value("\${ants.shell}") private val shell: String,
     private val encoder: PasswordEncoder,
     @Value("\${ants.password:}") password: String,
     @Value("\${ants.password-file:}") passwordFile: String,
     /** ANTS_DOCKER, which the image sets: Ants runs in its container. */
-    @Value("\${ants.docker:false}") docker: Boolean,
+    @Value("\${ants.docker:false}") private val docker: Boolean,
 ) {
     /** ANTS_PASSWORD, else the file ANTS_PASSWORD_FILE names (a Docker secret); either wins over `settings.yaml`'s. */
-    private val envPassword = password.ifEmpty { passwordFile.ifEmpty { null }?.let { Path.of(it).readText().removeSuffix("\n") }.orEmpty() }
+    private val envPassword = when {
+        password.isNotEmpty() -> password
+        passwordFile.isNotEmpty() -> Path.of(passwordFile).readText().removeSuffix("\n")
+        else -> ""
+    }
+
+    /** ANTS_PASSWORD or ANTS_PASSWORD_FILE sets the password, so neither the settings page nor `ants password` changes it. */
+    val passwordFromEnv get() = envPassword.isNotEmpty()
 
     /** The file itself, as the settings page names it. */
     val file: Path = home.resolve("settings.yaml")
 
     init {
-        check(!docker || envPassword.isNotEmpty()) { "Ants in Docker needs a password: set ANTS_PASSWORD or ANTS_PASSWORD_FILE." }
         if (!file.exists()) {
             val found = detect().mapValues { mapOf("path" to it.value) }
             file.writeAtomically(HEADER + if (found.isEmpty()) "" else yaml.dump(found))
         }
+    }
+
+    /** Refuses to start Ants in Docker without a password from the environment, or off loopback with the default one. */
+    @PostConstruct
+    fun refuseUnsafeStart() {
+        check(!docker || passwordFromEnv) { "Ants in Docker needs a password: set ANTS_PASSWORD or ANTS_PASSWORD_FILE." }
         val loopback = address.isNotEmpty() && InetAddress.getByName(address).isLoopbackAddress
         check(loopback || !encoder.matches("admin", password())) {
             "Ants won't listen on ${address.ifEmpty { "every address" }} with the default password. Change the password first."
@@ -192,4 +208,30 @@ class Settings(
 
             """.trimIndent() + "\n"
     }
+}
+
+/** `ants password`: asks for the new password twice and writes it, encoded, into `settings.yaml`. 0 when it changed. */
+fun changePassword(environment: Environment): Int {
+    val encoder = PasswordEncoderFactories.createDelegatingPasswordEncoder()
+    val settings = Settings(
+        home = Path.of(environment.getRequiredProperty("ants.home")).createDirectories(),
+        address = environment.getProperty("server.address", ""),
+        shell = environment.getRequiredProperty("ants.shell"),
+        encoder = encoder,
+        password = environment.getProperty("ants.password", ""),
+        passwordFile = environment.getProperty("ants.password-file", ""),
+        docker = environment.getProperty("ants.docker", Boolean::class.java, false),
+    )
+    fun refuse(why: String) = 1.also { System.err.println("$why; the password is unchanged") }
+    if (settings.passwordFromEnv) return refuse("ANTS_PASSWORD or ANTS_PASSWORD_FILE sets the password")
+    val console = System.console()?.takeIf { it.isTerminal }
+    val stdin = System.`in`.bufferedReader()
+    val (password, again) = listOf("New password: ", "Again: ").map { prompt ->
+        if (console != null) console.readPassword(prompt)?.let(::String).orEmpty() else stdin.readLine().orEmpty()
+    }
+    if (password.isEmpty()) return refuse("The password is empty")
+    if (password != again) return refuse("The passwords differ")
+    settings.save { it["password"] = encoder.encode(password) }
+    println("Password changed")
+    return 0
 }

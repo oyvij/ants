@@ -41,14 +41,14 @@ class LauncherTest {
 
     data class Ran(val exit: Int, val output: String)
 
-    private fun launch(vararg command: String) = ProcessBuilder(link.toString(), *command).redirectErrorStream(true).also {
+    private fun launch(vararg command: String, env: Map<String, String> = emptyMap()) = ProcessBuilder(link.toString(), *command).redirectErrorStream(true).also {
         it.environment().clear()
         // No update check reaches GitHub or Anthropic: Ants run here finds no release and no model table.
-        it.environment() += mapOf("HOME" to "$home", "PATH" to "$fakeLaunchctl:/usr/bin:/bin", "ANTS_RELEASES" to "", "ANTS_MODELS" to "")
+        it.environment() += mapOf("HOME" to "$home", "PATH" to "$fakeLaunchctl:/usr/bin:/bin", "ANTS_RELEASES" to "", "ANTS_MODELS" to "") + env
     }.start()
 
-    private fun ants(vararg command: String, input: String = ""): Ran {
-        val process = launch(*command)
+    private fun ants(vararg command: String, input: String = "", env: Map<String, String> = emptyMap()): Ran {
+        val process = launch(*command, env = env)
         process.outputWriter().use { it.write(input) }
         val output = process.inputReader().readText()
         return Ran(process.waitFor(), output)
@@ -216,6 +216,31 @@ class LauncherTest {
         }
         run.waitFor()
         assertFalse(lock.exists(), "a stopped Ants leaves no lock file")
+    }
+
+    @Test
+    fun `Ants refuses to start while another holds the lock, starting or running, and says where it runs`() {
+        val other = ProcessBuilder("sleep", "60").start() // a live pid, as an Ants that is still starting has
+        val lock = antsHome.createDirectories().resolve("ants.lock")
+        try {
+            lock.writeText("${other.pid()}\n")
+            assertEquals(Ran(1, "Ants is already starting (pid ${other.pid()})\n"), ants("run", "--server.port=0", "--ants.shell=/bin/sh"))
+            assertEquals(Ran(0, "Ants is already starting (pid ${other.pid()})\n"), ants("start"))
+
+            lock.writeText("${other.pid()}\nhttp://127.0.0.1:7323\n")
+            assertEquals(Ran(1, "Ants is already running at http://127.0.0.1:7323 (pid ${other.pid()})\n"), ants("run", "--server.port=0", "--ants.shell=/bin/sh"))
+            assertEquals(emptyList(), launchctl())
+        } finally {
+            other.destroy()
+        }
+    }
+
+    @Test
+    fun `password refuses while ANTS_PASSWORD sets the password`() {
+        assertEquals(
+            Ran(1, "ANTS_PASSWORD or ANTS_PASSWORD_FILE sets the password; the password is unchanged\n"),
+            ants("password", input = "s3cret\ns3cret\n", env = mapOf("ANTS_PASSWORD" to "from-env")),
+        )
     }
 
     @Test

@@ -13,7 +13,8 @@ service=gui/$(id -u)
 java=$root/runtime/bin/java
 [ -x "$java" ] || java=java
 
-# The pid and URL in the lock file Ants writes, when that Ants is still alive.
+# The pid and URL in the lock file, when that Ants is still alive. Ants writes its pid first thing at start and its URL
+# once it listens, and refuses to start while another holds the lock.
 # ponytail: a pid check only, so a stale lock whose pid was reused reads as running; check the command if it bites
 running() {
   [ -f "$lock" ] || return 1
@@ -21,8 +22,17 @@ running() {
   kill -0 "$pid" 2> /dev/null
 }
 
+# What the running Ants is doing, as Ants itself says it: "running at <url> (pid <pid>)", or "starting (pid <pid>)".
+state() {
+  if [ -n "$url" ]; then echo "running at $url (pid $pid)"; else echo "starting (pid $pid)"; fi
+}
+
+jar() {
+  exec "$java" -jar "$root/lib/ants.jar" "$@"
+}
+
 start() {
-  if running; then echo "Ants is already running at $url (pid $pid)"; return; fi
+  if running; then echo "Ants is already $(state)"; return; fi
   mkdir -p "$ANTS_HOME/logs" "$(dirname "$plist")"
   # The version current links, when that is this one, so launchd's own relaunches, at login or after a crash, run the
   # version an update or a rollback left there, as `ants restart` does.
@@ -63,7 +73,7 @@ EOF
   launchctl bootout "$service/$label" 2> /dev/null # a crashed one launchd still holds
   launchctl bootstrap "$service" "$plist" || return
   for _ in $(seq 120); do
-    if running; then echo "Ants is running at $url"; return; fi
+    if running && [ -n "$url" ]; then echo "Ants is running at $url"; return; fi
     sleep 0.5
   done
   echo "Ants is starting; ants logs shows how far it got"
@@ -89,11 +99,8 @@ case "${1:-}" in
   start) start ;;
   stop) stop ;;
   restart) stop > /dev/null && start ;;
-  run)
-    shift
-    if running; then echo "Ants is already running at $url (pid $pid)" >&2; exit 1; fi
-    exec "$java" -jar "$root/lib/ants.jar" "$@" ;;
-  password) exec "$java" -jar "$root/lib/ants.jar" password ;;
+  run) shift; jar "$@" ;; # Ants itself refuses to start while another runs
+  password) jar password ;;
   logs) shift; exec tail -n 100 "$@" "$ANTS_HOME/logs/ants.log" ;;
   rollback)
     # Swaps current and previous, so a second rollback goes forward again; a running Ants restarts on the version now current.
@@ -106,7 +113,7 @@ case "${1:-}" in
     fi
     echo "Rolled back to Ants ${previous#versions/}; it runs from the next ants start" ;;
   status)
-    if running; then echo "Ants is running at $url (pid $pid)"; else echo "Ants is not running"; exit 3; fi ;;
+    if running; then echo "Ants is $(state)"; else echo "Ants is not running"; exit 3; fi ;;
   -h | --help | help) echo "$usage" ;;
   *) echo "$usage" >&2; exit 2 ;;
 esac

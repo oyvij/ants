@@ -38,7 +38,7 @@ class SettingsPage(
             }
             "varde" -> runCatching { form.fromVarde() }.fold({ show(model, it) }, { show(model, form, it.message) })
             else -> form.error()?.let { show(model, form, it) } ?: run {
-                form.save(settings, params["password"].orEmpty(), encoder)
+                form.save(settings, params["password"].orEmpty().takeUnless { settings.passwordFromEnv }.orEmpty(), encoder)
                 "redirect:/settings"
             }
         }
@@ -48,6 +48,7 @@ class SettingsPage(
         model.addAttribute("form", form)
         model.addAttribute("file", settings.file.toString())
         model.addAttribute("message", message)
+        model.addAttribute("passwordFromEnv", settings.passwordFromEnv)
         model.addAttribute("login", ClaudeLogin(launcher.login(), home.resolve("claude"), launcher.usage()))
         return "settings"
     }
