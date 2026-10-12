@@ -15,7 +15,7 @@
 <h1>${entry.icon} ${entry.tag} ${entry.task}</h1>
 <p><a href="/processes/${entry.key}">${entry.process}</a> · waiting ${entry.waited}</p>
 <p>${entry.summary}</p>
-<form method="post" action="/processes/${entry.key}/schedule/start"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>Start now</button></form>
+<form method="post" action="/processes/${entry.key}/schedule/start"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button class="primary">Start now</button></form>
 <form method="post" action="/processes/${entry.key}/schedule/dismiss"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><input type="hidden" name="back" value="notifications"><button>Dismiss</button></form>
 </body>
 </html>

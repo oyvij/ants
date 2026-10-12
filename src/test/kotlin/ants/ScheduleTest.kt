@@ -129,7 +129,7 @@ class ScheduleTest : AntsTest() {
         home.resolve("settings.yaml").writeText("")
         clock.offset = Duration.ofHours(2)
         eventually { assertContains(browser.get("/notifications").body, "Configure a Vault") }
-        assertContains(browser.get("/processes/$key").body, "<button>Start now</button>") // the Process page has them too
+        assertContains(browser.get("/processes/$key").body, """<button class="primary">Start now</button>""") // the Process page has them too
         browser.get("/notifications/schedule-$key")
         assertEquals("/notifications", browser.post("/processes/$key/schedule/dismiss", mapOf("back" to "notifications")).path)
         assertFalse("Configure a Vault" in browser.get("/notifications").body)

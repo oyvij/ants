@@ -16,3 +16,7 @@ if (ask && navigator.setAppBadge && window.Notification?.permission === 'default
 for (const slot of document.querySelectorAll('nav [data-src]')) {
     new EventSource(slot.dataset.src).onmessage = event => slot.innerHTML = event.data;
 }
+// The sidebar marks the page it is on, or the page a deeper one sits under.
+for (const link of document.querySelectorAll('body > nav:first-child > a')) {
+    if (link.pathname === '/' ? location.pathname === '/' : location.pathname.startsWith(link.pathname)) link.setAttribute('aria-current', 'page');
+}

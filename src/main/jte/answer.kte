@@ -11,14 +11,6 @@
     @template.app()
     <meta name="color-scheme" content="${colorScheme}">
     <title>${entry.icon} ${entry.tag} ${entry.task} · Ants</title>
-    <style>
-        /* Fixed, so the buttons stay put from question to question; a button is made invisible, never removed. */
-        form { padding-bottom: 4em; }
-        footer { position: fixed; bottom: 0; left: 0; right: 0; padding: .75em 1em; background: Canvas; border-top: 1px solid GrayText; display: flex; gap: .5em; }
-        footer #next { margin-left: auto; }
-        #tabs [aria-selected=true] { font-weight: bold; }
-        textarea { width: 100%; min-height: 5em; }
-    </style>
     <script src="/answer.js" defer></script>
 </head>
 <body>

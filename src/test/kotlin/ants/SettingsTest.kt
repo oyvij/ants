@@ -205,8 +205,12 @@ class SettingsTest : AntsTest() {
         DateTimeFormatter.ofPattern("EEE d MMM HH:mm", Locale.ENGLISH).format(Instant.ofEpochSecond(epochSecond).atZone(ZoneId.systemDefault()))
 
     @Test
-    fun `dark mode follows the system until a choice is saved`() {
+    fun `dark mode follows the system until a choice is saved, through the color-scheme ants css reads`() {
         assertContains(browser.get("/").body, """<meta name="color-scheme" content="light dark">""")
+        assertContains(browser.get("/").body, """<link rel="stylesheet" href="/ants.css">""")
+        val css = browser.get("/ants.css")
+        assertEquals(200, css.status)
+        assertContains(css.body, "light-dark(")
         press("save", mapOf("theme" to "dark"))
         assertContains(browser.get("/").body, """<meta name="color-scheme" content="dark">""")
         assertContains(browser.get("/settings").body, """name="theme" value="dark" checked""")

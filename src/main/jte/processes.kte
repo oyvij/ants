@@ -9,7 +9,6 @@
     @template.app()
     <meta name="color-scheme" content="${colorScheme}">
     <title>Processes · Ants</title>
-    <style>[role=alert] { white-space: pre-line; }</style>
 </head>
 <body>
 @template.nav()
@@ -28,7 +27,7 @@
         <option value="${process.key}">${process.name ?: process.key}</option>
 @endfor
     </select></label>
-    <button>＋ New Process</button>
+    <button class="primary">＋ New Process</button>
 </form>
 <form method="post" action="/processes" enctype="multipart/form-data">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">

@@ -95,7 +95,7 @@ class TemplatesTest : AntsTest() {
         assertContains(browser.get("/templates.json").body, """{"name":"review-loop","title":"Review loop","shipped":true}""")
 
         val shipped = browser.get("/templates/review-loop").body
-        assertContains(shipped, """<button id="save" data-action="/templates/review-loop" hidden>Save</button>""")
+        assertContains(shipped, """<button class="primary" id="save" data-action="/templates/review-loop" hidden>Save</button>""")
         assertContains(shipped, """<form method="post" action="/templates/review-loop/copy">""")
         assertEquals(403, browser.post("/templates/review-loop", mapOf("bpmn" to browser.get("/templates/review-loop/diagram.bpmn").body)).status)
 
@@ -103,7 +103,7 @@ class TemplatesTest : AntsTest() {
         browser.get("/templates/review-loop")
         val copy = browser.post("/templates/review-loop/copy", emptyMap())
         assertEquals("/templates/review-loop-copy", copy.path)
-        assertContains(copy.body, """<button id="save" data-action="/templates/review-loop-copy">Save</button>""")
+        assertContains(copy.body, """<button class="primary" id="save" data-action="/templates/review-loop-copy">Save</button>""")
         assertContains(browser.get("/templates/review-loop-copy/diagram.bpmn").body, """<bpmn:userTask id="approve" name="Approve">""")
     }
 

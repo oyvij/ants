@@ -29,11 +29,11 @@
     @if(schedule.skipped != null)<p>${schedule.skipped}</p>@endif
     @if(schedule.failed != null)
     <p role="alert">✕ [failed] The scheduled Run didn't start: ${schedule.failed.why}</p>
-    <form method="post" action="/processes/${process.key}/schedule/start"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>Start now</button></form>
+    <form method="post" action="/processes/${process.key}/schedule/start"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button class="primary">Start now</button></form>
     <form method="post" action="/processes/${process.key}/schedule/dismiss"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>Dismiss</button></form>
     @endif
     <form method="post" action="/processes/${process.key}/schedule/${if (schedule.paused) "resume" else "pause"}"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>${if (schedule.paused) "Resume" else "Pause"}</button></form>
-    <form method="post" action="/processes/${process.key}/schedule/remove"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>Remove</button></form>
+    <form method="post" action="/processes/${process.key}/schedule/remove"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button class="danger">Remove</button></form>
 </section>
 @endif
 <div id="diagram" data-src="/processes/${process.key}/diagram.bpmn" style="height: 60vh"></div>
@@ -67,7 +67,7 @@
     </ul>
 @endif
 </section>
-    <button disabled="${reasons.isNotEmpty()}">Start</button>
+    <button class="primary" disabled="${reasons.isNotEmpty()}">Start</button>
 </form>
 <script src="/vendor/camunda-bpmn-js/base-navigated-viewer.production.min.js"></script>
 <script>

@@ -13,15 +13,6 @@
     @template.app()
     <meta name="color-scheme" content="${colorScheme}">
     <title>${task} · Transcript · Ants</title>
-    <style>
-        .tool, .ants, .user, #status { font-family: ui-monospace, monospace; }
-        .tool.error b { color: #c33; }
-        .ants { color: #777; }
-        .subagent { margin-left: 1em; border-left: 2px solid #9996; padding-left: .5em; }
-        .chip { font-size: .85em; border: 1px solid #9996; border-radius: 1em; padding: 0 .5em; }
-        .spinner { display: inline-block; animation: spin 2s linear infinite; }
-        @keyframes spin { to { transform: rotate(360deg); } }
-    </style>
 </head>
 <body>
 @template.nav()
@@ -40,12 +31,12 @@ $unsafe{transcript.html("subagents")}
 <form method="post" action="/runs/${run}/tasks/${task}/transcript/send">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
     <label>Message <textarea name="message" required></textarea></label>
-    <button>Send</button>
+    <button class="primary">Send</button>
     <small>${sendHint}</small>
 </form>
 <form method="post" action="/runs/${run}/tasks/${task}/transcript/stop">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
-    <button>■ Stop</button>
+    <button class="danger">■ Stop</button>
 </form>
 @endif
 <script>

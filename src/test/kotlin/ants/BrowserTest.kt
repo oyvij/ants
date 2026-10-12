@@ -2,6 +2,7 @@ package ants
 
 import com.microsoft.playwright.BrowserType
 import com.microsoft.playwright.Locator
+import com.microsoft.playwright.options.ColorScheme
 import com.microsoft.playwright.options.KeyboardModifier
 import com.microsoft.playwright.Page
 import com.microsoft.playwright.Playwright
@@ -196,6 +197,35 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `the theme setting switches light, dark and system on every page, the modeler and the diagrams included`() = browse {
+        val (process, plane) = row("themed", """<bpmn:startEvent id="start" />""", """<bpmn:userTask id="wait" name="Wait" />""", """<bpmn:endEvent id="end" />""")
+        deploy(definitions("themed", "Themed", process, plane))
+        val run = http.post("/processes/themed/runs", mapOf()).path
+        val diagrams = listOf("/processes/themed", "/processes/themed/edit", run)
+        val pages = listOf("/", "/notifications", "/runs", "/processes", "/agents", "/agents/new", "/skills", "/skills/new", "/templates", "/tickets", "/settings") + diagrams
+        val light = "rgb(244, 245, 247)"
+        val dark = "rgb(11, 13, 18)"
+        for ((theme, system, expected) in listOf(
+            Triple("light", ColorScheme.DARK, light), Triple("dark", ColorScheme.LIGHT, dark),
+            Triple("system", ColorScheme.LIGHT, light), Triple("system", ColorScheme.DARK, dark),
+        )) {
+            settings(null, "theme: $theme\n")
+            page.emulateMedia(Page.EmulateMediaOptions().setColorScheme(system))
+            for (path in pages) {
+                page.navigate(url(path))
+                assertThat(page.locator("link[rel=stylesheet][href='/ants.css']")).hasCount(1)
+                assertEquals(expected, page.evaluate("getComputedStyle(document.documentElement).backgroundColor"), "$theme on $path")
+                if (path in diagrams) {
+                    val svg = page.locator(".djs-container > svg")
+                    assertThat(svg).isVisible()
+                    assertEquals(expected == dark, "invert" in svg.evaluate("it => getComputedStyle(it).filter").toString(), "the diagram in $theme on $path")
+                }
+                if (theme != "system") page.screenshot("theme/$theme${path.replace(Regex("[^a-z0-9]+"), "-")}")
+            }
+        }
+    }
+
+    @Test
     fun `the Notification list asks for notification permission on a click, since macOS badges an app only with it`() = browse {
         // The browser's answer outlives the page, as a real one's does, so the reload below finds it.
         page.addInitScript(
@@ -234,6 +264,7 @@ class BrowserTest : AntsTest() {
         page.navigate(url(entry))
         val tabs = page.locator("#tabs [role=tab]")
         assertThat(tabs).hasText(arrayOf("· Title who", "· Title scope", "Review and send"))
+        page.screenshot("answer")
         assertThat(page.locator("#answer-who")).isVisible()
         assertThat(page.locator("#answer-scope")).isHidden()
         assertThat(page.locator("#back")).not().isVisible()

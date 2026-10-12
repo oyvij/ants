@@ -102,12 +102,12 @@ class SkillsTest : AntsTest() {
         copy.toFile().deleteRecursively()
         val shipped = page("/skills/shipped-draft")
         assertContains(shipped, """<textarea name="skill" rows="20" cols="80" readonly>""")
-        assertFalse("<button>Save</button>" in shipped)
+        assertFalse("""<button class="primary">Save</button>""" in shipped)
         assertEquals(403, save(skillMd("shipped-draft"), name = "shipped-draft").status)
 
         val page = browser.post("/skills/shipped-draft/copy", emptyMap())
         assertEquals("/skills/shipped-draft-copy", page.path)
-        assertContains(page.body, "<button>Save</button>")
+        assertContains(page.body, """<button class="primary">Save</button>""")
         assertEquals("---\nname: shipped-draft-copy\ndescription: Stands in for the Skills Ants ships.\n---\nDraft the text.\n", copy.resolve("SKILL.md").readText())
         assertEquals(home.resolve("shipped/skills/shipped-draft/result.schema.json").readText(), copy.resolve("result.schema.json").readText())
     }
@@ -179,11 +179,11 @@ class SkillsTest : AntsTest() {
         agent.writeText("---\nname: picker\ndescription: Picks.\ncli: claude\nskills: tdd\n---\nPick.\n")
         home.resolve("skills/chosen").toFile().deleteRecursively()
         val form = browser.get("/skills/new?use=picker").body
-        assertContains(form, "<button>Create and use</button>")
+        assertContains(form, """<button class="primary">Create and use</button>""")
         assertFalse("<nav>" in form) // the modeler's own page is behind the modal
 
         val refused = browser.post("/skills/new", mapOf("skill" to "no frontmatter", "schema" to "", "use" to "picker"))
-        assertContains(refused.body, "<button>Create and use</button>") // a refusal stays in the modal
+        assertContains(refused.body, """<button class="primary">Create and use</button>""") // a refusal stays in the modal
         assertEquals("/skills/chosen", browser.post("/skills/new", mapOf("skill" to skillMd("chosen"), "schema" to "", "use" to "picker")).path)
         assertEquals(listOf("tdd", "chosen"), Agent(agent).skills)
 

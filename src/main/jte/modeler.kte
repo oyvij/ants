@@ -15,23 +15,20 @@
     <title>${name} · Modeler · Ants</title>
     <link rel="stylesheet" href="/vendor/camunda-bpmn-js/assets/camunda-platform-modeler.css">
     <style>
-        body { margin: 0; height: 100vh; display: flex; flex-direction: column; }
-        header { display: flex; gap: 1rem; align-items: baseline; padding: 0 1rem; }
-        main { flex: 1; display: flex; min-height: 0; }
-        /* bpmn-js draws black on the page's background, so the canvas stays light in dark mode. */
-        #canvas { flex: 1; background: white; color-scheme: light; }
-        #explain { width: 20rem; overflow: auto; padding: 0 1rem; border-left: 1px solid #888; }
-        #refusal { white-space: pre-line; }
-        #checks { max-height: 8rem; overflow: auto; margin: 0; }
-        #checks .error::marker { content: "✖ "; color: crimson; }
-        #checks .warning::marker { content: "⚠ "; color: darkorange; }
+        body { height: 100vh; padding-bottom: 16px; display: flex; flex-direction: column; }
+        header { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
+        header h1 { margin: 0; }
+        main { flex: 1; display: flex; gap: 14px; min-height: 0; }
+        #canvas { flex: 1; margin: 0; }
+        #explain { width: 22rem; overflow: auto; }
+        #checks { max-height: 8rem; overflow: auto; }
     </style>
 </head>
 <body>
 @template.nav()
 <header>
     <h1>${name}</h1>
-    <button id="save" data-action="${action}" hidden="${copy != null}">${saveLabel}</button>
+    <button class="primary" id="save" data-action="${action}" hidden="${copy != null}">${saveLabel}</button>
 @if(copy != null)
     <form method="post" action="${copy}">
         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
