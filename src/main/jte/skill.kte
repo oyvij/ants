@@ -34,7 +34,7 @@
     <p><label>SKILL.md<br><textarea name="skill" rows="20" cols="80" readonly="${form.readOnly}">${form.skill}</textarea></label></p>
     <p><label>result.schema.json, the <code>output</code> the Skill promises; empty for any output<br><textarea name="schema" rows="12" cols="80" readonly="${form.readOnly}">${form.schema}</textarea></label></p>
 @if(!form.readOnly)
-    <p><button>${if (use != null) "Create and use" else "Save"}</button></p>
+    <p><button class="primary">${if (use != null) "Create and use" else "Save"}</button></p>
 @endif
 </form>
 @if(dependents != null)
@@ -43,7 +43,7 @@
 @if(form.name != null && !form.readOnly)
 <form method="post" action="/skills/${form.name}/delete">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
-    <button>Delete…</button>
+    <button class="danger">Delete…</button>
 </form>
 @endif
 @template.codemirror()

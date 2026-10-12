@@ -211,7 +211,7 @@ class CodexTest : AntsTest() {
         codex.session("draft", started, turn, "wait release", answer("Kept short."), completed)
         val run = start()
         var page = ""
-        eventually { page = browser.get(transcript(run)).body.also { assertContains(it, "<button>Send</button>") } }
+        eventually { page = browser.get(transcript(run)).body.also { assertContains(it, """<button class="primary">Send</button>""") } }
         assertContains(page, "codex takes no message while it works: Send stops it and resumes its session with your message.")
         eventually { assertEquals(1, codex.launches("draft").size) }
 

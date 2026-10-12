@@ -14,18 +14,6 @@
     @template.app()
     <meta name="color-scheme" content="${colorScheme}">
     <title>${entry.icon} ${entry.tag} ${entry.task} · Ants</title>
-    <style>
-        table.diff { border-collapse: collapse; font-family: monospace; width: 100%; }
-        table.diff td { padding: 0 .5em; white-space: pre; vertical-align: top; }
-        table.diff td:nth-child(-n+2) { color: GrayText; text-align: right; width: 3em; cursor: pointer; user-select: none; }
-        tr.add { background: color-mix(in srgb, green 15%, Canvas); }
-        tr.del { background: color-mix(in srgb, red 15%, Canvas); }
-        tr.hunk { color: GrayText; }
-        tr.picked { outline: 2px solid Highlight; }
-        table.site { border-collapse: collapse; font-family: monospace; }
-        table.site td { padding: 0 .5em; white-space: pre; }
-        table.site td:first-child { color: GrayText; text-align: right; }
-    </style>
     <script src="/review.js" defer></script>
 </head>
 <body>
@@ -133,7 +121,7 @@
 <form method="post" action="/notifications/${entry.id}">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
     <label>Comment on the changes <textarea name="comment"></textarea></label>
-    <button name="action" value="approve">Approve</button>
+    <button class="primary" name="action" value="approve">Approve</button>
     <button name="action" value="send-back">Send back</button>
 </form>
 </body>

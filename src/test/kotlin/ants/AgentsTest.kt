@@ -113,7 +113,7 @@ class AgentsTest : AntsTest() {
             for (name in listOf("shipped-writer", "outsider")) {
                 val page = get("/agents/$name")
                 assertContains(page, "<fieldset disabled>")
-                assertFalse("<button>Save</button>" in page)
+                assertFalse("""<button class="primary">Save</button>""" in page)
                 assertEquals(403, post("/agents/$name", mapOf("name" to name, "instructions" to "Changed.")).status)
             }
             assertEquals("/agents/outsider-copy", post("/agents/outsider/copy", emptyMap()).path)
@@ -259,11 +259,11 @@ class AgentsTest : AntsTest() {
         agents.resolve("helper.md").deleteIfExists()
         val form = browser.get("/agents/new?use")
         assertEquals("SAMEORIGIN", form.headers?.firstValue("X-Frame-Options")?.orElse(null)) // the modeler frames it
-        assertContains(form.body, "<button>Create and use</button>")
+        assertContains(form.body, """<button class="primary">Create and use</button>""")
         assertFalse("<nav>" in form.body) // the modeler's own page is behind the modal
 
         val refused = browser.post("/agents/new", mapOf("name" to "Helper!", "cli" to "claude", "use" to ""))
-        assertContains(refused.body, "<button>Create and use</button>") // a refusal stays in the modal
+        assertContains(refused.body, """<button class="primary">Create and use</button>""") // a refusal stays in the modal
         assertEquals("/agents/helper", browser.post("/agents/new", mapOf("name" to "helper", "cli" to "claude", "use" to "")).path)
         assertTrue(agents.resolve("helper.md").exists())
     }

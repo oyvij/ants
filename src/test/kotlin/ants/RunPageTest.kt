@@ -177,7 +177,7 @@ class RunPageTest : AntsTest() {
         assertContains(part(html, "drawer-head"), "⚠ [stuck] No tone given.")
         val action = part(html, "drawer-action")
         assertContains(action, "Which tone, dry or warm?")
-        assertContains(action, """<button name="action" value="continue">Continue the session</button>""")
+        assertContains(action, """<button class="primary" name="action" value="continue">Continue the session</button>""")
         assertContains(action, """<input type="hidden" name="back" value="run">""")
         val form = Regex("""<form method="post" action="(/notifications/[^"]+)">""").find(action)!!.groupValues[1]
 

@@ -38,8 +38,8 @@
 <form method="post">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
     <input type="hidden" name="instruction" value="">
-    @if(entry.tag == "[failed]")<button name="action" value="continue">Continue</button>@else<button name="action" value="push">Push</button>@endif
-    <button name="action" value="cancel">Cancel the Run</button>
+    @if(entry.tag == "[failed]")<button class="primary" name="action" value="continue">Continue</button>@else<button class="primary" name="action" value="push">Push</button>@endif
+    <button class="danger" name="action" value="cancel">Cancel the Run</button>
 </form>
 </body>
 </html>

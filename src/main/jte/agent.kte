@@ -90,7 +90,7 @@
         <p><label><input type="checkbox" name="subagent" checked="${form.subagent}"> Offer as a Subagent</label> Other Agents may start it as a Subagent. claude Agents only.</p>
         <p><label>Standing instructions<br><textarea name="instructions" rows="12" cols="80">${form.instructions}</textarea></label></p>
 @if(!readOnly)
-        <p><button>${if (use) "Create and use" else "Save"}</button></p>
+        <p><button class="primary">${if (use) "Create and use" else "Save"}</button></p>
 @endif
     </fieldset>
 </form>
@@ -100,7 +100,7 @@
 @if(file != null && !readOnly)
 <form method="post" action="${action}/delete">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
-    <button>Delete…</button>
+    <button class="danger">Delete…</button>
 </form>
 @endif
 </body>

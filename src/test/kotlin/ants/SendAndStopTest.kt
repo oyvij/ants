@@ -33,7 +33,7 @@ class SendAndStopTest : AntsTest() {
     /** The Transcript page, once it offers Send and Stop. */
     private fun live(run: String): String {
         var page = ""
-        eventually { page = browser.get(transcript(run)).body.also { assertContains(it, "<button>Send</button>") } }
+        eventually { page = browser.get(transcript(run)).body.also { assertContains(it, """<button class="primary">Send</button>""") } }
         return page
     }
 
@@ -69,7 +69,7 @@ class SendAndStopTest : AntsTest() {
         eventually { assertContains(browser.get(transcript(run)).body, "Result: done") }
         val refused = browser.post("${transcript(run)}/send", mapOf("message" to "One more thing."))
         assertContains(refused.body, "Not sent: the Agent's session has ended")
-        assertFalse("<button>Send</button>" in refused.body)
+        assertFalse("""<button class="primary">Send</button>""" in refused.body)
         claude.release("release")
         eventually { assertContains(browser.get("/runs/$run").body, "State: Completed") }
         assertFalse("One more thing." in claude.launches("draft").single().stdin)

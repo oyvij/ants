@@ -20,7 +20,7 @@ $unsafe{article}
 @if(file.forHuman)
 <form method="post" action="${file.href}/done">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
-    <p>This Ticket is yours to do. <button>Mark done</button></p>
+    <p>This Ticket is yours to do. <button class="primary">Mark done</button></p>
 </form>
 @endif
 @if(tickets.isNotEmpty())
