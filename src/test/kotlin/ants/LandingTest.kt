@@ -98,6 +98,9 @@ class LandingTest : AntsTest() {
 
     private fun real(run: String): Path = workspace(run).toRealPath()
 
+    /** The work branch a Run with no branch given gets: `ants/` and the slug its Run workspace folder starts with. */
+    private fun branch(run: String) = "ants/" + workspace(run).fileName.toString().removeSuffix("-$run")
+
     private fun clone(run: String, repo: String) = real(run).resolve("repos/$repo")
 
     /** Waits until every instance of `implement` has landed and the Run waits after it. */
@@ -148,7 +151,7 @@ class LandingTest : AntsTest() {
             }
         }
         val one = instances.resolve("implement-1")
-        assertEquals("ants/$run--implement-1", git(one.resolve("repos/api"), "branch", "--show-current"))
+        assertEquals("${branch(run)}--implement-1", git(one.resolve("repos/api"), "branch", "--show-current"))
         assertEquals(real(run).resolve("tasks"), one.resolve("tasks").toRealPath())
         assertFalse(one.resolve("instances").exists())
 
@@ -320,8 +323,8 @@ class LandingTest : AntsTest() {
     @Test
     fun `a shared clone off the work branch moves no repo`() {
         val run = meddling("cd web && git switch -q -c elsewhere")
-        refused(run, "is on elsewhere, not the work branch ants/$run")
-        assertEquals("1", git(clone(run, "web"), "rev-list", "--count", "ants/$run"))
+        refused(run, "is on elsewhere, not the work branch ${branch(run)}")
+        assertEquals("1", git(clone(run, "web"), "rev-list", "--count", branch(run)))
     }
 
     @Test
