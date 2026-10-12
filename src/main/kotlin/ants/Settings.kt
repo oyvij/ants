@@ -24,11 +24,19 @@ class Settings(
     @Value("\${server.address:}") address: String,
     @Value("\${ants.shell}") private val shell: String,
     private val encoder: PasswordEncoder,
+    @Value("\${ants.password:}") password: String,
+    @Value("\${ants.password-file:}") passwordFile: String,
+    /** ANTS_DOCKER, which the image sets: Ants runs in its container. */
+    @Value("\${ants.docker:false}") docker: Boolean,
 ) {
+    /** ANTS_PASSWORD, else the file ANTS_PASSWORD_FILE names (a Docker secret); either wins over `settings.yaml`'s. */
+    private val envPassword = password.ifEmpty { passwordFile.ifEmpty { null }?.let { Path.of(it).readText().removeSuffix("\n") }.orEmpty() }
+
     /** The file itself, as the settings page names it. */
     val file: Path = home.resolve("settings.yaml")
 
     init {
+        check(!docker || envPassword.isNotEmpty()) { "Ants in Docker needs a password: set ANTS_PASSWORD or ANTS_PASSWORD_FILE." }
         if (!file.exists()) {
             val found = detect().mapValues { mapOf("path" to it.value) }
             file.writeAtomically(HEADER + if (found.isEmpty()) "" else yaml.dump(found))
@@ -39,9 +47,9 @@ class Settings(
         }
     }
 
-    /** The login password, encoded; a plain one in the file reads as `{noop}`. */
+    /** The login password, from the environment else the file, encoded; a plain one reads as `{noop}`. */
     fun password(): String {
-        val password = read()["password"]?.toString() ?: "admin"
+        val password = envPassword.ifEmpty { read()["password"]?.toString() ?: "admin" }
         return if (password.startsWith("{")) password else "{noop}$password"
     }
 
