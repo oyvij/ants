@@ -1,15 +1,15 @@
 package ants
 
 import com.microsoft.playwright.Browser.NewContextOptions
-import com.microsoft.playwright.BrowserContext
 import com.microsoft.playwright.Page
 import com.microsoft.playwright.Playwright
 import com.microsoft.playwright.options.ColorScheme
-import com.microsoft.playwright.options.LoadState
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Timeout
 import org.springframework.beans.factory.annotation.Autowired
 import java.nio.file.Path
+import java.util.concurrent.TimeUnit
 import kotlin.io.path.createDirectories
 import kotlin.io.path.writeText
 import kotlin.test.assertEquals
@@ -38,6 +38,7 @@ class LookTest : AntsTest() {
     private fun result(json: String) = """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":$json}"""
 
     @Test
+    @Timeout(15, unit = TimeUnit.MINUTES) // about 80 screenshots, each given time to load
     fun `every page beside the prototype, in light and in dark`() {
         Playwright.create().use { playwright ->
             val chromium = launchChromium(playwright)
@@ -87,8 +88,7 @@ class LookTest : AntsTest() {
     private fun shoot(page: Page, url: String, name: String) {
         page.navigate("about:blank")
         page.navigate(url)
-        page.waitForLoadState(LoadState.NETWORKIDLE)
-        page.waitForTimeout(1000.0) // bpmn-js lays out and fits after its import
+        page.waitForTimeout(2500.0) // the pages' streams never let the network idle; bpmn-js and CodeMirror load and lay out
         page.screenshot(Page.ScreenshotOptions().setPath(look.resolve("$name.png")).setFullPage(true))
     }
 

@@ -41,7 +41,7 @@
 <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
 <ul id="checks" aria-label="Checks"></ul>
 <div class="modelerWrap">
-    <div id="canvas" class="dia modeler" data-src="${src}" data-facts="${modelerFacts}"></div>
+    <div id="canvas" data-src="${src}" data-facts="${modelerFacts}" class="dia modeler"></div>
     <aside id="explain" class="props"></aside>
 </div>
 </main>

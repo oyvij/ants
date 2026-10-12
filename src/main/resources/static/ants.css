@@ -47,6 +47,7 @@ svg.i { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-widt
 .side a, .side .bottom > form > button { display: flex; align-items: center; gap: 10px; color: var(--sideText); padding: 7px 10px; border-radius: 8px; font-weight: 500; }
 .side a:hover, .side .bottom > form > button:hover { background: var(--side2); color: #e5e7eb; text-decoration: none; }
 .side a.on { background: #232733; color: #fff; }
+.side .bottom > form > button svg.i { width: 17px; height: 17px; }
 .side .grp { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: #5b6475; padding: 16px 10px 4px; font-weight: 600; }
 .side .n { margin-left: auto; background: var(--wait); color: #fff; font-size: 11px; font-weight: 700; border-radius: 10px; padding: 0 7px; line-height: 18px; }
 .side .n:empty { display: none; }
@@ -75,7 +76,7 @@ main { max-width: 1160px; margin: 0 auto; padding: 32px 40px 160px; }
 main.full { max-width: none; padding: 20px 24px 24px; }
 .crumbs { font-size: 12.5px; color: var(--muted); margin-bottom: 6px; } .crumbs a { color: var(--muted); }
 .ph { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
-.ph h1 { font-size: 22px; letter-spacing: -.01em; margin: 0; } .ph .sub { width: 100%; color: var(--muted); margin-top: -6px; }
+.ph h1 { font-size: 22px; letter-spacing: -.01em; margin: 0; } .ph h1 a { color: inherit; } .ph .sub { width: 100%; color: var(--muted); margin-top: -6px; }
 .ph .acts { margin-left: auto; display: flex; gap: 8px; align-items: center; }
 .ph .acts form { margin: 0; }
 h2 { font-size: 14px; margin: 32px 0 12px; letter-spacing: .01em; }
@@ -172,6 +173,8 @@ textarea[data-md], textarea[data-json] { min-height: 90px; }
 .dia.modeler { height: calc(100vh - 128px); }
 .dia .zoom { position: absolute; right: 12px; top: 12px; display: flex; gap: 4px; z-index: 3; }
 .dia .zoom button { padding: 4px 10px; }
+/* The modeler's minimap toggle sits under the zoom buttons, which take its corner. */
+.dia .djs-minimap { top: 52px; right: 12px; }
 .dia .legend { position: absolute; left: 12px; bottom: 12px; z-index: 3; display: flex; gap: 6px; }
 .dia:fullscreen { height: 100vh; border-radius: 0; }
 .dia .nolib { padding: 40px; color: var(--muted); }
@@ -294,7 +297,7 @@ kbd { font: 11px var(--mono); border: 1px solid var(--line); border-bottom-width
 body.login { min-height: 100vh; display: grid; place-items: center; background: var(--side); }
 body.login .card { width: 360px; padding: 28px; margin: 0; }
 body.login .logo { color: var(--text); padding: 0 0 18px; }
-body.login p { margin: 16px 0; } body.login button { width: 100%; padding: 10px; }
+body.login p { margin: 14px 0; } body.login button { width: 100%; padding: 10px; }
 body.login [role] { margin-bottom: 4px; }
 
 /*
