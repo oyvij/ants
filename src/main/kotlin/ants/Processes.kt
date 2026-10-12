@@ -47,14 +47,22 @@ class Processes(
 
     /**
      * Deploys the shipped Processes, such as Set up Vault, through the Checks like any other. Each is its own
-     * deployment, `shipped/<file>`, so a start deploys it again only when Ants ships a change, and a user's Save of
-     * it, deployed under its key, survives a restart.
+     * deployment, `shipped/<file>`, so a start deploys it again only when Ants ships a change, and never over a user's
+     * Save of it: once the latest version under its key is the user's, a shipped change is not deployed.
      */
     @EventListener(ApplicationReadyEvent::class)
     fun deployShipped() {
         val folder = home.resolve("shipped/processes").takeIf { it.exists() } ?: return
         for (file in folder.listDirectoryEntries("*.bpmn")) try {
+            val key = process(parse(file.readBytes())).getAttribute("id")
+            val saved = repository.createProcessDefinitionQuery().processDefinitionKey(key).latestVersion().singleResult()
+            if (saved != null && !saved.resourceName.startsWith("shipped/")) {
+                log.info("The shipped Process $file is not deployed over your Save of $key")
+                continue
+            }
             deploy(file.readBytes(), "shipped/${file.fileName}")
+        } catch (e: SAXException) {
+            log.warn("The shipped Process $file can't be read: ${e.message}")
         } catch (e: Refused) {
             log.warn("The shipped Process $file can't be deployed: ${e.message}")
         }

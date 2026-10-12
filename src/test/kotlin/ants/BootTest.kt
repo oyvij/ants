@@ -102,4 +102,25 @@ class ShippedTest {
             }
         }
     }
+
+    @Test
+    fun `a changed shipped Process deploys over the shipped one, never over the user's Save of it`() {
+        val home = AntsTest.tempHome()
+        AntsTest.startAnother(home).use { ants ->
+            val browser = Browser("http://127.0.0.1:${(ants as WebServerApplicationContext).webServer!!.port}").also { it.login() }
+            val vault = home.resolve("shipped/processes/set-up-vault.bpmn")
+            browser.get("/processes") // its form token
+            assertEquals("/processes/set_up_vault", browser.post("/processes/deploy", mapOf("bpmn" to vault.readText().replace("name=\"Set up Vault\"", "name=\"My Vault set-up\""))).path)
+            // Ants ships a change to both: Set up Vault, which the user saved, and Ship small, which they didn't.
+            vault.writeText(vault.readText().replace("name=\"Set up Vault\"", "name=\"Set up Vault, updated\""))
+            val small = home.resolve("shipped/processes/ship-small.bpmn")
+            small.writeText(small.readText().replace("name=\"Ship small\"", "name=\"Ship small, updated\""))
+            ants.getBean(Processes::class.java).deployShipped()
+
+            val list = browser.get("/processes").body
+            assertContains(list, "My Vault set-up")
+            assertFalse("Set up Vault, updated" in list)
+            assertContains(list, "Ship small, updated")
+        }
+    }
 }

@@ -34,5 +34,7 @@ wait meanwhile, or how the Skills reach `vault-format.md`.
 - Ants itself doesn't stop a knowledge Agent writing the Vault before approval: the Vault's `--add-dir` is read and
   write. The Skills, and their Approve in the drawn Process, are what hold a write back.
 - A Template using update-knowledge must keep its `approval` input naming the Approve that follows it.
-- A user's Save of a shipped Process deploys under its key and survives a restart; a changed shipped file still
-  deploys a newer version over it.
+- A user's Save of a shipped Process deploys under its key and survives a restart, and a changed shipped file is not
+  deployed over it (story 128: updates never overwrite my changes): once the latest version under the key is not a
+  `shipped/` deployment, the shipped change is skipped. Such a user keeps their Process and misses the update; Copy
+  and a key of their own is the way to have both.
