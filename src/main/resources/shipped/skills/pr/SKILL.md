@@ -18,7 +18,8 @@ Your inputs; paths are relative to the Run workspace:
   `{repo, remote, branch, base, isNew, commits: [{sha, subject}], pushed, error, compareUrl}`.
   The clone is `repos/<repo>/`.
 - `spec` or `proposal`: what the Run built, `tickets/spec.md` or `proposal/proposal.md`.
-- `review`: the implementers' review of their commits, if any.
+- `review`: the implementers' review of their commits, if any: a summary, or their Results, each
+  with the summary as `output.review`.
 
 You run `gh` on the user's own login, and `git log` and `git diff` in the clones. You change
 nothing in the repos and push nothing.

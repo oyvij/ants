@@ -13,8 +13,8 @@ const val STORIES = "walkthrough/stories.json"
 const val WALKTHROUGH = "ants.walkthrough"
 
 /**
- * A Story set as the Story tab shows it: Varde's story format widened to a Run (`story-set.schema.json`), each step's
- * Site with the lines it points at.
+ * A Story set as the Story tab shows it: Varde's story format widened to a Run (the walkthrough Skill's
+ * `story-set.schema.json`), each step's Site with the lines it points at.
  */
 class StorySet(val title: String, val stories: List<Story>)
 
@@ -168,5 +168,5 @@ private fun locate(file: String): Pair<String, String>? = file.split('/', limit 
 
 private fun Map<*, *>.list(key: String) = (this[key] as? List<*>).orEmpty().map { it as Map<*, *> }
 
-private val schema by lazy { json.readValue(StorySet::class.java.getResource("/story-set.schema.json")!!.readText(), Map::class.java) }
+private val schema by lazy { json.readValue(StorySet::class.java.getResource("/shipped/skills/walkthrough/story-set.schema.json")!!.readText(), Map::class.java) }
 private val json = JsonMapper.shared()

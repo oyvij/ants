@@ -9,7 +9,7 @@
       <bpmn:extensionElements>
         <operaton:properties>
           <operaton:property name="ants.agent" value="writer" />
-          <operaton:property name="ants.skill" value="grill" />
+          <operaton:property name="ants.skill" value="quiz" />
         </operaton:properties>
       </bpmn:extensionElements>
     </bpmn:serviceTask>

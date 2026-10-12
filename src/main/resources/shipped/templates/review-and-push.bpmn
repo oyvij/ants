@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  xmlns:operaton="http://operaton.org/schema/1.0/bpmn"
+                  id="definitions" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="review_and_push" name="Review and push" isExecutable="true" operaton:historyTimeToLive="180">
+    <bpmn:documentation>The storyteller writes a Story set, and you review the changes; sent back, an implementer fixes them and the Story set is written again. Once approved, you Push and the pr Agent opens the pull requests. Needs the Spec, tospec's, and the implementers' Results, implement's.</bpmn:documentation>
+    <bpmn:startEvent id="start">
+      <bpmn:outgoing>f1</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:serviceTask id="walkthrough" name="Walk through" operaton:type="external" operaton:topic="agent">
+      <bpmn:extensionElements>
+        <operaton:properties>
+          <operaton:property name="ants.agent" value="storyteller" />
+          <operaton:property name="ants.skill" value="walkthrough" />
+          <operaton:property name="ants.resume" value="true" />
+        </operaton:properties>
+        <operaton:inputOutput>
+          <operaton:inputParameter name="spec">${tospec.output.spec}</operaton:inputParameter>
+          <operaton:inputParameter name="clones">${clones}</operaton:inputParameter>
+        </operaton:inputOutput>
+      </bpmn:extensionElements>
+      <bpmn:incoming>f1</bpmn:incoming>
+      <bpmn:incoming>fixed</bpmn:incoming>
+      <bpmn:outgoing>f2</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:userTask id="reviewchanges" name="Review the changes">
+      <bpmn:extensionElements>
+        <operaton:properties>
+          <operaton:property name="ants.user-task" value="review-changes" />
+          <operaton:property name="ants.walkthrough" value="walkthrough" />
+          <operaton:property name="ants.send-back" value="fix" />
+        </operaton:properties>
+      </bpmn:extensionElements>
+      <bpmn:incoming>f2</bpmn:incoming>
+      <bpmn:outgoing>f3</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:exclusiveGateway id="changesapproved" name="Approved?" default="sentback">
+      <bpmn:incoming>f3</bpmn:incoming>
+      <bpmn:outgoing>approved</bpmn:outgoing>
+      <bpmn:outgoing>sentback</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:serviceTask id="fix" name="Fix the review" operaton:type="external" operaton:topic="agent">
+      <bpmn:extensionElements>
+        <operaton:properties>
+          <operaton:property name="ants.agent" value="implementer" />
+          <operaton:property name="ants.skill" value="fix-review" />
+        </operaton:properties>
+        <operaton:inputOutput>
+          <operaton:inputParameter name="review">${reviewchanges}</operaton:inputParameter>
+          <operaton:inputParameter name="spec">${tospec.output.spec}</operaton:inputParameter>
+          <operaton:inputParameter name="stories">${walkthrough.output.stories}</operaton:inputParameter>
+        </operaton:inputOutput>
+      </bpmn:extensionElements>
+      <bpmn:incoming>sentback</bpmn:incoming>
+      <bpmn:outgoing>fixed</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="push" name="Push" operaton:type="external" operaton:topic="push">
+      <bpmn:incoming>approved</bpmn:incoming>
+      <bpmn:outgoing>f4</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="pr" name="Open pull request" operaton:type="external" operaton:topic="agent">
+      <bpmn:extensionElements>
+        <operaton:properties>
+          <operaton:property name="ants.agent" value="pr" />
+          <operaton:property name="ants.skill" value="pr" />
+        </operaton:properties>
+        <operaton:inputOutput>
+          <operaton:inputParameter name="push">${push}</operaton:inputParameter>
+          <operaton:inputParameter name="spec">${tospec.output.spec}</operaton:inputParameter>
+          <operaton:inputParameter name="review">${implement}</operaton:inputParameter>
+        </operaton:inputOutput>
+      </bpmn:extensionElements>
+      <bpmn:incoming>f4</bpmn:incoming>
+      <bpmn:outgoing>f5</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:endEvent id="end">
+      <bpmn:incoming>f5</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="walkthrough" />
+    <bpmn:sequenceFlow id="f2" sourceRef="walkthrough" targetRef="reviewchanges" />
+    <bpmn:sequenceFlow id="f3" sourceRef="reviewchanges" targetRef="changesapproved" />
+    <bpmn:sequenceFlow id="approved" name="yes" sourceRef="changesapproved" targetRef="push">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${reviewchanges.approved}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="sentback" name="no" sourceRef="changesapproved" targetRef="fix" />
+    <bpmn:sequenceFlow id="fixed" sourceRef="fix" targetRef="walkthrough" />
+    <bpmn:sequenceFlow id="f4" sourceRef="push" targetRef="pr" />
+    <bpmn:sequenceFlow id="f5" sourceRef="pr" targetRef="end" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="diagram">
+    <bpmndi:BPMNPlane id="plane" bpmnElement="review_and_push">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start">
+        <dc:Bounds x="180" y="160" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="walkthrough_di" bpmnElement="walkthrough">
+        <dc:Bounds x="270" y="138" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="reviewchanges_di" bpmnElement="reviewchanges">
+        <dc:Bounds x="420" y="138" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="changesapproved_di" bpmnElement="changesapproved" isMarkerVisible="true">
+        <dc:Bounds x="575" y="153" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="fix_di" bpmnElement="fix">
+        <dc:Bounds x="420" y="280" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="push_di" bpmnElement="push">
+        <dc:Bounds x="680" y="138" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="pr_di" bpmnElement="pr">
+        <dc:Bounds x="830" y="138" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_di" bpmnElement="end">
+        <dc:Bounds x="982" y="160" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1">
+        <di:waypoint x="216" y="178" />
+        <di:waypoint x="270" y="178" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2">
+        <di:waypoint x="370" y="178" />
+        <di:waypoint x="420" y="178" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f3_di" bpmnElement="f3">
+        <di:waypoint x="520" y="178" />
+        <di:waypoint x="575" y="178" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="approved_di" bpmnElement="approved">
+        <di:waypoint x="625" y="178" />
+        <di:waypoint x="680" y="178" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sentback_di" bpmnElement="sentback">
+        <di:waypoint x="600" y="203" />
+        <di:waypoint x="600" y="320" />
+        <di:waypoint x="520" y="320" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="fixed_di" bpmnElement="fixed">
+        <di:waypoint x="420" y="320" />
+        <di:waypoint x="320" y="320" />
+        <di:waypoint x="320" y="218" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f4_di" bpmnElement="f4">
+        <di:waypoint x="780" y="178" />
+        <di:waypoint x="830" y="178" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f5_di" bpmnElement="f5">
+        <di:waypoint x="930" y="178" />
+        <di:waypoint x="982" y="178" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

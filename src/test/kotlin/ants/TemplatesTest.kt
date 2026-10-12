@@ -58,6 +58,17 @@ class TemplatesTest : AntsTest() {
     }
 
     @Test
+    fun `a second copy's Asker, Send back resumes and Walkthrough name its own renamed Tasks`() {
+        val (grills, _) = drop("grill-you-answer", drop("grill-you-answer", blank("Grilled twice")).first)
+        assertContains(grills, """<operaton:property name="ants.asker" value="grill_2"/>""")
+        assertContains(grills, """<operaton:property name="ants.asker" value="grill"/>""")
+        val (reviews, _) = drop("review-and-push", drop("review-and-push", blank("Reviewed twice")).first)
+        assertContains(reviews, """<operaton:property name="ants.walkthrough" value="walkthrough_2"/>""")
+        assertContains(reviews, """<operaton:property name="ants.send-back" value="fix_2"/>""")
+        assertContains(reviews, """<operaton:property name="ants.agent" value="storyteller"/>""")
+    }
+
+    @Test
     fun `a renamed Task keeps the Agent and Skill it names, even when the Skill's name is its id`() {
         home.resolve("templates").createDirectories().resolve("grilling.bpmn").writeText("""<?xml version="1.0" encoding="UTF-8"?>
             <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:operaton="http://operaton.org/schema/1.0/bpmn"

@@ -221,7 +221,7 @@ class BrowserTest : AntsTest() {
 
     @Test
     fun `Review changes picks diff lines for a comment by clicking their numbers, and files it`() = browse {
-        agentTask(FakeClaude(), mapOf("fix-review" to null, "ship" to null), extra = reviewSourceMap())
+        agentTask(FakeClaude(), mapOf("mend" to null, "ship" to null), extra = reviewSourceMap())
         http.upload("/processes", "file", "review.bpmn", javaClass.getResource("/review.bpmn")!!.readBytes())
         val run = http.post("/processes/review/runs", listOf("repos" to "api", "repos" to "web")).path.removePrefix("/runs/")
         var entry = ""
@@ -263,11 +263,11 @@ class BrowserTest : AntsTest() {
     @Test
     fun `Review changes opens on the Story tab, comments on a story step, and switches to By repo`() = browse {
         val claude = FakeClaude()
-        agentTask(claude, mapOf("walkthrough" to null, "fix-review" to null, "ship" to null), extra = reviewSourceMap())
+        agentTask(claude, mapOf("narrate" to null, "mend" to null, "ship" to null), extra = reviewSourceMap())
         val set = """{"title":"Nothing changes","ranges":[{"repo":"api","base":"origin/main","head":"HEAD"}],"stories":[{"id":"s","name":"Greeting",""" +
             """"premise":"Hello stays.","steps":[{"id":"hello","name":"Hello","claim":"It greets.","why":"Politeness.",""" +
             """"site":{"file":"repos/api/hello.txt","side":"new","kind":"context","from":1,"to":1}}]}]}"""
-        claude.session("walkthrough", "write walkthrough/stories.json $set", """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":{"outcome":"done","summary":"Done.","output":{}}}""")
+        claude.session("narrate", "write walkthrough/stories.json $set", """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":{"outcome":"done","summary":"Done.","output":{}}}""")
         http.upload("/processes", "file", "story-set.bpmn", javaClass.getResource("/story-set.bpmn")!!.readBytes())
         val run = http.post("/processes/story-set/runs", listOf("repos" to "api", "repos" to "web")).path.removePrefix("/runs/")
         var entry = ""

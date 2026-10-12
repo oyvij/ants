@@ -480,6 +480,9 @@ class FakeClaude {
         val cwd get() = dir.resolve("cwd").readText().trim()
         val stdin get() = dir.resolve("stdin").readText().trim()
 
+        /** A file the launch's session wrote into its record (`$launch`). */
+        fun file(name: String) = dir.resolve(name).readText()
+
         /** Whether Ants killed the launch. */
         val killed get() = dir.resolve("killed").exists()
     }

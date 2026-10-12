@@ -27,7 +27,7 @@ class AnswerRoundTest : AntsTest() {
         agentTask(
             claude,
             mapOf(
-                "grill" to """{"type":"object","properties":{"questions":{"type":"array"}}}""",
+                "quiz" to """{"type":"object","properties":{"questions":{"type":"array"}}}""",
                 "answer-round" to """{"type":"object","properties":{"answers":{"type":"array"}}}""",
             ),
         )
@@ -59,9 +59,9 @@ class AnswerRoundTest : AntsTest() {
 
     @Test
     fun `a grill loop asks two Rounds, resumes the asker's session with each Round's stamped answers, and ends on an empty one`() {
-        claude.session("grill", 1, round("First round.", question("who", "Who exports"), question("scope", "Which invoices")))
-        claude.session("grill", 2, round("Second round.", question("format", "Number format")))
-        claude.session("grill", 3, round("Nothing left."))
+        claude.session("quiz", 1, round("First round.", question("who", "Who exports"), question("scope", "Which invoices")))
+        claude.session("quiz", 2, round("Second round.", question("format", "Number format")))
+        claude.session("quiz", 3, round("Nothing left."))
         val run = start()
 
         val first = entry(run)
@@ -74,7 +74,7 @@ class AnswerRoundTest : AntsTest() {
         browser.post("$second/answers", mapOf("answer.format" to "Recommend format."))
         eventually { assertContains(page(run), "State: Completed") }
 
-        val (one, two, three) = claude.launches("grill")
+        val (one, two, three) = claude.launches("quiz")
         val session = one.flag("--session-id")
         assertEquals(listOf(session, session), listOf(two.flag("--resume"), three.flag("--resume")))
         assertEquals(
@@ -90,19 +90,19 @@ class AnswerRoundTest : AntsTest() {
 
     @Test
     fun `a Round with an unanswered question is refused`() {
-        claude.session("grill", 1, round("First round.", question("who", "Who exports"), question("scope", "Which invoices")))
+        claude.session("quiz", 1, round("First round.", question("who", "Who exports"), question("scope", "Which invoices")))
         val run = start()
         val entry = entry(run)
         val refused = browser.post("$entry/answers", mapOf("answer.who" to "Everyone.", "answer.scope" to " "))
         assertContains(refused.body, "Every question needs an answer.")
         assertEquals(entry, entry(run))
-        assertEquals(1, claude.launches("grill").size)
+        assertEquals(1, claude.launches("quiz").size)
     }
 
     @Test
     fun `the user's answers go to the Answer History, and every Round to the Run log and the Report`() {
-        claude.session("grill", 1, round("First round.", question("who", "Who exports"), question("scope", "Which invoices")))
-        claude.session("grill", 2, "wait release", round("Nothing left."))
+        claude.session("quiz", 1, round("First round.", question("who", "Who exports"), question("scope", "Which invoices")))
+        claude.session("quiz", 2, "wait release", round("Nothing left."))
         val run = start()
         browser.post("${entry(run)}/answers", mapOf("answer.who" to "Recommend who.", "answer.scope" to "Only admins."))
         eventually { assertContains(home.resolve("runs/$run/run-log.md").readText(), "Answer the Round · Round 1\n\n- Who exports: Recommend who. (accepted)\n- Which invoices: Only admins. (written)\n") }
@@ -125,7 +125,7 @@ class AnswerRoundTest : AntsTest() {
 
     @Test
     fun `a Round its timer boundary took away says so, and sends nothing`() {
-        claude.session("grill", 1, round("First round.", question("who", "Who exports")))
+        claude.session("quiz", 1, round("First round.", question("who", "Who exports")))
         val run = start(timer = "PT2S")
         val entry = entry(run)
         eventually { assertContains(page(run), "State: Completed") }
@@ -133,22 +133,22 @@ class AnswerRoundTest : AntsTest() {
         val gone = browser.post("$entry/answers", mapOf("answer.who" to "Everyone."))
         assertContains(gone.body, "Nothing is waiting on you here any more")
         assertFalse(history.exists() && history.listDirectoryEntries("*$run*").isNotEmpty())
-        assertEquals(1, claude.launches("grill").size)
+        assertEquals(1, claude.launches("quiz").size)
     }
 
     @Test
     fun `an answer-round Agent answers a Round, its answers stamped agent, resumes the asker and keeps them out of the Answer History`() {
-        claude.session("grill", 1, round("First round.", question("who", "Who exports"), question("scope", "Which invoices")))
+        claude.session("quiz", 1, round("First round.", question("who", "Who exports"), question("scope", "Which invoices")))
         // It leaves `scope` unanswered, so that one gets its recommendation.
         claude.session("answer-round", answered("""{"id":"who","answer":"Admins.","why":"The Vault says so."}"""))
-        claude.session("grill", 2, round("Nothing left."))
+        claude.session("quiz", 2, round("Nothing left."))
         val run = start(process = "proxy")
         eventually { assertContains(page(run), "State: Completed") }
 
         val prompt = claude.launches("answer-round").single().stdin
         assertContains(prompt, "The Answer History is ${home.resolve("answer-history")}.")
         assertContains(prompt, "Ask who?")
-        val (one, two) = claude.launches("grill")
+        val (one, two) = claude.launches("quiz")
         assertEquals(one.flag("--session-id"), two.flag("--resume"))
         assertEquals(
             """{"type":"user","message":{"role":"user","content":"{\"answers\":[{\"id\":\"who\",\"answer\":\"Admins.\",\"source\":\"agent\"},""" +
@@ -162,13 +162,13 @@ class AnswerRoundTest : AntsTest() {
 
     @Test
     fun `a timer boundary on an unanswered Round falls back to Accept recommendations, which resumes the asker`() {
-        claude.session("grill", 1, round("First round.", question("who", "Who exports"), question("scope", "Which invoices")))
-        claude.session("grill", 2, round("Nothing left."))
+        claude.session("quiz", 1, round("First round.", question("who", "Who exports"), question("scope", "Which invoices")))
+        claude.session("quiz", 2, round("Nothing left."))
         val run = start(timer = "PT2S", process = "proposed", cap = 1)
         val entry = entry(run)
         eventually { assertContains(page(run), "State: Completed") }
 
-        val (one, two) = claude.launches("grill")
+        val (one, two) = claude.launches("quiz")
         assertEquals(one.flag("--session-id"), two.flag("--resume"))
         assertEquals(
             """{"type":"user","message":{"role":"user","content":"{\"answers\":[{\"id\":\"who\",\"answer\":\"Recommend who.\",\"source\":\"recommended\"},""" +
@@ -183,19 +183,19 @@ class AnswerRoundTest : AntsTest() {
 
     @Test
     fun `the cap hands a loop Accept recommendations paces to the user at Round 10, and only the user's Round enters the Answer History`() {
-        claude.session("grill", round("Another round.", question("who", "Who exports")))
-        claude.session("grill", 11, round("Nothing left."))
+        claude.session("quiz", round("Another round.", question("who", "Who exports")))
+        claude.session("quiz", 11, round("Nothing left."))
         val run = start(process = "proposed")
 
         // Ten launches and nine Accept recommendations, each waiting on its worker's next poll: about 0.4 s a Round, and
         // twice that on a busy machine (9.4 s under full CPU load), so the wait has room for all ten.
         val entry = entry(run, seconds = 30)
-        assertEquals(10, claude.launches("grill").size)
+        assertEquals(10, claude.launches("quiz").size)
         assertContains(browser.get(entry).body, "Round 10")
         browser.post("$entry/answers", mapOf("answer.who" to "Only admins."))
         eventually { assertContains(page(run), "State: Completed") }
 
-        assertEquals(11, claude.launches("grill").size)
+        assertEquals(11, claude.launches("quiz").size)
         val file = historyOf(run).single()
         assertContains(file.fileName.toString(), "-10.md")
         assertContains(file.readText(), "Only admins.")

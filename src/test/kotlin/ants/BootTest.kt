@@ -98,7 +98,7 @@ class ShippedTest {
         repeat(2) {
             AntsTest.startAnother(home).use { ants ->
                 val browser = Browser("http://127.0.0.1:${(ants as WebServerApplicationContext).webServer!!.port}").also { it.login() }
-                for (process in listOf("Set up Vault", "Ship small")) assertContains(browser.get("/processes").body, process)
+                for (process in listOf("Set up Vault", "Ship small", "Ship with me")) assertContains(browser.get("/processes").body, process)
             }
         }
     }
