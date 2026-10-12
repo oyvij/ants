@@ -74,7 +74,10 @@ class UpdateTest : AntsTest() {
         return browser.events(assertNotNull(slot, "$page has no update notice in its nav").groupValues[1]).poll(10, SECONDS).orEmpty()
     }
 
-    /** Presses the nav's **Update** on Home, as [browser] sees it, posting its form's fields. */
+    /**
+     * Presses the nav's **Update** on Home, as [browser] sees it, posting its form's fields. install.sh takes a while
+     * under CI load, so a test waits up to a minute for "runs from the next ants restart".
+     */
     private fun update(browser: Browser = this.browser) {
         val form = Regex("""<form method="post" action="([^"]+)".*name="_csrf" value="([^"]+)"""").find(notice(browser = browser))
         val (action, csrf) = assertNotNull(form, "no Update in the nav").destructured
@@ -131,7 +134,7 @@ class UpdateTest : AntsTest() {
 
         update()
 
-        eventually { assertContains(notice(), "Ants 96.0.0 runs from the next ants restart") }
+        eventually(60) { assertContains(notice(), "Ants 96.0.0 runs from the next ants restart") }
         assertTrue(home.resolve("versions/96.0.0/bin/ants").exists())
         assertEquals(Path.of("versions/96.0.0"), home.resolve("current").readSymbolicLink())
         assertEquals(Path.of("versions/$running"), home.resolve("previous").readSymbolicLink())
@@ -147,13 +150,13 @@ class UpdateTest : AntsTest() {
         published("97.0.0")
         eventually { assertContains(notice(), "Ants 97.0.0 is available") }
         update()
-        eventually { assertContains(notice(), "Ants 97.0.0 runs from the next ants restart") }
+        eventually(60) { assertContains(notice(), "Ants 97.0.0 runs from the next ants restart") }
         published("98.0.0")
         eventually { assertContains(notice(), "Ants 98.0.0 is available") }
 
         update()
 
-        eventually { assertContains(notice(), "Ants 98.0.0 runs from the next ants restart") }
+        eventually(60) { assertContains(notice(), "Ants 98.0.0 runs from the next ants restart") }
         assertEquals(Path.of("versions/98.0.0"), home.resolve("current").readSymbolicLink())
         assertEquals(Path.of("versions/$running"), home.resolve("previous").readSymbolicLink())
     }
@@ -168,7 +171,7 @@ class UpdateTest : AntsTest() {
 
             update(another)
 
-            eventually { assertContains(notice(browser = another), "Ants 95.0.0 runs from the next ants restart") }
+            eventually(60) { assertContains(notice(browser = another), "Ants 95.0.0 runs from the next ants restart") }
         }
     }
 
