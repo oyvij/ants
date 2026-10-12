@@ -1,0 +1,45 @@
+name: image
+
+# Publishes the multi-arch Ants image to GHCR, tagged with the version, build.gradle.kts' at the ref, and latest. The
+# release calls it on a version bump; `gh workflow run image.yml -f version=x.y.z` publishes one by hand.
+on:
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      version:
+        description: build.gradle.kts' version at the ref
+        type: string
+        required: true
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 25
+      - uses: gradle/actions/setup-gradle@v5
+      # The jar is the same on every platform, so it is built once, here, and each platform's image copies it.
+      - run: ./gradlew bootJar
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ghcr.io/${{ github.repository }}:${{ inputs.version }},ghcr.io/${{ github.repository }}:latest

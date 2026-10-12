@@ -2,6 +2,7 @@
 @param form: ants.SettingsForm
 @param file: String
 @param message: String? = null
+@param passwordFromEnv: Boolean
 @param login: ants.ClaudeLogin
 @param colorScheme: String = "light dark"
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
@@ -9,6 +10,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
+    @template.app()
     <meta name="color-scheme" content="${colorScheme}">
     <title>Settings · Ants</title>
 </head>
@@ -83,7 +85,11 @@
 
     <fieldset>
         <legend>Password</legend>
+@if(passwordFromEnv)
+        <p>ANTS_PASSWORD or ANTS_PASSWORD_FILE sets the password, over this file's; change it there.</p>
+@else
         <p><label>New password <input type="password" name="password" autocomplete="new-password"></label> Takes effect at the next login.</p>
+@endif
     </fieldset>
 
     <fieldset>

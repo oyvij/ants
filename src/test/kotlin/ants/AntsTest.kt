@@ -154,10 +154,21 @@ abstract class AntsTest {
             "--ants.home=$home",
             "--ants.shell=$shell",
             "--server.port=0",
+            "--ants.releases=${releases.toUri()}",
+            "--ants.models=${models.toUri()}",
             "--operaton.bpm.process-engine-name=another",
             "--spring.autoconfigure.exclude=org.operaton.bpm.spring.boot.starter.webapp.OperatonBpmWebappAutoConfiguration",
             *args,
         )
+
+        /** SHA256SUMS naming the tarball of a release of [version]. */
+        fun sums(version: String) = "${"0".repeat(64)}  ${tarball(version)}\n"
+
+        /** The release folder the update check reads, in place of GitHub's; its release is older than this Ants. */
+        val releases: Path = Files.createTempDirectory("releases").also { it.resolve("SHA256SUMS").writeText(sums("0.0.1")) }
+
+        /** Anthropic's model status table as the update check reads it; empty, so the bundled table stays. */
+        val models: Path = Files.createTempDirectory("models").resolve("model-deprecations.md").also { it.writeText("") }
 
         /** Ants' clock, shared like [home]: a test that moves it puts it back. */
         val clock = MovableClock()
@@ -171,6 +182,9 @@ abstract class AntsTest {
             registry.add("operaton.bpm.job-execution.wait-time-in-millis") { 200 }
             registry.add("operaton.bpm.job-execution.max-wait") { 500 }
             registry.add("ants.schedule-every") { "200ms" }
+            registry.add("ants.update-every") { "200ms" }
+            registry.add("ants.releases") { releases.toUri().toString() }
+            registry.add("ants.models") { models.toUri().toString() }
         }
     }
 

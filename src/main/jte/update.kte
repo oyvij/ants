@@ -1,0 +1,5 @@
+@param notice: ants.UpdateNotice
+@param docker: Boolean
+@param csrf: org.springframework.security.web.csrf.CsrfToken
+!{val newer = notice.newer}
+@if(newer == null)@elseif(notice.installed == newer)· Ants ${newer} runs from the next ants restart@elseif(notice.downloading)· Downloading Ants ${newer}…@elseif(docker)· Ants ${newer} is available@else<form method="post" action="/updates/${newer}" style="display: inline">· Ants ${newer} is available@if(notice.failed != null) (Update failed: ${notice.failed})@endif <input type="hidden" name="${csrf.parameterName}" value="${csrf.token}"><button>Update</button></form>@endif

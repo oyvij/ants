@@ -12,6 +12,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
+    @template.app()
     <meta name="color-scheme" content="${colorScheme}">
     <title>${run.processDefinitionName ?: run.processDefinitionKey} · Ants</title>
     <link rel="stylesheet" href="/vendor/camunda-bpmn-js/assets/base-navigated-viewer.css">

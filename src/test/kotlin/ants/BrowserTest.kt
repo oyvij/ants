@@ -180,6 +180,43 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `the app badge carries the Notification list count`() = browse {
+        settings(null)
+        page.addInitScript("navigator.setAppBadge = async count => window.badge = count")
+        val (process, plane) = row("badged", """<bpmn:startEvent id="start" />""", """<bpmn:userTask id="wait" name="Wait" />""", """<bpmn:endEvent id="end" />""")
+        deploy(definitions("badged", "Badged", process, plane))
+        page.navigate(url("/"))
+        fun badge() = (page.evaluate("window.badge") as Number?)?.toInt()
+        eventually { assertNotNull(badge()) } // the first count has come
+        val before = badge()!!
+
+        http.post("/processes/badged/runs", mapOf())
+        assertThat(page.locator("#waiting")).hasText("(${before + 1})")
+        eventually { assertEquals(before + 1, badge()) }
+    }
+
+    @Test
+    fun `the Notification list asks for notification permission on a click, since macOS badges an app only with it`() = browse {
+        // The browser's answer outlives the page, as a real one's does, so the reload below finds it.
+        page.addInitScript(
+            """
+            navigator.setAppBadge = async () => {};
+            Object.defineProperty(Notification, 'permission', { get: () => localStorage.getItem('permission') ?? 'default' });
+            Notification.requestPermission = async () => { localStorage.setItem('permission', 'granted'); return 'granted' };
+            """,
+        )
+        page.navigate(url("/notifications"))
+        val ask = page.getByText("Show the count on the app icon")
+
+        ask.click()
+
+        eventually { assertEquals("granted", page.evaluate("Notification.permission")) }
+        assertThat(ask).isHidden()
+        page.reload()
+        assertThat(ask).isHidden()
+    }
+
+    @Test
     fun `Answer a Round shows one question at a time under tabs marking accepted and edited, then Review and send`() = browse {
         val claude = FakeClaude()
         agentTask(claude, mapOf("quiz" to """{"type":"object","properties":{"questions":{"type":"array"}}}"""))

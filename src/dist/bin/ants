@@ -1,0 +1,119 @@
+#!/bin/bash
+# The ants launcher. It lives in bin/ of an Ants install, beside runtime/ (the Java runtime) and lib/ants.jar.
+set -u
+
+usage="usage: ants start | stop | restart | status | logs [-f] | run [args] | rollback | password"
+root=$(dirname "$(dirname "$(realpath "$0")")")
+export ANTS_HOME=${ANTS_HOME:-$HOME/.ants}
+lock=$ANTS_HOME/ants.lock
+label=no.oyvij.ants
+plist=$HOME/Library/LaunchAgents/$label.plist
+service=gui/$(id -u)
+
+java=$root/runtime/bin/java
+[ -x "$java" ] || java=java
+
+# The pid and URL in the lock file, when that Ants is still alive. Ants writes its pid first thing at start and its URL
+# once it listens, and refuses to start while another holds the lock.
+# ponytail: a pid check only, so a stale lock whose pid was reused reads as running; check the command if it bites
+running() {
+  [ -f "$lock" ] || return 1
+  { read -r pid; read -r url; } < "$lock"
+  kill -0 "$pid" 2> /dev/null
+}
+
+# What the running Ants is doing, as Ants itself says it: "running at <url> (pid <pid>)", or "starting (pid <pid>)".
+state() {
+  if [ -n "$url" ]; then echo "running at $url (pid $pid)"; else echo "starting (pid $pid)"; fi
+}
+
+jar() {
+  exec "$java" -jar "$root/lib/ants.jar" "$@"
+}
+
+start() {
+  if running; then echo "Ants is already $(state)"; return; fi
+  mkdir -p "$ANTS_HOME/logs" "$(dirname "$plist")"
+  # The version current links, when that is this one, so launchd's own relaunches, at login or after a crash, run the
+  # version an update or a rollback left there, as `ants restart` does.
+  local program=$root/bin/ants
+  [ "$(realpath "$ANTS_HOME/current" 2> /dev/null)" = "$root" ] && program=$ANTS_HOME/current/bin/ants
+  # ponytail: launchd appends to one log file that never rotates; rotate if it grows too big
+  cat > "$plist" << EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>$label</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>$program</string>
+        <string>run</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>ANTS_HOME</key>
+        <string>$ANTS_HOME</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>$ANTS_HOME/logs/ants.log</string>
+    <key>StandardErrorPath</key>
+    <string>$ANTS_HOME/logs/ants.log</string>
+</dict>
+</plist>
+EOF
+  launchctl bootout "$service/$label" 2> /dev/null # a crashed one launchd still holds
+  launchctl bootstrap "$service" "$plist" || return
+  for _ in $(seq 120); do
+    if running && [ -n "$url" ]; then echo "Ants is running at $url"; return; fi
+    sleep 0.5
+  done
+  echo "Ants is starting; ants logs shows how far it got"
+}
+
+# Uninstalls the launchd agent, so Ants stays stopped after logging in again, and stops an `ants run` too.
+stop() {
+  running; local was=$?
+  launchctl bootout "$service/$label" 2> /dev/null
+  rm -f "$plist"
+  running && kill "$pid"
+  for _ in $(seq 60); do
+    if ! running; then
+      if [ $was = 0 ]; then echo "Ants stopped"; else echo "Ants is not running"; fi
+      return
+    fi
+    sleep 0.5
+  done
+  echo "Ants (pid $pid) is still stopping" >&2; return 1
+}
+
+case "${1:-}" in
+  start) start ;;
+  stop) stop ;;
+  restart) stop > /dev/null && start ;;
+  run) shift; jar "$@" ;; # Ants itself refuses to start while another runs
+  password) jar password ;;
+  logs) shift; exec tail -n 100 "$@" "$ANTS_HOME/logs/ants.log" ;;
+  rollback)
+    # Swaps current and previous, so a second rollback goes forward again; a running Ants restarts on the version now current.
+    previous=$(readlink "$ANTS_HOME/previous") || { echo "There is no previous version to roll back to" >&2; exit 1; }
+    ln -sfn "$(readlink "$ANTS_HOME/current")" "$ANTS_HOME/previous"
+    ln -sfn "$previous" "$ANTS_HOME/current"
+    if running; then
+      echo "Rolled back to Ants ${previous#versions/}"
+      exec "$ANTS_HOME/current/bin/ants" restart
+    fi
+    echo "Rolled back to Ants ${previous#versions/}; it runs from the next ants start" ;;
+  status)
+    if running; then echo "Ants is $(state)"; else echo "Ants is not running"; exit 3; fi ;;
+  -h | --help | help) echo "$usage" ;;
+  *) echo "$usage" >&2; exit 2 ;;
+esac

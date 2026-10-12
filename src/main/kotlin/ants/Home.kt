@@ -1,7 +1,5 @@
 package ants
 
-import gg.jte.TemplateEngine
-import gg.jte.output.StringOutput
 import org.operaton.bpm.engine.ExternalTaskService
 import org.operaton.bpm.engine.HistoryService
 import org.operaton.bpm.engine.RepositoryService
@@ -16,13 +14,15 @@ import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.ResponseBody
 import org.springframework.security.web.csrf.CsrfToken
-import org.springframework.security.web.csrf.DefaultCsrfToken
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
 import java.net.URI
 import java.time.Clock
 
 /** An Agent Task running now, in a Run of a Process. */
 class Working(val process: String, val run: String, val task: String)
+
+/** Redirects back to the page a nav button was pressed on, as its Referer names it, else Home. */
+fun back(from: String?) = "redirect:" + (from?.let { runCatching { URI(it).path }.getOrNull() }?.ifEmpty { null } ?: "/")
 
 /** Home: stats, Waiting on you, Working now, Coming up, all live, and Start a Run. */
 @Controller
@@ -32,7 +32,6 @@ class Home(
     private val history: HistoryService,
     private val repository: RepositoryService,
     private val externalTasks: ExternalTaskService,
-    private val templates: TemplateEngine,
     private val launcher: AgentLauncher,
     private val clock: Clock,
     private val streams: Streams,
@@ -49,25 +48,19 @@ class Home(
     @PostMapping("/pauses/{cli}")
     fun tryNow(@PathVariable cli: String, @RequestHeader("Referer", required = false) from: String?): String {
         launcher.tryNow(cli)
-        return "redirect:" + (from?.let { runCatching { URI(it).path }.getOrNull() }?.ifEmpty { null } ?: "/")
+        return back(from)
     }
 
     /** The live part of Home as HTML, sent on connect and whenever it changes. */
     @GetMapping("/home/live", produces = [TEXT_EVENT_STREAM_VALUE])
     @ResponseBody
-    fun live(): SseEmitter = stream("dashboard.kte") { dashboard() }
+    fun live(): SseEmitter = streams.rendered("dashboard.kte") { dashboard() }
 
     /** The nav's pill as HTML, "claude paused until 15:45" with **Try now** per paused CLI, or nothing. */
     @GetMapping("/pauses", produces = [TEXT_EVENT_STREAM_VALUE])
     @ResponseBody
-    fun pauses(csrf: CsrfToken): SseEmitter {
-        val token = DefaultCsrfToken(csrf.headerName, csrf.parameterName, csrf.token) // read now, while the request lives
-        return stream("pill.kte") { mapOf("pauses" to launcher.pauses().mapValues { clock.local(it.value) }, "csrf" to token) }
-    }
-
-    /** Streams [template] rendered with [params], sent on connect and whenever it changes. */
-    private fun stream(template: String, params: () -> Map<String, Any>) =
-        streams.changes { StringOutput().also { templates.render(template, params(), it) }.toString().trim() }
+    fun pauses(csrf: CsrfToken): SseEmitter =
+        streams.rendered("pill.kte", csrf) { mapOf("pauses" to launcher.pauses().mapValues { clock.local(it.value) }) }
 
     private fun dashboard(): Map<String, Any> {
         val entries = notifications.entries()

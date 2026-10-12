@@ -1,7 +1,10 @@
 package ants
 
+import jakarta.annotation.PostConstruct
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.core.env.Environment
+import org.springframework.security.crypto.factory.PasswordEncoderFactories
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Component
 import org.yaml.snakeyaml.Yaml
@@ -11,37 +14,59 @@ import java.nio.file.Path
 import java.time.Duration
 import java.util.concurrent.TimeUnit.SECONDS
 import java.util.concurrent.atomic.AtomicReference
+import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.readText
 
 /** One repo in a Source map: its short name, its local checkout and its git remote. */
 data class Repo(val name: String, val path: String, val remote: String)
 
-/** `settings.yaml` in ANTS_HOME, created on first start and read fresh each time, so hand edits count. */
+/** `settings.yaml` in ANTS_HOME, created on first start ([start]) and read fresh each time, so hand edits count. */
 @Component
 class Settings(
     @Value("\${ants.home}") home: Path,
-    @Value("\${server.address:}") address: String,
+    @Value("\${server.address:}") private val address: String,
     @Value("\${ants.shell}") private val shell: String,
     private val encoder: PasswordEncoder,
+    @Value("\${ants.password:}") password: String,
+    @Value("\${ants.password-file:}") passwordFile: String,
+    /** ANTS_DOCKER, which the image sets: Ants runs in its container. */
+    @Value("\${ants.docker:false}") private val docker: Boolean,
 ) {
+    /** ANTS_PASSWORD, else the file ANTS_PASSWORD_FILE names (a Docker secret); either wins over `settings.yaml`'s. */
+    private val envPassword = when {
+        password.isNotEmpty() -> password
+        passwordFile.isNotEmpty() -> Path.of(passwordFile).readText().removeSuffix("\n")
+        else -> ""
+    }
+
+    /** ANTS_PASSWORD or ANTS_PASSWORD_FILE sets the password, so neither the settings page nor `ants password` changes it. */
+    val passwordFromEnv get() = envPassword.isNotEmpty()
+
     /** The file itself, as the settings page names it. */
     val file: Path = home.resolve("settings.yaml")
 
-    init {
-        if (!file.exists()) {
-            val found = detect().mapValues { mapOf("path" to it.value) }
-            file.writeAtomically(HEADER + if (found.isEmpty()) "" else yaml.dump(found))
+    /**
+     * At start, Ants creates the file, with the CLIs Detect finds while none is in it yet (`ants password` may have
+     * written only a password), and refuses to start in Docker without a password from the environment, or off
+     * loopback with the default one. `ants password` runs none of this, so it never runs the login shell.
+     */
+    @PostConstruct
+    fun start() {
+        if (CLIS.none { it in read() }) {
+            val found = detect()
+            save { values -> found.forEach { (cli, path) -> values[cli] = mapOf("path" to path) } }
         }
+        check(!docker || passwordFromEnv) { "Ants in Docker needs a password: set ANTS_PASSWORD or ANTS_PASSWORD_FILE." }
         val loopback = address.isNotEmpty() && InetAddress.getByName(address).isLoopbackAddress
         check(loopback || !encoder.matches("admin", password())) {
             "Ants won't listen on ${address.ifEmpty { "every address" }} with the default password. Change the password first."
         }
     }
 
-    /** The login password, encoded; a plain one in the file reads as `{noop}`. */
+    /** The login password, from the environment else the file, encoded; a plain one reads as `{noop}`. */
     fun password(): String {
-        val password = read()["password"]?.toString() ?: "admin"
+        val password = envPassword.ifEmpty { read()["password"]?.toString() ?: "admin" }
         return if (password.startsWith("{")) password else "{noop}$password"
     }
 
@@ -111,12 +136,13 @@ class Settings(
     fun colorScheme(): String = read()["theme"]?.toString()?.takeIf { it in listOf("light", "dark") } ?: "light dark"
 
     /** Every key in the file, as YAML reads it. */
-    fun read(): Map<String, Any?> = Yaml().load(file.readText()) ?: emptyMap()
+    fun read(): Map<String, Any?> = if (file.exists()) Yaml().load(file.readText()) ?: emptyMap() else emptyMap()
 
     /** Rewrites the file with [change] applied to its keys. Keys it doesn't touch are kept; comments are not. */
     @Synchronized
     fun save(change: (MutableMap<String, Any?>) -> Unit) {
-        file.writeAtomically(HEADER + yaml.dump(LinkedHashMap(read()).also(change)))
+        val values = LinkedHashMap(read()).also(change)
+        file.writeAtomically(HEADER + if (values.isEmpty()) "" else yaml.dump(values))
     }
 
     /** Finds each CLI through the user's login shell, which sees the PATH their profile sets. A missing one is left out. */
@@ -184,4 +210,30 @@ class Settings(
 
             """.trimIndent() + "\n"
     }
+}
+
+/** `ants password`: asks for the new password twice and writes it, encoded, into `settings.yaml`. 0 when it changed. */
+fun changePassword(environment: Environment): Int {
+    val encoder = PasswordEncoderFactories.createDelegatingPasswordEncoder()
+    val settings = Settings(
+        home = Path.of(environment.getRequiredProperty("ants.home")).createDirectories(),
+        address = environment.getProperty("server.address", ""),
+        shell = environment.getRequiredProperty("ants.shell"),
+        encoder = encoder,
+        password = environment.getProperty("ants.password", ""),
+        passwordFile = environment.getProperty("ants.password-file", ""),
+        docker = environment.getProperty("ants.docker", Boolean::class.java, false),
+    )
+    fun refuse(why: String) = 1.also { System.err.println("$why; the password is unchanged") }
+    if (settings.passwordFromEnv) return refuse("ANTS_PASSWORD or ANTS_PASSWORD_FILE sets the password")
+    val console = System.console()?.takeIf { it.isTerminal }
+    val stdin = System.`in`.bufferedReader()
+    val (password, again) = listOf("New password: ", "Again: ").map { prompt ->
+        if (console != null) console.readPassword(prompt)?.let(::String).orEmpty() else stdin.readLine().orEmpty()
+    }
+    if (password.isEmpty()) return refuse("The password is empty")
+    if (password != again) return refuse("The passwords differ")
+    settings.save { it["password"] = encoder.encode(password) }
+    println("Password changed")
+    return 0
 }

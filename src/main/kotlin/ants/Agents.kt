@@ -2,6 +2,7 @@ package ants
 
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpStatus
+import org.springframework.stereotype.Component
 import org.springframework.stereotype.Controller
 import org.springframework.ui.Model
 import org.springframework.web.bind.annotation.GetMapping
@@ -21,7 +22,7 @@ import kotlin.io.path.exists
  * those from extra folders are read-only, with Copy. Nothing is cached, so an edit reaches the next launch.
  */
 @Controller
-class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, @Value("\${ants.home}") home: Path) {
+class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, private val models: Models, @Value("\${ants.home}") home: Path) {
     private val folder = home.resolve("agents")
 
     @GetMapping("/agents")
@@ -127,6 +128,7 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, @Valu
         model.addAttribute("dependents", agent?.let { usedBy.agent(it.name) })
         model.addAttribute("error", error)
         model.addAttribute("notice", notice)
+        model.addAttribute("models", models)
         return "agent"
     }
 
@@ -160,8 +162,6 @@ data class AgentForm(
         else -> Agent.sandboxError(cli, sandbox)
     }
 
-    /** The model is none of the dropdown's, so it shows under Other model ID…. */
-    val otherModel get() = model.isNotEmpty() && model !in Models.aliases && Models.all.none { it.id == model }
 
     /** The agent file: Claude Code's format, with `cli`, `skills` and `ants-subagent` for Ants. */
     fun text(): String {
@@ -228,16 +228,31 @@ data class AgentForm(
 /** A Claude model from Anthropic's model status table; [retires] is set once it is deprecated. */
 class ClaudeModel(val id: String, val retires: String?)
 
-/** The model dropdown's choices: Anthropic's public model status table, without the retired models. */
-// ponytail: the table is a copy bundled with Ants (models.md); the update check (#76) is to refresh it.
-object Models {
-    val all = Models::class.java.getResource("/models.md")!!.readText().lines().mapNotNull {
+/**
+ * The model dropdown's choices: Anthropic's public model status table, without the retired models. It starts as the
+ * copy bundled with Ants (models.md), and the update check refreshes it.
+ */
+@Component
+class Models {
+    @Volatile
+    final var all = read(javaClass.getResource("/models.md")!!.readText())
+        private set
+
+    /** Replaces the list with the models in [table], the status table as markdown; a table with none changes nothing. */
+    fun refresh(table: String) {
+        all = read(table).ifEmpty { all }
+    }
+
+    private fun read(table: String) = table.lines().mapNotNull {
         Regex("""^\|\s*(claude-\S+)\s*\|\s*(Active|Deprecated)\s*\|[^|]*\|\s*(.*?)\s*\|""").find(it)?.destructured
     }.map { (id, state, retires) -> ClaudeModel(id, retires.takeIf { state == "Deprecated" }) }
 
     /** Claude Code's aliases, each with what it resolves to on Anthropic's API: the newest active model of its family. */
-    val aliases = listOf("fable", "opus", "sonnet", "haiku").associateWith { alias -> all.firstOrNull { "-$alias-" in "${it.id}-" && it.retires == null }?.id }
+    val aliases get() = listOf("fable", "opus", "sonnet", "haiku").associateWith { alias -> all.firstOrNull { "-$alias-" in "${it.id}-" && it.retires == null }?.id }
 
     /** The model [id], if it is deprecated. */
     fun deprecated(id: String) = all.firstOrNull { it.id == id && it.retires != null }
+
+    /** [id] is neither a listed model nor an alias, such as a model ID the user typed. */
+    fun unlisted(id: String) = id !in aliases && all.none { it.id == id }
 }

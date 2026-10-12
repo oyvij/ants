@@ -31,10 +31,11 @@ class PreRun(
     private val catalogue: Catalogue,
     private val settings: Settings,
     private val launcher: AgentLauncher,
+    private val models: Models,
     @Value("\${ants.home}") private val home: Path,
 ) {
     // ponytail: in memory, so a custom model ID is tried once per Ants start and claude command; a bad one stays bad until then.
-    private val models = ConcurrentHashMap<Pair<List<String>, String>, String>() // (claude command, model ID) -> why it failed, empty when it answered
+    private val tried = ConcurrentHashMap<Pair<List<String>, String>, String>() // (claude command, model ID) -> why it failed, empty when it answered
 
     /**
      * Why a Run of [definition] with the Repos [repos] (Source map names) can't start; empty when it's Ready. Without
@@ -102,10 +103,10 @@ class PreRun(
     else System.getenv("PATH").orEmpty().split(File.pathSeparator).any { it.isNotEmpty() && Files.isExecutable(Path.of(it, command)) }
 
     /** A model ID that is neither in Anthropic's table nor an alias; `[1m]` asks for the long context of a listed one. */
-    private fun custom(model: String) = model.substringBefore('[').let { id -> id !in Models.aliases && Models.all.none { it.id == id } }
+    private fun custom(model: String) = models.unlisted(model.substringBefore('['))
 
     /** Tries [model] once with a one-line prompt, the way a launch runs claude: null when it answers, else its last words. */
-    private fun tryModel(model: String): String? = models.computeIfAbsent(settings.command("claude") to model) {
+    private fun tryModel(model: String): String? = tried.computeIfAbsent(settings.command("claude") to model) {
         failure(launcher.cli("claude", home, listOf("-p", "--model", model, "Reply with OK.")), 60).orEmpty()
     }.ifEmpty { null }
 

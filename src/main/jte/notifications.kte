@@ -5,12 +5,14 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
+    @template.app()
     <meta name="color-scheme" content="${colorScheme}">
     <title>Notification list · Ants</title>
 </head>
 <body>
 @template.nav()
 <h1>Notification list</h1>
+<p id="badge-permission" hidden><button>Show the count on the app icon</button> macOS badges an installed app only with notification permission.</p>
 @if(error != null)<p role="alert">${error}</p>@endif
 @template.entries(entries = entries)
 </body>

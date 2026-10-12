@@ -1,4 +1,6 @@
 import org.springframework.boot.gradle.plugin.SpringBootPlugin
+import java.security.MessageDigest
+import java.util.HexFormat
 
 plugins {
     kotlin("jvm") version "2.4.21"
@@ -40,6 +42,7 @@ dependencies {
     implementation("org.commonmark:commonmark-ext-task-list-items:0.30.1") // a Ticket's ticking checkboxes
     implementation("org.commonmark:commonmark-ext-gfm-tables:0.30.1")
     runtimeOnly("com.h2database:h2")
+    runtimeOnly("org.postgresql:postgresql") // engine state on a server, such as in the Docker image
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation(kotlin("test"))
@@ -50,6 +53,17 @@ dependencies {
 
 jte {
     generate()
+}
+
+// META-INF/build-info.properties: the version the update check compares a release with. No build time, so a build
+// that changed nothing stays up to date.
+springBoot {
+    buildInfo { excludes = setOf("time") }
+}
+
+// The Dockerfile copies it by this name.
+tasks.bootJar {
+    archiveFileName = "ants.jar"
 }
 
 // Node runs only in the build: pnpm fetches the front-end libraries, whose dist/ goes into the static resources.
@@ -96,9 +110,57 @@ tasks.register<JavaExec>("playwright") {
     mainClass = "com.microsoft.playwright.CLI"
 }
 
+// The release: Ants with its own trimmed Java runtime, laid out as the launcher expects (bin/ants, lib/ants.jar,
+// runtime/), as build/dist/ants-<version>-macos-arm64.tar.gz beside its SHA256SUMS, which install.sh checks.
+// It is only ever built for macOS arm64 (release.yml), but the runtime is the build machine's, so CI's tests on Linux
+// install a Linux one under the same name.
+val image = layout.buildDirectory.dir("image")
+val jlink = tasks.register<Exec>("jlink") {
+    val jdk = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(25) }.get().metadata.installationPath
+    outputs.dir(image.map { it.dir("runtime") })
+    doFirst { delete(image) }
+    // java.se and the jdk modules Spring Boot, H2 and Operaton reach for; no compiler, jshell or other tools.
+    commandLine(
+        jdk.file("bin/jlink").asFile, "--output", image.get().dir("runtime").asFile,
+        "--add-modules", "java.se,jdk.unsupported,jdk.zipfs,jdk.charsets,jdk.management,jdk.crypto.cryptoki,jdk.naming.dns",
+        "--strip-debug", "--no-header-files", "--no-man-pages",
+    )
+}
+// Updates.kt's tarball() names it the same way.
+val tarballFile = layout.buildDirectory.file("dist/ants-$version-macos-arm64.tar.gz")
+val tarball = tasks.register<Exec>("tarball") {
+    val bootJar = tasks.bootJar.flatMap { it.archiveFile }
+    val dist = layout.buildDirectory.dir("dist").get()
+    val file = tarballFile.get().asFile
+    dependsOn(jlink)
+    inputs.file(bootJar)
+    inputs.dir("src/dist")
+    outputs.dir(dist)
+    doFirst {
+        delete(dist)
+        copy { from("src/dist"); into(image) }
+        copy { from(bootJar); into(image.get().dir("lib")); rename { "ants.jar" } }
+        dist.asFile.mkdirs()
+    }
+    // The system tar keeps the runtime's symlinks and modes as they are; on macOS, without AppleDouble ._ files.
+    environment("COPYFILE_DISABLE", "1")
+    commandLine("tar", "-czf", file, "-C", image.get().asFile, "bin", "lib", "runtime")
+    doLast {
+        val sha = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(file.readBytes()))
+        dist.file("SHA256SUMS").asFile.writeText("$sha  ${file.name}\n")
+    }
+}
+
 tasks.test {
     dependsOn(nodeTest)
+    dependsOn(tasks.bootJar) // DockerTest builds the image from it
     useJUnitPlatform { excludeTags("live") }
+    // LauncherTest runs the boot jar as the tarball's lib/ants.jar; InstallTest installs the tarball itself.
+    val bootJar = tasks.bootJar.flatMap { it.archiveFile }
+    inputs.file(bootJar)
+    systemProperty("ants.jar", bootJar.get().asFile.path)
+    inputs.files(tarball)
+    systemProperty("ants.tarball", tarballFile.get().asFile.path)
     // Only the system folders and a fake gh, so a CLI run by its bare name, such as claude or nono, is never the real one.
     environment("PATH", "${projectDir}/src/test/resources/fake-gh:/usr/bin:/bin")
     // Ants must strip these from every Agent's environment, even when the allow-list names them.
