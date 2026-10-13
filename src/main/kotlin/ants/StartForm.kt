@@ -68,7 +68,7 @@ class StartForm(
         val reasons = preRun.reasons(definition, repos, profile)
         if (reasons.isNotEmpty()) throw CantStart(reasons)
         // Scoped to its repos, the Run keeps no link to the Source map, nor to a Profile: a name is kept as its remote.
-        val known = settings.runRepos(null, profile).associate { it.name to it.remote }
+        val known = RunSource.Profiled(profile).repos(settings).associate { it.name to it.remote }
         val scope = repos.map { known[it] ?: it }.takeIf { it.isNotEmpty() }?.let { SCOPE to ArrayList(it) }
         // The Name field's, empty when not given: RunLifecycle names the Run then.
         val run = listOfNotNull(NAME to values[NAME]?.firstOrNull().orEmpty(), scope ?: profile?.let { PROFILE to it })

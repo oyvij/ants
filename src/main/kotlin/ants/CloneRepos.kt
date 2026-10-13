@@ -43,13 +43,13 @@ class CloneRepos(
         val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult().rootProcessInstanceId
         val repos = names.runWorkspace(run).resolve("repos").createDirectories()
         // A scoped Run clones exactly its scope, whatever the Task names; its new repos are created only now.
-        val scope = scopes.of(run)
-        val profile = scopes.profile(run)
-        val known = settings.runRepos(scope, profile).associateBy { it.name }
-        val wanted = (scope ?: Settings.strings(task.variables["repos"]).orEmpty())
-            .map { known[it] ?: url(it) ?: error("The Source map ${settings.profile(profile)?.sourceMap} has no repo $it") }
+        val source = scopes.of(run)
+        val scoped = source is RunSource.Scoped
+        val known = source.repos(settings).associateBy { it.name }
+        val wanted = ((source as? RunSource.Scoped)?.scope ?: Settings.strings(task.variables["repos"]).orEmpty())
+            .map { known[it] ?: url(it) ?: error("The Source map ${source.profile(settings)?.sourceMap} has no repo $it") }
             .filter { !repos.resolve(it.name).exists() }
-            .map { if (scope != null && newRepo(it.remote)) it.copy(remote = create(it.remote)) else it }
+            .map { if (scoped && newRepo(it.remote)) it.copy(remote = create(it.remote)) else it }
         val branch by lazy { workBranch(run, task.variables["branch"]?.toString(), wanted.map(Repo::remote), repos) }
         val cloned = wanted.map { repo -> cloneOne(repo, repos, branch) }
         @Suppress("UNCHECKED_CAST")

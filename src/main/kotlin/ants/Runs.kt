@@ -85,9 +85,10 @@ class Runs(
         val run = run(id)
         model.addAttribute("run", run)
         model.addAttribute("name", names.name(id))
-        model.addAttribute("scope", scopes.of(id))
-        model.addAttribute("profile", scopes.profile(id))
-        model.addAttribute("kept",keptWorkspace(run)?.toString())
+        val source = scopes.of(id)
+        model.addAttribute("scope", (source as? RunSource.Scoped)?.scope)
+        model.addAttribute("profile", (source as? RunSource.Profiled)?.name)
+        model.addAttribute("kept", keptWorkspace(run)?.toString())
         // Where the work lives, in full, as long as it is on disk: the shared clones, then each instance's worktrees.
         val workspace = names.runWorkspace(id)
         model.addAttribute("workspace", workspace.takeIf { Files.isDirectory(it) }?.toString())
@@ -151,7 +152,7 @@ class Runs(
         val element = repository.getBpmnModelInstance(instance.processDefinitionId).getModelElementById<FlowElement>(task)
             ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No Task $task")
         val top = instance.rootProcessInstanceId
-        val key = (history.createHistoricVariableInstanceQuery().processInstanceId(id).variableName(CALLED).singleResult()?.value as? String).orEmpty() + task
+        val key = (history.variable(id, CALLED) as? String).orEmpty() + task
         val file = Transcript.file(names.runWorkspace(top), key)
         val transcript = Transcript()
         var offset = 0L
@@ -177,7 +178,7 @@ class Runs(
     private fun shown(id: String): Map<String, Shown> {
         val entries = notifications.tasks().filter { it.instance == id }.associateBy { it.activity }
         val agentTasks = externalTasks.createExternalTaskQuery().processInstanceId(id).topicName(AgentLauncher.TOPIC).list().groupBy { it.activityId }
-        val rounds = history.createHistoricVariableInstanceQuery().processInstanceId(id).variableName("runs").singleResult()?.value as? Map<*, *>
+        val rounds = history.variable(id, "runs") as? Map<*, *>
         return history.createHistoricActivityInstanceQuery().processInstanceId(id).list().groupBy { it.activityId }.mapValues { (activity, instances) ->
             val round = (rounds?.get(activity) as? Number)?.toInt()
             val entry = entries[activity]
@@ -275,7 +276,7 @@ class RunLifecycle(@Value("\${ants.home}") private val home: Path, private val s
         if (run.isTopRun) {
             // The name given on the start form, else the Process and start time; the folder and Run log start with it.
             val process = (run as ExecutionEntity).processDefinition.let { it.name ?: it.key }
-            val name = (run.getVariable(NAME) as? String)?.trim()?.take(200)?.ifEmpty { null } ?: clock.defaultName(process)
+            val name = runName(run.getVariable(NAME) as? String) ?: clock.defaultName(process)
             val folder = folder(name, run.processInstanceId)
             run.setVariable(NAME, name)
             run.setVariable(FOLDER, folder)
@@ -287,9 +288,7 @@ class RunLifecycle(@Value("\${ants.home}") private val home: Path, private val s
         run.setVariable("runs", tasks.associateWith { 0 })
         run.setVariable("clones", ArrayList<Any>()) // Clone repos adds to it
         // A called Process reads its top Run's scope and Profile, as it runs in that Run.
-        val top = run.topRun
-        @Suppress("UNCHECKED_CAST")
-        val repos = settings.runRepos(top.getVariable(SCOPE) as List<String>?, top.getVariable(PROFILE) as String?)
+        val repos = RunSource.read(run.topRun::getVariable).repos(settings)
         run.setVariable("sourceMap", ArrayList(repos.map { linkedMapOf("name" to it.name, "remote" to it.remote) }))
     }
 

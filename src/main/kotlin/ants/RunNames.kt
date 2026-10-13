@@ -57,7 +57,7 @@ class RunNames(
 
     /** Renames [run], live or ended; its folder and branch keep the name they started with. Blank keeps the name. */
     fun rename(run: String, name: String) {
-        val given = name.trim().take(200).ifEmpty { return }
+        val given = runName(name) ?: return
         if (runtime.createProcessInstanceQuery().processInstanceId(run).count() > 0) return runtime.setVariable(run, NAME, given)
         // An ended Run's variables are history only, which the engine's API never changes, so its row is set directly.
         (history as ServiceImpl).commandExecutor.execute { context ->
@@ -66,6 +66,14 @@ class RunNames(
         }
     }
 
-    private fun variable(run: String, name: String) =
-        history.createHistoricVariableInstanceQuery().processInstanceId(run).variableName(name).singleResult()?.value as? String
+    private fun variable(run: String, name: String) = history.variable(run, name) as? String
 }
+
+/** The value of the variable [name] of the process instance [run], live or ended; null when it has none. */
+fun HistoryService.variable(run: String, name: String): Any? = createHistoricVariableInstanceQuery().processInstanceId(run).variableName(name).singleResult()?.value
+
+/** A Run's name as given, trimmed and cut to [NAME_LENGTH] characters; null when blank. */
+fun runName(given: String?): String? = given?.trim()?.take(NAME_LENGTH)?.ifEmpty { null }
+
+/** The most characters a Run's name keeps. */
+private const val NAME_LENGTH = 200

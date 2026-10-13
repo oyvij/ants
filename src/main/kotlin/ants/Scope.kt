@@ -16,27 +16,41 @@ fun newRepo(entry: String) = Regex("[A-Za-z0-9-]+/[A-Za-z0-9._-]+").matches(entr
 /** The Run variable holding the name of the Profile a Run uses; unset with no Profiles configured, or in a scoped Run. */
 const val PROFILE = "ants.profile"
 
-// Which Vault and Source map a Run uses, decided here alone: none for a Run scoped to its repos ([scope] set), else
-// its [profile]'s (the default Profile's when null), and none for a Profile no longer in the settings.
+/**
+ * What a Run draws on: the repos it is [Scoped] to, or its [Profiled] Profile. Which Vault, Source map and repos a Run
+ * uses is decided here alone: none for a scoped Run, else its Profile's, and none for a Profile no longer in the settings.
+ */
+sealed interface RunSource {
+    /** A Run scoped to [scope] ([SCOPE]): no Profile, Vault or Source map. */
+    data class Scoped(val scope: List<String>) : RunSource
 
-/** The Vault's folder a Run with [scope] and [profile] uses; none when scoped, or with no Vault configured. */
-fun Settings.runVault(scope: List<String>?, profile: String?): Path? =
-    if (scope != null) null else profile(profile)?.vault?.let { vaults()[it] }?.let(Settings::expand)
+    /** A Run using the Profile [name] ([PROFILE]), the default one when null. */
+    data class Profiled(val name: String?) : RunSource
 
-/** The Source map's file a Run with [scope] and [profile] uses; none when scoped. */
-fun Settings.runSourceMap(scope: List<String>?, profile: String?): Path? = if (scope != null) null else profile(profile)?.sourceMap?.let(::sourceMap)
+    /** The Profile the Run uses; none when scoped, or for a Profile no longer in [settings]. */
+    fun profile(settings: Settings): Profile? = (this as? Profiled)?.let { settings.profile(it.name) }
 
-/** The Source map's repos a Run with [scope] and [profile] uses, and its Repos field offers; none when scoped. */
-fun Settings.runRepos(scope: List<String>?, profile: String?): List<Repo> = if (scope != null) emptyList() else profile(profile)?.sourceMap?.let(::repos).orEmpty()
+    /** The Vault's folder the Run uses; none when scoped, or with no Vault configured. */
+    fun vault(settings: Settings): Path? = profile(settings)?.vault?.let { settings.vaults()[it] }?.let(Settings::expand)
 
-/** The scope and Profile of a Run, as it started ([SCOPE], [PROFILE]). */
+    /** The Source map's file the Run uses; none when scoped. */
+    fun sourceMap(settings: Settings): Path? = profile(settings)?.sourceMap?.let(settings::sourceMap)
+
+    /** The Source map's repos the Run uses, and its Repos field offers; none when scoped. */
+    fun repos(settings: Settings): List<Repo> = profile(settings)?.sourceMap?.let(settings::repos).orEmpty()
+
+    companion object {
+        /** The source of a Run started with the Repos entries [repos] and the Profile [profile]: scoped with any entry. */
+        fun of(repos: List<String>, profile: String?): RunSource = if (repos.isEmpty()) Profiled(profile) else Scoped(repos)
+
+        /** The source a Run keeps as it started, from its [SCOPE] and [PROFILE] variables as [variable] reads them. */
+        fun read(variable: (String) -> Any?): RunSource =
+            (variable(SCOPE) as? List<*>)?.let { scope -> Scoped(scope.map(Any?::toString)) } ?: Profiled(variable(PROFILE) as? String)
+    }
+}
+
+/** The source of each Run, as it started ([RunSource.read]). */
 @Component
 class Scopes(private val history: HistoryService) {
-    /** The repos [run] is scoped to, or null when it isn't. */
-    fun of(run: String): List<String>? = (variable(run, SCOPE) as? List<*>)?.map(Any?::toString)
-
-    /** The name of the Profile [run] uses, or null for the default one. */
-    fun profile(run: String): String? = variable(run, PROFILE) as? String
-
-    private fun variable(run: String, name: String) = history.createHistoricVariableInstanceQuery().processInstanceId(run).variableName(name).singleResult()?.value
+    fun of(run: String): RunSource = RunSource.read { history.variable(run, it) }
 }

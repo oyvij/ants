@@ -183,7 +183,7 @@ class Processes(
         val picked = startForm.profile(process, profile)
         model.addAttribute("profiles", settings.profiles().keys.toList())
         model.addAttribute("profile", picked)
-        model.addAttribute("repos", settings.runRepos(null, picked).map(Repo::name)) // the Repos field's choices
+        model.addAttribute("repos", RunSource.Profiled(picked).repos(settings).map(Repo::name)) // the Repos field's choices
         model.addAttribute("schedule", schedules.of(process))
         // A refused Start has already checked what was posted.
         if (!model.containsAttribute("reasons")) model.addAttribute("reasons", preRun.reasons(process, fields.filter { it.type == FieldType.REPOS }.flatMap { it.storedRepos }, picked))

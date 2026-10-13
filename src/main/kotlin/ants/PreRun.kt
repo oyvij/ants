@@ -48,11 +48,12 @@ class PreRun(
      */
     fun reasons(definition: ProcessDefinition, repos: List<String>, profile: String?): List<String> {
         val named = repos.distinct()
-        val scope = named.takeIf { it.isNotEmpty() }
-        val picked = settings.profile(profile)
-        if (scope == null && picked == null) return listOf("The Profile $profile isn't in the settings.")
-        val vault = settings.runVault(scope, profile)
-        if (scope == null && vault == null) return listOf(CONFIGURE_VAULT)
+        val source = RunSource.of(named, profile)
+        val vault = source.vault(settings)
+        if (source is RunSource.Profiled) {
+            if (source.profile(settings) == null) return listOf("The Profile $profile isn't in the settings.")
+            if (vault == null) return listOf(CONFIGURE_VAULT)
+        }
         val processes = withCalled(definition)
         // Names, schemas, references and ants-uses: the deploy's Checks again, since files change after a deploy.
         val failed = processes.flatMap { process ->
@@ -62,8 +63,10 @@ class PreRun(
         val agents = processes.flatMap { repository.getBpmnModelInstance(it.id).getModelElementsByType(ServiceTask::class.java) }
             .filter { it.operatonTopic == AgentLauncher.TOPIC }
             .mapNotNull { task -> task.property(AGENT)?.let { runCatching { catalogue.agent(it) }.getOrNull() } }.distinctBy { it.name }
-        val sourceMap = picked?.sourceMap
-        val known = settings.runRepos(null, profile).associateBy { it.name } // the Repos field's choices
+        // The Repos field's choices: the picked Profile's, which a scoped Run's names are looked up in.
+        val offered = RunSource.Profiled(profile)
+        val sourceMap = offered.profile(settings)?.sourceMap
+        val known = offered.repos(settings).associateBy { it.name }
         val created = named.filter { it !in known && newRepo(it) }
         // Each repo to clone, by its remote: a Source map name's, else the git URL itself.
         val remotes = named.filter { it !in created }.mapNotNull { known[it]?.let { repo -> repo.remote to "${repo.name}'s remote ${repo.remote}" } ?: CloneRepos.url(it)?.let { _ -> it to it } }
@@ -71,8 +74,8 @@ class PreRun(
         val missing = (agents.map { it.cli } + listOfNotNull("git".takeIf { named.isNotEmpty() }) + "gh")
             .distinct().associateWith { cli -> command(cli) }.filterValues { !executable(it) }
         return buildList {
-            vault?.takeIf { !it.exists() }?.let { add("The Vault ${picked?.vault} isn't there: $it.") }
-            settings.runSourceMap(scope, profile)?.takeIf { !it.exists() }?.let { add("The Source map $sourceMap isn't there: $it.") }
+            vault?.takeIf { !it.exists() }?.let { add("The Vault ${source.profile(settings)?.vault} isn't there: $it.") }
+            source.sourceMap(settings)?.takeIf { !it.exists() }?.let { add("The Source map $sourceMap isn't there: $it.") }
             addAll(failed)
             missing.forEach { (cli, command) -> add("$cli: $command isn't an executable.") }
             for (agent in agents) Agent.sandboxError(agent.cli, agent.sandbox)?.let { add("The Agent ${agent.name}: $it") }

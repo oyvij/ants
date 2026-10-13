@@ -321,12 +321,12 @@ class AgentLauncher(
     }
 
     /**
-     * Whether [task] is done without a launch, as the Tasks that serve the Source map and the Vault are in a Run with a
-     * [scope]: the scout's Result is the scope, with no branch and a brief Ants writes itself, `scout/brief.md` with
+     * Whether [task] is done without a launch, as the Tasks that serve the Source map and the Vault are in a Run scoped to
+     * repos ([source]): the scout's Result is the scope, with no branch and a brief Ants writes itself, `scout/brief.md` with
      * the prompt and the repos; Update the Vault's says written, with nothing to write.
      */
-    private fun notLaunched(task: LockedExternalTask, workspace: Path, scope: List<String>?): Boolean {
-        if (scope == null) return false
+    private fun notLaunched(task: LockedExternalTask, workspace: Path, source: RunSource): Boolean {
+        val scope = (source as? RunSource.Scoped)?.scope ?: return false
         val output = when (task.extensionProperties[SKILL]) {
             "scout" -> {
                 val repos = scope.joinToString("") { "- $it\n" }
@@ -383,11 +383,10 @@ class AgentLauncher(
     ): Map<*, *> {
         val inputs = inputs(task)
         // A called Process's Task uses its top Run's scope and Profile: [run] is the top Run.
-        val scope = scopes.of(run)
-        val profile = scopes.profile(run)
-        val vault = vault(task, skill, scope, profile)
+        val source = scopes.of(run)
+        val vault = vault(task, skill, source)
         val prompt = if (!handedOff) instruction.orEmpty()
-        else handOff(task, skill, used, cwd, vault, settings.runSourceMap(scope, profile)) + "\n\n" + json.writeValueAsString(inputs) + (if (instruction.isNullOrBlank()) "" else "\n\nFrom the user:\n$instruction")
+        else handOff(task, skill, used, cwd, vault, source.sourceMap(settings)) + "\n\n" + json.writeValueAsString(inputs) + (if (instruction.isNullOrBlank()) "" else "\n\nFrom the user:\n$instruction")
         // The Task's result-schema override replaces the Skill's result.schema.json; Checks refuse one that isn't valid.
         val override = task.extensionProperties[RESULT_SCHEMA]?.takeIf(String::isNotBlank)?.let { json.readValue(it, Map::class.java) }
         val output = override ?: skill.outputSchema
@@ -506,10 +505,10 @@ class AgentLauncher(
 
     /**
      * The Vault's folder when [task] gets the Vault: its toggle ([VAULT]) has the final say, else its [skill]'s opt-in.
-     * Null when off, in a Run with a [scope], which has no Vault whatever the toggle says, or with no Vault configured
-     * for its [profile], which the pre-Run check (#55) refuses.
+     * Null when off, in a scoped Run ([source]), which has no Vault whatever the toggle says, or with no Vault configured
+     * for its Profile, which the pre-Run check (#55) refuses.
      */
-    private fun vault(task: LockedExternalTask, skill: Skill, scope: List<String>?, profile: String?): Path? = settings.runVault(scope, profile)
+    private fun vault(task: LockedExternalTask, skill: Skill, source: RunSource): Path? = source.vault(settings)
         ?.takeIf { task.extensionProperties[VAULT]?.toBooleanStrictOrNull() ?: catalogue.vault(skill) }
 
     /**
