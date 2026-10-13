@@ -536,7 +536,7 @@ function writeAgentTask(element, changes, inputs, redraw = false) {
     const properties = Object.entries({...agentProperties(bo), ...changes}).filter(([, value]) => value !== undefined)
     const values = (bo.extensionElements?.values || []).filter(value => value.$type !== "camunda:Properties" && (!inputs || value.$type !== "camunda:InputOutput"))
     values.unshift(factory.create("camunda:Properties", {values: properties.map(([name, value]) => factory.create("camunda:Property", {name, value}))}))
-    if (inputs) values.push(factory.create("camunda:InputOutput", {inputParameters: inputs.map(([name, value]) => factory.create("camunda:InputParameter", {name, value}))}))
+    if (inputs?.length) values.push(factory.create("camunda:InputOutput", {inputParameters: inputs.map(([name, value]) => factory.create("camunda:InputParameter", {name, value}))}))
     quiet = !redraw
     try {
         modeler.get("modeling").updateProperties(element, {extensionElements: factory.create("bpmn:ExtensionElements", {values})})
@@ -728,8 +728,13 @@ panels.user = element => {
     const bo = element.businessObject
     const props = agentProperties(bo)
     const kind = userTasks.find(k => k.value === (props["ants.user-task"] || "")) || userTasks.find(k => !k.value)
-    const what = el("select", {onchange: () => writeAgentTask(element, {"ants.user-task": what.value || undefined}, undefined, true)},
-        ...userTasks.map(k => el("option", {value: k.value, textContent: k.name, selected: k === kind})))
+    // Switching kind drops the fields only the old kind has, such as Approve's title and show.
+    const what = el("select", {onchange: () => {
+        const next = userTasks.find(k => k.value === what.value)
+        const stale = userTasks.flatMap(k => k.fields).filter(f => !next.fields.some(g => g.property === f.property && g.input === f.input))
+        const cleared = Object.fromEntries(stale.filter(f => f.property).map(f => [f.property, undefined]))
+        writeAgentTask(element, {...cleared, "ants.user-task": what.value || undefined}, agentInputs(bo).filter(([name]) => !stale.some(f => f.input === name)), true)
+    }}, ...userTasks.map(k => el("option", {value: k.value, textContent: k.name, selected: k === kind})))
     const agentTasks = modeler.get("elementRegistry").filter(e => !e.labelTarget && kindOf(e) === "agent")
     const control = ({property, input}) => {
         if (input) {

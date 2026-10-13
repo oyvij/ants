@@ -189,7 +189,9 @@ class BrowserTest : AntsTest() {
         label("What you do").selectOption("Answer a Round")
         assertThat(label("Asker")).isVisible()
         label("What you do").selectOption("Approve")
-        assertThat(label("Title")).hasValue("Ship it?")
+        assertThat(label("Title")).hasValue("") // switching kind dropped the old kind's fields
+        label("Title").fill("Ship it?")
+        label("Title").press("Tab")
         page.locator("#save").click()
         assertThat(page).hasURL(Pattern.compile(".*/processes/gated$"))
         val saved = http.get("/processes/gated/diagram.bpmn").body

@@ -130,7 +130,7 @@ class SkillsTest : AntsTest() {
         assertContains(shipped, """<textarea name="skill" rows="20" data-markdown readonly""")
         assertFalse("""<button class="primary" form="skill">Save</button>""" in shipped)
         assertContains(shipped, "No Agent runs this Skill yet, so no Task can use it.") // shipped-writer lists no Skills
-        assertContains(shipped, "<code>\${shipped-draft.output.text}</code>") // a Result field later Tasks read
+        assertContains(shipped, "<code>\${&lt;task&gt;.output.text}</code>") // a Result field later Tasks read, under the Task's id
         assertEquals(403, save(skillMd("shipped-draft"), name = "shipped-draft").status)
 
         val page = browser.post("/skills/shipped-draft/copy", emptyMap())

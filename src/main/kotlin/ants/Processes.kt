@@ -77,24 +77,25 @@ class Processes(
     fun list(model: Model): String {
         val processes = repository.createProcessDefinitionQuery().latestVersion().orderByProcessDefinitionName().asc().list()
         model.addAttribute("processes", processes)
+        val login = preRun.oneLogin() // asked once for them all
         model.addAttribute("rows", Executors.newVirtualThreadPerTaskExecutor().use { threads ->
-            processes.map { process -> threads.submit<ProcessRow> { row(process) } }.map { it.get() }
+            processes.map { process -> threads.submit<ProcessRow> { row(process, login) } }.map { it.get() }
         })
         return "processes"
     }
 
-    private fun row(process: ProcessDefinition): ProcessRow {
+    private fun row(process: ProcessDefinition, login: () -> Map<*, *>): ProcessRow {
         val profile = startForm.profile(process, null)
         return ProcessRow(
             process, process.resourceName.startsWith("shipped/"), settings.profile(profile), schedules.of(process),
-            reasons(process, startForm.fields(process), profile).isEmpty(),
+            reasons(process, startForm.fields(process), profile, login).isEmpty(),
             history.createHistoricProcessInstanceQuery().processDefinitionKey(process.key).rootProcessInstances().active().count(),
         )
     }
 
     /** The pre-Run check of [process] as its start form opens, with its Repos fields' stored values. */
-    private fun reasons(process: ProcessDefinition, fields: List<Field>, profile: String?) =
-        preRun.reasons(process, fields.filter { it.type == FieldType.REPOS }.flatMap { it.storedRepos }, profile)
+    private fun reasons(process: ProcessDefinition, fields: List<Field>, profile: String?, login: () -> Map<*, *> = preRun.oneLogin()) =
+        preRun.reasons(process, fields.filter { it.type == FieldType.REPOS }.flatMap { it.storedRepos }, profile, login)
 
     /** The deployed Processes as the modeler's call activity panel picks them: each one's start-form fields are the call's inputs. */
     @GetMapping("/processes.json")

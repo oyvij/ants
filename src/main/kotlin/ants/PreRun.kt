@@ -44,8 +44,14 @@ class PreRun(
      * isn't in the settings is the only reason, and so is [CONFIGURE_VAULT] without the Profile's Vault, since such a
      * Run needs one; with Repos the Run is scoped to them, and needs neither the Vault nor the Source map. Each repo
      * must answer `git ls-remote`, and each new repo's name must be free. The Processes it calls are checked too, since
-     * they run inside its Run. A page checking many Processes at once asks the Claude login ([claudeLogin]) once.
+     * they run inside its Run. A page checking many Processes at once asks the Claude login ([claudeLogin]) once, by [oneLogin].
      */
+    /** The Claude login, asked once however many checks read it, for a page that checks many Processes. */
+    fun oneLogin(): () -> Map<*, *> {
+        val login by lazy { launcher.login() }
+        return { login }
+    }
+
     fun reasons(definition: ProcessDefinition, repos: List<String>, profile: String?, claudeLogin: () -> Map<*, *> = launcher::login): List<String> {
         val named = repos.distinct()
         val source = RunSource.of(named, profile)

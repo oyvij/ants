@@ -12,6 +12,7 @@ import org.springframework.security.web.csrf.CsrfToken
 import java.net.URI
 import java.time.Clock
 import java.time.LocalTime
+import java.util.concurrent.Executors
 
 /** Redirects back to the page a nav button was pressed on, as its Referer names it, else Home. */
 fun back(from: String?) = "redirect:" + (from?.let { runCatching { URI(it).path }.getOrNull() }?.ifEmpty { null } ?: "/")
@@ -39,15 +40,18 @@ class Home(
         model.addAllAttributes(dashboard())
         val hour = LocalTime.now(clock).hour
         model.addAttribute("greeting", if (hour < 12) "Good morning" else if (hour < 18) "Good afternoon" else "Good evening")
-        // Each Process's pre-Run check, as its page runs it, asking the Claude login once for them all.
-        val login by lazy { launcher.login() }
-        model.addAttribute(
-            "processes",
-            repository.createProcessDefinitionQuery().latestVersion().orderByProcessDefinitionName().asc().list().associateWith { process ->
-                val repos = startForm.fields(process).filter { it.type == FieldType.REPOS }.flatMap { it.storedRepos }
-                preRun.reasons(process, repos, startForm.profile(process, null)) { login }.isEmpty()
-            },
-        )
+        // Each Process's pre-Run check, as its page runs it, side by side as the Processes list runs them, asking the
+        // Claude login once for them all.
+        val login = preRun.oneLogin()
+        val processes = repository.createProcessDefinitionQuery().latestVersion().orderByProcessDefinitionName().asc().list()
+        model.addAttribute("processes", Executors.newVirtualThreadPerTaskExecutor().use { threads ->
+            processes.map { process ->
+                threads.submit<Boolean> {
+                    val repos = startForm.fields(process).filter { it.type == FieldType.REPOS }.flatMap { it.storedRepos }
+                    preRun.reasons(process, repos, startForm.profile(process, null), login).isEmpty()
+                }
+            }.let { ready -> processes.zip(ready) { process, it -> process to it.get() }.toMap() }
+        })
         return "home"
     }
 

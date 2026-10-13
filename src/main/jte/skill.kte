@@ -65,9 +65,9 @@
 @if(runBy.isEmpty())
     <div class="warn">No Agent runs this Skill yet, so no Task can use it.</div>
 @endif
-    <h3 class="fields">Result fields</h3><div class="help">Inputs this Skill offers the Tasks after it.</div>
+    <h3 class="fields">Result fields</h3><div class="help">Inputs this Skill offers the Tasks after it, under the id of the Task that runs it.</div>
 @for(field in fields)
-    <code>${"\${" + form.name + ".output." + field + "}"}</code>
+    <code>${"\${<task>.output." + field + "}"}</code>
 @endfor
 @if(fields.isEmpty())
     <span class="muted small">none</span>
