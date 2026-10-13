@@ -89,10 +89,16 @@ class CloneRepos(
     }
 
     /** The work branches the clones in [run]'s Run workspace were put on. */
-    private fun branches(run: String): List<String> = clones(names.runWorkspace(run)).mapNotNull { runCatching { workBranch(it) }.getOrNull() }.distinct()
+    private fun branches(run: String): List<String> = clones(names.runWorkspace(run)).mapNotNull(::putOn).distinct()
 
-    /** The work branch Clone repos put [clone] on, which every landing and Push uses, wherever the clone is now. */
-    fun workBranch(clone: Path) = git(clone, "config", WORK_BRANCH)
+    /** The work branch Clone repos put [clone] on, or null for a clone it didn't make. */
+    private fun putOn(clone: Path) = runCatching { git(clone, "config", WORK_BRANCH) }.getOrNull()
+
+    /**
+     * The work branch Clone repos put [clone] on, which every landing and Push uses, wherever the clone is now; for a
+     * clone an Agent made by hand, the branch it is on.
+     */
+    fun workBranch(clone: Path) = putOn(clone) ?: currentBranch(clone)
 
     /** The branch [clone] is on now, empty when its HEAD is detached. */
     fun currentBranch(clone: Path) = git(clone, "branch", "--show-current")
