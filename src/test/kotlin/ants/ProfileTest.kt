@@ -198,4 +198,38 @@ class ProfileTest : AntsTest() {
         assertTrue(privateVault.resolve("Note.md").exists())
         assertFalse(workVault.resolve("Note.md").exists())
     }
+
+    /** Deploys [key], a Process whose only Task calls [called], with the start form's Repos field when [repos]. */
+    private fun caller(key: String, called: String, repos: Boolean = false) = deploy(
+        "$key.bpmn",
+        """<?xml version="1.0" encoding="UTF-8"?>
+        <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:operaton="http://operaton.org/schema/1.0/bpmn" id="definitions" targetNamespace="http://bpmn.io/schema/bpmn">
+          <bpmn:process id="$key" name="$key" isExecutable="true" operaton:historyTimeToLive="180">
+            <bpmn:startEvent id="start">${if (!repos) "" else """<bpmn:extensionElements><operaton:formData><operaton:formField id="repos" label="Repos" type="string"><operaton:properties><operaton:property id="ants.type" value="repos" /></operaton:properties></operaton:formField></operaton:formData></bpmn:extensionElements>"""}</bpmn:startEvent>
+            <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="call" />
+            <bpmn:callActivity id="call" calledElement="$called" />
+            <bpmn:sequenceFlow id="f2" sourceRef="call" targetRef="end" />
+            <bpmn:endEvent id="end" />
+          </bpmn:process>
+        </bpmn:definitions>""",
+    )
+
+    @Test
+    fun `a Process called two levels down uses its top Run's Profile, and in a scoped Run its scope`() {
+        setUp()
+        caller("middle", "profile")
+        caller("top", "middle", repos = true)
+        browser.get("/processes/top")
+        val run = browser.post("/processes/top/runs", listOf(PROFILE to "private")).path.removePrefix("/runs/")
+        eventually(20) { assertContains(page(run), "State: Completed") }
+        val launch = claude.launches("draft").single().stdin.replace("\\\"", "\"")
+        assertContains(launch, "The Vault is $privateVault and the Source map is $privateMap.")
+        assertContains(launch, "\"sourceMap\":[{\"name\":\"api\",\"remote\":\"${privateApi.remote}\"}]")
+
+        val scoped = browser.post("/processes/top/runs", listOf("repos" to "${workApi.remote}")).path.removePrefix("/runs/")
+        eventually(20) { assertContains(page(scoped), "State: Completed") }
+        val scopedLaunch = claude.launches("draft").last().stdin.replace("\\\"", "\"")
+        assertFalse("Vault" in scopedLaunch || "Source map" in scopedLaunch, scopedLaunch)
+        assertContains(scopedLaunch, "\"sourceMap\":[]")
+    }
 }

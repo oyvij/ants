@@ -287,7 +287,7 @@ class RunLifecycle(@Value("\${ants.home}") private val home: Path, private val s
         run.setVariable("runs", tasks.associateWith { 0 })
         run.setVariable("clones", ArrayList<Any>()) // Clone repos adds to it
         // A called Process reads its top Run's scope and Profile, as it runs in that Run.
-        val top = generateSequence(run) { it.superExecution }.last()
+        val top = run.topRun
         @Suppress("UNCHECKED_CAST")
         val repos = settings.runRepos(top.getVariable(SCOPE) as List<String>?, top.getVariable(PROFILE) as String?)
         run.setVariable("sourceMap", ArrayList(repos.map { linkedMapOf("name" to it.name, "remote" to it.remote) }))
@@ -354,8 +354,8 @@ class RunLifecycle(@Value("\${ants.home}") private val home: Path, private val s
             // With Items are Tickets, the instance's Ticket goes in review once it ends, after its last landing.
             if (body.getProperty(ITEMS_ARE_TICKETS) == true) {
                 val item = instance.getVariable(loop.collectionElementVariable)
-                val run = (instance as ExecutionEntity).rootProcessInstanceId
-                val top = generateSequence(instance.processInstance) { it.superExecution?.processInstance }.last()
+                val top = instance.topRun
+                val run = top.id
                 val workspace = home.runWorkspace(run, top.getVariable(FOLDER) as? String)
                 Context.getCommandContext().transactionContext.addTransactionListener(TransactionState.COMMITTED) {
                     ticket(workspace, run, item)?.takeIf { !it.closed }?.status(Tracked.IN_REVIEW)
@@ -482,3 +482,10 @@ private fun ScopeImpl.multiInstanceBodies(): List<ActivityImpl> = activities.fla
 
 /** A called Process runs inside its caller's Run. */
 private val DelegateExecution.isTopRun get() = superExecution == null
+
+/**
+ * The top Run's process instance [this] runs in, at any depth of called Processes: the engine's root process instance
+ * ([ExecutionEntity.getRootProcessInstanceId]), the one services find by that id.
+ */
+private val DelegateExecution.topRun: ExecutionEntity
+    get() = generateSequence((this as ExecutionEntity).processInstance) { it.superExecution?.processInstance }.last()
