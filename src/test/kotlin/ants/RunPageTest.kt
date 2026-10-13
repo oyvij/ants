@@ -214,7 +214,7 @@ class RunPageTest : AntsTest() {
         val path = "/runs/$run/tasks/draft/transcript"
         var page = ""
         eventually { page = browser.get(path).body.also { assertContains(it, "Looking.") } }
-        assertContains(page, """<h1>Draft <span class="pill p-running">Running</span></h1>""")
+        assertContains(page, """<h1 data-flash="running">Draft <span class="pill p-running">Running</span></h1>""")
         assertContains(page, """<a href="/agents/writer">writer</a>""")
         assertContains(page, """<div class="sofar" id="sofar">""")
         val composer = assertNotNull(Regex("""<div class="composer">.*?</form>""", RegexOption.DOT_MATCHES_ALL).find(page)).value

@@ -556,6 +556,20 @@ class Transcripts(
         }
     }
 
+    /** The Task page's header, its state, tokens and summary, as HTML, sent on connect and whenever it changes. */
+    fun head(run: String, task: String): Part {
+        val file = file(run, task)
+        val transcript = Transcript()
+        var offset = 0L
+        tasks.task(run, task, transcript) // a Run that doesn't exist is refused now, not by every look
+        return streams.rendered("taskhead", "taskhead.kte") {
+            val (lines, end) = Transcript.read(file, offset)
+            offset = end
+            lines.forEach(transcript::add)
+            mapOf("view" to tasks.task(run, task, transcript), "run" to run, "runName" to names.name(run), "tokens" to transcript.html("tokens"))
+        }
+    }
+
     private fun file(run: String, task: String) = Transcript.file(names.runWorkspace(run), task).normalize()
         .also { if (!it.startsWith(runs) || it.nameCount != runs.nameCount + 4) throw ResponseStatusException(HttpStatus.NOT_FOUND) }
 }

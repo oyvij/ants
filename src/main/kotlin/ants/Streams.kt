@@ -92,7 +92,7 @@ class Streams(private val templates: TemplateEngine) {
  * installed app: the sidebar's events, `count`, `runs`, `pauses` and `update`, and `toast`, on every page, and an event
  * for each part of the page the query names: `home`; `runlist`, the Runs list; `notifications`, the Notification list;
  * `run=<id>`, with `drawer=<task>` while its Task drawer is open, and `tasks=<id>`, the Run page's Tasks table;
- * `transcript=<run>/<task>&from=<byte>`; `ticket=<run>/<name>`.
+ * `transcript=<run>/<task>&from=<byte>`, with `taskhead`, its Task page header; `ticket=<run>/<name>`.
  */
 @Controller
 class Live(
@@ -122,6 +122,7 @@ class Live(
             query["run"]?.let(runs::live),
             query["drawer"]?.let { runs.drawer(query.getValue("run"), it, csrf) },
             query["transcript"]?.let(::inRun)?.let { (run, task) -> transcripts.events(run, task, query.getValue("from").toLong()) },
+            query["transcript"]?.let(::inRun)?.let { (run, task) -> transcripts.head(run, task) },
             query["ticket"]?.let(::inRun)?.let { (run, name) -> tickets.live(run, name) },
         ),
     )

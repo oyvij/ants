@@ -48,7 +48,7 @@ class ApproveTest : AntsTest() {
         val entry = entry(run)
         for (cell in listOf("<i>✓</i>[approve]", "Check the draft", "Approve the notes")) assertContains(row(run)!!, cell)
         val body = browser.get(entry).body
-        assertContains(body, """<h1>Check the draft <span class="pill p-waiting">Waiting on you</span> <span class="tag t-approve"><i>✓</i>[approve]</span></h1>""")
+        assertContains(body, """<h1 data-flash="waiting">Check the draft <span class="pill p-waiting">Waiting on you</span> <span class="tag t-approve"><i>✓</i>[approve]</span></h1>""")
         assertContains(body, """<div class="sub">Approve the notes</div>""")
         assertContains(body, """<div class="muted small mono">notes.md</div><h1>Notes</h1>""")
         assertContains(body, "The <em>draft</em> reads well.")

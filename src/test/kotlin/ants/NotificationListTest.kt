@@ -84,7 +84,7 @@ class NotificationListTest : AntsTest() {
         )) assertContains(row, cell)
         assertContains(browser.get("/notifications").body, """<tr class="click" data-href="$entry">""")
         val page = browser.get(entry(run)).body
-        assertContains(page, """<h1>Draft <span class="pill p-stuck">Stuck</span> <span class="tag t-stuck"><i>⚠</i>[stuck]</span></h1>""")
+        assertContains(page, """<h1 data-flash="stuck">Draft <span class="pill p-stuck">Stuck</span> <span class="tag t-stuck"><i>⚠</i>[stuck]</span></h1>""")
         assertContains(page, """<div class="card"><h3>What it needs</h3><p>Which tone, dry or warm?</p>""")
         assertContains(page, """<summary class="small">The session so far</summary>""")
         assertContains(page, """href="/runs/$run/tasks/draft/transcript"""")

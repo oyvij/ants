@@ -200,6 +200,19 @@ class TranscriptTest : AntsTest() {
     }
 
     @Test
+    fun `the Transcript page's header follows the Task's state live, marking it to flash`() {
+        claude.session("draft", init, "wait release", done)
+        val run = start("agent-task")
+        val head = browser.events("transcript=$run/draft&from=0", "taskhead")
+        var html = head.until { "p-running" in it }
+        assertContains(html, """<h1 data-flash="running">Draft <span class="pill p-running">Running</span>""")
+        claude.release("release")
+        html = head.until { "p-done" in it }
+        assertContains(html, """<h1 data-flash="done">Draft <span class="pill p-done">Done</span>""")
+        assertContains(html, """<div class="crumbs"><a href="/runs">Runs</a> / <a href="/runs/$run">""") // the whole header comes
+    }
+
+    @Test
     fun `the live line's verb says what the latest event does and to what, else it rotates`() {
         claude.session(
             "draft", init, "wait one",
