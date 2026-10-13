@@ -302,7 +302,7 @@ body.login [role] { margin-bottom: 4px; }
 
 /* The markdown editor (markdown.js), the .ed above over every textarea[data-markdown]: read-only, or refused empty. */
 .ed { font-size: 14px; font-weight: 400; color: var(--text); text-align: left; }
-label > .ed { margin-top: 4px; }
+label > .ed { margin-top: 4px; } .modal .split .cm-scroller { font-family: inherit; line-height: 1.55; }
 .ed.readonly { background: var(--panel2); } .ed.readonly .st { color: var(--muted); }
 .ed.invalid { border-color: var(--bad); outline: 2px solid var(--badSoft); } .ed.invalid .st { color: var(--bad); }
 

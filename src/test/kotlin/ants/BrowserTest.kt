@@ -301,7 +301,7 @@ class BrowserTest : AntsTest() {
         assertEquals(buttons.y, page.locator("footer").boundingBox().y) // the buttons never move
         page.click("#next")
         assertThat(page.locator("#answer-scope + .ed.invalid")).isVisible() // required still stops an empty answer
-        assertThat(page).hasURL(Pattern.compile(".*" + Pattern.quote(entry) + "$"))
+        assertEquals(url(entry), page.url())
         scope.fill("Only admins.")
         page.click("#next")
         assertThat(page.locator("#review-list > button").nth(1)).hasText("✎ Ask scope?Only admins.") // the full question, the answer under it
