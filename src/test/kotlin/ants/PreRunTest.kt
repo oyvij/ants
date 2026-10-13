@@ -16,7 +16,7 @@ class PreRunTest : AntsTest() {
     private val vault = Files.createTempDirectory("vault")
 
     private fun settings(extra: String = "", vaults: String = "vaults:\n  notes: $vault\n") =
-        home.resolve("settings.yaml").writeText("claude:\n  command: [${claude.command}]\n$vaults$extra")
+        home.resolve("settings.yaml").writeAtomically("claude:\n  command: [${claude.command}]\n$vaults$extra")
 
     /** The Agent `writer` listing the Skill `draft`, whose output has a `text`; [frontmatter] is added to the Agent's. */
     private fun catalogue(frontmatter: String = "") {

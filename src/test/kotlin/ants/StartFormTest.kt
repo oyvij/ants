@@ -41,13 +41,13 @@ class StartFormTest : AntsTest() {
         val maps = Files.createTempDirectory("source-maps")
         maps.resolve("stacc.md").writeText("# Stacc\n- api-in: /code/api-in (git@example.com:stacc/api-in.git)\n- web: /code/web (/remotes/web.git)\n")
         maps.resolve("home.md").writeText("- dotfiles: /code/dotfiles (/remotes/dotfiles.git)\n")
-        home.resolve("settings.yaml").writeText("source-maps:\n  home: $maps/home.md\n  stacc: $maps/stacc.md\ndefault-source-map: stacc\n")
+        home.resolve("settings.yaml").writeAtomically("source-maps:\n  home: $maps/home.md\n  stacc: $maps/stacc.md\ndefault-source-map: stacc\n")
         try {
             browser.import("start-form.bpmn")
             val repos = form("start-form").substringAfter("""<div class="row picks">""").substringBefore("</div>")
             assertEquals(listOf("api-in", "web"), Regex("""<span class="mono">([^<]+)</span>""").findAll(repos).map { it.groupValues[1] }.toList())
         } finally {
-            home.resolve("settings.yaml").writeText("")
+            home.resolve("settings.yaml").writeAtomically("")
         }
     }
 
@@ -55,7 +55,7 @@ class StartFormTest : AntsTest() {
     fun `field values reach the Run as variables under their names`() {
         val map = Files.createTempDirectory("source-maps").resolve("work.md")
         map.writeText("- api-in: /code/api-in (${bare()})\n- web: /code/web (${bare()})\n")
-        home.resolve("settings.yaml").writeText("source-maps:\n  work: $map\n$vault")
+        home.resolve("settings.yaml").writeAtomically("source-maps:\n  work: $map\n$vault")
         browser.import("start-form.bpmn")
         browser.get("/processes/start-form")
         val run = browser.post(

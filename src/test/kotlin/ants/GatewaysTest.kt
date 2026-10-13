@@ -115,7 +115,7 @@ class GatewaysTest : AntsTest() {
 
     @Test
     fun `an intermediate timer waits, then the Run goes on`() {
-        home.resolve("settings.yaml").writeText(vault)
+        home.resolve("settings.yaml").writeAtomically(vault)
         val run = run(
             "timer-wait",
             """
@@ -159,7 +159,7 @@ class GatewaysTest : AntsTest() {
 
     @Test
     fun `a timer boundary on a User Task interrupts it when it fires`() {
-        home.resolve("settings.yaml").writeText(vault)
+        home.resolve("settings.yaml").writeAtomically(vault)
         val run = run(
             "boundary",
             """

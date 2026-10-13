@@ -18,7 +18,7 @@ class VaultTest : AntsTest() {
     /** A fresh, empty Vault, the default one. */
     private val vault: Path = Files.createTempDirectory("vault")
 
-    private fun settings() = home.resolve("settings.yaml").also { Files.writeString(it, "claude:\n  command: [${claude.command}]\nvaults:\n  notes: $vault\n") }
+    private fun settings() = home.resolve("settings.yaml").also { it.writeAtomically("claude:\n  command: [${claude.command}]\nvaults:\n  notes: $vault\n") }
 
     /** Every file in the Vault, relative to it. */
     private fun notes() = vault.walk().map { vault.relativize(it).toString() }.sorted().toList()

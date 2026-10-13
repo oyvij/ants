@@ -54,7 +54,7 @@ class ProfileTest : AntsTest() {
     /** The writer runs `draft`, which leaves a Note in whatever Vault its hand-off line names. */
     private fun setUp(settings: String = profiles) {
         agentTask(claude)
-        home.resolve("settings.yaml").writeText("claude:\n  command: [${claude.command}]\n$settings")
+        home.resolve("settings.yaml").writeAtomically("claude:\n  command: [${claude.command}]\n$settings")
         claude.session(
             "draft",
             """sh v=$(sed -n 's/.*The Vault is \(.*\) and the Source map is.*/\1/p' "${'$'}launch/stdin"); [ -n "${'$'}v" ] && echo note > "${'$'}v/Note.md"""",

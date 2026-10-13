@@ -34,7 +34,7 @@ class CodexTest : AntsTest() {
     /** The Agent `writer` on codex, with [agent] lines in its frontmatter, listing the Skill `draft`. */
     private fun codexTask(agent: String = "", claude: FakeClaude? = null, metadata: String = "") {
         agentTask(claude, agent = "cli: codex\n$agent", metadata = metadata)
-        home.resolve("settings.yaml").writeText(
+        home.resolve("settings.yaml").writeAtomically(
             "codex:\n  command: [${codex.command}]\n  env: [${env.joinToString(", ")}]\n" +
                 (if (claude == null) "" else "claude:\n  command: [${claude.command}]\n") + vault,
         )

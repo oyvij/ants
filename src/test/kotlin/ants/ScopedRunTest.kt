@@ -65,7 +65,7 @@ class ScopedRunTest : AntsTest() {
     }
 
     /** `settings.yaml` with the fake claude and gh, a Source map of api and web, and the Vault [notes] when [vault]. */
-    private fun settings(vault: Boolean = true) = home.resolve("settings.yaml").writeText(
+    private fun settings(vault: Boolean = true) = home.resolve("settings.yaml").writeAtomically(
         "claude:\n  command: [${claude.command}]\ngh:\n  path: $gh\n" + sourceMapLines(api, web) + (if (vault) "vaults:\n  notes: $notes\n" else ""),
     )
 

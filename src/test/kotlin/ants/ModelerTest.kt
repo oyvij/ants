@@ -34,7 +34,7 @@ class ModelerTest : AntsTest() {
         assertEquals("/processes/drawn-from-scratch", process.path)
         assertContains(process.body, "<h1>Drawn from scratch</h1>")
 
-        home.resolve("settings.yaml").writeText(vault)
+        home.resolve("settings.yaml").writeAtomically(vault)
         val run = browser.post("/processes/drawn-from-scratch/runs", mapOf("prompt" to "Draw"))
         assertContains(run.body, "Running")
     }

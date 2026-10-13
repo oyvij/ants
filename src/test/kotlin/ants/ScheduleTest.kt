@@ -65,7 +65,7 @@ class ScheduleTest : AntsTest() {
 
     @Test
     fun `a Schedule starts a Run at its time, with the stored values`() {
-        home.resolve("settings.yaml").writeText(vault)
+        home.resolve("settings.yaml").writeAtomically(vault)
         deploy()
         assertEquals(0, management.createJobQuery().processDefinitionKey(key).count(), "Operaton runs no start timer of its own")
         settle()
@@ -80,7 +80,7 @@ class ScheduleTest : AntsTest() {
 
     @Test
     fun `several missed times run once`() {
-        home.resolve("settings.yaml").writeText(vault)
+        home.resolve("settings.yaml").writeAtomically(vault)
         deploy()
         clock.offset = Duration.ofHours(5)
         eventually { assertEquals(1, runs()) }
@@ -90,7 +90,7 @@ class ScheduleTest : AntsTest() {
 
     @Test
     fun `an overlapping time is skipped and noted on the Process page, by the latest time skipped, until a Run starts again`() {
-        home.resolve("settings.yaml").writeText(vault)
+        home.resolve("settings.yaml").writeAtomically(vault)
         deploy(bpmn(waits = true))
         clock.offset = Duration.ofHours(1)
         eventually { assertEquals(1, runs()) }
@@ -108,7 +108,7 @@ class ScheduleTest : AntsTest() {
 
     @Test
     fun `a scheduled Run that can't start is a failed entry on the Notification list, with Start now and Dismiss`() {
-        home.resolve("settings.yaml").writeText("") // no Vault, so the pre-Run check refuses
+        home.resolve("settings.yaml").writeAtomically("") // no Vault, so the pre-Run check refuses
         deploy()
         clock.offset = Duration.ofHours(1)
         eventually { assertContains(browser.get("/notifications").body, "Configure a Vault") }
@@ -122,13 +122,13 @@ class ScheduleTest : AntsTest() {
         assertContains(entry, "The scheduled Run didn't start: Configure a Vault")
         assertContains(entry, """<form method="post" action="/processes/$key/schedule/start">""")
         assertContains(entry, """<form method="post" action="/processes/$key/schedule/dismiss">""")
-        home.resolve("settings.yaml").writeText(vault)
+        home.resolve("settings.yaml").writeAtomically(vault)
         val run = browser.post("/processes/$key/schedule/start", mapOf())
         assertContains(run.path, "/runs/")
         assertEquals(1, runs())
         assertFalse("Configure a Vault" in browser.get("/notifications").body)
 
-        home.resolve("settings.yaml").writeText("")
+        home.resolve("settings.yaml").writeAtomically("")
         clock.offset = Duration.ofHours(2)
         eventually { assertContains(browser.get("/notifications").body, "Configure a Vault") }
         assertContains(browser.get("/processes/$key").body, """<button class="primary">Start now</button>""") // the Process page has them too
@@ -153,7 +153,7 @@ class ScheduleTest : AntsTest() {
 
     @Test
     fun `Home's Coming up lists the next scheduled Runs, a paused Schedule doesn't run, and a removed one is gone`() {
-        home.resolve("settings.yaml").writeText(vault)
+        home.resolve("settings.yaml").writeAtomically(vault)
         deploy(bpmn(cron = "0 30 8 * * *"))
         assertContains(browser.get("/processes/$key").body, "Every day at 08:30")
         assertContains(comingUp(), "Nightly")

@@ -47,7 +47,7 @@ class RunNameTest : AntsTest() {
 
     @Test
     fun `an unnamed Run is named after its Process and start time, and a long name's slug stops at 40`() {
-        home.resolve("settings.yaml").writeText(vault)
+        home.resolve("settings.yaml").writeAtomically(vault)
         browser.import("start-end.bpmn")
         browser.get("/processes/start-end")
         val run = browser.post("/processes/start-end/runs", mapOf()).path.removePrefix("/runs/")

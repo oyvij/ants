@@ -106,7 +106,7 @@ class PasswordFromEnvTest {
     @Test
     fun `in Docker, Ants refuses to start without ANTS_PASSWORD or ANTS_PASSWORD_FILE, even with one in settings yaml`() {
         val home = AntsTest.tempHome().createDirectories()
-        home.resolve("settings.yaml").writeText("password: s3cret\n")
+        home.resolve("settings.yaml").writeAtomically("password: s3cret\n")
         val error = assertThrows<Exception> { AntsTest.bootAnother(home, "--ants.docker=true") }
         assertContains(generateSequence<Throwable>(error) { it.cause }.joinToString { it.message.orEmpty() }, "ANTS_PASSWORD or ANTS_PASSWORD_FILE")
         AntsTest.bootAnother(AntsTest.tempHome(), "--ants.docker=true", "--ants.password=s3cret")

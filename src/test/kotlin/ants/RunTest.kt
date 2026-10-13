@@ -19,7 +19,7 @@ class RunTest : AntsTest() {
 
     @Test
     fun `Start creates a Run, whose workspace is gone but for its Report once it ends`() {
-        home.resolve("settings.yaml").writeText(vault)
+        home.resolve("settings.yaml").writeAtomically(vault)
         browser.import("start-end.bpmn")
         val run = start("start-end")
         val id = run.path.removePrefix("/runs/")

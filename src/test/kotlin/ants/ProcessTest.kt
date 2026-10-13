@@ -37,7 +37,7 @@ class ProcessTest : AntsTest() {
 
     @Test
     fun `the Processes list shows where each Process is from, its Vault and Source map, Schedule, check, live Runs and Edit diagram`() {
-        home.resolve("settings.yaml").writeText(vault)
+        home.resolve("settings.yaml").writeAtomically(vault)
         processes.deployShipped()
         browser.import("start-end.bpmn")
         waits(cron = "0 0 0 * * *")
@@ -55,7 +55,7 @@ class ProcessTest : AntsTest() {
         assertContains(row("Start to end"), """<td class="muted">0</td>""")
         assertContains(row("Set up Vault"), ">shipped<")
 
-        home.resolve("settings.yaml").writeText("") // no Vault
+        home.resolve("settings.yaml").writeAtomically("") // no Vault
         assertContains(row("Waits"), """<span class="pill p-failed">Can't start</span>""")
     }
 
@@ -68,7 +68,7 @@ class ProcessTest : AntsTest() {
 
     @Test
     fun `the Process page has its Vault and Source map, the check, the start form with optional fields marked, the Schedule card and its Runs`() {
-        home.resolve("settings.yaml").writeText(vault)
+        home.resolve("settings.yaml").writeAtomically(vault)
         browser.import("start-form.bpmn")
         val page = browser.get("/processes/start-form").body
         assertContains(page, """<div class="sub">Vault <b>notes</b> · Source map <b>—</b>""")
@@ -88,7 +88,7 @@ class ProcessTest : AntsTest() {
         assertContains(scheduled, "It runs once when Ants is back, not once per missed time.")
         assertContains(scheduled, """<tr class="click" data-href="$run"><td><a href="$run"><b>Tiny wait</b></a></td>""")
 
-        home.resolve("settings.yaml").writeText("") // no Vault
+        home.resolve("settings.yaml").writeAtomically("") // no Vault
         assertContains(browser.get("/processes/waits").body, "won't start until the check above passes")
         browser.post("/processes/waits/schedule/pause", mapOf())
         assertContains(browser.get("/processes/waits").body, """<span class="pill p-quiet">Paused</span>""")
