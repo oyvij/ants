@@ -322,10 +322,10 @@ details.session { margin-bottom: 14px; } details.session > .tr { margin-top: 8px
 .tr .subagent { border-left: 3px solid var(--vio); padding-left: 12px; } .tr .subagent > summary { color: var(--vio); font-weight: 600; }
 #live:empty, #status:empty, .chips:empty { display: none; }
 #status { display: flex; gap: 6px; align-items: baseline; padding: 6px 0 2px; font-size: 13.5px; }
-#close { position: absolute; top: 12px; right: 12px; z-index: 2; }
+#close { position: absolute; top: 30px; right: 12px; z-index: 2; }
 #parts { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
-#parts > .dh { position: sticky; top: 0; z-index: 1; background: var(--panel); padding-right: 48px; }
-.dh h3 { margin: 2px 0 6px; font-size: 16px; }
+#parts > .dh { position: sticky; top: 0; z-index: 1; background: var(--panel); }
+.dh h3 { margin: 2px 40px 6px 0; font-size: 16px; }
 #parts > section { margin: 14px 18px 0; }
 #drawer-output h3 { font-size: 13px; margin: 4px 0 8px; }
 #parts > .df { margin-top: auto; position: sticky; bottom: 0; background: var(--panel); }
