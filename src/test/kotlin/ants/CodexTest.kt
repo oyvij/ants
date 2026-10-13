@@ -246,7 +246,7 @@ class CodexTest : AntsTest() {
 
         browser.get(transcript(run))
         browser.post("${transcript(run)}/send", mapOf("message" to "And this: ![image](${ImagesTest.RED_PATH})"))
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
         val resumed = codex.launches("draft")[1]
         assertEquals(listOf("resume", first.thread, "-"), resumed.argv.takeLast(3))
         assertEquals(image, resumed.flag("-i"))
@@ -261,6 +261,8 @@ class CodexTest : AntsTest() {
         val run = start()
         eventually { assertContains(browser.get(transcript(run)).body, ">Stop</button>") }
         eventually { assertEquals(1, codex.launches("draft").size) }
+        // Ants has read codex's thread.started, so Continue has a session to resume.
+        eventually { assertTrue(workspace(run).resolve("tasks/draft/session").exists()) }
         browser.post("${transcript(run)}/stop", emptyMap())
         var entry = ""
         eventually {

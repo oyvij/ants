@@ -65,7 +65,7 @@ class ImagesTest : AntsTest() {
         browser.postBytes("/images", RED_PNG)
         claude.session("draft", init, done)
         val run = start("Make it look like this: ![image]($RED_PATH)")
-        eventually { assertContains(browser.get("/runs/$run").body, "State: Completed") }
+        eventually { assertContains(browser.get("/runs/$run").body, """id="state">Completed<""") }
         val (image, text) = blocks(claude.launches("draft").single().stdin)
         assertEquals(mapOf("type" to "base64", "media_type" to "image/png", "data" to Base64.getEncoder().encodeToString(RED_PNG)), image["source"])
         assertEquals("image", image["type"])
@@ -84,7 +84,7 @@ class ImagesTest : AntsTest() {
         eventually { assertContains(browser.get(transcript).body, """› Like this: <img src="$RED_PATH" alt="image"></p>""") }
         assertContains(workspace(run).resolve("run-log.md").readText(), "Like this: ![image]($RED_PATH)\n")
         claude.release("release")
-        eventually { assertContains(browser.get("/runs/$run").body, "State: Completed") }
+        eventually { assertContains(browser.get("/runs/$run").body, """id="state">Completed<""") }
         val (image, text) = blocks(claude.launches("draft").single().stdin, 1)
         assertEquals("image", image["type"])
         assertEquals("Like this: ![image]($RED_PATH)", text["text"])
@@ -94,7 +94,7 @@ class ImagesTest : AntsTest() {
     fun `a message without an image stays plain text`() {
         claude.session("draft", init, done)
         val run = start("Say hello")
-        eventually { assertContains(browser.get("/runs/$run").body, "State: Completed") }
+        eventually { assertContains(browser.get("/runs/$run").body, """id="state">Completed<""") }
         assertContains(claude.launches("draft").single().stdin, """"content":"Follow the Skill in """)
     }
 
