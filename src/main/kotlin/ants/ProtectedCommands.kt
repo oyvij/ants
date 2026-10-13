@@ -109,6 +109,7 @@ class ProtectedCommands(
             ProcessBuilder(words).directory(dir.toFile()).redirectErrorStream(true).redirectInput(File("/dev/null"))
                 .apply {
                     environment().keys.retainAll(settings.env("claude").toSet())
+                    environment() -= AgentLauncher.PAID
                     environment() += secrets
                 }.start()
         } catch (e: IOException) {
@@ -117,8 +118,10 @@ class ProtectedCommands(
         val output = CompletableFuture.supplyAsync({ process.inputStream.readAllBytes().toString(Charsets.UTF_8) }) { Thread.ofVirtual().start(it) }
         if (!process.waitFor(timeLimit.toMillis(), MILLISECONDS)) {
             (process.descendants().toList() + process.toHandle()).forEach(ProcessHandle::destroyForcibly)
-            throw Refused("`$command` ran past its time limit of ${timeLimit.toMinutes()} minutes, so Ants killed it.")
+            throw Refused("`$command` ran past its time limit of ${timeLimit.toString().removePrefix("PT").lowercase()}, so Ants killed it.")
         }
+        // ponytail: a child left running that holds the output is never killed, only stopped being read; kill the
+        // process group if a build tool's daemon ever does this.
         val text = try {
             output.get(5, SECONDS)
         } catch (_: TimeoutException) {
@@ -131,6 +134,7 @@ class ProtectedCommands(
     class Refused(override val message: String) : Exception(message)
 
     companion object {
+        /** What stands for a Secret's value wherever Ants shows output. */
         const val MASK = "••••"
 
         /** [text] with each of [secrets] as [MASK], the longest first, so one holding another is masked whole. */

@@ -152,7 +152,7 @@ class ProtectedCommandsTest : AntsTest() {
 
         protectedCommands.timeLimit = Duration.ofSeconds(1)
         try {
-            assertEquals("`./yarn slow` ran past its time limit of 0 minutes, so Ants killed it.", text(call(url, authorization, "./yarn slow", folder = "sub")))
+            assertEquals("`./yarn slow` ran past its time limit of 1s, so Ants killed it.", text(call(url, authorization, "./yarn slow", folder = "sub")))
         } finally {
             protectedCommands.timeLimit = Duration.ofMinutes(10)
         }

@@ -617,7 +617,7 @@ class AgentLauncher(
     private fun flags(agent: Agent, schema: Map<*, *>, skills: List<Skill>, session: String, resume: Boolean, mcp: String, denied: List<String>): List<String> {
         val tools = (agent.tools ?: DEFAULT_TOOLS).filter { it.substringBefore('(') != "Skill" }
         val (subagents, types) = subagents(tools)
-        val disallowed = types + denied + listOf("secrets.yaml", "settings.yaml").flatMap { listOf("Read(/$home/$it)", "Edit(/$home/$it)") }
+        val disallowed = types + denied + listOf(settings.secretsFile, settings.file).map(Path::toAbsolutePath).flatMap { listOf("Read(/$it)", "Edit(/$it)") }
         return listOf(
             "-p",
             "--output-format", "stream-json", "--verbose", "--include-partial-messages",
@@ -688,7 +688,7 @@ class AgentLauncher(
         .directory(workspace.toFile())
         .apply {
             environment().keys.retainAll(settings.env(cli).toSet())
-            environment() -= listOf("ANTHROPIC_API_KEY", "CLAUDE_CODE_RETRY_WATCHDOG", "OPENAI_API_KEY", "CODEX_API_KEY") // never paid per token
+            environment() -= PAID // never paid per token
             environment() += if (cli == "codex") mapOf("CODEX_HOME" to home.resolve("codex").createDirectories().toString()) // codex refuses one that isn't there
             else mapOf(
                 "CLAUDE_CONFIG_DIR" to home.resolve("claude").toString(),
@@ -745,6 +745,9 @@ class AgentLauncher(
         val DEFAULT_TOOLS = listOf(
             "Bash", "Edit", "Glob", "Grep", "NotebookEdit", "Read", "TaskCreate", "TaskGet", "TaskList", "TaskUpdate", "WebFetch", "WebSearch", "Write",
         )
+        /** The variables Ants strips from every environment it gives a CLI or a Protected Command, so nothing is paid per token. */
+        val PAID = listOf("ANTHROPIC_API_KEY", "CLAUDE_CODE_RETRY_WATCHDOG", "OPENAI_API_KEY", "CODEX_API_KEY")
+
         /** Ants' MCP tool `run`, which runs a Protected Command ([ProtectedCommands]). */
         const val RUN_TOOL = "mcp__ants__run"
 

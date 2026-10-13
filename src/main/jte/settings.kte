@@ -107,10 +107,10 @@
         workspace, with the Secrets picked. The Agent gets the output, every Secret masked. A command is picked by how it starts, such as
         <span class="eg">yarn</span> or <span class="eg">mvn deploy</span>. A new Secret is offered here once saved.</div>
         <div class="listed">
-@for((i, row) in form.shownCommands.withIndex())
+@for((i, row) in form.shownProtectedCommands.withIndex())
             <div class="row" hidden="${row.prefix.isEmpty()}">
-                <input class="grow mono" name="commands[${i}].prefix" value="${row.prefix}" aria-label="Command prefix">
-                <select multiple class="grow" name="commands[${i}].secrets" aria-label="Secrets">
+                <input class="grow mono" name="protected-commands[${i}].prefix" value="${row.prefix}" aria-label="Command prefix">
+                <select multiple class="grow" name="protected-commands[${i}].secrets" aria-label="Secrets">
 @for(label in (form.secrets.map { it.label } + row.secrets).distinct())
                     <option selected="${label in row.secrets}">${label}</option>
 @endfor

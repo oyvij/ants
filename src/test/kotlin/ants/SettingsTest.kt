@@ -188,8 +188,8 @@ class SettingsTest : AntsTest() {
             save(
                 "secrets[0].label" to "npm", "secrets[0].value" to "tok-9f3a", "secrets[0].names" to "YARN_NPM_AUTH_TOKEN, NPM_TOKEN", "secrets[0].was" to "",
                 "secrets[1].label" to "maven", "secrets[1].value" to "tok-77mv", "secrets[1].names" to "MAVEN_TOKEN", "secrets[1].was" to "",
-                "commands[0].prefix" to "yarn", "commands[0].secrets" to "npm",
-                "commands[1].prefix" to "mvn deploy", "commands[1].secrets" to "npm", "commands[1].secrets" to "maven",
+                "protected-commands[0].prefix" to "yarn", "protected-commands[0].secrets" to "npm",
+                "protected-commands[1].prefix" to "mvn deploy", "protected-commands[1].secrets" to "npm", "protected-commands[1].secrets" to "maven",
             )
             assertEquals(mapOf("npm" to listOf("YARN_NPM_AUTH_TOKEN", "NPM_TOKEN"), "maven" to listOf("MAVEN_TOKEN")), yaml()["secrets"])
             assertEquals(mapOf("yarn" to listOf("npm"), "mvn deploy" to listOf("npm", "maven")), yaml()["protected-commands"])
@@ -201,14 +201,14 @@ class SettingsTest : AntsTest() {
             assertContains(page, """name="secrets[0].label" value="npm"""")
             assertContains(page, """name="secrets[0].names" value="YARN_NPM_AUTH_TOKEN, NPM_TOKEN"""")
             assertContains(page, """name="secrets[0].value" placeholder="••••"""")
-            assertContains(page, """name="commands[1].prefix" value="mvn deploy"""")
+            assertContains(page, """name="protected-commands[1].prefix" value="mvn deploy"""")
             assertContains(page, """<option selected>maven</option>""")
 
             // Renamed with the value left blank, it keeps its value; the one removed loses its value.
             save(
                 "secrets[0].label" to "registry", "secrets[0].value" to "", "secrets[0].names" to "NPM_TOKEN", "secrets[0].was" to "npm",
                 "secrets[1].label" to "", "secrets[1].value" to "", "secrets[1].names" to "", "secrets[1].was" to "maven",
-                "commands[0].prefix" to "yarn", "commands[0].secrets" to "registry",
+                "protected-commands[0].prefix" to "yarn", "protected-commands[0].secrets" to "registry",
             )
             assertEquals(mapOf("registry" to "tok-9f3a"), Yaml().load<Map<*, *>>(secrets.readText()))
             assertEquals(mapOf("yarn" to listOf("registry")), yaml()["protected-commands"])
@@ -217,7 +217,7 @@ class SettingsTest : AntsTest() {
                 save("secrets[0].label" to "registry", "secrets[0].names" to "npm-token", "secrets[0].was" to "registry") to
                     "A variable name is capitals, digits and underscores, such as NPM_TOKEN: the variable the command reads the Secret from.",
                 save("secrets[0].label" to "new", "secrets[0].names" to "NEW_TOKEN", "secrets[0].was" to "") to "Every Secret needs a label, a value and a variable name.",
-                save("commands[0].prefix" to "yarn", "commands[0].secrets" to "gone") to "The Protected Command yarn needs Secrets from the list above.",
+                save("protected-commands[0].prefix" to "yarn", "protected-commands[0].secrets" to "gone") to "The Protected Command yarn needs Secrets from the list above.",
             )
             for ((page, alert) in refused) assertContains(page, alert)
             assertEquals(mapOf("registry" to "tok-9f3a"), Yaml().load<Map<*, *>>(secrets.readText()))

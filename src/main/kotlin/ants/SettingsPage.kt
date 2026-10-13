@@ -142,7 +142,7 @@ data class ProfileRow(val name: String, val vault: String, val sourceMap: String
 data class SecretRow(val label: String, val names: String, val value: String = "", val was: String = "", val set: Boolean = false)
 
 /** One Protected Command on the settings page: its prefix and the labels of the Secrets it runs with. */
-data class CommandRow(val prefix: String, val secrets: List<String>)
+data class ProtectedCommandRow(val prefix: String, val secrets: List<String>)
 
 /** The settings page's form, filled from `settings.yaml` or from what the user posted. Empty means unset. */
 data class SettingsForm(
@@ -158,7 +158,7 @@ data class SettingsForm(
     /** Which of [profiles] is the default, -1 for none picked. */
     val defaultProfile: Int,
     val secrets: List<SecretRow>,
-    val protectedCommands: List<CommandRow>,
+    val protectedCommands: List<ProtectedCommandRow>,
     val agentFolders: String,
     val skillFolders: String,
     val theme: String,
@@ -167,7 +167,7 @@ data class SettingsForm(
     fun error() = when {
         agentTasks.isNotEmpty() && (agentTasks.toIntOrNull() ?: 0) < 1 -> "Agent Tasks at once must be a whole number, 1 or more."
         subagentDepth.isNotEmpty() && (subagentDepth.toIntOrNull() ?: 0) < 1 -> "Subagent depth must be a whole number, 1 or more."
-        else -> vaults.error("Vault") ?: sourceMaps.error("Source map") ?: profileError() ?: secretError() ?: commandError()
+        else -> vaults.error("Vault") ?: sourceMaps.error("Source map") ?: profileError() ?: secretError() ?: protectedCommandError()
     }
 
     /** The Profile rows plus an empty one, which adds the next. */
@@ -177,7 +177,7 @@ data class SettingsForm(
     val shownSecrets get() = secrets + SecretRow("", "")
 
     /** The Protected Command rows plus an empty one, which adds the next. */
-    val shownCommands get() = protectedCommands + CommandRow("", emptyList())
+    val shownProtectedCommands get() = protectedCommands + ProtectedCommandRow("", emptyList())
 
     private fun secretError() = when {
         secrets.any { it.label.isEmpty() || words(it.names).isEmpty() || (it.value.isEmpty() && it.was.isEmpty()) } -> "Every Secret needs a label, a value and a variable name."
@@ -187,7 +187,7 @@ data class SettingsForm(
         else -> null
     }
 
-    private fun commandError() = protectedCommands.firstOrNull { row -> row.secrets.any { it !in secrets.map(SecretRow::label) } }
+    private fun protectedCommandError() = protectedCommands.firstOrNull { row -> row.secrets.any { it !in secrets.map(SecretRow::label) } }
         ?.let { "The Protected Command ${it.prefix} needs Secrets from the list above." }
         ?: "Two Protected Commands have the same prefix.".takeIf { protectedCommands.map { it.prefix }.toSet().size < protectedCommands.size }
 
@@ -272,7 +272,7 @@ data class SettingsForm(
                 secrets = settings.secretValues().keys.let { set ->
                     settings.secrets().map { (label, names) -> SecretRow(label, names.joinToString(", "), was = label, set = label in set) }
                 },
-                protectedCommands = settings.protectedCommands().map { (prefix, labels) -> CommandRow(prefix, labels) },
+                protectedCommands = settings.protectedCommands().map { (prefix, labels) -> ProtectedCommandRow(prefix, labels) },
                 agentFolders = lines(values["agent-folders"]),
                 skillFolders = lines(values["skill-folders"]),
                 theme = values["theme"]?.toString() ?: "system",
@@ -297,8 +297,8 @@ data class SettingsForm(
             val secrets = generateSequence(0, Int::inc).takeWhile { "secrets[$it].label" in params }
                 .map { SecretRow(param("secrets[$it].label"), param("secrets[$it].names"), params["secrets[$it].value"].orEmpty(), param("secrets[$it].was"), set = param("secrets[$it].was").isNotEmpty()) }
                 .filter { it.label.isNotEmpty() }.toList()
-            val commands = generateSequence(0, Int::inc).takeWhile { "commands[$it].prefix" in params }
-                .map { CommandRow(Settings.strings(param("commands[$it].prefix")).orEmpty().joinToString(" "), param("commands[$it].secrets").lines().filter(String::isNotEmpty)) }
+            val commands = generateSequence(0, Int::inc).takeWhile { "protected-commands[$it].prefix" in params }
+                .map { ProtectedCommandRow(Settings.strings(param("protected-commands[$it].prefix")).orEmpty().joinToString(" "), param("protected-commands[$it].secrets").lines().filter(String::isNotEmpty)) }
                 .filter { it.prefix.isNotEmpty() }.toList()
             return SettingsForm(
                 paths = Settings.CLIS.associateWith { param("$it.path") },

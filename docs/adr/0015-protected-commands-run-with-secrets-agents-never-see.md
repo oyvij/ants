@@ -25,7 +25,8 @@ model.
   and presses **Continue the session**.
 - **Hygiene:** no Secret is ever in an Agent's own environment. Every claude Agent is denied Read and Edit of Ants'
   `secrets.yaml` and `settings.yaml`, not of all of ANTS_HOME as the ticket first said: the Run workspaces, the Skills
-  and the Answer History live there, and a deny rule beats every allow, the working directory's included.
+  and the Answer History live there, and a deny rule beats every allow, the working directory's included. The deny keeps the Read tool away;
+  Bash, as in `cat ~/.ants/secrets.yaml`, still reads the file, which the same-OS-user ceiling covers.
 
 ## Considered Options
 

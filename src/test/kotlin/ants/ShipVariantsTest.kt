@@ -101,7 +101,7 @@ class ShipVariantsTest : AntsTest() {
         val answerer = claude.launches("answer-round").single()
         assertContains(answerer.stdin, "The Answer History is ${home.resolve("answer-history")}.")
         assertContains(answerer.stdin, "Who exports?")
-        assertEquals("Read,Grep,Glob" to "Read,Grep,Glob", answerer.flag("--tools") to answerer.flag("--allowedTools"))
+        assertEquals("Read,Grep,Glob" to "Read,Grep,Glob", answerer.flag("--tools") to answerer.flag("--allowedTools")?.removeSuffix(",mcp__ants__run"))
         assertContains(claude.launches("grill")[1].stdin, """\"source\":\"agent\"""")
         // to-spec lists the repo instead: it gets the repos the grilling named, and web is never cloned.
         assertContains(claude.launches("to-spec").single().stdin, """\"repos\":[\"web\"]""")
