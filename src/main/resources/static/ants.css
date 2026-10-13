@@ -300,6 +300,20 @@ body.login .logo { color: var(--text); padding: 0 0 18px; }
 body.login p { margin: 14px 0; } body.login button { width: 100%; padding: 10px; }
 body.login [role] { margin-bottom: 4px; }
 
+/* Processes and the Process page: the list, New Process's modal, the check, the start form, the Schedule card, and its Runs. */
+:is(#processes, #process-runs) td:first-child a { color: inherit; }
+dialog#new-process { width: min(560px, 92vw); height: auto; }
+#new-process .mb { padding: 4px 24px 24px; font-size: 14px; }
+#new-process form { margin: 0; } #new-process .go { margin-top: 16px; }
+#start .picks { flex-wrap: wrap; gap: 6px 14px; margin-bottom: 8px; } #start .picks label { font-weight: 500; margin: 0; }
+#start textarea.tall { min-height: 300px; margin: 0; }
+#start .go { margin-top: 16px; }
+#schedule h3 .grow { flex: 1; }
+#schedule form { margin: 0; }
+#schedule .warn { margin-top: 14px; }
+#schedule .failed { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 14px; } #schedule .failed [role=alert] { width: 100%; margin: 0; }
+#schedule .subsec .help { margin: 0; }
+
 /*
  * Until the page tickets: the pages whose markup isn't the prototype's yet, styled by their elements. Each page ticket
  * moves its page onto the classes above and deletes what here no longer styles anything.
@@ -455,8 +469,6 @@ ol.steps { list-style: none; padding: 0; }
 ol.steps > li { margin: 16px 0; padding-top: 12px; border-top: 1px solid var(--line2); }
 ol.steps h4 { margin: 0 0 6px; font-size: 15px; }
 #comments > li { margin: 6px 0; }
-#pre-run strong { color: var(--ok); }
-#pre-run:has(ul) strong, #pre-run ul { color: var(--bad); }
 
 /* Answer a Round: one Question at a time under its tabs, each part colour-coded, and the buttons in a footer. */
 #round { max-width: 760px; padding-bottom: 72px; }

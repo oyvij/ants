@@ -1,93 +1,125 @@
 @import ants.FieldType
 @import ants.PreRun
+@import ants.local
+@import ants.stateName
 @param process: org.operaton.bpm.engine.repository.ProcessDefinition
 @param fields: List<ants.Field>
 @param repos: List<String>
 @param profiles: List<String>
 @param profile: String?
+@param source: ants.Profile?
 @param reasons: List<String>
 @param schedule: ants.Schedule? = null
+@param runs: List<org.operaton.bpm.engine.history.HistoricProcessInstance>
+@param names: Map<String, String>
+@param clock: java.time.Clock
 @param error: String? = null
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
 @param shell: ants.Shell
+!{val key = process.key; val title = process.name ?: key; val scopable = reasons == listOf(PreRun.CONFIGURE_VAULT) && fields.any { it.type == FieldType.REPOS };}
 <!doctype html>
 <html lang="en">
 <head>
     <meta charset="utf-8">
     @template.app()
     <meta name="color-scheme" content="${colorScheme}">
-    <title>${process.name ?: process.key} · Ants</title>
+    <title>${title} · Ants</title>
     <link rel="stylesheet" href="/vendor/camunda-bpmn-js/assets/base-navigated-viewer.css">
 </head>
 <body>
 @template.nav(shell = shell)
 <main>
-<div class="crumbs"><a href="/processes">Processes</a> / ${process.name ?: process.key}</div>
-<div class="ph"><h1>${process.name ?: process.key}</h1><div class="acts"><a class="btn" href="/processes/new?from=${process.key}">Copy</a><a class="btn" href="/processes/${process.key}/edit">Edit diagram</a></div></div>
-@if(schedule != null)
-<section id="schedule">
-    <h2>Schedule</h2>
-    <p>${schedule.words}@if(schedule.paused) · paused@elseif(schedule.at != null) · next ${schedule.at}@endif</p>
-    @if(schedule.skipped != null)<p>${schedule.skipped}</p>@endif
-    @if(schedule.failed != null)
-    <p role="alert">✕ [failed] The scheduled Run didn't start: ${schedule.failed.why}</p>
-    <form method="post" action="/processes/${process.key}/schedule/start"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button class="primary">Start now</button></form>
-    <form method="post" action="/processes/${process.key}/schedule/dismiss"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>Dismiss</button></form>
-    @endif
-    <form method="post" action="/processes/${process.key}/schedule/${if (schedule.paused) "resume" else "pause"}"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>${if (schedule.paused) "Resume" else "Pause"}</button></form>
-    <form method="post" action="/processes/${process.key}/schedule/remove"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button class="danger">Remove</button></form>
-</section>
-@endif
-<div id="diagram" class="dia" data-src="/processes/${process.key}/diagram.bpmn"></div>
-<form method="post" action="/processes/${process.key}/runs">
-    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
-@if(error != null)<p role="alert">${error}</p>@endif
-    <p><label>Name<br><input name="${ants.NAME}"></label><br><small>Optional. Left empty, the Run is named after its Process and start time.</small></p>
-@if(profiles.size > 1)
-    <p><label>Profile<br><select name="${ants.PROFILE}" onchange="location.search = '?ants.profile=' + encodeURIComponent(this.value)">
-    @for(name in profiles)
-        <option selected="${name == profile}">${name}</option>
-    @endfor
-    </select></label><br><small>The Vault and Source map the Run uses. A Run scoped to its Repos uses neither.</small></p>
-@endif
-@for(field in fields)
-    @if(field.type == FieldType.REPOS)
-    <label class="f" for="field-${field.name}">${field.label}</label>
-    @if(repos.isNotEmpty())
-    <select name="${field.name}" multiple>
-    @for(repo in repos)
-        <option selected="${repo in field.storedRepos}">${repo}</option>
-    @endfor
-    </select>
-    @endif
-    <input name="${field.name}" id="field-${field.name}" value="${field.storedRepos.filter { it !in repos }.joinToString(" ")}" placeholder="git URLs, or owner/name for a new repo">
-    <div class="help">@if(field.help != null)${field.help} @endif Pick Source map repos, type git URLs such as <span class="eg">git@github.com:you/api.git</span>, or <span class="eg">you/new-app</span> for a new private repo Ants creates on your gh login. Filled in, the Run is scoped to exactly these repos: no scout, no Vault and no Source map.</div>
-    @else
-    <p><label>${field.label}<br>
-    @if(field.type == FieldType.MARKDOWN)
-        <textarea name="${field.name}" required="${field.required}">${field.stored}</textarea>
-    @else
-        <input name="${field.name}" value="${field.stored ?: ""}" required="${field.required}">
-    @endif
-    </label>@if(field.help != null)<br><small>${field.help}</small>@endif</p>
-    @endif
-@endfor
-!{val scopable = reasons == listOf(PreRun.CONFIGURE_VAULT) && fields.any { it.type == FieldType.REPOS };}
-<section id="pre-run">
+<div class="crumbs"><a href="/processes">Processes</a> / ${title}</div>
+<div class="ph"><h1>${title}</h1>
+    <div class="acts"><a class="btn" href="/processes/new?from=${key}">Copy</a><a class="btn" href="${if (schedule == null) "/processes/$key/edit" else "#schedule"}">⏰ ${if (schedule == null) "Add a schedule" else "Schedule"}</a><a class="btn" href="/processes/${key}/edit">Edit diagram</a></div>
+    <div class="sub">Vault <b>${source?.vault ?: "—"}</b> · Source map <b>${source?.sourceMap ?: "—"}</b> · @if(profile == null)the defaults in <a href="/settings">Settings</a>@else Profile <b>${profile}</b>, set on the diagram@endif</div></div>
+<div class="card"><section id="pre-run">
 @if(reasons.isEmpty())
-    <p><strong>Ready</strong></p>
+    <span class="pill p-ready">Ready</span> <span class="muted small">&nbsp;Names, schemas, CLI commands, Source map, paths and the login all check out.</span>
 @else
-    <p><strong>Can't start</strong>@if(scopable) unless scoped to its Repos@endif</p>
-    <ul>
+    <span class="pill p-failed">Can't start</span>@if(scopable) <span class="muted small">&nbsp;unless scoped to its Repos</span>@endif
+    <ul class="reasons">
     @for(reason in reasons)
         <li>@if(reason == PreRun.CONFIGURE_VAULT)<a href="/settings">${reason}</a>@if(scopable), or name the Run's Repos@endif@else${reason}@endif</li>
     @endfor
     </ul>
 @endif
-</section>
-    <button class="primary" disabled="${reasons.isNotEmpty() && !scopable}">Start</button>
+</section></div>
+<form method="post" action="/processes/${key}/runs" class="card" id="start">
+    <h3>Start a Run</h3>
+    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+@if(error != null)<p role="alert">${error}</p>@endif
+@if(fields.isEmpty())<div class="help">This Process takes no input: its job is in the diagram.</div>@endif
+    <div class="fld"><label class="f" for="field-name">Name <span class="muted small">(optional)</span></label><div class="help">Left empty, the Run is named after its Process and start time.</div><input name="${ants.NAME}" id="field-name"></div>
+@if(profiles.size > 1)
+    <div class="fld"><label class="f" for="field-profile">Profile</label><div class="help">The Vault and Source map the Run uses. A Run scoped to its Repos uses neither.</div>
+    <select name="${ants.PROFILE}" id="field-profile" onchange="location.search = '?ants.profile=' + encodeURIComponent(this.value)">
+    @for(name in profiles)
+        <option selected="${name == profile}">${name}</option>
+    @endfor
+    </select></div>
+@endif
+@for(field in fields)
+    <div class="fld"><label class="f" for="field-${field.name}">${field.label}@if(!field.required) <span class="muted small">(optional)</span>@endif</label>
+    @if(field.type == FieldType.REPOS)
+    <div class="help">${field.help?.let { "$it " } ?: ""}Pick Source map repos, type git URLs such as <span class="eg">git@github.com:you/api.git</span>, or <span class="eg">you/new-app</span> for a new private repo Ants creates on your gh login. Filled in, the Run is scoped to exactly these repos: no scout, no Vault and no Source map.</div>
+    @if(repos.isNotEmpty())
+    <div class="row picks">
+    @for(repo in repos)
+        <label class="row"><input type="checkbox" name="${field.name}" value="${repo}" checked="${repo in field.storedRepos}"> <span class="mono">${repo}</span></label>
+    @endfor
+    </div>
+    @endif
+    <input name="${field.name}" id="field-${field.name}" value="${field.storedRepos.filter { it !in repos }.joinToString(" ")}" placeholder="git URLs, or owner/name for a new repo">
+    @else
+    @if(field.help != null)<div class="help">${field.help}</div>@endif
+    @if(field.type == FieldType.MARKDOWN)
+    <textarea name="${field.name}" id="field-${field.name}" required="${field.required}" class="tall">${field.stored}</textarea>
+    @else
+    <input name="${field.name}" id="field-${field.name}" value="${field.stored ?: ""}" required="${field.required}">
+    @endif
+    @endif
+    </div>
+@endfor
+    <div class="go"><button class="primary" disabled="${reasons.isNotEmpty() && !scopable}">Start</button></div>
 </form>
+<div class="card" id="schedule">
+@if(schedule == null)
+    <h3>⏰ Schedule</h3>
+    <div class="row"><span class="muted grow">No schedule. Runs start when someone presses Start.</span><a class="btn" href="/processes/${key}/edit">＋ Add a schedule</a></div>
+@else
+    <h3>⏰ Schedule <span class="grow"></span>@if(schedule.paused)<span class="pill p-quiet">Paused</span>@else<span class="pill p-ready">On</span>@endif</h3>
+    <div class="kv">
+        <span class="k">Runs</span><span>${schedule.words}</span>
+        <span class="k">Next Run</span><span>@if(schedule.paused)<span class="muted">paused</span>@elseif(reasons.isNotEmpty())<span style="color: var(--bad)">won't start until the check above passes</span>@else${schedule.at} · ${schedule.countdown}@endif</span>
+        <span class="k">Cron</span><span><code>${schedule.cron}</code> <a class="small" href="/processes/${key}/edit">Change it on the diagram</a></span>
+    </div>
+    @if(schedule.skipped != null)<div class="warn">${schedule.skipped}</div>@endif
+    @if(schedule.failed != null)
+    <div class="failed"><p role="alert">✕ [failed] The scheduled Run didn't start: ${schedule.failed.why}</p>
+    <form method="post" action="/processes/${key}/schedule/start"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button class="primary">Start now</button></form>
+    <form method="post" action="/processes/${key}/schedule/dismiss"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>Dismiss</button></form></div>
+    @endif
+    <div class="subsec row"><span class="help grow">Missed while Ants was off or asleep? It runs once when Ants is back, not once per missed time.</span>
+    <form method="post" action="/processes/${key}/schedule/${if (schedule.paused) "resume" else "pause"}"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>${if (schedule.paused) "Resume" else "Pause"}</button></form>
+    <form method="post" action="/processes/${key}/schedule/remove"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button class="danger">Remove</button></form></div>
+@endif
+</div>
+<h2>Diagram</h2>
+<div id="diagram" class="dia" data-src="/processes/${key}/diagram.bpmn"><div class="legend"><span class="pill p-running">Running</span><span class="pill p-waiting">Waiting on you</span><span class="pill p-done">Done</span><span class="pill p-quiet">Queued / paused</span></div></div>
+<h2>Runs of this Process</h2>
+@if(runs.isEmpty())
+<div class="card muted">None.</div>
+@else
+<table id="process-runs">
+    <tr><th>Run</th><th>Process</th><th>Now</th><th>Started</th></tr>
+@for(run in runs)
+    !{val state = run.stateName; val pill = when (state) { "Running" -> "p-running"; "Completed" -> "p-done"; "Suspended" -> "p-stuck"; else -> "p-failed" };}
+    <tr class="click" onclick="location = '/runs/${run.id}'"><td><a href="/runs/${run.id}"><b>${names[run.id]}</b></a></td><td class="muted">${title}</td><td><span class="pill ${pill}">${state}</span></td><td class="muted small">${clock.local(run.startTime.toInstant())}</td></tr>
+@endfor
+</table>
+@endif
 <script src="/vendor/camunda-bpmn-js/base-navigated-viewer.production.min.js"></script>
 <script>
     const box = document.getElementById('diagram'), viewer = new BpmnNavigatedViewer({ container: box });
