@@ -482,11 +482,11 @@ section.question > textarea:focus { outline: 2px solid var(--ans); }
 #checks .warning::marker { content: "⚠ "; color: var(--wait); }
 
 /* Agents and Skills: their lists, the Agent page (Who it is, What it may do, Standing instructions) and the Skill page. */
-table.library a { color: inherit; } table.library td b a:hover { color: var(--acc); }
+table.library a, .usedby a { color: inherit; } table.library td a, table.library td:first-child { white-space: nowrap; } table.library td b a:hover { color: var(--acc); }
 tr.hidden td { color: var(--muted); }
 form.agent fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 fieldset[data-cli][disabled] { display: none; }
-form.agent :is(input, select, textarea):not([type=checkbox], [type=radio]) { background: var(--field); color: var(--text); }
+form.agent :is(input, select, textarea):not([type=checkbox], [type=radio]) { background-color: var(--field); color: var(--text); }
 form.agent .chipsel input:not([type=checkbox]) { background: none; }
 .fld .other { display: none; margin-top: 6px; } .fld .help.other { margin: 4px 0 0; }
 .fld:has(option[value=other]:checked) .other { display: block; }
