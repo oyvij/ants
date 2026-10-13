@@ -289,9 +289,15 @@ kbd { font: 11px var(--mono); border: 1px solid var(--line); border-bottom-width
 @keyframes shim { from { background-position: 100% 0; } to { background-position: -150% 0; } }
 .status { display: flex; gap: 6px; align-items: baseline; padding: 6px 0 2px; font-size: 13.5px; }
 .tr .new { animation: fadein .35s ease-out; } @keyframes fadein { from { opacity: 0; transform: translateY(4px); } }
-.caret::after { content: "▍"; color: var(--run); animation: blink 1s steps(2) infinite; } @keyframes blink { 50% { opacity: 0; } }
+/* The caret ends the text streaming in, inside its last paragraph. */
+.caret > :last-child::after { content: "▍"; color: var(--run); animation: blink 1s steps(2) infinite; } @keyframes blink { 50% { opacity: 0; } }
 .num { font-variant-numeric: tabular-nums; }
-.flash { animation: flash 1.2s ease-out; } @keyframes flash { from { background: #fff4e0; } }
+.flash { animation: flash 1.2s ease-out; } @keyframes flash { from { background: var(--waitSoft); } }
+/* Reduced motion: no shimmer, flash, fade, blink, pulse or slide (shell.js stops the spinners); the clocks and counts still change. */
+@media (prefers-reduced-motion: reduce) {
+    .shimmer { animation: none; background: none; color: var(--run); }
+    .flash, .new, .caret > :last-child::after, .drawer, .toast, dialog.modal, .p-running::before, .ov.running i { animation: none; }
+}
 
 /* Home, the Notification list and Runs. Home's live part (#live) lays its cards out in Home's grid, beside Start a
    Run, which isn't live: the stats and Waiting on you across, then Working now beside Coming up and Start a Run. */
@@ -320,7 +326,7 @@ body.login [role] { margin-bottom: 4px; }
 .ed textarea:focus { outline: 0; } :is(.composer, .drawer) .ed textarea { min-height: 44px; max-height: 160px; }
 .composer > form { max-width: 1120px; margin: 0 auto; padding: 12px 32px; display: flex; gap: 8px; align-items: flex-end; }
 #diagram { margin-bottom: 6px; }
-#tasks ~ .help { margin-top: 10px; }
+#run-tasks:has(table) ~ .help { margin-top: 10px; }
 #rename { width: 420px; padding: 16px 20px 20px; border: 1px solid var(--line); color: var(--text); } #rename::backdrop { background: var(--modalBg); }
 #rename label.f { margin-top: 0; } #rename .row > input { flex: 1; }
 #details { margin-top: 32px; } #details > summary { margin-bottom: 12px; }

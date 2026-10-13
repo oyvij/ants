@@ -3,7 +3,7 @@
 @param runName: String
 @param tokens: String
 <div class="crumbs"><a href="/runs">Runs</a> / <a href="/runs/${run}">${runName}</a> / ${view.name}</div>
-<div class="ph"><h1>${view.name} $unsafe{view.badge}@if(view.entry != null) @template.tag(entry = view.entry)@endif</h1>
+<div class="ph"><h1 data-flash="${view.state}">${view.name} $unsafe{view.badge}@if(view.entry != null) @template.tag(entry = view.entry)@endif</h1>
     <div class="acts"><span class="muted small">@if(view.kind == "agent")@template.ent(agent = view.agent, skill = view.skill) · $unsafe{tokens}@elseif(view.kind == "user")User Task@else Built-in Task@endif</span></div>
 @if(view.summary != null)
     <div class="sub">${view.summary}</div>

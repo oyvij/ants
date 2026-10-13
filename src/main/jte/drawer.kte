@@ -12,13 +12,13 @@
 <header id="drawer-head" class="dh">
     <div class="muted small">${runName} · @if(view.kind == "agent")@template.ent(agent = view.agent, skill = view.skill) · ${tokens(transcript.tokens)}@elseif(view.kind == "user")User Task@else Built-in Task@endif</div>
     <h3>${view.name}</h3>
-    <div class="row">@if(view.state == "running" && transcript.line != null)<span class="small">$unsafe{transcript.line}</span>@else$unsafe{view.badge}@if(view.entry != null) @template.tag(entry = view.entry)@endif@endif<span class="grow"></span>@if(view.kind == "agent")<a class="small" href="/runs/${run}/tasks/${task}/transcript">Full Transcript →</a>@endif</div>
+    <div class="row" data-flash="${view.state}">@if(view.state == "running" && transcript.line != null)<span class="small">$unsafe{transcript.line}</span>@else$unsafe{view.badge}@if(view.entry != null) @template.tag(entry = view.entry)@endif@endif<span class="grow"></span>@if(view.kind == "agent")<a class="small" href="/runs/${run}/tasks/${task}/transcript">Full Transcript →</a>@endif</div>
 </header>
 @if(view.kind == "agent")
 <section id="drawer-so-far">$unsafe{transcript.html("sofar")}</section>
 <section id="drawer-output">
     <h3>Latest output</h3>
-    <div class="tr">$unsafe{transcript.output ?: "<p class=\"muted\">None yet.</p>"}</div>
+    <div class="tr">$unsafe{transcript.output ?: "<p class=\"muted\">None yet.</p>"}$unsafe{transcript.html("live")}</div>
 </section>
 @elseif(view.kind == "user")
 <section id="drawer-so-far"><div class="sofar">${view.summary ?: "Waits on you, or you did it."}</div></section>

@@ -61,6 +61,17 @@ class NotificationListTest : AntsTest() {
     private fun runLog(run: String) = workspace(run).resolve("run-log.md").readText()
 
     @Test
+    fun `the Notification list follows its entries live`() {
+        setUp()
+        claude.session("draft", stuck)
+        val list = browser.events("notifications", "notifications")
+        val run = start()
+        val html = list.until { "/runs/$run\"" in it }
+        assertContains(html, """<table class="notes">""")
+        assertContains(html, """<span class="tag t-stuck"><i>⚠</i>[stuck]</span>""")
+    }
+
+    @Test
     fun `a stuck Agent Task appears on the Notification list as ⚠ stuck with its summary, its row opening the entry`() {
         setUp()
         claude.session("draft", stuck)
@@ -73,7 +84,7 @@ class NotificationListTest : AntsTest() {
         )) assertContains(row, cell)
         assertContains(browser.get("/notifications").body, """<tr class="click" data-href="$entry">""")
         val page = browser.get(entry(run)).body
-        assertContains(page, """<h1>Draft <span class="pill p-stuck">Stuck</span> <span class="tag t-stuck"><i>⚠</i>[stuck]</span></h1>""")
+        assertContains(page, """<h1 data-flash="stuck">Draft <span class="pill p-stuck">Stuck</span> <span class="tag t-stuck"><i>⚠</i>[stuck]</span></h1>""")
         assertContains(page, """<div class="card"><h3>What it needs</h3><p>Which tone, dry or warm?</p>""")
         assertContains(page, """<summary class="small">The session so far</summary>""")
         assertContains(page, """href="/runs/$run/tasks/draft/transcript"""")

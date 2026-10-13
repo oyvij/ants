@@ -56,7 +56,7 @@ class RunTest : AntsTest() {
         val ids = List(2) { start("loop-then-wait").path.removePrefix("/runs/") }
         for (id in ids) {
             val row = """<tr class="click" data-href="/runs/$id"><td><b><a href="/runs/$id">Loop then wait, [^<]+</a></b></td><td class="muted">Loop then wait</td>\s*""" +
-                """<td><span class="pill p-waiting">Waiting on you</span> <span class="tag t-approve"><i>✓</i>\[approve]</span> <span class="small">b</span>"""
+                """<td[^>]*><span class="pill p-waiting">Waiting on you</span> <span class="tag t-approve"><i>✓</i>\[approve]</span> <span class="small">b</span>"""
             eventually { assertContains(runs("Live"), Regex(row)) }
             assertTrue(workspace(id).isDirectory())
         }
@@ -72,10 +72,26 @@ class RunTest : AntsTest() {
         browser.import("agent-task.bpmn")
         browser.get("/processes/agent-task")
         val id = browser.post("/processes/agent-task/runs", mapOf("prompt" to "Say hello")).path.removePrefix("/runs/")
-        val line = """data-href="/runs/$id">.*?<b class="small">Draft</b><div class="small"><span class="spin">✻</span> <span class="shimmer">Starting…</span> """ +
+        val line = """data-href="/runs/$id">.*?<b class="small">Draft</b><div class="small"><span class="spin">✻</span> <span class="shimmer" data-rotate>Pondering…</span> """ +
             """<span class="muted num">\(<span data-since="\d+">\d+s</span> · ↓ 0 tokens\)</span>"""
         eventually { assertContains(runs("Live"), Regex(line, RegexOption.DOT_MATCHES_ALL)) }
-        assertContains(browser.get("/runs").body, """<div class="sub">1 of 3 Agent Tasks running.</div>""")
+        assertContains(browser.get("/runs").body, """<div class="sub" data-flash="1">1 of 3 Agent Tasks running.</div>""")
+    }
+
+    @Test
+    fun `the Runs list follows its Runs live, from Now's live line to Ended`() {
+        agentTask(claude)
+        claude.session("draft", "wait release", """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION",""" +
+            """"structured_output":{"outcome":"done","summary":"Drafted.","output":{"text":"Hello"}}}""")
+        browser.import("agent-task.bpmn")
+        browser.get("/processes/agent-task")
+        val list = browser.events("runlist", "runlist")
+        val id = browser.post("/processes/agent-task/runs", mapOf("prompt" to "Say hello")).path.removePrefix("/runs/")
+        var html = list.until { Regex("""data-href="/runs/$id">.*?<span class="spin">""", RegexOption.DOT_MATCHES_ALL).containsMatchIn(it.substringBefore("<h2>Ended</h2>")) }
+        assertContains(html, """<div class="sub" data-flash="1">1 of 3 Agent Tasks running.</div>""")
+        claude.release("release")
+        html = list.until { "data-href=\"/runs/$id\"" in it.substringAfter("<h2>Ended</h2>") }
+        assertContains(html.substringAfter("<h2>Ended</h2>"), Regex("""data-href="/runs/$id">.*?<span class="pill p-done">Done · """, RegexOption.DOT_MATCHES_ALL))
     }
 
     @Test

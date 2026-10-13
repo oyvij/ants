@@ -73,7 +73,10 @@ class RunRow(val id: String, val name: String, val process: String, val started:
  * What the live Run [run], named [name], is doing now: the Notification list entries [waiting] on the user, its
  * [running] Agent Tasks, and its [quiet] ones, queued or paused.
  */
-class Now(val run: String, val name: String, val waiting: List<TaskEntry>, val running: List<Doing>, val quiet: List<Doing>)
+class Now(val run: String, val name: String, val waiting: List<TaskEntry>, val running: List<Doing>, val quiet: List<Doing>) {
+    /** Its Tasks' states, a word or a pill each, so a page flashes Now as one changes. */
+    val states get() = (waiting.map { it.tag } + running.map { "running" } + quiet.map { it.pill }).joinToString(" ")
+}
 
 /** An Agent Task of a live Run: its [task] name, and its live [line] and [subagents] while it runs, else its [pill], such as "Queued · 2 of 3 running". */
 class Doing(val task: String, val pill: String?, val line: String? = null, val subagents: Int = 0)
@@ -146,6 +149,14 @@ class Runs(
     /** The Runs list: Coming up, then the live Runs with what each is doing now, then the ended ones. */
     @GetMapping("/runs")
     fun list(model: Model): String {
+        model.addAllAttributes(listed())
+        return "runs"
+    }
+
+    /** The Runs list below its header as HTML, sent on connect and whenever it changes. */
+    fun liveList(csrf: CsrfToken): Part = streams.rendered("runlist", "runlist.kte", csrf) { listed() }
+
+    private fun listed(): Map<String, Any> {
         val now = now().associateBy { it.run }
         val runs = history.createHistoricProcessInstanceQuery().rootProcessInstances().orderByProcessInstanceStartTime().desc().list().map { run ->
             val ended = run.endTime?.let { clock.local(it.toInstant()) }
@@ -156,12 +167,10 @@ class Runs(
                 ended != null && keptWorkspace(run) != null, ended != null && Files.exists(names.runWorkspace(run.id).resolve(REPORT)),
             )
         }
-        model.addAttribute("live", runs.filter { it.ended == null })
-        model.addAttribute("ended", runs.filter { it.ended != null })
-        model.addAttribute("coming", schedules.all().filter { it.next != null })
-        model.addAttribute("running", launcher.running)
-        model.addAttribute("cap", settings.agentTasks())
-        return "runs"
+        return mapOf(
+            "live" to runs.filter { it.ended == null }, "ended" to runs.filter { it.ended != null }, "coming" to schedules.all().filter { it.next != null },
+            "running" to launcher.running, "cap" to settings.agentTasks(),
+        )
     }
 
     /**
@@ -193,6 +202,43 @@ class Runs(
         return (entries.keys + doing.keys).map { run ->
             val tasks = doing[run].orEmpty()
             Now(run, names.name(run), entries[run].orEmpty(), tasks.filter { it.pill == null }, tasks.filter { it.pill != null })
+        }
+    }
+
+    /**
+     * A toast as this stream sees a Round arrive or a queued Agent Task take a free slot: "New: <Run> asks Round 3. 4
+     * questions are waiting on you. Its slot went to <Run> · <Task>, which was queued." A Round's toast waits one look
+     * for the slot it frees, while a Task is queued.
+     */
+    fun toasts(): Part {
+        var rounds: Set<String>? = null // the Rounds waiting, as last seen; null before the first look
+        var queued = emptySet<String>() // the Agent Tasks seen waiting while every slot was taken
+        var held = emptyList<String>()
+        return Part("toast") {
+            val asked = notifications.tasks().filter { it.tag == UserTaskKind.ANSWER_ROUND.tag }
+            val new = rounds?.let { seen -> asked.filter { it.id !in seen } }.orEmpty().mapNotNull { entry ->
+                notifications.round(entry)?.let { (round, questions) ->
+                    "<b>New: ${HtmlUtils.htmlEscape(entry.runName)} asks Round $round</b> $questions question${if (questions == 1) " is" else "s are"} waiting on you."
+                }
+            }
+            rounds = asked.mapTo(mutableSetOf()) { it.id }
+            val (locked, waiting) = externalTasks.createExternalTaskQuery().topicName(AgentLauncher.TOPIC).withRetriesLeft().list()
+                .partition { it.lockExpirationTime?.after(Date()) == true }
+            val took = locked.filter { it.id in queued }.mapNotNull { task ->
+                val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult()?.rootProcessInstanceId ?: return@mapNotNull null
+                val name = repository.getBpmnModelInstance(task.processDefinitionId).getModelElementById<FlowElement>(task.activityId)?.name ?: task.activityId
+                "<b>${HtmlUtils.htmlEscape(names.name(run))} · ${HtmlUtils.htmlEscape(name)}</b>"
+            }.joinToString(" and ")
+            val full = launcher.running >= settings.agentTasks()
+            queued = waiting.filter { it.id in queued || full && launcher.pausedUntil(it.id) == null && launcher.heldBy(it.id) == null }.mapTo(mutableSetOf()) { it.id }
+            val said = held + new
+            held = emptyList()
+            when {
+                took.isNotEmpty() && said.isNotEmpty() -> said.dropLast(1) + "${said.last()} Its slot went to $took, which was queued."
+                took.isNotEmpty() -> listOf("<b>A slot came free.</b> It went to $took, which was queued.")
+                new.isNotEmpty() && queued.isNotEmpty() -> emptyList<String>().also { held = said }
+                else -> said
+            }.map { """<div class="toast" role="status">$it<div class="ok"><button type="button" onclick="this.closest('.toast').remove()">OK</button></div></div>""" }
         }
     }
 
@@ -274,6 +320,13 @@ class Runs(
             val state = run(id).stateName
             json.writeValueAsString(mapOf("state" to state, "pill" to (RUN_PILLS[state] ?: "quiet"), "elements" to shown(id), "called" to called))
         }
+    }
+
+    /** The Run page's Tasks table as HTML, sent on connect and whenever it changes, its Transcripts each read on from where it was left. */
+    fun liveTasks(id: String): Part {
+        run(id)
+        val seen = mutableMapOf<Path, Pair<Transcript, Long>>()
+        return streams.rendered("tasks", "tasks.kte") { mapOf("tasks" to tasks(id) { Transcript.follow(names.runWorkspace(it), seen) }) }
     }
 
     /**

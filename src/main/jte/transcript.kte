@@ -20,7 +20,7 @@
 <body>
 @template.nav(shell = shell)
 <main>
-@template.taskhead(view = view, run = run, runName = runName, tokens = transcript.html("tokens"))
+<div id="taskhead">@template.taskhead(view = view, run = run, runName = runName, tokens = transcript.html("tokens"))</div>
 $unsafe{transcript.html("sofar")}
 $unsafe{transcript.html("subagents")}
 @if(view.state == "round" && view.asked != null)
@@ -45,23 +45,23 @@ $unsafe{transcript.html("status")}
 </form></div>
 @endif
 <script type="module">
-    // Follows the Transcript from where this page's copy ends, replacing each changed element or appending a new entry, a Subagent's into its block.
+    // Follows the Transcript from where this page's copy ends: an entry that changed is replaced, a new one fades in
+    // (a Subagent's in its block), and the status, the streaming text, the tokens, the chips and So far are patched.
     const entries = document.getElementById('entries');
+    stream.on('taskhead', html => stream.patch(document.getElementById('taskhead'), html));
     stream.on('transcript', html => {
         const template = document.createElement('template');
         template.innerHTML = html;
         const element = template.content.firstElementChild;
         const old = document.getElementById(element.id);
-        old ? old.replaceWith(element) : (element.dataset.in ? document.querySelector('#' + element.dataset.in + ' > div') : entries).append(element);
+        if (old && !/^e\d+$/.test(element.id)) stream.morph(old, element);
+        else if (old) old.replaceWith(element);
+        else {
+            element.classList.add('new');
+            (element.dataset.in ? document.querySelector('#' + element.dataset.in + ' > div') : entries).append(element);
+        }
     });
     stream.follow('transcript=' + encodeURIComponent('${run}/${task}') + '&from=' + entries.dataset.from);
-    setInterval(() => {
-        for (const since of document.querySelectorAll('[data-since]')) {
-            const s = Math.floor((Date.now() - Number(since.dataset.since)) / 1000);
-            since.textContent = s >= 3600 ? Math.floor(s / 3600) + 'h ' + Math.floor(s / 60) % 60 + 'm'
-                : s >= 60 ? Math.floor(s / 60) + 'm ' + s % 60 + 's' : s + 's';
-        }
-    }, 1000);
 </script>
 </main>
 </body>

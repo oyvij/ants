@@ -801,6 +801,74 @@ class BrowserTest : AntsTest() {
         for (tab in open) assertEquals(1, tab.following(), tab.url())
     }
 
+    /** Starts a Run of agent-task.bpmn, whose Task `draft` plays [session] on the fake claude [claude]; the Run's path. */
+    private fun running(claude: FakeClaude, vararg session: String): String {
+        agentTask(claude)
+        claude.session("draft", *session)
+        http.import("agent-task.bpmn")
+        http.get("/processes/agent-task")
+        return http.post("/processes/agent-task/runs", mapOf("prompt" to "Say hello")).path
+    }
+
+    private val streaming = arrayOf(
+        """{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}""",
+        """{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Almost **there**"}}}""",
+    )
+
+    @Test
+    fun `a running Task's clock ticks, and its text streams in with a caret until the block ends`() = browse {
+        val claude = FakeClaude()
+        val run = running(claude, "wait one", *streaming, "wait two", """{"type":"assistant","message":{"id":"m1","content":[{"type":"text","text":"Almost **there**."}]}}""", "wait three")
+        page.navigate(url("$run/tasks/draft/transcript"))
+        val clock = page.locator("#status [data-since]")
+        assertThat(clock).hasText(Pattern.compile("\\d+s"))
+        val first = clock.textContent()
+        assertThat(clock).not().hasText(first) // a second later
+        assertThat(page.locator("#status .shimmer")).hasText(Pattern.compile("\\w+…"))
+
+        claude.release("one")
+        assertThat(page.locator("#live.caret")).containsText("Almost there")
+        assertEquals("\"▍\"", page.evaluate("getComputedStyle(document.querySelector('#live.caret > :last-child'), '::after').content"))
+        page.screenshot("liveness-streaming")
+        claude.release("two")
+        assertThat(page.locator("#entries .text.new")).containsText("Almost there.") // the whole block fades in
+        assertThat(page.locator("#live")).not().hasClass(Pattern.compile("caret"))
+        claude.release("three")
+    }
+
+    @Test
+    fun `a new Notification list entry flashes once as it arrives`() = browse {
+        settings(null)
+        val (process, plane) = row("flashed", """<bpmn:startEvent id="start" />""", """<bpmn:userTask id="wait" name="Wait" />""", """<bpmn:endEvent id="end" />""")
+        deploy(definitions("flashed", "Flashed", process, plane))
+        page.navigate(url("/notifications"))
+        page.waitForTimeout(1500.0) // the list's first update has come
+        val run = http.post("/processes/flashed/runs", mapOf()).path
+        val row = page.locator("#list tr.click", Page.LocatorOptions().setHas(page.locator("a[href='$run']")))
+        assertThat(row).hasClass(Pattern.compile("\\bflash\\b"))
+        assertThat(row).not().hasClass(Pattern.compile("\\bflash\\b")) // once: it goes as its animation ends
+    }
+
+    @Test
+    fun `with reduced motion nothing shimmers, flashes or spins, and the clock still ticks`() = browse {
+        page.emulateMedia(Page.EmulateMediaOptions().setReducedMotion(com.microsoft.playwright.options.ReducedMotion.REDUCE))
+        val claude = FakeClaude()
+        val run = running(claude, "wait one", *streaming, "wait two")
+        page.navigate(url("$run/tasks/draft/transcript"))
+        val clock = page.locator("#status [data-since]")
+        assertThat(clock).hasText(Pattern.compile("\\d+s"))
+        val first = clock.textContent()
+        val spin = page.locator("#status .spin")
+        val glyph = spin.textContent()
+        assertThat(clock).not().hasText(first) // the clock still ticks
+        assertEquals(glyph, spin.textContent()) // the spinner stands still
+        assertEquals("none", page.evaluate("getComputedStyle(document.querySelector('#status .shimmer')).animationName"))
+        claude.release("one")
+        assertThat(page.locator("#live.caret")).containsText("Almost there")
+        assertEquals("none", page.evaluate("getComputedStyle(document.querySelector('#live.caret > :last-child'), '::after').animationName"))
+        claude.release("two")
+    }
+
     /** An Agent Task [id] running `writer`'s Skill `draft`. */
     private fun agentTaskXml(id: String, name: String) = """<bpmn:serviceTask id="$id" name="$name" operaton:type="external" operaton:topic="agent">""" +
         """<bpmn:extensionElements><operaton:properties><operaton:property name="ants.agent" value="writer" />""" +
