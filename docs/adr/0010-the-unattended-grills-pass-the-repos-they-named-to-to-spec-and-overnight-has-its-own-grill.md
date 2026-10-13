@@ -1,6 +1,6 @@
 # The unattended Grills pass the repos they named to to-spec, and Ship overnight has its own Grill
 
-Partly superseded by ADR 0016: Grill (by proxy) and Grill (as proposed) clone the repos a Round names; only Grill
+Partly superseded by ADR 0017: Grill (by proxy) and Grill (as proposed) clone the repos a Round names; only Grill
 (overnight) never clones.
 
 The spec says the unattended Processes never widen the Run's repos and that to-spec lists the uncloned repos in the
