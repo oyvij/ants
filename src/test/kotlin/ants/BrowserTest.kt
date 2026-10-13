@@ -425,6 +425,19 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `New Process on the Processes list opens a modal that starts the modeler on a name, and a row opens its Process`() = browse {
+        http.import("start-end.bpmn")
+        page.navigate(url("/processes"))
+        page.click("tr.click >> text=you") // anywhere on the row
+        page.waitForURL(url("/processes/start-end"))
+        page.navigate(url("/processes"))
+        page.click(".ph button.primary")
+        page.getByLabel("Name").fill("From the list")
+        page.click("#new-process button.primary")
+        page.waitForURL { it.contains("/processes/new?name=From+the+list") }
+    }
+
+    @Test
     fun `Dark mode and Light mode in the sidebar switch the theme and stay on the page`() = browse {
         settings(null, "theme: light\n")
         page.navigate(url("/agents"))
