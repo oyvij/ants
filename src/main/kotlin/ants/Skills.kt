@@ -23,8 +23,11 @@ import kotlin.io.path.walk
 /** A Skill's two files as the Skills page shows them; [name] is null on the create form. */
 data class SkillForm(val name: String?, val skill: String, val schema: String, val readOnly: Boolean = false, val where: String = "")
 
-/** A Skill on the list: where it comes from, and whether a shipped Skill hides it by holding its name. */
-data class SkillRow(val skill: Skill, val where: String, val hidden: Boolean)
+/**
+ * A Skill on the list: where it comes from, whether a shipped Skill hides it by holding its name, the Agents that run
+ * it, and whether it reads the Vault.
+ */
+data class SkillRow(val skill: Skill, val where: String, val hidden: Boolean, val runBy: List<String> = emptyList(), val vault: Boolean = false)
 
 /**
  * The Skills page: edits `SKILL.md` and `result.schema.json`, writing only to the user's own Skills folder. The
@@ -38,9 +41,11 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy) {
     private fun list(model: Model, message: String?): String {
         val skills = catalogue.skills()
         val shipped = skills.filter(catalogue::shipped).map { it.name }.toSet()
+        val agents = catalogue.agents()
         model.addAttribute("skills", skills.map { skill ->
-            val isShipped = catalogue.shipped(skill)
-            SkillRow(skill, if (isShipped) "shipped" else skill.folder.toString(), !isShipped && skill.name in shipped)
+            val hidden = !catalogue.shipped(skill) && skill.name in shipped
+            val runBy = agents.filter { skill.name in it.skills }.map { it.name }.sorted()
+            SkillRow(skill, catalogue.where(skill.folder), hidden, runBy, runCatching { catalogue.vault(skill) }.getOrDefault(skill.vault))
         })
         model.addAttribute("message", message)
         return "skills"
@@ -78,7 +83,7 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy) {
         val skill = find(name)
         val schema = skill.folder.resolve("result.schema.json")
         val readOnly = !skill.file.startsWith(catalogue.yourSkills)
-        return show(model, SkillForm(name, skill.file.readText(), if (schema.exists()) schema.readText() else "", readOnly, skill.folder.toString()))
+        return show(model, SkillForm(name, skill.file.readText(), if (schema.exists()) schema.readText() else "", readOnly, catalogue.where(skill.folder)))
     }
 
     /** Copies the Skill's folder into the user's own as `<name>-copy`, renamed in its frontmatter, and opens it. */
@@ -177,6 +182,9 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy) {
         model.addAttribute("form", form)
         model.addAttribute("message", message)
         model.addAttribute("dependents", form.name?.let(usedBy::skill))
+        val skill = form.name?.let { runCatching { catalogue.skill(it) }.getOrNull() }
+        model.addAttribute("runBy", skill?.let { catalogue.agents().filter { agent -> skill.name in agent.skills }.sortedBy { it.name } }.orEmpty())
+        model.addAttribute("fields", skill?.let { runCatching { (it.outputSchema["properties"] as? Map<*, *>)?.keys?.map(Any?::toString) }.getOrNull() }.orEmpty())
         return "skill"
     }
 }

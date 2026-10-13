@@ -1,6 +1,8 @@
 @param form: ants.SkillForm
 @param message: String? = null
 @param dependents: ants.Dependents?
+@param runBy: List<ants.Agent> = emptyList()
+@param fields: List<String> = emptyList()
 @param use: String? = null
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
@@ -19,36 +21,59 @@
 @endif
 <main>
 @if(use == null)<div class="crumbs"><a href="/skills">Skills</a> / ${form.name ?: "New"}</div>@endif
-<div class="ph"><h1>${form.name ?: "New Skill"}</h1></div>
-@if(message != null)<p role="alert">${message}</p>@endif
+<div class="ph"><h1><span class="ent ent-skill"><svg class="i" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>${form.name ?: "New Skill"}</span></h1>
+    <div class="acts">
 @if(form.readOnly)
-<form method="post" action="/skills/${form.name}/copy">
-    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
-    <p>From <code>${form.where}</code>, read-only. <button>Copy</button> makes your own.</p>
-</form>
-@elseif(form.name != null)
-<p>In <code>${form.where}</code>. Edits reach live Runs at their next launch.</p>
+        <span class="muted small">Read-only (${form.where})</span>
+        <form method="post" action="/skills/${form.name}/copy"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>Copy</button></form>
+@else
+@if(form.name != null)
+        <form method="post" action="/skills/${form.name}/delete"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button class="danger">Delete</button></form>
 @endif
-<form method="post" action="/skills/${form.name ?: "new"}" class="skill">
+        <button class="primary" form="skill">${if (use != null) "Create and use" else "Save"}</button>
+@endif
+    </div>
+@if(dependents != null)    <div class="sub">@template.usedby(dependents = dependents, none = "no Process or Skill")</div>@endif
+</div>
+@if(message != null)<p role="alert">${message}</p>@endif
+<div class="grid2 skill-page">
+<div class="card">
+<form id="skill" method="post" action="/skills/${form.name ?: "new"}" class="skill">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
 @if(use != null)
     <input type="hidden" name="use" value="${use}">
 @endif
-    <p><label>SKILL.md<br><textarea name="skill" rows="20" cols="80" readonly="${form.readOnly}" data-markdown data-tall>${form.skill}</textarea></label></p>
-    <p><label>result.schema.json, the <code>output</code> the Skill promises; empty for any output<br><textarea name="schema" rows="12" cols="80" readonly="${form.readOnly}">${form.schema}</textarea></label></p>
-@if(!form.readOnly)
-    <p><button class="primary">${if (use != null) "Create and use" else "Save"}</button></p>
-@endif
+    <div class="fld"><label class="f">SKILL.md</label><div class="help">The instructions the Agent follows for this job. Markdown, with its frontmatter on top: the <code>name</code> Agents and Tasks call it by, unique across all Skill folders; the <code>description</code>, when to use it in one line; and in <code>metadata</code>, <code>varde-vault: true</code> to tell Agents running it where the Vault is.</div>
+        <textarea name="skill" rows="20" data-markdown readonly="${form.readOnly}" data-tall aria-label="SKILL.md">${form.skill}</textarea></div>
+    <div class="fld"><label class="f">result.schema.json</label><div class="help">A JSON Schema for the Result's <code>output</code>; empty for any output. Later Tasks read each field as <code>${"\${taskId.output.field}"}</code>, so every property here becomes an input others can use.</div>
+        <textarea name="schema" rows="12" data-json readonly="${form.readOnly}" data-tall aria-label="result.schema.json">${form.schema}</textarea></div>
+    <details class="small example"><summary>Example: scout's schema</summary><pre class="mono">{
+  "type": "object",
+  "required": ["repos", "brief"],
+  "properties": {
+    "repos": { "type": "array", "items": { "type": "string" }, "description": "Source map names of the repos to clone" },
+    "branch": { "type": "string", "description": "A suggested work branch" },
+    "brief": { "type": "string", "format": "path", "description": "The brief, scout/brief.md" }
+  }
+}</pre>Later Tasks then take <code>${"\${scout.output.repos}"}</code> and <code>${"\${scout.output.brief}"}</code> as inputs.</details>
 </form>
-@if(dependents != null)
-@template.dependents(dependents = dependents)
+</div>
+<div class="card"><h3>Run by</h3><div class="help">Agents whose <b>Skills it runs</b> list this Skill. Edit that list on the Agent.</div>
+@for(agent in runBy)
+    <div class="row runby"><span class="grow"><a href="/agents/${agent.name}">${agent.name}</a></span><span class="muted small">${agent.cli}</span></div>
+@endfor
+@if(runBy.isEmpty())
+    <div class="warn">No Agent runs this Skill yet, so no Task can use it.</div>
 @endif
-@if(form.name != null && !form.readOnly)
-<form method="post" action="/skills/${form.name}/delete">
-    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
-    <button class="danger">Delete…</button>
-</form>
+    <h3 class="fields">Result fields</h3><div class="help">Inputs this Skill offers the Tasks after it.</div>
+@for(field in fields)
+    <code>${"\${" + form.name + ".output." + field + "}"}</code>
+@endfor
+@if(fields.isEmpty())
+    <span class="muted small">none</span>
 @endif
+</div>
+</div>
 <script type="module" src="/skill-editor.js"></script>
 </main>
 </body>

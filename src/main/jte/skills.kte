@@ -14,23 +14,25 @@
 <body>
 @template.nav(shell = shell)
 <main>
-<div class="ph"><h1>Skills</h1><div class="acts"><a class="btn primary" href="/skills/new">New Skill</a></div>
-    <div class="sub">From the folders in <a href="/settings">Settings</a>. Ants writes only into its own <code>skills/</code>; the rest are read-only, with Copy.</div></div>
+<div class="ph"><h1>Skills</h1>
+    <div class="acts">
+        <form method="post" action="/skills/import" enctype="multipart/form-data"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><label class="btn" title="Import one SKILL.md into the New Skill form">Import…<input type="file" name="file" accept=".md" required hidden onchange="this.form.submit()"></label></form>
+        <a class="btn primary" href="/skills/new">New Skill</a>
+    </div>
+    <div class="sub">From the folders in <a href="/settings">Settings</a>. Ants writes only into <code>~/.ants/skills</code>; the rest are read-only, with Copy.</div></div>
 @if(message != null)<p role="alert">${message}</p>@endif
-<form method="post" action="/skills/import" enctype="multipart/form-data">
-    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
-    <label>Import one SKILL.md into the create form <input type="file" name="file" accept=".md" required></label>
-    <button>Import</button>
-</form>
-<ul>
+<table class="library">
+    <thead><tr><th>Name</th><th>Run by</th><th>Description</th><th>Folder</th></tr></thead>
+    <tbody>
 @for(row in skills)
 @if(row.hidden)
-    <li style="color: GrayText">${row.skill.name} ${row.skill.description} <small>${row.where}, hidden by the shipped Skill</small></li>
+    <tr class="hidden"><td><b>${row.skill.name}</b></td><td></td><td class="small">${row.skill.description}</td><td class="muted small">${row.where}, hidden by the shipped Skill</td></tr>
 @else
-    <li><a href="/skills/${row.skill.name}">${row.skill.name}</a> ${row.skill.description} <small>${row.where}</small></li>
+    <tr class="click" onclick="if (!event.target.closest('a')) location.href = this.querySelector('a').href"><td><b><a href="/skills/${row.skill.name}">${row.skill.name}</a></b>@if(row.vault) <span class="tag t-vault">Vault</span>@endif</td><td class="small">@for(agent in row.runBy)<a href="/agents/${agent}">${agent}</a>@if(agent != row.runBy.last()) @endif@endfor@if(row.runBy.isEmpty())<span class="muted">no Agent</span>@endif</td><td class="small">${row.skill.description}</td><td class="muted small">${row.where}</td></tr>
 @endif
 @endfor
-</ul>
+    </tbody>
+</table>
 </main>
 </body>
 </html>

@@ -42,6 +42,31 @@ class SkillsTest : AntsTest() {
         assertContains(page("/skills/summarise"), "Write it shorter.")
     }
 
+    @Test
+    fun `the lists show each Agent's CLI, model and Skills and each Skill's Run by, with a Vault tag`() {
+        val skill = home.resolve("skills/note-taker").createDirectories()
+        skill.resolve("SKILL.md").writeText("---\nname: note-taker\ndescription: Takes notes.\nmetadata:\n  varde-vault: true\n---\nTake notes.\n")
+        home.resolve("agents").createDirectories().resolve("noter.md").writeText("---\nname: noter\ncli: claude\nmodel: sonnet\nskills: note-taker\n---\nNote.\n")
+        try {
+            val skills = page("/skills")
+            assertContains(skills, """<a href="/skills/note-taker">note-taker</a></b> <span class="tag t-vault">Vault</span>""")
+            assertContains(skills, """<td class="small"><a href="/agents/noter">noter</a></td>""")
+            assertContains(skills, """<span class="muted">no Agent</span>""") // shipped-draft
+
+            val agents = page("/agents")
+            assertContains(agents, """<a href="/agents/noter">noter</a></b> <span class="tag t-vault">Vault</span>""")
+            assertContains(agents, """<td class="small">claude · sonnet</td><td class="small"><a href="/skills/note-taker">note-taker</a></td>""")
+            assertContains(agents, """<td class="small">claude · default</td>""") // shipped-writer names no model
+
+            val runBy = page("/skills/note-taker")
+            assertContains(runBy, """<a href="/agents/noter">noter</a>""")
+            assertFalse("No Agent runs this Skill yet" in runBy)
+        } finally {
+            skill.toFile().deleteRecursively()
+            home.resolve("agents/noter.md").toFile().delete()
+        }
+    }
+
     /** What the schema editor shows as you type [schema]: the errors the page's check returns. */
     private fun check(schema: String): String {
         browser.get("/skills/new")
@@ -88,8 +113,9 @@ class SkillsTest : AntsTest() {
         try {
             yours.resolve("SKILL.md").writeText(skillMd("shipped-draft"))
             val list = page("/skills")
-            assertContains(list, """<li><a href="/skills/shipped-draft">shipped-draft</a> Stands in for the Skills Ants ships. <small>shipped</small></li>""")
-            assertContains(list, """<li style="color: GrayText">shipped-draft Summarises a text. <small>$yours, hidden by the shipped Skill</small></li>""")
+            assertContains(list, """<b><a href="/skills/shipped-draft">shipped-draft</a></b>""")
+            assertContains(list, """<td class="small">Stands in for the Skills Ants ships.</td><td class="muted small">shipped with Ants</td>""")
+            assertContains(list, """<tr class="hidden"><td><b>shipped-draft</b></td><td></td><td class="small">Summarises a text.</td><td class="muted small">$yours, hidden by the shipped Skill</td></tr>""")
             assertContains(page("/skills/shipped-draft"), "Stands in for the Skills Ants ships.")
         } finally {
             yours.parent.toFile().deleteRecursively()
@@ -101,13 +127,15 @@ class SkillsTest : AntsTest() {
         val copy = home.resolve("skills/shipped-draft-copy")
         copy.toFile().deleteRecursively()
         val shipped = page("/skills/shipped-draft")
-        assertContains(shipped, """<textarea name="skill" rows="20" cols="80" readonly data-markdown data-tall>""")
-        assertFalse("""<button class="primary">Save</button>""" in shipped)
+        assertContains(shipped, """<textarea name="skill" rows="20" data-markdown readonly""")
+        assertFalse("""<button class="primary" form="skill">Save</button>""" in shipped)
+        assertContains(shipped, "No Agent runs this Skill yet, so no Task can use it.") // shipped-writer lists no Skills
+        assertContains(shipped, "<code>\${shipped-draft.output.text}</code>") // a Result field later Tasks read
         assertEquals(403, save(skillMd("shipped-draft"), name = "shipped-draft").status)
 
         val page = browser.post("/skills/shipped-draft/copy", emptyMap())
         assertEquals("/skills/shipped-draft-copy", page.path)
-        assertContains(page.body, """<button class="primary">Save</button>""")
+        assertContains(page.body, """<button class="primary" form="skill">Save</button>""")
         assertEquals("---\nname: shipped-draft-copy\ndescription: Stands in for the Skills Ants ships.\n---\nDraft the text.\n", copy.resolve("SKILL.md").readText())
         assertEquals(home.resolve("shipped/skills/shipped-draft/result.schema.json").readText(), copy.resolve("result.schema.json").readText())
     }
@@ -120,7 +148,7 @@ class SkillsTest : AntsTest() {
         val before = settings.readText()
         try {
             settings.writeText("skill-folders: [${extra.parent}]\n")
-            assertContains(page("/skills"), "<small>$extra</small>")
+            assertContains(page("/skills"), """<td class="muted small">$extra</td>""")
             assertContains(page("/skills/outside"), """action="/skills/outside/copy"""")
             assertEquals(403, save(skillMd("outside", "Changed."), name = "outside").status)
             assertEquals(skillMd("outside"), extra.resolve("SKILL.md").readText())
@@ -138,7 +166,7 @@ class SkillsTest : AntsTest() {
     fun `import fills the create form with one SKILL md, or refuses it with a reason`() {
         home.resolve("skills/imported").toFile().deleteRecursively()
         val form = import(skillMd("imported"))
-        assertContains(form, """<form method="post" action="/skills/new" class="skill">""")
+        assertContains(form, """<form id="skill" method="post" action="/skills/new" class="skill">""")
         assertContains(form, ">${skillMd("imported")}</textarea>")
         assertFalse(home.resolve("skills/imported").exists()) // only Save writes
 
@@ -179,11 +207,11 @@ class SkillsTest : AntsTest() {
         agent.writeText("---\nname: picker\ndescription: Picks.\ncli: claude\nskills: tdd\n---\nPick.\n")
         home.resolve("skills/chosen").toFile().deleteRecursively()
         val form = browser.get("/skills/new?use=picker").body
-        assertContains(form, """<button class="primary">Create and use</button>""")
+        assertContains(form, """<button class="primary" form="skill">Create and use</button>""")
         assertFalse("""<nav class="side">""" in form) // the modeler's own page is behind the modal
 
         val refused = browser.post("/skills/new", mapOf("skill" to "no frontmatter", "schema" to "", "use" to "picker"))
-        assertContains(refused.body, """<button class="primary">Create and use</button>""") // a refusal stays in the modal
+        assertContains(refused.body, """<button class="primary" form="skill">Create and use</button>""") // a refusal stays in the modal
         assertEquals("/skills/chosen", browser.post("/skills/new", mapOf("skill" to skillMd("chosen"), "schema" to "", "use" to "picker")).path)
         assertEquals(listOf("tdd", "chosen"), Agent(agent).skills)
 

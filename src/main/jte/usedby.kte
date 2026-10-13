@@ -1,0 +1,3 @@
+@param dependents: ants.Dependents
+@param none: String
+<span class="usedby">Used by: @if(dependents.none)${none}@else@for(process in dependents.processes.withIndex())@if(process.index > 0), @endif<a href="/processes/${process.value.key}">${process.value.name ?: process.value.key}</a>@if(process.value.id in dependents.older) (version ${process.value.version}, which live Runs still run)@endif@endfor@for(skill in dependents.skills.withIndex())${if (skill.index > 0 || dependents.processes.isNotEmpty()) ", " else ""}Skill <a href="/skills/${skill.value.name}">${skill.value.name}</a>@endfor@endif</span>

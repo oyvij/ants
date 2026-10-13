@@ -7,13 +7,20 @@ import org.springframework.stereotype.Controller
 import org.springframework.ui.Model
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
+import org.springframework.util.MultiValueMap
 import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.ResponseBody
 import org.springframework.web.multipart.MultipartFile
 import org.springframework.web.server.ResponseStatusException
 import org.yaml.snakeyaml.error.YAMLException
+import jakarta.servlet.http.HttpServletRequest
+import java.net.URI
 import java.nio.file.Path
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 import kotlin.io.path.deleteIfExists
 import kotlin.io.path.exists
 
@@ -29,8 +36,8 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
     fun list(model: Model) = list(model, null)
 
     private fun list(model: Model, error: String?): String {
-        model.addAttribute("agents", catalogue.agents().sortedBy { it.name })
-        model.addAttribute("folder", folder)
+        val vault = catalogue.skills().map { it.name }.distinct().associateWith { name -> runCatching { catalogue.vault(catalogue.skill(name)) }.getOrDefault(false) }
+        model.addAttribute("agents", catalogue.agents().sortedBy { it.name }.map { AgentRow(it, catalogue.where(it.file.parent), it.skills.any { name -> vault[name] == true }) })
         model.addAttribute("error", error)
         return "agents"
     }
@@ -44,7 +51,7 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
         show(model.addAttribute("use", use != null), AgentForm.of(Agent(folder.resolve("new.md"), ""), name = "").copy(skills = skills.orEmpty()), null)
 
     @PostMapping("/agents/new")
-    fun create(@RequestParam params: Map<String, String>, model: Model) = save(model.addAttribute("use", "use" in params), AgentForm.of(params), null)
+    fun create(@RequestParam params: MultiValueMap<String, String>, model: Model) = joined(params).let { save(model.addAttribute("use", "use" in it), AgentForm.of(it), null) }
 
     /** Fills the create form from one agent file, dropping the keys Ants doesn't use, or refuses it with a reason. */
     @PostMapping("/agents/import")
@@ -87,9 +94,26 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
     fun agent(@PathVariable name: String, model: Model) = find(name).let { show(model, AgentForm.of(it), it) }
 
     @PostMapping("/agents/{name}")
-    fun edit(@PathVariable name: String, @RequestParam params: Map<String, String>, model: Model): String {
+    fun edit(@PathVariable name: String, @RequestParam params: MultiValueMap<String, String>, model: Model): String {
         val agent = editable(find(name))
-        return save(model, AgentForm.of(params).copy(kept = AgentForm.of(agent).kept), agent, params)
+        val fields = joined(params)
+        return save(model, AgentForm.of(fields).copy(kept = AgentForm.of(agent).kept), agent, fields)
+    }
+
+    /** The form's fields, which repeat for a rule per Limit…, a chip per Skill and a tick per added tool: the filled ones, comma-separated. */
+    private fun joined(params: MultiValueMap<String, String>) = params.mapValues { (_, values) -> values.filter(String::isNotBlank).joinToString(", ") }
+
+    /** **Check now**: refreshes the model list from Anthropic's model status table, and goes back to the page with what it found. */
+    @PostMapping("/models/check")
+    fun checkModels(request: HttpServletRequest, @RequestHeader("Referer", required = false) from: String?): String {
+        val toast = try {
+            val new = models.check()
+            Toast("Checked", if (new.isEmpty()) "No new models." else "New: ${new.joinToString(", ")}.")
+        } catch (e: Exception) {
+            Toast("Not checked", "Anthropic's model list couldn't be read: ${e.message}")
+        }
+        Shell.toast(request, toast)
+        return back(from ?: "/agents")
     }
 
     /** Deletes one of the user's Agents, once the user has confirmed it, seeing what uses it. */
@@ -132,6 +156,8 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
         model.addAttribute("action", agent?.let { "/agents/${it.name}" } ?: "/agents/new")
         model.addAttribute("file", agent?.file?.toString())
         model.addAttribute("readOnly", agent != null && agent.file.parent != folder)
+        model.addAttribute("where", agent?.let { catalogue.where(it.file.parent) })
+        model.addAttribute("skills", catalogue.skills().distinctBy { it.name })
         model.addAttribute("dependents", agent?.let { usedBy.agent(it.name) })
         model.addAttribute("error", error)
         model.addAttribute("notice", notice)
@@ -144,6 +170,15 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
     private fun editable(agent: Agent) = agent.takeIf { it.file.parent == folder }
         ?: throw ResponseStatusException(HttpStatus.FORBIDDEN, "${agent.name} is read-only. Copy it to make one you can edit.")
 }
+
+/** An Agent on the list: the folder it comes from, and whether any of its Skills reads the Vault. */
+class AgentRow(val agent: Agent, val where: String, val vault: Boolean)
+
+/**
+ * A Claude Code tool as the Agent page offers it: what it [does], and for one with **Limit…**, what its rules narrow
+ * ([limits]), an [example] rule and a [note].
+ */
+class Tool(val name: String, val does: String, val limits: String? = null, val example: String? = null, val note: String? = null)
 
 /**
  * The Agents page's form, one field per key of the agent file. [tools] holds each ticked tool with its Limit…, the
@@ -163,6 +198,12 @@ data class AgentForm(
     val instructions: String,
     val kept: Map<*, *> = emptyMap<String, Any?>(),
 ) {
+    /** Each rule of [tool]'s **Limit…**, as the page lists them. */
+    fun limits(tool: String) = rules(tools[tool].orEmpty())
+
+    /** The tools Ants doesn't list, such as an MCP tool, each ticked on the page under "Added by you". */
+    val custom get() = rules(otherTools)
+
     fun error() = nameError("An Agent", name) ?: when {
         cli !in CLIS -> "Ants runs only ${CLIS.joinToString(" or ")}, not $cli."
         subagent && cli != "claude" -> "Only a claude Agent can be offered as a Subagent."
@@ -190,8 +231,75 @@ data class AgentForm(
     companion object {
         val CLIS = listOf("claude", "codex")
 
-        /** The tools offered as tick boxes; any other tool goes under Other tools. */
-        val TOOLS = (AgentLauncher.DEFAULT_TOOLS + "Agent").sorted()
+        /**
+         * Claude Code's tools an Agent most often needs, in the page's groups. The task-list tools feed the Run page's
+         * checklist. `Skill` is left out: Ants never allows it, since a Task's Skills come through `--add-dir`.
+         */
+        val GROUPS = linkedMapOf(
+            "Read the code" to listOf(
+                Tool("Read", "Open a file.", "paths", "src/**", "Also limits Glob, Grep and LSP."),
+                Tool("Glob", "Find files by name."),
+                Tool("Grep", "Search inside files."),
+                Tool("LSP", "Jump to definitions and find references."),
+            ),
+            "Change files" to listOf(
+                Tool("Edit", "Change part of a file.", "paths", "src/**", "Also limits Write and NotebookEdit."),
+                Tool("Write", "Create or overwrite a file."),
+                Tool("NotebookEdit", "Edit Jupyter notebooks (.ipynb). Only matters if your repos have them."),
+            ),
+            "Run commands" to listOf(Tool("Bash", "Shell commands: builds, tests, git.", "commands", "pnpm test", "* matches the rest, as in git *.")),
+            "Web" to listOf(
+                Tool("WebFetch", "Read the page at a URL.", "domains", "domain:docs.spring.io"),
+                Tool("WebSearch", "Search the web."),
+            ),
+            "Helpers" to listOf(
+                Tool("Agent", "Start Subagents inside this Task's slot.", "Subagent types", "Explore"),
+                Tool("TaskCreate", "Add a step to its own task list, the checklist on the Run page."),
+                Tool("TaskGet", "Read one step of its task list."),
+                Tool("TaskList", "Read its whole task list."),
+                Tool("TaskUpdate", "Tick off or change a step."),
+            ),
+        )
+
+        /** Claude Code's other tools (2.1.295), each with why it is usually off for an Agent running unattended in a Run. */
+        val OTHER_TOOLS = linkedMapOf(
+            "Artifact" to "Publishes to claude.ai.",
+            "AskUserQuestion" to "Nobody is at a terminal, so the question goes unanswered. A Round is how an Agent asks.",
+            "CronCreate" to "Its schedule dies with the session. Schedule the Process instead.",
+            "CronDelete" to "Its schedule dies with the session.",
+            "CronList" to "Its schedule dies with the session.",
+            "EndConversation" to "Ends the session without a Result.",
+            "EnterPlanMode" to "Plan mode waits for an approval nobody gives.",
+            "EnterWorktree" to "Moves the Agent out of the Run workspace.",
+            "ExitPlanMode" to "Plan mode waits for an approval nobody gives.",
+            "ExitWorktree" to "Moves the Agent out of the Run workspace.",
+            "ListAgents" to "Reaches your other Claude sessions on this machine.",
+            "ListMcpResourcesTool" to "Only useful with MCP, which Ants turns off.",
+            "Monitor" to "Background work is off for Agents.",
+            "PowerShell" to "Windows only.",
+            "PushNotification" to "Notifies outside Ants; the Notification list is the place.",
+            "ReadMcpResourceTool" to "Only useful with MCP, which Ants turns off.",
+            "RemoteTrigger" to "Creates Routines on claude.ai, outside Ants.",
+            "ReportFindings" to "Draws review findings in Claude Code's own screen, which nobody sees.",
+            "ScheduleWakeup" to "Its schedule dies with the session.",
+            "SendFeedback" to "Queues feedback nobody reviews.",
+            "SendMessage" to "Reaches your other Claude sessions on this machine.",
+            "SendUserFile" to "Sends files outside the Run.",
+            "ShareOnboardingGuide" to "Uploads to claude.ai.",
+            "TaskOutput" to "Background work is off for Agents.",
+            "TaskStop" to "Background work is off for Agents.",
+            "ToolSearch" to "Only useful with MCP, which Ants turns off.",
+            "WaitForMcpServers" to "Only useful with MCP, which Ants turns off.",
+            "Workflow" to "Starts many background agents outside the slot cap.",
+        )
+
+        /** The tools offered as tick boxes; any other tool is one the user added by name. */
+        val TOOLS = (GROUPS.values.flatten().map { it.name } + OTHER_TOOLS.keys).sorted()
+
+        /** What the page says of a tool Ants doesn't list. */
+        fun note(tool: String) = if (tool.startsWith("mcp__")) MCP_NOTE else UNKNOWN_NOTE
+        const val MCP_NOTE = "An MCP tool. Ants starts Agents with MCP off, so it needs an MCP server Ants doesn't configure yet."
+        const val UNKNOWN_NOTE = "Not a tool Ants knows. Passed to Claude Code as written."
 
         private val KEYS = setOf("name", "description", "cli", "skills", "tools", "sandbox", "model", "ants-subagent")
 
@@ -233,17 +341,44 @@ data class AgentForm(
 }
 
 /** A Claude model from Anthropic's model status table; [retires] is set once it is deprecated. */
-class ClaudeModel(val id: String, val retires: String?)
+class ClaudeModel(val id: String, val retires: String?) {
+    /** How the model dropdown names it: Opus 5.5 for claude-opus-5-5, Haiku 4.5 for claude-haiku-4-5-20251001. */
+    val label: String
+        get() {
+            val (family, version) = Regex("""^claude-([a-z]+)-(.*?)(-\d{8})?$""").find(id)?.destructured ?: return id
+            return family.replaceFirstChar(Char::uppercase) + " " + if (version.firstOrNull()?.isDigit() == true) version.replace('-', '.') else version
+        }
+}
 
 /**
  * The model dropdown's choices: Anthropic's public model status table, without the retired models. It starts as the
  * copy bundled with Ants (models.md), and the update check refreshes it.
  */
 @Component
-class Models {
+class Models(@Value("\${ants.models:https://docs.claude.com/en/docs/about-claude/model-deprecations.md}") private val table: String) {
     @Volatile
     final var all = read(javaClass.getResource("/models.md")!!.readText())
         private set
+
+    /** When the list was last read from the table; null while it is the copy bundled with Ants. */
+    @Volatile
+    final var checked: Instant? = null
+        private set
+
+    /** Reads the table now, returning the models new since the last read; throws when it can't be read. */
+    fun check(): List<String> {
+        val before = all.map { it.id }.toSet()
+        refresh(URI(table).toURL().readText())
+        checked = Instant.now()
+        return all.map { it.id }.filter { it !in before }
+    }
+
+    /** When the list was last checked, as the Agent page says it: the time, with the day when it isn't today. */
+    val lastChecked: String?
+        get() = checked?.atZone(ZoneId.systemDefault())?.let { if (it.toLocalDate() == LocalDate.now()) "%tR".format(it) else "%1\$te %1\$tb %1\$tR".format(it) }
+
+    /** The name the dropdown gives [id]. */
+    fun label(id: String) = all.firstOrNull { it.id == id }?.label ?: id
 
     /** Replaces the list with the models in [table], the status table as markdown; a table with none changes nothing. */
     fun refresh(table: String) {
@@ -255,7 +390,7 @@ class Models {
     }.map { (id, state, retires) -> ClaudeModel(id, retires.takeIf { state == "Deprecated" }) }
 
     /** Claude Code's aliases, each with what it resolves to on Anthropic's API: the newest active model of its family. */
-    val aliases get() = listOf("fable", "opus", "sonnet", "haiku").associateWith { alias -> all.firstOrNull { "-$alias-" in "${it.id}-" && it.retires == null }?.id }
+    val aliases get() = listOf("opus", "sonnet", "haiku", "fable").associateWith { alias -> all.firstOrNull { "-$alias-" in "${it.id}-" && it.retires == null }?.id }
 
     /** The model [id], if it is deprecated. */
     fun deprecated(id: String) = all.firstOrNull { it.id == id && it.retires != null }
