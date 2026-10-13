@@ -110,9 +110,9 @@ class CodexTest : AntsTest() {
         browser.post("${transcript(run)}/stop", emptyMap())
         var entry = ""
         eventually {
-            val row = assertNotNull(Regex("""<tr>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
+            val row = assertNotNull(Regex("""<tr[^>]*>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
                 .find(browser.get("/notifications").body)).groupValues[1]
-            assertContains(row, "■ [stopped]")
+            assertContains(row, "<i>■</i>[stopped]")
             entry = Regex("""href="(/notifications/[^"]+)"""").find(row)!!.groupValues[1]
         }
         browser.post(entry, mapOf("action" to "continue", "instruction" to "Go on."))
@@ -240,9 +240,9 @@ class CodexTest : AntsTest() {
         browser.post("${transcript(run)}/stop", emptyMap())
         var entry = ""
         eventually {
-            val row = assertNotNull(Regex("""<tr>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
+            val row = assertNotNull(Regex("""<tr[^>]*>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
                 .find(browser.get("/notifications").body)).groupValues[1]
-            assertContains(row, "■ [stopped]")
+            assertContains(row, "<i>■</i>[stopped]")
             entry = Regex("""href="(/notifications/[^"]+)"""").find(row)!!.groupValues[1]
         }
         assertContains(browser.get(entry).body, "Stopped by the user.")
@@ -264,7 +264,7 @@ class CodexTest : AntsTest() {
         val run = start()
         var entry = ""
         eventually {
-            val row = assertNotNull(Regex("""<tr>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
+            val row = assertNotNull(Regex("""<tr[^>]*>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
                 .find(browser.get("/notifications").body)).groupValues[1]
             entry = Regex("""href="(/notifications/[^"]+)"""").find(row)!!.groupValues[1]
         }

@@ -46,7 +46,7 @@ class NotificationListTest : AntsTest() {
     }
 
     /** The Run's row on the Notification list, or null. */
-    private fun row(run: String) = Regex("""<tr>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
+    private fun row(run: String) = Regex("""<tr[^>]*>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
         .find(browser.get("/notifications").body)?.groupValues?.get(1)
 
     /** The path of the Run's entry, once it is on the Notification list. */
@@ -61,13 +61,17 @@ class NotificationListTest : AntsTest() {
     private fun runLog(run: String) = workspace(run).resolve("run-log.md").readText()
 
     @Test
-    fun `a stuck Agent Task appears on the Notification list as ⚠ stuck with its summary`() {
+    fun `a stuck Agent Task appears on the Notification list as ⚠ stuck with its summary, its row opening the entry`() {
         setUp()
         claude.session("draft", stuck)
         val run = start()
-        entry(run)
+        val entry = entry(run)
         val row = row(run)!!
-        for (cell in listOf("⚠ [stuck]", "Agent Task", "Draft", "No tone given.", "<td>0 min</td>")) assertContains(row, cell)
+        for (cell in listOf(
+            """<span class="tag t-stuck"><i>⚠</i>[stuck]</span>""", """<b><a href="/runs/$run">Agent Task, """, """· <a href="$entry">Draft</a>""",
+            """<div class="muted small">Agent Task</div>""", "<td>No tone given.</td>", """<td class="muted small nowrap">0m</td>""",
+        )) assertContains(row, cell)
+        assertContains(browser.get("/notifications").body, """<tr class="click" data-href="$entry">""")
         val page = browser.get(entry(run)).body
         assertContains(page, "Which tone, dry or warm?")
         assertContains(page, """href="/runs/$run/tasks/draft/transcript"""")
@@ -161,7 +165,7 @@ class NotificationListTest : AntsTest() {
         claude.session("draft", *Array(25) { "stderr line ${it + 1}" }, "exit 3")
         val run = start()
         entry(run)
-        for (cell in listOf("✕ [failed]", "claude exited with code 3")) assertContains(row(run)!!, cell)
+        for (cell in listOf("<i>✕</i>[failed]", "claude exited with code 3")) assertContains(row(run)!!, cell)
         val page = entryPage(run)
         assertContains(page, (6..25).joinToString("\n") { "line $it" })
         assertFalse("line 5\n" in page)
@@ -189,7 +193,7 @@ class NotificationListTest : AntsTest() {
         )
         val run = start()
         entry(run)
-        assertContains(row(run)!!, "✕ [failed]")
+        assertContains(row(run)!!, "<i>✕</i>[failed]")
         assertContains(row(run)!!.replace("&#39;", "'"), "Ants' Claude login is missing or expired. Log in again (Settings)")
     }
 
@@ -209,7 +213,7 @@ class NotificationListTest : AntsTest() {
         setUp()
         val run = startWithout("draft")
         entry(run)
-        assertContains(row(run)!!, "✕ [failed]")
+        assertContains(row(run)!!, "<i>✕</i>[failed]")
         assertContains(row(run)!!, "No Skill named draft")
         assertEquals(emptyList(), claude.launches("draft"))
     }
@@ -246,7 +250,7 @@ class NotificationListTest : AntsTest() {
         val run = start()
         browser.post(entry(run), mapOf("action" to "continue", "instruction" to "Dry."))
         val session = claude.launches("draft").first().flag("--session-id")
-        eventually { assertContains(assertNotNull(row(run)), "✕ [failed]") }
+        eventually { assertContains(assertNotNull(row(run)), "<i>✕</i>[failed]") }
         assertContains(row(run)!!, "claude ended without a Result: error_during_execution No conversation found with session ID: $session")
     }
 

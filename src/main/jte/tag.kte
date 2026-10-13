@@ -1,0 +1,2 @@
+@param entry: ants.Entry
+<span class="tag t-${entry.tag.removeSurrounding("[", "]")}"><i>${entry.icon}</i>${entry.tag}</span>

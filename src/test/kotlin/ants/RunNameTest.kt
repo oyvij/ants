@@ -41,7 +41,7 @@ class RunNameTest : AntsTest() {
         assertContains(page, """<a href="/processes/loop-then-wait">Loop then wait</a>""")
         assertContains(page, "<small>$run</small>")
         assertContains(page, "<code>$workspace</code>")
-        assertContains(browser.get("/runs").body, """<a href="/runs/$run">Tiny todo app!</a></td><td>Loop then wait</td>""")
+        assertContains(browser.get("/runs").body, """<a href="/runs/$run">Tiny todo app!</a></b></td><td class="muted">Loop then wait</td>""")
         eventually { assertContains(browser.get("/notifications").body, """<a href="/runs/$run">Tiny todo app!</a>""") }
     }
 

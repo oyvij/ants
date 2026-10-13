@@ -90,7 +90,7 @@ class SendAndStopTest : AntsTest() {
         assertEquals(transcript(run), browser.post("${transcript(run)}/stop", emptyMap()).path)
         var entry = ""
         eventually {
-            val row = assertNotNull(Regex("""<tr>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
+            val row = assertNotNull(Regex("""<tr[^>]*>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
                 .find(browser.get("/notifications").body)).groupValues[1]
             entry = Regex("""href="(/notifications/[^"]+)"""").find(row)!!.groupValues[1]
         }
@@ -115,7 +115,7 @@ class SendAndStopTest : AntsTest() {
         browser.post("${transcript(run)}/stop", emptyMap())
         var row = ""
         eventually {
-            row = assertNotNull(Regex("""<tr>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
+            row = assertNotNull(Regex("""<tr[^>]*>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
                 .find(browser.get("/notifications").body)).groupValues[1]
         }
         return row
@@ -124,13 +124,13 @@ class SendAndStopTest : AntsTest() {
     @Test
     fun `after Stop only error_during_execution is stopped, any other result without a Result fails`() {
         val row = stopThen("""{"type":"result","subtype":"error_max_turns","is_error":true,"session_id":"${'$'}SESSION"}""", "exit 1")
-        assertContains(row, "✕ [failed]")
+        assertContains(row, "<i>✕</i>[failed]")
         assertContains(row, "claude ended without a Result: error_max_turns")
     }
 
     @Test
     fun `a CLI that exits with no result after Stop is stopped`() {
-        assertContains(stopThen("exit 1"), "■ [stopped]")
+        assertContains(stopThen("exit 1"), "<i>■</i>[stopped]")
     }
 
     @Test
@@ -148,7 +148,7 @@ class SendAndStopTest : AntsTest() {
         val pids = record.readText().trim().split(" ").map(String::toLong)
         var row = ""
         eventually {
-            row = assertNotNull(Regex("""<tr>((?:(?!</tr>).)*?/runs/$cancelled"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
+            row = assertNotNull(Regex("""<tr[^>]*>((?:(?!</tr>).)*?/runs/$cancelled"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
                 .find(browser.get("/notifications").body)).groupValues[1]
         }
         // One slot now, which the hanging draft holds, so the next Run's Task waits for it.

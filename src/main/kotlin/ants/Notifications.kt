@@ -39,9 +39,9 @@ sealed class Entry(val id: String, val tag: String, val process: String, val tas
     val waited: String
         get() = Duration.between(since.toInstant(), Instant.now()).let {
             when {
-                it.toDays() > 0 -> "${it.toDays()} d ${it.toHoursPart()} h"
-                it.toHours() > 0 -> "${it.toHours()} h ${it.toMinutesPart()} min"
-                else -> "${it.toMinutes()} min"
+                it.toDays() > 0 -> "${it.toDays()}d ${it.toHoursPart()}h"
+                it.toHours() > 0 -> "${it.toHours()}h ${it.toMinutesPart()}m"
+                else -> "${it.toMinutes()}m"
             }
         }
 

@@ -26,7 +26,7 @@ class VaultTest : AntsTest() {
     private fun result(output: String) =
         """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":{"outcome":"done","summary":"Done.","output":$output}}"""
 
-    private fun row(run: String) = Regex("""<tr>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
+    private fun row(run: String) = Regex("""<tr[^>]*>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
         .find(browser.get("/notifications").body)?.groupValues?.get(1)
 
     private fun entry(run: String): String {
@@ -56,7 +56,7 @@ class VaultTest : AntsTest() {
         val run = start("shipped/templates/update-the-vault.bpmn", "update_the_vault") // a Template runs as a Process of its own
 
         val approve = entry(run)
-        for (cell in listOf("✓ [approve]", "Approve the Notes")) assertContains(row(run)!!, cell)
+        for (cell in listOf("<i>✓</i>[approve]", "Approve the Notes")) assertContains(row(run)!!, cell)
         assertContains(browser.get(approve).body, "<strong>add</strong> <code>Billing/Decisions/Monthly invoices</code>")
         assertEquals(emptyList(), notes())
         val first = claude.launches("update-knowledge").single()
@@ -88,7 +88,7 @@ class VaultTest : AntsTest() {
         val run = start("shipped/processes/set-up-vault.bpmn", "set_up_vault")
 
         val round = entry(run)
-        assertContains(row(run)!!, "? [questions]")
+        assertContains(row(run)!!, "<i>?</i>[questions]")
         browser.post("$round/answers", mapOf("answer.readers" to "The user alone."))
         val approve = entry(run)
         assertContains(row(run)!!, "Approve the rule Notes")

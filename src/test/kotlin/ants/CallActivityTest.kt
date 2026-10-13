@@ -190,9 +190,9 @@ class CallActivityTest : AntsTest() {
         deploy(process("caller", "build" to call("build", "spec")))
         val run = start("caller")
 
-        val rows = { Regex("""<tr>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL).findAll(browser.get("/notifications").body).toList() }
+        val rows = { Regex("""<tr[^>]*>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL).findAll(browser.get("/notifications").body).toList() }
         eventually { assertEquals(1, rows().size) }
-        assertContains(rows().single().value, "<td>Caller</td>")
+        assertContains(rows().single().value, """<div class="muted small">Caller</div>""")
         val entry = Regex("""href="(/notifications/[^"]+)"""").find(rows().single().value)!!.groupValues[1]
         assertContains(browser.get(entry).body, """href="/runs/$run/tasks/build.draft/transcript"""")
         browser.post(entry, mapOf("action" to "continue", "instruction" to "Warm."))

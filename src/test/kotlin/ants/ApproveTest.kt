@@ -27,7 +27,7 @@ class ApproveTest : AntsTest() {
     }
 
     /** The Run's row on the Notification list, or null. */
-    private fun row(run: String) = Regex("""<tr>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
+    private fun row(run: String) = Regex("""<tr[^>]*>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
         .find(browser.get("/notifications").body)?.groupValues?.get(1)
 
     /** The path of the Run's entry, once it is on the Notification list. */
@@ -46,7 +46,7 @@ class ApproveTest : AntsTest() {
         claude.session("draft", drafted)
         val run = start()
         val entry = entry(run)
-        for (cell in listOf("✓ [approve]", "Check the draft", "Approve the notes")) assertContains(row(run)!!, cell)
+        for (cell in listOf("<i>✓</i>[approve]", "Check the draft", "Approve the notes")) assertContains(row(run)!!, cell)
         val body = browser.get(entry).body
         assertContains(body, "<h1>Notes</h1>")
         assertContains(body, "The <em>draft</em> reads well.")
