@@ -1,44 +1,27 @@
-@param live: Long
-@param waiting: Int
-@param done: Long
 @param entries: List<ants.Entry>
-@param working: List<ants.Working>
+@param running: Int
+@param cap: Int
+@param live: Long
+@param ended: Long
+@param working: List<ants.Now>
 @param coming: List<ants.Schedule>
-<section id="stats">
-<h2>Runs</h2>
-<dl>
-    <dt>Live</dt> <dd>${live}</dd>
-    <dt>Waiting</dt> <dd>${waiting}</dd>
-    <dt>Done</dt> <dd>${done}</dd>
-</dl>
-</section>
-<section id="waiting-on-you">
-<h2>Waiting on you</h2>
-@template.entries(entries = entries)
-</section>
-<section id="working-now">
-<h2>Working now</h2>
-@if(working.isEmpty())
-<p>No Agent Task is running.</p>
-@else
-<table>
-    <tr><th>Process</th><th>Run</th><th>Task</th></tr>
-@for(task in working)
-    <tr><td>${task.process}</td><td><a href="/runs/${task.run}">${task.runName}</a></td><td>${task.task}</td></tr>
+<div class="grid3" id="stats">
+    <div class="card"><div class="muted small">Waiting on you</div><div class="stat">${entries.size} <small>Tasks</small></div></div>
+    <div class="card"><div class="muted small">Agent Tasks running</div><div class="stat">${running} <small>of ${cap}</small></div></div>
+    <div class="card"><div class="muted small">Live Runs</div><div class="stat">${live} <small>${ended} ended</small></div></div>
+</div>
+<div class="card" id="waiting-on-you"><h3><svg class="i" viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg> Waiting on you <a class="small" href="/notifications">All ${entries.size}</a></h3>
+@template.entries(entries = entries.take(4), bare = true)
+</div>
+<div class="card" id="working-now"><h3><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m10 8.5 5 3.5-5 3.5z"/></svg> Working now</h3>
+@if(working.isEmpty())<div class="muted small">No Agent Task is running.</div>@endif
+@for(now in working)
+    <div class="item"><a href="/runs/${now.run}"><b>${now.name}</b></a><div>@template.now(now = now)</div></div>
 @endfor
-</table>
-@endif
-</section>
-<section id="coming-up">
-<h2>Coming up</h2>
-@if(coming.isEmpty())
-<p>No Schedule starts a Run.</p>
-@else
-<table>
-    <tr><th>When</th><th>Process</th><th>Schedule</th></tr>
+</div>
+<div class="card" id="coming-up"><h3>⏰ Coming up</h3>
+@if(coming.isEmpty())<div class="muted small">Nothing scheduled.</div>@endif
 @for(schedule in coming)
-    <tr><td>${schedule.at}</td><td><a href="/processes/${schedule.key}">${schedule.process}</a></td><td>${schedule.words}</td></tr>
+    <div class="row item"><a class="grow" href="/processes/${schedule.key}">${schedule.process}</a><span class="small muted">${schedule.at} · ${schedule.due}</span></div>
 @endfor
-</table>
-@endif
-</section>
+</div>

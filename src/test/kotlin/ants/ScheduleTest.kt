@@ -113,7 +113,7 @@ class ScheduleTest : AntsTest() {
         clock.offset = Duration.ofHours(1)
         eventually { assertContains(browser.get("/notifications").body, "Configure a Vault") }
         val list = browser.get("/notifications").body
-        assertContains(list, "✕ [failed]")
+        assertContains(list, "<i>✕</i>[failed]")
         assertContains(list, "Nightly")
         assertContains(list, "href=\"/notifications/schedule-$key\"")
         assertEquals(0, runs())
@@ -149,7 +149,7 @@ class ScheduleTest : AntsTest() {
     }
 
     /** Home's Coming up. */
-    private fun comingUp() = browser.get("/").body.substringAfter("<section id=\"coming-up\">").substringBefore("</section>")
+    private fun comingUp() = browser.get("/").body.substringAfter("id=\"coming-up\">").substringBefore("<div class=\"card\" id=")
 
     @Test
     fun `Home's Coming up lists the next scheduled Runs, a paused Schedule doesn't run, and a removed one is gone`() {

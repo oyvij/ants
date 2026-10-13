@@ -293,6 +293,20 @@ kbd { font: 11px var(--mono); border: 1px solid var(--line); border-bottom-width
 .num { font-variant-numeric: tabular-nums; }
 .flash { animation: flash 1.2s ease-out; } @keyframes flash { from { background: #fff4e0; } }
 
+/* Home, the Notification list and Runs. Home's live part (#live) lays its cards out in Home's grid, beside Start a
+   Run, which isn't live: the stats and Waiting on you across, then Working now beside Coming up and Start a Run. */
+.home { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: auto auto auto 1fr; column-gap: 20px; }
+.home > #live { display: contents; }
+.home .grid3, #waiting-on-you { grid-column: 1 / -1; } .home .grid3 { margin-bottom: 14px; }
+#working-now { grid-row: span 2; } #start-a-run { align-self: start; }
+.card h3 > a.small { margin-left: auto; font-weight: 500; }
+.item { padding: 7px 0; border-bottom: 1px solid var(--line2); } .row.item { padding: 6px 0; }
+.card .notes { box-shadow: none; }
+.notes td:first-child { width: 130px; }
+.nowrap { white-space: nowrap; }
+tr.click b a { color: inherit; }
+.t-ready-for-human { background: var(--accSoft); color: var(--accText); border-color: color-mix(in srgb, var(--acc) 30%, transparent); }
+
 /* The login page: one card in the middle of the sidebar's colour. */
 body.login { min-height: 100vh; display: grid; place-items: center; background: var(--side); }
 body.login .card { width: 360px; padding: 28px; margin: 0; }
@@ -304,18 +318,15 @@ body.login [role] { margin-bottom: 4px; }
  * Until the page tickets: the pages whose markup isn't the prototype's yet, styled by their elements. Each page ticket
  * moves its page onto the classes above and deletes what here no longer styles anything.
  */
-main > section, #live > section, fieldset:has(> legend), article, #explain {
+main > section, fieldset:has(> legend), article, #explain {
     background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sh);
     padding: 20px 22px; margin: 0 0 16px; min-width: 0;
 }
-:is(main > section, #live > section) > h2:first-child { margin-top: 0; }
+main > section > h2:first-child { margin-top: 0; }
 fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 fieldset fieldset:has(> legend) { box-shadow: none; padding: 12px 16px; }
 legend { float: left; width: 100%; padding: 0; margin-bottom: 8px; font-weight: 600; }
 legend + * { clear: both; }
-#stats dl { grid-auto-flow: column; grid-template: auto auto / repeat(3, 1fr); gap: 0 20px; margin: 0; }
-#stats dt { color: var(--muted); font-size: 12.5px; }
-#stats dd { margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -.02em; }
 dl { display: grid; grid-template-columns: max-content 1fr; gap: 8px 16px; align-items: baseline; }
 dt { color: var(--muted); font-size: 12.5px; font-weight: 600; }
 dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
@@ -330,22 +341,14 @@ hr { border: 0; border-top: 1px solid var(--line); }
 img { max-width: 100%; }
 
 /* Lists of links, such as the Processes, Skills and Templates: one row each. */
-main > ul:has(> li > a), #start-a-run > ul {
+main > ul:has(> li > a) {
     list-style: none; padding: 0; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sh); overflow: hidden;
 }
-#start-a-run > ul { box-shadow: none; }
-:is(main > ul:has(> li > a), #start-a-run > ul) > li { padding: 10px 16px; border-bottom: 1px solid var(--line2); }
-:is(main > ul:has(> li > a), #start-a-run > ul) > li:last-child { border-bottom: 0; }
-:is(main > ul:has(> li > a), #start-a-run > ul) > li > a { font-weight: 600; margin-right: 8px; }
+main > ul:has(> li > a) > li { padding: 10px 16px; border-bottom: 1px solid var(--line2); }
+main > ul:has(> li > a) > li:last-child { border-bottom: 0; }
+main > ul:has(> li > a) > li > a { font-weight: 600; margin-right: 8px; }
 
-/* Status pills, for a Run's state, and the waiting tags, for what a Notification waits on. */
-[data-state] { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; padding: 2px 9px; border-radius: 20px; white-space: nowrap; background: var(--line2); color: var(--text3); }
-[data-state]::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-[data-state=Running] { background: var(--runSoft); color: var(--run); }
-[data-state=Running]::before { animation: pulse 1.4s infinite; }
-[data-state=Completed] { background: var(--okSoft); color: var(--ok); }
-[data-state="Internally terminated"] { background: var(--badSoft); color: var(--bad); }
-[data-state=Suspended] { background: var(--vioSoft); color: var(--vio); }
+/* The waiting tags, for what a Notification waits on. */
 [data-tag] {
     display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 9px 0 7px; border-radius: 6px; border: 1px solid;
     font-size: 12px; font-weight: 600; white-space: nowrap; vertical-align: middle;

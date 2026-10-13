@@ -95,6 +95,19 @@ class Transcript {
 
     private val running get() = launches.isNotEmpty() && launches.last().end == null
 
+    /**
+     * The live line of the launch running now, as the Runs list and Home show it: `✻ Reading Header.tsx… (1m 20s · ↓
+     * 3.4k tokens)`, its clock from the launch's start; null when no launch runs.
+     */
+    val line: String?
+        get() = if (!running) null else launches.last().let {
+            """<span class="spin">✻</span> <span class="shimmer">$verb…</span> <span class="muted num">(<span data-since="${it.start.toEpochMilli()}">""" +
+                """${elapsed(Duration.between(it.start, Instant.now()))}</span> · ↓ ${tokens(it.tokens)})</span>"""
+        }
+
+    /** The Subagents running now. */
+    val runningSubagents get() = if (running) blocks.values.count { it.end == null } else 0
+
     /** Folds in one line of the file and returns the ids of the elements it changed. */
     fun add(line: String): Set<String> {
         val event = runCatching { json.readValue(line, Map::class.java) }.getOrNull() ?: return emptySet()

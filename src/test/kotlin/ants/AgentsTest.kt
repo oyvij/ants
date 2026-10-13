@@ -240,7 +240,7 @@ class AgentsTest : AntsTest() {
             browser.import("agent-task.bpmn")
             val run = browser.post("/processes/agent-task/runs", mapOf("prompt" to "Say hello")).path
             var entry = ""
-            val row = Regex("""<tr>(?:(?!</tr>).)*?"$run"(?:(?!</tr>).)*?href="(/notifications/[^"]+)"""",RegexOption.DOT_MATCHES_ALL)
+            val row = Regex("""<tr[^>]*>(?:(?!</tr>).)*?"$run"(?:(?!</tr>).)*?href="(/notifications/[^"]+)"""",RegexOption.DOT_MATCHES_ALL)
             eventually { entry = assertNotNull(row.find(browser.get("/notifications").body)).groupValues[1] }
 
             post("/agents/writer", mapOf("name" to "writer", "cli" to "claude", "tool.Read" to "on", "tool.Grep" to "on", "model" to "opus", "instructions" to "Write warmly."))

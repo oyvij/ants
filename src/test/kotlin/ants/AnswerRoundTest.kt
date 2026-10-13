@@ -44,7 +44,7 @@ class AnswerRoundTest : AntsTest() {
 
     private fun historyOf(run: String) = if (history.exists()) history.listDirectoryEntries("*$run*") else emptyList()
 
-    private fun row(run: String) = Regex("""<tr>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
+    private fun row(run: String) = Regex("""<tr[^>]*>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
         .find(browser.get("/notifications").body)?.groupValues?.get(1)
 
     private fun entry(run: String, seconds: Long = 10): String {
@@ -65,7 +65,7 @@ class AnswerRoundTest : AntsTest() {
         val run = start()
 
         val first = entry(run)
-        for (cell in listOf("? [questions]", "Answer the Round", "First round.")) assertContains(row(run)!!, cell)
+        for (cell in listOf("<i>?</i>[questions]", "Answer the Round", "First round.")) assertContains(row(run)!!, cell)
         val body = browser.get(first).body
         for (text in listOf("Who exports", "Ask who?", "Settles who.", "Because who.", ">Recommend who.</textarea>")) assertContains(body, text)
         browser.post("$first/answers", mapOf("answer.who" to "Recommend who.", "answer.scope" to "Only admins."))

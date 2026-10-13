@@ -1,6 +1,8 @@
-@import ants.stateName
-@param runs: List<org.operaton.bpm.engine.history.HistoricProcessInstance>
-@param names: Map<String, String>
+@param live: List<ants.RunRow>
+@param ended: List<ants.RunRow>
+@param coming: List<ants.Schedule>
+@param running: Int
+@param cap: Int
 @param colorScheme: String = "light dark"
 @param shell: ants.Shell
 <!doctype html>
@@ -14,13 +16,38 @@
 <body>
 @template.nav(shell = shell)
 <main>
-<div class="ph"><h1>Runs</h1><div class="acts"><a class="btn primary" href="/processes">Start a Run</a></div></div>
+<div class="ph"><h1>Runs</h1><div class="acts"><a class="btn primary" href="/processes">Start a Run</a></div><div class="sub">${running} of ${cap} Agent Tasks running.</div></div>
+@if(!coming.isEmpty())
+<h2>Coming up</h2>
 <table>
-    <tr><th>Run</th><th>Process</th><th>State</th><th>Started</th></tr>
-@for(run in runs)
-    <tr><td><a href="/runs/${run.id}">${names[run.id]}</a></td><td>${run.processDefinitionName ?: run.processDefinitionKey}</td><td><span data-state="${run.stateName}">${run.stateName}</span></td><td>${run.startTime.toString()}</td></tr>
+@for(schedule in coming)
+    <tr class="click" data-href="/processes/${schedule.key}"><td><b><a href="/processes/${schedule.key}">${schedule.process}</a></b></td><td class="small">${schedule.words}</td><td class="muted small">${schedule.at} · ${schedule.due}</td></tr>
 @endfor
 </table>
+@endif
+<h2>Live</h2>
+@if(live.isEmpty())<div class="card muted">None.</div>@else
+<table>
+    <tr><th>Run</th><th>Process</th><th>Now</th><th>Started</th></tr>
+@for(run in live)
+    <tr class="click" data-href="/runs/${run.id}"><td><b><a href="/runs/${run.id}">${run.name}</a></b></td><td class="muted">${run.process}</td>
+        <td>@if(run.now != null)@template.now(now = run.now)@else<span class="pill p-running">Running</span>@endif</td><td class="muted small">${run.started}</td></tr>
+@endfor
+</table>
+@endif
+<h2>Ended</h2>
+<div class="help">Done Runs leave their Report. Cancelled Runs keep their Run workspace until you dismiss them.</div>
+@if(ended.isEmpty())<div class="card muted">None.</div>@else
+<table>
+    <tr><th>Run</th><th>Process</th><th>Now</th><th>Started</th><th></th></tr>
+@for(run in ended)
+    <tr class="click" data-href="/runs/${run.id}"><td><b><a href="/runs/${run.id}">${run.name}</a></b></td><td class="muted">${run.process}</td>
+        <td><span class="pill ${if (run.done) "p-done" else "p-failed"}">${run.ended}</span></td><td class="muted small">${run.started}</td>
+        <td>@if(run.kept)<form method="post" action="/runs/${run.id}/dismiss">@if(shell.csrf != null)<input type="hidden" name="${shell.csrf.parameterName}" value="${shell.csrf.token}">@endif<button>Dismiss</button></form>@endif
+            @if(run.report)<a href="/runs/${run.id}/report">Report</a>@endif</td></tr>
+@endfor
+</table>
+@endif
 </main>
 </body>
 </html>

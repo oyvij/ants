@@ -242,6 +242,22 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `a row of the Notification list, Home's Waiting on you and the Runs list opens its entry or its Run on a click anywhere in it`() = browse {
+        settings(null)
+        val (process, plane) = row("clicked", """<bpmn:startEvent id="start" />""", """<bpmn:userTask id="wait" name="Wait" />""", """<bpmn:endEvent id="end" />""")
+        deploy(definitions("clicked", "Clicked", process, plane))
+        val run = http.post("/processes/clicked/runs", mapOf()).path
+        for (list in listOf("/notifications", "/")) {
+            page.navigate(url(list))
+            page.locator("tr.click:has(a[href='$run']) td:last-child").click()
+            page.waitForURL { "/notifications/" in it }
+        }
+        page.navigate(url("/runs"))
+        page.locator("tr.click[data-href='$run'] td:last-child").click()
+        page.waitForURL { it.endsWith(run) }
+    }
+
+    @Test
     fun `the Notification list asks for notification permission on a click, since macOS badges an app only with it`() = browse {
         // The browser's answer outlives the page, as a real one's does, so the reload below finds it.
         page.addInitScript(
