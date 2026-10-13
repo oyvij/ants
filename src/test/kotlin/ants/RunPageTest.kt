@@ -91,6 +91,11 @@ class RunPageTest : AntsTest() {
         assertFalse("Cancel the Run" in cancelled.body)
         assertContains(cancelled.body, "until you dismiss the Run")
         eventually { assertTrue(claude.launches("draft").single().killed) }
+        // The Task the Run was in the middle of reads Cancelled, not Done, in the table, on its page and on the diagram.
+        assertContains(row(cancelled.body, "Draft"), """<span class="pill p-quiet">Cancelled</span>""")
+        assertContains(browser.get("/runs/$run/tasks/draft/transcript").body, """<span class="pill p-quiet">Cancelled</span>""")
+        val diagram = diagram(assertNotNull(browser.events("run=$run", "run").poll(10, SECONDS)))
+        assertEquals(mapOf("state" to "cancelled", "badge" to "Cancelled", "round" to 1), diagram.element("draft"))
     }
 
     @Test

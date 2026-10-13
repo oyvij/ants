@@ -94,6 +94,8 @@ class MultiInstanceTest : AntsTest() {
             Thread.sleep(300)
             assertEquals(n, claude.launches("draft").size) // the next waits for this one
             assertContains(claude.launches("draft")[n - 1].stdin, """{\"ticket\":\"${"abc"[n - 1]}\"}""")
+            // The Tasks table's live line follows the running instance, not the first, which is done.
+            if (n == 2) eventually { assertContains(page(run), """class="shimmer"""") }
             claude.release("go-$n")
         }
         eventually { assertContains(page(run), """id="state">Completed<""") }

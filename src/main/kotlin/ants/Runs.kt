@@ -116,7 +116,7 @@ class TaskView(
     companion object {
         val PILLS = mapOf(
             "running" to "running", "done" to "done", "queued" to "quiet", "round" to "quiet", "waiting" to "waiting",
-            "stuck" to "stuck", "failed" to "failed", "stopped" to "stuck",
+            "stuck" to "stuck", "failed" to "failed", "stopped" to "stuck", "cancelled" to "quiet",
         )
 
         /** The state and label of a Task its [entry] holds: stuck, failed or stopped by its tag, else waiting on the user. */
@@ -348,7 +348,7 @@ class Runs(
             val (lines, end) = Transcript.read(file, offset)
             offset = end
             lines.forEach(transcript::add)
-            val view = tasks(id) { emptyMap() }.firstOrNull { it.element?.id == task }
+            val view = tasks(id) { emptyMap() }.firstOrNull { it.key == key }
                 ?: TaskView(key, element, "queued", "Not reached", null, null, null, 0, null)
             val entry = view.entry
             val model = mapOf(
@@ -360,22 +360,27 @@ class Runs(
     }
 
     /**
-     * The Tasks the Run, or called Process instance, [id] has reached, in the order it reached them. A Task that asked
-     * the Round waiting on the user waits on its Round. A multi-instance's instances count as one Task, opening the first.
-     * Each Task's Transcript is read from [transcripts], every Transcript in the Run by default.
+     * The Tasks the Run, or called Process instance, [id] has reached, in the order it reached them, a called Process's
+     * Tasks where its call is. A Task that asked the Round waiting on the user waits on its Round. A multi-instance's
+     * instances count as one Task, opening the first, its live line the running one's. Each Task's Transcript is read
+     * from [transcripts], every Transcript in the Run by default.
      */
-    fun tasks(id: String, transcripts: (top: String) -> Map<String, Transcript> = { Transcript.all(names.runWorkspace(it)) }): List<TaskView> {
+    fun tasks(id: String, transcripts: (top: String) -> Map<String, Transcript> = { Transcript.all(names.runWorkspace(it)) }): List<TaskView> =
+        tasks(id, transcripts(run(id).rootProcessInstanceId))
+
+    private fun tasks(id: String, transcripts: Map<String, Transcript>): List<TaskView> {
         val instance = run(id)
         val top = instance.rootProcessInstanceId
         val model = repository.getBpmnModelInstance(instance.processDefinitionId)
-        val transcripts = transcripts(top)
         val prefix = (history.variable(id, CALLED) as? String).orEmpty()
         val entries = notifications.tasks().filter { it.instance == id }
         val asking = entries.filter { it.tag == UserTaskKind.ANSWER_ROUND.tag }
             .mapNotNull { round -> model.getModelElementById<BaseElement>(round.activity)?.property(ASKER)?.let { it to round } }.toMap()
         val shown = shown(id)
         return history.createHistoricActivityInstanceQuery().processInstanceId(id).orderByHistoricActivityInstanceStartTime().asc().orderPartiallyByOccurrence().asc().list()
-            .map { it.activityId }.distinct().mapNotNull { model.getModelElementById<FlowElement>(it) as? org.operaton.bpm.model.bpmn.instance.Task }.map { task ->
+            .distinctBy { it.calledProcessInstanceId ?: it.activityId }.flatMap { reached ->
+                reached.calledProcessInstanceId?.let { return@flatMap tasks(it, transcripts) }
+                val task = model.getModelElementById<FlowElement>(reached.activityId) as? org.operaton.bpm.model.bpmn.instance.Task ?: return@flatMap emptyList()
                 val key = prefix + task.id
                 val entry = entries.firstOrNull { it.activity == task.id }
                 val own = transcripts.filterKeys { it == key || it.startsWith("$key-") }
@@ -385,11 +390,15 @@ class Runs(
                     asking[task.id] != null -> "round" to "Waiting on its Round"
                     now?.state == "queued" -> "queued" to (now.badge?.takeIf { it != "Queued" } ?: "Queued · ${launcher.running} of ${settings.agentTasks()} running")
                     now?.state == "running" -> "running" to "Running"
+                    now?.state == "cancelled" -> "cancelled" to "Cancelled"
                     else -> "done" to "Done"
                 }
                 val href = entry?.let { "/notifications/${it.id}" } ?: own.keys.firstOrNull()?.let { "/runs/$top/tasks/$it/transcript" }
-                TaskView(key, task, state, label, entry, now?.round, own.values.firstOrNull(), own.values.sumOf { it.tokens }, href, asking[task.id])
-            }
+                listOf(TaskView(
+                    key, task, state, label, entry, now?.round, own.values.firstOrNull { it.running } ?: own.values.firstOrNull(), own.values.sumOf { it.tokens },
+                    href, asking[task.id],
+                ))
+            }.distinctBy { it.key }
     }
 
     /**
@@ -403,7 +412,8 @@ class Runs(
         }
 
     /**
-     * Each element the Run has reached: done once every instance of it ended, else waiting when it has a Notification
+     * Each element the Run has reached: once every instance of it ended, cancelled if its latest were, by a Cancel or
+     * a timer boundary, else done; else waiting when it has a Notification
      * list entry, else queued with a badge while a usage limit pauses its Agent Task, else running, or queued for an
      * Agent Task no worker holds yet. Its Round is its count in `runs`.
      */
@@ -418,7 +428,9 @@ class Runs(
             val paused = tasks.firstNotNullOfOrNull { launcher.pausedUntil(it.id) }
             val held = tasks.map { launcher.heldBy(it.id) }
             when {
-                instances.all { it.endTime != null } -> Shown("done", null, round)
+                // ponytail: "latest" is the instances started at the last start time, which a parallel multi-instance's share.
+                instances.all { it.endTime != null } -> instances.maxOf { it.startTime }.let { last -> instances.filter { it.startTime == last } }
+                    .let { latest -> if (latest.any { it.isCanceled }) Shown("cancelled", "Cancelled", round) else Shown("done", null, round) }
                 entry != null -> Shown("waiting", "${entry.icon} ${entry.tag}", round)
                 paused != null -> Shown("queued", "Paused until ${clock.local(paused)}", round)
                 held.isNotEmpty() && held.all { it != null } -> Shown("queued", held.first(), round)

@@ -147,7 +147,7 @@
                     overlays.add(id, 'ants', { position, html: span });
                 };
                 if (now.state === 'done') badge('done', '✓', { top: -12, right: 16 });
-                else badge(now.state === 'queued' ? 'quiet' : now.state, now.badge ?? 'Running', { top: -12, right: 70 });
+                else badge(now.state === 'queued' || now.state === 'cancelled' ? 'quiet' : now.state, now.badge ?? 'Running', { top: -12, right: 70 });
                 if (now.round > 1) badge('quiet', 'round ' + now.round, { bottom: 14, left: 6 });
             }
             shown[id] = now;

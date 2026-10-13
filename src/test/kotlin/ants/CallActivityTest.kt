@@ -117,6 +117,9 @@ class CallActivityTest : AntsTest() {
         assertTrue(workspace(run).resolve("tasks/build.draft/transcript.jsonl").exists())
         assertTrue(workspace(run).resolve("tasks/draft/transcript.jsonl").exists())
         assertFalse(browser.get("/runs").body.contains("Spec</a>"), "the called Process is no Run of its own")
+        // The Run page lists the called Process's Task too, by its key, opening its Transcript.
+        assertContains(page(run), """<tr class="click" data-href="/runs/$run/tasks/build.draft/transcript">""")
+        assertContains(page(run), "<b>build.draft</b>")
     }
 
     @Test
