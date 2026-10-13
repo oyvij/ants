@@ -1,3 +1,4 @@
+@import ants.inlineCode
 @param entry: ants.TaskEntry
 @param changes: List<ants.RepoChanges>
 @param comments: List<ants.LineComment>
@@ -8,6 +9,7 @@
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
 @param shell: ants.Shell
+!{val tag = entry.tag.trim('[', ']')}
 <!doctype html>
 <html lang="en">
 <head>
@@ -20,110 +22,142 @@
 <body>
 @template.nav(shell = shell)
 <main>
-<div class="crumbs"><a href="/notifications">Notification list</a> / <a href="/runs/${entry.run}">${entry.runName}</a> / ${entry.task}</div>
-<div class="ph"><h1>${entry.task}</h1><div class="acts"><span data-tag="${entry.tag}">${entry.icon} ${entry.tag}</span><span class="muted small">${entry.process} · waiting ${entry.waited}</span></div></div>
+<div class="crumbs"><a href="/runs">Runs</a> / <a href="/runs/${entry.run}">${entry.runName}</a> / ${entry.task}</div>
+<div class="ph"><h1>${entry.task} <span class="pill p-waiting">Waiting on you</span> <span class="tag t-${tag}"><i>${entry.icon}</i>${tag.replaceFirstChar(Char::uppercase)}</span></h1>
+    <div class="acts"><span class="muted small">User Task</span></div><div class="sub">${entry.summary}</div></div>
 @if(error != null)<p role="alert">${error}</p>@endif
-@if(tab == null)<nav id="tabs"><b>By repo</b></nav>
-@elseif(tab == "story")<nav id="tabs"><b>Story</b> <a href="?tab=repo">By repo</a></nav>
-@else<nav id="tabs"><a href="?tab=story">Story</a> <b>By repo</b></nav>
+<div class="grid3 repos">
+    @for(changed in changes)!{val repo = changed.repo}
+    <div class="card"><b class="mono">${repo.repo}</b> <span class="muted small">on ${repo.branch}</span><div class="mono small muted" title="${repo.remote}">${repo.shortRemote}</div>
+        <div class="small">${changed.files.size} file${if (changed.files.size == 1) "" else "s"} · <span class="plus">+${changed.added}</span> <span class="minus">−${changed.removed}</span> · ${repo.commits.size} commit${if (repo.commits.size == 1) "" else "s"}</div></div>
+    @endfor
+</div>
+@if(tab == null)<div class="tabs"><a class="on" href="?tab=repo">By repo</a></div>
+@elseif(tab == "story")<div class="tabs"><a class="on" href="?tab=story">Story</a><a href="?tab=repo">By repo</a></div>
+@else<div class="tabs"><a href="?tab=story">Story</a><a class="on" href="?tab=repo">By repo</a></div>
 @endif
 @if(refused != null)<p role="alert">${refused}</p>@endif
-@if(stories != null)
-<h2>${stories.title}</h2>
-@for(story in stories.stories)
-<section class="story">
-    <h3>${story.name}</h3>
-    <p>${story.premise}</p>
-    <ol class="steps">
-        @for(i in story.steps.indices)!{val step = story.steps[i]}
-        <li>
-            <h4>${i + 1}. ${step.name}</h4>
-            <p><code>${step.at}</code> (${step.side}, ${step.kind})</p>
-            <table class="site">
-                @for(line in step.lines)<tr><td>${line.first}</td><td>${line.second}</td></tr>
-                @endfor
+@if(stories != null)!{val uncovered = stories.remainder.values.sum()}
+<div class="storyview">
+    <div class="spine"><div class="stitle">${stories.title}</div>
+        @for(i in stories.stories.indices)!{val story = stories.stories[i]}
+        <a class="srow" href="#s${i + 1}-1"><span>${story.name}</span><span class="cnt">${story.steps.size} step${if (story.steps.size == 1) "" else "s"}@if(story.stale > 0) · <span class="stalecnt">${story.stale} stale</span>@endif</span></a>
+        @endfor
+        <div class="srem"><div><b>Remainder</b> · ${uncovered} change${if (uncovered == 1) "" else "s"} no step covers</div>
+            @for(file in stories.remainder.entries)<div class="rf"><span class="mono">${file.key.substringAfterLast('/')}</span><span class="muted">${file.value}</span></div>
+            @endfor</div>
+    </div>
+    <div id="walkMain">
+        <div class="card" id="stories"><div class="muted small">Story set</div><h3>${stories.title}</h3>
+            @for(i in stories.stories.indices)!{val story = stories.stories[i]}
+            <div class="sover"><a href="#s${i + 1}-1"><b>${story.name}</b></a> <span class="muted small">${story.steps.size} step${if (story.steps.size == 1) "" else "s"}</span><div class="small">$unsafe{inlineCode(story.premise)}</div>
+                <div class="small muted">${story.steps.joinToString(" → ") { it.name }}</div></div>
+            @endfor
+            <div class="help">Pick a story to walk it one step at a time: <kbd>n</kbd> next, <kbd>p</kbd> back, <kbd>d</kbd> diff, <kbd>D</kbd> details, <kbd>c</kbd> comment, <kbd>Esc</kbd> back here.</div></div>
+        @for(i in stories.stories.indices)!{val story = stories.stories[i]}
+        <section class="walkstory" data-story="${i + 1}" hidden>
+            <div class="row walkhead"><b>${story.name}</b><span class="muted small">$unsafe{inlineCode(story.premise)}</span><span class="grow"></span><button type="button" class="ghost small" data-all>All stories <kbd>Esc</kbd></button></div>
+            <div class="walkgrid"><div class="smenu">@for(j in story.steps.indices)<a href="#s${i + 1}-${j + 1}">@if(story.steps[j].stale != null)⚠ @endif${story.steps[j].name}</a>@endfor</div>
+            <div>
+            @for(j in story.steps.indices)!{val step = story.steps[j]}
+            <div class="step" data-step="${j + 1}" hidden>
+                <div class="cfile"><span class="mono"><b>${step.repo}</b> · ${step.path}</span><span class="grow"></span><label class="small row"><input type="checkbox" class="showdiff"> Show the diff <kbd>d</kbd></label></div>
+                <div class="code">@for(line in step.code)<div class="${line.css}"><span class="ln">${line.number}</span><span class="bar"></span><span class="tx">${line.text}</span></div>@endfor</div>
+                <div class="band">
+                    <div class="claim">@if(step.stale != null)<span class="stale">STALE</span> @endif$unsafe{inlineCode(step.claim)}</div>
+                    @if(step.values.isNotEmpty())<div class="vals">@for(value in step.values)<span class="${if (value.cite != null) "cited" else "inv"}" title="${if (value.cite != null) "from ${value.cite}" else "not found in the code"}">${value.name}: <b>${value.value}</b> <span class="small">[${value.provenance}]</span></span>@endfor</div>@endif
+                    <div class="kv small details" hidden>
+                        <span class="k">Why</span><span>$unsafe{inlineCode(step.why)}</span>
+                        @if(step.flow != null)<span class="k">Flow</span><span>in: $unsafe{inlineCode(step.flow!!.first)}<br>out: $unsafe{inlineCode(step.flow!!.second)}</span>@endif
+                        @if(step.nudge != null)<span class="k">Nudge</span><span>$unsafe{inlineCode(step.nudge!!)}</span>@endif
+                        @if(step.stale != null)<span class="k">Stale</span><span>Written against<br><code>${step.stale}</code><br>Now<br><code>${step.now}</code></span>@endif
+                    </div>
+                    @for(comment in comments)@if(comment.story == story.name && comment.step == j + 1)<div class="scomment"><b>${comment.type}</b> ${comment.body}</div>@endif@endfor
+                    <form class="row stepcomment" method="post" action="/notifications/${entry.id}/comments#s${i + 1}-${j + 1}" hidden>
+                        <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+                        <input type="hidden" name="story" value="${story.name}">
+                        <input type="hidden" name="step" value="${j + 1}">
+                        <input type="hidden" name="repo" value="${step.repo}">
+                        <input type="hidden" name="file" value="${step.file}">
+                        <input type="hidden" name="side" value="${step.side}">
+                        <input type="hidden" name="from" value="${step.from}">
+                        <input type="hidden" name="to" value="${step.to}">
+                        <input type="hidden" name="tab" value="story">
+                        <select name="type" aria-label="Type">@for(type in ants.LineComment.TYPES)<option>${type}</option>@endfor</select>
+                        <input name="body" class="grow" placeholder="On this claim…" aria-label="Comment" required>
+                        <button class="primary">Add</button>
+                    </form>
+                    <div class="bandacts"><button type="button" data-go="-1" disabled="${j == 0}">◀ Back <kbd>p</kbd></button><button type="button" data-go="1" disabled="${j == story.steps.lastIndex}">Next <kbd>n</kbd> ▶</button>
+                        <span class="grow"></span><button type="button" class="ghost" data-details>Why, flow, nudge <kbd>D</kbd></button>
+                        <button type="button" class="ghost" data-comment>Comment on this step <kbd>c</kbd></button></div>
+                </div>
+            </div>
+            @endfor
+            </div></div>
+        </section>
+        @endfor
+    </div>
+</div>
+@elseif(tab != "story")
+<div class="walk">
+    <nav>@for(changed in changes)<b class="small mono">${changed.repo.repo}</b>@for(k in changed.files.indices)<a class="mono" href="#f-${changed.repo.repo}-${k + 1}">${changed.files[k].path.substringAfterLast('/')}</a>@endfor
+    @endfor</nav>
+    <div>
+    @for(changed in changes)!{val repo = changed.repo}
+    <div class="card" data-repo="${repo.repo}">
+        <div class="row"><b class="mono">${repo.repo}</b><span class="mono small muted" title="${repo.remote}">${repo.shortRemote}</span><code>${repo.branch}</code>
+            <span class="muted small">since ${repo.base ?: "the start: the remote has no default branch"}</span><span class="grow"></span>
+            <span class="small">${changed.files.size} file${if (changed.files.size == 1) "" else "s"} · <span class="plus">+${changed.added}</span> <span class="minus">−${changed.removed}</span></span></div>
+        <div class="commits">@for(commit in repo.commits)<div class="small"><span class="mono muted">${commit["sha"]?.take(7)}</span> ${commit["subject"]}</div>@endfor</div>
+        @for(k in changed.files.indices)!{val file = changed.files[k]}
+        <details id="f-${repo.repo}-${k + 1}" open>
+            <summary><span class="mono small">${file.path.removePrefix("repos/${repo.repo}/")}</span> <span class="small"><span class="plus">+${file.added}</span> <span class="minus">−${file.removed}</span></span></summary>
+            <table class="diff" data-file="${file.path}">
+                @for(line in file.lines)@if(line.kind == '@')<tr class="hunk"><td></td><td></td><td>${line.text}</td></tr>
+                @else<tr class="${line.css}" data-side="${line.side}" data-line="${line.line?.toString()}"><td>${line.old?.toString()}</td><td>${line.new?.toString()}</td><td>${line.text}</td></tr>
+                @endif@endfor
             </table>
-            <p>${step.claim}</p>
-            <p>Why: ${step.why}</p>
-            @if(step.flow != null)<p>${step.flow}</p>@endif
-            @if(step.nudge != null)<p>${step.nudge}</p>@endif
-            @if(step.values.isNotEmpty())<ul>
-                @for(value in step.values)<li>${value.name} = <code>${value.value}</code> (${value.source})</li>
-                @endfor
-            </ul>@endif
-            <details>
-                <summary>Comment on this step</summary>
-                <form method="post" action="/notifications/${entry.id}/comments">
-                    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
-                    <input type="hidden" name="story" value="${story.name}">
-                    <input type="hidden" name="step" value="${i + 1}">
-                    <input type="hidden" name="repo" value="${step.repo}">
-                    <input type="hidden" name="file" value="${step.file}">
-                    <input type="hidden" name="side" value="${step.side}">
-                    <input type="hidden" name="from" value="${step.from}">
-                    <input type="hidden" name="to" value="${step.to}">
-                    <input type="hidden" name="tab" value="story">
-                    <label>Type <select name="type">@for(type in ants.LineComment.TYPES)<option>${type}</option>@endfor</select></label>
-                    <label>Comment <textarea name="body" required></textarea></label>
-                    <button>Add the comment</button>
-                </form>
-            </details>
-        </li>
+        </details>
         @endfor
-    </ol>
-</section>
-@endfor
+    </div>
+    @endfor
+    <form method="post" action="/notifications/${entry.id}/comments" id="line-comment" class="card">
+        <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+        @if(tab != null)<input type="hidden" name="tab" value="repo">@endif
+        <div class="help">Click a line number to comment on it, and shift-click another to take in the lines between.</div>
+        <div class="lc">
+            <label>Repo <input name="repo" required></label>
+            <label>File <input name="file" required></label>
+            <label>Side <select name="side"><option>new</option><option>old</option></select></label>
+            <label>Lines <input name="from" type="number" min="1" required></label>
+            <label>to <input name="to" type="number" min="1"></label>
+            <label>Type <select name="type">@for(type in ants.LineComment.TYPES)<option>${type}</option>@endfor</select></label>
+        </div>
+        <div class="row"><input name="body" class="grow" placeholder="On these lines…" aria-label="Comment" required><button class="primary">Add the comment</button></div>
+    </form>
+    </div>
+</div>
 @endif
-@for(changed in changes)
-<section class="repo" data-repo="${changed.repo.repo}">
-    <h2>${changed.repo.repo}</h2>
-    <p>${changed.repo.branch} since ${changed.repo.base ?: "the start: the remote has no default branch"} · ${changed.repo.commits.size} commits, newest first</p>
-    <ol class="commits">
-        @for(commit in changed.repo.commits)<li><code>${commit["sha"]?.take(7)}</code> ${commit["subject"]}</li>
-        @endfor
-    </ol>
-    @for(file in changed.files)
-    <details open>
-        <summary>${file.path}</summary>
-        <table class="diff" data-file="${file.path}">
-            @for(line in file.lines)@if(line.kind == '@')<tr class="hunk"><td></td><td></td><td>${line.text}</td></tr>
-            @else<tr class="${line.css}" data-side="${line.side}" data-line="${line.line?.toString()}"><td>${line.old?.toString()}</td><td>${line.new?.toString()}</td><td>${line.text}</td></tr>
-            @endif@endfor
-        </table>
-    </details>
+@if(comments.isNotEmpty())
+<div id="comments"><b class="small">Comments (${comments.size})</b>
+    @for(k in comments.indices)!{val comment = comments[k]; val at = stories?.stories?.indexOfFirst { it.name == comment.story } ?: -1}
+    <form class="row small remove" method="post" action="/notifications/${entry.id}/comments">
+        <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+        @if(tab != null)<input type="hidden" name="tab" value="${tab}">@endif
+        <span class="tag t-${comment.type}">${comment.type.lowercase().replaceFirstChar(Char::uppercase)}</span>
+        <span>@if(at >= 0)<a href="#s${at + 1}-${comment.step}">${comment.story} › ${stories!!.stories[at].steps.getOrNull(comment.step!! - 1)?.name}</a> @elseif(comment.story != null)${comment.story} step ${comment.step} @endif<span class="mono">${comment.file}:${comment.from}-${comment.to} (${comment.side})</span>: ${comment.body}</span>
+        <span class="grow"></span><button class="ghost small" name="remove" value="${k}">Remove</button>
+    </form>
     @endfor
-</section>
-@endfor
-<h2>Comments</h2>
-<ol id="comments">
-    @for(i in comments.indices)!{val comment = comments[i]}
-    <li>${comment.summary.removePrefix("- ")}
-        <form method="post" action="/notifications/${entry.id}/comments" style="display: inline">
-            <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
-            <button name="remove" value="${i}">Remove</button>
-        </form>
-    </li>
-    @endfor
-</ol>
-@if(tab != "story")
-<form method="post" action="/notifications/${entry.id}/comments" id="line-comment">
-    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
-    <p>Click a line number to comment on it, and shift-click another to take in the lines between.</p>
-    <label>Repo <input name="repo" required></label>
-    <label>File <input name="file" required size="40"></label>
-    <label>Side <select name="side"><option>new</option><option>old</option></select></label>
-    <label>Lines <input name="from" type="number" min="1" required size="4"></label>
-    <label>to <input name="to" type="number" min="1" size="4"></label>
-    <label>Type <select name="type">@for(type in ants.LineComment.TYPES)<option>${type}</option>@endfor</select></label>
-    <label>Comment <textarea name="body" required></textarea></label>
-    <button>Add the comment</button>
-</form>
+</div>
 @endif
 <form method="post" action="/notifications/${entry.id}">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
-    <label>Comment on the changes <textarea name="comment"></textarea></label>
-    <button class="primary" name="action" value="approve">Approve</button>
-    <button name="action" value="send-back">Send back</button>
+    <div class="fld"><label class="f" for="comment">Overall comment</label>
+        <div class="help">Send back needs this or a comment on a step or a line: the Task it sends back to resumes with all of them.</div>
+        <textarea id="comment" name="comment" rows="5"></textarea></div>
+    <div class="composer"><div><span class="grow muted small">Nothing is pushed until you approve.</span><button name="action" value="send-back">Send back</button>
+        <button class="primary" name="action" value="approve">Approve</button></div></div>
 </form>
 </main>
 </body>

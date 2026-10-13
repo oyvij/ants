@@ -13,9 +13,13 @@ import kotlin.io.path.name
 /**
  * One of the Run's clones as Push sees it: its [remote] (the fetch URL, since the push URL is dead), its work
  * [branch], its [base] (the remote's default branch, null when the remote had none) and the [commits] on the work
- * branch since the base, newest first, each `{sha, subject}`.
+ * branch since the base, newest first, each `{sha, subject}`. [isNew] when the remote didn't have the work branch when
+ * it was cloned.
  */
-class Outgoing(val repo: String, val path: Path, val remote: String, val branch: String, val base: String?, val commits: List<Map<String, String>>)
+class Outgoing(val repo: String, val path: Path, val remote: String, val branch: String, val base: String?, val commits: List<Map<String, String>>, val isNew: Boolean) {
+    /** The [remote] as the pages show it: `github.com/stacc/api` for `git@github.com:stacc/api.git` or its https URL. */
+    val shortRemote get() = remote.replace(Regex("^git@([^:]+):"), "$1/").replace(Regex("^https?://"), "").removeSuffix(".git")
+}
 
 /**
  * The Built-in Task Push (topic `push`). It waits on the user as a ↑ `[push]` entry, whose page shows each clone
@@ -74,9 +78,7 @@ class Push(
 
     private fun result(repo: Outgoing, error: String?) = mapOf(
         "repo" to repo.repo, "remote" to repo.remote, "branch" to repo.branch, "base" to repo.base,
-        // Clone repos tracks the work branch when the remote had it, and Push pushes to the URL, so no tracking branch is ever added.
-        "isNew" to runCatching { cloneRepos.git(repo.path, "rev-parse", "--verify", "-q", "refs/remotes/origin/${repo.branch}") }.isFailure,
-        "commits" to repo.commits, "pushed" to (error == null), "error" to error, "compareUrl" to compareUrl(repo),
+        "isNew" to repo.isNew, "commits" to repo.commits, "pushed" to (error == null), "error" to error, "compareUrl" to compareUrl(repo),
     )
 
     /** The Run's clones, by name, each on the work branch Clone repos put it on. */
@@ -85,7 +87,9 @@ class Push(
         val base = runCatching { cloneRepos.git(path, "symbolic-ref", "--short", "refs/remotes/origin/HEAD").removePrefix("origin/") }.getOrNull()
         val commits = cloneRepos.git(path, "log", "--format=%H %s", if (base == null) "refs/heads/$branch" else "origin/$base..refs/heads/$branch").lines().filter(String::isNotBlank)
             .map { mapOf("sha" to it.substringBefore(' '), "subject" to it.substringAfter(' ')) }
-        Outgoing(path.name, path, cloneRepos.git(path, "config", "remote.origin.url"), branch, base, commits)
+        // Clone repos tracks the work branch when the remote had it, and Push pushes to the URL, so no tracking branch is ever added.
+        val isNew = runCatching { cloneRepos.git(path, "rev-parse", "--verify", "-q", "refs/remotes/origin/$branch") }.isFailure
+        Outgoing(path.name, path, cloneRepos.git(path, "config", "remote.origin.url"), branch, base, commits, isNew)
     }
 
 
