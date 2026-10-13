@@ -74,7 +74,7 @@ class ProcessTest : AntsTest() {
         assertContains(page, """<div class="sub">Vault <b>notes</b> · Source map <b>—</b>""")
         assertContains(page, """<span class="pill p-ready">Ready</span>""")
         assertContains(page, """<label class="f" for="field-prompt">Prompt</label>""")
-        assertContains(page, """<label class="f" for="field-workBranch">Work branch <span class="muted small">(optional)</span></label>""")
+        assertContains(page, """<label class="f" for="field-workBranch">Work branch <span class="muted small" style="font-weight: 500">(optional)</span></label>""")
         assertContains(page, "No schedule. Runs start when someone presses Start.")
         assertContains(page, """<a class="btn" href="/processes/start-form/edit">＋ Add a schedule</a>""")
 

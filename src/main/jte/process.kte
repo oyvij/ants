@@ -51,7 +51,7 @@
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
 @if(error != null)<p role="alert">${error}</p>@endif
 @if(fields.isEmpty())<div class="help">This Process takes no input: its job is in the diagram.</div>@endif
-    <div class="fld"><label class="f" for="field-name">Name <span class="muted small">(optional)</span></label><div class="help">Left empty, the Run is named after its Process and start time.</div><input name="${ants.NAME}" id="field-name"></div>
+    <div class="fld"><label class="f" for="field-name">Name <span class="muted small" style="font-weight: 500">(optional)</span></label><div class="help">Left empty, the Run is named after its Process and start time.</div><input name="${ants.NAME}" id="field-name"></div>
 @if(profiles.size > 1)
     <div class="fld"><label class="f" for="field-profile">Profile</label><div class="help">The Vault and Source map the Run uses. A Run scoped to its Repos uses neither.</div>
     <select name="${ants.PROFILE}" id="field-profile" onchange="location.search = '?ants.profile=' + encodeURIComponent(this.value)">
@@ -61,7 +61,7 @@
     </select></div>
 @endif
 @for(field in fields)
-    <div class="fld"><label class="f" for="field-${field.name}">${field.label}@if(!field.required) <span class="muted small">(optional)</span>@endif</label>
+    <div class="fld"><label class="f" for="field-${field.name}">${field.label}@if(!field.required) <span class="muted small" style="font-weight: 500">(optional)</span>@endif</label>
     @if(field.type == FieldType.REPOS)
     <div class="help">${field.help?.let { "$it " } ?: ""}Pick Source map repos, type git URLs such as <span class="eg">git@github.com:you/api.git</span>, or <span class="eg">you/new-app</span> for a new private repo Ants creates on your gh login. Filled in, the Run is scoped to exactly these repos: no scout, no Vault and no Source map.</div>
     @if(repos.isNotEmpty())
@@ -126,7 +126,7 @@
     fetch(box.dataset.src)
         .then(response => response.text())
         .then(xml => viewer.importXML(xml))
-        .then(() => (box.canvas = viewer.get('canvas')).zoom('fit-viewport'));
+        .then(() => (box.canvas = viewer.get('canvas')).zoom('fit-viewport', 'auto'));
 </script>
 </main>
 </body>
