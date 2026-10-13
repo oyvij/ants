@@ -76,6 +76,7 @@ class Templates(@Value("\${ants.home}") home: Path) {
         model.addAttribute("src", "/templates/$name/diagram.bpmn")
         model.addAttribute("action", "/templates/$name")
         model.addAttribute("saveLabel", "Save")
+        model.addAttribute("list", "Templates")
         model.addAttribute("copy", if (file.startsWith(shipped)) "/templates/$name/copy" else null)
         return "modeler"
     }

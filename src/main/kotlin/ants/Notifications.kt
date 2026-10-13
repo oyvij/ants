@@ -317,7 +317,7 @@ class Notifications(
         repository.getBpmnModelInstance(task.processDefinitionId).getModelElementById<BaseElement>(task.taskDefinitionKey).property(name)
 
     /** A User Task's kind, by its [USER_TASK]: an Approve without one. */
-    private fun kind(task: Task) = property(task, USER_TASK).let { value -> UserTaskKind.entries.firstOrNull { it.value == value } ?: UserTaskKind.APPROVE }
+    private fun kind(task: Task) = UserTaskKind.of(property(task, USER_TASK))
 
     /** The Result of the Agent Task an Answer a Round names as its asker, holding the Round's questions. */
     private fun asked(task: Task) = property(task, ASKER)?.let { runtime.getVariable(task.executionId, it) }
@@ -405,11 +405,19 @@ class Notifications(
     }
 }
 
-/** A User Task's kind, its [USER_TASK] [value], and the tag of its entry on the Notification list. */
-enum class UserTaskKind(val value: String?, val tag: String) {
-    ANSWER_ROUND("answer-round", "[questions]"),
-    REVIEW_CHANGES("review-changes", "[review]"),
-    APPROVE(null, "[approve]"),
+/**
+ * A User Task's kind, its [USER_TASK] [value], the tag of its entry on the Notification list, what the modeler calls
+ * it, and the fields of its Result, which later Tasks read as `${task.field}`.
+ */
+enum class UserTaskKind(val value: String?, val tag: String, val title: String, val result: List<String>) {
+    ANSWER_ROUND("answer-round", "[questions]", "Answer a Round", listOf("answers")),
+    REVIEW_CHANGES("review-changes", "[review]", "Review changes", listOf("approved", "comment", "comments")),
+    APPROVE(null, "[approve]", "Approve", listOf("approved", "comment")),
+    ;
+
+    companion object {
+        fun of(value: String?) = entries.firstOrNull { it.value == value } ?: APPROVE
+    }
 }
 
 /** The extension property naming a User Task's [UserTaskKind]; an Approve has none. */

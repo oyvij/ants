@@ -4,6 +4,9 @@
 @param action: String = "/processes/deploy"
 @param saveLabel: String = "Save and deploy"
 @param copy: String? = null
+@param list: String = "Processes"
+@param page: String? = null
+@param note: String? = null
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
 @param shell: ants.Shell
@@ -15,19 +18,16 @@
     <meta name="color-scheme" content="${colorScheme}">
     <title>${name} · Modeler · Ants</title>
     <link rel="stylesheet" href="/vendor/camunda-bpmn-js/assets/camunda-platform-modeler.css">
-    <style>
-        main.full { height: 100vh; display: flex; flex-direction: column; }
-        .modelerWrap { flex: 1; min-height: 0; }
-        .modelerWrap > :is(.dia, .props) { height: auto; margin: 0; }
-        #checks { max-height: 8rem; overflow: auto; }
-    </style>
 </head>
 <body>
 @template.nav(shell = shell)
 <main class="full">
-<div class="crumbs"><a href="/processes">Processes</a> / ${name} / Diagram</div>
+<div class="crumbs"><a href="/${list.lowercase()}">${list}</a> / @if(page != null)<a href="${page}">${name}</a>@else${name}@endif / Diagram</div>
 <div class="ph"><h1>${name}</h1>
     <div class="acts">
+@if(note != null)
+        <span class="muted small">${note}</span>
+@endif
 @if(copy != null)
         <form method="post" action="${copy}">
             <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
@@ -39,10 +39,15 @@
 </div>
 <p id="refusal" role="alert"></p>
 <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
-<ul id="checks" aria-label="Checks"></ul>
 <div class="modelerWrap">
     <div id="canvas" data-src="${src}" data-facts="${modelerFacts}" class="dia modeler"></div>
-    <aside id="explain" class="props"></aside>
+    <div class="props">
+        <div id="explain"></div>
+        <div class="checks">
+            <div class="row"><b>Checks</b><span class="grow"></span><span id="summary"></span></div>
+            <ul id="checks" aria-label="Checks"></ul>
+        </div>
+    </div>
 </div>
 </main>
 <script src="/vendor/camunda-bpmn-js/camunda-platform-modeler.production.min.js"></script>

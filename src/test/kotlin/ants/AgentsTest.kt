@@ -261,6 +261,7 @@ class AgentsTest : AntsTest() {
         assertEquals("SAMEORIGIN", form.headers?.firstValue("X-Frame-Options")?.orElse(null)) // the modeler frames it
         assertContains(form.body, """<button class="primary">Create and use</button>""")
         assertFalse("""<nav class="side">""" in form.body) // the modeler's own page is behind the modal
+        assertContains(browser.get("/agents/new?use&skills=draft").body, Regex("""name="skills" value="draft"""")) // the Task's Skill
 
         val refused = browser.post("/agents/new", mapOf("name" to "Helper!", "cli" to "claude", "use" to ""))
         assertContains(refused.body, """<button class="primary">Create and use</button>""") // a refusal stays in the modal

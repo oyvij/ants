@@ -11,6 +11,7 @@ import org.operaton.bpm.model.bpmn.instance.SubProcess
 import org.operaton.bpm.model.bpmn.instance.MultiInstanceLoopCharacteristics
 import org.operaton.bpm.model.bpmn.instance.SequenceFlow
 import org.operaton.bpm.model.bpmn.instance.ServiceTask
+import org.operaton.bpm.model.bpmn.instance.UserTask
 import org.operaton.bpm.model.bpmn.instance.operaton.OperatonFormField
 import org.operaton.bpm.model.bpmn.instance.operaton.OperatonIn
 import org.operaton.bpm.model.bpmn.instance.operaton.OperatonInputParameter
@@ -143,7 +144,8 @@ private fun problem(catalogue: Catalogue, path: List<String>, names: Set<String>
 /**
  * What an input picker on the Task [id] offers: the start-form fields, the Run variables, the element variable of each
  * multi-instance it runs in, and the Results of the Tasks before it, an Agent Task's by field (its `summary`, its
- * `output` and each field its schema promises) and a call activity's by the [called] Process's Task. A Task is before
+ * `output` and each field its schema promises), a User Task's by its kind's Result fields, and a call activity's by the
+ * [called] Process's Task. The modeler's condition builder offers those of a decision too. A Task is before
  * it when a path leads from it to [id], so a loop puts later Tasks before it too; they read `null` until run.
  */
 internal fun offered(catalogue: Catalogue, model: BpmnModelInstance, id: String, called: (String) -> BpmnModelInstance?): List<String> {
@@ -158,9 +160,11 @@ internal fun offered(catalogue: Catalogue, model: BpmnModelInstance, id: String,
     walk(target)
     before -= generateSequence(target.parentElement) { it.parentElement }.filterIsInstance<SubProcess>().map { it.id }.toSet() // still running, no Result yet
     val fields = model.getModelElementsByType(OperatonFormField::class.java).map { it.operatonId }
-    fun results(task: Activity, key: String): List<String> =
-        if (task !is ServiceTask || task.operatonTopic != AgentLauncher.TOPIC) listOf(key)
-        else listOf("$key.summary", "$key.output") + (promised(catalogue, task)?.get("properties") as? Map<*, *>).orEmpty().keys.map { "$key.output.$it" }
+    fun results(task: Activity, key: String): List<String> = when {
+        task is UserTask -> listOf(key) + UserTaskKind.of(task.property(USER_TASK)).result.map { "$key.$it" }
+        task !is ServiceTask || task.operatonTopic != AgentLauncher.TOPIC -> listOf(key)
+        else -> listOf("$key.summary", "$key.output") + (promised(catalogue, task)?.get("properties") as? Map<*, *>).orEmpty().keys.map { "$key.output.$it" }
+    }
     val results = model.getModelElementsByType(Activity::class.java).filter { it.id in before && it.givesResult }.flatMap { task ->
         val process = (task as? CallActivity)?.calledElement?.let(called)
         process?.getModelElementsByType(Activity::class.java)?.filter { it.givesResult }?.flatMap { results(it, "${task.id}.${it.id}") } ?: results(task, task.id)

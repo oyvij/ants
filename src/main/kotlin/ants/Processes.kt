@@ -150,6 +150,7 @@ class Processes(
         val query = listOfNotNull("name" to title, source?.let { "from" to it.key })
         model.addAttribute("name", title)
         model.addAttribute("src", "/processes/new.bpmn?" + query.joinToString("&") { (k, v) -> "$k=" + URLEncoder.encode(v, Charsets.UTF_8) })
+        model.addAttribute("note", "Draft")
         return "modeler"
     }
 
@@ -170,6 +171,8 @@ class Processes(
         val process = latest(key)
         model.addAttribute("name", process.name ?: process.key)
         model.addAttribute("src", "/processes/$key/diagram.bpmn")
+        model.addAttribute("page", "/processes/$key")
+        if (process.resourceName.startsWith("shipped/")) model.addAttribute("note", "Shipped: saving makes it your own")
         return "modeler"
     }
 

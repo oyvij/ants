@@ -1,5 +1,5 @@
 // What the modeler writes into the diagram as text and reads back from it: the namespace, a field's variable name, a
-// path's condition and a Schedule's cron. Nothing here needs the page, so `node --test` checks it (src/test/js).
+// path's condition (and what it can read) and a Schedule's cron. Nothing here needs the page, so `node --test` checks it (src/test/js).
 
 const OPERATON = "http://operaton.org/schema/1.0/bpmn"
 const CAMUNDA = "http://camunda.org/schema/1.0/bpmn"
@@ -41,6 +41,15 @@ export function readCondition(body) {
         if (match[2] === undefined || literal(value) === match[2]) return {field: match[1], op, value}
     }
     return null
+}
+
+// What a decision's condition picks from: of the `${…}` references [offered] before it, the Results of [tasks] (each
+// Task's id and name) as [path, where it is from], then the run count of each of those that is [counted] in `runs`.
+export function resultFields(offered, tasks, counted) {
+    const fields = offered.map(ref => ref.slice(2, -1)).filter(path => path.split(".")[0] in tasks)
+        .map(path => [path, `from ${tasks[path.split(".")[0]]}`])
+    const roots = [...new Set(fields.map(([path]) => path.split(".")[0]))].filter(root => counted.has(root))
+    return [...fields, ...roots.map(root => [`runs.${root}`, `times ${tasks[root]} ran`])]
 }
 
 // The Schedule in words: every hour, day, weekday, week or month at a time, written as the cron Ants runs it on

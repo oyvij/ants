@@ -22,6 +22,7 @@ import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -75,7 +76,10 @@ class BrowserTest : AntsTest() {
     private fun shape(id: String) = page.locator("#canvas .djs-element[data-element-id='$id'], #diagram .djs-element[data-element-id='$id']")
 
     private val pad get() = page.locator(".djs-context-pad")
-    private val heading get() = page.locator("#explain h2")
+    private val heading get() = page.locator("#explain .kind")
+    private val panel get() = page.locator("#explain")
+    private fun button(text: String) = page.locator("#explain button", Page.LocatorOptions().setHasText(text))
+    private fun label(text: String) = page.getByLabel(text, Page.GetByLabelOptions().setExact(true))
     private val selected = Pattern.compile("\\bselected\\b")
 
     /** Opens the modeler on a blank Process and appends an Agent Task to its start event; the Task's id. */
@@ -128,13 +132,126 @@ class BrowserTest : AntsTest() {
         page.locator("#explain button", Page.LocatorOptions().setHasText("New Agent")).click()
         val form = page.frameLocator("dialog iframe")
         form.locator("input[name=name]").fill("helper")
-        form.locator("button", com.microsoft.playwright.FrameLocator.LocatorOptions().setHasText("Create and use")).click()
+        page.locator("dialog .mh button", Page.LocatorOptions().setHasText("Create and use")).click()
 
         assertThat(page.locator("dialog")).hasCount(0)
         assertThat(page.locator("#explain select").first()).hasValue("helper")
         assertEquals(modeler, page.url())
         assertThat(shape(task)).hasClass(selected) // the Task drawn, never saved, is still there
         assertTrue(home.resolve("agents/helper.md").toFile().exists())
+    }
+
+    @Test
+    fun `picking an Agent picks its first Skill and says what later Tasks can read, and the Checks turn Ready to deploy`() = browse {
+        agentTask(null, mapOf("draft" to """{"type":"object","properties":{"notes":{"type":"string"}}}""", "polish" to null))
+        val task = appendAgentTask()
+        assertThat(page.locator("#summary")).hasText(Pattern.compile("\\d+ to fix"))
+        label("Agent").selectOption("writer")
+        assertThat(label("Skill")).hasValue("draft")
+        assertThat(panel).containsText("Later Tasks can read: ${'$'}{$task.output.notes}")
+        assertThat(page.locator("#summary")).hasText("Ready to deploy")
+        page.screenshot("modeler-agent-task")
+    }
+
+    @Test
+    fun `New Skill says the Task has no Agent yet, and New Agent comes with the Task's Skill`() = browse {
+        agentTask(null)
+        appendAgentTask()
+        button("New Skill").click()
+        assertThat(page.locator("dialog.modal")).containsText("This Task has no Agent yet.")
+        page.keyboard().press("Escape")
+        label("Agent").selectOption("writer")
+        assertThat(label("Skill")).hasValue("draft")
+        button("New Skill").click()
+        assertThat(page.locator("dialog.modal")).containsText("Added to writer's Skills, and picked on this Task.")
+        page.waitForTimeout(1000.0) // the form loads in its frame
+        page.screenshot("modeler-new-skill")
+        page.keyboard().press("Escape")
+        button("New Agent").click()
+        assertThat(page.frameLocator("dialog iframe").locator("input[name=skills]")).hasValue("draft")
+    }
+
+    @Test
+    fun `a User Task asks for its kind's fields and says what later Tasks can read`() = browse {
+        page.navigate(url("/processes/new?name=Gated&from="))
+        shape("start").click()
+        pad.locator("[data-action='append.user-task']").click()
+        val task = page.locator("#canvas .djs-shape.selected").getAttribute("data-element-id")!!
+        assertThat(heading).hasText("User Task")
+        label("What you do").selectOption("Review changes")
+        assertThat(label("Walkthrough")).isVisible()
+        assertThat(panel).containsText("${'$'}{$task.comments}")
+        label("What you do").selectOption("Approve")
+        label("Title").fill("Ship it?")
+        label("Title").press("Tab")
+        assertThat(panel).containsText("Later Tasks and decisions can read: ${'$'}{$task.approved} ${'$'}{$task.comment}")
+        page.screenshot("modeler-user-task")
+        label("What you do").selectOption("Answer a Round")
+        assertThat(label("Asker")).isVisible()
+        label("What you do").selectOption("Approve")
+        assertThat(label("Title")).hasValue("Ship it?")
+        page.locator("#save").click()
+        assertThat(page).hasURL(Pattern.compile(".*/processes/gated$"))
+        val saved = http.get("/processes/gated/diagram.bpmn").body
+        assertContains(saved, """<operaton:inputParameter name="title">Ship it?</operaton:inputParameter>""")
+        assertFalse("ants.user-task" in saved)
+    }
+
+    @Test
+    fun `a decision's paths pick a condition from the Results of the Tasks before it, and one is the default`() = browse {
+        agentTask(null, mapOf("draft" to """{"type":"object","properties":{"verdict":{"type":"string"}}}"""))
+        val (process, plane) = row("decided", """<bpmn:startEvent id="start" />""", """<bpmn:userTask id="ask" name="Ask" />""", agentTaskXml("draft", "Draft"),
+            """<bpmn:exclusiveGateway id="ok" name="Ok?" default="ok-end" />""", """<bpmn:endEvent id="end" />""")
+        val back = """<bpmn:sequenceFlow id="ok-draft" sourceRef="ok" targetRef="draft"><bpmn:conditionExpression>${'$'}{!ask.approved}</bpmn:conditionExpression></bpmn:sequenceFlow>"""
+        val edge = """<bpmndi:BPMNEdge id="ok-draft_di" bpmnElement="ok-draft"><di:waypoint x="600" y="80" /><di:waypoint x="600" y="40" />""" +
+            """<di:waypoint x="450" y="40" /><di:waypoint x="450" y="80" /></bpmndi:BPMNEdge>"""
+        deploy(definitions("decided", "Decided", process + back, plane.replace("</bpmndi:BPMNPlane>", "$edge</bpmndi:BPMNPlane>")))
+
+        page.navigate(url("/processes/decided/edit"))
+        shape("ok").click()
+        assertThat(heading).hasText("Decision (exclusive gateway)")
+        assertThat(panel).containsText("Paths out (2)")
+        val toDraft = page.locator("#explain .card", Page.LocatorOptions().setHasText("→ Draft"))
+        val field = toDraft.locator("select").first()
+        assertThat(field.locator("option[value='draft.output.verdict']")).hasText("draft.output.verdict (from Draft)")
+        assertThat(field.locator("option[value='ask.approved']")).hasText("ask.approved (from Ask)")
+        assertThat(field.locator("option[value='clones']")).hasCount(0) // a Run variable, no Task's Result
+        field.selectOption("draft.output.verdict")
+        toDraft.locator("select").nth(1).selectOption("equals")
+        toDraft.locator("input[placeholder=value]").fill("redo")
+        toDraft.locator("input[placeholder=value]").press("Tab")
+        assertThat(toDraft).containsText("${'$'}{draft.output.verdict == 'redo'}")
+        page.screenshot("modeler-decision")
+
+        toDraft.locator("button", Locator.LocatorOptions().setHasText("Select")).click()
+        assertThat(heading).hasText("Path")
+        button("See every path out of Ok?").click()
+        assertThat(heading).hasText("Decision (exclusive gateway)")
+        page.locator("#save").click()
+        assertThat(page).hasURL(Pattern.compile(".*/processes/decided$"))
+        assertContains(http.get("/processes/decided/diagram.bpmn").body, "draft.output.verdict == 'redo'")
+    }
+
+    @Test
+    fun `a parallel gateway says whether it splits or joins, and an element Ants doesn't run offers what to change it to`() = browse {
+        val (process, plane) = row("odd", """<bpmn:startEvent id="start" />""", """<bpmn:parallelGateway id="fork" />""", """<bpmn:scriptTask id="script" name="Script" />""", """<bpmn:endEvent id="end" />""")
+        val aside = """<bpmn:sequenceFlow id="fork-end" sourceRef="fork" targetRef="end" />"""
+        val edge = """<bpmndi:BPMNEdge id="fork-end_di" bpmnElement="fork-end"><di:waypoint x="300" y="160" /><di:waypoint x="300" y="200" />""" +
+            """<di:waypoint x="568" y="200" /><di:waypoint x="568" y="138" /></bpmndi:BPMNEdge>"""
+        home.resolve("templates").createDirectories().resolve("odd.bpmn")
+            .writeText(definitions("odd", "Odd", process + aside, plane.replace("</bpmndi:BPMNPlane>", "$edge</bpmndi:BPMNPlane>")))
+
+        page.navigate(url("/templates/odd"))
+        shape("fork").click()
+        assertThat(heading).hasText("Parallel gateway")
+        assertThat(panel).containsText("Splits the flow: all 2 branches start at once.")
+        assertThat(panel).containsText("→ Script")
+        shape("script").click()
+        assertThat(panel).containsText("Ants doesn't run this element")
+        assertThat(panel).containsText("Change it to:")
+        page.screenshot("modeler-not-run")
+        button("Agent Task").click()
+        assertThat(heading).hasText("Agent Task")
     }
 
     @Test
