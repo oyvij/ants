@@ -27,8 +27,9 @@ const kinds = {
 }
 
 // From the server (modelerFacts in Checks.kt): the Built-in Tasks by topic, the start-form field types by the
-// `ants.type` property each field carries (the engine only knows `string`), and Items are Tickets' property and help.
-const {builtIns, fieldTypes, itemsAreTickets} = JSON.parse(document.getElementById("canvas").dataset.facts)
+// `ants.type` property each field carries (the engine only knows `string`), Items are Tickets' property and help, and
+// the Process's Profile property, help and empty choice.
+const {builtIns, fieldTypes, itemsAreTickets, profile} = JSON.parse(document.getElementById("canvas").dataset.facts)
 
 // The three Tasks Ants runs, as the BPMN each one is.
 const tasks = {
@@ -458,17 +459,17 @@ function schedulePanel(element) {
 panels["timer-start"] = element => el("div", {}, schedulePanel(element), startForm(element))
 
 // The Process: the Profile (a Vault and a Source map) its Runs use unless the start form picks another, as its
-// `ants.profile` property. Offered once the settings have more than one Profile, or when the Process names one.
+// Profile property. Offered once the settings have more than one Profile, or when the Process names one.
 panels.process = element => {
     const box = el("div")
     fetch("/catalogue.json").then(response => response.json()).then(({profiles}) => {
-        const current = agentProperties(element.businessObject)["ants.profile"] || ""
+        const current = agentProperties(element.businessObject)[profile.property] || ""
         if (profiles.length < 2 && !current) return
-        const select = el("select", {onchange: () => writeAgentTask(element, {"ants.profile": select.value || undefined})},
-            el("option", {value: "", textContent: "The default", selected: !current}),
+        const select = el("select", {onchange: () => writeAgentTask(element, {[profile.property]: select.value || undefined})},
+            el("option", {value: "", textContent: profile.none, selected: !current}),
             ...[...new Set([...profiles, current].filter(Boolean))].map(name => el("option", {value: name, textContent: name, selected: name === current})))
         box.replaceChildren(el("p", {}, el("label", {}, "Profile ", select)),
-            el("p", {textContent: "The Vault and Source map its Runs use, unless the start form picks another Profile."}))
+            el("p", {textContent: profile.help}))
     })
     return box
 }
