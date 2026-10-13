@@ -432,8 +432,9 @@ class Runs(
     @PostMapping("/runs/{id}/cancel")
     fun cancel(@PathVariable id: String): String {
         if (run(id).endTime == null) {
-            // A cancelled Run keeps its workspace; externally terminated is what its pages read as Cancelled.
-            runtime.deleteProcessInstance(id, "Cancelled by the user", false, true)
+            // A cancelled Run keeps its workspace; externally terminated is what its pages read as Cancelled. Again
+            // while the launcher locks one of its Agent Tasks at the same moment.
+            onClash { runtime.deleteProcessInstance(id, "Cancelled by the user", false, true) }
             launcher.cancel(id)
         }
         return "redirect:/runs/$id"
