@@ -167,8 +167,8 @@ class ScopedRunTest : AntsTest() {
         for ((file, key) in listOf("ship-small" to "ship_small", "ship-with-me" to "ship_with_me", "ship-by-proxy" to "ship_by_proxy", "ship-as-proposed" to "ship_as_proposed", "ship-overnight" to "ship_overnight")) {
             browser.import("shipped/processes/$file.bpmn")
             val form = browser.get("/processes/$key").body.substringAfter("action=\"/processes/$key/runs\"").substringBefore("</form>")
-            assertContains(form, """<select name="repos" multiple>""", message = key)
-            assertContains(form, """<option>api</option>""", message = key)
+            assertContains(form, """<div class="row picks">""", message = key)
+            assertContains(form, """<input type="checkbox" name="repos" value="api">""", message = key)
             assertContains(form, """<input name="repos" """, message = key)
         }
     }

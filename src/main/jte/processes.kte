@@ -1,4 +1,5 @@
 @param processes: List<org.operaton.bpm.engine.repository.ProcessDefinition>
+@param rows: List<ants.ProcessRow>
 @param error: String? = null
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
@@ -14,28 +15,43 @@
 <body>
 @template.nav(shell = shell)
 <main>
-<div class="ph"><h1>Processes</h1><div class="acts"><a class="btn primary" href="/processes/new">New Process</a></div></div>
+<div class="ph"><h1>Processes</h1><div class="acts"><button class="primary" onclick="document.getElementById('new-process').showModal()">New Process</button></div></div>
 @if(error != null)<p role="alert">${error}</p>@endif
-<ul>
-@for(process in processes)
-    <li><a href="/processes/${process.key}">${process.name ?: process.key}</a></li>
+<table id="processes">
+    <tr><th>Process</th><th>From</th><th>Vault · Source map</th><th>Schedule</th><th>Check</th><th>Live Runs</th><th></th></tr>
+@for(row in rows)
+    !{val key = row.process.key}
+    <tr class="click" onclick="location = '/processes/${key}'">
+        <td><a href="/processes/${key}"><b>${row.process.name ?: key}</b></a></td>
+        <td class="muted small">${if (row.shipped) "shipped" else "you"}</td>
+        <td class="muted small">${row.profile?.vault ?: "—"} · ${row.profile?.sourceMap ?: "—"}</td>
+        <td class="small">@if(row.schedule == null)<a href="/processes/${key}#schedule">＋ Schedule</a>@else<span title="${row.schedule.cron}">⏰ ${row.schedule.words.removePrefix("Every ")}@if(row.schedule.paused) · paused@endif</span>@endif</td>
+        <td>@if(row.ready)<span class="pill p-ready">Ready</span>@else<span class="pill p-failed">Can't start</span>@endif</td>
+        <td class="muted">${row.live}</td>
+        <td><a href="/processes/${key}/edit">Edit diagram</a></td>
+    </tr>
 @endfor
-</ul>
-<form method="get" action="/processes/new">
-    <label>Name <input name="name" placeholder="New Process"></label>
-    <label>Start from <select name="from">
-        <option value="">Blank</option>
+</table>
+<dialog class="modal" id="new-process">
+    <form method="dialog" class="mh"><b>New Process</b><span class="sp"></span><span class="muted small">Esc to close</span><button class="ghost" title="Close" aria-label="Close">✕</button></form>
+    <div class="mb">
+        <form method="get" action="/processes/new">
+            <div class="fld"><label class="f" for="new-name">Name</label><div class="help">The Process's name; the modeler opens on it, unsaved.</div><input id="new-name" name="name" placeholder="New Process"></div>
+            <div class="fld"><label class="f" for="new-from">Start from</label><div class="help">A blank diagram, or a copy of a Process.</div><select id="new-from" name="from">
+                <option value="">Blank</option>
 @for(process in processes)
-        <option value="${process.key}">${process.name ?: process.key}</option>
+                <option value="${process.key}">${process.name ?: process.key}</option>
 @endfor
-    </select></label>
-    <button class="primary">＋ New Process</button>
-</form>
-<form method="post" action="/processes" enctype="multipart/form-data">
-    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
-    <label>Import a BPMN file <input type="file" name="file" accept=".bpmn" required></label>
-    <button>Import</button>
-</form>
+            </select></div>
+            <div class="go"><button class="primary">＋ New Process</button></div>
+        </form>
+        <form method="post" action="/processes" enctype="multipart/form-data" class="subsec">
+            <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+            <div class="fld"><label class="f" for="new-file">Import a BPMN file</label><div class="help">Deployed through the Checks, like Save and deploy.</div><input type="file" id="new-file" name="file" accept=".bpmn" required></div>
+            <div class="go"><button>Import</button></div>
+        </form>
+    </div>
+</dialog>
 </main>
 </body>
 </html>

@@ -123,7 +123,7 @@ class ProfileTest : AntsTest() {
         naming("private")
         val form = browser.get("/processes/profile").body
         assertContains(form, """<option selected>private</option>""")
-        assertContains(form, "<strong>Ready</strong>")
+        assertContains(form, """<span class="pill p-ready">Ready</span>""")
         // As a Schedule's Run does, posting no Profile.
         assertContains(page(start()), """<span id="profile">Profile private</span>""")
         assertContains(claude.launches("draft").single().stdin, "The Vault is $privateVault")
