@@ -168,7 +168,7 @@ class BrowserTest : AntsTest() {
         page.screenshot("modeler-new-skill")
         page.keyboard().press("Escape")
         button("New Agent").click()
-        assertThat(page.frameLocator("dialog iframe").locator("input[name=skills]")).hasValue("draft")
+        assertThat(page.frameLocator("dialog iframe").locator(".chipsel input[type=hidden][name=skills]")).hasValue("draft") // a chip on the Agent page (#98)
     }
 
     @Test
