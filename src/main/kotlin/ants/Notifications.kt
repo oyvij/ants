@@ -150,7 +150,7 @@ class Notifications(
         model.addAttribute("entry", entry)
         model.addAttribute("details", details(entry))
         if (isPush(incident)) {
-            model.addAttribute("repos", changes(push.outgoing(entry.run), cloneRepos::git))
+            model.addAttribute("repos", changes(push.pushing(entry.run), cloneRepos::git))
             return "push"
         }
         model.addAttribute("view", view(entry))

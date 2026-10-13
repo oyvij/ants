@@ -14,9 +14,9 @@ import kotlin.io.path.name
  * One of the Run's clones as Push sees it: its [remote] (the fetch URL, since the push URL is dead), its work
  * [branch], its [base] (the remote's default branch, null when the remote had none) and the [commits] on the work
  * branch since the base, newest first, each `{sha, subject}`. [isNew] when the remote didn't have the work branch when
- * it was cloned.
+ * it was cloned. [toPush] when it has commits since the base that the remote's work branch didn't have.
  */
-class Outgoing(val repo: String, val path: Path, val remote: String, val branch: String, val base: String?, val commits: List<Map<String, String>>, val isNew: Boolean) {
+class Outgoing(val repo: String, val path: Path, val remote: String, val branch: String, val base: String?, val commits: List<Map<String, String>>, val isNew: Boolean, val toPush: Boolean) {
     /** The [remote] as the pages show it: `github.com/stacc/api` for `git@github.com:stacc/api.git` or its https URL. */
     val shortRemote get() = remote.replace(Regex("^git@([^:]+):"), "$1/").replace(Regex("^https?://"), "").removeSuffix(".git")
 }
@@ -37,7 +37,7 @@ class Push(
 ) : BuiltInWorker(externalTasks, "Push", TOPIC, Duration.ofMinutes(30), { it.variables(AgentLauncher.ACTION) }) {
     /** Waits on the user at first; then pushes, or after a push by hand (Continue) completes with what the remotes hold. */
     override fun handle(task: LockedExternalTask) {
-        val repos = outgoing(runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult().rootProcessInstanceId)
+        val repos = pushing(runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult().rootProcessInstanceId)
         if (repos.isEmpty()) return externalTasks.complete(task.id, WORKER, mapOf(task.activityId to ArrayList<Any>())) // nothing changed, nothing to ask
         val action = task.variables[AgentLauncher.ACTION] ?: return wait(task, repos)
         runtime.removeVariablesLocal(task.executionId, listOf(AgentLauncher.ACTION, AgentLauncher.INSTRUCTION)) // the choice is used once
@@ -82,19 +82,19 @@ class Push(
         "isNew" to repo.isNew, "commits" to repo.commits, "pushed" to (error == null), "error" to error, "compareUrl" to compareUrl(repo),
     )
 
-    /**
-     * The Run's clones that have something to push, by name, each on the work branch Clone repos put it on: a clone
-     * with no commits since the base, or whose work branch the remote had where it still is, is left out.
-     */
-    fun outgoing(run: String): List<Outgoing> = clones(names.runWorkspace(run)).mapNotNull { path ->
+    /** The Run's clones that have something to push ([Outgoing.toPush]), which Push offers and pushes. */
+    fun pushing(run: String) = outgoing(run).filter(Outgoing::toPush)
+
+    /** The Run's clones, by name, each on the work branch Clone repos put it on. */
+    fun outgoing(run: String): List<Outgoing> = clones(names.runWorkspace(run)).map { path ->
         val branch = cloneRepos.workBranch(path)
         val base = runCatching { cloneRepos.git(path, "symbolic-ref", "--short", "refs/remotes/origin/HEAD").removePrefix("origin/") }.getOrNull()
         val commits = cloneRepos.git(path, "log", "--format=%H %s", if (base == null) "refs/heads/$branch" else "origin/$base..refs/heads/$branch").lines().filter(String::isNotBlank)
             .map { mapOf("sha" to it.substringBefore(' '), "subject" to it.substringAfter(' ')) }
         // Clone repos tracks the work branch when the remote had it, and Push pushes to the URL, so no tracking branch is ever added.
         val remoteHead = runCatching { cloneRepos.git(path, "rev-parse", "--verify", "-q", "refs/remotes/origin/$branch") }.getOrNull()
-        if (commits.isEmpty() || remoteHead == cloneRepos.git(path, "rev-parse", "refs/heads/$branch")) return@mapNotNull null
-        Outgoing(path.name, path, cloneRepos.git(path, "config", "remote.origin.url"), branch, base, commits, remoteHead == null)
+        val toPush = commits.isNotEmpty() && remoteHead != cloneRepos.git(path, "rev-parse", "refs/heads/$branch")
+        Outgoing(path.name, path, cloneRepos.git(path, "config", "remote.origin.url"), branch, base, commits, remoteHead == null, toPush)
     }
 
 
