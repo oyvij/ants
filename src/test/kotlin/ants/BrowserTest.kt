@@ -198,7 +198,7 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
-    fun `a decision's paths pick a condition from the Results of the Tasks before it, and one is the default`() = browse {
+    fun `a decision's paths pick a condition from what the decision can read, such as the Results of the Tasks before it, and one is the default`() = browse {
         agentTask(null, mapOf("draft" to """{"type":"object","properties":{"verdict":{"type":"string"}}}"""))
         val (process, plane) = row("decided", """<bpmn:startEvent id="start" />""", """<bpmn:userTask id="ask" name="Ask" />""", agentTaskXml("draft", "Draft"),
             """<bpmn:exclusiveGateway id="ok" name="Ok?" default="ok-end" />""", """<bpmn:endEvent id="end" />""")
@@ -215,7 +215,7 @@ class BrowserTest : AntsTest() {
         val field = toDraft.locator("select").first()
         assertThat(field.locator("option[value='draft.output.verdict']")).hasText("draft.output.verdict (from Draft)")
         assertThat(field.locator("option[value='ask.approved']")).hasText("ask.approved (from Ask)")
-        assertThat(field.locator("option[value='clones']")).hasCount(0) // a Run variable, no Task's Result
+        assertThat(field.locator("option[value='clones']")).hasText("clones (Ants' own)")
         field.selectOption("draft.output.verdict")
         toDraft.locator("select").nth(1).selectOption("equals")
         toDraft.locator("input[placeholder=value]").fill("redo")

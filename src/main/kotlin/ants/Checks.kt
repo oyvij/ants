@@ -106,7 +106,7 @@ private val userTaskFields: Map<UserTaskKind, List<Map<String, String>>> = run {
 /**
  * What the modeler page knows of Ants from the server, as JSON on its canvas's `data-facts`: each element kind's name and
  * explanation, the Built-in Tasks, the start-form field types, Items are Tickets' property and what it does, and the Process's Profile property, what it
- * does and how its empty choice reads, and each User Task kind's fields and Result.
+ * does and how its empty choice reads, Ants' own Run variables, and each User Task kind's fields and Result.
  */
 val modelerFacts: String = JsonMapper.shared().writeValueAsString(mapOf(
     "kinds" to elementKinds,
@@ -122,6 +122,7 @@ val modelerFacts: String = JsonMapper.shared().writeValueAsString(mapOf(
         "help" to "The Vault and Source map its Runs use, unless the start form picks another Profile.",
         "none" to "The default",
     ),
+    "runVariables" to RUN_VARIABLES,
     "userTasks" to userTaskFields.map { (kind, fields) -> mapOf("value" to kind.value.orEmpty(), "name" to kind.title, "result" to kind.result, "fields" to fields) },
 ))
 

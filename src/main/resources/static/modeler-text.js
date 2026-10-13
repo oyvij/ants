@@ -43,13 +43,20 @@ export function readCondition(body) {
     return null
 }
 
-// What a decision's condition picks from: of the `${…}` references [offered] before it, the Results of [tasks] (each
-// Task's id and name) as [path, where it is from], then the run count of each of those that is [counted] in `runs`.
-export function resultFields(offered, tasks, counted) {
-    const fields = offered.map(ref => ref.slice(2, -1)).filter(path => path.split(".")[0] in tasks)
-        .map(path => [path, `from ${tasks[path.split(".")[0]]}`])
-    const roots = [...new Set(fields.map(([path]) => path.split(".")[0]))].filter(root => counted.has(root))
-    return [...fields, ...roots.map(root => [`runs.${root}`, `times ${tasks[root]} ran`])]
+// What a decision's condition picks from, each [path, where it is from], of the `${…}` references [offered] before it:
+// the start form's [startFields], the Results of [tasks] (each Task's id and name), then the run count of each of
+// those that is [counted] in `runs`, Ants' own [runVariables], and anything else, a multi-instance's item.
+export function resultFields(offered, tasks, counted, startFields, runVariables) {
+    const paths = offered.map(ref => ref.slice(2, -1)), root = path => path.split(".")[0]
+    const results = paths.filter(path => root(path) in tasks).map(path => [path, `from ${tasks[root(path)]}`])
+    const roots = [...new Set(results.map(([path]) => root(path)))].filter(it => counted.has(it))
+    const rest = paths.filter(path => !(root(path) in tasks) && !startFields.includes(path))
+    return [
+        ...paths.filter(path => startFields.includes(path)).map(path => [path, "from the start form"]),
+        ...results, ...roots.map(it => [`runs.${it}`, `times ${tasks[it]} ran`]),
+        ...rest.filter(path => runVariables.includes(root(path))).map(path => [path, "Ants' own"]),
+        ...rest.filter(path => !runVariables.includes(root(path))).map(path => [path, "a multi-instance's item"]),
+    ]
 }
 
 // The Schedule in words: every hour, day, weekday, week or month at a time, written as the cron Ants runs it on

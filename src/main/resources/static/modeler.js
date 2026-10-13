@@ -9,8 +9,9 @@ import {camel, cronOf, everies, operators, readCondition, readSchedule, resultFi
 // From the server (modelerFacts in Checks.kt): what Ants calls each element it runs and what it does there (the
 // palette's tooltip and the panel's explanation), the Built-in Tasks by topic with their name and what each does, the start-form field types by the
 // `ants.type` property each field carries (the engine only knows `string`), Items are Tickets' property and help, the
-// Process's Profile property, help and empty choice, and each User Task kind with its fields and Result.
-const {kinds, builtIns, fieldTypes, itemsAreTickets, profile, userTasks} = JSON.parse(document.getElementById("canvas").dataset.facts)
+// Process's Profile property, help and empty choice, Ants' own Run variables, and each User Task kind with its fields
+// and Result.
+const {kinds, builtIns, fieldTypes, itemsAreTickets, profile, runVariables, userTasks} = JSON.parse(document.getElementById("canvas").dataset.facts)
 
 // The three Tasks Ants runs, as the BPMN each one is, and their colour on the diagram and in the palette.
 const tasks = {
@@ -340,11 +341,14 @@ async function offeredAt(element) {
     return response.json()
 }
 
-// What a decision's condition can read: the Results of the Tasks before [element], each with the Task it is from, and
-// their run counts.
+// What a decision's condition can read: the start form's fields, the Results of the Tasks before [element], each with
+// the Task it is from, and their run counts, Ants' own variables and a multi-instance's item.
 async function fieldsBefore(element) {
-    const results = modeler.get("elementRegistry").filter(e => !e.labelTarget && ["agent", "user", "built-in", "call", "subprocess"].includes(kindOf(e)))
-    return resultFields(await offeredAt(element), Object.fromEntries(results.map(e => [e.id, nameOf(e)])), new Set(results.filter(e => tasks[kindOf(e)]).map(e => e.id)))
+    const registry = modeler.get("elementRegistry")
+    const results = registry.filter(e => !e.labelTarget && ["agent", "user", "built-in", "call", "subprocess"].includes(kindOf(e)))
+    const startFields = registry.filter(e => e.type === "bpmn:StartEvent").flatMap(e => readForm(e.businessObject).map(field => field.id))
+    return resultFields(await offeredAt(element), Object.fromEntries(results.map(e => [e.id, nameOf(e)])), new Set(results.filter(e => tasks[kindOf(e)]).map(e => e.id)),
+        startFields, runVariables)
 }
 
 // The condition builder, for one path out of [gateway]: its label, whether it is the default, else a Result field from
@@ -357,7 +361,7 @@ function pathEditor(gateway, flow, fields) {
     const read = readCondition(body) || {field: "", op: "is true", value: ""}
     const shown = el("div", {className: "help mono", textContent: isDefault ? "(default: taken when no other condition matches)" : body || "(no condition yet)"})
     const missing = read.field && !fields.some(([path]) => path === read.field) ? [[read.field, "not before this decision"]] : []
-    const field = el("select", {}, el("option", {value: "", textContent: "Choose a Result field…"}),
+    const field = el("select", {}, el("option", {value: "", textContent: "Choose a field…"}),
         ...[...missing, ...fields].map(([path, from]) => el("option", {value: path, textContent: `${path} (${from})`, selected: path === read.field})))
     const op = el("select", {}, ...Object.keys(operators).map(name => el("option", {value: name, textContent: name, selected: name === read.op})))
     const value = el("input", {value: read.value, placeholder: "value"})
