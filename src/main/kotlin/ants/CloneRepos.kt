@@ -24,7 +24,7 @@ fun clones(workspace: Path): List<Path> =
  * into `<Run workspace>/repos/<name>/` at the remote's default branch, borrowing the Source map's local checkout's
  * objects (`--reference … --dissociate`), and puts it on the Run's work branch: the branch the Run's clones are
  * already on, else the `branch` input, else `ants/<slug>` of the Run's name, with a counter suffix (`-2`, `-3` …) while another live
- * Run holds it. The work branch is checked out when the remote has it, otherwise created. The push URL is dead, so no
+ * Run holds it, or, for `ants/<slug>`, while the remote has it. The work branch is checked out when the remote has it, otherwise created. The push URL is dead, so no
  * Agent pushes; Push gives the real remote itself. A repo already cloned is left alone. The Result is the repos it
  * cloned, `[{name, path, commit}]`, `path` relative to the Run workspace, and they are added to the Run's `clones`.
  * A scoped Run ([SCOPE]) clones its scope instead, whatever `repos` names, first creating each new repo on GitHub.
@@ -50,7 +50,7 @@ class CloneRepos(
             .map { known[it] ?: url(it) ?: error("The Source map ${settings.profile(profile)?.sourceMap} has no repo $it") }
             .filter { !repos.resolve(it.name).exists() }
             .map { if (scope != null && newRepo(it.remote)) it.copy(remote = create(it.remote)) else it }
-        val branch by lazy { workBranch(run, task.variables["branch"]?.toString()) }
+        val branch by lazy { workBranch(run, task.variables["branch"]?.toString(), wanted.map(Repo::remote), repos) }
         val cloned = wanted.map { repo -> cloneOne(repo, repos, branch) }
         @Suppress("UNCHECKED_CAST")
         val clones = (task.variables["clones"] as? List<Map<String, String>>).orEmpty() + cloned
@@ -77,13 +77,16 @@ class CloneRepos(
 
     /**
      * The work branch of [run]: the one its clones were put on, else [asked], else `ants/<slug>` ([RunNames.defaultBranch]), suffixed `-2`, `-3` …
-     * while another live Run's clones were put on it.
+     * while another live Run's clones were put on it, or, for the default, while any of its [remotes] has it (asked from [dir]).
      */
-    private fun workBranch(run: String, asked: String?): String {
+    private fun workBranch(run: String, asked: String?, remotes: List<String>, dir: Path): String {
         branches(run).firstOrNull()?.let { return it }
-        val wanted = asked?.takeIf(String::isNotBlank)?.trim() ?: names.defaultBranch(run)
+        val given = asked?.takeIf(String::isNotBlank)?.trim()
+        val wanted = given ?: names.defaultBranch(run)
         val held = runtime.createProcessInstanceQuery().rootProcessInstances().list().map { it.id }.filter { it != run }.flatMap(::branches).toSet()
-        return generateSequence(1) { it + 1 }.map { if (it == 1) wanted else "$wanted-$it" }.first { it !in held }
+        // A given branch the remote has is built on; a default one there is an earlier Run's, as one of the same name pushed it.
+        fun taken(branch: String) = branch in held || given == null && remotes.any { git(dir, "ls-remote", "--heads", it, "refs/heads/$branch").isNotEmpty() }
+        return generateSequence(1) { it + 1 }.map { if (it == 1) wanted else "$wanted-$it" }.first { !taken(it) }
     }
 
     /** The work branches the clones in [run]'s Run workspace were put on. */

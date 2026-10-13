@@ -88,6 +88,16 @@ class CloneReposTest : AntsTest() {
     }
 
     @Test
+    fun `a default work branch any of the Run's remotes already has gets a counter suffix`() {
+        val api = repo("api")
+        val web = repo("web")
+        git(web.local, "push", "-q", "origin", "HEAD:ants/same-name")
+        sourceMap(api, web)
+        val run = start(listOf("api", "web"), name = "Same name")
+        assertEquals(listOf("ants/same-name-2", "ants/same-name-2"), listOf("api", "web").map { git(clone(run, it), "branch", "--show-current") })
+    }
+
+    @Test
     fun `git push from a clone fails`() {
         val api = repo("api")
         sourceMap(api)
