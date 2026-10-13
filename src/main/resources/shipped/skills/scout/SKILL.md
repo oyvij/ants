@@ -1,6 +1,6 @@
 ---
 name: scout
-description: Read a Run's prompt, the Vault and the Source map, never code, and name the repos the Run works in, a work branch and a brief.
+description: Read a Run's prompt, the Vault and the Source map, never code, and pick the repos the Run works in, a work branch and a brief.
 metadata:
   ants-inputs: prompt sourceMap
   ants-uses: search-knowledge
@@ -21,26 +21,32 @@ Skill. Your inputs:
 You read the prompt, the Source map and the Vault, and never code: there are no clones yet, and
 you must not look for any.
 
-## 1. Name the repos
-
-`repos` holds only:
-
-- a Source map `name` the prompt names, matched loosely (case, spaces, hyphens, a plural, a
-  common short form), and
-- a git URL that appears word for word in the prompt.
-
-Nothing else: not a repo the Vault says is related, and not one you think the work might touch.
-
-- A repo the prompt names that matches no Source map name, or more than one, is `stuck`. Say in
-  `needs` which name you couldn't place, and the Source map names closest to it, so the user can
-  name the repo or add it to the Source map, then Continue.
-- A prompt that names no repo gives `repos: []`. That is not stuck.
-
-## 2. Search the Vault
+## 1. Search the Vault
 
 Start the `knowledge-searcher` Subagent with the Vault's path, the search-knowledge Skill's path
-and the subject of the prompt. Search once more if its answer opens a question the prompt depends
-on. Use what it finds only for the brief; it never adds a repo.
+and the subject of the prompt: the features, screens, services and terms it names, and which
+repos the Notes say hold them. Search once more if its answer opens a question the prompt depends
+on, or doesn't yet tie the work to a repo.
+
+## 2. Pick the repos
+
+The user picked no repos on the start form: a Run they pick repos for doesn't launch you. So you
+pick the repos the work changes, from the Source map:
+
+- each Source map `name` the prompt names, matched loosely (case, spaces, hyphens, a plural, a
+  common short form), and each git URL that appears word for word in the prompt;
+- else each Source map `name` the Vault ties the work to: the repo a Note says holds the feature,
+  screen or service the prompt is about, and the one the change has to be made in, not every repo
+  the Notes mention.
+
+`repos` holds only Source map names and the prompt's git URLs: never a repo outside the Source
+map, and never a new one.
+
+Answer `stuck` when you can't pick, and say in `needs` what you couldn't place and the Source map
+names closest to it, so the user can answer with the repos, then Continue:
+
+- a repo the prompt names that matches no Source map name, or more than one;
+- work the Vault ties to no repo, or to several with nothing to choose between them.
 
 ## 3. Name a work branch
 
@@ -52,7 +58,7 @@ spaces. The user's own branch, given on the start form, wins over yours.
 Write `scout/brief.md`:
 
 - **Prompt**: the prompt as you understood it, in a few lines.
-- **Repos**: each repo in `repos` and why.
+- **Repos**: each repo in `repos`, and the prompt's words or the `[[Note]]` that tie it to the work.
 - **Notes**: the relevant Vault Notes as `[[Name]]`, one line each on what they say.
 - **Open**: what the Vault doesn't answer that the work will need.
 
