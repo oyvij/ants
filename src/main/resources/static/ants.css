@@ -377,6 +377,15 @@ table.diff tr.picked { background: rgba(129, 140, 248, .25); }
 .card.push .kv { margin-top: 10px; grid-template-columns: 90px 1fr; } .card.push .commit { padding: 2px 0; }
 main form.row:is(.pushacts, .remove) { display: flex; margin: 16px 0 0; } #comments form.row { margin: 0; }
 
+/* Settings: its lists' name column and number fields keep the prototype's widths, and a long path wraps in its card. */
+.settings .grid2 > .card { min-width: 0; }
+.settings .kv code { overflow-wrap: anywhere; } .settings .cmd code { min-width: 0; }
+.settings .row > .name { width: 180px; flex: none; }
+.settings input.num { width: 90px; }
+.settings .nowrap, .settings .listed label { white-space: nowrap; font-weight: 500; }
+.settings .subsec > b + .help { margin-top: 2px; }
+.settings .subsec .fld:first-of-type label.f { margin-top: 10px; }
+
 /*
  * Until the page tickets: the pages whose markup isn't the prototype's yet, styled by their elements. Each page ticket
  * moves its page onto the classes above and deletes what here no longer styles anything.

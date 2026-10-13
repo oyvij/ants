@@ -39,7 +39,7 @@ class Updates(
     @Value("\${ants.releases:https://github.com/oyvij/ants/releases/latest/download}") releases: String,
     @Value("\${ants.update-every:6h}") private val every: Duration,
     /** ANTS_DOCKER, which the image sets. */
-    @Value("\${ants.docker:false}") private val docker: Boolean,
+    @Value("\${ants.docker:false}") val docker: Boolean,
     build: BuildProperties,
     private val models: Models,
     private val streams: Streams,
@@ -54,7 +54,16 @@ class Updates(
 
     @EventListener(ApplicationReadyEvent::class)
     fun start() {
-        loop.scheduleWithFixedDelay(::check, 0, every.toMillis(), MILLISECONDS)
+        loop.scheduleWithFixedDelay({ check() }, 0, every.toMillis(), MILLISECONDS)
+    }
+
+    /** What the last check found, and how Update went, for the settings page's Updates card. */
+    val current get() = notice
+
+    /** Settings' **Check now**: checks at once, and says what it found. */
+    fun checkNow(): Toast = when {
+        !check() -> Toast("Couldn't check", "the release list didn't answer; the log says why.")
+        else -> notice.newer?.let { Toast("Checked", "Ants $it is available.") } ?: Toast("Checked", "nothing newer.")
     }
 
     @PreDestroy
@@ -64,21 +73,24 @@ class Updates(
 
     /**
      * Reads the newest release's version from its SHA256SUMS, which names its tarball, and refreshes the model list from
-     * the model status table. Offline, the last answers stand.
+     * the model status table. Offline, the last answers stand. False when the release couldn't be read.
      */
-    private fun check() {
-        try {
+    private fun check(): Boolean {
+        val read = try {
             val sums = URI("$releases/SHA256SUMS").toURL().readText()
             val release = Regex(tarball("""(\S+)""")).find(sums)?.groupValues?.get(1) // its dots match any character too
             synchronized(this) { notice = notice.copy(newer = release?.takeIf { Version.parse(it) > version }) }
+            true
         } catch (e: Exception) {
             log.info("No update check: $e")
+            false
         }
         try {
             models.check()
         } catch (e: Exception) {
             log.info("The model list wasn't refreshed: $e")
         }
+        return read
     }
 
     /** The nav's update notice as HTML: a newer release with **Update**, how Update is going, or nothing. */

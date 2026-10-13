@@ -4,6 +4,10 @@
 @param message: String? = null
 @param passwordFromEnv: Boolean
 @param login: ants.ClaudeLogin
+@param home: String
+@param address: String
+@param update: ants.UpdateNotice
+@param docker: Boolean
 @param colorScheme: String = "light dark"
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param shell: ants.Shell
@@ -14,6 +18,7 @@
     @template.app()
     <meta name="color-scheme" content="${colorScheme}">
     <title>Settings · Ants</title>
+    <script src="/settings.js" defer></script>
 </head>
 <body>
 @template.nav(shell = shell)
@@ -21,115 +26,107 @@
 <div class="ph"><h1>Settings</h1><div class="acts"><button class="primary" form="settings" name="action" value="save">Save</button></div>
     <div class="sub">Written to <code>${file}</code>. A hand edit to it shows here.</div></div>
 @if(message != null)<p role="alert">${message}</p>@endif
-<section aria-labelledby="claude-login">
-    <h2 id="claude-login">Claude login</h2>
-    <p>@if(login.loggedIn)Logged in (${login.method}).@else Not logged in.@endif
-        Agents run on Ants' own Claude login, never yours. To log in, run in a terminal: <code>${login.command}</code></p>
-@if(login.apiKeySource != null)
-    <p role="alert">An API key is in use (apiKeySource: ${login.apiKeySource}). Agents run on the subscription login only:
-        remove the key from Ants' Claude login and log in again.</p>
-@endif
-@if(login.usage.isEmpty())
-    <p>No usage reported yet; it shows after an Agent Task runs.</p>
-@else
-    <ul>
-@for(usage in login.usage)
-        <li>${usage}</li>
-@endfor
-    </ul>
-@endif
-</section>
-<form method="post" action="/settings" id="settings">
+<form method="post" action="/settings" id="settings" class="settings">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
-    <fieldset>
-        <legend>Commands</legend>
-@for(cli in Settings.CLIS)
-        <p><label>${cli} <input name="${cli}.path" value="${form.paths[cli]}" size="50"></label></p>
-@endfor
-        <p><button name="action" value="detect">Detect</button> Finds them through your login shell.</p>
-@for(cli in Settings.AI_CLIS)
-        <p><label>${cli} command <input name="${cli}.command" value="${form.commands[cli]}" placeholder="${cli}'s path" size="50"></label>
-            Ants appends its flags, for example <code>nono run --profile ${cli} -- ${cli}</code>.</p>
-        <p><label>${cli} environment allow-list <input name="${cli}.env" value="${form.envs[cli]}" placeholder="${Settings.DEFAULT_ENV.joinToString(" ")}" size="50"></label></p>
-@endfor
-        <p><label>Varde's config.toml <input name="varde-config" value="${form.vardeConfig}" placeholder="~/.varde/config.toml" size="50"></label>
-            <button name="action" value="varde">Fill from Varde</button> Fills a command and allow-list from its <code>[ai]</code>.</p>
-    </fieldset>
-
-    <fieldset>
-        <legend>Agent Tasks at once</legend>
-        <p><input type="number" min="1" name="agent-tasks" value="${form.agentTasks}" placeholder="3" aria-label="Agent Tasks at once">
-            Live CLI processes across all Runs. More wait as Queued.</p>
-    </fieldset>
-
-    <fieldset>
-        <legend>Subagent depth</legend>
-        <p><input type="number" min="1" name="subagent-depth" value="${form.subagentDepth}" placeholder="1" aria-label="Subagent depth">
-            How deep claude's Subagents may nest. At 1 a Task's Subagents start none of their own.</p>
-    </fieldset>
-
-    <fieldset>
-        <legend>Vaults</legend>
-        @template.named(list = "vaults", default = "default-vault", named = form.vaults)
-    </fieldset>
-
-    <fieldset>
-        <legend>Source maps</legend>
-        @template.named(list = "source-maps", default = "default-source-map", named = form.sourceMaps)
-    </fieldset>
-
-    <fieldset>
-        <legend>Profiles</legend>
-        <p>Each pairs a Vault with a Source map, such as one for work and one for private repos. A Process can name its
-            Profile, and the start form picks the Run's. With none, every Run uses the default Vault and Source map.
-            Empty a name to remove its Profile; a new Vault or Source map is offered here once saved.</p>
-@for((i, row) in form.shownProfiles.withIndex())
-        <p>
-            <input name="profiles[${i}].name" value="${row.name}" aria-label="Name">
-            <select name="profiles[${i}].vault" aria-label="Vault"><option value="">Vault</option>
-@for(name in (form.vaults.rows.map { it.first } + row.vault).filter(String::isNotEmpty).distinct())
-                <option selected="${name == row.vault}">${name}</option>
-@endfor
-            </select>
-            <select name="profiles[${i}].source-map" aria-label="Source map"><option value="">Source map</option>
-@for(name in (form.sourceMaps.rows.map { it.first } + row.sourceMap).filter(String::isNotEmpty).distinct())
-                <option selected="${name == row.sourceMap}">${name}</option>
-@endfor
-            </select>
-            <label><input type="radio" name="default-profile" value="${i}" checked="${i == form.defaultProfile}"> default</label>
-        </p>
-@endfor
-    </fieldset>
-
-    <fieldset>
-        <legend>Extra folders, one per line</legend>
-        <p><label>Agent folders, after <code>agents/</code><br><textarea name="agent-folders" rows="3" cols="60">${form.agentFolders}</textarea></label></p>
-        <p><label>Skill folders, after <code>skills/</code><br><textarea name="skill-folders" rows="3" cols="60">${form.skillFolders}</textarea></label></p>
-    </fieldset>
-
-    <fieldset>
-        <legend>Password</legend>
-@if(passwordFromEnv)
-        <p>ANTS_PASSWORD or ANTS_PASSWORD_FILE sets the password, over this file's; change it there.</p>
-@else
-        <p><label>New password <input type="password" name="password" autocomplete="new-password"></label> Takes effect at the next login.</p>
+    <div class="grid2"><div class="card"><h3>Claude login</h3>
+        <div class="kv"><span class="k">Status</span><span>@if(login.loggedIn)<span class="pill p-ready">Logged in</span> ${login.method}@else<span class="pill p-failed">Not logged in</span>@endif</span>
+            <span class="k">Config folder</span><span><code>${login.folder.toString()}</code></span>
+            <span class="k">Usage</span><span>@if(login.usage.isEmpty())<span class="muted small">No usage reported yet; it shows after an Agent Task runs.</span>@else
+@for(usage in login.usage)<div class="meter"><span>${usage.window}</span><div class="track"><div class="fill${if (usage.percent > 75) " hot" else ""}" style="width:${usage.percent}%"></div></div><b>${usage.percent}%</b></div>@endfor
+@if(login.resets.isNotEmpty())<div class="help">${login.resets}</div>@endif@endif</span></div>
+@if(login.apiKeySource != null)
+        <p role="alert">An API key is in use (apiKeySource: ${login.apiKeySource}). Agents run on the subscription login only:
+            remove the key from Ants' Claude login and log in again.</p>
 @endif
-    </fieldset>
-
-    <fieldset>
-        <legend>So far</legend>
-        <p><label><input type="checkbox" name="so-far" checked="${form.soFar}"> Write a So far paragraph on running Tasks</label>
-            haiku rewrites each Task's new Transcript lines every couple of minutes; its tokens count on the Task.</p>
-    </fieldset>
-
-    <fieldset>
-        <legend>Theme</legend>
-@for(theme in listOf("system", "light", "dark"))
-        <label><input type="radio" name="theme" value="${theme}" checked="${theme == form.theme}"> ${theme}</label>
+        <div class="subsec"><b class="small">Log in again</b><div class="help">Agents run on Ants' own Claude login, never yours. Run this in a terminal, then press <b>Check login</b>.</div>
+            <div class="cmd"><code>${login.command}</code><button type="button" data-copy>Copy</button></div>
+            <button name="action" value="login">Check login</button></div>
+        <div class="subsec"><b class="small">Agent Tasks at once</b><div class="help">Live CLI processes across all Runs. More wait as <b>Queued</b>.</div>
+            <input type="number" min="1" name="agent-tasks" value="${form.agentTasks}" placeholder="3" aria-label="Agent Tasks at once" class="num"></div>
+        <div class="subsec"><b class="small">Subagent depth</b><div class="help">How deep claude's Subagents may nest. At 1 a Task's Subagents start none of their own.</div>
+            <input type="number" min="1" name="subagent-depth" value="${form.subagentDepth}" placeholder="1" aria-label="Subagent depth" class="num"></div></div>
+    <div class="card"><h3>Commands</h3>
+@for(cli in Settings.CLIS)
+        <div class="fld"><label class="f" for="${cli}.path">${cli}</label><input class="mono" id="${cli}.path" name="${cli}.path" value="${form.paths[cli]}"></div>
 @endfor
-    </fieldset>
+        <p class="row"><button name="action" value="detect">Detect</button> <span class="muted small">Finds them through your login shell.</span></p>
+@for(cli in Settings.AI_CLIS)
+        <div class="subsec"><b class="small">How Ants runs ${cli}</b>
+            <div class="fld"><label class="f" for="${cli}.command">Command</label><div class="help">Ants appends its flags, for example <span class="eg">nono run --profile ${cli} -- ${cli}</span></div>
+                <input class="mono" id="${cli}.command" name="${cli}.command" value="${form.commands[cli]}" placeholder="${cli}'s path"></div>
+            <div class="fld"><label class="f" for="${cli}.env">Environment allow-list</label>
+                <input class="mono" id="${cli}.env" name="${cli}.env" value="${form.envs[cli]}" placeholder="${Settings.DEFAULT_ENV.joinToString(" ")}"></div></div>
+@endfor
+        <div class="subsec"><b class="small">Varde's config.toml</b><div class="help">Fills a command and allow-list from its <code>[ai]</code>.</div>
+            <div class="row"><input class="grow mono" name="varde-config" value="${form.vardeConfig}" placeholder="~/.varde/config.toml" aria-label="Varde's config.toml"><button name="action" value="varde">Fill from Varde</button></div></div></div></div>
 
-    <p><button class="primary" name="action" value="save">Save</button></p>
+    <div class="card"><h3>Vaults</h3><div class="help">Profiles below pair them with Source maps; with no Profile, every Run uses the default.</div>
+        @template.named(list = "vaults", default = "default-vault", named = form.vaults)</div>
+    <div class="card"><h3>Source maps</h3><div class="help">Profiles below pair them with Vaults; with no Profile, every Run uses the default.</div>
+        @template.named(list = "source-maps", default = "default-source-map", named = form.sourceMaps)</div>
+
+    <div class="card"><h3>Profiles</h3><div class="help">Each pairs a Vault with a Source map, such as one for work and one for private repos. A Process can name its
+        Profile, and the start form picks the Run's. With none, every Run uses the default Vault and Source map.
+        A new Vault or Source map is offered here once saved.</div>
+        <div class="listed">
+@for((i, row) in form.shownProfiles.withIndex())
+            <div class="row" hidden="${row.name.isEmpty()}">
+                <input class="name" name="profiles[${i}].name" value="${row.name}" aria-label="Name">
+                <select class="grow" name="profiles[${i}].vault" aria-label="Vault"><option value="">Vault</option>
+@for(name in (form.vaults.rows.map { it.first } + row.vault).filter(String::isNotEmpty).distinct())
+                    <option selected="${name == row.vault}">${name}</option>
+@endfor
+                </select>
+                <select class="grow" name="profiles[${i}].source-map" aria-label="Source map"><option value="">Source map</option>
+@for(name in (form.sourceMaps.rows.map { it.first } + row.sourceMap).filter(String::isNotEmpty).distinct())
+                    <option selected="${name == row.sourceMap}">${name}</option>
+@endfor
+                </select>
+                <label class="row small"><input type="radio" name="default-profile" value="${i}" checked="${i == form.defaultProfile}"> default</label>
+                <button type="button" class="ghost" data-remove>Remove</button>
+            </div>
+@endfor
+            <button type="button" data-add>＋ Add</button></div></div>
+
+    <div class="grid2">
+@for((name, label, help) in listOf(Triple("agent-folders", "Agent folders", "Every <code>*.md</code> directly inside is an Agent."), Triple("skill-folders", "Skill folders", "Every folder holding a <code>SKILL.md</code>, at any depth, is a Skill.")))
+        <div class="card"><h3>${label}</h3><div class="help">$unsafe{help}</div><div class="listed">
+            <div class="row"><input class="grow mono" value="${home}/${name.removeSuffix("-folders")}s" disabled aria-label="${label}"><span class="muted small nowrap">Ants' own, always</span></div>
+@for(folder in (if (name == "agent-folders") form.agentFolders else form.skillFolders).lines().filter(String::isNotBlank) + "")
+            <div class="row" hidden="${folder.isEmpty()}"><input class="grow mono" name="${name}" value="${folder}" aria-label="${label}"><button type="button" class="ghost" data-remove>Remove</button></div>
+@endfor
+            <button type="button" data-add>＋ Add folder</button></div></div>
+@endfor
+    </div>
+
+    <div class="grid2"><div class="card"><h3>So far</h3>
+        <label class="row"><input type="checkbox" name="so-far" checked="${form.soFar}"> Write a So far paragraph on running Tasks</label>
+        <div class="help">haiku rewrites each Task's new Transcript lines every couple of minutes; its tokens count on the Task.</div></div>
+    <div class="card"><h3>Theme</h3>
+        <div class="row">
+@for(theme in listOf("system", "light", "dark"))
+            <label class="row"><input type="radio" name="theme" value="${theme}" checked="${theme == form.theme}"> ${theme}</label>
+@endfor
+        </div><div class="help">System follows the computer's light or dark mode.</div></div></div>
+
+    <div class="grid2"><div class="card"><h3>Server</h3>
+        <div class="fld"><label class="f" for="address">Address</label><div class="help">Set with SERVER_ADDRESS when Ants starts. Ants refuses a non-loopback address while the password is the default. &nbsp;e.g. <span class="eg">127.0.0.1:7323</span></div>
+            <input class="mono" id="address" value="${address}" readonly></div>
+        <div class="fld"><label class="f" for="password">Password</label>
+@if(passwordFromEnv)
+            <div class="help">ANTS_PASSWORD or ANTS_PASSWORD_FILE sets the password, over this file's; change it there.</div>
+@else
+            <div class="help">Takes effect at the next login.</div>
+            <input type="password" id="password" name="password" autocomplete="new-password" placeholder="Change from admin">
+@endif
+        </div></div>
+    <div class="card"><h3>Updates</h3>
+        !{val newer = update.newer}
+        <p class="small">Running v${shell.version}.@if(newer == null) Up to date.@elseif(update.installed == newer) Ants ${newer} installed; <code>ants restart</code> to use it.@elseif(update.downloading) Downloading Ants ${newer}…@elseif(docker) Ants ${newer} is available; pull the new image.@else Ants ${newer} is available. <button formaction="/updates/${newer}">Update</button>@endif</p>
+@if(update.failed != null)
+        <p role="alert">Update failed: ${update.failed}</p>
+@endif
+        <button name="action" value="updates">Check now</button></div></div>
 </form>
 </main>
 </body>

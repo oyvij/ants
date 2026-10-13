@@ -681,6 +681,35 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `on Settings, Add and Remove edit a list's rows, which Save writes, and Copy copies the login command`() = browse {
+        settings(null, "vaults:\n  work: /tmp/work\n  side: /tmp/side\ndefault-vault: work\nagent-folders: [/tmp/a]\n")
+        page.navigate(url("/settings"))
+        fun card(title: String) = page.locator(".card", Page.LocatorOptions().setHas(page.locator("h3:text-is('$title')")))
+        val vaults = card("Vaults")
+        vaults.getByText("Remove").first().click()
+        for ((name, row) in listOf("new" to 1, "more" to 2)) {
+            vaults.getByText("＋ Add").click()
+            val added = vaults.locator(".listed > .row:visible").nth(row)
+            added.locator("input.name").fill(name)
+            added.locator("input.mono").fill("/tmp/$name")
+        }
+        vaults.locator(".listed > .row:visible").nth(2).getByText("default").click()
+        val folders = card("Agent folders")
+        folders.getByText("Remove").first().click()
+        folders.getByText("＋ Add folder").click()
+        folders.locator("input[name=agent-folders]:visible").fill("/tmp/b")
+        page.locator(".cmd button").click()
+        assertThat(page.locator(".cmd button")).hasText("Copied")
+        page.locator(".ph button.primary").click()
+        eventually {
+            val saved = org.yaml.snakeyaml.Yaml().load<Map<*, *>>(home.resolve("settings.yaml").readText())
+            assertEquals(mapOf("side" to "/tmp/side", "new" to "/tmp/new", "more" to "/tmp/more"), saved["vaults"])
+            assertEquals("more", saved["default-vault"])
+            assertEquals(listOf("/tmp/b"), saved["agent-folders"])
+        }
+    }
+
+    @Test
     fun `a page follows one SSE connection, so three tabs on Run pages and a Transcript leave a fourth free to navigate`() = browse {
         settings(null)
         val (process, plane) = row("followed", """<bpmn:startEvent id="start" />""", """<bpmn:userTask id="wait" name="Wait" />""", """<bpmn:endEvent id="end" />""")
