@@ -116,8 +116,11 @@ class Live(
             home.live().takeIf { "home" in query },
             query["run"]?.let(runs::live),
             query["drawer"]?.let { runs.drawer(query.getValue("run"), it, csrf) },
-            query["transcript"]?.let { transcripts.events(it.substringBefore('/'), it.substringAfter('/'), query.getValue("from").toLong()) },
-            query["ticket"]?.let { tickets.live(it.substringBefore('/'), it.substringAfter('/')) },
+            query["transcript"]?.let(::inRun)?.let { (run, task) -> transcripts.events(run, task, query.getValue("from").toLong()) },
+            query["ticket"]?.let(::inRun)?.let { (run, name) -> tickets.live(run, name) },
         ),
     )
+
+    /** A part's `<run>/<x>`, as the transcript and ticket parts name theirs: the run, and what in it. */
+    private fun inRun(value: String) = value.substringBefore('/') to value.substringAfter('/')
 }
