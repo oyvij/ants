@@ -98,6 +98,10 @@ class StorySetTest : AntsTest() {
         assertContains(page, """<span class="k">Flow</span><span>in: the heading<br>out: the end</span>""")
         assertFalse("STALE" in page)
         assertFalse("data-repo=\"web\"" in page) // By repo is the other tab
+        // Without JS every story and step shows, with its comment form; review.js hides them and walks them.
+        assertContains(page, """<section class="walkstory" data-story="1">""")
+        assertContains(page, """<div class="step" data-step="1">""")
+        assertContains(page, """<form class="row stepcomment" method="post" action="${entry(run)}/comments#s1-1">""")
 
         val byRepo = browser.get(entry(run) + "?tab=repo").body
         assertContains(byRepo, """<a href="?tab=story">Story</a><a class="on" href="?tab=repo">By repo</a>""")

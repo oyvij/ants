@@ -3,6 +3,7 @@
 // The Story tab walks one story step at a time, its place in the hash, #s<story>-<step> (1-based), and the list of
 // stories without one: n next, p back, d the diff, D the details (Why, Flow, Nudge), c a comment on the step, Esc back
 // to the stories. A step comment's form posts to a URL with the step's hash, which the redirect back keeps.
+// Without this script every story, step, its details and its comment form show at once; this script hides them.
 //
 // By repo: a click on a diff line's number picks it for a line comment, filling the comment form's repo, file, side
 // and lines; a shift-click on the same file and side takes in the lines between. Without this script the form is
