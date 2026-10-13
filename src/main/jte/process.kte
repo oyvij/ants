@@ -66,7 +66,7 @@
     @else
     <p><label>${field.label}<br>
     @if(field.type == FieldType.MARKDOWN)
-        <textarea name="${field.name}" required="${field.required}">${field.stored}</textarea>
+        <textarea name="${field.name}" required="${field.required}" data-markdown data-tall>${field.stored}</textarea>
     @else
         <input name="${field.name}" value="${field.stored ?: ""}" required="${field.required}">
     @endif

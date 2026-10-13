@@ -17,8 +17,9 @@ import org.springframework.security.web.SecurityFilterChain
 class Security {
     @Bean
     fun filterChain(http: HttpSecurity): SecurityFilterChain = http
-        // A browser fetches the app's manifest and icons without the login cookie; the login page needs its stylesheet.
-        .authorizeHttpRequests { it.requestMatchers("/manifest.webmanifest", "/icon-*.png", "/ants.css").permitAll().anyRequest().authenticated() }
+        // A browser fetches the app's manifest and icons without the login cookie; the login page needs its stylesheet and,
+        // like every page, loads markdown.js (which loads nothing more where no field is markdown).
+        .authorizeHttpRequests { it.requestMatchers("/manifest.webmanifest", "/icon-*.png", "/ants.css", "/markdown.js").permitAll().anyRequest().authenticated() }
         // Ants' own login page (login.kte); Log out, in the sidebar, lands back on it.
         .formLogin { it.loginPage("/login").failureUrl("/login?error").permitAll() }
         .logout { it.logoutSuccessUrl("/login?logout").permitAll() }

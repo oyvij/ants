@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.ModelAttribute
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestParam
+import org.springframework.web.bind.annotation.ResponseBody
 
 /**
  * What the sidebar shows on every page, read only when a page renders it: the Notification list count, the Runs line
@@ -64,7 +65,7 @@ class ShellAdvice(
     )
 }
 
-/** The login page, and the sidebar's Light mode and Dark mode. */
+/** The login page, the sidebar's Light mode and Dark mode, and a markdown field's Preview. */
 @Controller
 class ShellPages(private val settings: Settings) {
     /** Spring Security sends a wrong password back here with `?error`, and Log out with `?logout`. */
@@ -82,4 +83,9 @@ class ShellPages(private val settings: Settings) {
         settings.save { it["theme"] = theme }
         return back(from)
     }
+
+    /** A markdown field's Preview and Expand (markdown.js): [text] rendered as the Approve page and the Report render it. */
+    @PostMapping("/markdown")
+    @ResponseBody
+    fun markdown(@RequestParam text: String) = Transcript.markdown(text)
 }

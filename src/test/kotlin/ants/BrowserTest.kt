@@ -281,26 +281,65 @@ class BrowserTest : AntsTest() {
         val tabs = page.locator("#tabs [role=tab]")
         assertThat(tabs).hasText(arrayOf("· Title who", "· Title scope", "Review and send"))
         page.screenshot("answer")
-        assertThat(page.locator("#answer-who")).isVisible()
-        assertThat(page.locator("#answer-scope")).isHidden()
+        val who = page.locator("#answer-who + .ed .cm-content")
+        val scope = page.locator("#answer-scope + .ed .cm-content") // each answer is a markdown editor
+        assertThat(who).isVisible()
+        assertThat(scope).isHidden()
         assertThat(page.locator("#back")).not().isVisible()
         page.click("#next")
         assertThat(tabs.nth(0)).hasText("✓ Title who")
-        assertThat(page.locator("#answer-scope")).isVisible()
-        page.fill("#answer-scope", "Only admins.")
+        assertThat(scope).isVisible()
+        scope.fill("Only admins.")
         assertThat(tabs.nth(1)).hasText("✎ Title scope")
         page.click("#reset")
+        assertThat(scope).hasText("Recommend scope.")
         assertThat(page.locator("#answer-scope")).hasValue("Recommend scope.")
-        page.fill("#answer-scope", "Only admins.")
+        scope.fill("")
         val buttons = page.locator("footer").boundingBox()
         page.click("#next")
-        assertThat(page.locator("#review-list")).containsText("Only admins.")
         assertThat(page.locator("#next")).hasText("Send the Round")
         assertEquals(buttons.y, page.locator("footer").boundingBox().y) // the buttons never move
+        page.click("#next")
+        assertThat(page.locator("#answer-scope + .ed.invalid")).isVisible() // required still stops an empty answer
+        assertThat(page).hasURL(Pattern.compile(".*" + Pattern.quote(entry) + "$"))
+        scope.fill("Only admins.")
+        page.click("#next")
+        assertThat(page.locator("#review-list > button").nth(1)).hasText("✎ Ask scope?Only admins.") // the full question, the answer under it
         page.click("#next")
         page.waitForURL { !it.contains(entry) }
         eventually { assertContains(http.get("/runs/$run").body, "State: Completed") }
         assertContains(claude.launches("quiz")[1].stdin, """{\"id\":\"who\",\"answer\":\"Recommend who.\",\"source\":\"accepted\"},{\"id\":\"scope\",\"answer\":\"Only admins.\",\"source\":\"written\"}""")
+    }
+
+    @Test
+    fun `a markdown field is an editor with the toolbar, ⌘B, Preview and Expand, over the textarea that carries its text`() = browse {
+        page.navigate(url("/agents/new"))
+        val field = page.locator("textarea[name=instructions]")
+        val editor = page.locator("textarea[name=instructions] + .ed")
+        assertThat(field).isHidden()
+        editor.locator(".cm-content").fill("Keep it small")
+        page.keyboard().press("ControlOrMeta+a")
+        page.keyboard().press("ControlOrMeta+b")
+        assertThat(field).hasValue("**Keep it small**")
+        editor.locator("button[title=Heading]").click()
+        assertThat(field).hasValue("## **Keep it small**")
+
+        editor.locator("button", Locator.LocatorOptions().setHasText("Preview")).click()
+        val modal = page.locator("dialog.modal")
+        assertThat(modal.locator(".md h2 strong")).hasText("Keep it small") // rendered by the server
+        page.screenshot("preview")
+        page.keyboard().press("Escape")
+        assertThat(modal).hasCount(0)
+
+        editor.locator("button", Locator.LocatorOptions().setHasText("Expand")).click()
+        assertThat(modal.locator(".split .cm-content")).isVisible()
+        page.keyboard().press("End")
+        page.keyboard().type(" now")
+        assertThat(modal.locator(".split .md h2")).hasText("Keep it small now") // the live preview
+        page.screenshot("expand")
+        modal.locator("button[title=Close]").click()
+        assertThat(editor.locator(".cm-content")).hasText("## **Keep it small** now") // the same editor, back in the page
+        assertThat(field).hasValue("## **Keep it small** now")
     }
 
     @Test

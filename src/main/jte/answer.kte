@@ -25,23 +25,18 @@
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
     @for((i, q) in questions.withIndex())
     <section class="question" data-title="${q.title}" data-recommendation="${q.recommendation}">
-        <p>Question ${i + 1} of ${questions.size}</p>
-        <h2>${q.title}</h2>
-        <h3>Question</h3>
-        <p>${q.ask}</p>
-        <h3>What it settles</h3>
-        <p>${q.context}</p>
-        <h3>Recommended</h3>
-        <p>${q.recommendation}</p>
-        <p>${q.why}</p>
-        <h3><label for="answer-${q.id}">Your answer</label></h3>
-        <textarea id="answer-${q.id}" name="answer.${q.id}" required>${q.answer}</textarea>
+        <div class="count">Question ${i + 1} of ${questions.size} · ${q.title}</div>
+        <div class="part ask"><h3>Question</h3><p>${q.ask}</p></div>
+        <div class="part ctx"><h3>What it settles</h3><p>${q.context}</p></div>
+        <div class="part rec"><h3>Recommended</h3><p>${q.recommendation}</p><p>${q.why}</p></div>
+        <div class="part ans"><h3><label for="answer-${q.id}">Your answer</label></h3>
+        <textarea id="answer-${q.id}" name="answer.${q.id}" required data-markdown>${q.answer}</textarea></div>
     </section>
     @endfor
     <section id="review" hidden>
         <h2>Review the Round</h2>
         <div id="review-list"></div>
-        <p>Click a question to change it.</p>
+        <p class="count">Click a question to change it.</p>
     </section>
     <footer>
         <button type="button" id="back" hidden>Back</button>

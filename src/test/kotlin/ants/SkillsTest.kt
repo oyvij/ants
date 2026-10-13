@@ -68,8 +68,8 @@ class SkillsTest : AntsTest() {
     @Test
     fun `the editors' scripts are all served`() {
         val page = browser.get("/skills/new").body
-        val scripts = Regex(""""(/vendor/codemirror/[^"]+)"""").findAll(page).map { it.groupValues[1] }.toList() + "/skill-editor.js"
-        assertEquals(19, scripts.size)
+        val scripts = Regex(""""(/vendor/codemirror/[^"]+)"""").findAll(page).map { it.groupValues[1] }.toList() + "/skill-editor.js" + "/markdown.js"
+        assertEquals(28, scripts.size)
         for (script in scripts) assertEquals(200, browser.get(script).status, script)
     }
 
@@ -101,7 +101,7 @@ class SkillsTest : AntsTest() {
         val copy = home.resolve("skills/shipped-draft-copy")
         copy.toFile().deleteRecursively()
         val shipped = page("/skills/shipped-draft")
-        assertContains(shipped, """<textarea name="skill" rows="20" cols="80" readonly>""")
+        assertContains(shipped, """<textarea name="skill" rows="20" cols="80" readonly data-markdown data-tall>""")
         assertFalse("""<button class="primary">Save</button>""" in shipped)
         assertEquals(403, save(skillMd("shipped-draft"), name = "shipped-draft").status)
 

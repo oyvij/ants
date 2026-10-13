@@ -33,7 +33,7 @@ $unsafe{transcript.html("subagents")}
 @if(sendHint != null)
 <form method="post" action="/runs/${run}/tasks/${task}/transcript/send">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
-    <label>Message <textarea name="message" required></textarea></label>
+    <label>Message <textarea name="message" required data-markdown></textarea></label>
     <button class="primary">Send</button>
     <small>${sendHint}</small>
 </form>

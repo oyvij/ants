@@ -21,7 +21,7 @@
 @if(error != null)<p role="alert">${error}</p>@endif
 <form method="post">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
-    <label>Comment <textarea name="comment"></textarea></label>
+    <label>Comment <textarea name="comment" data-markdown></textarea></label>
     <button class="primary" name="action" value="approve">Approve</button>
     <button name="action" value="send-back">Send back</button>
 </form>

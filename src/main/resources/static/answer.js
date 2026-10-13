@@ -34,9 +34,10 @@ function render() {
     questions.forEach((q, j) => q.hidden = j !== i);
     review.hidden = i !== n;
     if (i === n) {
+        // Each full question, with the answer under it.
         document.getElementById('review-list').replaceChildren(...questions.map((q, j) => {
-            const item = button(`${mark(j)} ${q.dataset.title}: ${answer(j).value}`, j);
-            item.style.display = 'block';
+            const item = button(`${mark(j)} ${q.querySelector('.ask p').textContent}`, j);
+            item.append(Object.assign(document.createElement('div'), {className: 'a', textContent: answer(j).value}));
             return item;
         }));
     }
@@ -48,6 +49,7 @@ function render() {
 back.onclick = () => go(i - 1);
 reset.onclick = () => {
     answer(i).value = questions[i].dataset.recommendation;
+    answer(i).dispatchEvent(new Event('change')); // the markdown editor over it takes the value
     render();
 };
 next.onclick = event => {
