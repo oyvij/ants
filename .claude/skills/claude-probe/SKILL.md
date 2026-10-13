@@ -19,6 +19,8 @@ test scripts, so it passes whatever you assume. Facts the real CLI has already s
   `control_response` success, then `result/error_during_execution`, then exit 1.
 - A base64 `image` block before the text block of a stream-json user message reaches the model, and claude
   replays the message with the image data in it.
+- Under `--permission-mode dontAsk`, claude 2.1.296 checks a Write against Edit rules: `--allowedTools 'Write(scout/**)'`
+  denies the Write, and `'Edit(scout/**)'` allows it (so `AgentLauncher` sends a Write limit as both).
 
 ## Steps
 

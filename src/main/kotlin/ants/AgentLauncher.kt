@@ -649,7 +649,8 @@ class AgentLauncher(
             "--disable-slash-commands",
             "--forward-subagent-text",
             "--tools", tools.map { it.substringBefore('(') }.distinct().joinToString(","),
-            "--allowedTools", tools.joinToString(","),
+            // claude checks a Write against Edit rules and ignores a Write(path) one, so a Write limit also goes out as Edit
+            "--allowedTools", (tools + tools.filter { it.startsWith("Write(") }.map { "Edit(" + it.removePrefix("Write(") }).distinct().joinToString(","),
         ) + subagents + (if (disallowed.isEmpty()) emptyList() else listOf("--disallowedTools", disallowed.joinToString(","))) + skills.flatMap { listOf("--add-dir", it.folder.toString()) } + (if (agent.model != null) listOf("--model", agent.model) else emptyList()) +
             (if (agent.instructions.isNotEmpty()) listOf("--append-system-prompt", agent.instructions) else emptyList())
     }

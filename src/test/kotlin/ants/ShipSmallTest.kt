@@ -79,7 +79,8 @@ class ShipSmallTest : AntsTest() {
         shipSmall()
         fun tools(skill: String) = claude.launches(skill).first().let { it.flag("--tools") to it.flag("--allowedTools") }
 
-        assertEquals("Read,Grep,Glob,Write,Agent" to "Read,Grep,Glob,Write(scout/**),Agent(knowledge-searcher)", tools("scout"))
+        // claude checks a Write against Edit rules and ignores a Write(path) rule, so the scout's limit goes out as both
+        assertEquals("Read,Grep,Glob,Write,Agent" to "Read,Grep,Glob,Write(scout/**),Agent(knowledge-searcher),Edit(scout/**)", tools("scout"))
         assertEquals("Read,Grep,Glob,Write,Edit" to "Read,Grep,Glob,Write(proposal/**),Edit(proposal/**)", tools("propose-solution"))
         assertContains(tools("implement").first!!.split(","), "Agent")
         assertFalse("Bash(" in tools("implement").second!!) // Bash unlimited
