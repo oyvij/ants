@@ -6,6 +6,7 @@
 @param coming: List<ants.Schedule>
 @param processes: List<org.operaton.bpm.engine.repository.ProcessDefinition>
 @param colorScheme: String = "light dark"
+@param shell: ants.Shell
 <!doctype html>
 <html lang="en">
 <head>
@@ -15,8 +16,9 @@
     <title>Ants</title>
 </head>
 <body>
-@template.nav()
-<h1>Home</h1>
+@template.nav(shell = shell)
+<main>
+<div class="ph"><h1>Home</h1><div class="acts"><a class="btn primary" href="/processes">Start a Run</a></div></div>
 <div id="live">@template.dashboard(live = live, waiting = waiting, done = done, entries = entries, working = working, coming = coming)</div>
 <section id="start-a-run">
 <h2>Start a Run</h2>
@@ -26,8 +28,10 @@
 @endfor
 </ul>
 </section>
-<script>
-    new EventSource('/home/live').onmessage = event => document.getElementById('live').innerHTML = event.data;
+<script type="module">
+    stream.on('home', html => document.getElementById('live').innerHTML = html);
+    stream.follow('home');
 </script>
+</main>
 </body>
 </html>

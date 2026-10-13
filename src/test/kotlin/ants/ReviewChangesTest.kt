@@ -34,7 +34,7 @@ class ReviewChangesTest : AntsTest() {
         return run
     }
 
-    private fun clone(run: String, name: String): Path = home.runWorkspace(run).resolve("repos/$name")
+    private fun clone(run: String, name: String): Path = workspace(run).resolve("repos/$name")
 
     /** The Run's row on the Notification list, or null. */
     private fun row(run: String) = Regex("""<tr>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
@@ -94,7 +94,7 @@ class ReviewChangesTest : AntsTest() {
         assertNotEquals(entry, again)
         val first = claude.launches("mend").single()
         assertContains(first.stdin, "From the user:\\n- ISSUE repos/api/hello.txt:1-2 (new): Say hello, not hi.")
-        assertContains(home.resolve("runs/$run/run-log.md").readText(), "Review the changes · Send back\n\n- ISSUE repos/api/hello.txt:1-2 (new): Say hello, not hi.\n")
+        assertContains(workspace(run).resolve("run-log.md").readText(), "Review the changes · Send back\n\n- ISSUE repos/api/hello.txt:1-2 (new): Say hello, not hi.\n")
 
         claude.session("mend", 2, result("""{"review":"Shortened it."}"""))
         browser.post(again, mapOf("action" to "send-back", "comment" to "Shorter."))
@@ -113,7 +113,7 @@ class ReviewChangesTest : AntsTest() {
     fun `Approve completes with approved, comment and comments, and sets in-review Tickets done`() {
         claude.session("ship", result("{}"))
         val run = start()
-        val issues = home.runWorkspace(run).resolve("tickets/issues").createDirectories()
+        val issues = workspace(run).resolve("tickets/issues").createDirectories()
         issues.resolve("01-a.md").writeText("# A\n\nStatus: in-review\n")
         issues.resolve("02-b.md").writeText("# B\n\nStatus: ready-for-human\n")
         val entry = entry(run)
@@ -144,7 +144,7 @@ class ReviewChangesTest : AntsTest() {
     @Test
     fun `a Review changes' Task drawer leads to its page`() {
         val run = start()
-        val drawer = assertNotNull(browser.events("/runs/$run/tasks/changes/drawer").poll(10, TimeUnit.SECONDS))
+        val drawer = assertNotNull(browser.events("run=$run&drawer=changes", "drawer").poll(10, TimeUnit.SECONDS))
         assertContains(drawer, """<a href="${entry(run)}">Review the changes</a>""")
         assertFalse("Continue the session" in drawer)
     }

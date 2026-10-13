@@ -10,19 +10,17 @@ import org.operaton.bpm.engine.runtime.Incident
 import org.operaton.bpm.engine.task.Task
 import org.operaton.bpm.model.bpmn.instance.BaseElement
 import org.operaton.bpm.model.bpmn.instance.FlowElement
+import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpStatus
-import org.springframework.http.MediaType.TEXT_EVENT_STREAM_VALUE
 import org.springframework.stereotype.Controller
 import org.springframework.ui.Model
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestParam
-import org.springframework.web.bind.annotation.ResponseBody
 import org.springframework.web.server.ResponseStatusException
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
 import tools.jackson.databind.json.JsonMapper
 import java.nio.file.Path
 import java.time.Duration
@@ -53,12 +51,12 @@ sealed class Entry(val id: String, val tag: String, val process: String, val tas
 }
 
 /**
- * A Task of the Run [run] waiting on the user: held by an incident, or a User Task. [taskId] is the Task's key in the
+ * A Task of the Run [run], named [runName], waiting on the user: held by an incident, or a User Task. [taskId] is the Task's key in the
  * Run ([taskKey]); the Task is the element [activity] of the process instance [instance], which is the Run's own or,
  * in a called Process, the called one's.
  */
 class TaskEntry(
-    id: String, tag: String, process: String, val run: String, task: String, val taskId: String, summary: String, since: Date,
+    id: String, tag: String, process: String, val run: String, val runName: String, task: String, val taskId: String, summary: String, since: Date,
     val instance: String, val activity: String,
 ) : Entry(id, tag, process, task, summary, since)
 
@@ -85,6 +83,7 @@ class Notifications(
     private val schedules: Schedules,
     private val tickets: Tickets,
     private val cloneRepos: CloneRepos,
+    private val names: RunNames,
     @Value("\${ants.home}") private val home: Path,
 ) {
     /** Everything waiting on the user, oldest first. */
@@ -133,7 +132,7 @@ class Notifications(
                     model.addAttribute("tab", shown)
                     if (story) {
                         try {
-                            model.addAttribute("stories", storySet(home.runWorkspace(entry.run), cloneRepos.untrimmed))
+                            model.addAttribute("stories", storySet(names.runWorkspace(entry.run), cloneRepos.untrimmed))
                         } catch (refused: StorySetRefused) {
                             model.addAttribute("refused", refused.message)
                         }
@@ -143,7 +142,7 @@ class Notifications(
                     "review"
                 }
                 UserTaskKind.APPROVE -> {
-                    model.addAttribute("shown", shown(home.runWorkspace(entry.run), runtime.getVariableLocal(task.executionId, SHOW)))
+                    model.addAttribute("shown", shown(names.runWorkspace(entry.run), runtime.getVariableLocal(task.executionId, SHOW)))
                     "approve"
                 }
             }
@@ -177,7 +176,7 @@ class Notifications(
     @PostMapping("/notifications/{id}")
     fun act(
         @PathVariable id: String, @RequestParam action: String, @RequestParam instruction: String, @RequestParam(required = false) back: String?, model: Model,
-        response: HttpServletResponse,
+        response: HttpServletResponse, request: HttpServletRequest,
     ): String {
         val incident = incidents().incidentId(id).singleResult() ?: return gone(model, response)
         val entry = entry(incident)
@@ -195,7 +194,7 @@ class Notifications(
             model.addAttribute("error", "Continue the session needs an instruction.")
             return entry(id, model, response)
         }
-        runLog(home.runWorkspace(entry.run), entry.task, name, instruction)
+        runLog(names.runWorkspace(entry.run), entry.task, name, instruction)
         if (action == CANCEL) {
             // A cancelled Run keeps its workspace; externally terminated is what its pages read as Cancelled.
             runtime.deleteProcessInstance(entry.run, "Cancelled by the user", false, true)
@@ -205,6 +204,7 @@ class Notifications(
         // The choice first: the worker can fetch the Task again the moment its retries are back.
         runtime.setVariablesLocal(incident.executionId, mapOf(AgentLauncher.ACTION to action, AgentLauncher.INSTRUCTION to instruction))
         externalTasks.setRetries(incident.configuration, 1)
+        if (action == Push.PUSH) Shell.toast(request, Toast("Pushing", "${entry.summary}. The Run goes on once it is pushed."))
         return back(back, entry.run, "/notifications/next?run=${entry.run}")
     }
 
@@ -229,7 +229,7 @@ class Notifications(
             model.addAttribute("error", if (comments == null) "Send back needs a comment." else "Send back needs a comment, on the changes or on a line.")
             return entry(id, model, response)
         }
-        val workspace = home.runWorkspace(entry.run)
+        val workspace = names.runWorkspace(entry.run)
         val message = (listOf(comment.trim()) + comments.orEmpty().joinToString("\n") { it.summary }).filter(String::isNotEmpty).joinToString("\n\n")
         runLog(workspace, entry.task, if (approved) "Approve" else "Send back", message)
         val result = mapOf("approved" to approved, "comment" to comment) + (comments?.let { mapOf("comments" to ArrayList(it.map(LineComment::toMap))) } ?: emptyMap())
@@ -282,7 +282,7 @@ class Notifications(
             return entry(id, model, response)
         }
         val answers = answers(questions)
-        val workspace = home.runWorkspace(entry.run)
+        val workspace = names.runWorkspace(entry.run)
         val round = round(task)
         runLog(workspace, entry.task, "Round $round", roundLog(questions, answers))
         answerHistory(home, entry.process, entry.run, entry.task, entry.taskId, round, questions, answers)
@@ -339,9 +339,7 @@ class Notifications(
     }
 
     /** The count for the nav and the tab title, sent on connect and whenever it changes. */
-    @GetMapping("/notifications/count", produces = [TEXT_EVENT_STREAM_VALUE])
-    @ResponseBody
-    fun count(): SseEmitter = streams.changes { entries().size.toString() }
+    fun count(): Part = streams.changes("count") { entries().size.toString() }
 
     private fun incidents() = runtime.createIncidentQuery().incidentType(Incident.EXTERNAL_TASK_HANDLER_TYPE)
 
@@ -383,6 +381,7 @@ class Notifications(
             tag = tag,
             process = top.processDefinitionName ?: top.processDefinitionKey,
             run = run,
+            runName = names.name(run),
             task = task?.name ?: activity,
             taskId = runtime.taskKey(execution, activity),
             summary = summary,

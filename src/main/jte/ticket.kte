@@ -1,9 +1,11 @@
 @param file: ants.Tracked
+@param runName: String
 @param article: String
 @param tickets: List<ants.Tracked>
 @param error: String? = null
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
+@param shell: ants.Shell
 <!doctype html>
 <html lang="en">
 <head>
@@ -13,8 +15,10 @@
     <title>${file.title} · Ants</title>
 </head>
 <body>
-@template.nav()
-<p><a href="/tickets">Tickets</a> · <a href="/runs/${file.run}">Run</a>@if(file.name != "spec") · <a href="/runs/${file.run}/tickets/spec">Spec</a>@endif · <a href="${file.href}/edit">Edit</a></p>
+@template.nav(shell = shell)
+<main>
+<div class="ph"><div class="crumbs"><a href="/tickets">Tickets</a> / <a href="/runs/${file.run}">${runName}</a>@if(file.name != "spec") / <a href="/runs/${file.run}/tickets/spec">Spec</a>@endif</div>
+    <div class="acts"><a class="btn" href="${file.href}/edit">Edit</a></div></div>
 @if(error != null)<p role="alert">${error}</p>@endif
 $unsafe{article}
 @if(file.forHuman)
@@ -36,7 +40,7 @@ $unsafe{article}
     <input type="hidden" name="line">
     <input type="hidden" name="version">
 </form>
-<script>
+<script type="module">
     // Ticking a checkbox saves it, saying which version of the file the page showed; the page follows the file as it changes.
     const tick = document.getElementById('tick');
     document.addEventListener('change', event => {
@@ -45,11 +49,13 @@ $unsafe{article}
         tick.version.value = document.getElementById('ticket').dataset.version;
         tick.submit();
     });
-    new EventSource('${file.href}/live').onmessage = event => {
+    stream.on('ticket', html => {
         const template = document.createElement('template');
-        template.innerHTML = event.data;
+        template.innerHTML = html;
         document.getElementById('ticket').replaceWith(template.content.firstElementChild);
-    };
+    });
+    stream.follow('ticket=' + encodeURIComponent('${file.run}/${file.name}'));
 </script>
+</main>
 </body>
 </html>

@@ -57,7 +57,9 @@ _Avoid_: cron, timer, trigger
 
 **Run**:
 One execution of a Process, including any Processes it calls, from its starting input to its end;
-many Runs of one Process may be live at once.
+many Runs of one Process may be live at once. Every Run has a name, given on the start form or else its
+Process and start time ("Ship small, 12 Oct 21:40"), which the user can change; Ants shows it wherever the
+Run shows, and its id, the engine's UUID, only small on the Run page.
 _Avoid_: instance, job, execution
 
 **Pre-Run check**:
@@ -68,7 +70,7 @@ _Avoid_: preflight, validation
 
 **Run workspace**:
 The folder a Run works in, holding its clones and intermediate files, deleted when the Run ends, or kept
-until the user dismisses it if the Run failed.
+until the user dismisses it if the Run failed. Named after the Run as it started, `runs/<slug>-<uuid>/`.
 _Avoid_: sandbox, scratch dir
 
 **Run log**:
@@ -85,6 +87,12 @@ _Avoid_: repo list, registry
 The user's store of knowledge Notes, kept across Runs and shared with Varde; only a Skill that opts in
 is told where it is.
 _Avoid_: knowledge base, wiki, memory
+
+**Profile**:
+A named pair of one Vault and one Source map, such as `work` and `private`, one of them the default. A Process
+can name its Profile and the start form picks the Run's; the Run then uses that Vault and Source map alone. A
+Run scoped to its repos has none.
+_Avoid_: group, context, account
 
 **Result**:
 What an Agent hands back when its Task ends: either done, carrying what the Task promised, or stuck,

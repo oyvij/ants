@@ -7,16 +7,12 @@ import org.springframework.boot.context.event.ApplicationReadyEvent
 import org.springframework.boot.info.BuildProperties
 import org.springframework.context.event.EventListener
 import org.springframework.http.HttpStatus.FORBIDDEN
-import org.springframework.http.MediaType.TEXT_EVENT_STREAM_VALUE
 import org.springframework.security.web.csrf.CsrfToken
 import org.springframework.stereotype.Controller
-import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestHeader
-import org.springframework.web.bind.annotation.ResponseBody
 import org.springframework.web.server.ResponseStatusException
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
 import java.lang.module.ModuleDescriptor.Version
 import java.net.URI
 import java.nio.file.Path
@@ -87,9 +83,7 @@ class Updates(
     }
 
     /** The nav's update notice as HTML: a newer release with **Update**, how Update is going, or nothing. */
-    @GetMapping("/updates", produces = [TEXT_EVENT_STREAM_VALUE])
-    @ResponseBody
-    fun notice(csrf: CsrfToken): SseEmitter = streams.rendered("update.kte", csrf) { mapOf("notice" to notice, "docker" to docker) }
+    fun notice(csrf: CsrfToken): Part = streams.rendered("update", "update.kte", csrf) { mapOf("notice" to notice, "docker" to docker) }
 
     /** **Update** to [release], the newer one the nav offers: installs it in the background and goes back. Docker refuses it. */
     @PostMapping("/updates/{release}")

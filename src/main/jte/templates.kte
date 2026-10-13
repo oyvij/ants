@@ -2,6 +2,7 @@
 @param message: String? = null
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
+@param shell: ants.Shell
 <!doctype html>
 <html lang="en">
 <head>
@@ -11,10 +12,11 @@
     <title>Templates · Ants</title>
 </head>
 <body>
-@template.nav()
-<h1>Templates</h1>
+@template.nav(shell = shell)
+<main>
+<div class="ph"><h1>Templates</h1>
+    <div class="sub">A Template is dropped into a Process from the modeler's palette as a collapsed sub-process, a copy: editing the Template afterwards doesn't change the Process.</div></div>
 @if(message != null)<p role="alert">${message}</p>@endif
-<p>A Template is dropped into a Process from the modeler's palette as a collapsed sub-process, a copy: editing the Template afterwards doesn't change the Process.</p>
 <form method="post" action="/templates/new">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
     <label>Name <input name="name" required pattern="[a-z0-9][a-z0-9\-]{0,63}"></label>
@@ -25,5 +27,6 @@
     <li><a href="/templates/${row.name}">${row.name}</a> ${row.title}@if(row.shipped) <small>shipped</small>@endif</li>
 @endfor
 </ul>
+</main>
 </body>
 </html>

@@ -9,13 +9,16 @@ import java.nio.file.Path
 const val REPORT = "report.md"
 
 /**
- * The Report of the Run [run] as it ends, as markdown, written mechanically: its Process and how it ended, its start
+ * The Report of the Run [run] as it ends, as markdown, written mechanically: its name, its Process and how it ended, its start
  * form, each Agent Task's Result summary, tokens and Transcript link, read from the Transcripts in [workspace], and
  * each Round's answers and their sources, read from its Run log, its Spec and Tickets, the Push Results and the pull requests.
  */
 fun report(run: DelegateExecution, workspace: Path): String = buildString {
     val definition = (run as ExecutionEntity).processDefinition
-    append("# ${definition.name ?: definition.key}\n\n${if (run.isCanceled) "Cancelled" else "Completed"}\n\n## Start form\n\n")
+    val process = definition.name ?: definition.key
+    append("# ${run.getVariable(NAME) ?: process}\n\n$process · ${if (run.isCanceled) "Cancelled" else "Completed"}\n\n")
+    (run.getVariable(SCOPE) as? List<*>)?.let { scope -> append("Scoped to its repos: ${scope.joinToString { "`$it`" }}. No scout, no Vault and no Source map.\n\n") }
+    append("## Start form\n\n")
     for (field in run.processEngineServices.formService.getStartFormData(run.processDefinitionId).formFields) {
         val value = run.getVariable(field.id).let { if (it is List<*>) it.joinToString(", ") else it?.toString().orEmpty() }
         append("**${field.label ?: field.id}**\n\n$value\n\n")

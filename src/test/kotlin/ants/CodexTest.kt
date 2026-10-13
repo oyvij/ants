@@ -86,7 +86,7 @@ class CodexTest : AntsTest() {
         assertEquals(listOf("outcome", "summary", "output", "needs"), schema["required"]) // codex's strict mode: every key required
         assertEquals(home.resolve("codex").toString(), launch.env["CODEX_HOME"])
         for (key in listOf("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "CODEX_API_KEY")) assertEquals(null, launch.env[key], key)
-        assertContains(launch.stdin, "Follow the Skill in ${home.resolve("skills/draft/SKILL.md")} for the workspace at ${home.resolve("runs/$run")}.")
+        assertContains(launch.stdin, "Follow the Skill in ${home.resolve("skills/draft/SKILL.md")} for the workspace at ${workspace(run)}.")
 
         val transcript = browser.get("/runs/$run/tasks/draft/transcript").body
         assertContains(transcript, "<strong>short</strong> draft.")
@@ -140,8 +140,8 @@ class CodexTest : AntsTest() {
     )
 
     private fun pill(page: String): String {
-        val slot = Regex("""<span id="paused" data-src="([^"]+)"></span>""").find(browser.get(page).body)!!
-        return browser.events(slot.groupValues[1]).poll(10, SECONDS).orEmpty()
+        assertContains(browser.get(page).body, """<span id="paused"></span>""")
+        return browser.events("", "pauses").poll(10, SECONDS).orEmpty()
     }
 
     @Test
@@ -214,9 +214,11 @@ class CodexTest : AntsTest() {
         eventually { page = browser.get(transcript(run)).body.also { assertContains(it, """<button class="primary">Send</button>""") } }
         assertContains(page, "codex takes no message while it works: Send stops it and resumes its session with your message.")
         eventually { assertEquals(1, codex.launches("draft").size) }
+        // Ants has read codex's thread.started, so a Send has a session to resume.
+        eventually { assertTrue(workspace(run).resolve("tasks/draft/session").exists()) }
 
         assertEquals(transcript(run), browser.post("${transcript(run)}/send", mapOf("message" to "Keep it short.")).path)
-        assertContains(home.resolve("runs/$run/run-log.md").readText(), "Draft · Send\n\nKeep it short.\n")
+        assertContains(workspace(run).resolve("run-log.md").readText(), "Draft · Send\n\nKeep it short.\n")
         codex.release("release")
         eventually { assertContains(page(run), "State: Completed") }
         assertContains(page(run), "Kept short.")

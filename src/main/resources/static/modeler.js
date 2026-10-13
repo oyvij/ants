@@ -27,8 +27,9 @@ const kinds = {
 }
 
 // From the server (modelerFacts in Checks.kt): the Built-in Tasks by topic, the start-form field types by the
-// `ants.type` property each field carries (the engine only knows `string`), and Items are Tickets' property and help.
-const {builtIns, fieldTypes, itemsAreTickets} = JSON.parse(document.getElementById("canvas").dataset.facts)
+// `ants.type` property each field carries (the engine only knows `string`), Items are Tickets' property and help, and
+// the Process's Profile property, help and empty choice.
+const {builtIns, fieldTypes, itemsAreTickets, profile} = JSON.parse(document.getElementById("canvas").dataset.facts)
 
 // The three Tasks Ants runs, as the BPMN each one is.
 const tasks = {
@@ -201,6 +202,7 @@ const modeler = new BpmnModeler({
     }, {__init__: ["antsTemplates"], antsTemplates: ["type", AntsTemplates]}],
 })
 const canvas = document.getElementById("canvas")
+canvas.canvas = modeler.get("canvas") // the diagram box's zoom buttons (shell.js)
 const panel = document.getElementById("explain")
 const csrf = document.querySelector("input[name=_csrf]").value
 
@@ -456,6 +458,22 @@ function schedulePanel(element) {
 }
 panels["timer-start"] = element => el("div", {}, schedulePanel(element), startForm(element))
 
+// The Process: the Profile (a Vault and a Source map) its Runs use unless the start form picks another, as its
+// Profile property. Offered once the settings have more than one Profile, or when the Process names one.
+panels.process = element => {
+    const box = el("div")
+    fetch("/catalogue.json").then(response => response.json()).then(({profiles}) => {
+        const current = agentProperties(element.businessObject)[profile.property] || ""
+        if (profiles.length < 2 && !current) return
+        const select = el("select", {onchange: () => writeAgentTask(element, {[profile.property]: select.value || undefined})},
+            el("option", {value: "", textContent: profile.none, selected: !current}),
+            ...[...new Set([...profiles, current].filter(Boolean))].map(name => el("option", {value: name, textContent: name, selected: name === current})))
+        box.replaceChildren(el("p", {}, el("label", {}, "Profile ", select)),
+            el("p", {textContent: profile.help}))
+    })
+    return box
+}
+
 // The Agent Task: its Agent from a live dropdown, then one of the Skills that Agent lists, one input per name the Skill
 // declares (its pickers offer only start-form fields, Run variables and earlier Results), the Vault and Answer History
 // toggles (defaulting from the Skill), resume, and a result-schema override. All of it lives in the Task's
@@ -490,9 +508,13 @@ function writeAgentTask(element, changes, inputs, redraw = false) {
 // page never navigates, so the diagram, its unsaved changes and the selection stay. Create and use lands the frame on
 // the new one's page; [use] then picks that name on the Task.
 function createAndUse(kind, src, use) {
-    const frame = el("iframe", {src, title: kind === "agents" ? "New Agent" : "New Skill"})
-    frame.style = "width: min(64rem, 90vw); height: 80vh; border: 0; display: block"
-    const dialog = el("dialog", {}, el("form", {method: "dialog"}, el("button", {textContent: "Cancel"})), frame)
+    const title = kind === "agents" ? "New Agent" : "New Skill"
+    const frame = el("iframe", {src, title, className: "mb"})
+    frame.style = "border: 0; display: block; padding: 0; width: 100%"
+    const close = el("button", {className: "ghost", title: "Close", ariaLabel: "Close", textContent: "✕"})
+    const header = el("form", {method: "dialog", className: "mh"}, el("b", {textContent: title}), el("span", {className: "sp"}),
+        el("span", {className: "muted small", textContent: "Esc to close"}), close)
+    const dialog = el("dialog", {className: "modal"}, header, frame)
     dialog.onclose = () => dialog.remove()
     frame.onload = () => {
         const name = frame.contentWindow.location.pathname.match(new RegExp(`^/${kind}/([^/]+)$`))?.[1]

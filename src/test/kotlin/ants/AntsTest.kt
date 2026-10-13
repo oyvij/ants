@@ -56,6 +56,12 @@ abstract class AntsTest {
     @Autowired
     private lateinit var catalogue: Catalogue
 
+    @Autowired
+    private lateinit var names: RunNames
+
+    /** The Run workspace of [run], wherever its name put it. */
+    fun workspace(run: String): Path = names.runWorkspace(run)
+
     /**
      * Every test starts on a clean Ants, whatever ran before it in this JVM: no Processes, Runs or Schedules, no live
      * CLI holding a launch slot, no Agents, Skills or Templates of the user's, the clock where it belongs and every CLI's
@@ -248,11 +254,20 @@ class Browser(private val base: String) {
         return upload("/processes", "file", file, javaClass.getResource("/$file")!!.readBytes())
     }
 
-    /** Opens an SSE stream the way a page's `EventSource` does; each event's data arrives on the queue. */
-    fun events(path: String): BlockingQueue<String> {
+    /**
+     * Opens a page's SSE stream, `/live?[query]`, the way its `EventSource` does; the data of each event named [name]
+     * arrives on the queue.
+     */
+    fun events(query: String, name: String): BlockingQueue<String> {
         val events = LinkedBlockingQueue<String>()
-        client.sendAsync(HttpRequest.newBuilder(URI("$base$path")).header("Accept", "text/event-stream").GET().build(), HttpResponse.BodyHandlers.ofLines())
-            .thenAccept { response -> response.body().forEach { if (it.startsWith("data:")) events += it.removePrefix("data:") } }
+        var event = ""
+        client.sendAsync(HttpRequest.newBuilder(URI("$base/live?$query")).header("Accept", "text/event-stream").GET().build(), HttpResponse.BodyHandlers.ofLines())
+            .thenAccept { response ->
+                response.body().forEach {
+                    if (it.startsWith("event:")) event = it.removePrefix("event:")
+                    if (it.startsWith("data:") && event == name) events += it.removePrefix("data:")
+                }
+            }
         return events
     }
 

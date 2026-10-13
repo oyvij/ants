@@ -24,7 +24,7 @@
 <table>
     <tr><th>Process</th><th>Run</th><th>Task</th></tr>
 @for(task in working)
-    <tr><td>${task.process}</td><td><a href="/runs/${task.run}">${task.run}</a></td><td>${task.task}</td></tr>
+    <tr><td>${task.process}</td><td><a href="/runs/${task.run}">${task.runName}</a></td><td>${task.task}</td></tr>
 @endfor
 </table>
 @endif

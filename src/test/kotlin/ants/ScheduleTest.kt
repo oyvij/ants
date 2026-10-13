@@ -73,7 +73,9 @@ class ScheduleTest : AntsTest() {
         clock.offset = Duration.ofHours(1)
         eventually { assertEquals(1, runs()) }
         val run = history.createHistoricProcessInstanceQuery().processDefinitionKey(key).singleResult()
-        assertContains(browser.get("/runs/${run.id}").body, "<dt>prompt</dt><dd><code>Sweep</code></dd>")
+        val page = browser.get("/runs/${run.id}").body
+        assertContains(page, "<dt>prompt</dt><dd><code>Sweep</code></dd>")
+        assertContains(page, Regex("<h1>Nightly, \\d{1,2} [A-Z][a-z]{2} \\d\\d:\\d\\d</h1>")) // named as an unnamed Run is
     }
 
     @Test

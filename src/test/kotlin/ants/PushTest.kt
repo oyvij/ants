@@ -32,7 +32,7 @@ class PushTest : AntsTest() {
         return run
     }
 
-    private fun clone(run: String, name: String): Path = home.runWorkspace(run).resolve("repos/$name")
+    private fun clone(run: String, name: String): Path = workspace(run).resolve("repos/$name")
 
     /** The Run's row on the Notification list, or null. */
     private fun row(run: String) = Regex("""<tr>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
@@ -66,7 +66,10 @@ class PushTest : AntsTest() {
         assertFalse("Skip" in page)
 
         val heads = listOf(api, web).associateWith { git(clone(run, it.name), "rev-parse", "HEAD") }
-        assertEquals("/notifications", push(run).path)
+        val landed = push(run)
+        assertEquals("/notifications", landed.path)
+        assertContains(landed.body, """<div class="toast" role="status"><b>Pushing</b> Push feature-x to api, web. The Run goes on once it is pushed.""")
+        assertFalse("class=\"toast\"" in browser.get("/notifications").body) // shown once
         completed(run)
         for (repo in listOf(api, web)) assertEquals(before.getValue(repo) + "refs/heads/feature-x ${heads[repo]}", refs(repo))
         assertEquals(
@@ -157,7 +160,7 @@ class PushTest : AntsTest() {
     fun `Cancel the Run pushes nothing and keeps the Run workspace`() {
         val api = repo("api")
         val run = start(api)
-        val drawer = assertNotNull(browser.events("/runs/$run/tasks/push/drawer").poll(10, TimeUnit.SECONDS))
+        val drawer = assertNotNull(browser.events("run=$run&drawer=push", "drawer").poll(10, TimeUnit.SECONDS))
         assertContains(drawer, """<a href="${entry(run)}">Push or cancel the Run</a>""")
         assertFalse("Continue the session" in drawer)
         val cancelled = browser.post(entry(run), mapOf("action" to "cancel", "instruction" to ""))

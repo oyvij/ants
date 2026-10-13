@@ -2,6 +2,7 @@
 @param message: String? = null
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
+@param shell: ants.Shell
 <!doctype html>
 <html lang="en">
 <head>
@@ -11,10 +12,11 @@
     <title>Skills · Ants</title>
 </head>
 <body>
-@template.nav()
-<h1>Skills</h1>
+@template.nav(shell = shell)
+<main>
+<div class="ph"><h1>Skills</h1><div class="acts"><a class="btn primary" href="/skills/new">New Skill</a></div>
+    <div class="sub">From the folders in <a href="/settings">Settings</a>. Ants writes only into its own <code>skills/</code>; the rest are read-only, with Copy.</div></div>
 @if(message != null)<p role="alert">${message}</p>@endif
-<p><a href="/skills/new">＋ New Skill</a></p>
 <form method="post" action="/skills/import" enctype="multipart/form-data">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
     <label>Import one SKILL.md into the create form <input type="file" name="file" accept=".md" required></label>
@@ -29,5 +31,6 @@
 @endif
 @endfor
 </ul>
+</main>
 </body>
 </html>

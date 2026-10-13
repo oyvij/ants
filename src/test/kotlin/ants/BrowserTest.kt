@@ -144,7 +144,7 @@ class BrowserTest : AntsTest() {
         deploy(definitions("called", "Called", called, calledPlane))
         val (caller, callerPlane) = row("caller", """<bpmn:startEvent id="start" />""", """<bpmn:callActivity id="build" name="Build" calledElement="called" />""", """<bpmn:endEvent id="end" />""")
         deploy(definitions("caller", "Caller", caller, callerPlane))
-        val run = http.post("/processes/caller/runs", mapOf()).path
+        val run = http.post("/processes/caller/runs", mapOf(NAME to "Tiny caller")).path
         assertTrue(run.startsWith("/runs/"), run)
 
         page.navigate(url(run))
@@ -154,7 +154,7 @@ class BrowserTest : AntsTest() {
             assertTrue(page.isVisible("#trail"), "no breadcrumb after clicking the call activity")
         }
         assertThat(shape("review")).isVisible()
-        assertThat(page.locator("#trail")).hasText("Caller › Build")
+        assertThat(page.locator("#trail")).hasText("Tiny caller › Build") // the Run by its name
         page.click("#trail a")
         assertThat(shape("build")).isVisible()
         assertThat(shape("review")).hasCount(0)
@@ -167,7 +167,7 @@ class BrowserTest : AntsTest() {
         val (process, plane) = row("tracked", """<bpmn:startEvent id="start" />""", """<bpmn:userTask id="wait" name="Wait" />""", """<bpmn:endEvent id="end" />""")
         deploy(definitions("tracked", "Tracked", process, plane))
         val run = http.post("/processes/tracked/runs", mapOf()).path.removePrefix("/runs/")
-        val file = home.resolve("runs/$run/tickets/issues").createDirectories().resolve("01-hello.md")
+        val file = workspace(run).resolve("tickets/issues").createDirectories().resolve("01-hello.md")
         file.writeText("# Say hello\n\nStatus: ready-for-agent\n\n- [ ] Says hello\n")
 
         page.navigate(url("/runs/$run/tickets/01-hello"))
@@ -192,7 +192,7 @@ class BrowserTest : AntsTest() {
         val before = badge()!!
 
         http.post("/processes/badged/runs", mapOf())
-        assertThat(page.locator("#waiting")).hasText("(${before + 1})")
+        assertThat(page.locator("#waiting")).hasText("${before + 1}")
         eventually { assertEquals(before + 1, badge()) }
     }
 
@@ -310,7 +310,7 @@ class BrowserTest : AntsTest() {
         val run = http.post("/processes/review/runs", listOf("repos" to "api", "repos" to "web")).path.removePrefix("/runs/")
         var entry = ""
         eventually { entry = assertNotNull(Regex("""href="(/notifications/[^"]+)"""").find(http.get("/notifications").body)).groupValues[1] }
-        commitFile(home.runWorkspace(run).resolve("repos/api"), "hello.txt", "hi\nthere\nworld\n", "Say hi")
+        commitFile(workspace(run).resolve("repos/api"), "hello.txt", "hi\nthere\nworld\n", "Say hi")
 
         page.navigate(url(entry))
         val diff = page.locator("table.diff[data-file='repos/api/hello.txt']")
@@ -326,6 +326,20 @@ class BrowserTest : AntsTest() {
         page.screenshot("review")
         page.click("#line-comment button")
         assertThat(page.locator("#comments")).containsText("SUGGESTION repos/api/hello.txt:1-2 (new): Say hello.")
+    }
+
+    @Test
+    fun `the Process properties pick the Process's Profile from the settings' Profiles`() = browse {
+        settings(null, "profiles:\n  work: {vault: notes}\n  private: {vault: notes}\n")
+        val (process, plane) = row("profiled", """<bpmn:startEvent id="start" />""", """<bpmn:endEvent id="end" />""")
+        deploy(definitions("profiled", "Profiled", process, plane))
+
+        page.navigate(url("/processes/profiled/edit"))
+        assertThat(heading).hasText("Process")
+        page.getByLabel("Profile").selectOption("private")
+        page.locator("#save").click()
+        assertThat(page).hasURL(Pattern.compile(".*/processes/profiled$"))
+        assertContains(http.get("/processes/profiled/diagram.bpmn").body, """name="ants.profile" value="private"""")
     }
 
     @Test
@@ -375,6 +389,79 @@ class BrowserTest : AntsTest() {
         page.click("#tabs a")
         assertThat(page.locator("#tabs b")).hasText("By repo")
         assertThat(page.locator("section.repo h2").first()).hasText("api")
+    }
+
+    @Test
+    fun `the diagram box zooms with ＋ and －, and Fit fits the diagram again`() = browse {
+        settings(null)
+        val (process, plane) = row("zoomed", """<bpmn:startEvent id="start" />""", """<bpmn:userTask id="wait" name="Wait" />""", """<bpmn:endEvent id="end" />""")
+        deploy(definitions("zoomed", "Zoomed", process, plane))
+        page.navigate(url("/processes/zoomed"))
+        assertThat(shape("wait")).isVisible()
+        fun zoom() = (page.evaluate("document.querySelector('.dia').canvas.zoom()") as Number).toDouble()
+        val fit = zoom()
+
+        page.click(".dia .zoom [title='Zoom in']")
+        assertEquals(fit * 1.25, zoom(), 0.001)
+        page.click(".dia .zoom [title='Zoom out']")
+        page.click(".dia .zoom [title='Zoom out']")
+        assertEquals(fit / 1.25, zoom(), 0.001)
+        page.click(".dia .zoom [title='Fit']")
+        assertEquals(fit, zoom(), 0.001)
+    }
+
+    @Test
+    fun `a modal closes on Esc, on its ✕ and on a click outside it`() = browse {
+        appendAgentTask()
+        val newAgent = page.locator("#explain button", Page.LocatorOptions().setHasText("New Agent"))
+        val modal = page.locator("dialog.modal")
+        for (close in listOf<() -> Unit>({ page.keyboard().press("Escape") }, { modal.locator("[title=Close]").click() }, { page.mouse().click(5.0, 5.0) })) {
+            newAgent.click()
+            assertThat(modal).isVisible()
+            assertThat(modal.locator(".mh")).containsText("New Agent")
+            close()
+            assertThat(modal).hasCount(0)
+        }
+    }
+
+    @Test
+    fun `Dark mode and Light mode in the sidebar switch the theme and stay on the page`() = browse {
+        settings(null, "theme: light\n")
+        page.navigate(url("/agents"))
+        assertThat(page.getByText("Light mode")).isHidden()
+        page.getByText("Dark mode").click()
+        page.waitForURL { it.endsWith("/agents") }
+        assertEquals("rgb(11, 13, 18)", page.evaluate("getComputedStyle(document.documentElement).backgroundColor"))
+        assertThat(page.getByText("Dark mode")).isHidden()
+        page.getByText("Light mode").click()
+        assertThat(page.locator("meta[name=color-scheme]")).hasAttribute("content", "light")
+    }
+
+    @Test
+    fun `a page follows one SSE connection, so three tabs on Run pages and a Transcript leave a fourth free to navigate`() = browse {
+        settings(null)
+        val (process, plane) = row("followed", """<bpmn:startEvent id="start" />""", """<bpmn:userTask id="wait" name="Wait" />""", """<bpmn:endEvent id="end" />""")
+        deploy(definitions("followed", "Followed", process, plane))
+        val run = http.post("/processes/followed/runs", mapOf()).path
+        // Tabs share a browser's 6 connections per host, so they share one context here; each counts its open EventSources.
+        val tabs = page.context().browser()!!.newContext().apply {
+            addCookies(page.context().cookies())
+            addInitScript("const Opened = EventSource; window.sources = []; EventSource = class extends Opened { constructor(...a) { super(...a); sources.push(this); } };")
+        }
+        fun open(path: String) = tabs.newPage().apply { navigate(url(path)) }
+        fun Page.drawer() {
+            eventually { locator("#diagram .djs-element[data-element-id='wait']").click() }
+            assertThat(locator("#drawer-head")).isVisible() // the drawer's stream has come
+        }
+        fun Page.following() = (evaluate("sources.filter(source => source.readyState !== EventSource.CLOSED).length") as Number).toInt()
+
+        val open = listOf(open(run).apply { drawer() }, open("$run/tasks/wait/transcript"), open(run).apply { drawer() })
+        val fourth = tabs.newPage().apply { setDefaultNavigationTimeout(5_000.0) }
+        for (path in listOf("/", "/runs", run, "/processes/followed")) {
+            fourth.navigate(url(path))
+            assertEquals(1, fourth.following(), path)
+        }
+        for (tab in open) assertEquals(1, tab.following(), tab.url())
     }
 
     /** An Agent Task [id] running `writer`'s Skill `draft`. */

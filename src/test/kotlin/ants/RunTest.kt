@@ -23,8 +23,8 @@ class RunTest : AntsTest() {
         val run = start("start-end")
         val id = run.path.removePrefix("/runs/")
         assertContains(run.body, "Completed")
-        assertContains(browser.get("/runs").body, """<a href="/runs/$id">Start to end</a>""")
-        assertEquals(listOf("report.md"), home.resolve("runs/$id").toFile().list()?.toList())
+        assertContains(browser.get("/runs").body, """<a href="/runs/$id">Start to end, """)
+        assertEquals(listOf("report.md"), workspace(id).toFile().list()?.toList())
     }
 
     private val claude = FakeClaude()
@@ -41,7 +41,7 @@ class RunTest : AntsTest() {
         importLoopThenWait()
         val run = start("loop-then-wait")
         assertContains(run.body, "Running")
-        assertTrue(home.resolve("runs/${run.path.removePrefix("/runs/")}").isDirectory())
+        assertTrue(workspace(run.path.removePrefix("/runs/")).isDirectory())
         eventually {
             val variables = browser.get(run.path).body.replace("&#34;", "\"")
             assertContains(variables, "<dt>b</dt><dd><code>null</code></dd>")
@@ -55,8 +55,8 @@ class RunTest : AntsTest() {
         val ids = List(2) { start("loop-then-wait").path.removePrefix("/runs/") }
         val runs = browser.get("/runs").body
         for (id in ids) {
-            assertContains(runs, Regex("""<a href="/runs/$id">Loop then wait</a></td><td><span data-state="Running">Running</span></td>"""))
-            assertTrue(home.resolve("runs/$id").isDirectory())
+            assertContains(runs, Regex("""<a href="/runs/$id">Loop then wait, [^<]+</a></td><td>Loop then wait</td><td><span data-state="Running">Running</span></td>"""))
+            assertTrue(workspace(id).isDirectory())
         }
     }
 }

@@ -6,6 +6,7 @@
 @param copy: String? = null
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
+@param shell: ants.Shell
 <!doctype html>
 <html lang="en">
 <head>
@@ -15,33 +16,34 @@
     <title>${name} · Modeler · Ants</title>
     <link rel="stylesheet" href="/vendor/camunda-bpmn-js/assets/camunda-platform-modeler.css">
     <style>
-        body { height: 100vh; padding-bottom: 16px; display: flex; flex-direction: column; }
-        header { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
-        header h1 { margin: 0; }
-        main { flex: 1; display: flex; gap: 14px; min-height: 0; }
-        #canvas { flex: 1; margin: 0; }
-        #explain { width: 22rem; overflow: auto; }
+        main.full { height: 100vh; display: flex; flex-direction: column; }
+        .modelerWrap { flex: 1; min-height: 0; }
+        .modelerWrap > :is(.dia, .props) { height: auto; margin: 0; }
         #checks { max-height: 8rem; overflow: auto; }
     </style>
 </head>
 <body>
-@template.nav()
-<header>
-    <h1>${name}</h1>
-    <button class="primary" id="save" data-action="${action}" hidden="${copy != null}">${saveLabel}</button>
+@template.nav(shell = shell)
+<main class="full">
+<div class="crumbs"><a href="/processes">Processes</a> / ${name} / Diagram</div>
+<div class="ph"><h1>${name}</h1>
+    <div class="acts">
 @if(copy != null)
-    <form method="post" action="${copy}">
-        <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
-        <p>Ants' own, read-only. <button>Copy</button> makes your own.</p>
-    </form>
+        <form method="post" action="${copy}">
+            <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+            <span class="muted small">Ants' own, read-only.</span> <button>Copy</button> <span class="muted small">makes your own.</span>
+        </form>
 @endif
-    <p id="refusal" role="alert"></p>
-    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
-</header>
+        <button class="primary" id="save" data-action="${action}" hidden="${copy != null}">${saveLabel}</button>
+    </div>
+</div>
+<p id="refusal" role="alert"></p>
+<input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
 <ul id="checks" aria-label="Checks"></ul>
-<main>
-    <div id="canvas" data-src="${src}" data-facts="${modelerFacts}"></div>
-    <aside id="explain"></aside>
+<div class="modelerWrap">
+    <div id="canvas" data-src="${src}" data-facts="${modelerFacts}" class="dia modeler"></div>
+    <aside id="explain" class="props"></aside>
+</div>
 </main>
 <script src="/vendor/camunda-bpmn-js/camunda-platform-modeler.production.min.js"></script>
 <script type="module" src="/modeler.js"></script>

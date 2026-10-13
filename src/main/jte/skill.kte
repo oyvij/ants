@@ -4,6 +4,7 @@
 @param use: String? = null
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
+@param shell: ants.Shell
 <!doctype html>
 <html lang="en">
 <head>
@@ -14,9 +15,11 @@
 </head>
 <body>
 @if(use == null)
-@template.nav()
+@template.nav(shell = shell)
 @endif
-<h1>${form.name ?: "New Skill"}</h1>
+<main>
+@if(use == null)<div class="crumbs"><a href="/skills">Skills</a> / ${form.name ?: "New"}</div>@endif
+<div class="ph"><h1>${form.name ?: "New Skill"}</h1></div>
 @if(message != null)<p role="alert">${message}</p>@endif
 @if(form.readOnly)
 <form method="post" action="/skills/${form.name}/copy">
@@ -48,5 +51,6 @@
 @endif
 @template.codemirror()
 <script type="module" src="/skill-editor.js"></script>
+</main>
 </body>
 </html>

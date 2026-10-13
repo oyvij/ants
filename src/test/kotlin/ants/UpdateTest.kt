@@ -26,7 +26,8 @@ import kotlin.test.assertTrue
 
 /**
  * The update check against a release folder on disk ([AntsTest.releases]), never GitHub, and Update in the nav. The
- * test Ants checks every 200 ms, so a test changes the folder and waits for the nav to follow.
+ * test Ants checks every 200 ms, so a test changes the folder and waits for the nav to follow, up to a minute: under
+ * CI load the check and install.sh have taken longer than [eventually]'s default ten seconds.
  */
 class UpdateTest : AntsTest() {
     private val browser by lazy { browser().also { it.login() } }
@@ -59,7 +60,7 @@ class UpdateTest : AntsTest() {
     fun noNewerRelease() {
         release("0.0.1")
         models.writeText(javaClass.getResource("/models.md")!!.readText())
-        eventually {
+        eventually(60) {
             assertEquals("", notice())
             assertFalse("claude-opus-9" in browser.get("/agents/new").body)
         }
@@ -68,13 +69,15 @@ class UpdateTest : AntsTest() {
         home.resolve("versions").toFile().deleteRecursively()
     }
 
-    /** The nav's update notice as [page] shows it: the nav fills its slot from the stream it names. */
+    /** The nav's update notice as [page] shows it: the nav fills its slot from the page's stream. */
     private fun notice(page: String = "/", browser: Browser = this.browser): String {
-        val slot = Regex("""<span id="update" data-src="([^"]+)"></span>""").find(browser.get(page).body)
-        return browser.events(assertNotNull(slot, "$page has no update notice in its nav").groupValues[1]).poll(10, SECONDS).orEmpty()
+        assertContains(browser.get(page).body, """<span id="update"></span>""", message = "$page has no update notice in its nav")
+        return browser.events("", "update").poll(10, SECONDS).orEmpty()
     }
 
-    /** Presses the nav's **Update** on Home, as [browser] sees it, posting its form's fields. */
+    /**
+     * Presses the nav's **Update** on Home, as [browser] sees it, posting its form's fields.
+     */
     private fun update(browser: Browser = this.browser) {
         val form = Regex("""<form method="post" action="([^"]+)".*name="_csrf" value="([^"]+)"""").find(notice(browser = browser))
         val (action, csrf) = assertNotNull(form, "no Update in the nav").destructured
@@ -85,7 +88,7 @@ class UpdateTest : AntsTest() {
     fun `a newer release shows in the nav with Update`() {
         release("99.0.0")
 
-        eventually {
+        eventually(60) {
             val notice = notice("/runs")
             assertContains(notice, "Ants 99.0.0 is available")
             assertContains(notice, """<form method="post" action="/updates/99.0.0"""")
@@ -106,7 +109,7 @@ class UpdateTest : AntsTest() {
         startAnother(tempHome(), "--ants.docker=true", "--ants.password=s3cret").use { ants ->
             val docker = Browser("http://127.0.0.1:${(ants as WebServerApplicationContext).webServer!!.port}").also { it.login("s3cret") }
 
-            val events = docker.events("/updates")
+            val events = docker.events("", "update")
             val notice = generateSequence { events.poll(10, SECONDS) }.first { it.isNotEmpty() } // once its first check is done
 
             assertContains(notice, "Ants 99.0.0 is available")
@@ -123,21 +126,21 @@ class UpdateTest : AntsTest() {
         browser.import("agent-task.bpmn")
         browser.get("/processes/agent-task")
         val run = browser.post("/processes/agent-task/runs", mapOf("prompt" to "Say hello")).path.removePrefix("/runs/")
-        eventually { assertEquals(1, claude.launches("draft").size) }
+        eventually(60) { assertEquals(1, claude.launches("draft").size) }
         home.resolve("versions/$running").createDirectories()
         home.resolve("current").createSymbolicLinkPointingTo(Path.of("versions/$running"))
         published("96.0.0")
-        eventually { assertContains(notice(), "Ants 96.0.0 is available") }
+        eventually(60) { assertContains(notice(), "Ants 96.0.0 is available") }
 
         update()
 
-        eventually { assertContains(notice(), "Ants 96.0.0 runs from the next ants restart") }
+        eventually(60) { assertContains(notice(), "Ants 96.0.0 runs from the next ants restart") }
         assertTrue(home.resolve("versions/96.0.0/bin/ants").exists())
         assertEquals(Path.of("versions/96.0.0"), home.resolve("current").readSymbolicLink())
         assertEquals(Path.of("versions/$running"), home.resolve("previous").readSymbolicLink())
         assertContains(browser.get("/runs/$run").body, "State: Running")
         claude.release("release")
-        eventually { assertContains(browser.get("/runs/$run").body, "State: Completed") }
+        eventually(60) { assertContains(browser.get("/runs/$run").body, "State: Completed") }
     }
 
     @Test
@@ -145,15 +148,15 @@ class UpdateTest : AntsTest() {
         home.resolve("versions/$running").createDirectories()
         home.resolve("current").createSymbolicLinkPointingTo(Path.of("versions/$running"))
         published("97.0.0")
-        eventually { assertContains(notice(), "Ants 97.0.0 is available") }
+        eventually(60) { assertContains(notice(), "Ants 97.0.0 is available") }
         update()
-        eventually { assertContains(notice(), "Ants 97.0.0 runs from the next ants restart") }
+        eventually(60) { assertContains(notice(), "Ants 97.0.0 runs from the next ants restart") }
         published("98.0.0")
-        eventually { assertContains(notice(), "Ants 98.0.0 is available") }
+        eventually(60) { assertContains(notice(), "Ants 98.0.0 is available") }
 
         update()
 
-        eventually { assertContains(notice(), "Ants 98.0.0 runs from the next ants restart") }
+        eventually(60) { assertContains(notice(), "Ants 98.0.0 runs from the next ants restart") }
         assertEquals(Path.of("versions/98.0.0"), home.resolve("current").readSymbolicLink())
         assertEquals(Path.of("versions/$running"), home.resolve("previous").readSymbolicLink())
     }
@@ -163,12 +166,12 @@ class UpdateTest : AntsTest() {
         published("94.0.0")
         startAnother(tempHome()).use { ants -> // it checks at start, and then not for six hours
             val another = Browser("http://127.0.0.1:${(ants as WebServerApplicationContext).webServer!!.port}").also { it.login() }
-            eventually { assertContains(notice(browser = another), "Ants 94.0.0 is available") }
+            eventually(60) { assertContains(notice(browser = another), "Ants 94.0.0 is available") }
             published("95.0.0")
 
             update(another)
 
-            eventually { assertContains(notice(browser = another), "Ants 95.0.0 runs from the next ants restart") }
+            eventually(60) { assertContains(notice(browser = another), "Ants 95.0.0 runs from the next ants restart") }
         }
     }
 
@@ -184,7 +187,7 @@ class UpdateTest : AntsTest() {
             """.trimIndent(),
         )
 
-        eventually {
+        eventually(60) {
             val form = browser.get("/agents/new").body
             assertContains(form, ">claude-opus-9</option>")
             assertContains(form, "claude-sonnet-8 (deprecated, retires June 1, 2029)")

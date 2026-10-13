@@ -25,6 +25,12 @@
               <operaton:property id="ants.help" value="Leave it empty for the scout to name one" />
             </operaton:properties>
           </operaton:formField>
+          <operaton:formField id="repos" label="Repos" type="string">
+            <operaton:properties>
+              <operaton:property id="ants.type" value="repos" />
+              <operaton:property id="ants.help" value="Optional. Leave it empty for the scout to pick the repos from the prompt." />
+            </operaton:properties>
+          </operaton:formField>
         </operaton:formData>
       </bpmn:extensionElements>
       <bpmn:outgoing>toscout</bpmn:outgoing>

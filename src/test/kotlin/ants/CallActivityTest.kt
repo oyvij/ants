@@ -113,9 +113,9 @@ class CallActivityTest : AntsTest() {
         assertContains(claude.launches("draft").single().stdin, """{\"prompt\":\"Say hello\"}""")
         assertContains(claude.launches("proofread").single().stdin, """{\"text\":\"called\"}""")
         // One Run workspace, the top Run's, with a Transcript of each, kept apart.
-        assertEquals(listOf(home.resolve("runs/$run").toRealPath().toString()), claude.launchLog().distinct())
-        assertTrue(home.resolve("runs/$run/tasks/build.draft/transcript.jsonl").exists())
-        assertTrue(home.resolve("runs/$run/tasks/draft/transcript.jsonl").exists())
+        assertEquals(listOf(workspace(run).toRealPath().toString()), claude.launchLog().distinct())
+        assertTrue(workspace(run).resolve("tasks/build.draft/transcript.jsonl").exists())
+        assertTrue(workspace(run).resolve("tasks/draft/transcript.jsonl").exists())
         assertFalse(browser.get("/runs").body.contains("Spec</a>"), "the called Process is no Run of its own")
     }
 
@@ -151,8 +151,8 @@ class CallActivityTest : AntsTest() {
         eventually { assertContains(page(run), "State: Completed") }
         val first = claude.launches("draft").indexOfFirst { """{\"prompt\":\"a\"}""" in it.stdin } + 1
         assertEquals(listOf(first, 3 - first).joinToString(",", "[", "]") { """{"draft":${done("$it")}}""" }, variable(run, "build"))
-        assertTrue(home.resolve("runs/$run/tasks/build-1.draft/transcript.jsonl").exists())
-        assertTrue(home.resolve("runs/$run/tasks/build-2.draft/transcript.jsonl").exists())
+        assertTrue(workspace(run).resolve("tasks/build-1.draft/transcript.jsonl").exists())
+        assertTrue(workspace(run).resolve("tasks/build-2.draft/transcript.jsonl").exists())
     }
 
     @Test
@@ -209,10 +209,10 @@ class CallActivityTest : AntsTest() {
         val run = start("caller")
 
         // The breadcrumb leads back to the Run's own diagram, which the page holds; the called one is by its instance.
-        val called = browser.events("/runs/$run/live").until { (it["called"] as Map<*, *>)["build"] != null }.let { (it["called"] as Map<*, *>)["build"] }
+        val called = browser.events("run=$run", "run").until { (it["called"] as Map<*, *>)["build"] != null }.let { (it["called"] as Map<*, *>)["build"] }
         assertContains(browser.get("/runs/$called/diagram.bpmn").body, """id="spec"""")
-        browser.events("/runs/$called/live").until { ((it["elements"] as Map<*, *>)["draft"] as? Map<*, *>)?.get("state") == "running" }
-        val drawer = browser.events("/runs/$called/tasks/draft/drawer")
+        browser.events("run=$called", "run").until { ((it["elements"] as Map<*, *>)["draft"] as? Map<*, *>)?.get("state") == "running" }
+        val drawer = browser.events("run=$called&drawer=draft", "drawer")
         assertContains(assertNotNull(drawer.poll(10, SECONDS)), """href="/runs/$run/tasks/build.draft/transcript"""")
         claude.release("go")
         eventually { assertContains(page(run), "State: Completed") }

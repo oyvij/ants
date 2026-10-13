@@ -201,6 +201,18 @@ class PreRunTest : AntsTest() {
     }
 
     @Test
+    fun `a gh that is logged in isn't asked again for a while, since gh auth status waits on GitHub`() {
+        ready()
+        val gh = Files.createTempDirectory("fake-gh").resolve("gh")
+        val asked = gh.resolveSibling("asked")
+        gh.writeText("#!/bin/sh\necho \"$*\" >> $asked\nexit 0\n")
+        gh.toFile().setExecutable(true)
+        settings("gh:\n  path: $gh\n")
+        repeat(3) { assertContains(status(), "Ready") }
+        assertEquals(listOf("auth status"), asked.toFile().readLines())
+    }
+
+    @Test
     fun `a custom model ID claude refuses, tried once`() {
         ready()
         claude.session("so-far", "stderr There's an issue with the selected model (claude-made-up).", "exit 1")

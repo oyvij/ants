@@ -5,21 +5,18 @@ import org.operaton.bpm.engine.HistoryService
 import org.operaton.bpm.engine.RepositoryService
 import org.operaton.bpm.engine.RuntimeService
 import org.operaton.bpm.model.bpmn.instance.FlowElement
-import org.springframework.http.MediaType.TEXT_EVENT_STREAM_VALUE
 import org.springframework.stereotype.Controller
 import org.springframework.ui.Model
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestHeader
-import org.springframework.web.bind.annotation.ResponseBody
 import org.springframework.security.web.csrf.CsrfToken
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
 import java.net.URI
 import java.time.Clock
 
-/** An Agent Task running now, in a Run of a Process. */
-class Working(val process: String, val run: String, val task: String)
+/** An Agent Task running now, in the Run [run], named [runName], of a Process. */
+class Working(val process: String, val run: String, val runName: String, val task: String)
 
 /** Redirects back to the page a nav button was pressed on, as its Referer names it, else Home. */
 fun back(from: String?) = "redirect:" + (from?.let { runCatching { URI(it).path }.getOrNull() }?.ifEmpty { null } ?: "/")
@@ -36,6 +33,7 @@ class Home(
     private val clock: Clock,
     private val streams: Streams,
     private val schedules: Schedules,
+    private val names: RunNames,
 ) {
     @GetMapping("/")
     fun home(model: Model): String {
@@ -52,20 +50,16 @@ class Home(
     }
 
     /** The live part of Home as HTML, sent on connect and whenever it changes. */
-    @GetMapping("/home/live", produces = [TEXT_EVENT_STREAM_VALUE])
-    @ResponseBody
-    fun live(): SseEmitter = streams.rendered("dashboard.kte") { dashboard() }
+    fun live(): Part = streams.rendered("home", "dashboard.kte") { dashboard() }
 
     /** The nav's pill as HTML, "claude paused until 15:45" with **Try now** per paused CLI, or nothing. */
-    @GetMapping("/pauses", produces = [TEXT_EVENT_STREAM_VALUE])
-    @ResponseBody
-    fun pauses(csrf: CsrfToken): SseEmitter =
-        streams.rendered("pill.kte", csrf) { mapOf("pauses" to launcher.pauses().mapValues { clock.local(it.value) }) }
+    fun pauses(csrf: CsrfToken): Part =
+        streams.rendered("pauses", "pill.kte", csrf) { mapOf("pauses" to launcher.pauses().mapValues { clock.local(it.value) }) }
 
     private fun dashboard(): Map<String, Any> {
         val entries = notifications.entries()
         return mapOf(
-            "live" to history.createHistoricProcessInstanceQuery().rootProcessInstances().active().count(),
+            "live" to history.liveRuns(),
             "waiting" to entries.filterIsInstance<TaskEntry>().distinctBy { it.run }.size, // a scheduled Run that didn't start isn't a Run
             "done" to history.createHistoricProcessInstanceQuery().rootProcessInstances().completed().count(),
             "entries" to entries,
@@ -81,6 +75,6 @@ class Home(
         val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult()?.rootProcessInstanceId ?: return@mapNotNull null
         val top = history.createHistoricProcessInstanceQuery().processInstanceId(run).singleResult() ?: return@mapNotNull null
         val element = repository.getBpmnModelInstance(task.processDefinitionId).getModelElementById<FlowElement>(task.activityId)
-        Working(top.processDefinitionName ?: top.processDefinitionKey, run, element?.name ?: task.activityId)
+        Working(top.processDefinitionName ?: top.processDefinitionKey, run, names.name(run), element?.name ?: task.activityId)
     }
 }

@@ -64,7 +64,8 @@ val builtIns = mapOf(
 
 /**
  * What the modeler page knows of Ants from the server, as JSON on its canvas's `data-facts`: the Built-in Tasks, the
- * start-form field types, and Items are Tickets' property and what it does.
+ * start-form field types, Items are Tickets' property and what it does, and the Process's Profile property, what it
+ * does and how its empty choice reads.
  */
 val modelerFacts: String = JsonMapper.shared().writeValueAsString(mapOf(
     "builtIns" to builtIns,
@@ -73,6 +74,11 @@ val modelerFacts: String = JsonMapper.shared().writeValueAsString(mapOf(
         "property" to ITEMS_ARE_TICKETS,
         "help" to "Each item names a Ticket ($TICKETS/01-hello.md, or 01). An instance waits until its Ticket's Blocked by are " +
             "${Tracked.IN_REVIEW} or ${Tracked.DONE}, a ${Tracked.READY_FOR_HUMAN} Ticket waits for you, and a landed instance's Ticket goes ${Tracked.IN_REVIEW}.",
+    ),
+    "profile" to mapOf(
+        "property" to PROFILE,
+        "help" to "The Vault and Source map its Runs use, unless the start form picks another Profile.",
+        "none" to "The default",
     ),
 ))
 

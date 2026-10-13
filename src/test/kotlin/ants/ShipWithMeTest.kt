@@ -100,7 +100,7 @@ class ShipWithMeTest : AntsTest() {
 
         // Review changes Approve set every Ticket done.
         for (ticket in listOf("01-one", "02-two", "03-three")) {
-            assertContains(home.runWorkspace(run).resolve("tickets/issues/$ticket.md").readText(), "Status: done", message = ticket)
+            assertContains(workspace(run).resolve("tickets/issues/$ticket.md").readText(), "Status: done", message = ticket)
         }
 
         assertEquals(3, claude.launches("grill").size)

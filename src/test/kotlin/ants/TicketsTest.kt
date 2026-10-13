@@ -47,7 +47,7 @@ class TicketsTest : AntsTest() {
         val tickets = browser.get("/tickets").body
         assertContains(tickets, """<a href="/runs/$run/tickets/spec">Greet the world</a>""")
         assertContains(tickets, "<td>open</td><td>1/2 done</td>")
-        assertContains(tickets, """<a href="/runs/$run">Agent Task</a>""")
+        assertContains(tickets, Regex("""<a href="/runs/$run">Agent Task, [^<]+</a> · Agent Task</td>"""))
     }
 
     @Test
@@ -70,19 +70,19 @@ class TicketsTest : AntsTest() {
 
         browser.post("/runs/$run/tickets/02-goodbye/tick", mapOf("line" to "9", "version" to version(page)))
 
-        val file = home.resolve("runs/$run/tickets/issues/02-goodbye.md").readText()
+        val file = workspace(run).resolve("tickets/issues/02-goodbye.md").readText()
         assertContains(file, "- [ ] Says goodbye\n- [x] Waves\n")
         assertContains(browser.get("/runs/$run/tickets/02-goodbye").body, """<input type="checkbox" checked="" data-line="9"> Waves""")
 
         val stale = browser.post("/runs/$run/tickets/02-goodbye/tick", mapOf("line" to "8", "version" to version(page)))
         assertContains(stale.body, "This file changed since you opened it, so nothing was saved.")
-        assertContains(home.resolve("runs/$run/tickets/issues/02-goodbye.md").readText(), "- [ ] Says goodbye\n")
+        assertContains(workspace(run).resolve("tickets/issues/02-goodbye.md").readText(), "- [ ] Says goodbye\n")
     }
 
     @Test
     fun `a Ticket's page follows the file as an Agent changes it`() {
         val run = start("wait edit", """write tickets/issues/02-goodbye.md # Say goodbye\n\nStatus: in-progress\n""")
-        val events = browser.events("/runs/$run/tickets/02-goodbye/live")
+        val events = browser.events("ticket=$run/02-goodbye", "ticket")
         assertContains(events.poll(10, SECONDS)!!, "Status: ready-for-agent")
 
         claude.release("edit")
@@ -96,7 +96,7 @@ class TicketsTest : AntsTest() {
         val edit = browser.get("/runs/$run/tickets/02-goodbye/edit").body
         assertContains(edit, "- [ ] Says goodbye\n- [ ] Waves")
         claude.release("edit")
-        val file = home.resolve("runs/$run/tickets/issues/02-goodbye.md")
+        val file = workspace(run).resolve("tickets/issues/02-goodbye.md")
         eventually { assertContains(file.readText(), "The Agent was here.") }
 
         val refused = browser.post("/runs/$run/tickets/02-goodbye/edit", mapOf("text" to "# Mine\n", "version" to version(edit)))
@@ -117,7 +117,7 @@ class TicketsTest : AntsTest() {
         eventually { assertContains(browser.get("/notifications").body, "Sign the letter") }
         val list = browser.get("/notifications").body
         assertContains(list, "[ready-for-human]")
-        assertContains(list, """<a href="/runs/$run">$run</a>""")
+        assertContains(list, """<a href="/runs/$run">Agent Task, """)
         val id = Regex("""href="/notifications/([^"]+)">Sign the letter""").find(list)!!.groupValues[1]
 
         val page = browser.get("/notifications/$id")
@@ -125,14 +125,14 @@ class TicketsTest : AntsTest() {
         val done = browser.post("/runs/$run/tickets/03-sign/done", mapOf())
 
         assertEquals("/runs/$run/tickets/03-sign", done.path)
-        assertContains(home.resolve("runs/$run/tickets/issues/03-sign.md").readText(), "Status: done\n")
+        assertContains(workspace(run).resolve("tickets/issues/03-sign.md").readText(), "Status: done\n")
         assertFalse("Sign the letter" in browser.get("/notifications").body)
     }
 
     @Test
     fun `when the Run ends its Spec closes, and its Tickets survive cleanup and are listed in the Report`() {
         val run = start()
-        assertContains(home.resolve("runs/$run/docs/agents/issue-tracker.md").readText(), "`tickets/issues/<NN>-<slug>.md`")
+        assertContains(workspace(run).resolve("docs/agents/issue-tracker.md").readText(), "`tickets/issues/<NN>-<slug>.md`")
 
         claude.release("go")
 

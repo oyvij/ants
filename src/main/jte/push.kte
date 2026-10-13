@@ -4,6 +4,7 @@
 @param error: String? = null
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
+@param shell: ants.Shell
 <!doctype html>
 <html lang="en">
 <head>
@@ -13,11 +14,11 @@
     <title>${entry.icon} ${entry.tag} ${entry.task} · Ants</title>
 </head>
 <body>
-@template.nav()
-<p><a href="/notifications">Notification list</a></p>
-<h1>${entry.icon} ${entry.tag} ${entry.task}</h1>
-<p>${entry.process} · <a href="/runs/${entry.run}">Run ${entry.run}</a> · waiting ${entry.waited}</p>
-<p>${entry.summary}</p>
+@template.nav(shell = shell)
+<main>
+<div class="crumbs"><a href="/notifications">Notification list</a> / <a href="/runs/${entry.run}">${entry.runName}</a> / ${entry.task}</div>
+<div class="ph"><h1>${entry.icon} ${entry.tag} ${entry.task}</h1><div class="acts"><span class="muted small">${entry.process} · waiting ${entry.waited}</span></div>
+    <div class="sub">${entry.summary}</div></div>
 @if(details != null)
 <h2>What git said</h2>
 <pre>${details}</pre>
@@ -41,5 +42,6 @@
     @if(entry.tag == "[failed]")<button class="primary" name="action" value="continue">Continue</button>@else<button class="primary" name="action" value="push">Push</button>@endif
     <button class="danger" name="action" value="cancel">Cancel the Run</button>
 </form>
+</main>
 </body>
 </html>

@@ -55,6 +55,8 @@ class AgentLauncher(
     private val landing: Landing,
     private val cloneRepos: CloneRepos,
     internal val clock: Clock,
+    private val names: RunNames,
+    private val scopes: Scopes,
     @Value("\${ants.home}") private val home: Path,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -98,7 +100,7 @@ class AgentLauncher(
      */
     fun send(run: String, task: String, message: String): Boolean {
         val stdin = stdins[key(run, task)]?.takeIf { it.say(message) } ?: return false
-        runLog(home.runWorkspace(run), stdin.task, "Send", message)
+        runLog(names.runWorkspace(run), stdin.task, "Send", message)
         return true
     }
 
@@ -224,8 +226,9 @@ class AgentLauncher(
         var transcript: Transcript.Writer? = null
         try {
             val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult().rootProcessInstanceId
-            val workspace = home.runWorkspace(run)
+            val workspace = names.runWorkspace(run)
             if (ticketed(task, run, workspace)) return
+            if (notLaunched(task, workspace, scopes.of(run))) return
             val agent = catalogue.agent(task.extensionProperties[AGENT] ?: error("${task.activityId} names no $AGENT"))
             if (hold(task, agent.cli)) return // keeping its choice for the launch after the reset
             runtime.removeVariablesLocal(task.executionId, listOf(ACTION, INSTRUCTION, SESSION)) // the choice is used once
@@ -317,6 +320,31 @@ class AgentLauncher(
         return true
     }
 
+    /**
+     * Whether [task] is done without a launch, as the Tasks that serve the Source map and the Vault are in a Run scoped to
+     * repos ([source]): the scout's Result is the scope, with no branch and a brief Ants writes itself, `scout/brief.md` with
+     * the prompt and the repos; Update the Vault's says written, with nothing to write.
+     */
+    private fun notLaunched(task: LockedExternalTask, workspace: Path, source: RunSource): Boolean {
+        val scope = (source as? RunSource.Scoped)?.scope ?: return false
+        val output = when (task.extensionProperties[SKILL]) {
+            "scout" -> {
+                val repos = scope.joinToString("") { "- $it\n" }
+                workspace.resolve("scout").createDirectories().resolve("brief.md").writeText(
+                    "# Brief\n\n## Prompt\n\n${inputs(task)["prompt"] ?: ""}\n\n## Repos\n\nThe Run is scoped to the repos its start form names, " +
+                        "and has no Vault or Source map:\n\n$repos",
+                )
+                mapOf("repos" to ArrayList(scope), "branch" to "", "brief" to "scout/brief.md")
+            }
+            "update-knowledge" -> mapOf("written" to true)
+            else -> return false
+        }
+        val summary = "Not launched: the Run is scoped to its repos, with no Vault or Source map."
+        Transcript.Writer(Transcript.file(workspace, instance(task))).ants("end", summary)
+        complete(task, mapOf("outcome" to "done", "summary" to summary, "output" to output))
+        return true
+    }
+
     /** Completes [task] with its [result] ([onClash]). */
     private fun complete(task: LockedExternalTask, result: Map<*, *>) = onClash { externalTasks.complete(task.id, WORKER, mapOf(task.activityId to result)) }
 
@@ -354,9 +382,11 @@ class AgentLauncher(
         session: String?, started: (String) -> Unit, resume: Boolean, instruction: String?, handedOff: Boolean = !resume,
     ): Map<*, *> {
         val inputs = inputs(task)
-        val vault = vault(task, skill)
+        // A called Process's Task uses its top Run's scope and Profile: [run] is the top Run.
+        val source = scopes.of(run)
+        val vault = vault(task, skill, source)
         val prompt = if (!handedOff) instruction.orEmpty()
-        else handOff(task, skill, used, cwd, vault) + "\n\n" + json.writeValueAsString(inputs) + (if (instruction.isNullOrBlank()) "" else "\n\nFrom the user:\n$instruction")
+        else handOff(task, skill, used, cwd, vault, source.sourceMap(settings)) + "\n\n" + json.writeValueAsString(inputs) + (if (instruction.isNullOrBlank()) "" else "\n\nFrom the user:\n$instruction")
         // The Task's result-schema override replaces the Skill's result.schema.json; Checks refuse one that isn't valid.
         val override = task.extensionProperties[RESULT_SCHEMA]?.takeIf(String::isNotBlank)?.let { json.readValue(it, Map::class.java) }
         val output = override ?: skill.outputSchema
@@ -371,7 +401,7 @@ class AgentLauncher(
             .plus(answerHistory(task, skill)?.let { listOf("--add-dir", "${it.createDirectories()}") }.orEmpty()) // so a Read reaches it (ADR 0010)
         val process = cli(agent.cli, cwd, flags(agent, schema, listOf(skill) + used, session!!, resume, gated?.let { listOf("Write(/$it/**)", "Edit(/$it/**)") }.orEmpty()) + shared + places).start()
         val stdin = Stdin(process.outputWriter(), name(task))
-        clis[process] = workspace.fileName.toString() // the Run workspace is runs/<run>/
+        clis[process] = run
         val stderr = drain(process)
         try {
             stdin.say(prompt)
@@ -475,20 +505,20 @@ class AgentLauncher(
 
     /**
      * The Vault's folder when [task] gets the Vault: its toggle ([VAULT]) has the final say, else its [skill]'s opt-in.
-     * Null when off, or with no Vault configured, which the pre-Run check (#55) refuses.
+     * Null when off, in a scoped Run ([source]), which has no Vault whatever the toggle says, or with no Vault configured
+     * for its Profile, which the pre-Run check (#55) refuses.
      */
-    // ponytail: the default Vault, until a Process picks its own.
-    private fun vault(task: LockedExternalTask, skill: Skill): Path? = settings.vaults()[settings.defaultVault()]?.let(Settings::expand)
+    private fun vault(task: LockedExternalTask, skill: Skill, source: RunSource): Path? = source.vault(settings)
         ?.takeIf { task.extensionProperties[VAULT]?.toBooleanStrictOrNull() ?: catalogue.vault(skill) }
 
     /**
-     * The hand-off line: the Skill and the workspace, the Skills it [used], and where the [vault] and Source map and the
+     * The hand-off line: the Skill and the workspace, the Skills it [used], and where the [vault] and [sourceMap] and the
      * Answer History are, each only when on: the Task's [ANSWER_HISTORY] toggle has the final say, else the Skill's opt-in.
      */
-    private fun handOff(task: LockedExternalTask, skill: Skill, used: List<Skill>, workspace: Path, vault: Path?): String {
+    private fun handOff(task: LockedExternalTask, skill: Skill, used: List<Skill>, workspace: Path, vault: Path?, sourceMap: Path?): String {
         val places = if (vault == null) emptyList() else listOfNotNull(
             "the Vault is $vault",
-            settings.sourceMap()?.let { "the Source map is $it" },
+            sourceMap?.let { "the Source map is $it" },
         )
         return "Follow the Skill in ${skill.file} for the workspace at $workspace." +
             (if (used.isEmpty()) "" else " It uses the Skills ${used.joinToString { "${it.name} (${it.file})" }}.") +

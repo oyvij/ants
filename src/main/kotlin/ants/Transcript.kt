@@ -11,7 +11,6 @@ import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.server.ResponseStatusException
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
 import org.springframework.web.util.HtmlUtils
 import tools.jackson.databind.json.JsonMapper
 import java.io.RandomAccessFile
@@ -31,8 +30,8 @@ import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.name
 
 /**
- * One Agent Task's Transcript, folded into the elements its page shows. The file, `runs/<run>/tasks/<task-id>/
- * transcript.jsonl`, holds the raw stream-json lines of every launch as they arrived, plus Ants' own lines
+ * One Agent Task's Transcript, folded into the elements its page shows. The file, `tasks/<task-id>/
+ * transcript.jsonl` in the Run workspace, holds the raw stream-json lines of every launch as they arrived, plus Ants' own lines
  * (`"type":"ants"`): a `launch` divider before each launch and an `end` line after it. [add] folds in one line and
  * says which elements it changed, so a page following the file patches only those.
  */
@@ -459,13 +458,14 @@ fun tokens(count: Long): String {
 
 /** The Transcript page, which replays the file and then follows it over SSE, with Send and Stop while the Task runs. */
 @Controller
-class Transcripts(@Value("\${ants.home}") home: Path, private val launcher: AgentLauncher, private val streams: Streams) {
+class Transcripts(@Value("\${ants.home}") home: Path, private val launcher: AgentLauncher, private val streams: Streams, private val names: RunNames) {
     private val runs = home.resolve("runs")
 
     @GetMapping("/runs/{run}/tasks/{task}/transcript")
     fun page(@PathVariable run: String, @PathVariable task: String, model: Model): String {
         val (lines, offset) = Transcript.read(file(run, task))
         model.addAttribute("run", run)
+        model.addAttribute("runName", names.name(run))
         model.addAttribute("task", task)
         model.addAttribute("transcript", Transcript().apply { lines.forEach(::add) })
         model.addAttribute("offset", offset)
@@ -498,19 +498,18 @@ class Transcripts(@Value("\${ants.home}") home: Path, private val launcher: Agen
         return page(run, task, model)
     }
 
-    /** The changed elements of the Transcript from byte [from] on, as `entry` events, for as long as the page is open. */
-    @GetMapping("/runs/{run}/tasks/{task}/transcript/events")
-    fun events(@PathVariable run: String, @PathVariable task: String, @RequestParam from: Long): SseEmitter {
+    /** The changed elements of the Transcript from byte [from] on, as `transcript` events, for as long as the page is open. */
+    fun events(run: String, task: String, from: Long): Part {
         val file = file(run, task)
         val transcript = Transcript()
         var offset = Transcript.read(file, 0, from).let { (lines, end) -> lines.forEach(transcript::add); end }
-        return streams.poll(Duration.ofMillis(250), "entry") {
+        return Part("transcript", Duration.ofMillis(250)) {
             val (lines, end) = Transcript.read(file, offset)
             offset = end
             lines.flatMapTo(linkedSetOf()) { transcript.add(it) }.map(transcript::html)
         }
     }
 
-    private fun file(run: String, task: String) = Transcript.file(runs.resolve(run), task).normalize()
+    private fun file(run: String, task: String) = Transcript.file(names.runWorkspace(run), task).normalize()
         .also { if (!it.startsWith(runs) || it.nameCount != runs.nameCount + 4) throw ResponseStatusException(HttpStatus.NOT_FOUND) }
 }

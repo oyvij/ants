@@ -5,7 +5,6 @@ import org.operaton.bpm.engine.RepositoryService
 import org.operaton.bpm.engine.RuntimeService
 import org.operaton.bpm.engine.externaltask.LockedExternalTask
 import org.operaton.bpm.model.bpmn.instance.FlowElement
-import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
 import tools.jackson.databind.json.JsonMapper
 import java.nio.file.Files
@@ -143,13 +142,13 @@ class AcceptRecommendations(
     private val externalTasks: ExternalTaskService,
     private val runtime: RuntimeService,
     private val repository: RepositoryService,
-    @Value("\${ants.home}") private val home: Path,
+    private val names: RunNames,
 ) : BuiltInWorker(externalTasks, "Accept recommendations", "accept-recommendations", Duration.ofMinutes(1), { it.includeExtensionProperties() }) {
     override fun handle(task: LockedExternalTask) {
         val asker = task.extensionProperties[ASKER] ?: error("${task.activityId} names no asker ($ASKER)")
         val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult().rootProcessInstanceId
         val name = repository.getBpmnModelInstance(task.processDefinitionId).getModelElementById<FlowElement>(task.activityId)?.name ?: task.activityId
-        runtime.answerFor(home.runWorkspace(run), task.executionId, name, asker, emptyMap()) { answers ->
+        runtime.answerFor(names.runWorkspace(run), task.executionId, name, asker, emptyMap()) { answers ->
             onClash { externalTasks.complete(task.id, WORKER, mapOf(task.activityId to answers)) }
         }
     }

@@ -30,9 +30,7 @@ import org.springframework.security.web.csrf.CsrfToken
 import org.operaton.bpm.engine.RepositoryService
 import org.operaton.bpm.engine.RuntimeService
 import org.springframework.beans.factory.annotation.Value
-import org.springframework.http.MediaType.TEXT_EVENT_STREAM_VALUE
 import org.springframework.web.bind.annotation.ResponseBody
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
 import tools.jackson.databind.json.JsonMapper
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Component
@@ -41,6 +39,7 @@ import org.springframework.ui.Model
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.server.ResponseStatusException
 import java.io.File
 import java.nio.file.Files
@@ -70,11 +69,14 @@ class Runs(
     private val clock: Clock,
     private val templates: TemplateEngine,
     private val streams: Streams,
-    @Value("\${ants.home}") private val home: Path,
+    private val names: RunNames,
+    private val scopes: Scopes,
 ) {
     @GetMapping("/runs")
     fun list(model: Model): String {
-        model.addAttribute("runs", history.createHistoricProcessInstanceQuery().rootProcessInstances().orderByProcessInstanceStartTime().desc().list())
+        val runs = history.createHistoricProcessInstanceQuery().rootProcessInstances().orderByProcessInstanceStartTime().desc().list()
+        model.addAttribute("runs", runs)
+        model.addAttribute("names", runs.associate { it.id to names.name(it.id) })
         return "runs"
     }
 
@@ -82,9 +84,13 @@ class Runs(
     fun run(@PathVariable id: String, model: Model): String {
         val run = run(id)
         model.addAttribute("run", run)
+        model.addAttribute("name", names.name(id))
+        val source = scopes.of(id)
+        model.addAttribute("scope", (source as? RunSource.Scoped)?.scope)
+        model.addAttribute("profile", (source as? RunSource.Profiled)?.name)
         model.addAttribute("kept", keptWorkspace(run)?.toString())
         // Where the work lives, in full, as long as it is on disk: the shared clones, then each instance's worktrees.
-        val workspace = home.runWorkspace(id)
+        val workspace = names.runWorkspace(id)
         model.addAttribute("workspace", workspace.takeIf { Files.isDirectory(it) }?.toString())
         model.addAttribute("repos", (listOf(workspace.resolve("repos")) + workspace.resolve("instances").folders().map { it.resolve("repos") })
             .flatMap { it.folders() }.map { it.toString() })
@@ -95,8 +101,8 @@ class Runs(
                 .filter { it.executionId == id } // the Run's own, not an Agent Task's inputs or a multi-instance's own Results
                 .associate { it.name to ((it.typedValue as? ObjectValue)?.valueSerialized ?: "${it.value}") },
         )
-        model.addAttribute("transcripts", Transcript.all(home.runWorkspace(id)).mapValues { it.value.tokens })
-        model.addAttribute("report", Files.exists(home.runWorkspace(id).resolve(REPORT)))
+        model.addAttribute("transcripts", Transcript.all(workspace).mapValues { it.value.tokens })
+        model.addAttribute("report", Files.exists(workspace.resolve(REPORT)))
         model.addAttribute(
             "agentTasks",
             externalTasks.createExternalTaskQuery().processInstanceId(id).topicName(AgentLauncher.TOPIC).list()
@@ -108,9 +114,10 @@ class Runs(
     /** The Report the Run left as it ended, rendered. */
     @GetMapping("/runs/{id}/report")
     fun report(@PathVariable id: String, model: Model): String {
-        val file = home.runWorkspace(run(id).id).resolve(REPORT)
+        val file = names.runWorkspace(run(id).id).resolve(REPORT)
         if (!Files.exists(file)) throw ResponseStatusException(HttpStatus.NOT_FOUND, "Run $id has no Report yet")
         model.addAttribute("run", id)
+        model.addAttribute("name", names.name(id))
         model.addAttribute("html", Transcript.markdown(Files.readString(file)))
         return "report"
     }
@@ -124,11 +131,9 @@ class Runs(
      * The Run's state, each element's [Shown] and the process instance each call activity called (its latest), as
      * JSON, sent on connect and whenever it changes. [id] may be a called Process's instance, for the breadcrumb.
      */
-    @GetMapping("/runs/{id}/live", produces = [TEXT_EVENT_STREAM_VALUE])
-    @ResponseBody
-    fun live(@PathVariable id: String): SseEmitter {
+    fun live(id: String): Part {
         run(id)
-        return streams.changes {
+        return streams.changes("run") {
             // ponytail: a multi-instance call activity opens its latest called instance; a picker if one is wanted.
             val called = history.createHistoricActivityInstanceQuery().processInstanceId(id).activityType("callActivity")
                 .orderByHistoricActivityInstanceStartTime().asc().list().filter { it.calledProcessInstanceId != null }
@@ -142,25 +147,23 @@ class Runs(
      * Agent's checklist, latest output, and the comment box and action when it waits on the user. [id] may be a
      * called Process's instance, whose Task is kept in the top Run under its key ([taskKey]).
      */
-    @GetMapping("/runs/{id}/tasks/{task}/drawer", produces = [TEXT_EVENT_STREAM_VALUE])
-    @ResponseBody
-    fun drawer(@PathVariable id: String, @PathVariable task: String, csrf: CsrfToken): SseEmitter {
+    fun drawer(id: String, task: String, csrf: CsrfToken): Part {
         val instance = run(id)
         val element = repository.getBpmnModelInstance(instance.processDefinitionId).getModelElementById<FlowElement>(task)
             ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No Task $task")
         val top = instance.rootProcessInstanceId
-        val key = (history.createHistoricVariableInstanceQuery().processInstanceId(id).variableName(CALLED).singleResult()?.value as? String).orEmpty() + task
-        val file = Transcript.file(home.runWorkspace(top), key)
+        val key = (history.variable(id, CALLED) as? String).orEmpty() + task
+        val file = Transcript.file(names.runWorkspace(top), key)
         val transcript = Transcript()
         var offset = 0L
         csrf.token // loads the token while the request is still here
-        return streams.changes {
+        return streams.changes("drawer") {
             val (lines, end) = Transcript.read(file, offset)
             offset = end
             lines.forEach(transcript::add)
             val entry = notifications.tasks().firstOrNull { it.instance == id && it.activity == task }
             val model = mapOf(
-                "run" to top, "task" to key, "name" to (element.name ?: task), "shown" to shown(id)[task], "transcript" to transcript,
+                "run" to top, "runName" to names.name(top), "task" to key, "name" to (element.name ?: task), "shown" to shown(id)[task], "transcript" to transcript,
                 "entry" to entry, "details" to entry?.let(notifications::details), "push" to (entry?.let(notifications::isPush) == true), "sendHint" to launcher.sendHint(top, key), "_csrf" to csrf,
             )
             StringOutput().also { templates.render("drawer.kte", model, it) }.toString()
@@ -175,7 +178,7 @@ class Runs(
     private fun shown(id: String): Map<String, Shown> {
         val entries = notifications.tasks().filter { it.instance == id }.associateBy { it.activity }
         val agentTasks = externalTasks.createExternalTaskQuery().processInstanceId(id).topicName(AgentLauncher.TOPIC).list().groupBy { it.activityId }
-        val rounds = history.createHistoricVariableInstanceQuery().processInstanceId(id).variableName("runs").singleResult()?.value as? Map<*, *>
+        val rounds = history.variable(id, "runs") as? Map<*, *>
         return history.createHistoricActivityInstanceQuery().processInstanceId(id).list().groupBy { it.activityId }.mapValues { (activity, instances) ->
             val round = (rounds?.get(activity) as? Number)?.toInt()
             val entry = entries[activity]
@@ -204,6 +207,13 @@ class Runs(
         return "redirect:/runs/$id"
     }
 
+    /** Rename: the Run's name changes, live or ended; its folder and work branch keep the one they started with. */
+    @PostMapping("/runs/{id}/name")
+    fun rename(@PathVariable id: String, @RequestParam name: String): String {
+        names.rename(run(id).id, name)
+        return "redirect:/runs/$id"
+    }
+
     /** Dismiss: cleans up the Run workspace a cancelled Run kept, as if the Run had ended. */
     @PostMapping("/runs/{id}/dismiss")
     fun dismiss(@PathVariable id: String): String {
@@ -219,7 +229,7 @@ class Runs(
     private fun Path.folders(): List<Path> = if (!Files.isDirectory(this)) emptyList()
     else Files.list(this).use { all -> all.filter { Files.isDirectory(it) && !it.fileName.toString().startsWith(".") }.sorted().toList() }
 
-    private fun keptWorkspace(run: HistoricProcessInstance) = home.runWorkspace(run.id).takeIf { workspace ->
+    private fun keptWorkspace(run: HistoricProcessInstance) = names.runWorkspace(run.id).takeIf { workspace ->
         run.state == HistoricProcessInstance.STATE_EXTERNALLY_TERMINATED && workspace.toFile().listFiles()?.any { it.name !in KEPT } == true
     }
 
@@ -233,9 +243,6 @@ class Runs(
 }
 
 private val json = JsonMapper.shared()
-
-/** The Run workspace of [run] in this ANTS_HOME: `runs/<run>/`. */
-fun Path.runWorkspace(run: String): Path = resolve("runs").resolve(run)
 
 /** Back to the Run page of [run] when the user acted from its Task drawer ([back] is `run`), else to [otherwise]. */
 fun back(back: String?, run: String, otherwise: String) = "redirect:" + if (back == "run") "/runs/$run" else otherwise
@@ -254,23 +261,35 @@ val HistoricProcessInstance.stateName
     }
 
 /**
- * Gives each Run its Run workspace, `runs/<run>/` in ANTS_HOME, for as long as it lives. At Run start every
+ * Gives each Run its name ([NAME]) and its Run workspace, `runs/<slug>-<run>/` in ANTS_HOME ([FOLDER]), for as long
+ * as it lives, its Run log starting with the name. At Run start every
  * Task-id (and call activity id) variable is `null`, so forward references read `null`, `runs` counts each Task's
- * runs, `clones` is empty and `sourceMap` holds the default Source map's repos, `[{name, remote}]`. A multi-instance collects its instances' Results into one list ([collect]). A called Process runs inside its
+ * runs, `clones` is empty and `sourceMap` holds the repos of the Run's Profile's Source map ([PROFILE]), `[{name, remote}]`, none in a scoped Run ([SCOPE]). A multi-instance collects its instances' Results into one list ([collect]). A called Process runs inside its
  * caller's Run: it ends by giving its call activity every Result in it, by id.
  */
 /** The variables [RunLifecycle] gives every Run besides its Results, which any expression may read. */
 val RUN_VARIABLES = listOf("runs", "clones", "sourceMap")
 
 @Component
-class RunLifecycle(@Value("\${ants.home}") private val home: Path, private val settings: Settings) : AbstractProcessEnginePlugin() {
+class RunLifecycle(@Value("\${ants.home}") private val home: Path, private val settings: Settings, private val clock: Clock) : AbstractProcessEnginePlugin() {
     private fun started(tasks: List<String>, results: List<String>) = ExecutionListener { run ->
-        if (run.isTopRun) trackerDoc(home.runWorkspace(run.processInstanceId).createDirectories())
-        else run.setVariable(CALLED, called(run.superExecution))
+        if (run.isTopRun) {
+            // The name given on the start form, else the Process and start time; the folder and Run log start with it.
+            val process = (run as ExecutionEntity).processDefinition.let { it.name ?: it.key }
+            val name = runName(run.getVariable(NAME) as? String) ?: clock.defaultName(process)
+            val folder = folder(name, run.processInstanceId)
+            run.setVariable(NAME, name)
+            run.setVariable(FOLDER, folder)
+            val workspace = home.runWorkspace(run.processInstanceId, folder).createDirectories()
+            trackerDoc(workspace)
+            Files.writeString(workspace.resolve("run-log.md"), "# $name\n\n$process\n\n")
+        } else run.setVariable(CALLED, called(run.superExecution))
         for (id in results) run.setVariable(id, null)
         run.setVariable("runs", tasks.associateWith { 0 })
         run.setVariable("clones", ArrayList<Any>()) // Clone repos adds to it
-        run.setVariable("sourceMap", ArrayList(settings.repos().map { linkedMapOf("name" to it.name, "remote" to it.remote) }))
+        // A called Process reads its top Run's scope and Profile, as it runs in that Run.
+        val repos = RunSource.read(run.topRun::getVariable).repos(settings)
+        run.setVariable("sourceMap", ArrayList(repos.map { linkedMapOf("name" to it.name, "remote" to it.remote) }))
     }
 
     // ponytail: parallel Tasks starting in separate transactions clash on `runs` (optimistic locking) and the losing
@@ -288,7 +307,7 @@ class RunLifecycle(@Value("\${ants.home}") private val home: Path, private val s
             if (!cancelled) call.setVariable(call.currentActivityId, results.associateWith { run.getVariable(it) })
             return@ExecutionListener
         }
-        val workspace = home.runWorkspace(run.processInstanceId)
+        val workspace = home.runWorkspace(run.processInstanceId, run.getVariable(FOLDER) as? String)
         val report = report(run, workspace)
         // Only once the end is committed: a rolled-back end leaves the Run alive and needing its workspace.
         Context.getCommandContext().transactionContext.addTransactionListener(TransactionState.COMMITTED) {
@@ -334,9 +353,11 @@ class RunLifecycle(@Value("\${ants.home}") private val home: Path, private val s
             // With Items are Tickets, the instance's Ticket goes in review once it ends, after its last landing.
             if (body.getProperty(ITEMS_ARE_TICKETS) == true) {
                 val item = instance.getVariable(loop.collectionElementVariable)
-                val run = (instance as ExecutionEntity).rootProcessInstanceId
+                val top = instance.topRun
+                val run = top.id
+                val workspace = home.runWorkspace(run, top.getVariable(FOLDER) as? String)
                 Context.getCommandContext().transactionContext.addTransactionListener(TransactionState.COMMITTED) {
-                    ticket(home.runWorkspace(run), run, item)?.takeIf { !it.closed }?.status(Tracked.IN_REVIEW)
+                    ticket(workspace, run, item)?.takeIf { !it.closed }?.status(Tracked.IN_REVIEW)
                 }
             }
         })
@@ -460,3 +481,10 @@ private fun ScopeImpl.multiInstanceBodies(): List<ActivityImpl> = activities.fla
 
 /** A called Process runs inside its caller's Run. */
 private val DelegateExecution.isTopRun get() = superExecution == null
+
+/**
+ * The top Run's process instance [this] runs in, at any depth of called Processes: the engine's root process instance
+ * ([ExecutionEntity.getRootProcessInstanceId]), the one services find by that id.
+ */
+private val DelegateExecution.topRun: ExecutionEntity
+    get() = generateSequence((this as ExecutionEntity).processInstance) { it.superExecution?.processInstance }.last()
