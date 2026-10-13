@@ -55,7 +55,7 @@ class RunPageTest : AntsTest() {
         val run = start("agent-loop")
         assertContains(browser.get("/runs/$run").body, """<div id="diagram"""")
         assertContains(browser.get("/runs/$run/diagram.bpmn").body, """<bpmn:serviceTask id="polish"""")
-        val live = browser.events("/runs/$run/live")
+        val live = browser.events("run=$run", "run")
 
         var update = live.until(::diagram) { it.element("draft")?.get("state") == "running" }
         assertEquals(mapOf("state" to "running", "badge" to null, "round" to 1), update.element("draft"))
@@ -113,7 +113,7 @@ class RunPageTest : AntsTest() {
             "read", done,
         )
         val run = start("agent-task")
-        val drawer = browser.events("/runs/$run/tasks/draft/drawer")
+        val drawer = browser.events("run=$run&drawer=draft", "drawer")
         var html = drawer.until { "dry" in it }
         assertContains(part(html, "drawer-head"), "Draft")
         assertContains(part(html, "drawer-head"), "running")
@@ -147,7 +147,7 @@ class RunPageTest : AntsTest() {
                 """"modelUsage":{"claude-haiku-5-5":{"inputTokens":40,"outputTokens":2,"cacheReadInputTokens":0,"cacheCreationInputTokens":0}}}""",
         )
         val run = start("agent-task")
-        val html = browser.events("/runs/$run/tasks/draft/drawer").until { "It read the notes." in it }
+        val html = browser.events("run=$run&drawer=draft", "drawer").until { "It read the notes." in it }
         assertContains(part(html, "drawer-so-far"), "<p>It read the notes.</p>")
         assertContains(part(html, "drawer-head"), "42 tokens")
         val rewrite = claude.launches("so-far").first()
@@ -164,7 +164,7 @@ class RunPageTest : AntsTest() {
         claude.session("draft", 2, looked, "wait again", done)
         val rewrites = claude.launches("so-far").size
         val off = start("agent-task")
-        browser.events("/runs/$off/tasks/draft/drawer").until { "Looked at the notes." in it }
+        browser.events("run=$off&drawer=draft", "drawer").until { "Looked at the notes." in it }
         Thread.sleep(2500)
         assertEquals(rewrites, claude.launches("so-far").size)
         assertContains(browser.get("/settings").body, """<input type="checkbox" name="so-far">""") // unticked
@@ -177,7 +177,7 @@ class RunPageTest : AntsTest() {
         claude.session("draft", """{"type":"assistant","message":{"id":"m1","content":[{"type":"text","text":"Looked."}]}}""", "wait full", done)
         val rewrites = claude.launches("so-far").size
         val run = start("agent-task")
-        browser.events("/runs/$run/tasks/draft/drawer").until { "Looked." in it }
+        browser.events("run=$run&drawer=draft", "drawer").until { "Looked." in it }
         Thread.sleep(2500)
         assertEquals(rewrites, claude.launches("so-far").size)
         claude.release("full")
@@ -190,7 +190,7 @@ class RunPageTest : AntsTest() {
         claude.session("draft", stuck)
         claude.session("draft", 2, done)
         val run = start("agent-task")
-        val html = browser.events("/runs/$run/tasks/draft/drawer").until { "[stuck]" in it }
+        val html = browser.events("run=$run&drawer=draft", "drawer").until { "[stuck]" in it }
         assertContains(part(html, "drawer-head"), "⚠ [stuck] No tone given.")
         val action = part(html, "drawer-action")
         assertContains(action, "Which tone, dry or warm?")

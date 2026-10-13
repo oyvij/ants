@@ -364,10 +364,10 @@ class AgentTaskTest : AntsTest() {
     private fun rejected(resetsAt: Instant) = """{"type":"rate_limit_event","rate_limit_info":{"status":"rejected",""" +
         """"resetsAt":${resetsAt.epochSecond},"rateLimitType":"five_hour","isUsingOverage":false},"session_id":"${'$'}SESSION"}"""
 
-    /** The nav's pill as [page] shows it: the nav fills its slot from the stream it names. */
+    /** The nav's pill as [page] shows it: the nav fills its slot from the page's stream. */
     private fun pill(page: String): String {
-        val slot = Regex("""<span id="paused" data-src="([^"]+)"></span>""").find(browser.get(page).body)
-        return browser.events(assertNotNull(slot, "$page has no pill in its nav").groupValues[1]).poll(10, SECONDS).orEmpty()
+        assertContains(browser.get(page).body, """<span id="paused"></span>""", message = "$page has no pill in its nav")
+        return browser.events("", "pauses").poll(10, SECONDS).orEmpty()
     }
 
     @Test
@@ -380,7 +380,7 @@ class AgentTaskTest : AntsTest() {
         val until = clock.local(Instant.ofEpochSecond(resetsAt.epochSecond).plusSeconds(60))
         eventually { assertContains(page(run), "<dt>draft</dt><dd>Paused until $until</dd>") }
         assertContains(pill("/runs/$run"), "claude paused until $until")
-        assertContains(browser.events("/runs/$run/live").poll(10, SECONDS).orEmpty(), "\"badge\":\"Paused until $until\"") // the diagram's badge
+        assertContains(browser.events("run=$run", "run").poll(10, SECONDS).orEmpty(), "\"badge\":\"Paused until $until\"") // the diagram's badge
         assertFalse("/runs/$run\"" in browser.get("/notifications").body) // a pause waits on nobody
 
         clock.offset = Duration.ofHours(1) // past resetsAt, not yet the minute after

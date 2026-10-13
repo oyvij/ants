@@ -40,7 +40,7 @@ $unsafe{article}
     <input type="hidden" name="line">
     <input type="hidden" name="version">
 </form>
-<script>
+<script type="module">
     // Ticking a checkbox saves it, saying which version of the file the page showed; the page follows the file as it changes.
     const tick = document.getElementById('tick');
     document.addEventListener('change', event => {
@@ -49,11 +49,12 @@ $unsafe{article}
         tick.version.value = document.getElementById('ticket').dataset.version;
         tick.submit();
     });
-    new EventSource('${file.href}/live').onmessage = event => {
+    stream.on('ticket', html => {
         const template = document.createElement('template');
-        template.innerHTML = event.data;
+        template.innerHTML = html;
         document.getElementById('ticket').replaceWith(template.content.firstElementChild);
-    };
+    });
+    stream.follow('ticket=' + encodeURIComponent('${file.run}/${file.name}'));
 </script>
 </main>
 </body>

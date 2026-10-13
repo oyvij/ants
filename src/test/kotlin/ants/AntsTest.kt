@@ -254,11 +254,20 @@ class Browser(private val base: String) {
         return upload("/processes", "file", file, javaClass.getResource("/$file")!!.readBytes())
     }
 
-    /** Opens an SSE stream the way a page's `EventSource` does; each event's data arrives on the queue. */
-    fun events(path: String): BlockingQueue<String> {
+    /**
+     * Opens a page's SSE stream, `/live?[query]`, the way its `EventSource` does; the data of each event named [name]
+     * arrives on the queue.
+     */
+    fun events(query: String, name: String): BlockingQueue<String> {
         val events = LinkedBlockingQueue<String>()
-        client.sendAsync(HttpRequest.newBuilder(URI("$base$path")).header("Accept", "text/event-stream").GET().build(), HttpResponse.BodyHandlers.ofLines())
-            .thenAccept { response -> response.body().forEach { if (it.startsWith("data:")) events += it.removePrefix("data:") } }
+        var event = ""
+        client.sendAsync(HttpRequest.newBuilder(URI("$base/live?$query")).header("Accept", "text/event-stream").GET().build(), HttpResponse.BodyHandlers.ofLines())
+            .thenAccept { response ->
+                response.body().forEach {
+                    if (it.startsWith("event:")) event = it.removePrefix("event:")
+                    if (it.startsWith("data:") && event == name) events += it.removePrefix("data:")
+                }
+            }
         return events
     }
 

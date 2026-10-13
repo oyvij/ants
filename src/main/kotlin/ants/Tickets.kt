@@ -10,9 +10,6 @@ import org.commonmark.renderer.html.AttributeProvider
 import org.commonmark.renderer.html.HtmlRenderer
 import org.operaton.bpm.engine.HistoryService
 import org.springframework.http.HttpStatus
-import org.springframework.http.MediaType.TEXT_EVENT_STREAM_VALUE
-import org.springframework.web.bind.annotation.ResponseBody
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
 import org.springframework.stereotype.Controller
 import org.springframework.ui.Model
 import org.springframework.web.bind.annotation.GetMapping
@@ -196,11 +193,9 @@ class Tickets(private val history: HistoryService, private val streams: Streams,
     }
 
     /** The rendered file, sent on connect and whenever it changes. */
-    @GetMapping("/runs/{run}/tickets/{name}/live", produces = [TEXT_EVENT_STREAM_VALUE])
-    @ResponseBody
-    fun live(@PathVariable run: String, @PathVariable name: String): SseEmitter {
+    fun live(run: String, name: String): Part {
         tracked(run, name)
-        return streams.changes { article(tracked(run, name)) }
+        return streams.changes("ticket") { article(tracked(run, name)) }
     }
 
     /**
