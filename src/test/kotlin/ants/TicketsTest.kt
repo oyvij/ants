@@ -139,7 +139,7 @@ class TicketsTest : AntsTest() {
         eventually { assertContains(browser.get("/runs/$run").body, """<a href="/runs/$run/report">Report</a>""") }
         assertContains(browser.get("/tickets").body, "<td>closed</td><td>1/2 done</td>")
         assertContains(browser.get("/runs/$run/tickets/02-goodbye").body, "Says goodbye")
-        val report = browser.get("/runs/$run/report").body
+        val report = browser.report(run)
         assertContains(report, """<h2>Tickets</h2>""")
         assertContains(report, """<a rel="nofollow" href="/runs/$run/tickets/spec">Greet the world</a>""")
         assertContains(report, """<li><a rel="nofollow" href="/runs/$run/tickets/01-hello">Say hello</a> · done</li>""")

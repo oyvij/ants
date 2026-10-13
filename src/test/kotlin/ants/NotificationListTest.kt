@@ -289,7 +289,7 @@ class NotificationListTest : AntsTest() {
         assertFalse("[failed]" in transcript.readText())
         assertTrue(workspace(run).isDirectory())
         assertContains(runLog(run), "Check · Cancel the Run")
-        assertContains(browser.get("/runs/$run/report").body, " · Cancelled</p>") // the Report is written as the Run ends
+        assertContains(browser.report(run), " · Cancelled</p>") // the Report is written as the Run ends
         workspace(run).resolve("tickets").createDirectories().resolve("spec.md").writeText("# Hello\n")
 
         val dismissed = browser.post("/runs/$run/dismiss", emptyMap())

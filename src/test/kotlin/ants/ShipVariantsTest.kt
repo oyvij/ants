@@ -106,7 +106,7 @@ class ShipVariantsTest : AntsTest() {
         // to-spec lists the repo instead: it gets the repos the grilling named, and web is never cloned.
         assertContains(claude.launches("to-spec").single().stdin, """\"repos\":[\"web\"]""")
         assertEquals("refs/heads/main", git(web.remote, "for-each-ref", "--format=%(refname)"))
-        val report = browser.get("/runs/$run/report").body
+        val report = browser.report(run)
         assertContains(report.substringAfter("<h2>Answers you didn't give</h2>"), "Who exports: Only admins. (agent)")
     }
 

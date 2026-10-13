@@ -39,7 +39,7 @@ class ReportTest : AntsTest() {
         val run = start()
         eventually { assertContains(browser.get("/runs/$run").body, """<a href="/runs/$run/report">Report</a>""") }
 
-        val report = browser.get("/runs/$run/report").body
+        val report = browser.report(run)
         assertContains(report, Regex("<h1>Agent Task, [^<]+</h1>"))
         assertContains(report, "<p>Agent Task · Completed</p>")
         assertContains(report, "<h2>Start form</h2>")

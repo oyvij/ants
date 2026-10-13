@@ -191,7 +191,7 @@ class PushTest : AntsTest() {
         browser.post(entry(run), mapOf("action" to "continue", "instruction" to "")) // web stays unpushed
         completed(run)
 
-        val report = browser.get("/runs/$run/report").body
+        val report = browser.report(run)
         assertContains(report, "<h2>Push</h2>")
         assertContains(
             report,
