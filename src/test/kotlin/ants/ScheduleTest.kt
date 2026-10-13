@@ -172,7 +172,7 @@ class ScheduleTest : AntsTest() {
         assertContains(comingUp(), "Nightly")
 
         browser.post("/processes/$key/schedule/remove", mapOf())
-        assertFalse("<section id=\"schedule\">" in browser.get("/processes/$key").body)
+        assertContains(browser.get("/processes/$key").body, "No schedule. Runs start when someone presses Start.")
         assertFalse("timerEventDefinition" in browser.get("/processes/$key/diagram.bpmn").body)
         assertFalse("Nightly" in comingUp())
     }

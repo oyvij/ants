@@ -21,7 +21,7 @@
 <h2>Coming up</h2>
 <table>
 @for(schedule in coming)
-    <tr class="click" data-href="/processes/${schedule.key}"><td><b><a href="/processes/${schedule.key}">${schedule.process}</a></b></td><td class="small">${schedule.words}</td><td class="muted small">${schedule.at} · ${schedule.due}</td></tr>
+    <tr class="click" data-href="/processes/${schedule.key}"><td><b><a href="/processes/${schedule.key}">${schedule.process}</a></b></td><td class="small">${schedule.words}</td><td class="muted small">${schedule.at} · ${schedule.countdown}</td></tr>
 @endfor
 </table>
 @endif
