@@ -89,7 +89,7 @@ class ShipVariantsTest : AntsTest() {
     }
 
     @Test
-    fun `Ship by proxy has an answer-round Agent answer the Rounds, and never clones a repo a Round names`() {
+    fun `Ship by proxy has an answer-round Agent answer the Rounds, and Clone new repos clones a repo a Round names`() {
         afterTheGrilling()
         claude.session("grill", 1, round)
         claude.session("answer-round", result("""{"answers":[{"id":"who","answer":"Only admins.","why":"The Answer History says so."}]}"""))
@@ -103,9 +103,9 @@ class ShipVariantsTest : AntsTest() {
         assertContains(answerer.stdin, "Who exports?")
         assertEquals("Read,Grep,Glob" to "Read,Grep,Glob", answerer.flag("--tools") to answerer.flag("--allowedTools")?.removeSuffix(",mcp__ants__run"))
         assertContains(claude.launches("grill")[1].stdin, """\"source\":\"agent\"""")
-        // to-spec lists the repo instead: it gets the repos the grilling named, and web is never cloned.
+        // Clone new repos cloned the repo the Rounds named, and Push pushed its work branch.
         assertContains(claude.launches("to-spec").single().stdin, """\"repos\":[\"web\"]""")
-        assertEquals("refs/heads/main", git(web.remote, "for-each-ref", "--format=%(refname)"))
+        assertContains(git(web.remote, "for-each-ref", "--format=%(refname)"), "refs/heads/add-hello")
         val report = browser.report(run)
         assertContains(report.substringAfter("<h2>Answers you didn't give</h2>"), "Who exports: Only admins. (agent)")
     }
@@ -124,7 +124,7 @@ class ShipVariantsTest : AntsTest() {
     }
 
     @Test
-    fun `Ship as proposed accepts the recommendations`() {
+    fun `Ship as proposed accepts the recommendations, and Clone new repos clones a repo a Round names`() {
         afterTheGrilling()
         claude.session("grill", 1, round)
         claude.session("grill", 2, result("""{"questions":[],"repos":[]}"""))
@@ -133,7 +133,7 @@ class ShipVariantsTest : AntsTest() {
 
         assertEquals(listOf("[approve]", "[review]", "[push]", "[approve]"), waited)
         assertContains(claude.launches("grill")[1].stdin, """{\"id\":\"who\",\"answer\":\"Admins.\",\"source\":\"recommended\"}""")
-        assertEquals("refs/heads/main", git(web.remote, "for-each-ref", "--format=%(refname)"))
+        assertContains(git(web.remote, "for-each-ref", "--format=%(refname)"), "refs/heads/add-hello")
     }
 
     @Test

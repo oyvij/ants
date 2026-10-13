@@ -57,8 +57,10 @@ no file paths or code, which go stale>
 ## Further Notes
 ```
 
-A repo in `repos` that isn't in `clones` was not cloned, so the Run can't change it: list it
-under Further Notes, with what it would need to change there.
+A repo in `repos` that isn't in `clones` was not cloned, so nobody has read it and the Run can't
+change it: list it under Further Notes as not checked, with what to check there and what may need
+to change. Never write that it needs no change, or should need none: that is a guess about code
+nobody read.
 
 ## When the user sends it back
 

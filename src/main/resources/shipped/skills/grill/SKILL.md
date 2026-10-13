@@ -42,12 +42,12 @@ later answer reopens it, and then say so in its `context`.
 
 ## Repos
 
-When the answers show the work needs a repo that wasn't in `clones` when you started, name it in
-`repos`, as the user's Source map names it in the brief or as a git URL the user gave. Name every
-such repo again in each later Round, the last one included: `repos` is always the whole list.
-Where the user answers the Rounds, each is cloned at `repos/<name>/` before your next Round;
-otherwise it is not cloned, and the Spec lists it as a repo the Run doesn't change. With none,
-`repos` is `[]`.
+When the answers show the work needs a repo that wasn't in `clones` when you started, or may need
+it and nothing you have read rules it out, name it in `repos`, as the user's Source map names it in
+the brief or as a git URL the user gave. Never take a repo you haven't read to need no change. Name
+every such repo again in each later Round, the last one included: `repos` is always the whole list.
+Each is cloned at `repos/<name>/` before your next Round, so read it then. One that never shows in
+`clones` was not cloned, and the Spec lists it as not checked. With none, `repos` is `[]`.
 
 ## The end
 
