@@ -460,6 +460,33 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `pasting an image into the start form's prompt uploads it and references it at the caret, and anything else is refused`() = browse {
+        agentTask(null)
+        http.import("agent-task.bpmn")
+        page.navigate(url("/processes/agent-task"))
+        val field = page.locator("textarea[name=prompt]")
+        val editor = page.locator("textarea[name=prompt] + .ed")
+        editor.locator(".cm-content").fill("Like this: ")
+        // What Cmd+V gives the editor for a copied image or a clipboard screenshot: a paste event carrying the file.
+        fun paste(name: String, type: String, base64: String) = editor.locator(".cm-content").evaluate(
+            """(element, [name, type, base64]) => {
+                const clipboardData = new DataTransfer();
+                clipboardData.items.add(new File([Uint8Array.from(atob(base64), c => c.charCodeAt(0))], name, {type}));
+                element.dispatchEvent(new ClipboardEvent('paste', {clipboardData, bubbles: true, cancelable: true}));
+            }""",
+            listOf(name, type, base64),
+        )
+        paste("image.png", "image/png", java.util.Base64.getEncoder().encodeToString(ImagesTest.RED_PNG))
+        assertThat(field).hasValue("Like this: ![image](${ImagesTest.RED_PATH})")
+        page.keyboard().type(" please")
+        assertThat(field).hasValue("Like this: ![image](${ImagesTest.RED_PATH}) please")
+
+        paste("notes.pdf", "application/pdf", java.util.Base64.getEncoder().encodeToString("%PDF-1.4".toByteArray()))
+        assertThat(editor.locator(".st")).hasText("Only an image can be pasted: PNG, JPEG, GIF or WebP.")
+        assertThat(field).hasValue("Like this: ![image](${ImagesTest.RED_PATH}) please")
+    }
+
+    @Test
     fun `Review changes picks diff lines for a comment by clicking their numbers, and files it`() = browse {
         agentTask(FakeClaude(), mapOf("mend" to null, "ship" to null), extra = reviewSourceMap())
         http.upload("/processes", "file", "review.bpmn", javaClass.getResource("/review.bpmn")!!.readBytes())

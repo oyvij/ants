@@ -573,3 +573,6 @@ label.tick { display: flex; gap: 8px; align-items: center; font-weight: 500; }
 .skill-page h3.fields { margin-top: 18px; }
 details.example { margin-top: 8px; } details.example > summary { color: var(--text); }
 details.example pre { background: var(--line2); border: 0; padding: 10px; border-radius: 8px; white-space: pre; }
+
+/* Images in the prompt and in Send (#89): a pasted image, shown where the message shows its text */
+.user img, .prompt img { display: block; max-height: 240px; margin: 6px 0; border-radius: 6px; }
