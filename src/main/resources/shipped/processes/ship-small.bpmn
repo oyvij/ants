@@ -36,7 +36,7 @@
       <bpmn:outgoing>toscout</bpmn:outgoing>
     </bpmn:startEvent>
     <bpmn:subProcess id="scout_and_clone" name="Scout and clone">
-      <bpmn:documentation>The scout reads the prompt, the Vault and the Source map, never code, and names the repos; Clone repos clones them on the work branch: the start form's branch, else the scout's. Needs start-form fields prompt and branch.</bpmn:documentation>
+      <bpmn:documentation>The scout reads the prompt, the Vault and the Source map, never code, and names the repos, taking the start form's as given; Clone repos clones them on the work branch: the start form's branch, else the scout's. Needs start-form fields prompt, branch and repos.</bpmn:documentation>
       <bpmn:incoming>toscout</bpmn:incoming>
       <bpmn:outgoing>topropose</bpmn:outgoing>
       <bpmn:startEvent id="start_2">
@@ -51,6 +51,7 @@
           <operaton:inputOutput>
             <operaton:inputParameter name="prompt">${prompt}</operaton:inputParameter>
             <operaton:inputParameter name="sourceMap">${sourceMap}</operaton:inputParameter>
+            <operaton:inputParameter name="repos">${repos}</operaton:inputParameter>
           </operaton:inputOutput>
         </bpmn:extensionElements>
         <bpmn:incoming>f1</bpmn:incoming>

@@ -228,7 +228,6 @@ class AgentLauncher(
             val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult().rootProcessInstanceId
             val workspace = names.runWorkspace(run)
             if (ticketed(task, run, workspace)) return
-            if (notLaunched(task, workspace, scopes.of(run))) return
             val agent = catalogue.agent(task.extensionProperties[AGENT] ?: error("${task.activityId} names no $AGENT"))
             if (hold(task, agent.cli)) return // keeping its choice for the launch after the reset
             runtime.removeVariablesLocal(task.executionId, listOf(ACTION, INSTRUCTION, SESSION)) // the choice is used once
@@ -320,31 +319,6 @@ class AgentLauncher(
         return true
     }
 
-    /**
-     * Whether [task] is done without a launch, as the Tasks that serve the Source map and the Vault are in a Run scoped to
-     * repos ([source]): the scout's Result is the scope, with no branch and a brief Ants writes itself, `scout/brief.md` with
-     * the prompt and the repos; Update the Vault's says written, with nothing to write.
-     */
-    private fun notLaunched(task: LockedExternalTask, workspace: Path, source: RunSource): Boolean {
-        val scope = (source as? RunSource.Scoped)?.scope ?: return false
-        val output = when (task.extensionProperties[SKILL]) {
-            "scout" -> {
-                val repos = scope.joinToString("") { "- $it\n" }
-                workspace.resolve("scout").createDirectories().resolve("brief.md").writeText(
-                    "# Brief\n\n## Prompt\n\n${inputs(task)["prompt"] ?: ""}\n\n## Repos\n\nThe Run is scoped to the repos its start form names, " +
-                        "and has no Vault or Source map:\n\n$repos",
-                )
-                mapOf("repos" to ArrayList(scope), "branch" to "", "brief" to "scout/brief.md")
-            }
-            "update-knowledge" -> mapOf("written" to true)
-            else -> return false
-        }
-        val summary = "Not launched: the Run is scoped to its repos, with no Vault or Source map."
-        Transcript.Writer(Transcript.file(workspace, instance(task))).ants("end", summary)
-        complete(task, mapOf("outcome" to "done", "summary" to summary, "output" to output))
-        return true
-    }
-
     /** Completes [task] with its [result] ([onClash]). */
     private fun complete(task: LockedExternalTask, result: Map<*, *>) = onClash { externalTasks.complete(task.id, WORKER, mapOf(task.activityId to result)) }
 
@@ -382,7 +356,7 @@ class AgentLauncher(
         session: String?, started: (String) -> Unit, resume: Boolean, instruction: String?, handedOff: Boolean = !resume,
     ): Map<*, *> {
         val inputs = inputs(task)
-        // A called Process's Task uses its top Run's scope and Profile: [run] is the top Run.
+        // A called Process's Task uses its top Run's Profile: [run] is the top Run.
         val source = scopes.of(run)
         val vault = vault(task, skill, source)
         val prompt = if (!handedOff) instruction.orEmpty()
@@ -505,8 +479,8 @@ class AgentLauncher(
 
     /**
      * The Vault's folder when [task] gets the Vault: its toggle ([VAULT]) has the final say, else its [skill]'s opt-in.
-     * Null when off, in a scoped Run ([source]), which has no Vault whatever the toggle says, or with no Vault configured
-     * for its Profile, which the pre-Run check (#55) refuses.
+     * Null when off, or with no Vault configured for the Run's Profile ([source]), which the pre-Run check (#55) refuses
+     * unless the user picked the Run's repos.
      */
     private fun vault(task: LockedExternalTask, skill: Skill, source: RunSource): Path? = source.vault(settings)
         ?.takeIf { task.extensionProperties[VAULT]?.toBooleanStrictOrNull() ?: catalogue.vault(skill) }

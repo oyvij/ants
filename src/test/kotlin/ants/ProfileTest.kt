@@ -139,19 +139,21 @@ class ProfileTest : AntsTest() {
     }
 
     @Test
-    fun `a named, scoped Run gets its folder from its name and no Vault, even when its Profile has one`() {
+    fun `a named Run with a repo picked gets its folder from its name, and its Profile's Vault and Source map`() {
         setUp()
         naming("private")
         val run = start(NAME to "Tiny app", "repos" to "${workApi.remote}")
         assertEquals(home.resolve("runs/tiny-app-$run"), workspace(run))
         assertTrue(workspace(run).resolve("tasks").exists())
         val launch = claude.launches("draft").single()
-        assertFalse("Vault" in launch.stdin || "Source map" in launch.stdin, launch.stdin)
-        assertFalse(launch.argv.any { "$privateVault" in it || "$workVault" in it })
-        assertFalse(privateVault.resolve("Note.md").exists())
+        assertContains(launch.stdin, "The Vault is $privateVault and the Source map is $privateMap.")
+        assertContains(launch.argv.zipWithNext(), "--add-dir" to "$privateVault")
+        assertTrue(privateVault.resolve("Note.md").exists())
+        assertFalse(workVault.resolve("Note.md").exists())
         val page = page(run)
-        assertContains(page, "<dt>sourceMap</dt><dd><code>[]</code></dd>")
-        assertFalse("id=\"profile\"" in page)
+        assertContains(page, "<dt>sourceMap</dt><dd><code>[{\"name\":\"api\",\"remote\":\"${privateApi.remote}\"}]</code></dd>")
+        assertContains(page, """<span id="profile">Profile private</span>""")
+        assertContains(page, "\"commit\":\"${git(workApi.remote, "rev-parse", "main")}\"") // the picked repo, not the Profile's api
     }
 
     @Test
@@ -219,7 +221,7 @@ class ProfileTest : AntsTest() {
     )
 
     @Test
-    fun `a Process called two levels down uses its top Run's Profile, and in a scoped Run its scope`() {
+    fun `a Process called two levels down uses its top Run's Profile, with repos picked or not`() {
         setUp()
         caller("middle", "profile")
         caller("top", "middle", repos = true)
@@ -230,10 +232,10 @@ class ProfileTest : AntsTest() {
         assertContains(launch, "The Vault is $privateVault and the Source map is $privateMap.")
         assertContains(launch, "\"sourceMap\":[{\"name\":\"api\",\"remote\":\"${privateApi.remote}\"}]")
 
-        val scoped = browser.post("/processes/top/runs", listOf("repos" to "${workApi.remote}")).path.removePrefix("/runs/")
-        eventually(20) { assertContains(page(scoped), """id="state">Completed<""") }
-        val scopedLaunch = claude.launches("draft").last().stdin.replace("\\\"", "\"")
-        assertFalse("Vault" in scopedLaunch || "Source map" in scopedLaunch, scopedLaunch)
-        assertContains(scopedLaunch, "\"sourceMap\":[]")
+        val picked = browser.post("/processes/top/runs", listOf(PROFILE to "private", "repos" to "${workApi.remote}")).path.removePrefix("/runs/")
+        eventually(20) { assertContains(page(picked), """id="state">Completed<""") }
+        val pickedLaunch = claude.launches("draft").last().stdin.replace("\\\"", "\"")
+        assertContains(pickedLaunch, "The Vault is $privateVault and the Source map is $privateMap.")
+        assertContains(pickedLaunch, "\"sourceMap\":[{\"name\":\"api\",\"remote\":\"${privateApi.remote}\"}]")
     }
 }

@@ -57,7 +57,7 @@
     </div>
     <div class="sub"><a href="/processes/${run.processDefinitionKey}">${run.processDefinitionName ?: run.processDefinitionKey}</a> · started ${started}@if(branch != null) · branch <code>${branch}</code>@endif
         · repos @if(cloned.isEmpty())none yet@else@for(repo in cloned)<code>${repo}</code> @endfor@endif
-@if(scope != null)        · <span id="scope">Scoped to its repos: @for((i, repo) in scope.withIndex())@if(i > 0), @endif<code>${repo}</code>@endfor; no scout, no Vault and no Source map</span>@endif
+@if(scope != null)        · <span id="scope">Repos picked: @for((i, repo) in scope.withIndex())@if(i > 0), @endif<code>${repo}</code>@endfor</span>@endif
 @if(profile != null)        · <span id="profile">Profile ${profile}</span>@endif
 @if(vault != null)        · Vault ${vault}@endif
         · <small>${run.id}</small></div>

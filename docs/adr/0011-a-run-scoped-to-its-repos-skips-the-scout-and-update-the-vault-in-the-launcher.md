@@ -1,5 +1,9 @@
 # A Run scoped to its repos skips the scout and Update the Vault in the launcher
 
+Partly superseded by ADR 0014: the scout and Update the Vault run, and the Vault and Source map follow the Run's
+Profile, in a Run with picked repos too. What this says about cloning exactly the picked repos and creating new ones
+stands.
+
 Every Run used to go through the scout, which picks repos from the Source map and reads the Vault, and every default
 Process ends by updating the Vault. #101 lets the user name a Run's repos, new ones included, so that the Run never
 touches the Source map or the Vault. The spec had a Repos field type (Source map names only) but said nothing of what

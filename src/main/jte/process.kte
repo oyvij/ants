@@ -39,10 +39,10 @@
 @if(reasons.isEmpty())
     <span class="pill p-ready">Ready</span> <span class="muted small">&nbsp;Names, schemas, CLI commands, Source map, paths and the login all check out.</span>
 @else
-    <span class="pill p-failed">Can't start</span>@if(scopable) <span class="muted small">&nbsp;unless scoped to its Repos</span>@endif
+    <span class="pill p-failed">Can't start</span>@if(scopable) <span class="muted small">&nbsp;unless its Repos are picked</span>@endif
     <ul class="reasons">
     @for(reason in reasons)
-        <li>@if(reason == PreRun.CONFIGURE_VAULT)<a href="/settings">${reason}</a>@if(scopable), or name the Run's Repos@endif@else${reason}@endif</li>
+        <li>@if(reason == PreRun.CONFIGURE_VAULT)<a href="/settings">${reason}</a>@if(scopable), or pick the Run's Repos@endif@else${reason}@endif</li>
     @endfor
     </ul>
 @endif
@@ -54,7 +54,7 @@
 @if(fields.isEmpty())<div class="help">This Process takes no input: its job is in the diagram.</div>@endif
     <div class="fld"><label class="f" for="field-name">Name <span class="muted small" style="font-weight: 500">(optional)</span></label><div class="help">Left empty, the Run is named after its Process and start time.</div><input name="${ants.NAME}" id="field-name"></div>
 @if(profiles.size > 1)
-    <div class="fld"><label class="f" for="field-profile">Profile</label><div class="help">The Vault and Source map the Run uses. A Run scoped to its Repos uses neither.</div>
+    <div class="fld"><label class="f" for="field-profile">Profile</label><div class="help">The Vault and Source map the Run uses.</div>
     <select name="${ants.PROFILE}" id="field-profile" onchange="location.search = '?ants.profile=' + encodeURIComponent(this.value)">
     @for(name in profiles)
         <option selected="${name == profile}">${name}</option>
@@ -64,7 +64,7 @@
 @for(field in fields)
     <div class="fld"><label class="f" for="field-${field.name}">${field.label}@if(!field.required) <span class="muted small" style="font-weight: 500">(optional)</span>@endif</label>
     @if(field.type == FieldType.REPOS)
-    <div class="help">${field.help?.let { "$it " } ?: ""}Pick Source map repos, type git URLs such as <span class="eg">git@github.com:you/api.git</span>, or <span class="eg">you/new-app</span> for a new private repo Ants creates on your gh login. Filled in, the Run is scoped to exactly these repos: no scout, no Vault and no Source map.</div>
+    <div class="help">${field.help?.let { "$it " } ?: ""}Pick Source map repos, type git URLs such as <span class="eg">git@github.com:you/api.git</span>, or <span class="eg">you/new-app</span> for a new private repo Ants creates on your gh login. Filled in, the Run clones exactly these repos, and the scout takes them as given.</div>
     @if(repos.isNotEmpty())
     <div class="row picks">
     @for(repo in repos)
