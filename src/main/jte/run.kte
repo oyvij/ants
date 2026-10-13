@@ -71,9 +71,9 @@
 <table id="tasks"><tr><th>Task</th><th>Agent · Skill</th><th>State</th><th>Tokens</th></tr>
 @for(task in tasks)
     <tr class="${if (task.href != null) "click" else null}" data-href="${task.href}" onclick="${if (task.href != null) "location.href = this.dataset.href" else null}">
-        <td><b>${task.name}</b>@if(task.round != null && task.round > 1) <span class="muted small">round ${task.round}</span>@endif@if(task.transcript != null && task.transcript.working > 0) <span class="muted" title="Subagents">⑂ ${task.transcript.working}</span>@endif</td>
+        <td><b>${task.name}</b>@if(task.round != null && task.round > 1) <span class="muted small">round ${task.round}</span>@endif@if(task.transcript != null && task.transcript.runningSubagents > 0) <span class="muted" title="Subagents">⑂ ${task.transcript.runningSubagents}</span>@endif</td>
         <td class="small">@if(task.kind == "agent")@template.ent(agent = task.agent, skill = task.skill)@elseif(task.kind == "user")User Task@else Built-in Task@endif</td>
-        <td>@if(task.state == "running" && task.transcript?.liveLine != null)<span class="small">$unsafe{task.transcript.liveLine}</span>@else$unsafe{task.badge}@endif</td>
+        <td>@if(task.state == "running" && task.transcript?.line != null)<span class="small">$unsafe{task.transcript.line}</span>@else$unsafe{task.badge}@endif</td>
         <td class="muted small num">@if(task.tokens > 0)${tokens(task.tokens).removeSuffix(" tokens")}@endif</td>
     </tr>
 @endfor
@@ -143,19 +143,24 @@
         if (!latest || drawn !== current) return;
         called = latest.called;
         if (current === run) Object.assign(document.getElementById('state'), {
-textContent: latest.state, className: 'pill p-' + latest.pill });
+            textContent: latest.state, className: 'pill p-' + latest.pill,
+        });
         for (const [id, now] of Object.entries(latest.elements)) {
             const before = shown[id];
             if (!registry.get(id) || JSON.stringify(before) === JSON.stringify(now)) continue;
             if (before) canvas.removeMarker(id, 'ants-' + before.state);
             canvas.addMarker(id, 'ants-' + now.state);
             overlays.remove({ element: id, type: 'ants' });
-            const badge = [now.badge, now.round > 1 ? '↻ ' + now.round : null].filter(Boolean).join(' · ');
-            if (badge) {
-                const span = document.createElement('span');
-                span.className = 'ants-badge';
-                span.textContent = badge;
-                overlays.add(id, 'ants', { position: { bottom: 8, right: 8 }, html: span });
+            // A Task's badge on its top edge: ✓ once done, else its state or what it waits for; its Round at its foot.
+            if (/Task$|CallActivity/.test(registry.get(id).type)) {
+                const badge = (css, text, position) => {
+                    const span = Object.assign(document.createElement('span'), { className: 'ov ' + css, textContent: text });
+                    if (css === 'running') span.prepend(document.createElement('i'));
+                    overlays.add(id, 'ants', { position, html: span });
+                };
+                if (now.state === 'done') badge('done', '✓', { top: -12, right: 16 });
+                else badge(now.state === 'queued' ? 'quiet' : now.state, now.badge ?? 'Running', { top: -12, right: 70 });
+                if (now.round > 1) badge('quiet', 'round ' + now.round, { bottom: 14, left: 6 });
             }
             shown[id] = now;
         }

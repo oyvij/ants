@@ -1,5 +1,6 @@
 @param entry: ants.TaskEntry
 @param shown: String
+@param file: String? = null
 @param view: ants.TaskView
 @param error: String? = null
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
@@ -17,7 +18,7 @@
 @template.nav(shell = shell)
 <main>
 @template.taskhead(view = view, run = entry.run, runName = entry.runName, tokens = "")
-<div class="card md">$unsafe{shown}</div>
+<div class="card md">@if(file != null)<div class="muted small mono">${file}</div>@endif$unsafe{shown}</div>
 @if(error != null)<p role="alert">${error}</p>@endif
 <form method="post">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">

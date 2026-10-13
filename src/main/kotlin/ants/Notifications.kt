@@ -36,6 +36,9 @@ import kotlin.io.path.writeText
 sealed class Entry(val id: String, val tag: String, val process: String, val task: String, val summary: String, val since: Date) {
     val icon get() = ICONS[tag] ?: "•"
 
+    /** The tag as a label reads it: `Stuck` for `[stuck]`. */
+    val label get() = tag.trim('[', ']').replaceFirstChar(Char::uppercase)
+
     val waited: String
         get() = Duration.between(since.toInstant(), Instant.now()).let {
             when {
@@ -142,7 +145,10 @@ class Notifications(
                     "review"
                 }
                 UserTaskKind.APPROVE -> {
-                    model.addAttribute("shown", shown(names.runWorkspace(entry.run), runtime.getVariableLocal(task.executionId, SHOW)))
+                    val show = runtime.getVariableLocal(task.executionId, SHOW)
+                    val workspace = names.runWorkspace(entry.run)
+                    model.addAttribute("shown", shown(workspace, show))
+                    model.addAttribute("file", (show as? String)?.takeIf { inWorkspace(workspace, it) != null })
                     model.addAttribute("view", view(entry))
                     "approve"
                 }

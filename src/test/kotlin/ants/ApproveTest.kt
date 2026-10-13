@@ -50,7 +50,7 @@ class ApproveTest : AntsTest() {
         val body = browser.get(entry).body
         assertContains(body, """<h1>Check the draft <span class="pill p-waiting">Waiting on you</span> <span class="tag t-approve"><i>✓</i>Approve</span></h1>""")
         assertContains(body, """<div class="sub">Approve the notes</div>""")
-        assertContains(body, "<h1>Notes</h1>")
+        assertContains(body, """<div class="muted small mono">notes.md</div><h1>Notes</h1>""")
         assertContains(body, "The <em>draft</em> reads well.")
         assertContains(body, "Required to send back. The Agent's session resumes with it.")
         assertContains(body, """<div class="composer">""")

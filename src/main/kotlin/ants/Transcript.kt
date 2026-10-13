@@ -96,10 +96,10 @@ class Transcript {
     val running get() = launches.isNotEmpty() && launches.last().end == null
 
     /** The Subagents running now. */
-    val working get() = if (running) blocks.values.count { it.end == null } else 0
+    val runningSubagents get() = if (running) blocks.values.count { it.end == null } else 0
 
     /** While a launch runs, its live line: the spinner, what it is doing, and how long it has run with its tokens. */
-    val liveLine: String?
+    val line: String?
         get() = if (!running) null else launches.last().let {
             """<span class="spin">✻</span> <span class="shimmer">$verb…</span> <span class="muted num">(<span data-since="${it.start.toEpochMilli()}">""" +
                 """${elapsed(Duration.between(it.start, Instant.now()))}</span> · ↓ ${tokens(it.tokens)})</span>"""
@@ -149,7 +149,7 @@ class Transcript {
     fun html(id: String): String = when (id) {
         "live" -> """<div id="live">${if (live.isEmpty()) "" else markdown(live)}</div>"""
         "tokens" -> """<span id="tokens">${tokens(tokens)}</span>"""
-        "status" -> """<div id="status">${liveLine.orEmpty()}</div>"""
+        "status" -> """<div id="status">${line.orEmpty()}</div>"""
         "subagents" -> """<div id="subagents" class="chips">""" + blocks.values.filter { running && it.end == null }.joinToString(" ") {
             """<span class="chip"><span class="spin">✻</span> ${esc(it.type)} · ${esc(it.description)} · ${time(it)}</span>"""
         } + "</div>"
@@ -207,7 +207,7 @@ class Transcript {
                 append(parent) { """<details class="prompt" id="$it"><summary>Prompt</summary><pre>${esc(text)}</pre></details>""" }
             } else if (launch != null && !launch.prompted) {
                 launch.prompted = true
-                append { """<details class="prompt" id="$it"><summary>Prompt</summary><pre>${esc(text)}</pre></details>""" }
+                append { """<details class="prompt" id="$it"><summary>${if (launch.number == 1) "Opening prompt" else "Prompt"}</summary><pre>${esc(text)}</pre></details>""" }
             } else {
                 append { """<p class="user" id="$it">› ${esc(text)}</p>""" }
             }

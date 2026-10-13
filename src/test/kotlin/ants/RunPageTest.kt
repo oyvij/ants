@@ -65,7 +65,7 @@ class RunPageTest : AntsTest() {
 
         claude.release("first")
         update = live.until(::diagram) { it.element("draft")?.get("state") == "waiting" }
-        assertEquals(mapOf("state" to "waiting", "badge" to "⚠ [stuck]", "round" to 2), update.element("draft"))
+        assertEquals(mapOf("state" to "waiting", "badge" to "⚠ Stuck", "round" to 2), update.element("draft"))
 
         browser.post(entry(run), mapOf("action" to "continue", "instruction" to "Dry."))
         update = live.until(::diagram) { it["state"] == "Completed" }

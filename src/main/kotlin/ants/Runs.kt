@@ -105,7 +105,7 @@ class TaskView(
         }
 
         /** An entry's tag as a label: `⚠ Stuck` for `[stuck]`. */
-        fun tag(entry: Entry) = entry.tag.trim('[', ']').let { """<span class="tag t-$it"><i>${entry.icon}</i>${it.replaceFirstChar(Char::uppercase)}</span>""" }
+        fun tag(entry: Entry) = """<span class="tag t-${entry.tag.trim('[', ']')}"><i>${entry.icon}</i>${entry.label}</span>"""
     }
 }
 
@@ -292,7 +292,7 @@ class Runs(
             val held = tasks.map { launcher.heldBy(it.id) }
             when {
                 instances.all { it.endTime != null } -> Shown("done", null, round)
-                entry != null -> Shown("waiting", "${entry.icon} ${entry.tag}", round)
+                entry != null -> Shown("waiting", "${entry.icon} ${entry.label}", round)
                 paused != null -> Shown("queued", "Paused until ${clock.local(paused)}", round)
                 held.isNotEmpty() && held.all { it != null } -> Shown("queued", held.first(), round)
                 tasks.isNotEmpty() && tasks.none { it.lockExpirationTime?.after(Date()) == true } -> Shown("queued", "Queued", round)

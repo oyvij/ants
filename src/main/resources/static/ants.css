@@ -302,8 +302,8 @@ body.login [role] { margin-bottom: 4px; }
 
 /* The Run page, a Task's page with its Transcript, its stuck or Approve page, and the Run page's Task drawer. */
 .ent a::before { content: none !important; }
-.ed textarea { display: block; width: 100%; min-height: 130px; margin: 0; padding: 10px 12px; border: 0; border-radius: 0; background: none; resize: vertical; }
-.ed textarea:focus { outline: 0; } :is(.composer, .drawer) .ed textarea { min-height: 44px; }
+.ed textarea { display: block; width: 100%; min-height: 130px; max-height: 520px; margin: 0; padding: 10px 12px; border: 0; border-radius: 0; background: none; resize: none; field-sizing: content; }
+.ed textarea:focus { outline: 0; } :is(.composer, .drawer) .ed textarea { min-height: 44px; max-height: 160px; }
 .composer > form { max-width: 1120px; margin: 0 auto; padding: 12px 32px; display: flex; gap: 8px; align-items: flex-end; }
 #diagram { margin-bottom: 6px; }
 #tasks ~ .help { margin-top: 10px; }
