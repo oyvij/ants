@@ -214,6 +214,8 @@ class CodexTest : AntsTest() {
         eventually { page = browser.get(transcript(run)).body.also { assertContains(it, """<button class="primary">Send</button>""") } }
         assertContains(page, "codex takes no message while it works: Send stops it and resumes its session with your message.")
         eventually { assertEquals(1, codex.launches("draft").size) }
+        // Ants has read codex's thread.started, so a Send has a session to resume.
+        eventually { assertTrue(workspace(run).resolve("tasks/draft/session").exists()) }
 
         assertEquals(transcript(run), browser.post("${transcript(run)}/send", mapOf("message" to "Keep it short.")).path)
         assertContains(workspace(run).resolve("run-log.md").readText(), "Draft · Send\n\nKeep it short.\n")
