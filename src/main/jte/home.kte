@@ -28,8 +28,9 @@
 @endfor
 </ul>
 </section>
-<script>
-    new EventSource('/home/live').onmessage = event => document.getElementById('live').innerHTML = event.data;
+<script type="module">
+    stream.on('home', html => document.getElementById('live').innerHTML = html);
+    stream.follow('home');
 </script>
 </main>
 </body>

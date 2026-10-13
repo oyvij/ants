@@ -69,10 +69,10 @@ class UpdateTest : AntsTest() {
         home.resolve("versions").toFile().deleteRecursively()
     }
 
-    /** The nav's update notice as [page] shows it: the nav fills its slot from the stream it names. */
+    /** The nav's update notice as [page] shows it: the nav fills its slot from the page's stream. */
     private fun notice(page: String = "/", browser: Browser = this.browser): String {
-        val slot = Regex("""<span id="update" data-src="([^"]+)"></span>""").find(browser.get(page).body)
-        return browser.events(assertNotNull(slot, "$page has no update notice in its nav").groupValues[1]).poll(10, SECONDS).orEmpty()
+        assertContains(browser.get(page).body, """<span id="update"></span>""", message = "$page has no update notice in its nav")
+        return browser.events("", "update").poll(10, SECONDS).orEmpty()
     }
 
     /**
@@ -109,7 +109,7 @@ class UpdateTest : AntsTest() {
         startAnother(tempHome(), "--ants.docker=true", "--ants.password=s3cret").use { ants ->
             val docker = Browser("http://127.0.0.1:${(ants as WebServerApplicationContext).webServer!!.port}").also { it.login("s3cret") }
 
-            val events = docker.events("/updates")
+            val events = docker.events("", "update")
             val notice = generateSequence { events.poll(10, SECONDS) }.first { it.isNotEmpty() } // once its first check is done
 
             assertContains(notice, "Ants 99.0.0 is available")

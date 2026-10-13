@@ -140,8 +140,8 @@ class CodexTest : AntsTest() {
     )
 
     private fun pill(page: String): String {
-        val slot = Regex("""<span id="paused" data-src="([^"]+)"></span>""").find(browser.get(page).body)!!
-        return browser.events(slot.groupValues[1]).poll(10, SECONDS).orEmpty()
+        assertContains(browser.get(page).body, """<span id="paused"></span>""")
+        return browser.events("", "pauses").poll(10, SECONDS).orEmpty()
     }
 
     @Test

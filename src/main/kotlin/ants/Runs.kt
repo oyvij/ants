@@ -30,9 +30,7 @@ import org.springframework.security.web.csrf.CsrfToken
 import org.operaton.bpm.engine.RepositoryService
 import org.operaton.bpm.engine.RuntimeService
 import org.springframework.beans.factory.annotation.Value
-import org.springframework.http.MediaType.TEXT_EVENT_STREAM_VALUE
 import org.springframework.web.bind.annotation.ResponseBody
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
 import tools.jackson.databind.json.JsonMapper
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Component
@@ -131,11 +129,9 @@ class Runs(
      * The Run's state, each element's [Shown] and the process instance each call activity called (its latest), as
      * JSON, sent on connect and whenever it changes. [id] may be a called Process's instance, for the breadcrumb.
      */
-    @GetMapping("/runs/{id}/live", produces = [TEXT_EVENT_STREAM_VALUE])
-    @ResponseBody
-    fun live(@PathVariable id: String): SseEmitter {
+    fun live(id: String): Part {
         run(id)
-        return streams.changes {
+        return streams.changes("run") {
             // ponytail: a multi-instance call activity opens its latest called instance; a picker if one is wanted.
             val called = history.createHistoricActivityInstanceQuery().processInstanceId(id).activityType("callActivity")
                 .orderByHistoricActivityInstanceStartTime().asc().list().filter { it.calledProcessInstanceId != null }
@@ -149,9 +145,7 @@ class Runs(
      * Agent's checklist, latest output, and the comment box and action when it waits on the user. [id] may be a
      * called Process's instance, whose Task is kept in the top Run under its key ([taskKey]).
      */
-    @GetMapping("/runs/{id}/tasks/{task}/drawer", produces = [TEXT_EVENT_STREAM_VALUE])
-    @ResponseBody
-    fun drawer(@PathVariable id: String, @PathVariable task: String, csrf: CsrfToken): SseEmitter {
+    fun drawer(id: String, task: String, csrf: CsrfToken): Part {
         val instance = run(id)
         val element = repository.getBpmnModelInstance(instance.processDefinitionId).getModelElementById<FlowElement>(task)
             ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No Task $task")
@@ -161,7 +155,7 @@ class Runs(
         val transcript = Transcript()
         var offset = 0L
         csrf.token // loads the token while the request is still here
-        return streams.changes {
+        return streams.changes("drawer") {
             val (lines, end) = Transcript.read(file, offset)
             offset = end
             lines.forEach(transcript::add)

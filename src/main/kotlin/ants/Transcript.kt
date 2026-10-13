@@ -11,7 +11,6 @@ import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.server.ResponseStatusException
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
 import org.springframework.web.util.HtmlUtils
 import tools.jackson.databind.json.JsonMapper
 import java.io.RandomAccessFile
@@ -499,13 +498,12 @@ class Transcripts(@Value("\${ants.home}") home: Path, private val launcher: Agen
         return page(run, task, model)
     }
 
-    /** The changed elements of the Transcript from byte [from] on, as `entry` events, for as long as the page is open. */
-    @GetMapping("/runs/{run}/tasks/{task}/transcript/events")
-    fun events(@PathVariable run: String, @PathVariable task: String, @RequestParam from: Long): SseEmitter {
+    /** The changed elements of the Transcript from byte [from] on, as `transcript` events, for as long as the page is open. */
+    fun events(run: String, task: String, from: Long): Part {
         val file = file(run, task)
         val transcript = Transcript()
         var offset = Transcript.read(file, 0, from).let { (lines, end) -> lines.forEach(transcript::add); end }
-        return streams.poll(Duration.ofMillis(250), "entry") {
+        return Part("transcript", Duration.ofMillis(250)) {
             val (lines, end) = Transcript.read(file, offset)
             offset = end
             lines.flatMapTo(linkedSetOf()) { transcript.add(it) }.map(transcript::html)

@@ -423,6 +423,33 @@ class BrowserTest : AntsTest() {
         assertThat(page.locator("meta[name=color-scheme]")).hasAttribute("content", "light")
     }
 
+    @Test
+    fun `a page follows one SSE connection, so three tabs on Run pages and a Transcript leave a fourth free to navigate`() = browse {
+        settings(null)
+        val (process, plane) = row("followed", """<bpmn:startEvent id="start" />""", """<bpmn:userTask id="wait" name="Wait" />""", """<bpmn:endEvent id="end" />""")
+        deploy(definitions("followed", "Followed", process, plane))
+        val run = http.post("/processes/followed/runs", mapOf()).path
+        // Tabs share a browser's 6 connections per host, so they share one context here; each counts its open EventSources.
+        val tabs = page.context().browser()!!.newContext().apply {
+            addCookies(page.context().cookies())
+            addInitScript("const Opened = EventSource; window.sources = []; EventSource = class extends Opened { constructor(...a) { super(...a); sources.push(this); } };")
+        }
+        fun open(path: String) = tabs.newPage().apply { navigate(url(path)) }
+        fun Page.drawer() {
+            eventually { locator("#diagram .djs-element[data-element-id='wait']").click() }
+            assertThat(locator("#drawer-head")).isVisible() // the drawer's stream has come
+        }
+        fun Page.following() = (evaluate("sources.filter(source => source.readyState !== EventSource.CLOSED).length") as Number).toInt()
+
+        val open = listOf(open(run).apply { drawer() }, open("$run/tasks/wait/transcript"), open(run).apply { drawer() })
+        val fourth = tabs.newPage().apply { setDefaultNavigationTimeout(5_000.0) }
+        for (path in listOf("/", "/runs", run, "/processes/followed")) {
+            fourth.navigate(url(path))
+            assertEquals(1, fourth.following(), path)
+        }
+        for (tab in open) assertEquals(1, tab.following(), tab.url())
+    }
+
     /** An Agent Task [id] running `writer`'s Skill `draft`. */
     private fun agentTaskXml(id: String, name: String) = """<bpmn:serviceTask id="$id" name="$name" operaton:type="external" operaton:topic="agent">""" +
         """<bpmn:extensionElements><operaton:properties><operaton:property name="ants.agent" value="writer" />""" +

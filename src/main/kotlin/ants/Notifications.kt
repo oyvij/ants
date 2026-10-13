@@ -14,16 +14,13 @@ import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpStatus
-import org.springframework.http.MediaType.TEXT_EVENT_STREAM_VALUE
 import org.springframework.stereotype.Controller
 import org.springframework.ui.Model
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestParam
-import org.springframework.web.bind.annotation.ResponseBody
 import org.springframework.web.server.ResponseStatusException
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
 import tools.jackson.databind.json.JsonMapper
 import java.nio.file.Path
 import java.time.Duration
@@ -342,9 +339,7 @@ class Notifications(
     }
 
     /** The count for the nav and the tab title, sent on connect and whenever it changes. */
-    @GetMapping("/notifications/count", produces = [TEXT_EVENT_STREAM_VALUE])
-    @ResponseBody
-    fun count(): SseEmitter = streams.changes { entries().size.toString() }
+    fun count(): Part = streams.changes("count") { entries().size.toString() }
 
     private fun incidents() = runtime.createIncidentQuery().incidentType(Incident.EXTERNAL_TASK_HANDLER_TYPE)
 

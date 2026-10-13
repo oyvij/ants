@@ -82,7 +82,7 @@ class TicketsTest : AntsTest() {
     @Test
     fun `a Ticket's page follows the file as an Agent changes it`() {
         val run = start("wait edit", """write tickets/issues/02-goodbye.md # Say goodbye\n\nStatus: in-progress\n""")
-        val events = browser.events("/runs/$run/tickets/02-goodbye/live")
+        val events = browser.events("ticket=$run/02-goodbye", "ticket")
         assertContains(events.poll(10, SECONDS)!!, "Status: ready-for-agent")
 
         claude.release("edit")

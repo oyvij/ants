@@ -1,0 +1,3 @@
+@param working: Int
+@param live: Long
+@if(working > 0)<span class="spin">✻</span> ${working} working@else${live} live@endif

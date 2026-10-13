@@ -3,6 +3,7 @@ package ants
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.info.BuildProperties
+import java.util.concurrent.TimeUnit.SECONDS
 import kotlin.io.path.readText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
@@ -43,9 +44,18 @@ class ShellTest : AntsTest() {
             assertContains(side, link)
         }
         assertContains(side, """<span id="waiting" class="n">1</span>""")
-        assertContains(side, """<span class="m">1 live</span>""")
+        assertContains(side, """<span id="runs" class="m">1 live</span>""")
         assertContains(side, """<span class="m">v${build.version}</span>""")
         assertContains(side, """<form method="post" action="/logout">""")
+    }
+
+    @Test
+    fun `the sidebar's Runs line follows the live Runs on the page's stream`() {
+        waitingRun()
+        val runs = browser.events("", "runs")
+        assertEquals("1 live", runs.poll(10, SECONDS))
+        browser.post("/processes/waits/runs", mapOf())
+        assertEquals("2 live", runs.poll(10, SECONDS))
     }
 
     @Test
