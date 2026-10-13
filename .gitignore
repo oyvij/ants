@@ -7,3 +7,11 @@
 /.kotlin/
 .DS_Store
 /node_modules/
+
+# Tool output.
+/.claude/worktrees/
+/.playwright-mcp/
+/bin/
+/.classpath
+/.project
+/.settings/
