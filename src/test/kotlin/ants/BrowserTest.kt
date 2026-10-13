@@ -329,6 +329,20 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `the Process properties pick the Process's Profile from the settings' Profiles`() = browse {
+        settings(null, "profiles:\n  work: {vault: notes}\n  private: {vault: notes}\n")
+        val (process, plane) = row("profiled", """<bpmn:startEvent id="start" />""", """<bpmn:endEvent id="end" />""")
+        deploy(definitions("profiled", "Profiled", process, plane))
+
+        page.navigate(url("/processes/profiled/edit"))
+        assertThat(heading).hasText("Process")
+        page.getByLabel("Profile").selectOption("private")
+        page.locator("#save").click()
+        assertThat(page).hasURL(Pattern.compile(".*/processes/profiled$"))
+        assertContains(http.get("/processes/profiled/diagram.bpmn").body, """name="ants.profile" value="private"""")
+    }
+
+    @Test
     fun `ticking Items are Tickets on a multi-instance saves it on the element`() = browse {
         agentTask(null, mapOf("draft" to """{"type":"object","properties":{"items":{"type":"array"}}}"""))
         val loop = """<bpmn:multiInstanceLoopCharacteristics operaton:collection="${'$'}{plan.output.items}" /></bpmn:serviceTask>"""

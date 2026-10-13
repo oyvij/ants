@@ -12,6 +12,7 @@
 @param workspace: String?
 @param repos: List<String>
 @param scope: List<String>?
+@param profile: String? = null
 @param shell: ants.Shell
 <!doctype html>
 <html lang="en">
@@ -37,6 +38,9 @@
 <p><a href="/processes/${run.processDefinitionKey}">${run.processDefinitionName ?: run.processDefinitionKey}</a> · <small>${run.id}</small></p>
 @if(scope != null)
 <p id="scope">Scoped to its repos: @for((i, repo) in scope.withIndex())@if(i > 0), @endif<code>${repo}</code>@endfor. No scout, no Vault and no Source map.</p>
+@endif
+@if(profile != null)
+<p id="profile">Profile: ${profile}</p>
 @endif
 @if(run.endTime == null || variables.containsKey(ants.NAME))
 <form method="post" action="/runs/${run.id}/name">

@@ -79,6 +79,29 @@
     </fieldset>
 
     <fieldset>
+        <legend>Profiles</legend>
+        <p>Each pairs a Vault with a Source map, such as one for work and one for private repos. A Process can name its
+            Profile, and the start form picks the Run's. With none, every Run uses the default Vault and Source map.
+            Empty a name to remove its Profile; a new Vault or Source map is offered here once saved.</p>
+@for((i, row) in form.shownProfiles.withIndex())
+        <p>
+            <input name="profiles[${i}].name" value="${row.name}" aria-label="Name">
+            <select name="profiles[${i}].vault" aria-label="Vault"><option value="">Vault</option>
+@for(name in (form.vaults.rows.map { it.first } + row.vault).filter(String::isNotEmpty).distinct())
+                <option selected="${name == row.vault}">${name}</option>
+@endfor
+            </select>
+            <select name="profiles[${i}].source-map" aria-label="Source map"><option value="">Source map</option>
+@for(name in (form.sourceMaps.rows.map { it.first } + row.sourceMap).filter(String::isNotEmpty).distinct())
+                <option selected="${name == row.sourceMap}">${name}</option>
+@endfor
+            </select>
+            <label><input type="radio" name="default-profile" value="${i}" checked="${i == form.defaultProfile}"> default</label>
+        </p>
+@endfor
+    </fieldset>
+
+    <fieldset>
         <legend>Extra folders, one per line</legend>
         <p><label>Agent folders, after <code>agents/</code><br><textarea name="agent-folders" rows="3" cols="60">${form.agentFolders}</textarea></label></p>
         <p><label>Skill folders, after <code>skills/</code><br><textarea name="skill-folders" rows="3" cols="60">${form.skillFolders}</textarea></label></p>

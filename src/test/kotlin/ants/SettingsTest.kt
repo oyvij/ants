@@ -131,6 +131,34 @@ class SettingsTest : AntsTest() {
     }
 
     @Test
+    fun `Profiles pair a Vault with a Source map by name, one the default, and are renamed and removed on the page`() {
+        val lists = mapOf(
+            "vaults[0].name" to "work", "vaults[0].path" to "/tmp/work", "vaults[1].name" to "private", "vaults[1].path" to "/tmp/private",
+            "source-maps[0].name" to "work", "source-maps[0].path" to "/tmp/work.md", "source-maps[1].name" to "private", "source-maps[1].path" to "/tmp/private.md",
+        )
+        press("save", lists + mapOf(
+            "profiles[0].name" to "work", "profiles[0].vault" to "work", "profiles[0].source-map" to "work",
+            "profiles[1].name" to "private", "profiles[1].vault" to "private", "profiles[1].source-map" to "private",
+            "default-profile" to "1",
+        ))
+        assertEquals(mapOf("work" to mapOf("vault" to "work", "source-map" to "work"), "private" to mapOf("vault" to "private", "source-map" to "private")), yaml()["profiles"])
+        assertEquals("private", yaml()["default-profile"])
+        val page = browser.get("/settings").body
+        assertContains(page, """name="profiles[1].name" value="private"""")
+        assertContains(page, """name="default-profile" value="1" checked""")
+        assertContains(page, """name="profiles[2].name" value=""""") // an empty row adds the next one
+
+        // Renamed, and the other removed by emptying its row.
+        press("save", lists + mapOf("profiles[0].name" to "", "profiles[1].name" to "home", "profiles[1].vault" to "private", "profiles[1].source-map" to "private", "default-profile" to "1"))
+        assertEquals(mapOf("home" to mapOf("vault" to "private", "source-map" to "private")), yaml()["profiles"])
+        assertEquals("home", yaml()["default-profile"])
+
+        val refused = press("save", lists + mapOf("profiles[0].name" to "odd", "profiles[0].vault" to "nowhere", "profiles[0].source-map" to "work"))
+        assertContains(refused, "The Profile odd needs a Vault and a Source map from the lists above.")
+        assertEquals(mapOf("home" to mapOf("vault" to "private", "source-map" to "private")), yaml()["profiles"])
+    }
+
+    @Test
     fun `changing the password takes effect at the next login`() {
         press("save", mapOf("password" to "s3cret"))
         assertTrue(yaml()["password"].toString().startsWith("{bcrypt}"))

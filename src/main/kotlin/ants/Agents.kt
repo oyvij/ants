@@ -22,7 +22,7 @@ import kotlin.io.path.exists
  * those from extra folders are read-only, with Copy. Nothing is cached, so an edit reaches the next launch.
  */
 @Controller
-class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, private val models: Models, @Value("\${ants.home}") home: Path) {
+class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, private val models: Models, private val settings: Settings, @Value("\${ants.home}") home: Path) {
     private val folder = home.resolve("agents")
 
     @GetMapping("/agents")
@@ -61,7 +61,8 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
 
     /**
      * The Agents and Skills as the modeler's Agent Task panel picks them, read afresh each time so a new one shows up:
-     * each Agent's Skills, and each Skill's declared inputs, its Vault and Answer History defaults and its result schema.
+     * each Agent's Skills, and each Skill's declared inputs, its Vault and Answer History defaults and its result schema;
+     * and the Profiles a Process can name.
      */
     @GetMapping("/catalogue.json")
     @ResponseBody
@@ -74,6 +75,7 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
                 "output" to runCatching { skill.outputSchema.takeIf { it.isNotEmpty() } }.getOrNull(),
             )
         },
+        "profiles" to settings.profiles().keys,
     )
 
     @GetMapping("/agents/{name}")

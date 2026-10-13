@@ -88,6 +88,7 @@ class Runs(
         model.addAttribute("run", run)
         model.addAttribute("name", names.name(id))
         model.addAttribute("scope", scopes.of(id))
+        model.addAttribute("profile", scopes.profile(id))
         model.addAttribute("kept",keptWorkspace(run)?.toString())
         // Where the work lives, in full, as long as it is on disk: the shared clones, then each instance's worktrees.
         val workspace = names.runWorkspace(id)
@@ -268,7 +269,7 @@ val HistoricProcessInstance.stateName
  * Gives each Run its name ([NAME]) and its Run workspace, `runs/<slug>-<run>/` in ANTS_HOME ([FOLDER]), for as long
  * as it lives, its Run log starting with the name. At Run start every
  * Task-id (and call activity id) variable is `null`, so forward references read `null`, `runs` counts each Task's
- * runs, `clones` is empty and `sourceMap` holds the default Source map's repos, `[{name, remote}]`, none in a scoped Run ([SCOPE]). A multi-instance collects its instances' Results into one list ([collect]). A called Process runs inside its
+ * runs, `clones` is empty and `sourceMap` holds the repos of the Run's Profile's Source map ([PROFILE]), `[{name, remote}]`, none in a scoped Run ([SCOPE]). A multi-instance collects its instances' Results into one list ([collect]). A called Process runs inside its
  * caller's Run: it ends by giving its call activity every Result in it, by id.
  */
 /** The variables [RunLifecycle] gives every Run besides its Results, which any expression may read. */
@@ -291,10 +292,11 @@ class RunLifecycle(@Value("\${ants.home}") private val home: Path, private val s
         for (id in results) run.setVariable(id, null)
         run.setVariable("runs", tasks.associateWith { 0 })
         run.setVariable("clones", ArrayList<Any>()) // Clone repos adds to it
-        // A called Process reads its top Run's scope, as it runs in that Run.
+        // A called Process reads its top Run's scope and Profile, as it runs in that Run.
+        val top = generateSequence(run) { it.superExecution }.last()
         @Suppress("UNCHECKED_CAST")
-        val scope = generateSequence(run) { it.superExecution }.last().getVariable(SCOPE) as List<String>?
-        run.setVariable("sourceMap", ArrayList(settings.runRepos(scope).map { linkedMapOf("name" to it.name, "remote" to it.remote) }))
+        val repos = settings.runRepos(top.getVariable(SCOPE) as List<String>?, top.getVariable(PROFILE) as String?)
+        run.setVariable("sourceMap", ArrayList(repos.map { linkedMapOf("name" to it.name, "remote" to it.remote) }))
     }
 
     // ponytail: parallel Tasks starting in separate transactions clash on `runs` (optimistic locking) and the losing

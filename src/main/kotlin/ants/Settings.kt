@@ -21,6 +21,9 @@ import kotlin.io.path.readText
 /** One repo in a Source map: its short name, its local checkout and its git remote. */
 data class Repo(val name: String, val path: String, val remote: String)
 
+/** A Profile: the names of the Vault and the Source map it pairs, null where it names none. */
+data class Profile(val vault: String?, val sourceMap: String?)
+
 /** `settings.yaml` in ANTS_HOME, created on first start ([start]) and read fresh each time, so hand edits count. */
 @Component
 class Settings(
@@ -112,19 +115,33 @@ class Settings(
     /** The default Source map's name: the one the user picked, else the first. */
     fun defaultSourceMap(): String? = default("source-maps", "default-source-map")
 
-    /** The Source map [name]'s file, by default the default one's, which every Run and launch uses. */
-    // ponytail: the default Source map, until a Process picks its own.
-    fun sourceMap(name: String? = defaultSourceMap()): Path? = sourceMaps()[name]?.let(::expand)
+    /** The Source map [name]'s file. */
+    fun sourceMap(name: String?): Path? = sourceMaps()[name]?.let(::expand)
 
     /**
-     * The repos in the Source map [name] (by default the default one), read from its file in Varde's format, one
-     * `- <name>: <local path> (<git remote>)` line per repo. Other lines, and a file that isn't there, give none.
+     * The repos in the Source map [name], read from its file in Varde's format, one `- <name>: <local path> (<git
+     * remote>)` line per repo. Other lines, and a file that isn't there, give none.
      */
-    fun repos(name: String? = defaultSourceMap()): List<Repo> {
+    fun repos(name: String?): List<Repo> {
         val file = sourceMap(name)?.takeIf { it.exists() } ?: return emptyList()
         return file.readText().lines().mapNotNull { Regex("""^- ([^:]+): (.+?) \((.+)\)$""").find(it.trim())?.destructured }
             .map { (repo, path, remote) -> Repo(repo.trim(), path, remote) }
     }
+
+    /** The named Profiles, each a Vault and a Source map by name. */
+    fun profiles(): Map<String, Profile> = (read()["profiles"] as? Map<*, *>).orEmpty().entries.associate { (name, value) ->
+        val profile = value as? Map<*, *> ?: emptyMap<String, Any?>()
+        "$name" to Profile(profile["vault"]?.toString(), profile["source-map"]?.toString())
+    }
+
+    /** The default Profile's name: the one the user picked, else the first; null with none. */
+    fun defaultProfile(): String? = profiles().keys.let { names -> read()["default-profile"]?.toString()?.takeIf { it in names } ?: names.firstOrNull() }
+
+    /**
+     * The Profile [name], by default the default one; null when no Profile has that name. With no Profiles at all
+     * there is just one, whatever [name] says: the default Vault and the default Source map.
+     */
+    fun profile(name: String?): Profile? = profiles().ifEmpty { return Profile(defaultVault(), defaultSourceMap()) }[name ?: defaultProfile()]
 
     /** The extra Agent folders, read after Ants' own. */
     fun agentFolders(): List<Path> = folders("agent-folders")
@@ -203,6 +220,8 @@ class Settings(
             #   env: [PATH, HOME]  claude and codex only: the environment allow-list; Ants may narrow it, never widen it
             # varde-config: Varde's config.toml, whose [ai] command and env the settings page fills in
             # vaults, source-maps: name: path. default-vault, default-source-map: a name; without one, the first.
+            # profiles: name: {vault: <a Vault's name>, source-map: <a Source map's name>}. default-profile: a name;
+            #   without one, the first. With no Profiles, every Run uses the default Vault and Source map.
             # agent-folders, skill-folders: extra folders, read after Ants' own
             # theme: light or dark; without it, the pages follow the system
             # so-far: false switches off the So far paragraph on running Tasks; a time (90s, 5m) sets how often it's

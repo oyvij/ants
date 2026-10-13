@@ -173,16 +173,20 @@ class Processes(
         return "modeler"
     }
 
+    /** The Process page, its start form for the Profile [profile] picked on it, else the Process's own, else the default. */
     @GetMapping("/processes/{key}")
-    fun process(@PathVariable key: String, model: Model): String {
+    fun process(@PathVariable key: String, @RequestParam(PROFILE, required = false) profile: String?, model: Model): String {
         val process = latest(key)
         model.addAttribute("process", process)
         val fields = startForm.fields(process)
         model.addAttribute("fields", fields)
-        model.addAttribute("repos", settings.runRepos(null).map(Repo::name)) // the Repos field's choices
+        val picked = startForm.profile(process, profile)
+        model.addAttribute("profiles", settings.profiles().keys.toList())
+        model.addAttribute("profile", picked)
+        model.addAttribute("repos", settings.runRepos(null, picked).map(Repo::name)) // the Repos field's choices
         model.addAttribute("schedule", schedules.of(process))
         // A refused Start has already checked what was posted.
-        if (!model.containsAttribute("reasons")) model.addAttribute("reasons", preRun.reasons(process, fields.filter { it.type == FieldType.REPOS }.flatMap { it.storedRepos }))
+        if (!model.containsAttribute("reasons")) model.addAttribute("reasons", preRun.reasons(process, fields.filter { it.type == FieldType.REPOS }.flatMap { it.storedRepos }, picked))
         return "process"
     }
 
@@ -193,11 +197,11 @@ class Processes(
     } catch (e: Unfilled) {
         response.status = HttpStatus.BAD_REQUEST.value()
         model.addAttribute("error", e.message)
-        process(key, model)
+        process(key, values.getFirst(PROFILE), model)
     } catch (e: CantStart) {
         response.status = HttpStatus.BAD_REQUEST.value()
         model.addAttribute("reasons", e.reasons)
-        process(key, model)
+        process(key, values.getFirst(PROFILE), model)
     }
 
     /** Pauses the Process's Schedule: no Run starts on it, not even for the times missed, until it's resumed. */
@@ -226,7 +230,7 @@ class Processes(
         } catch (e: Refused) {
             response.status = HttpStatus.BAD_REQUEST.value()
             model.addAttribute("error", e.message)
-            return process(key, model)
+            return process(key, null, model)
         }
         schedules.forget(key)
         return "redirect:/processes/$key"

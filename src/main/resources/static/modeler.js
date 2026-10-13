@@ -457,6 +457,22 @@ function schedulePanel(element) {
 }
 panels["timer-start"] = element => el("div", {}, schedulePanel(element), startForm(element))
 
+// The Process: the Profile (a Vault and a Source map) its Runs use unless the start form picks another, as its
+// `ants.profile` property. Offered once the settings have more than one Profile, or when the Process names one.
+panels.process = element => {
+    const box = el("div")
+    fetch("/catalogue.json").then(response => response.json()).then(({profiles}) => {
+        const current = agentProperties(element.businessObject)["ants.profile"] || ""
+        if (profiles.length < 2 && !current) return
+        const select = el("select", {onchange: () => writeAgentTask(element, {"ants.profile": select.value || undefined})},
+            el("option", {value: "", textContent: "The default", selected: !current}),
+            ...[...new Set([...profiles, current].filter(Boolean))].map(name => el("option", {value: name, textContent: name, selected: name === current})))
+        box.replaceChildren(el("p", {}, el("label", {}, "Profile ", select)),
+            el("p", {textContent: "The Vault and Source map its Runs use, unless the start form picks another Profile."}))
+    })
+    return box
+}
+
 // The Agent Task: its Agent from a live dropdown, then one of the Skills that Agent lists, one input per name the Skill
 // declares (its pickers offer only start-form fields, Run variables and earlier Results), the Vault and Answer History
 // toggles (defaulting from the Skill), resume, and a result-schema override. All of it lives in the Task's

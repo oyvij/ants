@@ -382,10 +382,12 @@ class AgentLauncher(
         session: String?, started: (String) -> Unit, resume: Boolean, instruction: String?, handedOff: Boolean = !resume,
     ): Map<*, *> {
         val inputs = inputs(task)
+        // A called Process's Task uses its top Run's scope and Profile: [run] is the top Run.
         val scope = scopes.of(run)
-        val vault = vault(task, skill, scope)
+        val profile = scopes.profile(run)
+        val vault = vault(task, skill, scope, profile)
         val prompt = if (!handedOff) instruction.orEmpty()
-        else handOff(task, skill, used, cwd, vault, scope) +"\n\n" + json.writeValueAsString(inputs) + (if (instruction.isNullOrBlank()) "" else "\n\nFrom the user:\n$instruction")
+        else handOff(task, skill, used, cwd, vault, settings.runSourceMap(scope, profile)) + "\n\n" + json.writeValueAsString(inputs) + (if (instruction.isNullOrBlank()) "" else "\n\nFrom the user:\n$instruction")
         // The Task's result-schema override replaces the Skill's result.schema.json; Checks refuse one that isn't valid.
         val override = task.extensionProperties[RESULT_SCHEMA]?.takeIf(String::isNotBlank)?.let { json.readValue(it, Map::class.java) }
         val output = override ?: skill.outputSchema
@@ -504,20 +506,20 @@ class AgentLauncher(
 
     /**
      * The Vault's folder when [task] gets the Vault: its toggle ([VAULT]) has the final say, else its [skill]'s opt-in.
-     * Null when off, in a Run with a [scope], which has no Vault whatever the toggle says, or with no Vault configured,
-     * which the pre-Run check (#55) refuses.
+     * Null when off, in a Run with a [scope], which has no Vault whatever the toggle says, or with no Vault configured
+     * for its [profile], which the pre-Run check (#55) refuses.
      */
-    private fun vault(task: LockedExternalTask, skill: Skill, scope: List<String>?): Path? = settings.runVault(scope)
+    private fun vault(task: LockedExternalTask, skill: Skill, scope: List<String>?, profile: String?): Path? = settings.runVault(scope, profile)
         ?.takeIf { task.extensionProperties[VAULT]?.toBooleanStrictOrNull() ?: catalogue.vault(skill) }
 
     /**
-     * The hand-off line: the Skill and the workspace, the Skills it [used], and where the [vault] and Source map and the
+     * The hand-off line: the Skill and the workspace, the Skills it [used], and where the [vault] and [sourceMap] and the
      * Answer History are, each only when on: the Task's [ANSWER_HISTORY] toggle has the final say, else the Skill's opt-in.
      */
-    private fun handOff(task: LockedExternalTask, skill: Skill, used: List<Skill>, workspace: Path, vault: Path?, scope: List<String>?): String {
+    private fun handOff(task: LockedExternalTask, skill: Skill, used: List<Skill>, workspace: Path, vault: Path?, sourceMap: Path?): String {
         val places = if (vault == null) emptyList() else listOfNotNull(
             "the Vault is $vault",
-            settings.runSourceMap(scope)?.let { "the Source map is $it" },
+            sourceMap?.let { "the Source map is $it" },
         )
         return "Follow the Skill in ${skill.file} for the workspace at $workspace." +
             (if (used.isEmpty()) "" else " It uses the Skills ${used.joinToString { "${it.name} (${it.file})" }}.") +

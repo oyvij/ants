@@ -101,6 +101,9 @@ data class Named(val rows: List<Pair<String, String>>, val default: Int) {
     }
 }
 
+/** One Profile on the settings page: its name and the names of its Vault and Source map. */
+data class ProfileRow(val name: String, val vault: String, val sourceMap: String)
+
 /** The settings page's form, filled from `settings.yaml` or from what the user posted. Empty means unset. */
 data class SettingsForm(
     val paths: Map<String, String>,
@@ -111,6 +114,9 @@ data class SettingsForm(
     val subagentDepth: String,
     val vaults: Named,
     val sourceMaps: Named,
+    val profiles: List<ProfileRow>,
+    /** Which of [profiles] is the default, -1 for none picked. */
+    val defaultProfile: Int,
     val agentFolders: String,
     val skillFolders: String,
     val theme: String,
@@ -119,7 +125,17 @@ data class SettingsForm(
     fun error() = when {
         agentTasks.isNotEmpty() && (agentTasks.toIntOrNull() ?: 0) < 1 -> "Agent Tasks at once must be a whole number, 1 or more."
         subagentDepth.isNotEmpty() && (subagentDepth.toIntOrNull() ?: 0) < 1 -> "Subagent depth must be a whole number, 1 or more."
-        else -> vaults.error("Vault") ?: sourceMaps.error("Source map")
+        else -> vaults.error("Vault") ?: sourceMaps.error("Source map") ?: profileError()
+    }
+
+    /** The Profile rows plus an empty one, which adds the next. */
+    val shownProfiles get() = profiles + ProfileRow("", "", "")
+
+    private fun profileError(): String? {
+        val vaultNames = vaults.rows.map { it.first }
+        val mapNames = sourceMaps.rows.map { it.first }
+        return profiles.firstOrNull { it.vault !in vaultNames || it.sourceMap !in mapNames }?.let { "The Profile ${it.name} needs a Vault and a Source map from the lists above." }
+            ?: "Two Profiles have the same name.".takeIf { profiles.map { it.name }.toSet().size < profiles.size }
     }
 
     /** This form with the AI CLI's command and env from Varde's `[ai]`, filled in for the CLI that command runs. */
@@ -154,6 +170,8 @@ data class SettingsForm(
         values.keep("default-vault", vaults.rows.getOrNull(vaults.default)?.first)
         values.keep("source-maps", sourceMaps.rows.toMap())
         values.keep("default-source-map", sourceMaps.rows.getOrNull(sourceMaps.default)?.first)
+        values.keep("profiles", profiles.associate { it.name to mapOf("vault" to it.vault, "source-map" to it.sourceMap) })
+        values.keep("default-profile", profiles.getOrNull(defaultProfile)?.name)
         values.keep("agent-folders", agentFolders.lines().map(String::trim).filter(String::isNotEmpty))
         values.keep("skill-folders", skillFolders.lines().map(String::trim).filter(String::isNotEmpty))
         values.keep("theme", theme.takeIf { it in listOf("light", "dark") })
@@ -178,6 +196,8 @@ data class SettingsForm(
                 subagentDepth = values["subagent-depth"]?.toString().orEmpty(),
                 vaults = named(settings.vaults(), settings.defaultVault()),
                 sourceMaps = named(settings.sourceMaps(), settings.defaultSourceMap()),
+                profiles = settings.profiles().map { (name, profile) -> ProfileRow(name, profile.vault.orEmpty(), profile.sourceMap.orEmpty()) },
+                defaultProfile = settings.profiles().keys.indexOf(settings.defaultProfile()),
                 agentFolders = lines(values["agent-folders"]),
                 skillFolders = lines(values["skill-folders"]),
                 theme = values["theme"]?.toString() ?: "system",
@@ -194,6 +214,10 @@ data class SettingsForm(
                 val rows = all.filter { it != "" to "" }
                 return Named(rows, rows.indexOf(picked))
             }
+            // A row whose name is emptied is removed.
+            val allProfiles = generateSequence(0, Int::inc).takeWhile { "profiles[$it].name" in params }
+                .map { ProfileRow(param("profiles[$it].name"), param("profiles[$it].vault"), param("profiles[$it].source-map")) }.toList()
+            val profiles = allProfiles.filter { it.name.isNotEmpty() }
             return SettingsForm(
                 paths = Settings.CLIS.associateWith { param("$it.path") },
                 commands = Settings.AI_CLIS.associateWith { param("$it.command") },
@@ -203,6 +227,8 @@ data class SettingsForm(
                 subagentDepth = param("subagent-depth"),
                 vaults = named("vaults", "default-vault"),
                 sourceMaps = named("source-maps", "default-source-map"),
+                profiles = profiles,
+                defaultProfile = profiles.indexOf(param("default-profile").toIntOrNull()?.let(allProfiles::getOrNull)),
                 agentFolders = param("agent-folders"),
                 skillFolders = param("skill-folders"),
                 theme = param("theme").ifEmpty { "system" },

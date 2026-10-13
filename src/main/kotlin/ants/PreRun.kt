@@ -38,16 +38,19 @@ class PreRun(
     private val tried = ConcurrentHashMap<Pair<List<String>, String>, String>() // (claude command, model ID) -> why it failed, empty when it answered
 
     /**
-     * Why a Run of [definition] with the Repos [repos] (Source map names, git URLs and new repos' `owner/name`) can't
-     * start; empty when it's Ready. With no Repos, without a Vault the only reason is [CONFIGURE_VAULT], since such a
+     * Why a Run of [definition] with the Profile [profile] (null for the default) and the Repos [repos] (Source map
+     * names, git URLs and new repos' `owner/name`) can't start; empty when it's Ready. With no Repos, a Profile that
+     * isn't in the settings is the only reason, and so is [CONFIGURE_VAULT] without the Profile's Vault, since such a
      * Run needs one; with Repos the Run is scoped to them, and needs neither the Vault nor the Source map. Each repo
      * must answer `git ls-remote`, and each new repo's name must be free. The Processes it calls are checked too, since
      * they run inside its Run.
      */
-    fun reasons(definition: ProcessDefinition, repos: List<String>): List<String> {
+    fun reasons(definition: ProcessDefinition, repos: List<String>, profile: String?): List<String> {
         val named = repos.distinct()
         val scope = named.takeIf { it.isNotEmpty() }
-        val vault = settings.runVault(scope)
+        val picked = settings.profile(profile)
+        if (scope == null && picked == null) return listOf("The Profile $profile isn't in the settings.")
+        val vault = settings.runVault(scope, profile)
         if (scope == null && vault == null) return listOf(CONFIGURE_VAULT)
         val processes = withCalled(definition)
         // Names, schemas, references and ants-uses: the deploy's Checks again, since files change after a deploy.
@@ -58,8 +61,8 @@ class PreRun(
         val agents = processes.flatMap { repository.getBpmnModelInstance(it.id).getModelElementsByType(ServiceTask::class.java) }
             .filter { it.operatonTopic == AgentLauncher.TOPIC }
             .mapNotNull { task -> task.property(AGENT)?.let { runCatching { catalogue.agent(it) }.getOrNull() } }.distinctBy { it.name }
-        val sourceMap = settings.defaultSourceMap()
-        val known = settings.runRepos(null).associateBy { it.name } // the Repos field's choices
+        val sourceMap = picked?.sourceMap
+        val known = settings.runRepos(null, profile).associateBy { it.name } // the Repos field's choices
         val created = named.filter { it !in known && newRepo(it) }
         // Each repo to clone, by its remote: a Source map name's, else the git URL itself.
         val remotes = named.filter { it !in created }.mapNotNull { known[it]?.let { repo -> repo.remote to "${repo.name}'s remote ${repo.remote}" } ?: CloneRepos.url(it)?.let { _ -> it to it } }
@@ -67,8 +70,8 @@ class PreRun(
         val missing = (agents.map { it.cli } + listOfNotNull("git".takeIf { named.isNotEmpty() }) + "gh")
             .distinct().associateWith { cli -> command(cli) }.filterValues { !executable(it) }
         return buildList {
-            vault?.takeIf { !it.exists() }?.let { add("The Vault ${settings.defaultVault()} isn't there: $it.") }
-            settings.runSourceMap(scope)?.takeIf { !it.exists() }?.let { add("The Source map $sourceMap isn't there: $it.") }
+            vault?.takeIf { !it.exists() }?.let { add("The Vault ${picked?.vault} isn't there: $it.") }
+            settings.runSourceMap(scope, profile)?.takeIf { !it.exists() }?.let { add("The Source map $sourceMap isn't there: $it.") }
             addAll(failed)
             missing.forEach { (cli, command) -> add("$cli: $command isn't an executable.") }
             for (agent in agents) Agent.sandboxError(agent.cli, agent.sandbox)?.let { add("The Agent ${agent.name}: $it") }

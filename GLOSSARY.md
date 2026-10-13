@@ -88,6 +88,12 @@ The user's store of knowledge Notes, kept across Runs and shared with Varde; onl
 is told where it is.
 _Avoid_: knowledge base, wiki, memory
 
+**Profile**:
+A named pair of one Vault and one Source map, such as `work` and `private`, one of them the default. A Process
+can name its Profile and the start form picks the Run's; the Run then uses that Vault and Source map alone. A
+Run scoped to its repos has none.
+_Avoid_: group, context, account
+
 **Result**:
 What an Agent hands back when its Task ends: either done, carrying what the Task promised, or stuck,
 saying what it needs from the user.

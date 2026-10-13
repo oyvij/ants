@@ -3,6 +3,8 @@
 @param process: org.operaton.bpm.engine.repository.ProcessDefinition
 @param fields: List<ants.Field>
 @param repos: List<String>
+@param profiles: List<String>
+@param profile: String?
 @param reasons: List<String>
 @param schedule: ants.Schedule? = null
 @param error: String? = null
@@ -42,6 +44,13 @@
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
 @if(error != null)<p role="alert">${error}</p>@endif
     <p><label>Name<br><input name="${ants.NAME}"></label><br><small>Optional. Left empty, the Run is named after its Process and start time.</small></p>
+@if(profiles.size > 1)
+    <p><label>Profile<br><select name="${ants.PROFILE}" onchange="location.search = '?ants.profile=' + encodeURIComponent(this.value)">
+    @for(name in profiles)
+        <option selected="${name == profile}">${name}</option>
+    @endfor
+    </select></label><br><small>The Vault and Source map the Run uses. A Run scoped to its Repos uses neither.</small></p>
+@endif
 @for(field in fields)
     @if(field.type == FieldType.REPOS)
     <label class="f" for="field-${field.name}">${field.label}</label>
