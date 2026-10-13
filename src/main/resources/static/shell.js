@@ -10,7 +10,7 @@
 // stream.patch(element, html) brings an element's content up to date in place, as stream.morph(element, like) brings
 // the element itself, so an open form, the drawer or a running animation stays.
 const handlers = {};
-let source = null;
+let source = null, toasted = 0; // the latest toast shown, which the next stream starts after
 const listen = name => source.addEventListener(name, event => { handlers[name](event.data); liven(); });
 window.stream = {
     on(name, handler) {
@@ -19,7 +19,8 @@ window.stream = {
     },
     follow(query = '') {
         source?.close();
-        source = new EventSource('/live' + (query && '?' + query));
+        const all = [query, toasted && 'toast=' + toasted].filter(Boolean).join('&');
+        source = new EventSource('/live' + (all && '?' + all));
         Object.keys(handlers).forEach(listen);
     },
     patch(element, html) {
@@ -113,7 +114,11 @@ stream.on('update', html => document.getElementById('update').innerHTML = html);
 // A toast, such as a Round arriving or a queued Task taking a free slot, fades in; it goes by itself after a while,
 // and its OK button takes it away sooner.
 const toast = element => setTimeout(() => element.remove(), 12000);
+// Each is numbered, so one a reconnected stream sends again shows once.
 stream.on('toast', html => {
+    const seq = Number(/data-seq="(\d+)"/.exec(html)?.[1]);
+    if (seq <= toasted) return;
+    toasted = seq;
     document.querySelectorAll('.toast').forEach(old => old.remove()); // the latest says it
     document.body.insertAdjacentHTML('beforeend', html);
     toast(document.body.lastElementChild);

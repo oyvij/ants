@@ -89,7 +89,8 @@ class Streams(private val templates: TemplateEngine) {
 
 /**
  * The one SSE connection a page holds, since a browser opens at most 6 per host, shared by all its tabs and the
- * installed app: the sidebar's events, `count`, `runs`, `pauses` and `update`, and `toast`, on every page, and an event
+ * installed app: the sidebar's events, `count`, `runs`, `pauses` and `update`, and `toast` (after `toast=<n>`, the
+ * latest the page has shown), on every page, and an event
  * for each part of the page the query names: `home`; `runlist`, the Runs list; `notifications`, the Notification list;
  * `run=<id>`, with `drawer=<task>` while its Task drawer is open, and `tasks=<id>`, the Run page's Tasks table;
  * `transcript=<run>/<task>&from=<byte>`, with `taskhead`, its Task page header; `ticket=<run>/<name>`.
@@ -114,7 +115,7 @@ class Live(
             streams.rendered("runs", "running.kte") { mapOf("working" to launcher.running, "live" to history.liveRuns()) },
             home.pauses(csrf),
             updates.notice(csrf),
-            runs.toasts(),
+            runs.toasts(query["toast"]?.toLongOrNull()),
             home.live().takeIf { "home" in query },
             runs.liveList(csrf).takeIf { "runlist" in query },
             notifications.live().takeIf { "notifications" in query },

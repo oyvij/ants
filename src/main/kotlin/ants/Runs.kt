@@ -205,16 +205,38 @@ class Runs(
         }
     }
 
+    // The toasts so far, numbered, and what the latest look at the Rounds and slots saw; every page's stream shares them.
+    private val toastLog = ArrayDeque<Pair<Long, String>>()
+    private var toastCount = 0L
+    private var looked = 0L
+    private var rounds: Set<String>? = null // the Rounds waiting, as last seen; null before the first look
+    private var queued = emptySet<String>() // the Agent Tasks seen waiting while every slot was taken
+    private var held = emptyList<String>()
+
     /**
-     * A toast as this stream sees a Round arrive or a queued Agent Task take a free slot: "New: <Run> asks Round 3. 4
-     * questions are waiting on you. Its slot went to <Run> · <Task>, which was queued." A Round's toast waits one look
-     * for the slot it frees, while a Task is queued.
+     * The toasts after number [after] (the latest a page has shown, which it hands its next stream, so re-following
+     * loses none), each numbered in `data-seq`, then each new one: a Round arriving or a queued Agent Task taking a free
+     * slot, as [look] sees them.
      */
-    fun toasts(): Part {
-        var rounds: Set<String>? = null // the Rounds waiting, as last seen; null before the first look
-        var queued = emptySet<String>() // the Agent Tasks seen waiting while every slot was taken
-        var held = emptyList<String>()
+    fun toasts(after: Long?): Part {
+        var seen = synchronized(this) { after?.coerceAtMost(toastCount) ?: toastCount }
         return Part("toast") {
+            look()
+            synchronized(this) { toastLog.filter { it.first > seen }.also { if (it.isNotEmpty()) seen = it.last().first } }.map { (n, text) ->
+                """<div class="toast" role="status" data-seq="$n">$text<div class="ok"><button type="button" onclick="this.closest('.toast').remove()">OK</button></div></div>"""
+            }
+        }
+    }
+
+    /**
+     * Once a second, whichever stream asks: "New: <Run> asks Round 3. 4 questions are waiting on you. Its slot went to
+     * <Run> · <Task>, which was queued." A Round's toast waits one look for the slot it frees, while a Task is queued.
+     */
+    @Synchronized
+    private fun look() {
+        if (System.currentTimeMillis() - looked < 1000) return
+        looked = System.currentTimeMillis()
+        run {
             val asked = notifications.tasks().filter { it.tag == UserTaskKind.ANSWER_ROUND.tag }
             val new = rounds?.let { seen -> asked.filter { it.id !in seen } }.orEmpty().mapNotNull { entry ->
                 notifications.round(entry)?.let { (round, questions) ->
@@ -238,8 +260,9 @@ class Runs(
                 took.isNotEmpty() -> listOf("<b>A slot came free.</b> It went to $took, which was queued.")
                 new.isNotEmpty() && queued.isNotEmpty() -> emptyList<String>().also { held = said }
                 else -> said
-            }.map { """<div class="toast" role="status">$it<div class="ok"><button type="button" onclick="this.closest('.toast').remove()">OK</button></div></div>""" }
+            }.forEach { toastLog.addLast(++toastCount to it) }
         }
+        while (toastLog.size > 20) toastLog.removeFirst()
     }
 
     // The Transcripts of the running Agent Tasks, each read on from where it was last read, so a live page doesn't

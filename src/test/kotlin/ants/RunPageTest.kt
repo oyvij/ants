@@ -269,9 +269,12 @@ class RunPageTest : AntsTest() {
         val seen = StringBuilder()
         eventually { generateSequence { toasts.poll() }.forEach { seen.appendLine(it) }; assertContains(seen, "Its slot went to") }
         val names = browser.get("/runs").body
-        assertContains(seen, Regex("""<div class="toast" role="status"><b>New: [^<]+ asks Round 1</b> 1 question is waiting on you\."""))
+        assertContains(seen, Regex("""<div class="toast" role="status" data-seq="\d+"><b>New: [^<]+ asks Round 1</b> 1 question is waiting on you\."""))
         assertContains(seen, Regex("""Its slot went to <b>[^<]+ · Draft</b>, which was queued\."""))
         for (run in listOf(asking, queued)) assertContains(seen, Regex("""/runs/$run">([^<]+)<""").find(names)!!.groupValues[1])
+        // A page that follows again, as the Run page does when its drawer opens or closes, gets the toasts after the latest it showed.
+        val seq = Regex("""data-seq="(\d+)"><b>New: """).find(seen)!!.groupValues[1].toLong()
+        assertContains(assertNotNull(browser.events("toast=${seq - 1}", "toast").poll(10, SECONDS)), "asks Round 1")
     }
 
     /** The Run page's row of the Task named [name] in its Tasks table. */
