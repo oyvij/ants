@@ -3,7 +3,7 @@
 @param article: String
 @param tickets: List<ants.Tracked>
 @param error: String? = null
-@param sent: ants.AgentLauncher.SentBack? = null
+@param sent: ants.AgentLauncher.Fixing? = null
 @param sendBack: Boolean = false
 @param comment: String = ""
 @param _csrf: org.springframework.security.web.csrf.CsrfToken

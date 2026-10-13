@@ -314,22 +314,27 @@ class AgentLauncher(
      * land; gone once it lands.
      */
     // ponytail: kept in memory: a fix running dies with Ants, and after a restart its Ticket is the user's again, to
-    // Send back once more.
-    private val sentBack = ConcurrentHashMap<String, SentBack>()
+    // Send back once more (its blocker left `in-progress` until then).
+    private val fixing = ConcurrentHashMap<String, Fixing>()
 
-    /** A Ticket sent back: its fix [running], or not landing, as [summary] says. */
-    class SentBack(val running: Boolean, val summary: String)
+    /** A Ticket sent back: its fix [running], or [failed], as [summary] says. */
+    class Fixing(val running: Boolean, val summary: String) {
+        val failed get() = !running
+    }
 
-    /** Whether the Ticket [ticket] of [run] is sent back, and how its fix is going. */
-    fun sentBack(run: String, ticket: String): SentBack? = sentBack[key(run, ticket)]
+    /** How the fix of the Ticket [ticket] of [run] is going, if it is sent back. */
+    fun fixing(run: String, ticket: String): Fixing? = fixing[key(run, ticket)]
 
     /**
      * **Send back** on the `ready-for-human` [ticket] of [run], whose instance is held: adds [comment] to its Comments,
      * then, one at a time, each in a slot, resumes the implementer of each Ticket in its `Blocked by` with the comment
      * and the Ticket's path (or starts it anew, without a session), in a new instance folder from the work branch head.
-     * That Ticket is `in-progress` until its fix lands, then `in-review`, and the fix's Result replaces the instance's.
-     * Returns why it can't, or null.
+     * That Ticket is `in-progress` until its fix lands, then `in-review`, and the fix's Result replaces the instance's;
+     * a fix that doesn't land puts it and those not fixed yet back `in-review`, as their last landing left them. Only
+     * once every blocker has landed, and only for an implementer that is an instance of the held Task's own
+     * multi-instance. Returns why it can't, or null.
      */
+    @Synchronized // so one blocker is never fixed twice at once
     fun sendBack(run: String, ticket: Tracked, comment: String): String? {
         val workspace = names.runWorkspace(run)
         val id = key(run, ticket.name)
@@ -339,40 +344,47 @@ class AgentLauncher(
                     ticket(workspace, run, runtime.ticketItem(held.task.executionId, held.task.activityId))?.number == ticket.number
             }.getOrDefault(false) // its Run just ended
         }?.task ?: return "This Ticket isn't waiting on you in a live Run."
-        if (sentBack[id]?.running == true) return "This Ticket is sent back already; its fix hasn't landed yet."
+        if (fixing[id]?.running == true) return "This Ticket is sent back already; its fix hasn't landed yet."
+        val open = ticket.blockedBy.filter { ticket(workspace, run, it)?.landed == false }
+        if (open.isNotEmpty()) return "${open.joinToString()} ${if (open.size == 1) "hasn't" else "haven't"} landed yet, so there is nothing to send back to."
         val fixes = ticket.blockedBy.mapNotNull { number ->
             val (index, key) = runtime.ticketSibling(held.executionId, held.activityId) { ticket(workspace, run, it)?.number == number.toInt() } ?: return@mapNotNull null
-            Triple(number, index, key).takeIf { Transcript.file(workspace, key).exists() } // a blocker the user did has no implementer
+            Fix(number, index, key).takeIf { Transcript.file(workspace, key).exists() } // a blocker the user did has no implementer
         }
         if (fixes.isEmpty()) return "No Agent built what this Ticket checks."
         ticket.comment("Sent back by the user:\n\n${comment.trim()}")
         runLog(workspace, ticket.title, "Send back", comment)
         val message = "The user sent back ${ticket.title} ($TICKETS/${ticket.name}.md), which checks your work:\n\n${comment.trim()}\n\n" +
             "Fix it, then answer again with your Result."
-        fixes.forEach { (number, _, _) -> ticket(workspace, run, number)?.status(Tracked.IN_PROGRESS) }
-        sentBack[id] = SentBack(true, "Sent back; waiting on the fix of ${fixes.joinToString { it.first }}.")
+        fixes.forEach { ticket(workspace, run, it.ticket)?.status(Tracked.IN_PROGRESS) }
+        fixing[id] = Fixing(true, "Sent back; waiting on the fix of ${fixes.joinToString { it.ticket }}.")
         Thread.ofVirtual().start {
-            for ((number, index, key) in fixes) {
+            for ((i, fix) in fixes.withIndex()) {
                 try {
-                    while (inSlot { fix(held, run, workspace, key, index, message) } == null) Thread.sleep(200)
-                    ticket(workspace, run, number)?.status(Tracked.IN_REVIEW)
+                    while (inSlot { fix(held, run, workspace, fix, message) } == null) Thread.sleep(200)
+                    ticket(workspace, run, fix.ticket)?.status(Tracked.IN_REVIEW)
                 } catch (e: Exception) {
-                    if (e !is Stopped && e !is Failed) log.warn("The fix of $key failed", e)
-                    sentBack[id] = SentBack(false, "The fix of $number didn't land: ${e.message ?: e}")
+                    if (e !is Stopped && e !is Failed) log.warn("The fix of ${fix.key} failed", e)
+                    fixes.drop(i).forEach { ticket(workspace, run, it.ticket)?.status(Tracked.IN_REVIEW) }
+                    fixing[id] = Fixing(false, "The fix of ${fix.ticket} didn't land: ${e.message ?: e}")
                     return@start
                 }
             }
-            sentBack.remove(id)
+            fixing.remove(id)
         }
         return null
     }
 
+    /** The instance [key] that implemented the Ticket numbered [ticket], the [index]th (0-based) of its multi-instance. */
+    private data class Fix(val ticket: String, val index: Int, val key: String)
+
     /**
-     * Runs the instance [key] of [held]'s multi-instance, its [index]th, again with [message]: its last session resumed,
+     * Runs the instance of [held]'s multi-instance that [fix] names again with [message]: its last session resumed,
      * or a new one handed off its inputs; then lands it and puts its Result in place of the old one. A `stuck` one, or
      * one cut short by the Usage limit, fails ([Failed]).
      */
-    private fun fix(held: LockedExternalTask, run: String, workspace: Path, key: String, index: Int, message: String) {
+    private fun fix(held: LockedExternalTask, run: String, workspace: Path, fix: Fix, message: String) {
+        val key = fix.key
         val agent = catalogue.agent(held.extensionProperties[AGENT] ?: error("${held.activityId} names no $AGENT"))
         val skill = catalogue.skill(held.extensionProperties[SKILL] ?: error("${held.activityId} names no $SKILL"))
         if (agent.cli == "claude") refuseBareByDefault(agent.cli, workspace)
@@ -390,7 +402,7 @@ class AgentLauncher(
             val first = session(held, key, agent, skill, used, run, workspace, cwd, transcript, session, started, resumed, message, inputs = inputs)
             val result = land(workspace, key, first) { session(held, key, agent, skill, used, run, workspace, cwd, transcript, session, started, true, it, handedOff = false) }
             if (result["outcome"] != "done") throw Failed("it ended stuck: ${result["summary"]} It needs: ${result["needs"]}")
-            onClash { runtime.replaceResult(held.executionId, held.activityId, index, result) }
+            onClash { runtime.replaceResult(held.executionId, held.activityId, fix.index, result) }
             transcript.ants("end", "Done.")
         } catch (e: Exception) {
             transcript.ants("end", when (e) {

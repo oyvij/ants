@@ -695,10 +695,10 @@ private fun called(call: DelegateExecution) = key(call as ExecutionEntity, call.
 /**
  * The key of [activity] on [execution] in its Run: its id, then `-<n>` for each multi-instance it is the nth instance
  * of, outermost first, as in `draft-2-1` for the first `draft` in the second instance of a multi-instance sub-process;
- * in a called Process, after its call's key ([CALLED]).
+ * in a called Process, after its call's key ([CALLED]). With [counter], its execution counts as that instance instead.
  */
-private fun key(execution: ExecutionEntity, activity: String, instead: Pair<ExecutionEntity, Int>? = null) = (execution.getVariable(CALLED) as? String).orEmpty() + activity +
-    generateSequence(execution) { it.parent }.mapNotNull { if (it == instead?.first) instead.second else it.getVariableLocal("loopCounter") as? Int }
+private fun key(execution: ExecutionEntity, activity: String, counter: Pair<ExecutionEntity, Int>? = null) = (execution.getVariable(CALLED) as? String).orEmpty() + activity +
+    generateSequence(execution) { it.parent }.mapNotNull { if (it == counter?.first) counter.second else it.getVariableLocal("loopCounter") as? Int }
         .toList().asReversed().joinToString("") { "-${it + 1}" }
 
 /**

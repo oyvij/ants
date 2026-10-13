@@ -315,7 +315,7 @@ Review changes, pushes and Vault writes always wait for the user. The Spec is ap
 ### Tickets
 
 - Matt Pocock's local-markdown tracker in the Run workspace: `tickets/spec.md` is the Spec, and `tickets/issues/NN-<slug>.md` are its Tickets (What to build, checkbox Acceptance criteria, a `Blocked by:` line, a `Status:` line, `## Comments`). The files are the truth. Ants ships an `issue-tracker.md` telling Skills where the tracker lives, and writes it into each Run workspace at `docs/agents/issue-tracker.md`, where the Skills look for it.
-- Statuses: `ready-for-agent` and `ready-for-human` (to-tickets or the user), `in-progress` and `needs-info` (the implementer), `in-review` (Ants, on landing), `done` (Ants, on Review changes Approve), `wontfix` (the user). The Spec closes when the Run ends, or becomes `wontfix` if the Run is cancelled: Ants writes its `Status:` line (`closed` or `wontfix`), and a Spec without one reads as open.
+- Statuses: `ready-for-agent` and `ready-for-human` (to-tickets or the user), `in-progress` and `needs-info` (the implementer; Ants sets `in-progress` on a Ticket whose implementer a Send back resumes), `in-review` (Ants, on landing), `done` (Ants, on Review changes Approve), `wontfix` (the user). The Spec closes when the Run ends, or becomes `wontfix` if the Run is cancelled: Ants writes its `Status:` line (`closed` or `wontfix`), and a Spec without one reads as open.
 - Web edits refuse to save over a file changed since it was opened; a tick saves only over the version the page showed, like Save. A refused Save shows the new version above the user's text, and saving again overwrites it. Pages follow file changes over SSE.
 
 ### Catalogue: Agents, Skills, Templates

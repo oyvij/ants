@@ -144,6 +144,7 @@ class ItemsAreTicketsTest : AntsTest() {
     private fun commit(file: String) =
         "sh cd repos/api && echo $file > $file.txt && git add $file.txt && git -c user.name=A -c user.email=a@b -c commit.gpgsign=false commit -qm $file"
 
+    /** Send back on `02-two`, with [comment]. */
     private fun sendBack(run: String, comment: String) = browser.post("/runs/$run/tickets/02-two/send-back", mapOf("comment" to comment))
 
     @Test
@@ -198,6 +199,7 @@ class ItemsAreTicketsTest : AntsTest() {
         sendBack(run, "one.txt says one")
         eventually { assertContains(browser.get("/notifications").body, "[failed]") }
         assertContains(browser.get("/runs/$run/tickets/02-two").body, "claude exited with code 3")
+        assertEquals("in-review", status(run, "01-one")) // as its last landing left it, to Send back again
         assertEquals("ready-for-human", status(run, "02-two"))
         assertContains(browser.get("/runs/$run").body, "<dt>implement-2</dt><dd>Ready for human</dd>")
     }
