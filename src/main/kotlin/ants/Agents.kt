@@ -35,10 +35,13 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
         return "agents"
     }
 
-    /** The create form; with `use`, as the modeler's New Agent modal shows it, whose Create and use picks it on the Task. */
+    /**
+     * The create form; with `use`, as the modeler's New Agent modal shows it, whose Create and use picks it on the Task,
+     * and with [skills], the Task's Skill, filled in.
+     */
     @GetMapping("/agents/new")
-    fun new(@RequestParam use: String?, model: Model) =
-        show(model.addAttribute("use", use != null), AgentForm.of(Agent(folder.resolve("new.md"), ""), name = ""), null)
+    fun new(@RequestParam use: String?, @RequestParam skills: String?, model: Model) =
+        show(model.addAttribute("use", use != null), AgentForm.of(Agent(folder.resolve("new.md"), ""), name = "").copy(skills = skills.orEmpty()), null)
 
     @PostMapping("/agents/new")
     fun create(@RequestParam params: Map<String, String>, model: Model) = save(model.addAttribute("use", "use" in params), AgentForm.of(params), null)
@@ -61,13 +64,15 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
 
     /**
      * The Agents and Skills as the modeler's Agent Task panel picks them, read afresh each time so a new one shows up:
-     * each Agent's Skills, and each Skill's declared inputs, its Vault and Answer History defaults and its result schema;
+     * each Agent's description, Skills and folder, and whether it is the user's own (New Skill adds itself only to those), and each Skill's declared inputs, its Vault and Answer History defaults and its result schema;
      * and the Profiles a Process can name.
      */
     @GetMapping("/catalogue.json")
     @ResponseBody
     fun catalogue() = mapOf(
-        "agents" to catalogue.agents().map { mapOf("name" to it.name, "description" to it.description, "skills" to it.skills) },
+        "agents" to catalogue.agents().map {
+            mapOf("name" to it.name, "description" to it.description, "skills" to it.skills, "own" to (it.file.parent == folder), "folder" to it.file.parent.toString())
+        },
         "skills" to catalogue.skills().map { skill ->
             mapOf(
                 "name" to skill.name, "description" to skill.description, "inputs" to skill.inputs,

@@ -63,9 +63,29 @@ val builtIns = mapOf(
 )
 
 /**
+ * What the modeler's User Task panel asks for each kind, in its kind dropdown's order: a field is an input parameter
+ * (`input`, so `${…}` works in it) or an extension property naming a Task (`property`).
+ */
+private val userTaskFields: Map<UserTaskKind, List<Map<String, String>>> = run {
+    val sendBack = mapOf("label" to "Send back resumes", "property" to SEND_BACK, "help" to "The Agent Task that Send back resumes with your comment.")
+    mapOf(
+        UserTaskKind.ANSWER_ROUND to listOf(mapOf("label" to "Asker", "property" to ASKER, "help" to "The Agent Task whose Round of questions you answer. It is resumed with your answers.")),
+        UserTaskKind.APPROVE to listOf(
+            mapOf("label" to "Title", "input" to "title", "help" to "What you are asked to approve."),
+            mapOf("label" to "Show", "input" to "show", "help" to "A file in the Run workspace, or a \${…} such as an earlier Result, shown as markdown."),
+            sendBack,
+        ),
+        UserTaskKind.REVIEW_CHANGES to listOf(
+            mapOf("label" to "Walkthrough", "property" to WALKTHROUGH, "help" to "The Task whose Story set the Story tab shows. Without it, By repo only."),
+            sendBack,
+        ),
+    )
+}
+
+/**
  * What the modeler page knows of Ants from the server, as JSON on its canvas's `data-facts`: the Built-in Tasks, the
  * start-form field types, Items are Tickets' property and what it does, and the Process's Profile property, what it
- * does and how its empty choice reads.
+ * does and how its empty choice reads, and each User Task kind's fields and Result.
  */
 val modelerFacts: String = JsonMapper.shared().writeValueAsString(mapOf(
     "builtIns" to builtIns,
@@ -80,6 +100,7 @@ val modelerFacts: String = JsonMapper.shared().writeValueAsString(mapOf(
         "help" to "The Vault and Source map its Runs use, unless the start form picks another Profile.",
         "none" to "The default",
     ),
+    "userTasks" to userTaskFields.map { (kind, fields) -> mapOf("value" to kind.value.orEmpty(), "name" to kind.title, "result" to kind.result, "fields" to fields) },
 ))
 
 /** The BPMN elements Ants runs, by their XML name; [refusedUses] refuses some uses of them. Anything else is refused. */

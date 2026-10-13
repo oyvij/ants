@@ -353,6 +353,9 @@ class ChecksTest : AntsTest() {
         val catalogue = JsonMapper.shared().readValue(browser.get("/catalogue.json").body, Map::class.java)
         val writer = (catalogue["agents"] as List<*>).single { (it as Map<*, *>)["name"] == "writer" }
         assertEquals(listOf("draft", "other"), (writer as Map<*, *>)["skills"])
+        assertEquals(true, writer["own"]) // so New Skill can say it adds the Skill to this Agent
+        val shipped = (catalogue["agents"] as List<*>).map { it as Map<*, *> }.filter { it["name"] != "writer" }
+        assertTrue(shipped.isNotEmpty() && shipped.none { it["own"] == true })
         val skills = (catalogue["skills"] as List<*>).associateBy { (it as Map<*, *>)["name"] }
         val draft = skills["draft"] as Map<*, *>
         assertEquals(listOf("tone", "length"), draft["inputs"])
@@ -400,7 +403,7 @@ class ChecksTest : AntsTest() {
     }
 
     @Test
-    fun `input pickers offer only start-form fields, Run variables and the Results of earlier Tasks`() {
+    fun `input pickers offer only start-form fields, Run variables and the Results of earlier Tasks, a User Task's by field`() {
         writerAndDraft()
         val bpmn = twoTasks("").replace(
             """<bpmn:sequenceFlow id="f2" sourceRef="draft" targetRef="review" />""",
@@ -416,7 +419,7 @@ class ChecksTest : AntsTest() {
         )
         val offered = JsonMapper.shared().readValue(browser.post("/processes/inputs", mapOf("bpmn" to bpmn, "element" to "review")).body, List::class.java)
         assertEquals(
-            setOf("${'$'}{prompt}", "${'$'}{runs}", "${'$'}{clones}", "${'$'}{sourceMap}", "${'$'}{draft.summary}", "${'$'}{draft.output}", "${'$'}{draft.output.text}", "${'$'}{draft.output.meta}", "${'$'}{ask}"),
+            setOf("${'$'}{prompt}", "${'$'}{runs}", "${'$'}{clones}", "${'$'}{sourceMap}", "${'$'}{draft.summary}", "${'$'}{draft.output}", "${'$'}{draft.output.text}", "${'$'}{draft.output.meta}", "${'$'}{ask}", "${'$'}{ask.approved}", "${'$'}{ask.comment}"),
             offered.toSet(),
         )
     }

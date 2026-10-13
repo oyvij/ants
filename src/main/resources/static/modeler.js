@@ -1,41 +1,42 @@
 // The modeler page: camunda-bpmn-js with the palette trimmed to what Ants runs, "append Agent / User / Built-in Task"
-// on the context pad, a panel that explains the selected element, and Save and deploy through Ants' deploy path.
-// Each kind of element is one entry in `kinds`; a later panel for a kind (the Agent Task's Agent and Skill, a
-// gateway's conditions) is a function in `panels`. What it writes as text, with no page, is in modeler-text.js.
+// on the context pad, a panel that explains the selected element and edits it, the live Checks under it, and Save and
+// deploy through Ants' deploy path. Each kind of element is one entry in `kinds`; what its panel asks beyond its name
+// and explanation (the Agent Task's Agent and Skill, a decision's paths) is a function in `panels`. What it writes as
+// text, with no page, is in modeler-text.js.
 
-import {camel, cronOf, everies, operators, readCondition, readSchedule, toCamunda, unary, weekdays} from "/modeler-text.js"
+import {camel, cronOf, everies, operators, readCondition, readSchedule, resultFields, toCamunda, unary, weekdays} from "/modeler-text.js"
 
 // What Ants calls each element it runs, and what it does there: the palette's tooltip and the panel's explanation.
 const kinds = {
     process: {name: "Process", explain: "How one kind of job gets done. Every Run of it starts at its start event with the start form's fields."},
-    start: {name: "Start event", explain: "Where a Run begins. A Process has exactly one."},
-    "timer-start": {name: "Timer start event", explain: "Where a Run begins; the Process's Schedule says when it starts on its own."},
-    end: {name: "End event", explain: "Where a path ends. The Run ends when every path has."},
-    timer: {name: "Timer", explain: "Waits for a time or a duration, then goes on. Dropped on the edge of a User Task, it becomes a timer boundary."},
+    start: {name: "Start event", explain: "Where a Run begins; a Process has exactly one. Its fields are the start form you fill in on the Process page, and every Task can read them as ${field}."},
+    "timer-start": {name: "Timer start event", explain: "Starts a Run on a schedule, with no one pressing Start. Pause or remove the Schedule on the Process page."},
+    end: {name: "End event", explain: "A path ends here, and the Run finishes when every path has. Several end events are fine, named for how the Run ended."},
+    timer: {name: "Timer", explain: "The flow waits here for a while or until a time. No Agent runs and no slot is held. Dropped on the edge of a User Task, it becomes a timer boundary."},
     "timer-boundary": {name: "Timer boundary", explain: "On a User Task only: when it fires, the user's Task is cancelled and the Run takes this path instead, such as Accept recommendations."},
-    exclusive: {name: "Exclusive gateway", explain: "Takes the one path whose condition holds, else the default path. Loops are drawn with it."},
-    parallel: {name: "Parallel gateway", explain: "Fans out to every path at once, or waits for all of them to join."},
-    agent: {name: "Agent Task", explain: "An Agent runs one Skill through its AI CLI and hands back a Result, which later Tasks read under this Task's id."},
-    user: {name: "User Task", explain: "Waits on the Notification list until you act on it, such as answering a Round or approving."},
-    "built-in": {name: "Built-in Task", explain: "Ants does this itself, with no Agent and no user."},
-    task: {name: "Task", explain: "A plain Task does nothing. What should it be?"},
-    subprocess: {name: "Sub-process", explain: "Groups Tasks into one step, which can run as a multi-instance."},
-    call: {name: "Call activity", explain: "Runs another Process as one step, inside this Run; its Result is every Task Result of the called Process."},
-    annotation: {name: "Text annotation", explain: "A note on the diagram. Ants ignores it."},
-    group: {name: "Group", explain: "A frame around elements that belong together. Ants ignores it."},
-    flow: {name: "Sequence flow", explain: "The path a Run takes from one element to the next."},
+    exclusive: {name: "Decision (exclusive gateway)", explain: "Take exactly one path, or merge paths back together. Loops are drawn with it."},
+    parallel: {name: "Parallel gateway", explain: "Run branches at the same time, then wait for all of them to join."},
+    agent: {name: "Agent Task", explain: "An Agent runs one of its Skills and hands back a Result, which later Tasks read under this Task's id."},
+    user: {name: "User Task", explain: "The Run waits here, on the Notification list, until you act. Other branches keep going."},
+    "built-in": {name: "Built-in Task", explain: "Ants does this itself. No Agent, no tokens, no slot."},
+    task: {name: "Plain Task", explain: "Ants would pass straight through this, doing nothing. What should it be?"},
+    subprocess: {name: "Sub-process", explain: "Groups part of the flow into one box, such as a question loop, which can run as a multi-instance. Collapse it from the wrench menu to tidy the diagram."},
+    call: {name: "Call a Process", explain: "Runs another Process as one step, inside this Run; its Result is every Task Result of the called Process."},
+    annotation: {name: "Text annotation", explain: "A note for people reading the diagram. Ants ignores it when running."},
+    group: {name: "Group", explain: "A frame around elements that belong together. Ants ignores it when running."},
+    flow: {name: "Path", explain: "The path a Run takes from one element to the next."},
 }
 
 // From the server (modelerFacts in Checks.kt): the Built-in Tasks by topic, the start-form field types by the
-// `ants.type` property each field carries (the engine only knows `string`), Items are Tickets' property and help, and
-// the Process's Profile property, help and empty choice.
-const {builtIns, fieldTypes, itemsAreTickets, profile} = JSON.parse(document.getElementById("canvas").dataset.facts)
+// `ants.type` property each field carries (the engine only knows `string`), Items are Tickets' property and help, the
+// Process's Profile property, help and empty choice, and each User Task kind with its fields and Result.
+const {builtIns, fieldTypes, itemsAreTickets, profile, userTasks} = JSON.parse(document.getElementById("canvas").dataset.facts)
 
-// The three Tasks Ants runs, as the BPMN each one is.
+// The three Tasks Ants runs, as the BPMN each one is, and their colour on the diagram and in the palette.
 const tasks = {
-    agent: {type: "bpmn:ServiceTask", attrs: {"camunda:type": "external", "camunda:topic": "agent"}, icon: "bpmn-icon-service-task"},
-    user: {type: "bpmn:UserTask", attrs: {}, icon: "bpmn-icon-user-task"},
-    "built-in": {type: "bpmn:ServiceTask", attrs: {"camunda:type": "external", "camunda:topic": "clone-repos"}, icon: "bpmn-icon-screw-wrench"},
+    agent: {type: "bpmn:ServiceTask", attrs: {"camunda:type": "external", "camunda:topic": "agent"}, icon: "bpmn-icon-service-task ants-pal-agent", marker: "ants-agent"},
+    user: {type: "bpmn:UserTask", attrs: {}, icon: "bpmn-icon-user-task ants-pal-user", marker: "ants-user"},
+    "built-in": {type: "bpmn:ServiceTask", attrs: {"camunda:type": "external", "camunda:topic": "clone-repos"}, icon: "bpmn-icon-screw-wrench ants-pal-builtin", marker: "ants-builtin"},
 }
 
 function kindOf(element) {
@@ -88,12 +89,14 @@ function AntsPalette(palette, create, elementFactory, bpmnFactory) {
         "create.end-event": creating("event", "bpmn-icon-end-event-none", "end", shape({type: "bpmn:EndEvent"})),
         "create.exclusive-gateway": creating("gateway", "bpmn-icon-gateway-xor", "exclusive", shape({type: "bpmn:ExclusiveGateway"})),
         "create.parallel-gateway": creating("gateway", "bpmn-icon-gateway-parallel", "parallel", shape({type: "bpmn:ParallelGateway"})),
-        ...Object.fromEntries(Object.entries(tasks).map(([kind, {icon}]) =>
-            [`create.${kind}-task`, creating("activity", icon, kind, () => taskShape(elementFactory, bpmnFactory, kind))])),
         "create.subprocess-expanded": {...entries["create.subprocess-expanded"], title: `${kinds.subprocess.name}: ${kinds.subprocess.explain}`},
         "create.call-activity": creating("activity", "bpmn-icon-call-activity", "call", shape({type: "bpmn:CallActivity"})),
         "create.text-annotation": creating("artifact", "bpmn-icon-text-annotation", "annotation", shape({type: "bpmn:TextAnnotation"})),
         "create.group": creating("artifact", "bpmn-icon-group", "group", shape({type: "bpmn:Group"})),
+        // The work, at the bottom of the palette.
+        "ants-separator": {group: "ants", separator: true},
+        ...Object.fromEntries(Object.entries(tasks).map(([kind, {icon}]) =>
+            [`create.${kind}-task`, creating("ants", icon, kind, () => taskShape(elementFactory, bpmnFactory, kind))])),
     })
 }
 AntsPalette.$inject = ["palette", "create", "elementFactory", "bpmnFactory"]
@@ -212,21 +215,41 @@ function el(tag, props = {}, ...children) {
     return node
 }
 
+let ids = 0
+
+// A field as every form lays one out: its label, a help line, then the control (labelled by it) and anything after.
+function field(label, help, control, ...after) {
+    control.id ||= "field-" + ++ids
+    return el("div", {className: "fld"}, el("label", {className: "f", htmlFor: control.id, textContent: label}),
+        help ? el("div", {className: "help", textContent: help}) : "", control, ...after)
+}
+
+const note = (className, text) => el("div", {className, textContent: text})
+
+// The element's name, or what Ants calls its kind.
+const nameOf = element => element.businessObject.name || kinds[kindOf(element)]?.name || element.type.replace("bpmn:", "")
+
+const selectElement = element => modeler.get("selection").select(element)
+
+// Makes [element] an Agent, User or Built-in Task, or a decision or parallel gateway ([kind] null).
+function replace(element, type, kind) {
+    const replaced = modeler.get("bpmnReplace").replaceElement(element, {type})
+    if (kind) modeler.get("modeling").updateProperties(replaced, tasks[kind].attrs)
+    selectElement(replaced)
+}
+
+// What a plain Task, or any Task Ants doesn't run, can become: one big button per Task Ants runs.
+const taskButtons = element => Object.entries(tasks).map(([kind, {type, icon}]) => el("button", {className: "kindbtn", onclick: () => replace(element, type, kind)},
+    el("span", {className: icon}), el("span", {}, el("b", {textContent: kinds[kind].name}), el("br"), el("span", {className: "muted small", textContent: kinds[kind].explain}))))
+
 // What the panel adds under the explanation for a kind, beyond saying what it is.
 const panels = {
-    task: element => el("p", {}, ...Object.keys(tasks).map(kind => el("button", {
-        textContent: kinds[kind].name,
-        onclick: () => {
-            const replaced = modeler.get("bpmnReplace").replaceElement(element, {type: tasks[kind].type})
-            modeler.get("modeling").updateProperties(replaced, tasks[kind].attrs)
-            modeler.get("selection").select(replaced)
-        },
-    }))),
+    task: taskButtons,
     "built-in": element => {
         const topic = element.businessObject.get("camunda:topic")
-        const select = el("select", {onchange: () => modeler.get("modeling").updateProperties(element, {"camunda:topic": select.value})},
+        const which = el("select", {onchange: () => modeler.get("modeling").updateProperties(element, {"camunda:topic": which.value})},
             ...Object.entries(builtIns).map(([value, text]) => el("option", {value, textContent: text.split(":")[0], selected: value === topic})))
-        return el("div", {}, el("label", {}, "Which ", select), el("p", {textContent: builtIns[topic] || "Ants has no Built-in Task " + topic}))
+        return field("What Ants does", builtIns[topic]?.split(": ")[1] || "Ants has no Built-in Task " + topic, which)
     },
 }
 
@@ -270,8 +293,9 @@ function startForm(element) {
     const save = () => writeForm(element, fields)
     const redraw = () => { save(); explain(element) }
     const input = (f, key, props = {}) => el("input", {value: f[key], ...props, oninput: event => { f[key] = event.target.value; save() }})
-    return el("div", {},
-        el("h3", {textContent: "Start form"}),
+    return el("div", {className: "fld"},
+        el("label", {className: "f", textContent: "Start form"}),
+        note("help", "What you fill in to start a Run. Tasks read each field by its variable name, as ${name}."),
         ...fields.map((f, i) => {
             const name = input(f, "id")
             const label = input(f, "label", {
@@ -284,7 +308,7 @@ function startForm(element) {
             const type = el("select", {onchange: () => { f.type = type.value; save() }},
                 ...Object.entries(fieldTypes).map(([value, text]) => el("option", {value, textContent: text, selected: value === f.type})))
             const move = (to, text) => el("button", {textContent: text, disabled: !fields[to], onclick: () => { [fields[i], fields[to]] = [fields[to], fields[i]]; redraw() }})
-            return el("fieldset", {},
+            return el("div", {className: "card"},
                 el("label", {}, "Label ", label), el("br"),
                 el("label", {}, "Variable ", name), el("br"),
                 el("label", {}, "Type ", type), " ",
@@ -294,7 +318,7 @@ function startForm(element) {
                 move(i - 1, "Up"), move(i + 1, "Down"),
                 el("button", {textContent: "Remove", onclick: () => { fields.splice(i, 1); redraw() }}))
         }),
-        el("button", {textContent: "Add field", onclick: () => { fields.push({id: "", label: "", type: "text", help: "", stored: "", required: false}); redraw() }}))
+        el("button", {textContent: "＋ Add field", onclick: () => { fields.push({id: "", label: "", type: "text", help: "", stored: "", required: false}); redraw() }}))
 }
 panels.start = startForm
 
@@ -325,37 +349,42 @@ function multiInstance(element) {
             }), " Items are Tickets")))
 }
 
-// The condition builder: a Result field, an operator and a value write each path's JUEL, shown under it, and one path
-// is the default. A condition it can't read back shows as is, and the builder replaces it once the user edits it.
+// An explanation box: [html] is the page's own words, never the diagram's.
+const explainHtml = html => el("div", {className: "explain", innerHTML: html})
 
-// What a condition can read: each Task's Result (an Agent Task's under `output`), its run count and the start form.
-function resultFields() {
-    const fields = []
-    for (const element of modeler.get("elementRegistry").getAll()) {
-        const kind = kindOf(element)
-        if (kind === "agent") fields.push(`${element.id}.output.`)
-        if (kind === "user" || kind === "built-in" || kind === "call") fields.push(`${element.id}.`)
-        if (["agent", "user", "built-in"].includes(kind)) fields.push(`runs.${element.id}`)
-        if (kind === "start" || kind === "timer-start") fields.push(...readForm(element.businessObject).map(f => f.id).filter(Boolean))
-    }
-    return el("datalist", {id: "result-fields"}, ...fields.map(value => el("option", {value})))
+// The `${…}` references a picker on [element] offers, from the server: start-form fields, Run variables and the Results
+// of the Tasks before it (`offered` in AgentTaskChecks.kt).
+async function offeredAt(element) {
+    const {xml} = await modeler.saveXML()
+    const response = await fetch("/processes/inputs", {method: "POST", body: new URLSearchParams({_csrf: csrf, bpmn: xml, element: element.id})})
+    return response.json()
 }
 
-// One path out of [gateway]: the default, or its condition.
-function conditionRow(gateway, flow) {
+// What a decision's condition can read: the Results of the Tasks before [element], each with the Task it is from, and
+// their run counts.
+async function fieldsBefore(element) {
+    const results = modeler.get("elementRegistry").filter(e => !e.labelTarget && ["agent", "user", "built-in", "call", "subprocess"].includes(kindOf(e)))
+    return resultFields(await offeredAt(element), Object.fromEntries(results.map(e => [e.id, nameOf(e)])), new Set(results.filter(e => tasks[kindOf(e)]).map(e => e.id)))
+}
+
+// The condition builder, for one path out of [gateway]: its label, whether it is the default, else a Result field from
+// [fields], an operator and a value, which write the path's JUEL, shown under it. A condition it can't read back shows
+// as is, and the builder replaces it once the user edits it.
+function pathEditor(gateway, flow, fields) {
     const modeling = modeler.get("modeling")
     const isDefault = gateway.businessObject.default === flow.businessObject
     const body = flow.businessObject.conditionExpression?.body || ""
-    const read = readCondition(body) || {field: "", op: "equals", value: ""}
-    const shown = el("code", {textContent: isDefault ? "(default: taken when no condition holds)" : body || "(no condition: always taken, so give it one)"})
-    const field = el("input", {value: read.field, placeholder: "review.output.verdict", size: 24})
-    field.setAttribute("list", "result-fields")
+    const read = readCondition(body) || {field: "", op: "is true", value: ""}
+    const shown = el("div", {className: "help mono", textContent: isDefault ? "(default: taken when no other condition matches)" : body || "(no condition yet)"})
+    const missing = read.field && !fields.some(([path]) => path === read.field) ? [[read.field, "not before this decision"]] : []
+    const field = el("select", {}, el("option", {value: "", textContent: "Choose a Result field…"}),
+        ...[...missing, ...fields].map(([path, from]) => el("option", {value: path, textContent: `${path} (${from})`, selected: path === read.field})))
     const op = el("select", {}, ...Object.keys(operators).map(name => el("option", {value: name, textContent: name, selected: name === read.op})))
-    const value = el("input", {value: read.value, size: 10})
+    const value = el("input", {value: read.value, placeholder: "value"})
     const write = () => {
         value.hidden = unary.has(op.value)
         if (!field.value) return
-        const expression = operators[op.value](field.value.trim(), value.value)
+        const expression = operators[op.value](field.value, value.value)
         shown.textContent = expression
         quiet = true
         try {
@@ -364,28 +393,51 @@ function conditionRow(gateway, flow) {
             quiet = false
         }
     }
-    field.oninput = value.oninput = op.onchange = write
+    field.onchange = op.onchange = value.oninput = write
     value.hidden = unary.has(read.op)
     const makeDefault = el("input", {type: "radio", name: "default-" + gateway.id, checked: isDefault, onchange: () => {
         modeling.updateProperties(flow, {conditionExpression: undefined})
         modeling.updateProperties(gateway, {default: flow.businessObject})
         explain(modeler.get("selection").get()[0] || gateway)
     }})
-    const target = flow.target.businessObject.name || flow.target.id
-    return el("fieldset", {},
-        el("legend", {textContent: `To ${target}`}),
-        el("label", {}, makeDefault, " Default path"), el("br"),
-        isDefault ? "" : el("span", {}, field, " ", op, " ", value),
-        el("br"), shown)
+    const label = el("input", {value: flow.businessObject.name || "", placeholder: "Label on the diagram, e.g. yes", onchange: () => modeling.updateLabel(flow, label.value)})
+    return el("div", {className: "card path"},
+        el("div", {className: "row small"}, el("b", {className: "grow", textContent: "→ " + nameOf(flow.target)}),
+            el("button", {className: "ghost small", textContent: "Select", onclick: () => selectElement(flow)})),
+        label,
+        el("label", {className: "row small"}, makeDefault, " Default path: taken when no other condition matches"),
+        ...(isDefault ? [] : [note("small", "Take this path when"), field, el("div", {className: "row"}, op, value),
+            ...(fields.length ? [] : [note("warn", "No Task before this decision returns anything to decide on.")])]),
+        shown)
 }
 
 panels.exclusive = gateway => {
     const out = gateway.outgoing.filter(flow => flow.type === "bpmn:SequenceFlow")
-    if (out.length < 2) return el("p", {textContent: "With one path out it only merges, so it needs no conditions."})
-    return el("div", {}, el("h3", {textContent: "Conditions"}), resultFields(), ...out.map(flow => conditionRow(gateway, flow)))
+    const box = el("div", {}, out.length <= 1 && gateway.incoming.length > 1
+        ? explainHtml("This decision only <b>merges</b> paths back into one, such as a loop's way back in. It needs no conditions.")
+        : explainHtml("A fork in the road: the Run takes <b>exactly one</b> path out. Give each path a condition on a Result from an earlier Task, and make one the <b>default</b>, taken when nothing else matches."))
+    if (!out.length) box.append(note("warn", "No paths out yet. Hover the decision and drag its arrow to the next step."))
+    else fieldsBefore(gateway).then(fields => box.append(el("b", {className: "small", textContent: `Paths out (${out.length})`}), ...out.map(flow => pathEditor(gateway, flow, fields))))
+    return box
 }
-panels.flow = flow => kindOf(flow.source) === "exclusive" && flow.source.outgoing.length > 1
-    ? el("div", {}, resultFields(), conditionRow(flow.source, flow)) : ""
+
+panels.flow = flow => {
+    const source = flow.source
+    if (kindOf(source) !== "exclusive" || source.outgoing.length < 2) return note("explain", `This path needs no condition: when ${nameOf(source)} is done, the flow moves on.`)
+    const box = el("div")
+    fieldsBefore(source).then(fields => box.replaceChildren(pathEditor(source, flow, fields),
+        el("button", {className: "ghost", textContent: `See every path out of ${nameOf(source)}`, onclick: () => selectElement(source)})))
+    return box
+}
+
+panels.parallel = gateway => {
+    const out = gateway.outgoing, split = out.length > 1, join = gateway.incoming.length > 1
+    return el("div", {},
+        explainHtml(split && !join ? `<b>Splits</b> the flow: all ${out.length} branches start at once. Their Agent Tasks each wait for a free slot.`
+            : join && !split ? `<b>Joins</b> the branches: waits here until all ${gateway.incoming.length} have arrived, then carries on.`
+                : "Use two of these: one to <b>split</b> into branches that run at the same time, one to <b>join</b> them, waiting until all are done."),
+        ...(split ? [el("b", {className: "small", textContent: "Branches"}), ...out.map(flow => note("small branch", "→ " + nameOf(flow.target)))] : []))
+}
 
 // A timer waits for a duration, until a date, or until a cron time comes round (Operaton's six fields, seconds first).
 const times = {
@@ -460,16 +512,21 @@ panels["timer-start"] = element => el("div", {}, schedulePanel(element), startFo
 
 // The Process: the Profile (a Vault and a Source map) its Runs use unless the start form picks another, as its
 // Profile property. Offered once the settings have more than one Profile, or when the Process names one.
+// Above it, how to draw a Process.
 panels.process = element => {
-    const box = el("div")
+    const box = el("div", {}, explainHtml(`<b>Drawing a Process</b><ol>
+        <li>A Run begins at the <b>start event</b> (its start form) and finishes at an <b>end event</b>.</li>
+        <li>Add work from the bottom of the palette, or hover a shape and pick the next step from its menu: <b>Agent</b>, <b>User</b> or <b>Built-in Task</b>.</li>
+        <li>Choose between paths with a <b>decision</b> (◇ ×). Loop by drawing a path back to an earlier Task.</li>
+        <li>Run branches side by side with two <b>parallel gateways</b> (◇ +): one splits, one joins.</li>
+        <li>Fix everything under <b>Checks</b>, then <b>Save and deploy</b>.</li></ol>`))
     fetch("/catalogue.json").then(response => response.json()).then(({profiles}) => {
         const current = agentProperties(element.businessObject)[profile.property] || ""
         if (profiles.length < 2 && !current) return
         const select = el("select", {onchange: () => writeAgentTask(element, {[profile.property]: select.value || undefined})},
             el("option", {value: "", textContent: profile.none, selected: !current}),
             ...[...new Set([...profiles, current].filter(Boolean))].map(name => el("option", {value: name, textContent: name, selected: name === current})))
-        box.replaceChildren(el("p", {}, el("label", {}, "Profile ", select)),
-            el("p", {textContent: profile.help}))
+        box.append(field("Profile", profile.help, select))
     })
     return box
 }
@@ -506,21 +563,28 @@ function writeAgentTask(element, changes, inputs, redraw = false) {
 
 // ＋ New Agent and ＋ New Skill: the create form (/agents/new, /skills/new) in a modal over the modeler. The modeler
 // page never navigates, so the diagram, its unsaved changes and the selection stay. Create and use lands the frame on
-// the new one's page; [use] then picks that name on the Task.
-function createAndUse(kind, src, use) {
+// the new one's page; [use] then picks that name on the Task. The modal's header carries the form's title and its
+// Create and use, so the frame shows the form alone; [who] says who runs a new Skill.
+function createAndUse(kind, src, use, who = "") {
     const title = kind === "agents" ? "New Agent" : "New Skill"
     const frame = el("iframe", {src, title, className: "mb"})
-    frame.style = "border: 0; display: block; padding: 0; width: 100%"
-    const close = el("button", {className: "ghost", title: "Close", ariaLabel: "Close", textContent: "✕"})
-    const header = el("form", {method: "dialog", className: "mh"}, el("b", {textContent: title}), el("span", {className: "sp"}),
-        el("span", {className: "muted small", textContent: "Esc to close"}), close)
-    const dialog = el("dialog", {className: "modal"}, header, frame)
+    const create = el("button", {type: "button", className: "primary", textContent: "Create and use",
+        onclick: () => frame.contentDocument.querySelector("input[name=use]")?.form.requestSubmit()})
+    const header = el("form", {method: "dialog", className: "mh"}, el("b", {className: `ent ent-${kind.slice(0, -1)}`, textContent: title}),
+        el("span", {className: "muted small", textContent: "Esc to close"}), el("span", {className: "sp"}),
+        el("button", {className: "ghost", title: "Close", textContent: "Cancel"}), create)
+    const dialog = el("dialog", {className: "modal create"}, header, who, frame)
     dialog.onclose = () => dialog.remove()
     frame.onload = () => {
         const name = frame.contentWindow.location.pathname.match(new RegExp(`^/${kind}/([^/]+)$`))?.[1]
-        if (!name || name === "new") return // the form, or the form refusing a save
-        dialog.close()
-        use(decodeURIComponent(name))
+        if (name && name !== "new") {
+            dialog.close()
+            return use(decodeURIComponent(name))
+        }
+        // The form, or the form refusing a save.
+        const page = frame.contentDocument
+        page.querySelector(".ph")?.remove()
+        page.querySelector("input[name=use]")?.form.querySelectorAll("button.primary").forEach(button => button.hidden = true)
     }
     document.body.append(dialog)
     dialog.showModal()
@@ -532,67 +596,88 @@ panels.agent = element => {
     return box
 }
 
+// The fields of the Result a Skill promises, as later Tasks read them, from the Task's override when it has one.
+function promised(skill, override) {
+    try {
+        return Object.keys((override ? JSON.parse(override) : skill?.output)?.properties || {})
+    } catch {
+        return []
+    }
+}
+
 async function agentPanel(element, box) {
-    const {xml} = await modeler.saveXML()
-    const [catalogue, offered] = await Promise.all([
-        fetch("/catalogue.json").then(response => response.json()),
-        fetch("/processes/inputs", {method: "POST", body: new URLSearchParams({_csrf: csrf, bpmn: xml, element: element.id})}).then(response => response.json()),
-    ])
+    const [catalogue, offered] = await Promise.all([fetch("/catalogue.json").then(response => response.json()), offeredAt(element)])
     const bo = element.businessObject
     const props = agentProperties(bo)
     const agent = catalogue.agents.find(a => a.name === props["ants.agent"])
     const skill = catalogue.skills.find(s => s.name === props["ants.skill"])
-    const options = (names, current, missing) => [el("option", {value: "", textContent: "Pick one", selected: !current}),
+    const options = (names, current, missing, text = name => name) => [el("option", {value: "", textContent: "Choose…", selected: !current}),
         ...(current && !names.includes(current) ? [el("option", {value: current, textContent: `${current} (${missing})`, selected: true})] : []),
-        ...names.map(name => el("option", {value: name, textContent: name, selected: name === current}))]
-    const agentSelect = el("select", {onchange: () => writeAgentTask(element, {"ants.agent": agentSelect.value || undefined}, undefined, true)},
-        ...options(catalogue.agents.map(a => a.name), props["ants.agent"], "not found"))
-    const pickSkill = (name, skills) => {
-        const picked = skills.find(s => s.name === name)
+        ...names.map(name => el("option", {value: name, textContent: text(name), selected: name === current}))]
+    // One input per name the Skill [name] declares, keeping what the user already filled in.
+    const skillWrite = name => {
         const kept = Object.fromEntries(agentInputs(bo))
-        // One input per declared name, keeping what the user already filled in.
-        writeAgentTask(element, {"ants.skill": name || undefined}, (picked?.inputs || []).map(input => [input, kept[input] || ""]), true)
+        return [{"ants.skill": name || undefined}, (catalogue.skills.find(s => s.name === name)?.inputs || []).map(input => [input, kept[input] || ""])]
     }
-    const skillSelect = el("select", {disabled: !agent, onchange: () => pickSkill(skillSelect.value, catalogue.skills)},
+    const pickSkill = name => writeAgentTask(element, ...skillWrite(name), true)
+    // Picking an Agent picks its first Skill.
+    const pickAgent = name => {
+        const [changes, inputs] = skillWrite(catalogue.agents.find(a => a.name === name)?.skills[0])
+        writeAgentTask(element, {"ants.agent": name || undefined, ...changes}, inputs, true)
+    }
+    const described = name => [name, catalogue.agents.find(a => a.name === name)?.description].filter(Boolean).join(" · ")
+    const agentSelect = el("select", {onchange: () => pickAgent(agentSelect.value)},
+        ...options(catalogue.agents.map(a => a.name), props["ants.agent"], "not found", described))
+    const skillSelect = el("select", {disabled: !agent, onchange: () => pickSkill(skillSelect.value)},
         ...options(agent?.skills || [], props["ants.skill"], "not listed by this Agent"))
-    const newAgent = el("button", {type: "button", textContent: "＋ New Agent", onclick: () =>
-        createAndUse("agents", "/agents/new?use", name => writeAgentTask(element, {"ants.agent": name}, undefined, true))})
+    const newAgent = el("button", {type: "button", className: "ghost small", textContent: "＋ New Agent", onclick: () =>
+        createAndUse("agents", "/agents/new?use" + (props["ants.skill"] ? "&skills=" + encodeURIComponent(props["ants.skill"]) : ""), async name => {
+            catalogue.agents = (await (await fetch("/catalogue.json")).json()).agents
+            pickAgent(name)
+        })})
     // The Skill's page adds it to the Task's Agent when that Agent is the user's own.
-    const newSkill = el("button", {type: "button", textContent: "＋ New Skill", onclick: () =>
-        createAndUse("skills", "/skills/new?use=" + encodeURIComponent(props["ants.agent"] || ""),
-            async name => pickSkill(name, (await (await fetch("/catalogue.json")).json()).skills))})
+    const who = el("div", {className: "who"}, !agent ? note("warn", "This Task has no Agent yet. The Skill is created, and you add it to an Agent's Skills it runs.")
+        : agent.own ? note("okbox", `Added to ${agent.name}'s Skills, and picked on this Task.`)
+            : note("warn", `${agent.name} is in ${agent.folder} and read-only, so the Skill can't be added to it. Copy the Agent, or pick one of your own, then choose this Skill.`))
+    const newSkill = el("button", {type: "button", className: "ghost small", textContent: "＋ New Skill", onclick: () =>
+        createAndUse("skills", "/skills/new?use=" + encodeURIComponent(props["ants.agent"] || ""), async name => {
+            catalogue.skills = (await (await fetch("/catalogue.json")).json()).skills
+            pickSkill(name)
+        }, who)})
+    const fields = promised(skill, props["ants.result-schema"])
     const references = el("datalist", {id: "ants-references"}, ...offered.map(value => el("option", {value})))
     const inputs = agentInputs(bo).map(([name, value], i) => {
-        const field = el("input", {value, size: 28, oninput: () => {
+        const input = el("input", {className: "mono grow", value, ariaLabel: name, oninput: () => {
             const all = agentInputs(bo)
-            all[i][1] = field.value
+            all[i][1] = input.value
             writeAgentTask(element, {}, all)
         }})
-        field.setAttribute("list", "ants-references")
-        return el("p", {}, el("label", {}, name, " ", field))
+        input.setAttribute("list", "ants-references")
+        return el("div", {className: "row"}, el("code", {textContent: name}), input)
     })
-    const toggle = (name, label, fallback) => el("label", {}, el("input", {
-        type: "checkbox", checked: props[name] === undefined ? fallback : props[name] === "true",
-        onchange: event => writeAgentTask(element, {[name]: String(event.target.checked)}),
-    }), " ", label)
+    const check = (label, checked, onchange) => el("label", {}, el("input", {type: "checkbox", checked, onchange}), " " + label)
+    const toggle = (name, label, fallback) => check(label, props[name] === undefined ? fallback : props[name] === "true",
+        event => writeAgentTask(element, {[name]: String(event.target.checked)}))
     const override = el("textarea", {
-        rows: 4, cols: 32, value: props["ants.result-schema"] || "",
+        rows: 4, value: props["ants.result-schema"] || "",
         placeholder: skill?.output ? JSON.stringify(skill.output) : "The Skill promises no result schema: give one here to read its Result's fields",
         oninput: () => writeAgentTask(element, {"ants.result-schema": override.value.trim() || undefined}),
     })
     box.replaceChildren(
-        el("p", {}, el("label", {}, "Agent ", agentSelect), " ", newAgent),
-        el("p", {}, el("label", {}, "Skill ", skillSelect), " ", newSkill),
-        skill?.description ? el("p", {textContent: skill.description}) : "",
-        el("h3", {textContent: "Inputs"}), references,
-        ...(inputs.length ? inputs : [el("p", {textContent: skill ? "The Skill declares no inputs." : "Pick a Skill to see its inputs."})]),
-        el("h3", {textContent: "Context"}),
-        el("p", {}, toggle("ants.vault", "Vault and Source map", skill?.vault || false)), el("p", {}, toggle("ants.answer-history", "Answer History", skill?.answerHistory || false)),
-        el("p", {}, el("label", {}, el("input", {
-            type: "checkbox", checked: props["ants.resume"] === "true",
-            onchange: event => writeAgentTask(element, {"ants.resume": event.target.checked ? "true" : undefined}),
-        }), " Resume its session when the flow comes back")),
-        el("h3", {textContent: "Result schema override"}), override,
+        field("Agent", "Who does it.", agentSelect, newAgent),
+        props["ants.agent"] && !agent ? note("warn", `No Agent folder holds "${props["ants.agent"]}".`) : "",
+        field("Skill", "One of the Agent's Skills: the one job this Task does.", skillSelect, newSkill),
+        skill ? el("div", {className: "help"}, skill.description || "", skill.description ? el("br") : "", "Later Tasks can read: ",
+            ...(fields.length ? fields.flatMap(f => [el("code", {textContent: `\${${element.id}.output.${f}}`}), " "]) : [el("code", {textContent: `\${${element.id}.summary}`})])) : "",
+        el("div", {className: "fld"}, el("label", {className: "f", textContent: "Inputs"}),
+            note("help", "What it reads: start-form fields, Run variables and Results of Tasks before it in the diagram."), references,
+            ...(inputs.length ? inputs : [note("muted small", skill ? "The Skill declares no inputs." : "Pick a Skill to see its inputs.")])),
+        el("div", {className: "fld"}, el("label", {className: "f", textContent: "When the flow comes back"}),
+            check("Resume the session (Round answers, Send back)", props["ants.resume"] === "true",
+                event => writeAgentTask(element, {"ants.resume": event.target.checked ? "true" : undefined}))),
+        el("div", {className: "fld"}, el("label", {className: "f", textContent: "Knowledge"}),
+            toggle("ants.vault", "Vault and Source map", skill?.vault || false), toggle("ants.answer-history", "Answer History", skill?.answerHistory || false)),
+        field("Result schema", "Overrides the Skill's result.schema.json, so an unmodified Skill can still answer in JSON.", override),
     )
 }
 
@@ -621,11 +706,7 @@ panels.call = element => {
 }
 
 async function callPanel(element, box) {
-    const {xml} = await modeler.saveXML()
-    const [processes, offered] = await Promise.all([
-        fetch("/processes.json").then(response => response.json()),
-        fetch("/processes/inputs", {method: "POST", body: new URLSearchParams({_csrf: csrf, bpmn: xml, element: element.id})}).then(response => response.json()),
-    ])
+    const [processes, offered] = await Promise.all([fetch("/processes.json").then(response => response.json()), offeredAt(element)])
     const bo = element.businessObject
     const current = bo.calledElement
     const called = processes.find(p => p.key === current)
@@ -635,26 +716,66 @@ async function callPanel(element, box) {
             const kept = Object.fromEntries(callInputs(bo))
             writeCall(element, {calledElement: select.value || undefined}, (picked?.fields || []).map(f => [f.name, kept[f.name] || ""]), true)
         },
-    }, el("option", {value: "", textContent: "Pick one", selected: !current}),
+    }, el("option", {value: "", textContent: "Choose…", selected: !current}),
         ...(current && !called ? [el("option", {value: current, textContent: `${current} (not deployed)`, selected: true})] : []),
         ...processes.map(p => el("option", {value: p.key, textContent: p.name, selected: p.key === current})))
     const labels = Object.fromEntries((called?.fields || []).map(f => [f.name, f.label + (f.required ? " (required)" : "")]))
     const references = el("datalist", {id: "ants-call-references"}, ...offered.map(value => el("option", {value})))
     const inputs = callInputs(bo).map(([name, value], i) => {
-        const field = el("input", {value, size: 28, oninput: () => {
+        const input = el("input", {className: "mono grow", value, ariaLabel: labels[name] || name, oninput: () => {
             const all = callInputs(bo)
-            all[i][1] = field.value
+            all[i][1] = input.value
             writeCall(element, {}, all)
         }})
-        field.setAttribute("list", "ants-call-references")
-        return el("p", {}, el("label", {}, labels[name] || name, " ", field))
+        input.setAttribute("list", "ants-call-references")
+        return el("div", {className: "row"}, el("span", {className: "small", textContent: labels[name] || name}), input)
     })
     box.replaceChildren(
-        el("p", {}, el("label", {}, "Process ", select)),
-        el("h3", {textContent: "Inputs"}), references,
-        ...(inputs.length ? inputs : [el("p", {textContent: called ? "The Process's start form has no fields." : "Pick a Process to see its start-form fields."})]),
+        field("Process", "The Process it runs, always its latest version.", select),
+        el("div", {className: "fld"}, el("label", {className: "f", textContent: "Inputs"}),
+            note("help", "One per start-form field of the called Process."), references,
+            ...(inputs.length ? inputs : [note("muted small", called ? "The Process's start form has no fields." : "Pick a Process to see its start-form fields.")])),
     )
 }
+
+// The User Task: its kind (`ants.user-task`, none for an Approve), that kind's fields, each an input parameter or an
+// extension property naming an Agent Task, and the fields of its Result.
+panels.user = element => {
+    const bo = element.businessObject
+    const props = agentProperties(bo)
+    const kind = userTasks.find(k => k.value === (props["ants.user-task"] || "")) || userTasks.find(k => !k.value)
+    const what = el("select", {onchange: () => writeAgentTask(element, {"ants.user-task": what.value || undefined}, undefined, true)},
+        ...userTasks.map(k => el("option", {value: k.value, textContent: k.name, selected: k === kind})))
+    const agentTasks = modeler.get("elementRegistry").filter(e => !e.labelTarget && kindOf(e) === "agent")
+    const control = ({property, input}) => {
+        if (input) {
+            const box = el("input", {value: Object.fromEntries(agentInputs(bo))[input] || "", onchange: () => {
+                const inputs = agentInputs(bo).filter(([name]) => name !== input)
+                writeAgentTask(element, {}, box.value ? [...inputs, [input, box.value]] : inputs)
+            }})
+            return box
+        }
+        const current = props[property] || ""
+        const missing = current && !agentTasks.some(e => e.id === current) ? [el("option", {value: current, textContent: `${current} (not in this diagram)`, selected: true})] : []
+        const box = el("select", {onchange: () => writeAgentTask(element, {[property]: box.value || undefined})},
+            el("option", {value: "", textContent: "Choose…", selected: !current}), ...missing,
+            ...agentTasks.map(e => el("option", {value: e.id, textContent: `${nameOf(e)} (${e.id})`, selected: e.id === current})))
+        return box
+    }
+    return el("div", {}, field("What you do", "", what), ...kind.fields.map(f => field(f.label, f.help, control(f))),
+        el("div", {className: "help reads"}, "Later Tasks and decisions can read: ",
+            ...kind.result.flatMap(f => [el("code", {textContent: `\${${element.id}.${f}}`}), " "])))
+}
+
+// The panel's head: what the element is, and its name, which the diagram shows.
+function head(element, kind) {
+    const name = el("input", {className: "name", ariaLabel: "Name", value: element.businessObject.name || "", placeholder: "Name it",
+        onchange: () => modeler.get("modeling").updateLabel(element, name.value)})
+    return [el("div", {className: "kind", textContent: kind}), name]
+}
+
+// The kinds whose panel explains them itself, or warns instead.
+const ownWords = new Set(["process", "agent", "exclusive", "parallel", "flow", "task"])
 
 function explain(element) {
     const target = element.labelTarget || element
@@ -662,10 +783,31 @@ function explain(element) {
     // Throwing here would abort the import.
     if (!target.businessObject) return
     const kind = kindOf(target)
-    panel.replaceChildren(kind
-        ? el("div", {}, el("h2", {textContent: kinds[kind].name}), el("p", {textContent: kinds[kind].explain}), panels[kind]?.(target) || "", multiInstance(target))
-        : el("div", {}, el("h2", {textContent: target.type.replace("bpmn:", "")}), el("p", {textContent: "Ants doesn't run this element."})))
+    if (kind === "process") return panel.replaceChildren(el("div", {className: "kind", textContent: kinds.process.name}), el("h3", {textContent: nameOf(target)}), panels.process(target))
+    if (kind && kind !== "task") {
+        return panel.replaceChildren(...head(target, kinds[kind].name), ownWords.has(kind) ? "" : note("explain", kinds[kind].explain),
+            panels[kind]?.(target) || "", multiInstance(target))
+    }
+    // A plain Task, or anything Ants doesn't run: what it can become.
+    const type = target.type.replace("bpmn:", ""), event = target.businessObject.eventDefinitions?.[0]?.$type.replace("bpmn:", "")
+    const gateway = (text, type) => el("button", {textContent: text, onclick: () => replace(target, type)})
+    const options = kind || /Task$/.test(type) ? taskButtons(target)
+        : /Gateway$/.test(type) ? [gateway("Decision", "bpmn:ExclusiveGateway"), " ", gateway("Parallel gateway", "bpmn:ParallelGateway")] : []
+    panel.replaceChildren(
+        ...(kind ? head(target, kinds.task.name) : [el("div", {className: "kind", textContent: type + (event ? " · " + event : "")}), el("h3", {textContent: nameOf(target)})]),
+        note("warn", kind ? kinds.task.explain : "Ants doesn't run this element, so Save and deploy will refuse it."),
+        ...(kind || !options.length ? [] : [note("small change", "Change it to:")]), ...options)
 }
+
+// Agent, User and Built-in Tasks in their colours on the diagram.
+function mark(element) {
+    const canvas = modeler.get("canvas")
+    for (const {marker} of Object.values(tasks)) canvas.removeMarker(element, marker)
+    const marker = tasks[kindOf(element)]?.marker
+    if (marker && !element.labelTarget) canvas.addMarker(element, marker)
+}
+modeler.on("import.done", () => modeler.get("elementRegistry").forEach(mark))
+modeler.on(["shape.added", "element.changed"], ({element}) => element.businessObject && mark(element))
 
 modeler.on("selection.changed", ({newSelection}) => explain(newSelection.length === 1 ? newSelection[0] : modeler.get("canvas").getRootElement()))
 modeler.on("element.changed", ({element}) => {
@@ -678,7 +820,7 @@ fetch(canvas.dataset.src)
     .then(response => response.text())
     .then(xml => modeler.importXML(toCamunda(xml)))
     .then(() => {
-        modeler.get("canvas").zoom("fit-viewport")
+        modeler.get("canvas").zoom("fit-viewport", "auto")
         explain(modeler.get("canvas").getRootElement())
     })
 
@@ -689,10 +831,12 @@ document.getElementById("save").onclick = async () => {
     else document.getElementById("refusal").textContent = await response.text()
 }
 
-// The live Checks: everything Save and deploy would refuse, from the Checks it runs, and the warnings. Save and deploy
-// is disabled while any Check fails; clicking a Check selects its element, inside a collapsed sub-process too.
+// The live Checks: everything Save and deploy would refuse, from the Checks it runs, and the warnings, under a summary
+// of how many to fix. Save and deploy is disabled while any Check fails; clicking a Check selects its element, inside
+// a collapsed sub-process too.
 const save = document.getElementById("save")
 const checks = document.getElementById("checks")
+const summary = document.getElementById("summary")
 
 function jump(id) {
     const element = modeler.get("elementRegistry").get(id)
@@ -706,8 +850,11 @@ function jump(id) {
 async function check() {
     const {xml} = await modeler.saveXML()
     const found = await (await fetch("/processes/checks", {method: "POST", body: new URLSearchParams({_csrf: csrf, bpmn: xml})})).json()
-    save.disabled = found.some(item => !item.warning)
+    const failing = found.filter(item => !item.warning).length
+    save.disabled = failing > 0
     save.title = save.disabled ? "Fix the Checks first" : ""
+    summary.className = "pill " + (failing ? "p-waiting" : "p-ready")
+    summary.textContent = failing ? `${failing} to fix` : "Ready to deploy"
     checks.replaceChildren(...found.map(item => el("li", {className: item.warning ? "warning" : "error"}, item.element
         ? el("a", {href: "#" + item.element, textContent: item.message, onclick: event => { event.preventDefault(); jump(item.element) }})
         : item.message)))
