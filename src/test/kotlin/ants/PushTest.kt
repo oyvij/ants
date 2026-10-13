@@ -152,6 +152,22 @@ class PushTest : AntsTest() {
     }
 
     @Test
+    fun `a clone an Agent made by hand is pushed from the branch it is on`() {
+        val api = repo("api")
+        val web = repo("web")
+        val run = start(api)
+        git(workspace(run).resolve("repos"), "clone", "-q", "${web.remote}", "web")
+        git(clone(run, "web"), "switch", "-q", "-c", "feature-x")
+        git(clone(run, "web"), "commit", "-q", "--allow-empty", "-m", "Mine in web")
+
+        assertContains(browser.get(entry(run)).body, "Mine in web")
+        val head = git(clone(run, "web"), "rev-parse", "HEAD")
+        push(run)
+        completed(run)
+        assertContains(refs(web), "refs/heads/feature-x $head")
+    }
+
+    @Test
     fun `a waiting Push takes no Continue, since there is no Skip`() {
         val api = repo("api")
         val run = start(api)
