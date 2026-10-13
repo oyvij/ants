@@ -20,15 +20,17 @@ class PushTest : AntsTest() {
 
     /**
      * Starts a Run of `push.bpmn` with a Source map of [repos] on the work branch `feature-x`, commits "Mine in <repo>"
-     * in each clone once Push waits, and gives the Run.
+     * in each clone of [changed], approves the work, and gives the Run once Push waits.
      */
-    private fun start(vararg repos: Remote): String {
+    private fun start(vararg repos: Remote, changed: List<Remote> = repos.toList()): String {
         settings(null, sourceMapLines(*repos))
         browser.import("push.bpmn")
         browser.get("/processes/ship")
         val run = browser.post("/processes/ship/runs", repos.map { "repos" to it.name } + ("branch" to "feature-x")).path.removePrefix("/runs/")
-        entry(run)
-        for (repo in repos) git(clone(run, repo.name), "commit", "-q", "--allow-empty", "-m", "Mine in ${repo.name}")
+        val work = entry(run)
+        for (repo in changed) git(clone(run, repo.name), "commit", "-q", "--allow-empty", "-m", "Mine in ${repo.name}")
+        browser.post(work, mapOf("action" to "approve", "comment" to ""))
+        eventually { assertContains(assertNotNull(row(run)), "[push]") }
         return run
     }
 
@@ -149,6 +151,21 @@ class PushTest : AntsTest() {
         assertContains(row(run)!!, "Pushed: none. Not pushed: api, web.")
         assertContains(browser.get(entry(run)).body, "web: The clone is on elsewhere, not the work branch feature-x.")
         for (repo in listOf(api, web)) assertEquals("", git(repo.remote, "branch", "--list", "feature-x", "elsewhere"))
+    }
+
+    @Test
+    fun `a clone with no commits on the work branch is neither shown nor pushed`() {
+        val api = repo("api")
+        val web = repo("web")
+        val run = start(api, web, changed = listOf(api))
+
+        val page = browser.get(entry(run)).body
+        assertContains(page, "${api.remote}")
+        assertFalse("${web.remote}" in page)
+        push(run)
+        completed(run)
+        assertEquals(listOf("api"), result(run).map { (it as Map<*, *>)["repo"] })
+        assertEquals("", git(web.remote, "branch", "--list", "feature-x"))
     }
 
     @Test

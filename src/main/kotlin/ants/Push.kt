@@ -26,7 +26,7 @@ class Outgoing(val repo: String, val path: Path, val remote: String, val branch:
  * ([Outgoing]). **Push** dry-runs every repo, then pushes each work branch to the same branch on its remote: a
  * fast-forward only, never forced, never the base, and nothing else. A rejection is `[failed]`, naming the repos that
  * pushed and those that didn't, with git's message; the user can push by hand from the kept clone and Continue. The
- * Result has one entry per repo: `{repo, remote, branch, base, isNew, commits, pushed, error, compareUrl}`.
+ * Result has one entry per repo it offered (a clone with nothing to push is left out): `{repo, remote, branch, base, isNew, commits, pushed, error, compareUrl}`.
  */
 @Component
 class Push(
@@ -38,6 +38,7 @@ class Push(
     /** Waits on the user at first; then pushes, or after a push by hand (Continue) completes with what the remotes hold. */
     override fun handle(task: LockedExternalTask) {
         val repos = outgoing(runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult().rootProcessInstanceId)
+        if (repos.isEmpty()) return externalTasks.complete(task.id, WORKER, mapOf(task.activityId to ArrayList<Any>())) // nothing changed, nothing to ask
         val action = task.variables[AgentLauncher.ACTION] ?: return wait(task, repos)
         runtime.removeVariablesLocal(task.executionId, listOf(AgentLauncher.ACTION, AgentLauncher.INSTRUCTION)) // the choice is used once
         val errors = if (action == PUSH) push(repos) else repos.filter { !onRemote(it) }.associate { it.repo to "The remote's ${it.branch} isn't where this clone has it." }
@@ -81,15 +82,19 @@ class Push(
         "isNew" to repo.isNew, "commits" to repo.commits, "pushed" to (error == null), "error" to error, "compareUrl" to compareUrl(repo),
     )
 
-    /** The Run's clones, by name, each on the work branch Clone repos put it on. */
-    fun outgoing(run: String): List<Outgoing> = clones(names.runWorkspace(run)).map { path ->
+    /**
+     * The Run's clones that have something to push, by name, each on the work branch Clone repos put it on: a clone
+     * with no commits since the base, or whose work branch the remote had where it still is, is left out.
+     */
+    fun outgoing(run: String): List<Outgoing> = clones(names.runWorkspace(run)).mapNotNull { path ->
         val branch = cloneRepos.workBranch(path)
         val base = runCatching { cloneRepos.git(path, "symbolic-ref", "--short", "refs/remotes/origin/HEAD").removePrefix("origin/") }.getOrNull()
         val commits = cloneRepos.git(path, "log", "--format=%H %s", if (base == null) "refs/heads/$branch" else "origin/$base..refs/heads/$branch").lines().filter(String::isNotBlank)
             .map { mapOf("sha" to it.substringBefore(' '), "subject" to it.substringAfter(' ')) }
         // Clone repos tracks the work branch when the remote had it, and Push pushes to the URL, so no tracking branch is ever added.
-        val isNew = runCatching { cloneRepos.git(path, "rev-parse", "--verify", "-q", "refs/remotes/origin/$branch") }.isFailure
-        Outgoing(path.name, path, cloneRepos.git(path, "config", "remote.origin.url"), branch, base, commits, isNew)
+        val remoteHead = runCatching { cloneRepos.git(path, "rev-parse", "--verify", "-q", "refs/remotes/origin/$branch") }.getOrNull()
+        if (commits.isEmpty() || remoteHead == cloneRepos.git(path, "rev-parse", "refs/heads/$branch")) return@mapNotNull null
+        Outgoing(path.name, path, cloneRepos.git(path, "config", "remote.origin.url"), branch, base, commits, remoteHead == null)
     }
 
 

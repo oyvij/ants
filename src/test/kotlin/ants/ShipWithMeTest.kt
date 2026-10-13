@@ -105,10 +105,10 @@ class ShipWithMeTest : AntsTest() {
 
         assertEquals(3, claude.launches("grill").size)
         assertContains(claude.launches("grill")[1].stdin, """\"source\":\"written\"""")
-        // Clone new repos cloned the repo the first Round named; Push pushed the work branch of both.
+        // Clone new repos cloned the repo the first Round named; Push pushed api's work branch, not web's, which no Ticket changed.
         assertEquals("ONE", git(api.remote, "show", "add-hello:01.txt"))
         for (file in listOf("02.txt", "03.txt")) git(api.remote, "show", "add-hello:$file")
-        assertEquals("First", git(web.remote, "log", "-1", "--format=%s", "add-hello"))
+        assertEquals("", git(web.remote, "branch", "--list", "add-hello"))
         // Ticket 03 launched only once its blocker 01 had landed.
         val three = claude.launches("implement").single { "issues/03" in it.stdin }
         assertContains(three.file("seen"), "01.txt")
@@ -123,7 +123,8 @@ class ShipWithMeTest : AntsTest() {
             assertContains(report, text)
         }
         for (ticket in listOf("01-one", "02-two", "03-three")) assertContains(report, Regex("""$ticket[^>]*>[^<]*</a> · done"""), ticket)
-        for (repo in listOf("api", "web")) assertContains(report, Regex("""<strong>$repo</strong> · pushed <code>add-hello</code>"""), repo)
+        assertContains(report, Regex("""<strong>api</strong> · pushed <code>add-hello</code>"""))
+        assertFalse("<strong>web</strong> · pushed" in report)
     }
 
     @Test

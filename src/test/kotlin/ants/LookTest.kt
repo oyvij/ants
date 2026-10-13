@@ -188,8 +188,10 @@ class LookTest : AntsTest() {
         // A Push of two repos, each with a commit.
         http.import("push.bpmn")
         runs["push"] = start("ship", listOf("repos" to "api", "repos" to "web", "branch" to "ants/billing-retry"))
-        entry(runs.getValue("push"))
+        val work = entry(runs.getValue("push"))
         for (repo in listOf("api", "web")) commitFile(workspace(runs.getValue("push")).resolve("repos/$repo"), "retry.txt", "three times\n", "Retry a failed card payment")
+        http.post(work, mapOf("action" to "approve", "comment" to ""))
+        eventually(30) { check(entry(runs.getValue("push")) != work) }
 
         // A Round of questions.
         claude.session("quiz", 1, result("""{"outcome":"done","summary":"Round 1 on the invoice CSV export.","output":{"questions":[""" + listOf(
