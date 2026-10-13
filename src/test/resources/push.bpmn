@@ -24,7 +24,10 @@
         </operaton:inputOutput>
       </bpmn:extensionElements>
     </bpmn:serviceTask>
-    <bpmn:sequenceFlow id="f2" sourceRef="clone" targetRef="push" />
+    <bpmn:sequenceFlow id="f2" sourceRef="clone" targetRef="work" />
+    <!-- The test commits in the clones, then approves, so Push finds the work done, as after Cut and implement. -->
+    <bpmn:userTask id="work" name="Approve the work" />
+    <bpmn:sequenceFlow id="f2b" sourceRef="work" targetRef="push" />
     <bpmn:serviceTask id="push" name="Push" operaton:type="external" operaton:topic="push" />
     <bpmn:sequenceFlow id="f3" sourceRef="push" targetRef="end" />
     <bpmn:endEvent id="end" />
