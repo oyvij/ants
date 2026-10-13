@@ -116,16 +116,16 @@ class TranscriptTest : AntsTest() {
         )
         val run = start("agent-task")
         val path = "/runs/$run/tasks/draft/transcript"
-        eventually { assertContains(page(path), "Reading…") }
+        eventually { assertContains(page(path), "Reading notes.md…") }
         val loaded = page(path)
-        assertContains(loaded, Regex("""<div id="status"><span class="spin">✻</span> <span class="shimmer">Reading…</span> <span class="muted num">\(<span data-since="\d+">\d+s</span> · ↓ 115 tokens\)</span></div>"""))
+        assertContains(loaded, Regex("""<div id="status"><span class="spin">✻</span> <span class="shimmer">Reading notes.md…</span> <span class="muted num">\(<span data-since="\d+">\d+s</span> · ↓ 115 tokens\)</span></div>"""))
         assertContains(loaded, """<div class="tool" id="e2"><b>Read</b> <code>notes.md</code></div>""")
 
         val from = Regex("""data-from="(\d+)"""").find(loaded)!!.groupValues[1]
         val tab = Received(browser.events("transcript=$run/draft&from=$from", "transcript"))
         val secondTab = Received(browser.events("transcript=$run/draft&from=0", "transcript"))
         claude.release("one")
-        eventually { assertContains(tab.toString(), """<div id="live"><p>Almost <strong>there</strong></p>""") }
+        eventually { assertContains(tab.toString(), """<div id="live" class="caret"><p>Almost <strong>there</strong></p>""") } // a caret while the block streams
         assertContains(tab.toString(), "Writing…")
         assertFalse("Read</b>" in tab.toString()) // this page had it already
         claude.release("two")
@@ -197,6 +197,30 @@ class TranscriptTest : AntsTest() {
             assertContains(seen, """⑂ <b>searcher</b> Search the notes · 7s</summary>""")
             assertContains(seen, """<div id="subagents" class="chips"></div>""")
         }
+    }
+
+    @Test
+    fun `the live line's verb says what the latest event does and to what, else it rotates`() {
+        claude.session(
+            "draft", init, "wait one",
+            """{"type":"assistant","message":{"id":"m1","content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"pnpm test -- <b>theme</b>\nmore"}}]}}""",
+            "wait two",
+            """{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"ok"}]}}""",
+            "wait three",
+            """{"type":"assistant","message":{"id":"m2","content":[{"type":"tool_use","id":"t2","name":"Read","input":{"file_path":"/w/repos/web/src/Header.tsx"}}]}}""",
+            "wait four", done,
+        )
+        val run = start("agent-task")
+        val path = "/runs/$run/tasks/draft/transcript"
+        val rotating = Regex("""<div id="status"><span class="spin">✻</span> <span class="shimmer" data-rotate>Pondering…</span> """)
+        eventually { assertContains(page(path), rotating) } // nothing done yet: a rotating verb
+        claude.release("one")
+        eventually { assertContains(page(path), """<span class="shimmer">Running pnpm test -- &lt;b&gt;theme&lt;/b&gt;…</span>""") }
+        claude.release("two")
+        eventually { assertContains(page(path), rotating) } // its result is in: rotating again
+        claude.release("three")
+        eventually { assertContains(page(path), """<span class="shimmer">Reading Header.tsx…</span>""") }
+        claude.release("four")
     }
 
     @Test

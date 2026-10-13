@@ -30,7 +30,7 @@
 </div>
 </div>
 <script type="module">
-    stream.on('home', html => document.getElementById('live').innerHTML = html);
+    stream.on('home', html => stream.patch(document.getElementById('live'), html));
     stream.follow('home');
 </script>
 </main>

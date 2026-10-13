@@ -66,19 +66,7 @@
 <div id="diagram" class="dia"><div class="legend"><span class="pill p-running">Running</span><span class="pill p-waiting">Waiting on you</span><span class="pill p-done">Done</span><span class="pill p-quiet">Queued / paused</span></div></div>
 <div class="help">Drag to pan, Ctrl/⌘ + scroll to zoom. Click a Task to open it.</div>
 <aside id="drawer" class="drawer" hidden><button id="close" class="ghost" title="Close (Esc)" aria-label="Close">✕</button><div id="parts"></div></aside>
-@if(tasks.isNotEmpty())
-<h2>Tasks</h2>
-<table id="tasks"><tr><th>Task</th><th>Agent · Skill</th><th>State</th><th>Tokens</th></tr>
-@for(task in tasks)
-    <tr class="${if (task.href != null) "click" else null}" data-href="${task.href}">
-        <td><b>${task.name}</b>@if(task.round != null && task.round > 1) <span class="muted small">round ${task.round}</span>@endif@if(task.transcript != null && task.transcript.runningSubagents > 0) <span class="muted" title="Subagents">⑂ ${task.transcript.runningSubagents}</span>@endif</td>
-        <td class="small">@if(task.kind == "agent")@template.ent(agent = task.agent, skill = task.skill)@elseif(task.kind == "user")User Task@else Built-in Task@endif</td>
-        <td>@if(task.state == "running" && task.transcript?.line != null)<span class="small">$unsafe{task.transcript.line}</span>@else$unsafe{task.badge}@if(task.entry != null) @template.tag(entry = task.entry)@endif@endif</td>
-        <td class="muted small num">@if(task.tokens > 0)${tokens(task.tokens).removeSuffix(" tokens")}@endif</td>
-    </tr>
-@endfor
-</table>
-@endif
+<div id="run-tasks">@template.tasks(tasks = tasks)</div>
 @if(kept != null)
 <h2>Run workspace</h2>
 <div class="card">Kept at <code>${kept}</code> until you dismiss the Run.</div>
@@ -136,7 +124,8 @@
     const canvas = document.getElementById('diagram').canvas = viewer.get('canvas'), overlays = viewer.get('overlays'), registry = viewer.get('elementRegistry');
     const trail = [{ id: run, name: document.getElementById('name').textContent }], nav = document.getElementById('trail');
     let current = run, drawn = null, latest = null, shown = {}, called = {}, task = null;
-    const follow = () => stream.follow('run=' + current + (task === null ? '' : '&drawer=' + encodeURIComponent(task)));
+    const follow = () => stream.follow('run=' + current + '&tasks=' + run + (task === null ? '' : '&drawer=' + encodeURIComponent(task)));
+    stream.on('tasks', html => stream.patch(document.getElementById('run-tasks'), html));
     // Paints the latest update once the diagram it is for is drawn.
     function paint() {
         if (!latest || drawn !== current) return;
@@ -196,8 +185,9 @@
         } else if (element.type.endsWith('Task')) open(element.id);
     });
 
-    // The Task drawer follows its Task, replacing only the parts that changed, so a comment being typed stays, and
-    // removing the parts that are gone, such as Send once the session ends or the action once it is handled.
+    // The Task drawer follows its Task, patching only the parts that changed and replacing a changed one with a comment
+    // box, so a comment being typed stays, and removing the parts that are gone, such as Send once the session ends or
+    // the action once it is handled. Its Latest output keeps scrolled to the end.
     const drawer = document.getElementById('drawer'), parts = document.getElementById('parts');
     let received = {};
     function open(id) {
@@ -220,8 +210,11 @@
             if (received[part.id] === part.outerHTML) return;
             received[part.id] = part.outerHTML;
             const old = document.getElementById(part.id);
-            old ? old.replaceWith(part) : parts.insertBefore(part, parts.children[i] ?? null);
+            if (!old) parts.insertBefore(part, parts.children[i] ?? null);
+            else if (old.querySelector('textarea')) old.replaceWith(part);
+            else stream.patch(old, part.innerHTML);
         });
+        document.querySelector('#drawer-output .tr')?.scrollTo(0, 1e6);
     });
     const close = () => { task = null; drawer.hidden = true; follow(); };
     document.getElementById('close').onclick = close;

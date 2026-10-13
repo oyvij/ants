@@ -498,6 +498,14 @@ class FakeClaude {
     }
 }
 
+/** Waits for the live update, an SSE event's data, in which [check] passes. */
+fun java.util.concurrent.BlockingQueue<String>.until(check: (String) -> Boolean): String {
+    while (true) {
+        val html = assertNotNull(poll(10, SECONDS), "no matching update within 10 seconds")
+        if (check(html)) return html
+    }
+}
+
 /** Retries [check] until it passes or [seconds] are up. */
 fun eventually(seconds: Long = 10, check: () -> Unit) {
     val deadline = System.nanoTime() + seconds * 1_000_000_000

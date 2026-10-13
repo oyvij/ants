@@ -357,6 +357,12 @@ class Notifications(
     /** The count for the nav and the tab title, sent on connect and whenever it changes. */
     fun count(): Part = streams.changes("count") { entries().size.toString() }
 
+    /** The Notification list's entries as HTML, sent on connect and whenever they change. */
+    fun live(): Part = streams.rendered("notifications", "entries.kte") { mapOf("entries" to entries()) }
+
+    /** Which Round the Answer a Round entry [entry] asks, and how many questions it holds; null for any other entry. */
+    fun round(entry: TaskEntry): Pair<Int, Int>? = userTask(entry.id, UserTaskKind.ANSWER_ROUND)?.let { round(it) to Question.of(asked(it)).size }
+
     private fun incidents() = runtime.createIncidentQuery().incidentType(Incident.EXTERNAL_TASK_HANDLER_TYPE)
 
     /**

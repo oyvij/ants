@@ -149,6 +149,7 @@ class RunPageTest : AntsTest() {
         val run = start("agent-task")
         val html = browser.events("run=$run&drawer=draft", "drawer").until { "It read the notes." in it }
         assertContains(part(html, "drawer-so-far"), "<p>It read the notes.</p>")
+        assertContains(part(html, "drawer-so-far"), Regex("""<span class="muted">updated <span data-since="\d+">\d+s</span> ago</span>""")) // ticking (shell.js)
         assertContains(part(html, "drawer-head"), "42 tokens")
         val rewrite = claude.launches("so-far").first()
         assertEquals("haiku", rewrite.flag("--model"))
@@ -220,7 +221,7 @@ class RunPageTest : AntsTest() {
         assertContains(composer, """<form method="post" action="$path/send">""")
         assertContains(composer, """formaction="$path/stop"""")
         assertContains(composer, ">Send</button>")
-        assertContains(row(browser.get("/runs/$run").body, "Draft"), """<span class="shimmer">""") // the live line of a running Task
+        assertContains(row(browser.get("/runs/$run").body, "Draft"), """<span class="shimmer"""") // the live line of a running Task
     }
 
     @Test
@@ -234,6 +235,38 @@ class RunPageTest : AntsTest() {
         assertContains(page, """<span class="pill p-quiet">Waiting on its Round</span>""")
         assertContains(page, """This Task asked Round 1. <a href="$entry">Answer the Round</a> and its session resumes.""")
         assertContains(row(browser.get("/runs/$run").body, "Grill the idea"), "Waiting on its Round")
+    }
+
+    @Test
+    fun `the Run page's Tasks table follows its Tasks live, marking a changed state to flash`() {
+        setUp()
+        claude.session("draft", "wait release", done)
+        val run = start("agent-task")
+        val tasks = browser.events("run=$run&tasks=$run", "tasks")
+        var html = tasks.until { "<b>Draft</b>" in it && "shimmer" in it }
+        assertContains(row(html, "Draft"), """<td data-flash="running"><span class="small"><span class="spin">✻</span>""")
+        claude.release("release")
+        html = tasks.until { "<b>Draft</b>" in it && "shimmer" !in it }
+        assertContains(row(html, "Draft"), """<td data-flash="done"><span class="pill p-done">Done</span>""")
+    }
+
+    @Test
+    fun `a toast says when a Round arrives and a queued Task takes the slot it freed`() {
+        agentTask(claude, mapOf("quiz" to """{"type":"object","properties":{"questions":{"type":"array"}}}""", "draft" to null), extra = "agent-tasks: 1\n")
+        claude.session("quiz", "wait ask", result("""{"outcome":"done","summary":"Asked.","output":{"questions":[{"id":"who","title":"Who","ask":"Who?","context":"Who.","recommendation":"Me.","why":"Mine."}]}}"""))
+        claude.session("draft", "wait never")
+        val toasts = browser.events("", "toast")
+        val asking = start("round")
+        eventually { assertEquals(1, claude.launches("quiz").size) }
+        val queued = start("agent-task")
+        Thread.sleep(1500) // the stream sees it queued
+        claude.release("ask")
+        val seen = StringBuilder()
+        eventually { generateSequence { toasts.poll() }.forEach { seen.appendLine(it) }; assertContains(seen, "Its slot went to") }
+        val names = browser.get("/runs").body
+        assertContains(seen, Regex("""<div class="toast" role="status"><b>New: [^<]+ asks Round 1</b> 1 question is waiting on you\."""))
+        assertContains(seen, Regex("""Its slot went to <b>[^<]+ · Draft</b>, which was queued\."""))
+        for (run in listOf(asking, queued)) assertContains(seen, Regex("""/runs/$run">([^<]+)<""").find(names)!!.groupValues[1])
     }
 
     /** The Run page's row of the Task named [name] in its Tasks table. */

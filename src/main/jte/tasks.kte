@@ -1,0 +1,15 @@
+@import ants.tokens
+@param tasks: List<ants.TaskView>
+@if(tasks.isNotEmpty())
+<h2>Tasks</h2>
+<table id="tasks"><tr><th>Task</th><th>Agent · Skill</th><th>State</th><th>Tokens</th></tr>
+@for(task in tasks)
+    <tr class="${if (task.href != null) "click" else null}" data-href="${task.href}">
+        <td><b>${task.name}</b>@if(task.round != null && task.round > 1) <span class="muted small">round ${task.round}</span>@endif@if(task.transcript != null && task.transcript.runningSubagents > 0) <span class="muted" title="Subagents">⑂ ${task.transcript.runningSubagents}</span>@endif</td>
+        <td class="small">@if(task.kind == "agent")@template.ent(agent = task.agent, skill = task.skill)@elseif(task.kind == "user")User Task@else Built-in Task@endif</td>
+        <td data-flash="${task.state}">@if(task.state == "running" && task.transcript?.line != null)<span class="small">$unsafe{task.transcript.line}</span>@else$unsafe{task.badge}@if(task.entry != null) @template.tag(entry = task.entry)@endif@endif</td>
+        <td class="muted small num">@if(task.tokens > 0)${tokens(task.tokens).removeSuffix(" tokens")}@endif</td>
+    </tr>
+@endfor
+</table>
+@endif

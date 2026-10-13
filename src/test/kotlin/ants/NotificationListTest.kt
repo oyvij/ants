@@ -61,6 +61,17 @@ class NotificationListTest : AntsTest() {
     private fun runLog(run: String) = workspace(run).resolve("run-log.md").readText()
 
     @Test
+    fun `the Notification list follows its entries live`() {
+        setUp()
+        claude.session("draft", stuck)
+        val list = browser.events("notifications", "notifications")
+        val run = start()
+        val html = list.until { "/runs/$run\"" in it }
+        assertContains(html, """<table class="notes">""")
+        assertContains(html, """<span class="tag t-stuck"><i>⚠</i>[stuck]</span>""")
+    }
+
+    @Test
     fun `a stuck Agent Task appears on the Notification list as ⚠ stuck with its summary, its row opening the entry`() {
         setUp()
         claude.session("draft", stuck)

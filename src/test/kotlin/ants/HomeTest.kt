@@ -1,8 +1,6 @@
 package ants
 
 import org.junit.jupiter.api.Test
-import java.util.concurrent.BlockingQueue
-import java.util.concurrent.TimeUnit.SECONDS
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -31,18 +29,10 @@ class HomeTest : AntsTest() {
         .substringAfter("""id="$id">""").substringBefore("""<div class="card" id=""").replace("&#39;", "'")
 
     /** Home's stat cards: each one's label and number, and the Runs ended beside Live Runs. */
-    private fun stats(html: String) = Regex("""<div class="muted small">([^<]+)</div><div class="stat">(\d+) <small>([^<]*)</small></div>""")
+    private fun stats(html: String) = Regex("""<div class="muted small">([^<]+)</div><div class="stat"[^>]*>(\d+) <small>([^<]*)</small></div>""")
         .findAll(section(html, "stats")).flatMap {
             listOfNotNull(it.groupValues[1] to it.groupValues[2].toInt(), Regex("""(\d+) ended""").find(it.groupValues[3])?.let { ended -> "ended" to ended.groupValues[1].toInt() })
         }.toMap()
-
-    /** Waits for the live update in which [check] passes. */
-    private fun BlockingQueue<String>.until(check: (String) -> Boolean): String {
-        while (true) {
-            val html = assertNotNull(poll(10, SECONDS), "no matching update within 10 seconds")
-            if (check(html)) return html
-        }
-    }
 
     @Test
     fun `Home lists waiting entries and running Agent Tasks with their live line, and its stats count waiting Tasks, running Agent Tasks and live and ended Runs, live`() {
@@ -65,7 +55,7 @@ class HomeTest : AntsTest() {
 
         val working = start()
         html = live.until { "/runs/$working" in section(it, "working-now") }
-        assertContains(section(html, "working-now"), Regex("""<b class="small">Draft</b><div class="small"><span class="spin">✻</span> <span class="shimmer">\w+…</span>"""))
+        assertContains(section(html, "working-now"), Regex("""<b class="small">Draft</b><div class="small"><span class="spin">✻</span> <span class="shimmer"[^>]*>[^<]+…</span>"""))
         assertFalse("/runs/$waiting" in section(html, "working-now"))
         assertEquals(stats(1, 1, 2, 0), stats(html))
 

@@ -16,7 +16,11 @@
 <div class="ph"><h1>Notification list</h1><div class="sub">Every Task waiting on you, oldest first. An entry goes the moment you act.</div></div>
 <p id="badge-permission" hidden><button>Show the count on the app icon</button> macOS badges an installed app only with notification permission.</p>
 @if(error != null)<p role="alert">${error}</p>@endif
-@template.entries(entries = entries)
+<div id="list">@template.entries(entries = entries)</div>
+<script type="module">
+    stream.on('notifications', html => stream.patch(document.getElementById('list'), html));
+    stream.follow('notifications');
+</script>
 </main>
 </body>
 </html>
