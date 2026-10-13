@@ -133,7 +133,7 @@
 
     <div class="grid2"><div class="card"><h3>So far</h3>
         <label class="row"><input type="checkbox" name="so-far" checked="${form.soFar}"> Write a So far paragraph on running Tasks</label>
-        <div class="help">haiku rewrites each Task's new Transcript lines every couple of minutes; its tokens count on the Task.</div></div>
+        <div class="help">haiku rewrites each Task's new Transcript lines every couple of minutes, in a session of its own.</div></div>
     <div class="card"><h3>Theme</h3>
         <div class="row">
 @for(theme in listOf("system", "light", "dark"))

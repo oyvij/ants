@@ -49,9 +49,9 @@ class Transcript {
     private var seen = Instant.EPOCH // the latest time a line carried
     private var read = Instant.now() // when the latest line was folded in: the clocks read as of then, so they change only with a line, and tick in the page (shell.js)
     private var soFarAt: Instant? = null // when the latest So far was written
-    private var soFarTokens = 0L
-    private var thread: Any? = null // the codex session the lines are of
-    private val threadTotals = mutableMapOf<Any?, Long>() // a codex session → its total tokens, as its last turn.completed gave it
+    // ponytail: the largest window among the models a `result` names, a Subagent's included; it is the Task's own
+    // model's unless a Subagent runs on one with a larger window
+    private var window: Long? = null // the model's context window, as the latest `result` gave it
 
     /** The latest So far paragraph, if one has been written. */
     var soFar: String? = null
@@ -73,10 +73,8 @@ class Transcript {
     private class Launch(val entry: Int, val number: Int, val start: Instant) {
         var end: Instant? = null
         var prompted = false
-        val usage = mutableMapOf<Any?, Long>() // a message id → its tokens, while no `result` has said better
-        var modelUsage: Long? = null
-        var before: Long? = null // its codex session's total tokens before it
-        val tokens get() = modelUsage ?: usage.values.sum()
+        /** Its session's context: what its latest call read, or for codex the session's tokens so far. */
+        var context = 0L
     }
 
     /** A Subagent the session, or the Subagent [parent], started, shown as a block of the entries it added, [entries]. */
@@ -90,10 +88,13 @@ class Transcript {
     val roots get() = entries.indices.filter { it !in nested }.map { html("e$it") }
 
     /**
-     * Every launch's tokens: the last `result`'s `modelUsage`, which counts Subagents too, or so far the messages'.
-     * The So far rewrites count on the Task too.
+     * The context of the Task's latest session, as its last launch left it: one session has one context window, so
+     * launches don't add up, nor do a Subagent's, which has a window of its own, or the So far rewrites, haiku's own.
      */
-    val tokens get() = launches.sumOf { it.tokens } + soFarTokens
+    val tokens get() = launches.lastOrNull()?.context ?: 0
+
+    /** [tokens] as the pages show it, with the share of the model's window once a `result` has given it: `33k tokens (16.5%)`. */
+    val context get() = tokens(tokens) + (window?.let { " (" + String.format(Locale.ROOT, "%.1f", tokens * 100.0 / it) + "%)" } ?: "")
 
     val running get() = launches.isNotEmpty() && launches.last().end == null
 
@@ -103,7 +104,7 @@ class Transcript {
      */
     val line: String?
         get() = if (!running) null else launches.last().let {
-            """<span class="spin">✻</span> ${shimmer()} <span class="muted num">(${since(it.start)} · ↓ ${tokens(it.tokens)})</span>"""
+            """<span class="spin">✻</span> ${shimmer()} <span class="muted num">(${since(it.start)} · ${tokens(it.context)})</span>"""
         }
 
     /** The Subagents running now. */
@@ -128,17 +129,9 @@ class Transcript {
             // codex exec --json
             "item.started", "item.completed" -> codexMessage(event)?.let { message(it, launch) }
                 ?: item(event["item"] as? Map<*, *> ?: emptyMap<Any, Any>(), event["type"] == "item.completed")
-            "thread.started" -> {
-                thread = event["thread_id"]
-                if (launch != null && launch.before == null) launch.before = threadTotals[thread] ?: 0
-            }
-            // usage is the session's total so far (`usage_from_last_total` in codex-rs/exec), so a launch counts it
-            // less the session's total before the launch.
-            "turn.completed" -> (event["usage"] as? Map<*, *>)?.let {
-                val total = sum(it, "input_tokens", "output_tokens")
-                threadTotals[thread] = total
-                launch?.modelUsage = total - (launch?.before ?: 0)
-            }
+            // ponytail: usage is the session's total so far (`usage_from_last_total` in codex-rs/exec), not a call's
+            // context, which codex exec doesn't print; it stands in for codex's context until codex gives one.
+            "turn.completed" -> (event["usage"] as? Map<*, *>)?.let { launch?.context = sum(it, "input_tokens", "output_tokens") }
             "error", "turn.failed" -> codexError(event)?.let { message ->
                 append { """<div class="result" id="$it"><b>Error</b> ${esc(message)}</div>""" }
             }
@@ -153,7 +146,7 @@ class Transcript {
      */
     fun html(id: String): String = when (id) {
         "live" -> if (live.isEmpty()) """<div id="live"></div>""" else """<div id="live" class="caret">${markdown(live)}</div>""" // a caret until the block ends
-        "tokens" -> """<span id="tokens">${tokens(tokens)}</span>"""
+        "tokens" -> """<span id="tokens">$context</span>"""
         "status" -> """<div id="status">${line.orEmpty()}</div>"""
         "subagents" -> """<div id="subagents" class="chips">""" + blocks.values.filter { running && it.end == null }.joinToString(" ") {
             """<span class="chip"><span class="spin">✻</span> ${esc(it.type)} · ${esc(it.description)} · ${time(it)}</span>"""
@@ -207,7 +200,6 @@ class Transcript {
             "so-far" -> {
                 soFar = event["text"]?.toString()
                 soFarAt = at
-                soFarTokens += (event["tokens"] as? Number)?.toLong() ?: 0
             }
             else -> {
                 if (event["subtype"] == "end") launches.lastOrNull()?.end = at
@@ -255,8 +247,10 @@ class Transcript {
 
     private fun assistant(event: Map<*, *>, launch: Launch?) {
         val message = event["message"] as? Map<*, *> ?: return
-        (message["usage"] as? Map<*, *>)?.let {
-            launch?.usage?.set(message["id"], sum(it, "input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"))
+        // The session's context is what its latest call read: the input, from the cache or written to it, as Claude
+        // Code counts it. A Subagent's calls read a context of their own.
+        (message["usage"] as? Map<*, *>)?.takeIf { event["parent_tool_use_id"] == null && event["agent_id"] == null }?.let {
+            launch?.context = sum(it, "input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")
         }
         val parent = subagent(event) // a Subagent's own messages go into its block, and leave the live text and verb alone
         for (block in (message["content"] as? List<*>).orEmpty().filterIsInstance<Map<*, *>>()) when (block["type"]) {
@@ -369,11 +363,9 @@ class Transcript {
     }
 
     private fun result(event: Map<*, *>, launch: Launch?) {
-        // modelUsage is cumulative for the process, so the last result line of a launch holds the launch's tokens.
-        (event["modelUsage"] as? Map<*, *>)?.let { models ->
-            launch?.modelUsage = models.values.filterIsInstance<Map<*, *>>()
-                .sumOf { sum(it, "inputTokens", "outputTokens", "cacheReadInputTokens", "cacheCreationInputTokens") }
-        }
+        // modelUsage adds up every call, cache re-reads included, so it says nothing of the context, only the window.
+        (event["modelUsage"] as? Map<*, *>)?.values?.filterIsInstance<Map<*, *>>()
+            ?.mapNotNull { (it["contextWindow"] as? Number)?.toLong() }?.maxOrNull()?.let { window = it }
         val result = event["structured_output"] as? Map<*, *>
         if (result != null) this.result = result
         append { id ->
@@ -385,7 +377,7 @@ class Transcript {
     }
 
     private fun divider(launch: Launch) = """<h3 class="launch" id="e${launch.entry}">Launch ${launch.number} · """ +
-        "${TIME.format(launch.start)} · ${tokens(launch.tokens)}</h3>"
+        "${TIME.format(launch.start)} · ${tokens(launch.context)}</h3>"
 
     private fun append(html: (id: String) -> String): Int {
         val entry = entries.size

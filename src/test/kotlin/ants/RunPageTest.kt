@@ -142,7 +142,7 @@ class RunPageTest : AntsTest() {
     }
 
     @Test
-    fun `So far rewrites a running Task's new Transcript lines with haiku, counts on the Task, and can be switched off`() {
+    fun `So far rewrites a running Task's new Transcript lines with haiku, outside the Task's context, and can be switched off`() {
         setUp("so-far: 1s\n")
         val looked = """{"type":"assistant","message":{"id":"m1","content":[{"type":"text","text":"Looked at the notes."}]}}"""
         claude.session("draft", looked, "wait release", done, "wait linger")
@@ -155,7 +155,7 @@ class RunPageTest : AntsTest() {
         val html = browser.events("run=$run&drawer=draft", "drawer").until { "It read the notes." in it }
         assertContains(part(html, "drawer-so-far"), "<p>It read the notes.</p>")
         assertContains(part(html, "drawer-so-far"), Regex("""<span class="muted">updated <span data-since="\d+">\d+s</span> ago</span>""")) // ticking (shell.js)
-        assertContains(part(html, "drawer-head"), "42 tokens")
+        assertContains(part(html, "drawer-head"), "· 0 tokens") // haiku's rewrite is a session of its own
         val rewrite = claude.launches("so-far").first()
         assertEquals("haiku", rewrite.flag("--model"))
         assertEquals("", rewrite.flag("--tools"))
@@ -164,7 +164,7 @@ class RunPageTest : AntsTest() {
         Thread.sleep(2500) // with the session lingering after its Result, no second rewrite
         claude.release("linger")
         eventually { assertContains(browser.get("/runs/$run").body, """id="state">Completed<""") }
-        assertContains(browser.get("/runs/$run/tasks/draft/transcript").body, """<span id="tokens">42 tokens</span>""")
+        assertContains(browser.get("/runs/$run/tasks/draft/transcript").body, """<span id="tokens">0 tokens</span>""")
 
         setUp("so-far: false\n")
         claude.session("draft", 2, looked, "wait again", done)
@@ -283,7 +283,7 @@ class RunPageTest : AntsTest() {
     ).value
 
     @Test
-    fun `the Run page lists the Tasks it reached, each with its Agent and Skill, its state and tokens, opening the Task`() {
+    fun `the Run page lists the Tasks it reached, each with its Agent and Skill, its state and context, opening the Task`() {
         agentTask(claude, mapOf("draft" to """{"type":"object","properties":{"notes":{"type":"string"}}}""", "polish" to null))
         claude.session(
             "draft",
@@ -299,7 +299,7 @@ class RunPageTest : AntsTest() {
         assertContains(draft, """<a href="/agents/writer">writer</a>""")
         assertContains(draft, """<a href="/skills/draft">draft</a>""")
         assertContains(draft, """<span class="pill p-done">Done</span>""")
-        assertContains(draft, "1.5k")
+        assertContains(draft, "1.2k") // its context, the input of its latest call
         val check = row(page, "Check the draft")
         assertContains(check, """data-href="$entry"""")
         assertContains(check, "User Task")

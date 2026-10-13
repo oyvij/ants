@@ -1,4 +1,3 @@
-@import ants.tokens
 @param entry: ants.TaskEntry
 @param details: String?
 @param view: ants.TaskView
@@ -17,7 +16,7 @@
 <body>
 @template.nav(shell = shell)
 <main>
-@template.taskhead(view = view, run = entry.run, runName = entry.runName, tokens = tokens(view.tokens))
+@template.taskhead(view = view, run = entry.run, runName = entry.runName, tokens = view.context)
 @if(details != null)
 <div class="card"><h3>@if(entry.tag == "[stuck]")What it needs@elseif(entry.tag == "[stopped]")Where it stopped@else Why it failed@endif</h3>@if(entry.tag == "[stuck]")$unsafe{ants.Transcript.markdown(details)}@else<pre>${details}</pre>@endif</div>
 @endif

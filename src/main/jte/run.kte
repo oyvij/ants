@@ -1,5 +1,4 @@
 @import ants.stateName
-@import ants.tokens
 @import ants.RUN_PILLS
 @param run: org.operaton.bpm.engine.history.HistoricProcessInstance
 @param name: String
@@ -8,7 +7,7 @@
 @param kept: String?
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
-@param transcripts: Map<String, Long>
+@param transcripts: Map<String, String>
 @param report: String?
 @param tasks: List<ants.TaskView>
 @param started: String
@@ -100,10 +99,10 @@
 </dl>
 @endif
 @if(transcripts.isNotEmpty())
-<h2>Transcripts · ${tokens(transcripts.values.sum())}</h2>
+<h2>Transcripts</h2>
 <ul>
-@for((task, count) in transcripts)
-    <li><a href="/runs/${run.id}/tasks/${task}/transcript">${task}</a> · ${tokens(count)}</li>
+@for((task, context) in transcripts)
+    <li><a href="/runs/${run.id}/tasks/${task}/transcript">${task}</a> · ${context}</li>
 @endfor
 </ul>
 @endif
