@@ -304,7 +304,7 @@ kbd { font: 11px var(--mono); border: 1px solid var(--line); border-bottom-width
 .card .notes { box-shadow: none; }
 .notes td:first-child { width: 130px; }
 .nowrap { white-space: nowrap; }
-tr.click b a { color: inherit; }
+tr.click b a, .notes td a { color: inherit; } tr.click form { margin: 0; }
 .t-ready-for-human { background: var(--accSoft); color: var(--accText); border-color: color-mix(in srgb, var(--acc) 30%, transparent); }
 
 /* The login page: one card in the middle of the sidebar's colour. */
