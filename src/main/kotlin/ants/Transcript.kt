@@ -207,12 +207,12 @@ class Transcript {
         val parent = subagent(event)
         fun said(text: Any?) {
             if (parent != null) {
-                append(parent) { """<details class="prompt" id="$it"><summary>Prompt</summary><pre>${esc(text)}</pre></details>""" }
+                append(parent) { """<details class="prompt" id="$it"><summary>Prompt</summary><pre>${showImages(esc(text))}</pre></details>""" }
             } else if (launch != null && !launch.prompted) {
                 launch.prompted = true
-                append { """<details class="prompt" id="$it"><summary>${if (launch.number == 1) "Opening prompt" else "Prompt"}</summary><pre>${esc(text)}</pre></details>""" }
+                append { """<details class="prompt" id="$it"><summary>${if (launch.number == 1) "Opening prompt" else "Prompt"}</summary><pre>${showImages(esc(text))}</pre></details>""" }
             } else {
-                append { """<p class="user" id="$it">› ${esc(text)}</p>""" }
+                append { """<p class="user" id="$it">› ${showImages(esc(text))}</p>""" }
             }
         }
         when (val content = (event["message"] as? Map<*, *>)?.get("content")) {

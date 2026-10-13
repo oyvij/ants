@@ -3,7 +3,8 @@
 // modal, and ⤢ Expand, the same editor moved into the modal beside a live preview. The server renders both previews
 // (POST /markdown), as it renders the Approve page and the Report. The textarea stays in the form, hidden, and carries
 // what is posted, so without this script it is the field; a page script that sets its value fires `change` on it,
-// and the editor takes the new value. A page with no markdown field loads no CodeMirror.
+// and the editor takes the new value. A page with no markdown field loads no CodeMirror. A pasted image is stored in
+// Ants and referenced from the text (Images.kt), which gives it to the Agent.
 const selector = 'textarea[data-markdown]:not([data-mounted])';
 let codemirror, style;
 
@@ -49,6 +50,14 @@ function mount(textarea, cm) {
             cm.keymap.of([{key: 'Mod-b', run: view => surround(view, '**')}, {key: 'Mod-i', run: view => surround(view, '*')}]),
             cm.history(), cm.drawSelection(), cm.EditorView.lineWrapping, cm.keymap.of([...cm.defaultKeymap, ...cm.historyKeymap]),
             cm.placeholder(textarea.placeholder), cm.EditorState.readOnly.of(textarea.readOnly), cm.markdown(), cm.syntaxHighlighting(style),
+            // A copied image or a screenshot to the clipboard goes to Ants and is referenced at the caret; text pastes as text.
+            cm.EditorView.domEventHandlers({paste(event, view) {
+                const files = [...event.clipboardData?.files ?? []];
+                if (!files.length || view.state.readOnly) return false;
+                event.preventDefault();
+                pasteImages(view, files, status);
+                return true;
+            }}),
             cm.EditorView.updateListener.of(update => {
                 if (!update.docChanged) return;
                 textarea.value = update.state.doc.toString();
@@ -130,11 +139,31 @@ function modal(title, bodyClass) {
     return body;
 }
 
+const csrf = () => document.querySelector('input[name=_csrf]')?.value ?? '';
+
 /** Fills [element] with [text] rendered by the server. */
 async function render(element, text) {
-    const csrf = document.querySelector('input[name=_csrf]')?.value ?? '';
-    const response = await fetch('/markdown', {method: 'POST', body: new URLSearchParams({_csrf: csrf, text})});
+    const response = await fetch('/markdown', {method: 'POST', body: new URLSearchParams({_csrf: csrf(), text})});
     element.innerHTML = await response.text();
+}
+
+/**
+ * Stores each of [files] in Ants (POST /images) and puts a reference to it, `![image](/images/<sha256>.<ext>)`, at
+ * [view]'s caret; one that isn't an image, or is too big, isn't stored, and [status] says why.
+ */
+async function pasteImages(view, files, status) {
+    for (const file of files) {
+        status.textContent = 'Uploading the image…';
+        const response = await fetch('/images', {method: 'POST', headers: {'X-CSRF-TOKEN': csrf()}, body: file});
+        const text = await response.text();
+        if (!response.ok) {
+            status.textContent = text;
+            return;
+        }
+        const insert = `![image](${text})`, {from, to} = view.state.selection.main;
+        view.dispatch({changes: {from, to, insert}, selection: {anchor: from + insert.length}});
+        status.textContent = '';
+    }
 }
 
 mountAll();
