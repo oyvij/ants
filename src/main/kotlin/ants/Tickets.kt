@@ -77,21 +77,31 @@ class Tracked(val run: String, val name: String, val file: Path) {
         },
     )
 
+    /** Appends [comment] under `## Comments`, at the bottom, adding the heading when there is none. */
+    fun comment(comment: String) = file.writeText(text.trimEnd() + (if (COMMENTS.containsMatchIn(text)) "" else "\n\n## Comments") + "\n\n${comment.trim()}\n")
+
+    /** The text of each checkbox not ticked, such as an acceptance criterion still to meet. */
+    val unticked get() = text.lines().mapNotNull { line -> CHECKBOX.find(line)?.takeIf { it.groupValues[1] == " " }?.let { line.substring(it.range.last + 1).trim() } }
+
     /** The statuses Ants reads and sets; a Skill may write others, which Ants shows as they are. */
     companion object {
         const val DONE = "done"
         const val IN_REVIEW = "in-review"
+        const val IN_PROGRESS = "in-progress"
         const val READY_FOR_HUMAN = "ready-for-human"
         const val WONTFIX = "wontfix"
         const val CLOSED = "closed"
     }
 }
 
-/** A `ready-for-human` Ticket of a live Run, waiting on the user until they mark it done. */
+/**
+ * A `ready-for-human` Ticket of a live Run, waiting on the user until they mark it done; while it is [sent] back, saying
+ * so, and `[failed]` when its fix didn't land.
+ */
 // ponytail: waiting since the file last changed, not since it became ready-for-human; nothing records that moment.
-class TicketEntry(ticket: Tracked, process: String, val runName: String) : Entry(
-    "ticket-${ticket.run}-${ticket.name}", "[ready-for-human]", process, ticket.title, "Yours to do; mark it done when it is.",
-    Date(ticket.file.getLastModifiedTime().toMillis()),
+class TicketEntry(ticket: Tracked, process: String, val runName: String, sent: AgentLauncher.SentBack?) : Entry(
+    "ticket-${ticket.run}-${ticket.name}", if (sent?.running == false) "[failed]" else "[ready-for-human]", process, ticket.title,
+    sent?.summary ?: "Yours to do; mark it done when it is.", Date(ticket.file.getLastModifiedTime().toMillis()),
 ) {
     val run = ticket.run
     val href = ticket.href
@@ -109,6 +119,10 @@ class SpecRow(val run: String, val name: String, val process: String, val spec: 
 private val STATUS = Regex("""^Status:[ \t]*(\S+)""", RegexOption.MULTILINE)
 private val BLOCKED_BY = Regex("""^(Blocked by:)(.*)$""", RegexOption.MULTILINE)
 private val NUMBER = Regex("""\d+""")
+private val COMMENTS = Regex("""^## Comments\s*$""", RegexOption.MULTILINE)
+
+/** A task list item's checkbox, its mark in group 1. */
+private val CHECKBOX = Regex("""^\s*(?:[-*+]|\d+[.)])\s+\[([ xX])]""")
 
 /** Where a Run workspace keeps its Tickets, one file each. */
 const val TICKETS = "tickets/issues"
@@ -166,7 +180,7 @@ fun closeSpec(workspace: Path, cancelled: Boolean) = spec(workspace, "")?.status
  * The Tickets page, listing every Spec across Runs, open first, and a page per Spec and Ticket, rendered GitHub-style.
  */
 @Controller
-class Tickets(private val history: HistoryService, private val streams: Streams, private val names: RunNames) {
+class Tickets(private val history: HistoryService, private val streams: Streams, private val names: RunNames, private val launcher: AgentLauncher) {
     private fun spec(run: String) = ants.spec(names.runWorkspace(run), run)
 
     private fun tickets(run: String) = ants.tickets(names.runWorkspace(run), run)
@@ -189,6 +203,11 @@ class Tickets(private val history: HistoryService, private val streams: Streams,
         model.addAttribute("runName", names.name(run))
         model.addAttribute("article", article(file))
         model.addAttribute("tickets", if (name == "spec") tickets(run) else emptyList())
+        model.addAttribute("sent", launcher.sentBack(run, name))
+        // Send back goes to the Agents that built what the Ticket checks, so a Ticket blocked by nothing has none.
+        val live = history.createHistoricProcessInstanceQuery().processInstanceId(run).unfinished().count() > 0
+        model.addAttribute("sendBack", file.forHuman && file.blockedBy.isNotEmpty() && live)
+        if (!model.containsAttribute("comment")) model.addAttribute("comment", file.unticked.joinToString("") { "- $it\n" })
         return "ticket"
     }
 
@@ -215,14 +234,29 @@ class Tickets(private val history: HistoryService, private val streams: Streams,
 
     /** The `ready-for-human` Tickets of live Runs, on the Notification list until marked done. */
     fun waiting(): List<TicketEntry> = history.createHistoricProcessInstanceQuery().rootProcessInstances().unfinished().list().flatMap { run ->
-        tickets(run.id).filter { it.forHuman }.map { TicketEntry(it, run.processDefinitionName ?: run.processDefinitionKey, names.name(run.id)) }
+        tickets(run.id).filter { it.forHuman }.map {
+            TicketEntry(it, run.processDefinitionName ?: run.processDefinitionKey, names.name(run.id), launcher.sentBack(run.id, it.name))
+        }
     }
 
-    /** **Mark done**, on a Ticket that waits on the user. */
+    /** **Mark done**, on a Ticket that waits on the user, once no fix it was sent back for is still running. */
     @PostMapping("/runs/{run}/tickets/{name}/done")
-    fun done(@PathVariable run: String, @PathVariable name: String): String {
+    fun done(@PathVariable run: String, @PathVariable name: String, model: Model): String {
         val file = tracked(run, name)
+        if (launcher.sentBack(run, name)?.running == true) return page(run, name, model.addAttribute("error", "Its fix hasn't landed yet; mark it done once it has."))
         file.status(Tracked.DONE)
+        return "redirect:${file.href}"
+    }
+
+    /**
+     * **Send back** (comment required), on a `ready-for-human` Ticket of a live Run: to the implementers of the Tickets
+     * in its `Blocked by` ([AgentLauncher.sendBack]), while it stays the user's.
+     */
+    @PostMapping("/runs/{run}/tickets/{name}/send-back")
+    fun sendBack(@PathVariable run: String, @PathVariable name: String, @RequestParam comment: String, model: Model): String {
+        val file = tracked(run, name)
+        val refused = if (comment.isBlank()) "Send back needs a comment." else launcher.sendBack(run, file, comment)
+        if (refused != null) return page(run, name, model.addAttribute("error", refused).addAttribute("comment", comment))
         return "redirect:${file.href}"
     }
 
@@ -284,8 +318,6 @@ class Tickets(private val history: HistoryService, private val streams: Streams,
     private companion object {
         const val CHANGED = "This file changed since you opened it, so nothing was saved. This is the new version."
 
-        /** A task list item's checkbox, its mark in group 1. */
-        val CHECKBOX = Regex("""^\s*(?:[-*+]|\d+[.)])\s+\[([ xX])]""")
         val extensions = listOf(TaskListItemsExtension.create(), TablesExtension.create())
         val parser: Parser = Parser.builder().extensions(extensions).includeSourceSpans(IncludeSourceSpans.BLOCKS).build()
         val renderer: HtmlRenderer = HtmlRenderer.builder().extensions(extensions).escapeHtml(true).sanitizeUrls(true)

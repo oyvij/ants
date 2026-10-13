@@ -3,6 +3,9 @@
 @param article: String
 @param tickets: List<ants.Tracked>
 @param error: String? = null
+@param sent: ants.AgentLauncher.SentBack? = null
+@param sendBack: Boolean = false
+@param comment: String = ""
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
 @param shell: ants.Shell
@@ -22,9 +25,11 @@
 @if(error != null)<p role="alert">${error}</p>@endif
 $unsafe{article}
 @if(file.forHuman)
-<form method="post" action="${file.href}/done">
+<form method="post" action="${file.href}/send-back">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
-    <p>This Ticket is yours to do. <button class="primary">Mark done</button></p>
+    @if(sent != null)<p role="status">${sent.summary}</p>@endif
+    @if(sendBack)<p><label for="comment">What fails, for the Agents that built what it checks</label><br><textarea id="comment" name="comment" rows="6">${comment}</textarea></p>@endif
+    <p>This Ticket is yours to do. <button class="primary" formaction="${file.href}/done">Mark done</button>@if(sendBack) <button>Send back</button>@endif</p>
 </form>
 @endif
 @if(tickets.isNotEmpty())

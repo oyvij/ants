@@ -697,8 +697,9 @@ private fun called(call: DelegateExecution) = key(call as ExecutionEntity, call.
  * of, outermost first, as in `draft-2-1` for the first `draft` in the second instance of a multi-instance sub-process;
  * in a called Process, after its call's key ([CALLED]).
  */
-private fun key(execution: ExecutionEntity, activity: String) = (execution.getVariable(CALLED) as? String).orEmpty() + activity +
-    generateSequence(execution) { it.parent }.mapNotNull { it.getVariableLocal("loopCounter") as? Int }.toList().asReversed().joinToString("") { "-${it + 1}" }
+private fun key(execution: ExecutionEntity, activity: String, instead: Pair<ExecutionEntity, Int>? = null) = (execution.getVariable(CALLED) as? String).orEmpty() + activity +
+    generateSequence(execution) { it.parent }.mapNotNull { if (it == instead?.first) instead.second else it.getVariableLocal("loopCounter") as? Int }
+        .toList().asReversed().joinToString("") { "-${it + 1}" }
 
 /**
  * The key of the Task [activity] on [execution] in its Run, for its Transcript, live session and Notification entry,
@@ -726,6 +727,46 @@ fun RuntimeService.ticketItem(execution: String, activity: String): Any? = (this
         (scope as? ActivityImpl)?.takeIf { it.getProperty(ITEMS_ARE_TICKETS) == true }
             ?.let { body -> level.getVariable((body.activityBehavior as MultiInstanceActivityBehavior).collectionElementVariable) }
     }
+}
+
+/**
+ * Another instance of the Items are Tickets multi-instance the Task [activity] on [execution] runs an instance of, in its
+ * own Process: the one whose item [picks], as its number (0-based) and the key [activity] has in it. Null when no item
+ * picks, or the multi-instance is in a Process calling this one.
+ */
+fun RuntimeService.ticketSibling(execution: String, activity: String, picks: (Any?) -> Boolean): Pair<Int, String>? = (this as ServiceImpl).commandExecutor.execute { context ->
+    val (task, repeated, body) = context.ticketLoop(execution, activity) ?: return@execute null
+    val loop = repeated.activityBehavior as MultiInstanceActivityBehavior
+    val items = (loop.collectionExpression?.getValue(body) ?: body.getVariable(loop.collectionVariable)) as Collection<*>
+    val index = items.indexOfFirst(picks).takeIf { it >= 0 } ?: return@execute null
+    val instance = generateSequence(task) { it.parent }.first { it.hasVariableLocal(loop.collectionElementVariable) }
+    index to key(task, activity, instance to index)
+}
+
+/**
+ * Replaces the Result the instance [index] (0-based) of that multi-instance ([ticketSibling]) gave with [result], among
+ * the Results collected so far ([RunLifecycle.collect]): the instance's own when it repeats the Task [activity], else its
+ * [activity] entry. A clash with an instance ending at the same time rolls it back whole ([onClash]).
+ */
+fun RuntimeService.replaceResult(execution: String, activity: String, index: Int, result: Map<*, *>) {
+    (this as ServiceImpl).commandExecutor.execute { context ->
+        val (_, repeated, body) = checkNotNull(context.ticketLoop(execution, activity)) { "$activity runs in no Items are Tickets multi-instance" }
+        val results = LinkedHashMap<Any?, Any?>(body.getVariableLocal(RESULTS) as Map<*, *>)
+        val old = results["$index"]
+        results["$index"] = if (repeated.activities.single().id != activity) LinkedHashMap<Any?, Any?>(old as Map<*, *>).apply { put(activity, result) } else result
+        body.setVariableLocal(RESULTS, results)
+    }
+}
+
+/**
+ * The Items are Tickets multi-instance the Task [activity] on [execution] runs in, in its own Process: the Task's
+ * execution, the multi-instance's body and the body's execution, which holds the Results so far.
+ */
+private fun CommandContext.ticketLoop(execution: String, activity: String): Triple<ExecutionEntity, ActivityImpl, ExecutionEntity>? {
+    val (level, body) = scopes(execution, activity).firstOrNull { (_, scope) -> (scope as? ActivityImpl)?.getProperty(ITEMS_ARE_TICKETS) == true } ?: return null
+    val task = checkNotNull(executionManager.findExecutionById(execution))
+    if (level != task) return null
+    return Triple(task, body as ActivityImpl, generateSequence(task) { it.parent }.first { it.hasVariableLocal("nrOfInstances") })
 }
 
 /**
