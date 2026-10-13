@@ -18,10 +18,10 @@ const val STORY_SET_SCHEMA = "/shipped/skills/walkthrough/story-set.schema.json"
 
 /**
  * A Story set as the Story tab shows it: Varde's story format widened to a Run (the walkthrough Skill's
- * `story-set.schema.json`), each step's Site in its code, and the [remainder]: per changed file, its hunks that no
- * step's Site touches.
+ * `story-set.schema.json`), each step's Site in its code, and the [remainder]: per changed file, by its repo and its
+ * path in the clone, how many of its hunks no step's Site touches.
  */
-class StorySet(val title: String, val stories: List<Story>, val remainder: Map<String, Int>)
+class StorySet(val title: String, val stories: List<Story>, val remainder: Map<Pair<String, String>, Int>)
 
 class Story(val name: String, val premise: String, val steps: List<Step>) {
     val stale get() = steps.count { it.stale != null }
@@ -98,8 +98,8 @@ fun storySet(workspace: Path, git: (Path, List<String>) -> String): StorySet {
         })
     }
     val steps = stories.flatMap { it.steps }
-    val remainder = ranges.changed().associateWith { file ->
-        ranges.hunks(file).count { hunk -> steps.none { it.file == file && touches(hunk, it.side, it.from, it.to) } }
+    val remainder = ranges.changed().associate { file ->
+        locate(file)!! to ranges.hunks(file).count { hunk -> steps.none { it.file == file && touches(hunk, it.side, it.from, it.to) } }
     }.filterValues { it > 0 }
     return StorySet(set["title"].toString(), stories, remainder)
 }

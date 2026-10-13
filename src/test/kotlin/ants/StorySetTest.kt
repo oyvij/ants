@@ -83,7 +83,7 @@ class StorySetTest : AntsTest() {
         assertContains(page, """<div class="stitle">Shout the first word</div>""")
         assertContains(page, """<span>The first word is shouted</span><span class="cnt">2 steps</span>""")
         assertContains(page, """<b>Remainder</b> · 1 change no step covers""")
-        assertContains(page, """<div class="rf"><span class="mono">other.txt</span><span class="muted">1</span></div>""")
+        assertContains(page, """<div class="rf"><span class="mono"><b>api</b> · other.txt</span><span class="muted">1 hunk</span></div>""")
         assertContains(page, """<div class="small">Only the first line changes.</div>""")
         assertContains(page, "Shout → The rest")
         // Each step: its code with its site highlighted (the diff's removed lines shown on demand), the claim and the values.

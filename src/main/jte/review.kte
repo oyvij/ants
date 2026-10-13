@@ -43,7 +43,7 @@
         <a class="srow" href="#s${i + 1}-1"><span>${story.name}</span><span class="cnt">${story.steps.size} step${if (story.steps.size == 1) "" else "s"}@if(story.stale > 0) · <span class="stalecnt">${story.stale} stale</span>@endif</span></a>
         @endfor
         <div class="srem"><div><b>Remainder</b> · ${uncovered} change${if (uncovered == 1) "" else "s"} no step covers</div>
-            @for(file in stories.remainder.entries)<div class="rf"><span class="mono">${file.key.substringAfterLast('/')}</span><span class="muted">${file.value}</span></div>
+            @for(file in stories.remainder.entries)<div class="rf"><span class="mono"><b>${file.key.first}</b> · ${file.key.second}</span><span class="muted">${file.value} hunk${if (file.value == 1) "" else "s"}</span></div>
             @endfor</div>
     </div>
     <div id="walkMain">
