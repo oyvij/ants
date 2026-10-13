@@ -46,7 +46,7 @@
     </ul>
 @endif
 </section></div>
-<form method="post" action="/processes/${key}/runs" class="card" id="start">
+<div class="card" id="start"><form method="post" action="/processes/${key}/runs">
     <h3>Start a Run</h3>
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
 @if(error != null)<p role="alert">${error}</p>@endif
@@ -83,7 +83,7 @@
     </div>
 @endfor
     <div class="go"><button class="primary" disabled="${reasons.isNotEmpty() && !scopable}">Start</button></div>
-</form>
+</form></div>
 <div class="card" id="schedule">
 @if(schedule == null)
     <h3>⏰ Schedule</h3>

@@ -307,7 +307,7 @@ dialog#new-process { width: min(560px, 92vw); height: auto; }
 #new-process form { margin: 0; } #new-process .go { margin-top: 16px; }
 #start .picks { flex-wrap: wrap; gap: 6px 14px; margin-bottom: 8px; } #start .picks label { font-weight: 500; margin: 0; }
 #start textarea.tall { min-height: 300px; margin: 0; }
-#start .go { margin-top: 16px; }
+#start form { margin: 0; } #start .go { margin-top: 16px; }
 #schedule h3 .grow { flex: 1; }
 #schedule form { margin: 0; }
 #schedule .warn { margin-top: 14px; }
