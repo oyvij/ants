@@ -79,6 +79,9 @@ class ProfileTest : AntsTest() {
         val form = browser.get("/processes/profile").body
         assertContains(form, """<select name="$PROFILE"""")
         assertContains(form, """<option selected>work</option>""")
+        // The sub line says where the Profile came from: the default here, picked in the URL below.
+        assertContains(form, "Profile <b>work</b>, the default")
+        assertContains(browser.get("/processes/profile?$PROFILE=private").body, "Profile <b>private</b>, picked here")
 
         val work = start(PROFILE to "work")
         val private = start(PROFILE to "private")
@@ -124,6 +127,7 @@ class ProfileTest : AntsTest() {
         val form = browser.get("/processes/profile").body
         assertContains(form, """<option selected>private</option>""")
         assertContains(form, """<span class="pill p-ready">Ready</span>""")
+        assertContains(form, "Profile <b>private</b>, set on the diagram")
         // As a Schedule's Run does, posting no Profile.
         assertContains(page(start()), """<span id="profile">Profile private</span>""")
         assertContains(claude.launches("draft").single().stdin, "The Vault is $privateVault")

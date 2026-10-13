@@ -7,6 +7,7 @@
 @param repos: List<String>
 @param profiles: List<String>
 @param profile: String?
+@param profileFrom: String = "the default"
 @param source: ants.Profile?
 @param reasons: List<String>
 @param schedule: ants.Schedule? = null
@@ -33,7 +34,7 @@
 <div class="crumbs"><a href="/processes">Processes</a> / ${title}</div>
 <div class="ph"><h1>${title}</h1>
     <div class="acts"><a class="btn" href="/processes/new?from=${key}">Copy</a><a class="btn" href="${if (schedule == null) "/processes/$key/edit" else "#schedule"}">⏰ ${if (schedule == null) "Add a schedule" else "Schedule"}</a><a class="btn" href="/processes/${key}/edit">Edit diagram</a></div>
-    <div class="sub">Vault <b>${source?.vault ?: "—"}</b> · Source map <b>${source?.sourceMap ?: "—"}</b> · @if(profile == null)the defaults in <a href="/settings">Settings</a>@else Profile <b>${profile}</b>, set on the diagram@endif</div></div>
+    <div class="sub">Vault <b>${source?.vault ?: "—"}</b> · Source map <b>${source?.sourceMap ?: "—"}</b> · @if(profile == null)the defaults in <a href="/settings">Settings</a>@else Profile <b>${profile}</b>, ${profileFrom}@endif</div></div>
 <div class="card"><section id="pre-run">
 @if(reasons.isEmpty())
     <span class="pill p-ready">Ready</span> <span class="muted small">&nbsp;Names, schemas, CLI commands, Source map, paths and the login all check out.</span>

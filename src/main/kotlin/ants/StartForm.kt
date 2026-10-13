@@ -81,9 +81,11 @@ class StartForm(
      * Vault and Source map. A Schedule's Run picks none, so it uses the Process's.
      */
     fun profile(definition: ProcessDefinition, picked: String?): String? = if (settings.profiles().isEmpty()) null
-    else picked?.takeIf(String::isNotBlank)
-        ?: repository.getBpmnModelInstance(definition.id).getModelElementById<Process>(definition.key)?.property(PROFILE)?.takeIf(String::isNotBlank)
-        ?: settings.defaultProfile()
+    else picked?.takeIf(String::isNotBlank) ?: diagramProfile(definition) ?: settings.defaultProfile()
+
+    /** The Profile [definition] names on its diagram (its [PROFILE] property), if it names one. */
+    fun diagramProfile(definition: ProcessDefinition): String? =
+        repository.getBpmnModelInstance(definition.id).getModelElementById<Process>(definition.key)?.property(PROFILE)?.takeIf(String::isNotBlank)
 
     private fun entries(value: String) = value.split(Regex("[,\\s]+"))
 }
