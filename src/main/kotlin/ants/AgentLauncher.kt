@@ -83,7 +83,7 @@ class AgentLauncher(
     // ponytail: every poll (200 ms) re-reads each held instance's Tickets; watch tickets/ instead if many are ever held.
     private val heldOnTickets = ConcurrentHashMap<String, Held>()
 
-    private class Held(val reason: String, val check: () -> String?)
+    private class Held(val reason: String, val check: () -> String?, val task: LockedExternalTask)
 
     /** Why the Task with external task [id] is held before launch, such as `Blocked by 01`, if it is. */
     fun heldBy(id: String): String? = heldOnTickets[id]?.reason
@@ -150,7 +150,7 @@ class AgentLauncher(
                 heldOnTickets.forEach { (id, held) ->
                     val reason = held.check()
                     if (reason == null && heldOnTickets.remove(id) != null) runCatching { externalTasks.unlock(id) }
-                    else if (reason != null) heldOnTickets[id] = Held(reason, held.check)
+                    else if (reason != null) heldOnTickets[id] = Held(reason, held.check, held.task)
                 }
             }
             val fetched = synchronized(live) { // the slots So far takes too
@@ -255,16 +255,9 @@ class AgentLauncher(
             // The user's Continue, or a Send back to a session claude has: their words alone, no hand-off again.
             val continued = resume != null || (comment != null && again != null)
             val result = try {
-                var result = session(task, instance, agent, skill, used, run, workspace, cwd, transcript, session, started, resumed, task.variables[INSTRUCTION] as? String ?: comment, handedOff = !continued)
-                // A landing that conflicts resumes the session to resolve it, and is retried after each fix.
-                var rounds = 0
-                while (parallel && result["outcome"] == "done") {
-                    val conflict = landing.land(workspace, instance) ?: break
-                    if (rounds++ == CONFLICT_ROUNDS) throw Failed("${conflict.substringBefore("\n\n")} It still conflicts after $CONFLICT_ROUNDS rounds.", conflict.substringAfter("\n\n"))
-                    val resolve = "$conflict\n\nThe rebase was aborted. Rebase onto the work branch in each repo named, resolve the conflicts, and answer again with your Result."
-                    result = session(task, instance, agent, skill, used, run, workspace, cwd, transcript, session, started, true, resolve, handedOff = false)
-                }
-                result
+                val result = session(task, instance, agent, skill, used, run, workspace, cwd, transcript, session, started, resumed, task.variables[INSTRUCTION] as? String ?: comment, handedOff = !continued)
+                if (!parallel) result
+                else land(workspace, instance, result) { session(task, instance, agent, skill, used, run, workspace, cwd, transcript, session, started, true, it, handedOff = false) }
             } catch (limit: UsageLimit) {
                 val until = limit.resetsAt + Duration.ofMinutes(1)
                 transcript.ants("end", "Paused by the ${agent.cli} usage limit until ${clock.local(until)}.")
@@ -304,6 +297,124 @@ class AgentLauncher(
         }
     }
 
+    /** Lands the instance [instance]'s [result], when done; a landing that conflicts [resolve]s it in the session, and is retried after each fix. */
+    private fun land(workspace: Path, instance: String, result: Map<*, *>, resolve: (String) -> Map<*, *>): Map<*, *> {
+        var result = result
+        var rounds = 0
+        while (result["outcome"] == "done") {
+            val conflict = landing.land(workspace, instance) ?: break
+            if (rounds++ == CONFLICT_ROUNDS) throw Failed("${conflict.substringBefore("\n\n")} It still conflicts after $CONFLICT_ROUNDS rounds.", conflict.substringAfter("\n\n"))
+            result = resolve("$conflict\n\nThe rebase was aborted. Rebase onto the work branch in each repo named, resolve the conflicts, and answer again with your Result.")
+        }
+        return result
+    }
+
+    /**
+     * The `ready-for-human` Tickets sent back, by [key] of their Run and name, while their fix runs or once it didn't
+     * land; gone once it lands.
+     */
+    // ponytail: kept in memory: a fix running dies with Ants, and after a restart its Ticket is the user's again, to
+    // Send back once more (its blocker left `in-progress` until then).
+    private val fixing = ConcurrentHashMap<String, Fixing>()
+
+    /** A Ticket sent back: its fix [running], or [failed], as [summary] says. */
+    class Fixing(val running: Boolean, val summary: String) {
+        val failed get() = !running
+    }
+
+    /** How the fix of the Ticket [ticket] of [run] is going, if it is sent back. */
+    fun fixing(run: String, ticket: String): Fixing? = fixing[key(run, ticket)]
+
+    /**
+     * **Send back** on the `ready-for-human` [ticket] of [run], whose instance is held: adds [comment] to its Comments,
+     * then, one at a time, each in a slot, resumes the implementer of each Ticket in its `Blocked by` with the comment
+     * and the Ticket's path (or starts it anew, without a session), in a new instance folder from the work branch head.
+     * That Ticket is `in-progress` until its fix lands, then `in-review`, and the fix's Result replaces the instance's;
+     * a fix that doesn't land puts it and those not fixed yet back `in-review`, as their last landing left them. Only
+     * once every blocker has landed, and only for an implementer that is an instance of the held Task's own
+     * multi-instance. Returns why it can't, or null.
+     */
+    @Synchronized // so one blocker is never fixed twice at once
+    fun sendBack(run: String, ticket: Tracked, comment: String): String? {
+        val workspace = names.runWorkspace(run)
+        val id = key(run, ticket.name)
+        val held = heldOnTickets.values.firstOrNull { held ->
+            runCatching {
+                runtime.createProcessInstanceQuery().processInstanceId(held.task.processInstanceId).singleResult()?.rootProcessInstanceId == run &&
+                    ticket(workspace, run, runtime.ticketItem(held.task.executionId, held.task.activityId))?.number == ticket.number
+            }.getOrDefault(false) // its Run just ended
+        }?.task ?: return "This Ticket isn't waiting on you in a live Run."
+        if (fixing[id]?.running == true) return "This Ticket is sent back already; its fix hasn't landed yet."
+        val open = ticket.blockedBy.filter { ticket(workspace, run, it)?.landed == false }
+        if (open.isNotEmpty()) return "${open.joinToString()} ${if (open.size == 1) "hasn't" else "haven't"} landed yet, so there is nothing to send back to."
+        val fixes = ticket.blockedBy.mapNotNull { number ->
+            val (index, key) = runtime.ticketSibling(held.executionId, held.activityId) { ticket(workspace, run, it)?.number == number.toInt() } ?: return@mapNotNull null
+            Fix(number, index, key).takeIf { Transcript.file(workspace, key).exists() } // a blocker the user did has no implementer
+        }
+        if (fixes.isEmpty()) return "No Agent built what this Ticket checks."
+        ticket.comment("Sent back by the user:\n\n${comment.trim()}")
+        runLog(workspace, ticket.title, "Send back", comment)
+        val message = "The user sent back ${ticket.title} ($TICKETS/${ticket.name}.md), which checks your work:\n\n${comment.trim()}\n\n" +
+            "Fix it, then answer again with your Result."
+        fixes.forEach { ticket(workspace, run, it.ticket)?.status(Tracked.IN_PROGRESS) }
+        fixing[id] = Fixing(true, "Sent back; waiting on the fix of ${fixes.joinToString { it.ticket }}.")
+        Thread.ofVirtual().start {
+            for ((i, fix) in fixes.withIndex()) {
+                try {
+                    while (inSlot { fix(held, run, workspace, fix, message) } == null) Thread.sleep(200)
+                    ticket(workspace, run, fix.ticket)?.status(Tracked.IN_REVIEW)
+                } catch (e: Exception) {
+                    if (e !is Stopped && e !is Failed) log.warn("The fix of ${fix.key} failed", e)
+                    fixes.drop(i).forEach { ticket(workspace, run, it.ticket)?.status(Tracked.IN_REVIEW) }
+                    fixing[id] = Fixing(false, "The fix of ${fix.ticket} didn't land: ${e.message ?: e}")
+                    return@start
+                }
+            }
+            fixing.remove(id)
+        }
+        return null
+    }
+
+    /** The instance [key] that implemented the Ticket numbered [ticket], the [index]th (0-based) of its multi-instance. */
+    private data class Fix(val ticket: String, val index: Int, val key: String)
+
+    /**
+     * Runs the instance of [held]'s multi-instance that [fix] names again with [message]: its last session resumed,
+     * or a new one handed off its inputs; then lands it and puts its Result in place of the old one. A `stuck` one, or
+     * one cut short by the Usage limit, fails ([Failed]).
+     */
+    private fun fix(held: LockedExternalTask, run: String, workspace: Path, fix: Fix, message: String) {
+        val key = fix.key
+        val agent = catalogue.agent(held.extensionProperties[AGENT] ?: error("${held.activityId} names no $AGENT"))
+        val skill = catalogue.skill(held.extensionProperties[SKILL] ?: error("${held.activityId} names no $SKILL"))
+        if (agent.cli == "claude") refuseBareByDefault(agent.cli, workspace)
+        val last = Transcript.file(workspace, key).resolveSibling("session")
+        val resumed = last.exists()
+        var session = if (resumed) last.readText() else UUID.randomUUID().toString().takeIf { agent.cli == "claude" }
+        val inputs = last.resolveSibling(INPUTS).takeIf { it.exists() }?.let { json.readValue(it.readText(), Map::class.java) }.orEmpty()
+            .mapKeys { it.key.toString() }
+        val cwd = landing.folder(workspace, key, fresh = true)
+        val transcript = Transcript.Writer(Transcript.file(workspace, key)).apply { ants("launch") }
+        session?.let(last::writeText)
+        val started = { id: String -> session = id; last.writeText(id) }
+        val used = catalogue.uses(skill)
+        try {
+            val first = session(held, key, agent, skill, used, run, workspace, cwd, transcript, session, started, resumed, message, inputs = inputs)
+            val result = land(workspace, key, first) { session(held, key, agent, skill, used, run, workspace, cwd, transcript, session, started, true, it, handedOff = false) }
+            if (result["outcome"] != "done") throw Failed("it ended stuck: ${result["summary"]} It needs: ${result["needs"]}")
+            onClash { runtime.replaceResult(held.executionId, held.activityId, fix.index, result) }
+            transcript.ants("end", "Done.")
+        } catch (e: Exception) {
+            transcript.ants("end", when (e) {
+                is Stopped -> "[stopped] ${e.message}"
+                is UsageLimit -> "Cut short by the ${agent.cli} usage limit, which resets at ${clock.local(e.resetsAt)}."
+                else -> "[failed] ${e.message ?: e}"
+            })
+            if (e is UsageLimit) throw Failed("the ${agent.cli} usage limit cut it short; Send back again after ${clock.local(e.resetsAt)}.")
+            throw e
+        }
+    }
+
     /**
      * Whether [task] of [run], an instance of an Items are Tickets multi-instance, launches nothing now: held while its
      * Ticket is the user's or blocked ([ants.held]), or done without a launch once the user has marked it done.
@@ -316,7 +427,7 @@ class AgentLauncher(
             return true
         }
         val check = { ticket(workspace, run, item)?.let { if (it.done) null else held(it, tickets(workspace, run)) } }
-        heldOnTickets[task.id] = Held(check() ?: return false, check)
+        heldOnTickets[task.id] = Held(check() ?: return false, check, task)
         return true
     }
 
@@ -354,9 +465,10 @@ class AgentLauncher(
      */
     private fun session(
         task: LockedExternalTask, instance: String, agent: Agent, skill: Skill, used: List<Skill>, run: String, workspace: Path, cwd: Path, transcript: Transcript.Writer,
-        session: String?, started: (String) -> Unit, resume: Boolean, instruction: String?, handedOff: Boolean = !resume,
+        session: String?, started: (String) -> Unit, resume: Boolean, instruction: String?, handedOff: Boolean = !resume, inputs: Map<String, Any?> = inputs(task),
     ): Map<*, *> {
-        val inputs = inputs(task)
+        // Kept for a Send back that finds no session to resume ([fix]).
+        if (handedOff) Transcript.file(workspace, instance).resolveSibling(INPUTS).writeText(json.writeValueAsString(inputs))
         // A called Process's Task uses its top Run's Profile: [run] is the top Run.
         val source = scopes.of(run)
         val vault = vault(task, skill, source)
@@ -729,6 +841,9 @@ class AgentLauncher(
 
         /** The session id of a held Task's last launch. */
         private const val SESSION = "ants.session"
+
+        /** The inputs a Task's last session was handed off, beside its Transcript. */
+        private const val INPUTS = "inputs.json"
         private const val WORKER = "ants"
         private const val RESET = "The usage limit has reset. Carry on where you stopped."
         private val LOCK = Duration.ofDays(365)
