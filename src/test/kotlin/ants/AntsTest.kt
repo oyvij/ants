@@ -221,6 +221,19 @@ class Browser(private val base: String) {
 
     fun get(path: String) = send(HttpRequest.newBuilder(URI("$base$path")).GET())
 
+    /**
+     * The Report of [run], once Ants has written it. It writes it just after the Run's end commits, so a test that has
+     * seen the Run end may still be early.
+     */
+    fun report(run: String): String {
+        var page = get("/runs/$run/report")
+        eventually {
+            page = get("/runs/$run/report")
+            kotlin.test.assertEquals(200, page.status, "no Report for $run yet")
+        }
+        return page.body
+    }
+
     fun post(path: String, form: Map<String, String>): Page = post(path, form.toList())
 
     /** Posts a form whose fields may repeat, such as a multi-select's. */

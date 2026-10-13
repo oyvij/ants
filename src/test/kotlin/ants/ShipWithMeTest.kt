@@ -118,7 +118,7 @@ class ShipWithMeTest : AntsTest() {
         assertContains(claude.launches("update-knowledge").single().stdin, """\"review\":[{""")
         assertContains(claude.launches("update-knowledge").single().stdin, "Reviewed the Ticket.")
 
-        val report = browser.get("/runs/$run/report").body
+        val report = browser.report(run)
         for (text in listOf("<h2>Rounds</h2>", "Title who: Recommend who. (accepted)", "Title format: Recommend format. (accepted)", "<h2>Tickets</h2>", "<h2>Review</h2>", "Shouted one.", "Reviewed the Ticket.", "<h2>Push</h2>", "<h2>Pull requests</h2>", "https://github.com/oyvij/api/pull/8")) {
             assertContains(report, text)
         }

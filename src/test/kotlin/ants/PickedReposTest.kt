@@ -127,7 +127,7 @@ class PickedReposTest : AntsTest() {
         assertFalse("\"name\":\"web\"" in page.substringAfter("<dt>clones</dt>").substringBefore("</dd>"))
         assertContains(page, "Repos picked: <code>${api.remote}</code>")
         assertFalse("No scout" in page || "no scout" in page)
-        val report = browser.get("/runs/$run/report").body
+        val report = browser.report(run)
         assertContains(report, "Repos picked: <code>${api.remote}</code>")
         assertFalse("No scout" in report)
     }

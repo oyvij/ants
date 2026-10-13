@@ -68,7 +68,7 @@ class ShipSmallTest : AntsTest() {
         val (proposed, written) = claude.launches("update-knowledge")
         for (text in listOf("""\"spec\":\"proposal/proposal.md\"""", """\"review\":\"No findings.\"""", """\"approval\":null""")) assertContains(proposed.stdin, text)
         assertContains(written.stdin, """\"approval\":{\"approved\":true""")
-        val report = browser.get("/runs/$run/report").body
+        val report = browser.report(run)
         assertContains(report, "<h2>Push</h2>")
         assertContains(report, "<h2>Pull requests</h2>")
         assertContains(report, """<li><strong>api</strong> · <a rel="nofollow" href="https://github.com/oyvij/api/pull/7">https://github.com/oyvij/api/pull/7</a></li>""")
