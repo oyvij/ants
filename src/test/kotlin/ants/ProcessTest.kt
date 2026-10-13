@@ -44,7 +44,7 @@ class ProcessTest : AntsTest() {
         browser.post("/processes/waits/runs", mapOf())
 
         val waits = row("Waits")
-        assertContains(waits, """onclick="location = '/processes/waits'"""")
+        assertContains(waits, """data-href="/processes/waits"""")
         assertContains(waits, ">you<")
         assertContains(waits, "notes · —")
         assertContains(waits, """<span title="0 0 0 * * *">⏰ day at 00:00</span>""")
@@ -86,7 +86,7 @@ class ProcessTest : AntsTest() {
         assertContains(scheduled, "<code>0 0 0 * * *</code>")
         assertContains(scheduled, Regex("""00:00 · in (\d+h )?\d+m"""))
         assertContains(scheduled, "It runs once when Ants is back, not once per missed time.")
-        assertContains(scheduled, """<tr class="click" onclick="location = '$run'"><td><a href="$run"><b>Tiny wait</b></a></td>""")
+        assertContains(scheduled, """<tr class="click" data-href="$run"><td><a href="$run"><b>Tiny wait</b></a></td>""")
 
         home.resolve("settings.yaml").writeText("") // no Vault
         assertContains(browser.get("/processes/waits").body, "won't start until the check above passes")

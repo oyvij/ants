@@ -21,7 +21,7 @@
     <tr><th>Process</th><th>From</th><th>Vault · Source map</th><th>Schedule</th><th>Check</th><th>Live Runs</th><th></th></tr>
 @for(row in rows)
     !{val key = row.process.key}
-    <tr class="click" onclick="location = '/processes/${key}'">
+    <tr class="click" data-href="/processes/${key}">
         <td><a href="/processes/${key}"><b>${row.process.name ?: key}</b></a></td>
         <td class="muted small">${if (row.shipped) "shipped" else "you"}</td>
         <td class="muted small">${row.profile?.vault ?: "—"} · ${row.profile?.sourceMap ?: "—"}</td>

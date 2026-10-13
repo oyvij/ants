@@ -136,8 +136,8 @@ input[type=checkbox], input[type=radio] { width: auto; accent-color: var(--acc);
 .grid2 > .fld, .grid3 > .fld { display: flex; flex-direction: column; } .grid2 > .fld > :last-child, .grid3 > .fld > :last-child { margin-top: auto; }
 .reasons { margin: 8px 0 0; padding-left: 18px; color: var(--bad); }
 
-/* Editors (CodeMirror mounts over data-md / data-json textareas) */
-.ed { border: 1px solid var(--fieldLine); border-radius: 8px; background: var(--field); overflow: hidden; } .ed .cm-editor { color: var(--text); }
+/* The editor box (markdown.js's editorBox) CodeMirror mounts in, after its hidden textarea: read-only, or refused empty. */
+.ed { border: 1px solid var(--fieldLine); border-radius: 8px; background: var(--field); overflow: hidden; font-size: 14px; font-weight: 400; color: var(--text); text-align: left; } .ed .cm-editor { color: var(--text); }
 .ed:focus-within { border-color: var(--acc); outline: 2px solid var(--accSoft); }
 .ed .bar { display: flex; gap: 2px; align-items: center; padding: 4px 6px; border-bottom: 1px solid var(--line2); background: var(--panel2); }
 .ed .bar button { padding: 2px 8px; font-size: 12px; border: 0; box-shadow: none; background: none; color: var(--text3); }
@@ -147,10 +147,8 @@ input[type=checkbox], input[type=radio] { width: auto; accent-color: var(--acc);
 .ed .cm-content { min-height: 128px; cursor: text; } .ed.tall .cm-content { min-height: 298px; } .composer .ed .cm-content { min-height: 42px; }
 .modal .split .cm-content { min-height: calc(86vh - 80px); } .ed .cm-scroller { cursor: text; }
 .ed.json .cm-scroller { font-family: var(--mono); font-size: 12.5px; }
-.ed .prev { padding: 10px 14px; min-height: 90px; }
 .md h1, .md h2, .md h3 { margin: 12px 0 6px; } .md p { margin: 6px 0; } .md pre { background: #0f172a; color: #e2e8f0; padding: 12px 14px; border-radius: 8px; overflow: auto; font-size: 12.5px; }
 .md pre code { background: none; padding: 0; color: inherit; } .md .add { color: #86efac; } .md .del { color: #fca5a5; } .md .hunk { color: #93c5fd; }
-textarea[data-md], textarea[data-json] { min-height: 90px; }
 .cm-selectionBackground { background: light-dark(#d7dcfa, #2b3350) !important; }
 
 /* Transcript */
@@ -363,8 +361,6 @@ dialog#new-process { width: min(560px, 92vw); height: auto; }
 #schedule .failed { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 14px; } #schedule .failed [role=alert] { width: 100%; margin: 0; }
 #schedule .subsec .help { margin: 0; }
 
-/* The markdown editor (markdown.js), the .ed above over every textarea[data-markdown]: read-only, or refused empty. */
-.ed { font-size: 14px; font-weight: 400; color: var(--text); text-align: left; }
 label > .ed { margin-top: 4px; } .modal .split .cm-scroller { font-family: inherit; line-height: 1.55; }
 .ed.readonly { background: var(--panel2); } .ed.readonly .st { color: var(--muted); }
 .ed.invalid { border-color: var(--bad); outline: 2px solid var(--badSoft); } .ed.invalid .st { color: var(--bad); }
@@ -459,7 +455,6 @@ pre { background: var(--panel2); border: 1px solid var(--line); border-radius: 8
 pre code { background: none; padding: 0; }
 h3 { font-size: 14px; margin: 18px 0 8px; }
 small { color: var(--muted); font-size: 12.5px; }
-hr { border: 0; border-top: 1px solid var(--line); }
 img { max-width: 100%; }
 
 /* Lists of links, such as the Processes, Skills and Templates: one row each. */
@@ -469,16 +464,6 @@ main > ul:has(> li > a) {
 main > ul:has(> li > a) > li { padding: 10px 16px; border-bottom: 1px solid var(--line2); }
 main > ul:has(> li > a) > li:last-child { border-bottom: 0; }
 main > ul:has(> li > a) > li > a { font-weight: 600; margin-right: 8px; }
-
-/* The waiting tags, for what a Notification waits on. */
-[data-tag] {
-    display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 9px 0 7px; border-radius: 6px; border: 1px solid;
-    font-size: 12px; font-weight: 600; white-space: nowrap; vertical-align: middle;
-    background: var(--accSoft); color: var(--accText); border-color: color-mix(in srgb, var(--acc) 30%, transparent);
-}
-[data-tag="[questions]"], [data-tag="[approve]"], [data-tag="[review]"], [data-tag="[push]"] { background: var(--waitSoft); color: var(--wait); border-color: color-mix(in srgb, var(--wait) 35%, transparent); }
-[data-tag="[stuck]"], [data-tag="[stopped]"] { background: var(--vioSoft); color: var(--vio); border-color: color-mix(in srgb, var(--vio) 35%, transparent); }
-[data-tag="[failed]"] { background: var(--badSoft); color: var(--bad); border-color: color-mix(in srgb, var(--bad) 35%, transparent); }
 
 /* The Agent and Skill beside each name, drawn by the link. */
 a[href^="/agents/"]::before, a[href^="/skills/"]::before {
@@ -558,7 +543,6 @@ dialog.modal.create iframe { flex: 1; border: 0; display: block; padding: 0; wid
 /* Agents and Skills: their lists, the Agent page (Who it is, What it may do, Standing instructions) and the Skill page. */
 table.library a, .usedby a { color: inherit; } table.library td a, table.library td:first-child { white-space: nowrap; } table.library td b a:hover { color: var(--acc); }
 tr.hidden td { color: var(--muted); }
-form.agent fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 fieldset[data-cli][disabled] { display: none; }
 form.agent :is(input, select, textarea):not([type=checkbox], [type=radio]) { background-color: var(--field); color: var(--text); }
 form.agent .chipsel input:not([type=checkbox]) { background: none; }
@@ -573,7 +557,6 @@ details.others { margin-top: 16px; } details.others > summary { color: var(--acc
 .add-tool { margin-top: 14px; } .add-tool button { white-space: nowrap; }
 label.tick { display: flex; gap: 8px; align-items: center; font-weight: 500; }
 .ed .cm-gutters { background: var(--panel2); color: var(--muted); border-color: var(--line2); }
-.ed.ro { background: var(--panel2); }
 .ed .bar .ok { color: var(--ok); } .ed .bar .bad { color: var(--bad); }
 .grid2.skill-page { grid-template-columns: 1.4fr 1fr; }
 .skill-page form { margin: 0; } .skill-page form > .fld:first-of-type label.f { margin-top: 0; }

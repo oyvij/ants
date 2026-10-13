@@ -9,7 +9,6 @@
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
 @param shell: ants.Shell
-!{val tag = entry.tag.trim('[', ']')}
 <!doctype html>
 <html lang="en">
 <head>
@@ -23,7 +22,7 @@
 @template.nav(shell = shell)
 <main>
 <div class="crumbs"><a href="/runs">Runs</a> / <a href="/runs/${entry.run}">${entry.runName}</a> / ${entry.task}</div>
-<div class="ph"><h1>${entry.task} <span class="pill p-waiting">Waiting on you</span> <span class="tag t-${tag}"><i>${entry.icon}</i>${tag.replaceFirstChar(Char::uppercase)}</span></h1>
+<div class="ph"><h1>${entry.task} <span class="pill p-waiting">Waiting on you</span> @template.tag(entry = entry)</h1>
     <div class="acts"><span class="muted small">User Task</span></div><div class="sub">${entry.summary}</div></div>
 @if(error != null)<p role="alert">${error}</p>@endif
 <div class="grid3 repos">

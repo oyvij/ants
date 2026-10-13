@@ -187,11 +187,11 @@ class Transcript {
         (if (block.end != null || running) " · ${time(block)}" else "") + (if (block.status in OK) "" else " · ${esc(block.status)}") + "</summary>"
 
     /** How long [block] ran, or a ticking time while it runs. */
-    private fun time(block: Subagent) = block.end?.let { elapsed(Duration.between(block.start, it)) }
+    private fun time(block: Subagent) = block.end?.let { duration(Duration.between(block.start, it)) }
         ?: since(block.start)
 
     /** A clock from [start], as of the latest line, that the page ticks on every second. */
-    private fun since(start: Instant) = """<span data-since="${start.toEpochMilli()}">${elapsed(Duration.between(start, read))}</span>"""
+    private fun since(start: Instant) = """<span data-since="${start.toEpochMilli()}">${duration(Duration.between(start, read))}</span>"""
 
     private fun ants(event: Map<*, *>) {
         val at = Instant.parse(event["at"].toString())
@@ -221,17 +221,21 @@ class Transcript {
         // TaskCreate's tool result carries the id claude gave the new task.
         ((event["tool_use_result"] as? Map<*, *>)?.get("task") as? Map<*, *>)?.let { todos[it["id"].toString()] = Todo(it["subject"].toString(), "pending") }
         val parent = subagent(event)
+        val content = (event["message"] as? Map<*, *>)?.get("content")
+        // The images that went to the Agent beside the text: a reference to any other, one that isn't stored, stays text.
+        val images = (content as? List<*>).orEmpty().filterIsInstance<Map<*, *>>().filter { it["type"] == "image" }
+            .mapNotNull { (it["source"] as? Map<*, *>)?.let(::imageName) }.toSet()
         fun said(text: Any?) {
             if (parent != null) {
-                append(parent) { """<details class="prompt" id="$it"><summary>Prompt</summary><pre>${showImages(esc(text))}</pre></details>""" }
+                append(parent) { """<details class="prompt" id="$it"><summary>Prompt</summary><pre>${showImages(esc(text), images)}</pre></details>""" }
             } else if (launch != null && !launch.prompted) {
                 launch.prompted = true
-                append { """<details class="prompt" id="$it"><summary>${if (launch.number == 1) "Opening prompt" else "Prompt"}</summary><pre>${showImages(esc(text))}</pre></details>""" }
+                append { """<details class="prompt" id="$it"><summary>${if (launch.number == 1) "Opening prompt" else "Prompt"}</summary><pre>${showImages(esc(text), images)}</pre></details>""" }
             } else {
-                append { """<p class="user" id="$it">› ${showImages(esc(text))}</p>""" }
+                append { """<p class="user" id="$it">› ${showImages(esc(text), images)}</p>""" }
             }
         }
-        when (val content = (event["message"] as? Map<*, *>)?.get("content")) {
+        when (content) {
             is String -> said(content)
             is List<*> -> for (block in content.filterIsInstance<Map<*, *>>()) when (block["type"]) {
                 "text" -> said(block["text"])
@@ -477,16 +481,20 @@ class Transcript {
         private fun esc(value: Any?) = HtmlUtils.htmlEscape(value?.toString().orEmpty())
 
         private fun sum(usage: Map<*, *>, vararg keys: String) = keys.sumOf { (usage[it] as? Number)?.toLong() ?: 0 }
-
-        private fun elapsed(time: Duration) = when {
-            time.toHours() > 0 -> "${time.toHours()}h ${time.toMinutesPart()}m"
-            time.toMinutes() > 0 -> "${time.toMinutes()}m ${time.toSecondsPart()}s"
-            else -> "${time.seconds}s"
-        }
     }
 }
 
-/** A token count as the pages show it. */
+/**
+ * A duration as the pages show it, its two largest units of d, h, m and s, such as `1d 6h`, `6h 12m` or `12s`; to the
+ * minute without [seconds]. shell.js ticks a live one the same way.
+ */
+fun duration(time: Duration, seconds: Boolean = true): String {
+    val units = listOf(time.toDays() to "d", time.toHoursPart().toLong() to "h", time.toMinutesPart().toLong() to "m", time.toSecondsPart().toLong() to "s")
+        .let { if (seconds) it else it.dropLast(1) }
+    val first = units.indexOfFirst { it.first > 0 }.takeIf { it >= 0 } ?: units.lastIndex
+    return units.drop(first).take(2).joinToString(" ") { (count, unit) -> "$count$unit" }
+}
+
 /** A token count, short: as it is under a thousand, then in k (one decimal under ten thousand), then in M. */
 fun tokens(count: Long): String {
     fun short(n: Double) = String.format(Locale.ROOT, "%.1f", n).removeSuffix(".0")

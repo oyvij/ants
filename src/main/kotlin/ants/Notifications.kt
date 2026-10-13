@@ -36,14 +36,7 @@ import kotlin.io.path.writeText
 sealed class Entry(val id: String, val tag: String, val process: String, val task: String, val summary: String, val since: Date) {
     val icon get() = ICONS[tag] ?: "•"
 
-    val waited: String
-        get() = Duration.between(since.toInstant(), Instant.now()).let {
-            when {
-                it.toDays() > 0 -> "${it.toDays()}d ${it.toHoursPart()}h"
-                it.toHours() > 0 -> "${it.toHours()}h ${it.toMinutesPart()}m"
-                else -> "${it.toMinutes()}m"
-            }
-        }
+    val waited get() = duration(Duration.between(since.toInstant(), Instant.now()), seconds = false)
 
     private companion object {
         val ICONS = mapOf("[failed]" to "✕", "[stuck]" to "⚠", "[stopped]" to "■", "[questions]" to "?", "[approve]" to "✓", "[review]" to "±", "[push]" to "↑")

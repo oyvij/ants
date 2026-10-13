@@ -27,7 +27,7 @@ import kotlin.io.path.writeBytes
  * the text for claude ([userContent]), `-i <file>` for codex ([referencedImages]).
  */
 
-/** A reference to a stored image in a text, its alt text in group 1 and its path in group 2. */
+/** A reference to a stored image in a text, its alt text in group 1, its path in group 2 and its name in group 3. */
 private val IMAGE_REFERENCE = Regex("""!\[([^\]\n]*)]\((/images/([0-9a-f]{64}\.(png|jpeg|gif|webp)))\)""")
 private val IMAGE_NAME = Regex("""[0-9a-f]{64}\.(png|jpeg|gif|webp)""")
 
@@ -53,8 +53,15 @@ fun userContent(text: String, home: Path): Any = referencedImages(text, home).ta
     } + mapOf("type" to "text", "text" to text)
 } ?: text
 
-/** [html], escaped text, with each image reference in it shown as the image. */
-fun showImages(html: String) = IMAGE_REFERENCE.replace(html) { """<img src="${it.groupValues[2]}" alt="${it.groupValues[1]}">""" }
+/** [html], escaped text, with each reference in it to an image named in [stored] shown as the image; any other stays text. */
+fun showImages(html: String, stored: Set<String>) =
+    IMAGE_REFERENCE.replace(html) { if (it.groupValues[3] in stored) """<img src="${it.groupValues[2]}" alt="${it.groupValues[1]}">""" else it.value }
+
+/** The name Ants stores an image under: its SHA-256 and [ext]. */
+private fun imageName(bytes: ByteArray, ext: String) = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes)) + ".$ext"
+
+/** The name of the stored image a claude image block ([userContent]) carries, from its `source`. */
+fun imageName(source: Map<*, *>) = imageName(Base64.getDecoder().decode(source["data"].toString()), source["media_type"].toString().substringAfter('/'))
 
 /** Stores a pasted image and serves it back. */
 @RestController
@@ -74,14 +81,14 @@ class Images(@Value("\${ants.home}") home: Path) {
             else -> return refuse("Only an image can be pasted: PNG, JPEG, GIF or WebP.")
         }
         if (bytes.size > CAP) return refuse("The image is over the 3.75 MB an Agent takes.")
-        val name = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes)) + ".$ext"
+        val name = imageName(bytes, ext)
         images.createDirectories().resolve(name).writeBytes(bytes)
         return ResponseEntity.ok().contentType(MediaType.TEXT_PLAIN).body("/images/$name")
     }
 
     @GetMapping("/images/{name}")
     fun image(@PathVariable name: String): ResponseEntity<ByteArray> {
-        val file = images.resolve(name).takeIf { IMAGE_NAME.matches(name) && it.exists() } ?: return ResponseEntity.notFound().build()
+        val file = name.takeIf(IMAGE_NAME::matches)?.let(images::resolve)?.takeIf { it.exists() } ?: return ResponseEntity.notFound().build()
         return ResponseEntity.ok().contentType(MediaType.parseMediaType("image/${name.substringAfter('.')}"))
             .cacheControl(CacheControl.maxAge(Duration.ofDays(365)).cachePrivate().immutable()) // named by its content
             .body(file.readBytes())

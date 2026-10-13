@@ -87,7 +87,10 @@ function liven() {
     if (!still.matches) for (const spin of document.querySelectorAll('.spin')) set(spin, GLYPHS[Math.floor(now / 120) % GLYPHS.length]);
     for (const since of document.querySelectorAll('[data-since]')) {
         const s = Math.max(0, Math.floor((now - Number(since.dataset.since)) / 1000));
-        set(since, s >= 3600 ? Math.floor(s / 3600) + 'h ' + Math.floor(s / 60) % 60 + 'm' : s >= 60 ? Math.floor(s / 60) + 'm ' + s % 60 + 's' : s + 's');
+        // Its two largest units, as the server's duration() writes it.
+        const units = [[Math.floor(s / 86400), 'd'], [Math.floor(s / 3600) % 24, 'h'], [Math.floor(s / 60) % 60, 'm'], [s % 60, 's']];
+        const first = Math.max(units.findIndex(([n]) => n > 0), s ? 0 : 3);
+        set(since, units.slice(first, first + 2).map(([n, unit]) => n + unit).join(' '));
     }
     for (const verb of document.querySelectorAll('[data-rotate]')) set(verb, VERBS[Math.floor(now / 4000) % VERBS.length] + '…');
 }

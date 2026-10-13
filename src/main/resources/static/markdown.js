@@ -39,11 +39,7 @@ function mount(textarea, cm) {
         view.dispatch({changes: {from: view.state.doc.lineAt(view.state.selection.main.from).from, insert: text}});
         view.focus();
     };
-    const ed = Object.assign(document.createElement('div'), {className: 'ed'});
-    ed.classList.toggle('tall', textarea.hasAttribute('data-tall'));
-    ed.classList.toggle('readonly', textarea.readOnly);
-    const bar = Object.assign(document.createElement('div'), {className: 'bar'});
-    const status = Object.assign(document.createElement('span'), {className: 'st'});
+    const {ed, bar, status} = editorBox(textarea);
     const editor = new cm.EditorView({
         doc: textarea.value,
         extensions: [
@@ -122,7 +118,21 @@ function mount(textarea, cm) {
     });
     textarea.hidden = true;
     textarea.after(ed);
-    ed.append(bar, editor.dom);
+    ed.append(editor.dom);
+}
+
+/**
+ * The editor box this editor and the Skill page's schema editor (skill-editor.js) put after their hidden [textarea]:
+ * div.ed, tall or readonly as the textarea is, with its bar and the bar's status, for the caller to fill.
+ */
+export function editorBox(textarea) {
+    const ed = Object.assign(document.createElement('div'), {className: 'ed'});
+    ed.classList.toggle('tall', textarea.hasAttribute('data-tall'));
+    ed.classList.toggle('readonly', textarea.readOnly);
+    const bar = Object.assign(document.createElement('div'), {className: 'bar'});
+    const status = Object.assign(document.createElement('span'), {className: 'st'});
+    ed.append(bar);
+    return {ed, bar, status};
 }
 
 /** Opens a modal over the page, as the shell's (Esc, the ✕ or a click outside closes it), and returns its body. */

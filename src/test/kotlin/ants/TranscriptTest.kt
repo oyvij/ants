@@ -39,6 +39,15 @@ class TranscriptTest : AntsTest() {
     }
 
     @Test
+    fun `durations read as their two largest units, to the minute where seconds don't matter`() {
+        assertEquals("0s", duration(java.time.Duration.ZERO))
+        assertEquals("1m 5s", duration(java.time.Duration.ofSeconds(65)))
+        assertEquals("1d 0h", duration(java.time.Duration.ofHours(24).plusMinutes(3)))
+        assertEquals("3m", duration(java.time.Duration.ofSeconds(200), seconds = false))
+        assertEquals("in 2h 1m", countdown(java.time.Duration.ofSeconds(7_250)))
+    }
+
+    @Test
     fun `the Transcript page shows the prompt collapsed, streamed markdown, one line per tool call, thinking collapsed and the Result`() {
         claude.session(
             "draft", init,
@@ -174,8 +183,8 @@ class TranscriptTest : AntsTest() {
         eventually { assertContains(page(path), "Facts <strong>hold</strong>.") }
         val running = page(path)
         assertContains(running, """<div id="subagents" class="chips"><span class="chip">""")
-        assertContains(running, Regex("""<span class="chip"><span class="spin">✻</span> searcher · Search the notes · <span data-since="\d+">[\dhms ]+</span></span>"""))
-        assertContains(running, Regex("""<span class="chip"><span class="spin">✻</span> general-purpose · Check facts · <span data-since="\d+">[\dhms ]+</span></span>"""))
+        assertContains(running, Regex("""<span class="chip"><span class="spin">✻</span> searcher · Search the notes · <span data-since="\d+">[\ddhms ]+</span></span>"""))
+        assertContains(running, Regex("""<span class="chip"><span class="spin">✻</span> general-purpose · Check facts · <span data-since="\d+">[\ddhms ]+</span></span>"""))
         val searcher = Regex("""(?s)<details class="subagent" id="(e\d+)" open><summary id="\1s">⑂ <b>searcher</b> Search the notes · <span data-since""" +
             """.*?<div>(.*?)</div></details>""").find(running)!!.groupValues[2]
         assertContains(searcher, """<summary>Prompt</summary><pre>Find the tone</pre>""")

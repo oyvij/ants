@@ -28,7 +28,7 @@
 @if(row.hidden)
     <tr class="hidden"><td><b>${row.skill.name}</b></td><td></td><td class="small">${row.skill.description}</td><td class="muted small">${row.where}, hidden by the shipped Skill</td></tr>
 @else
-    <tr class="click" onclick="if (!event.target.closest('a')) location.href = this.querySelector('a').href"><td><b><a href="/skills/${row.skill.name}">${row.skill.name}</a></b>@if(row.vault) <span class="tag t-vault">Vault</span>@endif</td><td class="small">@for(agent in row.runBy)<a href="/agents/${agent}">${agent}</a>@if(agent != row.runBy.last()) @endif@endfor@if(row.runBy.isEmpty())<span class="muted">no Agent</span>@endif</td><td class="small">${row.skill.description}</td><td class="muted small">${row.where}</td></tr>
+    <tr class="click" data-href="/skills/${row.skill.name}"><td><b><a href="/skills/${row.skill.name}">${row.skill.name}</a></b>@if(row.vault) <span class="tag t-vault">Vault</span>@endif</td><td class="small">@for(agent in row.runBy)<a href="/agents/${agent}">${agent}</a>@if(agent != row.runBy.last()) @endif@endfor@if(row.runBy.isEmpty())<span class="muted">no Agent</span>@endif</td><td class="small">${row.skill.description}</td><td class="muted small">${row.where}</td></tr>
 @endif
 @endfor
     </tbody>

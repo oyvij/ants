@@ -91,6 +91,17 @@ class ImagesTest : AntsTest() {
     }
 
     @Test
+    fun `a reference to an image that isn't stored stays text in the Transcript`() {
+        claude.session("draft", init, done)
+        val missing = "/images/${"0".repeat(64)}.png"
+        val run = start("Like this: ![image]($missing)")
+        eventually { assertContains(browser.get("/runs/$run").body, """id="state">Completed<""") }
+        val transcript = browser.get("/runs/$run/tasks/draft/transcript").body
+        assertContains(transcript, "![image]($missing)")
+        assertEquals(false, "<img" in transcript)
+    }
+
+    @Test
     fun `a message without an image stays plain text`() {
         claude.session("draft", init, done)
         val run = start("Say hello")

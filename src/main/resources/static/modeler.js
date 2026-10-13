@@ -6,31 +6,11 @@
 
 import {camel, cronOf, everies, operators, readCondition, readSchedule, resultFields, toCamunda, unary, weekdays} from "/modeler-text.js"
 
-// What Ants calls each element it runs, and what it does there: the palette's tooltip and the panel's explanation.
-const kinds = {
-    process: {name: "Process", explain: "How one kind of job gets done. Every Run of it starts at its start event with the start form's fields."},
-    start: {name: "Start event", explain: "Where a Run begins; a Process has exactly one. Its fields are the start form you fill in on the Process page, and every Task can read them as ${field}."},
-    "timer-start": {name: "Timer start event", explain: "Starts a Run on a schedule, with no one pressing Start. Pause or remove the Schedule on the Process page."},
-    end: {name: "End event", explain: "A path ends here, and the Run finishes when every path has. Several end events are fine, named for how the Run ended."},
-    timer: {name: "Timer", explain: "The flow waits here for a while or until a time. No Agent runs and no slot is held. Dropped on the edge of a User Task, it becomes a timer boundary."},
-    "timer-boundary": {name: "Timer boundary", explain: "On a User Task only: when it fires, the user's Task is cancelled and the Run takes this path instead, such as Accept recommendations."},
-    exclusive: {name: "Decision (exclusive gateway)", explain: "Take exactly one path, or merge paths back together. Loops are drawn with it."},
-    parallel: {name: "Parallel gateway", explain: "Run branches at the same time, then wait for all of them to join."},
-    agent: {name: "Agent Task", explain: "An Agent runs one of its Skills and hands back a Result, which later Tasks read under this Task's id."},
-    user: {name: "User Task", explain: "The Run waits here, on the Notification list, until you act. Other branches keep going."},
-    "built-in": {name: "Built-in Task", explain: "Ants does this itself. No Agent, no tokens, no slot."},
-    task: {name: "Plain Task", explain: "Ants would pass straight through this, doing nothing. What should it be?"},
-    subprocess: {name: "Sub-process", explain: "Groups part of the flow into one box, such as a question loop, which can run as a multi-instance. Collapse it from the wrench menu to tidy the diagram."},
-    call: {name: "Call a Process", explain: "Runs another Process as one step, inside this Run; its Result is every Task Result of the called Process."},
-    annotation: {name: "Text annotation", explain: "A note for people reading the diagram. Ants ignores it when running."},
-    group: {name: "Group", explain: "A frame around elements that belong together. Ants ignores it when running."},
-    flow: {name: "Path", explain: "The path a Run takes from one element to the next."},
-}
-
-// From the server (modelerFacts in Checks.kt): the Built-in Tasks by topic, the start-form field types by the
+// From the server (modelerFacts in Checks.kt): what Ants calls each element it runs and what it does there (the
+// palette's tooltip and the panel's explanation), the Built-in Tasks by topic with their name and what each does, the start-form field types by the
 // `ants.type` property each field carries (the engine only knows `string`), Items are Tickets' property and help, the
 // Process's Profile property, help and empty choice, and each User Task kind with its fields and Result.
-const {builtIns, fieldTypes, itemsAreTickets, profile, userTasks} = JSON.parse(document.getElementById("canvas").dataset.facts)
+const {kinds, builtIns, fieldTypes, itemsAreTickets, profile, userTasks} = JSON.parse(document.getElementById("canvas").dataset.facts)
 
 // The three Tasks Ants runs, as the BPMN each one is, and their colour on the diagram and in the palette.
 const tasks = {
@@ -248,8 +228,8 @@ const panels = {
     "built-in": element => {
         const topic = element.businessObject.get("camunda:topic")
         const which = el("select", {onchange: () => modeler.get("modeling").updateProperties(element, {"camunda:topic": which.value})},
-            ...Object.entries(builtIns).map(([value, text]) => el("option", {value, textContent: text.split(":")[0], selected: value === topic})))
-        return field("What Ants does", builtIns[topic]?.split(": ")[1] || "Ants has no Built-in Task " + topic, which)
+            ...Object.entries(builtIns).map(([value, {name}]) => el("option", {value, textContent: name, selected: value === topic})))
+        return field("What Ants does", builtIns[topic]?.does || "Ants has no Built-in Task " + topic, which)
     },
 }
 
@@ -792,7 +772,7 @@ function explain(element) {
     const type = target.type.replace("bpmn:", ""), event = target.businessObject.eventDefinitions?.[0]?.$type.replace("bpmn:", "")
     const gateway = (text, type) => el("button", {textContent: text, onclick: () => replace(target, type)})
     const options = kind || /Task$/.test(type) ? taskButtons(target)
-        : /Gateway$/.test(type) ? [gateway("Decision", "bpmn:ExclusiveGateway"), " ", gateway("Parallel gateway", "bpmn:ParallelGateway")] : []
+        : /Gateway$/.test(type) ? [gateway(kinds.exclusive.name, "bpmn:ExclusiveGateway"), " ", gateway(kinds.parallel.name, "bpmn:ParallelGateway")] : []
     panel.replaceChildren(
         ...(kind ? head(target, kinds.task.name) : [el("div", {className: "kind", textContent: type + (event ? " · " + event : "")}), el("h3", {textContent: nameOf(target)})]),
         note("warn", kind ? kinds.task.explain : "Ants doesn't run this element, so Save and deploy will refuse it."),

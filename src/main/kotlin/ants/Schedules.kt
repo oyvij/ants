@@ -26,7 +26,7 @@ import kotlin.io.path.readText
 
 /**
  * The Process [key]'s Schedule as the user reads it: in words, when it [next] starts a Run ([at] on the clock, and
- * [countdown], such as `in 1d 6h 12m`), and what Ants noted.
+ * [countdown], such as `in 1d 6h`), and what Ants noted.
  */
 class Schedule(val key: String, val process: String, val cron: String, val paused: Boolean, val next: Instant?, val at: String?, val countdown: String?, val skipped: String?, val failed: FailedStart?) {
     val words get() = inWords(cron)
@@ -166,11 +166,8 @@ fun BpmnModelInstance.scheduleTimer(): TimerEventDefinition? = getModelElementsB
     .flatMap { it.getChildElementsByType(StartEvent::class.java) }
     .firstNotNullOfOrNull { it.getChildElementsByType(TimerEventDefinition::class.java).firstOrNull() }
 
-/** How long until a time [ahead]: `in 6h 12m`, with the days in front when there are any, to the nearest minute. */
-fun countdown(ahead: Duration): String {
-    val minutes = (ahead.toSeconds() + 30) / 60
-    return "in " + (if (minutes >= 1440) "${minutes / 1440}d " else "") + "${minutes % 1440 / 60}h ${minutes % 60}m"
-}
+/** How long until a time [ahead], to the nearest minute: `in 6h 12m`, or `in 1d 6h`. */
+fun countdown(ahead: Duration) = "in " + duration(Duration.ofMinutes((ahead.toSeconds() + 30) / 60), seconds = false)
 
 /** A Schedule in words, as the modeler writes it: every hour, day, weekday, week or month at a time, else its six fields. */
 fun inWords(cron: String): String {

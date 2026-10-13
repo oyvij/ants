@@ -94,7 +94,8 @@ class ModelerTest : AntsTest() {
         assertEquals(mapOf("text" to "Text", "markdown" to "Markdown", "repos" to "Repos"), read["fieldTypes"])
         assertEquals("ants.items-are-tickets", (read["itemsAreTickets"] as Map<*, *>)["property"])
         assertContains((read["itemsAreTickets"] as Map<*, *>)["help"].toString(), "Each item names a Ticket (tickets/issues/01-hello.md, or 01).")
-        for (fact in listOf("Clone repos:", "ready-for-human", "ants.items-are-tickets", "Answer a Round", "ants.send-back")) assertEquals(false, fact in browser.get("/modeler.js").body, fact)
+        assertEquals(mapOf("name" to "Parallel gateway", "explain" to "Run branches at the same time, then wait for all of them to join."), (read["kinds"] as Map<*, *>)["parallel"])
+        for (fact in listOf("Clone repos", "ready-for-human", "ants.items-are-tickets", "Answer a Round", "ants.send-back", "Parallel gateway", "Where a Run begins")) assertEquals(false, fact in browser.get("/modeler.js").body, fact)
     }
 
     @Test

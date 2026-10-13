@@ -116,7 +116,7 @@
     <tr><th>Run</th><th>Process</th><th>Now</th><th>Started</th></tr>
 @for(run in runs)
     !{val state = run.stateName; val pill = when (state) { "Running" -> "p-running"; "Completed" -> "p-done"; "Suspended" -> "p-stuck"; else -> "p-failed" };}
-    <tr class="click" onclick="location = '/runs/${run.id}'"><td><a href="/runs/${run.id}"><b>${names[run.id]}</b></a></td><td class="muted">${title}</td><td><span class="pill ${pill}">${state}</span></td><td class="muted small">${clock.local(run.startTime.toInstant())}</td></tr>
+    <tr class="click" data-href="/runs/${run.id}"><td><a href="/runs/${run.id}"><b>${names[run.id]}</b></a></td><td class="muted">${title}</td><td><span class="pill ${pill}">${state}</span></td><td class="muted small">${clock.local(run.startTime.toInstant())}</td></tr>
 @endfor
 </table>
 @endif
