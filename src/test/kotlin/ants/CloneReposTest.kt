@@ -45,6 +45,20 @@ class CloneReposTest : AntsTest() {
     }
 
     @Test
+    fun `a local checkout git can't borrow from is skipped, and the repo is cloned from its remote alone`() {
+        val api = repo("api")
+        // Any borrowing clone that fails, as one from a checkout with a stale commit-graph does: here, a shallow one, which git won't borrow from.
+        api.local.resolve(".git/shallow").writeText(git(api.local, "rev-parse", "HEAD") + "\n")
+        sourceMap(api)
+        browser.import("clone-repos.bpmn")
+        // Started with the repos as the scout names them: picked on the start form, they would come without their local checkout.
+        val run = runtime.startProcessInstanceByKey("clone-repos", mapOf("repos" to listOf("api"), "branch" to "feature-x")).id
+        eventually { assertNotNull(runtime.getVariable(run, "again")) }
+        assertEquals(git(api.remote, "rev-parse", "main"), git(clone(run, "api"), "rev-parse", "HEAD"))
+        assertEquals("", git(clone(run, "api"), "status", "--porcelain"))
+    }
+
+    @Test
     fun `running it again with the same repos does nothing, and nor does an empty list`() {
         val api = repo("api")
         sourceMap(api)

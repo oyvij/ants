@@ -64,7 +64,12 @@ class CloneRepos(
         val partial = repos.resolve(".${repo.name}")
         partial.toFile().deleteRecursively()
         val local = repo.path.takeIf(String::isNotEmpty)?.let(Settings::expand)?.takeIf { it.isDirectory() }
-        git(repos, listOf("clone", "-q") + (if (local == null) emptyList() else listOf("--reference", "$local", "--dissociate")) + listOf(repo.remote, partial.fileName.toString()))
+        fun clone(vararg reference: String) = git(repos, listOf("clone", "-q", *reference, repo.remote, partial.fileName.toString()))
+        // A local checkout whose objects are broken fails the borrowing clone; the remote alone still has them all.
+        if (local == null || runCatching { clone("--reference", "$local", "--dissociate") }.isFailure) {
+            partial.toFile().deleteRecursively()
+            clone()
+        }
         val onRemote = runCatching { git(partial, "rev-parse", "--verify", "-q", "refs/remotes/origin/$branch") }.isSuccess
         git(partial, if (onRemote) listOf("switch", "-q", branch) else listOf("switch", "-q", "-c", branch))
         git(partial, "remote", "set-url", "--push", "origin", DEAD_PUSH_URL)
