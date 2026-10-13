@@ -1,11 +1,13 @@
 package ants
 
 import org.junit.jupiter.api.Test
+import org.operaton.bpm.engine.RuntimeService
+import org.operaton.bpm.engine.TaskService
+import org.springframework.beans.factory.annotation.Autowired
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.exists
 import kotlin.io.path.readText
-import kotlin.io.path.walk
 import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
@@ -13,14 +15,20 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
-/** A Run scoped to the repos its start form names: no scout, no Source map and no Vault, against bare remotes. */
-class ScopedRunTest : AntsTest() {
+/** A Run with repos picked on its start form: the scout takes them as given, and the Run clones exactly them, against bare remotes. */
+class PickedReposTest : AntsTest() {
     private val browser by lazy { browser().also { it.login() } }
+
+    @Autowired
+    lateinit var runtime: RuntimeService
+
+    @Autowired
+    lateinit var tasks: TaskService
     private val claude = FakeClaude()
     private val api = repo("api")
     private val web = repo("web")
 
-    /** A Vault holding one Note, which a scoped Run must leave as it is. */
+    /** A Vault holding one Note. */
     private val notes: Path = Files.createTempDirectory("vault").also { it.resolve("Billing.md").writeText("Invoices go out monthly.\n") }
 
     /** Where the fake gh keeps the repos it creates, `<owner>/<name>.git`, and the log of its calls. */
@@ -69,69 +77,75 @@ class ScopedRunTest : AntsTest() {
         "claude:\n  command: [${claude.command}]\ngh:\n  path: $gh\n" + sourceMapLines(api, web) + (if (vault) "vaults:\n  notes: $notes\n" else ""),
     )
 
-    /** Starts Ship small scoped to [repos], named "Hello api"; the page it lands on. */
+    /** Starts Ship small with [repos] picked, named "Hello api"; the page it lands on. */
     private fun start(vararg repos: String): Browser.Page {
         browser.import("shipped/processes/ship-small.bpmn")
         browser.get("/processes/ship_small")
         return browser.post("/processes/ship_small/runs", listOf(NAME to "Hello api", "prompt" to "Add a hello endpoint", "branch" to "") + repos.map { "repos" to it })
     }
 
-    /** Plays Ship small once it is cloned: the proposal keeps the brief it read, the implementer commits in [repo], the user pushes. */
+    /**
+     * Plays Ship small with [repos] picked: the scout gives them back as they are, the proposal keeps the brief it read,
+     * the implementer commits in [repo], the user pushes and approves the Notes Update the Vault proposes.
+     */
     private fun shipSmall(repo: String, vararg repos: String): String {
+        val picked = repos.joinToString(",") { "\"$it\"" }
+        claude.session("scout", "write scout/brief.md Add a hello endpoint to $repo.\\n", result("""{"repos":[$picked],"branch":"","brief":"scout/brief.md"}"""))
         claude.session("propose-solution", "sh cp scout/brief.md \$launch/brief", "write proposal/proposal.md # Hello\\n", result("""{"proposal":"proposal/proposal.md"}"""))
         claude.session("implement", "sh git -C repos/$repo -c user.name=Ants -c user.email=ants@example.com -c commit.gpgsign=false commit -q --allow-empty -m 'Add hello'", result("""{"review":"No findings."}"""))
         claude.session("pr", result("""{"pullRequests":[]}"""))
+        claude.session("update-knowledge", 1, "write vault/proposal.md One Note.\\n", result("""{"proposal":"vault/proposal.md","written":false}"""))
+        claude.session("update-knowledge", 2, result("""{"written":true}"""))
         val page = start(*repos)
         assertEquals(200, page.status, page.body)
         val run = page.path.removePrefix("/runs/")
         val push = entry(run)
         assertContains(row(run)!!, "<i>↑</i>[push]")
         browser.post(push, mapOf("action" to "push", "instruction" to ""))
+        eventually(20) { assertContains(assertNotNull(row(run)), "<i>✓</i>[approve]") } // the Notes
+        browser.post(entry(run), mapOf("action" to "approve", "comment" to ""))
         eventually(20) { assertContains(browser.get("/runs/$run").body, """id="state">Completed<""") }
         return run
     }
 
     @Test
-    fun `a scoped Ship small clones only its repo, runs no scout, reads and writes no Vault, and pushes its branch`() {
+    fun `Ship small with a repo picked gives the scout that repo and the Vault, clones only it, pushes its branch and updates the Vault`() {
         settings()
-        val before = notes.walk().associateWith { it.readText() }
         val run = shipSmall("api", "api")
 
-        assertEquals(emptyList(), claude.launches("scout"))
-        assertEquals(emptyList(), claude.launches("update-knowledge"))
+        val scout = claude.launches("scout").single()
+        assertContains(scout.stdin, "\\\"repos\\\":[\\\"api\\\"]")
+        assertContains(scout.stdin, "The Vault is $notes")
+        assertContains(scout.argv.joinToString(" "), "--add-dir $notes")
+        assertContains(scout.stdin, "\\\"sourceMap\\\":[{")
+        assertEquals(2, claude.launches("update-knowledge").size)
         assertEquals("Add hello", git(api.remote, "log", "-1", "--format=%s", "ants/hello-api"))
         assertEquals("", git(web.remote, "branch", "--list", "ants/*"))
-        val brief = claude.launches("propose-solution").single().file("brief")
-        assertContains(brief, "Add a hello endpoint")
-        assertContains(brief, "${api.remote}")
-        for (skill in listOf("propose-solution", "implement", "pr")) {
-            val launch = claude.launches(skill).single()
-            assertFalse("$notes" in launch.argv.joinToString(" "), skill)
-            assertFalse("Vault" in launch.stdin || "Source map" in launch.stdin, skill)
-            assertFalse("sourceMap\\\":[{" in launch.stdin, skill)
-        }
-        assertEquals(before, notes.walk().associateWith { it.readText() })
+        assertContains(claude.launches("propose-solution").single().file("brief"), "Add a hello endpoint to api")
         val page = browser.get("/runs/$run").body.replace("&#34;", "\"")
-        assertContains(page, "<dt>sourceMap</dt><dd><code>[]</code></dd>")
         assertContains(page, """<dt>clones</dt><dd><code>[{"name":"api",""")
-        assertFalse("\"name\":\"web\"" in page)
-        assertContains(page, "Scoped to its repos: <code>${api.remote}</code>")
-        assertContains(browser.get("/runs/$run/report").body, "Scoped to its repos: <code>${api.remote}</code>")
+        assertFalse("\"name\":\"web\"" in page.substringAfter("<dt>clones</dt>").substringBefore("</dd>"))
+        assertContains(page, "Repos picked: <code>${api.remote}</code>")
+        assertFalse("No scout" in page || "no scout" in page)
+        val report = browser.get("/runs/$run/report").body
+        assertContains(report, "Repos picked: <code>${api.remote}</code>")
+        assertFalse("No scout" in report)
     }
 
     @Test
-    fun `a scoped Run with a new repo creates it through gh, clones it, builds on the work branch and pushes it`() {
+    fun `a Run with a new repo picked creates it through gh, clones it, builds on the work branch and pushes it`() {
         settings()
         val run = shipSmall("app", "you/app")
 
+        assertContains(claude.launches("scout").single().stdin, "\\\"repos\\\":[\\\"you/app\\\"]")
         assertContains(calls(), "repo create you/app --private --add-readme")
         assertEquals("Add hello", git(github.resolve("you/app.git"), "log", "-1", "--format=%s", "ants/hello-api"))
         assertEquals("Initial commit", git(github.resolve("you/app.git"), "log", "-1", "--format=%s", "main"))
-        assertContains(browser.get("/runs/$run").body, "Scoped to its repos: <code>you/app</code>")
+        assertContains(browser.get("/runs/$run").body, "Repos picked: <code>you/app</code>")
     }
 
     @Test
-    fun `a scoped Run cancelled before Clone repos creates nothing`() {
+    fun `a Run with a new repo picked, cancelled before Clone repos, creates nothing`() {
         settings()
         browser.import("wait-then-clone.bpmn")
         browser.get("/processes/wait-then-clone")
@@ -144,13 +158,13 @@ class ScopedRunTest : AntsTest() {
     }
 
     @Test
-    fun `a scoped Run starts without a Vault, and the pre-Run check refuses a repo it can't clone and a new repo whose name is taken`() {
+    fun `a Run with repos picked starts without a Vault, and the pre-Run check refuses a repo it can't clone and a new repo whose name is taken`() {
         settings(vault = false)
         browser.import("wait-then-clone.bpmn")
         val page = browser.get("/processes/wait-then-clone").body
         assertContains(page, "Configure a Vault")
         assertFalse("disabled" in page.substringAfter("""<section id="pre-run">""").substringBefore("</form>"))
-        assertEquals(400, browser.post("/processes/wait-then-clone/runs", emptyMap()).status) // unscoped, it needs the Vault
+        assertEquals(400, browser.post("/processes/wait-then-clone/runs", emptyMap()).status) // with no repos picked, the scout needs the Vault
         assertTrue(browser.post("/processes/wait-then-clone/runs", listOf("repos" to "api", "repos" to "you/app")).path.startsWith("/runs/"))
 
         Files.createDirectories(github.resolve("you/taken.git"))
@@ -159,6 +173,19 @@ class ScopedRunTest : AntsTest() {
         assertContains(refused.body, "git ls-remote can't reach /nowhere/gone.git.")
         assertContains(refused.body, "The repo you/taken already exists on GitHub.")
         assertFalse("Configure a Vault" in refused.body.substringAfter("""<section id="pre-run">""").substringBefore("</section>"))
+    }
+
+    @Test
+    fun `a Run started before repos stopped scoping, with its scope and no Profile, still clones exactly its scope and completes`() {
+        settings()
+        browser.import("wait-then-clone.bpmn")
+        val run = runtime.startProcessInstanceByKey("wait-then-clone", mapOf("repos" to arrayListOf<String>(), SCOPE to arrayListOf("${api.remote}"))).id
+        tasks.complete(tasks.createTaskQuery().processInstanceId(run).singleResult().id)
+        eventually(20) { assertContains(browser.get("/runs/$run").body, """id="state">Completed<""") }
+        val page = browser.get("/runs/$run").body.replace("&#34;", "\"")
+        assertContains(page, """<dt>clones</dt><dd><code>[{"name":"api",""")
+        assertFalse("\"name\":\"web\"" in page.substringAfter("<dt>clones</dt>").substringBefore("</dd>"))
+        assertContains(page, "Repos picked: <code>${api.remote}</code>")
     }
 
     @Test

@@ -52,8 +52,8 @@ class StartForm(
     /**
      * Starts a Run of [definition] with [values] from its start form, each field under its variable name: Text and
      * Markdown as a string, Repos as a list of its entries, and the Run's name under [NAME]. Values for anything else are
-     * ignored. With any Repos entry the Run is scoped to them ([SCOPE]), else it keeps its Profile ([profile]) as
-     * [PROFILE]. Refused with [CantStart] while the pre-Run check gives reasons.
+     * ignored. The Run keeps its Profile ([profile]) as [PROFILE], and the repos picked, if any, as [SCOPE]. Refused
+     * with [CantStart] while the pre-Run check gives reasons.
      */
     fun start(definition: ProcessDefinition, values: Map<String, List<String>>): ProcessInstance {
         val fields = fields(definition)
@@ -67,11 +67,11 @@ class StartForm(
         val profile = profile(definition, values[PROFILE]?.firstOrNull())
         val reasons = preRun.reasons(definition, repos, profile)
         if (reasons.isNotEmpty()) throw CantStart(reasons)
-        // Scoped to its repos, the Run keeps no link to the Source map, nor to a Profile: a name is kept as its remote.
-        val known = RunSource.Profiled(profile).repos(settings).associate { it.name to it.remote }
+        // The picked repos are kept by remote, so Clone repos clones exactly them whatever the Source map says later.
+        val known = RunSource(profile).repos(settings).associate { it.name to it.remote }
         val scope = repos.map { known[it] ?: it }.takeIf { it.isNotEmpty() }?.let { SCOPE to ArrayList(it) }
         // The Name field's, empty when not given: RunLifecycle names the Run then.
-        val run = listOfNotNull(NAME to values[NAME]?.firstOrNull().orEmpty(), scope ?: profile?.let { PROFILE to it })
+        val run = listOfNotNull(NAME to values[NAME]?.firstOrNull().orEmpty(), scope, profile?.let { PROFILE to it })
         return runtime.startProcessInstanceById(definition.id, variables + run)
     }
 

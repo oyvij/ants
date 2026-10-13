@@ -26,6 +26,11 @@ search-knowledge Skill, whose folder holds `vault-format.md` and `leak-check.sh`
 - `approval`: the user's answer to your last proposal, `{approved, comment}`, or null before you
   have proposed.
 
+## With no Vault
+
+When the line that handed you this Skill names no Vault, the Run's Profile has none: answer `done`
+with `written: true` and nothing else.
+
 ## If `approval.approved` is true: write
 
 The user approved the proposal in `vault/proposal.md`. Write the staged Notes in `vault/staging/`

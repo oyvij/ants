@@ -40,9 +40,9 @@ class PreRun(
 
     /**
      * Why a Run of [definition] with the Profile [profile] (null for the default) and the Repos [repos] (Source map
-     * names, git URLs and new repos' `owner/name`) can't start; empty when it's Ready. With no Repos, a Profile that
-     * isn't in the settings is the only reason, and so is [CONFIGURE_VAULT] without the Profile's Vault, since such a
-     * Run needs one; with Repos the Run is scoped to them, and needs neither the Vault nor the Source map. Each repo
+     * names, git URLs and new repos' `owner/name`) can't start; empty when it's Ready. A Profile that isn't in
+     * the settings is the only reason, and so is [CONFIGURE_VAULT] without the Profile's Vault and with no Repos, since the
+     * scout then picks the repos from the Vault; with Repos picked the Vault is optional (ADR 0014). Each repo
      * must answer `git ls-remote`, and each new repo's name must be free. The Processes it calls are checked too, since
      * they run inside its Run. A page checking many Processes at once asks the Claude login ([claudeLogin]) once, by [oneLogin].
      */
@@ -54,12 +54,10 @@ class PreRun(
 
     fun reasons(definition: ProcessDefinition, repos: List<String>, profile: String?, claudeLogin: () -> Map<*, *> = launcher::login): List<String> {
         val named = repos.distinct()
-        val source = RunSource.of(named, profile)
+        val source = RunSource(profile, named)
+        if (source.profile(settings) == null) return listOf("The Profile $profile isn't in the settings.")
         val vault = source.vault(settings)
-        if (source is RunSource.Profiled) {
-            if (source.profile(settings) == null) return listOf("The Profile $profile isn't in the settings.")
-            if (vault == null) return listOf(CONFIGURE_VAULT)
-        }
+        if (vault == null && named.isEmpty()) return listOf(CONFIGURE_VAULT) // the scout picks the repos from the Vault
         val processes = withCalled(definition)
         // Names, schemas, references and ants-uses: the deploy's Checks again, since files change after a deploy.
         val failed = processes.flatMap { process ->
@@ -69,10 +67,9 @@ class PreRun(
         val agents = processes.flatMap { repository.getBpmnModelInstance(it.id).getModelElementsByType(ServiceTask::class.java) }
             .filter { it.operatonTopic == AgentLauncher.TOPIC }
             .mapNotNull { task -> task.property(AGENT)?.let { runCatching { catalogue.agent(it) }.getOrNull() } }.distinctBy { it.name }
-        // The Repos field's choices: the picked Profile's, which a scoped Run's names are looked up in.
-        val offered = RunSource.Profiled(profile)
-        val sourceMap = offered.profile(settings)?.sourceMap
-        val known = offered.repos(settings).associateBy { it.name }
+        // The Repos field's choices: the Profile's, which the picked names are looked up in.
+        val sourceMap = source.profile(settings)?.sourceMap
+        val known = source.repos(settings).associateBy { it.name }
         val created = named.filter { it !in known && newRepo(it) }
         // Each repo to clone, by its remote: a Source map name's, else the git URL itself.
         val remotes = named.filter { it !in created }.mapNotNull { known[it]?.let { repo -> repo.remote to "${repo.name}'s remote ${repo.remote}" } ?: CloneRepos.url(it)?.let { _ -> it to it } }

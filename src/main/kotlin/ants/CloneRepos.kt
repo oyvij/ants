@@ -27,7 +27,7 @@ fun clones(workspace: Path): List<Path> =
  * Run holds it, or, for `ants/<slug>`, while the remote has it. The work branch is checked out when the remote has it, otherwise created. The push URL is dead, so no
  * Agent pushes; Push gives the real remote itself. A repo already cloned is left alone. The Result is the repos it
  * cloned, `[{name, path, commit}]`, `path` relative to the Run workspace, and they are added to the Run's `clones`.
- * A scoped Run ([SCOPE]) clones its scope instead, whatever `repos` names, first creating each new repo on GitHub.
+ * A Run with repos picked ([SCOPE]) clones exactly them instead, whatever `repos` names, first creating each new repo on GitHub.
  */
 // ponytail: one thread for every Run, so choosing a work branch never races another Run's; a slow clone holds up
 // the rest. A lock per branch name if Runs start together often.
@@ -42,14 +42,13 @@ class CloneRepos(
     override fun handle(task: LockedExternalTask) {
         val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult().rootProcessInstanceId
         val repos = names.runWorkspace(run).resolve("repos").createDirectories()
-        // A scoped Run clones exactly its scope, whatever the Task names; its new repos are created only now.
+        // A Run with repos picked clones exactly them, whatever the Task names; its new repos are created only now.
         val source = scopes.of(run)
-        val scoped = source is RunSource.Scoped
         val known = source.repos(settings).associateBy { it.name }
-        val wanted = ((source as? RunSource.Scoped)?.scope ?: Settings.strings(task.variables["repos"]).orEmpty())
+        val wanted = source.picked.ifEmpty { Settings.strings(task.variables["repos"]).orEmpty() }
             .map { known[it] ?: url(it) ?: error("The Source map ${source.profile(settings)?.sourceMap} has no repo $it") }
             .filter { !repos.resolve(it.name).exists() }
-            .map { if (scoped && newRepo(it.remote)) it.copy(remote = create(it.remote)) else it }
+            .map { if (source.picked.isNotEmpty() && newRepo(it.remote)) it.copy(remote = create(it.remote)) else it }
         val branch by lazy { workBranch(run, task.variables["branch"]?.toString(), wanted.map(Repo::remote), repos) }
         val cloned = wanted.map { repo -> cloneOne(repo, repos, branch) }
         @Suppress("UNCHECKED_CAST")

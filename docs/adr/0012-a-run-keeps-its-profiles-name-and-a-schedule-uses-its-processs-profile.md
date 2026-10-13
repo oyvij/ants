@@ -18,7 +18,7 @@ pairs one Vault with one Source map as a named **Profile** (`work`, `private`), 
   fallback to the default.
 - **Switching the Profile on the start form reloads the page** (`?ants.profile=`), so the Repos field's choices and
   the pre-Run check are the picked Profile's. Typed values are lost on the switch.
-- A scoped Run (ADR 0011) keeps no Profile: the Profile only resolves its Repos field's Source map names to remotes.
+- A Run with picked repos keeps its Profile too (ADR 0014; ADR 0011 had it keep none).
 
 ## Considered Options
 

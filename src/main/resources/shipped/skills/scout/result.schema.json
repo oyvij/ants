@@ -4,7 +4,7 @@
     "repos": {
       "type": "array",
       "items": { "type": "string" },
-      "description": "Source map names, or git URLs word for word from the prompt; empty when the prompt names none."
+      "description": "The repos the user picked, exactly as given; else the ones the scout picks: Source map names, or git URLs word for word from the prompt."
     },
     "branch": {
       "type": "string",

@@ -90,8 +90,8 @@ _Avoid_: knowledge base, wiki, memory
 
 **Profile**:
 A named pair of one Vault and one Source map, such as `work` and `private`, one of them the default. A Process
-can name its Profile and the start form picks the Run's; the Run then uses that Vault and Source map alone. A
-Run scoped to its repos has none.
+can name its Profile and the start form picks the Run's; the Run then uses that Vault and Source map alone,
+whether or not its repos are picked.
 _Avoid_: group, context, account
 
 **Result**:

@@ -5,8 +5,8 @@ Vault served only the brief. So a Run started without picking repos, the way the
 used, cloned nothing, and its implementer answered stuck (Run si-24725: a Danish bug report about Aftaler, whose repo
 the Vault names, but the prompt doesn't).
 
-- **The user's choice comes first.** Repos picked on the start form scope the Run (ADR 0011): the scout isn't launched
-  and those repos are the Run's.
+- **The user's choice comes first.** Repos picked on the start form are the Run's, and the scout takes them as given
+  (ADR 0014).
 - **Else the scout picks.** It takes the repos the prompt names, else the Source map names the Vault ties the work to,
   and says in the brief which words or Note tie each one.
 - **Only the Source map.** `repos` never holds a repo outside the Source map, nor a new one.

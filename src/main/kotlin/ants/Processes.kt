@@ -211,7 +211,7 @@ class Processes(
         model.addAttribute("profile", picked)
         model.addAttribute("profileFrom", if (!profile.isNullOrBlank()) "picked here" else if (startForm.diagramProfile(process) != null) "set on the diagram" else "the default")
         model.addAttribute("source", settings.profile(picked))
-        model.addAttribute("repos", RunSource.Profiled(picked).repos(settings).map(Repo::name)) // the Repos field's choices
+        model.addAttribute("repos", RunSource(picked).repos(settings).map(Repo::name)) // the Repos field's choices
         model.addAttribute("schedule", schedules.of(process))
         val runs = history.createHistoricProcessInstanceQuery().processDefinitionKey(key).rootProcessInstances().orderByProcessInstanceStartTime().desc().list()
         model.addAttribute("runs", runs)
