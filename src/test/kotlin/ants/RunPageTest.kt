@@ -87,9 +87,9 @@ class RunPageTest : AntsTest() {
 
         val cancelled = browser.post("/runs/$run/cancel", mapOf())
         assertEquals("/runs/$run", cancelled.path)
-        assertContains(cancelled.body, "State: Cancelled")
+        assertContains(cancelled.body, """id="state">Cancelled<""")
         assertFalse("Cancel the Run" in cancelled.body)
-        assertContains(cancelled.body, "until you dismiss it")
+        assertContains(cancelled.body, "until you dismiss the Run")
         eventually { assertTrue(claude.launches("draft").single().killed) }
     }
 
@@ -116,18 +116,18 @@ class RunPageTest : AntsTest() {
         val drawer = browser.events("run=$run&drawer=draft", "drawer")
         var html = drawer.until { "dry" in it }
         assertContains(part(html, "drawer-head"), "Draft")
-        assertContains(part(html, "drawer-head"), "running")
+        assertContains(part(html, "drawer-head"), """<span class="shimmer">""") // the live line of a running Task
         assertContains(part(html, "drawer-output"), "<p>The notes say <strong>dry</strong>.</p>")
         assertFalse("First a look" in part(html, "drawer-output"))
-        val tasks = part(html, "drawer-checklist")
-        assertContains(tasks, """<li class="completed">Read the notes</li>""")
-        assertContains(tasks, """<li class="in_progress">Write the draft</li>""")
-        assertContains(part(html, "drawer-links"), """href="/runs/$run/tasks/draft/transcript"""")
+        val tasks = part(html, "drawer-so-far")
+        assertContains(tasks, """<div class="todo done">☑ Read the notes</div>""")
+        assertContains(tasks, """<div class="todo now">◐ Write the draft</div>""")
+        assertContains(part(html, "drawer-head"), """<a class="small" href="/runs/$run/tasks/draft/transcript">Full Transcript →</a>""")
 
         // The comment box of a running Task sends into its live session, and the user stays on the Run page.
         val send = part(html, "drawer-send")
         assertContains(send, """<form method="post" action="/runs/$run/tasks/draft/transcript/send">""")
-        assertContains(send, """<form method="post" action="/runs/$run/tasks/draft/transcript/stop">""")
+        assertContains(send, """formaction="/runs/$run/tasks/draft/transcript/stop"""")
         browser.get("/runs/$run")
         assertEquals("/runs/$run", browser.post("/runs/$run/tasks/draft/transcript/send", mapOf("message" to "Keep it dry.", "back" to "run")).path)
         html = drawer.until { "done" in part(it, "drawer-head") }
@@ -157,7 +157,7 @@ class RunPageTest : AntsTest() {
         claude.release("release")
         Thread.sleep(2500) // with the session lingering after its Result, no second rewrite
         claude.release("linger")
-        eventually { assertContains(browser.get("/runs/$run").body, "State: Completed") }
+        eventually { assertContains(browser.get("/runs/$run").body, """id="state">Completed<""") }
         assertContains(browser.get("/runs/$run/tasks/draft/transcript").body, """<span id="tokens">42 tokens</span>""")
 
         setUp("so-far: false\n")
@@ -181,7 +181,7 @@ class RunPageTest : AntsTest() {
         Thread.sleep(2500)
         assertEquals(rewrites, claude.launches("so-far").size)
         claude.release("full")
-        eventually { assertContains(browser.get("/runs/$run").body, "State: Completed") }
+        eventually { assertContains(browser.get("/runs/$run").body, """id="state">Completed<""") }
     }
 
     @Test
@@ -190,10 +190,10 @@ class RunPageTest : AntsTest() {
         claude.session("draft", stuck)
         claude.session("draft", 2, done)
         val run = start("agent-task")
-        val html = browser.events("run=$run&drawer=draft", "drawer").until { "[stuck]" in it }
-        assertContains(part(html, "drawer-head"), "⚠ [stuck] No tone given.")
+        val html = browser.events("run=$run&drawer=draft", "drawer").until { "t-stuck" in it }
+        assertContains(part(html, "drawer-head"), """<span class="pill p-stuck">Stuck</span> <span class="tag t-stuck"><i>⚠</i>[stuck]</span>""")
+        assertContains(part(html, "drawer-needs"), "<p>Which tone, dry or warm?</p>")
         val action = part(html, "drawer-action")
-        assertContains(action, "Which tone, dry or warm?")
         assertContains(action, """<button class="primary" name="action" value="continue">Continue the session</button>""")
         assertContains(action, """<input type="hidden" name="back" value="run">""")
         val form = Regex("""<form method="post" action="(/notifications/[^"]+)">""").find(action)!!.groupValues[1]
@@ -201,7 +201,70 @@ class RunPageTest : AntsTest() {
         browser.get("/runs/$run")
         val after = browser.post(form, mapOf("action" to "continue", "instruction" to "Dry.", "back" to "run"))
         assertEquals("/runs/$run", after.path)
-        eventually { assertContains(browser.get("/runs/$run").body, "State: Completed") }
+        eventually { assertContains(browser.get("/runs/$run").body, """id="state">Completed<""") }
         assertEquals("Dry.", claude.launches("draft")[1].stdin.substringAfter("\"content\":\"").substringBefore('"'))
+    }
+
+    @Test
+    fun `a Task's page heads its Transcript with its state, Agent and Skill and So far, and Send and Stop sit at the bottom`() {
+        setUp()
+        claude.session("draft", """{"type":"assistant","message":{"id":"m1","content":[{"type":"text","text":"Looking."}]}}""", "wait never", done)
+        val run = start("agent-task")
+        val path = "/runs/$run/tasks/draft/transcript"
+        var page = ""
+        eventually { page = browser.get(path).body.also { assertContains(it, "Looking.") } }
+        assertContains(page, """<h1>Draft <span class="pill p-running">Running</span></h1>""")
+        assertContains(page, """<a href="/agents/writer">writer</a>""")
+        assertContains(page, """<div class="sofar" id="sofar">""")
+        val composer = assertNotNull(Regex("""<div class="composer">.*?</form>""", RegexOption.DOT_MATCHES_ALL).find(page)).value
+        assertContains(composer, """<form method="post" action="$path/send">""")
+        assertContains(composer, """formaction="$path/stop"""")
+        assertContains(composer, ">Send</button>")
+        assertContains(row(browser.get("/runs/$run").body, "Draft"), """<span class="shimmer">""") // the live line of a running Task
+    }
+
+    @Test
+    fun `a Task waiting on its Round says so on its page`() {
+        agentTask(claude, mapOf("quiz" to """{"type":"object","properties":{"questions":{"type":"array"}}}"""))
+        claude.session("quiz", result("""{"outcome":"done","summary":"Asked.","output":{"questions":[{"id":"who","title":"Who","ask":"Who?","context":"Who.","recommendation":"Me.","why":"Mine."}]}}"""))
+        val run = start("round")
+        var entry = ""
+        eventually { entry = entry(run) }
+        val page = browser.get("/runs/$run/tasks/grill/transcript").body
+        assertContains(page, """<span class="pill p-quiet">Waiting on its Round</span>""")
+        assertContains(page, """This Task asked Round 1. <a href="$entry">Answer the Round</a> and its session resumes.""")
+        assertContains(row(browser.get("/runs/$run").body, "Grill the idea"), "Waiting on its Round")
+    }
+
+    /** The Run page's row of the Task named [name] in its Tasks table. */
+    private fun row(page: String, name: String) = assertNotNull(
+        Regex("""<tr class="click"[^>]*>(?:(?!</tr>).)*?<b>$name</b>(?:(?!</tr>).)*</tr>""", RegexOption.DOT_MATCHES_ALL).find(page), "no row $name in $page",
+    ).value
+
+    @Test
+    fun `the Run page lists the Tasks it reached, each with its Agent and Skill, its state and tokens, opening the Task`() {
+        agentTask(claude, mapOf("draft" to """{"type":"object","properties":{"notes":{"type":"string"}}}""", "polish" to null))
+        claude.session(
+            "draft",
+            """{"type":"assistant","message":{"id":"m1","content":[{"type":"text","text":"Drafting."}],"usage":{"input_tokens":1200,"output_tokens":300}}}""",
+            result("""{"outcome":"done","summary":"Drafted.","output":{"notes":"Hello"}}"""),
+        )
+        val run = start("approve")
+        var entry = ""
+        eventually { entry = entry(run) }
+        val page = browser.get("/runs/$run").body
+        val draft = row(page, "Draft")
+        assertContains(draft, """data-href="/runs/$run/tasks/draft/transcript"""")
+        assertContains(draft, """<a href="/agents/writer">writer</a>""")
+        assertContains(draft, """<a href="/skills/draft">draft</a>""")
+        assertContains(draft, """<span class="pill p-done">Done</span>""")
+        assertContains(draft, "1.5k")
+        val check = row(page, "Check the draft")
+        assertContains(check, """data-href="$entry"""")
+        assertContains(check, "User Task")
+        assertContains(check, """<span class="pill p-waiting">Waiting on you</span> <span class="tag t-approve"><i>✓</i>[approve]</span>""")
+        assertFalse("<b>Polish</b>" in page) // not reached
+        assertContains(page, """id="state">Running</span>""")
+        assertContains(page, "The Report appears here when the Run ends.")
     }
 }

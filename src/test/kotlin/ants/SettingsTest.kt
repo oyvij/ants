@@ -115,7 +115,7 @@ class SettingsTest : AntsTest() {
         ))
         browser.import("agent-task.bpmn")
         val run = browser.post("/processes/agent-task/runs", mapOf("prompt" to "Say hello")).path
-        eventually { assertContains(browser.get(run).body, "State: Completed") }
+        eventually { assertContains(browser.get(run).body, """id="state">Completed<""") }
         val launch = claude.launches("draft").single()
         assertEquals("on", launch.env["ANTS_PREFIX"])
         assertEquals(null, launch.env["HOME"]) // outside the allow-list
@@ -251,7 +251,7 @@ class SettingsTest : AntsTest() {
             """{"type":"result","subtype":"success","structured_output":{"outcome":"done","summary":"Drafted.","output":{}}}""")
         browser.import("agent-task.bpmn")
         val run = browser.post("/processes/agent-task/runs", mapOf("prompt" to "Say hello")).path
-        eventually { assertContains(browser.get(run).body, "State: Completed") }
+        eventually { assertContains(browser.get(run).body, """id="state">Completed<""") }
         val page = browser.get("/settings").body
         assertContains(page, """<span>5-hour</span><div class="track"><div class="fill" style="width:4%"></div></div><b>4%</b>""")
         assertContains(page, """<span>7-day</span><div class="track"><div class="fill" style="width:7%"></div></div><b>7%</b>""")

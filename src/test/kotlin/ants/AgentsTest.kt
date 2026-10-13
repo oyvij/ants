@@ -298,7 +298,7 @@ class AgentsTest : AntsTest() {
 
             post("/agents/writer", mapOf("name" to "writer", "cli" to "claude", "tool.Read" to "on", "tool.Grep" to "on", "model" to "opus", "instructions" to "Write warmly."))
             browser.post(entry, mapOf("action" to "fresh", "instruction" to ""))
-            eventually { assertContains(browser.get(run).body, "State: Completed") }
+            eventually { assertContains(browser.get(run).body, """id="state">Completed<""") }
             val (first, second) = claude.launches("draft")
             assertEquals(listOf("sonnet", "Write plainly.", "Read"), listOf(first.flag("--model"), first.flag("--append-system-prompt"), first.flag("--tools")))
             assertEquals(listOf("opus", "Write warmly.", "Grep,Read"), listOf(second.flag("--model"), second.flag("--append-system-prompt"), second.flag("--tools")))

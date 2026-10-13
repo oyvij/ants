@@ -72,7 +72,7 @@ class AnswerRoundTest : AntsTest() {
 
         val second = entry(run)
         browser.post("$second/answers", mapOf("answer.format" to "Recommend format."))
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
 
         val (one, two, three) = claude.launches("quiz")
         val session = one.flag("--session-id")
@@ -107,7 +107,7 @@ class AnswerRoundTest : AntsTest() {
         browser.post("${entry(run)}/answers", mapOf("answer.who" to "Recommend who.", "answer.scope" to "Only admins."))
         eventually { assertContains(workspace(run).resolve("run-log.md").readText(), "Answer the Round · Round 1\n\n- Who exports: Recommend who. (accepted)\n- Which invoices: Only admins. (written)\n") }
         claude.release("release")
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
 
         val file = history.listDirectoryEntries("*$run*.md").single()
         val written = file.readText()
@@ -128,7 +128,7 @@ class AnswerRoundTest : AntsTest() {
         claude.session("quiz", 1, round("First round.", question("who", "Who exports")))
         val run = start(timer = "PT2S")
         val entry = entry(run)
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
         assertEquals(null, row(run))
         val gone = browser.post("$entry/answers", mapOf("answer.who" to "Everyone."))
         assertContains(gone.body, "Nothing is waiting on you here any more")
@@ -143,7 +143,7 @@ class AnswerRoundTest : AntsTest() {
         claude.session("stand-in", answered("""{"id":"who","answer":"Admins.","why":"The Vault says so."}"""))
         claude.session("quiz", 2, round("Nothing left."))
         val run = start(process = "proxy")
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
 
         val prompt = claude.launches("stand-in").single().stdin
         assertContains(prompt, "The Answer History is ${home.resolve("answer-history")}.")
@@ -166,7 +166,7 @@ class AnswerRoundTest : AntsTest() {
         claude.session("quiz", 2, round("Nothing left."))
         val run = start(timer = "PT2S", process = "proposed", cap = 1)
         val entry = entry(run)
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
 
         val (one, two) = claude.launches("quiz")
         assertEquals(one.flag("--session-id"), two.flag("--resume"))
@@ -193,7 +193,7 @@ class AnswerRoundTest : AntsTest() {
         assertEquals(10, claude.launches("quiz").size)
         assertContains(browser.get(entry).body, "Round 10")
         browser.post("$entry/answers", mapOf("answer.who" to "Only admins."))
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
 
         assertEquals(11, claude.launches("quiz").size)
         val file = historyOf(run).single()

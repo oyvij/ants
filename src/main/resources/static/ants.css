@@ -314,6 +314,36 @@ body.login .logo { color: var(--text); padding: 0 0 18px; }
 body.login p { margin: 14px 0; } body.login button { width: 100%; padding: 10px; }
 body.login [role] { margin-bottom: 4px; }
 
+/* The Run page, a Task's page with its Transcript, its stuck or Approve page, and the Run page's Task drawer. */
+.ent a::before { content: none !important; }
+.ed textarea { display: block; width: 100%; min-height: 130px; max-height: 520px; margin: 0; padding: 10px 12px; border: 0; border-radius: 0; background: none; resize: none; field-sizing: content; }
+.ed textarea:focus { outline: 0; } :is(.composer, .drawer) .ed textarea { min-height: 44px; max-height: 160px; }
+.composer > form { max-width: 1120px; margin: 0 auto; padding: 12px 32px; display: flex; gap: 8px; align-items: flex-end; }
+#diagram { margin-bottom: 6px; }
+#tasks ~ .help { margin-top: 10px; }
+#rename { width: 420px; padding: 16px 20px 20px; border: 1px solid var(--line); color: var(--text); } #rename::backdrop { background: var(--modalBg); }
+#rename label.f { margin-top: 0; } #rename .row > input { flex: 1; }
+#details { margin-top: 32px; } #details > summary { margin-bottom: 12px; }
+.card.round { border-color: var(--wait); }
+details.session { margin-bottom: 14px; } details.session > .tr { margin-top: 8px; }
+.tr #entries > *, .tr .subagent > div > * { margin: 8px 0; }
+.tr .tool b { font-weight: 400; } .tr .tool code { background: none; padding: 0; font-size: inherit; } .tr .tool.error::before { color: var(--bad); }
+.tr .text > :first-child { margin-top: 0; } .tr .text > :last-child { margin-bottom: 0; }
+.tr .ants { color: var(--muted); font-size: 12px; text-align: center; }
+.tr .user { background: var(--accSoft); padding: 8px 12px; border-radius: 8px; }
+.tr .launch { border-top: 1px dashed var(--line); padding-top: 6px; color: var(--muted); font-size: 12px; font-weight: 400; }
+.tr .result { background: var(--okSoft); color: var(--okText); padding: 8px 12px; border-radius: 8px; }
+.tr .subagent { border-left: 3px solid var(--vio); padding-left: 12px; } .tr .subagent > summary { color: var(--vio); font-weight: 600; }
+#live:empty, #status:empty, .chips:empty { display: none; }
+#status { display: flex; gap: 6px; align-items: baseline; padding: 6px 0 2px; font-size: 13.5px; }
+#close { position: absolute; top: 30px; right: 12px; z-index: 2; }
+#parts { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
+#parts > .dh { position: sticky; top: 0; z-index: 1; background: var(--panel); }
+.dh h3 { margin: 2px 40px 6px 0; font-size: 16px; }
+#parts > section { margin: 14px 18px 0; }
+#drawer-output h3 { font-size: 13px; margin: 4px 0 8px; }
+#parts > .df { margin-top: auto; position: sticky; bottom: 0; background: var(--panel); }
+.df form { margin: 0; } .df .row { margin-top: 8px; }
 /* Processes and the Process page: the list, New Process's modal, the check, the start form, the Schedule card, and its Runs. */
 :is(#processes, #process-runs) td:first-child a { color: inherit; }
 dialog#new-process { width: min(560px, 92vw); height: auto; }
@@ -477,37 +507,6 @@ details > summary { cursor: pointer; color: var(--muted); }
 /* The diagrams' boxes keep their margin below, and the call activity's trail above. */
 .dia { margin-bottom: 16px; }
 #trail { margin-bottom: 8px; color: var(--muted); }
-
-/* The Run's Task drawer. */
-#drawer {
-    position: fixed; top: 0; right: 0; bottom: 0; width: min(460px, 100%); z-index: 30; overflow: auto; padding: 14px 18px;
-    background: var(--panel); border-left: 1px solid var(--line); box-shadow: -12px 0 32px rgba(15, 23, 42, .12); animation: slidein .2s ease-out;
-}
-#close { float: right; border-color: transparent; box-shadow: none; }
-#drawer section { border-bottom: 1px solid var(--line2); padding: 6px 0 12px; }
-#drawer h2 { margin: 6px 0 4px; }
-#drawer-so-far { background: var(--accSoft); border-radius: 10px; padding: 12px 14px !important; margin: 12px 0; border: 0 !important; }
-#drawer-so-far h3 { margin: 0 0 4px; }
-#drawer-checklist ul { list-style: none; padding: 0; }
-.completed { color: var(--muted); text-decoration: line-through; }
-.in_progress { font-weight: 600; color: var(--run); }
-
-/* The Transcript. */
-#entries { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sh); padding: 10px 18px; font-size: 13.5px; margin-bottom: 16px; }
-#entries > *, .subagent > div > * { margin: 8px 0; }
-.tool, .ants, .user, #status { font-family: var(--mono); font-size: 12.5px; }
-.tool { color: var(--text2); }
-.tool.error b { color: var(--bad); }
-.ants { color: var(--muted); }
-.user { background: var(--accSoft); padding: 8px 12px; border-radius: 8px; }
-.launch { border-top: 1px dashed var(--line); padding-top: 6px; color: var(--muted); font-size: 12px; font-weight: 500; }
-.result { background: var(--okSoft); color: var(--okText); padding: 8px 12px; border-radius: 8px; }
-.subagent { border-left: 3px solid var(--vio); padding-left: 12px; }
-.subagent > summary { color: var(--vio); font-weight: 600; }
-#entries .chip, #drawer .chip { display: inline-block; margin: 2px 4px 2px 0; }
-#status { color: var(--run); }
-.spinner { display: inline-block; animation: spin 2s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
 
 /* The Answer page's tabs. */
 nav#tabs { display: flex; gap: 4px; margin-bottom: 18px; border-bottom: 1px solid var(--line); }

@@ -47,7 +47,7 @@ class SendAndStopTest : AntsTest() {
         eventually { assertContains(browser.get(transcript(run)).body, """<p class="user" id="e2">› Keep it short.</p>""") }
         assertContains(workspace(run).resolve("run-log.md").readText(), "Draft · Send\n\nKeep it short.\n")
         claude.release("release")
-        eventually { assertContains(browser.get("/runs/$run").body, "State: Completed") }
+        eventually { assertContains(browser.get("/runs/$run").body, """id="state">Completed<""") }
         assertContains(claude.launches("draft").single().stdin, """{"type":"user","message":{"role":"user","content":"Keep it short."}}""")
     }
 
@@ -58,7 +58,7 @@ class SendAndStopTest : AntsTest() {
         live(run)
         browser.post("${transcript(run)}/send", mapOf("message" to "Shorter, please."))
         claude.release("sent")
-        eventually { assertContains(browser.get("/runs/$run").body, "State: Completed") }
+        eventually { assertContains(browser.get("/runs/$run").body, """id="state">Completed<""") }
         assertContains(browser.get("/runs/$run").body, "Second draft.")
     }
 
@@ -71,7 +71,7 @@ class SendAndStopTest : AntsTest() {
         assertContains(refused.body, "Not sent: the Agent's session has ended")
         assertFalse("""<button class="primary">Send</button>""" in refused.body)
         claude.release("release")
-        eventually { assertContains(browser.get("/runs/$run").body, "State: Completed") }
+        eventually { assertContains(browser.get("/runs/$run").body, """id="state">Completed<""") }
         assertFalse("One more thing." in claude.launches("draft").single().stdin)
     }
 
@@ -102,7 +102,7 @@ class SendAndStopTest : AntsTest() {
         assertContains(claude.launches("draft")[0].stdin, """"request":{"subtype":"interrupt"}}""")
 
         browser.post(entry, mapOf("action" to "continue", "instruction" to "Carry on, but shorter."))
-        eventually { assertContains(browser.get("/runs/$run").body, "State: Completed") }
+        eventually { assertContains(browser.get("/runs/$run").body, """id="state">Completed<""") }
         val (first, second) = claude.launches("draft")
         assertEquals(first.flag("--session-id"), second.flag("--resume"))
     }
@@ -158,7 +158,7 @@ class SendAndStopTest : AntsTest() {
         assertEquals(1, claude.launches("draft").size)
 
         browser.post(Regex("""href="(/notifications/[^"]+)"""").find(row)!!.groupValues[1], mapOf("action" to "cancel", "instruction" to ""))
-        eventually { assertContains(browser.get("/runs/$next").body, "State: Completed") }
+        eventually { assertContains(browser.get("/runs/$next").body, """id="state">Completed<""") }
         for (pid in pids) assertFalse(ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false), "process $pid")
     }
 }

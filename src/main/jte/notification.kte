@@ -1,5 +1,7 @@
+@import ants.tokens
 @param entry: ants.TaskEntry
 @param details: String?
+@param view: ants.TaskView
 @param error: String? = null
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
@@ -15,21 +17,35 @@
 <body>
 @template.nav(shell = shell)
 <main>
-<div class="crumbs"><a href="/notifications">Notification list</a> / <a href="/runs/${entry.run}">${entry.runName}</a> / ${entry.task}</div>
-<div class="ph"><h1>${entry.icon} ${entry.tag} ${entry.task}</h1><div class="acts"><span class="muted small">${entry.process} · waiting ${entry.waited}</span></div>
-    <div class="sub">${entry.summary}</div></div>
+@template.taskhead(view = view, run = entry.run, runName = entry.runName, tokens = tokens(view.tokens))
 @if(details != null)
-<h2>@if(entry.tag == "[stuck]")What the Agent needs@else Details@endif</h2>
-<pre>${details}</pre>
+<div class="card"><h3>@if(entry.tag == "[stuck]")What it needs@elseif(entry.tag == "[stopped]")Where it stopped@else Why it failed@endif</h3>@if(entry.tag == "[stuck]")$unsafe{ants.Transcript.markdown(details)}@else<pre>${details}</pre>@endif</div>
 @endif
-<p><a href="/runs/${entry.run}/tasks/${entry.taskId}/transcript">Transcript</a></p>
+<details class="session">
+    <summary class="small">The session so far</summary>
+    <div class="tr">
+@if(view.transcript != null)
+@for(line in view.transcript.roots)
+$unsafe{line}
+@endfor
+@else
+        <div class="ants">No launch yet.</div>
+@endif
+        <p><a href="/runs/${entry.run}/tasks/${entry.taskId}/transcript">Full Transcript →</a></p>
+    </div>
+</details>
 @if(error != null)<p role="alert">${error}</p>@endif
 <form method="post">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
-    <label>Instruction <textarea name="instruction" required data-markdown></textarea></label>
-    <button class="primary" name="action" value="continue">Continue the session</button>
-    <button name="action" value="fresh" formnovalidate>Start fresh</button>
-    @if(entry.tag == "[failed]")<button class="danger" name="action" value="cancel" formnovalidate>Cancel the Run</button>@endif
+    <div class="fld"><label class="f" for="instruction">Your instruction</label>
+        <div class="help">Required to continue the session. Optional when starting fresh.</div>
+        <textarea id="instruction" name="instruction" data-markdown required></textarea></div>
+    <div class="composer"><div>
+        @if(entry.tag == "[failed]")<button class="danger" name="action" value="cancel" formnovalidate>Cancel the Run</button>@endif
+        <span class="grow"></span>
+        <button name="action" value="fresh" formnovalidate>Start fresh</button>
+        <button class="primary" name="action" value="continue">Continue the session</button>
+    </div></div>
 </form>
 </main>
 </body>

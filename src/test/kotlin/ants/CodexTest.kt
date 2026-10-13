@@ -69,7 +69,7 @@ class CodexTest : AntsTest() {
             answer(), completed,
         )
         val run = start()
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
         assertContains(page(run), "Drafted.")
 
         val launch = codex.launches("draft").single()
@@ -106,7 +106,7 @@ class CodexTest : AntsTest() {
         val run = start()
         eventually { assertEquals(1, codex.launches("draft").size) }
         codexTask("sandbox: yolo\n")
-        eventually { assertContains(browser.get(transcript(run)).body, "■ Stop") }
+        eventually { assertContains(browser.get(transcript(run)).body, ">Stop</button>") }
         browser.post("${transcript(run)}/stop", emptyMap())
         var entry = ""
         eventually {
@@ -125,12 +125,12 @@ class CodexTest : AntsTest() {
         codexTask(metadata = "metadata:\n  varde-vault: true\n")
         codex.session("draft", started, turn, answer(), completed)
         val run = start()
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
         assertEquals(vaultPath.toString(), codex.launches("draft").single().flag("--add-dir"))
 
         codexTask()
         val without = start("no-vault")
-        eventually { assertContains(page(without), "State: Completed") }
+        eventually { assertContains(page(without), """id="state">Completed<""") }
         assertFalse("--add-dir" in codex.launches("draft").last().argv)
     }
 
@@ -168,11 +168,11 @@ class CodexTest : AntsTest() {
         claude.session("draft", """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION",""" +
             """"structured_output":{"outcome":"done","summary":"Drafted by claude.","output":{"text":"Hello"}}}""")
         val onClaude = start("on-claude", agent = "claude-writer")
-        eventually { assertContains(page(onClaude), "State: Completed") } // claude isn't paused
+        eventually { assertContains(page(onClaude), """id="state">Completed<""") } // claude isn't paused
         assertEquals(1, codex.launches("draft").size)
 
         clock.offset = Duration.between(clock.instant(), reset).plusMinutes(1)
-        for (run in listOf(first, second)) eventually { assertContains(page(run), "State: Completed") }
+        for (run in listOf(first, second)) eventually { assertContains(page(run), """id="state">Completed<""") }
         val cut = codex.launches("draft").first()
         val resumed = codex.launches("draft").drop(1).single { it.argv.contains("resume") }
         assertEquals(cut.thread, resumed.flag("resume"))
@@ -190,7 +190,7 @@ class CodexTest : AntsTest() {
         val after = clock.instant()
         assertContains(setOf(clock.local(before.plusSeconds(31 * 60)), clock.local(after.plusSeconds(31 * 60))), page(run).substringAfter("Paused until ").substringBefore("<"))
         clock.offset = Duration.ofMinutes(32)
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
     }
 
     @Test
@@ -220,7 +220,7 @@ class CodexTest : AntsTest() {
         assertEquals(transcript(run), browser.post("${transcript(run)}/send", mapOf("message" to "Keep it short.")).path)
         assertContains(workspace(run).resolve("run-log.md").readText(), "Draft · Send\n\nKeep it short.\n")
         codex.release("release")
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
         assertContains(page(run), "Kept short.")
         val (cut, resumed) = codex.launches("draft")
         assertTrue(cut.interrupted)
@@ -235,7 +235,7 @@ class CodexTest : AntsTest() {
         codex.session("draft", 1, started, turn, "wait never")
         codex.session("draft", started, turn, answer(), completed)
         val run = start()
-        eventually { assertContains(browser.get(transcript(run)).body, "■ Stop") }
+        eventually { assertContains(browser.get(transcript(run)).body, ">Stop</button>") }
         eventually { assertEquals(1, codex.launches("draft").size) }
         browser.post("${transcript(run)}/stop", emptyMap())
         var entry = ""
@@ -247,7 +247,7 @@ class CodexTest : AntsTest() {
         }
         assertContains(browser.get(entry).body, "Stopped by the user.")
         browser.post(entry, mapOf("action" to "continue", "instruction" to "Go on."))
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
         val (cut, resumed) = codex.launches("draft")
         assertTrue(cut.interrupted)
         assertEquals(cut.thread, resumed.flag("resume"))
@@ -269,7 +269,7 @@ class CodexTest : AntsTest() {
             entry = Regex("""href="(/notifications/[^"]+)"""").find(row)!!.groupValues[1]
         }
         browser.post(entry, mapOf("action" to "continue", "instruction" to "Pick billing."))
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
         val (first, resumed) = codex.launches("draft")
         assertEquals(first.thread, resumed.flag("resume"))
         val transcript = browser.get(transcript(run)).body
