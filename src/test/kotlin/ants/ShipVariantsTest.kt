@@ -103,9 +103,9 @@ class ShipVariantsTest : AntsTest() {
         assertContains(answerer.stdin, "Who exports?")
         assertEquals("Read,Grep,Glob" to "Read,Grep,Glob", answerer.flag("--tools") to answerer.flag("--allowedTools")?.removeSuffix(",mcp__ants__run"))
         assertContains(claude.launches("grill")[1].stdin, """\"source\":\"agent\"""")
-        // Clone new repos cloned the repo the Rounds named, and Push pushed its work branch.
+        // Clone new repos cloned the repo the first Round named, so to-spec has it in its clones.
         assertContains(claude.launches("to-spec").single().stdin, """\"repos\":[\"web\"]""")
-        assertContains(git(web.remote, "for-each-ref", "--format=%(refname)"), "refs/heads/add-hello")
+        assertContains(claude.launches("to-spec").single().stdin, "repos/web")
         val report = browser.report(run)
         assertContains(report.substringAfter("<h2>Answers you didn't give</h2>"), "Who exports: Only admins. (agent)")
     }
@@ -133,7 +133,7 @@ class ShipVariantsTest : AntsTest() {
 
         assertEquals(listOf("[approve]", "[review]", "[push]", "[approve]"), waited)
         assertContains(claude.launches("grill")[1].stdin, """{\"id\":\"who\",\"answer\":\"Admins.\",\"source\":\"recommended\"}""")
-        assertContains(git(web.remote, "for-each-ref", "--format=%(refname)"), "refs/heads/add-hello")
+        assertContains(claude.launches("to-spec").single().stdin, "repos/web")
     }
 
     @Test
