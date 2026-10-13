@@ -53,7 +53,7 @@
     <form method="post" action="/notifications/${entry.id}">
         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
         <input type="hidden" name="back" value="run">
-        <label>Comment <textarea name="instruction" required></textarea></label>
+        <label>Comment <textarea name="instruction" required data-markdown></textarea></label>
         <button class="primary" name="action" value="continue">Continue the session</button>
         <button name="action" value="fresh" formnovalidate>Start fresh</button>
         @if(entry.tag == "[failed]")<button class="danger" name="action" value="cancel" formnovalidate>Cancel the Run</button>@endif
@@ -66,7 +66,7 @@
     <form method="post" action="/runs/${run}/tasks/${task}/transcript/send">
         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
         <input type="hidden" name="back" value="run">
-        <label>Comment <textarea name="message" required></textarea></label>
+        <label>Comment <textarea name="message" required data-markdown></textarea></label>
         <button class="primary">Send</button>
         <small>${sendHint}</small>
     </form>

@@ -75,7 +75,7 @@
     @else
     @if(field.help != null)<div class="help">${field.help}</div>@endif
     @if(field.type == FieldType.MARKDOWN)
-    <textarea name="${field.name}" id="field-${field.name}" required="${field.required}" class="tall">${field.stored}</textarea>
+    <textarea name="${field.name}" id="field-${field.name}" required="${field.required}" data-markdown data-tall>${field.stored}</textarea>
     @else
     <input name="${field.name}" id="field-${field.name}" value="${field.stored ?: ""}" required="${field.required}">
     @endif

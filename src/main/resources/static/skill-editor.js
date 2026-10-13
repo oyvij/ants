@@ -1,5 +1,6 @@
-// Turns the Skill form's text areas into CodeMirror editors. The schema is checked as you type, by the same check
-// Save runs, and Save is disabled while it fails. The text areas stay in the form and carry what is posted.
+// Turns the Skill form's schema into a CodeMirror JSON editor (SKILL.md is a markdown field, markdown.js). The schema is
+// checked as you type, by the same check Save runs, and Save is disabled while it fails. The text area stays in the
+// form and carries what is posted.
 import {basicSetup, EditorView} from "codemirror"
 import {EditorState} from "@codemirror/state"
 import {json, jsonParseLinter} from "@codemirror/lang-json"
@@ -24,14 +25,14 @@ const schemaCheck = linter(async view => {
     return diagnostics
 })
 
-for (const textarea of form.querySelectorAll("textarea")) {
+for (const textarea of form.querySelectorAll("textarea[name=schema]")) {
     const view = new EditorView({
         doc: textarea.value,
         extensions: [
             basicSetup,
             EditorState.readOnly.of(textarea.readOnly),
             EditorView.updateListener.of(update => { if (update.docChanged) textarea.value = update.state.doc.toString() }),
-            ...(textarea.name === "schema" ? [json(), schemaCheck, lintGutter()] : []),
+            json(), schemaCheck, lintGutter(),
         ],
     })
     textarea.after(view.dom)

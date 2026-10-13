@@ -26,7 +26,7 @@
 @if(error != null)<p role="alert">${error}</p>@endif
 <form method="post">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
-    <label>Instruction <textarea name="instruction" required></textarea></label>
+    <label>Instruction <textarea name="instruction" required data-markdown></textarea></label>
     <button class="primary" name="action" value="continue">Continue the session</button>
     <button name="action" value="fresh" formnovalidate>Start fresh</button>
     @if(entry.tag == "[failed]")<button class="danger" name="action" value="cancel" formnovalidate>Cancel the Run</button>@endif

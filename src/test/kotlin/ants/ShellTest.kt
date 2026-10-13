@@ -90,4 +90,17 @@ class ShellTest : AntsTest() {
         assertContains(browser().login("nope").body, "Wrong password.")
     }
 
+    @Test
+    fun `the markdown fields are marked for the editor, whose Preview the server renders as it renders the Approve page`() {
+        browser.import("start-form.bpmn")
+        assertContains(browser.get("/processes/start-form").body, """<textarea name="prompt" required data-markdown data-tall>""")
+        assertContains(browser.get("/agents/new").body, """<textarea name="instructions" rows="12" cols="80" data-markdown data-tall>""")
+        assertContains(browser.get("/skills/scout").body, """<textarea name="skill" rows="20" cols="80" readonly data-markdown data-tall>""")
+
+        val preview = browser.post("/markdown", mapOf("text" to "**Bold** and <script>alert(1)</script>"))
+
+        assertEquals(200, preview.status)
+        assertContains(preview.body, "<strong>Bold</strong>")
+        assertContains(preview.body, "&lt;script&gt;")
+    }
 }

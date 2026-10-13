@@ -121,7 +121,7 @@
 @endif
 <form method="post" action="/notifications/${entry.id}">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
-    <label>Comment on the changes <textarea name="comment"></textarea></label>
+    <label>Comment on the changes <textarea name="comment" data-markdown></textarea></label>
     <button class="primary" name="action" value="approve">Approve</button>
     <button name="action" value="send-back">Send back</button>
 </form>
