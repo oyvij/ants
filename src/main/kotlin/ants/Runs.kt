@@ -25,7 +25,11 @@ import org.operaton.bpm.engine.impl.util.xml.Element
 import org.operaton.bpm.engine.variable.value.ObjectValue
 import gg.jte.TemplateEngine
 import gg.jte.output.StringOutput
+import org.operaton.bpm.model.bpmn.instance.BaseElement
 import org.operaton.bpm.model.bpmn.instance.FlowElement
+import org.operaton.bpm.model.bpmn.instance.ServiceTask
+import org.operaton.bpm.model.bpmn.instance.UserTask
+import org.springframework.web.util.HtmlUtils
 import org.springframework.security.web.csrf.CsrfToken
 import org.operaton.bpm.engine.RepositoryService
 import org.operaton.bpm.engine.RuntimeService
@@ -39,6 +43,7 @@ import org.springframework.ui.Model
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.server.ResponseStatusException
 import java.io.File
@@ -50,12 +55,76 @@ import java.time.Clock
 import java.time.Instant
 import java.time.temporal.ChronoUnit.SECONDS
 import java.util.Date
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.io.path.ExperimentalPathApi
 import kotlin.io.path.createDirectories
 import kotlin.io.path.deleteRecursively
 
 /** What the live diagram shows of one element: its state (done, running, queued or waiting), a badge and its Round. */
 class Shown(val state: String, val badge: String?, val round: Int?)
+
+/**
+ * A Run as the Runs list shows it: its [ended] pill's words ("Done · 15:10") once it has ended, what it does [now]
+ * while it lives, and whether it [kept] its Run workspace and has a [report].
+ */
+class RunRow(val id: String, val name: String, val process: String, val started: String, val ended: String?, val done: Boolean, val now: Now?, val kept: Boolean, val report: Boolean)
+
+/**
+ * What the live Run [run], named [name], is doing now: the Notification list entries [waiting] on the user, its
+ * [running] Agent Tasks, and its [quiet] ones, queued or paused.
+ */
+class Now(val run: String, val name: String, val waiting: List<TaskEntry>, val running: List<Doing>, val quiet: List<Doing>)
+
+/** An Agent Task of a live Run: its [task] name, and its live [line] and [subagents] while it runs, else its [pill], such as "Queued · 2 of 3 running". */
+class Doing(val task: String, val pill: String?, val line: String? = null, val subagents: Int = 0)
+
+/** The pill beside an entry's tag in a Run's Now: its class and its words. */
+val TaskEntry.pill get() = TaskView.state(this).let { (state, label) -> TaskView.PILLS.getValue(state) to label }
+
+/**
+ * A Task of a Run as the Run page's Tasks table, the Task's own page and its drawer show it: its [element] in the
+ * Process (null for a called Process's Task, known only by its [key]), its [state] (running, queued, round, waiting,
+ * stuck, failed, stopped or done) and how it reads, [label], the [entry] waiting on the user, its [round] (its count in
+ * `runs`), its [tokens], where it opens, [href]: its entry's page, else its Transcript; and while it waits on its Round,
+ * that Round's entry, [asked].
+ */
+class TaskView(
+    val key: String, val element: FlowElement?, val state: String, val label: String, val entry: TaskEntry?, val round: Int?,
+    val transcript: Transcript?, val tokens: Long, val href: String?, val asked: TaskEntry? = null,
+) {
+    val name: String get() = element?.name ?: key
+
+    /** agent, user or builtin. */
+    val kind get() = when {
+        element is ServiceTask && element.operatonTopic == AgentLauncher.TOPIC || element == null -> "agent"
+        element is UserTask -> "user"
+        else -> "builtin"
+    }
+
+    val agent get() = element?.property(AGENT)
+    val skill get() = element?.property(SKILL)
+
+    /** The state as a pill; a page puts the entry's tag (tag.kte) beside it while the Task waits on the user. */
+    val badge get() = """<span class="pill p-${PILLS[state]}">${HtmlUtils.htmlEscape(label)}</span>"""
+
+    /** What the Task is waiting for or did, as its entry or its Result sums it up. */
+    val summary get() = entry?.summary?.ifEmpty { null } ?: transcript?.result?.get("summary")?.toString()
+
+    companion object {
+        val PILLS = mapOf(
+            "running" to "running", "done" to "done", "queued" to "quiet", "round" to "quiet", "waiting" to "waiting",
+            "stuck" to "stuck", "failed" to "failed", "stopped" to "stuck",
+        )
+
+        /** The state and label of a Task its [entry] holds: stuck, failed or stopped by its tag, else waiting on the user. */
+        fun state(entry: TaskEntry) = when (entry.tag) {
+            "[stuck]" -> "stuck" to "Stuck"
+            "[failed]" -> "failed" to "Failed"
+            "[stopped]" -> "stopped" to "Stopped"
+            else -> "waiting" to "Waiting on you"
+        }
+    }
+}
 
 @Controller
 class Runs(
@@ -71,14 +140,72 @@ class Runs(
     private val streams: Streams,
     private val names: RunNames,
     private val scopes: Scopes,
+    private val schedules: Schedules,
+    private val cloneRepos: CloneRepos,
 ) {
+    /** The Runs list: Coming up, then the live Runs with what each is doing now, then the ended ones. */
     @GetMapping("/runs")
     fun list(model: Model): String {
-        val runs = history.createHistoricProcessInstanceQuery().rootProcessInstances().orderByProcessInstanceStartTime().desc().list()
-        model.addAttribute("runs", runs)
-        model.addAttribute("names", runs.associate { it.id to names.name(it.id) })
+        val now = now().associateBy { it.run }
+        val runs = history.createHistoricProcessInstanceQuery().rootProcessInstances().orderByProcessInstanceStartTime().desc().list().map { run ->
+            val ended = run.endTime?.let { clock.local(it.toInstant()) }
+            val done = run.state == HistoricProcessInstance.STATE_COMPLETED
+            RunRow(
+                run.id, names.name(run.id), run.processDefinitionName ?: run.processDefinitionKey, clock.local(run.startTime.toInstant()),
+                ended?.let { (if (done) "Done" else run.stateName) + " · " + it }, done, now[run.id],
+                ended != null && keptWorkspace(run) != null, ended != null && Files.exists(names.runWorkspace(run.id).resolve(REPORT)),
+            )
+        }
+        model.addAttribute("live", runs.filter { it.ended == null })
+        model.addAttribute("ended", runs.filter { it.ended != null })
+        model.addAttribute("coming", schedules.all().filter { it.next != null })
+        model.addAttribute("running", launcher.running)
+        model.addAttribute("cap", settings.agentTasks())
         return "runs"
     }
+
+    /**
+     * What each live Run is doing now, as the Runs list's Now and Home's Working now show it: its Notification list
+     * entries, its running Agent Tasks with their live lines, and its queued or paused ones.
+     */
+    fun now(): List<Now> {
+        val entries = notifications.tasks().groupBy { it.run }
+        val cap = settings.agentTasks()
+        val read = mutableSetOf<Path>()
+        val doing = externalTasks.createExternalTaskQuery().topicName(AgentLauncher.TOPIC).withRetriesLeft().orderByCreateTime().asc().list().mapNotNull { task ->
+            // A Task that has just finished may have taken its Run with it.
+            val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult()?.rootProcessInstanceId ?: return@mapNotNull null
+            val name = repository.getBpmnModelInstance(task.processDefinitionId).getModelElementById<FlowElement>(task.activityId)?.name ?: task.activityId
+            val paused = launcher.pausedUntil(task.id)
+            val held = launcher.heldBy(task.id)
+            run to when {
+                paused != null -> Doing(name, "Paused until ${clock.local(paused)}")
+                held != null -> Doing(name, held)
+                task.lockExpirationTime?.after(Date()) == true -> {
+                    val key = runCatching { runtime.taskKey(task.executionId, task.activityId) }.getOrDefault(task.activityId)
+                    val transcript = followed(Transcript.file(names.runWorkspace(run), key).also { read.add(it) })
+                    Doing(name, null, transcript.line, transcript.runningSubagents)
+                }
+                else -> Doing(name, "Queued · ${launcher.running} of $cap running")
+            }
+        }.groupBy({ it.first }, { it.second })
+        followed.keys.retainAll(read)
+        return (entries.keys + doing.keys).map { run ->
+            val tasks = doing[run].orEmpty()
+            Now(run, names.name(run), entries[run].orEmpty(), tasks.filter { it.pill == null }, tasks.filter { it.pill != null })
+        }
+    }
+
+    // The Transcripts of the running Agent Tasks, each read on from where it was last read, so a live page doesn't
+    // read whole files every second.
+    private val followed = ConcurrentHashMap<Path, Pair<Transcript, Long>>()
+
+    private fun followed(file: Path): Transcript = followed.compute(file) { _, was ->
+        val (transcript, offset) = was ?: (Transcript() to 0L)
+        val (lines, end) = Transcript.read(file, offset)
+        lines.forEach(transcript::add)
+        transcript to end
+    }!!.first
 
     @GetMapping("/runs/{id}")
     fun run(@PathVariable id: String, model: Model): String {
@@ -102,7 +229,13 @@ class Runs(
                 .associate { it.name to ((it.typedValue as? ObjectValue)?.valueSerialized ?: "${it.value}") },
         )
         model.addAttribute("transcripts", Transcript.all(workspace).mapValues { it.value.tokens })
-        model.addAttribute("report", Files.exists(workspace.resolve(REPORT)))
+        model.addAttribute("report", workspace.resolve(REPORT).takeIf(Files::exists)?.let { Transcript.markdown(Files.readString(it)) })
+        model.addAttribute("tasks", tasks(id))
+        model.addAttribute("started", clock.local(run.startTime.toInstant()))
+        val clones = clones(workspace)
+        model.addAttribute("branch", clones.firstNotNullOfOrNull { runCatching { cloneRepos.workBranch(it) }.getOrNull() })
+        model.addAttribute("cloned", clones.map { it.fileName.toString() })
+        model.addAttribute("vault", source.profile(settings)?.vault)
         model.addAttribute(
             "agentTasks",
             externalTasks.createExternalTaskQuery().processInstanceId(id).topicName(AgentLauncher.TOPIC).list()
@@ -138,7 +271,8 @@ class Runs(
             val called = history.createHistoricActivityInstanceQuery().processInstanceId(id).activityType("callActivity")
                 .orderByHistoricActivityInstanceStartTime().asc().list().filter { it.calledProcessInstanceId != null }
                 .associate { it.activityId to it.calledProcessInstanceId }
-            json.writeValueAsString(mapOf("state" to run(id).stateName, "elements" to shown(id), "called" to called))
+            val state = run(id).stateName
+            json.writeValueAsString(mapOf("state" to state, "pill" to (RUN_PILLS[state] ?: "quiet"), "elements" to shown(id), "called" to called))
         }
     }
 
@@ -161,14 +295,59 @@ class Runs(
             val (lines, end) = Transcript.read(file, offset)
             offset = end
             lines.forEach(transcript::add)
-            val entry = notifications.tasks().firstOrNull { it.instance == id && it.activity == task }
+            val view = tasks(id) { emptyMap() }.firstOrNull { it.element?.id == task }
+                ?: TaskView(key, element, "queued", "Not reached", null, null, null, 0, null)
+            val entry = view.entry
             val model = mapOf(
-                "run" to top, "runName" to names.name(top), "task" to key, "name" to (element.name ?: task), "shown" to shown(id)[task], "transcript" to transcript,
-                "entry" to entry, "details" to entry?.let(notifications::details), "push" to (entry?.let(notifications::isPush) == true), "sendHint" to launcher.sendHint(top, key), "_csrf" to csrf,
+                "run" to top, "runName" to names.name(top), "task" to key, "view" to view, "transcript" to transcript,
+                "details" to entry?.let(notifications::details), "push" to (entry?.let(notifications::isPush) == true), "sendHint" to launcher.sendHint(top, key), "_csrf" to csrf,
             )
             StringOutput().also { templates.render("drawer.kte", model, it) }.toString()
         }
     }
+
+    /**
+     * The Tasks the Run, or called Process instance, [id] has reached, in the order it reached them. A Task that asked
+     * the Round waiting on the user waits on its Round. A multi-instance's instances count as one Task, opening the first.
+     * Each Task's Transcript is read from [transcripts], every Transcript in the Run by default.
+     */
+    fun tasks(id: String, transcripts: (top: String) -> Map<String, Transcript> = { Transcript.all(names.runWorkspace(it)) }): List<TaskView> {
+        val instance = run(id)
+        val top = instance.rootProcessInstanceId
+        val model = repository.getBpmnModelInstance(instance.processDefinitionId)
+        val transcripts = transcripts(top)
+        val prefix = (history.variable(id, CALLED) as? String).orEmpty()
+        val entries = notifications.tasks().filter { it.instance == id }
+        val asking = entries.filter { it.tag == UserTaskKind.ANSWER_ROUND.tag }
+            .mapNotNull { round -> model.getModelElementById<BaseElement>(round.activity)?.property(ASKER)?.let { it to round } }.toMap()
+        val shown = shown(id)
+        return history.createHistoricActivityInstanceQuery().processInstanceId(id).orderByHistoricActivityInstanceStartTime().asc().orderPartiallyByOccurrence().asc().list()
+            .map { it.activityId }.distinct().mapNotNull { model.getModelElementById<FlowElement>(it) as? org.operaton.bpm.model.bpmn.instance.Task }.map { task ->
+                val key = prefix + task.id
+                val entry = entries.firstOrNull { it.activity == task.id }
+                val own = transcripts.filterKeys { it == key || it.startsWith("$key-") }
+                val now = shown[task.id]
+                val (state, label) = when {
+                    entry != null -> TaskView.state(entry)
+                    asking[task.id] != null -> "round" to "Waiting on its Round"
+                    now?.state == "queued" -> "queued" to (now.badge?.takeIf { it != "Queued" } ?: "Queued · ${launcher.running} of ${settings.agentTasks()} running")
+                    now?.state == "running" -> "running" to "Running"
+                    else -> "done" to "Done"
+                }
+                val href = entry?.let { "/notifications/${it.id}" } ?: own.keys.firstOrNull()?.let { "/runs/$top/tasks/$it/transcript" }
+                TaskView(key, task, state, label, entry, now?.round, own.values.firstOrNull(), own.values.sumOf { it.tokens }, href, asking[task.id])
+            }
+    }
+
+    /**
+     * The Task [key] of the Run [run] as its page heads it, with its [transcript]; a called Process's Task, which the Run's
+     * Tasks don't list, by its key, its entry and its Transcript alone.
+     */
+    fun task(run: String, key: String, transcript: Transcript): TaskView = tasks(run).firstOrNull { key == it.key || key.startsWith(it.key + "-") }
+        ?: notifications.tasks().firstOrNull { it.run == run && it.taskId == key }.let { entry ->
+            val (state, label) = entry?.let(TaskView::state) ?: if (transcript.running) "running" to "Running" else "done" to "Done"
+            TaskView(key, null, state, label, entry, null, transcript, transcript.tokens, entry?.let { "/notifications/${it.id}" })
+        }
 
     /**
      * Each element the Run has reached: done once every instance of it ended, else waiting when it has a Notification
@@ -214,11 +393,11 @@ class Runs(
         return "redirect:/runs/$id"
     }
 
-    /** Dismiss: cleans up the Run workspace a cancelled Run kept, as if the Run had ended. */
+    /** Dismiss: cleans up the Run workspace a cancelled Run kept, as if the Run had ended, and goes back to the page it was pressed on. */
     @PostMapping("/runs/{id}/dismiss")
-    fun dismiss(@PathVariable id: String): String {
+    fun dismiss(@PathVariable id: String, @RequestHeader("Referer", required = false) from: String?): String {
         keptWorkspace(run(id))?.let { cleanUp(it.toFile()) }
-        return "redirect:/runs/$id"
+        return if (from == null) "redirect:/runs/$id" else back(from)
     }
 
     private fun run(id: String) = history.createHistoricProcessInstanceQuery().processInstanceId(id).singleResult()
@@ -251,6 +430,9 @@ fun back(back: String?, run: String, otherwise: String) = "redirect:" + if (back
 fun runLog(workspace: Path, task: String, what: String, text: String) {
     Files.writeString(workspace.resolve("run-log.md"), "## ${Instant.now().truncatedTo(SECONDS)} · $task · $what\n\n${text.trim()}\n\n", CREATE, APPEND)
 }
+
+/** The pill of each Run state, by how it reads; any other is quiet. */
+val RUN_PILLS = mapOf("Running" to "running", "Completed" to "done", "Cancelled" to "failed")
 
 /** How a Run's state reads on its pages. */
 val HistoricProcessInstance.stateName

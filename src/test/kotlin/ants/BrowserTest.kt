@@ -359,6 +359,22 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `a row of the Notification list, Home's Waiting on you and the Runs list opens its entry or its Run on a click anywhere in it`() = browse {
+        settings(null)
+        val (process, plane) = row("clicked", """<bpmn:startEvent id="start" />""", """<bpmn:userTask id="wait" name="Wait" />""", """<bpmn:endEvent id="end" />""")
+        deploy(definitions("clicked", "Clicked", process, plane))
+        val run = http.post("/processes/clicked/runs", mapOf()).path
+        for (list in listOf("/notifications", "/")) {
+            page.navigate(url(list))
+            page.locator("tr.click:has(a[href='$run']) td:last-child").click()
+            page.waitForURL { "/notifications/" in it }
+        }
+        page.navigate(url("/runs"))
+        page.locator("tr.click[data-href='$run'] td:last-child").click()
+        page.waitForURL { it.endsWith(run) }
+    }
+
+    @Test
     fun `the Notification list asks for notification permission on a click, since macOS badges an app only with it`() = browse {
         // The browser's answer outlives the page, as a real one's does, so the reload below finds it.
         page.addInitScript(
@@ -424,7 +440,7 @@ class BrowserTest : AntsTest() {
         assertThat(page.locator("#review-list > button").nth(1)).hasText("✎ Ask scope?Only admins.") // the full question, the answer under it
         page.click("#next")
         page.waitForURL { !it.contains(entry) }
-        eventually { assertContains(http.get("/runs/$run").body, "State: Completed") }
+        eventually { assertContains(http.get("/runs/$run").body, """id="state">Completed<""") }
         assertContains(claude.launches("quiz")[1].stdin, """{\"id\":\"who\",\"answer\":\"Recommend who.\",\"source\":\"accepted\"},{\"id\":\"scope\",\"answer\":\"Only admins.\",\"source\":\"written\"}""")
     }
 
@@ -624,6 +640,28 @@ class BrowserTest : AntsTest() {
             close()
             assertThat(modal).hasCount(0)
         }
+    }
+
+    @Test
+    fun `on the Run page Rename renames over the page, Esc closes the drawer, a Task's row opens the Task, whose comment is a markdown editor`() = browse {
+        settings(null)
+        val (process, plane) = row("approving", """<bpmn:startEvent id="start" />""", """<bpmn:userTask id="wait" name="Wait" />""", """<bpmn:endEvent id="end" />""")
+        deploy(definitions("approving", "Approving", process, plane))
+        val run = http.post("/processes/approving/runs", mapOf()).path
+        page.navigate(url(run))
+        page.click("button[popovertarget=rename]")
+        page.fill("#new-name", "Renamed")
+        page.click("#rename button.primary")
+        assertThat(page.locator("#name")).hasText("Renamed")
+
+        eventually { page.locator("#diagram .djs-element[data-element-id='wait']").click() }
+        assertThat(page.locator("#drawer-head")).isVisible()
+        page.keyboard().press("Escape")
+        assertThat(page.locator("#drawer")).isHidden()
+
+        page.click("#tasks tr.click")
+        page.waitForURL { "/notifications/" in it }
+        assertThat(page.locator("#comment + .ed .cm-content")).isVisible() // markdown.js's editor, whose own test is above
     }
 
     @Test

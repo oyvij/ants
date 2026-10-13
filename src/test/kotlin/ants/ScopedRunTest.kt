@@ -55,7 +55,7 @@ class ScopedRunTest : AntsTest() {
     private fun result(output: String) =
         """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":{"outcome":"done","summary":"Done.","output":$output}}"""
 
-    private fun row(run: String) = Regex("""<tr>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
+    private fun row(run: String) = Regex("""<tr[^>]*>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
         .find(browser.get("/notifications").body)?.groupValues?.get(1)
 
     private fun entry(run: String): String {
@@ -85,9 +85,9 @@ class ScopedRunTest : AntsTest() {
         assertEquals(200, page.status, page.body)
         val run = page.path.removePrefix("/runs/")
         val push = entry(run)
-        assertContains(row(run)!!, "↑ [push]")
+        assertContains(row(run)!!, "<i>↑</i>[push]")
         browser.post(push, mapOf("action" to "push", "instruction" to ""))
-        eventually(20) { assertContains(browser.get("/runs/$run").body, "State: Completed") }
+        eventually(20) { assertContains(browser.get("/runs/$run").body, """id="state">Completed<""") }
         return run
     }
 
@@ -138,7 +138,7 @@ class ScopedRunTest : AntsTest() {
         val run = browser.post("/processes/wait-then-clone/runs", listOf("repos" to "you/app")).path.removePrefix("/runs/")
         entry(run)
         browser.post("/runs/$run/cancel", emptyMap())
-        assertContains(browser.get("/runs/$run").body, "State: Cancelled")
+        assertContains(browser.get("/runs/$run").body, """id="state">Cancelled<""")
         assertFalse(calls().any { it.startsWith("repo create") }, calls().toString())
         assertFalse(github.resolve("you").exists())
     }

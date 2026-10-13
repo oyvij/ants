@@ -20,7 +20,7 @@ class ShipWithMeTest : AntsTest() {
     private fun question(id: String) =
         """{"id":"$id","title":"Title $id","ask":"Ask $id?","context":"Settles $id.","recommendation":"Recommend $id.","why":"Because $id."}"""
 
-    private fun row(run: String) = Regex("""<tr>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
+    private fun row(run: String) = Regex("""<tr[^>]*>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
         .find(browser.get("/notifications").body)?.groupValues?.get(1)
 
     /** The Run's entry on the Notification list, once it is the one tagged [tag]. */
@@ -81,16 +81,16 @@ class ShipWithMeTest : AntsTest() {
         browser.get("/processes/ship_with_me")
         val run = browser.post("/processes/ship_with_me/runs", mapOf("prompt" to "Say hello in api", "branch" to "")).path.removePrefix("/runs/")
 
-        browser.post("${entry(run, "? [questions]")}/answers", mapOf("answer.who" to "Recommend who.", "answer.scope" to "Only admins."))
+        browser.post("${entry(run, "<i>?</i>[questions]")}/answers", mapOf("answer.who" to "Recommend who.", "answer.scope" to "Only admins."))
         eventually { assertEquals(2, claude.launches("grill").size) }
-        browser.post("${entry(run, "? [questions]")}/answers", mapOf("answer.format" to "Recommend format."))
-        browser.post(entry(run, "✓ [approve]"), mapOf("action" to "approve", "comment" to ""))
-        val review = entry(run, "± [review]")
+        browser.post("${entry(run, "<i>?</i>[questions]")}/answers", mapOf("answer.format" to "Recommend format."))
+        browser.post(entry(run, "<i>✓</i>[approve]"), mapOf("action" to "approve", "comment" to ""))
+        val review = entry(run, "<i>±</i>[review]")
         browser.post(review, mapOf("action" to "send-back", "comment" to "Shout one."))
         eventually(20) { assertEquals(2, claude.launches("walkthrough").size) }
-        browser.post(entry(run, "± [review]"), mapOf("action" to "approve", "comment" to ""))
-        browser.post(entry(run, "↑ [push]"), mapOf("action" to "push", "instruction" to ""))
-        eventually(20) { assertContains(browser.get("/runs/$run").body, "State: Completed") }
+        browser.post(entry(run, "<i>±</i>[review]"), mapOf("action" to "approve", "comment" to ""))
+        browser.post(entry(run, "<i>↑</i>[push]"), mapOf("action" to "push", "instruction" to ""))
+        eventually(20) { assertContains(browser.get("/runs/$run").body, """id="state">Completed<""") }
         return run
     }
 

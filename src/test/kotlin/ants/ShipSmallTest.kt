@@ -16,7 +16,7 @@ class ShipSmallTest : AntsTest() {
     private fun result(output: String) =
         """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":{"outcome":"done","summary":"Done.","output":$output}}"""
 
-    private fun row(run: String) = Regex("""<tr>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
+    private fun row(run: String) = Regex("""<tr[^>]*>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
         .find(browser.get("/notifications").body)?.groupValues?.get(1)
 
     private fun entry(run: String): String {
@@ -47,11 +47,11 @@ class ShipSmallTest : AntsTest() {
         claude.session("update-knowledge", 2, result("""{"written":true}"""))
         val run = start("Add a hello endpoint to api")
         val push = entry(run)
-        assertContains(row(run)!!, "↑ [push]")
+        assertContains(row(run)!!, "<i>↑</i>[push]")
         browser.post(push, mapOf("action" to "push", "instruction" to ""))
-        eventually(20) { assertContains(assertNotNull(row(run)), "✓ [approve]") } // the Notes
+        eventually(20) { assertContains(assertNotNull(row(run)), "<i>✓</i>[approve]") } // the Notes
         browser.post(entry(run), mapOf("action" to "approve", "comment" to ""))
-        eventually(20) { assertContains(browser.get("/runs/$run").body, "State: Completed") }
+        eventually(20) { assertContains(browser.get("/runs/$run").body, """id="state">Completed<""") }
         return run
     }
 
@@ -101,7 +101,7 @@ class ShipSmallTest : AntsTest() {
         )
         val run = start("Fix billing")
         val entry = entry(run)
-        assertContains(row(run)!!, "⚠ [stuck]")
+        assertContains(row(run)!!, "<i>⚠</i>[stuck]")
         assertContains(row(run)!!, "Scout")
         assertContains(browser.get(entry).body, "The prompt names billing")
     }

@@ -1,0 +1,3 @@
+@import ants.pill
+@param now: ants.Now
+!{var first = true}@for(entry in now.waiting)@if(!first)<br>@endif!{first = false}<span class="pill p-${entry.pill.first}">${entry.pill.second}</span> @template.tag(entry = entry) <span class="small">${entry.task}</span>@endfor@for(task in now.running)@if(!first)<br>@endif!{first = false}<b class="small">${task.task}</b>@if(task.subagents > 0) <span class="muted small" title="Subagents">⑂ ${task.subagents}</span>@endif@if(task.line != null)<div class="small">$unsafe{task.line}</div>@endif@endfor@if(now.waiting.isEmpty() && now.running.isEmpty())@for(task in now.quiet)@if(!first)<br>@endif!{first = false}<span class="pill p-quiet">${task.pill}</span> <span class="small muted">${task.task}</span>@endfor@endif

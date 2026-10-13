@@ -47,7 +47,7 @@ class SendAndStopTest : AntsTest() {
         eventually { assertContains(browser.get(transcript(run)).body, """<p class="user" id="e2">› Keep it short.</p>""") }
         assertContains(workspace(run).resolve("run-log.md").readText(), "Draft · Send\n\nKeep it short.\n")
         claude.release("release")
-        eventually { assertContains(browser.get("/runs/$run").body, "State: Completed") }
+        eventually { assertContains(browser.get("/runs/$run").body, """id="state">Completed<""") }
         assertContains(claude.launches("draft").single().stdin, """{"type":"user","message":{"role":"user","content":"Keep it short."}}""")
     }
 
@@ -58,7 +58,7 @@ class SendAndStopTest : AntsTest() {
         live(run)
         browser.post("${transcript(run)}/send", mapOf("message" to "Shorter, please."))
         claude.release("sent")
-        eventually { assertContains(browser.get("/runs/$run").body, "State: Completed") }
+        eventually { assertContains(browser.get("/runs/$run").body, """id="state">Completed<""") }
         assertContains(browser.get("/runs/$run").body, "Second draft.")
     }
 
@@ -71,7 +71,7 @@ class SendAndStopTest : AntsTest() {
         assertContains(refused.body, "Not sent: the Agent's session has ended")
         assertFalse("""<button class="primary">Send</button>""" in refused.body)
         claude.release("release")
-        eventually { assertContains(browser.get("/runs/$run").body, "State: Completed") }
+        eventually { assertContains(browser.get("/runs/$run").body, """id="state">Completed<""") }
         assertFalse("One more thing." in claude.launches("draft").single().stdin)
     }
 
@@ -90,7 +90,7 @@ class SendAndStopTest : AntsTest() {
         assertEquals(transcript(run), browser.post("${transcript(run)}/stop", emptyMap()).path)
         var entry = ""
         eventually {
-            val row = assertNotNull(Regex("""<tr>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
+            val row = assertNotNull(Regex("""<tr[^>]*>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
                 .find(browser.get("/notifications").body)).groupValues[1]
             entry = Regex("""href="(/notifications/[^"]+)"""").find(row)!!.groupValues[1]
         }
@@ -102,7 +102,7 @@ class SendAndStopTest : AntsTest() {
         assertContains(claude.launches("draft")[0].stdin, """"request":{"subtype":"interrupt"}}""")
 
         browser.post(entry, mapOf("action" to "continue", "instruction" to "Carry on, but shorter."))
-        eventually { assertContains(browser.get("/runs/$run").body, "State: Completed") }
+        eventually { assertContains(browser.get("/runs/$run").body, """id="state">Completed<""") }
         val (first, second) = claude.launches("draft")
         assertEquals(first.flag("--session-id"), second.flag("--resume"))
     }
@@ -115,7 +115,7 @@ class SendAndStopTest : AntsTest() {
         browser.post("${transcript(run)}/stop", emptyMap())
         var row = ""
         eventually {
-            row = assertNotNull(Regex("""<tr>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
+            row = assertNotNull(Regex("""<tr[^>]*>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
                 .find(browser.get("/notifications").body)).groupValues[1]
         }
         return row
@@ -124,13 +124,13 @@ class SendAndStopTest : AntsTest() {
     @Test
     fun `after Stop only error_during_execution is stopped, any other result without a Result fails`() {
         val row = stopThen("""{"type":"result","subtype":"error_max_turns","is_error":true,"session_id":"${'$'}SESSION"}""", "exit 1")
-        assertContains(row, "✕ [failed]")
+        assertContains(row, "<i>✕</i>[failed]")
         assertContains(row, "claude ended without a Result: error_max_turns")
     }
 
     @Test
     fun `a CLI that exits with no result after Stop is stopped`() {
-        assertContains(stopThen("exit 1"), "■ [stopped]")
+        assertContains(stopThen("exit 1"), "<i>■</i>[stopped]")
     }
 
     @Test
@@ -148,7 +148,7 @@ class SendAndStopTest : AntsTest() {
         val pids = record.readText().trim().split(" ").map(String::toLong)
         var row = ""
         eventually {
-            row = assertNotNull(Regex("""<tr>((?:(?!</tr>).)*?/runs/$cancelled"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
+            row = assertNotNull(Regex("""<tr[^>]*>((?:(?!</tr>).)*?/runs/$cancelled"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
                 .find(browser.get("/notifications").body)).groupValues[1]
         }
         // One slot now, which the hanging draft holds, so the next Run's Task waits for it.
@@ -158,7 +158,7 @@ class SendAndStopTest : AntsTest() {
         assertEquals(1, claude.launches("draft").size)
 
         browser.post(Regex("""href="(/notifications/[^"]+)"""").find(row)!!.groupValues[1], mapOf("action" to "cancel", "instruction" to ""))
-        eventually { assertContains(browser.get("/runs/$next").body, "State: Completed") }
+        eventually { assertContains(browser.get("/runs/$next").body, """id="state">Completed<""") }
         for (pid in pids) assertFalse(ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false), "process $pid")
     }
 }

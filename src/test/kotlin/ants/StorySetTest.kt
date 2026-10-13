@@ -61,7 +61,7 @@ class StorySetTest : AntsTest() {
         return run
     }
 
-    private fun row(run: String) = Regex("""<tr>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
+    private fun row(run: String) = Regex("""<tr[^>]*>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
         .find(browser.get("/notifications").body)?.groupValues?.get(1)
 
     private fun entry(run: String): String {
@@ -181,7 +181,7 @@ class StorySetTest : AntsTest() {
         assertContains(commented.body, """<a href="#s1-2">The first word is shouted › The rest</a> <span class="mono">repos/api/long.txt:9-10 (new)</span>: Fine.""")
 
         browser.post(entry, mapOf("action" to "approve", "comment" to ""))
-        eventually { assertContains(browser.get("/runs/$run").body, "State: Completed") }
+        eventually { assertContains(browser.get("/runs/$run").body, """id="state">Completed<""") }
         val prompt = JsonMapper.shared().readTree(claude.launches("ship").single().stdin)["message"]["content"].asString()
         val verdict = JsonMapper.shared().readValue(prompt.substringAfterLast("\n\n"), Map::class.java)["verdict"] as Map<*, *>
         assertEquals(

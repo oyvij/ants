@@ -39,9 +39,9 @@ sealed class Entry(val id: String, val tag: String, val process: String, val tas
     val waited: String
         get() = Duration.between(since.toInstant(), Instant.now()).let {
             when {
-                it.toDays() > 0 -> "${it.toDays()} d ${it.toHoursPart()} h"
-                it.toHours() > 0 -> "${it.toHours()} h ${it.toMinutesPart()} min"
-                else -> "${it.toMinutes()} min"
+                it.toDays() > 0 -> "${it.toDays()}d ${it.toHoursPart()}h"
+                it.toHours() > 0 -> "${it.toHours()}h ${it.toMinutesPart()}m"
+                else -> "${it.toMinutes()}m"
             }
         }
 
@@ -143,7 +143,11 @@ class Notifications(
                     "review"
                 }
                 UserTaskKind.APPROVE -> {
-                    model.addAttribute("shown", shown(names.runWorkspace(entry.run), runtime.getVariableLocal(task.executionId, SHOW)))
+                    val show = runtime.getVariableLocal(task.executionId, SHOW)
+                    val workspace = names.runWorkspace(entry.run)
+                    model.addAttribute("shown", shown(workspace, show))
+                    model.addAttribute("file", (show as? String)?.takeIf { inWorkspace(workspace, it) != null })
+                    model.addAttribute("view", view(entry))
                     "approve"
                 }
             }
@@ -156,7 +160,18 @@ class Notifications(
             model.addAttribute("repos", changes(push.outgoing(entry.run), cloneRepos::git))
             return "push"
         }
+        model.addAttribute("view", view(entry))
         return "notification"
+    }
+
+    /** [entry]'s Task as its page heads it, with its Transcript, if it has one. */
+    private fun view(entry: TaskEntry): TaskView {
+        val instance = runtime.createProcessInstanceQuery().processInstanceId(entry.instance).singleResult()
+        val element = repository.getBpmnModelInstance(instance.processDefinitionId).getModelElementById<FlowElement>(entry.activity)
+        val transcript = Transcript.read(Transcript.file(names.runWorkspace(entry.run), entry.taskId)).first.takeIf { it.isNotEmpty() }
+            ?.let { lines -> Transcript().apply { lines.forEach(::add) } }
+        val (state, label) = TaskView.state(entry)
+        return TaskView(entry.taskId, element, state, label, entry, null, transcript, transcript?.tokens ?: 0, "/notifications/${entry.id}")
     }
 
     /** What [entry]'s page shows beyond its summary, such as what a stuck Agent needs. */

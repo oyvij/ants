@@ -24,7 +24,7 @@ class ShipVariantsTest : AntsTest() {
     /** A Round asking [question], naming web as a repo the work needs. */
     private val round = result("""{"questions":[$question],"repos":["web"]}""")
 
-    private fun row(run: String) = Regex("""<tr>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
+    private fun row(run: String) = Regex("""<tr[^>]*>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
         .find(browser.get("/notifications").body)?.groupValues?.get(1)
 
     /** Every tag the Run's Notification entries have shown while a test waited. */
@@ -80,11 +80,11 @@ class ShipVariantsTest : AntsTest() {
 
     /** Approves the Spec when [spec], then the changes, Pushes and approves the Notes, and waits for the Run to complete. */
     private fun finish(run: String, spec: Boolean = true) {
-        if (spec) browser.post(entry(run, "✓ [approve]"), mapOf("action" to "approve", "comment" to ""))
-        browser.post(entry(run, "± [review]", seconds = 30), mapOf("action" to "approve", "comment" to ""))
-        browser.post(entry(run, "↑ [push]"), mapOf("action" to "push", "instruction" to ""))
-        browser.post(entry(run, "✓ [approve]"), mapOf("action" to "approve", "comment" to ""))
-        eventually(20) { assertContains(browser.get("/runs/$run").body, "State: Completed") }
+        if (spec) browser.post(entry(run, "<i>✓</i>[approve]"), mapOf("action" to "approve", "comment" to ""))
+        browser.post(entry(run, "<i>±</i>[review]", seconds = 30), mapOf("action" to "approve", "comment" to ""))
+        browser.post(entry(run, "<i>↑</i>[push]"), mapOf("action" to "push", "instruction" to ""))
+        browser.post(entry(run, "<i>✓</i>[approve]"), mapOf("action" to "approve", "comment" to ""))
+        eventually(20) { assertContains(browser.get("/runs/$run").body, """id="state">Completed<""") }
         assertEquals("01", git(api.remote, "show", "add-hello:01.txt"))
     }
 
@@ -117,7 +117,7 @@ class ShipVariantsTest : AntsTest() {
         claude.session("answer-round", result("""{"answers":[{"id":"who","answer":"Only admins.","why":"Because."}]}"""))
         val run = start("ship-by-proxy", "ship_by_proxy")
 
-        val entry = entry(run, "? [questions]", seconds = 60)
+        val entry = entry(run, "<i>?</i>[questions]", seconds = 60)
         assertEquals(10, claude.launches("grill").size)
         assertEquals(9, claude.launches("answer-round").size)
         assertContains(browser.get(entry).body, "Round 10")

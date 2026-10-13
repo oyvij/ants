@@ -82,24 +82,35 @@ class LookTest : AntsTest() {
                     page.addInitScript("addEventListener('DOMContentLoaded', () => document.querySelector('details.proto')?.remove())")
                     for (pair in pairs) shoot(page, pair.prototype, "${pair.name}/prototype-$theme") { pair.script?.let { page.evaluate(it) } }
                     shoot(page, "$prototype#/login", "login/prototype-$theme")
+                    shoot(page, "$prototype#/runs/dark-mode-toggle", "drawer/prototype-$theme") { evaluate("openDrawer('dark-mode-toggle', 'grill')") }
                 }
                 chromium.newContext(options).use { context ->
                     val page = context.newPage()
+                    page.onConsoleMessage { if (it.type() == "error") println("LookTest: ${page.url()}: ${it.text()}") }
+                    page.onPageError { println("LookTest: ${page.url()}: $it") }
                     shoot(page, "http://127.0.0.1:$port/login", "login/app-$theme")
                     logIn(page)
                     for (pair in pairs) shoot(page, "http://127.0.0.1:$port${pair.app}", "${pair.name}/app-$theme") { pair.keys?.split(" ")?.forEach { page.keyboard().press(it) } }
+                    // The Run page's drawer, open on its running Agent Task.
+                    shoot(page, "http://127.0.0.1:$port/runs/${app.getValue("running")}", "drawer/app-$theme") {
+                        locator("#diagram .djs-element[data-element-id='draft']").click()
+                        waitForSelector("#drawer-head")
+                    }
                 }
             }
         }
     }
 
     /** Opens [url] in a fresh document, lets its diagrams and editors load, does [then], and saves it as [name]. */
-    private fun shoot(page: Page, url: String, name: String, then: () -> Unit = {}) {
+    private fun shoot(page: Page, url: String, name: String, then: (Page.() -> Unit)? = null) {
         page.navigate("about:blank")
         page.navigate(url)
         page.waitForTimeout(2500.0) // the pages' streams never let the network idle; bpmn-js and CodeMirror load and lay out
-        then()
-        page.waitForTimeout(300.0)
+        then?.let {
+            // A step that fails still leaves its screenshot, to see why.
+            runCatching { page.it() }.onFailure { println("LookTest: $name: ${it.message}") }
+            page.waitForTimeout(500.0) // the drawer slides in
+        }
         page.screenshot(Page.ScreenshotOptions().setPath(look.resolve("$name.png")).setFullPage(true))
     }
 
@@ -218,7 +229,7 @@ class LookTest : AntsTest() {
     private fun entry(run: String): String {
         var path = ""
         eventually(30) {
-            val row = Regex("""<tr>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL).find(http.get("/notifications").body)
+            val row = Regex("""<tr[^>]*>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL).find(http.get("/notifications").body)
             path = Regex("""href="(/notifications/[^"]+)"""").find(assertNotNull(row, "$run isn't on the Notification list").groupValues[1])!!.groupValues[1]
         }
         return path

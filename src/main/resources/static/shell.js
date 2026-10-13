@@ -1,6 +1,6 @@
 // What every page's shell does: the page's one stream; the Notification list count, live in the sidebar, the tab title
 // and the app badge (where the browser has one; 0 clears it); the sidebar's Runs line, Usage limit notice and update
-// notice, live too; the modal's click outside; the toast's timeout; and the diagram box's buttons.
+// notice, live too; a clickable row; the modal's click outside; the toast's timeout; and the diagram box's buttons.
 
 // A page holds one SSE connection, /live (a browser opens at most 6 per host, shared by all its tabs): the sidebar's
 // events on every page, and the page's own. A page script (a module, so it runs after this one) handles its events with
@@ -42,6 +42,12 @@ if (ask && navigator.setAppBadge && window.Notification?.permission === 'default
 for (const link of document.querySelectorAll('nav.side > a')) {
     if (link.pathname === '/' ? location.pathname === '/' : location.pathname.startsWith(link.pathname)) link.classList.add('on');
 }
+
+// A clickable row (tr.click) opens its data-href, unless the click was on a link, button or form of its own.
+document.addEventListener('click', event => {
+    const row = event.target.closest('tr.click[data-href]');
+    if (row && !event.target.closest('a, button, form')) location.href = row.dataset.href;
+});
 
 // A toast goes by itself after a while; its OK button takes it away sooner.
 setTimeout(() => document.querySelector('.toast')?.remove(), 12000);

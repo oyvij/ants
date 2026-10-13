@@ -44,9 +44,9 @@ class PreRun(
      * isn't in the settings is the only reason, and so is [CONFIGURE_VAULT] without the Profile's Vault, since such a
      * Run needs one; with Repos the Run is scoped to them, and needs neither the Vault nor the Source map. Each repo
      * must answer `git ls-remote`, and each new repo's name must be free. The Processes it calls are checked too, since
-     * they run inside its Run.
+     * they run inside its Run. A page checking many Processes at once asks the Claude login ([claudeLogin]) once.
      */
-    fun reasons(definition: ProcessDefinition, repos: List<String>, profile: String?): List<String> {
+    fun reasons(definition: ProcessDefinition, repos: List<String>, profile: String?, claudeLogin: () -> Map<*, *> = launcher::login): List<String> {
         val named = repos.distinct()
         val source = RunSource.of(named, profile)
         val vault = source.vault(settings)
@@ -81,7 +81,7 @@ class PreRun(
             for (agent in agents) Agent.sandboxError(agent.cli, agent.sandbox)?.let { add("The Agent ${agent.name}: $it") }
             for (name in named) if (name !in known && name !in created && CloneRepos.url(name) == null) add(if (sourceMap == null) "$name: no Source map is configured (Settings)." else "The Source map $sourceMap has no repo $name.")
             if (agents.any { it.cli == "claude" } && "claude" !in missing) {
-                val login = launcher.login()
+                val login = claudeLogin()
                 val apiKey = login["apiKeySource"]?.toString()?.takeIf { it != "none" }
                 if (login["loggedIn"] != true) add("${AgentLauncher.LOST_LOGIN}.")
                 else if (apiKey != null) add("An API key is in use (apiKeySource: $apiKey).")

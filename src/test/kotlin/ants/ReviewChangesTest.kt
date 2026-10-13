@@ -37,7 +37,7 @@ class ReviewChangesTest : AntsTest() {
     private fun clone(run: String, name: String): Path = workspace(run).resolve("repos/$name")
 
     /** The Run's row on the Notification list, or null. */
-    private fun row(run: String) = Regex("""<tr>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
+    private fun row(run: String) = Regex("""<tr[^>]*>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
         .find(browser.get("/notifications").body)?.groupValues?.get(1)
 
     /** The path of the Run's entry, once it is on the Notification list. */
@@ -101,7 +101,7 @@ class ReviewChangesTest : AntsTest() {
         claude.session("mend", 2, result("""{"review":"Shortened it."}"""))
         browser.post(again, mapOf("action" to "send-back", "comment" to "Shorter."))
         browser.post(entry(run), mapOf("action" to "approve", "comment" to ""))
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
         val second = claude.launches("mend")[1]
         assertEquals(first.flag("--session-id"), second.flag("--resume"))
         assertEquals("""{"type":"user","message":{"role":"user","content":"Shorter."}}""", second.stdin)
@@ -122,7 +122,7 @@ class ReviewChangesTest : AntsTest() {
         browser.post("$entry/comments", issue + ("type" to "NOTE"))
 
         browser.post(entry, mapOf("action" to "approve", "comment" to "Lovely."))
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
         val prompt = JsonMapper.shared().readTree(claude.launches("ship").single().stdin)["message"]["content"].asString()
         val verdict = JsonMapper.shared().readValue(prompt.substringAfterLast("\n\n"), Map::class.java)["verdict"]
         assertEquals(
@@ -147,7 +147,7 @@ class ReviewChangesTest : AntsTest() {
     fun `a Review changes' Task drawer leads to its page`() {
         val run = start()
         val drawer = assertNotNull(browser.events("run=$run&drawer=changes", "drawer").poll(10, TimeUnit.SECONDS))
-        assertContains(drawer, """<a href="${entry(run)}">Review the changes</a>""")
+        assertContains(drawer, """href="${entry(run)}">Review the changes</a>""")
         assertFalse("Continue the session" in drawer)
     }
 

@@ -2,81 +2,69 @@
 @param run: String
 @param runName: String
 @param task: String
-@param name: String
-@param shown: ants.Shown?
+@param view: ants.TaskView
 @param transcript: ants.Transcript
-@param entry: ants.TaskEntry?
 @param details: String?
 @param push: Boolean
 @param sendHint: String?
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
-<section id="drawer-head">
-    <h2>${name}</h2>
-    <p>${runName}</p>
-    <p>@if(entry != null)${entry.icon} ${entry.tag} ${entry.summary}@elseif(shown != null)${shown.badge ?: shown.state}@else not reached@endif · ${tokens(transcript.tokens)}</p>
-</section>
-<section id="drawer-so-far">
-    <h3>So far</h3>
-    <p>${transcript.soFar ?: "Nothing yet."}</p>
-</section>
-<section id="drawer-checklist">
-    <h3>The Agent's checklist</h3>
-@if(transcript.todos.isEmpty())
-    <p>No checklist yet.</p>
-@else
-    <ul>
-@for(todo in transcript.todos.values)
-        <li class="${todo.status}">${todo.subject}</li>
-@endfor
-    </ul>
-@endif
-</section>
+!{val entry = view.entry}
+<header id="drawer-head" class="dh">
+    <div class="muted small">${runName} · @if(view.kind == "agent")@template.ent(agent = view.agent, skill = view.skill) · ${tokens(transcript.tokens)}@elseif(view.kind == "user")User Task@else Built-in Task@endif</div>
+    <h3>${view.name}</h3>
+    <div class="row">@if(view.state == "running" && transcript.line != null)<span class="small">$unsafe{transcript.line}</span>@else$unsafe{view.badge}@if(view.entry != null) @template.tag(entry = view.entry)@endif@endif<span class="grow"></span>@if(view.kind == "agent")<a class="small" href="/runs/${run}/tasks/${task}/transcript">Full Transcript →</a>@endif</div>
+</header>
+@if(view.kind == "agent")
+<section id="drawer-so-far">$unsafe{transcript.html("sofar")}</section>
 <section id="drawer-output">
     <h3>Latest output</h3>
-    $unsafe{transcript.output ?: "<p>None yet.</p>"}
+    <div class="tr">$unsafe{transcript.output ?: "<p class=\"muted\">None yet.</p>"}</div>
 </section>
-@if(entry != null)
-<section id="drawer-action">
-@if(details != null)
-    <h3>@if(entry.tag == "[stuck]")What the Agent needs@else Details@endif</h3>
-    <pre>${details}</pre>
+@elseif(view.kind == "user")
+<section id="drawer-so-far"><div class="sofar">${view.summary ?: "Waits on you, or you did it."}</div></section>
+@else
+<section id="drawer-so-far"><div class="sofar">Ants does this itself; there is no Transcript.</div></section>
 @endif
+@if(entry != null && details != null)
+<section id="drawer-needs" class="card">
+    <h3>@if(entry.tag == "[stuck]")What it needs@elseif(entry.tag == "[stopped]")Where it stopped@else Why it failed@endif</h3>
+    @if(entry.tag == "[stuck]")$unsafe{ants.Transcript.markdown(details)}@else<pre>${details}</pre>@endif
+</section>
+@endif
+@if(entry != null)
+<footer id="drawer-action" class="df">
     @if(entry.tag == "[approve]")
-    <p><a href="/notifications/${entry.id}">Approve or send back</a></p>
+    <a class="btn primary" href="/notifications/${entry.id}">Approve or send back</a>
     @elseif(push)
-    <p><a href="/notifications/${entry.id}">@if(entry.tag == "[push]")Push@else Continue@endif or cancel the Run</a></p>
+    <a class="btn primary" href="/notifications/${entry.id}">@if(entry.tag == "[push]")Push@else Continue@endif or cancel the Run</a>
     @elseif(entry.tag == "[questions]")
-    <p><a href="/notifications/${entry.id}">Answer the Round</a></p>
+    <a class="btn primary" href="/notifications/${entry.id}">Answer the Round</a>
     @elseif(entry.tag == "[review]")
-    <p><a href="/notifications/${entry.id}">Review the changes</a></p>
+    <a class="btn primary" href="/notifications/${entry.id}">Review the changes</a>
     @else
     <form method="post" action="/notifications/${entry.id}">
         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
         <input type="hidden" name="back" value="run">
-        <label>Comment <textarea name="instruction" required data-markdown></textarea></label>
-        <button class="primary" name="action" value="continue">Continue the session</button>
-        <button name="action" value="fresh" formnovalidate>Start fresh</button>
-        @if(entry.tag == "[failed]")<button class="danger" name="action" value="cancel" formnovalidate>Cancel the Run</button>@endif
+        <textarea name="instruction" data-markdown required placeholder="Your instruction: required to continue the session, optional when starting fresh." aria-label="Your instruction"></textarea>
+        <div class="row">
+            @if(entry.tag == "[failed]")<button class="danger" name="action" value="cancel" formnovalidate>Cancel the Run</button>@endif
+            <span class="grow"></span>
+            <button name="action" value="fresh" formnovalidate>Start fresh</button>
+            <button class="primary" name="action" value="continue">Continue the session</button>
+        </div>
     </form>
     @endif
-</section>
-@endif
-@if(sendHint != null)
-<section id="drawer-send">
+</footer>
+@elseif(sendHint != null)
+<footer id="drawer-send" class="df">
     <form method="post" action="/runs/${run}/tasks/${task}/transcript/send">
         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
         <input type="hidden" name="back" value="run">
-        <label>Comment <textarea name="message" required data-markdown></textarea></label>
-        <button class="primary">Send</button>
-        <small>${sendHint}</small>
+        <textarea name="message" data-markdown required placeholder="Comment to the Agent. ${sendHint}" aria-label="Comment"></textarea>
+        <div class="row"><span class="grow"></span>
+            <button formaction="/runs/${run}/tasks/${task}/transcript/stop" formnovalidate>Stop</button>
+            <button class="primary">Send</button>
+        </div>
     </form>
-    <form method="post" action="/runs/${run}/tasks/${task}/transcript/stop">
-        <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
-        <input type="hidden" name="back" value="run">
-        <button class="danger">■ Stop</button>
-    </form>
-</section>
+</footer>
 @endif
-<section id="drawer-links">
-    <a href="/runs/${run}/tasks/${task}/transcript">Transcript</a>
-</section>
