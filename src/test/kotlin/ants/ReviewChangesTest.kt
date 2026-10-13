@@ -106,7 +106,7 @@ class ReviewChangesTest : AntsTest() {
         assertEquals(first.flag("--session-id"), second.flag("--resume"))
         assertEquals("""{"type":"user","message":{"role":"user","content":"Shorter."}}""", second.stdin)
 
-        val report = browser.get("/runs/$run/report").body
+        val report = browser.report(run)
         assertContains(report, "<h2>Review</h2>")
         assertContains(report, "<h3>fix</h3>\n<p>Shortened it.</p>") // a Task's latest review
     }

@@ -17,6 +17,7 @@ import java.nio.file.Path
 import java.util.regex.Pattern
 import kotlin.io.path.createDirectories
 import kotlin.io.path.deleteExisting
+import kotlin.io.path.deleteIfExists
 import kotlin.io.path.readText
 import kotlin.io.path.writeText
 import kotlin.test.assertContains
@@ -773,6 +774,41 @@ class BrowserTest : AntsTest() {
             assertEquals(mapOf("side" to "/tmp/side", "new" to "/tmp/new", "more" to "/tmp/more"), saved["vaults"])
             assertEquals("more", saved["default-vault"])
             assertEquals(listOf("/tmp/b"), saved["agent-folders"])
+        }
+    }
+
+    @Test
+    fun `on Settings, a Secret is added with a value the page never shows, and a Protected Command picks Secrets by label`() = browse {
+        settings(null, "secrets:\n  npm: [NPM_TOKEN]\n")
+        val secrets = home.resolve("secrets.yaml").apply { writeText("npm: tok-old\n") }
+        try {
+            page.navigate(url("/settings"))
+            assertFalse("tok-old" in page.content())
+            fun card(title: String) = page.locator(".card", Page.LocatorOptions().setHas(page.locator("h3:text-is('$title')")))
+            val card = card("Secrets")
+            assertThat(card.locator("[aria-label=Value]").first()).hasAttribute("placeholder", "••••")
+            card.getByText("＋ Add").click()
+            val added = card.locator(".listed > .row:visible").nth(1)
+            added.locator("[aria-label=Label]").fill("maven")
+            added.locator("[aria-label=Value]").fill("tok-mvn")
+            added.locator("[aria-label='Variable names']").fill("MAVEN_TOKEN, MVN_TOKEN")
+            val commands = card("Protected Commands")
+            commands.getByText("＋ Add").click()
+            val command = commands.locator(".listed > .row:visible").first()
+            command.locator("[aria-label='Command prefix']").fill("yarn")
+            command.locator("select").selectOption("npm")
+            page.locator(".ph button.primary").click()
+            eventually {
+                val saved = org.yaml.snakeyaml.Yaml().load<Map<*, *>>(home.resolve("settings.yaml").readText())
+                assertEquals(mapOf("npm" to listOf("NPM_TOKEN"), "maven" to listOf("MAVEN_TOKEN", "MVN_TOKEN")), saved["secrets"])
+                assertEquals(mapOf("yarn" to listOf("npm")), saved["protected-commands"])
+                assertEquals(mapOf("npm" to "tok-old", "maven" to "tok-mvn"), org.yaml.snakeyaml.Yaml().load<Map<*, *>>(secrets.readText()))
+            }
+            page.navigate(url("/settings"))
+            assertFalse("tok-" in page.content())
+            assertThat(card("Protected Commands").locator("select").first().locator("option")).hasText(arrayOf("npm", "maven")) // once saved, offered
+        } finally {
+            secrets.deleteIfExists()
         }
     }
 

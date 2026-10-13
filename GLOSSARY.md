@@ -94,6 +94,16 @@ can name its Profile and the start form picks the Run's; the Run then uses that 
 whether or not its repos are picked.
 _Avoid_: group, context, account
 
+**Secret**:
+A value the user gives Ants, such as a registry token, under one or more variable names, that Protected Commands use
+and Agents never see.
+_Avoid_: credential, env var, key
+
+**Protected Command**:
+A command prefix, such as `yarn` or `mvn deploy`, that Agents may ask Ants to run with any arguments, in their Run
+workspace, with the Secrets linked to it; the Agent gets its output, never the Secrets.
+_Avoid_: build, command, script
+
 **Result**:
 What an Agent hands back when its Task ends: either done, carrying what the Task promised, or stuck,
 saying what it needs from the user.

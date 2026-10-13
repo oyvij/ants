@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.yaml.snakeyaml.Yaml
 import java.nio.file.Files
+import java.nio.file.attribute.PosixFilePermissions
 import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
@@ -174,6 +175,55 @@ class SettingsTest : AntsTest() {
         val refused = press("save", lists + mapOf("profiles[0].name" to "odd", "profiles[0].vault" to "nowhere", "profiles[0].source-map" to "work"))
         assertContains(refused, "The Profile odd needs a Vault and a Source map from the lists above.")
         assertEquals(mapOf("home" to mapOf("vault" to "private", "source-map" to "private")), yaml()["profiles"])
+    }
+
+    @Test
+    fun `Secrets keep their values in secrets yaml, never on the page or in settings yaml, and Protected Commands link them by label`() {
+        val secrets = home.resolve("secrets.yaml")
+        try {
+            fun save(vararg form: Pair<String, String>): String {
+                browser.get("/settings")
+                return browser.post("/settings", form.toList() + ("action" to "save")).body.replace("&#34;", "\"")
+            }
+            save(
+                "secrets[0].label" to "npm", "secrets[0].value" to "tok-9f3a", "secrets[0].names" to "YARN_NPM_AUTH_TOKEN, NPM_TOKEN", "secrets[0].was" to "",
+                "secrets[1].label" to "maven", "secrets[1].value" to "tok-77mv", "secrets[1].names" to "MAVEN_TOKEN", "secrets[1].was" to "",
+                "protected-commands[0].prefix" to "yarn", "protected-commands[0].secrets" to "npm",
+                "protected-commands[1].prefix" to "mvn deploy", "protected-commands[1].secrets" to "npm", "protected-commands[1].secrets" to "maven",
+            )
+            assertEquals(mapOf("npm" to listOf("YARN_NPM_AUTH_TOKEN", "NPM_TOKEN"), "maven" to listOf("MAVEN_TOKEN")), yaml()["secrets"])
+            assertEquals(mapOf("yarn" to listOf("npm"), "mvn deploy" to listOf("npm", "maven")), yaml()["protected-commands"])
+            assertFalse("tok-" in file.readText())
+            assertEquals(mapOf("npm" to "tok-9f3a", "maven" to "tok-77mv"), Yaml().load<Map<*, *>>(secrets.readText()))
+            assertEquals("rw-------", PosixFilePermissions.toString(Files.getPosixFilePermissions(secrets)))
+            val page = browser.get("/settings").body.replace("&#34;", "\"")
+            assertFalse("tok-" in page)
+            assertContains(page, """name="secrets[0].label" value="npm"""")
+            assertContains(page, """name="secrets[0].names" value="YARN_NPM_AUTH_TOKEN, NPM_TOKEN"""")
+            assertContains(page, """name="secrets[0].value" placeholder="••••"""")
+            assertContains(page, """name="protected-commands[1].prefix" value="mvn deploy"""")
+            assertContains(page, """<option selected>maven</option>""")
+
+            // Renamed with the value left blank, it keeps its value; the one removed loses its value.
+            save(
+                "secrets[0].label" to "registry", "secrets[0].value" to "", "secrets[0].names" to "NPM_TOKEN", "secrets[0].was" to "npm",
+                "secrets[1].label" to "", "secrets[1].value" to "", "secrets[1].names" to "", "secrets[1].was" to "maven",
+                "protected-commands[0].prefix" to "yarn", "protected-commands[0].secrets" to "registry",
+            )
+            assertEquals(mapOf("registry" to "tok-9f3a"), Yaml().load<Map<*, *>>(secrets.readText()))
+            assertEquals(mapOf("yarn" to listOf("registry")), yaml()["protected-commands"])
+
+            val refused = listOf(
+                save("secrets[0].label" to "registry", "secrets[0].names" to "npm-token", "secrets[0].was" to "registry") to
+                    "A variable name is capitals, digits and underscores, such as NPM_TOKEN: the variable the command reads the Secret from.",
+                save("secrets[0].label" to "new", "secrets[0].names" to "NEW_TOKEN", "secrets[0].was" to "") to "Every Secret needs a label, a value and a variable name.",
+                save("protected-commands[0].prefix" to "yarn", "protected-commands[0].secrets" to "gone") to "The Protected Command yarn needs Secrets from the list above.",
+            )
+            for ((page, alert) in refused) assertContains(page, alert)
+            assertEquals(mapOf("registry" to "tok-9f3a"), Yaml().load<Map<*, *>>(secrets.readText()))
+        } finally {
+            secrets.deleteIfExists()
+        }
     }
 
     @Test

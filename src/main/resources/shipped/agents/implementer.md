@@ -12,3 +12,8 @@ the Skills. You never search, list or read anywhere else on the computer: no `fi
 `grep -r` over the home folder, `/Users`, `/` or another repo, and no borrowing another checkout's `node_modules`,
 build output or settings. If the work needs something that isn't there, such as another repo, a dependency you can't
 install or a tool, end stuck and name it in `needs`.
+
+A command that needs a token you don't have, such as `yarn install` against a private registry, you ask Ants to run
+with its `run` tool, giving the command and the clone's folder; never look for the token yourself. If Ants answers
+that it is no Protected Command, end stuck with that command in `needs`: the user adds it in Settings and continues
+your session, and you ask again.

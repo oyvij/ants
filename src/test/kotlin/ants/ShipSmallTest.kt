@@ -68,7 +68,7 @@ class ShipSmallTest : AntsTest() {
         val (proposed, written) = claude.launches("update-knowledge")
         for (text in listOf("""\"spec\":\"proposal/proposal.md\"""", """\"review\":\"No findings.\"""", """\"approval\":null""")) assertContains(proposed.stdin, text)
         assertContains(written.stdin, """\"approval\":{\"approved\":true""")
-        val report = browser.get("/runs/$run/report").body
+        val report = browser.report(run)
         assertContains(report, "<h2>Push</h2>")
         assertContains(report, "<h2>Pull requests</h2>")
         assertContains(report, """<li><strong>api</strong> · <a rel="nofollow" href="https://github.com/oyvij/api/pull/7">https://github.com/oyvij/api/pull/7</a></li>""")
@@ -77,7 +77,7 @@ class ShipSmallTest : AntsTest() {
     @Test
     fun `the shipped Agents get the tool allow-lists the spec gives them`() {
         shipSmall()
-        fun tools(skill: String) = claude.launches(skill).first().let { it.flag("--tools") to it.flag("--allowedTools") }
+        fun tools(skill: String) = claude.launches(skill).first().let { it.flag("--tools") to it.flag("--allowedTools")?.removeSuffix(",mcp__ants__run") } // every claude Task has the run tool
 
         // claude checks a Write against Edit rules and ignores a Write(path) rule, so the scout's limit goes out as both
         assertEquals("Read,Grep,Glob,Write,Agent" to "Read,Grep,Glob,Write(scout/**),Agent(knowledge-searcher),Edit(scout/**)", tools("scout"))

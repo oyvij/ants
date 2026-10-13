@@ -118,7 +118,7 @@ class AnswerRoundTest : AntsTest() {
         assertContains(index, "[Who exports](${file.fileName}#who) · Settles who. · Grill · ")
         assertContains(index, "[Which invoices](${file.fileName}#scope) · Settles scope. · Grill · ")
 
-        val report = browser.get("/runs/$run/report").body
+        val report = browser.report(run)
         assertContains(report, "Answer the Round · Round 1")
         assertContains(report, "Which invoices: Only admins. (written)")
     }
@@ -156,7 +156,7 @@ class AnswerRoundTest : AntsTest() {
             two.stdin,
         )
         assertEquals(emptyList(), historyOf(run))
-        val report = browser.get("/runs/$run/report").body
+        val report = browser.report(run)
         for (text in listOf("Answer for me · Round 1", "Who exports: Admins. (agent)", "Which invoices: Recommend scope. (recommended)")) assertContains(report, text)
     }
 
@@ -177,7 +177,7 @@ class AnswerRoundTest : AntsTest() {
         )
         assertContains(browser.post("$entry/answers", mapOf("answer.who" to "Everyone.", "answer.scope" to "All.")).body, "Nothing is waiting on you here any more")
         assertEquals(emptyList(), historyOf(run))
-        val report = browser.get("/runs/$run/report").body
+        val report = browser.report(run)
         for (text in listOf("Accept recommendations · Round 1", "Who exports: Recommend who. (recommended)")) assertContains(report, text)
     }
 
@@ -201,7 +201,7 @@ class AnswerRoundTest : AntsTest() {
         assertContains(file.readText(), "Only admins.")
         assertFalse("Recommend who." in file.readText().substringAfter("**Answer**"))
 
-        val report = browser.get("/runs/$run/report").body
+        val report = browser.report(run)
         val (mine, others) = report.substringAfter("<h2>Rounds</h2>").split("<h2>Answers you didn't give</h2>")
         for (text in listOf("Answer the Round · Round 10", "Who exports: Only admins. (written)")) assertContains(mine, text)
         assertFalse("recommended" in mine)
