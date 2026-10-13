@@ -84,7 +84,7 @@ class ShipVariantsTest : AntsTest() {
         browser.post(entry(run, "± [review]", seconds = 30), mapOf("action" to "approve", "comment" to ""))
         browser.post(entry(run, "↑ [push]"), mapOf("action" to "push", "instruction" to ""))
         browser.post(entry(run, "✓ [approve]"), mapOf("action" to "approve", "comment" to ""))
-        eventually(20) { assertContains(browser.get("/runs/$run").body, "State: Completed") }
+        eventually(20) { assertContains(browser.get("/runs/$run").body, """id="state">Completed<""") }
         assertEquals("01", git(api.remote, "show", "add-hello:01.txt"))
     }
 

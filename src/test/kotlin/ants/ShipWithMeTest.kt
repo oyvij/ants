@@ -90,7 +90,7 @@ class ShipWithMeTest : AntsTest() {
         eventually(20) { assertEquals(2, claude.launches("walkthrough").size) }
         browser.post(entry(run, "± [review]"), mapOf("action" to "approve", "comment" to ""))
         browser.post(entry(run, "↑ [push]"), mapOf("action" to "push", "instruction" to ""))
-        eventually(20) { assertContains(browser.get("/runs/$run").body, "State: Completed") }
+        eventually(20) { assertContains(browser.get("/runs/$run").body, """id="state">Completed<""") }
         return run
     }
 

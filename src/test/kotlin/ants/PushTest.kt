@@ -47,7 +47,7 @@ class PushTest : AntsTest() {
 
     private fun push(run: String) = browser.post(entry(run), mapOf("action" to "push", "instruction" to ""))
 
-    private fun completed(run: String) = eventually { assertContains(browser.get("/runs/$run").body, "State: Completed") }
+    private fun completed(run: String) = eventually { assertContains(browser.get("/runs/$run").body, """id="state">Completed<""") }
 
     /** The Push Result of the ended Run [run]. */
     private fun result(run: String) = history.createHistoricVariableInstanceQuery().processInstanceId(run).variableName("push").singleResult().value as List<*>
@@ -161,10 +161,10 @@ class PushTest : AntsTest() {
         val api = repo("api")
         val run = start(api)
         val drawer = assertNotNull(browser.events("run=$run&drawer=push", "drawer").poll(10, TimeUnit.SECONDS))
-        assertContains(drawer, """<a href="${entry(run)}">Push or cancel the Run</a>""")
+        assertContains(drawer, """href="${entry(run)}">Push or cancel the Run</a>""")
         assertFalse("Continue the session" in drawer)
         val cancelled = browser.post(entry(run), mapOf("action" to "cancel", "instruction" to ""))
-        assertContains(cancelled.body, "State: Cancelled")
+        assertContains(cancelled.body, """id="state">Cancelled<""")
         assertTrue(clone(run, "api").resolve(".git").toFile().isDirectory)
         assertEquals("", git(api.remote, "branch", "--list", "feature-x"))
     }

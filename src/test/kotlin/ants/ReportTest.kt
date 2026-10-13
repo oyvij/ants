@@ -59,7 +59,7 @@ class ReportTest : AntsTest() {
         workspace.resolve("scout").createDirectories().resolve("notes.md").writeText("notes\n")
         claude.release("go")
 
-        eventually { assertContains(browser.get("/runs/$run").body, "State: Completed") }
+        eventually { assertContains(browser.get("/runs/$run").body, """id="state">Completed<""") }
         eventually { assertEquals(listOf("report.md", "tasks", "tickets"), workspace.listDirectoryEntries().map { it.name }.sorted()) }
         assertEquals("Status: done\n", workspace.resolve("tickets/issues/01-hello.md").readText())
         assertTrue(workspace.resolve("tasks/draft/transcript.jsonl").exists())

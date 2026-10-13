@@ -158,7 +158,7 @@ class SkillsTest : AntsTest() {
             claude.session("draft", """{"type":"result","subtype":"success","structured_output":{"outcome":"done","summary":"Drafted.","output":{}}}""")
             fun run(): Any? {
                 val run = browser.post("/processes/agent-task/runs", mapOf("prompt" to "Say hello")).path
-                eventually { assertContains(browser.get(run).body, "State: Completed") }
+                eventually { assertContains(browser.get(run).body, """id="state">Completed<""") }
                 val argv = claude.launches("draft").last().argv
                 return (JsonMapper.shared().readValue(argv[argv.indexOf("--json-schema") + 1], Map::class.java)["properties"] as Map<*, *>)["output"]
             }

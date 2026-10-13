@@ -87,7 +87,7 @@ class ScopedRunTest : AntsTest() {
         val push = entry(run)
         assertContains(row(run)!!, "↑ [push]")
         browser.post(push, mapOf("action" to "push", "instruction" to ""))
-        eventually(20) { assertContains(browser.get("/runs/$run").body, "State: Completed") }
+        eventually(20) { assertContains(browser.get("/runs/$run").body, """id="state">Completed<""") }
         return run
     }
 
@@ -138,7 +138,7 @@ class ScopedRunTest : AntsTest() {
         val run = browser.post("/processes/wait-then-clone/runs", listOf("repos" to "you/app")).path.removePrefix("/runs/")
         entry(run)
         browser.post("/runs/$run/cancel", emptyMap())
-        assertContains(browser.get("/runs/$run").body, "State: Cancelled")
+        assertContains(browser.get("/runs/$run").body, """id="state">Cancelled<""")
         assertFalse(calls().any { it.startsWith("repo create") }, calls().toString())
         assertFalse(github.resolve("you").exists())
     }

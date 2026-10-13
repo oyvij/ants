@@ -582,7 +582,7 @@ class AgentLauncher(
         override var open = true
             private set
 
-        override val hint = "The Agent reads it at its next tool call."
+        override val hint = "It sees it at its next tool call."
 
         /** Whether the user stopped the session, so the `error_during_execution` that follows is `[stopped]`. */
         @Volatile

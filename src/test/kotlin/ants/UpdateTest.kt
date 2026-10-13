@@ -138,9 +138,9 @@ class UpdateTest : AntsTest() {
         assertTrue(home.resolve("versions/96.0.0/bin/ants").exists())
         assertEquals(Path.of("versions/96.0.0"), home.resolve("current").readSymbolicLink())
         assertEquals(Path.of("versions/$running"), home.resolve("previous").readSymbolicLink())
-        assertContains(browser.get("/runs/$run").body, "State: Running")
+        assertContains(browser.get("/runs/$run").body, """id="state">Running<""")
         claude.release("release")
-        eventually(60) { assertContains(browser.get("/runs/$run").body, "State: Completed") }
+        eventually(60) { assertContains(browser.get("/runs/$run").body, """id="state">Completed<""") }
     }
 
     @Test

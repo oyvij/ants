@@ -66,7 +66,7 @@ class VaultTest : AntsTest() {
         assertEquals(listOf("Write(/$vault/**)", "Edit(/$vault/**)"), first.flag("--disallowedTools")?.split(","))
 
         browser.post(approve, mapOf("action" to "approve", "comment" to ""))
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
         assertEquals(listOf("Billing/Decisions/Monthly-invoices.md"), notes())
         val second = claude.launches("update-knowledge")[1]
         assertEquals(first.flag("--session-id"), second.flag("--resume"))
@@ -96,7 +96,7 @@ class VaultTest : AntsTest() {
         assertEquals(emptyList(), notes())
 
         browser.post(approve, mapOf("action" to "approve", "comment" to ""))
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
         assertEquals(listOf("Vault/Guidelines/Writing knowledge Notes.md", "Vault/Vault.md"), notes())
         val (first, answered, approved) = claude.launches("init-vault")
         assertContains(first.stdin, """{\"approval\":null}""")

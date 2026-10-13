@@ -51,7 +51,7 @@ class ShipSmallTest : AntsTest() {
         browser.post(push, mapOf("action" to "push", "instruction" to ""))
         eventually(20) { assertContains(assertNotNull(row(run)), "✓ [approve]") } // the Notes
         browser.post(entry(run), mapOf("action" to "approve", "comment" to ""))
-        eventually(20) { assertContains(browser.get("/runs/$run").body, "State: Completed") }
+        eventually(20) { assertContains(browser.get("/runs/$run").body, """id="state">Completed<""") }
         return run
     }
 

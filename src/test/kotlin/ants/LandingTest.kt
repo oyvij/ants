@@ -292,7 +292,7 @@ class LandingTest : AntsTest() {
         val run = start("api")
 
         val cancelled = browser.post(entry(run), mapOf("action" to "cancel", "instruction" to ""))
-        assertContains(cancelled.body, "State: Cancelled")
+        assertContains(cancelled.body, """id="state">Cancelled<""")
     }
 
     /** A Run whose one instance commits in api and web, then runs [meddle] in the shared clones' folder before it is done. */

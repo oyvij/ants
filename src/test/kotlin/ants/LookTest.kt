@@ -73,22 +73,32 @@ class LookTest : AntsTest() {
                     page.addInitScript("addEventListener('DOMContentLoaded', () => document.querySelector('details.proto')?.remove())")
                     for (pair in pairs) shoot(page, pair.prototype, "${pair.name}/prototype-$theme")
                     shoot(page, "$prototype#/login", "login/prototype-$theme")
+                    shoot(page, "$prototype#/runs/dark-mode-toggle", "drawer/prototype-$theme") { evaluate("openDrawer('dark-mode-toggle', 'grill')") }
                 }
                 chromium.newContext(options).use { context ->
                     val page = context.newPage()
                     shoot(page, "http://127.0.0.1:$port/login", "login/app-$theme")
                     logIn(page)
                     for (pair in pairs) shoot(page, "http://127.0.0.1:$port${pair.app}", "${pair.name}/app-$theme")
+                    // The Run page's drawer, open on its running Agent Task.
+                    shoot(page, "http://127.0.0.1:$port/runs/${app.getValue("running")}", "drawer/app-$theme") {
+                        locator("#diagram .djs-element[data-element-id='draft']").click()
+                        waitForSelector("#drawer-head")
+                    }
                 }
             }
         }
     }
 
-    /** Opens [url] in a fresh document, lets its diagrams and editors load, and saves it as [name]. */
-    private fun shoot(page: Page, url: String, name: String) {
+    /** Opens [url] in a fresh document, lets its diagrams and editors load, does [then], and saves it as [name]. */
+    private fun shoot(page: Page, url: String, name: String, then: (Page.() -> Unit)? = null) {
         page.navigate("about:blank")
         page.navigate(url)
         page.waitForTimeout(2500.0) // the pages' streams never let the network idle; bpmn-js and CodeMirror load and lay out
+        then?.let {
+            page.it()
+            page.waitForTimeout(500.0) // the drawer slides in
+        }
         page.screenshot(Page.ScreenshotOptions().setPath(look.resolve("$name.png")).setFullPage(true))
     }
 

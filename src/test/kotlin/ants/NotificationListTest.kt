@@ -69,8 +69,12 @@ class NotificationListTest : AntsTest() {
         val row = row(run)!!
         for (cell in listOf("⚠ [stuck]", "Agent Task", "Draft", "No tone given.", "<td>0 min</td>")) assertContains(row, cell)
         val page = browser.get(entry(run)).body
-        assertContains(page, "Which tone, dry or warm?")
+        assertContains(page, """<h1>Draft <span class="pill p-stuck">Stuck</span> <span class="tag t-stuck"><i>⚠</i>Stuck</span></h1>""")
+        assertContains(page, """<div class="card"><h3>What it needs</h3><p>Which tone, dry or warm?</p>""")
+        assertContains(page, """<summary class="small">The session so far</summary>""")
         assertContains(page, """href="/runs/$run/tasks/draft/transcript"""")
+        assertContains(page, "Required to continue the session. Optional when starting fresh.")
+        assertContains(page, """<div class="composer">""")
         assertFalse("Cancel the Run" in page) // only a [failed] entry offers it
     }
 
@@ -91,7 +95,7 @@ class NotificationListTest : AntsTest() {
         assertEquals("/notifications", acted.path) // nothing else of this Run is waiting
         assertContains(runLog(run), "Draft · Continue the session\n\nDry, please.\n")
         claude.release("release")
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
         val (first, second) = claude.launches("draft")
         assertEquals(first.flag("--session-id"), second.flag("--resume"))
         assertEquals(null, second.flag("--session-id"))
@@ -107,7 +111,7 @@ class NotificationListTest : AntsTest() {
         browser.post(entry(run), mapOf("action" to "fresh", "instruction" to "Warm, please."))
         assertContains(runLog(run), "Draft · Start fresh\n\nWarm, please.\n")
         claude.release("release")
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
         val (first, second) = claude.launches("draft")
         assertNotEquals(first.flag("--session-id"), assertNotNull(second.flag("--session-id")))
         assertEquals(null, second.flag("--resume"))
@@ -122,7 +126,7 @@ class NotificationListTest : AntsTest() {
         claude.session("draft", 2, done)
         val run = start()
         browser.post(entry(run), mapOf("action" to "fresh", "instruction" to ""))
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
         assertFalse("From the user" in claude.launches("draft")[1].stdin)
     }
 
@@ -225,7 +229,7 @@ class NotificationListTest : AntsTest() {
         claude.session("draft", done)
         browser.get(entry)
         browser.post(entry, mapOf("action" to "continue", "instruction" to "Dry."))
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
         val launch = claude.launches("draft").single()
         assertNotNull(launch.flag("--session-id"))
         assertEquals(null, launch.flag("--resume"))
@@ -262,7 +266,7 @@ class NotificationListTest : AntsTest() {
 
         val cancelled = browser.post(entry, mapOf("action" to "cancel", "instruction" to ""))
         assertEquals("/runs/$run", cancelled.path)
-        assertContains(cancelled.body, "State: Cancelled")
+        assertContains(cancelled.body, """id="state">Cancelled<""")
         assertEquals(null, row(run))
         eventually { assertTrue(claude.launches("draft").single().killed) }
         val transcript = workspace(run).resolve("tasks/draft/transcript.jsonl")

@@ -67,7 +67,7 @@ class UsedByTest : AntsTest() {
         val run = browser.post("/processes/used-by/runs", mapOf("prompt" to "Keep it")).path.removePrefix("/runs/")
         home.resolve("skills/old-keeper-skill").toFile().deleteRecursively()
         home.resolve("settings.yaml").writeText(settings)
-        assertContains(get("/runs/$run"), "State: Running") // its Skill is missing, so its Task waits on the user
+        assertContains(get("/runs/$run"), """id="state">Running<""") // its Skill is missing, so its Task waits on the user
         deploy("new-keeper", "old-keeper-skill")
 
         val page = get("/agents/old-keeper")

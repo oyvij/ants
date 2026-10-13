@@ -151,7 +151,7 @@ class StorySetTest : AntsTest() {
         assertContains(commented.body, "NOTE repos/api/long.txt:9-10 (new), The first word is shouted step 2: Fine.")
 
         browser.post(entry, mapOf("action" to "approve", "comment" to ""))
-        eventually { assertContains(browser.get("/runs/$run").body, "State: Completed") }
+        eventually { assertContains(browser.get("/runs/$run").body, """id="state">Completed<""") }
         val prompt = JsonMapper.shared().readTree(claude.launches("ship").single().stdin)["message"]["content"].asString()
         val verdict = JsonMapper.shared().readValue(prompt.substringAfterLast("\n\n"), Map::class.java)["verdict"] as Map<*, *>
         assertEquals(

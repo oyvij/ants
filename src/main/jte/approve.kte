@@ -1,5 +1,6 @@
 @param entry: ants.TaskEntry
 @param shown: String
+@param view: ants.TaskView
 @param error: String? = null
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
@@ -15,16 +16,21 @@
 <body>
 @template.nav(shell = shell)
 <main>
-<div class="crumbs"><a href="/notifications">Notification list</a> / <a href="/runs/${entry.run}">${entry.runName}</a> / ${entry.task}</div>
-<div class="ph"><h1>${entry.summary.ifEmpty { entry.task }}</h1><div class="acts"><span data-tag="${entry.tag}">${entry.icon} ${entry.tag}</span><span class="muted small">${entry.process} · waiting ${entry.waited}</span></div></div>
-<article>$unsafe{shown}</article>
+@template.taskhead(view = view, run = entry.run, runName = entry.runName, tokens = "")
+<div class="card md">$unsafe{shown}</div>
 @if(error != null)<p role="alert">${error}</p>@endif
 <form method="post">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
-    <label>Comment <textarea name="comment"></textarea></label>
-    <button class="primary" name="action" value="approve">Approve</button>
-    <button name="action" value="send-back">Send back</button>
+    <div class="fld"><label class="f" for="comment">Comment</label>
+        <div class="help">Required to send back. The Agent's session resumes with it.</div>
+        <textarea id="comment" name="comment" data-md></textarea></div>
+    <div class="composer"><div>
+        <span class="grow"></span>
+        <button name="action" value="send-back">Send back</button>
+        <button class="primary" name="action" value="approve">Approve</button>
+    </div></div>
 </form>
+<script src="/editor.js"></script>
 </main>
 </body>
 </html>

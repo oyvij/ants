@@ -93,7 +93,17 @@ class Transcript {
      */
     val tokens get() = launches.sumOf { it.tokens } + soFarTokens
 
-    private val running get() = launches.isNotEmpty() && launches.last().end == null
+    val running get() = launches.isNotEmpty() && launches.last().end == null
+
+    /** The Subagents running now. */
+    val working get() = if (running) blocks.values.count { it.end == null } else 0
+
+    /** While a launch runs, its live line: the spinner, what it is doing, and how long it has run with its tokens. */
+    val liveLine: String?
+        get() = if (!running) null else launches.last().let {
+            """<span class="spin">✻</span> <span class="shimmer">$verb…</span> <span class="muted num">(<span data-since="${it.start.toEpochMilli()}">""" +
+                """${elapsed(Duration.between(it.start, Instant.now()))}</span> · ↓ ${tokens(it.tokens)})</span>"""
+        }
 
     /** Folds in one line of the file and returns the ids of the elements it changed. */
     fun add(line: String): Set<String> {
@@ -139,14 +149,15 @@ class Transcript {
     fun html(id: String): String = when (id) {
         "live" -> """<div id="live">${if (live.isEmpty()) "" else markdown(live)}</div>"""
         "tokens" -> """<span id="tokens">${tokens(tokens)}</span>"""
-        "status" -> if (!running) """<div id="status"></div>""" else launches.last().let {
-            """<div id="status"><span class="spinner">✻</span> $verb… <span data-since="${it.start.toEpochMilli()}">""" +
-                """${elapsed(Duration.between(it.start, Instant.now()))}</span> · ${tokens(it.tokens)}</div>"""
-        }
-        "subagents" -> """<div id="subagents">""" + (if (blocks.isEmpty()) "" else "⑂ ${blocks.size}") +
-            blocks.values.filter { running && it.end == null }.joinToString("") {
-                """ <span class="chip">⑂ ${esc(it.type)} · ${esc(it.description)} · ${time(it)}</span>"""
-            } + "</div>"
+        "status" -> """<div id="status">${liveLine.orEmpty()}</div>"""
+        "subagents" -> """<div id="subagents" class="chips">""" + blocks.values.filter { running && it.end == null }.joinToString(" ") {
+            """<span class="chip"><span class="spin">✻</span> ${esc(it.type)} · ${esc(it.description)} · ${time(it)}</span>"""
+        } + "</div>"
+        "sofar" -> """<div class="sofar" id="sofar"><div class="row small"><b>So far</b></div>""" +
+            markdown(soFar ?: result?.get("summary")?.toString() ?: "Nothing yet.") +
+            (if (todos.isEmpty()) "" else """<div class="todos">""" + todos.values.joinToString("") {
+                """<div class="todo ${TODO[it.status]?.second.orEmpty()}">${TODO[it.status]?.first ?: "☐"} ${esc(it.subject)}</div>"""
+            } + "</div>") + "</div>"
         else -> if (id.endsWith("s")) summary(blocks.getValue(id.removePrefix("e").removeSuffix("s").toInt()))
         else id.removePrefix("e").toInt().let { entry ->
             blocks[entry]?.let { block ->
@@ -243,7 +254,7 @@ class Transcript {
                 } else {
                     val argument = input.values.firstOrNull { it is String }?.toString().orEmpty()
                     tools[block["id"]] = append(parent) {
-                        """<div class="tool" id="$it">⏺ <b>${esc(name)}</b> <code>${esc(argument.lines().first().take(120))}</code></div>"""
+                        """<div class="tool" id="$it"><b>${esc(name)}</b> <code>${esc(argument.lines().first().take(120))}</code></div>"""
                     }
                 }
                 if (parent == null) verb = VERBS[name] ?: "Working"
@@ -327,7 +338,7 @@ class Transcript {
                 }
                 verb = VERBS[name] ?: "Working"
                 val entry = tools.getOrPut(id) {
-                    append { """<div class="tool" id="$it">⏺ <b>${esc(name)}</b> <code>${esc(argument?.toString().orEmpty().lines().first().take(120))}</code></div>""" }
+                    append { """<div class="tool" id="$it"><b>${esc(name)}</b> <code>${esc(argument?.toString().orEmpty().lines().first().take(120))}</code></div>""" }
                 }
                 if (completed && item["status"] == "failed") put(entry, entries[entry].replaceFirst("""class="tool"""", """class="tool error""""))
             }
@@ -396,7 +407,8 @@ class Transcript {
     }
 
     companion object {
-        private val FIXED = listOf("live", "status", "tokens", "subagents")
+        private val FIXED = listOf("live", "status", "tokens", "subagents", "sofar")
+        private val TODO = mapOf("completed" to ("☑" to "done"), "in_progress" to ("◐" to "now")) // a todo's status → its mark and class
         private val OK = setOf("running", "completed") // a Subagent's statuses its summary leaves unsaid
         private val VERBS = mapOf(
             "Read" to "Reading", "Edit" to "Editing", "Write" to "Writing", "NotebookEdit" to "Editing", "Grep" to "Searching",
@@ -458,16 +470,20 @@ fun tokens(count: Long): String {
 
 /** The Transcript page, which replays the file and then follows it over SSE, with Send and Stop while the Task runs. */
 @Controller
-class Transcripts(@Value("\${ants.home}") home: Path, private val launcher: AgentLauncher, private val streams: Streams, private val names: RunNames) {
+class Transcripts(
+    @Value("\${ants.home}") home: Path, private val launcher: AgentLauncher, private val streams: Streams, private val names: RunNames, private val tasks: Runs,
+) {
     private val runs = home.resolve("runs")
 
     @GetMapping("/runs/{run}/tasks/{task}/transcript")
     fun page(@PathVariable run: String, @PathVariable task: String, model: Model): String {
         val (lines, offset) = Transcript.read(file(run, task))
+        val transcript = Transcript().apply { lines.forEach(::add) }
         model.addAttribute("run", run)
         model.addAttribute("runName", names.name(run))
         model.addAttribute("task", task)
-        model.addAttribute("transcript", Transcript().apply { lines.forEach(::add) })
+        model.addAttribute("view", tasks.task(run, task, transcript))
+        model.addAttribute("transcript", transcript)
         model.addAttribute("offset", offset)
         model.addAttribute("sendHint", launcher.sendHint(run, task))
         return "transcript"

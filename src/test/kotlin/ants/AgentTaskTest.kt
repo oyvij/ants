@@ -87,7 +87,7 @@ class AgentTaskTest : AntsTest() {
         claude.session("draft", done("""{"verdict":"ship"}"""))
         val verdict = """{"type":"object","properties":{"verdict":{"type":"string"}},"required":["verdict"]}"""
         val run = startWith("overridden", property("ants.result-schema", verdict))
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
         val output = (claude.launches("draft").single().schema()["properties"] as Map<*, *>)["output"]
         assertEquals(JsonMapper.shared().readValue(verdict, Map::class.java), output)
     }
@@ -98,14 +98,14 @@ class AgentTaskTest : AntsTest() {
         agentTask(metadata = "metadata:\n  varde-vault: true\n", extra = "source-maps:\n  mine: $map\n")
         claude.session("draft", done)
         val byDefault = startWith("toggles-default", "")
-        eventually { assertContains(page(byDefault), "State: Completed") }
+        eventually { assertContains(page(byDefault), """id="state">Completed<""") }
         val defaults = claude.launches("draft").last().stdin
         assertContains(defaults, "for the workspace at ${workspace(byDefault)}. The Vault is $vaultPath and the Source map is $map.\\n")
         assertFalse("Answer History" in defaults)
         assertContains(claude.launches("draft").last().argv.zipWithNext(), "--add-dir" to "$vaultPath")
 
         val flipped = startWith("toggles-flipped", property("ants.vault", "false") + property("ants.answer-history", "true"))
-        eventually { assertContains(page(flipped), "State: Completed") }
+        eventually { assertContains(page(flipped), """id="state">Completed<""") }
         val toggled = claude.launches("draft").last().stdin
         assertContains(toggled, "for the workspace at ${workspace(flipped)}. The Answer History is ${home.resolve("answer-history")}.\\n")
         assertFalse("Vault" in toggled)
@@ -127,7 +127,7 @@ class AgentTaskTest : AntsTest() {
         agentTask()
         claude.session("draft", done)
         val run = startWith("resumed", property("ants.resume", "true"), file = "agent-loop") // on Draft, which loops once; not on Polish
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
         val (first, again, polish) = claude.launches("draft")
         assertEquals(first.flag("--session-id"), again.flag("--resume"))
         assertEquals(null, again.flag("--session-id"))
@@ -143,7 +143,7 @@ class AgentTaskTest : AntsTest() {
         agentTask(agent = "name: writer\ndescription: Writes.\nmodel: sonnet\n")
         claude.session("draft", """{"type":"system","subtype":"init","session_id":"${'$'}SESSION","apiKeySource":"none"}""", done)
         val run = start()
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
         assertContains(page(run), """<dt>draft</dt><dd><code>{"outcome":"done","summary":"Drafted.","output":{"text":"Hello"}}</code></dd>""")
     }
 
@@ -152,7 +152,7 @@ class AgentTaskTest : AntsTest() {
         agentTask(textSchema)
         claude.session("draft", done)
         val run = start()
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
         val schema = claude.launches("draft").single().schema()
         val properties = schema["properties"] as Map<*, *>
         assertEquals(mapOf("type" to "object", "properties" to mapOf("text" to mapOf("type" to "string")), "required" to listOf("text")), properties["output"])
@@ -169,7 +169,7 @@ class AgentTaskTest : AntsTest() {
             """"outcome":"stuck","summary":"No tone given.","needs":"Which tone, dry or warm?""""))
         val run = start()
         eventually { assertContains(page(run), "<dt>draft</dt><dd>[stuck] No tone given. Which tone, dry or warm?</dd>") }
-        assertContains(page(run), "State: Running")
+        assertContains(page(run), """id="state">Running<""")
     }
 
     @Test
@@ -177,7 +177,7 @@ class AgentTaskTest : AntsTest() {
         agentTask(textSchema)
         claude.session("draft", done("""{"words":"Hello"}"""), "read", done)
         val run = start()
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
         assertContains(page(run), """<dt>draft</dt><dd><code>{"outcome":"done","summary":"Drafted.","output":{"text":"Hello"}}</code></dd>""")
         val retry = claude.launches("draft").single().stdin.lines()[1]
         assertContains(retry, "Your Result is invalid")
@@ -192,7 +192,7 @@ class AgentTaskTest : AntsTest() {
         val run = start()
         eventually { assertContains(page(run), "<dt>draft</dt><dd>[failed] The Result is invalid: ") }
         assertContains(page(run), "required property 'summary' not found")
-        assertContains(page(run), "State: Running")
+        assertContains(page(run), """id="state">Running<""")
     }
 
     @Test
@@ -210,7 +210,7 @@ class AgentTaskTest : AntsTest() {
         agentTask(fileSchema)
         claude.session("draft", done("""{"file":"tickets/../tickets/spec.md"}"""))
         val run = start()
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
     }
 
     @Test
@@ -239,7 +239,7 @@ class AgentTaskTest : AntsTest() {
         agentTask(agent = "name: writer\ndescription: Writes.\ntools: Read, Grep, Skill, Bash(git log:*)\nmodel: sonnet\n")
         claude.session("draft", done)
         val run = start()
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
         val launch = claude.launches("draft").single()
         val argv = launch.argv.joinToString(" ")
         for (flags in listOf(
@@ -271,7 +271,7 @@ class AgentTaskTest : AntsTest() {
         val review = usedSkill("review", uses("seams"))
         claude.session("draft", done)
         val run = start()
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
         val launch = claude.launches("draft").single()
         assertContains(launch.stdin, "for the workspace at ${workspace(run)}. It uses the Skills implement-tdd ($tdd), seams ($seams), review ($review).")
         val argv = launch.argv.joinToString(" ")
@@ -298,7 +298,7 @@ class AgentTaskTest : AntsTest() {
         claude.session("draft", done)
         assertTrue(catalogue.vault(catalogue.skill("draft")))
         val run = start()
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
         assertContains(claude.launches("draft").single().argv.zipWithNext(), "--add-dir" to "$vaultPath")
         usedSkill("search")
         assertFalse(catalogue.vault(catalogue.skill("draft")))
@@ -313,7 +313,7 @@ class AgentTaskTest : AntsTest() {
         assertContains(page(runs[0]), "<dt>draft</dt><dd>Running</dd>")
         assertContains(page(runs[1]), "<dt>draft</dt><dd>Queued: 1 of 1 Agent Tasks running</dd>")
         claude.release("release")
-        for (run in runs) eventually { assertContains(page(run), "State: Completed") }
+        for (run in runs) eventually { assertContains(page(run), """id="state">Completed<""") }
         assertEquals(runs.map { workspace(it).toRealPath().toString() }, claude.launchLog())
     }
 
@@ -333,7 +333,7 @@ class AgentTaskTest : AntsTest() {
         claude.session("draft", done)
         claude.help("Options:\n  --bare      Minimal mode: skip hooks, LSP and keychain reads\n  --verbose   The default is quiet\n")
         val run = start()
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
     }
 
     @Test
@@ -344,7 +344,7 @@ class AgentTaskTest : AntsTest() {
         val run = start()
         home.resolve("agents/writer.md").writeText("Write plainly.\n")
         settings()
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
         val argv = claude.launches("draft").single().argv.joinToString(" ")
         assertContains(argv, "--append-system-prompt Write plainly.")
         assertContains(argv, "--tools Bash,Edit,Glob,Grep,NotebookEdit,Read,TaskCreate,TaskGet,TaskList,TaskUpdate,WebFetch,WebSearch,Write")
@@ -387,7 +387,7 @@ class AgentTaskTest : AntsTest() {
         Thread.sleep(600)
         assertEquals(1, claude.launches("draft").size)
         clock.offset = Duration.ofMinutes(62)
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
 
         val (first, resumed) = claude.launches("draft")
         assertEquals(first.flag("--session-id"), resumed.flag("--resume"))
@@ -414,7 +414,7 @@ class AgentTaskTest : AntsTest() {
         assertContains(runs, """action="/pauses/claude"""")
         assertContains(runs, "Try now")
         browser.post("/pauses/claude", emptyMap())
-        for (run in listOf(first, second)) eventually { assertContains(page(run), "State: Completed") }
+        for (run in listOf(first, second)) eventually { assertContains(page(run), """id="state">Completed<""") }
         val (cut, after1, after2) = claude.launches("draft") // the two after Try now launch together
         assertEquals(setOf(cut.flag("--session-id"), null), setOf(after1.flag("--resume"), after2.flag("--resume")))
         assertFalse("Try now" in pill("/runs"))
@@ -431,7 +431,7 @@ class AgentTaskTest : AntsTest() {
         val after = clock.instant()
         assertContains(setOf(clock.local(before.plusSeconds(31 * 60)), clock.local(after.plusSeconds(31 * 60))), page(run).substringAfter("Paused until ").substringBefore("<"))
         clock.offset = Duration.ofMinutes(32)
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
         assertContains(claude.launches("draft").last().argv, "--resume")
     }
 

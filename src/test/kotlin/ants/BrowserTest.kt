@@ -299,7 +299,7 @@ class BrowserTest : AntsTest() {
         assertEquals(buttons.y, page.locator("footer").boundingBox().y) // the buttons never move
         page.click("#next")
         page.waitForURL { !it.contains(entry) }
-        eventually { assertContains(http.get("/runs/$run").body, "State: Completed") }
+        eventually { assertContains(http.get("/runs/$run").body, """id="state">Completed<""") }
         assertContains(claude.launches("quiz")[1].stdin, """{\"id\":\"who\",\"answer\":\"Recommend who.\",\"source\":\"accepted\"},{\"id\":\"scope\",\"answer\":\"Only admins.\",\"source\":\"written\"}""")
     }
 
@@ -422,6 +422,31 @@ class BrowserTest : AntsTest() {
             close()
             assertThat(modal).hasCount(0)
         }
+    }
+
+    @Test
+    fun `on the Run page Rename renames over the page, Esc closes the drawer, a Task's row opens the Task, and a comment's toolbar writes markdown`() = browse {
+        settings(null)
+        val (process, plane) = row("approving", """<bpmn:startEvent id="start" />""", """<bpmn:userTask id="wait" name="Wait" />""", """<bpmn:endEvent id="end" />""")
+        deploy(definitions("approving", "Approving", process, plane))
+        val run = http.post("/processes/approving/runs", mapOf()).path
+        page.navigate(url(run))
+        page.click("button[popovertarget=rename]")
+        page.fill("#new-name", "Renamed")
+        page.click("#rename button.primary")
+        assertThat(page.locator("#name")).hasText("Renamed")
+
+        eventually { page.locator("#diagram .djs-element[data-element-id='wait']").click() }
+        assertThat(page.locator("#drawer-head")).isVisible()
+        page.keyboard().press("Escape")
+        assertThat(page.locator("#drawer")).isHidden()
+
+        page.click("#tasks tr.click")
+        page.waitForURL { "/notifications/" in it }
+        page.fill("#comment", "dry")
+        page.locator("#comment").selectText()
+        page.click(".ed .bar button[title=Bold]")
+        assertThat(page.locator("#comment")).hasValue("**dry**")
     }
 
     @Test
