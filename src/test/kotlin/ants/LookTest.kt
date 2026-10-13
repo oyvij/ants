@@ -77,6 +77,8 @@ class LookTest : AntsTest() {
                 }
                 chromium.newContext(options).use { context ->
                     val page = context.newPage()
+                    page.onConsoleMessage { if (it.type() == "error") println("LookTest: ${page.url()}: ${it.text()}") }
+                    page.onPageError { println("LookTest: ${page.url()}: $it") }
                     shoot(page, "http://127.0.0.1:$port/login", "login/app-$theme")
                     logIn(page)
                     for (pair in pairs) shoot(page, "http://127.0.0.1:$port${pair.app}", "${pair.name}/app-$theme")
@@ -96,7 +98,8 @@ class LookTest : AntsTest() {
         page.navigate(url)
         page.waitForTimeout(2500.0) // the pages' streams never let the network idle; bpmn-js and CodeMirror load and lay out
         then?.let {
-            page.it()
+            // A step that fails still leaves its screenshot, to see why.
+            runCatching { page.it() }.onFailure { println("LookTest: $name: ${it.message}") }
             page.waitForTimeout(500.0) // the drawer slides in
         }
         page.screenshot(Page.ScreenshotOptions().setPath(look.resolve("$name.png")).setFullPage(true))

@@ -220,6 +220,7 @@ class RunPageTest : AntsTest() {
         assertContains(composer, """<form method="post" action="$path/send">""")
         assertContains(composer, """formaction="$path/stop"""")
         assertContains(composer, ">Send</button>")
+        assertContains(row(browser.get("/runs/$run").body, "Draft"), """<span class="shimmer">""") // the live line of a running Task
     }
 
     @Test
