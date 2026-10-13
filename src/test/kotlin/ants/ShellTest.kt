@@ -93,7 +93,7 @@ class ShellTest : AntsTest() {
     @Test
     fun `the markdown fields are marked for the editor, whose Preview the server renders as it renders the Approve page`() {
         browser.import("start-form.bpmn")
-        assertContains(browser.get("/processes/start-form").body, """<textarea name="prompt" required data-markdown data-tall>""")
+        assertContains(browser.get("/processes/start-form").body, """<textarea name="prompt" id="field-prompt" required data-markdown data-tall>""")
         assertContains(browser.get("/agents/new").body, """<textarea name="instructions" rows="12" cols="80" data-markdown data-tall>""")
         assertContains(browser.get("/skills/scout").body, """<textarea name="skill" rows="20" cols="80" readonly data-markdown data-tall>""")
 
