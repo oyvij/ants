@@ -56,7 +56,25 @@ class SettingsTest : AntsTest() {
         assertContains(page, """name="agent-tasks" value="7"""")
         assertContains(page, """name="subagent-depth" value="3"""")
         assertContains(page, """name="claude.command" value="env claude"""")
-        assertContains(page, "/tmp/skills</textarea>")
+        assertContains(page, """name="skill-folders" value="/tmp/skills"""")
+    }
+
+    @Test
+    fun `Agent and Skill folders are rows after Ants' own, each row one folder`() {
+        browser.get("/settings")
+        browser.post("/settings", listOf("action" to "save", "agent-folders" to "/tmp/a", "agent-folders" to "", "agent-folders" to "/tmp/b"))
+        assertEquals(listOf("/tmp/a", "/tmp/b"), yaml()["agent-folders"])
+        val page = browser.get("/settings").body
+        assertContains(page, """value="${home.resolve("agents")}" disabled""")
+        assertContains(page, """value="${home.resolve("skills")}" disabled""")
+        assertContains(page, """name="agent-folders" value="/tmp/b"""")
+    }
+
+    @Test
+    fun `the Server card shows the address Ants listens on, beside the password`() {
+        val page = browser.get("/settings").body
+        assertContains(page, """value="127.0.0.1:$port" readonly""")
+        assertContains(page, """name="password"""")
     }
 
     @Test
@@ -193,14 +211,24 @@ class SettingsTest : AntsTest() {
     fun `settings shows logged in or not, and the exact login command`() {
         fakeClaude()
         val command = "<code>CLAUDE_CONFIG_DIR=${home.resolve("claude")} claude auth login</code>"
-        assertContains(browser.get("/settings").body, "Not logged in.")
+        assertContains(browser.get("/settings").body, """<span class="pill p-failed">Not logged in</span>""")
         assertContains(browser.get("/settings").body, command)
 
         fakeClaude("""{"loggedIn":true,"authMethod":"claude.ai","subscriptionType":"max"}""")
         val page = browser.get("/settings").body
-        assertContains(page, "Logged in (claude.ai, max).")
+        assertContains(page, """<span class="pill p-ready">Logged in</span> claude.ai, max""")
         assertContains(page, command)
         assertFalse("API key" in page)
+    }
+
+    @Test
+    fun `Check login asks claude again and says what it found, keeping what was typed`() {
+        fakeClaude()
+        val out = press("login", mapOf("agent-tasks" to "9"))
+        assertContains(out, """<div class="toast" role="status"><b>Not logged in</b>""")
+        assertContains(out, """name="agent-tasks" value="9"""")
+        fakeClaude("""{"loggedIn":true,"authMethod":"claude.ai","subscriptionType":"max"}""")
+        assertContains(press("login", emptyMap()), """<div class="toast" role="status"><b>Logged in</b> claude.ai, max""")
     }
 
     @Test
@@ -225,8 +253,9 @@ class SettingsTest : AntsTest() {
         val run = browser.post("/processes/agent-task/runs", mapOf("prompt" to "Say hello")).path
         eventually { assertContains(browser.get(run).body, "State: Completed") }
         val page = browser.get("/settings").body
-        assertContains(page, "5-hour usage: 4%, resets ${local(1791732000)}")
-        assertContains(page, "7-day usage: 7%, resets ${local(1792162800)}")
+        assertContains(page, """<span>5-hour</span><div class="track"><div class="fill" style="width:4%"></div></div><b>4%</b>""")
+        assertContains(page, """<span>7-day</span><div class="track"><div class="fill" style="width:7%"></div></div><b>7%</b>""")
+        assertContains(page, "5-hour resets ${local(1791732000)}, 7-day resets ${local(1792162800)}.")
     }
 
     private fun local(epochSecond: Long) =

@@ -108,8 +108,11 @@ class LookTest : AntsTest() {
         return Path.of("build/look").createDirectories().resolve(file).also { it.writeText(html) }.toUri().toString()
     }
 
-    /** settings.yaml's lines beyond the Vault and claude: the Source map of the Review changes Run, and no So far. */
-    private val extra by lazy { reviewSourceMap() + "so-far: false\n" }
+    /**
+     * settings.yaml's lines beyond the Vault and claude: the Source map of the Review changes Run, no So far, and an extra
+     * Agent and Skill folder, as Settings in the prototype lists Varde's.
+     */
+    private val extra by lazy { reviewSourceMap() + "so-far: false\nagent-folders: [~/.varde/ai/agents]\nskill-folders: [~/.varde/ai/skills]\n" }
 
     /**
      * Seeds what the prototype shows, one Run at a time, each waiting until it has reached the state it is for, since the
@@ -117,6 +120,7 @@ class LookTest : AntsTest() {
      */
     private fun seed(): Map<String, String> {
         processes.deployShipped()
+        home.resolve("claude-usage.json").writeText("""{"five_hour":{"utilization":0.82},"seven_day":{"utilization":0.41}}""") // Settings' meters
         agentTask(claude, mapOf(
             "draft" to """{"type":"object","properties":{"notes":{"type":"string","format":"path"}}}""",
             "polish" to null, "mend" to null, "ship" to null,
