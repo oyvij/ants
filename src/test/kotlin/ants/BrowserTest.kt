@@ -28,7 +28,7 @@ import kotlin.test.assertTrue
 
 /**
  * What only the pages' scripts do, in a real browser: Chromium through Playwright, on the running test Ants, logged in.
- * CI installs Chromium (test.yml); where it can't launch, such as in nono's sandbox, these tests are skipped
+ * CI installs Chromium (ci.yml); where it can't launch, such as in nono's sandbox, these tests are skipped
  * ([launchChromium]), never passed. A new test is a method that is
  * `browse { page.navigate(url("/…")); … }`, and [screenshot] saves what the page looks like to build/reports/browser.
  */

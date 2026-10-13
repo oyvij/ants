@@ -20,7 +20,7 @@ import kotlin.test.assertNotNull
  * The look test: every page beside the prototype it must equal, in light and in dark, as
  * build/reports/browser/look/<page>/{prototype,app}-{light,dark}.png, for a person or an agent to compare. It asserts
  * nothing about the look itself. The prototype is `prototype/web-ui`'s one HTML file, opened at a hash route, and
- * `prototype/answer-screen`'s Answer page; CI fetches both branches (test.yml), and they load bpmn-js, CodeMirror and
+ * `prototype/answer-screen`'s Answer page; CI fetches both branches (ci.yml), and they load bpmn-js, CodeMirror and
  * marked from unpkg. The app side is seeded with what the prototype shows: Runs in different states, waiting entries, a
  * Schedule, and the shipped Processes, Agents and Skills. Like [BrowserTest], it is skipped where Chromium can't launch.
  */

@@ -1,0 +1,142 @@
+#!/usr/bin/env python3
+"""The test classes a change touches, to run in seconds while building instead of the whole suite.
+
+    scripts/affected-tests [--run] [<base> | <from>..<to>]
+
+Reads what changed since <base> (default: where HEAD left origin/main), committed or not, and prints the test classes
+that likely cover it:
+
+- a changed test class itself, and the tests that name a changed test resource (`agent-task.bpmn`, `fake-claude`);
+- for a Kotlin file, the tests whose code uses what it declares at top level (`Landing`, `runLog`), and the tests
+  named for it (`LandingTest`; `RunTest` and `RunPageTest` for `Runs.kt`);
+- for a template (`run.kte`), the tests of the Kotlin files that render it;
+- for a shipped Skill or Process, the tests that name it, and the shipped catalogue's tests.
+
+A change to the test harness (AntsTest.kt, FakeClaude.kt, …), to the build, to what most tests use, or that no test names, touches everything: it says so, and the
+whole local suite is `./gradlew test -Pshard=rest`. The browser shard (BrowserTest, LookTest, PwaTest, …) never runs
+locally, since Chromium can't run in the sandbox: for a change to a template, a script or the styles it prints the
+command that runs that shard on CI. Either way the full suite runs on the pull request; this is the fast loop, not the
+gate.
+
+--run runs the local ones with Gradle.
+"""
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+TESTS = ROOT / "src/test/kotlin/ants"
+MAIN = ROOT / "src/main/kotlin/ants"
+# build.gradle.kts' browser and look shards: CI only.
+BROWSER = {"BrowserTest", "LookTest", "PwaTest", "ChromiumLaunchTest", "DockerTest"}
+DECLARED = re.compile(r"^(?:(?:private|internal|data|enum|sealed|abstract|open|inline|value|const|annotation|operator|infix|suspend)\s+)*"
+                      r"(?:class|object|interface|fun|val|var)\s+(?:<[^>]*>\s*)?(?:[\w.]+\.)?(\w+)", re.M)
+
+
+def git(*args):
+    return subprocess.run(["git", "-C", str(ROOT), *args], check=True, capture_output=True, text=True).stdout.split()
+
+
+# AntsTest is the harness, run through the others; LiveClaudeTest runs only with ./gradlew liveTest.
+HARNESS = {"AntsTest", "LiveClaudeTest"}
+# Past this many, a change is as good as everywhere.
+MOST = 15
+
+
+def test_classes():
+    return {p.stem: p.read_text() for p in TESTS.glob("*Test.kt") if p.stem not in HARNESS}
+
+
+def naming(tests, *names):
+    """The test classes whose text, strings included, has any of the file names [names] (`agent-task.bpmn`)."""
+    words = [re.compile(rf"(?<![\w-]){re.escape(n)}(?![\w-])") for n in names if len(n) > 2]
+    return {t for t, text in tests.items() if any(w.search(text) for w in words)}
+
+
+def code(text):
+    """[text] without its comments, strings and backticked test names, so "the Runs list" in a name isn't a use of Runs."""
+    return re.sub(r'/\*.*?\*/|//[^\n]*|"""(?:.|\n)*?"""|"(?:\\.|[^"\\\n])*"|`[^`\n]*`', " ", text, flags=re.S)
+
+
+def using(tests, *names):
+    """The test classes whose code uses any of the Kotlin [names]."""
+    # A one-word lower-case name (key, json, tasks) is every test's local too; only a capitalised or camelCase one tells.
+    words = [re.compile(rf"(?<![\w.]){re.escape(n)}\b") for n in names if re.search("[A-Z]", n)]
+    return {t for t, text in tests.items() if any(w.search(code(text)) for w in words)}
+
+
+def named(tests, stem):
+    """The test classes named for the Kotlin file [stem]: Landing's LandingTest, Runs' RunTest and RunPageTest."""
+    return {t for t in tests if t.startswith(stem.removesuffix("s"))}
+
+
+def declared(path):
+    return set(DECLARED.findall(path.read_text())) if path.exists() else set()
+
+
+def affected(changed):
+    """(the test classes, whether everything is touched, whether the browser shard is), or None when nothing is."""
+    tests, found, everything, browser = test_classes(), set(), False, False
+    changed = [n for n in changed if not (n.startswith(("docs/", ".claude/", ".github/", "scripts/", "prototype/")) or n.endswith(".md") and not n.startswith("src/"))]
+    if not changed:
+        return None
+    for name in changed:
+        path = ROOT / name
+        if name.startswith("src/test/kotlin/"):
+            if path.stem in tests or path.stem.endswith("Test"):
+                found.add(path.stem)
+            else:
+                everything = True  # the harness every test stands on
+        elif name.startswith("src/test/resources/"):
+            found |= naming(tests, path.name)
+        elif name.startswith("src/main/kotlin/"):
+            found |= using(tests, *declared(path)) | named(tests, path.stem)
+        elif name.startswith("src/main/jte/"):
+            browser = True
+            stem = path.name.removesuffix(".kte")
+            renders = [k for k in MAIN.glob("*.kt") if re.search(rf'"{re.escape(stem)}(\.kte)?"', k.read_text())]
+            found |= naming(tests, stem + ".kte") | using(tests, *{n for k in renders for n in declared(k)}) | {t for k in renders for t in named(tests, k.stem)}
+        elif name.startswith("src/main/resources/static/"):
+            browser = True
+            found |= naming(tests, path.name)
+        elif name.startswith("src/main/resources/shipped/"):
+            parts = Path(name).parts
+            found |= naming(tests, parts[5] if len(parts) > 6 else path.stem) | ({"ShippedTest", "ShippedBpmnTest", "SkillsTest"} & tests.keys())
+        else:
+            everything = True  # the build, the workflows, the dist scripts
+    browser |= bool(found & BROWSER)
+    return found - BROWSER, everything, browser
+
+
+def main(args):
+    if "--help" in args or "-h" in args:
+        print(__doc__.strip())
+        return 0
+    run = "--run" in args
+    rest = [a for a in args if a != "--run"]
+    base = rest[0] if rest else git("merge-base", "origin/main", "HEAD")[0]
+    # A range (`a..b`) is those commits alone; a base is everything since it, uncommitted and new files too.
+    new = [] if ".." in base else git("ls-files", "--others", "--exclude-standard")
+    changed = sorted(set(git("diff", "--name-only", base)) | set(new))
+    if (result := affected(changed)) is None:
+        print("Only docs, scripts or CI changed: no test to run.")
+        return 0
+    found, everything, browser = result
+    everything |= len(found) > MOST or not found
+    if everything:
+        print("The change touches the test harness, the build, most tests or none by name: run the whole local suite, ./gradlew test -Pshard=rest")
+    else:
+        print("\n".join(sorted(found)))
+    if browser:
+        print("\nIt touches the pages: the browser shard runs on CI only:\n"
+              "  gh workflow run ci.yml --ref $(git branch --show-current) -f shards='[\"browser\",\"look\"]'", file=sys.stderr)
+    if not run:
+        return 0
+    gradle = ["./gradlew", "test"] + (["-Pshard=rest"] if everything else [f for t in sorted(found) for f in ("--tests", f"ants.{t}")])
+    return subprocess.run(gradle, cwd=ROOT, env={**os.environ, "CI": "true"}).returncode
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

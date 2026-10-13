@@ -112,7 +112,7 @@ tasks.register<JavaExec>("playwright") {
 
 // The release: Ants with its own trimmed Java runtime, laid out as the launcher expects (bin/ants, lib/ants.jar,
 // runtime/), as build/dist/ants-<version>-macos-arm64.tar.gz beside its SHA256SUMS, which install.sh checks.
-// It is only ever built for macOS arm64 (release.yml), but the runtime is the build machine's, so CI's tests on Linux
+// It is only ever built for macOS arm64 (ci.yml), but the runtime is the build machine's, so CI's tests on Linux
 // install a Linux one under the same name.
 val image = layout.buildDirectory.dir("image")
 val jlink = tasks.register<Exec>("jlink") {
@@ -170,6 +170,13 @@ tasks.test {
     environment("CODEX_API_KEY", "sk-codex-test")
     // BrowserTest drives the Chromium the playwright task installed; it never downloads one itself.
     environment("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD", "1")
+    // CI runs the suite as jobs at once (ci.yml): -Pshard=look or browser runs only those classes, rest every other.
+    val shards = mapOf("look" to listOf("ants.LookTest"), "browser" to listOf("ants.BrowserTest", "ants.DockerTest", "ants.PwaTest", "ants.ChromiumLaunchTest"))
+    when (val shard = findProperty("shard")?.toString()) {
+        null -> {}
+        "rest" -> shards.values.flatten().forEach(filter::excludeTestsMatching)
+        else -> shards.getValue(shard).forEach(filter::includeTestsMatching)
+    }
     // Test classes run in a random order (junit-platform.properties), from a seed it prints; -PtestSeed=… replays one.
     // Set when the task runs, so a new seed never makes an up-to-date test task run again.
     val testSeed = findProperty("testSeed")
