@@ -10,13 +10,17 @@ import org.springframework.stereotype.Component
 import org.yaml.snakeyaml.Yaml
 import java.io.File
 import java.net.InetAddress
+import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption
+import java.nio.file.attribute.PosixFilePermissions
 import java.time.Duration
 import java.util.concurrent.TimeUnit.SECONDS
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.readText
+import kotlin.io.path.writeText
 
 /** One repo in a Source map: its short name, its local checkout and its git remote. */
 data class Repo(val name: String, val path: String, val remote: String)
@@ -149,6 +153,29 @@ class Settings(
     /** The extra Skill folders, read after Ants' own. */
     fun skillFolders(): List<Path> = folders("skill-folders")
 
+    /** The Secrets, each label to the variable names it goes under; their values are in [secretsFile] ([secretValues]). */
+    fun secrets(): Map<String, List<String>> = (read()["secrets"] as? Map<*, *>).orEmpty().entries.associate { (label, names) -> "$label" to strings(names).orEmpty() }
+
+    /** The Protected Commands, each command prefix to the labels of the Secrets it runs with. */
+    fun protectedCommands(): Map<String, List<String>> =
+        (read()["protected-commands"] as? Map<*, *>).orEmpty().entries.associate { (prefix, labels) -> "$prefix" to strings(labels).orEmpty() }
+
+    /** `secrets.yaml`, beside this file: each Secret's value by label, readable by Ants' OS user alone. */
+    val secretsFile: Path = home.resolve("secrets.yaml")
+
+    /** Each Secret's value, by label, read fresh. */
+    fun secretValues(): Map<String, String> = if (!secretsFile.exists()) emptyMap()
+    else (Yaml().load<Map<*, *>>(secretsFile.readText()) ?: emptyMap<Any, Any>()).entries.associate { (label, value) -> "$label" to "$value" }
+
+    /** Rewrites [secretsFile] with [values], the file mode 0600 before a value is in it. */
+    @Synchronized
+    fun saveSecretValues(values: Map<String, String>) {
+        val owner = PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------"))
+        val next = Files.createTempFile(secretsFile.parent.createDirectories(), ".secrets.yaml", ".tmp", owner)
+        next.writeText(if (values.isEmpty()) "" else yaml.dump(values))
+        Files.move(next, secretsFile, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+    }
+
     /** The pages' `color-scheme`: the system's until the user picks light or dark. */
     fun colorScheme(): String = read()["theme"]?.toString()?.takeIf { it in listOf("light", "dark") } ?: "light dark"
 
@@ -223,6 +250,9 @@ class Settings(
             # profiles: name: {vault: <a Vault's name>, source-map: <a Source map's name>}. default-profile: a name;
             #   without one, the first. With no Profiles, every Run uses the default Vault and Source map.
             # agent-folders, skill-folders: extra folders, read after Ants' own
+            # secrets: label: [VARIABLE, NAMES], the variables a Protected Command reads it under; the values are in
+            #   secrets.yaml, never here
+            # protected-commands: prefix: [Secret labels], such as `mvn deploy: [maven]`; Agents ask Ants to run them
             # theme: light or dark; without it, the pages follow the system
             # so-far: false switches off the So far paragraph on running Tasks; a time (90s, 5m) sets how often it's
             #   rewritten (default 2m)

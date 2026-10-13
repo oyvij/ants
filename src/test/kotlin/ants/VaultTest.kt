@@ -63,7 +63,7 @@ class VaultTest : AntsTest() {
         assertContains(first.argv.zipWithNext(), "--add-dir" to "$vault")
         assertContains(first.stdin, """\"approval\":null""")
         // Ants holds the write back too: Write and Edit on the Vault are denied until the launch after Approve.
-        assertEquals(listOf("Write(/$vault/**)", "Edit(/$vault/**)"), first.flag("--disallowedTools")?.split(","))
+        assertEquals(listOf("Write(/$vault/**)", "Edit(/$vault/**)"), first.flag("--disallowedTools")?.split(",")?.filter { "$vault" in it })
 
         browser.post(approve, mapOf("action" to "approve", "comment" to ""))
         eventually { assertContains(page(run), """id="state">Completed<""") }
@@ -71,7 +71,7 @@ class VaultTest : AntsTest() {
         val second = claude.launches("update-knowledge")[1]
         assertEquals(first.flag("--session-id"), second.flag("--resume"))
         assertContains(second.stdin, """\"approval\":{\"approved\":true""")
-        assertEquals(null, second.flag("--disallowedTools"))
+        assertFalse(second.flag("--disallowedTools")!!.contains("$vault"))
     }
 
     @Test

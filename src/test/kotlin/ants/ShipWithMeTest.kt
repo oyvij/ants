@@ -129,7 +129,7 @@ class ShipWithMeTest : AntsTest() {
     @Test
     fun `the griller, planner and storyteller get the tool allow-lists the spec gives them, and the implementer fixes the review`() {
         shipWithMe()
-        fun tools(skill: String) = claude.launches(skill).first().let { it.flag("--tools") to it.flag("--allowedTools") }
+        fun tools(skill: String) = claude.launches(skill).first().let { it.flag("--tools") to it.flag("--allowedTools")?.removeSuffix(",mcp__ants__run") } // every claude Task has the run tool
 
         assertEquals("Read,Grep,Glob" to "Read,Grep,Glob", tools("grill"))
         assertEquals("Read,Grep,Glob,Write,Edit" to "Read,Grep,Glob,Write(tickets/**),Edit(tickets/**)", tools("to-spec"))

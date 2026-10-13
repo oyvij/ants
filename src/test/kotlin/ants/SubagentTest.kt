@@ -55,7 +55,7 @@ class SubagentTest : AntsTest() {
         assertEquals(mapOf("description" to "Reviews.", "prompt" to "Review."), offered["reviewer"])
         assertFalse("private" in offered)
         assertFalse("codex-helper" in offered)
-        assertNull(launch.flag("--disallowedTools")) // the Agent tool without a Limit starts any type
+        assertFalse(launch.flag("--disallowedTools")!!.split(",").any { it.startsWith("Agent(") }) // the Agent tool without a Limit starts any type
         assertEquals("2", launch.env["CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH"])
     }
 
