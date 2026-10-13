@@ -25,10 +25,10 @@ import kotlin.io.path.exists
 import kotlin.io.path.readText
 
 /**
- * The Process [key]'s Schedule as the user reads it: in words, when it [next] starts a Run ([at] on the clock), and
- * what Ants noted.
+ * The Process [key]'s Schedule as the user reads it: in words, when it [next] starts a Run ([at] on the clock, and
+ * [countdown], such as `in 1d 6h`), and what Ants noted.
  */
-class Schedule(val key: String, val process: String, val cron: String, val paused: Boolean, val next: Instant?, val at: String?, val skipped: String?, val failed: FailedStart?) {
+class Schedule(val key: String, val process: String, val cron: String, val paused: Boolean, val next: Instant?, val at: String?, val countdown: String?, val skipped: String?, val failed: FailedStart?) {
     val words get() = inWords(cron)
 }
 
@@ -92,7 +92,7 @@ class Schedules(
         val cron = repository.getBpmnModelInstance(definition.id).schedule() ?: return null
         val state = state(definition.key)
         val next = if (state.paused) null else runCatching { CronExpression.parse(cron).next(clock.instant().atZone(clock.zone))?.toInstant() }.getOrNull()
-        return Schedule(definition.key, definition.name ?: definition.key, cron, state.paused, next, next?.let(clock::local), state.skipped, state.failed)
+        return Schedule(definition.key, definition.name ?: definition.key, cron, state.paused, next, next?.let(clock::local), next?.let { countdown(Duration.between(clock.instant(), it)) }, state.skipped, state.failed)
     }
 
     /** Pauses or resumes the Schedule of [key]; times that come while it is paused never run. */
@@ -165,6 +165,9 @@ fun BpmnModelInstance.schedule(): String? = scheduleTimer()?.timeCycle?.textCont
 fun BpmnModelInstance.scheduleTimer(): TimerEventDefinition? = getModelElementsByType(Process::class.java)
     .flatMap { it.getChildElementsByType(StartEvent::class.java) }
     .firstNotNullOfOrNull { it.getChildElementsByType(TimerEventDefinition::class.java).firstOrNull() }
+
+/** How long until a time [ahead], to the nearest minute: `in 6h 12m`, or `in 1d 6h`. */
+fun countdown(ahead: Duration) = "in " + duration(Duration.ofMinutes((ahead.toSeconds() + 30) / 60), seconds = false)
 
 /** A Schedule in words, as the modeler writes it: every hour, day, weekday, week or month at a time, else its six fields. */
 fun inWords(cron: String): String {

@@ -108,7 +108,7 @@ class CallActivityTest : AntsTest() {
         deploy(process("caller", "build" to call("build", "spec"), "draft" to agentTask("draft", "proofread", input("text", "build.draft.output.text"))))
         val run = start("caller")
 
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
         assertEquals("""{"draft":${done("called")}}""", variable(run, "build"))
         assertContains(claude.launches("draft").single().stdin, """{\"prompt\":\"Say hello\"}""")
         assertContains(claude.launches("proofread").single().stdin, """{\"text\":\"called\"}""")
@@ -117,6 +117,9 @@ class CallActivityTest : AntsTest() {
         assertTrue(workspace(run).resolve("tasks/build.draft/transcript.jsonl").exists())
         assertTrue(workspace(run).resolve("tasks/draft/transcript.jsonl").exists())
         assertFalse(browser.get("/runs").body.contains("Spec</a>"), "the called Process is no Run of its own")
+        // The Run page lists the called Process's Task too, by its key, opening its Transcript.
+        assertContains(page(run), """<tr class="click" data-href="/runs/$run/tasks/build.draft/transcript">""")
+        assertContains(page(run), "<b>build.draft</b>")
     }
 
     @Test
@@ -127,11 +130,11 @@ class CallActivityTest : AntsTest() {
         deploy(spec())
         deploy(process("caller", "build" to call("build", "spec")))
         val before = start("caller")
-        eventually { assertContains(page(before), "State: Completed") }
+        eventually { assertContains(page(before), """id="state">Completed<""") }
 
         deploy(spec(skill = "proofread"))
         val after = start("caller")
-        eventually { assertContains(page(after), "State: Completed") }
+        eventually { assertContains(page(after), """id="state">Completed<""") }
         assertEquals("""{"draft":${done("fixed")}}""", variable(after, "build"))
     }
 
@@ -148,7 +151,7 @@ class CallActivityTest : AntsTest() {
 
         eventually { assertEquals(2, claude.launches("draft").size) }
         claude.release("go")
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
         val first = claude.launches("draft").indexOfFirst { """{\"prompt\":\"a\"}""" in it.stdin } + 1
         assertEquals(listOf(first, 3 - first).joinToString(",", "[", "]") { """{"draft":${done("$it")}}""" }, variable(run, "build"))
         assertTrue(workspace(run).resolve("tasks/build-1.draft/transcript.jsonl").exists())
@@ -176,7 +179,7 @@ class CallActivityTest : AntsTest() {
 
         eventually { assertEquals(2, claude.launches("draft").size) }
         claude.release("go")
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
         val first = claude.launches("draft").indexOfFirst { """{\"prompt\":\"a\"}""" in it.stdin } + 1
         assertEquals(listOf(first, 3 - first).joinToString(",", "[", "]") { """{"build":{"draft":${done("$it")}}}""" }, variable(run, "each"))
     }
@@ -190,13 +193,13 @@ class CallActivityTest : AntsTest() {
         deploy(process("caller", "build" to call("build", "spec")))
         val run = start("caller")
 
-        val rows = { Regex("""<tr>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL).findAll(browser.get("/notifications").body).toList() }
+        val rows = { Regex("""<tr[^>]*>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL).findAll(browser.get("/notifications").body).toList() }
         eventually { assertEquals(1, rows().size) }
-        assertContains(rows().single().value, "<td>Caller</td>")
+        assertContains(rows().single().value, """<div class="muted small">Caller</div>""")
         val entry = Regex("""href="(/notifications/[^"]+)"""").find(rows().single().value)!!.groupValues[1]
         assertContains(browser.get(entry).body, """href="/runs/$run/tasks/build.draft/transcript"""")
         browser.post(entry, mapOf("action" to "continue", "instruction" to "Warm."))
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
         assertEquals("""{"draft":${done("warm")}}""", variable(run, "build"))
     }
 
@@ -215,7 +218,7 @@ class CallActivityTest : AntsTest() {
         val drawer = browser.events("run=$called&drawer=draft", "drawer")
         assertContains(assertNotNull(drawer.poll(10, SECONDS)), """href="/runs/$run/tasks/build.draft/transcript"""")
         claude.release("go")
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
     }
 
     @Test

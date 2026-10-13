@@ -35,7 +35,7 @@ class PushTest : AntsTest() {
     private fun clone(run: String, name: String): Path = workspace(run).resolve("repos/$name")
 
     /** The Run's row on the Notification list, or null. */
-    private fun row(run: String) = Regex("""<tr>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
+    private fun row(run: String) = Regex("""<tr[^>]*>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
         .find(browser.get("/notifications").body)?.groupValues?.get(1)
 
     /** The path of the Run's entry, once it is on the Notification list. */
@@ -47,7 +47,7 @@ class PushTest : AntsTest() {
 
     private fun push(run: String) = browser.post(entry(run), mapOf("action" to "push", "instruction" to ""))
 
-    private fun completed(run: String) = eventually { assertContains(browser.get("/runs/$run").body, "State: Completed") }
+    private fun completed(run: String) = eventually { assertContains(browser.get("/runs/$run").body, """id="state">Completed<""") }
 
     /** The Push Result of the ended Run [run]. */
     private fun result(run: String) = history.createHistoricVariableInstanceQuery().processInstanceId(run).variableName("push").singleResult().value as List<*>
@@ -60,9 +60,14 @@ class PushTest : AntsTest() {
         val web = repo("web")
         val before = listOf(api, web).associateWith(::refs)
         val run = start(api, web)
-        for (cell in listOf("↑ [push]", "Push", "Push feature-x to api, web")) assertContains(row(run)!!, cell)
+        for (cell in listOf("<i>↑</i>[push]", "Push", "Push feature-x to api, web")) assertContains(row(run)!!, cell)
         val page = browser.get(entry(run)).body
-        for (text in listOf("${api.remote}", "${web.remote}", "feature-x", "main", "Mine in api", "Mine in web", "Push", "Cancel the Run")) assertContains(page, text)
+        for (text in listOf("${api.remote}", "${web.remote}", "feature-x", "Mine in api", "Mine in web", "Cancel the Run")) assertContains(page, text)
+        assertContains(page, """<code>feature-x</code> <span class="pill p-quiet">new on the remote</span>""")
+        assertContains(page, "based on <code>main</code>")
+        assertContains(page, "0 files · <span class=\"plus\">+0</span>") // the commits are empty
+        assertContains(page, "Ants pushes these branches only: never with force, and never to <code>main</code>.")
+        assertContains(page, """<button class="primary" name="action" value="push">Push 2 branches</button>""")
         assertFalse("Skip" in page)
 
         val heads = listOf(api, web).associateWith { git(clone(run, it.name), "rev-parse", "HEAD") }
@@ -94,7 +99,7 @@ class PushTest : AntsTest() {
         git(web.local, "push", "-q", "origin", "feature-x")
 
         push(run)
-        eventually { assertContains(assertNotNull(row(run)), "✕ [failed]") }
+        eventually { assertContains(assertNotNull(row(run)), "<i>✕</i>[failed]") }
         assertContains(row(run)!!, "Pushed: none. Not pushed: api, web.")
         val page = browser.get(entry(run)).body
         assertContains(page, "web: git push failed: To ${web.remote}\n ! [rejected]        feature-x -&gt; feature-x (fetch first)") // git's own words
@@ -125,7 +130,7 @@ class PushTest : AntsTest() {
         val head = git(clone(run, "api"), "rev-parse", "HEAD")
 
         push(run)
-        eventually { assertContains(assertNotNull(row(run)), "✕ [failed]") }
+        eventually { assertContains(assertNotNull(row(run)), "<i>✕</i>[failed]") }
         assertContains(row(run)!!, "Pushed: api. Not pushed: web.")
         assertContains(browser.get(entry(run)).body, "No pushes on Sundays")
         assertEquals(head, git(api.remote, "rev-parse", "feature-x"))
@@ -140,7 +145,7 @@ class PushTest : AntsTest() {
         git(clone(run, "web"), "switch", "-q", "-c", "elsewhere")
 
         push(run)
-        eventually { assertContains(assertNotNull(row(run)), "✕ [failed]") }
+        eventually { assertContains(assertNotNull(row(run)), "<i>✕</i>[failed]") }
         assertContains(row(run)!!, "Pushed: none. Not pushed: api, web.")
         assertContains(browser.get(entry(run)).body, "web: The clone is on elsewhere, not the work branch feature-x.")
         for (repo in listOf(api, web)) assertEquals("", git(repo.remote, "branch", "--list", "feature-x", "elsewhere"))
@@ -152,7 +157,7 @@ class PushTest : AntsTest() {
         val run = start(api)
         val refused = browser.post(entry(run), mapOf("action" to "continue", "instruction" to ""))
         assertEquals(400, refused.status)
-        assertContains(assertNotNull(row(run)), "↑ [push]")
+        assertContains(assertNotNull(row(run)), "<i>↑</i>[push]")
         assertEquals("", git(api.remote, "branch", "--list", "feature-x"))
     }
 
@@ -161,10 +166,10 @@ class PushTest : AntsTest() {
         val api = repo("api")
         val run = start(api)
         val drawer = assertNotNull(browser.events("run=$run&drawer=push", "drawer").poll(10, TimeUnit.SECONDS))
-        assertContains(drawer, """<a href="${entry(run)}">Push or cancel the Run</a>""")
+        assertContains(drawer, """href="${entry(run)}">Push or cancel the Run</a>""")
         assertFalse("Continue the session" in drawer)
         val cancelled = browser.post(entry(run), mapOf("action" to "cancel", "instruction" to ""))
-        assertContains(cancelled.body, "State: Cancelled")
+        assertContains(cancelled.body, """id="state">Cancelled<""")
         assertTrue(clone(run, "api").resolve(".git").toFile().isDirectory)
         assertEquals("", git(api.remote, "branch", "--list", "feature-x"))
     }
@@ -182,7 +187,7 @@ class PushTest : AntsTest() {
         git(clone(run, "api"), "remote", "set-url", "origin", "https://github.com/oyvij/api.git")
         git(clone(run, "api"), "config", "url.${api.remote}.insteadOf", "https://github.com/oyvij/api.git")
         push(run)
-        eventually { assertContains(assertNotNull(row(run)), "✕ [failed]") }
+        eventually { assertContains(assertNotNull(row(run)), "<i>✕</i>[failed]") }
         browser.post(entry(run), mapOf("action" to "continue", "instruction" to "")) // web stays unpushed
         completed(run)
 

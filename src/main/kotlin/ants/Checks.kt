@@ -55,19 +55,61 @@ class Checks(private val catalogue: Catalogue, private val repository: Repositor
     }
 }
 
-/** The Built-in Tasks, by the topic Ants carries each out on, with what each does. */
+/** The Built-in Tasks, by the topic Ants carries each out on, with their name and what each does. */
 val builtIns = mapOf(
-    "clone-repos" to "Clone repos: clones the named repos into the Run workspace on the work branch.",
-    "accept-recommendations" to "Accept recommendations: answers a Round with every recommendation.",
-    "push" to "Push: waits for you to push the work branch of every repo.",
+    "clone-repos" to mapOf("name" to "Clone repos", "does" to "clones the named repos into the Run workspace on the work branch."),
+    "accept-recommendations" to mapOf("name" to "Accept recommendations", "does" to "answers a Round with every recommendation."),
+    "push" to mapOf("name" to "Push", "does" to "waits for you to push the work branch of every repo."),
 )
 
+/** What Ants calls each element the modeler shows, by the modeler's kind, and what it does there: the palette's tooltip and the panel's explanation. */
+private val elementKinds = mapOf(
+    "process" to ("Process" to "How one kind of job gets done. Every Run of it starts at its start event with the start form's fields."),
+    "start" to ("Start event" to "Where a Run begins; a Process has exactly one. Its fields are the start form you fill in on the Process page, and every Task can read them as \${field}."),
+    "timer-start" to ("Timer start event" to "Starts a Run on a schedule, with no one pressing Start. Pause or remove the Schedule on the Process page."),
+    "end" to ("End event" to "A path ends here, and the Run finishes when every path has. Several end events are fine, named for how the Run ended."),
+    "timer" to ("Timer" to "The flow waits here for a while or until a time. No Agent runs and no slot is held. Dropped on the edge of a User Task, it becomes a timer boundary."),
+    "timer-boundary" to ("Timer boundary" to "On a User Task only: when it fires, the user's Task is cancelled and the Run takes this path instead, such as Accept recommendations."),
+    "exclusive" to ("Decision (exclusive gateway)" to "Take exactly one path, or merge paths back together. Loops are drawn with it."),
+    "parallel" to ("Parallel gateway" to "Run branches at the same time, then wait for all of them to join."),
+    "agent" to ("Agent Task" to "An Agent runs one of its Skills and hands back a Result, which later Tasks read under this Task's id."),
+    "user" to ("User Task" to "The Run waits here, on the Notification list, until you act. Other branches keep going."),
+    "built-in" to ("Built-in Task" to "Ants does this itself. No Agent, no tokens, no slot."),
+    "task" to ("Plain Task" to "Ants would pass straight through this, doing nothing. What should it be?"),
+    "subprocess" to ("Sub-process" to "Groups part of the flow into one box, such as a question loop, which can run as a multi-instance. Collapse it from the wrench menu to tidy the diagram."),
+    "call" to ("Call a Process" to "Runs another Process as one step, inside this Run; its Result is every Task Result of the called Process."),
+    "annotation" to ("Text annotation" to "A note for people reading the diagram. Ants ignores it when running."),
+    "group" to ("Group" to "A frame around elements that belong together. Ants ignores it when running."),
+    "flow" to ("Path" to "The path a Run takes from one element to the next."),
+).mapValues { (_, it) -> mapOf("name" to it.first, "explain" to it.second) }
+
 /**
- * What the modeler page knows of Ants from the server, as JSON on its canvas's `data-facts`: the Built-in Tasks, the
- * start-form field types, Items are Tickets' property and what it does, and the Process's Profile property, what it
- * does and how its empty choice reads.
+ * What the modeler's User Task panel asks for each kind, in its kind dropdown's order: a field is an input parameter
+ * (`input`, so `${…}` works in it) or an extension property naming a Task (`property`).
+ */
+private val userTaskFields: Map<UserTaskKind, List<Map<String, String>>> = run {
+    val sendBack = mapOf("label" to "Send back resumes", "property" to SEND_BACK, "help" to "The Agent Task that Send back resumes with your comment.")
+    mapOf(
+        UserTaskKind.ANSWER_ROUND to listOf(mapOf("label" to "Asker", "property" to ASKER, "help" to "The Agent Task whose Round of questions you answer. It is resumed with your answers.")),
+        UserTaskKind.APPROVE to listOf(
+            mapOf("label" to "Title", "input" to "title", "help" to "What you are asked to approve."),
+            mapOf("label" to "Show", "input" to "show", "help" to "A file in the Run workspace, or a \${…} such as an earlier Result, shown as markdown."),
+            sendBack,
+        ),
+        UserTaskKind.REVIEW_CHANGES to listOf(
+            mapOf("label" to "Walkthrough", "property" to WALKTHROUGH, "help" to "The Task whose Story set the Story tab shows. Without it, By repo only."),
+            sendBack,
+        ),
+    )
+}
+
+/**
+ * What the modeler page knows of Ants from the server, as JSON on its canvas's `data-facts`: each element kind's name and
+ * explanation, the Built-in Tasks, the start-form field types, Items are Tickets' property and what it does, and the Process's Profile property, what it
+ * does and how its empty choice reads, Ants' own Run variables, and each User Task kind's fields and Result.
  */
 val modelerFacts: String = JsonMapper.shared().writeValueAsString(mapOf(
+    "kinds" to elementKinds,
     "builtIns" to builtIns,
     "fieldTypes" to FieldType.entries.associate { it.name.lowercase() to it.name.lowercase().replaceFirstChar(Char::uppercase) },
     "itemsAreTickets" to mapOf(
@@ -80,6 +122,8 @@ val modelerFacts: String = JsonMapper.shared().writeValueAsString(mapOf(
         "help" to "The Vault and Source map its Runs use, unless the start form picks another Profile.",
         "none" to "The default",
     ),
+    "runVariables" to RUN_VARIABLES,
+    "userTasks" to userTaskFields.map { (kind, fields) -> mapOf("value" to kind.value.orEmpty(), "name" to kind.title, "result" to kind.result, "fields" to fields) },
 ))
 
 /** The BPMN elements Ants runs, by their XML name; [refusedUses] refuses some uses of them. Anything else is refused. */

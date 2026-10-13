@@ -54,7 +54,7 @@ class UsedByTest : AntsTest() {
         val skill = get("/skills/keep-notes")
         assertContains(skill, keepNotes)
         assertContains(skill, """<a href="/skills/keep-index">keep-index</a>""")
-        assertContains(get("/skills/keep-index"), "Nothing uses it.")
+        assertContains(get("/skills/keep-index"), "Used by: no Process or Skill")
     }
 
     @Test
@@ -67,7 +67,7 @@ class UsedByTest : AntsTest() {
         val run = browser.post("/processes/used-by/runs", mapOf("prompt" to "Keep it")).path.removePrefix("/runs/")
         home.resolve("skills/old-keeper-skill").toFile().deleteRecursively()
         home.resolve("settings.yaml").writeText(settings)
-        assertContains(get("/runs/$run"), "State: Running") // its Skill is missing, so its Task waits on the user
+        assertContains(get("/runs/$run"), """id="state">Running<""") // its Skill is missing, so its Task waits on the user
         deploy("new-keeper", "old-keeper-skill")
 
         val page = get("/agents/old-keeper")

@@ -57,7 +57,7 @@ class AgentLauncher(
     internal val clock: Clock,
     private val names: RunNames,
     private val scopes: Scopes,
-    @Value("\${ants.home}") private val home: Path,
+    @Value("\${ants.home}") internal val home: Path,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val poller = Executors.newSingleThreadScheduledExecutor()
@@ -400,7 +400,7 @@ class AgentLauncher(
         val places = vault?.let { listOf("--add-dir", "$it") }.orEmpty() // the Vault's path goes nowhere else (ADR 0002)
             .plus(answerHistory(task, skill)?.let { listOf("--add-dir", "${it.createDirectories()}") }.orEmpty()) // so a Read reaches it (ADR 0010)
         val process = cli(agent.cli, cwd, flags(agent, schema, listOf(skill) + used, session!!, resume, gated?.let { listOf("Write(/$it/**)", "Edit(/$it/**)") }.orEmpty()) + shared + places).start()
-        val stdin = Stdin(process.outputWriter(), name(task))
+        val stdin = Stdin(process.outputWriter(), name(task), home)
         clis[process] = run
         val stderr = drain(process)
         try {
@@ -575,14 +575,14 @@ class AgentLauncher(
      * written has been read. A message counts as read when the CLI replays it (`--replay-user-messages`), which claude
      * does as it takes the message in: at the next tool boundary, or in a turn of its own after a `result` line.
      */
-    private class Stdin(private val writer: BufferedWriter, override val task: String) : Live {
+    private class Stdin(private val writer: BufferedWriter, override val task: String, private val home: Path) : Live {
         private var unread = 0
 
         @Volatile
         override var open = true
             private set
 
-        override val hint = "The Agent reads it at its next tool call."
+        override val hint = "It sees it at its next tool call."
 
         /** Whether the user stopped the session, so the `error_during_execution` that follows is `[stopped]`. */
         @Volatile
@@ -590,7 +590,7 @@ class AgentLauncher(
             private set
 
         @Synchronized
-        override fun say(message: String) = write(mapOf("type" to "user", "message" to mapOf("role" to "user", "content" to message)))
+        override fun say(message: String) = write(mapOf("type" to "user", "message" to mapOf("role" to "user", "content" to userContent(message, home))))
             .also { if (it) unread++ }
 
         @Synchronized

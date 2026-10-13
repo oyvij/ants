@@ -1,9 +1,12 @@
 package ants
 
+import jakarta.servlet.http.HttpServletRequest
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.boot.web.server.context.WebServerApplicationContext
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Controller
 import org.springframework.ui.Model
+import org.springframework.util.MultiValueMap
 import org.springframework.web.bind.annotation.ControllerAdvice
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.ModelAttribute
@@ -17,21 +20,37 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.roundToInt
 
-/** The settings page: one form over `settings.yaml`. Detect and Fill from Varde fill the form; only Save writes. */
+/**
+ * The settings page: one form over `settings.yaml`. Detect and Fill from Varde fill the form; Check login and Check now
+ * (the update check) ask again and say what they found in a toast, keeping what was typed; only Save writes.
+ */
 @Controller
 class SettingsPage(
     private val settings: Settings,
     private val encoder: PasswordEncoder,
     private val launcher: AgentLauncher,
     @Value("\${ants.home}") private val home: Path,
+    /** Where Ants listens, as it was started; empty is every address. */
+    @Value("\${server.address:}") private val address: String,
+    private val updates: Updates,
+    private val server: WebServerApplicationContext,
 ) {
+    private val port get() = server.webServer?.port
+
     @GetMapping("/settings")
     fun page(model: Model) = show(model, SettingsForm.of(settings))
 
     @PostMapping("/settings")
-    fun press(@RequestParam params: Map<String, String>, model: Model): String {
+    fun press(@RequestParam all: MultiValueMap<String, String>, request: HttpServletRequest, model: Model): String {
+        // A list's rows, such as the Agent folders, post one value each, which the form reads one per line.
+        val params = all.mapValues { it.value.joinToString("\n") }
         val form = SettingsForm.of(params)
         return when (params["action"]) {
+            "login" -> login().let { login ->
+                Shell.toast(request, if (login.loggedIn) Toast("Logged in", login.method) else Toast("Not logged in", "Run the command under Log in again, then press Check login."))
+                show(model, form)
+            }
+            "updates" -> Shell.toast(request, updates.checkNow()).let { show(model, form) }
             "detect" -> settings.detect().let { found ->
                 val missing = Settings.CLIS - found.keys
                 show(model, form.copy(paths = form.paths + found), if (missing.isEmpty()) null else "Your login shell doesn't find ${missing.joinToString(", ")}.")
@@ -49,13 +68,19 @@ class SettingsPage(
         model.addAttribute("file", settings.file.toString())
         model.addAttribute("message", message)
         model.addAttribute("passwordFromEnv", settings.passwordFromEnv)
-        model.addAttribute("login", ClaudeLogin(launcher.login(), home.resolve("claude"), launcher.usage()))
+        model.addAttribute("login", login())
+        model.addAttribute("home", home.toString())
+        model.addAttribute("address", "${address.ifEmpty { "0.0.0.0" }}:$port")
+        model.addAttribute("update", updates.current)
+        model.addAttribute("docker", updates.docker)
         return "settings"
     }
+
+    private fun login() = ClaudeLogin(launcher.login(), home.resolve("claude"), launcher.usage())
 }
 
 /** Ants' own Claude login as `claude auth status` reports it, the command that logs it in, and the latest usage. */
-class ClaudeLogin(status: Map<*, *>, folder: Path, usage: Map<*, *>) {
+class ClaudeLogin(status: Map<*, *>, val folder: Path, usage: Map<*, *>) {
     val loggedIn = status["loggedIn"] == true
 
     /** How it's logged in, such as `claude.ai, max`. */
@@ -67,13 +92,19 @@ class ClaudeLogin(status: Map<*, *>, folder: Path, usage: Map<*, *>) {
     /** Run in a terminal; Ants never handles the credentials. */
     val command = "CLAUDE_CONFIG_DIR=${shellQuoted(folder.toString())} claude auth login"
 
-    /** Such as `5-hour usage: 4%, resets Sun 11 Oct 19:00`, for each window claude last reported. */
+    /** Each window claude last reported, such as the 5-hour one at 4% that resets Sun 11 Oct 19:00. */
     val usage = listOf("five_hour" to "5-hour", "seven_day" to "7-day").mapNotNull { (key, name) ->
         val window = usage[key] as? Map<*, *> ?: return@mapNotNull null
         val used = (window["utilization"] as? Number ?: return@mapNotNull null).toDouble() * 100
-        val resets = (window["resetsAt"] as? Number)?.let { ", resets " + TIME.format(Instant.ofEpochSecond(it.toLong()).atZone(ZoneId.systemDefault())) }
-        "$name usage: ${used.roundToInt()}%${resets.orEmpty()}"
+        val resets = (window["resetsAt"] as? Number)?.let { TIME.format(Instant.ofEpochSecond(it.toLong()).atZone(ZoneId.systemDefault())) }
+        Usage(name, used.roundToInt(), resets)
     }
+
+    /** Such as `5-hour resets Sun 11 Oct 19:00, 7-day resets Fri 16 Oct 15:00.`, or empty. */
+    val resets = this.usage.filter { it.resets != null }.joinToString(", ", postfix = ".") { "${it.window} resets ${it.resets}" }.takeIf { it != "." }.orEmpty()
+
+    /** One usage window: its name, how much of it is used, in percent, and when it resets. */
+    data class Usage(val window: String, val percent: Int, val resets: String?)
 
     private companion object {
         val TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("EEE d MMM HH:mm", Locale.ENGLISH)

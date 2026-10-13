@@ -36,14 +36,7 @@ import kotlin.io.path.writeText
 sealed class Entry(val id: String, val tag: String, val process: String, val task: String, val summary: String, val since: Date) {
     val icon get() = ICONS[tag] ?: "•"
 
-    val waited: String
-        get() = Duration.between(since.toInstant(), Instant.now()).let {
-            when {
-                it.toDays() > 0 -> "${it.toDays()} d ${it.toHoursPart()} h"
-                it.toHours() > 0 -> "${it.toHours()} h ${it.toMinutesPart()} min"
-                else -> "${it.toMinutes()} min"
-            }
-        }
+    val waited get() = duration(Duration.between(since.toInstant(), Instant.now()), seconds = false)
 
     private companion object {
         val ICONS = mapOf("[failed]" to "✕", "[stuck]" to "⚠", "[stopped]" to "■", "[questions]" to "?", "[approve]" to "✓", "[review]" to "±", "[push]" to "↑")
@@ -103,7 +96,8 @@ class Notifications(
 
     /**
      * An entry's page. A Review changes' has two tabs ([tab]): Story, the Story set of the Task its Walkthrough field
-     * names, first, and By repo; without a Walkthrough, By repo only.
+     * names, first, and By repo; without a Walkthrough, By repo only. Both show a card per repo. Push's page shows each
+     * repo's changes as it will push them.
      */
     @GetMapping("/notifications/{id}")
     fun entry(@PathVariable id: String, model: Model, response: HttpServletResponse, @RequestParam(required = false) tab: String? = null): String {
@@ -137,12 +131,16 @@ class Notifications(
                             model.addAttribute("refused", refused.message)
                         }
                     }
-                    model.addAttribute("changes", if (story) emptyList() else changes(push.outgoing(entry.run), cloneRepos::git))
+                    model.addAttribute("changes", changes(push.outgoing(entry.run), cloneRepos::git)) // each tab's summary cards
                     model.addAttribute("comments", comments(task))
                     "review"
                 }
                 UserTaskKind.APPROVE -> {
-                    model.addAttribute("shown", shown(names.runWorkspace(entry.run), runtime.getVariableLocal(task.executionId, SHOW)))
+                    val show = runtime.getVariableLocal(task.executionId, SHOW)
+                    val workspace = names.runWorkspace(entry.run)
+                    model.addAttribute("shown", shown(workspace, show))
+                    model.addAttribute("file", (show as? String)?.takeIf { inWorkspace(workspace, it) != null })
+                    model.addAttribute("view", view(entry))
                     "approve"
                 }
             }
@@ -152,10 +150,21 @@ class Notifications(
         model.addAttribute("entry", entry)
         model.addAttribute("details", details(entry))
         if (isPush(incident)) {
-            model.addAttribute("repos", push.outgoing(entry.run))
+            model.addAttribute("repos", changes(push.outgoing(entry.run), cloneRepos::git))
             return "push"
         }
+        model.addAttribute("view", view(entry))
         return "notification"
+    }
+
+    /** [entry]'s Task as its page heads it, with its Transcript, if it has one. */
+    private fun view(entry: TaskEntry): TaskView {
+        val instance = runtime.createProcessInstanceQuery().processInstanceId(entry.instance).singleResult()
+        val element = repository.getBpmnModelInstance(instance.processDefinitionId).getModelElementById<FlowElement>(entry.activity)
+        val transcript = Transcript.read(Transcript.file(names.runWorkspace(entry.run), entry.taskId)).first.takeIf { it.isNotEmpty() }
+            ?.let { lines -> Transcript().apply { lines.forEach(::add) } }
+        val (state, label) = TaskView.state(entry)
+        return TaskView(entry.taskId, element, state, label, entry, null, transcript, transcript?.tokens ?: 0, "/notifications/${entry.id}")
     }
 
     /** What [entry]'s page shows beyond its summary, such as what a stuck Agent needs. */
@@ -317,7 +326,7 @@ class Notifications(
         repository.getBpmnModelInstance(task.processDefinitionId).getModelElementById<BaseElement>(task.taskDefinitionKey).property(name)
 
     /** A User Task's kind, by its [USER_TASK]: an Approve without one. */
-    private fun kind(task: Task) = property(task, USER_TASK).let { value -> UserTaskKind.entries.firstOrNull { it.value == value } ?: UserTaskKind.APPROVE }
+    private fun kind(task: Task) = UserTaskKind.of(property(task, USER_TASK))
 
     /** The Result of the Agent Task an Answer a Round names as its asker, holding the Round's questions. */
     private fun asked(task: Task) = property(task, ASKER)?.let { runtime.getVariable(task.executionId, it) }
@@ -340,6 +349,12 @@ class Notifications(
 
     /** The count for the nav and the tab title, sent on connect and whenever it changes. */
     fun count(): Part = streams.changes("count") { entries().size.toString() }
+
+    /** The Notification list's entries as HTML, sent on connect and whenever they change. */
+    fun live(): Part = streams.rendered("notifications", "entries.kte") { mapOf("entries" to entries()) }
+
+    /** Which Round the Answer a Round entry [entry] asks, and how many questions it holds; null for any other entry. */
+    fun round(entry: TaskEntry): Pair<Int, Int>? = userTask(entry.id, UserTaskKind.ANSWER_ROUND)?.let { round(it) to Question.of(asked(it)).size }
 
     private fun incidents() = runtime.createIncidentQuery().incidentType(Incident.EXTERNAL_TASK_HANDLER_TYPE)
 
@@ -405,11 +420,19 @@ class Notifications(
     }
 }
 
-/** A User Task's kind, its [USER_TASK] [value], and the tag of its entry on the Notification list. */
-enum class UserTaskKind(val value: String?, val tag: String) {
-    ANSWER_ROUND("answer-round", "[questions]"),
-    REVIEW_CHANGES("review-changes", "[review]"),
-    APPROVE(null, "[approve]"),
+/**
+ * A User Task's kind, its [USER_TASK] [value], the tag of its entry on the Notification list, what the modeler calls
+ * it, and the fields of its Result, which later Tasks read as `${task.field}`.
+ */
+enum class UserTaskKind(val value: String?, val tag: String, val title: String, val result: List<String>) {
+    ANSWER_ROUND("answer-round", "[questions]", "Answer a Round", listOf("answers")),
+    REVIEW_CHANGES("review-changes", "[review]", "Review changes", listOf("approved", "comment", "comments")),
+    APPROVE(null, "[approve]", "Approve", listOf("approved", "comment")),
+    ;
+
+    companion object {
+        fun of(value: String?) = entries.firstOrNull { it.value == value } ?: APPROVE
+    }
 }
 
 /** The extension property naming a User Task's [UserTaskKind]; an Approve has none. */

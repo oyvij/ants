@@ -1,7 +1,7 @@
 // What the modeler writes as text and reads back, checked with no browser: `node --test`, run by ./gradlew test.
 import {test} from "node:test"
 import assert from "node:assert/strict"
-import {camel, cronOf, operators, readCondition, readSchedule, toCamunda, unary} from "../../main/resources/static/modeler-text.js"
+import {camel, cronOf, operators, readCondition, readSchedule, resultFields, toCamunda, unary} from "../../main/resources/static/modeler-text.js"
 
 test("every operator's JUEL reads back as the field, operator and value it was written from", () => {
     for (const op of Object.keys(operators)) {
@@ -59,6 +59,16 @@ test("a field's variable name is its label in camel case", () => {
     assert.equal(camel("Repos"), "repos")
     assert.equal(camel("2 Ticket IDs!"), "ticketIds")
     assert.equal(camel(""), "")
+})
+
+test("a decision's condition reads the start form, the Results of the Tasks before it and their run counts, Ants' own variables and a multi-instance's item, each labelled by where it is from", () => {
+    const offered = ["${prompt}", "${runs}", "${clones}", "${item}", "${draft.summary}", "${draft.output.verdict}", "${ask}", "${ask.approved}", "${build.draft.output.text}"]
+    assert.deepEqual(resultFields(offered, {draft: "Draft", ask: "Ask", build: "Build"}, new Set(["draft", "ask"]), ["prompt"], ["runs", "clones", "sourceMap"]), [
+        ["prompt", "from the start form"],
+        ["draft.summary", "from Draft"], ["draft.output.verdict", "from Draft"], ["ask", "from Ask"], ["ask.approved", "from Ask"],
+        ["build.draft.output.text", "from Build"], ["runs.draft", "times Draft ran"], ["runs.ask", "times Ask ran"],
+        ["runs", "Ants' own"], ["clones", "Ants' own"], ["item", "a multi-instance's item"],
+    ])
 })
 
 test("the diagram opens in camunda's namespace, which Ants' deploy path turns back", () => {

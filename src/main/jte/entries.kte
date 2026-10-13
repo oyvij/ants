@@ -1,11 +1,14 @@
 @param entries: List<ants.Entry>
+@param bare: Boolean = false
 @if(entries.isEmpty())
-<p>Nothing is waiting on you.</p>
+<div class="muted">Nothing waits on you.</div>
 @else
-<table>
-    <tr><th></th><th>Process</th><th>Run</th><th>Task</th><th>Summary</th><th>Waiting</th></tr>
+<table class="notes">
+@if(!bare)    <tr><th>Tag</th><th>Run · Task</th><th>Summary</th><th>Waiting</th></tr>@endif
 @for(entry in entries)
-    <tr><td><span data-tag="${entry.tag}">${entry.icon} ${entry.tag}</span></td><td>${entry.process}</td><td>@if(entry is ants.TaskEntry)<a href="/runs/${entry.run}">${entry.runName}</a>@elseif(entry is ants.TicketEntry)<a href="/runs/${entry.run}">${entry.runName}</a>@endif</td><td><a href="/notifications/${entry.id}">${entry.task}</a></td><td>${entry.summary}</td><td>${entry.waited}</td></tr>
+    <tr class="click" data-href="/notifications/${entry.id}"><td>@template.tag(entry = entry)</td>
+        <td>@if(entry is ants.TaskEntry)<b><a href="/runs/${entry.run}">${entry.runName}</a></b> · @elseif(entry is ants.TicketEntry)<b><a href="/runs/${entry.run}">${entry.runName}</a></b> · @endif<a href="/notifications/${entry.id}">${entry.task}</a><div class="muted small">${entry.process}</div></td>
+        <td>${entry.summary}</td><td class="muted small nowrap">${entry.waited}</td></tr>
 @endfor
 </table>
 @endif

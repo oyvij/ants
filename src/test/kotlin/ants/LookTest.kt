@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import org.springframework.beans.factory.annotation.Autowired
+import tools.jackson.databind.json.JsonMapper
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
 import kotlin.io.path.createDirectories
@@ -32,8 +33,11 @@ class LookTest : AntsTest() {
     private val claude = FakeClaude()
     private val look: Path = Path.of("build/reports/browser/look")
 
-    /** A page and its prototype: a hash route in web-ui.html, or another file of the prototype's. */
-    private class Shot(val name: String, val prototype: String, val app: String)
+    /**
+     * A page and its prototype: a hash route in web-ui.html, or another file of the prototype's, each shot after
+     * [script] runs in the prototype and the app is given [keys], space-separated, for a state no URL reaches.
+     */
+    private class Shot(val name: String, val prototype: String, val app: String, val script: String? = null, val keys: String? = null)
 
     private fun result(json: String) = """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":$json}"""
 
@@ -55,6 +59,11 @@ class LookTest : AntsTest() {
                 Shot("stuck", "$prototype#/runs/payments-webhook/tasks/grill", entry(app.getValue("stuck"))),
                 Shot("approve", "$prototype#/runs/search-reindex/tasks/approve", entry(app.getValue("approve"))),
                 Shot("review", "$prototype#/runs/billing-retry-impl/tasks/review", entry(app.getValue("review"))),
+                // A story walked to its third step, with the diff and the details shown.
+                Shot("review-step", "$prototype#/runs/billing-retry-impl/tasks/review", entry(app.getValue("review")) + "#s1-3", "walk(0, 2); W.diff = true; W.details = true; renderWalk()", "d D"),
+                Shot("review-by-repo", "$prototype#/runs/billing-retry-impl/tasks/review", entry(app.getValue("review")) + "?tab=repo", "reviewTab('repo')"),
+                // The prototype confirms a Push in a modal over Review changes; Ants waits on Push's own page.
+                Shot("push", "$prototype#/runs/billing-retry-impl/tasks/review", entry(app.getValue("push")), "confirmPush('billing-retry-impl', 'review')"),
                 Shot("processes", "$prototype#/processes", "/processes"),
                 Shot("process", "$prototype#/processes/spec-you", "/processes/ship_with_me"),
                 Shot("modeler", "$prototype#/processes/spec-you/edit", "/processes/ship_with_me/edit"),
@@ -71,24 +80,37 @@ class LookTest : AntsTest() {
                 chromium.newContext(options).use { context ->
                     val page = context.newPage()
                     page.addInitScript("addEventListener('DOMContentLoaded', () => document.querySelector('details.proto')?.remove())")
-                    for (pair in pairs) shoot(page, pair.prototype, "${pair.name}/prototype-$theme")
+                    for (pair in pairs) shoot(page, pair.prototype, "${pair.name}/prototype-$theme") { pair.script?.let { page.evaluate(it) } }
                     shoot(page, "$prototype#/login", "login/prototype-$theme")
+                    shoot(page, "$prototype#/runs/dark-mode-toggle", "drawer/prototype-$theme") { evaluate("openDrawer('dark-mode-toggle', 'grill')") }
                 }
                 chromium.newContext(options).use { context ->
                     val page = context.newPage()
+                    page.onConsoleMessage { if (it.type() == "error") println("LookTest: ${page.url()}: ${it.text()}") }
+                    page.onPageError { println("LookTest: ${page.url()}: $it") }
                     shoot(page, "http://127.0.0.1:$port/login", "login/app-$theme")
                     logIn(page)
-                    for (pair in pairs) shoot(page, "http://127.0.0.1:$port${pair.app}", "${pair.name}/app-$theme")
+                    for (pair in pairs) shoot(page, "http://127.0.0.1:$port${pair.app}", "${pair.name}/app-$theme") { pair.keys?.split(" ")?.forEach { page.keyboard().press(it) } }
+                    // The Run page's drawer, open on its running Agent Task.
+                    shoot(page, "http://127.0.0.1:$port/runs/${app.getValue("running")}", "drawer/app-$theme") {
+                        locator("#diagram .djs-element[data-element-id='draft']").click()
+                        waitForSelector("#drawer-head")
+                    }
                 }
             }
         }
     }
 
-    /** Opens [url] in a fresh document, lets its diagrams and editors load, and saves it as [name]. */
-    private fun shoot(page: Page, url: String, name: String) {
+    /** Opens [url] in a fresh document, lets its diagrams and editors load, does [then], and saves it as [name]. */
+    private fun shoot(page: Page, url: String, name: String, then: (Page.() -> Unit)? = null) {
         page.navigate("about:blank")
         page.navigate(url)
         page.waitForTimeout(2500.0) // the pages' streams never let the network idle; bpmn-js and CodeMirror load and lay out
+        then?.let {
+            // A step that fails still leaves its screenshot, to see why.
+            runCatching { page.it() }.onFailure { println("LookTest: $name: ${it.message}") }
+            page.waitForTimeout(500.0) // the drawer slides in
+        }
         page.screenshot(Page.ScreenshotOptions().setPath(look.resolve("$name.png")).setFullPage(true))
     }
 
@@ -108,8 +130,11 @@ class LookTest : AntsTest() {
         return Path.of("build/look").createDirectories().resolve(file).also { it.writeText(html) }.toUri().toString()
     }
 
-    /** settings.yaml's lines beyond the Vault and claude: the Source map of the Review changes Run, and no So far. */
-    private val extra by lazy { reviewSourceMap() + "so-far: false\n" }
+    /**
+     * settings.yaml's lines beyond the Vault and claude: the Source map of the Review changes Run, no So far, and an extra
+     * Agent and Skill folder, as Settings in the prototype lists Varde's.
+     */
+    private val extra by lazy { reviewSourceMap() + "so-far: false\nagent-folders: [~/.varde/ai/agents]\nskill-folders: [~/.varde/ai/skills]\n" }
 
     /**
      * Seeds what the prototype shows, one Run at a time, each waiting until it has reached the state it is for, since the
@@ -117,9 +142,10 @@ class LookTest : AntsTest() {
      */
     private fun seed(): Map<String, String> {
         processes.deployShipped()
+        home.resolve("claude-usage.json").writeText("""{"five_hour":{"utilization":0.82},"seven_day":{"utilization":0.41}}""") // Settings' meters
         agentTask(claude, mapOf(
             "draft" to """{"type":"object","properties":{"notes":{"type":"string","format":"path"}}}""",
-            "polish" to null, "mend" to null, "ship" to null,
+            "polish" to null, "mend" to null, "ship" to null, "narrate" to null,
             "quiz" to """{"type":"object","properties":{"questions":{"type":"array"}}}""",
         ), extra = extra)
         val runs = mutableMapOf<String, String>()
@@ -150,11 +176,20 @@ class LookTest : AntsTest() {
         runs["running"] = start("agent-task", listOf("prompt" to "Add a dark mode toggle."))
         eventually { assertEquals(3, claude.launches("draft").size) }
 
-        // Review changes over two cloned repos, one with a commit.
-        http.import("review.bpmn")
-        runs["review"] = start("review", listOf("repos" to "api", "repos" to "web"))
+        // Review changes over two cloned repos, told as the prototype's Story set, with a step gone stale and a change no step covers.
+        claude.session("narrate", "wait commits", "write walkthrough/stories.json ${BillingRetry.stories}", result("""{"outcome":"done","summary":"Told the change as three stories.","output":{}}"""))
+        http.import("story-set.bpmn")
+        runs["review"] = start("story-set", listOf("repos" to "api", "repos" to "web"))
+        eventually { assertEquals(1, claude.launches("narrate").size) }
+        BillingRetry.commit(workspace(runs.getValue("review")).resolve("repos"))
+        claude.release("commits")
         entry(runs.getValue("review"))
-        commitFile(workspace(runs.getValue("review")).resolve("repos/api"), "hello.txt", "hello\nthere\nworld\n", "Greet them")
+
+        // A Push of two repos, each with a commit.
+        http.import("push.bpmn")
+        runs["push"] = start("ship", listOf("repos" to "api", "repos" to "web", "branch" to "ants/billing-retry"))
+        entry(runs.getValue("push"))
+        for (repo in listOf("api", "web")) commitFile(workspace(runs.getValue("push")).resolve("repos/$repo"), "retry.txt", "three times\n", "Retry a failed card payment")
 
         // A Round of questions.
         claude.session("quiz", 1, result("""{"outcome":"done","summary":"Round 1 on the invoice CSV export.","output":{"questions":[""" + listOf(
@@ -194,9 +229,96 @@ class LookTest : AntsTest() {
     private fun entry(run: String): String {
         var path = ""
         eventually(30) {
-            val row = Regex("""<tr>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL).find(http.get("/notifications").body)
+            val row = Regex("""<tr[^>]*>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL).find(http.get("/notifications").body)
             path = Regex("""href="(/notifications/[^"]+)"""").find(assertNotNull(row, "$run isn't on the Notification list").groupValues[1])!!.groupValues[1]
         }
         return path
     }
+}
+
+/**
+ * The prototype's Review changes, `billing-retry-impl`, in two clones, api and web: three commits in api (the handler
+ * as it was, the retry, and a later change to a line a step is on, which makes that step stale) and one in web; and
+ * the Story set telling it, with a test no step covers.
+ */
+internal object BillingRetry {
+    private val handler = listOf(
+        "package billing", "", "class PaymentFailedHandler(private val invoices: InvoiceRepository) {", "    fun handle(event: PaymentFailed) {",
+        "        val invoice = invoices.get(event.invoiceId)", "        log.info(\"Payment failed for \${invoice.id}, attempt \${event.attempt}\")",
+        "        invoice.markUnpaid()", "        invoices.save(invoice)", "    }", "}",
+    )
+    private val retrying = listOf(
+        "package billing", "", "class PaymentFailedHandler(", "    private val invoices: InvoiceRepository,", "    private val policy: PaymentRetryPolicy,",
+        "    private val retries: RetryScheduler,", ") {", "    fun handle(event: PaymentFailed) {", "        val invoice = invoices.get(event.invoiceId)",
+        "        log.info(\"Payment failed for \${invoice.id}, attempt \${event.attempt}\")", "        policy.next(event.attempt)?.let { retries.schedule(invoice, it) }",
+        "            ?: invoice.markUnpaid()", "        invoices.save(invoice)", "    }", "}",
+    )
+    private val policy = listOf(
+        "package billing", "", "import kotlin.time.Duration", "import kotlin.time.Duration.Companion.hours", "",
+        "/** How long to wait before each retry of a failed card payment. */", "data class PaymentRetryPolicy(",
+        "    val delays: List<Duration> = listOf(1.hours, 6.hours, 24.hours),", ") {", "    /** The delay before retry [attempt], or null when none are left. */",
+        "    fun next(attempt: Int): Duration? = delays.getOrNull(attempt - 1)", "}",
+    )
+    private val scheduler = listOf(
+        "package billing", "", "class RetryScheduler(private val jobs: JobQueue) {", "    fun schedule(invoice: Invoice, after: Duration) {",
+        "        invoice.nextRetryAt = Instant.now() + after", "        jobs.enqueue(RetryPayment(invoice.id), after)", "    }", "}",
+    )
+    private val test = listOf(
+        "class PaymentRetryPolicyTest {", "    private val policy = PaymentRetryPolicy()", "",
+        "    @Test fun `first retry waits an hour`() = assertEquals(1.hours, policy.next(1))", "    @Test fun `no fourth retry`() = assertNull(policy.next(4))", "}",
+    )
+    private val banner = listOf(
+        "import { Banner } from \"../ui/Banner\"", "import { relative } from \"../time\"", "import type { Invoice } from \"./types\"", "",
+        "export function InvoiceBanner({ invoice }: { invoice: Invoice }) {", "  if (invoice.status === \"UNPAID\") return <Banner tone=\"danger\">This invoice is unpaid.</Banner>",
+        "  if (invoice.nextRetryAt)", "    return <Banner tone=\"info\">We'll try your card again {relative(invoice.nextRetryAt)}.</Banner>", "  return null", "}",
+    )
+
+    /** Commits the change in the clones under [repos], one commit at a time. */
+    fun commit(repos: Path) {
+        fun write(repo: String, file: String, lines: List<String>) = repos.resolve("$repo/$file").writeText(lines.joinToString("\n", postfix = "\n"))
+        commitFile(repos.resolve("api"), "PaymentFailedHandler.kt", handler.joinToString("\n", postfix = "\n"), "Mark a failed payment unpaid")
+        write("api", "PaymentRetryPolicy.kt", policy)
+        write("api", "RetryScheduler.kt", scheduler)
+        write("api", "PaymentRetryPolicyTest.kt", test)
+        commitFile(repos.resolve("api"), "PaymentFailedHandler.kt", retrying.joinToString("\n", postfix = "\n"), "Retry a failed card payment three times")
+        commitFile(repos.resolve("api"), "PaymentFailedHandler.kt", retrying.joinToString("\n", postfix = "\n").replace("invoices.save(invoice)", "invoices.save(invoice, flush = true)"), "Flush the save")
+        commitFile(repos.resolve("web"), "InvoiceBanner.tsx", banner.joinToString("\n", postfix = "\n"), "Tell the customer when the card is tried again")
+    }
+
+    private fun step(name: String, file: String, kind: String, from: Int, to: Int, claim: String, why: String, vararg more: Pair<String, Any>) =
+        mapOf("id" to name.lowercase().replace(' ', '-'), "name" to name, "claim" to claim, "why" to why, "site" to mapOf("file" to file, "side" to "new", "kind" to kind, "from" to from, "to" to to)) + more
+
+    private const val HANDLER = "repos/api/PaymentFailedHandler.kt"
+    private const val POLICY = "repos/api/PaymentRetryPolicy.kt"
+
+    /** The Story set, as JSON on one line. */
+    val stories: String = JsonMapper.shared().writeValueAsString(mapOf(
+        "protocolVersion" to 1, "title" to "A failed card payment is retried three times before the invoice goes unpaid",
+        "ranges" to listOf(mapOf("repo" to "api", "base" to "HEAD~2", "head" to "HEAD~1"), mapOf("repo" to "web", "base" to "origin/main", "head" to "HEAD")),
+        "stories" to listOf(
+            mapOf("id" to "retry", "name" to "Retrying a failed payment", "premise" to "A failed payment no longer marks the invoice unpaid at once: it asks a policy for a delay and schedules a retry.", "steps" to listOf(
+                step("Failure arrives", HANDLER, "context", 8, 10, "A failed payment arrives in `PaymentFailedHandler.handle`, carrying which attempt it was.",
+                    "This is where control enters: the payment provider's webhook ends up here.",
+                    "flow" to mapOf("in" to "PaymentWebhookController posts PaymentFailed", "out" to "policy.next(attempt)"),
+                    "values" to listOf(mapOf("name" to "attempt", "value" to "event.attempt", "provenance" to "literal", "cite" to mapOf("file" to HANDLER, "line" to 10)))),
+                step("Ask the policy", HANDLER, "changed", 11, 11, "Instead of giving up, the handler asks the retry policy how long to wait.",
+                    "Keeps the numbers out of the handler, so changing the schedule never touches the flow."),
+                step("Three delays", POLICY, "changed", 7, 11, "The policy holds three delays, 1 h, 6 h and 24 h, and has none for a fourth attempt.",
+                    "The schedule is data, so it can be tuned without a deploy of the handler.",
+                    "values" to listOf(
+                        mapOf("name" to "delays", "value" to "1.hours, 6.hours, 24.hours", "provenance" to "literal", "cite" to mapOf("file" to POLICY, "line" to 8)),
+                        mapOf("name" to "next(4)", "value" to "null", "provenance" to "invented"),
+                    )),
+                step("Schedule it", "repos/api/RetryScheduler.kt", "changed", 4, 7, "The retry becomes a delayed job on the existing JobQueue, so it survives a restart.",
+                    "A job outlives the request that failed.", "nudge" to "Look at what happens if the job runs after the invoice was paid some other way."),
+            )),
+            mapOf("id" to "customer", "name" to "What the customer sees", "premise" to "While a retry is planned, the invoice page says when.", "steps" to listOf(
+                step("The banner", "repos/web/InvoiceBanner.tsx", "changed", 7, 8, "The invoice page shows an info banner while `nextRetryAt` is set.", "The customer knows the card will be tried again."),
+            )),
+            mapOf("id" to "giving-up", "name" to "Giving up", "premise" to "After the last retry the invoice ends up unpaid, as before.", "steps" to listOf(
+                step("Last attempt", HANDLER, "changed", 12, 12, "With no delay left, the handler marks the invoice unpaid: the old behaviour.", "Nothing changes for the last attempt."),
+                step("Saved either way", HANDLER, "context", 13, 13, "Retried or unpaid, the invoice is saved.", "One save, whichever way it went."),
+            )),
+        ),
+    ))
 }

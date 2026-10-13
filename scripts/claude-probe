@@ -7,6 +7,7 @@
   --raw-schema         pass --schema as given, without the envelope
   --then MESSAGE       send after a result line, instead of closing stdin (repeatable, in order)
   --interrupt SECONDS  send an interrupt control request after SECONDS
+  --image FILE         put the image (png, jpeg, gif, webp) beside the prompt, as a base64 image block
   --model MODEL        default haiku
   --cwd DIR            the working directory, default a fresh temporary Run workspace
   --timeout SECONDS    kill claude after SECONDS, default 300
@@ -18,7 +19,9 @@ It runs on your own claude login (not ANTS_HOME/claude) and costs a little usage
 as Ants drops it.
 """
 import argparse
+import base64
 import json
+import mimetypes
 import os
 import subprocess
 import sys
@@ -107,6 +110,7 @@ def main():
     parser.add_argument("--raw-schema", action="store_true")
     parser.add_argument("--then", action="append", default=[])
     parser.add_argument("--interrupt", type=float)
+    parser.add_argument("--image")
     parser.add_argument("--model", default="haiku")
     parser.add_argument("--cwd")
     parser.add_argument("--timeout", type=float, default=300)
@@ -136,10 +140,14 @@ def main():
         claude.stdin.write(json.dumps(message) + "\n")
         claude.stdin.flush()
 
-    def say(text):
-        send({"type": "user", "message": {"role": "user", "content": text}})
+    def say(text, image=None):
+        content = text if image is None else [
+            {"type": "image", "source": {"type": "base64", "media_type": mimetypes.guess_type(image)[0],
+                                         "data": base64.b64encode(Path(image).read_bytes()).decode()}},
+            {"type": "text", "text": text}]
+        send({"type": "user", "message": {"role": "user", "content": content}})
 
-    say(args.prompt)
+    say(args.prompt, args.image)
     if args.interrupt:
         def interrupt():
             if claude.stdin.closed:

@@ -136,8 +136,8 @@ input[type=checkbox], input[type=radio] { width: auto; accent-color: var(--acc);
 .grid2 > .fld, .grid3 > .fld { display: flex; flex-direction: column; } .grid2 > .fld > :last-child, .grid3 > .fld > :last-child { margin-top: auto; }
 .reasons { margin: 8px 0 0; padding-left: 18px; color: var(--bad); }
 
-/* Editors (CodeMirror mounts over data-md / data-json textareas) */
-.ed { border: 1px solid var(--fieldLine); border-radius: 8px; background: var(--field); overflow: hidden; } .ed .cm-editor { color: var(--text); }
+/* The editor box (markdown.js's editorBox) CodeMirror mounts in, after its hidden textarea: read-only, or refused empty. */
+.ed { border: 1px solid var(--fieldLine); border-radius: 8px; background: var(--field); overflow: hidden; font-size: 14px; font-weight: 400; color: var(--text); text-align: left; } .ed .cm-editor { color: var(--text); }
 .ed:focus-within { border-color: var(--acc); outline: 2px solid var(--accSoft); }
 .ed .bar { display: flex; gap: 2px; align-items: center; padding: 4px 6px; border-bottom: 1px solid var(--line2); background: var(--panel2); }
 .ed .bar button { padding: 2px 8px; font-size: 12px; border: 0; box-shadow: none; background: none; color: var(--text3); }
@@ -147,10 +147,8 @@ input[type=checkbox], input[type=radio] { width: auto; accent-color: var(--acc);
 .ed .cm-content { min-height: 128px; cursor: text; } .ed.tall .cm-content { min-height: 298px; } .composer .ed .cm-content { min-height: 42px; }
 .modal .split .cm-content { min-height: calc(86vh - 80px); } .ed .cm-scroller { cursor: text; }
 .ed.json .cm-scroller { font-family: var(--mono); font-size: 12.5px; }
-.ed .prev { padding: 10px 14px; min-height: 90px; }
 .md h1, .md h2, .md h3 { margin: 12px 0 6px; } .md p { margin: 6px 0; } .md pre { background: #0f172a; color: #e2e8f0; padding: 12px 14px; border-radius: 8px; overflow: auto; font-size: 12.5px; }
 .md pre code { background: none; padding: 0; color: inherit; } .md .add { color: #86efac; } .md .del { color: #fca5a5; } .md .hunk { color: #93c5fd; }
-textarea[data-md], textarea[data-json] { min-height: 90px; }
 .cm-selectionBackground { background: light-dark(#d7dcfa, #2b3350) !important; }
 
 /* Transcript */
@@ -266,7 +264,7 @@ div.tools label span { color: var(--muted); font-size: 12px; display: block; }
 .code { font: 12.5px/1.75 var(--mono); padding: 10px 0; overflow-x: auto; background: var(--codeBg); }
 .cl { display: grid; grid-template-columns: 44px 3px 1fr; gap: 12px; white-space: pre; padding-right: 16px; } .cl .ln { text-align: right; color: var(--lnum); }
 .cl.dim .tx { color: var(--dimCode); } .cl.site.changed .bar { background: #eab308; } .cl.site.context .bar { background: #3b82f6; } .cl.site .tx { color: var(--text); }
-.cl.add { background: var(--okSoft); } .cl.add .tx { color: var(--okText); } .cl.del { background: var(--badSoft); } .cl.del .tx { color: var(--badText); text-decoration: line-through; }
+.diff .cl.add { background: var(--okSoft); } .diff .cl.add .tx { color: var(--okText); } .diff .cl.del { background: var(--badSoft); } .diff .cl.del .tx { color: var(--badText); text-decoration: line-through; }
 .band { border-top: 1px solid var(--line); padding: 16px 18px; background: var(--band); }
 .band .claim { font-size: 15px; font-weight: 600; } .band .stale { background: var(--waitSoft); color: var(--warnText); font-size: 11px; font-weight: 800; padding: 1px 6px; border-radius: 4px; letter-spacing: .05em; }
 .vals { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 10px; font-size: 12.5px; } .vals .cited { color: var(--citeC); } .vals .inv { color: var(--invC); }
@@ -289,9 +287,29 @@ kbd { font: 11px var(--mono); border: 1px solid var(--line); border-bottom-width
 @keyframes shim { from { background-position: 100% 0; } to { background-position: -150% 0; } }
 .status { display: flex; gap: 6px; align-items: baseline; padding: 6px 0 2px; font-size: 13.5px; }
 .tr .new { animation: fadein .35s ease-out; } @keyframes fadein { from { opacity: 0; transform: translateY(4px); } }
-.caret::after { content: "▍"; color: var(--run); animation: blink 1s steps(2) infinite; } @keyframes blink { 50% { opacity: 0; } }
+/* The caret ends the text streaming in, inside its last paragraph. */
+.caret > :last-child::after { content: "▍"; color: var(--run); animation: blink 1s steps(2) infinite; } @keyframes blink { 50% { opacity: 0; } }
 .num { font-variant-numeric: tabular-nums; }
-.flash { animation: flash 1.2s ease-out; } @keyframes flash { from { background: #fff4e0; } }
+.flash { animation: flash 1.2s ease-out; } @keyframes flash { from { background: var(--waitSoft); } }
+/* Reduced motion: no shimmer, flash, fade, blink, pulse or slide (shell.js stops the spinners); the clocks and counts still change. */
+@media (prefers-reduced-motion: reduce) {
+    .shimmer { animation: none; background: none; color: var(--run); }
+    .flash, .new, .caret > :last-child::after, .drawer, .toast, dialog.modal, .p-running::before, .ov.running i { animation: none; }
+}
+
+/* Home, the Notification list and Runs. Home's live part (#live) lays its cards out in Home's grid, beside Start a
+   Run, which isn't live: the stats and Waiting on you across, then Working now beside Coming up and Start a Run. */
+.home { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: auto auto auto 1fr; column-gap: 20px; }
+.home > #live { display: contents; }
+.home .grid3, #waiting-on-you { grid-column: 1 / -1; } .home .grid3 { margin-bottom: 14px; }
+#working-now { grid-row: span 2; } #start-a-run { align-self: start; }
+.card h3 > a.small { margin-left: auto; font-weight: 500; }
+.item { padding: 7px 0; border-bottom: 1px solid var(--line2); } .row.item { padding: 6px 0; }
+.card .notes { box-shadow: none; }
+.notes td:first-child { width: 130px; }
+.nowrap { white-space: nowrap; }
+tr.click b a, .notes td a { color: inherit; } tr.click form { margin: 0; }
+.t-ready-for-human { background: var(--accSoft); color: var(--accText); border-color: color-mix(in srgb, var(--acc) 30%, transparent); }
 
 /* The login page: one card in the middle of the sidebar's colour. */
 body.login { min-height: 100vh; display: grid; place-items: center; background: var(--side); }
@@ -300,22 +318,133 @@ body.login .logo { color: var(--text); padding: 0 0 18px; }
 body.login p { margin: 14px 0; } body.login button { width: 100%; padding: 10px; }
 body.login [role] { margin-bottom: 4px; }
 
+/* The Run page, a Task's page with its Transcript, its stuck or Approve page, and the Run page's Task drawer. */
+.ent a::before { content: none !important; }
+.ed textarea { display: block; width: 100%; min-height: 130px; max-height: 520px; margin: 0; padding: 10px 12px; border: 0; border-radius: 0; background: none; resize: none; field-sizing: content; }
+.ed textarea:focus { outline: 0; } :is(.composer, .drawer) .ed textarea { min-height: 44px; max-height: 160px; }
+.composer > form { max-width: 1120px; margin: 0 auto; padding: 12px 32px; display: flex; gap: 8px; align-items: flex-end; }
+#diagram { margin-bottom: 6px; }
+#run-tasks:has(table) ~ .help { margin-top: 10px; }
+#rename { width: 420px; padding: 16px 20px 20px; border: 1px solid var(--line); color: var(--text); } #rename::backdrop { background: var(--modalBg); }
+#rename label.f { margin-top: 0; } #rename .row > input { flex: 1; }
+#details { margin-top: 32px; } #details > summary { margin-bottom: 12px; }
+.card.round { border-color: var(--wait); }
+details.session { margin-bottom: 14px; } details.session > .tr { margin-top: 8px; }
+.tr #entries > *, .tr .subagent > div > * { margin: 8px 0; }
+.tr .tool b { font-weight: 400; } .tr .tool code { background: none; padding: 0; font-size: inherit; } .tr .tool.error::before { color: var(--bad); }
+.tr .text > :first-child { margin-top: 0; } .tr .text > :last-child { margin-bottom: 0; }
+.tr .ants { color: var(--muted); font-size: 12px; text-align: center; }
+.tr .user { background: var(--accSoft); padding: 8px 12px; border-radius: 8px; }
+.tr .launch { border-top: 1px dashed var(--line); padding-top: 6px; color: var(--muted); font-size: 12px; font-weight: 400; }
+.tr .result { background: var(--okSoft); color: var(--okText); padding: 8px 12px; border-radius: 8px; }
+.tr .subagent { border-left: 3px solid var(--vio); padding-left: 12px; } .tr .subagent > summary { color: var(--vio); font-weight: 600; }
+#live:empty, #status:empty, .chips:empty { display: none; }
+#status { display: flex; gap: 6px; align-items: baseline; padding: 6px 0 2px; font-size: 13.5px; }
+#close { position: absolute; top: 30px; right: 12px; z-index: 2; }
+#parts { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
+#parts > .dh { position: sticky; top: 0; z-index: 1; background: var(--panel); }
+.dh h3 { margin: 2px 40px 6px 0; font-size: 16px; }
+#parts > section { margin: 14px 18px 0; }
+#drawer-output h3 { font-size: 13px; margin: 4px 0 8px; }
+#parts > .df { margin-top: auto; position: sticky; bottom: 0; background: var(--panel); }
+.df form { margin: 0; } .df .row { margin-top: 8px; }
+/* Processes and the Process page: the list, New Process's modal, the check, the start form, the Schedule card, and its Runs. */
+:is(#processes, #process-runs) td:first-child a { color: inherit; }
+dialog#new-process { width: min(560px, 92vw); height: auto; }
+#new-process .mb { padding: 4px 24px 24px; font-size: 14px; }
+#new-process form { margin: 0; } #new-process .go { margin-top: 16px; }
+#start .picks { flex-wrap: wrap; gap: 6px 14px; margin-bottom: 8px; } #start .picks label { font-weight: 500; margin: 0; }
+#start form { margin: 0; } #start .go { margin-top: 16px; }
+#schedule h3 .grow { flex: 1; }
+#schedule form { margin: 0; }
+#schedule .warn { margin-top: 14px; }
+#schedule .failed { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 14px; } #schedule .failed [role=alert] { width: 100%; margin: 0; }
+#schedule .subsec .help { margin: 0; }
+
+label > .ed { margin-top: 4px; } .modal .split .cm-scroller { font-family: inherit; line-height: 1.55; }
+.ed.readonly { background: var(--panel2); } .ed.readonly .st { color: var(--muted); }
+.ed.invalid { border-color: var(--bad); outline: 2px solid var(--badSoft); } .ed.invalid .st { color: var(--bad); }
+
+/* Answer a Round, as prototype/answer-screen: one question at a time under its tabs, each part colour-coded, the answer
+   a markdown editor, then Review and send; the buttons in a footer under the column, where they never move. */
+#round { max-width: 760px; padding-bottom: 72px; }
+nav#tabs[role=tablist] { position: sticky; top: 0; z-index: 4; display: flex; gap: 2px; margin: 0 0 28px; background: var(--bg); border-bottom: 1px solid var(--line); }
+nav#tabs[role=tablist] > button { min-height: 0; padding: 10px 14px; border: 0; border-bottom: 3px solid transparent; border-radius: 0; box-shadow: none; background: none; color: var(--muted); font-size: 15px; font-weight: 400; }
+nav#tabs[role=tablist] > [aria-selected=true] { color: var(--text); font-weight: 600; border-bottom-color: var(--ask); background: color-mix(in srgb, var(--ask) 10%, transparent); }
+#round .count { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
+#round .part { --part: var(--ask); border-left: 4px solid var(--part); padding: 2px 0 2px 14px; margin-bottom: 20px; font-size: 15px; }
+#round .part h3 { margin: 0 0 4px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--part); }
+#round .part h3 label { font: inherit; color: inherit; }
+#round .part p { margin: 0; }
+#round .ask p { font-size: 19px; font-weight: 600; }
+#round .ctx { --part: var(--ctx); }
+#round .rec { --part: var(--rec); } #round .rec p { color: var(--text2); }
+#round .ans { --part: var(--ans); } #round .ans .ed { font-size: 15px; }
+#round .ans .ed:focus-within { border-color: var(--ans); outline-color: color-mix(in srgb, var(--ans) 25%, transparent); }
+#review-list > button { display: block; width: 100%; margin-bottom: 8px; padding: 10px 12px; text-align: left; white-space: normal; font-size: 15px; font-weight: 400; background: var(--panel); border-radius: 6px; }
+#review-list > button:hover { border-color: var(--ask); }
+#review-list .a { margin-top: 2px; color: var(--ans); white-space: pre-wrap; }
+#round > footer {
+    /* The footer spans the page; its buttons line up with the column, inset as main insets it (max-width 1160px, padding 40px). */
+    --inset: calc(max(0px, (100% - var(--side-width) - 1160px) / 2) + 40px);
+    position: fixed; bottom: 0; left: var(--side-width); right: 0; z-index: 5; display: flex; gap: 8px;
+    padding: 12px max(var(--inset), calc(100% - var(--side-width) - var(--inset) - 760px)) 12px var(--inset);
+    background: var(--composer); backdrop-filter: blur(6px); border-top: 1px solid var(--line);
+}
+#round > footer > #next { margin-left: auto; min-width: 140px; background: var(--ans); border-color: var(--ans); color: light-dark(#fff, #0b1a10); }
+
+/* Review changes and Push: a card per repo, the Story tab's walk (review.js) and By repo's diffs, as pReview and confirmPush draw them. */
+.plus { color: var(--ok); } .minus { color: var(--bad); }
+.grid3.repos { margin-bottom: 14px; } .grid3.repos > .card { min-width: 0; } .grid3.repos .card > .mono { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tabs a { padding: 10px 16px; color: var(--muted); border-bottom: 2px solid transparent; font-weight: 600; font-size: 13px; }
+.tabs a:hover { text-decoration: none; color: var(--text); } .tabs a.on { color: var(--text); border-bottom-color: var(--acc); }
+.spine .stalecnt { color: var(--wait); } .spine .srem > div:first-child { margin-bottom: 6px; }
+#stories h3 { font-size: 17px; margin: 2px 0 10px; } #stories .help { margin: 12px 0 0; }
+.walkhead { margin-bottom: 12px; align-items: baseline; } .walkhead > b { font-size: 15px; }
+.cfile label { gap: 6px; cursor: pointer; }
+#walkMain:not(.diff) .cl.extra { display: none; }
+.band .details { margin-top: 12px; grid-template-columns: 64px 1fr; } .band .details code { white-space: pre-wrap; }
+.stepcomment { margin-top: 14px; }
+.walk nav b { padding: 8px 10px 2px; } .walk nav a.mono { font-size: 12px; }
+.walk { grid-template-columns: 220px minmax(0, 1fr); }
+.walk .card > .row > b.mono { font-size: 16px; } .walk .commits { margin: 8px 0 4px; }
+.walk .card > .row > * { flex-shrink: 0; white-space: nowrap; } .walk .card > .row > .mono.muted { flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.walk details { border-top: 1px solid var(--line2); padding: 8px 0; overflow-x: auto; } .walk summary { cursor: pointer; }
+table.diff { margin: 6px 0; background: #0f172a; color: #e2e8f0; border: 0; border-radius: 8px; box-shadow: none; font: 12.5px/1.6 var(--mono); padding: 12px 0; }
+table.diff td { padding: 0 14px 0 0; border: 0; white-space: pre; vertical-align: top; background: none !important; }
+table.diff td:nth-child(-n+2) { width: 1%; padding: 0 0 0 14px; text-align: right; color: #64748b; cursor: pointer; user-select: none; }
+table.diff td:nth-child(3) { padding-left: 14px; width: auto; }
+table.diff tr.add { color: #86efac; } table.diff tr.del { color: #fca5a5; } table.diff tr.hunk { color: #93c5fd; }
+table.diff tr.picked { background: rgba(129, 140, 248, .25); }
+#line-comment .lc { display: grid; grid-template-columns: 1fr 2fr 1fr 1fr 1fr 1.4fr; gap: 8px 12px; margin-bottom: 10px; }
+#line-comment label { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; font-weight: 600; }
+#comments { margin: 16px 0 0; } #comments form { margin: 0; padding: 3px 0; gap: 6px; }
+.card.push { box-shadow: none; margin: 12px 0; } .card.push > .row > b { font-size: 15px; }
+.card.push .kv { margin-top: 10px; grid-template-columns: 90px 1fr; } .card.push .commit { padding: 2px 0; }
+main form.row:is(.pushacts, .remove) { display: flex; margin: 16px 0 0; } #comments form.row { margin: 0; }
+
+/* Settings: its lists' name column and number fields keep the prototype's widths, and a long path wraps in its card. */
+.settings .grid2 > .card { min-width: 0; }
+.settings .kv code { overflow-wrap: anywhere; } .settings .cmd code { min-width: 0; }
+.settings .row > .name { width: 180px; flex: none; }
+.settings input.num { width: 90px; }
+.settings .nowrap, .settings .listed label { white-space: nowrap; font-weight: 500; }
+.settings .subsec > b + .help { margin-top: 2px; }
+.settings .subsec .fld:first-of-type label.f { margin-top: 10px; }
+
 /*
  * Until the page tickets: the pages whose markup isn't the prototype's yet, styled by their elements. Each page ticket
  * moves its page onto the classes above and deletes what here no longer styles anything.
  */
-main > section, #live > section, fieldset:has(> legend), article, #explain {
+main > section, fieldset:has(> legend), article {
     background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sh);
     padding: 20px 22px; margin: 0 0 16px; min-width: 0;
 }
-:is(main > section, #live > section) > h2:first-child { margin-top: 0; }
+main > section > h2:first-child { margin-top: 0; }
 fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 fieldset fieldset:has(> legend) { box-shadow: none; padding: 12px 16px; }
 legend { float: left; width: 100%; padding: 0; margin-bottom: 8px; font-weight: 600; }
 legend + * { clear: both; }
-#stats dl { grid-auto-flow: column; grid-template: auto auto / repeat(3, 1fr); gap: 0 20px; margin: 0; }
-#stats dt { color: var(--muted); font-size: 12.5px; }
-#stats dd { margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -.02em; }
 dl { display: grid; grid-template-columns: max-content 1fr; gap: 8px 16px; align-items: baseline; }
 dt { color: var(--muted); font-size: 12.5px; font-weight: 600; }
 dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
@@ -326,34 +455,15 @@ pre { background: var(--panel2); border: 1px solid var(--line); border-radius: 8
 pre code { background: none; padding: 0; }
 h3 { font-size: 14px; margin: 18px 0 8px; }
 small { color: var(--muted); font-size: 12.5px; }
-hr { border: 0; border-top: 1px solid var(--line); }
 img { max-width: 100%; }
 
 /* Lists of links, such as the Processes, Skills and Templates: one row each. */
-main > ul:has(> li > a), #start-a-run > ul {
+main > ul:has(> li > a) {
     list-style: none; padding: 0; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sh); overflow: hidden;
 }
-#start-a-run > ul { box-shadow: none; }
-:is(main > ul:has(> li > a), #start-a-run > ul) > li { padding: 10px 16px; border-bottom: 1px solid var(--line2); }
-:is(main > ul:has(> li > a), #start-a-run > ul) > li:last-child { border-bottom: 0; }
-:is(main > ul:has(> li > a), #start-a-run > ul) > li > a { font-weight: 600; margin-right: 8px; }
-
-/* Status pills, for a Run's state, and the waiting tags, for what a Notification waits on. */
-[data-state] { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; padding: 2px 9px; border-radius: 20px; white-space: nowrap; background: var(--line2); color: var(--text3); }
-[data-state]::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-[data-state=Running] { background: var(--runSoft); color: var(--run); }
-[data-state=Running]::before { animation: pulse 1.4s infinite; }
-[data-state=Completed] { background: var(--okSoft); color: var(--ok); }
-[data-state="Internally terminated"] { background: var(--badSoft); color: var(--bad); }
-[data-state=Suspended] { background: var(--vioSoft); color: var(--vio); }
-[data-tag] {
-    display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 9px 0 7px; border-radius: 6px; border: 1px solid;
-    font-size: 12px; font-weight: 600; white-space: nowrap; vertical-align: middle;
-    background: var(--accSoft); color: var(--accText); border-color: color-mix(in srgb, var(--acc) 30%, transparent);
-}
-[data-tag="[questions]"], [data-tag="[approve]"], [data-tag="[review]"], [data-tag="[push]"] { background: var(--waitSoft); color: var(--wait); border-color: color-mix(in srgb, var(--wait) 35%, transparent); }
-[data-tag="[stuck]"], [data-tag="[stopped]"] { background: var(--vioSoft); color: var(--vio); border-color: color-mix(in srgb, var(--vio) 35%, transparent); }
-[data-tag="[failed]"] { background: var(--badSoft); color: var(--bad); border-color: color-mix(in srgb, var(--bad) 35%, transparent); }
+main > ul:has(> li > a) > li { padding: 10px 16px; border-bottom: 1px solid var(--line2); }
+main > ul:has(> li > a) > li:last-child { border-bottom: 0; }
+main > ul:has(> li > a) > li > a { font-weight: 600; margin-right: 8px; }
 
 /* The Agent and Skill beside each name, drawn by the link. */
 a[href^="/agents/"]::before, a[href^="/skills/"]::before {
@@ -383,55 +493,13 @@ form > label, form > p > label { margin-right: 8px; }
 [role=alert]:empty { display: none; }
 [role=status]:not(.toast) { background: var(--okSoft); color: var(--okText); border-radius: 8px; padding: 8px 12px; }
 details > summary { cursor: pointer; color: var(--muted); }
-fieldset.tools { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 4px 16px; }
-fieldset.tools > :is(legend, p) { grid-column: 1 / -1; }
-fieldset.tools details[open] { grid-column: 1 / -1; }
 ::file-selector-button { font: inherit; font-weight: 600; font-size: 13px; color: var(--text); background: var(--panel2); border: 1px solid var(--fieldLine); border-radius: 6px; padding: 4px 10px; margin-right: 8px; cursor: pointer; }
-
-/* The code editors: CodeMirror, mounted after each Skill text area. */
-form .cm-editor { border: 1px solid var(--fieldLine); border-radius: 8px; background: var(--field); color: var(--text); overflow: hidden; margin-top: 4px; max-height: 520px; }
-form .cm-editor.cm-focused { outline: 2px solid var(--accSoft) !important; border-color: var(--acc); }
-form .cm-editor .cm-scroller { font-family: var(--mono); font-size: 12.5px; line-height: 1.55; }
-form .cm-editor .cm-gutters { background: var(--panel2); color: var(--muted); border-color: var(--line2); }
-form .cm-editor .cm-activeLine { background: color-mix(in srgb, var(--acc) 6%, transparent); }
-form .cm-editor .cm-activeLineGutter { background: color-mix(in srgb, var(--acc) 12%, transparent); }
 
 /* The diagrams' boxes keep their margin below, and the call activity's trail above. */
 .dia { margin-bottom: 16px; }
 #trail { margin-bottom: 8px; color: var(--muted); }
 
-/* The Run's Task drawer. */
-#drawer {
-    position: fixed; top: 0; right: 0; bottom: 0; width: min(460px, 100%); z-index: 30; overflow: auto; padding: 14px 18px;
-    background: var(--panel); border-left: 1px solid var(--line); box-shadow: -12px 0 32px rgba(15, 23, 42, .12); animation: slidein .2s ease-out;
-}
-#close { float: right; border-color: transparent; box-shadow: none; }
-#drawer section { border-bottom: 1px solid var(--line2); padding: 6px 0 12px; }
-#drawer h2 { margin: 6px 0 4px; }
-#drawer-so-far { background: var(--accSoft); border-radius: 10px; padding: 12px 14px !important; margin: 12px 0; border: 0 !important; }
-#drawer-so-far h3 { margin: 0 0 4px; }
-#drawer-checklist ul { list-style: none; padding: 0; }
-.completed { color: var(--muted); text-decoration: line-through; }
-.in_progress { font-weight: 600; color: var(--run); }
-
-/* The Transcript. */
-#entries { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sh); padding: 10px 18px; font-size: 13.5px; margin-bottom: 16px; }
-#entries > *, .subagent > div > * { margin: 8px 0; }
-.tool, .ants, .user, #status { font-family: var(--mono); font-size: 12.5px; }
-.tool { color: var(--text2); }
-.tool.error b { color: var(--bad); }
-.ants { color: var(--muted); }
-.user { background: var(--accSoft); padding: 8px 12px; border-radius: 8px; }
-.launch { border-top: 1px dashed var(--line); padding-top: 6px; color: var(--muted); font-size: 12px; font-weight: 500; }
-.result { background: var(--okSoft); color: var(--okText); padding: 8px 12px; border-radius: 8px; }
-.subagent { border-left: 3px solid var(--vio); padding-left: 12px; }
-.subagent > summary { color: var(--vio); font-weight: 600; }
-#entries .chip, #drawer .chip { display: inline-block; margin: 2px 4px 2px 0; }
-#status { color: var(--run); }
-.spinner { display: inline-block; animation: spin 2s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
-
-/* Review changes: the diffs, and the Story set's steps. */
+/* The Answer page's tabs. */
 nav#tabs { display: flex; gap: 4px; margin-bottom: 18px; border-bottom: 1px solid var(--line); }
 nav#tabs > :is(a, b, button) {
     padding: 10px 16px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; box-shadow: none; background: none;
@@ -439,55 +507,63 @@ nav#tabs > :is(a, b, button) {
 }
 nav#tabs > b, nav#tabs > [aria-selected=true] { color: var(--text); border-bottom-color: var(--acc); }
 nav#tabs > a:hover { text-decoration: none; color: var(--text); }
-table:is(.diff, .site) { font: 12.5px/1.75 var(--mono); border-radius: 0; box-shadow: none; border: 0; border-top: 1px solid var(--line2); }
-table:is(.diff, .site) td { padding: 0 12px; white-space: pre; vertical-align: top; border: 0; }
-table.diff td:nth-child(-n+2), table.site td:first-child { color: var(--muted); opacity: .7; text-align: right; width: 3em; }
-table.diff td:nth-child(-n+2) { cursor: pointer; user-select: none; }
-table:is(.diff, .site) tr:hover > td { background: none; }
-tr.add > td { background: var(--okSoft) !important; color: var(--okText); }
-tr.del > td { background: var(--badSoft) !important; color: var(--badText); }
-tr.hunk > td { color: var(--muted); background: var(--panel2) !important; }
-tr.picked { outline: 2px solid var(--acc); outline-offset: -2px; }
-section.repo details { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; margin: 10px 0; }
-section.repo summary { padding: 10px 16px; font: 12.5px var(--mono); color: var(--text); background: var(--panel2); }
-ol.commits { padding-left: 20px; }
-ol.steps { list-style: none; padding: 0; }
-ol.steps > li { margin: 16px 0; padding-top: 12px; border-top: 1px solid var(--line2); }
-ol.steps h4 { margin: 0 0 6px; font-size: 15px; }
-#comments > li { margin: 6px 0; }
-#pre-run strong { color: var(--ok); }
-#pre-run:has(ul) strong, #pre-run ul { color: var(--bad); }
 
-/* Answer a Round: one Question at a time under its tabs, each part colour-coded, and the buttons in a footer. */
-#round { max-width: 760px; padding-bottom: 72px; }
-nav#tabs[role=tablist] { position: sticky; top: 0; z-index: 4; background: var(--bg); gap: 2px; }
-nav#tabs > [aria-selected=true] { border-bottom: 3px solid var(--ask); background: color-mix(in srgb, var(--ask) 10%, transparent); }
-section.question > p:first-child { color: var(--muted); font-size: 13px; margin-bottom: 4px; }
-section.question > h2 { margin-top: 0; font-size: 18px; }
-section.question > h3 { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; margin: 20px 0 0; }
-section.question > :is(h3, h3 ~ p) { border-left: 4px solid var(--part); padding: 2px 0 2px 14px; }
-section.question > h3 ~ p { margin: 0; }
-section.question > h3 { --part: var(--ask); color: var(--part); }
-section.question > h3 ~ * { --part: var(--ask); }
-section.question > h3:nth-of-type(2), section.question > h3:nth-of-type(2) ~ * { --part: var(--ctx); }
-section.question > h3:nth-of-type(3), section.question > h3:nth-of-type(3) ~ * { --part: var(--rec); }
-section.question > h3:nth-of-type(4), section.question > h3:nth-of-type(4) ~ * { --part: var(--ans); }
-section.question > h3:first-of-type + p { font-size: 18px; font-weight: 600; }
-section.question > h3:nth-of-type(3) ~ p { color: var(--text2); }
-section.question > h3 label { font: inherit; color: inherit; }
-section.question > textarea { border-left: 4px solid var(--ans); border-radius: 0 6px 6px 0; min-height: 6em; font-size: 15px; padding: 10px; }
-section.question > textarea:focus { outline: 2px solid var(--ans); }
-#review-list > button { width: 100%; justify-content: flex-start; white-space: pre-wrap; text-align: left; font-weight: 500; margin-bottom: 8px; padding: 10px 12px; }
-#review-list > button:hover { border-color: var(--ask); background: var(--panel); }
-#round > footer {
-    position: fixed; bottom: 0; left: var(--side-width); right: 0; z-index: 5; display: flex; gap: 8px; padding: 12px 40px;
-    background: var(--composer); backdrop-filter: blur(6px); border-top: 1px solid var(--line);
-}
-#round > footer > #next { margin-left: auto; min-width: 140px; background: var(--ans); border-color: var(--ans); color: #fff; }
+/*
+ * The modeler (#97): the properties panel beside the canvas (.modelerWrap, .props above), each element's head (.kind
+ * and its name), its explanation, the decision's path cards, the Task buttons, the Checks under it, and the New Agent
+ * and New Skill modal.
+ */
+.modelerWrap > .dia { margin: 0; }
+.props .name { font-weight: 700; font-size: 15px; }
+.props .explain { background: var(--accSoft); color: var(--accText); border-radius: 8px; padding: 8px 10px; font-size: 12.5px; margin: 12px 0; line-height: 1.5; }
+.props .explain ol { margin: 6px 0 0; padding-left: 18px; }
+.props .fld > label.f { margin-top: 14px; }
+.props .fld > .ghost.small { margin-top: 4px; }
+.props .fld .row { margin-bottom: 6px; } .props .fld .row > code { white-space: nowrap; }
+.props label:has(> input[type=checkbox], > input[type=radio]) { display: flex; gap: 6px; align-items: center; margin: 4px 0; font-weight: 500; }
+.props .fld .card { padding: 10px; margin: 6px 0; box-shadow: none; }
+.props .card.path { padding: 10px 12px; margin: 8px 0; box-shadow: none; }
+.props .card.path > * + * { margin-top: 6px; }
+.props .branch { padding: 4px 0; }
+.props .change { margin-top: 10px; }
+.props .kindbtn { display: flex; justify-content: flex-start; gap: 10px; width: 100%; text-align: left; white-space: normal; margin: 6px 0; font-weight: 500; }
+.props .kindbtn > span:first-child { font-size: 22px; }
+.props .checks { border-top: 1px solid var(--line); margin-top: 18px; padding-top: 12px; }
+.props .checks > .row { margin-bottom: 6px; }
+#summary:empty { display: none; }
+#checks { list-style: none; padding: 0; margin: 0; font-size: 12.5px; }
+#checks li { padding: 5px 8px; border-radius: 6px; }
+#checks li:has(a):hover { background: var(--line2); }
+#checks a { color: inherit; } #checks a:hover { text-decoration: none; }
+#checks .error::before { content: "✖ "; color: var(--bad); }
+#checks .warning::before { content: "⚠ "; color: var(--wait); }
+dialog.modal.create .who > * { margin: 0; border-radius: 0; padding: 10px 18px; }
+dialog.modal.create iframe { flex: 1; border: 0; display: block; padding: 0; width: 100%; background: var(--bg); }
 
-/* The modeler's panel beside the canvas and its Checks. */
-#explain { border-radius: var(--r); margin: 0; }
-#explain h2:first-child { margin-top: 0; }
-#checks { list-style-position: inside; padding: 0; }
-#checks .error::marker { content: "✖ "; color: var(--bad); }
-#checks .warning::marker { content: "⚠ "; color: var(--wait); }
+/* Agents and Skills: their lists, the Agent page (Who it is, What it may do, Standing instructions) and the Skill page. */
+table.library a, .usedby a { color: inherit; } table.library td a, table.library td:first-child { white-space: nowrap; } table.library td b a:hover { color: var(--acc); }
+tr.hidden td { color: var(--muted); }
+fieldset[data-cli][disabled] { display: none; }
+form.agent :is(input, select, textarea):not([type=checkbox], [type=radio]) { background-color: var(--field); color: var(--text); }
+form.agent .chipsel input:not([type=checkbox]) { background: none; }
+.fld .other { display: none; margin-top: 6px; } .fld .help.other { margin: 4px 0 0; }
+.fld:has(option[value=other]:checked) .other { display: block; }
+.fld .help.checked { margin: 6px 0 0; }
+main .trow label { font-weight: 400; font-size: 14px; margin: 0; }
+.trow:has(> label > input:checked) { background: var(--accSoft); }
+.trow:not(:has(> label > input:checked)) [data-limit] { visibility: hidden; }
+.tlim .row { margin-bottom: 4px; }
+details.others { margin-top: 16px; } details.others > summary { color: var(--acc); }
+.add-tool { margin-top: 14px; } .add-tool button { white-space: nowrap; }
+label.tick { display: flex; gap: 8px; align-items: center; font-weight: 500; }
+.ed .cm-gutters { background: var(--panel2); color: var(--muted); border-color: var(--line2); }
+.ed .bar .ok { color: var(--ok); } .ed .bar .bad { color: var(--bad); }
+.grid2.skill-page { grid-template-columns: 1.4fr 1fr; }
+.skill-page form { margin: 0; } .skill-page form > .fld:first-of-type label.f { margin-top: 0; }
+.runby { padding: 6px 0; border-bottom: 1px solid var(--line2); } .runby a { color: inherit; }
+.skill-page h3.fields { margin-top: 18px; }
+details.example { margin-top: 8px; } details.example > summary { color: var(--text); }
+details.example pre { background: var(--line2); border: 0; padding: 10px; border-radius: 8px; white-space: pre; }
+
+/* Images in the prompt and in Send (#89): a pasted image, shown where the message shows its text */
+.user img, .prompt img { display: block; max-height: 240px; margin: 6px 0; border-radius: 6px; }

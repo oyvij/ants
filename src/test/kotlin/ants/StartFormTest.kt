@@ -22,8 +22,8 @@ class StartFormTest : AntsTest() {
         val order = listOf("Prompt", "What the Run should build", "Work branch", "Leave it empty for the scout to name one", "Repos")
             .map { form.indexOf(it) }
         assertTrue(order.all { it >= 0 } && order == order.sorted(), form)
-        assertContains(form, """<textarea name="prompt" required>""")
-        assertContains(form, """<input name="workBranch" value="">""")
+        assertContains(form, """<textarea name="prompt" id="field-prompt" required data-markdown data-tall>""")
+        assertContains(form, """<input name="workBranch" id="field-workBranch" value="">""")
         assertContains(form, """<input name="repos" id="field-repos" value="" placeholder""") // no Source map, so no list to pick from
     }
 
@@ -44,8 +44,8 @@ class StartFormTest : AntsTest() {
         home.resolve("settings.yaml").writeText("source-maps:\n  home: $maps/home.md\n  stacc: $maps/stacc.md\ndefault-source-map: stacc\n")
         try {
             browser.import("start-form.bpmn")
-            val repos = form("start-form").substringAfter("""<select name="repos" multiple>""").substringBefore("</select>")
-            assertEquals(listOf("api-in", "web"), Regex("<option>([^<]+)</option>").findAll(repos).map { it.groupValues[1] }.toList())
+            val repos = form("start-form").substringAfter("""<div class="row picks">""").substringBefore("</div>")
+            assertEquals(listOf("api-in", "web"), Regex("""<span class="mono">([^<]+)</span>""").findAll(repos).map { it.groupValues[1] }.toList())
         } finally {
             home.resolve("settings.yaml").writeText("")
         }

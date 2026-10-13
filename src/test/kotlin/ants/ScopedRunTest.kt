@@ -55,7 +55,7 @@ class ScopedRunTest : AntsTest() {
     private fun result(output: String) =
         """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":{"outcome":"done","summary":"Done.","output":$output}}"""
 
-    private fun row(run: String) = Regex("""<tr>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
+    private fun row(run: String) = Regex("""<tr[^>]*>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
         .find(browser.get("/notifications").body)?.groupValues?.get(1)
 
     private fun entry(run: String): String {
@@ -85,9 +85,9 @@ class ScopedRunTest : AntsTest() {
         assertEquals(200, page.status, page.body)
         val run = page.path.removePrefix("/runs/")
         val push = entry(run)
-        assertContains(row(run)!!, "↑ [push]")
+        assertContains(row(run)!!, "<i>↑</i>[push]")
         browser.post(push, mapOf("action" to "push", "instruction" to ""))
-        eventually(20) { assertContains(browser.get("/runs/$run").body, "State: Completed") }
+        eventually(20) { assertContains(browser.get("/runs/$run").body, """id="state">Completed<""") }
         return run
     }
 
@@ -138,7 +138,7 @@ class ScopedRunTest : AntsTest() {
         val run = browser.post("/processes/wait-then-clone/runs", listOf("repos" to "you/app")).path.removePrefix("/runs/")
         entry(run)
         browser.post("/runs/$run/cancel", emptyMap())
-        assertContains(browser.get("/runs/$run").body, "State: Cancelled")
+        assertContains(browser.get("/runs/$run").body, """id="state">Cancelled<""")
         assertFalse(calls().any { it.startsWith("repo create") }, calls().toString())
         assertFalse(github.resolve("you").exists())
     }
@@ -167,8 +167,8 @@ class ScopedRunTest : AntsTest() {
         for ((file, key) in listOf("ship-small" to "ship_small", "ship-with-me" to "ship_with_me", "ship-by-proxy" to "ship_by_proxy", "ship-as-proposed" to "ship_as_proposed", "ship-overnight" to "ship_overnight")) {
             browser.import("shipped/processes/$file.bpmn")
             val form = browser.get("/processes/$key").body.substringAfter("action=\"/processes/$key/runs\"").substringBefore("</form>")
-            assertContains(form, """<select name="repos" multiple>""", message = key)
-            assertContains(form, """<option>api</option>""", message = key)
+            assertContains(form, """<div class="row picks">""", message = key)
+            assertContains(form, """<input type="checkbox" name="repos" value="api">""", message = key)
             assertContains(form, """<input name="repos" """, message = key)
         }
     }

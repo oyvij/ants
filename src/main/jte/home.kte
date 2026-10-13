@@ -1,10 +1,12 @@
-@param live: Long
-@param waiting: Int
-@param done: Long
+@param greeting: String
 @param entries: List<ants.Entry>
-@param working: List<ants.Working>
+@param running: Int
+@param cap: Int
+@param live: Long
+@param ended: Long
+@param working: List<ants.Now>
 @param coming: List<ants.Schedule>
-@param processes: List<org.operaton.bpm.engine.repository.ProcessDefinition>
+@param processes: Map<org.operaton.bpm.engine.repository.ProcessDefinition, Boolean>
 @param colorScheme: String = "light dark"
 @param shell: ants.Shell
 <!doctype html>
@@ -18,18 +20,17 @@
 <body>
 @template.nav(shell = shell)
 <main>
-<div class="ph"><h1>Home</h1><div class="acts"><a class="btn primary" href="/processes">Start a Run</a></div></div>
-<div id="live">@template.dashboard(live = live, waiting = waiting, done = done, entries = entries, working = working, coming = coming)</div>
-<section id="start-a-run">
-<h2>Start a Run</h2>
-<ul>
-@for(process in processes)
-    <li><a href="/processes/${process.key}">${process.name ?: process.key}</a></li>
+<div class="ph"><h1>${greeting}</h1><div class="acts"><a class="btn primary" href="/processes">Start a Run</a></div></div>
+<div class="home">
+<div id="live">@template.dashboard(entries = entries, running = running, cap = cap, live = live, ended = ended, working = working, coming = coming)</div>
+<div class="card" id="start-a-run"><h3><svg class="i" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><path d="M6.5 10v3.5A2.5 2.5 0 0 0 9 16h5"/></svg> Start a Run</h3>
+@for((process, ready) in processes)
+    <div class="row item"><a class="grow" href="/processes/${process.key}">${process.name ?: process.key}</a>@if(!ready)<span class="pill p-failed">Can't start</span>@endif</div>
 @endfor
-</ul>
-</section>
+</div>
+</div>
 <script type="module">
-    stream.on('home', html => document.getElementById('live').innerHTML = html);
+    stream.on('home', html => stream.patch(document.getElementById('live'), html));
     stream.follow('home');
 </script>
 </main>

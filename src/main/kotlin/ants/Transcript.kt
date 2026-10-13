@@ -45,8 +45,10 @@ class Transcript {
     private val nested = mutableSetOf<Int>() // the entries inside a block
     private val changed = linkedSetOf<String>()
     private val live = StringBuilder() // the text block streaming in now
-    private var verb = "Starting"
+    private var verb: String? = null // what the latest event does, such as "Reading Header.tsx"; null for nothing in particular
     private var seen = Instant.EPOCH // the latest time a line carried
+    private var read = Instant.now() // when the latest line was folded in: the clocks read as of then, so they change only with a line, and tick in the page (shell.js)
+    private var soFarAt: Instant? = null // when the latest So far was written
     private var soFarTokens = 0L
     private var thread: Any? = null // the codex session the lines are of
     private val threadTotals = mutableMapOf<Any?, Long>() // a codex session → its total tokens, as its last turn.completed gave it
@@ -93,11 +95,24 @@ class Transcript {
      */
     val tokens get() = launches.sumOf { it.tokens } + soFarTokens
 
-    private val running get() = launches.isNotEmpty() && launches.last().end == null
+    val running get() = launches.isNotEmpty() && launches.last().end == null
+
+    /**
+     * The live line of the launch running now, as the Runs list, Home, the Run page and its drawer show it: `✻ Reading
+     * Header.tsx… (1m 20s · ↓ 3.4k tokens)`, its clock from the launch's start; null when no launch runs.
+     */
+    val line: String?
+        get() = if (!running) null else launches.last().let {
+            """<span class="spin">✻</span> ${shimmer()} <span class="muted num">(${since(it.start)} · ↓ ${tokens(it.tokens)})</span>"""
+        }
+
+    /** The Subagents running now. */
+    val runningSubagents get() = if (running) blocks.values.count { it.end == null } else 0
 
     /** Folds in one line of the file and returns the ids of the elements it changed. */
     fun add(line: String): Set<String> {
         val event = runCatching { json.readValue(line, Map::class.java) }.getOrNull() ?: return emptySet()
+        read = Instant.now()
         val watched = FIXED + blocks.keys.map { "e${it}s" }
         val before = watched.associateWith(::html)
         changed.clear()
@@ -137,16 +152,18 @@ class Transcript {
      * `subagents`, the count and a chip per running Subagent.
      */
     fun html(id: String): String = when (id) {
-        "live" -> """<div id="live">${if (live.isEmpty()) "" else markdown(live)}</div>"""
+        "live" -> if (live.isEmpty()) """<div id="live"></div>""" else """<div id="live" class="caret">${markdown(live)}</div>""" // a caret until the block ends
         "tokens" -> """<span id="tokens">${tokens(tokens)}</span>"""
-        "status" -> if (!running) """<div id="status"></div>""" else launches.last().let {
-            """<div id="status"><span class="spinner">✻</span> $verb… <span data-since="${it.start.toEpochMilli()}">""" +
-                """${elapsed(Duration.between(it.start, Instant.now()))}</span> · ${tokens(it.tokens)}</div>"""
-        }
-        "subagents" -> """<div id="subagents">""" + (if (blocks.isEmpty()) "" else "⑂ ${blocks.size}") +
-            blocks.values.filter { running && it.end == null }.joinToString("") {
-                """ <span class="chip">⑂ ${esc(it.type)} · ${esc(it.description)} · ${time(it)}</span>"""
-            } + "</div>"
+        "status" -> """<div id="status">${line.orEmpty()}</div>"""
+        "subagents" -> """<div id="subagents" class="chips">""" + blocks.values.filter { running && it.end == null }.joinToString(" ") {
+            """<span class="chip"><span class="spin">✻</span> ${esc(it.type)} · ${esc(it.description)} · ${time(it)}</span>"""
+        } + "</div>"
+        "sofar" -> """<div class="sofar" id="sofar"><div class="row small"><b>So far</b>""" +
+            (soFarAt?.takeIf { running }?.let { """<span class="grow"></span><span class="muted">updated ${since(it)} ago</span>""" } ?: "") + "</div>" +
+            markdown(soFar ?: result?.get("summary")?.toString() ?: "Nothing yet.") +
+            (if (todos.isEmpty()) "" else """<div class="todos">""" + todos.values.joinToString("") {
+                """<div class="todo ${TODO[it.status]?.second.orEmpty()}">${TODO[it.status]?.first ?: "☐"} ${esc(it.subject)}</div>"""
+            } + "</div>") + "</div>"
         else -> if (id.endsWith("s")) summary(blocks.getValue(id.removePrefix("e").removeSuffix("s").toInt()))
         else id.removePrefix("e").toInt().let { entry ->
             blocks[entry]?.let { block ->
@@ -157,12 +174,24 @@ class Transcript {
         }
     }
 
+    /** The live line's verb, shimmering: what the latest event does, else one that rotates (shell.js) from "Pondering". */
+    private fun shimmer() = verb?.let { """<span class="shimmer">${esc(it)}…</span>""" } ?: """<span class="shimmer" data-rotate>Pondering…</span>"""
+
+    /** What a call of the tool [name] on [argument] does, as the live line says it: "Reading Header.tsx", "Running pnpm test". */
+    private fun doing(name: String, argument: String): String {
+        val what = argument.lines().first().let { if (name in FILE_TOOLS) it.substringAfterLast('/') else it }.take(40)
+        return listOf(VERBS[name] ?: "Working", what).filter { it.isNotEmpty() }.joinToString(" ")
+    }
+
     private fun summary(block: Subagent) = """<summary id="e${block.entry}s">⑂ <b>${esc(block.type)}</b> ${esc(block.description)}""" +
         (if (block.end != null || running) " · ${time(block)}" else "") + (if (block.status in OK) "" else " · ${esc(block.status)}") + "</summary>"
 
     /** How long [block] ran, or a ticking time while it runs. */
-    private fun time(block: Subagent) = block.end?.let { elapsed(Duration.between(block.start, it)) }
-        ?: """<span data-since="${block.start.toEpochMilli()}">${elapsed(Duration.between(block.start, Instant.now()))}</span>"""
+    private fun time(block: Subagent) = block.end?.let { duration(Duration.between(block.start, it)) }
+        ?: since(block.start)
+
+    /** A clock from [start], as of the latest line, that the page ticks on every second. */
+    private fun since(start: Instant) = """<span data-since="${start.toEpochMilli()}">${duration(Duration.between(start, read))}</span>"""
 
     private fun ants(event: Map<*, *>) {
         val at = Instant.parse(event["at"].toString())
@@ -171,12 +200,13 @@ class Transcript {
                 val launch = Launch(entries.size, launches.size + 1, at)
                 launches += launch
                 append { divider(launch) }
-                verb = "Starting"
+                verb = null
                 live.clear()
                 todos.clear()
             }
             "so-far" -> {
                 soFar = event["text"]?.toString()
+                soFarAt = at
                 soFarTokens += (event["tokens"] as? Number)?.toLong() ?: 0
             }
             else -> {
@@ -191,22 +221,26 @@ class Transcript {
         // TaskCreate's tool result carries the id claude gave the new task.
         ((event["tool_use_result"] as? Map<*, *>)?.get("task") as? Map<*, *>)?.let { todos[it["id"].toString()] = Todo(it["subject"].toString(), "pending") }
         val parent = subagent(event)
+        val content = (event["message"] as? Map<*, *>)?.get("content")
+        // The images that went to the Agent beside the text: a reference to any other, one that isn't stored, stays text.
+        val images = (content as? List<*>).orEmpty().filterIsInstance<Map<*, *>>().filter { it["type"] == "image" }
+            .mapNotNull { (it["source"] as? Map<*, *>)?.let(::imageName) }.toSet()
         fun said(text: Any?) {
             if (parent != null) {
-                append(parent) { """<details class="prompt" id="$it"><summary>Prompt</summary><pre>${esc(text)}</pre></details>""" }
+                append(parent) { """<details class="prompt" id="$it"><summary>Prompt</summary><pre>${showImages(esc(text), images)}</pre></details>""" }
             } else if (launch != null && !launch.prompted) {
                 launch.prompted = true
-                append { """<details class="prompt" id="$it"><summary>Prompt</summary><pre>${esc(text)}</pre></details>""" }
+                append { """<details class="prompt" id="$it"><summary>${if (launch.number == 1) "Opening prompt" else "Prompt"}</summary><pre>${showImages(esc(text), images)}</pre></details>""" }
             } else {
-                append { """<p class="user" id="$it">› ${esc(text)}</p>""" }
+                append { """<p class="user" id="$it">› ${showImages(esc(text), images)}</p>""" }
             }
         }
-        when (val content = (event["message"] as? Map<*, *>)?.get("content")) {
+        when (content) {
             is String -> said(content)
             is List<*> -> for (block in content.filterIsInstance<Map<*, *>>()) when (block["type"]) {
                 "text" -> said(block["text"])
                 "tool_result" -> {
-                    if (parent == null) verb = "Thinking"
+                    if (parent == null) verb = null
                     // without task_* events, such as for a type the Limit denies, the tool's result ends the Subagent
                     subagents[block["tool_use_id"]]?.takeIf { it.end == null }?.let {
                         it.end = seen
@@ -243,10 +277,10 @@ class Transcript {
                 } else {
                     val argument = input.values.firstOrNull { it is String }?.toString().orEmpty()
                     tools[block["id"]] = append(parent) {
-                        """<div class="tool" id="$it">⏺ <b>${esc(name)}</b> <code>${esc(argument.lines().first().take(120))}</code></div>"""
+                        """<div class="tool" id="$it"><b>${esc(name)}</b> <code>${esc(argument.lines().first().take(120))}</code></div>"""
                     }
                 }
-                if (parent == null) verb = VERBS[name] ?: "Working"
+                if (parent == null) verb = doing(name, input.values.firstOrNull { it is String }?.toString().orEmpty())
                 if (name == "TaskUpdate") todo(input)
             }
         }
@@ -325,9 +359,9 @@ class Transcript {
                     "mcp_tool_call" -> "${item["server"]}.${item["tool"]}" to item["arguments"]
                     else -> return
                 }
-                verb = VERBS[name] ?: "Working"
+                verb = doing(name, argument?.toString().orEmpty())
                 val entry = tools.getOrPut(id) {
-                    append { """<div class="tool" id="$it">⏺ <b>${esc(name)}</b> <code>${esc(argument?.toString().orEmpty().lines().first().take(120))}</code></div>""" }
+                    append { """<div class="tool" id="$it"><b>${esc(name)}</b> <code>${esc(argument?.toString().orEmpty().lines().first().take(120))}</code></div>""" }
                 }
                 if (completed && item["status"] == "failed") put(entry, entries[entry].replaceFirst("""class="tool"""", """class="tool error""""))
             }
@@ -396,13 +430,15 @@ class Transcript {
     }
 
     companion object {
-        private val FIXED = listOf("live", "status", "tokens", "subagents")
+        private val FIXED = listOf("live", "status", "tokens", "subagents", "sofar")
+        private val TODO = mapOf("completed" to ("☑" to "done"), "in_progress" to ("◐" to "now")) // a todo's status → its mark and class
         private val OK = setOf("running", "completed") // a Subagent's statuses its summary leaves unsaid
         private val VERBS = mapOf(
             "Read" to "Reading", "Edit" to "Editing", "Write" to "Writing", "NotebookEdit" to "Editing", "Grep" to "Searching",
             "Glob" to "Searching", "Bash" to "Running", "Shell" to "Running", "WebFetch" to "Browsing", "WebSearch" to "Browsing", "Agent" to "Delegating",
             "Task" to "Delegating", "TaskCreate" to "Planning", "TaskUpdate" to "Planning",
         )
+        private val FILE_TOOLS = setOf("Read", "Edit", "Write", "NotebookEdit") // whose argument is a path, said by its file name
         private val TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault())
         private val json = JsonMapper.shared()
         private val parser = Parser.builder().build()
@@ -411,9 +447,19 @@ class Transcript {
         fun file(workspace: Path, task: String): Path = workspace.resolve("tasks").resolve(task).resolve("transcript.jsonl")
 
         /** The Transcript of every Task in the Run workspace [workspace] that has one, by Task id. */
-        fun all(workspace: Path): Map<String, Transcript> = workspace.resolve("tasks").takeIf { it.isDirectory() }
+        fun all(workspace: Path): Map<String, Transcript> = follow(workspace, mutableMapOf())
+
+        /** Every Transcript in [workspace], as [all], each read on from where it was left in [seen], its file's Transcript and offset. */
+        fun follow(workspace: Path, seen: MutableMap<Path, Pair<Transcript, Long>>): Map<String, Transcript> = workspace.resolve("tasks").takeIf { it.isDirectory() }
             ?.listDirectoryEntries()?.sortedBy { it.name }?.filter { it.resolve("transcript.jsonl").exists() }
-            ?.associate { it.name to Transcript().apply { read(file(workspace, it.name)).first.forEach(::add) } }
+            ?.associate { folder ->
+                val file = file(workspace, folder.name)
+                val (transcript, offset) = seen[file] ?: (Transcript() to 0L)
+                val (lines, end) = read(file, offset)
+                lines.forEach(transcript::add)
+                seen[file] = transcript to end
+                folder.name to transcript
+            }
             .orEmpty()
 
         /** The whole lines of [file] between byte offsets [from] and [until], and the offset after the last of them. */
@@ -435,16 +481,20 @@ class Transcript {
         private fun esc(value: Any?) = HtmlUtils.htmlEscape(value?.toString().orEmpty())
 
         private fun sum(usage: Map<*, *>, vararg keys: String) = keys.sumOf { (usage[it] as? Number)?.toLong() ?: 0 }
-
-        private fun elapsed(time: Duration) = when {
-            time.toHours() > 0 -> "${time.toHours()}h ${time.toMinutesPart()}m"
-            time.toMinutes() > 0 -> "${time.toMinutes()}m ${time.toSecondsPart()}s"
-            else -> "${time.seconds}s"
-        }
     }
 }
 
-/** A token count as the pages show it. */
+/**
+ * A duration as the pages show it, its two largest units of d, h, m and s, such as `1d 6h`, `6h 12m` or `12s`; to the
+ * minute without [seconds]. shell.js ticks a live one the same way.
+ */
+fun duration(time: Duration, seconds: Boolean = true): String {
+    val units = listOf(time.toDays() to "d", time.toHoursPart().toLong() to "h", time.toMinutesPart().toLong() to "m", time.toSecondsPart().toLong() to "s")
+        .let { if (seconds) it else it.dropLast(1) }
+    val first = units.indexOfFirst { it.first > 0 }.takeIf { it >= 0 } ?: units.lastIndex
+    return units.drop(first).take(2).joinToString(" ") { (count, unit) -> "$count$unit" }
+}
+
 /** A token count, short: as it is under a thousand, then in k (one decimal under ten thousand), then in M. */
 fun tokens(count: Long): String {
     fun short(n: Double) = String.format(Locale.ROOT, "%.1f", n).removeSuffix(".0")
@@ -458,16 +508,20 @@ fun tokens(count: Long): String {
 
 /** The Transcript page, which replays the file and then follows it over SSE, with Send and Stop while the Task runs. */
 @Controller
-class Transcripts(@Value("\${ants.home}") home: Path, private val launcher: AgentLauncher, private val streams: Streams, private val names: RunNames) {
+class Transcripts(
+    @Value("\${ants.home}") home: Path, private val launcher: AgentLauncher, private val streams: Streams, private val names: RunNames, private val tasks: Runs,
+) {
     private val runs = home.resolve("runs")
 
     @GetMapping("/runs/{run}/tasks/{task}/transcript")
     fun page(@PathVariable run: String, @PathVariable task: String, model: Model): String {
         val (lines, offset) = Transcript.read(file(run, task))
+        val transcript = Transcript().apply { lines.forEach(::add) }
         model.addAttribute("run", run)
         model.addAttribute("runName", names.name(run))
         model.addAttribute("task", task)
-        model.addAttribute("transcript", Transcript().apply { lines.forEach(::add) })
+        model.addAttribute("view", tasks.task(run, task, transcript))
+        model.addAttribute("transcript", transcript)
         model.addAttribute("offset", offset)
         model.addAttribute("sendHint", launcher.sendHint(run, task))
         return "transcript"
@@ -507,6 +561,20 @@ class Transcripts(@Value("\${ants.home}") home: Path, private val launcher: Agen
             val (lines, end) = Transcript.read(file, offset)
             offset = end
             lines.flatMapTo(linkedSetOf()) { transcript.add(it) }.map(transcript::html)
+        }
+    }
+
+    /** The Task page's header, its state, tokens and summary, as HTML, sent on connect and whenever it changes. */
+    fun head(run: String, task: String): Part {
+        val file = file(run, task)
+        val transcript = Transcript()
+        var offset = 0L
+        tasks.task(run, task, transcript) // a Run that doesn't exist is refused now, not by every look
+        return streams.rendered("taskhead", "taskhead.kte") {
+            val (lines, end) = Transcript.read(file, offset)
+            offset = end
+            lines.forEach(transcript::add)
+            mapOf("view" to tasks.task(run, task, transcript), "run" to run, "runName" to names.name(run), "tokens" to transcript.html("tokens"))
         }
     }
 

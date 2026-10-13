@@ -75,7 +75,7 @@ class ScheduleTest : AntsTest() {
         val run = history.createHistoricProcessInstanceQuery().processDefinitionKey(key).singleResult()
         val page = browser.get("/runs/${run.id}").body
         assertContains(page, "<dt>prompt</dt><dd><code>Sweep</code></dd>")
-        assertContains(page, Regex("<h1>Nightly, \\d{1,2} [A-Z][a-z]{2} \\d\\d:\\d\\d</h1>")) // named as an unnamed Run is
+        assertContains(page, Regex("<span id=\"name\">Nightly, \\d{1,2} [A-Z][a-z]{2} \\d\\d:\\d\\d</span>")) // named as an unnamed Run is
     }
 
     @Test
@@ -113,7 +113,7 @@ class ScheduleTest : AntsTest() {
         clock.offset = Duration.ofHours(1)
         eventually { assertContains(browser.get("/notifications").body, "Configure a Vault") }
         val list = browser.get("/notifications").body
-        assertContains(list, "✕ [failed]")
+        assertContains(list, "<i>✕</i>[failed]")
         assertContains(list, "Nightly")
         assertContains(list, "href=\"/notifications/schedule-$key\"")
         assertEquals(0, runs())
@@ -149,7 +149,7 @@ class ScheduleTest : AntsTest() {
     }
 
     /** Home's Coming up. */
-    private fun comingUp() = browser.get("/").body.substringAfter("<section id=\"coming-up\">").substringBefore("</section>")
+    private fun comingUp() = browser.get("/").body.substringAfter("id=\"coming-up\">").substringBefore("<div class=\"card\" id=")
 
     @Test
     fun `Home's Coming up lists the next scheduled Runs, a paused Schedule doesn't run, and a removed one is gone`() {
@@ -172,7 +172,7 @@ class ScheduleTest : AntsTest() {
         assertContains(comingUp(), "Nightly")
 
         browser.post("/processes/$key/schedule/remove", mapOf())
-        assertFalse("<section id=\"schedule\">" in browser.get("/processes/$key").body)
+        assertContains(browser.get("/processes/$key").body, "No schedule. Runs start when someone presses Start.")
         assertFalse("timerEventDefinition" in browser.get("/processes/$key/diagram.bpmn").body)
         assertFalse("Nightly" in comingUp())
     }

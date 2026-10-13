@@ -97,6 +97,21 @@ class UpdateTest : AntsTest() {
     }
 
     @Test
+    fun `Settings' Updates card shows the running version, and Check now checks at once`() {
+        assertContains(browser.get("/settings").body, "Running v$running. Up to date.")
+        release("99.0.0")
+        val page = browser.post("/settings", mapOf("action" to "updates")).body
+        assertContains(page, """<div class="toast" role="status"><b>Checked</b> Ants 99.0.0 is available.""")
+        assertContains(page, """Running v$running. Ants 99.0.0 is available. <button formaction="/updates/99.0.0">Update</button>""")
+    }
+
+    @Test
+    fun `a scheduled check that can't reach the release list says so on the Updates card`() {
+        releases.resolve("SHA256SUMS").deleteIfExists()
+        eventually(60) { assertContains(browser.get("/settings").body, "Running v$running. Couldn't check for a newer Ants: the release list didn't answer.") }
+    }
+
+    @Test
     fun `an older release shows nothing`() {
         release("0.0.1")
 
@@ -138,9 +153,9 @@ class UpdateTest : AntsTest() {
         assertTrue(home.resolve("versions/96.0.0/bin/ants").exists())
         assertEquals(Path.of("versions/96.0.0"), home.resolve("current").readSymbolicLink())
         assertEquals(Path.of("versions/$running"), home.resolve("previous").readSymbolicLink())
-        assertContains(browser.get("/runs/$run").body, "State: Running")
+        assertContains(browser.get("/runs/$run").body, """id="state">Running<""")
         claude.release("release")
-        eventually(60) { assertContains(browser.get("/runs/$run").body, "State: Completed") }
+        eventually(60) { assertContains(browser.get("/runs/$run").body, """id="state">Completed<""") }
     }
 
     @Test
@@ -189,9 +204,9 @@ class UpdateTest : AntsTest() {
 
         eventually(60) {
             val form = browser.get("/agents/new").body
-            assertContains(form, ">claude-opus-9</option>")
-            assertContains(form, "claude-sonnet-8 (deprecated, retires June 1, 2029)")
-            assertContains(form, "opus → claude-opus-9")
+            assertContains(form, ">Opus 9 · claude-opus-9</option>")
+            assertContains(form, "Sonnet 8 · claude-sonnet-8 · retires June 1, 2029")
+            assertContains(form, "opus · newest Opus, now Opus 9")
             assertFalse("claude-opus-5-5" in form, "a retired model is off the list")
         }
     }

@@ -1,5 +1,6 @@
 @import ants.stateName
 @import ants.tokens
+@import ants.RUN_PILLS
 @param run: org.operaton.bpm.engine.history.HistoricProcessInstance
 @param name: String
 @param variables: Map<String, String>
@@ -8,7 +9,12 @@
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
 @param transcripts: Map<String, Long>
-@param report: Boolean
+@param report: String?
+@param tasks: List<ants.TaskView>
+@param started: String
+@param branch: String?
+@param cloned: List<String>
+@param vault: String?
 @param workspace: String?
 @param repos: List<String>
 @param scope: List<String>?
@@ -27,27 +33,52 @@
 @template.nav(shell = shell)
 <main>
 <div class="crumbs"><a href="/runs">Runs</a> / ${name}</div>
-<div class="ph"><h1>${name}</h1>
-@if(run.endTime == null)
-    <div class="acts"><form method="post" action="/runs/${run.id}/cancel">
-        <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
-        <button class="danger" onclick="return confirm('Cancel this Run? Its running Agents stop, and its Run workspace is kept until you dismiss it.')">Cancel the Run</button>
-    </form></div>
-@endif
-    <div class="sub" id="state">State: ${run.stateName}</div></div>
-<p><a href="/processes/${run.processDefinitionKey}">${run.processDefinitionName ?: run.processDefinitionKey}</a> · <small>${run.id}</small></p>
-@if(scope != null)
-<p id="scope">Scoped to its repos: @for((i, repo) in scope.withIndex())@if(i > 0), @endif<code>${repo}</code>@endfor. No scout, no Vault and no Source map.</p>
-@endif
-@if(profile != null)
-<p id="profile">Profile: ${profile}</p>
-@endif
+<div class="ph"><h1><span id="name">${name}</span> <span class="pill p-${RUN_PILLS[run.stateName] ?: "quiet"}" id="state">${run.stateName}</span></h1>
+    <div class="acts">
 @if(run.endTime == null || variables.containsKey(ants.NAME))
-<form method="post" action="/runs/${run.id}/name">
-    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
-    <p><label>Name <input name="name" value="${name}" required></label> <button>Rename</button></p>
-</form>
+        <button type="button" popovertarget="rename">Rename</button>
+        <form method="post" action="/runs/${run.id}/name" id="rename" class="card" popover>
+            <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+            <label class="f" for="new-name">Name</label>
+            <div class="row"><input id="new-name" name="name" value="${name}" required><button class="primary">Rename</button></div>
+        </form>
 @endif
+@if(run.endTime == null)
+        <form method="post" action="/runs/${run.id}/cancel">
+            <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+            <button class="danger" onclick="return confirm('Cancel the Run? Its running Agents stop, and its Run workspace is kept until you dismiss it.')">Cancel the Run</button>
+        </form>
+@elseif(kept != null)
+        <form method="post" action="/runs/${run.id}/dismiss">
+            <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+            <button>Dismiss</button>
+        </form>
+@endif
+    </div>
+    <div class="sub"><a href="/processes/${run.processDefinitionKey}">${run.processDefinitionName ?: run.processDefinitionKey}</a> · started ${started}@if(branch != null) · branch <code>${branch}</code>@endif
+        · repos @if(cloned.isEmpty())none yet@else@for(repo in cloned)<code>${repo}</code> @endfor@endif
+@if(scope != null)        · <span id="scope">Scoped to its repos: @for((i, repo) in scope.withIndex())@if(i > 0), @endif<code>${repo}</code>@endfor; no scout, no Vault and no Source map</span>@endif
+@if(profile != null)        · <span id="profile">Profile ${profile}</span>@endif
+@if(vault != null)        · Vault ${vault}@endif
+        · <small>${run.id}</small></div>
+</div>
+<nav id="trail" hidden></nav>
+<div id="diagram" class="dia"><div class="legend"><span class="pill p-running">Running</span><span class="pill p-waiting">Waiting on you</span><span class="pill p-done">Done</span><span class="pill p-quiet">Queued / paused</span></div></div>
+<div class="help">Drag to pan, Ctrl/⌘ + scroll to zoom. Click a Task to open it.</div>
+<aside id="drawer" class="drawer" hidden><button id="close" class="ghost" title="Close (Esc)" aria-label="Close">✕</button><div id="parts"></div></aside>
+<div id="run-tasks">@template.tasks(tasks = tasks)</div>
+@if(kept != null)
+<h2>Run workspace</h2>
+<div class="card">Kept at <code>${kept}</code> until you dismiss the Run.</div>
+@endif
+@if(report != null)
+<h2><a href="/runs/${run.id}/report">Report</a></h2>
+<div class="card md">$unsafe{report}</div>
+@else
+<div class="help">The Report appears here when the Run ends.</div>
+@endif
+<details id="details">
+<summary class="small">Details: the Run workspace, each Agent Task, the Transcripts and the variables</summary>
 @if(workspace != null)
 <section id="where">
     <p>Run workspace <code>${workspace}</code></p>
@@ -60,18 +91,6 @@
 @endif
 </section>
 @endif
-@if(report)
-<p><a href="/runs/${run.id}/report">Report</a></p>
-@endif
-@if(kept != null)
-<form method="post" action="/runs/${run.id}/dismiss">
-    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
-    <p>The Run workspace is kept at <code>${kept}</code> until you dismiss it. <button>Dismiss</button></p>
-</form>
-@endif
-<nav id="trail" hidden></nav>
-<div id="diagram" class="dia"><div class="legend"><span class="pill p-running">Running</span><span class="pill p-waiting">Waiting on you</span><span class="pill p-done">Done</span><span class="pill p-quiet">Queued / paused</span></div></div>
-<aside id="drawer" hidden><button id="close" aria-label="Close">✕</button><div id="parts"></div></aside>
 @if(agentTasks.isNotEmpty())
 <h2>Agent Tasks</h2>
 <dl>
@@ -94,6 +113,7 @@
     <dt>${name}</dt><dd><code>${value}</code></dd>
 @endfor
 </dl>
+</details>
 <script src="/vendor/camunda-bpmn-js/base-navigated-viewer.production.min.js"></script>
 <script type="module">
     // The live diagram: each update patches only the elements whose state, badge or Round changed, so an open drawer stays.
@@ -102,26 +122,33 @@
     const run = '${run.id}';
     const viewer = new BpmnNavigatedViewer({ container: '#diagram' });
     const canvas = document.getElementById('diagram').canvas = viewer.get('canvas'), overlays = viewer.get('overlays'), registry = viewer.get('elementRegistry');
-    const trail = [{ id: run, name: document.querySelector('h1').textContent }], nav = document.getElementById('trail');
+    const trail = [{ id: run, name: document.getElementById('name').textContent }], nav = document.getElementById('trail');
     let current = run, drawn = null, latest = null, shown = {}, called = {}, task = null;
-    const follow = () => stream.follow('run=' + current + (task === null ? '' : '&drawer=' + encodeURIComponent(task)));
+    const follow = () => stream.follow('run=' + current + '&tasks=' + run + (task === null ? '' : '&drawer=' + encodeURIComponent(task)));
+    stream.on('tasks', html => stream.patch(document.getElementById('run-tasks'), html));
     // Paints the latest update once the diagram it is for is drawn.
     function paint() {
         if (!latest || drawn !== current) return;
         called = latest.called;
-        if (current === run) document.getElementById('state').textContent = 'State: ' + latest.state;
+        if (current === run) Object.assign(document.getElementById('state'), {
+            textContent: latest.state, className: 'pill p-' + latest.pill,
+        });
         for (const [id, now] of Object.entries(latest.elements)) {
             const before = shown[id];
             if (!registry.get(id) || JSON.stringify(before) === JSON.stringify(now)) continue;
             if (before) canvas.removeMarker(id, 'ants-' + before.state);
             canvas.addMarker(id, 'ants-' + now.state);
             overlays.remove({ element: id, type: 'ants' });
-            const badge = [now.badge, now.round > 1 ? '↻ ' + now.round : null].filter(Boolean).join(' · ');
-            if (badge) {
-                const span = document.createElement('span');
-                span.className = 'ants-badge';
-                span.textContent = badge;
-                overlays.add(id, 'ants', { position: { bottom: 8, right: 8 }, html: span });
+            // A Task's badge on its top edge: ✓ once done, else its state or what it waits for; its Round at its foot.
+            if (/Task$|CallActivity/.test(registry.get(id).type)) {
+                const badge = (css, text, position) => {
+                    const span = Object.assign(document.createElement('span'), { className: 'ov ' + css, textContent: text });
+                    if (css === 'running') span.prepend(document.createElement('i'));
+                    overlays.add(id, 'ants', { position, html: span });
+                };
+                if (now.state === 'done') badge('done', '✓', { top: -12, right: 16 });
+                else badge(now.state === 'queued' || now.state === 'cancelled' ? 'quiet' : now.state, now.badge ?? 'Running', { top: -12, right: 70 });
+                if (now.round > 1) badge('quiet', 'round ' + now.round, { bottom: 14, left: 6 });
             }
             shown[id] = now;
         }
@@ -158,8 +185,9 @@
         } else if (element.type.endsWith('Task')) open(element.id);
     });
 
-    // The Task drawer follows its Task, replacing only the parts that changed, so a comment being typed stays, and
-    // removing the parts that are gone, such as Send once the session ends or the action once it is handled.
+    // The Task drawer follows its Task, patching only the parts that changed and replacing a changed one with a comment
+    // box, so a comment being typed stays, and removing the parts that are gone, such as Send once the session ends or
+    // the action once it is handled. Its Latest output keeps scrolled to the end.
     const drawer = document.getElementById('drawer'), parts = document.getElementById('parts');
     let received = {};
     function open(id) {
@@ -182,10 +210,15 @@
             if (received[part.id] === part.outerHTML) return;
             received[part.id] = part.outerHTML;
             const old = document.getElementById(part.id);
-            old ? old.replaceWith(part) : parts.insertBefore(part, parts.children[i] ?? null);
+            if (!old) parts.insertBefore(part, parts.children[i] ?? null);
+            else if (old.querySelector('textarea')) old.replaceWith(part);
+            else stream.patch(old, part.innerHTML);
         });
+        document.querySelector('#drawer-output .tr')?.scrollTo(0, 1e6);
     });
-    document.getElementById('close').onclick = () => { task = null; drawer.hidden = true; follow(); };
+    const close = () => { task = null; drawer.hidden = true; follow(); };
+    document.getElementById('close').onclick = close;
+    addEventListener('keydown', event => { if (event.key === 'Escape' && !drawer.hidden) close(); });
     show(run);
 </script>
 </main>

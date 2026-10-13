@@ -146,6 +146,13 @@ class Catalogue(@Value("\${ants.home}") private val home: Path, private val sett
 
     fun shipped(skill: Skill) = skill.file.startsWith(shipped)
 
+    /** Where the Agents and Skills pages say [folder] is: "shipped with Ants", or the folder, with `~` for the home folder. */
+    fun where(folder: Path): String {
+        if (folder.startsWith(shipped)) return "shipped with Ants"
+        val user = Path.of(System.getProperty("user.home"))
+        return if (folder.startsWith(user)) "~/${user.relativize(folder)}" else folder.toString()
+    }
+
     /** The Skill [name]; a shipped Skill wins its name. */
     fun skill(name: String): Skill {
         val skills = skills().filter { it.name == name }

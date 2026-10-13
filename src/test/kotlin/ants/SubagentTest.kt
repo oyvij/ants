@@ -37,7 +37,7 @@ class SubagentTest : AntsTest() {
     private fun launch(): FakeClaude.Launch {
         claude.session("draft", done)
         val run = start()
-        eventually { assertContains(browser.get("/runs/$run").body, "State: Completed") }
+        eventually { assertContains(browser.get("/runs/$run").body, """id="state">Completed<""") }
         return claude.launches("draft").single()
     }
 

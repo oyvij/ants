@@ -1,10 +1,12 @@
 @param entry: ants.TaskEntry
 @param details: String?
-@param repos: List<ants.Outgoing>
+@param repos: List<ants.RepoChanges>
 @param error: String? = null
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
 @param shell: ants.Shell
+!{val failed = entry.tag == "[failed]"}
+!{val bases = repos.mapNotNull { it.repo.base }.distinct()}
 <!doctype html>
 <html lang="en">
 <head>
@@ -16,31 +18,38 @@
 <body>
 @template.nav(shell = shell)
 <main>
-<div class="crumbs"><a href="/notifications">Notification list</a> / <a href="/runs/${entry.run}">${entry.runName}</a> / ${entry.task}</div>
-<div class="ph"><h1>${entry.icon} ${entry.tag} ${entry.task}</h1><div class="acts"><span class="muted small">${entry.process} · waiting ${entry.waited}</span></div>
-    <div class="sub">${entry.summary}</div></div>
+<div class="crumbs"><a href="/runs">Runs</a> / <a href="/runs/${entry.run}">${entry.runName}</a> / ${entry.task}</div>
+<div class="ph"><h1>${entry.task} @if(failed)<span class="pill p-failed">Failed</span>@else<span class="pill p-waiting">Waiting on you</span>@endif @template.tag(entry = entry)</h1>
+    <div class="acts"><span class="muted small">Built-in Task</span></div><div class="sub">${entry.summary}</div></div>
 @if(details != null)
 <h2>What git said</h2>
 <pre>${details}</pre>
 @endif
-<table>
-    <tr><th>Repo</th><th>Remote</th><th>Branch</th><th>Base</th><th>Commits</th></tr>
-@for(repo in repos)
-    <tr><td>${repo.repo}</td><td>${repo.remote}</td><td>${repo.branch}</td><td>${repo.base ?: "none"}</td>
-        <td><ul>@for(commit in repo.commits)<li><code>${commit.getValue("sha").take(7)}</code> ${commit.getValue("subject")}</li>@endfor</ul></td></tr>
+<div class="help">Last check before anything leaves your machine. This is exactly what will be pushed.</div>
+@for(changed in repos)!{val repo = changed.repo}
+<div class="card push" data-repo="${repo.repo}">
+    <div class="row"><b class="mono">${repo.repo}</b><span class="grow"></span><span class="small">${changed.files.size} file${if (changed.files.size == 1) "" else "s"} · <span class="plus">+${changed.added}</span> <span class="minus">−${changed.removed}</span></span></div>
+    <div class="kv">
+        <span class="k">Remote</span><span class="mono small">${repo.remote}</span>
+        <span class="k">Branch</span><span><code>${repo.branch}</code> @if(repo.isNew)<span class="pill p-quiet">new on the remote</span>@else<span class="pill p-waiting">updates an existing branch</span>@endif
+            <span class="muted small">@if(repo.base != null)based on <code>${repo.base}</code>@else no base: the remote has no default branch@endif</span></span>
+        <span class="k">Commits</span><span>@for(commit in repo.commits)<div class="small commit"><span class="mono muted">${commit.getValue("sha").take(7)}</span> ${commit.getValue("subject")}</div>@endfor</span>
+    </div>
+</div>
 @endfor
-</table>
-@if(entry.tag == "[failed]")
+<div class="help">Ants pushes these branches only: never with force, and never to @if(bases.isEmpty())the base@else<code>${bases.joinToString(" or ")}</code>@endif.</div>
+@if(failed)
 <p>To push by hand from the kept clone, then Continue:</p>
-<pre>@for(repo in repos)git -C ${repo.path.toString()} push ${repo.remote} ${repo.branch}
+<pre>@for(changed in repos)git -C ${changed.repo.path.toString()} push ${changed.repo.remote} ${changed.repo.branch}
 @endfor</pre>
 @endif
 @if(error != null)<p role="alert">${error}</p>@endif
-<form method="post">
+<form method="post" class="row pushacts">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
     <input type="hidden" name="instruction" value="">
-    @if(entry.tag == "[failed]")<button class="primary" name="action" value="continue">Continue</button>@else<button class="primary" name="action" value="push">Push</button>@endif
+    <span class="grow"></span>
     <button class="danger" name="action" value="cancel">Cancel the Run</button>
+    @if(failed)<button class="primary" name="action" value="continue">Continue</button>@else<button class="primary" name="action" value="push">Push ${repos.size} branch${if (repos.size == 1) "" else "es"}</button>@endif
 </form>
 </main>
 </body>

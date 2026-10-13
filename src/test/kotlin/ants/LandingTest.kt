@@ -125,7 +125,7 @@ class LandingTest : AntsTest() {
     private fun entry(run: String): String {
         var entry = ""
         eventually {
-            val row = assertNotNull(Regex("""<tr>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
+            val row = assertNotNull(Regex("""<tr[^>]*>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
                 .find(browser.get("/notifications").body)).groupValues[1]
             entry = Regex("""href="(/notifications/[^"]+)"""").find(row)!!.groupValues[1]
         }
@@ -292,7 +292,7 @@ class LandingTest : AntsTest() {
         val run = start("api")
 
         val cancelled = browser.post(entry(run), mapOf("action" to "cancel", "instruction" to ""))
-        assertContains(cancelled.body, "State: Cancelled")
+        assertContains(cancelled.body, """id="state">Cancelled<""")
     }
 
     /** A Run whose one instance commits in api and web, then runs [meddle] in the shared clones' folder before it is done. */

@@ -27,7 +27,7 @@ class ApproveTest : AntsTest() {
     }
 
     /** The Run's row on the Notification list, or null. */
-    private fun row(run: String) = Regex("""<tr>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
+    private fun row(run: String) = Regex("""<tr[^>]*>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
         .find(browser.get("/notifications").body)?.groupValues?.get(1)
 
     /** The path of the Run's entry, once it is on the Notification list. */
@@ -46,11 +46,14 @@ class ApproveTest : AntsTest() {
         claude.session("draft", drafted)
         val run = start()
         val entry = entry(run)
-        for (cell in listOf("✓ [approve]", "Check the draft", "Approve the notes")) assertContains(row(run)!!, cell)
+        for (cell in listOf("<i>✓</i>[approve]", "Check the draft", "Approve the notes")) assertContains(row(run)!!, cell)
         val body = browser.get(entry).body
-        assertContains(body, "<h1>Notes</h1>")
+        assertContains(body, """<h1 data-flash="waiting">Check the draft <span class="pill p-waiting">Waiting on you</span> <span class="tag t-approve"><i>✓</i>[approve]</span></h1>""")
+        assertContains(body, """<div class="sub">Approve the notes</div>""")
+        assertContains(body, """<div class="muted small mono">notes.md</div><h1>Notes</h1>""")
         assertContains(body, "The <em>draft</em> reads well.")
-        assertContains(body, "Approve the notes")
+        assertContains(body, "Required to send back. The Agent's session resumes with it.")
+        assertContains(body, """<div class="composer">""")
     }
 
     @Test
@@ -61,7 +64,7 @@ class ApproveTest : AntsTest() {
         val acted = browser.post(entry(run), mapOf("action" to "approve", "comment" to "Ship it."))
         assertEquals(null, row(run))
         assertEquals("/notifications", acted.path)
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
         assertContains(claude.launches("polish").single().stdin, """{\"verdict\":{\"approved\":true,\"comment\":\"Ship it.\"}}""")
         assertEquals(1, claude.launches("draft").size)
     }
@@ -84,7 +87,7 @@ class ApproveTest : AntsTest() {
         val again = entry(run) // the revised draft waits for approval again
         assertNotEquals(entry, again)
         browser.post(again, mapOf("action" to "approve", "comment" to ""))
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
         val (first, second) = claude.launches("draft")
         assertEquals(first.flag("--session-id"), second.flag("--resume"))
         assertEquals("""{"type":"user","message":{"role":"user","content":"Shorter, please."}}""", second.stdin)

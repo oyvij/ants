@@ -1,10 +1,7 @@
 package ants
 
-import org.operaton.bpm.engine.ExternalTaskService
 import org.operaton.bpm.engine.HistoryService
 import org.operaton.bpm.engine.RepositoryService
-import org.operaton.bpm.engine.RuntimeService
-import org.operaton.bpm.model.bpmn.instance.FlowElement
 import org.springframework.stereotype.Controller
 import org.springframework.ui.Model
 import org.springframework.web.bind.annotation.GetMapping
@@ -14,31 +11,47 @@ import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.security.web.csrf.CsrfToken
 import java.net.URI
 import java.time.Clock
-
-/** An Agent Task running now, in the Run [run], named [runName], of a Process. */
-class Working(val process: String, val run: String, val runName: String, val task: String)
+import java.time.LocalTime
+import java.util.concurrent.Executors
 
 /** Redirects back to the page a nav button was pressed on, as its Referer names it, else Home. */
 fun back(from: String?) = "redirect:" + (from?.let { runCatching { URI(it).path }.getOrNull() }?.ifEmpty { null } ?: "/")
 
-/** Home: stats, Waiting on you, Working now, Coming up, all live, and Start a Run. */
+/**
+ * Home: a greeting, the stats, Waiting on you, Working now and Coming up, all live, and Start a Run, where a Process
+ * that can't start says so.
+ */
 @Controller
 class Home(
     private val notifications: Notifications,
-    private val runtime: RuntimeService,
     private val history: HistoryService,
     private val repository: RepositoryService,
-    private val externalTasks: ExternalTaskService,
     private val launcher: AgentLauncher,
     private val clock: Clock,
     private val streams: Streams,
     private val schedules: Schedules,
-    private val names: RunNames,
+    private val runs: Runs,
+    private val settings: Settings,
+    private val startForm: StartForm,
+    private val preRun: PreRun,
 ) {
     @GetMapping("/")
     fun home(model: Model): String {
         model.addAllAttributes(dashboard())
-        model.addAttribute("processes", repository.createProcessDefinitionQuery().latestVersion().orderByProcessDefinitionName().asc().list())
+        val hour = LocalTime.now(clock).hour
+        model.addAttribute("greeting", if (hour < 12) "Good morning" else if (hour < 18) "Good afternoon" else "Good evening")
+        // Each Process's pre-Run check, as its page runs it, side by side as the Processes list runs them, asking the
+        // Claude login once for them all.
+        val login = preRun.oneLogin()
+        val processes = repository.createProcessDefinitionQuery().latestVersion().orderByProcessDefinitionName().asc().list()
+        model.addAttribute("processes", Executors.newVirtualThreadPerTaskExecutor().use { threads ->
+            processes.map { process ->
+                threads.submit<Boolean> {
+                    val repos = startForm.fields(process).filter { it.type == FieldType.REPOS }.flatMap { it.storedRepos }
+                    preRun.reasons(process, repos, startForm.profile(process, null), login).isEmpty()
+                }
+            }.let { ready -> processes.zip(ready) { process, it -> process to it.get() }.toMap() }
+        })
         return "home"
     }
 
@@ -56,25 +69,13 @@ class Home(
     fun pauses(csrf: CsrfToken): Part =
         streams.rendered("pauses", "pill.kte", csrf) { mapOf("pauses" to launcher.pauses().mapValues { clock.local(it.value) }) }
 
-    private fun dashboard(): Map<String, Any> {
-        val entries = notifications.entries()
-        return mapOf(
-            "live" to history.liveRuns(),
-            "waiting" to entries.filterIsInstance<TaskEntry>().distinctBy { it.run }.size, // a scheduled Run that didn't start isn't a Run
-            "done" to history.createHistoricProcessInstanceQuery().rootProcessInstances().completed().count(),
-            "entries" to entries,
-            "working" to working(),
-            "coming" to schedules.all().filter { it.next != null },
-        )
-    }
-
-    /** A locked Agent Task with retries left is running, unless the Usage limit pause holds it locked until the reset. */
-    private fun working() = externalTasks.createExternalTaskQuery().topicName(AgentLauncher.TOPIC).locked().withRetriesLeft().list().mapNotNull { task ->
-        if (launcher.pausedUntil(task.id) != null) return@mapNotNull null
-        // A Task that has just finished may have taken its Run with it.
-        val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult()?.rootProcessInstanceId ?: return@mapNotNull null
-        val top = history.createHistoricProcessInstanceQuery().processInstanceId(run).singleResult() ?: return@mapNotNull null
-        val element = repository.getBpmnModelInstance(task.processDefinitionId).getModelElementById<FlowElement>(task.activityId)
-        Working(top.processDefinitionName ?: top.processDefinitionKey, run, names.name(run), element?.name ?: task.activityId)
-    }
+    private fun dashboard(): Map<String, Any> = mapOf(
+        "entries" to notifications.entries(),
+        "running" to launcher.running,
+        "cap" to settings.agentTasks(),
+        "live" to history.liveRuns(),
+        "ended" to history.createHistoricProcessInstanceQuery().rootProcessInstances().finished().count(),
+        "working" to runs.now().filter { it.running.isNotEmpty() || it.quiet.isNotEmpty() },
+        "coming" to schedules.all().filter { it.next != null },
+    )
 }

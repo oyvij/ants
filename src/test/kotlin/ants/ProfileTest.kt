@@ -69,7 +69,7 @@ class ProfileTest : AntsTest() {
         val page = browser.post("/processes/profile/runs", values.toList())
         assertTrue(page.path.startsWith("/runs/"), page.body)
         val run = page.path.removePrefix("/runs/")
-        eventually(20) { assertContains(page(run), "State: Completed") }
+        eventually(20) { assertContains(page(run), """id="state">Completed<""") }
         return run
     }
 
@@ -79,6 +79,9 @@ class ProfileTest : AntsTest() {
         val form = browser.get("/processes/profile").body
         assertContains(form, """<select name="$PROFILE"""")
         assertContains(form, """<option selected>work</option>""")
+        // The sub line says where the Profile came from: the default here, picked in the URL below.
+        assertContains(form, "Profile <b>work</b>, the default")
+        assertContains(browser.get("/processes/profile?$PROFILE=private").body, "Profile <b>private</b>, picked here")
 
         val work = start(PROFILE to "work")
         val private = start(PROFILE to "private")
@@ -95,11 +98,11 @@ class ProfileTest : AntsTest() {
         val workPage = page(work)
         assertContains(workPage, "<dt>sourceMap</dt><dd><code>[{\"name\":\"api\",\"remote\":\"${workApi.remote}\"}]</code></dd>")
         assertContains(workPage, "\"commit\":\"${git(workApi.remote, "rev-parse", "main")}\"")
-        assertContains(workPage, """<p id="profile">Profile: work</p>""")
+        assertContains(workPage, """<span id="profile">Profile work</span>""")
         val privatePage = page(private)
         assertContains(privatePage, "<dt>sourceMap</dt><dd><code>[{\"name\":\"api\",\"remote\":\"${privateApi.remote}\"}]</code></dd>")
         assertContains(privatePage, "\"commit\":\"${git(privateApi.remote, "rev-parse", "main")}\"")
-        assertContains(privatePage, """<p id="profile">Profile: private</p>""")
+        assertContains(privatePage, """<span id="profile">Profile private</span>""")
     }
 
     /** Deploys [xml] as the file [name], refusing nothing. */
@@ -123,11 +126,12 @@ class ProfileTest : AntsTest() {
         naming("private")
         val form = browser.get("/processes/profile").body
         assertContains(form, """<option selected>private</option>""")
-        assertContains(form, "<strong>Ready</strong>")
+        assertContains(form, """<span class="pill p-ready">Ready</span>""")
+        assertContains(form, "Profile <b>private</b>, set on the diagram")
         // As a Schedule's Run does, posting no Profile.
-        assertContains(page(start()), """<p id="profile">Profile: private</p>""")
+        assertContains(page(start()), """<span id="profile">Profile private</span>""")
         assertContains(claude.launches("draft").single().stdin, "The Vault is $privateVault")
-        assertContains(page(start(PROFILE to "work")), """<p id="profile">Profile: work</p>""")
+        assertContains(page(start(PROFILE to "work")), """<span id="profile">Profile work</span>""")
 
         naming("gone")
         assertContains(browser.get("/processes/profile").body, "The Profile gone isn't in the settings.")
@@ -166,7 +170,7 @@ class ProfileTest : AntsTest() {
             """.trimIndent(),
         )
         assertFalse(PROFILE in browser.get("/processes/profile").body)
-        assertContains(page(start()), """<p id="profile">Profile: work</p>""")
+        assertContains(page(start()), """<span id="profile">Profile work</span>""")
 
         setUp("vaults:\n  work: $workVault\nsource-maps:\n  work: $workMap\n")
         assertFalse(PROFILE in browser.get("/processes/profile").body)
@@ -193,7 +197,7 @@ class ProfileTest : AntsTest() {
         )
         browser.get("/processes/caller")
         val run = browser.post("/processes/caller/runs", listOf(PROFILE to "private")).path.removePrefix("/runs/")
-        eventually(20) { assertContains(page(run), "State: Completed") }
+        eventually(20) { assertContains(page(run), """id="state">Completed<""") }
         assertContains(claude.launches("draft").single().stdin, "The Vault is $privateVault and the Source map is $privateMap.")
         assertTrue(privateVault.resolve("Note.md").exists())
         assertFalse(workVault.resolve("Note.md").exists())
@@ -221,13 +225,13 @@ class ProfileTest : AntsTest() {
         caller("top", "middle", repos = true)
         browser.get("/processes/top")
         val run = browser.post("/processes/top/runs", listOf(PROFILE to "private")).path.removePrefix("/runs/")
-        eventually(20) { assertContains(page(run), "State: Completed") }
+        eventually(20) { assertContains(page(run), """id="state">Completed<""") }
         val launch = claude.launches("draft").single().stdin.replace("\\\"", "\"")
         assertContains(launch, "The Vault is $privateVault and the Source map is $privateMap.")
         assertContains(launch, "\"sourceMap\":[{\"name\":\"api\",\"remote\":\"${privateApi.remote}\"}]")
 
         val scoped = browser.post("/processes/top/runs", listOf("repos" to "${workApi.remote}")).path.removePrefix("/runs/")
-        eventually(20) { assertContains(page(scoped), "State: Completed") }
+        eventually(20) { assertContains(page(scoped), """id="state">Completed<""") }
         val scopedLaunch = claude.launches("draft").last().stdin.replace("\\\"", "\"")
         assertFalse("Vault" in scopedLaunch || "Source map" in scopedLaunch, scopedLaunch)
         assertContains(scopedLaunch, "\"sourceMap\":[]")

@@ -39,6 +39,15 @@ class TranscriptTest : AntsTest() {
     }
 
     @Test
+    fun `durations read as their two largest units, to the minute where seconds don't matter`() {
+        assertEquals("0s", duration(java.time.Duration.ZERO))
+        assertEquals("1m 5s", duration(java.time.Duration.ofSeconds(65)))
+        assertEquals("1d 0h", duration(java.time.Duration.ofHours(24).plusMinutes(3)))
+        assertEquals("3m", duration(java.time.Duration.ofSeconds(200), seconds = false))
+        assertEquals("in 2h 1m", countdown(java.time.Duration.ofSeconds(7_250)))
+    }
+
+    @Test
     fun `the Transcript page shows the prompt collapsed, streamed markdown, one line per tool call, thinking collapsed and the Result`() {
         claude.session(
             "draft", init,
@@ -51,16 +60,16 @@ class TranscriptTest : AntsTest() {
             done,
         )
         val run = start("agent-task")
-        eventually { assertContains(page("/runs/$run"), "State: Completed") }
+        eventually { assertContains(page("/runs/$run"), """id="state">Completed<""") }
         assertContains(page("/runs/$run"), """<a href="/runs/$run/tasks/draft/transcript">draft</a>""")
 
         val transcript = page("/runs/$run/tasks/draft/transcript") // the Run has ended, and its Transcript is still there
         val order = listOf(
             """<h3 class="launch" id="e0">Launch 1""",
-            """<details class="prompt" id="e1"><summary>Prompt</summary><pre>Follow the Skill in ${home.resolve("skills/draft/SKILL.md")}""",
+            """<details class="prompt" id="e1"><summary>Opening prompt</summary><pre>Follow the Skill in ${home.resolve("skills/draft/SKILL.md")}""",
             """<p>Let me <strong>look</strong>.</p>""",
             """<details class="thinking" id="e3"><summary>✻ Thinking</summary>Which files?</details>""",
-            """<div class="tool" id="e4">⏺ <b>Bash</b> <code>ls -1</code></div>""",
+            """<div class="tool" id="e4"><b>Bash</b> <code>ls -1</code></div>""",
             """<div class="result" id="e5"><b>Result: done</b> Drafted.<pre>""",
             """<p class="ants" id="e6">Done.</p>""",
         )
@@ -81,7 +90,7 @@ class TranscriptTest : AntsTest() {
             done.replace(""""structured_output"""", """"modelUsage":$usage,"structured_output""""),
         )
         val run = start("agent-loop")
-        eventually { assertContains(page("/runs/$run"), "State: Completed") }
+        eventually { assertContains(page("/runs/$run"), """id="state">Completed<""") }
         val sessions = claude.launches("draft").map { it.argv[it.argv.indexOf("--session-id") + 1] }
         assertEquals(3, sessions.size)
 
@@ -116,27 +125,27 @@ class TranscriptTest : AntsTest() {
         )
         val run = start("agent-task")
         val path = "/runs/$run/tasks/draft/transcript"
-        eventually { assertContains(page(path), "Reading…") }
+        eventually { assertContains(page(path), "Reading notes.md…") }
         val loaded = page(path)
-        assertContains(loaded, Regex("""<div id="status"><span class="spinner">✻</span> Reading… <span data-since="\d+">\d+s</span> · 115 tokens</div>"""))
-        assertContains(loaded, """<div class="tool" id="e2">⏺ <b>Read</b> <code>notes.md</code></div>""")
+        assertContains(loaded, Regex("""<div id="status"><span class="spin">✻</span> <span class="shimmer">Reading notes.md…</span> <span class="muted num">\(<span data-since="\d+">\d+s</span> · ↓ 115 tokens\)</span></div>"""))
+        assertContains(loaded, """<div class="tool" id="e2"><b>Read</b> <code>notes.md</code></div>""")
 
         val from = Regex("""data-from="(\d+)"""").find(loaded)!!.groupValues[1]
         val tab = Received(browser.events("transcript=$run/draft&from=$from", "transcript"))
         val secondTab = Received(browser.events("transcript=$run/draft&from=0", "transcript"))
         claude.release("one")
-        eventually { assertContains(tab.toString(), """<div id="live"><p>Almost <strong>there</strong></p>""") }
+        eventually { assertContains(tab.toString(), """<div id="live" class="caret"><p>Almost <strong>there</strong></p>""") } // a caret while the block streams
         assertContains(tab.toString(), "Writing…")
         assertFalse("Read</b>" in tab.toString()) // this page had it already
         claude.release("two")
-        eventually { assertContains(tab.toString(), Regex("""Writing… <span data-since="\d+">\d+s</span> · 330 tokens</div>""")) }
+        eventually { assertContains(tab.toString(), Regex("""Writing…</span> <span class="muted num">\(<span data-since="\d+">\d+s</span> · ↓ 330 tokens\)</span></div>""")) }
         claude.release("three")
         eventually { assertContains(tab.toString(), """<div id="status"></div>""") }
         assertContains(tab.toString(), """<div class="result" id="e""")
 
         eventually { assertContains(secondTab.toString(), "<b>Result: done</b>") }
         for (text in listOf(page(path), secondTab.toString())) {
-            assertContains(text, """⏺ <b>Read</b> <code>notes.md</code>""")
+            assertContains(text, """<b>Read</b> <code>notes.md</code>""")
             assertContains(text, """<p>Almost <strong>there</strong>.</p>""")
             assertContains(text, "<b>Result: done</b> Drafted.")
         }
@@ -173,30 +182,67 @@ class TranscriptTest : AntsTest() {
         val path = "/runs/$run/tasks/draft/transcript"
         eventually { assertContains(page(path), "Facts <strong>hold</strong>.") }
         val running = page(path)
-        assertContains(running, """<div id="subagents">⑂ 2""")
-        assertContains(running, Regex("""<span class="chip">⑂ searcher · Search the notes · <span data-since="\d+">[\dhms ]+</span></span>"""))
-        assertContains(running, Regex("""<span class="chip">⑂ general-purpose · Check facts · <span data-since="\d+">[\dhms ]+</span></span>"""))
+        assertContains(running, """<div id="subagents" class="chips"><span class="chip">""")
+        assertContains(running, Regex("""<span class="chip"><span class="spin">✻</span> searcher · Search the notes · <span data-since="\d+">[\ddhms ]+</span></span>"""))
+        assertContains(running, Regex("""<span class="chip"><span class="spin">✻</span> general-purpose · Check facts · <span data-since="\d+">[\ddhms ]+</span></span>"""))
         val searcher = Regex("""(?s)<details class="subagent" id="(e\d+)" open><summary id="\1s">⑂ <b>searcher</b> Search the notes · <span data-since""" +
             """.*?<div>(.*?)</div></details>""").find(running)!!.groupValues[2]
         assertContains(searcher, """<summary>Prompt</summary><pre>Find the tone</pre>""")
-        assertContains(searcher, """⏺ <b>Read</b> <code>tone.md</code>""")
+        assertContains(searcher, """<b>Read</b> <code>tone.md</code>""")
         assertFalse("Facts" in searcher)
         assertContains(running, Regex("""(?s)<details class="subagent" id="e\d+" open><summary id="e\d+s">⑂ <b>general-purpose</b> Check facts.*?Facts <strong>hold</strong>.*?</details>"""))
-        assertContains(running, Regex("""<div id="status">.*· 1.1k tokens</div>""")) // the Subagents' messages count while they run
+        assertContains(running, Regex("""<div id="status">.*· ↓ 1.1k tokens\)</span></div>""")) // the Subagents' messages count while they run
 
         val tab = Received(browser.events("transcript=$run/draft&from=${Regex("""data-from="(\d+)"""").find(running)!!.groupValues[1]}", "transcript"))
         claude.release("one")
         eventually { assertContains(page(path), "<b>Result: done</b>") }
         val ended = page(path)
-        assertContains(ended, """<div id="subagents">⑂ 2</div>""") // no running Subagents, no chips
+        assertContains(ended, """<div id="subagents" class="chips"></div>""") // no running Subagents, no chips
         assertContains(ended, """⑂ <b>searcher</b> Search the notes · 7s</summary>""")
         assertContains(ended, """⑂ <b>general-purpose</b> Check facts · 1m 5s · failed</summary>""")
         // The tab's events come as the stream sees the file grow: the searcher's end can come before the other's.
         eventually {
             val seen = tab.toString()
             assertContains(seen, """⑂ <b>searcher</b> Search the notes · 7s</summary>""")
-            assertContains(seen, """<div id="subagents">⑂ 2</div>""")
+            assertContains(seen, """<div id="subagents" class="chips"></div>""")
         }
+    }
+
+    @Test
+    fun `the Transcript page's header follows the Task's state live, marking it to flash`() {
+        claude.session("draft", init, "wait release", done)
+        val run = start("agent-task")
+        val head = browser.events("transcript=$run/draft&from=0", "taskhead")
+        var html = head.until { "p-running" in it }
+        assertContains(html, """<h1 data-flash="running">Draft <span class="pill p-running">Running</span>""")
+        claude.release("release")
+        html = head.until { "p-done" in it }
+        assertContains(html, """<h1 data-flash="done">Draft <span class="pill p-done">Done</span>""")
+        assertContains(html, """<div class="crumbs"><a href="/runs">Runs</a> / <a href="/runs/$run">""") // the whole header comes
+    }
+
+    @Test
+    fun `the live line's verb says what the latest event does and to what, else it rotates`() {
+        claude.session(
+            "draft", init, "wait one",
+            """{"type":"assistant","message":{"id":"m1","content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"pnpm test -- <b>theme</b>\nmore"}}]}}""",
+            "wait two",
+            """{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"ok"}]}}""",
+            "wait three",
+            """{"type":"assistant","message":{"id":"m2","content":[{"type":"tool_use","id":"t2","name":"Read","input":{"file_path":"/w/repos/web/src/Header.tsx"}}]}}""",
+            "wait four", done,
+        )
+        val run = start("agent-task")
+        val path = "/runs/$run/tasks/draft/transcript"
+        val rotating = Regex("""<div id="status"><span class="spin">✻</span> <span class="shimmer" data-rotate>Pondering…</span> """)
+        eventually { assertContains(page(path), rotating) } // nothing done yet: a rotating verb
+        claude.release("one")
+        eventually { assertContains(page(path), """<span class="shimmer">Running pnpm test -- &lt;b&gt;theme&lt;/b&gt;…</span>""") }
+        claude.release("two")
+        eventually { assertContains(page(path), rotating) } // its result is in: rotating again
+        claude.release("three")
+        eventually { assertContains(page(path), """<span class="shimmer">Reading Header.tsx…</span>""") }
+        claude.release("four")
     }
 
     @Test
@@ -224,7 +270,7 @@ class TranscriptTest : AntsTest() {
             Regex("""(?s)<details class="subagent" id="(e\d+)" open><summary id="\1s">⑂ <b>searcher</b>.*?</summary><div><details class="subagent" id="(e\d+)" data-in="\1" open>""" +
                 """<summary id="\2s">⑂ <b>Explore</b> Dig.*?</summary><div><div class="text" id="e\d+" data-in="\2"><p>Deep <strong>find</strong>.</p>"""),
         )
-        assertContains(running, Regex("""<div id="status">.*· 1.1k tokens</div>"""))
+        assertContains(running, Regex("""<div id="status">.*· ↓ 1.1k tokens\)</span></div>"""))
 
         claude.release("one")
         eventually { assertContains(page(path), "<b>Result: done</b>") }

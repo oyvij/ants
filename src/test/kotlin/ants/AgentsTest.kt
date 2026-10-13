@@ -63,12 +63,23 @@ class AgentsTest : AntsTest() {
         val page = get("/agents/reviewer")
         assertContains(page, """name="description" value="Reviews changes."""")
         assertContains(page, """name="tool.Bash" checked""")
-        assertContains(page, """name="limit.Bash" value="git log *, git diff *"""")
-        assertContains(page, """name="other-tools" value="mcp__github__get_issue"""")
+        assertContains(page, """name="limit.Bash" value="git log *"""") // one field per rule, with × and ＋ Add
+        assertContains(page, """name="limit.Bash" value="git diff *"""")
+        assertContains(page, """<input type="checkbox" name="other-tools" value="mcp__github__get_issue" checked>""")
+        assertContains(page, "An MCP tool. Ants starts Agents with MCP off")
+        assertContains(page, """<input type="hidden" name="skills" value="code-review">""") // a chip with ×
         assertContains(page, """value="claude-sonnet-5-5" selected""")
         assertContains(page, ">Review carefully.</textarea>")
 
         post("/agents/reviewer", reviewer)
+        assertEquals(reviewerFile, agents.resolve("reviewer.md").readText())
+
+        // As the page posts it: a field per rule, chip and ticked tool, the empty ones left blank.
+        browser.post("/agents/reviewer", reviewer.toList().filter { it.first !in setOf("skills", "limit.Bash", "other-tools") } + listOf(
+            "skills" to "code-review", "skills" to "tdd", "skills" to "",
+            "limit.Bash" to "git log *", "limit.Bash" to "", "limit.Bash" to "git diff *",
+            "other-tools" to "mcp__github__get_issue", "other-tools" to "",
+        ))
         assertEquals(reviewerFile, agents.resolve("reviewer.md").readText())
 
         post("/agents/reviewer", reviewer + ("model" to "other") + ("model-other" to "claude-opus-5-5[1m]") + ("instructions" to "Review harder."))
@@ -83,7 +94,8 @@ class AgentsTest : AntsTest() {
         agents.resolve("seeker.md").writeText("---\nname: seeker\ncolor: blue\ntools: Agent(knowledge-searcher, worker), Read\n---\nScout.\n")
         val page = get("/agents/seeker")
         assertContains(page, """name="tool.Agent" checked""")
-        assertContains(page, """name="limit.Agent" value="knowledge-searcher, worker"""")
+        assertContains(page, """name="limit.Agent" value="knowledge-searcher"""")
+        assertContains(page, """name="limit.Agent" value="worker"""")
         post("/agents/seeker", mapOf("name" to "seeker", "cli" to "claude", "tool.Read" to "on", "instructions" to "Scout."))
         assertEquals("---\nname: seeker\ncli: claude\ntools: Read\ncolor: blue\n---\nScout.\n", agents.resolve("seeker.md").readText())
     }
@@ -113,7 +125,7 @@ class AgentsTest : AntsTest() {
             for (name in listOf("shipped-writer", "outsider")) {
                 val page = get("/agents/$name")
                 assertContains(page, "<fieldset disabled>")
-                assertFalse("""<button class="primary">Save</button>""" in page)
+                assertFalse("""<button class="primary" form="agent">Save</button>""" in page)
                 assertEquals(403, post("/agents/$name", mapOf("name" to name, "instructions" to "Changed.")).status)
             }
             assertEquals("/agents/outsider-copy", post("/agents/outsider/copy", emptyMap()).path)
@@ -167,7 +179,7 @@ class AgentsTest : AntsTest() {
     @Test
     fun `Import fills the create form and drops unknown keys with a notice, or refuses with a reason`() {
         val filled = import("helper.md", "---\nname: helper\ndescription: Helps.\ncolor: green\nmemory: user\ntools: Read, Grep\nmodel: haiku\n---\nHelp out.\n")
-        assertContains(filled, "<h1>New Agent</h1>")
+        assertContains(filled, "New Agent</span></h1>")
         assertContains(filled, """action="/agents/new"""")
         assertContains(filled, """name="name" value="helper"""")
         assertContains(filled, """name="tool.Grep" checked""")
@@ -185,7 +197,15 @@ class AgentsTest : AntsTest() {
         assertContains(get("/agents/new"), """name="sandbox"""")
         post("/agents/new", mapOf("name" to "coder", "cli" to "codex", "sandbox" to "read-only", "tool.Read" to "on", "instructions" to "Code."))
         assertEquals("---\nname: coder\ncli: codex\nsandbox: read-only\n---\nCode.\n", agents.resolve("coder.md").readText())
-        assertContains(get("/agents/coder"), """value="read-only" selected""")
+        val coder = get("/agents/coder")
+        assertContains(coder, """value="read-only" selected""")
+        assertContains(coder, """<fieldset data-cli="claude" disabled>""") // Claude's tools and models, off for a codex Agent
+        assertContains(coder, """<fieldset data-cli="codex">""")
+
+        // codex's model is free text.
+        post("/agents/coder", mapOf("name" to "coder", "cli" to "codex", "sandbox" to "read-only", "model" to "gpt-5-codex", "instructions" to "Code."))
+        assertContains(agents.resolve("coder.md").readText(), "model: gpt-5-codex\n")
+        assertContains(get("/agents/coder"), """<input class="mono" name="model" value="gpt-5-codex"""")
 
         val refused = post("/agents/new", mapOf("name" to "yolo", "cli" to "codex", "sandbox" to "yolo"))
         assertContains(refused.body, "codex takes the sandbox read-only, workspace-write or danger-full-access, not yolo.")
@@ -211,15 +231,48 @@ class AgentsTest : AntsTest() {
     @Test
     fun `the model dropdown lists current models and aliases, and a deprecated model warns`() {
         val page = get("/agents/new")
-        assertContains(page, ">opus → claude-opus-5-5</option>")
-        assertContains(page, "sonnet → claude-sonnet-5-5</option>")
-        assertContains(page, ">claude-haiku-5-5</option>")
-        assertContains(page, ">claude-sonnet-4-5-20250929 (deprecated, retires November 30, 2026)</option>")
+        assertContains(page, """<optgroup label="Always the newest">""")
+        assertContains(page, ">opus · newest Opus, now Opus 5.5</option>")
+        assertContains(page, ">sonnet · newest Sonnet, now Sonnet 5.5</option>")
+        assertContains(page, """<optgroup label="A fixed version">""")
+        assertContains(page, ">Haiku 5.5 · claude-haiku-5-5</option>")
+        assertContains(page, ">Haiku 4.5 · claude-haiku-4-5-20251001</option>")
+        assertContains(page, ">Sonnet 4.5 · claude-sonnet-4-5-20250929 · retires November 30, 2026</option>")
         assertFalse("claude-opus-4-1-20250805" in page) // retired
         assertContains(page, ">Other model ID…</option>")
+        assertContains(page, "From Anthropic's public model list, refreshed with Ants' update check (last ")
 
         agents.resolve("old.md").writeText("---\nname: old\nmodel: claude-sonnet-4-5-20250929\n---\n")
-        assertContains(get("/agents/old"), "claude-sonnet-4-5-20250929 is deprecated and retires November 30, 2026.")
+        assertContains(get("/agents/old"), "Deprecated: it retires November 30, 2026.")
+    }
+
+    @Test
+    fun `Check now refreshes the model list and goes back to the page`() {
+        val checked = post("/models/check", emptyMap()) // the page it was pressed on sends its Referer; without one, the Agents
+        assertEquals("/agents", checked.path)
+        assertContains(checked.body, "<b>Checked</b>")
+    }
+
+    @Test
+    fun `the tools come in groups, each saying what it does, and the others say why they are usually off`() {
+        val page = get("/agents/new")
+        for (group in listOf("Read the code", "Change files", "Run commands", "Web", "Helpers")) assertContains(page, """<div class="tgroup">$group</div>""")
+        assertContains(page, """<b class="mono">Read</b></label>""")
+        assertContains(page, "Open a file.")
+        assertContains(page, """data-example="pnpm test"""") // Bash's Limit…
+        assertContains(page, "Claude Code's other ${AgentForm.OTHER_TOOLS.size} tools: usually off for Agents, and why")
+        assertContains(page, """name="tool.AskUserQuestion"""")
+        assertContains(page, "Nobody is at a terminal, so the question goes unanswered.")
+        assertFalse("""name="tool.Skill"""" in page) // never in the allow-list
+
+        agents.resolve("asker.md").writeText("---\nname: asker\ntools: Read, AskUserQuestion, Frobnicate\n---\n")
+        val asker = get("/agents/asker")
+        assertContains(asker, """name="tool.AskUserQuestion" checked""")
+        assertContains(asker, "tools (1 ticked): usually off")
+        assertContains(asker, """<input type="checkbox" name="other-tools" value="Frobnicate" checked>""")
+        assertContains(asker, "Not a tool Ants knows.")
+        post("/agents/asker", mapOf("name" to "asker", "cli" to "claude", "tool.Read" to "on", "tool.AskUserQuestion" to "on", "other-tools" to "Frobnicate"))
+        assertContains(agents.resolve("asker.md").readText(), "tools: AskUserQuestion, Read, Frobnicate\n")
     }
 
     @Test
@@ -240,12 +293,12 @@ class AgentsTest : AntsTest() {
             browser.import("agent-task.bpmn")
             val run = browser.post("/processes/agent-task/runs", mapOf("prompt" to "Say hello")).path
             var entry = ""
-            val row = Regex("""<tr>(?:(?!</tr>).)*?"$run"(?:(?!</tr>).)*?href="(/notifications/[^"]+)"""",RegexOption.DOT_MATCHES_ALL)
+            val row = Regex("""<tr[^>]*>(?:(?!</tr>).)*?"$run"(?:(?!</tr>).)*?href="(/notifications/[^"]+)"""",RegexOption.DOT_MATCHES_ALL)
             eventually { entry = assertNotNull(row.find(browser.get("/notifications").body)).groupValues[1] }
 
             post("/agents/writer", mapOf("name" to "writer", "cli" to "claude", "tool.Read" to "on", "tool.Grep" to "on", "model" to "opus", "instructions" to "Write warmly."))
             browser.post(entry, mapOf("action" to "fresh", "instruction" to ""))
-            eventually { assertContains(browser.get(run).body, "State: Completed") }
+            eventually { assertContains(browser.get(run).body, """id="state">Completed<""") }
             val (first, second) = claude.launches("draft")
             assertEquals(listOf("sonnet", "Write plainly.", "Read"), listOf(first.flag("--model"), first.flag("--append-system-prompt"), first.flag("--tools")))
             assertEquals(listOf("opus", "Write warmly.", "Grep,Read"), listOf(second.flag("--model"), second.flag("--append-system-prompt"), second.flag("--tools")))
@@ -259,11 +312,12 @@ class AgentsTest : AntsTest() {
         agents.resolve("helper.md").deleteIfExists()
         val form = browser.get("/agents/new?use")
         assertEquals("SAMEORIGIN", form.headers?.firstValue("X-Frame-Options")?.orElse(null)) // the modeler frames it
-        assertContains(form.body, """<button class="primary">Create and use</button>""")
+        assertContains(form.body, """<button class="primary" form="agent">Create and use</button>""")
         assertFalse("""<nav class="side">""" in form.body) // the modeler's own page is behind the modal
+        assertContains(browser.get("/agents/new?use&skills=draft").body, Regex("""name="skills" value="draft"""")) // the Task's Skill
 
         val refused = browser.post("/agents/new", mapOf("name" to "Helper!", "cli" to "claude", "use" to ""))
-        assertContains(refused.body, """<button class="primary">Create and use</button>""") // a refusal stays in the modal
+        assertContains(refused.body, """<button class="primary" form="agent">Create and use</button>""") // a refusal stays in the modal
         assertEquals("/agents/helper", browser.post("/agents/new", mapOf("name" to "helper", "cli" to "claude", "use" to "")).path)
         assertTrue(agents.resolve("helper.md").exists())
     }

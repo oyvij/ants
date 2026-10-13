@@ -12,11 +12,13 @@ and out, `ANTHROPIC_API_KEY` dropped), prints one line per event, and keeps the 
 ## When to probe
 
 Probe before you build on a CLI fact the spec states but nobody has observed. The fake `claude` only plays what a
-test scripts, so it passes whatever you assume. Two facts the real CLI has already settled:
+test scripts, so it passes whatever you assume. Facts the real CLI has already settled:
 
 - The API refuses `oneOf`, `allOf` or `anyOf` at a `--json-schema` top level (ADR 0003).
 - A user message after a `result` continues the same session, and an `interrupt` control request ends the turn with
   `control_response` success, then `result/error_during_execution`, then exit 1.
+- A base64 `image` block before the text block of a stream-json user message reaches the model, and claude
+  replays the message with the image data in it.
 
 ## Steps
 
@@ -26,6 +28,7 @@ test scripts, so it passes whatever you assume. Two facts the real CLI has alrea
    - A conversation: `--then "<message>"`, once per message sent after a `result`.
    - Stop: `--interrupt <seconds>`, with a task long enough to still be running (haiku answers short prompts in
      under 4 s).
+   - An image: `--image <file>` puts it beside the first prompt as a base64 image block.
    - Any other flag goes after `--`.
 2. Read the printed lines; open the recording (path on stderr) only for a field the line cuts off.
 3. To make a test play the same session, pass `--fixture <file>`. It writes fake-`claude` session lines: partial

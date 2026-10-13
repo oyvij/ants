@@ -1,5 +1,4 @@
-@param agents: List<ants.Agent>
-@param folder: java.nio.file.Path
+@param agents: List<ants.AgentRow>
 @param error: String? = null
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
@@ -15,26 +14,21 @@
 <body>
 @template.nav(shell = shell)
 <main>
-<div class="ph"><h1>Agents</h1><div class="acts"><a class="btn primary" href="/agents/new">New Agent</a></div>
-    <div class="sub">From the folders in <a href="/settings">Settings</a>. Ants writes only into its own <code>agents/</code>; the rest are read-only, with Copy.</div></div>
+<div class="ph"><h1>Agents</h1>
+    <div class="acts">
+        <form method="post" action="/agents/import" enctype="multipart/form-data"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><label class="btn" title="Import one agent file into the New Agent form">Import…<input type="file" name="file" accept=".md" required hidden onchange="this.form.submit()"></label></form>
+        <a class="btn primary" href="/agents/new">New Agent</a>
+    </div>
+    <div class="sub">From the folders in <a href="/settings">Settings</a>. Ants writes only into <code>~/.ants/agents</code>; the rest are read-only, with Copy.</div></div>
 @if(error != null)<p role="alert">${error}</p>@endif
-<table>
-    <thead><tr><th>Name</th><th>Description</th><th>From</th></tr></thead>
+<table class="library">
+    <thead><tr><th>Name</th><th>CLI · model</th><th>Skills</th><th>Description</th><th>Folder</th></tr></thead>
     <tbody>
-@for(agent in agents)
-    <tr>
-        <td><a href="/agents/${agent.name}">${agent.name}</a></td>
-        <td>${agent.description}</td>
-        <td>@if(agent.file.parent == folder)yours@else<code>${agent.file.parent.toString()}</code>, read-only@endif</td>
-    </tr>
+@for(row in agents)
+    <tr class="click" data-href="/agents/${row.agent.name}"><td><b><a href="/agents/${row.agent.name}">${row.agent.name}</a></b>@if(row.vault) <span class="tag t-vault">Vault</span>@endif</td><td class="small">${row.agent.cli} · ${row.agent.model ?: "default"}</td><td class="small">@for(skill in row.agent.skills)<a href="/skills/${skill}">${skill}</a>@if(skill != row.agent.skills.last()) @endif@endfor</td><td class="small">${row.agent.description}</td><td class="muted small">${row.where}</td></tr>
 @endfor
     </tbody>
 </table>
-<form method="post" action="/agents/import" enctype="multipart/form-data">
-    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
-    <label>Import an agent file <input type="file" name="file" accept=".md" required></label>
-    <button>Import</button> Fills the New Agent form.
-</form>
 </main>
 </body>
 </html>

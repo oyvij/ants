@@ -1,5 +1,5 @@
 // What the modeler writes into the diagram as text and reads back from it: the namespace, a field's variable name, a
-// path's condition and a Schedule's cron. Nothing here needs the page, so `node --test` checks it (src/test/js).
+// path's condition (and what it can read) and a Schedule's cron. Nothing here needs the page, so `node --test` checks it (src/test/js).
 
 const OPERATON = "http://operaton.org/schema/1.0/bpmn"
 const CAMUNDA = "http://camunda.org/schema/1.0/bpmn"
@@ -41,6 +41,22 @@ export function readCondition(body) {
         if (match[2] === undefined || literal(value) === match[2]) return {field: match[1], op, value}
     }
     return null
+}
+
+// What a decision's condition picks from, each [path, where it is from], of the `${…}` references [offered] before it:
+// the start form's [startFields], the Results of [tasks] (each Task's id and name), then the run count of each of
+// those that is [counted] in `runs`, Ants' own [runVariables], and anything else, a multi-instance's item.
+export function resultFields(offered, tasks, counted, startFields, runVariables) {
+    const paths = offered.map(ref => ref.slice(2, -1)), root = path => path.split(".")[0]
+    const results = paths.filter(path => root(path) in tasks).map(path => [path, `from ${tasks[root(path)]}`])
+    const roots = [...new Set(results.map(([path]) => root(path)))].filter(it => counted.has(it))
+    const rest = paths.filter(path => !(root(path) in tasks) && !startFields.includes(path))
+    return [
+        ...paths.filter(path => startFields.includes(path)).map(path => [path, "from the start form"]),
+        ...results, ...roots.map(it => [`runs.${it}`, `times ${tasks[it]} ran`]),
+        ...rest.filter(path => runVariables.includes(root(path))).map(path => [path, "Ants' own"]),
+        ...rest.filter(path => !runVariables.includes(root(path))).map(path => [path, "a multi-instance's item"]),
+    ]
 }
 
 // The Schedule in words: every hour, day, weekday, week or month at a time, written as the cron Ants runs it on

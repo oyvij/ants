@@ -1,0 +1,20 @@
+@param form: ants.AgentForm
+@param name: String
+@param tool: ants.Tool? = null
+@param warn: String? = null
+@param readOnly: Boolean
+@param added: Boolean = false
+!{val limits = if (added) emptyList<String>() else form.limits(name)}
+!{val does = tool?.does.orEmpty()}
+<div class="trow"><label>@if(added)<input type="checkbox" name="other-tools" value="${name}" checked>@else<input type="checkbox" name="tool.${name}" checked="${name in form.tools}">@endif <b class="mono">${name}</b></label>
+    <span class="tdesc">${does}@if(warn != null)<span class="twarn">${if (does.isEmpty()) "" else " "}⚠ ${warn}</span>@endif</span>
+    @if(limits.isNotEmpty())<span class="small muted">limited</span>@elseif(tool?.limits != null && !readOnly)<button type="button" class="ghost small" data-limit>Limit…</button>@else<span></span>@endif
+@if(tool?.limits != null || limits.isNotEmpty())
+    <div class="tlim" data-tool="${name}" data-example="${tool?.example.orEmpty()}" hidden="${limits.isEmpty()}"><div class="help">Only these ${tool?.limits ?: "rules"}. ${tool?.note.orEmpty()} None listed means all.</div>
+@for(rule in limits)
+        <div class="row"><input class="mono grow" name="limit.${name}" value="${rule}" placeholder="e.g. ${tool?.example.orEmpty()}">@if(!readOnly)<button type="button" class="ghost" title="Remove">×</button>@endif</div>
+@endfor
+@if(!readOnly)        <button type="button" data-add>＋ Add</button>@endif
+    </div>
+@endif
+</div>

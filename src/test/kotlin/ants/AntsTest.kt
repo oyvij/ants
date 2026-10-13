@@ -248,6 +248,11 @@ class Browser(private val base: String) {
         )
     }
 
+    /** Posts [content] as the request's whole body, its CSRF token in a header, as a page script's `fetch` does. */
+    fun postBytes(path: String, content: ByteArray) = send(
+        HttpRequest.newBuilder(URI("$base$path")).apply { csrf?.let { header("X-CSRF-TOKEN", it) } }.POST(HttpRequest.BodyPublishers.ofByteArray(content)),
+    )
+
     /** Imports a `.bpmn` from the test resources on the Processes page. */
     fun import(file: String): Page {
         get("/processes")

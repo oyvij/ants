@@ -22,7 +22,7 @@
 <form method="post">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
     <input type="hidden" name="version" value="${file.version}">
-    <textarea name="text" rows="30" cols="100">
+    <textarea name="text" rows="30" cols="100" data-markdown data-tall>
 ${text}</textarea>
     <p><button class="primary">Save</button></p>
 </form>

@@ -29,6 +29,9 @@ one of two pairs; paths are relative to the Run workspace:
 - Follow each clone's own guidance: `CLAUDE.md`, `AGENTS.md`, `CONTRIBUTING.md`, coding standards
   and ADRs, where they exist.
 - Change only what the work needs.
+- Work only in the clones. With no clone in `repos/`, never make a repo (`git init`) yourself:
+  Ants can't land it. Answer `stuck`, saying the Run has no repo and that a new one is named in
+  the start form's Repos, as `owner/name`.
 
 ## 1. Start
 

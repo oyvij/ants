@@ -48,13 +48,13 @@ class CodexTest : AntsTest() {
         """"text":"{\"outcome\":\"done\",\"summary\":\"$summary\",\"output\":{\"text\":\"Hello\"},\"needs\":null}"}}"""
     private val completed = """{"type":"turn.completed","usage":{"input_tokens":1200,"cached_input_tokens":200,"output_tokens":34}}"""
 
-    private fun start(key: String = "agent-task", agent: String = "writer"): String {
+    private fun start(key: String = "agent-task", agent: String = "writer", prompt: String = "Say hello"): String {
         val bpmn = javaClass.getResource("/agent-task.bpmn")!!.readText().replace("\"agent-task\"", "\"$key\"")
             .replace("""name="ants.agent" value="writer"""", """name="ants.agent" value="$agent"""")
         browser.get("/processes")
         assertFalse("role=\"alert\"" in browser.upload("/processes", "file", "$key.bpmn", bpmn.toByteArray()).body)
         browser.get("/processes/$key")
-        return browser.post("/processes/$key/runs", mapOf("prompt" to "Say hello")).path.removePrefix("/runs/")
+        return browser.post("/processes/$key/runs", mapOf("prompt" to prompt)).path.removePrefix("/runs/")
     }
 
     private fun page(run: String) = browser.get("/runs/$run").body.replace("&#34;", "\"")
@@ -69,7 +69,7 @@ class CodexTest : AntsTest() {
             answer(), completed,
         )
         val run = start()
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
         assertContains(page(run), "Drafted.")
 
         val launch = codex.launches("draft").single()
@@ -106,13 +106,13 @@ class CodexTest : AntsTest() {
         val run = start()
         eventually { assertEquals(1, codex.launches("draft").size) }
         codexTask("sandbox: yolo\n")
-        eventually { assertContains(browser.get(transcript(run)).body, "■ Stop") }
+        eventually { assertContains(browser.get(transcript(run)).body, ">Stop</button>") }
         browser.post("${transcript(run)}/stop", emptyMap())
         var entry = ""
         eventually {
-            val row = assertNotNull(Regex("""<tr>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
+            val row = assertNotNull(Regex("""<tr[^>]*>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
                 .find(browser.get("/notifications").body)).groupValues[1]
-            assertContains(row, "■ [stopped]")
+            assertContains(row, "<i>■</i>[stopped]")
             entry = Regex("""href="(/notifications/[^"]+)"""").find(row)!!.groupValues[1]
         }
         browser.post(entry, mapOf("action" to "continue", "instruction" to "Go on."))
@@ -125,12 +125,12 @@ class CodexTest : AntsTest() {
         codexTask(metadata = "metadata:\n  varde-vault: true\n")
         codex.session("draft", started, turn, answer(), completed)
         val run = start()
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
         assertEquals(vaultPath.toString(), codex.launches("draft").single().flag("--add-dir"))
 
         codexTask()
         val without = start("no-vault")
-        eventually { assertContains(page(without), "State: Completed") }
+        eventually { assertContains(page(without), """id="state">Completed<""") }
         assertFalse("--add-dir" in codex.launches("draft").last().argv)
     }
 
@@ -168,11 +168,11 @@ class CodexTest : AntsTest() {
         claude.session("draft", """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION",""" +
             """"structured_output":{"outcome":"done","summary":"Drafted by claude.","output":{"text":"Hello"}}}""")
         val onClaude = start("on-claude", agent = "claude-writer")
-        eventually { assertContains(page(onClaude), "State: Completed") } // claude isn't paused
+        eventually { assertContains(page(onClaude), """id="state">Completed<""") } // claude isn't paused
         assertEquals(1, codex.launches("draft").size)
 
         clock.offset = Duration.between(clock.instant(), reset).plusMinutes(1)
-        for (run in listOf(first, second)) eventually { assertContains(page(run), "State: Completed") }
+        for (run in listOf(first, second)) eventually { assertContains(page(run), """id="state">Completed<""") }
         val cut = codex.launches("draft").first()
         val resumed = codex.launches("draft").drop(1).single { it.argv.contains("resume") }
         assertEquals(cut.thread, resumed.flag("resume"))
@@ -190,7 +190,7 @@ class CodexTest : AntsTest() {
         val after = clock.instant()
         assertContains(setOf(clock.local(before.plusSeconds(31 * 60)), clock.local(after.plusSeconds(31 * 60))), page(run).substringAfter("Paused until ").substringBefore("<"))
         clock.offset = Duration.ofMinutes(32)
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
     }
 
     @Test
@@ -220,7 +220,7 @@ class CodexTest : AntsTest() {
         assertEquals(transcript(run), browser.post("${transcript(run)}/send", mapOf("message" to "Keep it short.")).path)
         assertContains(workspace(run).resolve("run-log.md").readText(), "Draft · Send\n\nKeep it short.\n")
         codex.release("release")
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
         assertContains(page(run), "Kept short.")
         val (cut, resumed) = codex.launches("draft")
         assertTrue(cut.interrupted)
@@ -230,24 +230,50 @@ class CodexTest : AntsTest() {
     }
 
     @Test
+    fun `an image in a codex Task's prompt, and in a message Sent to it, goes to codex as -i`() {
+        codexTask()
+        codex.session("draft", 1, started, turn, "wait never")
+        codex.session("draft", started, turn, answer(), completed)
+        browser.get("/processes")
+        browser.postBytes("/images", ImagesTest.RED_PNG)
+        val image = home.resolve(ImagesTest.RED_PATH.removePrefix("/")).toString()
+        val run = start(prompt = "Like this: ![image](${ImagesTest.RED_PATH})")
+        eventually { assertEquals(1, codex.launches("draft").size) }
+        eventually { assertTrue(workspace(run).resolve("tasks/draft/session").exists()) }
+        val first = codex.launches("draft").single()
+        assertEquals(image, first.flag("-i"))
+        assertContains(first.stdin, "Like this: ![image](${ImagesTest.RED_PATH})")
+
+        browser.get(transcript(run))
+        browser.post("${transcript(run)}/send", mapOf("message" to "And this: ![image](${ImagesTest.RED_PATH})"))
+        eventually { assertContains(page(run), """id="state">Completed<""") }
+        val resumed = codex.launches("draft")[1]
+        assertEquals(listOf("resume", first.thread, "-"), resumed.argv.takeLast(3))
+        assertEquals(image, resumed.flag("-i"))
+        assertEquals("And this: ![image](${ImagesTest.RED_PATH})", resumed.stdin)
+    }
+
+    @Test
     fun `Stop on a codex Task leaves it stopped, and Continue resumes its session`() {
         codexTask()
         codex.session("draft", 1, started, turn, "wait never")
         codex.session("draft", started, turn, answer(), completed)
         val run = start()
-        eventually { assertContains(browser.get(transcript(run)).body, "■ Stop") }
+        eventually { assertContains(browser.get(transcript(run)).body, ">Stop</button>") }
         eventually { assertEquals(1, codex.launches("draft").size) }
+        // Ants has read codex's thread.started, so Continue has a session to resume.
+        eventually { assertTrue(workspace(run).resolve("tasks/draft/session").exists()) }
         browser.post("${transcript(run)}/stop", emptyMap())
         var entry = ""
         eventually {
-            val row = assertNotNull(Regex("""<tr>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
+            val row = assertNotNull(Regex("""<tr[^>]*>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
                 .find(browser.get("/notifications").body)).groupValues[1]
-            assertContains(row, "■ [stopped]")
+            assertContains(row, "<i>■</i>[stopped]")
             entry = Regex("""href="(/notifications/[^"]+)"""").find(row)!!.groupValues[1]
         }
         assertContains(browser.get(entry).body, "Stopped by the user.")
         browser.post(entry, mapOf("action" to "continue", "instruction" to "Go on."))
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
         val (cut, resumed) = codex.launches("draft")
         assertTrue(cut.interrupted)
         assertEquals(cut.thread, resumed.flag("resume"))
@@ -264,12 +290,12 @@ class CodexTest : AntsTest() {
         val run = start()
         var entry = ""
         eventually {
-            val row = assertNotNull(Regex("""<tr>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
+            val row = assertNotNull(Regex("""<tr[^>]*>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
                 .find(browser.get("/notifications").body)).groupValues[1]
             entry = Regex("""href="(/notifications/[^"]+)"""").find(row)!!.groupValues[1]
         }
         browser.post(entry, mapOf("action" to "continue", "instruction" to "Pick billing."))
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
         val (first, resumed) = codex.launches("draft")
         assertEquals(first.thread, resumed.flag("resume"))
         val transcript = browser.get(transcript(run)).body

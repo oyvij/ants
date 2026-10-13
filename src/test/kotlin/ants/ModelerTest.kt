@@ -94,6 +94,31 @@ class ModelerTest : AntsTest() {
         assertEquals(mapOf("text" to "Text", "markdown" to "Markdown", "repos" to "Repos"), read["fieldTypes"])
         assertEquals("ants.items-are-tickets", (read["itemsAreTickets"] as Map<*, *>)["property"])
         assertContains((read["itemsAreTickets"] as Map<*, *>)["help"].toString(), "Each item names a Ticket (tickets/issues/01-hello.md, or 01).")
-        for (fact in listOf("Clone repos:", "ready-for-human", "ants.items-are-tickets")) assertEquals(false, fact in browser.get("/modeler.js").body, fact)
+        assertEquals(mapOf("name" to "Parallel gateway", "explain" to "Run branches at the same time, then wait for all of them to join."), (read["kinds"] as Map<*, *>)["parallel"])
+        for (fact in listOf("Clone repos", "ready-for-human", "ants.items-are-tickets", "Answer a Round", "ants.send-back", "Parallel gateway", "Where a Run begins")) assertEquals(false, fact in browser.get("/modeler.js").body, fact)
+    }
+
+    @Test
+    fun `the modeler gets each User Task kind's fields and Result from the server`() {
+        val (modeler, _) = open("/processes/new?name=Facts")
+        val facts = Regex("""data-facts="([^"]+)"""").find(modeler.body)!!.groupValues[1].replace("&#34;", "\"").replace("&#39;", "'")
+        val kinds = (JsonMapper.shared().readValue(facts, Map::class.java)["userTasks"] as List<*>).map { it as Map<*, *> }
+        assertEquals(listOf("Answer a Round", "Approve", "Review changes"), kinds.map { it["name"] })
+        assertEquals(listOf("answer-round", "", "review-changes"), kinds.map { it["value"] })
+        assertEquals(listOf("approved", "comment"), kinds[1]["result"])
+        val approve = (kinds[1]["fields"] as List<*>).map { it as Map<*, *> }
+        assertEquals(listOf("Title", "Show", "Send back resumes"), approve.map { it["label"] })
+        assertEquals(listOf("title", "show", null), approve.map { it["input"] })
+        assertEquals("ants.send-back", approve[2]["property"])
+        assertEquals(listOf("ants.asker"), (kinds[0]["fields"] as List<*>).map { (it as Map<*, *>)["property"] })
+        assertEquals(listOf("ants.walkthrough", "ants.send-back"), (kinds[2]["fields"] as List<*>).map { (it as Map<*, *>)["property"] })
+    }
+
+    @Test
+    fun `the modeler's header leads back to the Process page, and a new Process is a Draft`() {
+        browser.import("start-end.bpmn")
+        val modeler = browser.get("/processes/start-end/edit").body
+        assertContains(modeler, """<a href="/processes/start-end">Start to end</a>""")
+        assertContains(browser.get("/processes/new?name=Drafted").body, "Draft")
     }
 }

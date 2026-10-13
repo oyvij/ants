@@ -22,6 +22,7 @@ import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -75,7 +76,10 @@ class BrowserTest : AntsTest() {
     private fun shape(id: String) = page.locator("#canvas .djs-element[data-element-id='$id'], #diagram .djs-element[data-element-id='$id']")
 
     private val pad get() = page.locator(".djs-context-pad")
-    private val heading get() = page.locator("#explain h2")
+    private val heading get() = page.locator("#explain .kind")
+    private val panel get() = page.locator("#explain")
+    private fun button(text: String) = page.locator("#explain button", Page.LocatorOptions().setHasText(text))
+    private fun label(text: String) = page.getByLabel(text, Page.GetByLabelOptions().setExact(true))
     private val selected = Pattern.compile("\\bselected\\b")
 
     /** Opens the modeler on a blank Process and appends an Agent Task to its start event; the Task's id. */
@@ -128,13 +132,128 @@ class BrowserTest : AntsTest() {
         page.locator("#explain button", Page.LocatorOptions().setHasText("New Agent")).click()
         val form = page.frameLocator("dialog iframe")
         form.locator("input[name=name]").fill("helper")
-        form.locator("button", com.microsoft.playwright.FrameLocator.LocatorOptions().setHasText("Create and use")).click()
+        page.locator("dialog .mh button", Page.LocatorOptions().setHasText("Create and use")).click()
 
         assertThat(page.locator("dialog")).hasCount(0)
         assertThat(page.locator("#explain select").first()).hasValue("helper")
         assertEquals(modeler, page.url())
         assertThat(shape(task)).hasClass(selected) // the Task drawn, never saved, is still there
         assertTrue(home.resolve("agents/helper.md").toFile().exists())
+    }
+
+    @Test
+    fun `picking an Agent picks its first Skill and says what later Tasks can read, and the Checks turn Ready to deploy`() = browse {
+        agentTask(null, mapOf("draft" to """{"type":"object","properties":{"notes":{"type":"string"}}}""", "polish" to null))
+        val task = appendAgentTask()
+        assertThat(page.locator("#summary")).hasText(Pattern.compile("\\d+ to fix"))
+        label("Agent").selectOption("writer")
+        assertThat(label("Skill")).hasValue("draft")
+        assertThat(panel).containsText("Later Tasks can read: ${'$'}{$task.output.notes}")
+        assertThat(page.locator("#summary")).hasText("Ready to deploy")
+        page.screenshot("modeler-agent-task")
+    }
+
+    @Test
+    fun `New Skill says the Task has no Agent yet, and New Agent comes with the Task's Skill`() = browse {
+        agentTask(null)
+        appendAgentTask()
+        button("New Skill").click()
+        assertThat(page.locator("dialog.modal")).containsText("This Task has no Agent yet.")
+        page.keyboard().press("Escape")
+        label("Agent").selectOption("writer")
+        assertThat(label("Skill")).hasValue("draft")
+        button("New Skill").click()
+        assertThat(page.locator("dialog.modal")).containsText("Added to writer's Skills, and picked on this Task.")
+        page.waitForTimeout(1000.0) // the form loads in its frame
+        page.screenshot("modeler-new-skill")
+        page.keyboard().press("Escape")
+        button("New Agent").click()
+        assertThat(page.frameLocator("dialog iframe").locator(".chipsel input[type=hidden][name=skills]")).hasValue("draft") // a chip on the Agent page (#98)
+    }
+
+    @Test
+    fun `a User Task asks for its kind's fields and says what later Tasks can read`() = browse {
+        page.navigate(url("/processes/new?name=Gated&from="))
+        shape("start").click()
+        pad.locator("[data-action='append.user-task']").click()
+        val task = page.locator("#canvas .djs-shape.selected").getAttribute("data-element-id")!!
+        assertThat(heading).hasText("User Task")
+        label("What you do").selectOption("Review changes")
+        assertThat(label("Walkthrough")).isVisible()
+        assertThat(panel).containsText("${'$'}{$task.comments}")
+        label("What you do").selectOption("Approve")
+        label("Title").fill("Ship it?")
+        label("Title").press("Tab")
+        assertThat(panel).containsText("Later Tasks and decisions can read: ${'$'}{$task.approved} ${'$'}{$task.comment}")
+        page.screenshot("modeler-user-task")
+        label("What you do").selectOption("Answer a Round")
+        assertThat(label("Asker")).isVisible()
+        label("What you do").selectOption("Approve")
+        assertThat(label("Title")).hasValue("") // switching kind dropped the old kind's fields
+        label("Title").fill("Ship it?")
+        label("Title").press("Tab")
+        page.locator("#save").click()
+        assertThat(page).hasURL(Pattern.compile(".*/processes/gated$"))
+        val saved = http.get("/processes/gated/diagram.bpmn").body
+        assertContains(saved, """<operaton:inputParameter name="title">Ship it?</operaton:inputParameter>""")
+        assertFalse("ants.user-task" in saved)
+    }
+
+    @Test
+    fun `a decision's paths pick a condition from what the decision can read, such as the Results of the Tasks before it, and one is the default`() = browse {
+        agentTask(null, mapOf("draft" to """{"type":"object","properties":{"verdict":{"type":"string"}}}"""))
+        val (process, plane) = row("decided", """<bpmn:startEvent id="start" />""", """<bpmn:userTask id="ask" name="Ask" />""", agentTaskXml("draft", "Draft"),
+            """<bpmn:exclusiveGateway id="ok" name="Ok?" default="ok-end" />""", """<bpmn:endEvent id="end" />""")
+        val back = """<bpmn:sequenceFlow id="ok-draft" sourceRef="ok" targetRef="draft"><bpmn:conditionExpression>${'$'}{!ask.approved}</bpmn:conditionExpression></bpmn:sequenceFlow>"""
+        val edge = """<bpmndi:BPMNEdge id="ok-draft_di" bpmnElement="ok-draft"><di:waypoint x="600" y="80" /><di:waypoint x="600" y="40" />""" +
+            """<di:waypoint x="450" y="40" /><di:waypoint x="450" y="80" /></bpmndi:BPMNEdge>"""
+        deploy(definitions("decided", "Decided", process + back, plane.replace("</bpmndi:BPMNPlane>", "$edge</bpmndi:BPMNPlane>")))
+
+        page.navigate(url("/processes/decided/edit"))
+        shape("ok").click()
+        assertThat(heading).hasText("Decision (exclusive gateway)")
+        assertThat(panel).containsText("Paths out (2)")
+        val toDraft = page.locator("#explain .card", Page.LocatorOptions().setHasText("→ Draft"))
+        val field = toDraft.locator("select").first()
+        assertThat(field.locator("option[value='draft.output.verdict']")).hasText("draft.output.verdict (from Draft)")
+        assertThat(field.locator("option[value='ask.approved']")).hasText("ask.approved (from Ask)")
+        assertThat(field.locator("option[value='clones']")).hasText("clones (Ants' own)")
+        field.selectOption("draft.output.verdict")
+        toDraft.locator("select").nth(1).selectOption("equals")
+        toDraft.locator("input[placeholder=value]").fill("redo")
+        toDraft.locator("input[placeholder=value]").press("Tab")
+        assertThat(toDraft).containsText("${'$'}{draft.output.verdict == 'redo'}")
+        page.screenshot("modeler-decision")
+
+        toDraft.locator("button", Locator.LocatorOptions().setHasText("Select")).click()
+        assertThat(heading).hasText("Path")
+        button("See every path out of Ok?").click()
+        assertThat(heading).hasText("Decision (exclusive gateway)")
+        page.locator("#save").click()
+        assertThat(page).hasURL(Pattern.compile(".*/processes/decided$"))
+        assertContains(http.get("/processes/decided/diagram.bpmn").body, "draft.output.verdict == 'redo'")
+    }
+
+    @Test
+    fun `a parallel gateway says whether it splits or joins, and an element Ants doesn't run offers what to change it to`() = browse {
+        val (process, plane) = row("odd", """<bpmn:startEvent id="start" />""", """<bpmn:parallelGateway id="fork" />""", """<bpmn:scriptTask id="script" name="Script" />""", """<bpmn:endEvent id="end" />""")
+        val aside = """<bpmn:sequenceFlow id="fork-end" sourceRef="fork" targetRef="end" />"""
+        val edge = """<bpmndi:BPMNEdge id="fork-end_di" bpmnElement="fork-end"><di:waypoint x="300" y="160" /><di:waypoint x="300" y="200" />""" +
+            """<di:waypoint x="568" y="200" /><di:waypoint x="568" y="138" /></bpmndi:BPMNEdge>"""
+        home.resolve("templates").createDirectories().resolve("odd.bpmn")
+            .writeText(definitions("odd", "Odd", process + aside, plane.replace("</bpmndi:BPMNPlane>", "$edge</bpmndi:BPMNPlane>")))
+
+        page.navigate(url("/templates/odd"))
+        shape("fork").click()
+        assertThat(heading).hasText("Parallel gateway")
+        assertThat(panel).containsText("Splits the flow: all 2 branches start at once.")
+        assertThat(panel).containsText("→ Script")
+        shape("script").click()
+        assertThat(panel).containsText("Ants doesn't run this element")
+        assertThat(panel).containsText("Change it to:")
+        page.screenshot("modeler-not-run")
+        button("Agent Task").click()
+        assertThat(heading).hasText("Agent Task")
     }
 
     @Test
@@ -242,6 +361,22 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `a row of the Notification list, Home's Waiting on you and the Runs list opens its entry or its Run on a click anywhere in it`() = browse {
+        settings(null)
+        val (process, plane) = row("clicked", """<bpmn:startEvent id="start" />""", """<bpmn:userTask id="wait" name="Wait" />""", """<bpmn:endEvent id="end" />""")
+        deploy(definitions("clicked", "Clicked", process, plane))
+        val run = http.post("/processes/clicked/runs", mapOf()).path
+        for (list in listOf("/notifications", "/")) {
+            page.navigate(url(list))
+            page.locator("tr.click:has(a[href='$run']) td:last-child").click()
+            page.waitForURL { "/notifications/" in it }
+        }
+        page.navigate(url("/runs"))
+        page.locator("tr.click[data-href='$run'] td:last-child").click()
+        page.waitForURL { it.endsWith(run) }
+    }
+
+    @Test
     fun `the Notification list asks for notification permission on a click, since macOS badges an app only with it`() = browse {
         // The browser's answer outlives the page, as a real one's does, so the reload below finds it.
         page.addInitScript(
@@ -281,26 +416,92 @@ class BrowserTest : AntsTest() {
         val tabs = page.locator("#tabs [role=tab]")
         assertThat(tabs).hasText(arrayOf("· Title who", "· Title scope", "Review and send"))
         page.screenshot("answer")
-        assertThat(page.locator("#answer-who")).isVisible()
-        assertThat(page.locator("#answer-scope")).isHidden()
+        val who = page.locator("#answer-who + .ed .cm-content")
+        val scope = page.locator("#answer-scope + .ed .cm-content") // each answer is a markdown editor
+        assertThat(who).isVisible()
+        assertThat(scope).isHidden()
         assertThat(page.locator("#back")).not().isVisible()
         page.click("#next")
         assertThat(tabs.nth(0)).hasText("✓ Title who")
-        assertThat(page.locator("#answer-scope")).isVisible()
-        page.fill("#answer-scope", "Only admins.")
+        assertThat(scope).isVisible()
+        scope.fill("Only admins.")
         assertThat(tabs.nth(1)).hasText("✎ Title scope")
         page.click("#reset")
+        assertThat(scope).hasText("Recommend scope.")
         assertThat(page.locator("#answer-scope")).hasValue("Recommend scope.")
-        page.fill("#answer-scope", "Only admins.")
+        scope.fill("")
         val buttons = page.locator("footer").boundingBox()
         page.click("#next")
-        assertThat(page.locator("#review-list")).containsText("Only admins.")
         assertThat(page.locator("#next")).hasText("Send the Round")
         assertEquals(buttons.y, page.locator("footer").boundingBox().y) // the buttons never move
         page.click("#next")
+        assertThat(page.locator("#answer-scope + .ed.invalid")).isVisible() // required still stops an empty answer
+        assertEquals(url(entry), page.url())
+        scope.fill("Only admins.")
+        page.click("#next")
+        assertThat(page.locator("#review-list > button").nth(1)).hasText("✎ Ask scope?Only admins.") // the full question, the answer under it
+        page.click("#next")
         page.waitForURL { !it.contains(entry) }
-        eventually { assertContains(http.get("/runs/$run").body, "State: Completed") }
+        eventually { assertContains(http.get("/runs/$run").body, """id="state">Completed<""") }
         assertContains(claude.launches("quiz")[1].stdin, """{\"id\":\"who\",\"answer\":\"Recommend who.\",\"source\":\"accepted\"},{\"id\":\"scope\",\"answer\":\"Only admins.\",\"source\":\"written\"}""")
+    }
+
+    @Test
+    fun `a markdown field is an editor with the toolbar, ⌘B, Preview and Expand, over the textarea that carries its text`() = browse {
+        page.navigate(url("/agents/new"))
+        val field = page.locator("textarea[name=instructions]")
+        val editor = page.locator("textarea[name=instructions] + .ed")
+        assertThat(field).isHidden()
+        editor.locator(".cm-content").fill("Keep it small")
+        page.keyboard().press("ControlOrMeta+a")
+        page.keyboard().press("ControlOrMeta+b")
+        assertThat(field).hasValue("**Keep it small**")
+        editor.locator("button[title=Heading]").click()
+        assertThat(field).hasValue("## **Keep it small**")
+
+        editor.locator("button", Locator.LocatorOptions().setHasText("Preview")).click()
+        val modal = page.locator("dialog.modal")
+        assertThat(modal.locator(".md h2 strong")).hasText("Keep it small") // rendered by the server
+        page.screenshot("preview")
+        page.keyboard().press("Escape")
+        assertThat(modal).hasCount(0)
+
+        editor.locator("button", Locator.LocatorOptions().setHasText("Expand")).click()
+        assertThat(modal.locator(".split .cm-content")).isVisible()
+        page.keyboard().press("End")
+        page.keyboard().type(" now")
+        assertThat(modal.locator(".split .md h2")).hasText("Keep it small now") // the live preview
+        page.screenshot("expand")
+        modal.locator("button[title=Close]").click()
+        assertThat(editor.locator(".cm-content")).hasText("## **Keep it small** now") // the same editor, back in the page
+        assertThat(field).hasValue("## **Keep it small** now")
+    }
+
+    @Test
+    fun `pasting an image into the start form's prompt uploads it and references it at the caret, and anything else is refused`() = browse {
+        agentTask(null)
+        http.import("agent-task.bpmn")
+        page.navigate(url("/processes/agent-task"))
+        val field = page.locator("textarea[name=prompt]")
+        val editor = page.locator("textarea[name=prompt] + .ed")
+        editor.locator(".cm-content").fill("Like this: ")
+        // What Cmd+V gives the editor for a copied image or a clipboard screenshot: a paste event carrying the file.
+        fun paste(name: String, type: String, base64: String) = editor.locator(".cm-content").evaluate(
+            """(element, [name, type, base64]) => {
+                const clipboardData = new DataTransfer();
+                clipboardData.items.add(new File([Uint8Array.from(atob(base64), c => c.charCodeAt(0))], name, {type}));
+                element.dispatchEvent(new ClipboardEvent('paste', {clipboardData, bubbles: true, cancelable: true}));
+            }""",
+            listOf(name, type, base64),
+        )
+        paste("image.png", "image/png", java.util.Base64.getEncoder().encodeToString(ImagesTest.RED_PNG))
+        assertThat(field).hasValue("Like this: ![image](${ImagesTest.RED_PATH})")
+        page.keyboard().type(" please")
+        assertThat(field).hasValue("Like this: ![image](${ImagesTest.RED_PATH}) please")
+
+        paste("notes.pdf", "application/pdf", java.util.Base64.getEncoder().encodeToString("%PDF-1.4".toByteArray()))
+        assertThat(editor.locator(".st")).hasText("Only an image can be pasted: PNG, JPEG, GIF or WebP.")
+        assertThat(field).hasValue("Like this: ![image](${ImagesTest.RED_PATH}) please")
     }
 
     @Test
@@ -325,7 +526,7 @@ class BrowserTest : AntsTest() {
         page.fill("#line-comment [name=body]", "Say hello.")
         page.screenshot("review")
         page.click("#line-comment button")
-        assertThat(page.locator("#comments")).containsText("SUGGESTION repos/api/hello.txt:1-2 (new): Say hello.")
+        assertThat(page.locator("#comments")).containsText("Suggestion repos/api/hello.txt:1-2 (new): Say hello.")
     }
 
     @Test
@@ -359,12 +560,13 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
-    fun `Review changes opens on the Story tab, comments on a story step, and switches to By repo`() = browse {
+    fun `Review changes opens on the Story tab, walks a story step by step by key, comments on a step, and switches to By repo`() = browse {
         val claude = FakeClaude()
         agentTask(claude, mapOf("narrate" to null, "mend" to null, "ship" to null), extra = reviewSourceMap())
         val set = """{"title":"Nothing changes","ranges":[{"repo":"api","base":"origin/main","head":"HEAD"}],"stories":[{"id":"s","name":"Greeting",""" +
             """"premise":"Hello stays.","steps":[{"id":"hello","name":"Hello","claim":"It greets.","why":"Politeness.",""" +
-            """"site":{"file":"repos/api/hello.txt","side":"new","kind":"context","from":1,"to":1}}]}]}"""
+            """"site":{"file":"repos/api/hello.txt","side":"new","kind":"context","from":1,"to":1}},""" +
+            """{"id":"world","name":"World","claim":"It names the world.","why":"Scope.","site":{"file":"repos/api/hello.txt","side":"new","kind":"context","from":2,"to":2}}]}]}"""
         claude.session("narrate", "write walkthrough/stories.json $set", """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":{"outcome":"done","summary":"Done.","output":{}}}""")
         http.upload("/processes", "file", "story-set.bpmn", javaClass.getResource("/story-set.bpmn")!!.readBytes())
         val run = http.post("/processes/story-set/runs", listOf("repos" to "api", "repos" to "web")).path.removePrefix("/runs/")
@@ -377,18 +579,36 @@ class BrowserTest : AntsTest() {
         assertContains(http.get(entry).body, "/runs/$run")
 
         page.navigate(url(entry))
-        assertThat(page.locator("#tabs b")).hasText("Story")
-        assertThat(page.locator("section.story h4")).hasText("1. Hello")
-        page.click("section.story summary")
-        page.selectOption("section.story [name=type]", "ISSUE")
-        page.fill("section.story [name=body]", "Why?")
+        assertThat(page.locator(".tabs a.on")).hasText("Story")
+        assertThat(page.locator("#stories")).isVisible()
+        page.click("#stories .sover a")
+        val step = page.locator(".step:not([hidden])")
+        assertThat(step.locator(".claim")).hasText("It greets.")
+        assertThat(page.locator(".smenu a.on")).hasText("Hello")
+        assertThat(page.locator(".spine .srow.on")).containsText("Greeting")
+        assertThat(step.locator("[data-go='-1']")).isDisabled()
+        page.keyboard().press("n")
+        assertThat(step.locator(".claim")).hasText("It names the world.")
+        page.keyboard().press("p")
+        assertThat(step.locator(".claim")).hasText("It greets.")
+        assertThat(step.locator(".details")).isHidden()
+        page.keyboard().press("D")
+        assertThat(step.locator(".details")).containsText("Politeness.")
+        page.keyboard().press("d")
+        assertThat(page.locator("#walkMain")).hasClass(Pattern.compile("diff"))
+        assertThat(step.locator(".showdiff")).isChecked()
+        page.keyboard().press("c")
+        page.selectOption(".step:not([hidden]) [name=type]", "ISSUE")
+        page.fill(".step:not([hidden]) [name=body]", "Why?")
         page.screenshot("story")
-        page.click("section.story button")
-        assertThat(page.locator("#comments")).containsText("ISSUE repos/api/hello.txt:1-1 (new), Greeting step 1: Why?")
-        assertThat(page.locator("#tabs b")).hasText("Story")
-        page.click("#tabs a")
-        assertThat(page.locator("#tabs b")).hasText("By repo")
-        assertThat(page.locator("section.repo h2").first()).hasText("api")
+        page.keyboard().press("Enter")
+        assertThat(page.locator("#comments")).containsText("Greeting › Hello repos/api/hello.txt:1-1 (new): Why?")
+        assertThat(step.locator(".scomment")).hasText("ISSUE Why?") // back on the step it is on
+        page.keyboard().press("Escape")
+        assertThat(page.locator("#stories")).isVisible()
+        page.click(".tabs a:not(.on)")
+        assertThat(page.locator(".tabs a.on")).hasText("By repo")
+        assertThat(page.locator("[data-repo]").first()).containsText("api")
     }
 
     @Test
@@ -425,6 +645,96 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `on the Run page Rename renames over the page, Esc closes the drawer, a Task's row opens the Task, whose comment is a markdown editor`() = browse {
+        settings(null)
+        val (process, plane) = row("approving", """<bpmn:startEvent id="start" />""", """<bpmn:userTask id="wait" name="Wait" />""", """<bpmn:endEvent id="end" />""")
+        deploy(definitions("approving", "Approving", process, plane))
+        val run = http.post("/processes/approving/runs", mapOf()).path
+        page.navigate(url(run))
+        page.click("button[popovertarget=rename]")
+        page.fill("#new-name", "Renamed")
+        page.click("#rename button.primary")
+        assertThat(page.locator("#name")).hasText("Renamed")
+
+        eventually { page.locator("#diagram .djs-element[data-element-id='wait']").click() }
+        assertThat(page.locator("#drawer-head")).isVisible()
+        page.keyboard().press("Escape")
+        assertThat(page.locator("#drawer")).isHidden()
+
+        page.click("#tasks tr.click")
+        page.waitForURL { "/notifications/" in it }
+        assertThat(page.locator("#comment + .ed .cm-content")).isVisible() // markdown.js's editor, whose own test is above
+    }
+
+    @Test
+    fun `New Process on the Processes list opens a modal that starts the modeler on a name, and a row opens its Process`() = browse {
+        http.import("start-end.bpmn")
+        page.navigate(url("/processes"))
+        page.click("tr.click >> text=you") // anywhere on the row
+        page.waitForURL(url("/processes/start-end"))
+        page.navigate(url("/processes"))
+        page.click(".ph button.primary")
+        page.getByLabel("Name").fill("From the list")
+        page.click("#new-process button.primary")
+        page.waitForURL { it.contains("/processes/new?name=From+the+list") }
+    }
+
+    @Test
+    fun `the Agent page's chips, Limit rules, added tools and CLI switch save what the page shows`() = browse {
+        home.resolve("skills/chip-skill").createDirectories().resolve("SKILL.md").writeText("---\nname: chip-skill\ndescription: Chips.\n---\nChip.\n")
+        val file = home.resolve("agents").createDirectories().resolve("chipper.md")
+        file.writeText("---\nname: chipper\ncli: claude\nskills: gone, kept\ntools: Read\n---\nChip.\n")
+        page.navigate(url("/agents/chipper"))
+
+        page.locator(".chipsel .c", Page.LocatorOptions().setHasText("gone")).locator("button").click()
+        page.fill("#add-skill", "chip-skill")
+        page.locator("#add-skill").dispatchEvent("change")
+        assertThat(page.locator(".chipsel .c")).containsText(arrayOf("kept", "chip-skill"))
+
+        val bash = page.locator(".trow", Page.LocatorOptions().setHasText("Shell commands"))
+        assertThat(bash.locator("[data-limit]")).isHidden() // Limit… only once it's ticked
+        bash.locator("input[name='tool.Bash']").check()
+        bash.locator("[data-limit]").click()
+        bash.locator("input[name='limit.Bash']").fill("git log *")
+        bash.locator("[data-add]").click()
+        bash.locator("input[name='limit.Bash']").nth(1).fill("git diff *")
+        assertThat(bash.locator("input[name='limit.Bash']").first()).hasAttribute("placeholder", "e.g. pnpm test")
+
+        page.fill(".add-tool input", "mcp__github__get_issue")
+        page.click(".add-tool button")
+        assertThat(page.locator(".added")).containsText("An MCP tool.")
+        page.fill(".add-tool input", "AskUserQuestion")
+        page.press(".add-tool input", "Enter")
+        assertThat(page.locator("input[name='tool.AskUserQuestion']")).isChecked()
+        assertThat(page.locator("details.others")).hasAttribute("open", "")
+
+        page.click("button[form=agent]")
+        eventually {
+            assertEquals("---\nname: chipper\ncli: claude\nskills: kept, chip-skill\ntools: AskUserQuestion, Bash(git log *), Bash(git diff *), Read, mcp__github__get_issue\n---\nChip.\n", file.readText())
+        }
+
+        page.navigate(url("/agents/chipper"))
+        page.selectOption("select[name=cli]", "codex")
+        assertThat(page.locator("select[name=sandbox]")).isVisible()
+        assertThat(page.locator("input[name='tool.Read']")).isHidden()
+        page.fill("fieldset[data-cli=codex] input[name=model]", "gpt-5-codex")
+        page.click("button[form=agent]")
+        eventually { assertContains(file.readText(), "cli: codex\nskills: kept, chip-skill\nsandbox: workspace-write\nmodel: gpt-5-codex\n") }
+    }
+
+    @Test
+    fun `the Skill page's schema editor says whether the schema is valid`() = browse {
+        page.navigate(url("/skills/new"))
+        val bar = page.locator(".ed.json .bar")
+        page.locator(".ed.json .cm-content").fill("""{"type": "strin"}""")
+        assertThat(bar).containsText("✗")
+        assertThat(page.locator("button[form=skill]")).isDisabled()
+        page.locator(".ed.json .cm-content").fill("""{"type": "object", "properties": {"text": {"type": "string"}}}""")
+        assertThat(bar).containsText("✓ valid schema")
+        assertThat(page.locator("button[form=skill]")).isEnabled()
+    }
+
+    @Test
     fun `Dark mode and Light mode in the sidebar switch the theme and stay on the page`() = browse {
         settings(null, "theme: light\n")
         page.navigate(url("/agents"))
@@ -435,6 +745,35 @@ class BrowserTest : AntsTest() {
         assertThat(page.getByText("Dark mode")).isHidden()
         page.getByText("Light mode").click()
         assertThat(page.locator("meta[name=color-scheme]")).hasAttribute("content", "light")
+    }
+
+    @Test
+    fun `on Settings, Add and Remove edit a list's rows, which Save writes, and Copy copies the login command`() = browse {
+        settings(null, "vaults:\n  work: /tmp/work\n  side: /tmp/side\ndefault-vault: work\nagent-folders: [/tmp/a]\n")
+        page.navigate(url("/settings"))
+        fun card(title: String) = page.locator(".card", Page.LocatorOptions().setHas(page.locator("h3:text-is('$title')")))
+        val vaults = card("Vaults")
+        vaults.getByText("Remove").first().click()
+        for ((name, row) in listOf("new" to 1, "more" to 2)) {
+            vaults.getByText("＋ Add").click()
+            val added = vaults.locator(".listed > .row:visible").nth(row)
+            added.locator("input.name").fill(name)
+            added.locator("input.mono").fill("/tmp/$name")
+        }
+        vaults.locator(".listed > .row:visible").nth(2).getByText("default").click()
+        val folders = card("Agent folders")
+        folders.getByText("Remove").first().click()
+        folders.getByText("＋ Add folder").click()
+        folders.locator("input[name=agent-folders]:visible").fill("/tmp/b")
+        page.locator(".cmd button").click()
+        assertThat(page.locator(".cmd button")).hasText("Copied")
+        page.locator(".ph button.primary").click()
+        eventually {
+            val saved = org.yaml.snakeyaml.Yaml().load<Map<*, *>>(home.resolve("settings.yaml").readText())
+            assertEquals(mapOf("side" to "/tmp/side", "new" to "/tmp/new", "more" to "/tmp/more"), saved["vaults"])
+            assertEquals("more", saved["default-vault"])
+            assertEquals(listOf("/tmp/b"), saved["agent-folders"])
+        }
     }
 
     @Test
@@ -462,6 +801,74 @@ class BrowserTest : AntsTest() {
             assertEquals(1, fourth.following(), path)
         }
         for (tab in open) assertEquals(1, tab.following(), tab.url())
+    }
+
+    /** Starts a Run of agent-task.bpmn, whose Task `draft` plays [session] on the fake claude [claude]; the Run's path. */
+    private fun running(claude: FakeClaude, vararg session: String): String {
+        agentTask(claude)
+        claude.session("draft", *session)
+        http.import("agent-task.bpmn")
+        http.get("/processes/agent-task")
+        return http.post("/processes/agent-task/runs", mapOf("prompt" to "Say hello")).path
+    }
+
+    private val streaming = arrayOf(
+        """{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}""",
+        """{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Almost **there**"}}}""",
+    )
+
+    @Test
+    fun `a running Task's clock ticks, and its text streams in with a caret until the block ends`() = browse {
+        val claude = FakeClaude()
+        val run = running(claude, "wait one", *streaming, "wait two", """{"type":"assistant","message":{"id":"m1","content":[{"type":"text","text":"Almost **there**."}]}}""", "wait three")
+        page.navigate(url("$run/tasks/draft/transcript"))
+        val clock = page.locator("#status [data-since]")
+        assertThat(clock).hasText(Pattern.compile("\\d+s"))
+        val first = clock.textContent()
+        assertThat(clock).not().hasText(first) // a second later
+        assertThat(page.locator("#status .shimmer")).hasText(Pattern.compile("\\w+…"))
+
+        claude.release("one")
+        assertThat(page.locator("#live.caret")).containsText("Almost there")
+        assertEquals("\"▍\"", page.evaluate("getComputedStyle(document.querySelector('#live.caret > :last-child'), '::after').content"))
+        page.screenshot("liveness-streaming")
+        claude.release("two")
+        assertThat(page.locator("#entries .text.new")).containsText("Almost there.") // the whole block fades in
+        assertThat(page.locator("#live")).not().hasClass(Pattern.compile("caret"))
+        claude.release("three")
+    }
+
+    @Test
+    fun `a new Notification list entry flashes once as it arrives`() = browse {
+        settings(null)
+        val (process, plane) = row("flashed", """<bpmn:startEvent id="start" />""", """<bpmn:userTask id="wait" name="Wait" />""", """<bpmn:endEvent id="end" />""")
+        deploy(definitions("flashed", "Flashed", process, plane))
+        page.navigate(url("/notifications"))
+        page.waitForTimeout(1500.0) // the list's first update has come
+        val run = http.post("/processes/flashed/runs", mapOf()).path
+        val row = page.locator("#list tr.click", Page.LocatorOptions().setHas(page.locator("a[href='$run']")))
+        assertThat(row).hasClass(Pattern.compile("\\bflash\\b"))
+        assertThat(row).not().hasClass(Pattern.compile("\\bflash\\b")) // once: it goes as its animation ends
+    }
+
+    @Test
+    fun `with reduced motion nothing shimmers, flashes or spins, and the clock still ticks`() = browse {
+        page.emulateMedia(Page.EmulateMediaOptions().setReducedMotion(com.microsoft.playwright.options.ReducedMotion.REDUCE))
+        val claude = FakeClaude()
+        val run = running(claude, "wait one", *streaming, "wait two")
+        page.navigate(url("$run/tasks/draft/transcript"))
+        val clock = page.locator("#status [data-since]")
+        assertThat(clock).hasText(Pattern.compile("\\d+s"))
+        val first = clock.textContent()
+        val spin = page.locator("#status .spin")
+        val glyph = spin.textContent()
+        assertThat(clock).not().hasText(first) // the clock still ticks
+        assertEquals(glyph, spin.textContent()) // the spinner stands still
+        assertEquals("none", page.evaluate("getComputedStyle(document.querySelector('#status .shimmer')).animationName"))
+        claude.release("one")
+        assertThat(page.locator("#live.caret")).containsText("Almost there")
+        assertEquals("none", page.evaluate("getComputedStyle(document.querySelector('#live.caret > :last-child'), '::after').animationName"))
+        claude.release("two")
     }
 
     /** An Agent Task [id] running `writer`'s Skill `draft`. */

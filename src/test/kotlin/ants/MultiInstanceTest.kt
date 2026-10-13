@@ -75,7 +75,7 @@ class MultiInstanceTest : AntsTest() {
 
         eventually { assertEquals(3, claude.launches("draft").size) } // all at once
         claude.release("go")
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
         val order = listOf("a", "b", "c").map { launchOf("draft", """\"item\":\"$it\"""") }
         assertEquals(setOf(1, 2, 3), order.toSet())
         assertEquals(order.joinToString(",", "[", "]") { drafted("$it") }, variable(run, "draft"))
@@ -94,9 +94,11 @@ class MultiInstanceTest : AntsTest() {
             Thread.sleep(300)
             assertEquals(n, claude.launches("draft").size) // the next waits for this one
             assertContains(claude.launches("draft")[n - 1].stdin, """{\"ticket\":\"${"abc"[n - 1]}\"}""")
+            // The Tasks table's live line follows the running instance, not the first, which is done.
+            if (n == 2) eventually { assertContains(page(run), """class="shimmer"""") }
             claude.release("go-$n")
         }
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
         assertEquals((1..3).joinToString(",", "[", "]") { drafted("$it") }, variable(run, "draft"))
     }
 
@@ -125,7 +127,7 @@ class MultiInstanceTest : AntsTest() {
 
         eventually { assertEquals(1, claude.launches("proofread").size) }
         claude.release("drafted-1")
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
         val first = launchOf("draft", """\"item\":\"a\"""") // which launch played which session
         assertEquals(listOf("1", "2"), claude.launches("proofread").map { Regex("""\\"text\\":\\"(\d)\\"""").find(it.stdin)!!.groupValues[1] })
         val reviewed = """{"outcome":"done","summary":"Done.","output":{"text":"ok"}}"""
@@ -151,7 +153,7 @@ class MultiInstanceTest : AntsTest() {
             </bpmn:subProcess>"""
         val run = start("nested", subProcess, "fanout")
 
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
         assertEquals(4, claude.launches("draft").size)
         // Outer instance first, then the Task's own: draft-2-1 is the first draft of the second sub-process.
         assertEquals(setOf("plan", "draft-1-1", "draft-1-2", "draft-2-1", "draft-2-2"), workspace(run).resolve("tasks").listDirectoryEntries().map { it.name }.toSet())
@@ -165,7 +167,7 @@ class MultiInstanceTest : AntsTest() {
         claude.session("plan", result("""{"items":[]}"""))
         val run = start("none", agentTask("draft", "draft", loop = loop()), "draft")
 
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
         assertEquals("[]", variable(run, "draft"))
         assertEquals(0, claude.launches("draft").size)
     }
@@ -180,7 +182,7 @@ class MultiInstanceTest : AntsTest() {
 
         eventually { assertEquals(n, claude.launches("draft").size) }
         claude.release("go")
-        eventually { assertContains(page(run), "State: Completed") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
         assertEquals(List(n) { drafted("same") }.joinToString(",", "[", "]"), variable(run, "draft"))
     }
 }

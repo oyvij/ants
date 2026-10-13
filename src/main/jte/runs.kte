@@ -1,6 +1,8 @@
-@import ants.stateName
-@param runs: List<org.operaton.bpm.engine.history.HistoricProcessInstance>
-@param names: Map<String, String>
+@param live: List<ants.RunRow>
+@param ended: List<ants.RunRow>
+@param coming: List<ants.Schedule>
+@param running: Int
+@param cap: Int
 @param colorScheme: String = "light dark"
 @param shell: ants.Shell
 <!doctype html>
@@ -13,14 +15,10 @@
 </head>
 <body>
 @template.nav(shell = shell)
-<main>
-<div class="ph"><h1>Runs</h1><div class="acts"><a class="btn primary" href="/processes">Start a Run</a></div></div>
-<table>
-    <tr><th>Run</th><th>Process</th><th>State</th><th>Started</th></tr>
-@for(run in runs)
-    <tr><td><a href="/runs/${run.id}">${names[run.id]}</a></td><td>${run.processDefinitionName ?: run.processDefinitionKey}</td><td><span data-state="${run.stateName}">${run.stateName}</span></td><td>${run.startTime.toString()}</td></tr>
-@endfor
-</table>
-</main>
+<main id="runlist">@template.runlist(live = live, ended = ended, coming = coming, running = running, cap = cap, csrf = shell.csrf)</main>
+<script type="module">
+    stream.on('runlist', html => stream.patch(document.getElementById('runlist'), html));
+    stream.follow('runlist');
+</script>
 </body>
 </html>

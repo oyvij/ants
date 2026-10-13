@@ -2,7 +2,9 @@ package ants
 
 import org.operaton.bpm.engine.ProcessEngineException
 import jakarta.servlet.http.HttpServletResponse
+import org.operaton.bpm.engine.HistoryService
 import org.operaton.bpm.engine.RepositoryService
+import org.operaton.bpm.engine.repository.ProcessDefinition
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.context.event.ApplicationReadyEvent
@@ -29,6 +31,8 @@ import java.io.StringWriter
 import java.net.URI
 import java.net.URLEncoder
 import java.nio.file.Path
+import java.time.Clock
+import java.util.concurrent.Executors
 import kotlin.io.path.exists
 import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.readBytes
@@ -41,7 +45,7 @@ import javax.xml.transform.stream.StreamResult
 @Controller
 class Processes(
     private val repository: RepositoryService, private val startForm: StartForm, private val settings: Settings, private val checks: Checks, private val preRun: PreRun,
-    private val schedules: Schedules, @Value("\${ants.home}") private val home: Path,
+    private val schedules: Schedules, private val history: HistoryService, private val names: RunNames, private val clock: Clock, @Value("\${ants.home}") private val home: Path,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -68,11 +72,30 @@ class Processes(
         }
     }
 
+    /** The Processes list: a row each, its pre-Run checks run side by side, since each may ask claude, gh and git. */
     @GetMapping("/processes")
     fun list(model: Model): String {
-        model.addAttribute("processes", repository.createProcessDefinitionQuery().latestVersion().orderByProcessDefinitionName().asc().list())
+        val processes = repository.createProcessDefinitionQuery().latestVersion().orderByProcessDefinitionName().asc().list()
+        model.addAttribute("processes", processes)
+        val login = preRun.oneLogin() // asked once for them all
+        model.addAttribute("rows", Executors.newVirtualThreadPerTaskExecutor().use { threads ->
+            processes.map { process -> threads.submit<ProcessRow> { row(process, login) } }.map { it.get() }
+        })
         return "processes"
     }
+
+    private fun row(process: ProcessDefinition, login: () -> Map<*, *>): ProcessRow {
+        val profile = startForm.profile(process, null)
+        return ProcessRow(
+            process, process.resourceName.startsWith("shipped/"), settings.profile(profile), schedules.of(process),
+            reasons(process, startForm.fields(process), profile, login).isEmpty(),
+            history.createHistoricProcessInstanceQuery().processDefinitionKey(process.key).rootProcessInstances().active().count(),
+        )
+    }
+
+    /** The pre-Run check of [process] as its start form opens, with its Repos fields' stored values. */
+    private fun reasons(process: ProcessDefinition, fields: List<Field>, profile: String?, login: () -> Map<*, *> = preRun.oneLogin()) =
+        preRun.reasons(process, fields.filter { it.type == FieldType.REPOS }.flatMap { it.storedRepos }, profile, login)
 
     /** The deployed Processes as the modeler's call activity panel picks them: each one's start-form fields are the call's inputs. */
     @GetMapping("/processes.json")
@@ -150,6 +173,7 @@ class Processes(
         val query = listOfNotNull("name" to title, source?.let { "from" to it.key })
         model.addAttribute("name", title)
         model.addAttribute("src", "/processes/new.bpmn?" + query.joinToString("&") { (k, v) -> "$k=" + URLEncoder.encode(v, Charsets.UTF_8) })
+        model.addAttribute("note", "Draft")
         return "modeler"
     }
 
@@ -170,6 +194,8 @@ class Processes(
         val process = latest(key)
         model.addAttribute("name", process.name ?: process.key)
         model.addAttribute("src", "/processes/$key/diagram.bpmn")
+        model.addAttribute("page", "/processes/$key")
+        if (process.resourceName.startsWith("shipped/")) model.addAttribute("note", "Shipped: saving makes it your own")
         return "modeler"
     }
 
@@ -183,10 +209,16 @@ class Processes(
         val picked = startForm.profile(process, profile)
         model.addAttribute("profiles", settings.profiles().keys.toList())
         model.addAttribute("profile", picked)
+        model.addAttribute("profileFrom", if (!profile.isNullOrBlank()) "picked here" else if (startForm.diagramProfile(process) != null) "set on the diagram" else "the default")
+        model.addAttribute("source", settings.profile(picked))
         model.addAttribute("repos", RunSource.Profiled(picked).repos(settings).map(Repo::name)) // the Repos field's choices
         model.addAttribute("schedule", schedules.of(process))
+        val runs = history.createHistoricProcessInstanceQuery().processDefinitionKey(key).rootProcessInstances().orderByProcessInstanceStartTime().desc().list()
+        model.addAttribute("runs", runs)
+        model.addAttribute("names", runs.associate { it.id to names.name(it.id) })
+        model.addAttribute("clock", clock)
         // A refused Start has already checked what was posted.
-        if (!model.containsAttribute("reasons")) model.addAttribute("reasons", preRun.reasons(process, fields.filter { it.type == FieldType.REPOS }.flatMap { it.storedRepos }, picked))
+        if (!model.containsAttribute("reasons")) model.addAttribute("reasons", reasons(process, fields, picked))
         return "process"
     }
 
@@ -263,6 +295,12 @@ private const val CAMUNDA = "http://camunda.org/schema/1.0/bpmn"
 private const val OPERATON = "http://operaton.org/schema/1.0/bpmn"
 internal const val BPMN = "http://www.omg.org/spec/BPMN/20100524/MODEL"
 internal const val BPMNDI = "http://www.omg.org/spec/BPMN/20100524/DI"
+
+/**
+ * A row of the Processes list: whether the Process is [shipped] or the user's, the [profile] whose Vault and Source
+ * map its Runs use, its [schedule], whether it is [ready] to start, and its [live] Runs.
+ */
+class ProcessRow(val process: ProcessDefinition, val shipped: Boolean, val profile: Profile?, val schedule: Schedule?, val ready: Boolean, val live: Long)
 
 /** Why a Process can't be deployed, in the XML parser's or the engine's words. */
 class Refused(message: String?) : Exception(message)
