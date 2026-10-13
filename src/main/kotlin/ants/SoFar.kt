@@ -19,7 +19,7 @@ import java.util.concurrent.TimeUnit.SECONDS
 /**
  * So far: every couple of minutes (settings' `so-far`), haiku rewrites each running Agent Task's new Transcript lines
  * into a short paragraph for its drawer. The paragraph goes into the Transcript as one of Ants' own lines, with its
- * tokens, so they count on the Task and the next rewrite starts from there.
+ * tokens, so the next rewrite starts from there; haiku's session is its own, outside the Task's context.
  */
 @Component
 class SoFar(

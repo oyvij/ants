@@ -88,12 +88,12 @@ val TaskEntry.pill get() = TaskView.state(this).let { (state, label) -> TaskView
  * A Task of a Run as the Run page's Tasks table, the Task's own page and its drawer show it: its [element] in the
  * Process (null for a called Process's Task, known only by its [key]), its [state] (running, queued, round, waiting,
  * stuck, failed, stopped or done) and how it reads, [label], the [entry] waiting on the user, its [round] (its count in
- * `runs`), its [tokens], where it opens, [href]: its entry's page, else its Transcript; and while it waits on its Round,
+ * `runs`), its [context] (its session's, the largest one's for a multi-instance; empty with none), where it opens, [href]: its entry's page, else its Transcript; and while it waits on its Round,
  * that Round's entry, [asked].
  */
 class TaskView(
     val key: String, val element: FlowElement?, val state: String, val label: String, val entry: TaskEntry?, val round: Int?,
-    val transcript: Transcript?, val tokens: Long, val href: String?, val asked: TaskEntry? = null,
+    val transcript: Transcript?, val context: String, val href: String?, val asked: TaskEntry? = null,
 ) {
     val name: String get() = element?.name ?: key
 
@@ -297,7 +297,7 @@ class Runs(
                 .filter { it.executionId == id } // the Run's own, not an Agent Task's inputs or a multi-instance's own Results
                 .associate { it.name to ((it.typedValue as? ObjectValue)?.valueSerialized ?: "${it.value}") },
         )
-        model.addAttribute("transcripts", Transcript.all(workspace).mapValues { it.value.tokens })
+        model.addAttribute("transcripts", Transcript.all(workspace).mapValues { it.value.context })
         model.addAttribute("report", workspace.resolve(REPORT).takeIf(Files::exists)?.let { Transcript.markdown(Files.readString(it)) })
         model.addAttribute("tasks", tasks(id))
         model.addAttribute("started", clock.local(run.startTime.toInstant()))
@@ -372,7 +372,7 @@ class Runs(
             offset = end
             lines.forEach(transcript::add)
             val view = tasks(id) { emptyMap() }.firstOrNull { it.key == key }
-                ?: TaskView(key, element, "queued", "Not reached", null, null, null, 0, null)
+                ?: TaskView(key, element, "queued", "Not reached", null, null, null, "", null)
             val entry = view.entry
             val model = mapOf(
                 "run" to top, "runName" to names.name(top), "task" to key, "view" to view, "transcript" to transcript,
@@ -418,7 +418,7 @@ class Runs(
                 }
                 val href = entry?.let { "/notifications/${it.id}" } ?: own.keys.firstOrNull()?.let { "/runs/$top/tasks/$it/transcript" }
                 listOf(TaskView(
-                    key, task, state, label, entry, now?.round, own.values.firstOrNull { it.running } ?: own.values.firstOrNull(), own.values.sumOf { it.tokens },
+                    key, task, state, label, entry, now?.round, own.values.firstOrNull { it.running } ?: own.values.firstOrNull(), own.values.filter { it.tokens > 0 }.maxByOrNull { it.tokens }?.context.orEmpty(),
                     href, asking[task.id],
                 ))
             }.distinctBy { it.key }
@@ -431,7 +431,7 @@ class Runs(
     fun task(run: String, key: String, transcript: Transcript): TaskView = tasks(run).firstOrNull { key == it.key || key.startsWith(it.key + "-") }
         ?: notifications.tasks().firstOrNull { it.run == run && it.taskId == key }.let { entry ->
             val (state, label) = entry?.let(TaskView::state) ?: if (transcript.running) "running" to "Running" else "done" to "Done"
-            TaskView(key, null, state, label, entry, null, transcript, transcript.tokens, entry?.let { "/notifications/${it.id}" })
+            TaskView(key, null, state, label, entry, null, transcript, transcript.context, entry?.let { "/notifications/${it.id}" })
         }
 
     /**

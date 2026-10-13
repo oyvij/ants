@@ -80,13 +80,15 @@ class TranscriptTest : AntsTest() {
     }
 
     @Test
-    fun `a second launch of a Task appends after a divider, and tokens from modelUsage add up per launch, Task and Run`() {
-        val usage = """{"m":{"inputTokens":1,"outputTokens":2,"cacheReadInputTokens":3,"cacheCreationInputTokens":4},""" +
-            """"n":{"inputTokens":10,"outputTokens":20,"cacheReadInputTokens":30,"cacheCreationInputTokens":40}}"""
+    fun `a second launch of a Task appends after a divider, and each launch and Task shows its session's context out of the model's window`() {
+        // modelUsage adds up every call of the launch, cache re-reads included; it gives only the window.
+        val usage = """{"m":{"inputTokens":1,"outputTokens":2,"cacheReadInputTokens":3000000,"cacheCreationInputTokens":4,"contextWindow":200000}}"""
         claude.session(
             "draft", init,
-            // modelUsage, which counts Subagents too, outranks the messages' own usage
-            """{"type":"assistant","message":{"id":"m1","content":[{"type":"text","text":"Hello from ${'$'}SESSION"}],"usage":{"input_tokens":7}}}""",
+            """{"type":"assistant","message":{"id":"m0","content":[{"type":"text","text":"Reading."}],"usage":{"input_tokens":5,"cache_read_input_tokens":9000}}}""",
+            // the context is the latest call's: its input, read from the cache or written to it; its output comes in the next
+            """{"type":"assistant","message":{"id":"m1","content":[{"type":"text","text":"Hello from ${'$'}SESSION"}],""" +
+                """"usage":{"input_tokens":7,"cache_read_input_tokens":30000,"cache_creation_input_tokens":3000,"output_tokens":900}}}""",
             done.replace(""""structured_output"""", """"modelUsage":$usage,"structured_output""""),
         )
         val run = start("agent-loop")
@@ -100,17 +102,18 @@ class TranscriptTest : AntsTest() {
         assertTrue(first in 0..<second)
         assertEquals(1, sessions.count { draft.indexOf("Hello from $it") in first..second })
         assertEquals(1, sessions.count { draft.indexOf("Hello from $it") > second })
-        assertEquals(2, Regex("""Launch \d · [\d: -]+ · 110 tokens</h3>""").findAll(draft).count())
-        assertContains(draft, """<span id="tokens">220 tokens</span>""")
+        assertEquals(2, Regex("""Launch \d · [\d: -]+ · 33k tokens</h3>""").findAll(draft).count())
+        // The Task is its latest session: a fresh launch doesn't add to the one before.
+        assertContains(draft, """<span id="tokens">33k tokens (16.5%)</span>""")
 
         val runPage = page("/runs/$run")
-        assertContains(runPage, "<h2>Transcripts · 330 tokens</h2>")
-        assertContains(runPage, """<a href="/runs/$run/tasks/draft/transcript">draft</a> · 220 tokens""")
-        assertContains(runPage, """<a href="/runs/$run/tasks/polish/transcript">polish</a> · 110 tokens""")
+        assertContains(runPage, "<h2>Transcripts</h2>") // sessions' contexts don't add up
+        assertContains(runPage, """<a href="/runs/$run/tasks/draft/transcript">draft</a> · 33k tokens (16.5%)""")
+        assertContains(runPage, """<a href="/runs/$run/tasks/polish/transcript">polish</a> · 33k tokens (16.5%)""")
     }
 
     @Test
-    fun `a running Task shows a spinner, an activity verb, elapsed time and rising tokens, followed live over SSE`() {
+    fun `a running Task shows a spinner, an activity verb, elapsed time and its rising context, followed live over SSE`() {
         fun usage(input: Int) = """"usage":{"input_tokens":$input,"output_tokens":5,"cache_read_input_tokens":100,"cache_creation_input_tokens":0}"""
         claude.session(
             "draft", init,
@@ -127,7 +130,7 @@ class TranscriptTest : AntsTest() {
         val path = "/runs/$run/tasks/draft/transcript"
         eventually { assertContains(page(path), "Reading notes.md…") }
         val loaded = page(path)
-        assertContains(loaded, Regex("""<div id="status"><span class="spin">✻</span> <span class="shimmer">Reading notes.md…</span> <span class="muted num">\(<span data-since="\d+">\d+s</span> · ↓ 115 tokens\)</span></div>"""))
+        assertContains(loaded, Regex("""<div id="status"><span class="spin">✻</span> <span class="shimmer">Reading notes.md…</span> <span class="muted num">\(<span data-since="\d+">\d+s</span> · 110 tokens\)</span></div>"""))
         assertContains(loaded, """<div class="tool" id="e2"><b>Read</b> <code>notes.md</code></div>""")
 
         val from = Regex("""data-from="(\d+)"""").find(loaded)!!.groupValues[1]
@@ -138,7 +141,7 @@ class TranscriptTest : AntsTest() {
         assertContains(tab.toString(), "Writing…")
         assertFalse("Read</b>" in tab.toString()) // this page had it already
         claude.release("two")
-        eventually { assertContains(tab.toString(), Regex("""Writing…</span> <span class="muted num">\(<span data-since="\d+">\d+s</span> · ↓ 330 tokens\)</span></div>""")) }
+        eventually { assertContains(tab.toString(), Regex("""Writing…</span> <span class="muted num">\(<span data-since="\d+">\d+s</span> · 210 tokens\)</span></div>""")) }
         claude.release("three")
         eventually { assertContains(tab.toString(), """<div id="status"></div>""") }
         assertContains(tab.toString(), """<div class="result" id="e""")
@@ -154,7 +157,7 @@ class TranscriptTest : AntsTest() {
     }
 
     @Test
-    fun `Subagents show as a count, live chips with type, description and time, and nested blocks, their tokens in the Task's`() {
+    fun `Subagents show as a count, live chips with type, description and time, and nested blocks, their context apart from the Task's`() {
         fun spawn(id: String, type: String, description: String) =
             """{"type":"assistant","message":{"id":"m1","content":[{"type":"tool_use","id":"$id","name":"Agent","input":""" +
                 """{"description":"$description","prompt":"Look it up","subagent_type":"$type"}}],"usage":{"input_tokens":10}},""" +
@@ -191,7 +194,7 @@ class TranscriptTest : AntsTest() {
         assertContains(searcher, """<b>Read</b> <code>tone.md</code>""")
         assertFalse("Facts" in searcher)
         assertContains(running, Regex("""(?s)<details class="subagent" id="e\d+" open><summary id="e\d+s">⑂ <b>general-purpose</b> Check facts.*?Facts <strong>hold</strong>.*?</details>"""))
-        assertContains(running, Regex("""<div id="status">.*· ↓ 1.1k tokens\)</span></div>""")) // the Subagents' messages count while they run
+        assertContains(running, Regex("""<div id="status">.*· 10 tokens\)</span></div>""")) // each Subagent has a context of its own
 
         val tab = Received(browser.events("transcript=$run/draft&from=${Regex("""data-from="(\d+)"""").find(running)!!.groupValues[1]}", "transcript"))
         claude.release("one")
@@ -246,7 +249,7 @@ class TranscriptTest : AntsTest() {
     }
 
     @Test
-    fun `a Subagent's own Subagent nests inside its block, and Subagent tokens stay in the Task's once the launch ends`() {
+    fun `a Subagent's own Subagent nests inside its block, and Subagents stay out of the Task's context once the launch ends`() {
         claude.session(
             "draft", init,
             """{"type":"assistant","message":{"id":"m1","content":[{"type":"tool_use","id":"tA","name":"Agent","input":{"description":"Search","subagent_type":"searcher"}}],""" +
@@ -270,12 +273,12 @@ class TranscriptTest : AntsTest() {
             Regex("""(?s)<details class="subagent" id="(e\d+)" open><summary id="\1s">⑂ <b>searcher</b>.*?</summary><div><details class="subagent" id="(e\d+)" data-in="\1" open>""" +
                 """<summary id="\2s">⑂ <b>Explore</b> Dig.*?</summary><div><div class="text" id="e\d+" data-in="\2"><p>Deep <strong>find</strong>.</p>"""),
         )
-        assertContains(running, Regex("""<div id="status">.*· ↓ 1.1k tokens\)</span></div>"""))
+        assertContains(running, Regex("""<div id="status">.*· 10 tokens\)</span></div>"""))
 
         claude.release("one")
         eventually { assertContains(page(path), "<b>Result: done</b>") }
-        assertContains(page(path), """<span id="tokens">1.5k tokens</span>""") // modelUsage, which counts the Subagents
-        assertContains(page("/runs/$run"), "Transcripts · 1.5k tokens")
+        assertContains(page(path), """<span id="tokens">10 tokens</span>""") // no contextWindow in modelUsage, so no share of it
+        assertContains(page("/runs/$run"), """<a href="/runs/$run/tasks/draft/transcript">draft</a> · 10 tokens<""")
     }
 }
 

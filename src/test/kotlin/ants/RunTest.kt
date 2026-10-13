@@ -73,7 +73,7 @@ class RunTest : AntsTest() {
         browser.get("/processes/agent-task")
         val id = browser.post("/processes/agent-task/runs", mapOf("prompt" to "Say hello")).path.removePrefix("/runs/")
         val line = """data-href="/runs/$id">.*?<b class="small">Draft</b><div class="small"><span class="spin">✻</span> <span class="shimmer" data-rotate>Pondering…</span> """ +
-            """<span class="muted num">\(<span data-since="\d+">\d+s</span> · ↓ 0 tokens\)</span>"""
+            """<span class="muted num">\(<span data-since="\d+">\d+s</span> · 0 tokens\)</span>"""
         eventually { assertContains(runs("Live"), Regex(line, RegexOption.DOT_MATCHES_ALL)) }
         assertContains(browser.get("/runs").body, """<div class="sub" data-flash="1">1 of 3 Agent Tasks running.</div>""")
     }

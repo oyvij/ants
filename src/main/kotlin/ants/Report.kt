@@ -10,7 +10,7 @@ const val REPORT = "report.md"
 
 /**
  * The Report of the Run [run] as it ends, as markdown, written mechanically: its name, its Process and how it ended, its start
- * form, each Agent Task's Result summary, tokens and Transcript link, read from the Transcripts in [workspace], and
+ * form, each Agent Task's Result summary, its session's context and Transcript link, read from the Transcripts in [workspace], and
  * each Round's answers and their sources, read from its Run log, its Spec and Tickets, the Push Results and the pull requests.
  */
 fun report(run: DelegateExecution, workspace: Path): String = buildString {
@@ -24,10 +24,10 @@ fun report(run: DelegateExecution, workspace: Path): String = buildString {
         append("**${field.label ?: field.id}**\n\n$value\n\n")
     }
     val transcripts = Transcript.all(workspace)
-    append("## Tasks · ${tokens(transcripts.values.sumOf { it.tokens })}\n\n")
+    append("## Tasks\n\n") // each Task is its own session, so their contexts don't add up
     for ((task, transcript) in transcripts) {
         val result = transcript.result?.let { " · ${it["outcome"]}: ${it["summary"]}" }.orEmpty()
-        append("- [$task](/runs/${run.processInstanceId}/tasks/$task/transcript)$result · ${tokens(transcript.tokens)}\n")
+        append("- [$task](/runs/${run.processInstanceId}/tasks/$task/transcript)$result · ${transcript.context}\n")
     }
     append(roundsReport(workspace))
     // The implementers' and fixers' own reviews: a Result's `output.review`, the last of each Task's launches.

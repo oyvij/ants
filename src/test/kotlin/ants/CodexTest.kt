@@ -281,7 +281,7 @@ class CodexTest : AntsTest() {
     }
 
     @Test
-    fun `a codex launch that resumes its session counts only its own tokens`() {
+    fun `a codex launch that resumes its session shows the session's tokens so far, as codex gives no context per call`() {
         codexTask()
         val stuck = """{"type":"item.completed","item":{"id":"item_9","type":"agent_message",""" +
             """"text":"{\"outcome\":\"stuck\",\"summary\":\"Blocked.\",\"output\":null,\"needs\":\"A topic.\"}"}}"""
@@ -300,7 +300,7 @@ class CodexTest : AntsTest() {
         assertEquals(first.thread, resumed.flag("resume"))
         val transcript = browser.get(transcript(run)).body
         assertTrue(Regex("""Launch 1 · [^<]* · 1k tokens""").containsMatchIn(transcript), transcript)
-        assertTrue(Regex("""Launch 2 · [^<]* · 500 tokens""").containsMatchIn(transcript), transcript)
+        assertTrue(Regex("""Launch 2 · [^<]* · 1.5k tokens""").containsMatchIn(transcript), transcript)
         assertContains(transcript, """<span id="tokens">1.5k tokens</span>""")
     }
 

@@ -34,8 +34,8 @@ class ReportTest : AntsTest() {
     }
 
     @Test
-    fun `a finished Run has a Report with the start form, each Task's summary, tokens and Transcript links`() {
-        claude.session("draft", init, done)
+    fun `a finished Run has a Report with the start form, each Task's summary, context and Transcript links`() {
+        claude.session("draft", init, """{"type":"assistant","message":{"id":"m1","content":[],"usage":{"input_tokens":4,"cache_read_input_tokens":6}}}""", done)
         val run = start()
         eventually { assertContains(browser.get("/runs/$run").body, """<a href="/runs/$run/report">Report</a>""") }
 
@@ -44,7 +44,7 @@ class ReportTest : AntsTest() {
         assertContains(report, "<p>Agent Task · Completed</p>")
         assertContains(report, "<h2>Start form</h2>")
         assertContains(report, "<p><strong>Prompt</strong></p>\n<p>Say <em>hello</em></p>")
-        assertContains(report, "<h2>Tasks · 10 tokens</h2>")
+        assertContains(report, "<h2>Tasks</h2>")
         assertContains(report, """<li><a rel="nofollow" href="/runs/$run/tasks/draft/transcript">draft</a> · done: Drafted a <strong>dry</strong> hello. · 10 tokens</li>""")
     }
 
