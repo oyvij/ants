@@ -364,7 +364,7 @@ class BrowserTest : AntsTest() {
         page.fill("#line-comment [name=body]", "Say hello.")
         page.screenshot("review")
         page.click("#line-comment button")
-        assertThat(page.locator("#comments")).containsText("SUGGESTION repos/api/hello.txt:1-2 (new): Say hello.")
+        assertThat(page.locator("#comments")).containsText("Suggestion repos/api/hello.txt:1-2 (new): Say hello.")
     }
 
     @Test
@@ -398,12 +398,13 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
-    fun `Review changes opens on the Story tab, comments on a story step, and switches to By repo`() = browse {
+    fun `Review changes opens on the Story tab, walks a story step by step by key, comments on a step, and switches to By repo`() = browse {
         val claude = FakeClaude()
         agentTask(claude, mapOf("narrate" to null, "mend" to null, "ship" to null), extra = reviewSourceMap())
         val set = """{"title":"Nothing changes","ranges":[{"repo":"api","base":"origin/main","head":"HEAD"}],"stories":[{"id":"s","name":"Greeting",""" +
             """"premise":"Hello stays.","steps":[{"id":"hello","name":"Hello","claim":"It greets.","why":"Politeness.",""" +
-            """"site":{"file":"repos/api/hello.txt","side":"new","kind":"context","from":1,"to":1}}]}]}"""
+            """"site":{"file":"repos/api/hello.txt","side":"new","kind":"context","from":1,"to":1}},""" +
+            """{"id":"world","name":"World","claim":"It names the world.","why":"Scope.","site":{"file":"repos/api/hello.txt","side":"new","kind":"context","from":2,"to":2}}]}]}"""
         claude.session("narrate", "write walkthrough/stories.json $set", """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":{"outcome":"done","summary":"Done.","output":{}}}""")
         http.upload("/processes", "file", "story-set.bpmn", javaClass.getResource("/story-set.bpmn")!!.readBytes())
         val run = http.post("/processes/story-set/runs", listOf("repos" to "api", "repos" to "web")).path.removePrefix("/runs/")
@@ -416,18 +417,36 @@ class BrowserTest : AntsTest() {
         assertContains(http.get(entry).body, "/runs/$run")
 
         page.navigate(url(entry))
-        assertThat(page.locator("#tabs b")).hasText("Story")
-        assertThat(page.locator("section.story h4")).hasText("1. Hello")
-        page.click("section.story summary")
-        page.selectOption("section.story [name=type]", "ISSUE")
-        page.fill("section.story [name=body]", "Why?")
+        assertThat(page.locator(".tabs a.on")).hasText("Story")
+        assertThat(page.locator("#stories")).isVisible()
+        page.click("#stories .sover a")
+        val step = page.locator(".step:not([hidden])")
+        assertThat(step.locator(".claim")).hasText("It greets.")
+        assertThat(page.locator(".smenu a.on")).hasText("Hello")
+        assertThat(page.locator(".spine .srow.on")).containsText("Greeting")
+        assertThat(step.locator("[data-go='-1']")).isDisabled()
+        page.keyboard().press("n")
+        assertThat(step.locator(".claim")).hasText("It names the world.")
+        page.keyboard().press("p")
+        assertThat(step.locator(".claim")).hasText("It greets.")
+        assertThat(step.locator(".details")).isHidden()
+        page.keyboard().press("D")
+        assertThat(step.locator(".details")).containsText("Politeness.")
+        page.keyboard().press("d")
+        assertThat(page.locator("#walkMain")).hasClass(Pattern.compile("diff"))
+        assertThat(step.locator(".showdiff")).isChecked()
+        page.keyboard().press("c")
+        page.selectOption(".step:not([hidden]) [name=type]", "ISSUE")
+        page.fill(".step:not([hidden]) [name=body]", "Why?")
         page.screenshot("story")
-        page.click("section.story button")
-        assertThat(page.locator("#comments")).containsText("ISSUE repos/api/hello.txt:1-1 (new), Greeting step 1: Why?")
-        assertThat(page.locator("#tabs b")).hasText("Story")
-        page.click("#tabs a")
-        assertThat(page.locator("#tabs b")).hasText("By repo")
-        assertThat(page.locator("section.repo h2").first()).hasText("api")
+        page.keyboard().press("Enter")
+        assertThat(page.locator("#comments")).containsText("Greeting › Hello repos/api/hello.txt:1-1 (new): Why?")
+        assertThat(step.locator(".scomment")).hasText("ISSUE Why?") // back on the step it is on
+        page.keyboard().press("Escape")
+        assertThat(page.locator("#stories")).isVisible()
+        page.click(".tabs a:not(.on)")
+        assertThat(page.locator(".tabs a.on")).hasText("By repo")
+        assertThat(page.locator("[data-repo]").first()).containsText("api")
     }
 
     @Test

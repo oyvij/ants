@@ -62,7 +62,12 @@ class PushTest : AntsTest() {
         val run = start(api, web)
         for (cell in listOf("↑ [push]", "Push", "Push feature-x to api, web")) assertContains(row(run)!!, cell)
         val page = browser.get(entry(run)).body
-        for (text in listOf("${api.remote}", "${web.remote}", "feature-x", "main", "Mine in api", "Mine in web", "Push", "Cancel the Run")) assertContains(page, text)
+        for (text in listOf("${api.remote}", "${web.remote}", "feature-x", "Mine in api", "Mine in web", "Cancel the Run")) assertContains(page, text)
+        assertContains(page, """<code>feature-x</code> <span class="pill p-quiet">new on the remote</span>""")
+        assertContains(page, "based on <code>main</code>")
+        assertContains(page, "0 files · <span class=\"plus\">+0</span>") // the commits are empty
+        assertContains(page, "Ants pushes these branches only: never with force, and never to <code>main</code>.")
+        assertContains(page, """<button class="primary" name="action" value="push">Push 2 branches</button>""")
         assertFalse("Skip" in page)
 
         val heads = listOf(api, web).associateWith { git(clone(run, it.name), "rev-parse", "HEAD") }

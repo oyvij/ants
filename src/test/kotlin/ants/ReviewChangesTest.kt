@@ -59,11 +59,13 @@ class ReviewChangesTest : AntsTest() {
 
         assertContains(row(run)!!, "[review]")
         val body = browser.get(entry(run)).body
-        assertContains(body, "<h2>api</h2>")
-        assertContains(body, "<h2>web</h2>")
-        assertContains(body, "</code> Say hi</li>")
-        assertContains(body, "</code> Add a file</li>")
-        assertFalse("</code> First</li>" in body) // the base is not under review
+        assertContains(body, """<div class="card" data-repo="api">""")
+        assertContains(body, """<div class="card" data-repo="web">""")
+        assertContains(body, """1 file · <span class="plus">+1</span> <span class="minus">−1</span> · 1 commit""") // api's summary card
+        assertContains(body, """<a class="mono" href="#f-api-1">hello.txt</a>""")
+        assertContains(body, "</span> Say hi</div>")
+        assertContains(body, "</span> Add a file</div>")
+        assertFalse("</span> First</div>" in body) // the base is not under review
         assertContains(body, """data-file="repos/api/hello.txt"""")
         assertContains(body, """<tr class="del" data-side="old" data-line="1"><td>1</td><td></td><td>-hello</td></tr>""")
         assertContains(body, """<tr class="add" data-side="new" data-line="1"><td></td><td>1</td><td>+hi</td></tr>""")

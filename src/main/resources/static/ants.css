@@ -266,7 +266,7 @@ div.tools label span { color: var(--muted); font-size: 12px; display: block; }
 .code { font: 12.5px/1.75 var(--mono); padding: 10px 0; overflow-x: auto; background: var(--codeBg); }
 .cl { display: grid; grid-template-columns: 44px 3px 1fr; gap: 12px; white-space: pre; padding-right: 16px; } .cl .ln { text-align: right; color: var(--lnum); }
 .cl.dim .tx { color: var(--dimCode); } .cl.site.changed .bar { background: #eab308; } .cl.site.context .bar { background: #3b82f6; } .cl.site .tx { color: var(--text); }
-.cl.add { background: var(--okSoft); } .cl.add .tx { color: var(--okText); } .cl.del { background: var(--badSoft); } .cl.del .tx { color: var(--badText); text-decoration: line-through; }
+.diff .cl.add { background: var(--okSoft); } .diff .cl.add .tx { color: var(--okText); } .diff .cl.del { background: var(--badSoft); } .diff .cl.del .tx { color: var(--badText); text-decoration: line-through; }
 .band { border-top: 1px solid var(--line); padding: 16px 18px; background: var(--band); }
 .band .claim { font-size: 15px; font-weight: 600; } .band .stale { background: var(--waitSoft); color: var(--warnText); font-size: 11px; font-weight: 800; padding: 1px 6px; border-radius: 4px; letter-spacing: .05em; }
 .vals { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 10px; font-size: 12.5px; } .vals .cited { color: var(--citeC); } .vals .inv { color: var(--invC); }
@@ -346,6 +346,36 @@ nav#tabs[role=tablist] > [aria-selected=true] { color: var(--text); font-weight:
     background: var(--composer); backdrop-filter: blur(6px); border-top: 1px solid var(--line);
 }
 #round > footer > #next { margin-left: auto; min-width: 140px; background: var(--ans); border-color: var(--ans); color: light-dark(#fff, #0b1a10); }
+
+/* Review changes and Push: a card per repo, the Story tab's walk (review.js) and By repo's diffs, as pReview and confirmPush draw them. */
+.plus { color: var(--ok); } .minus { color: var(--bad); }
+.grid3.repos { margin-bottom: 14px; } .grid3.repos > .card { min-width: 0; } .grid3.repos .card > .mono { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tabs a { padding: 10px 16px; color: var(--muted); border-bottom: 2px solid transparent; font-weight: 600; font-size: 13px; }
+.tabs a:hover { text-decoration: none; color: var(--text); } .tabs a.on { color: var(--text); border-bottom-color: var(--acc); }
+.spine .stalecnt { color: var(--wait); } .spine .srem > div:first-child { margin-bottom: 6px; }
+#stories h3 { font-size: 17px; margin: 2px 0 10px; } #stories .help { margin: 12px 0 0; }
+.walkhead { margin-bottom: 12px; align-items: baseline; } .walkhead > b { font-size: 15px; }
+.cfile label { gap: 6px; cursor: pointer; }
+#walkMain:not(.diff) .cl.extra { display: none; }
+.band .details { margin-top: 12px; grid-template-columns: 64px 1fr; } .band .details code { white-space: pre-wrap; }
+.stepcomment { margin-top: 14px; }
+.walk nav b { padding: 8px 10px 2px; } .walk nav a.mono { font-size: 12px; }
+.walk { grid-template-columns: 220px minmax(0, 1fr); }
+.walk .card > .row > b.mono { font-size: 16px; } .walk .commits { margin: 8px 0 4px; }
+.walk .card > .row > * { flex-shrink: 0; white-space: nowrap; } .walk .card > .row > .mono.muted { flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.walk details { border-top: 1px solid var(--line2); padding: 8px 0; overflow-x: auto; } .walk summary { cursor: pointer; }
+table.diff { margin: 6px 0; background: #0f172a; color: #e2e8f0; border: 0; border-radius: 8px; box-shadow: none; font: 12.5px/1.6 var(--mono); padding: 12px 0; }
+table.diff td { padding: 0 14px 0 0; border: 0; white-space: pre; vertical-align: top; background: none !important; }
+table.diff td:nth-child(-n+2) { width: 1%; padding: 0 0 0 14px; text-align: right; color: #64748b; cursor: pointer; user-select: none; }
+table.diff td:nth-child(3) { padding-left: 14px; width: auto; }
+table.diff tr.add { color: #86efac; } table.diff tr.del { color: #fca5a5; } table.diff tr.hunk { color: #93c5fd; }
+table.diff tr.picked { background: rgba(129, 140, 248, .25); }
+#line-comment .lc { display: grid; grid-template-columns: 1fr 2fr 1fr 1fr 1fr 1.4fr; gap: 8px 12px; margin-bottom: 10px; }
+#line-comment label { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; font-weight: 600; }
+#comments { margin: 16px 0 0; } #comments form { margin: 0; padding: 3px 0; gap: 6px; }
+.card.push { box-shadow: none; margin: 12px 0; } .card.push > .row > b { font-size: 15px; }
+.card.push .kv { margin-top: 10px; grid-template-columns: 90px 1fr; } .card.push .commit { padding: 2px 0; }
+main form.row:is(.pushacts, .remove) { display: flex; margin: 16px 0 0; } #comments form.row { margin: 0; }
 
 /*
  * Until the page tickets: the pages whose markup isn't the prototype's yet, styled by their elements. Each page ticket
@@ -478,7 +508,7 @@ textarea + .cm-editor .cm-activeLineGutter { background: color-mix(in srgb, var(
 .spinner { display: inline-block; animation: spin 2s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* Review changes: the diffs, and the Story set's steps. */
+/* The Answer page's tabs. */
 nav#tabs { display: flex; gap: 4px; margin-bottom: 18px; border-bottom: 1px solid var(--line); }
 nav#tabs > :is(a, b, button) {
     padding: 10px 16px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; box-shadow: none; background: none;
@@ -486,22 +516,6 @@ nav#tabs > :is(a, b, button) {
 }
 nav#tabs > b, nav#tabs > [aria-selected=true] { color: var(--text); border-bottom-color: var(--acc); }
 nav#tabs > a:hover { text-decoration: none; color: var(--text); }
-table:is(.diff, .site) { font: 12.5px/1.75 var(--mono); border-radius: 0; box-shadow: none; border: 0; border-top: 1px solid var(--line2); }
-table:is(.diff, .site) td { padding: 0 12px; white-space: pre; vertical-align: top; border: 0; }
-table.diff td:nth-child(-n+2), table.site td:first-child { color: var(--muted); opacity: .7; text-align: right; width: 3em; }
-table.diff td:nth-child(-n+2) { cursor: pointer; user-select: none; }
-table:is(.diff, .site) tr:hover > td { background: none; }
-tr.add > td { background: var(--okSoft) !important; color: var(--okText); }
-tr.del > td { background: var(--badSoft) !important; color: var(--badText); }
-tr.hunk > td { color: var(--muted); background: var(--panel2) !important; }
-tr.picked { outline: 2px solid var(--acc); outline-offset: -2px; }
-section.repo details { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; margin: 10px 0; }
-section.repo summary { padding: 10px 16px; font: 12.5px var(--mono); color: var(--text); background: var(--panel2); }
-ol.commits { padding-left: 20px; }
-ol.steps { list-style: none; padding: 0; }
-ol.steps > li { margin: 16px 0; padding-top: 12px; border-top: 1px solid var(--line2); }
-ol.steps h4 { margin: 0 0 6px; font-size: 15px; }
-#comments > li { margin: 6px 0; }
 
 /* The modeler's panel beside the canvas and its Checks. */
 #explain { border-radius: var(--r); margin: 0; }

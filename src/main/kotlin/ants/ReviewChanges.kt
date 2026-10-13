@@ -14,10 +14,16 @@ class DiffLine(val kind: Char, val old: Int?, val new: Int?, val text: String) {
 }
 
 /** One file's diff, [path] relative to the Run workspace root, as every comment's `file` is. */
-class FileDiff(val path: String, val lines: List<DiffLine>)
+class FileDiff(val path: String, val lines: List<DiffLine>) {
+    val added get() = lines.count { it.kind == '+' }
+    val removed get() = lines.count { it.kind == '-' }
+}
 
 /** A repo's changes under review: its commits since the base, as Push reads them ([repo]), and their diff. */
-class RepoChanges(val repo: Outgoing, val files: List<FileDiff>)
+class RepoChanges(val repo: Outgoing, val files: List<FileDiff>) {
+    val added get() = files.sumOf { it.added }
+    val removed get() = files.sumOf { it.removed }
+}
 
 /**
  * A line comment, in Varde's shape: [story] and [step] say which story step it is on, as Varde does, by the story's
@@ -78,7 +84,7 @@ fun changes(outgoing: List<Outgoing>, git: (Path, List<String>) -> String): List
 }
 
 /** The files of the unified diff [diff], each path prefixed with the clone's [path] in the Run workspace. */
-private fun files(diff: String, path: String): List<FileDiff> {
+internal fun files(diff: String, path: String): List<FileDiff> {
     val files = mutableListOf<Pair<String, MutableList<DiffLine>>>()
     var old = 0
     var new = 0

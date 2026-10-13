@@ -103,7 +103,8 @@ class Notifications(
 
     /**
      * An entry's page. A Review changes' has two tabs ([tab]): Story, the Story set of the Task its Walkthrough field
-     * names, first, and By repo; without a Walkthrough, By repo only.
+     * names, first, and By repo; without a Walkthrough, By repo only. Both show a card per repo. Push's page shows each
+     * repo's changes as it will push them.
      */
     @GetMapping("/notifications/{id}")
     fun entry(@PathVariable id: String, model: Model, response: HttpServletResponse, @RequestParam(required = false) tab: String? = null): String {
@@ -137,7 +138,7 @@ class Notifications(
                             model.addAttribute("refused", refused.message)
                         }
                     }
-                    model.addAttribute("changes", if (story) emptyList() else changes(push.outgoing(entry.run), cloneRepos::git))
+                    model.addAttribute("changes", changes(push.outgoing(entry.run), cloneRepos::git)) // each tab's summary cards
                     model.addAttribute("comments", comments(task))
                     "review"
                 }
@@ -152,7 +153,7 @@ class Notifications(
         model.addAttribute("entry", entry)
         model.addAttribute("details", details(entry))
         if (isPush(incident)) {
-            model.addAttribute("repos", push.outgoing(entry.run))
+            model.addAttribute("repos", changes(push.outgoing(entry.run), cloneRepos::git))
             return "push"
         }
         return "notification"
