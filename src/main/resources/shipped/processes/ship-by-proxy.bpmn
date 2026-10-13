@@ -69,7 +69,7 @@
       <bpmn:sequenceFlow id="f3" sourceRef="clone" targetRef="end_2"/>
     </bpmn:subProcess>
     <bpmn:subProcess id="grill_by_proxy" name="Grill (by proxy)">
-      <bpmn:documentation>The griller asks a Round at a time until it asks nothing; the answerer answers each Round from your Answer History and the Vault, and from Round 10 you do. Repos a Round names are not cloned. Needs start-form field prompt, and the scout's brief.</bpmn:documentation>
+      <bpmn:documentation>The griller asks a Round at a time until it asks nothing; the answerer answers each Round from your Answer History and the Vault, and from Round 10 you do. Clone new repos clones any repo a Round names. Needs start-form field prompt, and the scout's brief.</bpmn:documentation>
       <bpmn:incoming>s2</bpmn:incoming>
       <bpmn:outgoing>s3</bpmn:outgoing>
       <bpmn:startEvent id="start_3">
@@ -92,8 +92,17 @@
         <bpmn:incoming>byyou</bpmn:incoming>
         <bpmn:outgoing>f2_2</bpmn:outgoing>
       </bpmn:serviceTask>
-      <bpmn:exclusiveGateway default="nothing" id="asked" name="Asked?">
+      <bpmn:serviceTask id="clonenew" name="Clone new repos" operaton:topic="clone-repos" operaton:type="external">
+        <bpmn:extensionElements>
+          <operaton:inputOutput>
+            <operaton:inputParameter name="repos">${grill.output.repos}</operaton:inputParameter>
+          </operaton:inputOutput>
+        </bpmn:extensionElements>
         <bpmn:incoming>f2_2</bpmn:incoming>
+        <bpmn:outgoing>cloned</bpmn:outgoing>
+      </bpmn:serviceTask>
+      <bpmn:exclusiveGateway default="nothing" id="asked" name="Asked?">
+        <bpmn:incoming>cloned</bpmn:incoming>
         <bpmn:outgoing>questions</bpmn:outgoing>
         <bpmn:outgoing>nothing</bpmn:outgoing>
       </bpmn:exclusiveGateway>
@@ -130,7 +139,8 @@
         <bpmn:incoming>nothing</bpmn:incoming>
       </bpmn:endEvent>
       <bpmn:sequenceFlow id="f1_2" sourceRef="start_3" targetRef="grill"/>
-      <bpmn:sequenceFlow id="f2_2" sourceRef="grill" targetRef="asked"/>
+      <bpmn:sequenceFlow id="f2_2" sourceRef="grill" targetRef="clonenew"/>
+      <bpmn:sequenceFlow id="cloned" sourceRef="clonenew" targetRef="asked"/>
       <bpmn:sequenceFlow id="questions" name="yes" sourceRef="asked" targetRef="capped">
         <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${not empty grill.output.questions}</bpmn:conditionExpression>
       </bpmn:sequenceFlow>
@@ -486,20 +496,23 @@
       <bpmndi:BPMNShape bpmnElement="grill" id="grill_di">
         <dc:Bounds height="80" width="100" x="270" y="138"/>
       </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="clonenew_di" bpmnElement="clonenew">
+        <dc:Bounds x="420" y="138" width="100" height="80"/>
+      </bpmndi:BPMNShape>
       <bpmndi:BPMNShape bpmnElement="asked" id="asked_di" isMarkerVisible="true">
-        <dc:Bounds height="50" width="50" x="425" y="153"/>
+        <dc:Bounds height="50" width="50" x="575" y="153"/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape bpmnElement="capped" id="capped_di" isMarkerVisible="true">
-        <dc:Bounds height="50" width="50" x="425" y="275"/>
+        <dc:Bounds height="50" width="50" x="575" y="275"/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape bpmnElement="answerer" id="answerer_di">
         <dc:Bounds height="80" width="100" x="270" y="260"/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape bpmnElement="answerround" id="answerround_di">
-        <dc:Bounds height="80" width="100" x="400" y="380"/>
+        <dc:Bounds height="80" width="100" x="550" y="380"/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape bpmnElement="end_3" id="end_di_3">
-        <dc:Bounds height="36" width="36" x="532" y="160"/>
+        <dc:Bounds height="36" width="36" x="682" y="160"/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNEdge bpmnElement="f1_2" id="f1_di_2">
         <di:waypoint x="216" y="178"/>
@@ -507,22 +520,22 @@
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge bpmnElement="f2_2" id="f2_di_2">
         <di:waypoint x="370" y="178"/>
-        <di:waypoint x="425" y="178"/>
+        <di:waypoint x="420" y="178"/>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge bpmnElement="questions" id="questions_di">
-        <di:waypoint x="450" y="203"/>
-        <di:waypoint x="450" y="275"/>
+        <di:waypoint x="600" y="203"/>
+        <di:waypoint x="600" y="275"/>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge bpmnElement="nothing" id="nothing_di">
-        <di:waypoint x="475" y="178"/>
-        <di:waypoint x="532" y="178"/>
+        <di:waypoint x="625" y="178"/>
+        <di:waypoint x="682" y="178"/>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge bpmnElement="cap" id="cap_di">
-        <di:waypoint x="450" y="325"/>
-        <di:waypoint x="450" y="380"/>
+        <di:waypoint x="600" y="325"/>
+        <di:waypoint x="600" y="380"/>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge bpmnElement="under" id="under_di">
-        <di:waypoint x="425" y="300"/>
+        <di:waypoint x="575" y="300"/>
         <di:waypoint x="370" y="300"/>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge bpmnElement="byagent" id="byagent_di">
@@ -530,10 +543,14 @@
         <di:waypoint x="320" y="218"/>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge bpmnElement="byyou" id="byyou_di">
-        <di:waypoint x="400" y="420"/>
+        <di:waypoint x="550" y="420"/>
         <di:waypoint x="230" y="420"/>
         <di:waypoint x="230" y="200"/>
         <di:waypoint x="270" y="200"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="cloned_di" bpmnElement="cloned">
+        <di:waypoint x="520" y="178"/>
+        <di:waypoint x="575" y="178"/>
       </bpmndi:BPMNEdge>
     </bpmndi:BPMNPlane>
   </bpmndi:BPMNDiagram>

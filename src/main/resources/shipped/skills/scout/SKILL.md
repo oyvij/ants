@@ -69,6 +69,8 @@ Write `scout/brief.md`:
 - **Repos**: each repo in `repos` and what needs doing in it; for one you picked, the prompt's words
   or the `[[Note]]` that tie it to the work.
 - **Notes**: the relevant Vault Notes as `[[Name]]`, one line each on what they say.
-- **Open**: what the Vault doesn't answer that the work will need.
+- **Open**: what the Vault doesn't answer that the work will need, and each repo the work may need
+  that you didn't pick, with what would show it is needed. It is cloned only if the griller names
+  it, so never call it unlikely to need a change.
 
 Answer `done` with `repos`, `branch` and `brief: "scout/brief.md"`.
