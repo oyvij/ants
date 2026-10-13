@@ -189,9 +189,9 @@ class UpdateTest : AntsTest() {
 
         eventually(60) {
             val form = browser.get("/agents/new").body
-            assertContains(form, ">claude-opus-9</option>")
-            assertContains(form, "claude-sonnet-8 (deprecated, retires June 1, 2029)")
-            assertContains(form, "opus → claude-opus-9")
+            assertContains(form, ">Opus 9 · claude-opus-9</option>")
+            assertContains(form, "Sonnet 8 · claude-sonnet-8 · retires June 1, 2029")
+            assertContains(form, "opus · newest Opus, now Opus 9")
             assertFalse("claude-opus-5-5" in form, "a retired model is off the list")
         }
     }

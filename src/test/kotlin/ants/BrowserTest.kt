@@ -425,6 +425,61 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `the Agent page's chips, Limit rules, added tools and CLI switch save what the page shows`() = browse {
+        home.resolve("skills/chip-skill").createDirectories().resolve("SKILL.md").writeText("---\nname: chip-skill\ndescription: Chips.\n---\nChip.\n")
+        val file = home.resolve("agents").createDirectories().resolve("chipper.md")
+        file.writeText("---\nname: chipper\ncli: claude\nskills: gone, kept\ntools: Read\n---\nChip.\n")
+        page.navigate(url("/agents/chipper"))
+
+        page.locator(".chipsel .c", Page.LocatorOptions().setHasText("gone")).locator("button").click()
+        page.fill("#add-skill", "chip-skill")
+        page.locator("#add-skill").dispatchEvent("change")
+        assertThat(page.locator(".chipsel .c")).containsText(arrayOf("kept", "chip-skill"))
+
+        val bash = page.locator(".trow", Page.LocatorOptions().setHasText("Shell commands"))
+        assertThat(bash.locator("[data-limit]")).isHidden() // Limit… only once it's ticked
+        bash.locator("input[name='tool.Bash']").check()
+        bash.locator("[data-limit]").click()
+        bash.locator("input[name='limit.Bash']").fill("git log *")
+        bash.locator("[data-add]").click()
+        bash.locator("input[name='limit.Bash']").nth(1).fill("git diff *")
+        assertThat(bash.locator("input[name='limit.Bash']").first()).hasAttribute("placeholder", "e.g. pnpm test")
+
+        page.fill(".add-tool input", "mcp__github__get_issue")
+        page.click(".add-tool button")
+        assertThat(page.locator(".added")).containsText("An MCP tool.")
+        page.fill(".add-tool input", "AskUserQuestion")
+        page.press(".add-tool input", "Enter")
+        assertThat(page.locator("input[name='tool.AskUserQuestion']")).isChecked()
+        assertThat(page.locator("details.others")).hasAttribute("open", "")
+
+        page.click("button[form=agent]")
+        eventually {
+            assertEquals("---\nname: chipper\ncli: claude\nskills: kept, chip-skill\ntools: AskUserQuestion, Bash(git log *), Bash(git diff *), Read, mcp__github__get_issue\n---\nChip.\n", file.readText())
+        }
+
+        page.navigate(url("/agents/chipper"))
+        page.selectOption("select[name=cli]", "codex")
+        assertThat(page.locator("select[name=sandbox]")).isVisible()
+        assertThat(page.locator("input[name='tool.Read']")).isHidden()
+        page.fill("fieldset[data-cli=codex] input[name=model]", "gpt-5-codex")
+        page.click("button[form=agent]")
+        eventually { assertContains(file.readText(), "cli: codex\nskills: kept, chip-skill\nsandbox: workspace-write\nmodel: gpt-5-codex\n") }
+    }
+
+    @Test
+    fun `the Skill page's schema editor says whether the schema is valid`() = browse {
+        page.navigate(url("/skills/new"))
+        val bar = page.locator(".ed.json .bar")
+        page.locator(".ed.json .cm-content").fill("""{"type": "strin"}""")
+        assertThat(bar).containsText("✗")
+        assertThat(page.locator("button[form=skill]")).isDisabled()
+        page.locator(".ed.json .cm-content").fill("""{"type": "object", "properties": {"text": {"type": "string"}}}""")
+        assertThat(bar).containsText("✓ valid schema")
+        assertThat(page.locator("button[form=skill]")).isEnabled()
+    }
+
+    @Test
     fun `Dark mode and Light mode in the sidebar switch the theme and stay on the page`() = browse {
         settings(null, "theme: light\n")
         page.navigate(url("/agents"))

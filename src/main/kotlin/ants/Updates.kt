@@ -37,7 +37,6 @@ data class UpdateNotice(val newer: String? = null, val downloading: Boolean = fa
 class Updates(
     @Value("\${ants.home}") private val home: Path,
     @Value("\${ants.releases:https://github.com/oyvij/ants/releases/latest/download}") releases: String,
-    @Value("\${ants.models:https://docs.claude.com/en/docs/about-claude/model-deprecations.md}") private val table: String,
     @Value("\${ants.update-every:6h}") private val every: Duration,
     /** ANTS_DOCKER, which the image sets. */
     @Value("\${ants.docker:false}") private val docker: Boolean,
@@ -76,7 +75,7 @@ class Updates(
             log.info("No update check: $e")
         }
         try {
-            models.refresh(URI(table).toURL().readText())
+            models.check()
         } catch (e: Exception) {
             log.info("The model list wasn't refreshed: $e")
         }

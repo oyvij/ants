@@ -54,7 +54,7 @@ class UsedByTest : AntsTest() {
         val skill = get("/skills/keep-notes")
         assertContains(skill, keepNotes)
         assertContains(skill, """<a href="/skills/keep-index">keep-index</a>""")
-        assertContains(get("/skills/keep-index"), "Nothing uses it.")
+        assertContains(get("/skills/keep-index"), "Used by: no Process or Skill")
     }
 
     @Test

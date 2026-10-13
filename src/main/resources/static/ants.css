@@ -383,18 +383,7 @@ form > label, form > p > label { margin-right: 8px; }
 [role=alert]:empty { display: none; }
 [role=status]:not(.toast) { background: var(--okSoft); color: var(--okText); border-radius: 8px; padding: 8px 12px; }
 details > summary { cursor: pointer; color: var(--muted); }
-fieldset.tools { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 4px 16px; }
-fieldset.tools > :is(legend, p) { grid-column: 1 / -1; }
-fieldset.tools details[open] { grid-column: 1 / -1; }
 ::file-selector-button { font: inherit; font-weight: 600; font-size: 13px; color: var(--text); background: var(--panel2); border: 1px solid var(--fieldLine); border-radius: 6px; padding: 4px 10px; margin-right: 8px; cursor: pointer; }
-
-/* The code editors: CodeMirror, mounted after each Skill text area. */
-form .cm-editor { border: 1px solid var(--fieldLine); border-radius: 8px; background: var(--field); color: var(--text); overflow: hidden; margin-top: 4px; max-height: 520px; }
-form .cm-editor.cm-focused { outline: 2px solid var(--accSoft) !important; border-color: var(--acc); }
-form .cm-editor .cm-scroller { font-family: var(--mono); font-size: 12.5px; line-height: 1.55; }
-form .cm-editor .cm-gutters { background: var(--panel2); color: var(--muted); border-color: var(--line2); }
-form .cm-editor .cm-activeLine { background: color-mix(in srgb, var(--acc) 6%, transparent); }
-form .cm-editor .cm-activeLineGutter { background: color-mix(in srgb, var(--acc) 12%, transparent); }
 
 /* The diagrams' boxes keep their margin below, and the call activity's trail above. */
 .dia { margin-bottom: 16px; }
@@ -491,3 +480,30 @@ section.question > textarea:focus { outline: 2px solid var(--ans); }
 #checks { list-style-position: inside; padding: 0; }
 #checks .error::marker { content: "✖ "; color: var(--bad); }
 #checks .warning::marker { content: "⚠ "; color: var(--wait); }
+
+/* Agents and Skills: their lists, the Agent page (Who it is, What it may do, Standing instructions) and the Skill page. */
+table.library a { color: inherit; } table.library td b a:hover { color: var(--acc); }
+tr.hidden td { color: var(--muted); }
+form.agent fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+fieldset[data-cli][disabled] { display: none; }
+form.agent :is(input, select, textarea):not([type=checkbox], [type=radio]) { background: var(--field); color: var(--text); }
+form.agent .chipsel input:not([type=checkbox]) { background: none; }
+.fld .other { display: none; margin-top: 6px; } .fld .help.other { margin: 4px 0 0; }
+.fld:has(option[value=other]:checked) .other { display: block; }
+.fld .help.checked { margin: 6px 0 0; }
+main .trow label { font-weight: 400; font-size: 14px; margin: 0; }
+.trow:has(> label > input:checked) { background: var(--accSoft); }
+.trow:not(:has(> label > input:checked)) [data-limit] { visibility: hidden; }
+.tlim .row { margin-bottom: 4px; }
+details.others { margin-top: 16px; } details.others > summary { color: var(--acc); }
+.add-tool { margin-top: 14px; } .add-tool button { white-space: nowrap; }
+label.tick { display: flex; gap: 8px; align-items: center; font-weight: 500; }
+.ed .cm-gutters { background: var(--panel2); color: var(--muted); border-color: var(--line2); }
+.ed.ro { background: var(--panel2); }
+.ed .bar .ok { color: var(--ok); } .ed .bar .bad { color: var(--bad); }
+.grid2.skill-page { grid-template-columns: 1.4fr 1fr; }
+.skill-page form { margin: 0; } .skill-page form > .fld:first-of-type label.f { margin-top: 0; }
+.runby { padding: 6px 0; border-bottom: 1px solid var(--line2); } .runby a { color: inherit; }
+.skill-page h3.fields { margin-top: 18px; }
+details.example { margin-top: 8px; } details.example > summary { color: var(--text); }
+details.example pre { background: var(--line2); border: 0; padding: 10px; border-radius: 8px; white-space: pre; }
