@@ -106,6 +106,12 @@ class UpdateTest : AntsTest() {
     }
 
     @Test
+    fun `a scheduled check that can't reach the release list says so on the Updates card`() {
+        releases.resolve("SHA256SUMS").deleteIfExists()
+        eventually(60) { assertContains(browser.get("/settings").body, "Running v$running. Couldn't check for a newer Ants: the release list didn't answer.") }
+    }
+
+    @Test
     fun `an older release shows nothing`() {
         release("0.0.1")
 

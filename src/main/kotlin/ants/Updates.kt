@@ -23,8 +23,13 @@ import java.util.concurrent.TimeUnit.MILLISECONDS
 /** The release tarball's name, as build.gradle.kts names it and SHA256SUMS lists it. */
 fun tarball(version: String) = "ants-$version-macos-arm64.tar.gz"
 
-/** What the nav says about updates: the newest release, when it is newer than this Ants, and how Update went. */
-data class UpdateNotice(val newer: String? = null, val downloading: Boolean = false, val installed: String? = null, val failed: String? = null)
+/**
+ * What the nav says about updates: the newest release, when it is newer than this Ants, and how Update went; and, for
+ * the Updates card, whether the latest check couldn't read the release list.
+ */
+data class UpdateNotice(
+    val newer: String? = null, val downloading: Boolean = false, val installed: String? = null, val failed: String? = null, val unreachable: Boolean = false,
+)
 
 /**
  * The update check, at start and every six hours (`ants.update-every`): the newest release in ANTS_RELEASES (GitHub's
@@ -79,10 +84,11 @@ class Updates(
         val read = try {
             val sums = URI("$releases/SHA256SUMS").toURL().readText()
             val release = Regex(tarball("""(\S+)""")).find(sums)?.groupValues?.get(1) // its dots match any character too
-            synchronized(this) { notice = notice.copy(newer = release?.takeIf { Version.parse(it) > version }) }
+            synchronized(this) { notice = notice.copy(newer = release?.takeIf { Version.parse(it) > version }, unreachable = false) }
             true
         } catch (e: Exception) {
             log.info("No update check: $e")
+            synchronized(this) { notice = notice.copy(unreachable = true) }
             false
         }
         try {

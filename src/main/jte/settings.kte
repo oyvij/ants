@@ -122,7 +122,7 @@
         </div></div>
     <div class="card"><h3>Updates</h3>
         !{val newer = update.newer}
-        <p class="small">Running v${shell.version}.@if(newer == null) Up to date.@elseif(update.installed == newer) Ants ${newer} installed; <code>ants restart</code> to use it.@elseif(update.downloading) Downloading Ants ${newer}…@elseif(docker) Ants ${newer} is available; pull the new image.@else Ants ${newer} is available. <button formaction="/updates/${newer}">Update</button>@endif</p>
+        <p class="small">Running v${shell.version}.@if(newer == null && update.unreachable) Couldn't check for a newer Ants: the release list didn't answer.@elseif(newer == null) Up to date.@elseif(update.installed == newer) Ants ${newer} installed; <code>ants restart</code> to use it.@elseif(update.downloading) Downloading Ants ${newer}…@elseif(docker) Ants ${newer} is available; pull the new image.@else Ants ${newer} is available. <button formaction="/updates/${newer}">Update</button>@endif</p>
 @if(update.failed != null)
         <p role="alert">Update failed: ${update.failed}</p>
 @endif
