@@ -135,6 +135,15 @@ data class Named(val rows: List<Pair<String, String>>, val default: Int) {
 /** One Profile on the settings page: its name and the names of its Vault and Source map. */
 data class ProfileRow(val name: String, val vault: String, val sourceMap: String)
 
+/**
+ * One Secret on the settings page: its label, its variable names, the value typed in, which the page never shows, the
+ * label it was saved under, whose value a blank one keeps, and whether it has a value [set].
+ */
+data class SecretRow(val label: String, val names: String, val value: String = "", val was: String = "", val set: Boolean = false)
+
+/** One Protected Command on the settings page: its prefix and the labels of the Secrets it runs with. */
+data class CommandRow(val prefix: String, val secrets: List<String>)
+
 /** The settings page's form, filled from `settings.yaml` or from what the user posted. Empty means unset. */
 data class SettingsForm(
     val paths: Map<String, String>,
@@ -148,6 +157,8 @@ data class SettingsForm(
     val profiles: List<ProfileRow>,
     /** Which of [profiles] is the default, -1 for none picked. */
     val defaultProfile: Int,
+    val secrets: List<SecretRow>,
+    val protectedCommands: List<CommandRow>,
     val agentFolders: String,
     val skillFolders: String,
     val theme: String,
@@ -156,11 +167,29 @@ data class SettingsForm(
     fun error() = when {
         agentTasks.isNotEmpty() && (agentTasks.toIntOrNull() ?: 0) < 1 -> "Agent Tasks at once must be a whole number, 1 or more."
         subagentDepth.isNotEmpty() && (subagentDepth.toIntOrNull() ?: 0) < 1 -> "Subagent depth must be a whole number, 1 or more."
-        else -> vaults.error("Vault") ?: sourceMaps.error("Source map") ?: profileError()
+        else -> vaults.error("Vault") ?: sourceMaps.error("Source map") ?: profileError() ?: secretError() ?: commandError()
     }
 
     /** The Profile rows plus an empty one, which adds the next. */
     val shownProfiles get() = profiles + ProfileRow("", "", "")
+
+    /** The Secret rows plus an empty one, which adds the next. */
+    val shownSecrets get() = secrets + SecretRow("", "")
+
+    /** The Protected Command rows plus an empty one, which adds the next. */
+    val shownCommands get() = protectedCommands + CommandRow("", emptyList())
+
+    private fun secretError() = when {
+        secrets.any { it.label.isEmpty() || words(it.names).isEmpty() || (it.value.isEmpty() && it.was.isEmpty()) } -> "Every Secret needs a label, a value and a variable name."
+        secrets.flatMap { words(it.names) }.any { !Regex("[A-Z_][A-Z0-9_]*").matches(it) } ->
+            "A variable name is capitals, digits and underscores, such as NPM_TOKEN: the variable the command reads the Secret from."
+        secrets.map { it.label }.toSet().size < secrets.size -> "Two Secrets have the same label."
+        else -> null
+    }
+
+    private fun commandError() = protectedCommands.firstOrNull { row -> row.secrets.any { it !in secrets.map(SecretRow::label) } }
+        ?.let { "The Protected Command ${it.prefix} needs Secrets from the list above." }
+        ?: "Two Protected Commands have the same prefix.".takeIf { protectedCommands.map { it.prefix }.toSet().size < protectedCommands.size }
 
     private fun profileError(): String? {
         val vaultNames = vaults.rows.map { it.first }
@@ -183,8 +212,17 @@ data class SettingsForm(
         )
     }
 
-    /** Writes the form into `settings.yaml`, with [password] as the new password unless it's empty. */
-    fun save(settings: Settings, password: String, encoder: PasswordEncoder) = settings.save { values ->
+    /**
+     * Writes the form into `settings.yaml`, with [password] as the new password unless it's empty, and the Secrets'
+     * values into `secrets.yaml`, a blank one keeping the value saved under the label it was.
+     */
+    fun save(settings: Settings, password: String, encoder: PasswordEncoder) {
+        val saved = settings.secretValues()
+        settings.saveSecretValues(secrets.mapNotNull { row -> row.value.ifEmpty { saved[row.was] }?.let { row.label to it } }.toMap())
+        settings.save { values -> write(values, password, encoder) }
+    }
+
+    private fun write(values: MutableMap<String, Any?>, password: String, encoder: PasswordEncoder) {
         for (cli in Settings.CLIS) {
             val entry = LinkedHashMap<Any?, Any?>(values[cli] as? Map<*, *> ?: emptyMap<Any?, Any?>())
             entry.keep("path", paths[cli])
@@ -203,6 +241,8 @@ data class SettingsForm(
         values.keep("default-source-map", sourceMaps.rows.getOrNull(sourceMaps.default)?.first)
         values.keep("profiles", profiles.associate { it.name to mapOf("vault" to it.vault, "source-map" to it.sourceMap) })
         values.keep("default-profile", profiles.getOrNull(defaultProfile)?.name)
+        values.keep("secrets", secrets.associate { it.label to words(it.names) })
+        values.keep("protected-commands", protectedCommands.associate { it.prefix to it.secrets })
         values.keep("agent-folders", agentFolders.lines().map(String::trim).filter(String::isNotEmpty))
         values.keep("skill-folders", skillFolders.lines().map(String::trim).filter(String::isNotEmpty))
         values.keep("theme", theme.takeIf { it in listOf("light", "dark") })
@@ -229,6 +269,10 @@ data class SettingsForm(
                 sourceMaps = named(settings.sourceMaps(), settings.defaultSourceMap()),
                 profiles = settings.profiles().map { (name, profile) -> ProfileRow(name, profile.vault.orEmpty(), profile.sourceMap.orEmpty()) },
                 defaultProfile = settings.profiles().keys.indexOf(settings.defaultProfile()),
+                secrets = settings.secretValues().keys.let { set ->
+                    settings.secrets().map { (label, names) -> SecretRow(label, names.joinToString(", "), was = label, set = label in set) }
+                },
+                protectedCommands = settings.protectedCommands().map { (prefix, labels) -> CommandRow(prefix, labels) },
                 agentFolders = lines(values["agent-folders"]),
                 skillFolders = lines(values["skill-folders"]),
                 theme = values["theme"]?.toString() ?: "system",
@@ -249,6 +293,13 @@ data class SettingsForm(
             val allProfiles = generateSequence(0, Int::inc).takeWhile { "profiles[$it].name" in params }
                 .map { ProfileRow(param("profiles[$it].name"), param("profiles[$it].vault"), param("profiles[$it].source-map")) }.toList()
             val profiles = allProfiles.filter { it.name.isNotEmpty() }
+            // The value is posted as typed, never trimmed.
+            val secrets = generateSequence(0, Int::inc).takeWhile { "secrets[$it].label" in params }
+                .map { SecretRow(param("secrets[$it].label"), param("secrets[$it].names"), params["secrets[$it].value"].orEmpty(), param("secrets[$it].was"), set = param("secrets[$it].was").isNotEmpty()) }
+                .filter { it.label.isNotEmpty() }.toList()
+            val commands = generateSequence(0, Int::inc).takeWhile { "commands[$it].prefix" in params }
+                .map { CommandRow(Settings.strings(param("commands[$it].prefix")).orEmpty().joinToString(" "), param("commands[$it].secrets").lines().filter(String::isNotEmpty)) }
+                .filter { it.prefix.isNotEmpty() }.toList()
             return SettingsForm(
                 paths = Settings.CLIS.associateWith { param("$it.path") },
                 commands = Settings.AI_CLIS.associateWith { param("$it.command") },
@@ -260,6 +311,8 @@ data class SettingsForm(
                 sourceMaps = named("source-maps", "default-source-map"),
                 profiles = profiles,
                 defaultProfile = profiles.indexOf(param("default-profile").toIntOrNull()?.let(allProfiles::getOrNull)),
+                secrets = secrets,
+                protectedCommands = commands,
                 agentFolders = param("agent-folders"),
                 skillFolders = param("skill-folders"),
                 theme = param("theme").ifEmpty { "system" },

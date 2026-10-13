@@ -88,6 +88,38 @@
 @endfor
             <button type="button" data-add>＋ Add</button></div></div>
 
+    <div class="card"><h3>Secrets</h3><div class="help">Values such as a registry token, which Protected Commands run with and Agents never see.
+        A value is kept in <code>secrets.yaml</code>, never shown again; left blank, the saved one stays. Each variable name is the
+        variable the command reads the value from, such as <span class="eg">YARN_NPM_AUTH_TOKEN</span>.</div>
+        <div class="listed">
+@for((i, row) in form.shownSecrets.withIndex())
+            <div class="row" hidden="${row.label.isEmpty()}">
+                <input type="hidden" name="secrets[${i}].was" value="${row.was}">
+                <input class="name" name="secrets[${i}].label" value="${row.label}" aria-label="Label">
+                <input type="password" class="name" name="secrets[${i}].value" placeholder="${if (row.set) "••••" else "Value"}" autocomplete="new-password" aria-label="Value">
+                <input class="grow mono" name="secrets[${i}].names" value="${row.names}" placeholder="NPM_TOKEN" aria-label="Variable names">
+                <button type="button" class="ghost" data-remove>Remove</button>
+            </div>
+@endfor
+            <button type="button" data-add>＋ Add</button></div></div>
+
+    <div class="card"><h3>Protected Commands</h3><div class="help">Commands Agents may ask Ants to run, with any arguments, in their Run
+        workspace, with the Secrets picked. The Agent gets the output, every Secret masked. A command is picked by how it starts, such as
+        <span class="eg">yarn</span> or <span class="eg">mvn deploy</span>. A new Secret is offered here once saved.</div>
+        <div class="listed">
+@for((i, row) in form.shownCommands.withIndex())
+            <div class="row" hidden="${row.prefix.isEmpty()}">
+                <input class="grow mono" name="commands[${i}].prefix" value="${row.prefix}" aria-label="Command prefix">
+                <select multiple class="grow" name="commands[${i}].secrets" aria-label="Secrets">
+@for(label in (form.secrets.map { it.label } + row.secrets).distinct())
+                    <option selected="${label in row.secrets}">${label}</option>
+@endfor
+                </select>
+                <button type="button" class="ghost" data-remove>Remove</button>
+            </div>
+@endfor
+            <button type="button" data-add>＋ Add</button></div></div>
+
     <div class="grid2">
 @for((name, label, help) in listOf(Triple("agent-folders", "Agent folders", "Every <code>*.md</code> directly inside is an Agent."), Triple("skill-folders", "Skill folders", "Every folder holding a <code>SKILL.md</code>, at any depth, is a Skill.")))
         <div class="card"><h3>${label}</h3><div class="help">$unsafe{help}</div><div class="listed">

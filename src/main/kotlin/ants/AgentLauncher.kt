@@ -57,6 +57,7 @@ class AgentLauncher(
     internal val clock: Clock,
     private val names: RunNames,
     private val scopes: Scopes,
+    private val protectedCommands: ProtectedCommands,
     @Value("\${ants.home}") internal val home: Path,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -373,7 +374,10 @@ class AgentLauncher(
         val shared = if (cwd == workspace) emptyList() else listOf("--add-dir", "$workspace") // what an instance's links lead to
         val places = vault?.let { listOf("--add-dir", "$it") }.orEmpty() // the Vault's path goes nowhere else (ADR 0002)
             .plus(answerHistory(task, skill)?.let { listOf("--add-dir", "${it.createDirectories()}") }.orEmpty()) // so a Read reaches it (ADR 0010)
-        val process = cli(agent.cli, cwd, flags(agent, schema, listOf(skill) + used, session!!, resume, gated?.let { listOf("Write(/$it/**)", "Edit(/$it/**)") }.orEmpty()) + shared + places).start()
+        val (token, mcp) = protectedCommands.open(workspace) // its Protected Commands run in the Run workspace
+        val process = runCatching {
+            cli(agent.cli, cwd, flags(agent, schema, listOf(skill) + used, session!!, resume, mcp, gated?.let { listOf("Write(/$it/**)", "Edit(/$it/**)") }.orEmpty()) + shared + places).start()
+        }.onFailure { protectedCommands.close(token) }.getOrThrow()
         val stdin = Stdin(process.outputWriter(), name(task), home)
         clis[process] = run
         val stderr = drain(process)
@@ -422,6 +426,7 @@ class AgentLauncher(
             stdin.close()
             stdins.remove(key(run, instance), stdin)
             clis -= process
+            protectedCommands.close(token)
         }
     }
 
@@ -605,11 +610,14 @@ class AgentLauncher(
         }
     }
 
-    /** claude's flags, with the permission rules [denied] besides the Subagent types a Limit leaves out. */
-    private fun flags(agent: Agent, schema: Map<*, *>, skills: List<Skill>, session: String, resume: Boolean, denied: List<String>): List<String> {
+    /**
+     * claude's flags, with Ants' MCP server [mcp] and its tool `run`, and the permission rules [denied] besides the
+     * Subagent types a Limit leaves out and Ants' own files that hold a Secret or the password (ADR 0015).
+     */
+    private fun flags(agent: Agent, schema: Map<*, *>, skills: List<Skill>, session: String, resume: Boolean, mcp: String, denied: List<String>): List<String> {
         val tools = (agent.tools ?: DEFAULT_TOOLS).filter { it.substringBefore('(') != "Skill" }
         val (subagents, types) = subagents(tools)
-        val disallowed = types + denied
+        val disallowed = types + denied + listOf("secrets.yaml", "settings.yaml").flatMap { listOf("Read(/$home/$it)", "Edit(/$home/$it)") }
         return listOf(
             "-p",
             "--output-format", "stream-json", "--verbose", "--include-partial-messages",
@@ -620,11 +628,12 @@ class AgentLauncher(
             "--setting-sources", "user,project",
             "--settings", """{"disableAllHooks":true}""",
             "--strict-mcp-config",
+            "--mcp-config", mcp,
             "--disable-slash-commands",
             "--forward-subagent-text",
             "--tools", tools.map { it.substringBefore('(') }.distinct().joinToString(","),
             // claude checks a Write against Edit rules and ignores a Write(path) one, so a Write limit also goes out as Edit
-            "--allowedTools", (tools + tools.filter { it.startsWith("Write(") }.map { "Edit(" + it.removePrefix("Write(") }).distinct().joinToString(","),
+            "--allowedTools", (tools + tools.filter { it.startsWith("Write(") }.map { "Edit(" + it.removePrefix("Write(") } + RUN_TOOL).distinct().joinToString(","),
         ) + subagents + (if (disallowed.isEmpty()) emptyList() else listOf("--disallowedTools", disallowed.joinToString(","))) + skills.flatMap { listOf("--add-dir", it.folder.toString()) } + (if (agent.model != null) listOf("--model", agent.model) else emptyList()) +
             (if (agent.instructions.isNotEmpty()) listOf("--append-system-prompt", agent.instructions) else emptyList())
     }
@@ -736,6 +745,9 @@ class AgentLauncher(
         val DEFAULT_TOOLS = listOf(
             "Bash", "Edit", "Glob", "Grep", "NotebookEdit", "Read", "TaskCreate", "TaskGet", "TaskList", "TaskUpdate", "WebFetch", "WebSearch", "Write",
         )
+        /** Ants' MCP tool `run`, which runs a Protected Command ([ProtectedCommands]). */
+        const val RUN_TOOL = "mcp__ants__run"
+
         /** The tool that starts Subagents: `Agent`, formerly `Task`. */
         val SUBAGENT_TOOLS = setOf("Agent", "Task")
 
