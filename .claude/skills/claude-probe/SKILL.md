@@ -21,6 +21,10 @@ test scripts, so it passes whatever you assume. Facts the real CLI has already s
   replays the message with the image data in it.
 - Under `--permission-mode dontAsk`, claude 2.1.296 checks a Write against Edit rules: `--allowedTools 'Write(scout/**)'`
   denies the Write, and `'Edit(scout/**)'` allows it (so `AgentLauncher` sends a Write limit as both).
+- Under `dontAsk`, claude 2.1.299 with `--allowedTools 'Bash(git log *)'` refuses `git -C <dir> log`,
+  `git --git-dir=… log`, `git -c … log`, `cd <dir> && git log` and `git log; touch x`, but allows a lone
+  `cd <dir>` inside the cwd (not `cd /tmp`), after which the shell stays there and a plain `git log` runs. It also
+  allows `git diff --output=<any path>`, which writes the file; `--disallowedTools 'Bash(git *--output*)'` refuses it.
 - claude 2.1.296 under `--strict-mcp-config` uses an `--mcp-config` HTTP server on `127.0.0.1` (`"type": "http"`,
   with an `Authorization` header it sends on every request), inside nono with network allowed. `--tools Read`
   doesn't hide the MCP tool; `--allowedTools mcp__<server>__<tool>` lets it run under `dontAsk`.

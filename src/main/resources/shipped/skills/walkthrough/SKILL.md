@@ -19,8 +19,11 @@ Your inputs; paths are relative to the Run workspace:
 - `clones`: the repos cloned for the Run, `[{name, path, commit}]`; each clone is at `path`, on
   the work branch.
 
-You read the clones, with `git log`, `git diff` and `git show` run from inside a clone
-(`cd repos/<name> && git log …`); you write only in `walkthrough/`. You change no code.
+You read the clones with `git log`, `git diff`, `git show` and `git merge-base`, run from inside
+a clone; you write only in `walkthrough/`. You change no code. Each command is its own Bash call:
+first `cd repos/<name>`, then a plain `git log …` (the shell stays in the clone). Anything else is
+refused: `git -C …`, `git --git-dir=…`, `git -c …`, `--output`, and `cd … && git …` or any other
+chained command.
 
 ## 1. Read the change
 
