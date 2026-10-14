@@ -39,10 +39,10 @@ class NotificationListTest : AntsTest() {
     private val stuck = result("""{"outcome":"stuck","summary":"No tone given.","needs":"Which tone, dry or warm?"}""")
     private val done = result("""{"outcome":"done","summary":"Drafted.","output":{"text":"Hello"}}""")
 
-    private fun start(): String {
+    private fun start(prompt: String = "Say hello"): String {
         browser.import("agent-task.bpmn")
         browser.get("/processes/agent-task")
-        return browser.post("/processes/agent-task/runs", mapOf("prompt" to "Say hello")).path.removePrefix("/runs/")
+        return browser.post("/processes/agent-task/runs", mapOf("prompt" to prompt)).path.removePrefix("/runs/")
     }
 
     /** The Run's row on the Notification list, or null. */
@@ -132,6 +132,22 @@ class NotificationListTest : AntsTest() {
         assertEquals(null, second.flag("--resume"))
         assertContains(second.stdin, """Follow the Skill in ${home.resolve("skills/draft/SKILL.md")}""")
         assertContains(second.stdin, """\n\nFrom the user:\nWarm, please."}}""")
+    }
+
+    @Test
+    fun `a prompt and an instruction longer than Operaton's text column reach the Agent whole`() {
+        setUp()
+        claude.session("draft", stuck)
+        claude.session("draft", 2, done)
+        val prompt = "Say hello. " + "p".repeat(5000)
+        val output = "I ran the command for you, here is the output:\r\n\r\n" + "line of output\r\n".repeat(450) // about 7000 characters
+        val run = start(prompt)
+
+        browser.post(entry(run), mapOf("action" to "continue", "instruction" to output))
+        eventually { assertContains(page(run), """id="state">Completed<""") }
+        val (first, second) = claude.launches("draft")
+        assertContains(first.stdin, "p".repeat(5000))
+        assertContains(second.stdin, "line of output\\r\\n".repeat(450))
     }
 
     @Test
