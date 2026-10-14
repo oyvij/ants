@@ -289,6 +289,21 @@ class Browser(private val base: String) {
         return events
     }
 
+    /**
+     * The first event named [name] on a page's SSE stream, `/live?[query]`, which sends each part's state on connect,
+     * then closes the stream, as a page left does. A test polling the nav uses this, not [events]: each stream left open
+     * holds one of the JVM's shared pool threads for its minute, and a poll every 100 ms used them all up.
+     */
+    fun event(query: String, name: String): String =
+        client.send(HttpRequest.newBuilder(URI("$base/live?$query")).header("Accept", "text/event-stream").GET().build(), HttpResponse.BodyHandlers.ofLines())
+            .body().use { lines ->
+                var event = ""
+                lines.iterator().asSequence()
+                    .onEach { if (it.startsWith("event:")) event = it.removePrefix("event:") }
+                    .first { it.startsWith("data:") && event == name }
+                    .removePrefix("data:")
+            }
+
     fun login(password: String = "admin"): Page {
         get("/login")
         return post("/login", mapOf("username" to "admin", "password" to password))

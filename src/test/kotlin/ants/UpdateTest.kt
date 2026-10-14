@@ -72,7 +72,7 @@ class UpdateTest : AntsTest() {
     /** The nav's update notice as [page] shows it: the nav fills its slot from the page's stream. */
     private fun notice(page: String = "/", browser: Browser = this.browser): String {
         assertContains(browser.get(page).body, """<span id="update"></span>""", message = "$page has no update notice in its nav")
-        return browser.events("", "update").poll(10, SECONDS).orEmpty()
+        return browser.event("", "update")
     }
 
     /**

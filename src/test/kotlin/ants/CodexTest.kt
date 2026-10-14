@@ -11,7 +11,6 @@ import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-import java.util.concurrent.TimeUnit.SECONDS
 import kotlin.io.path.createDirectories
 import kotlin.io.path.createFile
 import kotlin.io.path.exists
@@ -141,7 +140,7 @@ class CodexTest : AntsTest() {
 
     private fun pill(page: String): String {
         assertContains(browser.get(page).body, """<span id="paused"></span>""")
-        return browser.events("", "pauses").poll(10, SECONDS).orEmpty()
+        return browser.event("", "pauses")
     }
 
     @Test
