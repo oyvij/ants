@@ -85,6 +85,8 @@ class ShipSmallTest : AntsTest() {
         assertContains(tools("implement").first!!.split(","), "Agent")
         assertFalse("Bash(" in tools("implement").second!!) // Bash unlimited
         assertEquals("Read,Bash" to "Read,Bash(gh pr create *),Bash(gh pr view *),Bash(git log *),Bash(git diff *)", tools("pr"))
+        // claude refuses `git -C` and `cd … && git …` under Bash(git log *), but allows a lone cd into the clone
+        assertContains(home.resolve("shipped/skills/pr/SKILL.md").toFile().readText(), "first `cd repos/<repo>`,\nthen a plain `git log …`")
 
         val scout = claude.launches("scout").single()
         val offered = JsonMapper.shared().readValue(scout.flag("--agents"), Map::class.java)

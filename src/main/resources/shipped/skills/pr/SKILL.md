@@ -23,7 +23,11 @@ Your inputs; paths are relative to the Run workspace:
 - `fixes`: the review of the fixes made after the user sent the changes back, if any.
 
 You run `gh` on the user's own login, and `git log` and `git diff` in the clones. You change
-nothing in the repos and push nothing.
+nothing in the repos and push nothing. Each command is its own Bash call. Run `gh` from wherever
+you are, always with `--repo <owner>/<name>`. Run git from inside a clone: first `cd repos/<repo>`,
+then a plain `git log …` (the shell stays in the clone); `cd ../..` takes you back to the
+workspace root. Anything else is refused: `git -C …`, `git --git-dir=…`, `git -c …`, `--output`,
+and `cd … && git …` or any other chained command.
 
 ## 1. Pick the repos
 
@@ -37,7 +41,7 @@ keep it: don't open a second one.
 
 ## 2. Write the body
 
-Read the spec or proposal, the review and the fixes, and `git log` and `git diff` from `<base>` in the clone.
+Read the spec or proposal, the review and the fixes, and `git log` and `git diff` from `<base>`, inside the clone.
 Write the body briefly, in the repo's own terms:
 
 ```markdown
