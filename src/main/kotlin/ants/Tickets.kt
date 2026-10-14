@@ -31,7 +31,6 @@ import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.name
 import kotlin.io.path.nameWithoutExtension
 import kotlin.io.path.readText
-import kotlin.io.path.writeText
 
 /**
  * A file of a Run's tracker, read once: the Spec, `tickets/spec.md` in the Run workspace, named `spec`, or a Ticket,
@@ -69,7 +68,7 @@ class Tracked(val run: String, val name: String, val file: Path) {
     val href get() = "/runs/$run/tickets/$name"
 
     /** Sets the `Status:` line, adding one under the title when there is none. */
-    fun status(status: String) = file.writeText(
+    fun status(status: String) = file.writeAtomically(
         when {
             STATUS.containsMatchIn(text) -> STATUS.replaceFirst(text, "Status: $status")
             text.startsWith("# ") && '\n' in text -> text.replaceFirst("\n", "\n\nStatus: $status\n")
@@ -78,7 +77,7 @@ class Tracked(val run: String, val name: String, val file: Path) {
     )
 
     /** Appends [comment] under `## Comments`, at the bottom, adding the heading when there is none. */
-    fun comment(comment: String) = file.writeText(text.trimEnd() + (if (COMMENTS.containsMatchIn(text)) "" else "\n\n## Comments") + "\n\n${comment.trim()}\n")
+    fun comment(comment: String) = file.writeAtomically(text.trimEnd() + (if (COMMENTS.containsMatchIn(text)) "" else "\n\n## Comments") + "\n\n${comment.trim()}\n")
 
     /** The text of each checkbox not ticked, such as an acceptance criterion still to meet. */
     val unticked get() = text.lines().mapNotNull { line -> CHECKBOX.find(line)?.takeIf { it.groupValues[1] == " " }?.let { line.substring(it.range.last + 1).trim() } }
@@ -228,7 +227,7 @@ class Tickets(private val history: HistoryService, private val streams: Streams,
         val lines = file.text.split("\n").toMutableList()
         val box = CHECKBOX.find(lines.getOrNull(line).orEmpty()) ?: throw ResponseStatusException(HttpStatus.BAD_REQUEST, "No checkbox on line $line")
         lines[line] = lines[line].replaceRange(box.groups[1]!!.range, if (box.groupValues[1] == " ") "x" else " ")
-        file.file.writeText(lines.joinToString("\n"))
+        file.file.writeAtomically(lines.joinToString("\n"))
         return "redirect:${file.href}"
     }
 
@@ -275,7 +274,7 @@ class Tickets(private val history: HistoryService, private val streams: Streams,
     fun save(@PathVariable run: String, @PathVariable name: String, @RequestParam text: String, @RequestParam version: String, model: Model): String {
         val file = tracked(run, name)
         if (file.version != version) return edit(file, text, article(file), model.addAttribute("error", CHANGED))
-        file.file.writeText(text.replace("\r\n", "\n")) // a text area sends CRLF
+        file.file.writeAtomically(text.replace("\r\n", "\n")) // a text area sends CRLF
         return "redirect:${file.href}"
     }
 
