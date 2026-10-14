@@ -162,6 +162,16 @@ class TicketsTest : AntsTest() {
         eventually { assertContains(browser.get("/tickets").body, """<a href="/runs/$run/tickets/spec">Greet the world</a></td><td>wontfix</td>""") }
     }
 
+    @Test
+    fun `a Ticket being set to a status is never read half written`() {
+        val file = java.nio.file.Files.createTempDirectory("ticket").resolve("01-one.md")
+        file.toFile().writeText("# One\n\nStatus: ready-for-agent\n\nBlocked by: none\n" + "Some words.\n".repeat(1000))
+        val writer = Thread { repeat(2000) { Tracked("run", "01-one", file).status(if (it % 2 == 0) "in-progress" else "in-review") } }
+        writer.start()
+        while (writer.isAlive) assertNotNull(Tracked("run", "01-one", file).status, "a reader saw the file half written")
+        writer.join()
+    }
+
     /** The version of the file [page] shows. */
     private fun version(page: String) = Regex("""(?:data-version="|name="version" value=")(\w+)""").find(page)!!.groupValues[1]
 }
