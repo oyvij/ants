@@ -88,12 +88,11 @@ stop() {
   running; local was=$?
   launchctl bootout "$service/$label" 2> /dev/null
   rm -f "$plist"
-  running && kill "$pid"
+  if [ $was != 0 ]; then echo "Ants is not running"; return; fi
+  kill "$pid" 2> /dev/null
+  # Waits on the pid, not the lock: Ants removes its lock as its shutdown begins, while it still holds its port.
   for _ in $(seq 60); do
-    if ! running; then
-      if [ $was = 0 ]; then echo "Ants stopped"; else echo "Ants is not running"; fi
-      return
-    fi
+    if ! kill -0 "$pid" 2> /dev/null; then echo "Ants stopped"; return; fi
     sleep 0.5
   done
   echo "Ants (pid $pid) is still stopping" >&2; return 1
