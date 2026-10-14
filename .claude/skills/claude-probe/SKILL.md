@@ -28,6 +28,11 @@ test scripts, so it passes whatever you assume. Facts the real CLI has already s
 - claude 2.1.296 under `--strict-mcp-config` uses an `--mcp-config` HTTP server on `127.0.0.1` (`"type": "http"`,
   with an `Authorization` header it sends on every request), inside nono with network allowed. `--tools Read`
   doesn't hide the MCP tool; `--allowedTools mcp__<server>__<tool>` lets it run under `dontAsk`.
+- With the `pr` Agent's tools under `dontAsk`, claude 2.1.299 runs `gh pr view <branch> --repo o/n` and
+  `gh pr create --repo o/n …` (a multi-line `--body` too) from the workspace root, which isn't a git repo, so gh
+  needs `--repo` there. A lone `cd repos/<x>` is allowed, and `cd ../..` back to the root, but not `cd ..` above
+  it, nor a `cd` into a symlink that leaves it. `a && b` runs when each part is allowed on its own. A user's shell
+  `cd` hook that fails (fnm's `--use-on-cd` on a clone with `package.json`) makes the `cd` fail and not stick.
 
 ## Steps
 
