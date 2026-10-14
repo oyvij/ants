@@ -1,6 +1,7 @@
 package ants
 
 import org.junit.jupiter.api.Test
+import org.operaton.bpm.engine.ExternalTaskService
 import org.operaton.bpm.engine.RuntimeService
 import org.springframework.beans.factory.annotation.Autowired
 import java.nio.file.Files
@@ -15,6 +16,9 @@ class CloneReposTest : AntsTest() {
 
     @Autowired
     lateinit var runtime: RuntimeService
+
+    @Autowired
+    lateinit var externalTasks: ExternalTaskService
 
     /** `settings.yaml` with a Source map of [repos]. */
     private fun sourceMap(vararg repos: Remote) = settings(null, sourceMapLines(*repos))
@@ -56,6 +60,26 @@ class CloneReposTest : AntsTest() {
         eventually { assertNotNull(runtime.getVariable(run, "again")) }
         assertEquals(git(api.remote, "rev-parse", "main"), git(clone(run, "api"), "rev-parse", "HEAD"))
         assertEquals("", git(clone(run, "api"), "status", "--porcelain"))
+    }
+
+    @Test
+    fun `a clone already on disk from an earlier, failed attempt is still in clones`() {
+        val api = repo("api")
+        val web = repo("web")
+        sourceMap(api, web)
+        val moved = Files.move(web.remote, web.remote.resolveSibling("gone.git"))
+        browser.import("clone-repos.bpmn")
+        val run = runtime.startProcessInstanceByKey("clone-repos", mapOf("repos" to listOf("api", "web"), "branch" to "feature-x")).id
+        // The first attempt clones api, then fails on web, whose remote is gone, so it completes nothing.
+        fun failed() = externalTasks.createExternalTaskQuery().processInstanceId(run).noRetriesLeft().singleResult()
+        eventually { assertNotNull(failed()) }
+        assertEquals(listOf("api"), clones(workspace(run)).map { it.fileName.toString() })
+        Files.move(moved, web.remote)
+        externalTasks.setRetries(failed().id, 1)
+        eventually { assertNotNull(runtime.getVariable(run, "again")) }
+        val clones = listOf(api, web).map { mapOf("name" to it.name, "path" to "repos/${it.name}", "commit" to git(it.remote, "rev-parse", "main")) }
+        assertEquals(clones.drop(1), runtime.getVariable(run, "clone")) // this attempt's Result: only web
+        assertEquals(clones.reversed(), runtime.getVariable(run, "clones"))
     }
 
     @Test

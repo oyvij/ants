@@ -26,7 +26,7 @@ fun clones(workspace: Path): List<Path> =
  * already on, else the `branch` input, else `ants/<slug>` of the Run's name, with a counter suffix (`-2`, `-3` …) while another live
  * Run holds it, or, for `ants/<slug>`, while the remote has it. The work branch is checked out when the remote has it, otherwise created. The push URL is dead, so no
  * Agent pushes; Push gives the real remote itself. A repo already cloned is left alone. The Result is the repos it
- * cloned, `[{name, path, commit}]`, `path` relative to the Run workspace, and they are added to the Run's `clones`.
+ * cloned, `[{name, path, commit}]`, `path` relative to the Run workspace; the Run's `clones` becomes every clone in `repos/`, so one an earlier, failed attempt made is there too.
  * A Run with repos picked ([SCOPE]) clones exactly them instead, whatever `repos` names, first creating each new repo on GitHub.
  */
 // ponytail: one thread for every Run, so choosing a work branch never races another Run's; a slow clone holds up
@@ -51,8 +51,11 @@ class CloneRepos(
             .map { if (source.picked.isNotEmpty() && newRepo(it.remote)) it.copy(remote = create(it.remote)) else it }
         val branch by lazy { workBranch(run, task.variables["branch"]?.toString(), wanted.map(Repo::remote), repos) }
         val cloned = wanted.map { repo -> cloneOne(repo, repos, branch) }
+        // Every clone on disk, even one an earlier, failed attempt made and so never added.
         @Suppress("UNCHECKED_CAST")
-        val clones = (task.variables["clones"] as? List<Map<String, String>>).orEmpty() + cloned
+        val kept = (task.variables["clones"] as? List<Map<String, String>>).orEmpty().filter { repos.resolve(it["name"]!!).exists() } + cloned
+        val clones = kept + clones(repos.parent).filter { dir -> kept.none { it["name"] == dir.name } }
+            .map { mapOf("name" to it.name, "path" to "repos/${it.name}", "commit" to git(it, "rev-parse", "HEAD")) }
         externalTasks.complete(task.id, WORKER, mapOf(task.activityId to ArrayList(cloned), "clones" to ArrayList(clones)))
     }
 
