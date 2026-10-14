@@ -430,7 +430,11 @@ class BrowserTest : AntsTest() {
         page.click("#reset")
         assertThat(scope).hasText("Recommend scope.")
         assertThat(page.locator("#answer-scope")).hasValue("Recommend scope.")
-        scope.fill("")
+        // Cleared through the editor's own keys: fill("") sets the DOM selection and presses Delete, which CodeMirror
+        // can take before the selectionchange event tells it of the selection, and then deletes nothing.
+        scope.press("ControlOrMeta+a")
+        scope.press("Delete")
+        assertThat(page.locator("#answer-scope")).hasValue("")
         val buttons = page.locator("footer").boundingBox()
         page.click("#next")
         assertThat(page.locator("#next")).hasText("Send the Round")
