@@ -367,7 +367,7 @@ class AgentTaskTest : AntsTest() {
     /** The nav's pill as [page] shows it: the nav fills its slot from the page's stream. */
     private fun pill(page: String): String {
         assertContains(browser.get(page).body, """<span id="paused"></span>""", message = "$page has no pill in its nav")
-        return browser.events("", "pauses").poll(10, SECONDS).orEmpty()
+        return browser.event("", "pauses")
     }
 
     @Test
