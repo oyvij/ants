@@ -140,6 +140,7 @@ class ShipWithMeTest : AntsTest() {
                 "Read,Grep,Glob,Write(walkthrough/**),Edit(walkthrough/**),Bash(git log *),Bash(git diff *),Bash(git show *),Bash(git merge-base *)",
             tools("walkthrough"),
         )
+        assertContains(claude.launches("walkthrough").first().flag("--disallowedTools")!!.split(","), "Bash(git *--output*)") // --output makes git log, diff and show write a file
         assertEquals(tools("implement"), tools("fix-review"))
         // Every implementer builds with tdd and reviews with code-review.
         for (skill in listOf("implement", "fix-review")) {

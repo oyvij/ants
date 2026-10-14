@@ -729,7 +729,10 @@ class AgentLauncher(
     private fun flags(agent: Agent, schema: Map<*, *>, skills: List<Skill>, session: String, resume: Boolean, mcp: String, denied: List<String>): List<String> {
         val tools = (agent.tools ?: DEFAULT_TOOLS).filter { it.substringBefore('(') != "Skill" }
         val (subagents, types) = subagents(tools)
-        val disallowed = types + denied + listOf(settings.secretsFile, settings.file).map(Path::toAbsolutePath).flatMap { listOf("Read(/$it)", "Edit(/$it)") }
+        // Probed on claude 2.1.299: a rule such as `Bash(git diff *)` lets `git diff --output=<any path>` write a file, and
+        // the deny rule `Bash(git *--output*)` refuses it (git takes no abbreviation of `--output`)
+        val gitOutput = if (tools.any { it.startsWith("Bash(git ") }) listOf("Bash(git *--output*)") else emptyList()
+        val disallowed = types + gitOutput + denied + listOf(settings.secretsFile, settings.file).map(Path::toAbsolutePath).flatMap { listOf("Read(/$it)", "Edit(/$it)") }
         return listOf(
             "-p",
             "--output-format", "stream-json", "--verbose", "--include-partial-messages",
