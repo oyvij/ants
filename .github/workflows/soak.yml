@@ -5,13 +5,18 @@ name: soak
 on:
   workflow_dispatch:
 
+# The tests only (test.yml, not ci.yml, whose release and image jobs ask to write): soak releases and publishes
+# nothing.
+permissions:
+  contents: read
+
 jobs:
   test:
     strategy:
       fail-fast: false
       matrix:
         run: ["1", "2", "3", "4", "5"]
-    uses: ./.github/workflows/ci.yml
+    uses: ./.github/workflows/test.yml
     with:
       load: true
       run: ${{ matrix.run }}
