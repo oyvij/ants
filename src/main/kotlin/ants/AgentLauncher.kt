@@ -345,7 +345,7 @@ class AgentLauncher(
             }.getOrDefault(false) // its Run just ended
         }?.task ?: return "This Ticket isn't waiting on you in a live Run."
         if (fixing[id]?.running == true) return "This Ticket is sent back already; its fix hasn't landed yet."
-        val open = ticket.blockedBy.filter { ticket(workspace, run, it)?.landed == false }
+        val open = waitsFor(ticket, tickets(workspace, run))
         if (open.isNotEmpty()) return "${open.joinToString()} ${if (open.size == 1) "hasn't" else "haven't"} landed yet, so there is nothing to send back to."
         val fixes = ticket.blockedBy.mapNotNull { number ->
             val (index, key) = runtime.ticketSibling(held.executionId, held.activityId) { ticket(workspace, run, it)?.number == number.toInt() } ?: return@mapNotNull null

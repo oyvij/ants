@@ -140,6 +140,28 @@ class ItemsAreTicketsTest : AntsTest() {
         assertEquals("in-review", status(run, "02-two"))
     }
 
+    @Test
+    fun `a ready-for-human Ticket reaches the Notification list only once its Blocked by have landed`() {
+        val api = repo("api")
+        setUp(api, two = "ready-for-human")
+        claude.session("build", init, "wait go", commit("one"), done)
+        val run = start("api")
+        eventually { assertEquals(1, claude.launches("build").size) }
+
+        assertFalse("ticket-$run-02-two" in browser.get("/notifications").body)
+        val page = browser.get("/runs/$run/tickets/02-two").body
+        assertContains(page, "Waits for 01")
+        assertFalse("Mark done" in page)
+        assertFalse("Send back" in page)
+        assertContains(browser.post("/runs/$run/tickets/02-two/done", emptyMap()).body, "Waits for 01")
+        assertEquals("ready-for-human", status(run, "02-two"))
+
+        claude.release("go")
+        eventually { assertEquals("in-review", status(run, "01-one")) }
+        assertContains(browser.get("/notifications").body, "ticket-$run-02-two")
+        assertContains(browser.get("/runs/$run/tickets/02-two").body, "Mark done")
+    }
+
     /** A session line committing [file] in the api repo. */
     private fun commit(file: String) =
         "sh cd repos/api && echo $file > $file.txt && git add $file.txt && git -c user.name=A -c user.email=a@b -c commit.gpgsign=false commit -qm $file"
