@@ -270,7 +270,6 @@ div.tools label span { color: var(--muted); font-size: 12px; display: block; }
 .vals { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 10px; font-size: 12.5px; } .vals .cited { color: var(--citeC); } .vals .inv { color: var(--invC); }
 .pred { margin-top: 14px; background: var(--vioSoft); border-radius: 8px; padding: 10px 12px; font-size: 13px; }
 .scomment { margin-top: 12px; font-size: 12.5px; background: var(--waitSoft); padding: 6px 10px; border-radius: 6px; }
-kbd { font: 11px var(--mono); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; color: var(--muted); background: var(--panel); display: inline-block; line-height: 16px; margin-left: 4px; vertical-align: 1px; font-weight: 500; }
 .bandacts { display: flex; align-items: center; gap: 10px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line2); }
 .tabs { display: flex; gap: 4px; margin-bottom: 18px; border-bottom: 1px solid var(--line); }
 .tabs button { border: 0; box-shadow: none; background: none; border-radius: 0; padding: 10px 16px; color: var(--muted); border-bottom: 2px solid transparent; }

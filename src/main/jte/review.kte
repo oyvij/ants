@@ -52,15 +52,15 @@
             <div class="sover"><a href="#s${i + 1}-1"><b>${story.name}</b></a> <span class="muted small">${story.steps.size} step${if (story.steps.size == 1) "" else "s"}</span><div class="small">$unsafe{inlineCode(story.premise)}</div>
                 <div class="small muted">${story.steps.joinToString(" → ") { it.name }}</div></div>
             @endfor
-            <div class="help">Pick a story to walk it one step at a time: <kbd>n</kbd> next, <kbd>p</kbd> back, <kbd>d</kbd> diff, <kbd>D</kbd> details, <kbd>c</kbd> comment, <kbd>Esc</kbd> back here.</div></div>
+            <div class="help">Pick a story to walk it one step at a time.</div></div>
         @for(i in stories.stories.indices)!{val story = stories.stories[i]}
         <section class="walkstory" data-story="${i + 1}">
-            <div class="row walkhead"><b>${story.name}</b><span class="muted small">$unsafe{inlineCode(story.premise)}</span><span class="grow"></span><button type="button" class="ghost small" data-all>All stories <kbd>Esc</kbd></button></div>
+            <div class="row walkhead"><b>${story.name}</b><span class="muted small">$unsafe{inlineCode(story.premise)}</span><span class="grow"></span><button type="button" class="ghost small" data-all>All stories</button></div>
             <div class="walkgrid"><div class="smenu">@for(j in story.steps.indices)<a href="#s${i + 1}-${j + 1}">@if(story.steps[j].stale != null)⚠ @endif${story.steps[j].name}</a>@endfor</div>
             <div>
             @for(j in story.steps.indices)!{val step = story.steps[j]}
             <div class="step" data-step="${j + 1}">
-                <div class="cfile"><span class="mono"><b>${step.repo}</b> · ${step.path}</span><span class="grow"></span><label class="small row"><input type="checkbox" class="showdiff"> Show the diff <kbd>d</kbd></label></div>
+                <div class="cfile"><span class="mono"><b>${step.repo}</b> · ${step.path}</span><span class="grow"></span><label class="small row"><input type="checkbox" class="showdiff"> Show the diff</label></div>
                 <div class="code">@for(line in step.code)<div class="${line.css}"><span class="ln">${line.number}</span><span class="bar"></span><span class="tx">${line.text}</span></div>@endfor</div>
                 <div class="band">
                     <div class="claim">@if(step.stale != null)<span class="stale">STALE</span> @endif$unsafe{inlineCode(step.claim)}</div>
@@ -86,9 +86,9 @@
                         <input name="body" class="grow" placeholder="On this claim…" aria-label="Comment" required>
                         <button class="primary">Add</button>
                     </form>
-                    <div class="bandacts"><button type="button" data-go="-1" disabled="${j == 0}">◀ Back <kbd>p</kbd></button><button type="button" data-go="1" disabled="${j == story.steps.lastIndex}">Next <kbd>n</kbd> ▶</button>
-                        <span class="grow"></span><button type="button" class="ghost" data-details>Why, flow, nudge <kbd>D</kbd></button>
-                        <button type="button" class="ghost" data-comment>Comment on this step <kbd>c</kbd></button></div>
+                    <div class="bandacts"><button type="button" data-go="-1" disabled="${j == 0}">◀ Back</button><button type="button" data-go="1" disabled="${j == story.steps.lastIndex}">Next ▶</button>
+                        <span class="grow"></span><button type="button" class="ghost" data-details>Why, flow, nudge</button>
+                        <button type="button" class="ghost" data-comment>Comment on this step</button></div>
                 </div>
             </div>
             @endfor
