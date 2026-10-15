@@ -615,7 +615,9 @@ class BrowserTest : AntsTest() {
         assertThat(page.locator("#comments")).hasCount(0)
         assertThat(step.locator(".claim")).hasText("It greets.") // still on the step
         assertThat(step.locator(".scomment")).hasCount(0)
-        page.fill("#comment", "can type n, p, d, D and c")
+        val overall = page.locator("#comment + .ed .cm-content") // the overall comment's markdown editor
+        overall.pressSequentially("can type n, p, d, D and c")
+        assertThat(overall).hasText("can type n, p, d, D and c")
         assertThat(step.locator(".claim")).hasText("It greets.") // no key steps the story
         page.click(".step:not([hidden]) [data-go='1']")
         page.click(".walkstory:not([hidden]) [data-all]")
