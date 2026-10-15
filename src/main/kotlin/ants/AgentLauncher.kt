@@ -313,8 +313,8 @@ class AgentLauncher(
      * The `ready-for-human` Tickets sent back, by [key] of their Run and name, while their fix runs or once it didn't
      * land; gone once it lands.
      */
-    // ponytail: kept in memory: a fix running dies with Ants, and after a restart its Ticket is the user's again, to
-    // Send back once more (its blocker left `in-progress` until then).
+    // ponytail: kept in memory: a fix running dies with Ants, and after a restart its blocker stays `in-progress`, so its
+    // Ticket waits for it, until the user Edits it back to `in-review` and can Send back once more.
     private val fixing = ConcurrentHashMap<String, Fixing>()
 
     /** A Ticket sent back: its fix [running], or [failed], as [summary] says. */

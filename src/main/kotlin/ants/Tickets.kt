@@ -192,7 +192,7 @@ class Tickets(private val history: HistoryService, private val streams: Streams,
      * The blockers of [ticket], among [tickets], it waits for before it is the user's: none once it was sent back,
      * though its fix puts them back `in-progress`.
      */
-    private fun waitsFor(ticket: Tracked, tickets: List<Tracked> = tickets(ticket.run)) =
+    private fun waitsForUnlessSent(ticket: Tracked, tickets: List<Tracked> = tickets(ticket.run)) =
         if (launcher.fixing(ticket.run, ticket.name) != null) emptyList() else ants.waitsFor(ticket, tickets)
 
     @GetMapping("/tickets")
@@ -214,7 +214,7 @@ class Tickets(private val history: HistoryService, private val streams: Streams,
         model.addAttribute("article", article(file))
         model.addAttribute("tickets", if (name == "spec") tickets(run) else emptyList())
         model.addAttribute("sent", launcher.fixing(run, name))
-        model.addAttribute("waitsFor", waitsFor(file))
+        model.addAttribute("waitsFor", waitsForUnlessSent(file))
         // Send back goes to the Agents that built what the Ticket checks, so a Ticket blocked by nothing has none.
         val live = history.createHistoricProcessInstanceQuery().processInstanceId(run).unfinished().count() > 0
         model.addAttribute("sendBack", file.forHuman && file.blockedBy.isNotEmpty() && live)
@@ -246,7 +246,7 @@ class Tickets(private val history: HistoryService, private val streams: Streams,
     /** The `ready-for-human` Tickets of live Runs whose `Blocked by` have landed, on the Notification list until marked done. */
     fun waiting(): List<TicketEntry> = history.createHistoricProcessInstanceQuery().rootProcessInstances().unfinished().list().flatMap { run ->
         val tickets = tickets(run.id)
-        tickets.filter { it.forHuman && waitsFor(it, tickets).isEmpty() }.map {
+        tickets.filter { it.forHuman && waitsForUnlessSent(it, tickets).isEmpty() }.map {
             TicketEntry(it, run.processDefinitionName ?: run.processDefinitionKey, names.name(run.id), launcher.fixing(run.id, it.name))
         }
     }
@@ -258,7 +258,7 @@ class Tickets(private val history: HistoryService, private val streams: Streams,
     @PostMapping("/runs/{run}/tickets/{name}/done")
     fun done(@PathVariable run: String, @PathVariable name: String, model: Model): String {
         val file = tracked(run, name)
-        if (waitsFor(file).isNotEmpty()) return page(run, name, model.addAttribute("error", "It waits for its Blocked by to land first."))
+        if (waitsForUnlessSent(file).isNotEmpty()) return page(run, name, model.addAttribute("error", "It waits for its Blocked by to land first."))
         if (launcher.fixing(run, name)?.running == true) return page(run, name, model.addAttribute("error", "Its fix hasn't landed yet; mark it done once it has."))
         file.status(Tracked.DONE)
         return "redirect:${file.href}"
