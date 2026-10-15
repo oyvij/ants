@@ -604,11 +604,17 @@ class BrowserTest : AntsTest() {
         assertThat(step.locator(".showdiff")).isChecked()
         page.click(".step:not([hidden]) [data-comment]")
         page.selectOption(".step:not([hidden]) [name=type]", "ISSUE")
-        page.fill(".step:not([hidden]) [name=body]", "Why?")
+        page.locator(".step:not([hidden]) [name=body]").pressSequentially("Why?")
+        page.keyboard().press("Enter") // a new line, not the comment sent
+        page.keyboard().type("And why now?")
         page.screenshot("story")
-        page.keyboard().press("Enter")
-        assertThat(page.locator("#comments")).containsText("Greeting › Hello repos/api/hello.txt:1-1 (new): Why?")
-        assertThat(step.locator(".scomment")).hasText("ISSUE Why?") // back on the step it is on
+        page.click(".step:not([hidden]) .stepcomment button")
+        assertThat(page.locator("#comments")).containsText("Greeting › Hello repos/api/hello.txt:1-1 (new): Why?\nAnd why now?")
+        assertThat(step.locator(".scomment")).containsText("ISSUE Why?\nAnd why now?") // back on the step it is on
+        step.locator(".scomment button").click()
+        assertThat(page.locator("#comments")).hasCount(0)
+        assertThat(step.locator(".claim")).hasText("It greets.") // still on the step
+        assertThat(step.locator(".scomment")).hasCount(0)
         page.fill("#comment", "can type n, p, d, D and c")
         assertThat(step.locator(".claim")).hasText("It greets.") // no key steps the story
         page.click(".step:not([hidden]) [data-go='1']")
