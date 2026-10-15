@@ -1,8 +1,9 @@
 // Review changes.
 //
 // The Story tab walks one story step at a time, its place in the hash, #s<story>-<step> (1-based), and the list of
-// stories without one: n next, p back, d the diff, D the details (Why, Flow, Nudge), c a comment on the step, Esc back
-// to the stories. A step comment's form posts to a URL with the step's hash, which the redirect back keeps.
+// stories without one; its buttons go back and next, show the diff, the details (Why, Flow, Nudge) and a comment form on
+// the step, and back to the stories. No keys: Ants is clicked, and a key would be lost from the comments typed here.
+// A step comment's form posts to a URL with the step's hash, which the redirect back keeps.
 // Without this script every story, step, its details and its comment form show at once; this script hides them.
 //
 // By repo: a click on a diff line's number picks it for a line comment, filling the comment form's repo, file, side
@@ -23,7 +24,7 @@ if (walk) {
         })
         document.querySelectorAll(".spine .srow").forEach(a => a.classList.toggle("on", a.hash.startsWith(`#s${story}-`)))
         walk.querySelectorAll(".details, .stepcomment").forEach(it => it.hidden = true)
-        walk.querySelectorAll("[data-details]").forEach(it => it.firstChild.textContent = "Why, flow, nudge ")
+        walk.querySelectorAll("[data-details]").forEach(it => it.textContent = "Why, flow, nudge")
     }
     addEventListener("hashchange", show)
     show()
@@ -39,7 +40,7 @@ if (walk) {
     const details = () => {
         const box = step().querySelector(".details")
         box.hidden = !box.hidden
-        step().querySelector("[data-details]").firstChild.textContent = box.hidden ? "Why, flow, nudge " : "Hide details "
+        step().querySelector("[data-details]").textContent = box.hidden ? "Why, flow, nudge" : "Hide details"
     }
     const comment = () => {
         const form = step().querySelector(".stepcomment")
@@ -56,17 +57,6 @@ if (walk) {
         else if (button.hasAttribute("data-all")) location.hash = ""
     })
     walk.addEventListener("change", event => event.target.matches(".showdiff") && diff(event.target.checked))
-    addEventListener("keydown", event => {
-        if (at().length === 0 || event.metaKey || event.ctrlKey || event.altKey) return
-        if (event.target.closest("input, textarea, select")) {
-            if (event.key === "Escape" && event.target.closest(".stepcomment")) event.target.closest(".stepcomment").hidden = true
-            return
-        }
-        const keys = { n: () => go(1), p: () => go(-1), d: () => diff(!walk.classList.contains("diff")), D: details, c: comment, Escape: () => location.hash = "" }
-        if (!keys[event.key]) return
-        event.preventDefault()
-        keys[event.key]()
-    })
 }
 
 const form = document.getElementById("line-comment")

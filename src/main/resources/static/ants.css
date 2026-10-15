@@ -269,8 +269,7 @@ div.tools label span { color: var(--muted); font-size: 12px; display: block; }
 .band .claim { font-size: 15px; font-weight: 600; } .band .stale { background: var(--waitSoft); color: var(--warnText); font-size: 11px; font-weight: 800; padding: 1px 6px; border-radius: 4px; letter-spacing: .05em; }
 .vals { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 10px; font-size: 12.5px; } .vals .cited { color: var(--citeC); } .vals .inv { color: var(--invC); }
 .pred { margin-top: 14px; background: var(--vioSoft); border-radius: 8px; padding: 10px 12px; font-size: 13px; }
-.scomment { margin-top: 12px; font-size: 12.5px; background: var(--waitSoft); padding: 6px 10px; border-radius: 6px; }
-kbd { font: 11px var(--mono); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; color: var(--muted); background: var(--panel); display: inline-block; line-height: 16px; margin-left: 4px; vertical-align: 1px; font-weight: 500; }
+.scomment { align-items: flex-start; margin-top: 12px; font-size: 12.5px; background: var(--waitSoft); padding: 6px 10px; border-radius: 6px; }
 .bandacts { display: flex; align-items: center; gap: 10px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line2); }
 .tabs { display: flex; gap: 4px; margin-bottom: 18px; border-bottom: 1px solid var(--line); }
 .tabs button { border: 0; box-shadow: none; background: none; border-radius: 0; padding: 10px 16px; color: var(--muted); border-bottom: 2px solid transparent; }
@@ -404,7 +403,7 @@ nav#tabs[role=tablist] > [aria-selected=true] { color: var(--text); font-weight:
 .cfile label { gap: 6px; cursor: pointer; }
 #walkMain:not(.diff) .cl.extra { display: none; }
 .band .details { margin-top: 12px; grid-template-columns: 64px 1fr; } .band .details code { white-space: pre-wrap; }
-.stepcomment { margin-top: 14px; }
+.stepcomment { margin-top: 14px; align-items: flex-start; }
 .walk nav b { padding: 8px 10px 2px; } .walk nav a.mono { font-size: 12px; }
 .walk { grid-template-columns: 220px minmax(0, 1fr); }
 .walk .card > .row > b.mono { font-size: 16px; } .walk .commits { margin: 8px 0 4px; }
@@ -418,7 +417,7 @@ table.diff tr.add { color: #86efac; } table.diff tr.del { color: #fca5a5; } tabl
 table.diff tr.picked { background: rgba(129, 140, 248, .25); }
 #line-comment .lc { display: grid; grid-template-columns: 1fr 2fr 1fr 1fr 1fr 1.4fr; gap: 8px 12px; margin-bottom: 10px; }
 #line-comment label { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; font-weight: 600; }
-#comments { margin: 16px 0 0; } #comments form { margin: 0; padding: 3px 0; gap: 6px; }
+#comments { margin: 16px 0 0; } .cbody { white-space: pre-wrap; } #comments form { margin: 0; padding: 3px 0; gap: 6px; }
 .card.push { box-shadow: none; margin: 12px 0; } .card.push > .row > b { font-size: 15px; }
 .card.push .kv { margin-top: 10px; grid-template-columns: 90px 1fr; } .card.push .commit { padding: 2px 0; }
 main form.row:is(.pushacts, .remove) { display: flex; margin: 16px 0 0; } #comments form.row { margin: 0; }

@@ -4,6 +4,7 @@
 @param tickets: List<ants.Tracked>
 @param error: String? = null
 @param sent: ants.AgentLauncher.Fixing? = null
+@param waitsFor: List<String> = emptyList()
 @param sendBack: Boolean = false
 @param comment: String = ""
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
@@ -24,7 +25,9 @@
     <div class="acts"><a class="btn" href="${file.href}/edit">Edit</a></div></div>
 @if(error != null)<p role="alert">${error}</p>@endif
 $unsafe{article}
-@if(file.forHuman)
+@if(file.forHuman && waitsFor.isNotEmpty())
+<p role="status">Waits for ${waitsFor.joinToString()}, then it is yours to do.</p>
+@elseif(file.forHuman)
 <form method="post" action="${file.href}/send-back">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
     @if(sent != null)<p role="status">${sent.summary}</p>@endif

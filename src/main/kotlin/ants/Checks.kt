@@ -115,7 +115,7 @@ val modelerFacts: String = JsonMapper.shared().writeValueAsString(mapOf(
     "itemsAreTickets" to mapOf(
         "property" to ITEMS_ARE_TICKETS,
         "help" to "Each item names a Ticket ($TICKETS/01-hello.md, or 01). An instance waits until its Ticket's Blocked by are " +
-            "${Tracked.IN_REVIEW} or ${Tracked.DONE}, a ${Tracked.READY_FOR_HUMAN} Ticket waits for you, and a landed instance's Ticket goes ${Tracked.IN_REVIEW}.",
+            "${Tracked.IN_REVIEW} or ${Tracked.DONE}, a ${Tracked.READY_FOR_HUMAN} Ticket waits for you once its Blocked by have, and a landed instance's Ticket goes ${Tracked.IN_REVIEW}.",
     ),
     "profile" to mapOf(
         "property" to PROFILE,

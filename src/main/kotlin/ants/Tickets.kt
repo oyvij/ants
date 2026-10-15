@@ -142,9 +142,12 @@ fun ticket(workspace: Path, run: String, item: Any?): Tracked? {
  */
 fun held(ticket: Tracked, tickets: List<Tracked>): String? {
     if (ticket.forHuman) return "Ready for human"
-    val open = ticket.blockedBy.filter { n -> tickets.any { it.number == n.toInt() && !it.landed } }
+    val open = waitsFor(ticket, tickets)
     return if (open.isEmpty()) null else "Blocked by ${open.joinToString()}"
 }
+
+/** The numbers in [ticket]'s `Blocked by` of those among [tickets] not `in-review` or `done` yet, as written: `01, 03`. */
+fun waitsFor(ticket: Tracked, tickets: List<Tracked>) = ticket.blockedBy.filter { n -> tickets.any { it.number == n.toInt() && !it.landed } }
 
 /** The Spec in the Run workspace [workspace] of the Run [run], if it has one. */
 fun spec(workspace: Path, run: String) = workspace.resolve("tickets/spec.md").takeIf { it.exists() }?.let { Tracked(run, "spec", it) }
@@ -184,6 +187,13 @@ class Tickets(private val history: HistoryService, private val streams: Streams,
 
     private fun tickets(run: String) = ants.tickets(names.runWorkspace(run), run)
 
+    /**
+     * The blockers of [ticket], among [tickets], it waits for before it is the user's: none once it was sent back,
+     * though its fix puts them back `in-progress`.
+     */
+    private fun waitsForUnlessSent(ticket: Tracked, tickets: List<Tracked> = tickets(ticket.run)) =
+        if (launcher.fixing(ticket.run, ticket.name) != null) emptyList() else ants.waitsFor(ticket, tickets)
+
     @GetMapping("/tickets")
     fun list(model: Model): String {
         val specs = history.createHistoricProcessInstanceQuery().rootProcessInstances().list().mapNotNull { run ->
@@ -203,6 +213,7 @@ class Tickets(private val history: HistoryService, private val streams: Streams,
         model.addAttribute("article", article(file))
         model.addAttribute("tickets", if (name == "spec") tickets(run) else emptyList())
         model.addAttribute("sent", launcher.fixing(run, name))
+        model.addAttribute("waitsFor", waitsForUnlessSent(file))
         // Send back goes to the Agents that built what the Ticket checks, so a Ticket blocked by nothing has none.
         val live = history.createHistoricProcessInstanceQuery().processInstanceId(run).unfinished().count() > 0
         model.addAttribute("sendBack", file.forHuman && file.blockedBy.isNotEmpty() && live)
@@ -231,17 +242,22 @@ class Tickets(private val history: HistoryService, private val streams: Streams,
         return "redirect:${file.href}"
     }
 
-    /** The `ready-for-human` Tickets of live Runs, on the Notification list until marked done. */
+    /** The `ready-for-human` Tickets of live Runs whose `Blocked by` have landed, on the Notification list until marked done. */
     fun waiting(): List<TicketEntry> = history.createHistoricProcessInstanceQuery().rootProcessInstances().unfinished().list().flatMap { run ->
-        tickets(run.id).filter { it.forHuman }.map {
+        val tickets = tickets(run.id)
+        tickets.filter { it.forHuman && waitsForUnlessSent(it, tickets).isEmpty() }.map {
             TicketEntry(it, run.processDefinitionName ?: run.processDefinitionKey, names.name(run.id), launcher.fixing(run.id, it.name))
         }
     }
 
-    /** **Mark done**, on a Ticket that waits on the user, once no fix it was sent back for is still running. */
+    /**
+     * **Mark done**, on a Ticket that waits on the user, once its `Blocked by` have landed and no fix it was sent back
+     * for is still running.
+     */
     @PostMapping("/runs/{run}/tickets/{name}/done")
     fun done(@PathVariable run: String, @PathVariable name: String, model: Model): String {
         val file = tracked(run, name)
+        if (waitsForUnlessSent(file).isNotEmpty()) return page(run, name, model.addAttribute("error", "It waits for its Blocked by to land first."))
         if (launcher.fixing(run, name)?.running == true) return page(run, name, model.addAttribute("error", "Its fix hasn't landed yet; mark it done once it has."))
         file.status(Tracked.DONE)
         return "redirect:${file.href}"

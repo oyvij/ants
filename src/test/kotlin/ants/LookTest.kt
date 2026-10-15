@@ -35,9 +35,9 @@ class LookTest : AntsTest() {
 
     /**
      * A page and its prototype: a hash route in web-ui.html, or another file of the prototype's, each shot after
-     * [script] runs in the prototype and the app is given [keys], space-separated, for a state no URL reaches.
+     * [script] runs in the prototype and [appScript] in the app, for a state no URL reaches.
      */
-    private class Shot(val name: String, val prototype: String, val app: String, val script: String? = null, val keys: String? = null)
+    private class Shot(val name: String, val prototype: String, val app: String, val script: String? = null, val appScript: String? = null)
 
     private fun result(json: String) = """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":$json}"""
 
@@ -60,7 +60,7 @@ class LookTest : AntsTest() {
                 Shot("approve", "$prototype#/runs/search-reindex/tasks/approve", entry(app.getValue("approve"))),
                 Shot("review", "$prototype#/runs/billing-retry-impl/tasks/review", entry(app.getValue("review"))),
                 // A story walked to its third step, with the diff and the details shown.
-                Shot("review-step", "$prototype#/runs/billing-retry-impl/tasks/review", entry(app.getValue("review")) + "#s1-3", "walk(0, 2); W.diff = true; W.details = true; renderWalk()", "d D"),
+                Shot("review-step", "$prototype#/runs/billing-retry-impl/tasks/review", entry(app.getValue("review")) + "#s1-3", "walk(0, 2); W.diff = true; W.details = true; renderWalk()", "document.querySelector('.step:not([hidden]) .showdiff').click(); document.querySelector('.step:not([hidden]) [data-details]').click()"),
                 Shot("review-by-repo", "$prototype#/runs/billing-retry-impl/tasks/review", entry(app.getValue("review")) + "?tab=repo", "reviewTab('repo')"),
                 // The prototype confirms a Push in a modal over Review changes; Ants waits on Push's own page.
                 Shot("push", "$prototype#/runs/billing-retry-impl/tasks/review", entry(app.getValue("push")), "confirmPush('billing-retry-impl', 'review')"),
@@ -90,7 +90,7 @@ class LookTest : AntsTest() {
                     page.onPageError { println("LookTest: ${page.url()}: $it") }
                     shoot(page, "http://127.0.0.1:$port/login", "login/app-$theme")
                     logIn(page)
-                    for (pair in pairs) shoot(page, "http://127.0.0.1:$port${pair.app}", "${pair.name}/app-$theme") { pair.keys?.split(" ")?.forEach { page.keyboard().press(it) } }
+                    for (pair in pairs) shoot(page, "http://127.0.0.1:$port${pair.app}", "${pair.name}/app-$theme") { pair.appScript?.let { page.evaluate(it) } }
                     // The Run page's drawer, open on its running Agent Task.
                     shoot(page, "http://127.0.0.1:$port/runs/${app.getValue("running")}", "drawer/app-$theme") {
                         locator("#diagram .djs-element[data-element-id='draft']").click()

@@ -180,9 +180,9 @@ class StorySetTest : AntsTest() {
             "$entry/comments",
             mapOf("story" to "The first word is shouted", "step" to "2", "repo" to "api", "file" to "repos/api/long.txt", "side" to "new", "from" to "9", "to" to "10", "type" to "NOTE", "body" to "Fine.", "tab" to "story"),
         )
-        assertContains(commented.body, """<div class="scomment"><b>NOTE</b> Fine.</div>""") // under its step
+        assertContains(commented.body, """<span class="grow"><b>NOTE</b> <span class="cbody">Fine.</span></span><button class="ghost small" name="remove" value="0">Remove</button>""") // under its step
         assertContains(commented.body, """<span class="tag t-NOTE">Note</span>""") // and listed above the overall comment
-        assertContains(commented.body, """<a href="#s1-2">The first word is shouted › The rest</a> <span class="mono">repos/api/long.txt:9-10 (new)</span>: Fine.""")
+        assertContains(commented.body, """<a href="#s1-2">The first word is shouted › The rest</a> <span class="mono">repos/api/long.txt:9-10 (new)</span>: <span class="cbody">Fine.</span>""")
 
         browser.post(entry, mapOf("action" to "approve", "comment" to ""))
         eventually { assertContains(browser.get("/runs/$run").body, """id="state">Completed<""") }
