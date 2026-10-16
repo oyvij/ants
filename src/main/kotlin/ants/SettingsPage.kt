@@ -76,11 +76,15 @@ class SettingsPage(
         return "settings"
     }
 
-    private fun login() = ClaudeLogin(launcher.login(), home.resolve("claude"), launcher.usage())
+    // Docker sets HOSTNAME to the container's ID, which `docker exec` takes.
+    private fun login() = ClaudeLogin(launcher.login(), home.resolve("claude"), launcher.usage(), if (updates.docker) System.getenv("HOSTNAME") ?: "ants" else null)
 }
 
-/** Ants' own Claude login as `claude auth status` reports it, the command that logs it in, and the latest usage. */
-class ClaudeLogin(status: Map<*, *>, val folder: Path, usage: Map<*, *>) {
+/**
+ * Ants' own Claude login as `claude auth status` reports it, the command that logs it in, and the latest usage.
+ * In Docker, [container] names Ants' container, which the command runs in: the folder is on its volume, not the host.
+ */
+class ClaudeLogin(status: Map<*, *>, val folder: Path, usage: Map<*, *>, container: String? = null) {
     val loggedIn = status["loggedIn"] == true
 
     /** How it's logged in, such as `claude.ai, max`. */
@@ -91,6 +95,7 @@ class ClaudeLogin(status: Map<*, *>, val folder: Path, usage: Map<*, *>) {
 
     /** Run in a terminal; Ants never handles the credentials. */
     val command = "CLAUDE_CONFIG_DIR=${shellQuoted(folder.toString())} claude auth login"
+        .let { if (container == null) it else "docker exec -it ${shellQuoted(container)} env $it" }
 
     /** Each window claude last reported, such as the 5-hour one at 4% that resets Sun 11 Oct 19:00. */
     val usage = listOf("five_hour" to "5-hour", "seven_day" to "7-day").mapNotNull { (key, name) ->
