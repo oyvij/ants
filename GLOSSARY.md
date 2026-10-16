@@ -13,6 +13,12 @@ A BPMN diagram defining how agents and the user get one kind of job done, from a
 report.
 _Avoid_: workflow (Varde's word for a folder of Skills run in order), pipeline, flow
 
+**Path**:
+One route through a Process, picked from a dropdown on its start form: Build and ship's Human in the loop,
+Answered as me, Take the recommendations, Hands-off until review and Feeling lucky. A Path differs in who answers
+the Rounds and where the Run first waits on the user.
+_Avoid_: mode, variant, flavour
+
 **Task**:
 One step of a Process, reading the inputs it names and ending in a result the next steps read.
 _Avoid_: job, step, activity
@@ -58,7 +64,7 @@ _Avoid_: cron, timer, trigger
 **Run**:
 One execution of a Process, including any Processes it calls, from its starting input to its end;
 many Runs of one Process may be live at once. Every Run has a name, given on the start form or else its
-Process and start time ("Ship small, 12 Oct 21:40"), which the user can change; Ants shows it wherever the
+Process and start time ("Build and ship, 12 Oct 21:40"), which the user can change; Ants shows it wherever the
 Run shows, and its id, the engine's UUID, only small on the Run page.
 _Avoid_: instance, job, execution
 

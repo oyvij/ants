@@ -18,7 +18,7 @@ const val NAME = "ants.name"
 /** The Run variable holding its Run workspace's folder name, given once at start ([folder]). */
 const val FOLDER = "ants.folder"
 
-/** The name of a Run left unnamed: its [process] and start time, as in `Ship small, 12 Oct 21:40`. */
+/** The name of a Run left unnamed: its [process] and start time, as in `Build and ship, 12 Oct 21:40`. */
 fun Clock.defaultName(process: String, start: Instant = instant()): String =
     "$process, " + DateTimeFormatter.ofPattern("d MMM HH:mm", Locale.ENGLISH).format(start.atZone(zone))
 

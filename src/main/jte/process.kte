@@ -75,7 +75,13 @@
     <input name="${field.name}" id="field-${field.name}" value="${field.storedRepos.filter { it !in repos }.joinToString(" ")}" placeholder="git URLs, or owner/name for a new repo">
     @else
     @if(field.help != null)<div class="help">${field.help}</div>@endif
-    @if(field.type == FieldType.MARKDOWN)
+    @if(field.choices.isNotEmpty())
+    <select name="${field.name}" id="field-${field.name}">
+    @for((id, name) in field.choices)
+        <option value="${id}" selected="${id == field.stored}">${name}</option>
+    @endfor
+    </select>
+    @elseif(field.type == FieldType.MARKDOWN)
     <textarea name="${field.name}" id="field-${field.name}" required="${field.required}" data-markdown data-tall>${field.stored}</textarea>
     @else
     <input name="${field.name}" id="field-${field.name}" value="${field.stored ?: ""}" required="${field.required}">

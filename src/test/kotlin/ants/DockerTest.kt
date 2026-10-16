@@ -50,7 +50,7 @@ class DockerTest {
                 eventually(180) { assertEquals(200, runCatching { browser.get("/login").status }.getOrNull()) }
                 assertEquals("/", browser.login("s3cret").path)
                 // The server, and so the login page, is up before Ants deploys the shipped Processes (on ApplicationReady).
-                eventually(60) { assertContains(browser.get("/processes").body, "Ship small") }
+                eventually(60) { assertContains(browser.get("/processes").body, "Build and ship") }
 
                 // The engine is in Postgres, which now holds tables, and everything else is on the volume.
                 val tables = docker("exec", "$id-db", "psql", "--username", "postgres", "--dbname", "ants", "--tuples-only", "--command", "select count(*) from information_schema.tables where table_schema = 'public'")

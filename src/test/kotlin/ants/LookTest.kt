@@ -65,8 +65,8 @@ class LookTest : AntsTest() {
                 // The prototype confirms a Push in a modal over Review changes; Ants waits on Push's own page.
                 Shot("push", "$prototype#/runs/billing-retry-impl/tasks/review", entry(app.getValue("push")), "confirmPush('billing-retry-impl', 'review')"),
                 Shot("processes", "$prototype#/processes", "/processes"),
-                Shot("process", "$prototype#/processes/spec-you", "/processes/ship_with_me"),
-                Shot("modeler", "$prototype#/processes/spec-you/edit", "/processes/ship_with_me/edit"),
+                Shot("process", "$prototype#/processes/spec-you", "/processes/build_and_ship"),
+                Shot("modeler", "$prototype#/processes/spec-you/edit", "/processes/build_and_ship/edit"),
                 Shot("agents", "$prototype#/agents", "/agents"),
                 Shot("agent", "$prototype#/agents/griller", "/agents/griller"), // the prototype has no planner
                 Shot("skills", "$prototype#/skills", "/skills"),
