@@ -6,54 +6,52 @@ metadata:
   ants-uses: tdd code-review
 ---
 
-<!-- Adapted from Matt Pocock's implement Skill (https://github.com/mattpocock/skills).
+<!-- Matt Pocock's implement Skill (https://github.com/mattpocock/skills, v1.3.1), word for word below the line.
 Copyright (c) 2026 Matt Pocock. MIT License: see LICENSE in the tdd Skill's folder. -->
 
-# Implement
+## In Ants
 
-Build one piece of work in the clones, test-first, review it, and leave it committed.
+Below the line is Matt Pocock's implement Skill, word for word. Follow it. Ants runs it without a
+chat, so where the two differ, this section wins.
 
-The line that handed you this Skill names your workspace and the tdd and code-review Skills. The
-clones are in `repos/<name>/` in your workspace, each on the branch you commit to. Your inputs are
-one of two pairs; paths are relative to the Run workspace:
+The work is one of two pairs of inputs; paths are relative to the Run workspace:
 
 - `ticket` and `spec`: a Ticket of the Run's Spec, `tickets/issues/NN-<slug>.md`, and the Spec,
   `tickets/spec.md`. Build the Ticket, and only it; the Spec is its context.
-- `prompt` and `proposal`: what the user asked, and the proposal for it,
-  `proposal/proposal.md`. Build the proposal.
+- `prompt` and `proposal`: what the user asked, and the proposal for it, `proposal/proposal.md`.
+  Build the proposal.
 
-## Rules
+There is no Skill tool. To call the Skill tool with a name, read and follow that Skill's
+`SKILL.md`: the line that handed you this Skill gives each one's path.
 
-- Commit on the branch each clone is on. Never push, and never switch, rebase or reset a branch:
-  Ants lands your commits and pushes them.
-- Follow each clone's own guidance: `CLAUDE.md`, `AGENTS.md`, `CONTRIBUTING.md`, coding standards
-  and ADRs, where they exist.
-- Change only what the work needs.
-- Work only in the clones. With no clone in `repos/`, never make a repo (`git init`) yourself:
-  Ants can't land it. Answer `stuck`, saying the Run has no repo and that a new one is named in
-  the start form's Repos, as `owner/name`.
+- **The code** is in the clones, `repos/<name>/` in your workspace, each on the branch you commit
+  to. Commit there; never push, and never switch, rebase or reset a branch: Ants lands your
+  commits and pushes them. Follow each clone's own `CLAUDE.md`, `AGENTS.md` and
+  `CONTRIBUTING.md`, where they exist. With no clone in `repos/`, never make a repo
+  (`git init`): Ants can't land it. Answer `stuck`, saying the Run has no repo and that a new one
+  is named in the start form's Repos, as `owner/name`.
+- **Before you change anything**, note each clone's `HEAD` commit: it is the fixed point the
+  review starts from. With a Ticket, set its `Status:` line to `in-progress`. If it can't be built
+  as written, set it to `needs-info`, add a comment under `## Comments` saying why, and answer
+  `stuck` with the question.
+- **The pre-agreed seams** are those the Ticket's acceptance criteria and the Spec's Testing
+  Decisions name, or the proposal's Tests.
+- **The suites:** run each touched repo's whole suite once at the end.
+- **The review** runs from the fixed point, against the Ticket and the Spec, or the proposal. Fix
+  each finding you agree with as a new commit, never amending the commits under review, and run
+  the suites again.
 
-## 1. Start
+Answer `done` with `review`: the review's two reports, under `### Standards` and `### Spec`, saying
+what each found, what you fixed, and anything you left and why.
 
-Note each clone's `HEAD` commit before you change anything: it is the fixed point your review
-starts from.
+---
 
-With a Ticket, set its `Status:` line to `in-progress`. If the Ticket can't be built as written,
-set it to `needs-info`, add a comment under `## Comments` saying why, and answer `stuck` with the
-question.
+Implement the work described by the user in the spec or tickets.
 
-## 2. Build
+Call the Skill tool with "tdd" where possible, at pre-agreed seams.
 
-Build by following the tdd Skill, with the Ticket's acceptance criteria, or the proposal's Tests,
-as the behaviours to test. Run single test files often, and each touched repo's whole suite once
-at the end. Commit in small steps, in the repo's commit-message style.
+Run typechecking regularly, single test files regularly, and the full test suite once at the end.
 
-## 3. Review
+Once done, call the Skill tool with "code-review" to review the work.
 
-Review your commits by following the code-review Skill, from the fixed point, against the Ticket
-and the Spec, or the proposal. Fix what it finds as new commits, and run the suites again.
-
-## 4. Answer
-
-Answer `done` with `review`: a short markdown summary of the review, under `### Standards` and
-`### Spec`, saying what each found and what you fixed, and anything you left and why.
+Commit your work to the current branch.

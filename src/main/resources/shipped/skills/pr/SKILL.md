@@ -5,14 +5,16 @@ metadata:
   ants-inputs: push spec proposal review fixes
 ---
 
-<!-- The body's shape is adapted from Matt Pocock's pr Skill (https://github.com/mattpocock/skills).
-Copyright (c) 2026 Matt Pocock. MIT License: see LICENSE in the tdd Skill's folder. -->
+<!-- Matt Pocock's pr Skill (https://github.com/mattpocock/skills, v1.3.1), word for word below the line, with its
+CREDITS.md beside it. Copyright (c) 2026 Matt Pocock. MIT License: see LICENSE in the tdd Skill's folder. -->
 
-# Open Pull Requests
+## In Ants
 
-Open one pull request per pushed repo, so the user's reviewers get the context of the Run.
+Below the line is Matt Pocock's pr Skill, word for word: it writes the body. This section opens
+the pull requests. Ants runs it without a chat, so where the two differ, this section wins.
 
-Your inputs; paths are relative to the Run workspace:
+Open one pull request per pushed repo, so the user's reviewers get the context of the Run. Your
+inputs; paths are relative to the Run workspace:
 
 - `push`: the Push Result, one entry per repo:
   `{repo, remote, branch, base, isNew, commits: [{sha, subject}], pushed, error, compareUrl}`.
@@ -29,47 +31,180 @@ then a plain `git log …` (the shell stays in the clone); `cd ../..` takes you 
 workspace root. Anything else is refused: `git -C …`, `git --git-dir=…`, `git -c …`, `--output`,
 and `cd … && git …` or any other chained command.
 
-## 1. Pick the repos
+1. **Pick the repos.** Only entries with `pushed: true`. A repo whose `remote` isn't on
+   `github.com` gets no pull request from you: open the others first, then answer `stuck`, naming
+   each such repo with its `compareUrl` (or its remote and branches when there is none), so the
+   user can open it by hand and Continue. When Continued, answer `done` with the pull requests you
+   opened. If `gh pr view <branch> --repo <owner>/<name>` already shows an open pull request for
+   the branch, keep it: don't open a second one.
+2. **Write the body** as below, from the spec or proposal, the review and the fixes, and
+   `git log` and `git diff` from `<base>`, inside the clone. `GLOSSARY.md` is the clone's. The
+   review and the fixes are evidence, and tell you the Merge Danger. You can't take screenshots.
+   The title is one short line saying what the change does.
+3. **Open it:** `gh pr create --repo <owner>/<name> --head <branch> --base <base> --title "…"
+   --body "…"`, with `<owner>/<name>` read from the remote. If `gh` isn't logged in or is refused,
+   answer `stuck` with its message.
 
-Only entries with `pushed: true`. A repo whose `remote` isn't on `github.com` gets no pull
-request from you: open the others first, then answer `stuck`, naming each such repo with its
-`compareUrl` (or its remote and branches when there is none), so the user can open it by hand and
-Continue. When Continued, answer `done` with the pull requests you opened.
+Answer `done` with `pullRequests: [{repo, url}]`.
 
-If `gh pr view <branch> --repo <owner>/<name>` already shows an open pull request for the branch,
-keep it: don't open a second one.
+---
 
-## 2. Write the body
-
-Read the spec or proposal, the review and the fixes, and `git log` and `git diff` from `<base>`, inside the clone.
-Write the body briefly, in the repo's own terms:
+Use this template for writing the PR body:
 
 ```markdown
 ## Summary
 
-<what changed and why, in a few lines, or the smallest sketch that makes it clear>
+<diagram, diff-sketch, or tree>
 
 ## Evidence
 
-<the tests that show it works>
-
-## Review
-
-<what the review found and what was fixed, after the user's review too; what was left>
+- **Before:** <screenshot/output/failing test run>
+  **After:** <screenshot/output/passing test run>
 
 ## Merge Danger
 
 **Door:** <one-way or two-way>
 
-**Blast Radius:** <one word>
+<optional: description>
+
+**Blast Radius:** <one-word description>
+
+<optional: potential ramifications of merge>
 ```
 
-The title is one short line saying what the change does.
+## Sections
 
-## 3. Open it
+Skip all preambles and keep prose brief. Use the user's domain language from `GLOSSARY.md`.
 
-`gh pr create --repo <owner>/<name> --head <branch> --base <base> --title "…" --body "…"`, with
-`<owner>/<name>` read from the remote. If `gh` isn't logged in or is refused, answer `stuck` with
-its message.
+### Summary
 
-Answer `done` with `pullRequests: [{repo, url}]`.
+Pick the smallest view that makes the key point clear.
+
+- Show logic or an algorithm as pseudocode:
+
+```text
+on(save)
+  if content is unchanged
+    return cached result
+  write new content
+  return fresh result
+```
+
+- Show runtime control flow as a call tree:
+
+```text
+submitForm
+  createSession
+    persistPrompt
+    launchAgent
+  navigateToSession
+```
+
+- Show UI structure as a component tree, including state and module boundaries that matter:
+
+```text
+<SessionPage> (apps/example/src/routes/session.tsx)
+  useSessionEvents()
+  <SessionToolbar>
+    <RunSkillButton> (packages/ui)
+```
+
+- Show file responsibility or a broad refactor as a shallow file tree:
+
+```text
+src/
+├── commands/       # parses user actions
+├── sessions/       # owns session state
+└── transport/      # sends API requests
+```
+
+- Show component interaction, control flow, or data flow with Mermaid:
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant UI
+    participant Daemon
+    User->>UI: choose command
+    UI->>Daemon: send expanded prompt
+    Daemon-->>UI: stream result
+```
+
+- Use `diff` when the point is what changes and the surrounding shape already exists. Match the diff shape to the topic.
+
+For a component change:
+
+```diff
+ <SessionPage>
+   useSessionEvents()
+   <SessionToolbar>
++    <RunSkillButton />
+   <SessionTimeline>
++    <SkillResultCard />
+```
+
+For a file-layout change:
+
+```diff
+ src/
+ ├── commands/
++│   └── show-me.ts       # expands the slash command
+ ├── sessions/
+-└── transport.ts
++└── transport/
++    ├── client.ts
++    └── stream.ts
+```
+
+For a call-tree or call-stack change:
+
+```diff
+ submitForm
+   createSession
+     persistPrompt
++    expandSkillMention
+     launchAgent
+-  navigateToSession
++  navigateToSession
++    subscribeToEvents
+```
+
+For a state or control-flow change:
+
+```diff
+ on(save)
+-  write content
++  if content is unchanged
++    return cached result
++  write new content
++  invalidate cache
+```
+
+- Show the whole block when most of it is new, when omitted context would hide ownership or order, or when the user needs a copyable target shape:
+
+```ts
+function expandSkill(command: string): string {
+  const skillName = command.slice(1);
+  return `use the ${skillName} skill`;
+}
+```
+
+#### Guidance
+
+Place each visual next to the short text it supports. Keep only the calls, files, props, states, and boundaries needed to answer the user's current question or the options to resolve the current discussion point.
+
+You may use one of these, you may use several, it is unlikely you will use all of them. Use your judgement and don't overwhelm the user.
+
+### Evidence
+
+Concrete evidence that the change works. Show a before and after.
+
+Screenshots are S-tier - when the environment is set up for it and the change is visual.
+
+Execution-based evidence is A-tier. Test results, console output. Show the exact test that now fails and passes, using pseudocode.
+
+### Merge Danger
+
+Describe whether it's a one-way or two-way door. You can walk back through two-way doors, but not one-way doors. A PR that is cheap to roll back is lower risk. Changes that involve destructive actions or hard-to-reverse decisions are one-way doors.
+
+The blast radius is the potential impact or scope of the changes introduced by this PR. Consider all possibilities. Examples are layout shift, breakages for consumers, mobile responsiveness, etc.
