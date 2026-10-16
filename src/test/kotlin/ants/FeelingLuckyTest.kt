@@ -7,8 +7,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 
-/** The shipped Ship small, run end to end against fake Agents, a bare remote and a temporary Vault. */
-class ShipSmallTest : AntsTest() {
+/** The shipped Build and ship's Feeling lucky, run end to end against fake Agents, a bare remote and a temporary Vault. */
+class FeelingLuckyTest : AntsTest() {
     private val browser by lazy { browser().also { it.login() } }
     private val claude = FakeClaude()
     private val api = repo("api")
@@ -25,20 +25,20 @@ class ShipSmallTest : AntsTest() {
         return path
     }
 
-    /** Ship small's Process page, set up with the fake claude, a Vault and a Source map holding [api]. */
+    /** Build and ship's Process page, set up with the fake claude, a Vault and a Source map holding [api]. */
     private fun page(): String {
         settings(claude, sourceMapLines(api))
-        assertFalse("role=\"alert\"" in browser.import("shipped/processes/ship-small.bpmn").body)
-        return browser.get("/processes/ship_small").body
+        assertFalse("role=\"alert\"" in browser.import("shipped/processes/build-and-ship.bpmn").body)
+        return browser.get("/processes/build_and_ship").body
     }
 
     private fun start(prompt: String): String {
         page()
-        return browser.post("/processes/ship_small/runs", mapOf("prompt" to prompt, "branch" to "")).path.removePrefix("/runs/")
+        return browser.post("/processes/build_and_ship/runs", mapOf("prompt" to prompt, "path" to "lucky", "branch" to "")).path.removePrefix("/runs/")
     }
 
-    /** Plays a whole Ship small: the scout picks api and names the branch, the implementer commits, the user pushes. */
-    private fun shipSmall(): String {
+    /** Plays a whole Build and ship's Feeling lucky: the scout picks api and names the branch, the implementer commits, the user pushes. */
+    private fun feelingLucky(): String {
         claude.session("scout", "write scout/brief.md Add a hello endpoint to api.\\n", result("""{"repos":["api"],"branch":"add-hello","brief":"scout/brief.md"}"""))
         claude.session("propose-solution", "write proposal/proposal.md # Hello\\n\\nOne endpoint.\\n", result("""{"proposal":"proposal/proposal.md"}"""))
         claude.session("implement", "sh git -C repos/api -c user.name=Ants -c user.email=ants@example.com -c commit.gpgsign=false commit -q --allow-empty -m 'Add hello'", result("""{"review":"No findings."}"""))
@@ -56,8 +56,8 @@ class ShipSmallTest : AntsTest() {
     }
 
     @Test
-    fun `Ship small ends with one pushed branch on the bare remote, a pull request Result and a Report`() {
-        val run = shipSmall()
+    fun `Build and ship's Feeling lucky ends with one pushed branch on the bare remote, a pull request Result and a Report`() {
+        val run = feelingLucky()
 
         assertEquals("Add hello", git(api.remote, "log", "-1", "--format=%s", "add-hello"))
         assertEquals(setOf("refs/heads/main", "refs/heads/add-hello"), git(api.remote, "for-each-ref", "--format=%(refname)").lines().toSet())
@@ -76,7 +76,7 @@ class ShipSmallTest : AntsTest() {
 
     @Test
     fun `the shipped Agents get the tool allow-lists the spec gives them`() {
-        shipSmall()
+        feelingLucky()
         fun tools(skill: String) = claude.launches(skill).first().let { it.flag("--tools") to it.flag("--allowedTools")?.removeSuffix(",mcp__ants__run") } // every claude Task has the run tool
 
         // claude checks a Write against Edit rules and ignores a Write(path) rule, so the scout's limit goes out as both
@@ -119,7 +119,7 @@ class ShipSmallTest : AntsTest() {
     }
 
     @Test
-    fun `the pre-Run check passes for Ship small on a configured setup`() {
+    fun `the pre-Run check passes for Build and ship on a configured setup`() {
         val status = page().substringAfter("""<section id="pre-run">""").substringBefore("</section>")
         assertContains(status, "Ready")
         assertFalse("Can't start" in status)

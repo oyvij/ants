@@ -7,8 +7,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 
-/** The shipped Ship with me, run end to end against fake Agents, bare remotes and a temporary Vault. */
-class ShipWithMeTest : AntsTest() {
+/** The shipped Build and ship's Human in the loop, run end to end against fake Agents, bare remotes and a temporary Vault. */
+class HumanInTheLoopTest : AntsTest() {
     private val browser by lazy { browser().also { it.login() } }
     private val claude = FakeClaude()
     private val api = repo("api")
@@ -46,11 +46,11 @@ class ShipWithMeTest : AntsTest() {
             """"values":[{"name":"text","value":"$text","provenance":"literal","cite":{"file":"repos/api/01.txt","line":1}}]}]}]}"""
 
     /**
-     * Plays a whole Ship with me: the scout picks api, the first Round names web too, two Rounds, the Spec approved,
+     * Plays a whole Build and ship's Human in the loop: the scout picks api, the first Round names web too, two Rounds, the Spec approved,
      * three Tickets (03 blocked by 01) implemented, a Review changes Send back and fix, then Approve, Push and the pull
      * request.
      */
-    private fun shipWithMe(): String {
+    private fun humanInTheLoop(): String {
         claude.session("scout", "write scout/brief.md Hello.\\n", result("""{"repos":["api"],"branch":"add-hello","brief":"scout/brief.md"}"""))
         claude.session("grill", 1, result("""{"questions":[${question("who")},${question("scope")}],"repos":["web"]}"""))
         claude.session("grill", 2, result("""{"questions":[${question("format")}],"repos":[]}"""))
@@ -77,9 +77,9 @@ class ShipWithMeTest : AntsTest() {
         claude.session("update-knowledge", result("""{"written":true}"""))
 
         settings(claude, sourceMapLines(api, web))
-        assertFalse("role=\"alert\"" in browser.import("shipped/processes/ship-with-me.bpmn").body)
-        browser.get("/processes/ship_with_me")
-        val run = browser.post("/processes/ship_with_me/runs", mapOf("prompt" to "Say hello in api", "branch" to "")).path.removePrefix("/runs/")
+        assertFalse("role=\"alert\"" in browser.import("shipped/processes/build-and-ship.bpmn").body)
+        browser.get("/processes/build_and_ship")
+        val run = browser.post("/processes/build_and_ship/runs", mapOf("prompt" to "Say hello in api", "path" to "human", "branch" to "")).path.removePrefix("/runs/")
 
         browser.post("${entry(run, "<i>?</i>[questions]")}/answers", mapOf("answer.who" to "Recommend who.", "answer.scope" to "Only admins."))
         eventually { assertEquals(2, claude.launches("grill").size) }
@@ -95,8 +95,8 @@ class ShipWithMeTest : AntsTest() {
     }
 
     @Test
-    fun `Ship with me runs end to end, with two Rounds, an approved Spec, three Tickets, a Send back and fix, then Push and the pull request`() {
-        val run = shipWithMe()
+    fun `Build and ship's Human in the loop runs end to end, with two Rounds, an approved Spec, three Tickets, a Send back and fix, then Push and the pull request`() {
+        val run = humanInTheLoop()
 
         // Review changes Approve set every Ticket done.
         for (ticket in listOf("01-one", "02-two", "03-three")) {
@@ -129,7 +129,7 @@ class ShipWithMeTest : AntsTest() {
 
     @Test
     fun `the griller, planner and storyteller get the tool allow-lists the spec gives them, and the implementer fixes the review`() {
-        shipWithMe()
+        humanInTheLoop()
         fun tools(skill: String) = claude.launches(skill).first().let { it.flag("--tools") to it.flag("--allowedTools")?.removeSuffix(",mcp__ants__run") } // every claude Task has the run tool
 
         assertEquals("Read,Grep,Glob" to "Read,Grep,Glob", tools("grill"))
@@ -158,10 +158,10 @@ class ShipWithMeTest : AntsTest() {
     }
 
     @Test
-    fun `the pre-Run check passes for Ship with me on a configured setup`() {
+    fun `the pre-Run check passes for Build and ship on a configured setup`() {
         settings(claude, sourceMapLines(api))
-        browser.import("shipped/processes/ship-with-me.bpmn")
-        val status = browser.get("/processes/ship_with_me").body.substringAfter("""<section id="pre-run">""").substringBefore("</section>")
+        browser.import("shipped/processes/build-and-ship.bpmn")
+        val status = browser.get("/processes/build_and_ship").body.substringAfter("""<section id="pre-run">""").substringBefore("</section>")
         assertContains(status, "Ready")
         assertFalse("Can't start" in status)
     }

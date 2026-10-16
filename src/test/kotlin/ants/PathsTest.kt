@@ -7,10 +7,10 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 
 /**
- * The shipped Ship by proxy, Ship as proposed and Ship overnight, which differ from Ship with me only in who answers the
+ * Build and ship's Answered as me, Take the recommendations and Hands-off until review, which differ from Human in the loop in who answers the
  * grilling Rounds, run end to end against fake Agents, bare remotes and a temporary Vault.
  */
-class ShipVariantsTest : AntsTest() {
+class PathsTest : AntsTest() {
     private val browser by lazy { browser().also { it.login() } }
     private val claude = FakeClaude()
     private val api = repo("api")
@@ -70,12 +70,12 @@ class ShipVariantsTest : AntsTest() {
         claude.session("update-knowledge", 2, result("""{"written":true}"""))
     }
 
-    private fun start(file: String, key: String): String {
+    private fun start(path: String): String {
         settings(claude, sourceMapLines(api, web))
-        assertFalse("role=\"alert\"" in browser.import("shipped/processes/$file.bpmn").body)
-        val status = browser.get("/processes/$key").body.substringAfter("""<section id="pre-run">""").substringBefore("</section>")
+        assertFalse("role=\"alert\"" in browser.import("shipped/processes/build-and-ship.bpmn").body)
+        val status = browser.get("/processes/build_and_ship").body.substringAfter("""<section id="pre-run">""").substringBefore("</section>")
         assertContains(status, "Ready")
-        return browser.post("/processes/$key/runs", mapOf("prompt" to "Say hello in api", "branch" to "")).path.removePrefix("/runs/")
+        return browser.post("/processes/build_and_ship/runs", mapOf("prompt" to "Say hello in api", "path" to path, "branch" to "")).path.removePrefix("/runs/")
     }
 
     /** Approves the Spec when [spec], then the changes, Pushes and approves the Notes, and waits for the Run to complete. */
@@ -89,12 +89,12 @@ class ShipVariantsTest : AntsTest() {
     }
 
     @Test
-    fun `Ship by proxy has an answer-round Agent answer the Rounds, and Clone new repos clones a repo a Round names`() {
+    fun `Answered as me has an answer-round Agent answer the Rounds, and Clone new repos clones a repo a Round names`() {
         afterTheGrilling()
         claude.session("grill", 1, round)
         claude.session("answer-round", result("""{"answers":[{"id":"who","answer":"Only admins.","why":"The Answer History says so."}]}"""))
         claude.session("grill", 2, result("""{"questions":[],"repos":["web"]}"""))
-        val run = start("ship-by-proxy", "ship_by_proxy")
+        val run = start("as-me")
         finish(run)
 
         assertEquals(listOf("[approve]", "[review]", "[push]", "[approve]"), waited)
@@ -111,11 +111,11 @@ class ShipVariantsTest : AntsTest() {
     }
 
     @Test
-    fun `Ship by proxy hands Round 10 to the user`() {
+    fun `Answered as me hands Round 10 to the user`() {
         claude.session("scout", "write scout/brief.md Hello.\\n", result("""{"repos":["api"],"branch":"add-hello","brief":"scout/brief.md"}"""))
         claude.session("grill", round)
         claude.session("answer-round", result("""{"answers":[{"id":"who","answer":"Only admins.","why":"Because."}]}"""))
-        val run = start("ship-by-proxy", "ship_by_proxy")
+        val run = start("as-me")
 
         val entry = entry(run, "<i>?</i>[questions]", seconds = 60)
         assertEquals(10, claude.launches("grill").size)
@@ -124,11 +124,11 @@ class ShipVariantsTest : AntsTest() {
     }
 
     @Test
-    fun `Ship as proposed accepts the recommendations, and Clone new repos clones a repo a Round names`() {
+    fun `Take the recommendations accepts the recommendations, and Clone new repos clones a repo a Round names`() {
         afterTheGrilling()
         claude.session("grill", 1, round)
         claude.session("grill", 2, result("""{"questions":[],"repos":[]}"""))
-        val run = start("ship-as-proposed", "ship_as_proposed")
+        val run = start("recommendations")
         finish(run)
 
         assertEquals(listOf("[approve]", "[review]", "[push]", "[approve]"), waited)
@@ -137,11 +137,11 @@ class ShipVariantsTest : AntsTest() {
     }
 
     @Test
-    fun `Ship overnight answers every Round by proxy, ends the grilling at the cap, and waits on the user only at Review changes, Push and the Notes`() {
+    fun `Hands-off until review answers every Round by proxy, ends the grilling at the cap, and waits on the user only at Review changes, Push and the Notes`() {
         afterTheGrilling()
         claude.session("grill", round)
         claude.session("answer-round", result("""{"answers":[{"id":"who","answer":"Only admins.","why":"Because."}]}"""))
-        val run = start("ship-overnight", "ship_overnight")
+        val run = start("hands-off")
         finish(run, spec = false)
 
         assertEquals(listOf("[review]", "[push]", "[approve]"), waited)

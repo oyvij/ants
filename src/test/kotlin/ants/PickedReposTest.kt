@@ -77,15 +77,15 @@ class PickedReposTest : AntsTest() {
         "claude:\n  command: [${claude.command}]\ngh:\n  path: $gh\n" + sourceMapLines(api, web) + (if (vault) "vaults:\n  notes: $notes\n" else ""),
     )
 
-    /** Starts Ship small with [repos] picked, named "Hello api"; the page it lands on. */
+    /** Starts Build and ship's Feeling lucky with [repos] picked, named "Hello api"; the page it lands on. */
     private fun start(vararg repos: String): Browser.Page {
-        browser.import("shipped/processes/ship-small.bpmn")
-        browser.get("/processes/ship_small")
-        return browser.post("/processes/ship_small/runs", listOf(NAME to "Hello api", "prompt" to "Add a hello endpoint", "branch" to "") + repos.map { "repos" to it })
+        browser.import("shipped/processes/build-and-ship.bpmn")
+        browser.get("/processes/build_and_ship")
+        return browser.post("/processes/build_and_ship/runs", listOf(NAME to "Hello api", "prompt" to "Add a hello endpoint", "path" to "lucky", "branch" to "") + repos.map { "repos" to it })
     }
 
     /**
-     * Plays Ship small with [repos] picked: the scout gives them back as they are, the proposal keeps the brief it read,
+     * Plays Feeling lucky with [repos] picked: the scout gives them back as they are, the proposal keeps the brief it read,
      * the implementer commits in [repo], the user pushes and approves the Notes Update the Vault proposes.
      */
     private fun shipSmall(repo: String, vararg repos: String): String {
@@ -109,7 +109,7 @@ class PickedReposTest : AntsTest() {
     }
 
     @Test
-    fun `Ship small with a repo picked gives the scout that repo and the Vault, clones only it, pushes its branch and updates the Vault`() {
+    fun `Feeling lucky with a repo picked gives the scout that repo and the Vault, clones only it, pushes its branch and updates the Vault`() {
         settings()
         val run = shipSmall("api", "api")
 
@@ -189,14 +189,18 @@ class PickedReposTest : AntsTest() {
     }
 
     @Test
-    fun `each default Process's start form has an optional Repos field`() {
+    fun `Build and ship's start form has an optional Repos field and a Path dropdown, Human in the loop picked, that refuses any other path`() {
         settings()
-        for ((file, key) in listOf("ship-small" to "ship_small", "ship-with-me" to "ship_with_me", "ship-by-proxy" to "ship_by_proxy", "ship-as-proposed" to "ship_as_proposed", "ship-overnight" to "ship_overnight")) {
-            browser.import("shipped/processes/$file.bpmn")
-            val form = browser.get("/processes/$key").body.substringAfter("action=\"/processes/$key/runs\"").substringBefore("</form>")
-            assertContains(form, """<div class="row picks">""", message = key)
-            assertContains(form, """<input type="checkbox" name="repos" value="api">""", message = key)
-            assertContains(form, """<input name="repos" """, message = key)
-        }
+        browser.import("shipped/processes/build-and-ship.bpmn")
+        val form = browser.get("/processes/build_and_ship").body.substringAfter("action=\"/processes/build_and_ship/runs\"").substringBefore("</form>")
+        assertContains(form, """<div class="row picks">""")
+        assertContains(form, """<input type="checkbox" name="repos" value="api">""")
+        assertContains(form, """<input name="repos" """)
+        assertContains(form, """<select name="path" id="field-path">""")
+        assertContains(form, """<option value="human" selected>Human in the loop: you answer every question, then approve the Spec</option>""")
+        for (path in listOf("as-me", "recommendations", "hands-off", "lucky")) assertContains(form, """<option value="$path">""")
+
+        val refused = browser.post("/processes/build_and_ship/runs", mapOf("prompt" to "Say hello", "path" to "overnight", "branch" to ""))
+        assertContains(refused.body, "Path is none of its choices")
     }
 }

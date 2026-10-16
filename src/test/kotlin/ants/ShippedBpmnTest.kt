@@ -45,7 +45,7 @@ class ShippedBpmnTest {
         val embedded = files("processes").flatMap { file ->
             read(file).getModelElementsByType(SubProcess::class.java).filter { it.id in templates }.map { Triple(file.name, it.id, shape(it.flowElements)) }
         }
-        assert(embedded.size > 20) { "only ${embedded.size} embedded Templates found" }
+        assert(embedded.size >= 4) { "only ${embedded.size} embedded Templates found" }
         for ((file, id, shape) in embedded) assertEquals(templates[id], shape, "$file: $id drifted from templates/${id.replace('_', '-')}.bpmn")
     }
 

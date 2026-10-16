@@ -13,9 +13,13 @@ enum class FieldType { TEXT, MARKDOWN, REPOS }
 
 /**
  * One start-form field, read from the start event's `operaton:formData`. The engine knows only its own form types, so
- * Ants' [type], [help] and [stored] value live in the field's properties [FIELD_TYPE], [HELP] and [STORED].
+ * Ants' [type], [help] and [stored] value live in the field's properties [FIELD_TYPE], [HELP] and [STORED]. An engine
+ * `enum` field is a dropdown of its [choices], each value's id to its name, in order.
  */
-data class Field(val name: String, val label: String, val type: FieldType, val required: Boolean, val help: String?, val stored: String?) {
+data class Field(
+    val name: String, val label: String, val type: FieldType, val required: Boolean, val help: String?, val stored: String?,
+    val choices: Map<String, String> = emptyMap(),
+) {
     /** The stored value of a Repos field: its entries, separated by commas or spaces. */
     val storedRepos: List<String> get() = stored.orEmpty().split(Regex("[,\\s]+")).filter(String::isNotEmpty)
 }
@@ -46,6 +50,7 @@ class StartForm(
             required = field.validationConstraints.orEmpty().any { it.name == "required" },
             help = field.properties[HELP]?.takeIf(String::isNotBlank),
             stored = field.properties[STORED],
+            choices = (field.type.getInformation("values") as? Map<*, *>).orEmpty().entries.associate { (id, name) -> "$id" to "$name" },
         )
     }
 
@@ -61,6 +66,7 @@ class StartForm(
             // A Repos field's typed-in entries come as one value, separated by commas or spaces.
             val given = values[field.name].orEmpty().let { if (field.type == FieldType.REPOS) it.flatMap(::entries) else it }.filter(String::isNotBlank)
             if (field.required && given.isEmpty()) throw Unfilled("${field.label} is required")
+            if (field.choices.isNotEmpty() && given.any { it !in field.choices }) throw Unfilled("${field.label} is none of its choices")
             field.name to if (field.type == FieldType.REPOS) given.distinct() else given.firstOrNull().orEmpty()
         }
         val repos = fields.filter { it.type == FieldType.REPOS }.flatMap { variables[it.name] as List<*> }.map(Any?::toString).distinct()

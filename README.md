@@ -30,7 +30,7 @@ Open <http://127.0.0.1:7323> and log in as `admin` / `admin`. Then, on **Setting
    never an API key.
 4. Add a Vault and a Source map, or run the shipped **Set up Vault** Process to create a Vault.
 
-Then start a Run from one of the shipped Processes, such as **Ship small** or **Ship with me**, and watch the
+Then start a Run from one of the shipped Processes, such as **Build and ship**, picking its Path (Human in the loop, Feeling lucky, …), and watch the
 **Notification list** for anything waiting on you.
 
 Everything Ants owns lives in `~/.ants`. Set `ANTS_HOME` to move it. `settings.yaml` there takes hand edits.
