@@ -3,6 +3,7 @@ package ants
 import jakarta.servlet.http.HttpServletRequest
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.web.server.context.WebServerApplicationContext
+import org.springframework.http.HttpStatus
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Controller
 import org.springframework.ui.Model
@@ -12,12 +13,15 @@ import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.ModelAttribute
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestParam
+import org.springframework.web.server.ResponseStatusException
 import tools.jackson.dataformat.toml.TomlMapper
 import java.nio.file.Path
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlin.io.path.exists
+import kotlin.io.path.readText
 import kotlin.math.roundToInt
 
 /**
@@ -63,8 +67,21 @@ class SettingsPage(
         }
     }
 
+    /** Save in a Source map's editor: rewrites the file of the saved Source map [name], creating it if it isn't there. */
+    @PostMapping("/settings/source-map")
+    fun sourceMap(@RequestParam name: String, @RequestParam text: String): String {
+        val file = settings.sourceMap(name) ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No Source map $name")
+        file.writeAtomically(text.replace("\r\n", "\n"))
+        return "redirect:/settings"
+    }
+
     private fun show(model: Model, form: SettingsForm, message: String? = null): String {
         model.addAttribute("form", form)
+        // Each saved Source map's path and text, for its editor.
+        model.addAttribute("maps", settings.sourceMaps().mapValues { (name, path) -> path to settings.sourceMap(name)?.takeIf { it.exists() }?.readText().orEmpty() })
+        // The Profile Set up Vault runs with for each saved Vault: the first that pairs it; with no Profiles, the default Vault's, blank.
+        model.addAttribute("setUp", settings.profiles().ifEmpty { null }?.entries?.reversed()?.associate { (name, profile) -> profile.vault to name }
+            ?: listOfNotNull(settings.defaultVault()).associateWith { "" })
         model.addAttribute("file", settings.file.toString())
         model.addAttribute("message", message)
         model.addAttribute("passwordFromEnv", settings.passwordFromEnv)

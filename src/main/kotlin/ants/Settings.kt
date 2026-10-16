@@ -56,7 +56,8 @@ class Settings(
     /**
      * At start, Ants creates the file, with the CLIs Detect finds while none is in it yet (`ants password` may have
      * written only a password), and refuses to start in Docker without a password from the environment, or off
-     * loopback with the default one. `ants password` runs none of this, so it never runs the login shell.
+     * loopback with the default one. It also sets up the Anthill Profile ([anthill]). `ants password` runs none of
+     * this, so it never runs the login shell.
      */
     @PostConstruct
     fun start() {
@@ -64,10 +65,32 @@ class Settings(
             val found = detect()
             save { values -> found.forEach { (cli, path) -> values[cli] = mapOf("path" to path) } }
         }
+        anthill()
         check(!docker || passwordFromEnv) { "Ants in Docker needs a password: set ANTS_PASSWORD or ANTS_PASSWORD_FILE." }
         val loopback = address.isNotEmpty() && InetAddress.getByName(address).isLoopbackAddress
         check(loopback || !encoder.matches("admin", password())) {
             "Ants won't listen on ${address.ifEmpty { "every address" }} with the default password. Change the password first."
+        }
+    }
+
+    /**
+     * Ants' own Profile, [ANTHILL]: the Vault `knowledge-vault` and the Source map `source-map.md` in ANTS_HOME, set
+     * up on the first start that finds no `source-map.md` there, a clean install's or an update's, so a removed one
+     * stays removed. A name the user already has is left as it is, and so is their default Profile: Anthill is
+     * added after their Profiles.
+     */
+    private fun anthill() {
+        val map = file.resolveSibling("source-map.md")
+        if (map.exists()) return
+        val vault = file.resolveSibling("knowledge-vault").createDirectories()
+        map.writeText("")
+        save { values ->
+            fun add(key: String, value: Any) {
+                values[key] = LinkedHashMap(values[key] as? Map<*, *> ?: emptyMap<Any, Any>()).apply { putIfAbsent(ANTHILL, value) }
+            }
+            add("vaults", "$vault")
+            add("source-maps", "$map")
+            add("profiles", mapOf("vault" to ANTHILL, "source-map" to ANTHILL))
         }
     }
 
@@ -212,6 +235,9 @@ class Settings(
     private fun folders(key: String) = strings(read()[key]).orEmpty().map(::expand)
 
     companion object {
+        /** The name of the Profile Ants ships, and of its Vault and Source map. */
+        const val ANTHILL = "Anthill"
+
         /** The CLIs Ants finds paths for. */
         val CLIS = listOf("claude", "codex", "git", "gh")
 
@@ -248,7 +274,8 @@ class Settings(
             # varde-config: Varde's config.toml, whose [ai] command and env the settings page fills in
             # vaults, source-maps: name: path. default-vault, default-source-map: a name; without one, the first.
             # profiles: name: {vault: <a Vault's name>, source-map: <a Source map's name>}. default-profile: a name;
-            #   without one, the first. With no Profiles, every Run uses the default Vault and Source map.
+            #   without one, the first. With no Profiles, every Run uses the default Vault and Source map. Ants ships
+            #   the Profile Anthill, over knowledge-vault/ and source-map.md beside this file.
             # agent-folders, skill-folders: extra folders, read after Ants' own
             # secrets: label: [VARIABLE, NAMES], the variables a Protected Command reads it under; the values are in
             #   secrets.yaml, never here

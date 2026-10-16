@@ -3,7 +3,10 @@ package ants
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.springframework.boot.web.server.context.WebServerApplicationContext
+import org.yaml.snakeyaml.Yaml
 import java.nio.file.Files
+import kotlin.io.path.deleteExisting
+import kotlin.io.path.isDirectory
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.measureTime
 import kotlin.io.path.createDirectories
@@ -56,6 +59,33 @@ class BootTest : AntsTest() {
         assertEquals(200, cockpit.status)
         assertContains(cockpit.body, "Cockpit")
         assertContains(browser.get("/operaton/api/admin/auth/user/default").body, "\"userId\":\"admin\"")
+    }
+}
+
+class AnthillTest {
+    @Test
+    fun `a clean install and the first start after an update have the Anthill Profile, after the user's own, and a removed one stays removed`() {
+        val home = AntsTest.tempHome()
+        val settings = home.resolve("settings.yaml")
+        fun yaml(): Map<*, *> = Yaml().load(settings.readText())
+        AntsTest.bootAnother(home)
+        assertEquals(mapOf("Anthill" to mapOf("vault" to "Anthill", "source-map" to "Anthill")), yaml()["profiles"])
+        assertEquals(mapOf("Anthill" to "${home.resolve("knowledge-vault")}"), yaml()["vaults"])
+        assertEquals(mapOf("Anthill" to "${home.resolve("source-map.md")}"), yaml()["source-maps"])
+        assertTrue(home.resolve("knowledge-vault").isDirectory())
+        assertEquals("", home.resolve("source-map.md").readText())
+
+        // An Ants from before Anthill: the user's own Profile, and no source-map.md.
+        home.resolve("source-map.md").deleteExisting()
+        settings.writeText("vaults:\n  work: /tmp/work\nsource-maps:\n  work: /tmp/work.md\nprofiles:\n  work: {vault: work, source-map: work}\n")
+        AntsTest.startAnother(home).use { ants ->
+            assertEquals(listOf("work", "Anthill"), (yaml()["profiles"] as Map<*, *>).keys.toList())
+            assertEquals("work", ants.getBean(Settings::class.java).defaultProfile())
+
+            settings.writeText("profiles:\n  work: {vault: work, source-map: work}\n")
+            ants.getBean(Settings::class.java).start()
+            assertEquals(listOf("work"), (yaml()["profiles"] as Map<*, *>).keys.toList())
+        }
     }
 }
 

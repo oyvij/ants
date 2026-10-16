@@ -350,6 +350,7 @@ details.session { margin-bottom: 14px; } details.session > .tr { margin-top: 8px
 /* Processes and the Process page: the list, New Process's modal, the check, the start form, the Schedule card, and its Runs. */
 :is(#processes, #process-runs) td:first-child a { color: inherit; }
 dialog#new-process { width: min(560px, 92vw); height: auto; }
+dialog.source-map { width: min(760px, 92vw); height: auto; } .source-map textarea { width: 100%; margin-top: 8px; } .source-map .go { margin-top: 12px; }
 #new-process .mb { padding: 4px 24px 24px; font-size: 14px; }
 #new-process form { margin: 0; } #new-process .go { margin-top: 16px; }
 #start .picks { flex-wrap: wrap; gap: 6px 14px; margin-bottom: 8px; } #start .picks label { font-weight: 500; margin: 0; }

@@ -178,6 +178,38 @@ class SettingsTest : AntsTest() {
     }
 
     @Test
+    fun `a saved Source map is edited in its editor, which shows an example while it's empty`() {
+        val map = Files.createTempDirectory("source-map").resolve("work.md")
+        press("save", mapOf("source-maps[0].name" to "work", "source-maps[0].path" to "$map"))
+        val page = browser.get("/settings").body
+        assertContains(page, """<button type="button" data-edit="source-map-0">Edit</button>""")
+        assertContains(page, """placeholder="- ants: ~/code/ants (git@github.com:oyvij/ants.git)""")
+        assertEquals(1, Regex("data-edit=").findAll(page).count()) // the empty row, unsaved, has no editor
+
+        browser.post("/settings/source-map", mapOf("name" to "work", "text" to "# Work\r\n- api: ~/code/api (git@github.com:acme/api.git)\r\n"))
+        assertEquals("# Work\n- api: ~/code/api (git@github.com:acme/api.git)\n", map.readText())
+        assertContains(browser.get("/settings").body, "- api: ~/code/api (git@github.com:acme/api.git)\n</textarea>")
+        assertEquals(404, browser.post("/settings/source-map", mapOf("name" to "nowhere", "text" to "x")).status)
+    }
+
+    @Test
+    fun `each Vault a Profile pairs runs Set up Vault with that Profile, and with no Profiles only the default Vault does`() {
+        val lists = mapOf(
+            "vaults[0].name" to "work", "vaults[0].path" to "/tmp/work", "vaults[1].name" to "spare", "vaults[1].path" to "/tmp/spare",
+            "source-maps[0].name" to "work", "source-maps[0].path" to "/tmp/work.md",
+        )
+        press("save", lists + mapOf("profiles[0].name" to "job", "profiles[0].vault" to "work", "profiles[0].source-map" to "work"))
+        var page = browser.get("/settings").body
+        assertContains(page, """<button formaction="/processes/set_up_vault/runs" name="ants.profile" value="job"""")
+        assertEquals(1, Regex("""name="ants.profile"""").findAll(page).count()) // spare is in no Profile
+
+        press("save", lists)
+        page = browser.get("/settings").body
+        assertContains(page, """<button formaction="/processes/set_up_vault/runs" name="ants.profile" value=""""")
+        assertEquals(1, Regex("""name="ants.profile"""").findAll(page).count())
+    }
+
+    @Test
     fun `Secrets keep their values in secrets yaml, never on the page or in settings yaml, and Protected Commands link them by label`() {
         val secrets = home.resolve("secrets.yaml")
         try {

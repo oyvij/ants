@@ -28,7 +28,9 @@ Open <http://127.0.0.1:7323> and log in as `admin` / `admin`. Then, on **Setting
 2. Press **Detect** to find `claude`, `codex`, `git` and `gh`.
 3. Log in to Claude with the command the page shows. Agents run on Ants' own subscription login, never yours and
    never an API key.
-4. Add a Vault and a Source map, or run the shipped **Set up Vault** Process to create a Vault.
+4. Ants ships the Profile **Anthill**: the Vault `~/.ants/knowledge-vault` and the Source map `~/.ants/source-map.md`.
+   Press **Edit** on the Source map to list your repos, and **Set up Vault** on the Vault to write its rules. Add
+   more Vaults, Source maps and Profiles beside it.
 
 Then start a Run from one of the shipped Processes, such as **Build and ship**, picking its Path (Human in the loop, Feeling lucky, …), and watch the
 **Notification list** for anything waiting on you.
