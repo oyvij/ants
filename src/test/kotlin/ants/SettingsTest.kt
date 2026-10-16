@@ -272,6 +272,12 @@ class SettingsTest : AntsTest() {
     }
 
     @Test
+    fun `in Docker the login command runs in Ants' container, whose volume holds the login`() {
+        assertEquals("docker exec -it 3f2a9c env CLAUDE_CONFIG_DIR=/data/claude claude auth login",
+            ClaudeLogin(emptyMap<Any, Any>(), java.nio.file.Path.of("/data/claude"), emptyMap<Any, Any>(), "3f2a9c").command)
+    }
+
+    @Test
     fun `Check login asks claude again and says what it found, keeping what was typed`() {
         fakeClaude()
         val out = press("login", mapOf("agent-tasks" to "9"))
