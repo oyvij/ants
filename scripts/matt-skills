@@ -1,0 +1,109 @@
+#!/usr/bin/env python3
+"""Updates the shipped Skills that are Matt Pocock's to his latest release, keeping each one's In Ants section.
+
+    scripts/matt-skills [<plugin>]
+
+<plugin> is his plugin's folder, the one holding `.claude-plugin/plugin.json` and `skills/`: a clone of
+https://github.com/mattpocock/skills, or by default the newest version Claude Code has cached in
+~/.claude/plugins/cache/mattpocock/mattpocock-skills/.
+
+Each shipped SKILL.md is Ants' frontmatter and In Ants section, down to the `---` line under it, then Matt's SKILL.md
+word for word without its frontmatter. This keeps everything down to that line, stamps his version into the header,
+and puts his current body below it. His other files in the Skill's folder (`tests.md`, `CREDITS.md`, …) are copied
+beside it; his `agents/` (Codex display names) are not.
+
+Then it prints what changed. Read `git diff` before committing: a new step of his that needs a user, a new file or a
+new Skill he calls may need a line in the In Ants section, or a new shipped Skill (add it to SKILLS below).
+"""
+import re
+import shutil
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+SHIPPED = ROOT / "src/main/resources/shipped/skills"
+CACHE = Path.home() / ".claude/plugins/cache/mattpocock/mattpocock-skills"
+
+# The shipped Skill, and his Skill it is, under his skills/.
+SKILLS = {
+    "grill": "productivity/grilling",
+    "to-spec": "engineering/to-spec",
+    "to-tickets": "engineering/to-tickets",
+    "implement": "engineering/implement",
+    "tdd": "engineering/tdd",
+    "code-review": "engineering/code-review",
+    "pr": "engineering/pr",
+    "codebase-design": "engineering/codebase-design",
+}
+
+
+def body(text):
+    """A SKILL.md without its frontmatter and the blank line after it."""
+    return re.sub(r"\A---\n.*?\n---\n\n?", "", text, flags=re.S)
+
+
+def header(text, name):
+    """A shipped SKILL.md down to the `---` line that ends its In Ants section, and the blank line after it."""
+    match = re.match(r"\A---\n.*?\n---\n.*?\n---\n\n", text, flags=re.S)
+    if not match:
+        sys.exit(f"{name}/SKILL.md has no `---` line under its In Ants section")
+    return match.group(0)
+
+
+def newest():
+    versions = [p for p in CACHE.glob("*") if (p / "skills").is_dir()]
+    if not versions:
+        sys.exit(f"No cached plugin in {CACHE}; pass the folder of a clone of https://github.com/mattpocock/skills")
+    return max(versions, key=lambda p: [int(n) if n.isdigit() else 0 for n in p.name.split(".")])
+
+
+def main(args):
+    if args[:1] in (["-h"], ["--help"]):
+        print(__doc__)
+        return
+    plugin = Path(args[0]).expanduser() if args else newest()
+    version = re.search(r'"version":\s*"([^"]+)"', (plugin / ".claude-plugin/plugin.json").read_text()).group(1)
+    print(f"Matt Pocock's skills v{version}, from {plugin}")
+    for name, path in SKILLS.items():
+        source = plugin / "skills" / path
+        if not (source / "SKILL.md").exists():
+            print(f"  {name}: {path} is gone from his skills; find what replaced it and fix SKILLS")
+            continue
+        target = SHIPPED / name
+        target.mkdir(exist_ok=True)
+        skill = target / "SKILL.md"
+        old = skill.read_text() if skill.exists() else ""
+        if not old:
+            print(f"  {name}: new; write its frontmatter and In Ants section, ending in a `---` line, first")
+            continue
+        new_body = body((source / "SKILL.md").read_text())
+        head = header(old, name)
+        same = old[len(head):] == new_body
+        head = re.sub(r"(mattpocock/skills, )v[\w.-]+", rf"\g<1>v{version}", head)
+        skill.write_text(head + new_body)
+        notes = ["same text" if same else "text changed"]
+        for file in sorted(source.rglob("*")):
+            relative = file.relative_to(source)
+            if file.is_dir() or relative.name == "SKILL.md" or relative.parts[0] == "agents":
+                continue
+            copy = target / relative
+            if not copy.exists():
+                notes.append(f"new file {relative}")
+            elif copy.read_bytes() != file.read_bytes():
+                notes.append(f"{relative} changed")
+            copy.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(file, copy)
+        ours = {"SKILL.md", "LICENSE", "result.schema.json", "story-set.schema.json"}
+        for file in sorted(target.rglob("*")):
+            relative = file.relative_to(target)
+            if file.is_file() and relative.name not in ours and not (source / relative).exists():
+                notes.append(f"{relative} is no longer his; delete it if nothing of Ants' uses it")
+        uses = re.search(r"ants-uses:(.*)", head)
+        for called in sorted(set(re.findall(r'Skill tool with "([\w-]+)"', new_body))):
+            if called not in (uses.group(1).split() if uses else []):
+                notes.append(f'calls "{called}", which isn\'t in its ants-uses')
+        print(f"  {name}: " + "; ".join(notes))
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])
