@@ -1,12 +1,22 @@
 @param list: String
 @param default: String
 @param named: ants.Named
+@param setUp: Map<String?, String>? = null
+@param edit: List<String>? = null
 <div class="listed">
 @for(i in named.shown.indices)
     <div class="row" hidden="${i == named.rows.size}">
         <input class="name" name="${list}[${i}].name" value="${named.shown[i].first}" aria-label="Name">
         <input class="grow mono" name="${list}[${i}].path" value="${named.shown[i].second}" aria-label="Path">
         <label class="row small"><input type="radio" name="${default}" value="${i}" checked="${i == named.default}"> default</label>
+@if(setUp != null)
+        !{val profile = setUp[named.shown[i].first]}
+        @if(profile != null)<button formaction="/processes/set_up_vault/runs" name="ants.profile" value="${profile}" title="Runs Set up Vault on this Vault${if (profile.isEmpty()) "" else ", with the Profile $profile"}">Set up Vault</button>
+        @else<button type="button" disabled title="Pair it with a Source map in a Profile below, and save">Set up Vault</button>@endif
+@endif
+@if(edit != null && named.shown[i].first in edit)
+        <button type="button" data-edit="source-map-${edit.indexOf(named.shown[i].first)}">Edit</button>
+@endif
         <button type="button" class="ghost" data-remove>Remove</button>
     </div>
 @endfor

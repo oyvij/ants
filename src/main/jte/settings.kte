@@ -8,6 +8,8 @@
 @param address: String
 @param update: ants.UpdateNotice
 @param docker: Boolean
+@param maps: Map<String, Pair<String, String>>
+@param setUp: Map<String?, String>
 @param colorScheme: String = "light dark"
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param shell: ants.Shell
@@ -61,9 +63,9 @@
             <div class="row"><input class="grow mono" name="varde-config" value="${form.vardeConfig}" placeholder="~/.varde/config.toml" aria-label="Varde's config.toml"><button name="action" value="varde">Fill from Varde</button></div></div></div></div>
 
     <div class="card"><h3>Vaults</h3><div class="help">Profiles below pair them with Source maps; with no Profile, every Run uses the default.</div>
-        @template.named(list = "vaults", default = "default-vault", named = form.vaults)</div>
+        @template.named(list = "vaults", default = "default-vault", named = form.vaults, setUp = setUp)</div>
     <div class="card"><h3>Source maps</h3><div class="help">Profiles below pair them with Vaults; with no Profile, every Run uses the default.</div>
-        @template.named(list = "source-maps", default = "default-source-map", named = form.sourceMaps)</div>
+        @template.named(list = "source-maps", default = "default-source-map", named = form.sourceMaps, edit = maps.keys.toList())</div>
 
     <div class="card"><h3>Profiles</h3><div class="help">Each pairs a Vault with a Source map, such as one for work and one for private repos. A Process can name its
         Profile, and the start form picks the Run's. With none, every Run uses the default Vault and Source map.
@@ -160,6 +162,18 @@
 @endif
         <button name="action" value="updates">Check now</button></div></div>
 </form>
+@for((i, map) in maps.entries.withIndex())
+<dialog class="modal source-map" id="source-map-${i}">
+    <form method="dialog" class="mh"><b>${map.key}</b><code class="small">${map.value.first}</code><span class="sp"></span><span class="muted small">Esc to close</span><button class="ghost" title="Close" aria-label="Close">✕</button></form>
+    <form method="post" action="/settings/source-map" class="mb">
+        <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+        <input type="hidden" name="name" value="${map.key}">
+        <div class="help">One repo per line, <code>- &lt;name&gt;: &lt;local path&gt; (&lt;git remote&gt;)</code>; Processes and Tasks name it by its name. Other lines are ignored.</div>
+        <textarea class="mono" name="text" rows="14" aria-label="Source map" placeholder="- ants: ~/code/ants (git@github.com:oyvij/ants.git)&#10;- web: ~/code/web (https://github.com/acme/web.git)">${map.value.second}</textarea>
+        <div class="go"><button class="primary">Save</button></div>
+    </form>
+</dialog>
+@endfor
 </main>
 </body>
 </html>

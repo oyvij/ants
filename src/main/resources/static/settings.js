@@ -1,9 +1,13 @@
 // The settings page. Its lists (.listed), such as the Vaults and the Agent folders: ＋ Add shows a new empty row,
 // numbered after the last, and Remove empties its row and hides it, which Save reads as removed. Copy puts the login
-// command on the clipboard.
+// command on the clipboard. Edit opens a Source map's editor.
 document.addEventListener('click', event => {
-    const button = event.target.closest('[data-add], [data-remove], [data-copy]');
+    const button = event.target.closest('[data-add], [data-remove], [data-copy], [data-edit]');
     if (!button) return;
+    if ('edit' in button.dataset) {
+        document.getElementById(button.dataset.edit).showModal();
+        return;
+    }
     if ('copy' in button.dataset) {
         navigator.clipboard?.writeText(button.previousElementSibling.textContent).catch(() => {});
         button.textContent = 'Copied';
