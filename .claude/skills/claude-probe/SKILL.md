@@ -33,6 +33,9 @@ test scripts, so it passes whatever you assume. Facts the real CLI has already s
   needs `--repo` there. A lone `cd repos/<x>` is allowed, and `cd ../..` back to the root, but not `cd ..` above
   it, nor a `cd` into a symlink that leaves it. `a && b` runs when each part is allowed on its own. A user's shell
   `cd` hook that fails (fnm's `--use-on-cd` on a clone with `package.json`) makes the `cd` fail and not stick.
+- claude 2.1.302 under `dontAsk` with `Bash(gh pr create *)` refuses `gh pr create … --body "…"` when the body has a
+  backtick in it (Markdown code), and allows a multi-line body with `$HOME` in it. Writing the body with
+  `Write(pr/**)` and running `gh pr create … --body-file pr/x.md` is allowed, so the `pr` Skill does that.
 
 ## Steps
 
