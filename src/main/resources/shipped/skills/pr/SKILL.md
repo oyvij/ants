@@ -41,9 +41,11 @@ and `cd … && git …` or any other chained command.
    `git log` and `git diff` from `<base>`, inside the clone. `GLOSSARY.md` is the clone's. The
    review and the fixes are evidence, and tell you the Merge Danger. You can't take screenshots.
    The title is one short line saying what the change does.
-3. **Open it:** `gh pr create --repo <owner>/<name> --head <branch> --base <base> --title "…"
-   --body "…"`, with `<owner>/<name>` read from the remote. If `gh` isn't logged in or is refused,
-   answer `stuck` with its message.
+3. **Open it:** write the body to `pr/<repo>.md` in the Run workspace, then, from the workspace
+   root, run `gh pr create --repo <owner>/<name> --head <branch> --base <base> --title "…"
+   --body-file pr/<repo>.md`, with `<owner>/<name>` read from the remote. Never pass the body inline
+   with `--body`: claude refuses a command with a backtick in it, and a body usually has one. If
+   `gh` isn't logged in or is refused, answer `stuck` with its message.
 
 Answer `done` with `pullRequests: [{repo, url}]`.
 
