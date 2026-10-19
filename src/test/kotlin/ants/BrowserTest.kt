@@ -1142,6 +1142,31 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `the Agent and Skill editors and Review changes use most of the width at 1440px and 1920px, and no page scrolls sideways at 1280px`() = browse {
+        val entry = staleStoryReviewEntry(wideAndTall)
+        home.resolve("agents").createDirectories().resolve("roomy.md").writeText("---\nname: roomy\ncli: claude\ntools: Read\n---\nRoomy.\n")
+        home.resolve("skills/roomy").createDirectories().resolve("SKILL.md").writeText("---\nname: roomy\ndescription: Roomy.\n---\n" + "A long line of the Skill. ".repeat(40) + "\n")
+        val pages = mapOf<String, () -> Unit>(
+            "the Agent editor" to { page.navigate(url("/agents/roomy")); assertThat(page.locator(".ed").first()).isVisible() },
+            "the Skill editor" to { page.navigate(url("/skills/roomy")); assertThat(page.locator(".ed").first()).isVisible() },
+            "Review changes' Story tab" to { page.navigate(url("$entry#s1-3")); assertThat(page.locator(".step:not([hidden]) .code")).containsText("line 12") },
+            "Review changes' By repo tab" to { page.navigate(url(entry)); page.click(".tabs a:not(.on)"); assertThat(page.locator(".tabs a.on")).hasText("By repo") },
+        )
+        for (width in listOf(1280, 1440, 1920)) {
+            page.setViewportSize(width, 900)
+            for ((name, open) in pages) {
+                open()
+                val (scroll, client) = (page.evaluate("[document.documentElement.scrollWidth, document.documentElement.clientWidth]") as List<*>).map { (it as Number).toInt() }
+                assertTrue(scroll <= client, "$name is ${scroll}px wide in a ${client}px window at ${width}px")
+                if (width == 1280) continue
+                val (left, right) = contentEdges("main")
+                val beside = width - page.locator("nav.side").boundingBox().width
+                assertTrue(right - left >= 0.8 * beside, "$name's content is ${right - left}px of the ${beside}px beside the sidebar at ${width}px")
+            }
+        }
+    }
+
+    @Test
     fun `the Skill page's schema editor says whether the schema is valid`() = browse {
         page.navigate(url("/skills/new"))
         val bar = page.locator(".ed.json .bar")
