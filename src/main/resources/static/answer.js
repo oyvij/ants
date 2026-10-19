@@ -1,3 +1,4 @@
+// Without this script the page is a plain form of every question. Ants stamps the sources.
 const form = document.getElementById('round');
 const questions = [...form.querySelectorAll('section.question')];
 const review = document.getElementById('review');
@@ -10,7 +11,7 @@ let i = 0;
 const answer = j => questions[j].querySelector('textarea');
 const edited = j => answer(j).value !== questions[j].dataset.recommendation;
 const answered = j => (accepted.has(j) || edited(j)) && answer(j).value.trim() !== '';
-const mark = j => edited(j) ? '✎' : accepted.has(j) ? '✓' : '·';
+const marks = j => [answered(j) && '✓', edited(j) && '✎'].filter(Boolean).join(' ');
 const steps = {ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1};
 
 function button(j, ...content) {
@@ -26,8 +27,7 @@ function span(className, text) {
 }
 
 function row(q, j) {
-    const marks = [answered(j) && '✓', edited(j) && '✎'].filter(Boolean).join(' ');
-    return button(j, span('n', j + 1), ' ', span('t', q.dataset.title), ' ', span('m', marks));
+    return button(j, span('n', j + 1), ' ', span('t', q.dataset.title), ' ', span('m', marks(j)));
 }
 
 function go(j) {
@@ -49,7 +49,7 @@ function render() {
     if (i === n) {
         // Each full question, with the answer under it.
         document.getElementById('review-list').replaceChildren(...questions.map((q, j) => {
-            const item = button(j, `${mark(j)} ${q.querySelector('.ask p').textContent}`);
+            const item = button(j, `${marks(j)} ${q.querySelector('.ask p').textContent}`);
             item.append(Object.assign(document.createElement('div'), {className: 'a', textContent: answer(j).value}));
             return item;
         }));

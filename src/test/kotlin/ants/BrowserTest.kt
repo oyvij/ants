@@ -432,10 +432,10 @@ class BrowserTest : AntsTest() {
         assertThat(tabs.nth(0)).hasAttribute("aria-selected", "true")
         assertThat(page.locator("#back")).not().isVisible()
         tabs.nth(0).focus()
-        for ((key, row) in listOf("ArrowDown" to 1, "ArrowRight" to 2, "ArrowUp" to 1, "ArrowLeft" to 0)) {
+        for ((key, active) in listOf("ArrowDown" to 1, "ArrowRight" to 2, "ArrowUp" to 1, "ArrowLeft" to 0)) {
             page.keyboard().press(key)
-            assertThat(tabs.nth(row)).hasAttribute("aria-selected", "true")
-            assertThat(tabs.nth(row)).isFocused()
+            assertThat(tabs.nth(active)).hasAttribute("aria-selected", "true")
+            assertThat(tabs.nth(active)).isFocused()
         }
         assertThat(who).isVisible()
         page.click("#next")
@@ -464,7 +464,7 @@ class BrowserTest : AntsTest() {
         assertEquals(url(entry), page.url())
         scope.fill("Only admins.")
         tabs.last().click()
-        assertThat(page.locator("#review-list > button").nth(1)).hasText("✎ Ask scope?Only admins.") // the full question, the answer under it
+        assertThat(page.locator("#review-list > button").nth(1)).hasText("✓ ✎ Ask scope?Only admins.") // the full question, the answer under it
         page.click("#next")
         page.waitForURL { !it.contains(entry) }
         eventually { assertContains(http.get("/runs/$run").body, """id="state">Completed<""") }
