@@ -1030,6 +1030,76 @@ class BrowserTest : AntsTest() {
         eventually { assertContains(file.readText(), "cli: codex\nskills: kept, chip-skill\nsandbox: workspace-write\nmodel: gpt-5-codex\n") }
     }
 
+    private fun misalignedFields() = (page.evaluate("""() => {
+        const box = e => e.getBoundingClientRect()
+        const content = e => { const r = box(e), s = getComputedStyle(e)
+            return [r.left + parseFloat(s.borderLeftWidth) + parseFloat(s.paddingLeft), r.right - parseFloat(s.borderRightWidth) - parseFloat(s.paddingRight)] }
+        const name = e => e.tagName.toLowerCase() + (e.name ? "[name=" + e.name + "]" : "") + (e.className && typeof e.className === "string" ? "." + e.className.trim().split(/\s+/).join(".") : "")
+        const off = []
+        for (const card of document.querySelectorAll("main .card")) {
+            if (!card.checkVisibility()) continue
+            const [edge, end] = content(card)
+            const title = card.querySelector("h3")?.textContent.trim() ?? "the editor card"
+            for (const e of card.querySelectorAll("label.f, .help, .tgroup, .grid2, .grid3, input:not([type=hidden]), select, textarea, .ed, .chipsel")) {
+                if (!e.checkVisibility() || e.parentElement.closest(".chipsel, .ed")) continue
+                const cell = e.parentElement.closest(".grid2 > .fld, .grid3 > .fld, .card")
+                const [left, right] = cell === card ? [edge, end] : [box(cell).left, box(cell).right]
+                if (Math.abs(box(e).left - left) > 1) off.push(title + ": " + name(e) + " starts at " + box(e).left + ", not " + left)
+                if (e.matches("input:not([type=checkbox], [type=radio]), select, textarea, .ed, .chipsel") && !e.closest(".row") && Math.abs(box(e).right - right) > 1)
+                    off.push(title + ": " + name(e) + " ends at " + box(e).right + ", not " + right)
+            }
+            for (const grid of card.querySelectorAll(".grid2, .grid3")) {
+                const rows = {}
+                for (const cell of grid.children) if (cell.checkVisibility()) (rows[Math.round(box(cell).top)] ??= []).push(box(cell).width)
+                for (const widths of Object.values(rows)) if (Math.max(...widths) - Math.min(...widths) > 1) off.push(title + ": a row's fields are " + widths.join(", ") + "px wide")
+            }
+        }
+        return off
+    }""") as List<*>).map { it.toString() }
+
+    @Test
+    fun `on the Agent and Skill pages, every field in a card starts at the card's content edge and fills its cell`() = browse {
+        home.resolve("agents").createDirectories().resolve("lined-up.md").writeText("---\nname: lined-up\ncli: claude\nskills: implement\ntools: Read, Bash(git log *)\n---\nLined up.\n")
+        home.resolve("skills/lined-up").createDirectories().resolve("SKILL.md").writeText("---\nname: lined-up\ndescription: Lined up.\n---\nLined up.\n")
+        for (width in listOf(1440, 1920)) {
+            page.setViewportSize(width, 900)
+            for (path in listOf("/agents/lined-up", "/agents/new", "/skills/lined-up")) {
+                page.navigate(url(path))
+                assertThat(page.locator(".ed").first()).isVisible()
+                assertEquals(emptyList(), misalignedFields(), "$path at ${width}px")
+            }
+        }
+    }
+
+    @Test
+    fun `the Agent page's cards stay stacked full width, and Who it is lays out in three columns from 1600px`() = browse {
+        home.resolve("agents").createDirectories().resolve("wide.md").writeText("---\nname: wide\ncli: claude\n---\nWide.\n")
+        page.setViewportSize(1600, 900)
+        page.navigate(url("/agents/wide"))
+        val main = page.locator("main").evaluate("e => { const r = e.getBoundingClientRect(), s = getComputedStyle(e); return r.width - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight) }") as Number
+        val cards = page.locator("form.agent .card")
+        assertEquals(3, cards.count())
+        for (i in 0 until 3) assertEquals(main.toDouble(), cards.nth(i).boundingBox().width, 1.0, "card ${i + 1} is full width")
+        assertTrue(cards.nth(0).boundingBox().let { it.y + it.height } <= cards.nth(1).boundingBox().y, "the cards are stacked")
+        val (name, description, cli) = listOf("#name", "#description", "#cli").map { page.locator(it).boundingBox() }
+        assertEquals(name.y, description.y, 1.0)
+        assertEquals(name.y, cli.y, 1.0)
+        assertTrue(name.x + name.width < description.x && description.x + description.width < cli.x, "Name, Description and CLI sit side by side")
+    }
+
+    @Test
+    fun `the Skill page gives its side column 360px and the editors the rest`() = browse {
+        page.setViewportSize(1920, 1080)
+        page.navigate(url("/skills/new"))
+        val (left, right) = page.locator("main").evaluate("e => { const r = e.getBoundingClientRect(), s = getComputedStyle(e); return [r.left + parseFloat(s.paddingLeft), r.right - parseFloat(s.paddingRight)] }") as List<*>
+        val editors = page.locator(".card:has(#skill)").boundingBox()
+        val side = page.locator(".card:has(h3:text-is('Run by'))").boundingBox()
+        assertEquals(360.0, side.width, 1.0)
+        assertEquals((right as Number).toDouble(), side.x + side.width, 1.0)
+        assertEquals((left as Number).toDouble(), editors.x, 1.0)
+        assertEquals(side.x - 20, editors.x + editors.width, 1.0)
+    }
+
     @Test
     fun `the Skill page's schema editor says whether the schema is valid`() = browse {
         page.navigate(url("/skills/new"))
