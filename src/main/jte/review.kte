@@ -20,7 +20,7 @@
 </head>
 <body>
 @template.nav(shell = shell)
-<main>
+<main class="${if (tab == "story") "full" else null}">
 <div class="crumbs"><a href="/runs">Runs</a> / <a href="/runs/${entry.run}">${entry.runName}</a> / ${entry.task}</div>
 <div class="ph"><h1>${entry.task} <span class="pill p-waiting">Waiting on you</span> @template.tag(entry = entry)</h1>
     <div class="acts"><span class="muted small">User Task</span></div><div class="sub">${entry.summary}</div></div>
@@ -38,14 +38,15 @@
 @if(refused != null)<p role="alert">${refused}</p>@endif
 @if(stories != null)!{val uncovered = stories.remainder.values.sum()}
 <div class="storyview">
-    <div class="spine"><div class="stitle">${stories.title}</div>
+    <nav class="spine"><div class="stitle">${stories.title}</div>
         @for(i in stories.stories.indices)!{val story = stories.stories[i]}
         <a class="srow" href="#s${i + 1}-1"><span>${story.name}</span><span class="cnt">${story.steps.size} step${if (story.steps.size == 1) "" else "s"}@if(story.stale > 0) · <span class="stalecnt">${story.stale} stale</span>@endif</span></a>
+        <ol class="ssteps" data-story="${i + 1}">@for(j in story.steps.indices)<li><a href="#s${i + 1}-${j + 1}">@if(story.steps[j].stale != null)⚠ @endif${story.steps[j].name}</a></li>@endfor</ol>
         @endfor
         <div class="srem"><div><b>Remainder</b> · ${uncovered} change${if (uncovered == 1) "" else "s"} no step covers</div>
             @for(file in stories.remainder.entries)<div class="rf"><span class="mono"><b>${file.key.first}</b> · ${file.key.second}</span><span class="muted">${file.value} hunk${if (file.value == 1) "" else "s"}</span></div>
             @endfor</div>
-    </div>
+    </nav>
     <div id="walkMain">
         <div class="card" id="stories"><div class="muted small">Story set</div><h3>${stories.title}</h3>
             @for(i in stories.stories.indices)!{val story = stories.stories[i]}
@@ -56,8 +57,7 @@
         @for(i in stories.stories.indices)!{val story = stories.stories[i]}
         <section class="walkstory" data-story="${i + 1}">
             <div class="row walkhead"><b>${story.name}</b><span class="muted small">$unsafe{inlineCode(story.premise)}</span><span class="grow"></span><button type="button" class="ghost small" data-all>All stories</button></div>
-            <div class="walkgrid"><div class="smenu">@for(j in story.steps.indices)<a href="#s${i + 1}-${j + 1}">@if(story.steps[j].stale != null)⚠ @endif${story.steps[j].name}</a>@endfor</div>
-            <div>
+            <div class="walksteps">
             @for(j in story.steps.indices)!{val step = story.steps[j]}
             <div class="step" data-step="${j + 1}">
                 <div class="cfile"><span class="mono"><b>${step.repo}</b> · ${step.path}</span><span class="grow"></span><label class="small row"><input type="checkbox" class="showdiff"> Show the diff</label></div>
@@ -92,7 +92,7 @@
                 </div>
             </div>
             @endfor
-            </div></div>
+            </div>
         </section>
         @endfor
     </div>

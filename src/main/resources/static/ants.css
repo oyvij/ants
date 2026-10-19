@@ -164,6 +164,7 @@ input[type=checkbox], input[type=radio] { width: auto; accent-color: var(--acc);
 .chip { font-size: 12px; font-weight: 600; background: var(--vioSoft); color: var(--vio); border-radius: 20px; padding: 3px 11px; cursor: pointer; }
 .composer { position: fixed; bottom: 0; left: var(--side-width); right: 0; background: var(--composer); backdrop-filter: blur(6px); border-top: 1px solid var(--line); z-index: 5; }
 .composer > :is(div, form) { max-width: var(--page-max); margin: 0 auto; padding: 12px 40px; display: flex; gap: 8px; align-items: flex-end; }
+main.full:has(.composer) { padding-bottom: 160px; } main.full .composer > :is(div, form) { max-width: none; padding-inline: 24px; }
 .composer .grow { flex: 1; } .composer .ed .cm-editor { min-height: 44px; max-height: 160px; }
 
 /* The diagram box: the Run's live diagram, the Process's, and the modeler's canvas, with ＋, －, Fit and ⛶ (shell.js) */
@@ -251,15 +252,16 @@ div.tools label span { color: var(--muted); font-size: 12px; display: block; }
 .chipsel input { border: 0; outline: 0; flex: 1; min-width: 160px; padding: 4px; min-height: 0; background: none; }
 .listed .row { margin-bottom: 6px; }
 
-.storyview { display: grid; grid-template-columns: 280px 1fr; gap: 20px; align-items: start; }
-.spine { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sh); padding: 18px; position: sticky; top: 16px; }
+.storyview { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 20px; align-items: start; }
+.spine { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sh); padding: 16px; position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow-y: auto; overflow-wrap: anywhere; }
 .spine .stitle { font-weight: 700; font-size: 15px; line-height: 1.4; margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--line2); }
 .spine .srow { display: flex; align-items: baseline; gap: 10px; padding: 8px 10px; margin: 0 -10px; border-radius: 8px; color: var(--text); font-size: 13.5px; } .spine .srow .cnt { margin-left: auto; color: var(--muted); font-size: 12px; white-space: nowrap; } .spine .srow:hover { background: var(--line2); text-decoration: none; }
 .spine .srow.on { background: var(--accSoft); font-weight: 600; } .spine .srem { margin-top: 14px; border-top: 1px solid var(--line2); padding-top: 12px; font-size: 12.5px; } .spine .srem .rf { display: flex; justify-content: space-between; padding: 3px 0; color: var(--text2); }
 .sover { padding: 12px 0; border-top: 1px solid var(--line2); } .sover > div { margin-top: 3px; }
-.walkgrid { display: grid; grid-template-columns: 180px minmax(0, 1fr); box-shadow: var(--sh); gap: 0; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
-.smenu { background: var(--panel2); border-right: 1px solid var(--line); padding: 8px 0; } .smenu a { display: block; padding: 8px 16px; font-size: 13px; color: var(--muted); }
-.smenu a.on { background: var(--text); color: var(--panel); font-weight: 700; } .smenu a:hover { text-decoration: none; }
+.ssteps { margin: 2px 0 8px; padding: 0 0 0 24px; font-size: 13px; } .ssteps li::marker { color: var(--muted); font-size: 12px; }
+.ssteps a { display: block; padding: 5px 8px; border-radius: 6px; color: var(--muted); } .ssteps a:hover { background: var(--line2); text-decoration: none; }
+.ssteps a[aria-current=step] { background: var(--text); color: var(--panel); font-weight: 700; }
+.walksteps { box-shadow: var(--sh); background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
 .cfile { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--line2); font-size: 12.5px; }
 .code { font: 12.5px/1.75 var(--mono); padding: 10px 0; overflow-x: auto; background: var(--codeBg); }
 .cl { display: grid; grid-template-columns: 44px 3px 1fr; gap: 12px; white-space: pre; padding-right: 16px; } .cl .ln { text-align: right; color: var(--lnum); }
@@ -274,9 +276,9 @@ div.tools label span { color: var(--muted); font-size: 12px; display: block; }
 .tabs { display: flex; gap: 4px; margin-bottom: 18px; border-bottom: 1px solid var(--line); }
 .tabs button { border: 0; box-shadow: none; background: none; border-radius: 0; padding: 10px 16px; color: var(--muted); border-bottom: 2px solid transparent; }
 .tabs button.on { color: var(--text); border-bottom-color: var(--acc); }
-.walk { display: grid; grid-template-columns: 220px 1fr; gap: 18px; }
+.walk { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 18px; }
 .walk nav { position: sticky; top: 20px; align-self: start; display: flex; flex-direction: column; gap: 2px; }
-.walk nav a { color: var(--text); padding: 6px 10px; border-radius: 8px; font-size: 13px; } .walk nav a:hover { background: var(--panel); text-decoration: none; }
+.walk nav a { color: var(--text); padding: 6px 10px; border-radius: 8px; font-size: 13px; overflow-wrap: anywhere; } .walk nav a:hover { background: var(--panel); text-decoration: none; }
 
 /* Liveness: what a running Agent looks like everywhere it appears */
 .spin { display: inline-block; width: 1em; text-align: center; color: var(--run); font-weight: 700; }
@@ -420,7 +422,6 @@ nav#tabs[role=tablist] .m { color: var(--ans); white-space: nowrap; }
 .band .details { margin-top: 12px; grid-template-columns: 64px 1fr; } .band .details code { white-space: pre-wrap; }
 .stepcomment { margin-top: 14px; align-items: flex-start; }
 .walk nav b { padding: 8px 10px 2px; } .walk nav a.mono { font-size: 12px; }
-.walk { grid-template-columns: 220px minmax(0, 1fr); }
 .walk .card > .row > b.mono { font-size: 16px; } .walk .commits { margin: 8px 0 4px; }
 .walk .card > .row > * { flex-shrink: 0; white-space: nowrap; } .walk .card > .row > .mono.muted { flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .walk details { border-top: 1px solid var(--line2); padding: 8px 0; overflow-x: auto; } .walk summary { cursor: pointer; }

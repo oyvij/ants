@@ -760,14 +760,14 @@ class BrowserTest : AntsTest() {
         assertContains(http.get("/processes/ticketed/diagram.bpmn").body, """name="ants.items-are-tickets" value="true"""")
     }
 
-    @Test
-    fun `Review changes opens on the Story tab, walks a story step by step by key, comments on a step, and switches to By repo`() = browse {
+    private fun storyReviewWithTwoStaleSteps(): String {
         val claude = FakeClaude()
         agentTask(claude, mapOf("narrate" to null, "mend" to null, "ship" to null), extra = reviewSourceMap())
-        val set = """{"title":"Nothing changes","ranges":[{"repo":"api","base":"origin/main","head":"HEAD"}],"stories":[{"id":"s","name":"Greeting",""" +
+        val set = """{"title":"Nothing changes","ranges":[{"repo":"api","base":"origin/main","head":"origin/main"}],"stories":[{"id":"s","name":"Greeting",""" +
             """"premise":"Hello stays.","steps":[{"id":"hello","name":"Hello","claim":"It greets.","why":"Politeness.",""" +
             """"site":{"file":"repos/api/hello.txt","side":"new","kind":"context","from":1,"to":1}},""" +
-            """{"id":"world","name":"World","claim":"It names the world.","why":"Scope.","site":{"file":"repos/api/hello.txt","side":"new","kind":"context","from":2,"to":2}}]}]}"""
+            """{"id":"world","name":"World","claim":"It names the world.","why":"Scope.","site":{"file":"repos/api/hello.txt","side":"new","kind":"context","from":2,"to":2}},""" +
+            """{"id":"everyone","name":"Everyone","claim":"It greets the world.","why":"Reach.","site":{"file":"repos/api/hello.txt","side":"new","kind":"context","from":1,"to":2}}]}]}"""
         claude.session("narrate", "write walkthrough/stories.json $set", """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":{"outcome":"done","summary":"Done.","output":{}}}""")
         http.upload("/processes", "file", "story-set.bpmn", javaClass.getResource("/story-set.bpmn")!!.readBytes())
         val run = http.post("/processes/story-set/runs", listOf("repos" to "api", "repos" to "web")).path.removePrefix("/runs/")
@@ -778,18 +778,37 @@ class BrowserTest : AntsTest() {
             entry = Regex("""href="(/notifications/[^"]+)"""").find(list)!!.groupValues[1]
         }
         assertContains(http.get(entry).body, "/runs/$run")
+        commitFile(workspace(run).resolve("repos/api"), "hello.txt", "hello\nWORLD\n", "Shout the world")
+        return entry
+    }
 
+    @Test
+    fun `Review changes opens on the Story tab, walks a story step by step by key, comments on a step, and switches to By repo`() = browse {
+        val entry = storyReviewWithTwoStaleSteps()
         page.navigate(url(entry))
         assertThat(page.locator(".tabs a.on")).hasText("Story")
+        val spine = page.locator(".spine")
+        assertThat(spine).containsText("Nothing changes")
+        assertThat(spine).containsText("Greeting")
+        assertThat(spine).containsText("Remainder")
+        assertThat(spine.locator("li a[href='#s1-1']")).isHidden()
         assertThat(page.locator("#stories")).isVisible()
         page.click("#stories .sover a")
         val step = page.locator(".step:not([hidden])")
         assertThat(step.locator(".claim")).hasText("It greets.")
-        assertThat(page.locator(".smenu a.on")).hasText("Hello")
-        assertThat(page.locator(".spine .srow.on")).containsText("Greeting")
+        val active = spine.locator("[aria-current=step]")
+        assertThat(active).hasText("Hello")
+        assertThat(spine.locator("li:visible")).hasText(arrayOf("Hello", "⚠ World", "⚠ Everyone"))
+        assertThat(spine.locator(".srow.on")).containsText("Greeting")
         assertThat(step.locator("[data-go='-1']")).isDisabled()
-        page.click(".step:not([hidden]) [data-go='1']")
-        assertThat(step.locator(".claim")).hasText("It names the world.")
+        step.locator("[data-go='1']").press("Enter")
+        assertThat(step.locator(".claim")).containsText("It names the world.")
+        assertThat(active).hasText("⚠ World")
+        spine.locator("li a[href='#s1-1']").press("Enter")
+        assertThat(step.locator(".claim")).hasText("It greets.")
+        assertThat(active).hasText("Hello")
+        spine.locator("li a[href='#s1-2']").click()
+        assertThat(active).hasText("⚠ World")
         page.click(".step:not([hidden]) [data-go='-1']")
         assertThat(step.locator(".claim")).hasText("It greets.")
         assertThat(step.locator(".details")).isHidden()
@@ -815,12 +834,61 @@ class BrowserTest : AntsTest() {
         overall.pressSequentially("can type n, p, d, D and c")
         assertThat(overall).hasText("can type n, p, d, D and c")
         assertThat(step.locator(".claim")).hasText("It greets.") // no key steps the story
-        page.click(".step:not([hidden]) [data-go='1']")
+        page.navigate(url("$entry#s1-3"))
+        assertThat(step.locator(".claim")).containsText("It greets the world.")
+        assertThat(step.locator(".claim .stale")).hasText("STALE")
+        assertThat(active).hasText("⚠ Everyone")
+        assertThat(step.locator("[data-go='1']")).isDisabled()
         page.click(".walkstory:not([hidden]) [data-all]")
         assertThat(page.locator("#stories")).isVisible()
+        assertThat(active).hasCount(0)
         page.click(".tabs a:not(.on)")
         assertThat(page.locator(".tabs a.on")).hasText("By repo")
         assertThat(page.locator("[data-repo]").first()).containsText("api")
+    }
+
+    @Test
+    fun `Review changes' sticky story column never slides over the code as a long step scrolls`() = browse {
+        val entry = storyReviewWithTwoStaleSteps()
+        page.setViewportSize(1440, 360)
+        page.navigate(url("$entry#s1-3"))
+        page.click(".step:not([hidden]) [data-details]")
+        page.click(".step:not([hidden]) [data-comment]")
+        val spine = page.locator(".spine")
+        val code = page.locator(".step:not([hidden]) .code")
+        assertThat(code).isVisible()
+        val height = (page.evaluate("document.documentElement.scrollHeight") as Number).toInt()
+        assertTrue(height > 720, "the page is ${height}px tall")
+        for (y in 0..height step 40) {
+            page.evaluate("y => scrollTo(0, y)", y)
+            val (s, c) = spine.boundingBox() to code.boundingBox()
+            val apart = s.x + s.width <= c.x || c.x + c.width <= s.x || s.y + s.height <= c.y || c.y + c.height <= s.y
+            assertTrue(apart, "scrolled to $y, the story column (${s.x}, ${s.y}, ${s.width}×${s.height}) is over the code (${c.x}, ${c.y}, ${c.width}×${c.height})")
+        }
+        val side = page.locator("nav.side").boundingBox()
+        assertTrue(spine.boundingBox().x - (side.x + side.width) <= 32, "the story column sits against the sidebar")
+    }
+
+    @Test
+    fun `Review changes' By repo file list wraps a long file name instead of clipping it`() = browse {
+        agentTask(FakeClaude(), mapOf("mend" to null, "ship" to null), extra = reviewSourceMap())
+        http.upload("/processes", "file", "review.bpmn", javaClass.getResource("/review.bpmn")!!.readBytes())
+        val run = http.post("/processes/review/runs", listOf("repos" to "api", "repos" to "web")).path.removePrefix("/runs/")
+        var entry = ""
+        eventually { entry = assertNotNull(Regex("""href="(/notifications/[^"]+)"""").find(http.get("/notifications").body)).groupValues[1] }
+        val long = "PaymentFailedHandlerRetryPolicySchedulerIntegrationTest.kt"
+        commitFile(workspace(run).resolve("repos/api"), long, "retry\n", "Test the retry")
+
+        page.setViewportSize(1440, 900)
+        page.navigate(url(entry))
+        val nav = page.locator(".walk nav")
+        val link = nav.locator("a", Locator.LocatorOptions().setHasText(long))
+        assertThat(link).hasText(long)
+        assertEquals(200.0, nav.boundingBox().width, 0.5)
+        val (n, l) = nav.boundingBox() to link.boundingBox()
+        assertTrue(l.x >= n.x && l.x + l.width <= n.x + n.width + 0.5, "the link (${l.x}, ${l.width}) stays inside the nav (${n.x}, ${n.width})")
+        assertTrue(l.height > 30, "the long name wraps onto more lines, ${l.height}px tall")
+        assertEquals(link.evaluate("e => e.clientWidth"), link.evaluate("e => e.scrollWidth"))
     }
 
     @Test
