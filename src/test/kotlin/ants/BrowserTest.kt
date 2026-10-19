@@ -1,5 +1,6 @@
 package ants
 
+import com.microsoft.playwright.Browser.NewContextOptions
 import com.microsoft.playwright.BrowserType
 import com.microsoft.playwright.Locator
 import com.microsoft.playwright.options.AriaRole
@@ -510,10 +511,6 @@ class BrowserTest : AntsTest() {
         assertThat(field).hasValue("Like this: ![image](${ImagesTest.RED_PATH}) please")
     }
 
-    /**
-     * The Process `picker`, start-form.bpmn with its Repos field storing [stored], on a Source map of api, web and
-     * webhooks; opens its page.
-     */
     private fun picker(stored: String = "") {
         settings(null, sourceMapLines(repo("api"), repo("web"), repo("webhooks")))
         val bpmn = javaClass.getResource("/start-form.bpmn")!!.readText().replace("\"start-form\"", "\"picker\"")
@@ -575,7 +572,6 @@ class BrowserTest : AntsTest() {
         assertThat(none).isVisible()
     }
 
-    /** Fills in the start form's required Prompt and starts the Run; the Run's `repos` variable as its page shows it. */
     private fun startPicked(page: Page = this.page, prompt: Locator = page.locator("textarea[name=prompt] + .ed .cm-content")): String {
         prompt.fill("Add dark mode")
         page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("Start").setExact(true)).click()
@@ -584,8 +580,9 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
-    fun `the start form's Repos combobox shows the stored repos as tags, and the Run gets exactly the repos picked`() = browse {
+    fun `the start form's Repos combobox shows the stored repos as tags, and the Run gets exactly the repos picked, a URL still being typed among them`() = browse {
         val elsewhere = repo("elsewhere").remote
+        val mirror = repo("webmirror").remote
         picker(stored = "api $elsewhere")
         assertThat(repoTags).hasText(arrayOf("api×", "$elsewhere×"))
 
@@ -595,19 +592,15 @@ class BrowserTest : AntsTest() {
         repoBox.press("Escape")
         assertThat(repoTags).hasText(arrayOf("$elsewhere×", "web×"))
 
-        assertEquals("""["$elsewhere","web"]""", startPicked())
+        repoBox.pressSequentially("$mirror")
+        assertEquals("""["$elsewhere","web","$mirror"]""", startPicked())
     }
 
     @Test
     fun `with JavaScript off the start form's Repos field is the Source map's checkboxes and a text input, which still start the Run`() = browse {
         val elsewhere = repo("elsewhere").remote
         picker()
-        val plain = page.context().browser().newContext(com.microsoft.playwright.Browser.NewContextOptions().setJavaScriptEnabled(false)).newPage()
-        plain.navigate(url("/login"))
-        plain.fill("input[name=username]", "admin")
-        plain.fill("input[name=password]", "admin")
-        plain.click("button[type=submit]")
-        plain.waitForURL { !it.contains("/login") }
+        val plain = page.context().browser()!!.newContext(NewContextOptions().setJavaScriptEnabled(false)).apply { addCookies(page.context().cookies()) }.newPage()
         plain.navigate(url("/processes/picker"))
         assertThat(plain.getByRole(AriaRole.COMBOBOX)).hasCount(0)
         assertThat(plain.locator("#start input[type=checkbox]")).hasCount(3)

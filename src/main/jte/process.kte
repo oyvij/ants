@@ -62,7 +62,7 @@
     </select></div>
 @endif
 @for(field in fields)
-    <div class="fld" data-repos="${if (field.type == FieldType.REPOS) "Filter Source map repos, or type a git URL / owner/name" else null}"><label class="f" for="field-${field.name}">${field.label}@if(!field.required) <span class="muted small" style="font-weight: 500">(optional)</span>@endif</label>
+    <div class="fld" data-filter-placeholder="${if (field.type == FieldType.REPOS) "Filter Source map repos, or type a git URL / owner/name" else null}"><label class="f" for="field-${field.name}">${field.label}@if(!field.required) <span class="muted small" style="font-weight: 500">(optional)</span>@endif</label>
     @if(field.type == FieldType.REPOS)
     <div class="help">${field.help?.let { "$it " } ?: ""}Pick Source map repos, type git URLs such as <span class="eg">git@github.com:you/api.git</span>, or <span class="eg">you/new-app</span> for a new private repo Ants creates on your gh login. Filled in, the Run clones exactly these repos, and the scout takes them as given.</div>
     @if(repos.isNotEmpty())

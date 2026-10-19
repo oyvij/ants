@@ -15,7 +15,7 @@ function repoPicker(field) {
         .filter((repo, i, all) => all.indexOf(repo) === i)
 
     const input = element("input", {
-        id, role: "combobox", placeholder: field.dataset.repos, autocomplete: "off",
+        id, role: "combobox", placeholder: field.dataset.filterPlaceholder, autocomplete: "off",
         "aria-autocomplete": "list", "aria-expanded": "false", "aria-controls": `${id}-list`,
     })
     const list = element("ul", {id: `${id}-list`, role: "listbox", "aria-multiselectable": "true", "aria-label": "Source map repos"})
@@ -63,7 +63,13 @@ function repoPicker(field) {
     function filter() {
         const query = input.value.trim().toLowerCase()
         for (const option of options) option.hidden = !option.textContent.toLowerCase().includes(query)
-        activate(shown()[0])
+        activate(query && !/[/:]/.test(query) ? shown()[0] : null)
+    }
+
+    function addTyped() {
+        for (const repo of entries(input.value)) if (!picked.includes(repo)) picked.push(repo)
+        input.value = ""
+        render()
     }
 
     function open() {
@@ -106,14 +112,13 @@ function repoPicker(field) {
             const option = !list.hidden && active()
             if (option) toggle(option.textContent)
             else if (input.value.trim()) {
-                for (const repo of entries(input.value)) if (!picked.includes(repo)) picked.push(repo)
-                input.value = ""
-                render()
+                addTyped()
                 filter()
             } else return
             event.preventDefault()
-        }
+        } else if (event.key === "Tab") close()
     })
+    input.form.addEventListener("submit", addTyped)
     list.addEventListener("mousedown", event => event.preventDefault())
     list.addEventListener("click", event => {
         const option = event.target.closest("[role=option]")
@@ -126,9 +131,13 @@ function repoPicker(field) {
     })
     tags.addEventListener("click", event => {
         const button = event.target.closest("button")
-        if (button) toggle(button.parentElement.querySelector("input").value)
+        if (!button) return
+        const at = [...tags.children].indexOf(button.parentElement)
+        toggle(button.parentElement.querySelector("input").value)
+        const next = tags.children[at] ?? tags.children[at - 1]
+        if (next) next.querySelector("button").focus()
     })
     render()
 }
 
-document.querySelectorAll("#start [data-repos]").forEach(repoPicker)
+document.querySelectorAll("#start [data-filter-placeholder]").forEach(repoPicker)
