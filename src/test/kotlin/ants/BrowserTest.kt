@@ -794,7 +794,46 @@ class BrowserTest : AntsTest() {
         assertContains(http.get("/processes/ticketed/diagram.bpmn").body, """name="ants.items-are-tickets" value="true"""")
     }
 
-    private fun staleStoryReviewEntry(): String {
+    private val wideAndTall = "let greeting = " + "\"hello\" + ".repeat(80) + "\"world\"\n" + (2..40).joinToString("") { "line $it\n" }
+
+    private fun assertScrollsSidewaysOnScreenKeepingItsNumbers(box: Locator, numbers: Locator) {
+        box.evaluate("e => e.scrollIntoView({block: 'start'})")
+        val (across, down) = (box.evaluate("e => [e.scrollWidth - e.clientWidth, e.scrollHeight - e.clientHeight]") as List<*>).map { (it as Number).toInt() }
+        assertTrue(across > 0 && down > 0, "the box scrolls ${across}px sideways and ${down}px down inside it")
+        val (b, bar) = box.boundingBox() to page.locator(".composer > div").boundingBox()
+        assertTrue(b.y + b.height <= bar.y, "the box ends, horizontal scrollbar and all, at ${b.y + b.height}, under the composer at ${bar.y}")
+        val before = numbers.all().map { it.boundingBox().x }
+        page.mouse().move(b.x + b.width / 2, b.y + b.height / 2)
+        page.mouse().wheel(300.0, 0.0)
+        eventually { assertTrue((box.evaluate("e => e.scrollLeft") as Number).toInt() > 0, "the box scrolled sideways under the pointer") }
+        assertEquals(0.0, (page.evaluate("scrollX") as Number).toDouble())
+        for ((x, number) in before.zip(numbers.all())) assertEquals(x, number.boundingBox().x, 0.5, "the line number stays put")
+    }
+
+    @Test
+    fun `a story step's code wider and taller than its box scrolls sideways inside it, its scrollbar on screen and its line numbers put`() = browse {
+        val entry = staleStoryReviewEntry(wideAndTall)
+        page.setViewportSize(1440, 240)
+        page.navigate(url("$entry#s1-3"))
+        val code = page.locator(".step:not([hidden]) .code")
+        assertThat(code).containsText("line 12")
+        assertScrollsSidewaysOnScreenKeepingItsNumbers(code, code.locator(".ln").nth(1))
+    }
+
+    @Test
+    fun `a By repo file's diff wider and taller than its box scrolls sideways inside it, and its line numbers stay put and pick lines`() = browse {
+        val entry = byRepoReviewEntryOfApiCommitting("wide.txt", wideAndTall)
+        page.setViewportSize(1440, 400)
+        page.navigate(url(entry))
+        val diff = page.locator("table.diff[data-file='repos/api/wide.txt']")
+        val numbers = diff.locator("tr[data-side=new][data-line='2'] td:nth-child(-n+2)")
+        assertScrollsSidewaysOnScreenKeepingItsNumbers(diff, numbers)
+        numbers.nth(1).click()
+        assertThat(page.locator("#line-comment [name=file]")).hasValue("repos/api/wide.txt")
+        assertThat(page.locator("#line-comment [name=from]")).hasValue("2")
+    }
+
+    private fun staleStoryReviewEntry(hello: String = "hello\nWORLD\n"): String {
         val claude = FakeClaude()
         agentTask(claude, mapOf("narrate" to null, "mend" to null, "ship" to null), extra = reviewSourceMap())
         val set = """{"title":"Nothing changes","ranges":[{"repo":"api","base":"origin/main","head":"origin/main"}],"stories":[{"id":"s","name":"Greeting",""" +
@@ -812,7 +851,7 @@ class BrowserTest : AntsTest() {
             entry = Regex("""href="(/notifications/[^"]+)"""").find(list)!!.groupValues[1]
         }
         assertContains(http.get(entry).body, "/runs/$run")
-        commitFile(workspace(run).resolve("repos/api"), "hello.txt", "hello\nWORLD\n", "Shout the world")
+        commitFile(workspace(run).resolve("repos/api"), "hello.txt", hello, "Shout the world")
         return entry
     }
 
