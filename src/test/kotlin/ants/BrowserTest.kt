@@ -723,6 +723,34 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `the composer never covers the end of Review changes however tall it grows, and a page without one keeps its own bottom padding`() = browse {
+        val entry = staleStoryReviewEntry()
+        page.setViewportSize(1440, 700)
+        page.navigate(url("$entry#s1-1"))
+        page.click(".step:not([hidden]) [data-comment]")
+        page.locator(".step:not([hidden]) [name=body]").fill("Why?")
+        page.click(".step:not([hidden]) .stepcomment button")
+        assertThat(page.locator("#comments")).isVisible()
+        val composer = page.locator(".composer")
+        fun clear(height: String) = eventually {
+            page.evaluate("scrollTo(0, document.documentElement.scrollHeight)")
+            val bar = composer.boundingBox()
+            for (selector in listOf(".step:not([hidden]) .code", "#comments", "#comment + .ed")) {
+                val box = page.locator(selector).boundingBox()
+                assertTrue(box.y + box.height <= bar.y, "$selector ends at ${box.y + box.height}px, under the $height composer at ${bar.y}px")
+            }
+        }
+        clear("one-line")
+        page.locator(".composer > div").evaluate("bar => { bar.style.flexWrap = 'wrap'; bar.insertAdjacentHTML('beforeend', '<p style=\"flex-basis: 100%; height: 240px; margin: 0\"></p>') }")
+        assertTrue(composer.boundingBox().height > 240)
+        clear("grown")
+
+        page.navigate(url("/processes"))
+        fun padding(side: String) = page.locator("main").evaluate("main => getComputedStyle(main).padding$side") as String
+        assertEquals(padding("Top"), padding("Bottom"))
+    }
+
+    @Test
     fun `a rendered Markdown body keeps a readable measure on a wide page`() = browse {
         settings(null)
         val (process, plane) = row("measured", """<bpmn:startEvent id="start" />""", """<bpmn:userTask id="wait" name="Wait" />""", """<bpmn:endEvent id="end" />""")
