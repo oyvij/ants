@@ -647,14 +647,19 @@ class BrowserTest : AntsTest() {
         assertEquals("""["web","$elsewhere"]""", startPicked(plain, plain.locator("textarea[name=prompt]")))
     }
 
-    @Test
-    fun `Review changes picks diff lines for a comment by clicking their numbers, and files it`() = browse {
+    private fun byRepoReviewEntryOfApiCommitting(file: String, text: String): String {
         agentTask(FakeClaude(), mapOf("mend" to null, "ship" to null), extra = reviewSourceMap())
         http.upload("/processes", "file", "review.bpmn", javaClass.getResource("/review.bpmn")!!.readBytes())
         val run = http.post("/processes/review/runs", listOf("repos" to "api", "repos" to "web")).path.removePrefix("/runs/")
         var entry = ""
         eventually { entry = assertNotNull(Regex("""href="(/notifications/[^"]+)"""").find(http.get("/notifications").body)).groupValues[1] }
-        commitFile(workspace(run).resolve("repos/api"), "hello.txt", "hi\nthere\nworld\n", "Say hi")
+        commitFile(workspace(run).resolve("repos/api"), file, text, "Change $file")
+        return entry
+    }
+
+    @Test
+    fun `Review changes picks diff lines for a comment by clicking their numbers, and files it`() = browse {
+        val entry = byRepoReviewEntryOfApiCommitting("hello.txt", "hi\nthere\nworld\n")
 
         page.navigate(url(entry))
         val diff = page.locator("table.diff[data-file='repos/api/hello.txt']")
@@ -760,7 +765,7 @@ class BrowserTest : AntsTest() {
         assertContains(http.get("/processes/ticketed/diagram.bpmn").body, """name="ants.items-are-tickets" value="true"""")
     }
 
-    private fun storyReviewWithTwoStaleSteps(): String {
+    private fun staleStoryReviewEntry(): String {
         val claude = FakeClaude()
         agentTask(claude, mapOf("narrate" to null, "mend" to null, "ship" to null), extra = reviewSourceMap())
         val set = """{"title":"Nothing changes","ranges":[{"repo":"api","base":"origin/main","head":"origin/main"}],"stories":[{"id":"s","name":"Greeting",""" +
@@ -784,7 +789,7 @@ class BrowserTest : AntsTest() {
 
     @Test
     fun `Review changes opens on the Story tab, walks a story step by step by key, comments on a step, and switches to By repo`() = browse {
-        val entry = storyReviewWithTwoStaleSteps()
+        val entry = staleStoryReviewEntry()
         page.navigate(url(entry))
         assertThat(page.locator(".tabs a.on")).hasText("Story")
         val spine = page.locator(".spine")
@@ -849,7 +854,7 @@ class BrowserTest : AntsTest() {
 
     @Test
     fun `Review changes' sticky story column never slides over the code as a long step scrolls`() = browse {
-        val entry = storyReviewWithTwoStaleSteps()
+        val entry = staleStoryReviewEntry()
         page.setViewportSize(1440, 360)
         page.navigate(url("$entry#s1-3"))
         page.click(".step:not([hidden]) [data-details]")
@@ -862,8 +867,8 @@ class BrowserTest : AntsTest() {
         for (y in 0..height step 40) {
             page.evaluate("y => scrollTo(0, y)", y)
             val (s, c) = spine.boundingBox() to code.boundingBox()
-            val apart = s.x + s.width <= c.x || c.x + c.width <= s.x || s.y + s.height <= c.y || c.y + c.height <= s.y
-            assertTrue(apart, "scrolled to $y, the story column (${s.x}, ${s.y}, ${s.width}×${s.height}) is over the code (${c.x}, ${c.y}, ${c.width}×${c.height})")
+            assertTrue(s.x + s.width <= c.x, "scrolled to $y, the story column (${s.x}, ${s.width}) reaches over the code (${c.x})")
+            if (c.y + c.height > 0) assertTrue(s.y + s.height > 0, "scrolled to $y, the code is on screen but the story column has left it (${s.y})")
         }
         val side = page.locator("nav.side").boundingBox()
         assertTrue(spine.boundingBox().x - (side.x + side.width) <= 32, "the story column sits against the sidebar")
@@ -871,13 +876,8 @@ class BrowserTest : AntsTest() {
 
     @Test
     fun `Review changes' By repo file list wraps a long file name instead of clipping it`() = browse {
-        agentTask(FakeClaude(), mapOf("mend" to null, "ship" to null), extra = reviewSourceMap())
-        http.upload("/processes", "file", "review.bpmn", javaClass.getResource("/review.bpmn")!!.readBytes())
-        val run = http.post("/processes/review/runs", listOf("repos" to "api", "repos" to "web")).path.removePrefix("/runs/")
-        var entry = ""
-        eventually { entry = assertNotNull(Regex("""href="(/notifications/[^"]+)"""").find(http.get("/notifications").body)).groupValues[1] }
         val long = "PaymentFailedHandlerRetryPolicySchedulerIntegrationTest.kt"
-        commitFile(workspace(run).resolve("repos/api"), long, "retry\n", "Test the retry")
+        val entry = byRepoReviewEntryOfApiCommitting(long, "retry\n")
 
         page.setViewportSize(1440, 900)
         page.navigate(url(entry))

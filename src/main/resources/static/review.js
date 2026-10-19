@@ -24,7 +24,10 @@ if (walk) {
         document.querySelectorAll(".spine .srow").forEach(a => a.classList.toggle("on", a.hash.startsWith(`#s${story}-`)))
         document.querySelectorAll(".spine .ssteps").forEach(list => {
             list.hidden = Number(list.dataset.story) !== story
-            list.querySelectorAll("a").forEach(a => a.hash === `#s${story}-${n}` ? a.setAttribute("aria-current", "step") : a.removeAttribute("aria-current"))
+            list.querySelectorAll("a").forEach(a => {
+                if (a.hash === `#s${story}-${n}`) a.setAttribute("aria-current", "step")
+                else a.removeAttribute("aria-current")
+            })
         })
         walk.querySelectorAll(".details, .stepcomment").forEach(it => it.hidden = true)
         walk.querySelectorAll("[data-details]").forEach(it => it.textContent = "Why, flow, nudge")
