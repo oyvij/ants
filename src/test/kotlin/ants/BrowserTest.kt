@@ -400,57 +400,94 @@ class BrowserTest : AntsTest() {
         assertThat(ask).isHidden()
     }
 
-    @Test
-    fun `Answer a Round shows one question at a time under tabs marking accepted and edited, then Review and send`() = browse {
-        val claude = FakeClaude()
+    private fun round(vararg questions: Pair<String, String>) = """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":""" +
+        """{"outcome":"done","summary":"A Round.","output":{"questions":[""" + questions.joinToString(",") { (id, title) ->
+            """{"id":"$id","title":"$title","ask":"Ask $id?","context":"Settles $id.","recommendation":"Recommend $id.","why":"Because $id."}"""
+        } + "]}}}"
+
+    private fun answering(claude: FakeClaude, vararg questions: Pair<String, String>): Pair<String, String> {
         agentTask(claude, mapOf("quiz" to """{"type":"object","properties":{"questions":{"type":"array"}}}"""))
-        fun round(vararg ids: String) = """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":""" +
-            """{"outcome":"done","summary":"A Round.","output":{"questions":[""" + ids.joinToString(",") {
-                """{"id":"$it","title":"Title $it","ask":"Ask $it?","context":"Settles $it.","recommendation":"Recommend $it.","why":"Because $it."}"""
-            } + "]}}}"
-        claude.session("quiz", 1, round("who", "scope"))
+        claude.session("quiz", 1, round(*questions))
         claude.session("quiz", 2, round())
         http.upload("/processes", "file", "round.bpmn", javaClass.getResource("/round.bpmn")!!.readBytes())
         val run = http.post("/processes/round/runs", mapOf()).path.removePrefix("/runs/")
         var entry = ""
         eventually { entry = assertNotNull(Regex("""href="(/notifications/[^"]+)"""").find(http.get("/notifications").body)).groupValues[1] }
+        return run to entry
+    }
+
+    @Test
+    fun `Answer a Round shows one question at a time beside a list of them marking answered, accepted and edited, then Review and send`() = browse {
+        val claude = FakeClaude()
+        val (run, entry) = answering(claude, "who" to "Title who", "scope" to "Title scope")
 
         page.navigate(url(entry))
         val tabs = page.locator("#tabs [role=tab]")
-        assertThat(tabs).hasText(arrayOf("· Title who", "· Title scope", "Review and send"))
+        assertThat(tabs).hasText(arrayOf("1 Title who", "2 Title scope", "Review and send"))
         page.screenshot("answer")
         val who = page.locator("#answer-who + .ed .cm-content")
         val scope = page.locator("#answer-scope + .ed .cm-content") // each answer is a markdown editor
         assertThat(who).isVisible()
         assertThat(scope).isHidden()
+        assertThat(tabs.nth(0)).hasAttribute("aria-selected", "true")
         assertThat(page.locator("#back")).not().isVisible()
+        tabs.nth(0).focus()
+        for ((key, row) in listOf("ArrowDown" to 1, "ArrowRight" to 2, "ArrowUp" to 1, "ArrowLeft" to 0)) {
+            page.keyboard().press(key)
+            assertThat(tabs.nth(row)).hasAttribute("aria-selected", "true")
+            assertThat(tabs.nth(row)).isFocused()
+        }
+        assertThat(who).isVisible()
         page.click("#next")
-        assertThat(tabs.nth(0)).hasText("✓ Title who")
+        assertThat(tabs.nth(0)).hasText("1 Title who ✓")
+        assertThat(tabs.nth(1)).hasAttribute("aria-selected", "true")
         assertThat(scope).isVisible()
         scope.fill("Only admins.")
-        assertThat(tabs.nth(1)).hasText("✎ Title scope")
+        assertThat(tabs.nth(1)).hasText("2 Title scope ✓ ✎")
         page.click("#reset")
         assertThat(scope).hasText("Recommend scope.")
         assertThat(page.locator("#answer-scope")).hasValue("Recommend scope.")
+        assertThat(tabs.nth(1)).hasText("2 Title scope")
         // Cleared through the editor's own keys: fill("") sets the DOM selection and presses Delete, which CodeMirror
         // can take before the selectionchange event tells it of the selection, and then deletes nothing.
         scope.press("ControlOrMeta+a")
         scope.press("Delete")
         assertThat(page.locator("#answer-scope")).hasValue("")
+        assertThat(tabs.nth(1)).hasText("2 Title scope ✎")
         val buttons = page.locator("footer").boundingBox()
         page.click("#next")
         assertThat(page.locator("#next")).hasText("Send the Round")
+        assertThat(tabs.last()).hasAttribute("aria-selected", "true")
         assertEquals(buttons.y, page.locator("footer").boundingBox().y) // the buttons never move
         page.click("#next")
         assertThat(page.locator("#answer-scope + .ed.invalid")).isVisible() // required still stops an empty answer
         assertEquals(url(entry), page.url())
         scope.fill("Only admins.")
-        page.click("#next")
+        tabs.last().click()
         assertThat(page.locator("#review-list > button").nth(1)).hasText("✎ Ask scope?Only admins.") // the full question, the answer under it
         page.click("#next")
         page.waitForURL { !it.contains(entry) }
         eventually { assertContains(http.get("/runs/$run").body, """id="state">Completed<""") }
         assertContains(claude.launches("quiz")[1].stdin, """{\"id\":\"who\",\"answer\":\"Recommend who.\",\"source\":\"accepted\"},{\"id\":\"scope\",\"answer\":\"Only admins.\",\"source\":\"written\"}""")
+    }
+
+    @Test
+    fun `a Round of ten long question titles lists every title in full inside the viewport`() = browse {
+        val titles = (1..10).map { "q$it" to "Question $it asks which of the many long and winding options the Run should settle on before it goes on" }
+        val (_, entry) = answering(FakeClaude(), *titles.toTypedArray())
+        page.setViewportSize(1440, 900)
+
+        page.navigate(url(entry))
+
+        val tabs = page.locator("#tabs [role=tab]")
+        assertThat(tabs).hasText((titles.mapIndexed { i, (_, title) -> "${i + 1} $title" } + "Review and send").toTypedArray())
+        page.screenshot("answer-long")
+        for (i in titles.indices) {
+            val box = tabs.nth(i).boundingBox()
+            assertTrue(box.x >= 0 && box.x + box.width <= 1440, "row ${i + 1} spans ${box.x} to ${box.x + box.width}")
+            assertEquals(true, tabs.nth(i).evaluate("e => e.scrollWidth <= e.clientWidth && e.scrollHeight <= e.clientHeight"), "row ${i + 1} is clipped")
+        }
+        assertTrue(tabs.nth(0).boundingBox().let { it.x + it.width } <= page.locator("#round").boundingBox().x, "the list sits left of the question")
     }
 
     @Test
@@ -650,7 +687,7 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
-    fun `the composer on Review changes and the footer on the Answer page line up with the page's content at 1440px and 1920px`() = browse {
+    fun `the composer on Review changes lines up with the page's content, and the footer on the Answer page with the question column, at 1440px and 1920px`() = browse {
         val claude = FakeClaude()
         agentTask(claude, mapOf("mend" to null, "ship" to null, "quiz" to """{"type":"object","properties":{"questions":{"type":"array"}}}"""), extra = reviewSourceMap())
         claude.session("quiz", 1, """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":""" +
@@ -675,7 +712,7 @@ class BrowserTest : AntsTest() {
             page.navigate(url(review))
             for ((main, bar) in contentEdges("main").zip(contentEdges(".composer > div"))) assertEquals(main, bar, 1.0, "the composer's content edges at ${width}px")
             page.navigate(url(answer))
-            assertEquals(contentEdges("main")[0], contentEdges("#round > footer")[0], 1.0, "the footer's left edge at ${width}px")
+            assertEquals(page.locator("#round").boundingBox().x, contentEdges("#round > footer")[0], 1.0, "the footer's buttons start where the question column starts at ${width}px")
             assertEquals(right("#round"), right("#next"), 1.0, "the footer's buttons end where the question column ends at ${width}px")
         }
     }

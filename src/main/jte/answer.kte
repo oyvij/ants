@@ -19,8 +19,9 @@
 <main>
 <div class="crumbs"><a href="/notifications">Notification list</a> / <a href="/runs/${entry.run}">${entry.runName}</a> / ${entry.task}</div>
 <div class="ph"><h1>${entry.summary.ifEmpty { entry.task }}</h1><div class="acts">@template.tag(entry = entry)<span class="muted small">Round ${round} · ${entry.process} · waiting ${entry.waited}</span></div></div>
-<nav id="tabs" role="tablist" hidden></nav>
 @if(error != null)<p role="alert">${error}</p>@endif
+<div class="answering">
+<nav id="tabs" role="tablist" aria-orientation="vertical" hidden></nav>
 <form method="post" action="/notifications/${entry.id}/answers" id="round">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
     @for((i, q) in questions.withIndex())
@@ -44,6 +45,7 @@
         <button id="next">Send the Round</button>
     </footer>
 </form>
+</div>
 </main>
 </body>
 </html>
