@@ -75,6 +75,7 @@ svg.i { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-widt
 main { max-width: var(--page-max); margin: 0 auto; padding: 32px 40px calc(32px + var(--composer-height, 0px)); }
 main.full { max-width: none; padding: 20px 24px calc(24px + var(--composer-height, 0px)); }
 main.full .composer > :is(div, form) { max-width: none; padding-inline: 24px; }
+:root:has(.composer) { --composer-height: 64px; }
 .crumbs { font-size: 12.5px; color: var(--muted); margin-bottom: 6px; } .crumbs a { color: var(--muted); }
 .ph { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
 .ph h1 { font-size: 22px; letter-spacing: -.01em; margin: 0; } .ph h1 a { color: inherit; } .ph .sub { width: 100%; color: var(--muted); margin-top: -6px; }

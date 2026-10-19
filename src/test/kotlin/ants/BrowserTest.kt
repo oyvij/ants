@@ -732,12 +732,12 @@ class BrowserTest : AntsTest() {
         page.click(".step:not([hidden]) .stepcomment button")
         assertThat(page.locator("#comments")).isVisible()
         val composer = page.locator(".composer")
-        fun clear(height: String) = eventually {
+        fun clear(bar: String) = eventually {
             page.evaluate("scrollTo(0, document.documentElement.scrollHeight)")
-            val bar = composer.boundingBox()
+            val top = composer.boundingBox().y
             for (selector in listOf(".step:not([hidden]) .code", "#comments", "#comment + .ed")) {
                 val box = page.locator(selector).boundingBox()
-                assertTrue(box.y + box.height <= bar.y, "$selector ends at ${box.y + box.height}px, under the $height composer at ${bar.y}px")
+                assertTrue(box.y + box.height <= top, "$selector ends at ${box.y + box.height}px, under the $bar composer at ${top}px")
             }
         }
         clear("one-line")
