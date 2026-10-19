@@ -641,7 +641,8 @@ class BrowserTest : AntsTest() {
         val main = page.locator("main")
         page.setViewportSize(1920, 1080)
         page.navigate(url("/processes"))
-        assertTrue(main.boundingBox().width > 1160, "main is ${main.boundingBox().width}px wide at 1920px")
+        val wide = main.boundingBox().width
+        assertTrue(wide > 1160, "main is ${wide}px wide at 1920px")
         page.setViewportSize(3840, 1080)
         assertEquals(2200.0, main.boundingBox().width, 0.5)
         page.navigate(url("/processes/start-end/edit"))
@@ -656,29 +657,26 @@ class BrowserTest : AntsTest() {
             """{"outcome":"done","summary":"A Round.","output":{"questions":[{"id":"who","title":"Who","ask":"Who?","context":"Settles who.","recommendation":"You.","why":"Because."}]}}}""")
         http.upload("/processes", "file", "review.bpmn", javaClass.getResource("/review.bpmn")!!.readBytes())
         http.upload("/processes", "file", "round.bpmn", javaClass.getResource("/round.bpmn")!!.readBytes())
-        http.post("/processes/review/runs", listOf("repos" to "api", "repos" to "web"))
-        http.post("/processes/round/runs", mapOf())
-        val entries = mutableListOf<String>()
-        eventually {
-            entries.clear()
-            entries += Regex("""href="(/notifications/[^"]+)"""").findAll(http.get("/notifications").body).map { it.groupValues[1] }.distinct()
-            assertEquals(2, entries.size)
+        fun newEntry(seen: Set<String> = emptySet()): String {
+            var entry = ""
+            eventually { entry = assertNotNull(Regex("""href="(/notifications/[^"]+)"""").findAll(http.get("/notifications").body).map { it.groupValues[1] }.firstOrNull { it !in seen }) }
+            return entry
         }
-        fun content(locator: Locator) = (locator.evaluate("e => { const r = e.getBoundingClientRect(), s = getComputedStyle(e); " +
+        http.post("/processes/review/runs", listOf("repos" to "api", "repos" to "web"))
+        val review = newEntry()
+        http.post("/processes/round/runs", mapOf())
+        val answer = newEntry(setOf(review))
+        fun contentEdges(selector: String) = (page.locator(selector).evaluate("e => { const r = e.getBoundingClientRect(), s = getComputedStyle(e); " +
             "return [r.left + parseFloat(s.paddingLeft), r.right - parseFloat(s.paddingRight)] }") as List<*>).map { (it as Number).toDouble() }
+        fun right(selector: String) = page.locator(selector).boundingBox().let { it.x + it.width }
 
         for (width in listOf(1440, 1920)) {
             page.setViewportSize(width, 900)
-            for (entry in entries) {
-                page.navigate(url(entry))
-                val (left, right) = content(page.locator("main"))
-                val bar = page.locator(".composer > div, #round > footer")
-                val (barLeft, barRight) = content(bar)
-                assertEquals(left, barLeft, 1.0, "the left edge of the fixed bar on $entry at ${width}px")
-                if (page.locator("#round").count() == 0) assertEquals(right, barRight, 1.0, "the right edge of the composer at ${width}px")
-                else assertEquals(page.locator("#round").boundingBox().let { it.x + it.width }, page.locator("#next").boundingBox().let { it.x + it.width }, 1.0,
-                    "the footer's buttons end where the question column ends at ${width}px")
-            }
+            page.navigate(url(review))
+            for ((main, bar) in contentEdges("main").zip(contentEdges(".composer > div"))) assertEquals(main, bar, 1.0, "the composer's content edges at ${width}px")
+            page.navigate(url(answer))
+            assertEquals(contentEdges("main")[0], contentEdges("#round > footer")[0], 1.0, "the footer's left edge at ${width}px")
+            assertEquals(right("#round"), right("#next"), 1.0, "the footer's buttons end where the question column ends at ${width}px")
         }
     }
 
@@ -691,7 +689,8 @@ class BrowserTest : AntsTest() {
         workspace(run).resolve("tickets/issues").createDirectories().resolve("01-wide.md").writeText("# Wide\n\nStatus: ready-for-agent\n\n" + "A long line of prose. ".repeat(60) + "\n")
         page.setViewportSize(1920, 1080)
         page.navigate(url("/runs/$run/tickets/01-wide"))
-        assertTrue(page.locator("#ticket").boundingBox().width <= 860, "the Ticket is ${page.locator("#ticket").boundingBox().width}px wide")
+        val ticket = page.locator("#ticket").boundingBox().width
+        assertTrue(ticket <= 860, "the Ticket is ${ticket}px wide")
     }
 
     @Test

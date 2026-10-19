@@ -163,7 +163,7 @@ input[type=checkbox], input[type=radio] { width: auto; accent-color: var(--acc);
 .chips { display: flex; gap: 6px; margin: 0 0 12px; flex-wrap: wrap; }
 .chip { font-size: 12px; font-weight: 600; background: var(--vioSoft); color: var(--vio); border-radius: 20px; padding: 3px 11px; cursor: pointer; }
 .composer { position: fixed; bottom: 0; left: var(--side-width); right: 0; background: var(--composer); backdrop-filter: blur(6px); border-top: 1px solid var(--line); z-index: 5; }
-.composer > div { max-width: var(--page-max); margin: 0 auto; padding: 12px 40px; display: flex; gap: 8px; align-items: flex-end; }
+.composer > :is(div, form) { max-width: var(--page-max); margin: 0 auto; padding: 12px 40px; display: flex; gap: 8px; align-items: flex-end; }
 .composer .grow { flex: 1; } .composer .ed .cm-editor { min-height: 44px; max-height: 160px; }
 
 /* The diagram box: the Run's live diagram, the Process's, and the modeler's canvas, with ＋, －, Fit and ⛶ (shell.js) */
@@ -227,7 +227,7 @@ dialog.modal::backdrop { background: var(--modalBg); }
 .modal .mb { flex: 1; overflow: auto; padding: 24px 40px; font-size: 15px; } .modal .mb.md { margin: 0 auto; width: 100%; }
 .modal .split { display: grid; grid-template-columns: 1fr 1fr; flex: 1; min-height: 0; }
 .modal .split > div { overflow: auto; } .modal .split .cm-editor { min-height: 100%; max-height: none; font-size: 15px; } .modal .split .cm-scroller { padding: 12px 8px; }
-.modal .split .md { padding: 20px 28px; border-left: 1px solid var(--line); background: var(--band); font-size: 15px; }
+.modal .split .md { max-width: none; padding: 20px 28px; border-left: 1px solid var(--line); background: var(--band); font-size: 15px; }
 /* A toast, for an action that left the page it was pressed on, such as a Push: it says what happens next. */
 .toast { position: fixed; top: 16px; right: 16px; z-index: 90; width: 380px; background: #0f172a; color: #e2e8f0; border: 1px solid light-dark(transparent, var(--line)); border-radius: 10px; padding: 12px 14px; box-shadow: 0 10px 30px rgba(0, 0, 0, .25); font-size: 13px; animation: fadein .15s; }
 .toast code { background: #1e293b; color: #e2e8f0; }
@@ -321,7 +321,6 @@ body.login [role] { margin-bottom: 4px; }
 .ent a::before { content: none !important; }
 .ed textarea { display: block; width: 100%; min-height: 130px; max-height: 520px; margin: 0; padding: 10px 12px; border: 0; border-radius: 0; background: none; resize: none; field-sizing: content; }
 .ed textarea:focus { outline: 0; } :is(.composer, .drawer) .ed textarea { min-height: 44px; max-height: 160px; }
-.composer > form { max-width: var(--page-max); margin: 0 auto; padding: 12px 40px; display: flex; gap: 8px; align-items: flex-end; }
 #diagram { margin-bottom: 6px; }
 #run-tasks:has(table) ~ .help { margin-top: 10px; }
 #rename { width: 420px; padding: 16px 20px 20px; border: 1px solid var(--line); color: var(--text); } #rename::backdrop { background: var(--modalBg); }
