@@ -691,6 +691,9 @@ class BrowserTest : AntsTest() {
         assertEquals(3840.0 - page.locator("nav.side").boundingBox().width, main.boundingBox().width, 0.5)
     }
 
+    private fun contentEdges(selector: String) = (page.locator(selector).evaluate("e => { const r = e.getBoundingClientRect(), s = getComputedStyle(e); " +
+        "return [r.left + parseFloat(s.paddingLeft), r.right - parseFloat(s.paddingRight)] }") as List<*>).map { (it as Number).toDouble() }
+
     @Test
     fun `the composer on Review changes lines up with the page's content, and the footer on the Answer page with the question column, at 1440px and 1920px`() = browse {
         val claude = FakeClaude()
@@ -708,8 +711,6 @@ class BrowserTest : AntsTest() {
         val review = newEntry()
         http.post("/processes/round/runs", mapOf())
         val answer = newEntry(setOf(review))
-        fun contentEdges(selector: String) = (page.locator(selector).evaluate("e => { const r = e.getBoundingClientRect(), s = getComputedStyle(e); " +
-            "return [r.left + parseFloat(s.paddingLeft), r.right - parseFloat(s.paddingRight)] }") as List<*>).map { (it as Number).toDouble() }
         fun right(selector: String) = page.locator(selector).boundingBox().let { it.x + it.width }
 
         for (width in listOf(1440, 1920)) {
@@ -1034,8 +1035,8 @@ class BrowserTest : AntsTest() {
         const box = e => e.getBoundingClientRect()
         const content = e => { const r = box(e), s = getComputedStyle(e)
             return [r.left + parseFloat(s.borderLeftWidth) + parseFloat(s.paddingLeft), r.right - parseFloat(s.borderRightWidth) - parseFloat(s.paddingRight)] }
-        const name = e => e.tagName.toLowerCase() + (e.name ? "[name=" + e.name + "]" : "") + (e.className && typeof e.className === "string" ? "." + e.className.trim().split(/\s+/).join(".") : "")
-        const off = []
+        const describe = e => e.tagName.toLowerCase() + (e.name ? "[name=" + e.name + "]" : "") + (e.className && typeof e.className === "string" ? "." + e.className.trim().split(/\s+/).join(".") : "")
+        const offenders = []
         for (const card of document.querySelectorAll("main .card")) {
             if (!card.checkVisibility()) continue
             const [edge, end] = content(card)
@@ -1044,17 +1045,17 @@ class BrowserTest : AntsTest() {
                 if (!e.checkVisibility() || e.parentElement.closest(".chipsel, .ed")) continue
                 const cell = e.parentElement.closest(".grid2 > .fld, .grid3 > .fld, .card")
                 const [left, right] = cell === card ? [edge, end] : [box(cell).left, box(cell).right]
-                if (Math.abs(box(e).left - left) > 1) off.push(title + ": " + name(e) + " starts at " + box(e).left + ", not " + left)
+                if (Math.abs(box(e).left - left) > 1) offenders.push(title + ": " + describe(e) + " starts at " + box(e).left + ", not " + left)
                 if (e.matches("input:not([type=checkbox], [type=radio]), select, textarea, .ed, .chipsel") && !e.closest(".row") && Math.abs(box(e).right - right) > 1)
-                    off.push(title + ": " + name(e) + " ends at " + box(e).right + ", not " + right)
+                    offenders.push(title + ": " + describe(e) + " ends at " + box(e).right + ", not " + right)
             }
             for (const grid of card.querySelectorAll(".grid2, .grid3")) {
                 const rows = {}
                 for (const cell of grid.children) if (cell.checkVisibility()) (rows[Math.round(box(cell).top)] ??= []).push(box(cell).width)
-                for (const widths of Object.values(rows)) if (Math.max(...widths) - Math.min(...widths) > 1) off.push(title + ": a row's fields are " + widths.join(", ") + "px wide")
+                for (const widths of Object.values(rows)) if (Math.max(...widths) - Math.min(...widths) > 1) offenders.push(title + ": a row's fields are " + widths.join(", ") + "px wide")
             }
         }
-        return off
+        return offenders
     }""") as List<*>).map { it.toString() }
 
     @Test
@@ -1076,10 +1077,10 @@ class BrowserTest : AntsTest() {
         home.resolve("agents").createDirectories().resolve("wide.md").writeText("---\nname: wide\ncli: claude\n---\nWide.\n")
         page.setViewportSize(1600, 900)
         page.navigate(url("/agents/wide"))
-        val main = page.locator("main").evaluate("e => { const r = e.getBoundingClientRect(), s = getComputedStyle(e); return r.width - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight) }") as Number
+        val (left, right) = contentEdges("main")
         val cards = page.locator("form.agent .card")
         assertEquals(3, cards.count())
-        for (i in 0 until 3) assertEquals(main.toDouble(), cards.nth(i).boundingBox().width, 1.0, "card ${i + 1} is full width")
+        for (i in 0 until 3) assertEquals(right - left, cards.nth(i).boundingBox().width, 1.0, "card ${i + 1} is full width")
         assertTrue(cards.nth(0).boundingBox().let { it.y + it.height } <= cards.nth(1).boundingBox().y, "the cards are stacked")
         val (name, description, cli) = listOf("#name", "#description", "#cli").map { page.locator(it).boundingBox() }
         assertEquals(name.y, description.y, 1.0)
@@ -1091,13 +1092,14 @@ class BrowserTest : AntsTest() {
     fun `the Skill page gives its side column 360px and the editors the rest`() = browse {
         page.setViewportSize(1920, 1080)
         page.navigate(url("/skills/new"))
-        val (left, right) = page.locator("main").evaluate("e => { const r = e.getBoundingClientRect(), s = getComputedStyle(e); return [r.left + parseFloat(s.paddingLeft), r.right - parseFloat(s.paddingRight)] }") as List<*>
+        val (left, right) = contentEdges("main")
         val editors = page.locator(".card:has(#skill)").boundingBox()
         val side = page.locator(".card:has(h3:text-is('Run by'))").boundingBox()
         assertEquals(360.0, side.width, 1.0)
-        assertEquals((right as Number).toDouble(), side.x + side.width, 1.0)
-        assertEquals((left as Number).toDouble(), editors.x, 1.0)
-        assertEquals(side.x - 20, editors.x + editors.width, 1.0)
+        assertEquals(right, side.x + side.width, 1.0)
+        assertEquals(left, editors.x, 1.0)
+        val gap = page.locator(".card:has(#skill)").evaluate("e => parseFloat(getComputedStyle(e.parentElement).columnGap)") as Number
+        assertEquals(side.x - gap.toDouble(), editors.x + editors.width, 1.0)
     }
 
     @Test
