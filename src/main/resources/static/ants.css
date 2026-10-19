@@ -22,7 +22,7 @@
     --citeC: light-dark(#0e7490, #67e8f9); --invC: light-dark(#b45309, #fbbf24); --modalBg: light-dark(rgba(15, 23, 42, .5), rgba(0, 0, 0, .6));
     --chev: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237b8495' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
     --r: 10px; --sh: 0 1px 2px light-dark(rgba(16, 24, 40, .05), rgba(0, 0, 0, .45)), 0 1px 3px light-dark(rgba(16, 24, 40, .06), transparent);
-    --side-width: 232px; --page-max: 2200px; --mono: ui-monospace, "SF Mono", Menlo, monospace;
+    --side-width: 232px; --page-max: 2200px; --code-max: calc(100vh - 180px); --mono: ui-monospace, "SF Mono", Menlo, monospace;
     /* The Answer page's sections: the question, what it settles, the recommendation and your answer. */
     --ask: light-dark(#3b5bdb, #91a7ff); --ctx: light-dark(#ae3ec9, #e599f7); --rec: light-dark(#e67700, #ffc078); --ans: light-dark(#2b8a3e, #69db7c);
     font: 14px/1.5 Inter, ui-sans-serif, system-ui, -apple-system, sans-serif; color: var(--text); background: var(--bg);
@@ -264,8 +264,8 @@ div.tools label span { color: var(--muted); font-size: 12px; display: block; }
 .ssteps a[aria-current=step] { background: var(--text); color: var(--panel); font-weight: 700; }
 .walksteps { box-shadow: var(--sh); background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
 .cfile { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--line2); font-size: 12.5px; }
-.code { display: grid; font: 12.5px/1.75 var(--mono); padding: 10px 0; overflow: auto; max-height: calc(100vh - 180px); background: var(--codeBg); }
-.cl { display: grid; grid-template-columns: 44px 3px 1fr; gap: 12px; white-space: pre; padding-right: 16px; background: var(--codeBg); } .cl .ln { position: sticky; left: 0; background: inherit; text-align: right; color: var(--lnum); }
+.code { display: grid; font: 12.5px/1.75 var(--mono); padding: 10px 0; overflow: auto; max-height: var(--code-max); background: var(--codeBg); }
+.cl { display: grid; grid-template-columns: 44px 3px 1fr; gap: 12px; white-space: pre; padding-right: 16px; background: var(--codeBg); } .cl .ln { position: sticky; left: 0; margin-right: -12px; padding-right: 12px; background: inherit; text-align: right; color: var(--lnum); }
 .cl.dim .tx { color: var(--dimCode); } .cl.site.changed .bar { background: #eab308; } .cl.site.context .bar { background: #3b82f6; } .cl.site .tx { color: var(--text); }
 .diff .cl.add { background: var(--okSoft); } .diff .cl.add .tx { color: var(--okText); } .diff .cl.del { background: var(--badSoft); } .diff .cl.del .tx { color: var(--badText); text-decoration: line-through; }
 .band { border-top: 1px solid var(--line); padding: 16px 18px; background: var(--band); }
@@ -426,12 +426,12 @@ nav#tabs[role=tablist] .m { color: var(--ans); white-space: nowrap; }
 .walk .card > .row > b.mono { font-size: 16px; } .walk .commits { margin: 8px 0 4px; }
 .walk .card > .row > * { flex-shrink: 0; white-space: nowrap; } .walk .card > .row > .mono.muted { flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .walk details { border-top: 1px solid var(--line2); padding: 8px 0; } .walk summary { cursor: pointer; }
-table.diff { display: block; overflow: auto; max-height: calc(100vh - 180px); margin: 6px 0; background: #0f172a; color: #e2e8f0; border: 0; border-radius: 8px; box-shadow: none; font: 12.5px/1.6 var(--mono); padding: 12px 0; }
+table.diff { --diff-bg: #0f172a; --num: 56px; --picked: rgba(129, 140, 248, .25); display: block; overflow: auto; max-height: var(--code-max); margin: 6px 0; background: var(--diff-bg); color: #e2e8f0; border: 0; border-radius: 8px; box-shadow: none; font: 12.5px/1.6 var(--mono); padding: 12px 0; }
 table.diff td { padding: 0 14px 0 0; border: 0; white-space: pre; vertical-align: top; background: none !important; }
-table.diff td:nth-child(-n+2) { position: sticky; left: 0; box-sizing: border-box; width: 56px; min-width: 56px; background: #0f172a !important; padding: 0 0 0 14px; text-align: right; color: #64748b; cursor: pointer; user-select: none; } table.diff td:nth-child(2) { left: 56px; }
+table.diff td:nth-child(-n+2) { position: sticky; left: 0; width: var(--num); min-width: var(--num); background: var(--diff-bg) !important; padding: 0 0 0 14px; text-align: right; color: #64748b; cursor: pointer; user-select: none; } table.diff td:nth-child(2) { left: var(--num); }
 table.diff td:nth-child(3) { padding-left: 14px; width: auto; }
 table.diff tr.add { color: #86efac; } table.diff tr.del { color: #fca5a5; } table.diff tr.hunk { color: #93c5fd; }
-table.diff tr.picked { background: rgba(129, 140, 248, .25); } table.diff tr.picked td:nth-child(-n+2) { background: color-mix(in srgb, #818cf8 25%, #0f172a) !important; }
+table.diff tr.picked { background: var(--picked); } table.diff tr.picked td:nth-child(-n+2) { background: linear-gradient(var(--picked), var(--picked)), var(--diff-bg) !important; }
 #line-comment .lc { display: grid; grid-template-columns: 1fr 2fr 1fr 1fr 1fr 1.4fr; gap: 8px 12px; margin-bottom: 10px; }
 #line-comment label { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; font-weight: 600; }
 #comments { margin: 16px 0 0; } .cbody { white-space: pre-wrap; } #comments form { margin: 0; padding: 3px 0; gap: 6px; }
