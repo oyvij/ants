@@ -636,6 +636,65 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `a page fills the width beside the sidebar up to 2200px, and the modeler stays full-bleed`() = browse {
+        http.import("start-end.bpmn")
+        val main = page.locator("main")
+        page.setViewportSize(1920, 1080)
+        page.navigate(url("/processes"))
+        assertTrue(main.boundingBox().width > 1160, "main is ${main.boundingBox().width}px wide at 1920px")
+        page.setViewportSize(3840, 1080)
+        assertEquals(2200.0, main.boundingBox().width, 0.5)
+        page.navigate(url("/processes/start-end/edit"))
+        assertEquals(3840.0 - page.locator("nav.side").boundingBox().width, main.boundingBox().width, 0.5)
+    }
+
+    @Test
+    fun `the composer on Review changes and the footer on the Answer page line up with the page's content at 1440px and 1920px`() = browse {
+        val claude = FakeClaude()
+        agentTask(claude, mapOf("mend" to null, "ship" to null, "quiz" to """{"type":"object","properties":{"questions":{"type":"array"}}}"""), extra = reviewSourceMap())
+        claude.session("quiz", 1, """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":""" +
+            """{"outcome":"done","summary":"A Round.","output":{"questions":[{"id":"who","title":"Who","ask":"Who?","context":"Settles who.","recommendation":"You.","why":"Because."}]}}}""")
+        http.upload("/processes", "file", "review.bpmn", javaClass.getResource("/review.bpmn")!!.readBytes())
+        http.upload("/processes", "file", "round.bpmn", javaClass.getResource("/round.bpmn")!!.readBytes())
+        http.post("/processes/review/runs", listOf("repos" to "api", "repos" to "web"))
+        http.post("/processes/round/runs", mapOf())
+        val entries = mutableListOf<String>()
+        eventually {
+            entries.clear()
+            entries += Regex("""href="(/notifications/[^"]+)"""").findAll(http.get("/notifications").body).map { it.groupValues[1] }.distinct()
+            assertEquals(2, entries.size)
+        }
+        fun content(locator: Locator) = (locator.evaluate("e => { const r = e.getBoundingClientRect(), s = getComputedStyle(e); " +
+            "return [r.left + parseFloat(s.paddingLeft), r.right - parseFloat(s.paddingRight)] }") as List<*>).map { (it as Number).toDouble() }
+
+        for (width in listOf(1440, 1920)) {
+            page.setViewportSize(width, 900)
+            for (entry in entries) {
+                page.navigate(url(entry))
+                val (left, right) = content(page.locator("main"))
+                val bar = page.locator(".composer > div, #round > footer")
+                val (barLeft, barRight) = content(bar)
+                assertEquals(left, barLeft, 1.0, "the left edge of the fixed bar on $entry at ${width}px")
+                if (page.locator("#round").count() == 0) assertEquals(right, barRight, 1.0, "the right edge of the composer at ${width}px")
+                else assertEquals(page.locator("#round").boundingBox().let { it.x + it.width }, page.locator("#next").boundingBox().let { it.x + it.width }, 1.0,
+                    "the footer's buttons end where the question column ends at ${width}px")
+            }
+        }
+    }
+
+    @Test
+    fun `a rendered Markdown body keeps a readable measure on a wide page`() = browse {
+        settings(null)
+        val (process, plane) = row("measured", """<bpmn:startEvent id="start" />""", """<bpmn:userTask id="wait" name="Wait" />""", """<bpmn:endEvent id="end" />""")
+        deploy(definitions("measured", "Measured", process, plane))
+        val run = http.post("/processes/measured/runs", mapOf()).path.removePrefix("/runs/")
+        workspace(run).resolve("tickets/issues").createDirectories().resolve("01-wide.md").writeText("# Wide\n\nStatus: ready-for-agent\n\n" + "A long line of prose. ".repeat(60) + "\n")
+        page.setViewportSize(1920, 1080)
+        page.navigate(url("/runs/$run/tickets/01-wide"))
+        assertTrue(page.locator("#ticket").boundingBox().width <= 860, "the Ticket is ${page.locator("#ticket").boundingBox().width}px wide")
+    }
+
+    @Test
     fun `the Process properties pick the Process's Profile from the settings' Profiles`() = browse {
         settings(null, "profiles:\n  work: {vault: notes}\n  private: {vault: notes}\n")
         val (process, plane) = row("profiled", """<bpmn:startEvent id="start" />""", """<bpmn:endEvent id="end" />""")
