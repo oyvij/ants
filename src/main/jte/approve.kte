@@ -24,7 +24,7 @@
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
     <div class="fld"><label class="f" for="comment">Comment</label>
         <div class="help">Required to send back. The Agent's session resumes with it.</div>
-        <textarea id="comment" name="comment" data-markdown></textarea></div>
+        <textarea id="comment" name="comment" placeholder="e.g. Ship it, but rename the flag first." data-markdown></textarea></div>
     <div class="composer"><div>
         <span class="grow"></span>
         <button name="action" value="send-back">Send back</button>

@@ -16,14 +16,14 @@ class StartFormTest : AntsTest() {
         browser.get("/processes/$key").body.substringAfter("""action="/processes/$key/runs"""").substringBefore("</form>")
 
     @Test
-    fun `declared fields appear on the start form in order, with help text`() {
+    fun `declared fields appear on the start form in order, with help text and their examples as placeholders`() {
         browser.import("start-form.bpmn")
         val form = form("start-form")
         val order = listOf("Prompt", "What the Run should build", "Work branch", "Leave it empty for the scout to name one", "Repos")
             .map { form.indexOf(it) }
         assertTrue(order.all { it >= 0 } && order == order.sorted(), form)
-        assertContains(form, """<textarea name="prompt" id="field-prompt" required data-markdown data-tall>""")
-        assertContains(form, """<input name="workBranch" id="field-workBranch" value="">""")
+        assertContains(form, """<textarea name="prompt" id="field-prompt" placeholder="e.g. Add a dark mode toggle to the web app" required data-markdown data-tall>""")
+        assertContains(form, """<input name="workBranch" id="field-workBranch" value="" placeholder="e.g. ants/dark-mode">""")
         assertContains(form, """<input name="repos" id="field-repos" value="" placeholder""") // no Source map, so no list to pick from
     }
 

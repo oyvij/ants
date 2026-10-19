@@ -127,7 +127,7 @@ class SkillsTest : AntsTest() {
         val copy = home.resolve("skills/shipped-draft-copy")
         copy.toFile().deleteRecursively()
         val shipped = page("/skills/shipped-draft")
-        assertContains(shipped, """<textarea name="skill" rows="20" data-markdown readonly""")
+        assertContains(shipped, """name="skill" rows="20" placeholder="e.g. ---&#10;name: release-notes&#10;description: Writes the release notes for a version.&#10;---&#10;Read the commits since the last tag and sum them up for users." data-markdown readonly""")
         assertFalse("""<button class="primary" form="skill">Save</button>""" in shipped)
         assertContains(shipped, "No Agent runs this Skill yet, so no Task can use it.") // shipped-writer lists no Skills
         assertContains(shipped, "<code>\${&lt;task&gt;.output.text}</code>") // a Result field later Tasks read, under the Task's id

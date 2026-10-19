@@ -92,8 +92,8 @@ private val userTaskFields: Map<UserTaskKind, List<Map<String, String>>> = run {
     mapOf(
         UserTaskKind.ANSWER_ROUND to listOf(mapOf("label" to "Asker", "property" to ASKER, "help" to "The Agent Task whose Round of questions you answer. It is resumed with your answers.")),
         UserTaskKind.APPROVE to listOf(
-            mapOf("label" to "Title", "input" to "title", "help" to "What you are asked to approve."),
-            mapOf("label" to "Show", "input" to "show", "help" to "A file in the Run workspace, or a \${…} such as an earlier Result, shown as markdown."),
+            mapOf("label" to "Title", "input" to "title", "help" to "What you are asked to approve.", "example" to "Ship the release notes?"),
+            mapOf("label" to "Show", "input" to "show", "help" to "A file in the Run workspace, or a \${…} such as an earlier Result, shown as markdown.", "example" to "notes.md"),
             sendBack,
         ),
         UserTaskKind.REVIEW_CHANGES to listOf(

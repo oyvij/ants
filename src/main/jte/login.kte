@@ -16,8 +16,8 @@
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
 @if(error)<div role="alert">Wrong password.</div>@endif
 @if(loggedOut)<div role="status">You are logged out.</div>@endif
-    <label class="f" for="username">User</label><input id="username" name="username" value="admin" autocomplete="username" required>
-    <label class="f" for="password">Password</label><input id="password" type="password" name="password" autocomplete="current-password" autofocus required>
+    <label class="f" for="username">User</label><input id="username" name="username" value="admin" autocomplete="username" placeholder="e.g. admin" required>
+    <label class="f" for="password">Password</label><input id="password" type="password" name="password" autocomplete="current-password" placeholder="e.g. admin, until you change it on Settings" autofocus required>
     <p><button class="primary" type="submit">Log in</button></p>
     <div class="help">Single user. The session lasts until you log out.</div>
 </form>

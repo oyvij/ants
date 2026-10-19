@@ -22,7 +22,8 @@
 <form method="post">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
     <input type="hidden" name="version" value="${file.version}">
-    <textarea name="text" rows="30" cols="100" data-markdown data-tall>
+    <label class="f" for="text">The Ticket, in Markdown</label>
+    <textarea id="text" name="text" rows="30" cols="100" placeholder="e.g. # Say hello&#10;&#10;Status: ready-for-agent" data-markdown data-tall>
 ${text}</textarea>
     <p><button class="primary">Save</button></p>
 </form>

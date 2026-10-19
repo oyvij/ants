@@ -205,7 +205,7 @@ class AgentsTest : AntsTest() {
         // codex's model is free text.
         post("/agents/coder", mapOf("name" to "coder", "cli" to "codex", "sandbox" to "read-only", "model" to "gpt-5-codex", "instructions" to "Code."))
         assertContains(agents.resolve("coder.md").readText(), "model: gpt-5-codex\n")
-        assertContains(get("/agents/coder"), """<input class="mono" name="model" value="gpt-5-codex"""")
+        assertContains(get("/agents/coder"), """<input class="mono" id="codex-model" name="model" value="gpt-5-codex"""")
 
         val refused = post("/agents/new", mapOf("name" to "yolo", "cli" to "codex", "sandbox" to "yolo"))
         assertContains(refused.body, "codex takes the sandbox read-only, workspace-write or danger-full-access, not yolo.")

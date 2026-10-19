@@ -93,9 +93,9 @@ class ShellTest : AntsTest() {
     @Test
     fun `the markdown fields are marked for the editor, whose Preview the server renders as it renders the Approve page`() {
         browser.import("start-form.bpmn")
-        assertContains(browser.get("/processes/start-form").body, """<textarea name="prompt" id="field-prompt" required data-markdown data-tall>""")
-        assertContains(browser.get("/agents/new").body, """<textarea name="instructions" rows="14" data-markdown data-tall aria-label="Standing instructions">""")
-        assertContains(browser.get("/skills/scout").body, """<textarea name="skill" rows="20" data-markdown readonly data-tall aria-label="SKILL.md">""")
+        assertContains(browser.get("/processes/start-form").body, """<textarea name="prompt" id="field-prompt" placeholder="e.g. Add a dark mode toggle to the web app" required data-markdown data-tall>""")
+        assertContains(browser.get("/agents/new").body, """<textarea id="instructions" name="instructions" rows="14" placeholder="e.g. You implement one Ticket at a time, test first, and commit once the suite passes." data-markdown data-tall>""")
+        assertContains(browser.get("/skills/scout").body, """<textarea id="skill-md" name="skill" rows="20" placeholder="e.g. ---&#10;name: release-notes&#10;description: Writes the release notes for a version.&#10;---&#10;Read the commits since the last tag and sum them up for users." data-markdown readonly data-tall>""")
 
         val preview = browser.post("/markdown", mapOf("text" to "**Bold** and <script>alert(1)</script>"))
 

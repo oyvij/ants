@@ -183,7 +183,7 @@ class SettingsTest : AntsTest() {
         press("save", mapOf("source-maps[0].name" to "work", "source-maps[0].path" to "$map"))
         val page = browser.get("/settings").body
         assertContains(page, """<button type="button" data-edit="source-map-0">Edit</button>""")
-        assertContains(page, """placeholder="- ants: ~/code/ants (git@github.com:oyvij/ants.git)""")
+        assertContains(page, """placeholder="e.g. - ants: ~/code/ants (git@github.com:oyvij/ants.git)""")
         assertEquals(1, Regex("data-edit=").findAll(page).count()) // the empty row, unsaved, has no editor
 
         browser.post("/settings/source-map", mapOf("name" to "work", "text" to "# Work\r\n- api: ~/code/api (git@github.com:acme/api.git)\r\n"))

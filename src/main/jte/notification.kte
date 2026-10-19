@@ -38,7 +38,7 @@ $unsafe{line}
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
     <div class="fld"><label class="f" for="instruction">Your instruction</label>
         <div class="help">Required to continue the session. Optional when starting fresh.</div>
-        <textarea id="instruction" name="instruction" data-markdown required></textarea></div>
+        <textarea id="instruction" name="instruction" placeholder="e.g. Both providers, Stripe first." data-markdown required></textarea></div>
     <div class="composer"><div>
         @if(entry.tag == "[failed]")<button class="danger" name="action" value="cancel" formnovalidate>Cancel the Run</button>@endif
         <span class="grow"></span>

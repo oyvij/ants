@@ -44,7 +44,8 @@
     <form method="post" action="/notifications/${entry.id}">
         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
         <input type="hidden" name="back" value="run">
-        <textarea name="instruction" data-markdown required placeholder="Your instruction: required to continue the session, optional when starting fresh." aria-label="Your instruction"></textarea>
+        <label class="f" for="drawer-instruction">Your instruction</label>
+        <textarea id="drawer-instruction" name="instruction" data-markdown required placeholder="Required to continue the session, optional when starting fresh: e.g. Both providers, Stripe first."></textarea>
         <div class="row">
             @if(entry.tag == "[failed]")<button class="danger" name="action" value="cancel" formnovalidate>Cancel the Run</button>@endif
             <span class="grow"></span>
@@ -59,7 +60,8 @@
     <form method="post" action="/runs/${run}/tasks/${task}/transcript/send">
         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
         <input type="hidden" name="back" value="run">
-        <textarea name="message" data-markdown required placeholder="Comment to the Agent. ${sendHint}" aria-label="Comment"></textarea>
+        <label class="f" for="drawer-message">Comment to the Agent</label>
+        <textarea id="drawer-message" name="message" data-markdown required placeholder="e.g. Use the existing retry helper. ${sendHint}"></textarea>
         <div class="row"><span class="grow"></span>
             <button formaction="/runs/${run}/tasks/${task}/transcript/stop" formnovalidate>Stop</button>
             <button class="primary">Send</button>

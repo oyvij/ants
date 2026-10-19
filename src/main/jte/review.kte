@@ -82,8 +82,8 @@
                         <input type="hidden" name="from" value="${step.from}">
                         <input type="hidden" name="to" value="${step.to}">
                         <input type="hidden" name="tab" value="story">
-                        <select name="type" aria-label="Type">@for(type in ants.LineComment.TYPES)<option>${type}</option>@endfor</select>
-                        <textarea name="body" class="grow" rows="3" placeholder="On this claim…" aria-label="Comment" required></textarea>
+                        <label class="cap">Type<select name="type">@for(type in ants.LineComment.TYPES)<option>${type}</option>@endfor</select></label>
+                        <label class="cap grow">Comment<textarea name="body" rows="3" placeholder="On this claim…" required></textarea></label>
                         <button class="primary">Add</button>
                     </form>
                     <div class="bandacts"><button type="button" data-go="-1" disabled="${j == 0}">◀ Back</button><button type="button" data-go="1" disabled="${j == story.steps.lastIndex}">Next ▶</button>
@@ -125,14 +125,14 @@
         @if(tab != null)<input type="hidden" name="tab" value="repo">@endif
         <div class="help">Click a line number to comment on it, and shift-click another to take in the lines between.</div>
         <div class="lc">
-            <label>Repo <input name="repo" required></label>
-            <label>File <input name="file" required></label>
-            <label>Side <select name="side"><option>new</option><option>old</option></select></label>
-            <label>Lines <input name="from" type="number" min="1" required></label>
-            <label>to <input name="to" type="number" min="1"></label>
-            <label>Type <select name="type">@for(type in ants.LineComment.TYPES)<option>${type}</option>@endfor</select></label>
+            <label class="cap">Repo<input name="repo" placeholder="e.g. api" required></label>
+            <label class="cap">File<input name="file" placeholder="e.g. repos/api/Retry.kt" required></label>
+            <label class="cap">Side<select name="side"><option>new</option><option>old</option></select></label>
+            <label class="cap">Lines<input name="from" type="number" min="1" placeholder="e.g. 12" required></label>
+            <label class="cap">to<input name="to" type="number" min="1" placeholder="e.g. 14"></label>
+            <label class="cap">Type<select name="type">@for(type in ants.LineComment.TYPES)<option>${type}</option>@endfor</select></label>
         </div>
-        <div class="row"><textarea name="body" class="grow" rows="3" placeholder="On these lines…" aria-label="Comment" required></textarea><button class="primary">Add the comment</button></div>
+        <div class="row"><label class="cap grow">Comment<textarea name="body" rows="3" placeholder="On these lines…" required></textarea></label><button class="primary">Add the comment</button></div>
     </form>
     </div>
 </div>
@@ -154,7 +154,7 @@
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
     <div class="fld"><label class="f" for="comment">Overall comment</label>
         <div class="help">Send back needs this or a comment on a step or a line: the Task it sends back to resumes with all of them.</div>
-        <textarea id="comment" name="comment" rows="5" data-markdown></textarea></div>
+        <textarea id="comment" name="comment" rows="5" placeholder="e.g. Cap the retries before this ships." data-markdown></textarea></div>
     <div class="composer"><div><span class="grow muted small">Nothing is pushed until you approve.</span><button name="action" value="send-back">Send back</button>
         <button class="primary" name="action" value="approve">Approve</button></div></div>
 </form>

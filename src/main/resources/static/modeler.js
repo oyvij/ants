@@ -244,7 +244,7 @@ function readForm(bo) {
         const props = Object.fromEntries((field.properties?.values || []).map(p => [p.id, p.value]))
         return {
             id: field.id || "", label: field.label || "", type: props["ants.type"] || "text", help: props["ants.help"] || "",
-            stored: props["ants.stored"] || "", required: (field.validation?.constraints || []).some(c => c.name === "required"),
+            example: props["ants.example"] || "", stored: props["ants.stored"] || "", required: (field.validation?.constraints || []).some(c => c.name === "required"),
         }
     })
 }
@@ -252,7 +252,7 @@ function readForm(bo) {
 function writeForm(element, fields) {
     const factory = modeler.get("bpmnFactory")
     const field = f => {
-        const props = [["ants.type", f.type], ["ants.help", f.help], ["ants.stored", f.stored]].filter(([, value]) => value)
+        const props = [["ants.type", f.type], ["ants.help", f.help], ["ants.example", f.example], ["ants.stored", f.stored]].filter(([, value]) => value)
         const attrs = {id: f.id, label: f.label, type: "string"}
         if (props.length) attrs.properties = factory.create("camunda:Properties", {values: props.map(([id, value]) => factory.create("camunda:Property", {id, value}))})
         if (f.required) attrs.validation = factory.create("camunda:Validation", {constraints: [factory.create("camunda:Constraint", {name: "required"})]})
@@ -278,8 +278,8 @@ function startForm(element) {
         el("label", {className: "f", textContent: "Start form"}),
         note("help", "What you fill in to start a Run. Tasks read each field by its variable name, as ${name}."),
         ...fields.map((f, i) => {
-            const name = input(f, "id")
-            const label = input(f, "label", {
+            const name = input(f, "id", {placeholder: "e.g. prompt"})
+            const label = input(f, "label", {placeholder: "e.g. Prompt",
                 oninput: event => {
                     if (f.id === camel(f.label)) name.value = f.id = camel(event.target.value) // derived until the user renames it
                     f.label = event.target.value
@@ -294,12 +294,13 @@ function startForm(element) {
                 el("label", {}, "Variable ", name), el("br"),
                 el("label", {}, "Type ", type), " ",
                 el("label", {}, el("input", {type: "checkbox", checked: f.required, onchange: event => { f.required = event.target.checked; save() }}), " Required"), el("br"),
-                el("label", {}, "Help ", input(f, "help")), el("br"),
-                el("label", {title: "Used by the Schedule; Repos as names separated by commas"}, "Stored value ", input(f, "stored")), el("br"),
+                el("label", {}, "Help ", input(f, "help", {placeholder: "e.g. What the Run should build"})), el("br"),
+                el("label", {}, "Example ", input(f, "example", {placeholder: "e.g. Add a dark mode toggle"})), el("br"),
+                el("label", {title: "Used by the Schedule; Repos as names separated by commas"}, "Stored value ", input(f, "stored", {placeholder: "e.g. api, web"})), el("br"),
                 move(i - 1, "Up"), move(i + 1, "Down"),
                 el("button", {textContent: "Remove", onclick: () => { fields.splice(i, 1); redraw() }}))
         }),
-        el("button", {textContent: "＋ Add field", onclick: () => { fields.push({id: "", label: "", type: "text", help: "", stored: "", required: false}); redraw() }}))
+        el("button", {textContent: "＋ Add field", onclick: () => { fields.push({id: "", label: "", type: "text", help: "", example: "", stored: "", required: false}); redraw() }}))
 }
 panels.start = startForm
 
@@ -364,7 +365,7 @@ function pathEditor(gateway, flow, fields) {
     const field = el("select", {}, el("option", {value: "", textContent: "Choose a field…"}),
         ...[...missing, ...fields].map(([path, from]) => el("option", {value: path, textContent: `${path} (${from})`, selected: path === read.field})))
     const op = el("select", {}, ...Object.keys(operators).map(name => el("option", {value: name, textContent: name, selected: name === read.op})))
-    const value = el("input", {value: read.value, placeholder: "value"})
+    const value = el("input", {value: read.value, placeholder: "e.g. redo"})
     const write = () => {
         value.hidden = unary.has(op.value)
         if (!field.value) return
@@ -384,13 +385,14 @@ function pathEditor(gateway, flow, fields) {
         modeling.updateProperties(gateway, {default: flow.businessObject})
         explain(modeler.get("selection").get()[0] || gateway)
     }})
-    const label = el("input", {value: flow.businessObject.name || "", placeholder: "Label on the diagram, e.g. yes", onchange: () => modeling.updateLabel(flow, label.value)})
+    const label = el("input", {value: flow.businessObject.name || "", placeholder: "e.g. yes", onchange: () => modeling.updateLabel(flow, label.value)})
     return el("div", {className: "card path"},
         el("div", {className: "row small"}, el("b", {className: "grow", textContent: "→ " + nameOf(flow.target)}),
             el("button", {className: "ghost small", textContent: "Select", onclick: () => selectElement(flow)})),
-        label,
+        el("label", {className: "cap"}, "Label on the diagram", label),
         el("label", {className: "row small"}, makeDefault, " Default path: taken when no other condition matches"),
-        ...(isDefault ? [] : [note("small", "Take this path when"), field, el("div", {className: "row"}, op, value),
+        ...(isDefault ? [] : [el("label", {className: "cap"}, "Take this path when", field),
+            el("div", {className: "row"}, el("label", {className: "cap"}, "Test", op), el("label", {className: "cap grow"}, "Value", value)),
             ...(fields.length ? [] : [note("warn", "No Task before this decision returns anything to decide on.")])]),
         shown)
 }
@@ -435,7 +437,7 @@ function timerPanel(element) {
     const current = Object.keys(times).find(key => definition[key]) || "timeDuration"
     const kind = el("select", {}, ...Object.entries(times).map(([key, {name}]) => el("option", {value: key, textContent: name, selected: key === current})))
     const hint = el("p", {textContent: times[current].hint})
-    const value = el("input", {value: definition[current]?.body || "", placeholder: "PT30M"})
+    const value = el("input", {value: definition[current]?.body || "", placeholder: "e.g. PT30M"})
     const write = () => {
         hint.textContent = times[kind.value].hint
         const properties = Object.fromEntries(Object.keys(times).map(key => [key, undefined]))
@@ -448,7 +450,7 @@ function timerPanel(element) {
         }
     }
     kind.onchange = value.oninput = write
-    return el("div", {}, el("label", {}, kind, " ", value), hint)
+    return el("div", {}, el("div", {className: "row"}, el("label", {className: "cap"}, "Wait", kind), el("label", {className: "cap grow"}, "Value", value)), hint)
 }
 panels.timer = timerPanel
 panels["timer-boundary"] = timerPanel
@@ -460,9 +462,9 @@ function schedulePanel(element) {
     const every = el("select", {}, ...Object.entries(everies).map(([value, text]) => el("option", {value, textContent: text, selected: value === schedule.every})))
     const at = el("input", {type: "time", value: schedule.at || "08:00"})
     const on = el("select", {}, ...Object.entries(weekdays).map(([value, text]) => el("option", {value, textContent: text, selected: value === schedule.on})))
-    const dom = el("input", {type: "number", min: 1, max: 31, value: schedule.dom || 1})
-    const cron = el("input", {value: schedule.cron, placeholder: "0 0 8 * * MON-FRI", size: 20})
-    const parts = {at: el("label", {}, " at ", at), on: el("label", {}, " on ", on), dom: el("label", {}, " on day ", dom), cron: el("label", {}, " ", cron)}
+    const dom = el("input", {type: "number", min: 1, max: 31, value: schedule.dom || 1, placeholder: "e.g. 1"})
+    const cron = el("input", {value: schedule.cron, placeholder: "e.g. 0 0 8 * * MON-FRI", size: 20})
+    const parts = {at: el("label", {}, " at ", at), on: el("label", {}, " on ", on), dom: el("label", {}, " on day ", dom), cron: el("label", {}, " cron ", cron)}
     const show = () => {
         parts.at.hidden = ["hour", "advanced"].includes(every.value)
         parts.on.hidden = every.value !== "week"
@@ -489,7 +491,7 @@ function schedulePanel(element) {
     if (!definition.timeCycle?.body) write() // a new timer start gets every day at 08:00
     return el("div", {},
         el("h3", {textContent: "Schedule"}),
-        el("p", {}, "Every ", every, parts.at, parts.on, parts.dom, parts.cron),
+        el("p", {}, el("label", {}, "Every ", every), parts.at, parts.on, parts.dom, parts.cron),
         el("p", {textContent: "Every required start-form field needs a stored value, since a scheduled Run starts with no one there. Pause or remove the Schedule on the Process page."}))
 }
 panels["timer-start"] = element => el("div", {}, schedulePanel(element), startForm(element))
@@ -631,13 +633,13 @@ async function agentPanel(element, box) {
     const fields = promised(skill, props["ants.result-schema"])
     const references = el("datalist", {id: "ants-references"}, ...offered.map(value => el("option", {value})))
     const inputs = agentInputs(bo).map(([name, value], i) => {
-        const input = el("input", {className: "mono grow", value, ariaLabel: name, oninput: () => {
+        const input = el("input", {className: "mono grow", value, placeholder: `e.g. \${${name}}`, oninput: () => {
             const all = agentInputs(bo)
             all[i][1] = input.value
             writeAgentTask(element, {}, all)
         }})
         input.setAttribute("list", "ants-references")
-        return el("div", {className: "row"}, el("code", {textContent: name}), input)
+        return el("label", {className: "row"}, el("code", {textContent: name}), input)
     })
     const check = (label, checked, onchange) => el("label", {}, el("input", {type: "checkbox", checked, onchange}), " " + label)
     const toggle = (name, label, fallback) => check(label, props[name] === undefined ? fallback : props[name] === "true",
@@ -706,13 +708,13 @@ async function callPanel(element, box) {
     const labels = Object.fromEntries((called?.fields || []).map(f => [f.name, f.label + (f.required ? " (required)" : "")]))
     const references = el("datalist", {id: "ants-call-references"}, ...offered.map(value => el("option", {value})))
     const inputs = callInputs(bo).map(([name, value], i) => {
-        const input = el("input", {className: "mono grow", value, ariaLabel: labels[name] || name, oninput: () => {
+        const input = el("input", {className: "mono grow", value, placeholder: `e.g. \${${name}}`, oninput: () => {
             const all = callInputs(bo)
             all[i][1] = input.value
             writeCall(element, {}, all)
         }})
         input.setAttribute("list", "ants-call-references")
-        return el("div", {className: "row"}, el("span", {className: "small", textContent: labels[name] || name}), input)
+        return el("label", {className: "row"}, el("span", {className: "small", textContent: labels[name] || name}), input)
     })
     box.replaceChildren(
         field("Process", "The Process it runs, always its latest version.", select),
@@ -736,9 +738,9 @@ panels.user = element => {
         writeAgentTask(element, {...cleared, "ants.user-task": what.value || undefined}, agentInputs(bo).filter(([name]) => !stale.some(f => f.input === name)), true)
     }}, ...userTasks.map(k => el("option", {value: k.value, textContent: k.name, selected: k === kind})))
     const agentTasks = modeler.get("elementRegistry").filter(e => !e.labelTarget && kindOf(e) === "agent")
-    const control = ({property, input}) => {
+    const control = ({property, input, example}) => {
         if (input) {
-            const box = el("input", {value: Object.fromEntries(agentInputs(bo))[input] || "", onchange: () => {
+            const box = el("input", {value: Object.fromEntries(agentInputs(bo))[input] || "", placeholder: `e.g. ${example}`, onchange: () => {
                 const inputs = agentInputs(bo).filter(([name]) => name !== input)
                 writeAgentTask(element, {}, box.value ? [...inputs, [input, box.value]] : inputs)
             }})
@@ -758,9 +760,9 @@ panels.user = element => {
 
 // The panel's head: what the element is, and its name, which the diagram shows.
 function head(element, kind) {
-    const name = el("input", {className: "name", ariaLabel: "Name", value: element.businessObject.name || "", placeholder: "Name it",
+    const name = el("input", {className: "name", value: element.businessObject.name || "", placeholder: "e.g. Write the Spec",
         onchange: () => modeler.get("modeling").updateLabel(element, name.value)})
-    return [el("div", {className: "kind", textContent: kind}), name]
+    return [el("div", {className: "kind", textContent: kind}), field("Name", "", name)]
 }
 
 // The kinds whose panel explains them itself, or warns instead.

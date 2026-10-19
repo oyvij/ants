@@ -52,7 +52,7 @@
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
 @if(error != null)<p role="alert">${error}</p>@endif
 @if(fields.isEmpty())<div class="help">This Process takes no input: its job is in the diagram.</div>@endif
-    <div class="fld"><label class="f" for="field-name">Name <span class="muted small" style="font-weight: 500">(optional)</span></label><div class="help">Left empty, the Run is named after its Process and start time.</div><input name="${ants.NAME}" id="field-name"></div>
+    <div class="fld"><label class="f" for="field-name">Name <span class="muted small" style="font-weight: 500">(optional)</span></label><div class="help">Left empty, the Run is named after its Process and start time.</div><input name="${ants.NAME}" id="field-name" placeholder="e.g. Dark mode toggle"></div>
 @if(profiles.size > 1)
     <div class="fld"><label class="f" for="field-profile">Profile</label><div class="help">The Vault and Source map the Run uses.</div>
     <select name="${ants.PROFILE}" id="field-profile" onchange="location.search = '?ants.profile=' + encodeURIComponent(this.value)">
@@ -83,9 +83,9 @@
     @endfor
     </select>
     @elseif(field.type == FieldType.MARKDOWN)
-    <textarea name="${field.name}" id="field-${field.name}" required="${field.required}" data-markdown data-tall>${field.stored}</textarea>
+    <textarea name="${field.name}" id="field-${field.name}" placeholder="${field.example?.let { "e.g. $it" }}" required="${field.required}" data-markdown data-tall>${field.stored}</textarea>
     @else
-    <input name="${field.name}" id="field-${field.name}" value="${field.stored ?: ""}" required="${field.required}">
+    <input name="${field.name}" id="field-${field.name}" value="${field.stored ?: ""}" placeholder="${field.example?.let { "e.g. $it" }}" required="${field.required}">
     @endif
     @endif
     </div>

@@ -49,31 +49,7 @@ class LookTest : AntsTest() {
             val prototype = prototype("prototype/web-ui", "web-ui.html")
             val answerPage = prototype("prototype/answer-screen", "answer-page.html")
             val app = seed()
-            val pairs = listOf(
-                Shot("home", "$prototype#/", "/"),
-                Shot("notifications", "$prototype#/notifications", "/notifications"),
-                Shot("runs", "$prototype#/runs", "/runs"),
-                Shot("run-review", "$prototype#/runs/billing-retry-impl", "/runs/${app.getValue("review")}"),
-                Shot("run-approve", "$prototype#/runs/search-reindex", "/runs/${app.getValue("approve")}"),
-                Shot("transcript", "$prototype#/runs/dark-mode-toggle/tasks/grill", "/runs/${app.getValue("running")}/tasks/draft/transcript"),
-                Shot("stuck", "$prototype#/runs/payments-webhook/tasks/grill", entry(app.getValue("stuck"))),
-                Shot("approve", "$prototype#/runs/search-reindex/tasks/approve", entry(app.getValue("approve"))),
-                Shot("review", "$prototype#/runs/billing-retry-impl/tasks/review", entry(app.getValue("review"))),
-                // A story walked to its third step, with the diff and the details shown.
-                Shot("review-step", "$prototype#/runs/billing-retry-impl/tasks/review", entry(app.getValue("review")) + "#s1-3", "walk(0, 2); W.diff = true; W.details = true; renderWalk()", "document.querySelector('.step:not([hidden]) .showdiff').click(); document.querySelector('.step:not([hidden]) [data-details]').click()"),
-                Shot("review-by-repo", "$prototype#/runs/billing-retry-impl/tasks/review", entry(app.getValue("review")) + "?tab=repo", "reviewTab('repo')"),
-                // The prototype confirms a Push in a modal over Review changes; Ants waits on Push's own page.
-                Shot("push", "$prototype#/runs/billing-retry-impl/tasks/review", entry(app.getValue("push")), "confirmPush('billing-retry-impl', 'review')"),
-                Shot("processes", "$prototype#/processes", "/processes"),
-                Shot("process", "$prototype#/processes/spec-you", "/processes/build_and_ship"),
-                Shot("modeler", "$prototype#/processes/spec-you/edit", "/processes/build_and_ship/edit"),
-                Shot("agents", "$prototype#/agents", "/agents"),
-                Shot("agent", "$prototype#/agents/griller", "/agents/griller"), // the prototype has no planner
-                Shot("skills", "$prototype#/skills", "/skills"),
-                Shot("skill", "$prototype#/skills/scout", "/skills/scout"),
-                Shot("settings", "$prototype#/settings", "/settings"),
-                Shot("answer", answerPage, entry(app.getValue("round"))),
-            )
+            val pairs = shots(app, prototype, answerPage)
             for ((theme, scheme) in listOf("light" to ColorScheme.LIGHT, "dark" to ColorScheme.DARK)) {
                 settings(claude, extra + "theme: $theme\n")
                 val options = NewContextOptions().setColorScheme(scheme).setViewportSize(1440, 900)
@@ -91,15 +67,106 @@ class LookTest : AntsTest() {
                     shoot(page, "http://127.0.0.1:$port/login", "login/app-$theme")
                     logIn(page)
                     for (pair in pairs) shoot(page, "http://127.0.0.1:$port${pair.app}", "${pair.name}/app-$theme") { pair.appScript?.let { page.evaluate(it) } }
-                    // The Run page's drawer, open on its running Agent Task.
-                    shoot(page, "http://127.0.0.1:$port/runs/${app.getValue("running")}", "drawer/app-$theme") {
-                        locator("#diagram .djs-element[data-element-id='draft']").click()
-                        waitForSelector("#drawer-head")
-                    }
+                    shoot(page, "http://127.0.0.1:$port/runs/${app.getValue("running")}", "drawer/app-$theme") { openDrawer() }
                 }
             }
         }
     }
+
+    private fun Page.openDrawer() {
+        locator("#diagram .djs-element[data-element-id='draft']").click()
+        waitForSelector("#drawer-head")
+    }
+
+    private val exemptionsByOffender: Map<String, String> = emptyMap()
+
+    @Test
+    @Timeout(10, unit = TimeUnit.MINUTES)
+    fun `every control on the pages LookTest shoots, in the drawer and in the modals' forms has a visible label, and every text field and Markdown editor an example placeholder`() {
+        Playwright.create().use { playwright ->
+            val app = seed()
+            val page = launchChromium(playwright).newContext(NewContextOptions().setViewportSize(1440, 900)).newPage()
+            val offenders = mutableListOf<String>()
+            fun visit(path: String, where: String, open: Page.() -> Unit = {}) {
+                page.navigate("about:blank")
+                page.navigate("http://127.0.0.1:$port$path")
+                page.waitForTimeout(1500.0)
+                page.open()
+                page.waitForTimeout(300.0)
+                offenders += unlabelled(page).map { "$where: $it" }
+            }
+            visit("/login", "login")
+            logIn(page)
+            for (shot in shots(app, prototype = "", answerPage = "")) visit(shot.app, shot.name) { shot.appScript?.let { evaluate(it) } }
+            for (run in listOf("running", "stuck")) visit("/runs/${app.getValue(run)}", "the drawer on the $run Run") { openDrawer() }
+            visit("/runs/${app.getValue("running")}", "the Run page's Rename") { click("button[popovertarget=rename]") }
+            visit("/processes", "New Process") { click(".ph button.primary") }
+            visit("/settings", "Settings with a row added to every list") { locator("[data-add]").all().forEach { it.click() } }
+            visit("/settings", "a Source map's editor") { locator("[data-edit]").first().click() }
+            visit(entry(app.getValue("review")) + "#s1-1", "a story step's comment") { locator(".step:not([hidden]) [data-comment]").click() }
+            visit(entry(app.getValue("review")) + "?tab=repo", "a line comment") { locator("table.diff tr[data-line] td").nth(1).click() }
+            for (path in listOf("/agents/new", "/skills/new")) visit(path, "the modeler's modal $path")
+            visit("/agents/new", "a new codex Agent") { selectOption("select[name=cli]", "codex") }
+            visit("/agents/new", "a new Agent on another model") { selectOption("select[name=model]", "other") }
+            page.navigate("http://127.0.0.1:$port/processes/build_and_ship/edit")
+            page.waitForTimeout(1500.0)
+            val shapes = page.evaluate("[...document.querySelectorAll('#canvas .djs-shape')].map(shape => shape.dataset.elementId)") as List<*>
+            for (shape in shapes) {
+                page.locator("#canvas .djs-element[data-element-id='$shape']").dispatchEvent("click")
+                page.waitForTimeout(300.0)
+                offenders += unlabelled(page).map { "the modeler on $shape: $it" }
+            }
+            assertEquals(emptyList(), offenders.distinct().filter { it !in exemptionsByOffender })
+        }
+    }
+
+    private fun unlabelled(page: Page): List<String> = page.frames().flatMap { frame ->
+        (frame.evaluate("""() => {
+            const textLike = /^(text|search|url|email|tel|password|number)$/
+            const name = control => control.tagName.toLowerCase() + (control.type && control.tagName === "INPUT" ? "[type=" + control.type + "]" : "") +
+                (control.name ? "[name=" + control.name + "]" : control.id ? "#" + control.id : "")
+            document.querySelectorAll("details").forEach(details => details.open = true)
+            const offenders = []
+            for (const control of document.querySelectorAll("input:not([type=hidden]), select, textarea")) {
+                const editor = control.matches("textarea") && control.nextElementSibling?.matches(".ed") ? control.nextElementSibling : null
+                if (!(editor ?? control).checkVisibility()) continue
+                const what = editor ? "the editor over " + name(control) : name(control)
+                if (![...control.labels].some(label => label.checkVisibility() && label.textContent.trim()))
+                    offenders.push(what + " has no visible label" + (control.ariaLabel ? ", only aria-label " + control.ariaLabel : ""))
+                else if (control.ariaLabel) offenders.push(what + " keeps aria-label " + control.ariaLabel + " beside its visible label")
+                if ((control.matches("textarea") || textLike.test(control.type)) && !control.placeholder.trim()) offenders.push(what + " has no placeholder")
+                else if (editor && editor.querySelector(".cm-content")?.textContent === "" && !editor.querySelector(".cm-placeholder")?.checkVisibility())
+                    offenders.push(what + " shows no placeholder inside the editor")
+            }
+            return offenders
+        }""") as List<*>).map { it.toString() }
+    }
+
+    private fun shots(app: Map<String, String>, prototype: String, answerPage: String) = listOf(
+        Shot("home", "$prototype#/", "/"),
+        Shot("notifications", "$prototype#/notifications", "/notifications"),
+        Shot("runs", "$prototype#/runs", "/runs"),
+        Shot("run-review", "$prototype#/runs/billing-retry-impl", "/runs/${app.getValue("review")}"),
+        Shot("run-approve", "$prototype#/runs/search-reindex", "/runs/${app.getValue("approve")}"),
+        Shot("transcript", "$prototype#/runs/dark-mode-toggle/tasks/grill", "/runs/${app.getValue("running")}/tasks/draft/transcript"),
+        Shot("stuck", "$prototype#/runs/payments-webhook/tasks/grill", entry(app.getValue("stuck"))),
+        Shot("approve", "$prototype#/runs/search-reindex/tasks/approve", entry(app.getValue("approve"))),
+        Shot("review", "$prototype#/runs/billing-retry-impl/tasks/review", entry(app.getValue("review"))),
+        // A story walked to its third step, with the diff and the details shown.
+        Shot("review-step", "$prototype#/runs/billing-retry-impl/tasks/review", entry(app.getValue("review")) + "#s1-3", "walk(0, 2); W.diff = true; W.details = true; renderWalk()", "document.querySelector('.step:not([hidden]) .showdiff').click(); document.querySelector('.step:not([hidden]) [data-details]').click()"),
+        Shot("review-by-repo", "$prototype#/runs/billing-retry-impl/tasks/review", entry(app.getValue("review")) + "?tab=repo", "reviewTab('repo')"),
+        // The prototype confirms a Push in a modal over Review changes; Ants waits on Push's own page.
+        Shot("push", "$prototype#/runs/billing-retry-impl/tasks/review", entry(app.getValue("push")), "confirmPush('billing-retry-impl', 'review')"),
+        Shot("processes", "$prototype#/processes", "/processes"),
+        Shot("process", "$prototype#/processes/spec-you", "/processes/build_and_ship"),
+        Shot("modeler", "$prototype#/processes/spec-you/edit", "/processes/build_and_ship/edit"),
+        Shot("agents", "$prototype#/agents", "/agents"),
+        Shot("agent", "$prototype#/agents/griller", "/agents/griller"), // the prototype has no planner
+        Shot("skills", "$prototype#/skills", "/skills"),
+        Shot("skill", "$prototype#/skills/scout", "/skills/scout"),
+        Shot("settings", "$prototype#/settings", "/settings"),
+        Shot("answer", answerPage, entry(app.getValue("round"))),
+    )
 
     /** Opens [url] in a fresh document, lets its diagrams and editors load, does [then], and saves it as [name]. */
     private fun shoot(page: Page, url: String, name: String, then: (Page.() -> Unit)? = null) {
