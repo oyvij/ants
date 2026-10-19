@@ -40,7 +40,8 @@ and `cd … && git …` or any other chained command.
 2. **Write the body** as below, from the spec or proposal, the review and the fixes, and
    `git log` and `git diff` from `<base>`, inside the clone. `GLOSSARY.md` is the clone's. The
    review and the fixes are evidence, and tell you the Merge Danger. You can't take screenshots.
-   The title is one short line saying what the change does.
+   The title is one short line saying what the change does, in plain words with no backticks:
+   claude refuses a command with a backtick in it, and the title goes on the command line.
 3. **Open it:** write the body to `pr/<repo>.md` in the Run workspace, then, from the workspace
    root, run `gh pr create --repo <owner>/<name> --head <branch> --base <base> --title "…"
    --body-file pr/<repo>.md`, with `<owner>/<name>` read from the remote. Never pass the body inline

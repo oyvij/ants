@@ -36,6 +36,8 @@ test scripts, so it passes whatever you assume. Facts the real CLI has already s
 - claude 2.1.302 under `dontAsk` with `Bash(gh pr create *)` refuses `gh pr create … --body "…"` when the body has a
   backtick in it (Markdown code), and allows a multi-line body with `$HOME` in it. Writing the body with
   `Write(pr/**)` and running `gh pr create … --body-file pr/x.md` is allowed, so the `pr` Skill does that.
+  claude 2.1.303 still refuses it with a backtick in `--title`, and allows `--title "… (#110)"` and `--body-file`
+  from inside a clone (`../../pr/x.md`) or by absolute path, so the Skill's titles have no backticks.
 
 ## Steps
 
