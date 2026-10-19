@@ -115,7 +115,7 @@ button, .btn { display: inline-flex; align-items: center; justify-content: cente
 a.btn:hover { text-decoration: none; }
 button.small, .ghost.small { min-height: 28px; font-size: 12.5px; }
 input:not([type=checkbox]):not([type=radio]), select { min-height: 36px; }
-.ed .bar button, .tabs button, .chipsel .c button, .cmd button, .dia .zoom button, .notice button { min-height: 0; }
+.ed .bar button, .tabs button, :is(.chipsel, .fld .tags) .c button, .cmd button, .dia .zoom button, .notice button { min-height: 0; }
 button:hover, .btn:hover { background: var(--hover); }
 button.primary, .btn.primary { background: var(--acc); border-color: var(--acc); color: #fff; } :is(button, .btn).primary:hover { background: var(--accHover); }
 button.danger, .btn.danger { color: var(--bad); } button.ghost { border-color: transparent; box-shadow: none; background: none; color: var(--acc); padding: 4px 6px; }
@@ -245,9 +245,9 @@ div.tools legend { font-weight: 700; font-size: 12.5px; padding: 0 4px; }
 div.tools label { display: flex; gap: 8px; align-items: flex-start; padding: 4px 0; font-size: 13px; cursor: pointer; }
 div.tools label span { color: var(--muted); font-size: 12px; display: block; }
 .chipsel { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; border: 1px solid var(--fieldLine); border-radius: 8px; padding: 6px; background: var(--field); }
-.chipsel .c { background: var(--accSoft); color: var(--accText); font-weight: 600; font-size: 12.5px; border-radius: 6px; padding: 2px 4px 2px 8px; display: inline-flex; gap: 4px; align-items: center; }
+:is(.chipsel, .fld .tags) .c { background: var(--accSoft); color: var(--accText); font-weight: 600; font-size: 12.5px; border-radius: 6px; padding: 2px 4px 2px 8px; display: inline-flex; gap: 4px; align-items: center; }
 .chipsel .c svg.i { width: 13px; height: 13px; color: var(--citeC); }
-.chipsel .c button { border: 0; background: none; box-shadow: none; padding: 0 4px; color: var(--accText); }
+:is(.chipsel, .fld .tags) .c button { border: 0; background: none; box-shadow: none; padding: 0 4px; color: var(--accText); }
 .chipsel input { border: 0; outline: 0; flex: 1; min-width: 160px; padding: 4px; min-height: 0; background: none; }
 .listed .row { margin-bottom: 6px; }
 
@@ -354,6 +354,13 @@ dialog.source-map { width: min(760px, 92vw); height: auto; } .source-map textare
 #new-process .mb { padding: 4px 24px 24px; font-size: 14px; }
 #new-process form { margin: 0; } #new-process .go { margin-top: 16px; }
 #start .picks { flex-wrap: wrap; gap: 6px 14px; margin-bottom: 8px; } #start .picks label { font-weight: 500; margin: 0; }
+#start .combo { position: relative; }
+#start .combo [role=listbox] { position: absolute; z-index: 4; left: 0; right: 0; top: calc(100% + 4px); margin: 0; padding: 4px; list-style: none; background: var(--panel); border: 1px solid var(--fieldLine); border-radius: 8px; box-shadow: 0 10px 30px rgba(15, 23, 42, .12); max-height: 280px; overflow: auto; }
+#start .combo [role=option] { position: relative; padding: 6px 10px 6px 30px; border-radius: 6px; cursor: pointer; font-family: var(--mono); font-size: 13px; }
+#start .combo [role=option].on { background: var(--hover); }
+#start .combo [role=option][aria-selected=true]::before { content: "✓"; position: absolute; left: 10px; color: var(--accText); font-weight: 700; }
+#start .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; } #start .tags:empty { display: none; }
+#start .tags + .help { margin: 8px 0 0; }
 #start form { margin: 0; } #start .go { margin-top: 16px; }
 #schedule h3 .grow { flex: 1; }
 #schedule form { margin: 0; }

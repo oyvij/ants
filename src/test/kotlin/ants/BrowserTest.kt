@@ -2,6 +2,7 @@ package ants
 
 import com.microsoft.playwright.BrowserType
 import com.microsoft.playwright.Locator
+import com.microsoft.playwright.options.AriaRole
 import com.microsoft.playwright.options.ColorScheme
 import com.microsoft.playwright.options.KeyboardModifier
 import com.microsoft.playwright.Page
@@ -507,6 +508,113 @@ class BrowserTest : AntsTest() {
         paste("notes.pdf", "application/pdf", java.util.Base64.getEncoder().encodeToString("%PDF-1.4".toByteArray()))
         assertThat(editor.locator(".st")).hasText("Only an image can be pasted: PNG, JPEG, GIF or WebP.")
         assertThat(field).hasValue("Like this: ![image](${ImagesTest.RED_PATH}) please")
+    }
+
+    /**
+     * The Process `picker`, start-form.bpmn with its Repos field storing [stored], on a Source map of api, web and
+     * webhooks; opens its page.
+     */
+    private fun picker(stored: String = "") {
+        settings(null, sourceMapLines(repo("api"), repo("web"), repo("webhooks")))
+        val bpmn = javaClass.getResource("/start-form.bpmn")!!.readText().replace("\"start-form\"", "\"picker\"")
+            .replace("""<camunda:property id="ants.type" value="repos" />""", """<camunda:property id="ants.type" value="repos" /><camunda:property id="ants.stored" value="$stored" />""")
+        assertFalse("role=\"alert\"" in http.upload("/processes", "file", "picker.bpmn", bpmn.toByteArray()).body)
+        page.navigate(url("/processes/picker"))
+    }
+
+    private val repoBox get() = page.getByRole(AriaRole.COMBOBOX, Page.GetByRoleOptions().setName("Repos (optional)"))
+    private val repoOptions get() = page.getByRole(AriaRole.LISTBOX).getByRole(AriaRole.OPTION)
+    private fun repoOption(name: String) = page.getByRole(AriaRole.OPTION, Page.GetByRoleOptions().setName(name).setExact(true))
+    private val repoTags get() = page.getByRole(AriaRole.LIST, Page.GetByRoleOptions().setName("Picked repos")).getByRole(AriaRole.LISTITEM)
+
+    @Test
+    fun `the start form's Repos combobox filters as you type, toggles a repo on Enter or a click, moves by the arrow keys and closes on Esc`() = browse {
+        picker()
+        assertThat(page.locator("#start input[type=checkbox]")).hasCount(0)
+        assertThat(repoBox).hasAttribute("placeholder", "Filter Source map repos, or type a git URL / owner/name")
+        repoBox.click()
+        assertThat(page.getByRole(AriaRole.LISTBOX)).hasAttribute("aria-multiselectable", "true")
+        assertThat(repoOptions).hasText(arrayOf("api", "web", "webhooks"))
+
+        repoBox.pressSequentially("web")
+        assertThat(repoOptions).hasText(arrayOf("web", "webhooks"))
+        repoBox.press("ArrowDown")
+        repoBox.press("Enter")
+        assertThat(repoOption("webhooks")).hasAttribute("aria-selected", "true")
+        assertThat(repoOption("web")).hasAttribute("aria-selected", "false")
+        repoBox.press("ArrowUp")
+        repoBox.press("Enter")
+        assertThat(repoOption("web")).hasAttribute("aria-selected", "true")
+        repoOption("webhooks").click()
+        assertThat(repoOption("webhooks")).hasAttribute("aria-selected", "false")
+        assertThat(repoBox).isFocused()
+
+        repoBox.press("Escape")
+        assertThat(page.getByRole(AriaRole.LISTBOX)).isHidden()
+        assertThat(repoTags).hasText(arrayOf("web×"))
+    }
+
+    @Test
+    fun `a git URL or owner name typed in the start form's Repos combobox becomes a tag on Enter, and × removes a tag`() = browse {
+        picker()
+        val none = page.getByText("the scout picks the Run's repos from the whole Source map")
+        assertThat(none).isVisible()
+
+        repoBox.click()
+        repoBox.pressSequentially("you/new-app")
+        assertThat(repoOptions.filter(Locator.FilterOptions().setVisible(true))).hasCount(0)
+        repoBox.press("Enter")
+        assertThat(repoBox).hasValue("")
+        assertThat(page).hasURL(Pattern.compile("/processes/picker$"))
+        repoBox.blur()
+        assertThat(repoTags).hasText(arrayOf("you/new-app×"))
+        assertThat(none).isHidden()
+
+        page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("Remove you/new-app")).click()
+        assertThat(repoTags).hasCount(0)
+        assertThat(none).isVisible()
+    }
+
+    /** Fills in the start form's required Prompt and starts the Run; the Run's `repos` variable as its page shows it. */
+    private fun startPicked(page: Page = this.page, prompt: Locator = page.locator("textarea[name=prompt] + .ed .cm-content")): String {
+        prompt.fill("Add dark mode")
+        page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("Start").setExact(true)).click()
+        page.waitForURL(Pattern.compile("/runs/[^/]+$"))
+        return page.locator("dt:text-is('repos') + dd").textContent()
+    }
+
+    @Test
+    fun `the start form's Repos combobox shows the stored repos as tags, and the Run gets exactly the repos picked`() = browse {
+        val elsewhere = repo("elsewhere").remote
+        picker(stored = "api $elsewhere")
+        assertThat(repoTags).hasText(arrayOf("api×", "$elsewhere×"))
+
+        page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("Remove api")).click()
+        repoBox.click()
+        repoOption("web").click()
+        repoBox.press("Escape")
+        assertThat(repoTags).hasText(arrayOf("$elsewhere×", "web×"))
+
+        assertEquals("""["$elsewhere","web"]""", startPicked())
+    }
+
+    @Test
+    fun `with JavaScript off the start form's Repos field is the Source map's checkboxes and a text input, which still start the Run`() = browse {
+        val elsewhere = repo("elsewhere").remote
+        picker()
+        val plain = page.context().browser().newContext(com.microsoft.playwright.Browser.NewContextOptions().setJavaScriptEnabled(false)).newPage()
+        plain.navigate(url("/login"))
+        plain.fill("input[name=username]", "admin")
+        plain.fill("input[name=password]", "admin")
+        plain.click("button[type=submit]")
+        plain.waitForURL { !it.contains("/login") }
+        plain.navigate(url("/processes/picker"))
+        assertThat(plain.getByRole(AriaRole.COMBOBOX)).hasCount(0)
+        assertThat(plain.locator("#start input[type=checkbox]")).hasCount(3)
+
+        plain.getByLabel("web", Page.GetByLabelOptions().setExact(true)).check()
+        plain.locator("#field-repos").fill("$elsewhere")
+        assertEquals("""["web","$elsewhere"]""", startPicked(plain, plain.locator("textarea[name=prompt]")))
     }
 
     @Test
