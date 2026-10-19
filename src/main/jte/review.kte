@@ -83,7 +83,7 @@
                         <input type="hidden" name="to" value="${step.to}">
                         <input type="hidden" name="tab" value="story">
                         <label class="cap">Type<select name="type">@for(type in ants.LineComment.TYPES)<option>${type}</option>@endfor</select></label>
-                        <label class="cap grow">Comment<textarea name="body" rows="3" placeholder="On this claim…" required></textarea></label>
+                        <label class="cap grow">Comment<textarea name="body" rows="3" placeholder="e.g. Why three retries, not five?" required></textarea></label>
                         <button class="primary">Add</button>
                     </form>
                     <div class="bandacts"><button type="button" data-go="-1" disabled="${j == 0}">◀ Back</button><button type="button" data-go="1" disabled="${j == story.steps.lastIndex}">Next ▶</button>
@@ -132,7 +132,7 @@
             <label class="cap">to<input name="to" type="number" min="1" placeholder="e.g. 14"></label>
             <label class="cap">Type<select name="type">@for(type in ants.LineComment.TYPES)<option>${type}</option>@endfor</select></label>
         </div>
-        <div class="row"><label class="cap grow">Comment<textarea name="body" rows="3" placeholder="On these lines…" required></textarea></label><button class="primary">Add the comment</button></div>
+        <div class="row"><label class="cap grow">Comment<textarea name="body" rows="3" placeholder="e.g. This retries an invoice that was already paid." required></textarea></label><button class="primary">Add the comment</button></div>
     </form>
     </div>
 </div>

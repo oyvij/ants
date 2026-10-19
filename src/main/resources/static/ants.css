@@ -559,7 +559,7 @@ form.agent .chipsel input:not([type=checkbox]) { background: none; }
 main .trow label { font-weight: 400; font-size: 14px; margin: 0; }
 .trow:has(> label > input:checked) { background: var(--accSoft); }
 .trow:not(:has(> label > input:checked)) [data-limit] { visibility: hidden; }
-.tlim .row { margin-bottom: 4px; }
+.tlim .row { margin-bottom: 4px; } main .tlim label.cap { flex-direction: column; align-items: stretch; gap: 4px; font-size: 12.5px; font-weight: 600; }
 details.others { margin-top: 16px; } details.others > summary { color: var(--acc); }
 .add-tool { margin-top: 14px; } .add-tool button { white-space: nowrap; }
 label.tick { display: flex; gap: 8px; align-items: center; font-weight: 500; }

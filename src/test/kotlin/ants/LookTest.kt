@@ -108,6 +108,7 @@ class LookTest : AntsTest() {
             for (path in listOf("/agents/new", "/skills/new")) visit(path, "the modeler's modal $path")
             visit("/agents/new", "a new codex Agent") { selectOption("select[name=cli]", "codex") }
             visit("/agents/new", "a new Agent on another model") { selectOption("select[name=model]", "other") }
+            visit("/agents/new", "a new Agent's tool limited") { locator("input[name='tool.Bash']").check(); locator(".trow:has(input[name='tool.Bash']) [data-limit]").click() }
             page.navigate("http://127.0.0.1:$port/processes/build_and_ship/edit")
             page.waitForTimeout(1500.0)
             val shapes = page.evaluate("[...document.querySelectorAll('#canvas .djs-shape')].map(shape => shape.dataset.elementId)") as List<*>

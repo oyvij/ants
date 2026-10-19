@@ -20,10 +20,11 @@ addSkill?.addEventListener("change", () => {
 
 function addRule(limits) {
     const row = Object.assign(document.createElement("div"), {className: "row"})
-    row.innerHTML = '<input class="mono grow"><button type="button" class="ghost" title="Remove">×</button>'
-    Object.assign(row.firstChild, {name: `limit.${limits.dataset.tool}`, placeholder: `e.g. ${limits.dataset.example}`})
+    row.innerHTML = '<label class="cap grow">Rule<input class="mono"></label><button type="button" class="ghost" title="Remove">×</button>'
+    const rule = row.querySelector("input")
+    Object.assign(rule, {name: `limit.${limits.dataset.tool}`, placeholder: `e.g. ${limits.dataset.example}`})
     limits.querySelector("[data-add]").before(row)
-    row.firstChild.focus()
+    rule.focus()
 }
 
 const adder = form.querySelector(".add-tool")

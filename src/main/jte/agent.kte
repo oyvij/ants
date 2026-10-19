@@ -108,7 +108,7 @@
                 <span class="c">$unsafe{skillIcon}${skill}<input type="hidden" name="skills" value="${skill}">@if(!readOnly)<button type="button" title="Remove">×</button>@endif</span>
 @endfor
 @if(!readOnly)
-                <input id="add-skill" name="skills" list="skill-list" placeholder="Add a Skill…" autocomplete="off">
+                <input id="add-skill" name="skills" list="skill-list" placeholder="Add a Skill, e.g. implement" autocomplete="off">
 @endif
             </div>
             <datalist id="skill-list">
