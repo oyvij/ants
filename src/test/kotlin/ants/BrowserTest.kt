@@ -363,7 +363,7 @@ class BrowserTest : AntsTest() {
         page.click("#pb-stop")
         assertThat(page.locator("#pb-send")).isVisible()
         assertTrue("interrupt" in second.stdin)
-        page.close(Page.CloseOptions().setRunBeforeUnload(true)) // as a tab closes: its unload handlers run
+        page.navigate(url("/processes")) // leaving the page, as closing its tab, ends its claude
         eventually { assertTrue(second.killed) }
     }
 
