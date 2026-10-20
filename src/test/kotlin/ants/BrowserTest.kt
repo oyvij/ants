@@ -552,6 +552,82 @@ class BrowserTest : AntsTest() {
         assertThat(sidebar).isHidden()
     }
 
+    private val tapTargets = "button, .btn, .topbar a, .topbar label, nav.side a, .tabs a, :is(.chipsel, .tags) .c, [role=tab]"
+    private val textFields = "input:not([type=checkbox], [type=radio], [type=hidden], [type=file]), select, textarea, .cm-content"
+
+    private fun visible(selector: String, measure: String) = (page.locator(selector).evaluateAll(
+        "es => es.filter(e => e.checkVisibility({visibilityProperty: true})).map(e => [e.outerHTML.slice(0, 100), $measure])",
+    ) as List<*>).map { (it as List<*>).let { (html, value) -> html as String to value } }.also { assertTrue(it.isNotEmpty(), "${page.url()} shows a $selector") }
+
+    private fun assertTapSized() {
+        val short = visible(tapTargets, "e.getBoundingClientRect().height").filter { (_, height) -> (height as Number).toDouble() < 44 }
+        assertEquals(listOf<Pair<String, Any?>>(), short, "on ${page.url()} these are under 44px tall")
+    }
+
+    private fun assertFieldText(size: String) {
+        val other = visible(textFields, "getComputedStyle(e).fontSize").filter { (_, font) -> font != size }
+        assertEquals(listOf<Pair<String, Any?>>(), other, "on ${page.url()} these don't have $size text")
+    }
+
+    private fun chipper() {
+        home.resolve("skills/chip-skill").createDirectories().resolve("SKILL.md").writeText("---\nname: chip-skill\ndescription: Chips.\n---\nChip.\n")
+        home.resolve("agents").createDirectories().resolve("chipper.md").writeText("---\nname: chipper\ncli: claude\nskills: chip-skill\ntools: Read\n---\nChip.\n")
+    }
+
+    @Test
+    fun `on a phone buttons, nav links, chips with their ×, question chips and the diagram's zoom buttons are at least 44px tall`() = browse {
+        val (_, entry) = answering(FakeClaude(), "who" to "Title who", "scope" to "Title scope")
+        val run = waitingRun("tapped")
+        chipper()
+        onPhone()
+        for (path in listOf("/", "/notifications", run, "/processes/tapped", entry, "/agents/chipper", "/agents/new", "/skills/new", "/settings")) {
+            page.navigate(url(path))
+            assertTapSized()
+        }
+
+        page.navigate(url("/runs"))
+        menu.tap()
+        assertThat(sidebar).isVisible()
+        assertTapSized()
+
+        picker()
+        repoBox.tap()
+        repoOption("api").tap()
+        repoBox.blur()
+        assertThat(repoTags).hasText(arrayOf("api×"))
+        assertTapSized()
+    }
+
+    @Test
+    fun `on a phone inputs, selects, textareas and the Markdown editors have 16px text, so iOS doesn't zoom in on them, and above 768px they keep theirs`() = browse {
+        val (_, entry) = answering(FakeClaude(), "who" to "Title who")
+        chipper()
+        val pages = listOf(entry, "/agents/chipper", "/agents/new", "/skills/new", "/settings")
+        onPhone()
+        for (path in pages) {
+            page.navigate(url(path))
+            assertFieldText("16px")
+        }
+        picker()
+        assertFieldText("16px")
+
+        page.setViewportSize(769, 900)
+        page.navigate(url("/agents/new"))
+        assertEquals("14px", page.locator("input[name=name]").evaluate("e => getComputedStyle(e).fontSize"))
+        assertEquals("14px", page.locator("textarea[name=instructions] + .ed .cm-content").evaluate("e => getComputedStyle(e).fontSize"))
+        assertTrue(page.locator("textarea[name=instructions] + .ed .bar button").first().boundingBox().height < 44, "the editor's toolbar keeps its desktop size")
+    }
+
+    @Test
+    fun `on a phone a tap on a shape in the modeler opens its hover menu, which appends a Task on a tap`() = browse {
+        onPhone()
+        page.navigate(url("/processes/new?name=Tapped&from="))
+        shape("start").tap()
+        assertThat(pad.locator("[data-action='append.agent-task']")).isVisible()
+        pad.locator("[data-action='append.agent-task']").tap()
+        assertThat(heading).hasText("Agent Task")
+    }
+
     private fun round(vararg questions: Pair<String, String>) = """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":""" +
         """{"outcome":"done","summary":"A Round.","output":{"questions":[""" + questions.joinToString(",") { (id, title) ->
             """{"id":"$id","title":"$title","ask":"Ask $id?","context":"Settles $id.","recommendation":"Recommend $id.","why":"Because $id."}"""
