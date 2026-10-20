@@ -552,7 +552,7 @@ class BrowserTest : AntsTest() {
         assertThat(sidebar).isHidden()
     }
 
-    private val tapTargets = "button, .btn, .topbar a, .topbar label, nav.side a, .tabs a, :is(.chipsel, .tags) .c, [role=tab]"
+    private val tapTargets = "button, .btn, .topbar a, .topbar label, nav.side a, .tabs a, .spine a, .walk nav a, .crumbs a, :is(.chipsel, .tags) .c, [role=tab]"
     private val textFields = "input:not([type=checkbox], [type=radio], [type=hidden], [type=file]), select, textarea, .cm-content"
 
     private fun visible(selector: String, measure: String) = (page.locator(selector).evaluateAll(
@@ -596,6 +596,16 @@ class BrowserTest : AntsTest() {
         repoBox.blur()
         assertThat(repoTags).hasText(arrayOf("api×"))
         assertTapSized()
+    }
+
+    @Test
+    fun `on a phone Review changes' tabs, story and step links, file links and breadcrumbs are at least 44px tall`() = browse {
+        val entry = staleStoryReviewEntry()
+        onPhone()
+        for (tab in listOf("story", "repo")) {
+            page.navigate(url("$entry?tab=$tab"))
+            assertTapSized()
+        }
     }
 
     @Test

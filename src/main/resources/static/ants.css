@@ -606,7 +606,8 @@ details.example pre { background: var(--line2); border: 0; padding: 10px; border
     .notes tr { padding: 8px 0; border-bottom: 1px solid var(--line2); }
     .notes tr:last-child { border-bottom: 0; }
     .notes td, .notes td:first-child { width: auto; padding: 4px 16px; border: 0; overflow-wrap: anywhere; }
-    :is(button, .btn, .side a, .topbar :is(a, label), .tabs a, :is(.chipsel, .tags) .c, nav#tabs[role=tablist] > button) { min-height: 44px; }
-    .tabs a { display: flex; align-items: center; }
+    :is(button, .btn, .side a, .topbar :is(a, label), .tabs a, .spine .srow, .ssteps a, .walk nav a, .crumbs a, :is(.chipsel, .tags) .c, nav#tabs[role=tablist] > button) { min-height: 44px; }
+    :is(.tabs, .ssteps, .walk nav) a { display: flex; align-items: center; }
+    .crumbs a { display: inline-flex; align-items: center; }
     :is(input, select, textarea, .ed .cm-content) { font-size: 16px; }
 }
