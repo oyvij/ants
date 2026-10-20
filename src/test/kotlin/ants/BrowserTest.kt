@@ -552,7 +552,7 @@ class BrowserTest : AntsTest() {
         assertThat(sidebar).isHidden()
     }
 
-    private val tapTargets = "button, .btn, .topbar a, .topbar label, nav.side a, .tabs a, .spine a, .walk nav a, .crumbs a, :is(.chipsel, .tags) .c, [role=tab]"
+    private val tapTargets = "button, .btn, .topbar a, .topbar label, nav.side a, .tabs a, .fold > summary, .spine a, .walk nav a, .crumbs a, :is(.chipsel, .tags) .c, [role=tab]"
     private val textFields = "input:not([type=checkbox], [type=radio], [type=hidden], [type=file]), select, textarea, .cm-content"
 
     private fun visible(selector: String, measure: String) = (page.locator(selector).evaluateAll(
@@ -1592,6 +1592,7 @@ class BrowserTest : AntsTest() {
 
         stories.getByText("Stories", Locator.GetByTextOptions().setExact(true)).tap()
         assertThat(greeting).isVisible()
+        assertTapSized()
         greeting.tap()
         val step = page.locator(".step:not([hidden])")
         assertThat(step.locator(".claim")).hasText("It greets.")
@@ -1635,6 +1636,7 @@ class BrowserTest : AntsTest() {
 
         files.getByText("Files", Locator.GetByTextOptions().setExact(true)).tap()
         assertThat(wide).isVisible()
+        assertTapSized()
         assertNoSidewaysScroll()
         wide.tap()
         page.waitForURL { it.endsWith("#f-api-1") }

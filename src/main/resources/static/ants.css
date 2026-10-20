@@ -634,7 +634,7 @@ details.example pre { background: var(--line2); border: 0; padding: 10px; border
     main form.row.pushacts { flex-wrap: wrap; }
     .storyview, .walk { grid-template-columns: minmax(0, 1fr); }
     .fold { position: static; max-height: none; padding: 0 16px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); }
-    .fold > summary { display: list-item; padding: 12px 0; color: var(--text); font-weight: 600; }
+    .fold > summary { display: list-item; padding: 12px 0; line-height: 20px; color: var(--text); font-weight: 600; }
     .fold[open] { padding-bottom: 12px; }
     .fold:not([open])::details-content { content-visibility: hidden; }
     .walkhead, .cfile, .bandacts, .walk .card > .row { flex-wrap: wrap; }
