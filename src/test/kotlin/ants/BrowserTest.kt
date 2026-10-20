@@ -989,8 +989,8 @@ class BrowserTest : AntsTest() {
         assertThat(field).hasValue("Like this: ![image](${ImagesTest.RED_PATH}) please")
     }
 
-    private fun picker(stored: String = "") {
-        settings(null, sourceMapLines(repo("api"), repo("web"), repo("webhooks")))
+    private fun picker(stored: String = "", vararg sourceMap: String = arrayOf("api", "web", "webhooks")) {
+        settings(null, sourceMapLines(*sourceMap.map(::repo).toTypedArray()))
         val bpmn = javaClass.getResource("/start-form.bpmn")!!.readText().replace("\"start-form\"", "\"picker\"")
             .replace("""<camunda:property id="ants.type" value="repos" />""", """<camunda:property id="ants.type" value="repos" /><camunda:property id="ants.stored" value="$stored" />""")
         assertFalse("role=\"alert\"" in http.upload("/processes", "file", "picker.bpmn", bpmn.toByteArray()).body)
@@ -1086,6 +1086,73 @@ class BrowserTest : AntsTest() {
         plain.getByLabel("web", Page.GetByLabelOptions().setExact(true)).check()
         plain.locator("#field-repos").fill("$elsewhere")
         assertEquals("""["web","$elsewhere"]""", startPicked(plain, plain.locator("textarea[name=prompt]")))
+    }
+
+    private val longRepo = "a-repository-whose-name-is-far-too-long-for-one-line-of-a-phone"
+
+    private fun assertShownWhole(part: Locator, what: String) {
+        assertWithinScreen(part, what)
+        assertEquals(true, part.evaluate("e => e.scrollWidth <= e.clientWidth"), "$what shows its whole name")
+    }
+
+    private fun tapStart(prompt: Locator): String {
+        prompt.fill("Add dark mode")
+        page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("Start").setExact(true)).tap()
+        page.waitForURL(Pattern.compile("/runs/[^/]+$"))
+        return page.locator("dt:text-is('repos') + dd").textContent()
+    }
+
+    @Test
+    fun `on a phone the start form's Repos picker wraps many picked repos within the screen, and taps pick and remove repos and start the Run`() = browse {
+        val elsewhere = repo(longRepo).remote
+        picker("api web webhooks $longRepo $elsewhere", "api", "web", "webhooks", longRepo, "billing", "search")
+        onPhone()
+        page.navigate(url("/processes/picker"))
+        assertThat(repoTags).hasCount(5)
+        assertNoSidewaysScroll()
+        for (tag in repoTags.all()) assertShownWhole(tag, "the tag ${tag.textContent()}")
+        page.screenshot("phone/start")
+
+        page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("Remove api")).tap()
+        assertThat(repoTags).hasText(arrayOf("web×", "webhooks×", "$longRepo×", "$elsewhere×"))
+        repoBox.tap()
+        assertThat(page.getByRole(AriaRole.LISTBOX)).isVisible()
+        assertWithinScreen(page.getByRole(AriaRole.LISTBOX), "the Source map repos")
+        for (option in repoOptions.all()) {
+            assertShownWhole(option, "the option ${option.textContent()}")
+            assertTrue(option.boundingBox().height >= 44, "the option ${option.textContent()} is ${option.boundingBox().height}px tall")
+        }
+        assertNoSidewaysScroll()
+        repoOption("search").tap()
+        assertThat(repoOption("search")).hasAttribute("aria-selected", "true")
+        page.locator("#start h3").tap()
+        assertThat(page.getByRole(AriaRole.LISTBOX)).isHidden()
+        assertThat(repoTags).hasText(arrayOf("web×", "webhooks×", "$longRepo×", "$elsewhere×", "search×"))
+        assertNoSidewaysScroll()
+
+        assertEquals("""["web","webhooks","$longRepo","$elsewhere","search"]""", tapStart(page.locator("textarea[name=prompt] + .ed .cm-content")))
+    }
+
+    @Test
+    fun `on a phone with JavaScript off the start form's Repos checkboxes and text input fit the screen, and taps on them start the Run`() = browse {
+        val elsewhere = repo(longRepo).remote
+        picker("", "api", "web", "webhooks", longRepo, "billing", "search")
+        onPhone(javaScript = false)
+        page.navigate(url("/processes/picker"))
+        assertThat(page.getByRole(AriaRole.COMBOBOX)).hasCount(0)
+        val boxes = page.locator("#start label:has(input[type=checkbox])")
+        assertThat(boxes).hasCount(6)
+        assertNoSidewaysScroll()
+        for (box in boxes.all()) assertShownWhole(box, "the checkbox ${box.textContent().trim()}")
+        page.screenshot("phone/start-no-js")
+
+        page.getByLabel(longRepo, Page.GetByLabelOptions().setExact(true)).tap()
+        page.getByLabel("web", Page.GetByLabelOptions().setExact(true)).tap()
+        assertThat(page.getByLabel("web", Page.GetByLabelOptions().setExact(true))).isChecked()
+        page.locator("#field-repos").tap()
+        page.locator("#field-repos").fill("$elsewhere")
+        assertNoSidewaysScroll()
+        assertEquals("""["web","$longRepo","$elsewhere"]""", tapStart(page.locator("textarea[name=prompt]")))
     }
 
     private fun byRepoReviewEntryOfApiCommitting(file: String, text: String): String {

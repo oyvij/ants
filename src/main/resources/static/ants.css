@@ -622,6 +622,8 @@ details.example pre { background: var(--line2); border: 0; padding: 10px; border
     .modal .split .cm-content { min-height: 0; }
     .modal .split .md { padding: 16px; border-left: 0; border-top: 1px solid var(--line); }
     .toast { top: 0; left: 0; right: 0; width: auto; border-radius: 0; }
+    #start :is(.tags .mono, .picks .mono, .combo [role=option]) { overflow-wrap: anywhere; }
+    #start .combo [role=option] { display: flex; align-items: center; min-height: 44px; }
     :is(button, .btn, .side a, .topbar :is(a, label), .tabs a, .spine .srow, .ssteps a, .walk nav a, .crumbs a, :is(.chipsel, .tags) .c, nav#tabs[role=tablist] > button) { min-height: 44px; }
     :is(.tabs, .ssteps, .walk nav) a { display: flex; align-items: center; }
     .crumbs a { display: inline-flex; align-items: center; }
