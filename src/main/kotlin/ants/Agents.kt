@@ -243,8 +243,9 @@ data class AgentForm(
                 Tool("LSP", "Jump to definitions and find references."),
             ),
             "Change files" to listOf(
-                Tool("Edit", "Change part of a file.", "paths", "src/**", "Also limits Write and NotebookEdit."),
-                Tool("Write", "Create or overwrite a file."),
+                // Probed on claude 2.1.303: `Write` ticked without a limit writes anywhere, whatever Edit's limit.
+                Tool("Edit", "Change part of a file.", "paths", "src/**", "A ticked Write needs a Limit of its own."),
+                Tool("Write", "Create or overwrite a file.", "paths", "src/**"),
                 Tool("NotebookEdit", "Edit Jupyter notebooks (.ipynb). Only matters if your repos have them."),
             ),
             "Run commands" to listOf(Tool("Bash", "Shell commands: builds, tests, git.", "commands", "pnpm test", "* matches the rest, as in git *.")),
