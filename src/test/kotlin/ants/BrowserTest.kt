@@ -1050,9 +1050,9 @@ class BrowserTest : AntsTest() {
         assertThat(none).isVisible()
     }
 
-    private fun startPicked(page: Page = this.page, prompt: Locator = page.locator("textarea[name=prompt] + .ed .cm-content")): String {
+    private fun startPicked(page: Page = this.page, prompt: Locator = page.locator("textarea[name=prompt] + .ed .cm-content"), press: (Locator) -> Unit = { it.click() }): String {
         prompt.fill("Add dark mode")
-        page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("Start").setExact(true)).click()
+        press(page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("Start").setExact(true)))
         page.waitForURL(Pattern.compile("/runs/[^/]+$"))
         return page.locator("dt:text-is('repos') + dd").textContent()
     }
@@ -1089,60 +1089,65 @@ class BrowserTest : AntsTest() {
     }
 
     private val longRepo = "a-repository-whose-name-is-far-too-long-for-one-line-of-a-phone"
+    private val phoneSourceMap = arrayOf("api", "web", "webhooks", longRepo, "billing", "search", "docs", "infra")
 
     private fun assertShownWhole(part: Locator, what: String) {
         assertWithinScreen(part, what)
         assertEquals(true, part.evaluate("e => e.scrollWidth <= e.clientWidth"), "$what shows its whole name")
     }
 
-    private fun tapStart(prompt: Locator): String {
-        prompt.fill("Add dark mode")
-        page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("Start").setExact(true)).tap()
-        page.waitForURL(Pattern.compile("/runs/[^/]+$"))
-        return page.locator("dt:text-is('repos') + dd").textContent()
+    private fun assertStartFormInOneColumn() {
+        val fields = page.locator("#start .fld").all().map { it.boundingBox() }
+        for ((above, below) in fields.zipWithNext()) {
+            assertEquals(above.x, below.x, 0.5, "the start form's fields start at one edge")
+            assertTrue(below.y >= above.y + above.height, "the start form's fields sit one under another")
+        }
     }
 
     @Test
     fun `on a phone the start form's Repos picker wraps many picked repos within the screen, and taps pick and remove repos and start the Run`() = browse {
         val elsewhere = repo(longRepo).remote
-        picker("api web webhooks $longRepo $elsewhere", "api", "web", "webhooks", longRepo, "billing", "search")
+        picker("api web webhooks $longRepo billing docs infra $elsewhere", *phoneSourceMap)
         onPhone()
         page.navigate(url("/processes/picker"))
-        assertThat(repoTags).hasCount(5)
+        assertThat(repoTags).hasCount(8)
         assertNoSidewaysScroll()
+        assertStartFormInOneColumn()
         for (tag in repoTags.all()) assertShownWhole(tag, "the tag ${tag.textContent()}")
         page.screenshot("phone/start")
 
         page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("Remove api")).tap()
-        assertThat(repoTags).hasText(arrayOf("web×", "webhooks×", "$longRepo×", "$elsewhere×"))
+        assertThat(repoTags).hasText(arrayOf("web×", "webhooks×", "$longRepo×", "billing×", "docs×", "infra×", "$elsewhere×"))
         repoBox.tap()
         assertThat(page.getByRole(AriaRole.LISTBOX)).isVisible()
         assertWithinScreen(page.getByRole(AriaRole.LISTBOX), "the Source map repos")
         for (option in repoOptions.all()) {
             assertShownWhole(option, "the option ${option.textContent()}")
-            assertTrue(option.boundingBox().height >= 44, "the option ${option.textContent()} is ${option.boundingBox().height}px tall")
+            val height = option.boundingBox().height
+            assertTrue(height >= 44, "the option ${option.textContent()} is ${height}px tall")
         }
         assertNoSidewaysScroll()
         repoOption("search").tap()
         assertThat(repoOption("search")).hasAttribute("aria-selected", "true")
         page.locator("#start h3").tap()
         assertThat(page.getByRole(AriaRole.LISTBOX)).isHidden()
-        assertThat(repoTags).hasText(arrayOf("web×", "webhooks×", "$longRepo×", "$elsewhere×", "search×"))
+        assertThat(repoTags).hasText(arrayOf("web×", "webhooks×", "$longRepo×", "billing×", "docs×", "infra×", "$elsewhere×", "search×"))
         assertNoSidewaysScroll()
 
-        assertEquals("""["web","webhooks","$longRepo","$elsewhere","search"]""", tapStart(page.locator("textarea[name=prompt] + .ed .cm-content")))
+        assertEquals("""["web","webhooks","$longRepo","billing","docs","infra","$elsewhere","search"]""", startPicked(press = { it.tap() }))
     }
 
     @Test
     fun `on a phone with JavaScript off the start form's Repos checkboxes and text input fit the screen, and taps on them start the Run`() = browse {
         val elsewhere = repo(longRepo).remote
-        picker("", "api", "web", "webhooks", longRepo, "billing", "search")
+        picker("", *phoneSourceMap)
         onPhone(javaScript = false)
         page.navigate(url("/processes/picker"))
         assertThat(page.getByRole(AriaRole.COMBOBOX)).hasCount(0)
         val boxes = page.locator("#start label:has(input[type=checkbox])")
-        assertThat(boxes).hasCount(6)
+        assertThat(boxes).hasCount(phoneSourceMap.size)
         assertNoSidewaysScroll()
+        assertStartFormInOneColumn()
         for (box in boxes.all()) assertShownWhole(box, "the checkbox ${box.textContent().trim()}")
         page.screenshot("phone/start-no-js")
 
@@ -1150,9 +1155,9 @@ class BrowserTest : AntsTest() {
         page.getByLabel("web", Page.GetByLabelOptions().setExact(true)).tap()
         assertThat(page.getByLabel("web", Page.GetByLabelOptions().setExact(true))).isChecked()
         page.locator("#field-repos").tap()
-        page.locator("#field-repos").fill("$elsewhere")
+        page.locator("#field-repos").fill(elsewhere.toString())
         assertNoSidewaysScroll()
-        assertEquals("""["web","$longRepo","$elsewhere"]""", tapStart(page.locator("textarea[name=prompt]")))
+        assertEquals("""["web","$longRepo","$elsewhere"]""", startPicked(page, page.locator("textarea[name=prompt]")) { it.tap() })
     }
 
     private fun byRepoReviewEntryOfApiCommitting(file: String, text: String): String {
