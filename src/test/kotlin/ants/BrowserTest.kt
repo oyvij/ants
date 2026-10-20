@@ -1210,16 +1210,16 @@ class BrowserTest : AntsTest() {
         "| PaymentRetryPolicy | PaymentRetryPolicyTest | ExponentialBackoffPolicy | FixedClockForRetries | InMemoryPaymentLedger | StripeWebhookGateway |\n\n" +
         "![Ants](/icon-512.png)\n"
 
-    private fun assertWideTableScrollsInsideItsBoxAndTheImageFits(body: String) = eventually {
-        val (right, tableRight, scrolled, imageRight, imageWidth) = (page.locator(body).evaluate(
+    private fun assertWideTableScrollsInsideItsBoxAndTheImageFits(selector: String) = eventually {
+        val (right, tableRight, scrolled, imageRight, imageWidth) = (page.locator(selector).evaluate(
             "e => { const t = e.querySelector('table'), i = e.querySelector('img'); t.scrollLeft = 100; " +
                 "return [e.getBoundingClientRect().right, t.getBoundingClientRect().right, t.scrollLeft, i.getBoundingClientRect().right, i.complete ? i.getBoundingClientRect().width : 0] }",
         ) as List<*>).map { (it as Number).toDouble() }
-        assertTrue(right <= 390, "$body ends at ${right}px on a 390px screen")
-        assertTrue(tableRight <= right, "the table ends at ${tableRight}px, past $body's ${right}px")
+        assertTrue(right <= page.viewportSize().width, "$selector ends at ${right}px on a ${page.viewportSize().width}px screen")
+        assertTrue(tableRight <= right, "the table ends at ${tableRight}px, past $selector's ${right}px")
         assertTrue(scrolled > 0, "the wide table scrolls sideways inside its own box")
         assertTrue(imageWidth in 1.0..<512.0, "the 512px image shrinks to fit, at ${imageWidth}px")
-        assertTrue(imageRight <= right, "the image ends at ${imageRight}px, past $body's ${right}px")
+        assertTrue(imageRight <= right, "the image ends at ${imageRight}px, past $selector's ${right}px")
     }
 
     @Test
@@ -1260,6 +1260,8 @@ class BrowserTest : AntsTest() {
         assertNoSidewaysScroll()
     }
 
+    private fun buttonNamed(name: String) = page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName(name).setExact(true))
+
     private fun waitingEntry(after: String? = null): String {
         var entry = ""
         eventually { entry = assertNotNull(Regex("""href="(/notifications/[^"]+)"""").find(http.get("/notifications").body)).groupValues[1].also { assertNotEquals(after, it) } }
@@ -1294,21 +1296,20 @@ class BrowserTest : AntsTest() {
         val commentBox = comment.boundingBox()
         assertEquals(left, specBox.x, 0.5, "the Spec starts at the page's content edge")
         assertEquals(right, specBox.x + specBox.width, 0.5, "the Spec ends at the page's content edge")
-        assertEquals(left, commentBox.x, 0.5, "the comment starts under the Spec")
+        assertEquals(left, commentBox.x, 0.5, "the comment starts at the page's content edge")
         assertTrue(commentBox.y >= specBox.y + specBox.height, "the comment sits under the Spec")
-        fun button(name: String) = page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName(name).setExact(true))
         for (name in listOf("Send back", "Approve")) {
-            val box = button(name).boundingBox()
-            assertTrue(box.x >= 0 && box.x + box.width <= 390 && box.y + box.height <= 844, "$name is on the screen at $box")
+            val box = buttonNamed(name).boundingBox()
+            assertTrue(box.x >= 0 && box.x + box.width <= page.viewportSize().width && box.y + box.height <= page.viewportSize().height, "$name is on the screen at $box")
         }
 
         comment.locator(".cm-content").tap()
         page.keyboard().type("Shorter, please.")
-        button("Send back").tap()
+        buttonNamed("Send back").tap()
         eventually { assertContains(workspace(run).resolve("run-log.md").readText(), "Send back\n\nShorter, please.\n") }
 
         page.navigate(url(waitingEntry(after = first)))
-        button("Approve").tap()
+        buttonNamed("Approve").tap()
         eventually { assertContains(http.get("/runs/$run").body, """id="state">Completed<""") }
         assertEquals(2, claude.launches("draft").size)
     }
@@ -1338,13 +1339,12 @@ class BrowserTest : AntsTest() {
             assertEquals(right, box.x + box.width, 0.5, "a repo's card ends at the page's content edge")
         }
         assertTrue(boxes[1].y >= boxes[0].y + boxes[0].height, "web's card sits under api's")
-        fun button(name: String) = page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName(name).setExact(true))
         for (name in listOf("Cancel the Run", "Push 2 branches")) {
-            val box = button(name).boundingBox()
+            val box = buttonNamed(name).boundingBox()
             assertTrue(box.x >= left - 0.5 && box.x + box.width <= right + 0.5, "$name is within the page at $box")
         }
 
-        button("Push 2 branches").tap()
+        buttonNamed("Push 2 branches").tap()
         assertThat(page.locator(".toast")).containsText("Pushing")
         eventually(30) { for (repo in repos) assertContains(git(repo.remote, "branch", "--list"), branch) }
     }
