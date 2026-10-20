@@ -7,6 +7,7 @@
 @param list: String = "Processes"
 @param page: String? = null
 @param note: String? = null
+@param builder: String? = null
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
 @param shell: ants.Shell
@@ -34,6 +35,9 @@
             <span class="muted small">Ants' own, read-only.</span> <button>Copy</button> <span class="muted small">makes your own.</span>
         </form>
 @endif
+@if(builder != null)
+        <button type="button" id="builder-toggle" aria-controls="builder" aria-pressed="true">Process Builder</button>
+@endif
         <button class="primary" id="save" data-action="${action}" hidden="${copy != null}">${saveLabel}</button>
     </div>
 </div>
@@ -48,6 +52,16 @@
             <ul id="checks" aria-label="Checks"></ul>
         </div>
     </div>
+@if(builder != null)
+    <aside class="pb" id="builder" aria-label="Process Builder" data-off="${builder.ifEmpty { null }}">
+        <div id="pb-dialog" class="tr"><p class="muted">@if(builder.isNotEmpty())${builder}@elseSay what this Process should get done, loosely is fine: the Process Builder asks about the gaps, proposes a shape and builds it here, each change one undo step.@endif</p><div id="pb-live"></div></div>
+        <form id="pb-form" hidden="${builder.isNotEmpty()}">
+            <label class="f" for="pb-message">Message to the Process Builder</label>
+            <textarea id="pb-message" name="message" data-markdown data-enter-sends required placeholder="e.g. Every morning, pick a small issue and get it to a PR. (Enter sends, Shift+Enter adds a line)"></textarea>
+            <div class="row"><span class="grow muted small" id="pb-error" role="alert"></span><button type="button" id="pb-stop" hidden>Stop</button><button class="primary" id="pb-send">Send</button></div>
+        </form>
+    </aside>
+@endif
 </div>
 </main>
 <script src="/vendor/camunda-bpmn-js/camunda-platform-modeler.production.min.js"></script>

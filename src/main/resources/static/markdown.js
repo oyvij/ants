@@ -43,6 +43,8 @@ function mount(textarea, cm) {
     const editor = new cm.EditorView({
         doc: textarea.value,
         extensions: [
+            // A chat box's (data-enter-sends) Enter sends its form, and Shift+Enter adds a line.
+            textarea.hasAttribute('data-enter-sends') ? cm.Prec.highest(cm.keymap.of([{key: 'Enter', run: () => (textarea.form.requestSubmit(), true), shift: cm.insertNewlineAndIndent}])) : [],
             cm.keymap.of([{key: 'Mod-b', run: view => surround(view, '**')}, {key: 'Mod-i', run: view => surround(view, '*')}]),
             cm.history(), cm.drawSelection(), cm.EditorView.lineWrapping, cm.keymap.of([...cm.defaultKeymap, ...cm.historyKeymap]),
             cm.placeholder(textarea.placeholder), cm.EditorState.readOnly.of(textarea.readOnly), cm.markdown(), cm.syntaxHighlighting(style),

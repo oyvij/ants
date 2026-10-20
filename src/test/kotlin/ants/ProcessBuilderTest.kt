@@ -60,7 +60,7 @@ class ProcessBuilderTest : AntsTest() {
     fun `a follow-up goes into the same session, and once claude has died the next message resumes it`() {
         settings(claude)
         val done = """{"type":"result","subtype":"success","result":"Done.","session_id":"${'$'}SESSION"}"""
-        claude.session("process-builder", 1, done, "read", done, "exit 0")
+        claude.session("process-builder", 1, done, "read", "exit 0") // claude dies in the turn
         claude.session("process-builder", 2, done)
         val token = open()
         send(token, "First.")

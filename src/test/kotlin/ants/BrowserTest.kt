@@ -279,6 +279,94 @@ class BrowserTest : AntsTest() {
         assertEquals(before, tool("diagram", emptyMap()))
     }
 
+    private val builderResult = """{"type":"result","subtype":"success","result":"","session_id":"${'$'}SESSION"}"""
+
+    /** A fake claude's reply [text], as one assistant message. */
+    private fun says(text: String) = """{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"$text"}]},"session_id":"${'$'}SESSION"}"""
+
+    /** Types [lines] into the Process Builder's prompt box, Shift+Enter between them, and sends them with Enter. */
+    private fun ask(vararg lines: String) {
+        assertThat(page.locator("#canvas")).hasAttribute("data-builder", Pattern.compile(".+")) // the session is open
+        assertThat(page.locator("#pb-send")).isVisible() // no turn runs
+        page.locator("#builder .cm-content").click()
+        lines.forEachIndexed { i, line ->
+            if (i > 0) page.keyboard().press("Shift+Enter")
+            page.keyboard().type(line)
+        }
+        page.keyboard().press("Enter")
+    }
+
+    @Test
+    fun `the Process Builder asks first, then builds a small Process on the open canvas from the answer, each change one undo step`() = browse {
+        val claude = FakeClaude()
+        agentTask(claude, metadata = "metadata:\n  ants-inputs: prompt\n")
+        claude.session("process-builder",
+            says("Who answers the questions it asks?"), builderResult, "read",
+            """mcp add_element {"kind":"agent","id":"pick","name":"Pick","x":300,"y":80}""",
+            """mcp set_agent_task {"id":"pick","agent":"writer","inputs":{"prompt":"${'$'}{prompt}"}}""",
+            """mcp add_element {"kind":"end","id":"done","x":500,"y":102}""",
+            """mcp connect {"from":"start","to":"pick","id":"toPick"}""",
+            """mcp connect {"from":"pick","to":"done","id":"toDone"}""",
+            says("Built: Pick, then done."), builderResult)
+        page.navigate(url("/processes/new?name=Built+here&from="))
+        val dialog = page.locator("#pb-dialog")
+        ask("Every morning, pick a small issue and get it to a PR.")
+        assertThat(dialog).containsText("Who answers the questions it asks?")
+        assertThat(shape("pick")).hasCount(0) // it asks before it builds
+        ask("I do.")
+        assertThat(dialog).containsText("Built: Pick, then done.")
+        assertThat(dialog).containsText("set_agent_task")
+        val built = listOf("pick", "done", "toPick", "toDone")
+        for (id in built) assertThat(shape(id)).hasCount(1)
+        shape("pick").click()
+        assertThat(label("Agent")).hasValue("writer")
+        assertThat(page.locator("#explain label.row input").first()).hasValue("\${prompt}")
+        page.screenshot("process-builder")
+        repeat(5) { undo() }
+        for (id in built) assertThat(shape(id)).hasCount(0)
+        assertThat(shape("start")).hasCount(1)
+    }
+
+    @Test
+    fun `the Process Builder keeps one session per page, resumes a dead claude, stops a turn, and closing the page ends claude`() = browse {
+        val claude = FakeClaude()
+        settings(claude)
+        claude.session("process-builder", 1, says("One."), builderResult, "read", says("Two."), "exit 0") // claude dies in the turn
+        claude.session("process-builder", 2, says("Three."), "read",
+            """{"type":"result","subtype":"error_during_execution","session_id":"${'$'}SESSION"}""", "wait never")
+        page.navigate(url("/templates/review-and-push"))
+        assertThat(page.locator("#canvas")).isVisible()
+        assertThat(page.locator("#builder, #builder-toggle")).hasCount(0) // a Template has no Process Builder
+        assertFalse(page.locator("#canvas").getAttribute("data-builder").orEmpty().isNotEmpty())
+
+        page.navigate(url("/processes/new?name=Talked+through&from="))
+        page.click("#builder-toggle")
+        assertThat(page.locator("#builder")).isHidden()
+        page.reload()
+        assertThat(page.locator("#builder")).isHidden() // the choice is remembered
+        page.click("#builder-toggle")
+        assertThat(page.locator("#builder")).isVisible()
+
+        val dialog = page.locator("#pb-dialog")
+        ask("First line", "second line")
+        assertThat(dialog).containsText("One.")
+        eventually { assertTrue("First line\\nsecond line" in claude.launches("process-builder").single().stdin) }
+        ask("Again.")
+        assertThat(dialog).containsText("Two.")
+        assertEquals(1, claude.launches("process-builder").size)
+        ask("Third.") // claude exited after Two: this resumes its session
+        assertThat(dialog).containsText("Three.")
+        val (first, second) = claude.launches("process-builder")
+        assertEquals(first.flag("--session-id"), second.flag("--resume"))
+
+        assertThat(page.locator("#pb-send")).isHidden() // Stop replaces Send while the turn runs
+        page.click("#pb-stop")
+        assertThat(page.locator("#pb-send")).isVisible()
+        assertTrue("interrupt" in second.stdin)
+        page.close()
+        eventually { assertTrue(second.killed) }
+    }
+
     @Test
     fun `an Agent Task set up by the Process Builder's tools reads in the saved XML as one set up by hand`() = browse {
         agentTask(null, metadata = "metadata:\n  ants-inputs: prompt\n")
