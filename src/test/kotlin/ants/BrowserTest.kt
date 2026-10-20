@@ -693,6 +693,9 @@ class BrowserTest : AntsTest() {
         ).apply { addCookies(cookies) }.newPage().also(::watch)
     }
 
+    // A modal and a toast fade in from 4px lower, so they are measured once their animations end.
+    private fun settled(element: Locator) = element.evaluate("e => Promise.all(e.getAnimations().map(a => a.finished))")
+
     private fun assertNoSidewaysScroll() {
         val (scroll, client) = (page.evaluate("[document.documentElement.scrollWidth, document.documentElement.clientWidth]") as List<*>).map { (it as Number).toInt() }
         assertEquals(page.viewportSize().width, client, "${page.url()} renders at the screen's width")
@@ -999,7 +1002,8 @@ class BrowserTest : AntsTest() {
         page.navigate(url(run))
         assertThat(shape("wait")).isVisible()
         assertNoSidewaysScroll()
-        eventually { shape("wait").tap() }
+        // On a phone the zoom buttons cover the Task's top right, so the tap goes to its bottom left.
+        eventually { shape("wait").run { tap(Locator.TapOptions().setPosition(boundingBox().width * 0.15, boundingBox().height * 0.85)) } }
         val drawer = page.locator("#drawer")
         assertThat(page.locator("#drawer-head")).isVisible()
         eventually { assertEquals(0.0, drawer.boundingBox().x, 0.5) }
@@ -1069,6 +1073,7 @@ class BrowserTest : AntsTest() {
         page.locator("textarea[name=instructions] + .ed").locator("button", Locator.LocatorOptions().setHasText("Expand")).tap()
         val modal = page.locator("dialog.modal")
         assertThat(modal.locator(".split .cm-content")).isVisible()
+        settled(modal)
         assertEquals(0.0, modal.boundingBox().x, 0.5)
         assertEquals(390.0, modal.boundingBox().width, 0.5)
         val (editor, preview) = modal.locator(".split > *").all().map { it.boundingBox() }
@@ -1084,6 +1089,7 @@ class BrowserTest : AntsTest() {
         page.locator("button[name=action][value=updates]").tap()
         val toast = page.locator(".toast")
         assertThat(toast).containsText("Checked")
+        settled(toast)
         val spot = toast.boundingBox()
         assertEquals(0.0, spot.x, 0.5)
         assertEquals(390.0, spot.width, 0.5)
@@ -1979,6 +1985,7 @@ class BrowserTest : AntsTest() {
     }
 
     private fun assertScrollsAwayWithThePage(disclosure: Locator) {
+        page.evaluate("scrollTo(0, 0)")
         val before = disclosure.boundingBox().y
         page.evaluate("scrollBy(0, 200)")
         eventually { assertEquals(before - 200, disclosure.boundingBox().y, 0.5, "the disclosure scrolls away with the page") }
@@ -2005,9 +2012,9 @@ class BrowserTest : AntsTest() {
         val active = stories.locator("[aria-current=step]")
         assertThat(active).hasText("Hello")
         assertThat(active).isVisible()
-        stories.getByRole(AriaRole.LINK, Locator.GetByRoleOptions().setName("⚠ World")).tap()
+        stories.getByRole(AriaRole.LINK, Locator.GetByRoleOptions().setName("World")).tap()
         assertThat(step.locator(".claim")).hasText("It names the world.")
-        assertThat(active).hasText("⚠ World")
+        assertThat(active).hasText("World")
         assertThat(stories.locator(".srow.on")).containsText("Greeting")
         assertNoSidewaysScroll()
         page.screenshot("phone/review-story")
