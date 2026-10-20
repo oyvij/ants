@@ -425,7 +425,7 @@ class BrowserTest : AntsTest() {
     }
 
     private val topBar get() = page.locator("body > header")
-    private val drawer get() = page.locator("nav.side")
+    private val sidebar get() = page.locator("nav.side")
     private val menu get() = page.getByText("☰", Page.GetByTextOptions().setExact(true))
 
     @Test
@@ -463,14 +463,14 @@ class BrowserTest : AntsTest() {
         assertThat(topBar).containsText("Ants")
         assertEquals(0.0, topBar.boundingBox().y, 0.5)
         assertEquals(390.0, topBar.boundingBox().width, 0.5)
-        val count = page.locator("#bar-waiting")
+        val count = page.locator("#topbar-waiting")
         assertThat(count).hasText(Pattern.compile("\\d+"))
         val before = count.textContent().toInt()
 
         http.post("/processes/counted/runs", mapOf())
 
         assertThat(count).hasText("${before + 1}")
-        assertThat(drawer).isHidden()
+        assertThat(sidebar).isHidden()
         val main = page.locator("main").boundingBox()
         assertEquals(0.0, main.x, 0.5)
         assertEquals(390.0, main.width, 0.5)
@@ -481,56 +481,62 @@ class BrowserTest : AntsTest() {
         onPhone()
         page.navigate(url("/runs"))
         menu.tap()
-        assertThat(drawer).isVisible()
-        eventually { assertEquals(0.0, drawer.boundingBox().x, 0.5) }
-        fun link(name: String) = drawer.getByRole(AriaRole.LINK, Locator.GetByRoleOptions().setName(name))
+        assertThat(sidebar).isVisible()
+        eventually { assertEquals(0.0, sidebar.boundingBox().x, 0.5) }
+        fun link(name: String) = sidebar.getByRole(AriaRole.LINK, Locator.GetByRoleOptions().setName(name))
         for (name in listOf("Home", "Notification list", "Runs", "Processes", "Tickets", "Agents", "Skills", "Templates", "Settings")) assertThat(link(name)).isVisible()
-        assertThat(drawer.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Log out"))).hasText(Pattern.compile("Log out v\\S+"))
-        assertThat(drawer.locator("button[name=theme]:visible")).hasCount(1)
-        for (notice in listOf("#runs", "#paused", "#update")) assertThat(drawer.locator(notice)).hasCount(1)
+        assertThat(sidebar.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Log out"))).hasText(Pattern.compile("Log out v\\S+"))
+        assertThat(sidebar.locator("button[name=theme]:visible")).hasCount(1)
+        for (notice in listOf("#runs", "#paused", "#update")) assertThat(sidebar.locator(notice)).hasCount(1)
         fun background(name: String) = link(name).evaluate("a => getComputedStyle(a).backgroundColor")
         assertNotEquals(background("Processes"), background("Runs"), "the drawer marks Runs, the page it is on")
         page.screenshot("phone/drawer")
 
         page.touchscreen().tap(370.0, 600.0)
-        assertThat(drawer).isHidden()
+        assertThat(sidebar).isHidden()
         assertTrue(page.url().endsWith("/runs"), "a tap outside the drawer only closes it")
 
         menu.tap()
-        assertThat(drawer).isVisible()
+        assertThat(sidebar).isVisible()
         page.keyboard().press("Escape")
-        assertThat(drawer).isHidden()
+        assertThat(sidebar).isHidden()
 
         menu.tap()
         link("Processes").tap()
         page.waitForURL { it.endsWith("/processes") }
-        assertThat(drawer).isHidden()
+        assertThat(sidebar).isHidden()
     }
 
     @Test
     fun `on a phone with JavaScript off ☰ still opens and closes the menu`() = browse {
         onPhone(javaScript = false)
         page.navigate(url("/runs"))
-        assertThat(drawer).isHidden()
+        assertThat(sidebar).isHidden()
         menu.tap()
-        assertThat(drawer).isVisible()
-        assertThat(drawer.getByRole(AriaRole.LINK, Locator.GetByRoleOptions().setName("Processes"))).isVisible()
+        assertThat(sidebar).isVisible()
+        assertThat(sidebar.getByRole(AriaRole.LINK, Locator.GetByRoleOptions().setName("Processes"))).isVisible()
         menu.tap()
-        assertThat(drawer).isHidden()
+        assertThat(sidebar).isHidden()
     }
 
     @Test
-    fun `on a phone in dark mode the top bar and the drawer are dark like the sidebar`() = browse {
-        settings(null, "theme: dark\n")
+    fun `on a phone the top bar and the drawer follow light and dark mode as the desktop sidebar does`() = browse {
         onPhone()
-        page.navigate(url("/runs"))
-        menu.tap()
-        assertThat(drawer).isVisible()
-        assertEquals("rgb(11, 13, 18)", page.evaluate("getComputedStyle(document.documentElement).backgroundColor"))
-        val side = drawer.evaluate("e => getComputedStyle(e).backgroundColor")
-        assertEquals(side, topBar.evaluate("e => getComputedStyle(e).backgroundColor"))
-        assertEquals("rgb(255, 255, 255)", topBar.getByText("Ants").evaluate("e => getComputedStyle(e).color"))
-        page.screenshot("phone/drawer-dark")
+        fun background(part: Locator) = part.evaluate("e => getComputedStyle(e).backgroundColor")
+        for ((theme, pageBackground) in listOf("light" to "rgb(244, 245, 247)", "dark" to "rgb(11, 13, 18)")) {
+            settings(null, "theme: $theme\n")
+            page.setViewportSize(1024, 844)
+            page.navigate(url("/runs"))
+            val desktop = background(sidebar)
+            page.setViewportSize(390, 844)
+            menu.tap()
+            assertThat(sidebar).isVisible()
+            assertEquals(pageBackground, page.evaluate("getComputedStyle(document.documentElement).backgroundColor"), "the page in $theme")
+            assertEquals(desktop, background(sidebar), "the drawer in $theme")
+            assertEquals(desktop, background(topBar), "the top bar in $theme")
+            assertEquals("rgb(255, 255, 255)", topBar.getByText("Ants").evaluate("e => getComputedStyle(e).color"), "Ants in $theme")
+            page.screenshot("phone/drawer-$theme")
+        }
     }
 
     @Test
@@ -538,12 +544,12 @@ class BrowserTest : AntsTest() {
         page.setViewportSize(769, 900)
         page.navigate(url("/runs"))
         assertThat(topBar).isHidden()
-        assertThat(drawer).isVisible()
-        assertEquals(232.0, drawer.boundingBox().width, 0.5)
+        assertThat(sidebar).isVisible()
+        assertEquals(232.0, sidebar.boundingBox().width, 0.5)
         assertEquals(232.0, page.locator("main").boundingBox().x, 0.5)
         page.setViewportSize(768, 900)
         assertThat(topBar).isVisible()
-        assertThat(drawer).isHidden()
+        assertThat(sidebar).isHidden()
     }
 
     private fun round(vararg questions: Pair<String, String>) = """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":""" +

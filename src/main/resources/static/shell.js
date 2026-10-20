@@ -101,7 +101,7 @@ addEventListener('DOMContentLoaded', liven);
 const title = document.title.replace(/^\(\d+\) /, '');
 stream.on('count', data => {
     const count = data === '0' ? '' : data;
-    for (const waiting of [document.getElementById('waiting'), document.getElementById('bar-waiting')]) {
+    for (const waiting of [document.getElementById('waiting'), document.getElementById('topbar-waiting')]) {
         if (waiting.textContent === count) continue;
         waiting.textContent = count;
         flash(waiting);

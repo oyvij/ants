@@ -49,8 +49,8 @@ svg.i { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-widt
 .side a.on { background: #232733; color: #fff; }
 .side .bottom > form > button svg.i { width: 17px; height: 17px; }
 .side .grp { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: #5b6475; padding: 16px 10px 4px; font-weight: 600; }
-:is(.side, .bar) .n { margin-left: auto; background: var(--wait); color: #fff; font-size: 11px; font-weight: 700; border-radius: 10px; padding: 0 7px; line-height: 18px; }
-:is(.side, .bar) .n:empty { display: none; }
+:is(.side, .topbar) .n { margin-left: auto; background: var(--wait); color: #fff; font-size: 11px; font-weight: 700; border-radius: 10px; padding: 0 7px; line-height: 18px; }
+:is(.side, .topbar) .n:empty { display: none; }
 .side .m { margin-left: auto; font-size: 12px; color: #6b7385; }
 .side .bottom { margin-top: auto; display: flex; flex-direction: column; gap: 8px; }
 .notice, #paused form, #update:not(:empty) { background: var(--side2); border: 1px solid #262a35; border-radius: 9px; padding: 8px 10px; font-size: 12px; color: #cbd2dd; }
@@ -66,16 +66,16 @@ svg.i { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-widt
 :root:has(meta[name=color-scheme][content=light]) .to-light, :root:has(meta[name=color-scheme][content=dark]) .to-dark { display: none; }
 @media (prefers-color-scheme: light) { :root:has(meta[name=color-scheme][content="light dark"]) .to-light { display: none; } }
 @media (prefers-color-scheme: dark) { :root:has(meta[name=color-scheme][content="light dark"]) .to-dark { display: none; } }
+#menu, .topbar { display: none; }
+.topbar { position: sticky; top: 0; z-index: 9; align-items: center; gap: 4px; padding: 6px 8px 6px 16px; background: var(--side); color: var(--sideText); color-scheme: dark; }
+.topbar .logo { padding: 0; margin-right: auto; }
+.topbar .logo:hover, .topbar .notifications:hover { text-decoration: none; }
+.topbar .notifications, .topbar label { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-radius: 8px; color: #e5e7eb; cursor: pointer; }
+.topbar label { font-size: 20px; line-height: 1; }
 /* The installed app has no browser bar, so the sidebar carries back, forward and reload; a browser tab has its own. */
 #history { display: none; gap: 4px; padding: 0 10px 12px; }
 @media (display-mode: standalone) { #history { display: flex; } }
 #history button { padding: 3px 10px; font-size: 14px; }
-#menu, .bar { display: none; }
-.bar { position: sticky; top: 0; z-index: 9; align-items: center; gap: 4px; padding: 6px 8px 6px 16px; background: var(--side); color: var(--sideText); color-scheme: dark; }
-.bar .logo { padding: 0; margin-right: auto; }
-.bar .logo:hover, .bar .count:hover { text-decoration: none; }
-.bar .count, .bar label { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-radius: 8px; color: #e5e7eb; cursor: pointer; }
-.bar label { font-size: 20px; line-height: 1; }
 
 /* Page */
 main { max-width: var(--page-max); margin: 0 auto; padding: 32px 40px calc(32px + var(--composer-height, 0px)); }
@@ -585,7 +585,7 @@ details.example pre { background: var(--line2); border: 0; padding: 10px; border
 
 @media (max-width: 768px) {
     :root { --side-width: 0px; }
-    .bar { display: flex; }
+    .topbar { display: flex; }
     nav.side { width: min(280px, 85vw); visibility: hidden; transform: translateX(-100%); transition: transform .2s, visibility .2s; }
     #menu:checked ~ nav.side { visibility: visible; transform: none; box-shadow: 0 0 0 100vmax var(--modalBg); }
     main, main.full { padding-inline: 16px; }

@@ -1,6 +1,6 @@
 @param shell: ants.Shell
 <input type="checkbox" id="menu" autocomplete="off">
-<header class="bar"><a class="logo" href="/"><b>🐜</b>Ants</a><a class="count" href="/notifications" title="Notification list"><svg class="i" viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg><span id="bar-waiting" class="n">${if (shell.waiting > 0) shell.waiting.toString() else ""}</span></a><label for="menu" title="Menu">☰</label></header>
+<header class="topbar"><a class="logo" href="/"><b>🐜</b>Ants</a><a class="notifications" href="/notifications" title="Notification list"><svg class="i" viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg><span id="topbar-waiting" class="n">${if (shell.waiting > 0) shell.waiting.toString() else ""}</span></a><label for="menu" title="Menu">☰</label></header>
 <nav class="side">
     <div class="logo"><b>🐜</b>Ants</div>
     <span id="history"><button type="button" onclick="history.back()" title="Back" aria-label="Back">←</button><button type="button" onclick="history.forward()" title="Forward" aria-label="Forward">→</button><button type="button" onclick="location.reload()" title="Reload" aria-label="Reload">↻</button></span>

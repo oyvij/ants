@@ -61,9 +61,9 @@ class ShellTest : AntsTest() {
     @Test
     fun `the top bar shows Ants, the Notification list count and the ☰ that opens the sidebar`() {
         waitingRun()
-        val bar = Regex("""<header class="bar">.*?</header>""", RegexOption.DOT_MATCHES_ALL).find(browser.get("/runs").body)!!.value
+        val bar = Regex("""<header class="topbar">.*?</header>""", RegexOption.DOT_MATCHES_ALL).find(browser.get("/runs").body)!!.value
         assertContains(bar, """<b>🐜</b>Ants""")
-        assertContains(bar, """<span id="bar-waiting" class="n">1</span>""")
+        assertContains(bar, """<span id="topbar-waiting" class="n">1</span>""")
         assertContains(bar, """<label for="menu" title="Menu">☰</label>""")
     }
 
