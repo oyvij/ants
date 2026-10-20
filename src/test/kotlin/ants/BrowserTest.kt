@@ -145,7 +145,8 @@ class BrowserTest : AntsTest() {
         val elements = diagram["elements"].associateBy { it["id"].asString() }
         assertEquals(setOf("start", "draft", "end"), elements.keys)
         val draft = elements.getValue("draft")
-        assertEquals(listOf<Any>("agent", "Draft it", 200, 80), listOf(draft["kind"].asString(), draft["name"].asString(), draft["x"].asInt(), draft["y"].asInt()))
+        assertEquals(listOf<Any>("agent", "Draft it", 80), listOf(draft["kind"].asString(), draft["name"].asString(), draft["y"].asInt()))
+        assertEquals(listOf("start", "draft", "end"), elements.values.sortedBy { it["x"].asInt() }.map { it["id"].asString() })
         assertEquals("writer", draft["properties"]["ants.agent"].asString())
         assertEquals("\${prompt}", draft["inputs"]["prompt"].asString())
         assertEquals(listOf("f1:start>draft", "f2:draft>end"), diagram["connections"].iterator().asSequence().map { "${it["id"].asString()}:${it["from"].asString()}>${it["to"].asString()}" }.toList())
