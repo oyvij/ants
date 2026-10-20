@@ -361,7 +361,7 @@ dialog.source-map { width: min(760px, 92vw); height: auto; } .source-map textare
 #start .combo [role=listbox] { position: absolute; z-index: 4; left: 0; right: 0; top: calc(100% + 4px); margin: 0; padding: 4px; list-style: none; background: var(--panel); border: 1px solid var(--fieldLine); border-radius: 8px; box-shadow: 0 10px 30px rgba(15, 23, 42, .12); max-height: 280px; overflow: auto; }
 #start .combo [role=option] { position: relative; padding: 6px 10px 6px 30px; border-radius: 6px; cursor: pointer; font-family: var(--mono); font-size: 13px; }
 #start .combo [role=option].on { background: var(--hover); }
-#start .combo [role=option][aria-selected=true]::before { content: "✓"; position: absolute; left: 10px; color: var(--accText); font-weight: 700; }
+#start .combo [role=option][aria-selected=true]::before { content: "✓" / ""; /* aria-selected already says it: an empty alt keeps the tick out of the option's name */ position: absolute; left: 10px; color: var(--accText); font-weight: 700; }
 #start .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; } #start .tags:empty { display: none; }
 #start .tags + .help { margin: 8px 0 0; }
 #start form { margin: 0; } #start .go { margin-top: 16px; }
