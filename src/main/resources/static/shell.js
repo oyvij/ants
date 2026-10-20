@@ -164,3 +164,6 @@ for (const box of document.querySelectorAll('.dia')) {
     };
     box.addEventListener('fullscreenchange', () => setTimeout(() => { box.canvas?.resized(); box.canvas?.zoom('fit-viewport', 'auto'); }, 50));
 }
+
+const composer = document.querySelector('.composer');
+if (composer) new ResizeObserver(() => document.documentElement.style.setProperty('--composer-height', composer.offsetHeight + 'px')).observe(composer, { box: 'border-box' });

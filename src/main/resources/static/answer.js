@@ -1,5 +1,4 @@
-// Answer a Round: one question at a time under a tab bar marking each untouched (·), accepted (✓) or edited (✎),
-// then Review and send. Without this script the page is a plain form of every question. Ants stamps the sources.
+// Without this script the page is a plain form of every question. Ants stamps the sources.
 const form = document.getElementById('round');
 const questions = [...form.querySelectorAll('section.question')];
 const review = document.getElementById('review');
@@ -10,14 +9,25 @@ const accepted = new Set();
 let i = 0;
 
 const answer = j => questions[j].querySelector('textarea');
-const mark = j => answer(j).value !== questions[j].dataset.recommendation ? '✎' : accepted.has(j) ? '✓' : '·';
+const edited = j => answer(j).value !== questions[j].dataset.recommendation;
+const answered = j => (accepted.has(j) || edited(j)) && answer(j).value.trim() !== '';
+const marks = j => [answered(j) && '✓', edited(j) && '✎'].filter(Boolean).join(' ');
+const steps = {ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1};
 
-function button(label, j) {
+function button(j, ...content) {
     const b = document.createElement('button');
     b.type = 'button';
-    b.textContent = label;
+    b.append(...content);
     b.onclick = () => go(j);
     return b;
+}
+
+function span(className, text) {
+    return Object.assign(document.createElement('span'), {className, textContent: text});
+}
+
+function row(q, j) {
+    return button(j, span('n', j + 1), ' ', span('t', q.dataset.title), ' ', span('m', marks(j)));
 }
 
 function go(j) {
@@ -26,17 +36,20 @@ function go(j) {
 }
 
 function render() {
-    tabs.replaceChildren(...questions.map((q, j) => button(`${mark(j)} ${q.dataset.title}`, j)), button('Review and send', n));
+    const focused = tabs.contains(document.activeElement);
+    tabs.replaceChildren(...questions.map(row), button(n, span('t', 'Review and send')));
     [...tabs.children].forEach((tab, j) => {
         tab.setAttribute('role', 'tab');
         tab.setAttribute('aria-selected', j === i);
+        tab.tabIndex = j === i ? 0 : -1;
     });
+    if (focused) tabs.children[i].focus();
     questions.forEach((q, j) => q.hidden = j !== i);
     review.hidden = i !== n;
     if (i === n) {
         // Each full question, with the answer under it.
         document.getElementById('review-list').replaceChildren(...questions.map((q, j) => {
-            const item = button(`${mark(j)} ${q.querySelector('.ask p').textContent}`, j);
+            const item = button(j, `${marks(j)} ${q.querySelector('.ask p').textContent}`);
             item.append(Object.assign(document.createElement('div'), {className: 'a', textContent: answer(j).value}));
             return item;
         }));
@@ -46,6 +59,12 @@ function render() {
     next.textContent = i === n ? 'Send the Round' : 'Next';
 }
 
+tabs.onkeydown = event => {
+    const step = steps[event.key];
+    if (!step) return;
+    event.preventDefault();
+    go((i + step + n + 1) % (n + 1));
+};
 back.onclick = () => go(i - 1);
 reset.onclick = () => {
     answer(i).value = questions[i].dataset.recommendation;

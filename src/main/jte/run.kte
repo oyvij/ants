@@ -39,7 +39,7 @@
         <form method="post" action="/runs/${run.id}/name" id="rename" class="card" popover>
             <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
             <label class="f" for="new-name">Name</label>
-            <div class="row"><input id="new-name" name="name" value="${name}" required><button class="primary">Rename</button></div>
+            <div class="row"><input id="new-name" name="name" value="${name}" placeholder="e.g. Dark mode toggle" required><button class="primary">Rename</button></div>
         </form>
 @endif
 @if(run.endTime == null)

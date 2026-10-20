@@ -314,7 +314,7 @@ class Tickets(private val history: HistoryService, private val streams: Streams,
     }
 
     /** The file rendered, its version on it, so a tick says which version it ticked. */
-    private fun article(file: Tracked) = """<article id="ticket" data-version="${file.version}">${html(file)}</article>"""
+    private fun article(file: Tracked) = """<article id="ticket" class="md" data-version="${file.version}">${html(file)}</article>"""
 
     /**
      * The file as HTML, GitHub-style: tables, `Blocked by:` numbers as links to those Tickets, and each checkbox

@@ -18,16 +18,16 @@ enum class FieldType { TEXT, MARKDOWN, REPOS }
  */
 data class Field(
     val name: String, val label: String, val type: FieldType, val required: Boolean, val help: String?, val stored: String?,
-    val choices: Map<String, String> = emptyMap(),
+    val choices: Map<String, String> = emptyMap(), val example: String? = null,
 ) {
     /** The stored value of a Repos field: its entries, separated by commas or spaces. */
     val storedRepos: List<String> get() = stored.orEmpty().split(Regex("[,\\s]+")).filter(String::isNotEmpty)
 }
 
-// A start-form field's properties: its type, help and stored value.
 const val FIELD_TYPE = "ants.type"
 const val HELP = "ants.help"
 const val STORED = "ants.stored"
+const val EXAMPLE = "ants.example"
 
 /** A start form the user filled in wrong, such as a required field left empty. */
 class Unfilled(message: String) : Exception(message)
@@ -51,6 +51,7 @@ class StartForm(
             help = field.properties[HELP]?.takeIf(String::isNotBlank),
             stored = field.properties[STORED],
             choices = (field.type.getInformation("values") as? Map<*, *>).orEmpty().entries.associate { (id, name) -> "$id" to "$name" },
+            example = field.properties[EXAMPLE]?.takeIf(String::isNotBlank),
         )
     }
 

@@ -12,7 +12,7 @@
 @if(tool?.limits != null || limits.isNotEmpty())
     <div class="tlim" data-tool="${name}" data-example="${tool?.example.orEmpty()}" hidden="${limits.isEmpty()}"><div class="help">Only these ${tool?.limits ?: "rules"}. ${tool?.note.orEmpty()} None listed means all.</div>
 @for(rule in limits)
-        <div class="row"><input class="mono grow" name="limit.${name}" value="${rule}" placeholder="e.g. ${tool?.example.orEmpty()}">@if(!readOnly)<button type="button" class="ghost" title="Remove">×</button>@endif</div>
+        <div class="row"><label class="cap grow">Rule<input class="mono" name="limit.${name}" value="${rule}" placeholder="e.g. ${tool?.example.orEmpty()}"></label>@if(!readOnly)<button type="button" class="ghost" title="Remove">×</button>@endif</div>
 @endfor
 @if(!readOnly)        <button type="button" data-add>＋ Add</button>@endif
     </div>

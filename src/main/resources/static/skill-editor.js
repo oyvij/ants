@@ -1,7 +1,7 @@
 // Turns the Skill form's schema into a CodeMirror JSON editor in the prototype's editor box (SKILL.md is a markdown
 // field, markdown.js). The bar says whether the schema is valid, by the same check Save runs, and Save is disabled
 // while it fails. The text area stays in the form and carries what is posted.
-import {EditorView, drawSelection, keymap} from "@codemirror/view"
+import {EditorView, drawSelection, keymap, placeholder} from "@codemirror/view"
 import {EditorState} from "@codemirror/state"
 import {defaultKeymap, history, historyKeymap} from "@codemirror/commands"
 import {bracketMatching, defaultHighlightStyle, syntaxHighlighting} from "@codemirror/language"
@@ -39,7 +39,7 @@ for (const textarea of form.querySelectorAll("textarea[name=schema]")) {
         doc: textarea.value,
         extensions: [
             history(), drawSelection(), EditorView.lineWrapping, keymap.of([...defaultKeymap, ...historyKeymap]),
-            EditorState.readOnly.of(textarea.readOnly),
+            placeholder(textarea.placeholder), EditorState.readOnly.of(textarea.readOnly),
             EditorView.updateListener.of(update => { if (update.docChanged) textarea.value = update.state.doc.toString() }),
             json(), syntaxHighlighting(defaultHighlightStyle), bracketMatching(), schemaCheck(status), lintGutter(),
         ],

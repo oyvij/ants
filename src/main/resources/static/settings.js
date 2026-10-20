@@ -29,7 +29,7 @@ document.addEventListener('click', event => {
         const row = empty(last.cloneNode(true));
         row.querySelectorAll('[name]').forEach(field => field.name = field.name.replace(/\[(\d+)]/, (_, i) => `[${+i + 1}]`));
         row.querySelectorAll('[type=radio]').forEach(radio => radio.value = +radio.value + 1);
-        row.querySelectorAll('[type=password]').forEach(value => value.placeholder = 'Value'); // a new Secret has none yet
+        row.querySelectorAll('[type=password]').forEach(value => value.placeholder = 'e.g. npm_a1b2c3'); // a new Secret has none yet
         last.after(row);
     }
     button.previousElementSibling.querySelector('input')?.focus();

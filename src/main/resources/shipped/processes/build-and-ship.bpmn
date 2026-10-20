@@ -9,6 +9,7 @@
             <operaton:properties>
               <operaton:property id="ants.type" value="markdown"/>
               <operaton:property id="ants.help" value="What the Run should build, naming its repos"/>
+              <operaton:property id="ants.example" value="Add a dark mode toggle to the web app's settings page"/>
             </operaton:properties>
             <operaton:validation>
               <operaton:constraint name="required"/>
@@ -31,6 +32,7 @@
           <operaton:formField id="branch" label="Work branch" type="string">
             <operaton:properties>
               <operaton:property id="ants.help" value="Leave it empty for the scout to name one"/>
+              <operaton:property id="ants.example" value="ants/dark-mode"/>
             </operaton:properties>
           </operaton:formField>
           <operaton:formField id="repos" label="Repos" type="string">

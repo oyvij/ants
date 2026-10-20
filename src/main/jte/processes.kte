@@ -36,7 +36,7 @@
     <form method="dialog" class="mh"><b>New Process</b><span class="sp"></span><span class="muted small">Esc to close</span><button class="ghost" title="Close" aria-label="Close">✕</button></form>
     <div class="mb">
         <form method="get" action="/processes/new">
-            <div class="fld"><label class="f" for="new-name">Name</label><div class="help">The Process's name; the modeler opens on it, unsaved.</div><input id="new-name" name="name" placeholder="New Process"></div>
+            <div class="fld"><label class="f" for="new-name">Name</label><div class="help">The Process's name; the modeler opens on it, unsaved.</div><input id="new-name" name="name" placeholder="e.g. Nightly knowledge sweep"></div>
             <div class="fld"><label class="f" for="new-from">Start from</label><div class="help">A blank diagram, or a copy of a Process.</div><select id="new-from" name="from">
                 <option value="">Blank</option>
 @for(process in processes)

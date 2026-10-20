@@ -1,7 +1,9 @@
 package ants
 
+import com.microsoft.playwright.Browser.NewContextOptions
 import com.microsoft.playwright.BrowserType
 import com.microsoft.playwright.Locator
+import com.microsoft.playwright.options.AriaRole
 import com.microsoft.playwright.options.ColorScheme
 import com.microsoft.playwright.options.KeyboardModifier
 import com.microsoft.playwright.Page
@@ -221,8 +223,8 @@ class BrowserTest : AntsTest() {
         assertThat(field.locator("option[value='clones']")).hasText("clones (Ants' own)")
         field.selectOption("draft.output.verdict")
         toDraft.locator("select").nth(1).selectOption("equals")
-        toDraft.locator("input[placeholder=value]").fill("redo")
-        toDraft.locator("input[placeholder=value]").press("Tab")
+        toDraft.getByLabel("Value").fill("redo")
+        toDraft.getByLabel("Value").press("Tab")
         assertThat(toDraft).containsText("${'$'}{draft.output.verdict == 'redo'}")
         page.screenshot("modeler-decision")
 
@@ -398,57 +400,94 @@ class BrowserTest : AntsTest() {
         assertThat(ask).isHidden()
     }
 
-    @Test
-    fun `Answer a Round shows one question at a time under tabs marking accepted and edited, then Review and send`() = browse {
-        val claude = FakeClaude()
+    private fun round(vararg questions: Pair<String, String>) = """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":""" +
+        """{"outcome":"done","summary":"A Round.","output":{"questions":[""" + questions.joinToString(",") { (id, title) ->
+            """{"id":"$id","title":"$title","ask":"Ask $id?","context":"Settles $id.","recommendation":"Recommend $id.","why":"Because $id."}"""
+        } + "]}}}"
+
+    private fun answering(claude: FakeClaude, vararg questions: Pair<String, String>): Pair<String, String> {
         agentTask(claude, mapOf("quiz" to """{"type":"object","properties":{"questions":{"type":"array"}}}"""))
-        fun round(vararg ids: String) = """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":""" +
-            """{"outcome":"done","summary":"A Round.","output":{"questions":[""" + ids.joinToString(",") {
-                """{"id":"$it","title":"Title $it","ask":"Ask $it?","context":"Settles $it.","recommendation":"Recommend $it.","why":"Because $it."}"""
-            } + "]}}}"
-        claude.session("quiz", 1, round("who", "scope"))
+        claude.session("quiz", 1, round(*questions))
         claude.session("quiz", 2, round())
         http.upload("/processes", "file", "round.bpmn", javaClass.getResource("/round.bpmn")!!.readBytes())
         val run = http.post("/processes/round/runs", mapOf()).path.removePrefix("/runs/")
         var entry = ""
         eventually { entry = assertNotNull(Regex("""href="(/notifications/[^"]+)"""").find(http.get("/notifications").body)).groupValues[1] }
+        return run to entry
+    }
+
+    @Test
+    fun `Answer a Round shows one question at a time beside a list of them marking answered, accepted and edited, then Review and send`() = browse {
+        val claude = FakeClaude()
+        val (run, entry) = answering(claude, "who" to "Title who", "scope" to "Title scope")
 
         page.navigate(url(entry))
         val tabs = page.locator("#tabs [role=tab]")
-        assertThat(tabs).hasText(arrayOf("· Title who", "· Title scope", "Review and send"))
+        assertThat(tabs).hasText(arrayOf("1 Title who", "2 Title scope", "Review and send"))
         page.screenshot("answer")
         val who = page.locator("#answer-who + .ed .cm-content")
         val scope = page.locator("#answer-scope + .ed .cm-content") // each answer is a markdown editor
         assertThat(who).isVisible()
         assertThat(scope).isHidden()
+        assertThat(tabs.nth(0)).hasAttribute("aria-selected", "true")
         assertThat(page.locator("#back")).not().isVisible()
+        tabs.nth(0).focus()
+        for ((key, active) in listOf("ArrowDown" to 1, "ArrowRight" to 2, "ArrowUp" to 1, "ArrowLeft" to 0)) {
+            page.keyboard().press(key)
+            assertThat(tabs.nth(active)).hasAttribute("aria-selected", "true")
+            assertThat(tabs.nth(active)).isFocused()
+        }
+        assertThat(who).isVisible()
         page.click("#next")
-        assertThat(tabs.nth(0)).hasText("✓ Title who")
+        assertThat(tabs.nth(0)).hasText("1 Title who ✓")
+        assertThat(tabs.nth(1)).hasAttribute("aria-selected", "true")
         assertThat(scope).isVisible()
         scope.fill("Only admins.")
-        assertThat(tabs.nth(1)).hasText("✎ Title scope")
+        assertThat(tabs.nth(1)).hasText("2 Title scope ✓ ✎")
         page.click("#reset")
         assertThat(scope).hasText("Recommend scope.")
         assertThat(page.locator("#answer-scope")).hasValue("Recommend scope.")
+        assertThat(tabs.nth(1)).hasText("2 Title scope")
         // Cleared through the editor's own keys: fill("") sets the DOM selection and presses Delete, which CodeMirror
         // can take before the selectionchange event tells it of the selection, and then deletes nothing.
         scope.press("ControlOrMeta+a")
         scope.press("Delete")
         assertThat(page.locator("#answer-scope")).hasValue("")
+        assertThat(tabs.nth(1)).hasText("2 Title scope ✎")
         val buttons = page.locator("footer").boundingBox()
         page.click("#next")
         assertThat(page.locator("#next")).hasText("Send the Round")
+        assertThat(tabs.last()).hasAttribute("aria-selected", "true")
         assertEquals(buttons.y, page.locator("footer").boundingBox().y) // the buttons never move
         page.click("#next")
         assertThat(page.locator("#answer-scope + .ed.invalid")).isVisible() // required still stops an empty answer
         assertEquals(url(entry), page.url())
         scope.fill("Only admins.")
-        page.click("#next")
-        assertThat(page.locator("#review-list > button").nth(1)).hasText("✎ Ask scope?Only admins.") // the full question, the answer under it
+        tabs.last().click()
+        assertThat(page.locator("#review-list > button").nth(1)).hasText("✓ ✎ Ask scope?Only admins.") // the full question, the answer under it
         page.click("#next")
         page.waitForURL { !it.contains(entry) }
         eventually { assertContains(http.get("/runs/$run").body, """id="state">Completed<""") }
         assertContains(claude.launches("quiz")[1].stdin, """{\"id\":\"who\",\"answer\":\"Recommend who.\",\"source\":\"accepted\"},{\"id\":\"scope\",\"answer\":\"Only admins.\",\"source\":\"written\"}""")
+    }
+
+    @Test
+    fun `a Round of ten long question titles lists every title in full inside the viewport`() = browse {
+        val titles = (1..10).map { "q$it" to "Question $it asks which of the many long and winding options the Run should settle on before it goes on" }
+        val (_, entry) = answering(FakeClaude(), *titles.toTypedArray())
+        page.setViewportSize(1440, 900)
+
+        page.navigate(url(entry))
+
+        val tabs = page.locator("#tabs [role=tab]")
+        assertThat(tabs).hasText((titles.mapIndexed { i, (_, title) -> "${i + 1} $title" } + "Review and send").toTypedArray())
+        page.screenshot("answer-long")
+        for (i in titles.indices) {
+            val box = tabs.nth(i).boundingBox()
+            assertTrue(box.x >= 0 && box.x + box.width <= 1440, "row ${i + 1} spans ${box.x} to ${box.x + box.width}")
+            assertEquals(true, tabs.nth(i).evaluate("e => e.scrollWidth <= e.clientWidth && e.scrollHeight <= e.clientHeight"), "row ${i + 1} is clipped")
+        }
+        assertTrue(tabs.nth(0).boundingBox().let { it.x + it.width } <= page.locator("#round").boundingBox().x, "the list sits left of the question")
     }
 
     @Test
@@ -509,14 +548,118 @@ class BrowserTest : AntsTest() {
         assertThat(field).hasValue("Like this: ![image](${ImagesTest.RED_PATH}) please")
     }
 
+    private fun picker(stored: String = "") {
+        settings(null, sourceMapLines(repo("api"), repo("web"), repo("webhooks")))
+        val bpmn = javaClass.getResource("/start-form.bpmn")!!.readText().replace("\"start-form\"", "\"picker\"")
+            .replace("""<camunda:property id="ants.type" value="repos" />""", """<camunda:property id="ants.type" value="repos" /><camunda:property id="ants.stored" value="$stored" />""")
+        assertFalse("role=\"alert\"" in http.upload("/processes", "file", "picker.bpmn", bpmn.toByteArray()).body)
+        page.navigate(url("/processes/picker"))
+    }
+
+    private val repoBox get() = page.getByRole(AriaRole.COMBOBOX, Page.GetByRoleOptions().setName("Repos (optional)"))
+    private val repoOptions get() = page.getByRole(AriaRole.LISTBOX).getByRole(AriaRole.OPTION)
+    private fun repoOption(name: String) = page.getByRole(AriaRole.OPTION, Page.GetByRoleOptions().setName(name).setExact(true))
+    private val repoTags get() = page.getByRole(AriaRole.LIST, Page.GetByRoleOptions().setName("Picked repos")).getByRole(AriaRole.LISTITEM)
+
     @Test
-    fun `Review changes picks diff lines for a comment by clicking their numbers, and files it`() = browse {
+    fun `the start form's Repos combobox filters as you type, toggles a repo on Enter or a click, moves by the arrow keys and closes on Esc`() = browse {
+        picker()
+        assertThat(page.locator("#start input[type=checkbox]")).hasCount(0)
+        assertThat(repoBox).hasAttribute("placeholder", "Filter Source map repos, or type a git URL / owner/name")
+        repoBox.click()
+        assertThat(page.getByRole(AriaRole.LISTBOX)).hasAttribute("aria-multiselectable", "true")
+        assertThat(repoOptions).hasText(arrayOf("api", "web", "webhooks"))
+
+        repoBox.pressSequentially("web")
+        assertThat(repoOptions).hasText(arrayOf("web", "webhooks"))
+        repoBox.press("ArrowDown")
+        repoBox.press("Enter")
+        assertThat(repoOption("webhooks")).hasAttribute("aria-selected", "true")
+        assertThat(repoOption("web")).hasAttribute("aria-selected", "false")
+        repoBox.press("ArrowUp")
+        repoBox.press("Enter")
+        assertThat(repoOption("web")).hasAttribute("aria-selected", "true")
+        repoOption("webhooks").click()
+        assertThat(repoOption("webhooks")).hasAttribute("aria-selected", "false")
+        assertThat(repoBox).isFocused()
+
+        repoBox.press("Escape")
+        assertThat(page.getByRole(AriaRole.LISTBOX)).isHidden()
+        assertThat(repoTags).hasText(arrayOf("web×"))
+    }
+
+    @Test
+    fun `a git URL or owner name typed in the start form's Repos combobox becomes a tag on Enter, and × removes a tag`() = browse {
+        picker()
+        val none = page.getByText("the scout picks the Run's repos from the whole Source map")
+        assertThat(none).isVisible()
+
+        repoBox.click()
+        repoBox.pressSequentially("you/new-app")
+        assertThat(repoOptions.filter(Locator.FilterOptions().setVisible(true))).hasCount(0)
+        repoBox.press("Enter")
+        assertThat(repoBox).hasValue("")
+        assertThat(page).hasURL(Pattern.compile("/processes/picker$"))
+        repoBox.blur()
+        assertThat(repoTags).hasText(arrayOf("you/new-app×"))
+        assertThat(none).isHidden()
+
+        page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("Remove you/new-app")).click()
+        assertThat(repoTags).hasCount(0)
+        assertThat(none).isVisible()
+    }
+
+    private fun startPicked(page: Page = this.page, prompt: Locator = page.locator("textarea[name=prompt] + .ed .cm-content")): String {
+        prompt.fill("Add dark mode")
+        page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("Start").setExact(true)).click()
+        page.waitForURL(Pattern.compile("/runs/[^/]+$"))
+        return page.locator("dt:text-is('repos') + dd").textContent()
+    }
+
+    @Test
+    fun `the start form's Repos combobox shows the stored repos as tags, and the Run gets exactly the repos picked, a URL still being typed among them`() = browse {
+        val elsewhere = repo("elsewhere").remote
+        val mirror = repo("webmirror").remote
+        picker(stored = "api $elsewhere")
+        assertThat(repoTags).hasText(arrayOf("api×", "$elsewhere×"))
+
+        page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("Remove api")).click()
+        repoBox.click()
+        repoOption("web").click()
+        repoBox.press("Escape")
+        assertThat(repoTags).hasText(arrayOf("$elsewhere×", "web×"))
+
+        repoBox.pressSequentially("$mirror")
+        assertEquals("""["$elsewhere","web","$mirror"]""", startPicked())
+    }
+
+    @Test
+    fun `with JavaScript off the start form's Repos field is the Source map's checkboxes and a text input, which still start the Run`() = browse {
+        val elsewhere = repo("elsewhere").remote
+        picker()
+        val plain = page.context().browser()!!.newContext(NewContextOptions().setJavaScriptEnabled(false)).apply { addCookies(page.context().cookies()) }.newPage()
+        plain.navigate(url("/processes/picker"))
+        assertThat(plain.getByRole(AriaRole.COMBOBOX)).hasCount(0)
+        assertThat(plain.locator("#start input[type=checkbox]")).hasCount(3)
+
+        plain.getByLabel("web", Page.GetByLabelOptions().setExact(true)).check()
+        plain.locator("#field-repos").fill("$elsewhere")
+        assertEquals("""["web","$elsewhere"]""", startPicked(plain, plain.locator("textarea[name=prompt]")))
+    }
+
+    private fun byRepoReviewEntryOfApiCommitting(file: String, text: String): String {
         agentTask(FakeClaude(), mapOf("mend" to null, "ship" to null), extra = reviewSourceMap())
         http.upload("/processes", "file", "review.bpmn", javaClass.getResource("/review.bpmn")!!.readBytes())
         val run = http.post("/processes/review/runs", listOf("repos" to "api", "repos" to "web")).path.removePrefix("/runs/")
         var entry = ""
         eventually { entry = assertNotNull(Regex("""href="(/notifications/[^"]+)"""").find(http.get("/notifications").body)).groupValues[1] }
-        commitFile(workspace(run).resolve("repos/api"), "hello.txt", "hi\nthere\nworld\n", "Say hi")
+        commitFile(workspace(run).resolve("repos/api"), file, text, "Change $file")
+        return entry
+    }
+
+    @Test
+    fun `Review changes picks diff lines for a comment by clicking their numbers, and files it`() = browse {
+        val entry = byRepoReviewEntryOfApiCommitting("hello.txt", "hi\nthere\nworld\n")
 
         page.navigate(url(entry))
         val diff = page.locator("table.diff[data-file='repos/api/hello.txt']")
@@ -532,6 +675,94 @@ class BrowserTest : AntsTest() {
         page.screenshot("review")
         page.click("#line-comment button")
         assertThat(page.locator("#comments")).containsText("Suggestion repos/api/hello.txt:1-2 (new): Say hello.")
+    }
+
+    @Test
+    fun `a page fills the width beside the sidebar up to 2200px, and the modeler stays full-bleed`() = browse {
+        http.import("start-end.bpmn")
+        val main = page.locator("main")
+        page.setViewportSize(1920, 1080)
+        page.navigate(url("/processes"))
+        val wide = main.boundingBox().width
+        assertTrue(wide > 1160, "main is ${wide}px wide at 1920px")
+        page.setViewportSize(3840, 1080)
+        assertEquals(2200.0, main.boundingBox().width, 0.5)
+        page.navigate(url("/processes/start-end/edit"))
+        assertEquals(3840.0 - page.locator("nav.side").boundingBox().width, main.boundingBox().width, 0.5)
+    }
+
+    private fun contentEdges(selector: String) = (page.locator(selector).evaluate("e => { const r = e.getBoundingClientRect(), s = getComputedStyle(e); " +
+        "return [r.left + parseFloat(s.paddingLeft), r.right - parseFloat(s.paddingRight)] }") as List<*>).map { (it as Number).toDouble() }
+
+    @Test
+    fun `the composer on Review changes lines up with the page's content, and the footer on the Answer page with the question column, at 1440px and 1920px`() = browse {
+        val claude = FakeClaude()
+        agentTask(claude, mapOf("mend" to null, "ship" to null, "quiz" to """{"type":"object","properties":{"questions":{"type":"array"}}}"""), extra = reviewSourceMap())
+        claude.session("quiz", 1, """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":""" +
+            """{"outcome":"done","summary":"A Round.","output":{"questions":[{"id":"who","title":"Who","ask":"Who?","context":"Settles who.","recommendation":"You.","why":"Because."}]}}}""")
+        http.upload("/processes", "file", "review.bpmn", javaClass.getResource("/review.bpmn")!!.readBytes())
+        http.upload("/processes", "file", "round.bpmn", javaClass.getResource("/round.bpmn")!!.readBytes())
+        fun newEntry(seen: Set<String> = emptySet()): String {
+            var entry = ""
+            eventually { entry = assertNotNull(Regex("""href="(/notifications/[^"]+)"""").findAll(http.get("/notifications").body).map { it.groupValues[1] }.firstOrNull { it !in seen }) }
+            return entry
+        }
+        http.post("/processes/review/runs", listOf("repos" to "api", "repos" to "web"))
+        val review = newEntry()
+        http.post("/processes/round/runs", mapOf())
+        val answer = newEntry(setOf(review))
+        fun right(selector: String) = page.locator(selector).boundingBox().let { it.x + it.width }
+
+        for (width in listOf(1440, 1920)) {
+            page.setViewportSize(width, 900)
+            page.navigate(url(review))
+            for ((main, bar) in contentEdges("main").zip(contentEdges(".composer > div"))) assertEquals(main, bar, 1.0, "the composer's content edges at ${width}px")
+            page.navigate(url(answer))
+            assertEquals(page.locator("#round").boundingBox().x, contentEdges("#round > footer")[0], 1.0, "the footer's buttons start where the question column starts at ${width}px")
+            assertEquals(right("#round"), right("#next"), 1.0, "the footer's buttons end where the question column ends at ${width}px")
+        }
+    }
+
+    @Test
+    fun `the composer never covers the end of Review changes however tall it grows, and a page without one keeps its own bottom padding`() = browse {
+        val entry = staleStoryReviewEntry()
+        page.setViewportSize(1440, 700)
+        page.navigate(url("$entry#s1-1"))
+        page.click(".step:not([hidden]) [data-comment]")
+        page.locator(".step:not([hidden]) [name=body]").fill("Why?")
+        page.click(".step:not([hidden]) .stepcomment button")
+        assertThat(page.locator("#comments")).isVisible()
+        val composer = page.locator(".composer")
+        fun clear(bar: String) = eventually {
+            page.evaluate("scrollTo(0, document.documentElement.scrollHeight)")
+            val top = composer.boundingBox().y
+            for (selector in listOf(".step:not([hidden]) .code", "#comments", "#comment + .ed")) {
+                val box = page.locator(selector).boundingBox()
+                assertTrue(box.y + box.height <= top, "$selector ends at ${box.y + box.height}px, under the $bar composer at ${top}px")
+            }
+        }
+        clear("one-line")
+        page.locator(".composer > div").evaluate("bar => { bar.style.flexWrap = 'wrap'; bar.insertAdjacentHTML('beforeend', '<p style=\"flex-basis: 100%; height: 240px; margin: 0\"></p>') }")
+        assertTrue(composer.boundingBox().height > 240)
+        clear("grown")
+
+        page.navigate(url("/processes"))
+        fun padding(side: String) = page.locator("main").evaluate("main => getComputedStyle(main).padding$side") as String
+        assertEquals(padding("Top"), padding("Bottom"))
+    }
+
+    @Test
+    fun `a rendered Markdown body keeps a readable measure on a wide page`() = browse {
+        settings(null)
+        val (process, plane) = row("measured", """<bpmn:startEvent id="start" />""", """<bpmn:userTask id="wait" name="Wait" />""", """<bpmn:endEvent id="end" />""")
+        deploy(definitions("measured", "Measured", process, plane))
+        val run = http.post("/processes/measured/runs", mapOf()).path.removePrefix("/runs/")
+        workspace(run).resolve("tickets/issues").createDirectories().resolve("01-wide.md").writeText("# Wide\n\nStatus: ready-for-agent\n\n" + "A long line of prose. ".repeat(60) + "\n")
+        page.setViewportSize(1920, 1080)
+        page.navigate(url("/runs/$run/tickets/01-wide"))
+        // Measured in one step: the live update swaps #ticket for a new one, and boundingBox() reads null mid-swap
+        val ticket = (page.locator("#ticket").evaluate("e => e.getBoundingClientRect().width") as Number).toDouble()
+        assertTrue(ticket <= 860, "the Ticket is ${ticket}px wide")
     }
 
     @Test
@@ -564,14 +795,54 @@ class BrowserTest : AntsTest() {
         assertContains(http.get("/processes/ticketed/diagram.bpmn").body, """name="ants.items-are-tickets" value="true"""")
     }
 
+    private val wideAndTall = "let greeting = " + "\"hello\" + ".repeat(80) + "\"world\"\n" + (2..40).joinToString("") { "line $it\n" }
+
+    private fun assertScrollsBothWaysAboveTheComposerKeepingItsNumbers(box: Locator, numbers: Locator) {
+        box.evaluate("e => e.scrollIntoView({block: 'start'})")
+        val (across, down) = (box.evaluate("e => [e.scrollWidth - e.clientWidth, e.scrollHeight - e.clientHeight]") as List<*>).map { (it as Number).toInt() }
+        assertTrue(across > 0 && down > 0, "the box scrolls ${across}px sideways and ${down}px down inside it")
+        val (b, bar) = box.boundingBox() to page.locator(".composer > div").boundingBox()
+        assertTrue(b.y + b.height <= bar.y, "the box ends, horizontal scrollbar and all, at ${b.y + b.height}, under the composer at ${bar.y}")
+        val before = numbers.all().map { it.boundingBox().x }
+        page.mouse().move(b.x + b.width / 2, b.y + b.height / 2)
+        page.mouse().wheel(300.0, 0.0)
+        eventually { assertTrue((box.evaluate("e => e.scrollLeft") as Number).toInt() > 0, "the box scrolled sideways under the pointer") }
+        assertEquals(0.0, (page.evaluate("scrollX") as Number).toDouble())
+        for ((x, number) in before.zip(numbers.all())) assertEquals(x, number.boundingBox().x, 0.5, "the line number stays put")
+    }
+
     @Test
-    fun `Review changes opens on the Story tab, walks a story step by step by key, comments on a step, and switches to By repo`() = browse {
+    fun `a story step's code wider and taller than its box scrolls sideways inside it, its scrollbar on screen and its line numbers stay put`() = browse {
+        val entry = staleStoryReviewEntry(wideAndTall, head = "HEAD")
+        page.setViewportSize(1440, 240)
+        page.navigate(url("$entry#s1-3"))
+        val code = page.locator(".step:not([hidden]) .code")
+        assertThat(code).containsText("line 12")
+        assertScrollsBothWaysAboveTheComposerKeepingItsNumbers(code, code.locator(".ln:visible").nth(1))
+    }
+
+    @Test
+    fun `a By repo file's diff wider and taller than its box scrolls sideways inside it, and its line numbers stay put and pick lines`() = browse {
+        val entry = byRepoReviewEntryOfApiCommitting("wide.txt", wideAndTall)
+        page.setViewportSize(1440, 400)
+        page.navigate(url(entry))
+        val diff = page.locator("table.diff[data-file='repos/api/wide.txt']")
+        val numbers = diff.locator("tr[data-side=new][data-line='2'] td:nth-child(-n+2)")
+        assertScrollsBothWaysAboveTheComposerKeepingItsNumbers(diff, numbers)
+        numbers.nth(1).click()
+        assertThat(page.locator("#line-comment [name=file]")).hasValue("repos/api/wide.txt")
+        assertThat(page.locator("#line-comment [name=from]")).hasValue("2")
+    }
+
+    /** Review changes on a Story set written against [head]; then [helloText] is committed, so against origin/main its steps go stale and against HEAD they show it. */
+    private fun staleStoryReviewEntry(helloText: String = "hello\nWORLD\n", head: String = "origin/main"): String {
         val claude = FakeClaude()
         agentTask(claude, mapOf("narrate" to null, "mend" to null, "ship" to null), extra = reviewSourceMap())
-        val set = """{"title":"Nothing changes","ranges":[{"repo":"api","base":"origin/main","head":"HEAD"}],"stories":[{"id":"s","name":"Greeting",""" +
+        val set = """{"title":"Nothing changes","ranges":[{"repo":"api","base":"origin/main","head":"$head"}],"stories":[{"id":"s","name":"Greeting",""" +
             """"premise":"Hello stays.","steps":[{"id":"hello","name":"Hello","claim":"It greets.","why":"Politeness.",""" +
             """"site":{"file":"repos/api/hello.txt","side":"new","kind":"context","from":1,"to":1}},""" +
-            """{"id":"world","name":"World","claim":"It names the world.","why":"Scope.","site":{"file":"repos/api/hello.txt","side":"new","kind":"context","from":2,"to":2}}]}]}"""
+            """{"id":"world","name":"World","claim":"It names the world.","why":"Scope.","site":{"file":"repos/api/hello.txt","side":"new","kind":"context","from":2,"to":2}},""" +
+            """{"id":"everyone","name":"Everyone","claim":"It greets the world.","why":"Reach.","site":{"file":"repos/api/hello.txt","side":"new","kind":"context","from":1,"to":2}}]}]}"""
         claude.session("narrate", "write walkthrough/stories.json $set", """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":{"outcome":"done","summary":"Done.","output":{}}}""")
         http.upload("/processes", "file", "story-set.bpmn", javaClass.getResource("/story-set.bpmn")!!.readBytes())
         val run = http.post("/processes/story-set/runs", listOf("repos" to "api", "repos" to "web")).path.removePrefix("/runs/")
@@ -582,18 +853,37 @@ class BrowserTest : AntsTest() {
             entry = Regex("""href="(/notifications/[^"]+)"""").find(list)!!.groupValues[1]
         }
         assertContains(http.get(entry).body, "/runs/$run")
+        commitFile(workspace(run).resolve("repos/api"), "hello.txt", helloText, "Shout the world")
+        return entry
+    }
 
+    @Test
+    fun `Review changes opens on the Story tab, walks a story step by step by key, comments on a step, and switches to By repo`() = browse {
+        val entry = staleStoryReviewEntry()
         page.navigate(url(entry))
         assertThat(page.locator(".tabs a.on")).hasText("Story")
+        val spine = page.locator(".spine")
+        assertThat(spine).containsText("Nothing changes")
+        assertThat(spine).containsText("Greeting")
+        assertThat(spine).containsText("Remainder")
+        assertThat(spine.locator("li a[href='#s1-1']")).isHidden()
         assertThat(page.locator("#stories")).isVisible()
         page.click("#stories .sover a")
         val step = page.locator(".step:not([hidden])")
         assertThat(step.locator(".claim")).hasText("It greets.")
-        assertThat(page.locator(".smenu a.on")).hasText("Hello")
-        assertThat(page.locator(".spine .srow.on")).containsText("Greeting")
+        val active = spine.locator("[aria-current=step]")
+        assertThat(active).hasText("Hello")
+        assertThat(spine.locator("li:visible")).hasText(arrayOf("Hello", "⚠ World", "⚠ Everyone"))
+        assertThat(spine.locator(".srow.on")).containsText("Greeting")
         assertThat(step.locator("[data-go='-1']")).isDisabled()
-        page.click(".step:not([hidden]) [data-go='1']")
-        assertThat(step.locator(".claim")).hasText("It names the world.")
+        step.locator("[data-go='1']").press("Enter")
+        assertThat(step.locator(".claim")).containsText("It names the world.")
+        assertThat(active).hasText("⚠ World")
+        spine.locator("li a[href='#s1-1']").press("Enter")
+        assertThat(step.locator(".claim")).hasText("It greets.")
+        assertThat(active).hasText("Hello")
+        spine.locator("li a[href='#s1-2']").click()
+        assertThat(active).hasText("⚠ World")
         page.click(".step:not([hidden]) [data-go='-1']")
         assertThat(step.locator(".claim")).hasText("It greets.")
         assertThat(step.locator(".details")).isHidden()
@@ -619,12 +909,56 @@ class BrowserTest : AntsTest() {
         overall.pressSequentially("can type n, p, d, D and c")
         assertThat(overall).hasText("can type n, p, d, D and c")
         assertThat(step.locator(".claim")).hasText("It greets.") // no key steps the story
-        page.click(".step:not([hidden]) [data-go='1']")
+        page.navigate(url("$entry#s1-3"))
+        assertThat(step.locator(".claim")).containsText("It greets the world.")
+        assertThat(step.locator(".claim .stale")).hasText("STALE")
+        assertThat(active).hasText("⚠ Everyone")
+        assertThat(step.locator("[data-go='1']")).isDisabled()
         page.click(".walkstory:not([hidden]) [data-all]")
         assertThat(page.locator("#stories")).isVisible()
+        assertThat(active).hasCount(0)
         page.click(".tabs a:not(.on)")
         assertThat(page.locator(".tabs a.on")).hasText("By repo")
         assertThat(page.locator("[data-repo]").first()).containsText("api")
+    }
+
+    @Test
+    fun `Review changes' sticky story column never slides over the code as a long step scrolls`() = browse {
+        val entry = staleStoryReviewEntry()
+        page.setViewportSize(1440, 360)
+        page.navigate(url("$entry#s1-3"))
+        page.click(".step:not([hidden]) [data-details]")
+        page.click(".step:not([hidden]) [data-comment]")
+        val spine = page.locator(".spine")
+        val code = page.locator(".step:not([hidden]) .code")
+        assertThat(code).isVisible()
+        val height = (page.evaluate("document.documentElement.scrollHeight") as Number).toInt()
+        assertTrue(height > 720, "the page is ${height}px tall")
+        for (y in 0..height step 40) {
+            page.evaluate("y => scrollTo(0, y)", y)
+            val (s, c) = spine.boundingBox() to code.boundingBox()
+            assertTrue(s.x + s.width <= c.x, "scrolled to $y, the story column (${s.x}, ${s.width}) reaches over the code (${c.x})")
+            if (c.y + c.height > 0) assertTrue(s.y + s.height > 0, "scrolled to $y, the code is on screen but the story column has left it (${s.y})")
+        }
+        val side = page.locator("nav.side").boundingBox()
+        assertTrue(spine.boundingBox().x - (side.x + side.width) <= 32, "the story column sits against the sidebar")
+    }
+
+    @Test
+    fun `Review changes' By repo file list wraps a long file name instead of clipping it`() = browse {
+        val long = "PaymentFailedHandlerRetryPolicySchedulerIntegrationTest.kt"
+        val entry = byRepoReviewEntryOfApiCommitting(long, "retry\n")
+
+        page.setViewportSize(1440, 900)
+        page.navigate(url(entry))
+        val nav = page.locator(".walk nav")
+        val link = nav.locator("a", Locator.LocatorOptions().setHasText(long))
+        assertThat(link).hasText(long)
+        assertEquals(200.0, nav.boundingBox().width, 0.5)
+        val (n, l) = nav.boundingBox() to link.boundingBox()
+        assertTrue(l.x >= n.x && l.x + l.width <= n.x + n.width + 0.5, "the link (${l.x}, ${l.width}) stays inside the nav (${n.x}, ${n.width})")
+        assertTrue(l.height > 30, "the long name wraps onto more lines, ${l.height}px tall")
+        assertEquals(link.evaluate("e => e.clientWidth"), link.evaluate("e => e.scrollWidth"))
     }
 
     @Test
@@ -738,6 +1072,107 @@ class BrowserTest : AntsTest() {
         eventually { assertContains(file.readText(), "cli: codex\nskills: kept, chip-skill\nsandbox: workspace-write\nmodel: gpt-5-codex\n") }
     }
 
+    private fun misalignedFields() = (page.evaluate("""() => {
+        const box = e => e.getBoundingClientRect()
+        const content = e => { const r = box(e), s = getComputedStyle(e)
+            return [r.left + parseFloat(s.borderLeftWidth) + parseFloat(s.paddingLeft), r.right - parseFloat(s.borderRightWidth) - parseFloat(s.paddingRight)] }
+        const describe = e => e.tagName.toLowerCase() + (e.name ? "[name=" + e.name + "]" : "") + (e.className && typeof e.className === "string" ? "." + e.className.trim().split(/\s+/).join(".") : "")
+        const offenders = []
+        for (const card of document.querySelectorAll("main .card")) {
+            if (!card.checkVisibility()) continue
+            const [edge, end] = content(card)
+            const title = card.querySelector("h3")?.textContent.trim() ?? "the editor card"
+            for (const e of card.querySelectorAll("label.f, .help, .tgroup, .grid2, .grid3, input:not([type=hidden]), select, textarea, .ed, .chipsel")) {
+                if (!e.checkVisibility() || e.parentElement.closest(".chipsel, .ed")) continue
+                const cell = e.parentElement.closest(".grid2 > .fld, .grid3 > .fld, .card")
+                const [left, right] = cell === card ? [edge, end] : [box(cell).left, box(cell).right]
+                if (Math.abs(box(e).left - left) > 1) offenders.push(title + ": " + describe(e) + " starts at " + box(e).left + ", not " + left)
+                if (e.matches("input:not([type=checkbox], [type=radio]), select, textarea, .ed, .chipsel") && !e.closest(".row") && Math.abs(box(e).right - right) > 1)
+                    offenders.push(title + ": " + describe(e) + " ends at " + box(e).right + ", not " + right)
+            }
+            for (const grid of card.querySelectorAll(".grid2, .grid3")) {
+                const rows = {}
+                for (const cell of grid.children) if (cell.checkVisibility()) (rows[Math.round(box(cell).top)] ??= []).push(box(cell).width)
+                for (const widths of Object.values(rows)) if (Math.max(...widths) - Math.min(...widths) > 1) offenders.push(title + ": a row's fields are " + widths.join(", ") + "px wide")
+            }
+        }
+        return offenders
+    }""") as List<*>).map { it.toString() }
+
+    @Test
+    fun `on the Agent and Skill pages, every field in a card starts at the card's content edge and fills its cell`() = browse {
+        home.resolve("agents").createDirectories().resolve("lined-up.md").writeText("---\nname: lined-up\ncli: claude\nskills: implement\ntools: Read, Bash(git log *)\n---\nLined up.\n")
+        home.resolve("skills/lined-up").createDirectories().resolve("SKILL.md").writeText("---\nname: lined-up\ndescription: Lined up.\n---\nLined up.\n")
+        for (width in listOf(1440, 1920)) {
+            page.setViewportSize(width, 900)
+            for (path in listOf("/agents/lined-up", "/agents/new", "/skills/lined-up")) {
+                page.navigate(url(path))
+                assertThat(page.locator(".ed").first()).isVisible()
+                assertEquals(emptyList(), misalignedFields(), "$path at ${width}px")
+            }
+        }
+    }
+
+    @Test
+    fun `the Agent page's cards stay stacked full width, and Who it is lays out in three columns from 1600px`() = browse {
+        home.resolve("agents").createDirectories().resolve("wide.md").writeText("---\nname: wide\ncli: claude\n---\nWide.\n")
+        page.setViewportSize(1600, 900)
+        page.navigate(url("/agents/wide"))
+        val (left, right) = contentEdges("main")
+        val cards = page.locator("form.agent .card")
+        assertEquals(3, cards.count())
+        for (i in 0 until 3) assertEquals(right - left, cards.nth(i).boundingBox().width, 1.0, "card ${i + 1} is full width")
+        assertTrue(cards.nth(0).boundingBox().let { it.y + it.height } <= cards.nth(1).boundingBox().y, "the cards are stacked")
+        val (name, description, cli) = listOf("#name", "#description", "#cli").map { page.locator(it).boundingBox() }
+        assertEquals(name.y, description.y, 1.0)
+        assertEquals(name.y, cli.y, 1.0)
+        assertTrue(name.x + name.width < description.x && description.x + description.width < cli.x, "Name, Description and CLI sit side by side")
+    }
+
+    @Test
+    fun `the Skill page gives its side column 360px and the editors the rest`() = browse {
+        page.setViewportSize(1920, 1080)
+        page.navigate(url("/skills/new"))
+        val (left, right) = contentEdges("main")
+        val editors = page.locator(".card:has(#skill)").boundingBox()
+        val side = page.locator(".card:has(h3:text-is('Run by'))").boundingBox()
+        assertEquals(360.0, side.width, 1.0)
+        assertEquals(right, side.x + side.width, 1.0)
+        assertEquals(left, editors.x, 1.0)
+        val gap = page.locator(".card:has(#skill)").evaluate("e => parseFloat(getComputedStyle(e.parentElement).columnGap)") as Number
+        assertEquals(side.x - gap.toDouble(), editors.x + editors.width, 1.0)
+    }
+
+    @Test
+    fun `the Agent and Skill editors and Review changes use most of the width at 1440px and 1920px, and no page scrolls sideways at 1280px`() = browse {
+        val entry = staleStoryReviewEntry(wideAndTall, head = "HEAD")
+        home.resolve("agents").createDirectories().resolve("roomy.md").writeText("---\nname: roomy\ncli: claude\ntools: Read\n---\nRoomy.\n")
+        home.resolve("skills/roomy").createDirectories().resolve("SKILL.md").writeText("---\nname: roomy\ndescription: Roomy.\n---\n" + "A long line of the Skill. ".repeat(40) + "\n")
+        val workAreas = listOf(
+            Triple("the Agent editor", "/agents/roomy", ".card:has(#instructions) .ed"),
+            Triple("the Skill editor", "/skills/roomy", ".card:has(#skill) .ed"),
+            Triple("Review changes' Story tab", "$entry#s1-3", ".step:not([hidden]) .code"),
+            Triple("Review changes' By repo tab", "$entry?tab=repo", ".walk [data-repo]"),
+        )
+        fun windowWidth() = (page.evaluate("document.documentElement.clientWidth") as Number).toDouble()
+        fun open(path: String, area: String) = page.locator(area).first().also { page.navigate(url(path)); assertThat(it).isVisible() }
+
+        page.setViewportSize(1280, 900)
+        for ((name, path, area) in workAreas) {
+            open(path, area)
+            val scroll = (page.evaluate("document.documentElement.scrollWidth") as Number).toDouble()
+            assertTrue(scroll <= windowWidth(), "$name is ${scroll}px wide in a ${windowWidth()}px window")
+        }
+        for (width in listOf(1440, 1920)) {
+            page.setViewportSize(width, 900)
+            for ((name, path, area) in workAreas) {
+                val used = open(path, area).boundingBox().width
+                val beside = windowWidth() - page.locator("nav.side").boundingBox().width
+                assertTrue(used > beside / 2, "$name's work area is ${used}px of the ${beside}px beside the sidebar at ${width}px")
+            }
+        }
+    }
+
     @Test
     fun `the Skill page's schema editor says whether the schema is valid`() = browse {
         page.navigate(url("/skills/new"))
@@ -773,8 +1208,8 @@ class BrowserTest : AntsTest() {
         for ((name, row) in listOf("new" to 1, "more" to 2)) {
             vaults.getByText("＋ Add").click()
             val added = vaults.locator(".listed > .row:visible").nth(row)
-            added.locator("input.name").fill(name)
-            added.locator("input.mono").fill("/tmp/$name")
+            added.getByLabel("Name").fill(name)
+            added.getByLabel("Path").fill("/tmp/$name")
         }
         vaults.locator(".listed > .row:visible").nth(2).getByText("default").click()
         val folders = card("Agent folders")
@@ -801,17 +1236,17 @@ class BrowserTest : AntsTest() {
             assertFalse("tok-old" in page.content())
             fun card(title: String) = page.locator(".card", Page.LocatorOptions().setHas(page.locator("h3:text-is('$title')")))
             val card = card("Secrets")
-            assertThat(card.locator("[aria-label=Value]").first()).hasAttribute("placeholder", "••••")
+            assertThat(card.getByLabel("Value").first()).hasAttribute("placeholder", "••••")
             card.getByText("＋ Add").click()
             val added = card.locator(".listed > .row:visible").nth(1)
-            added.locator("[aria-label=Label]").fill("maven")
-            added.locator("[aria-label=Value]").fill("tok-mvn")
-            added.locator("[aria-label='Variable names']").fill("MAVEN_TOKEN, MVN_TOKEN")
+            added.getByLabel("Label").fill("maven")
+            added.getByLabel("Value").fill("tok-mvn")
+            added.getByLabel("Variable names").fill("MAVEN_TOKEN, MVN_TOKEN")
             val commands = card("Protected Commands")
             commands.getByText("＋ Add").click()
             val command = commands.locator(".listed > .row:visible").first()
-            command.locator("[aria-label='Command prefix']").fill("yarn")
-            command.locator("select").selectOption("npm")
+            command.getByLabel("Command prefix").fill("yarn")
+            command.getByLabel("Secrets").selectOption("npm")
             page.locator(".ph button.primary").click()
             eventually {
                 val saved = org.yaml.snakeyaml.Yaml().load<Map<*, *>>(home.resolve("settings.yaml").readText())

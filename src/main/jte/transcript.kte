@@ -39,7 +39,7 @@ $unsafe{transcript.html("status")}
 @if(sendHint != null)
 <div class="composer"><form method="post" action="/runs/${run}/tasks/${task}/transcript/send">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
-    <div class="grow"><textarea name="message" data-markdown required placeholder="Message the Agent. ${sendHint}" aria-label="Message"></textarea></div>
+    <div class="grow"><label class="f" for="message">Message to the Agent</label><textarea id="message" name="message" data-markdown required placeholder="e.g. Use the existing retry helper. ${sendHint}"></textarea></div>
     <button formaction="/runs/${run}/tasks/${task}/transcript/stop" formnovalidate>Stop</button>
     <button class="primary">Send</button>
 </form></div>

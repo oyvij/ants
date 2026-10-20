@@ -43,10 +43,10 @@
 @if(use != null)
     <input type="hidden" name="use" value="${use}">
 @endif
-    <div class="fld"><label class="f">SKILL.md</label><div class="help">The instructions the Agent follows for this job. Markdown, with its frontmatter on top: the <code>name</code> Agents and Tasks call it by, unique across all Skill folders; the <code>description</code>, when to use it in one line; and in <code>metadata</code>, <code>varde-vault: true</code> to tell Agents running it where the Vault is.</div>
-        <textarea name="skill" rows="20" data-markdown readonly="${form.readOnly}" data-tall aria-label="SKILL.md">${form.skill}</textarea></div>
-    <div class="fld"><label class="f">result.schema.json</label><div class="help">A JSON Schema for the Result's <code>output</code>; empty for any output. Later Tasks read each field as <code>${"\${taskId.output.field}"}</code>, so every property here becomes an input others can use.</div>
-        <textarea name="schema" rows="12" readonly="${form.readOnly}" data-tall aria-label="result.schema.json">${form.schema}</textarea></div>
+    <div class="fld"><label class="f" for="skill-md">SKILL.md</label><div class="help">The instructions the Agent follows for this job. Markdown, with its frontmatter on top: the <code>name</code> Agents and Tasks call it by, unique across all Skill folders; the <code>description</code>, when to use it in one line; and in <code>metadata</code>, <code>varde-vault: true</code> to tell Agents running it where the Vault is.</div>
+        <textarea id="skill-md" name="skill" rows="20" placeholder="e.g. ---&#10;name: release-notes&#10;description: Writes the release notes for a version.&#10;---&#10;Read the commits since the last tag and sum them up for users." data-markdown readonly="${form.readOnly}" data-tall>${form.skill}</textarea></div>
+    <div class="fld"><label class="f" for="result-schema">result.schema.json</label><div class="help">A JSON Schema for the Result's <code>output</code>; empty for any output. Later Tasks read each field as <code>${"\${taskId.output.field}"}</code>, so every property here becomes an input others can use.</div>
+        <textarea id="result-schema" name="schema" rows="12" placeholder="e.g. {&quot;type&quot;: &quot;object&quot;, &quot;properties&quot;: {&quot;notes&quot;: {&quot;type&quot;: &quot;string&quot;}}}" readonly="${form.readOnly}" data-tall>${form.schema}</textarea></div>
     <details class="small example"><summary>Example: scout's schema</summary><pre class="mono">{
   "type": "object",
   "required": ["repos", "brief"],

@@ -10,6 +10,7 @@
             <camunda:properties>
               <camunda:property id="ants.type" value="markdown" />
               <camunda:property id="ants.help" value="What the Run should build" />
+              <camunda:property id="ants.example" value="Add a dark mode toggle to the web app" />
             </camunda:properties>
             <camunda:validation>
               <camunda:constraint name="required" />
@@ -18,6 +19,7 @@
           <camunda:formField id="workBranch" label="Work branch" type="string">
             <camunda:properties>
               <camunda:property id="ants.help" value="Leave it empty for the scout to name one" />
+              <camunda:property id="ants.example" value="ants/dark-mode" />
             </camunda:properties>
           </camunda:formField>
           <camunda:formField id="repos" label="Repos" type="string">

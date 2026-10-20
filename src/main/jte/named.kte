@@ -3,11 +3,13 @@
 @param named: ants.Named
 @param setUp: Map<String?, String>? = null
 @param edit: List<String>? = null
+@param nameExample: String
+@param pathExample: String
 <div class="listed">
 @for(i in named.shown.indices)
     <div class="row" hidden="${i == named.rows.size}">
-        <input class="name" name="${list}[${i}].name" value="${named.shown[i].first}" aria-label="Name">
-        <input class="grow mono" name="${list}[${i}].path" value="${named.shown[i].second}" aria-label="Path">
+        <label class="cap name">Name<input name="${list}[${i}].name" value="${named.shown[i].first}" placeholder="e.g. ${nameExample}"></label>
+        <label class="cap grow">Path<input class="mono" name="${list}[${i}].path" value="${named.shown[i].second}" placeholder="e.g. ${pathExample}"></label>
         <label class="row small"><input type="radio" name="${default}" value="${i}" checked="${i == named.default}"> default</label>
 @if(setUp != null)
         !{val profile = setUp[named.shown[i].first]}

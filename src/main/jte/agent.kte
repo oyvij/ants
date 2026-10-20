@@ -57,17 +57,18 @@
     <div class="card"><h3>Who it is</h3>
         <div class="grid2">
             <div class="fld"><label class="f" for="name">Name</label><div class="help">How Tasks name it: lowercase letters, digits and hyphens, unique across all Agent folders. &nbsp;e.g. <span class="eg">implementer</span></div>
-                <input id="name" name="name" value="${form.name}" required pattern="[a-z0-9][a-z0-9\-]*"></div>
+                <input id="name" name="name" value="${form.name}" placeholder="e.g. implementer" required pattern="[a-z0-9][a-z0-9\-]*"></div>
             <div class="fld"><label class="f" for="description">Description</label><div class="help">One line: what this Agent is for. Shown in the modeler's Agent dropdown. &nbsp;e.g. <span class="eg">Implements one ticket, test first, and commits.</span></div>
-                <input id="description" name="description" value="${form.description}"></div>
+                <input id="description" name="description" value="${form.description}" placeholder="e.g. Implements one ticket, test first, and commits."></div>
             <div class="fld"><label class="f" for="cli">CLI</label><div class="help">Which AI CLI runs it, on Ants' own login.</div>
                 <select id="cli" name="cli">
 @for(cli in AgentForm.CLIS)
                     <option value="${cli}" selected="${cli == form.cli}">${cli}</option>
 @endfor
                 </select></div>
-            <div class="fld"><label class="f" for="model">Model</label><div class="help">An alias always runs the newest of its family; a fixed version stays put until it retires.</div>
+            <div class="fld">
                 <fieldset data-cli="claude" disabled="${!claude}">
+                    <label class="f" for="model">Model</label><div class="help">An alias always runs the newest of its family; a fixed version stays put until it retires.</div>
                     <select id="model" name="model">
                         <option value="" selected="${form.model.isEmpty()}">default · whatever the CLI picks</option>
                         <optgroup label="Always the newest">
@@ -87,7 +88,8 @@
                         </optgroup>
                         <option value="other" selected="${other}">Other model ID…</option>
                     </select>
-                    <input class="mono other" name="model-other" value="${if (other) form.model else ""}" placeholder="e.g. claude-opus-6" aria-label="Other model ID">
+                    <label class="f other" for="model-other">Other model ID</label>
+                    <input class="mono other" id="model-other" name="model-other" value="${if (other) form.model else ""}" placeholder="e.g. claude-opus-6">
                     <div class="help other">Not on Anthropic's list yet. The check before a Run tries it once on your login.</div>
 @if(deprecated != null)
                     <div class="warn">Deprecated: it retires ${deprecated.retires}. Pick a newer version, or <b>opus</b> / <b>sonnet</b> to always get the newest.</div>
@@ -95,7 +97,8 @@
                     <div class="help checked">From Anthropic's public model list, refreshed with Ants' update check (last ${models.lastChecked ?: "never: the list Ants shipped with"}). <button class="ghost small" form="models-check">Check now</button></div>
                 </fieldset>
                 <fieldset data-cli="codex" disabled="${claude}">
-                    <input class="mono" name="model" value="${if (claude) "" else form.model}" placeholder="e.g. gpt-5-codex" aria-label="Model">
+                    <label class="f" for="codex-model">Model</label>
+                    <input class="mono" id="codex-model" name="model" value="${if (claude) "" else form.model}" placeholder="e.g. gpt-5-codex">
                     <div class="help checked">codex's model ID, as <code>codex -m</code> takes it; empty for codex's default.</div>
                 </fieldset></div>
         </div>
@@ -105,7 +108,7 @@
                 <span class="c">$unsafe{skillIcon}${skill}<input type="hidden" name="skills" value="${skill}">@if(!readOnly)<button type="button" title="Remove">×</button>@endif</span>
 @endfor
 @if(!readOnly)
-                <input id="add-skill" name="skills" list="skill-list" placeholder="Add a Skill…" autocomplete="off">
+                <input id="add-skill" name="skills" list="skill-list" placeholder="Add a Skill, e.g. implement" autocomplete="off">
 @endif
             </div>
             <datalist id="skill-list">
@@ -140,20 +143,21 @@
 @endfor
             </div>
 @if(!readOnly)
-            <div class="row add-tool" data-mcp="${AgentForm.MCP_NOTE}" data-unknown="${AgentForm.UNKNOWN_NOTE}"><input class="mono" name="other-tools" placeholder="A tool Ants doesn't list yet, by name" aria-label="Add a tool"><button type="button">＋ Add tool</button></div>
+            <label class="f" for="other-tools">Add a tool</label>
+            <div class="row add-tool" data-mcp="${AgentForm.MCP_NOTE}" data-unknown="${AgentForm.UNKNOWN_NOTE}"><input class="mono" id="other-tools" name="other-tools" placeholder="A tool Ants doesn't list yet, by name: e.g. mcp__github__get_issue"><button type="button">＋ Add tool</button></div>
 @endif
         </fieldset>
         <fieldset data-cli="codex" disabled="${claude}">
-            <div class="help">Codex has no tool list; its sandbox decides what it may touch.</div>
-            <select name="sandbox" aria-label="Sandbox">
+            <label class="f" for="sandbox">Sandbox</label><div class="help">Codex has no tool list; its sandbox decides what it may touch.</div>
+            <select id="sandbox" name="sandbox">
 @for(sandbox in ants.Agent.SANDBOXES)
                 <option value="${sandbox}" selected="${sandbox == form.sandbox}">${sandbox}${when (sandbox) { "read-only" -> ": reads files, changes nothing"; "workspace-write" -> ": changes files in the Run workspace"; else -> ": anything, anywhere" }}</option>
 @endfor
             </select>
         </fieldset>
     </div>
-    <div class="card"><h3>Standing instructions</h3><div class="help">Who the Agent is and how it works, whatever the Skill. Markdown; <b>Expand</b> gives you a big editor with a live preview.</div>
-        <textarea name="instructions" rows="14" data-markdown data-tall aria-label="Standing instructions">${form.instructions}</textarea></div>
+    <div class="card"><h3><label for="instructions">Standing instructions</label></h3><div class="help">Who the Agent is and how it works, whatever the Skill. Markdown; <b>Expand</b> gives you a big editor with a live preview.</div>
+        <textarea id="instructions" name="instructions" rows="14" placeholder="e.g. You implement one Ticket at a time, test first, and commit once the suite passes." data-markdown data-tall>${form.instructions}</textarea></div>
     </fieldset>
 </form>
 <form id="models-check" method="post" action="/models/check"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"></form>
