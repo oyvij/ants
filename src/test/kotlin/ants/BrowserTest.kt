@@ -26,6 +26,7 @@ import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -47,9 +48,7 @@ class BrowserTest : AntsTest() {
     fun launch(info: TestInfo) {
         test = info.testMethod.get().name
         playwright = Playwright.create()
-        page = launchChromium(playwright).newPage()
-        page.onConsoleMessage { if (it.type() == "error") errors += "console: ${it.text()}" }
-        page.onPageError { errors += "page error: $it" }
+        page = launchChromium(playwright).newPage().also(::watch)
         page.navigate(url("/login"))
         page.fill("input[name=username]", "admin")
         page.fill("input[name=password]", "admin")
@@ -60,6 +59,11 @@ class BrowserTest : AntsTest() {
     @AfterEach
     fun close() {
         if (::playwright.isInitialized) playwright.close()
+    }
+
+    private fun watch(page: Page) {
+        page.onConsoleMessage { if (it.type() == "error") errors += "console: ${it.text()}" }
+        page.onPageError { errors += "page error: $it" }
     }
 
     private fun url(path: String) = "http://127.0.0.1:$port$path"
@@ -575,6 +579,415 @@ class BrowserTest : AntsTest() {
         assertThat(ask).isHidden()
     }
 
+    private fun onPhone(javaScript: Boolean = true) {
+        val cookies = page.context().cookies()
+        page = page.context().browser()!!.newContext(
+            NewContextOptions().setViewportSize(390, 844).setIsMobile(true).setHasTouch(true).setJavaScriptEnabled(javaScript),
+        ).apply { addCookies(cookies) }.newPage().also(::watch)
+    }
+
+    private fun assertNoSidewaysScroll() {
+        val (scroll, client) = (page.evaluate("[document.documentElement.scrollWidth, document.documentElement.clientWidth]") as List<*>).map { (it as Number).toInt() }
+        assertEquals(page.viewportSize().width, client, "${page.url()} renders at the screen's width")
+        assertTrue(scroll <= client, "${page.url()} is ${scroll}px wide on a ${client}px screen")
+    }
+
+    private fun waitingRun(key: String): String {
+        settings(null)
+        val (process, plane) = row(key, """<bpmn:startEvent id="start" />""", """<bpmn:userTask id="wait" name="Wait" />""", """<bpmn:endEvent id="end" />""")
+        deploy(definitions(key, key.replaceFirstChar(Char::uppercase), process, plane))
+        return http.post("/processes/$key/runs", mapOf()).path
+    }
+
+    private val topBar get() = page.locator("body > header")
+    private val sidebar get() = page.locator("nav.side")
+    private val menu get() = page.getByText("☰", Page.GetByTextOptions().setExact(true))
+
+    @Test
+    fun `on a phone Home and the Notification list fit the screen with 16px side padding, Home's cards in one column, and an entry opens on a tap`() = browse {
+        val run = waitingRun("phoned")
+        onPhone()
+        for (path in listOf("/", "/notifications")) {
+            page.navigate(url(path))
+            assertThat(page.locator("tr.click:has(a[href='$run'])")).isVisible()
+            assertNoSidewaysScroll()
+            val (left, right) = contentEdges("main")
+            assertEquals(16.0, left, 0.5, "main's content starts 16px in on $path")
+            assertEquals(374.0, right, 0.5, "main's content ends 16px in on $path")
+            page.screenshot("phone${path.replace(Regex("[^a-z0-9]+"), "-")}")
+        }
+
+        page.navigate(url("/"))
+        assertStacked("/", "#stats", "#waiting-on-you", "#working-now", "#coming-up", "#start-a-run")
+
+        page.navigate(url("/notifications"))
+        page.locator("tr.click:has(a[href='$run']) td").last().tap()
+        page.waitForURL { "/notifications/" in it }
+    }
+
+    @Test
+    fun `on a phone the top bar shows Ants and the live Notification list count, and the sidebar isn't beside the content`() = browse {
+        waitingRun("counted")
+        onPhone()
+        page.navigate(url("/runs"))
+        assertThat(topBar).containsText("Ants")
+        assertEquals(0.0, topBar.boundingBox().y, 0.5)
+        assertEquals(390.0, topBar.boundingBox().width, 0.5)
+        val count = page.locator("#topbar-waiting")
+        assertThat(count).hasText(Pattern.compile("\\d+"))
+        val before = count.textContent().toInt()
+
+        http.post("/processes/counted/runs", mapOf())
+
+        assertThat(count).hasText("${before + 1}")
+        assertThat(sidebar).isHidden()
+        val main = page.locator("main").boundingBox()
+        assertEquals(0.0, main.x, 0.5)
+        assertEquals(390.0, main.width, 0.5)
+    }
+
+    @Test
+    fun `on a phone ☰ opens the sidebar as a drawer with the page marked, which closes on a tap outside, on Esc and on following a link`() = browse {
+        onPhone()
+        page.navigate(url("/runs"))
+        menu.tap()
+        assertThat(sidebar).isVisible()
+        eventually { assertEquals(0.0, sidebar.boundingBox().x, 0.5) }
+        fun link(name: String) = sidebar.getByRole(AriaRole.LINK, Locator.GetByRoleOptions().setName(name))
+        for (name in listOf("Home", "Notification list", "Runs", "Processes", "Tickets", "Agents", "Skills", "Templates", "Settings")) assertThat(link(name)).isVisible()
+        assertThat(sidebar.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Log out"))).hasText(Pattern.compile("Log out v\\S+"))
+        assertThat(sidebar.locator("button[name=theme]:visible")).hasCount(1)
+        for (notice in listOf("#runs", "#paused", "#update")) assertThat(sidebar.locator(notice)).hasCount(1)
+        fun background(name: String) = link(name).evaluate("a => getComputedStyle(a).backgroundColor")
+        assertNotEquals(background("Processes"), background("Runs"), "the drawer marks Runs, the page it is on")
+        page.screenshot("phone/drawer")
+
+        page.touchscreen().tap(370.0, 600.0)
+        assertThat(sidebar).isHidden()
+        assertTrue(page.url().endsWith("/runs"), "a tap outside the drawer only closes it")
+
+        menu.tap()
+        assertThat(sidebar).isVisible()
+        page.keyboard().press("Escape")
+        assertThat(sidebar).isHidden()
+
+        menu.tap()
+        link("Processes").tap()
+        page.waitForURL { it.endsWith("/processes") }
+        assertThat(sidebar).isHidden()
+    }
+
+    @Test
+    fun `on a phone with JavaScript off ☰ still opens and closes the menu`() = browse {
+        onPhone(javaScript = false)
+        page.navigate(url("/runs"))
+        assertThat(sidebar).isHidden()
+        menu.tap()
+        assertThat(sidebar).isVisible()
+        assertThat(sidebar.getByRole(AriaRole.LINK, Locator.GetByRoleOptions().setName("Processes"))).isVisible()
+        menu.tap()
+        assertThat(sidebar).isHidden()
+    }
+
+    @Test
+    fun `on a phone the top bar and the drawer follow light and dark mode as the desktop sidebar does`() = browse {
+        onPhone()
+        fun background(part: Locator) = part.evaluate("e => getComputedStyle(e).backgroundColor")
+        for ((theme, pageBackground) in listOf("light" to "rgb(244, 245, 247)", "dark" to "rgb(11, 13, 18)")) {
+            settings(null, "theme: $theme\n")
+            page.setViewportSize(1024, 844)
+            page.navigate(url("/runs"))
+            val desktop = background(sidebar)
+            page.setViewportSize(390, 844)
+            menu.tap()
+            assertThat(sidebar).isVisible()
+            assertEquals(pageBackground, page.evaluate("getComputedStyle(document.documentElement).backgroundColor"), "the page in $theme")
+            assertEquals(desktop, background(sidebar), "the drawer in $theme")
+            assertEquals(desktop, background(topBar), "the top bar in $theme")
+            assertEquals("rgb(255, 255, 255)", topBar.getByText("Ants").evaluate("e => getComputedStyle(e).color"), "Ants in $theme")
+            page.screenshot("phone/drawer-$theme")
+        }
+    }
+
+    @Test
+    fun `above 768px the top bar is hidden and the sidebar sits beside the content`() = browse {
+        page.setViewportSize(769, 900)
+        page.navigate(url("/runs"))
+        assertThat(topBar).isHidden()
+        assertThat(sidebar).isVisible()
+        assertEquals(232.0, sidebar.boundingBox().width, 0.5)
+        assertEquals(232.0, page.locator("main").boundingBox().x, 0.5)
+        page.setViewportSize(768, 900)
+        assertThat(topBar).isVisible()
+        assertThat(sidebar).isHidden()
+    }
+
+    private val tapTargets = "button, .btn, .topbar a, .topbar label, nav.side a, .tabs a, .fold > summary, .spine a, .walk nav a, .crumbs a, :is(.chipsel, .tags) .c, [role=tab]"
+    private val textFields = "input:not([type=checkbox], [type=radio], [type=hidden], [type=file]), select, textarea, .cm-content"
+
+    private fun visible(selector: String, measure: String) = (page.locator(selector).evaluateAll(
+        "es => es.filter(e => e.checkVisibility({visibilityProperty: true})).map(e => [e.outerHTML.slice(0, 100), $measure])",
+    ) as List<*>).map { (it as List<*>).let { (html, value) -> html as String to value } }.also { assertTrue(it.isNotEmpty(), "${page.url()} shows a $selector") }
+
+    private fun assertTapSized() {
+        val short = visible(tapTargets, "e.getBoundingClientRect().height").filter { (_, height) -> (height as Number).toDouble() < 44 }
+        assertEquals(listOf<Pair<String, Any?>>(), short, "on ${page.url()} these are under 44px tall")
+    }
+
+    private fun assertFieldText(size: String) {
+        val other = visible(textFields, "getComputedStyle(e).fontSize").filter { (_, font) -> font != size }
+        assertEquals(listOf<Pair<String, Any?>>(), other, "on ${page.url()} these don't have $size text")
+    }
+
+    private fun chipper() {
+        home.resolve("skills/chip-skill").createDirectories().resolve("SKILL.md").writeText("---\nname: chip-skill\ndescription: Chips.\n---\nChip.\n")
+        home.resolve("agents").createDirectories().resolve("chipper.md").writeText("---\nname: chipper\ncli: claude\nskills: chip-skill\ntools: Read\n---\nChip.\n")
+    }
+
+    @Test
+    fun `on a phone buttons, nav links, chips with their ×, question chips and the diagram's zoom buttons are at least 44px tall`() = browse {
+        val (_, entry) = answering(FakeClaude(), "who" to "Title who", "scope" to "Title scope")
+        val run = waitingRun("tapped")
+        chipper()
+        onPhone()
+        for (path in listOf("/", "/notifications", run, "/processes/tapped", entry, "/agents/chipper", "/agents/new", "/skills/new", "/settings")) {
+            page.navigate(url(path))
+            assertTapSized()
+        }
+
+        page.navigate(url("/runs"))
+        menu.tap()
+        assertThat(sidebar).isVisible()
+        assertTapSized()
+
+        picker()
+        repoBox.tap()
+        repoOption("api").tap()
+        repoBox.blur()
+        assertThat(repoTags).hasText(arrayOf("api×"))
+        assertTapSized()
+    }
+
+    @Test
+    fun `on a phone Review changes' tabs, story and step links, file links and breadcrumbs are at least 44px tall`() = browse {
+        val entry = staleStoryReviewEntry()
+        onPhone()
+        for (tab in listOf("story", "repo")) {
+            page.navigate(url("$entry?tab=$tab"))
+            assertTapSized()
+        }
+    }
+
+    @Test
+    fun `on a phone inputs, selects, textareas and the Markdown editors have 16px text, so iOS doesn't zoom in on them, and above 768px they keep theirs`() = browse {
+        val (_, entry) = answering(FakeClaude(), "who" to "Title who")
+        chipper()
+        val pages = listOf(entry, "/agents/chipper", "/agents/new", "/skills/new", "/settings")
+        onPhone()
+        for (path in pages) {
+            page.navigate(url(path))
+            assertFieldText("16px")
+        }
+        picker()
+        assertFieldText("16px")
+
+        page.setViewportSize(769, 900)
+        page.navigate(url("/agents/new"))
+        assertEquals("14px", page.locator("input[name=name]").evaluate("e => getComputedStyle(e).fontSize"))
+        assertEquals("14px", page.locator("textarea[name=instructions] + .ed .cm-content").evaluate("e => getComputedStyle(e).fontSize"))
+        assertTrue(page.locator("textarea[name=instructions] + .ed .bar button").first().boundingBox().height < 44, "the editor's toolbar keeps its desktop size")
+    }
+
+    @Test
+    fun `on a phone a tap on a shape in the modeler opens its hover menu, which appends a Task on a tap`() = browse {
+        onPhone()
+        page.navigate(url("/processes/new?name=Tapped&from="))
+        shape("start").tap()
+        assertThat(pad.locator("[data-action='append.agent-task']")).isVisible()
+        pad.locator("[data-action='append.agent-task']").tap()
+        assertThat(heading).hasText("Agent Task")
+    }
+
+    private fun visibleBox(selector: String) = page.locator(selector).first().also { assertThat(it).isVisible() }.boundingBox()
+
+    private fun card(title: String) = ".card:has(> h3:text-is('$title'))"
+
+    private fun assertStacked(path: String, vararg parts: String) {
+        val boxes = parts.map { it to visibleBox(it) }
+        for ((above, below) in boxes.zipWithNext()) {
+            assertEquals(above.second.x, below.second.x, 0.5, "${below.first} starts where ${above.first} starts on $path")
+            assertEquals(above.second.width, below.second.width, 0.5, "${below.first} is as wide as ${above.first} on $path")
+            assertTrue(below.second.y >= above.second.y + above.second.height, "${below.first} sits under ${above.first} on $path")
+        }
+    }
+
+    @Test
+    fun `on a phone the modeler, a Skill, the Agent form, Templates and Settings fit the screen in one column`() = browse {
+        http.import("start-end.bpmn")
+        settings(null, "vaults:\n  work: /tmp/work\n  side: /tmp/side\ndefault-vault: work\nagent-folders: [/tmp/a]\n")
+        home.resolve("agents").createDirectories().resolve("stacked.md").writeText("---\nname: stacked\ncli: claude\nskills: stacked\ntools: Read, Bash(git log *)\n---\nStacked.\n")
+        home.resolve("skills/stacked").createDirectories().resolve("SKILL.md").writeText("---\nname: stacked\ndescription: Stacked.\n---\n" + "A long line of the Skill. ".repeat(40) + "\n")
+        val pages = listOf(
+            "/processes/start-end/edit" to arrayOf("#canvas", ".props"),
+            "/templates/review-and-push" to arrayOf("#canvas", ".props"),
+            "/templates" to arrayOf("main form", "main ul"),
+            "/skills/stacked" to arrayOf(".card:has(#skill)", card("Run by")),
+            "/skills/new" to arrayOf(".card:has(#skill)", card("Run by")),
+            "/agents/stacked" to arrayOf("#name", "#description", "#cli", "#model"),
+            "/agents/new" to arrayOf("#name", "#description", "#cli", "#model"),
+            "/agents/implementer" to arrayOf("#name", "#description", "#cli", "#model"),
+            "/settings" to arrayOf(card("Claude login"), card("Commands"), card("Vaults"), card("Agent folders"), card("So far"), card("Theme"), card("Server"), card("Updates")),
+        )
+        onPhone()
+        for ((path, parts) in pages) {
+            page.navigate(url(path))
+            assertStacked(path, *parts)
+            assertNoSidewaysScroll()
+            page.screenshot("phone${path.replace(Regex("[^a-z0-9]+"), "-")}")
+        }
+    }
+
+    @Test
+    fun `just above 768px the modeler, the Skill page, the Agent form and Settings keep their columns side by side`() = browse {
+        http.import("start-end.bpmn")
+        settings(null)
+        home.resolve("agents").createDirectories().resolve("beside.md").writeText("---\nname: beside\ncli: claude\n---\nBeside.\n")
+        page.setViewportSize(769, 900)
+        fun assertBeside(path: String, left: String, right: String) {
+            page.navigate(url(path))
+            val (leftBox, rightBox) = listOf(left, right).map(::visibleBox)
+            assertEquals(leftBox.y, rightBox.y, 1.0, "$right sits level with $left on $path")
+            assertTrue(leftBox.x + leftBox.width < rightBox.x, "$right sits beside $left on $path")
+        }
+        assertBeside("/processes/start-end/edit", "#canvas", ".props")
+        assertBeside("/skills/new", ".card:has(#skill)", card("Run by"))
+        assertBeside("/agents/beside", "#name", "#description")
+        assertBeside("/settings", card("Claude login"), card("Commands"))
+    }
+
+    private fun assertWithinScreen(part: Locator, what: String) {
+        val box = part.boundingBox()
+        assertTrue(box.x >= 0 && box.x + box.width <= 390, "$what spans ${box.x} to ${box.x + box.width} on a 390px screen")
+    }
+
+    @Test
+    fun `on a phone the Runs list fits the screen, each row within it, and a Run opens on a tap on its row`() = browse {
+        val run = waitingRun("listed")
+        onPhone()
+        page.navigate(url("/runs"))
+        val row = page.locator("tr.click[data-href='$run']")
+        assertThat(row).isVisible()
+        assertNoSidewaysScroll()
+        for (cell in row.locator("td").all()) assertWithinScreen(cell, "a cell of the Run's row")
+        page.screenshot("phone/runs")
+
+        row.locator("td").last().tap()
+        page.waitForURL { it.endsWith(run) }
+    }
+
+    @Test
+    fun `on a phone the Run page's Task drawer spans the screen, and neither the Run page nor the Process page scrolls sideways`() = browse {
+        val run = waitingRun("drawn")
+        onPhone()
+        page.navigate(url(run))
+        assertThat(shape("wait")).isVisible()
+        assertNoSidewaysScroll()
+        eventually { shape("wait").tap() }
+        val drawer = page.locator("#drawer")
+        assertThat(page.locator("#drawer-head")).isVisible()
+        eventually { assertEquals(0.0, drawer.boundingBox().x, 0.5) }
+        assertEquals(390.0, drawer.boundingBox().width, 0.5)
+        assertNoSidewaysScroll()
+        page.screenshot("phone/run-drawer")
+
+        page.navigate(url("/processes/drawn"))
+        assertThat(shape("wait")).isVisible()
+        assertNoSidewaysScroll()
+        page.screenshot("phone/process")
+
+        page.setViewportSize(769, 900)
+        page.navigate(url(run))
+        eventually { shape("wait").click() }
+        assertThat(page.locator("#drawer-head")).isVisible()
+        eventually { assertEquals(460.0, drawer.boundingBox().width, 0.5) }
+    }
+
+    @Test
+    fun `on a phone the Run page's and the Process page's diagrams fit the screen, and ＋, －, Fit and ⛶ work on a tap`() = browse {
+        val run = waitingRun("tapzoom")
+        onPhone()
+        for (path in listOf(run, "/processes/tapzoom")) {
+            page.navigate(url(path))
+            assertThat(shape("wait")).isVisible()
+            val diagram = page.locator(".dia").first()
+            assertWithinScreen(diagram, "the diagram on $path")
+            assertWithinScreen(diagram.locator(".zoom"), "the zoom buttons on $path")
+            assertWithinScreen(diagram.locator(".legend"), "the legend on $path")
+            fun zoom() = (diagram.evaluate("e => e.canvas.zoom()") as Number).toDouble()
+            eventually { assertEquals(true, diagram.evaluate("e => e.canvas != null"), "the diagram on $path is drawn") }
+            diagram.locator(".zoom [title='Fit']").tap()
+            val fit = zoom()
+
+            diagram.locator(".zoom [title='Zoom in']").tap()
+            assertEquals(fit * 1.25, zoom(), 0.001, "＋ on $path")
+            diagram.locator(".zoom [title='Zoom out']").tap()
+            diagram.locator(".zoom [title='Zoom out']").tap()
+            assertEquals(fit / 1.25, zoom(), 0.001, "－ on $path")
+            diagram.locator(".zoom [title='Fit']").tap()
+            assertEquals(fit, zoom(), 0.001, "Fit on $path")
+
+            diagram.locator(".zoom [title='Fullscreen']").tap()
+            eventually { assertEquals(true, diagram.evaluate("e => document.fullscreenElement === e"), "⛶ makes the diagram on $path fullscreen") }
+            diagram.locator(".zoom [title='Fullscreen']").tap()
+            eventually { assertEquals(true, page.evaluate("document.fullscreenElement === null"), "⛶ again leaves fullscreen on $path") }
+        }
+    }
+
+    @Test
+    fun `on a phone that can't make a diagram fullscreen, as an iPhone can't, the diagram offers ＋, － and Fit without ⛶`() = browse {
+        val run = waitingRun("unfull")
+        onPhone()
+        page.addInitScript("Object.defineProperty(Document.prototype, 'fullscreenEnabled', { get: () => false })")
+        for (path in listOf(run, "/processes/unfull")) {
+            page.navigate(url(path))
+            assertThat(shape("wait")).isVisible()
+            assertThat(page.locator(".dia .zoom button")).hasText(arrayOf("＋", "－", "Fit"))
+        }
+    }
+
+    @Test
+    fun `on a phone a modal spans the screen with its editor and preview stacked, and a toast spans the screen at the top`() = browse {
+        onPhone()
+        page.navigate(url("/agents/new"))
+        page.locator("textarea[name=instructions] + .ed").locator("button", Locator.LocatorOptions().setHasText("Expand")).tap()
+        val modal = page.locator("dialog.modal")
+        assertThat(modal.locator(".split .cm-content")).isVisible()
+        assertEquals(0.0, modal.boundingBox().x, 0.5)
+        assertEquals(390.0, modal.boundingBox().width, 0.5)
+        val (editor, preview) = modal.locator(".split > *").all().map { it.boundingBox() }
+        assertEquals(390.0, editor.width, 0.5, "the editor spans the modal")
+        assertEquals(390.0, preview.width, 0.5, "the preview spans the modal")
+        assertTrue(preview.y >= editor.y + editor.height - 0.5, "the preview sits under the editor")
+        assertTrue(preview.height > 100, "the preview keeps room to read, ${preview.height}px tall")
+        page.screenshot("phone/modal")
+        modal.locator("button[title=Close]").tap()
+        assertThat(modal).hasCount(0)
+
+        page.navigate(url("/settings"))
+        page.locator("button[name=action][value=updates]").tap()
+        val toast = page.locator(".toast")
+        assertThat(toast).containsText("Checked")
+        val spot = toast.boundingBox()
+        assertEquals(0.0, spot.x, 0.5)
+        assertEquals(390.0, spot.width, 0.5)
+        assertEquals(0.0, spot.y, 0.5)
+        assertNoSidewaysScroll()
+        page.screenshot("phone/toast")
+
+        page.setViewportSize(769, 900)
+        assertEquals(380.0, toast.boundingBox().width, 0.5)
+    }
+
     private fun round(vararg questions: Pair<String, String>) = """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":""" +
         """{"outcome":"done","summary":"A Round.","output":{"questions":[""" + questions.joinToString(",") { (id, title) ->
             """{"id":"$id","title":"$title","ask":"Ask $id?","context":"Settles $id.","recommendation":"Recommend $id.","why":"Because $id."}"""
@@ -644,6 +1057,86 @@ class BrowserTest : AntsTest() {
         page.waitForURL { !it.contains(entry) }
         eventually { assertContains(http.get("/runs/$run").body, """id="state">Completed<""") }
         assertContains(claude.launches("quiz")[1].stdin, """{\"id\":\"who\",\"answer\":\"Recommend who.\",\"source\":\"accepted\"},{\"id\":\"scope\",\"answer\":\"Only admins.\",\"source\":\"written\"}""")
+    }
+
+    @Test
+    fun `on a phone the questions are a strip of chips above the question, which scrolls sideways within itself and switches the question on a tap`() = browse {
+        val titles = (1..6).map { "q$it" to "Question $it asks which option the Run should settle on" }
+        val (_, entry) = answering(FakeClaude(), *titles.toTypedArray())
+        onPhone()
+        page.navigate(url(entry))
+        val strip = page.locator("#tabs")
+        val tabs = page.locator("#tabs [role=tab]")
+        assertThat(tabs).hasCount(7)
+        assertThat(strip).hasAttribute("aria-orientation", "horizontal")
+        assertNoSidewaysScroll()
+        page.screenshot("phone/answer")
+
+        val box = strip.boundingBox()
+        assertTrue(box.x >= 0 && box.x + box.width <= 390, "the strip spans ${box.x} to ${box.x + box.width}")
+        val question = page.locator("section.question:visible")
+        assertTrue(box.y + box.height <= question.boundingBox().y, "the strip sits above the question")
+        assertTrue(tabs.nth(1).boundingBox().y < tabs.nth(0).boundingBox().y + tabs.nth(0).boundingBox().height, "the chips run side by side")
+        assertEquals(true, strip.evaluate("e => e.scrollWidth > e.clientWidth"), "the chips overflow the strip")
+
+        tabs.nth(4).tap()
+        assertThat(tabs.nth(4)).hasAttribute("aria-selected", "true")
+        assertThat(page.locator("#answer-q5 + .ed .cm-content")).isVisible()
+        assertThat(page.locator("#answer-q1 + .ed .cm-content")).isHidden()
+        assertTrue((strip.evaluate("e => e.scrollLeft") as Number).toDouble() > 0, "the strip, not the page, scrolls sideways to reach the chip")
+        assertEquals(0, (page.evaluate("scrollX") as Number).toInt(), "the page didn't scroll sideways")
+        assertNoSidewaysScroll()
+
+        page.locator("#next").tap()
+        assertThat(tabs.nth(4)).containsText("✓")
+        assertThat(tabs.nth(5)).hasAttribute("aria-selected", "true")
+        eventually {
+            val chip = tabs.nth(5).boundingBox()
+            val shown = strip.boundingBox()
+            assertTrue(chip.x >= shown.x - 0.5 && chip.x + chip.width <= shown.x + shown.width + 0.5, "Next brings the chip it selects into the strip's view")
+        }
+        page.locator("#answer-q6 + .ed .cm-content").fill("Only admins.")
+        assertThat(tabs.nth(5)).containsText("✓ ✎")
+
+        page.setViewportSize(1024, 844)
+        assertThat(strip).hasAttribute("aria-orientation", "vertical")
+        page.setViewportSize(390, 844)
+        assertThat(strip).hasAttribute("aria-orientation", "horizontal")
+    }
+
+    @Test
+    fun `on a phone the Answer footer spans the screen and never covers the end of the question, even wrapped taller`() = browse {
+        val (_, entry) = answering(FakeClaude(), "who" to "Title who", "scope" to "Title scope")
+        onPhone()
+        page.navigate(url(entry))
+        page.locator("#next").tap()
+        val footer = page.locator("#round > footer")
+        assertThat(page.locator("#back")).isVisible()
+        assertTrue(page.locator("#next").boundingBox().y > page.locator("#back").boundingBox().y, "Next wraps under Back and Reset")
+        val box = footer.boundingBox()
+        assertEquals(0.0, box.x, 0.5)
+        assertEquals(390.0, box.width, 0.5)
+        assertEquals(844.0, box.y + box.height, 0.5)
+        val (left, right) = contentEdges("#round > footer")
+        assertEquals(16.0, left, 0.5, "the footer's buttons start 16px in")
+        assertEquals(374.0, right, 0.5, "the footer's buttons end 16px in")
+        for (button in listOf("#back", "#reset", "#next")) {
+            val b = page.locator(button).boundingBox()
+            assertTrue(b.x >= 0 && b.x + b.width <= 390, "$button spans ${b.x} to ${b.x + b.width}")
+        }
+        assertNoSidewaysScroll()
+        page.screenshot("phone/answer-footer")
+
+        fun clear(bar: String) = eventually {
+            page.evaluate("scrollTo(0, document.documentElement.scrollHeight)")
+            val top = footer.boundingBox().y
+            val end = page.locator("section.question:visible .ed").boundingBox()
+            assertTrue(end.y + end.height <= top, "the answer ends at ${end.y + end.height}px, under the $bar footer at ${top}px")
+        }
+        clear("wrapped")
+        footer.evaluate("bar => bar.insertAdjacentHTML('beforeend', '<p style=\"flex-basis: 100%; height: 240px; margin: 0\"></p>')")
+        assertTrue(footer.boundingBox().height > 240)
+        clear("grown")
     }
 
     @Test
@@ -723,8 +1216,8 @@ class BrowserTest : AntsTest() {
         assertThat(field).hasValue("Like this: ![image](${ImagesTest.RED_PATH}) please")
     }
 
-    private fun picker(stored: String = "") {
-        settings(null, sourceMapLines(repo("api"), repo("web"), repo("webhooks")))
+    private fun picker(stored: String = "", vararg sourceMap: String = arrayOf("api", "web", "webhooks")) {
+        settings(null, sourceMapLines(*sourceMap.map(::repo).toTypedArray()))
         val bpmn = javaClass.getResource("/start-form.bpmn")!!.readText().replace("\"start-form\"", "\"picker\"")
             .replace("""<camunda:property id="ants.type" value="repos" />""", """<camunda:property id="ants.type" value="repos" /><camunda:property id="ants.stored" value="$stored" />""")
         assertFalse("role=\"alert\"" in http.upload("/processes", "file", "picker.bpmn", bpmn.toByteArray()).body)
@@ -784,9 +1277,9 @@ class BrowserTest : AntsTest() {
         assertThat(none).isVisible()
     }
 
-    private fun startPicked(page: Page = this.page, prompt: Locator = page.locator("textarea[name=prompt] + .ed .cm-content")): String {
+    private fun startPicked(page: Page = this.page, prompt: Locator = page.locator("textarea[name=prompt] + .ed .cm-content"), press: (Locator) -> Unit = { it.click() }): String {
         prompt.fill("Add dark mode")
-        page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("Start").setExact(true)).click()
+        press(page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("Start").setExact(true)))
         page.waitForURL(Pattern.compile("/runs/[^/]+$"))
         return page.locator("dt:text-is('repos') + dd").textContent()
     }
@@ -820,6 +1313,78 @@ class BrowserTest : AntsTest() {
         plain.getByLabel("web", Page.GetByLabelOptions().setExact(true)).check()
         plain.locator("#field-repos").fill("$elsewhere")
         assertEquals("""["web","$elsewhere"]""", startPicked(plain, plain.locator("textarea[name=prompt]")))
+    }
+
+    private val longRepo = "a-repository-whose-name-is-far-too-long-for-one-line-of-a-phone"
+    private val phoneSourceMap = arrayOf("api", "web", "webhooks", longRepo, "billing", "search", "docs", "infra")
+
+    private fun assertShownWhole(part: Locator, what: String) {
+        assertWithinScreen(part, what)
+        assertEquals(true, part.evaluate("e => e.scrollWidth <= e.clientWidth"), "$what shows its whole name")
+    }
+
+    private fun assertStartFormInOneColumn() {
+        val fields = page.locator("#start .fld").all().map { it.boundingBox() }
+        for ((above, below) in fields.zipWithNext()) {
+            assertEquals(above.x, below.x, 0.5, "the start form's fields start at one edge")
+            assertTrue(below.y >= above.y + above.height, "the start form's fields sit one under another")
+        }
+    }
+
+    @Test
+    fun `on a phone the start form's Repos picker wraps many picked repos within the screen, and taps pick and remove repos and start the Run`() = browse {
+        val elsewhere = repo(longRepo).remote
+        picker("api web webhooks $longRepo billing docs infra $elsewhere", *phoneSourceMap)
+        onPhone()
+        page.navigate(url("/processes/picker"))
+        assertThat(repoTags).hasCount(8)
+        assertNoSidewaysScroll()
+        assertStartFormInOneColumn()
+        for (tag in repoTags.all()) assertShownWhole(tag, "the tag ${tag.textContent()}")
+        page.screenshot("phone/start")
+
+        page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("Remove api")).tap()
+        assertThat(repoTags).hasText(arrayOf("web×", "webhooks×", "$longRepo×", "billing×", "docs×", "infra×", "$elsewhere×"))
+        repoBox.tap()
+        assertThat(page.getByRole(AriaRole.LISTBOX)).isVisible()
+        assertWithinScreen(page.getByRole(AriaRole.LISTBOX), "the Source map repos")
+        for (option in repoOptions.all()) {
+            assertShownWhole(option, "the option ${option.textContent()}")
+            val height = option.boundingBox().height
+            assertTrue(height >= 44, "the option ${option.textContent()} is ${height}px tall")
+        }
+        assertNoSidewaysScroll()
+        repoOption("search").tap()
+        assertThat(repoOption("search")).hasAttribute("aria-selected", "true")
+        page.locator("#start h3").tap()
+        assertThat(page.getByRole(AriaRole.LISTBOX)).isHidden()
+        assertThat(repoTags).hasText(arrayOf("web×", "webhooks×", "$longRepo×", "billing×", "docs×", "infra×", "$elsewhere×", "search×"))
+        assertNoSidewaysScroll()
+
+        assertEquals("""["web","webhooks","$longRepo","billing","docs","infra","$elsewhere","search"]""", startPicked(press = { it.tap() }))
+    }
+
+    @Test
+    fun `on a phone with JavaScript off the start form's Repos checkboxes and text input fit the screen, and taps on them start the Run`() = browse {
+        val elsewhere = repo(longRepo).remote
+        picker("", *phoneSourceMap)
+        onPhone(javaScript = false)
+        page.navigate(url("/processes/picker"))
+        assertThat(page.getByRole(AriaRole.COMBOBOX)).hasCount(0)
+        val boxes = page.locator("#start label:has(input[type=checkbox])")
+        assertThat(boxes).hasCount(phoneSourceMap.size)
+        assertNoSidewaysScroll()
+        assertStartFormInOneColumn()
+        for (box in boxes.all()) assertShownWhole(box, "the checkbox ${box.textContent().trim()}")
+        page.screenshot("phone/start-no-js")
+
+        page.getByLabel(longRepo, Page.GetByLabelOptions().setExact(true)).tap()
+        page.getByLabel("web", Page.GetByLabelOptions().setExact(true)).tap()
+        assertThat(page.getByLabel("web", Page.GetByLabelOptions().setExact(true))).isChecked()
+        page.locator("#field-repos").tap()
+        page.locator("#field-repos").fill(elsewhere.toString())
+        assertNoSidewaysScroll()
+        assertEquals("""["web","$longRepo","$elsewhere"]""", startPicked(page, page.locator("textarea[name=prompt]")) { it.tap() })
     }
 
     private fun byRepoReviewEntryOfApiCommitting(file: String, text: String): String {
@@ -898,6 +1463,22 @@ class BrowserTest : AntsTest() {
         }
     }
 
+    private fun assertTheComposerNeverCoversTheEnd(vararg ends: String) {
+        val composer = page.locator(".composer")
+        fun clear(bar: String) = eventually {
+            page.evaluate("scrollTo(0, document.documentElement.scrollHeight)")
+            val top = composer.boundingBox().y
+            for (selector in ends) {
+                val box = page.locator(selector).boundingBox()
+                assertTrue(box.y + box.height <= top, "$selector ends at ${box.y + box.height}px, under the $bar composer at ${top}px")
+            }
+        }
+        clear("one-line")
+        page.locator(".composer > div").evaluate("bar => { bar.style.flexWrap = 'wrap'; bar.insertAdjacentHTML('beforeend', '<p style=\"flex-basis: 100%; height: 240px; margin: 0\"></p>') }")
+        assertTrue(composer.boundingBox().height > 240)
+        clear("grown")
+    }
+
     @Test
     fun `the composer never covers the end of Review changes however tall it grows, and a page without one keeps its own bottom padding`() = browse {
         val entry = staleStoryReviewEntry()
@@ -907,19 +1488,7 @@ class BrowserTest : AntsTest() {
         page.locator(".step:not([hidden]) [name=body]").fill("Why?")
         page.click(".step:not([hidden]) .stepcomment button")
         assertThat(page.locator("#comments")).isVisible()
-        val composer = page.locator(".composer")
-        fun clear(bar: String) = eventually {
-            page.evaluate("scrollTo(0, document.documentElement.scrollHeight)")
-            val top = composer.boundingBox().y
-            for (selector in listOf(".step:not([hidden]) .code", "#comments", "#comment + .ed")) {
-                val box = page.locator(selector).boundingBox()
-                assertTrue(box.y + box.height <= top, "$selector ends at ${box.y + box.height}px, under the $bar composer at ${top}px")
-            }
-        }
-        clear("one-line")
-        page.locator(".composer > div").evaluate("bar => { bar.style.flexWrap = 'wrap'; bar.insertAdjacentHTML('beforeend', '<p style=\"flex-basis: 100%; height: 240px; margin: 0\"></p>') }")
-        assertTrue(composer.boundingBox().height > 240)
-        clear("grown")
+        assertTheComposerNeverCoversTheEnd(".step:not([hidden]) .code", "#comments", "#comment + .ed")
 
         page.navigate(url("/processes"))
         fun padding(side: String) = page.locator("main").evaluate("main => getComputedStyle(main).padding$side") as String
@@ -938,6 +1507,149 @@ class BrowserTest : AntsTest() {
         // Measured in one step: the live update swaps #ticket for a new one, and boundingBox() reads null mid-swap
         val ticket = (page.locator("#ticket").evaluate("e => e.getBoundingClientRect().width") as Number).toDouble()
         assertTrue(ticket <= 860, "the Ticket is ${ticket}px wide")
+    }
+
+    private val wideMarkdown = "| Class | Test | Policy | Clock | Ledger | Gateway |\n|---|---|---|---|---|---|\n" +
+        "| PaymentRetryPolicy | PaymentRetryPolicyTest | ExponentialBackoffPolicy | FixedClockForRetries | InMemoryPaymentLedger | StripeWebhookGateway |\n\n" +
+        "![Ants](/icon-512.png)\n"
+
+    private fun assertWideTableScrollsInsideItsBoxAndTheImageFits(selector: String) = eventually {
+        val (right, tableRight, scrolled, imageRight, imageWidth) = (page.locator(selector).evaluate(
+            "e => { const t = e.querySelector('table'), i = e.querySelector('img'); t.scrollLeft = 100; " +
+                "return [e.getBoundingClientRect().right, t.getBoundingClientRect().right, t.scrollLeft, i.getBoundingClientRect().right, i.complete ? i.getBoundingClientRect().width : 0] }",
+        ) as List<*>).map { (it as Number).toDouble() }
+        assertTrue(right <= page.viewportSize().width, "$selector ends at ${right}px on a ${page.viewportSize().width}px screen")
+        assertTrue(tableRight <= right, "the table ends at ${tableRight}px, past $selector's ${right}px")
+        assertTrue(scrolled > 0, "the wide table scrolls sideways inside its own box")
+        assertTrue(imageWidth in 1.0..<512.0, "the 512px image shrinks to fit, at ${imageWidth}px")
+        assertTrue(imageRight <= right, "the image ends at ${imageRight}px, past $selector's ${right}px")
+    }
+
+    @Test
+    fun `on a phone the Tickets list, the Spec and a Ticket fit the screen, a wide table scrolls inside its box, an image fits, and a checkbox ticks on a tap`() = browse {
+        val run = waitingRun("specced").removePrefix("/runs/")
+        workspace(run).resolve("tickets/spec.md").also { it.parent.createDirectories() }.writeText("# Paying again\n\n$wideMarkdown")
+        val file = workspace(run).resolve("tickets/issues").createDirectories().resolve("01-retry.md")
+        file.writeText("# Retry a failed payment\n\nStatus: ready-for-agent\n\n- [ ] Retries three times\n\n$wideMarkdown")
+        onPhone()
+
+        page.navigate(url("/tickets"))
+        val cells = page.locator("tr:has(a[href='/runs/$run/tickets/spec']) td")
+        assertThat(cells).hasCount(4)
+        assertNoSidewaysScroll()
+        val boxes = cells.all().map { it.boundingBox() }
+        for ((above, below) in boxes.zipWithNext()) {
+            assertEquals(above.x, below.x, 0.5, "the Spec's row stacks its cells in one column")
+            assertTrue(below.y >= above.y + above.height, "the Spec's row stacks its cells one under the other")
+        }
+        page.screenshot("phone/tickets")
+
+        page.navigate(url("/runs/$run/tickets/spec"))
+        assertThat(page.locator("#ticket")).containsText("Paying again")
+        assertNoSidewaysScroll()
+        assertWideTableScrollsInsideItsBoxAndTheImageFits("#ticket")
+
+        page.navigate(url("/runs/$run/tickets/01-retry"))
+        assertThat(page.locator("#ticket")).containsText("Retries three times")
+        assertNoSidewaysScroll()
+        assertWideTableScrollsInsideItsBoxAndTheImageFits("#ticket")
+        page.screenshot("phone/ticket")
+        val box = page.locator("#ticket input[type=checkbox]")
+        val size = box.boundingBox()
+        assertTrue(size.width >= 24 && size.height >= 24, "the checkbox is ${size.width}×${size.height}px, too small to tap")
+        box.tap()
+        eventually { assertContains(file.readText(), "- [x] Retries three times") }
+        assertThat(page.locator("#ticket input[type=checkbox]")).isChecked()
+        assertNoSidewaysScroll()
+    }
+
+    private fun buttonNamed(name: String) = page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName(name).setExact(true))
+
+    private fun waitingEntry(after: String? = null): String {
+        var entry = ""
+        eventually { entry = assertNotNull(Regex("""href="(/notifications/[^"]+)"""").find(http.get("/notifications").body)).groupValues[1].also { assertNotEquals(after, it) } }
+        return entry
+    }
+
+    @Test
+    fun `on a phone Approve shows the Spec, the comment and its Send back and Approve in one column, and both work`() = browse {
+        val claude = FakeClaude()
+        val drafted = """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":{"outcome":"done","summary":"Drafted.","output":{"notes":"notes.md"}}}"""
+        claude.session("draft", drafted)
+        claude.session("draft", 2, drafted)
+        claude.session("polish", """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":{"outcome":"done","summary":"Polished.","output":{}}}""")
+        agentTask(claude, mapOf("draft" to """{"type":"object","properties":{"notes":{"type":"string","format":"path"}}}""", "polish" to null))
+        http.import("approve.bpmn")
+        val run = http.post("/processes/approve/runs", mapOf()).path.removePrefix("/runs/")
+        workspace(run).resolve("notes.md").writeText(
+            "# Paying again\n\nSee https://example.com/" + "payments/retries/".repeat(12) + " for the policy.\n\n" +
+                "```\n" + "val policy = PaymentRetryPolicy(".repeat(6) + "\n```\n\n$wideMarkdown",
+        )
+        val first = waitingEntry()
+        onPhone()
+
+        page.navigate(url(first))
+        val spec = page.locator(".card.md")
+        assertThat(spec).containsText("Paying again")
+        assertNoSidewaysScroll()
+        page.screenshot("phone/approve")
+        val (left, right) = contentEdges("main")
+        val comment = page.locator("#comment + .ed")
+        val specBox = spec.boundingBox()
+        val commentBox = comment.boundingBox()
+        assertEquals(left, specBox.x, 0.5, "the Spec starts at the page's content edge")
+        assertEquals(right, specBox.x + specBox.width, 0.5, "the Spec ends at the page's content edge")
+        assertEquals(left, commentBox.x, 0.5, "the comment starts at the page's content edge")
+        assertTrue(commentBox.y >= specBox.y + specBox.height, "the comment sits under the Spec")
+        for (name in listOf("Send back", "Approve")) {
+            val box = buttonNamed(name).boundingBox()
+            assertTrue(box.x >= 0 && box.x + box.width <= page.viewportSize().width && box.y + box.height <= page.viewportSize().height, "$name is on the screen at $box")
+        }
+
+        comment.locator(".cm-content").tap()
+        page.keyboard().type("Shorter, please.")
+        buttonNamed("Send back").tap()
+        eventually { assertContains(workspace(run).resolve("run-log.md").readText(), "Send back\n\nShorter, please.\n") }
+
+        page.navigate(url(waitingEntry(after = first)))
+        buttonNamed("Approve").tap()
+        eventually { assertContains(http.get("/runs/$run").body, """id="state">Completed<""") }
+        assertEquals(2, claude.launches("draft").size)
+    }
+
+    @Test
+    fun `on a phone Push is one column of its repos with Cancel and Push on the screen, and Push pushes on a tap`() = browse {
+        val repos = listOf(repo("api"), repo("web"))
+        settings(null, sourceMapLines(*repos.toTypedArray()))
+        http.import("push.bpmn")
+        val branch = "ants/retry-a-failed-card-payment-three-times-with-backoff"
+        val run = http.post("/processes/ship/runs", repos.map { "repos" to it.name } + ("branch" to branch)).path.removePrefix("/runs/")
+        val work = waitingEntry()
+        for (repo in repos) commitFile(workspace(run).resolve("repos/${repo.name}"), "retry.txt", "three times\n", "Retry a failed card payment three times, with exponential backoff between the tries")
+        http.post(work, mapOf("action" to "approve", "comment" to ""))
+        val push = waitingEntry(after = work)
+        onPhone()
+
+        page.navigate(url(push))
+        val cards = page.locator(".card[data-repo]")
+        assertThat(cards).hasCount(2)
+        assertNoSidewaysScroll()
+        page.screenshot("phone/push")
+        val (left, right) = contentEdges("main")
+        val boxes = cards.all().map { it.boundingBox() }
+        for (box in boxes) {
+            assertEquals(left, box.x, 0.5, "a repo's card starts at the page's content edge")
+            assertEquals(right, box.x + box.width, 0.5, "a repo's card ends at the page's content edge")
+        }
+        assertTrue(boxes[1].y >= boxes[0].y + boxes[0].height, "web's card sits under api's")
+        for (name in listOf("Cancel the Run", "Push 2 branches")) {
+            val box = buttonNamed(name).boundingBox()
+            assertTrue(box.x >= left - 0.5 && box.x + box.width <= right + 0.5, "$name is within the page at $box")
+        }
+
+        buttonNamed("Push 2 branches").tap()
+        assertThat(page.locator(".toast")).containsText("Pushing")
+        eventually(30) { for (repo in repos) assertContains(git(repo.remote, "branch", "--list"), branch) }
     }
 
     @Test
@@ -1134,6 +1846,120 @@ class BrowserTest : AntsTest() {
         assertTrue(l.x >= n.x && l.x + l.width <= n.x + n.width + 0.5, "the link (${l.x}, ${l.width}) stays inside the nav (${n.x}, ${n.width})")
         assertTrue(l.height > 30, "the long name wraps onto more lines, ${l.height}px tall")
         assertEquals(link.evaluate("e => e.clientWidth"), link.evaluate("e => e.scrollWidth"))
+    }
+
+    private fun disclosure(name: String) = page.locator("details", Page.LocatorOptions().setHas(page.getByText(name, Page.GetByTextOptions().setExact(true))))
+
+    private fun assertAtTheTopAcrossTheContent(disclosure: Locator, content: Locator) {
+        val (d, c) = disclosure.boundingBox() to content.boundingBox()
+        assertEquals(16.0, d.x, 0.5, "the disclosure starts at the content's edge")
+        assertEquals(358.0, d.width, 0.5, "the disclosure spans the content")
+        assertTrue(d.y + d.height <= c.y, "the disclosure (${d.y}, ${d.height}) sits above the content (${c.y})")
+    }
+
+    private fun assertOnePerRow(vararg fields: Locator) {
+        for ((above, below) in fields.map { it.boundingBox() }.zipWithNext()) {
+            assertTrue(below.y >= above.y + above.height, "a field at ${below.y} sits under the one ending at ${above.y + above.height}")
+            assertEquals(above.x, below.x, 0.5, "the fields start at one edge")
+        }
+    }
+
+    private fun assertTheComposerSpansThePhoneAndNeverCoversTheEnd(vararg ends: String) {
+        val composer = page.locator(".composer").boundingBox()
+        assertEquals(0.0, composer.x, 0.5)
+        assertEquals(390.0, composer.width, 0.5)
+        assertTheComposerNeverCoversTheEnd(*ends)
+    }
+
+    private fun assertScrollsAwayWithThePage(disclosure: Locator) {
+        val before = disclosure.boundingBox().y
+        page.evaluate("scrollBy(0, 200)")
+        eventually { assertEquals(before - 200, disclosure.boundingBox().y, 0.5, "the disclosure scrolls away with the page") }
+        page.evaluate("scrollTo(0, 0)")
+    }
+
+    @Test
+    fun `on a phone the Story tab fits the screen, its stories in a closed Stories disclosure on top that opens on a tap, jumps to a step and marks it`() = browse {
+        val entry = staleStoryReviewEntry(wideAndTall, head = "HEAD")
+        onPhone()
+        page.navigate(url(entry))
+        val stories = disclosure("Stories")
+        val greeting = stories.getByRole(AriaRole.LINK, Locator.GetByRoleOptions().setName("Greeting"))
+        assertThat(greeting).isHidden()
+        assertAtTheTopAcrossTheContent(stories, page.locator("#walkMain"))
+        assertNoSidewaysScroll()
+
+        stories.getByText("Stories", Locator.GetByTextOptions().setExact(true)).tap()
+        assertThat(greeting).isVisible()
+        assertTapSized()
+        greeting.tap()
+        val step = page.locator(".step:not([hidden])")
+        assertThat(step.locator(".claim")).hasText("It greets.")
+        val active = stories.locator("[aria-current=step]")
+        assertThat(active).hasText("Hello")
+        assertThat(active).isVisible()
+        stories.getByRole(AriaRole.LINK, Locator.GetByRoleOptions().setName("⚠ World")).tap()
+        assertThat(step.locator(".claim")).hasText("It names the world.")
+        assertThat(active).hasText("⚠ World")
+        assertThat(stories.locator(".srow.on")).containsText("Greeting")
+        assertNoSidewaysScroll()
+        page.screenshot("phone/review-story")
+
+        assertScrollsAwayWithThePage(stories)
+
+        page.navigate(url("$entry#s1-3"))
+        page.setViewportSize(390, 400)
+        val code = step.locator(".code")
+        assertThat(code).containsText("line 12")
+        assertScrollsBothWaysAboveTheComposerKeepingItsNumbers(code, code.locator(".ln:visible").nth(1))
+
+        page.setViewportSize(390, 844)
+        step.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Comment on this step")).tap()
+        val form = step.locator(".stepcomment")
+        assertOnePerRow(form.locator("[name=type]"), form.locator("[name=body]"), form.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Add")))
+        assertNoSidewaysScroll()
+        assertTheComposerSpansThePhoneAndNeverCoversTheEnd(".step:not([hidden]) .bandacts", "#comment + .ed")
+    }
+
+    @Test
+    fun `on a phone By repo fits the screen, its files in a closed Files disclosure on top that opens on a tap and jumps to a file, whose wide diff scrolls inside its box`() = browse {
+        val entry = byRepoReviewEntryOfApiCommitting("wide.txt", wideAndTall)
+        onPhone()
+        page.navigate(url(entry))
+        val files = disclosure("Files")
+        val wide = files.getByRole(AriaRole.LINK, Locator.GetByRoleOptions().setName("wide.txt"))
+        assertThat(wide).isHidden()
+        assertAtTheTopAcrossTheContent(files, page.locator("[data-repo]").first())
+        assertNoSidewaysScroll()
+        assertScrollsAwayWithThePage(files)
+
+        files.getByText("Files", Locator.GetByTextOptions().setExact(true)).tap()
+        assertThat(wide).isVisible()
+        assertTapSized()
+        assertNoSidewaysScroll()
+        wide.tap()
+        page.waitForURL { it.endsWith("#f-api-1") }
+        eventually {
+            val y = page.locator("#f-api-1").boundingBox().y
+            assertTrue((page.evaluate("scrollY") as Number).toDouble() > 0 && y >= -0.5 && y < 844, "the file is on screen at $y")
+        }
+        page.screenshot("phone/review-by-repo")
+
+        page.setViewportSize(390, 400)
+        val diff = page.locator("table.diff[data-file='repos/api/wide.txt']")
+        val numbers = diff.locator("tr[data-side=new][data-line='2'] td:nth-child(-n+2)")
+        assertScrollsBothWaysAboveTheComposerKeepingItsNumbers(diff, numbers)
+        for (number in numbers.all()) assertEquals(1.0, (number.evaluate("td => getComputedStyle(td).backgroundColor.match(/[\\d.]+/g).map(Number)[3] ?? 1") as Number).toDouble(), "the line number's background is opaque")
+        numbers.nth(1).tap()
+        val form = page.locator("#line-comment")
+        assertThat(form.locator("[name=file]")).hasValue("repos/api/wide.txt")
+        assertThat(form.locator("[name=from]")).hasValue("2")
+        assertThat(form.locator("[name=body]")).isFocused()
+        page.setViewportSize(390, 844)
+        assertOnePerRow(*listOf("repo", "file", "side", "from", "to", "type", "body").map { form.locator("[name=$it]") }.toTypedArray(),
+            form.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Add the comment")))
+        assertNoSidewaysScroll()
+        assertTheComposerSpansThePhoneAndNeverCoversTheEnd("#line-comment", "#comment + .ed")
     }
 
     @Test

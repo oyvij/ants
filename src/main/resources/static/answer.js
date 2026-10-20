@@ -4,6 +4,7 @@ const questions = [...form.querySelectorAll('section.question')];
 const review = document.getElementById('review');
 const tabs = document.getElementById('tabs');
 const [back, reset, next] = ['back', 'reset', 'next'].map(id => document.getElementById(id));
+const footer = form.querySelector('footer');
 const n = questions.length;
 const accepted = new Set();
 let i = 0;
@@ -35,6 +36,11 @@ function go(j) {
     render();
 }
 
+function reveal(tab) {
+    const shown = tabs.getBoundingClientRect(), box = tab.getBoundingClientRect();
+    tabs.scrollLeft += Math.min(0, box.left - shown.left) + Math.max(0, box.right - shown.right);
+}
+
 function render() {
     const focused = tabs.contains(document.activeElement);
     tabs.replaceChildren(...questions.map(row), button(n, span('t', 'Review and send')));
@@ -44,6 +50,7 @@ function render() {
         tab.tabIndex = j === i ? 0 : -1;
     });
     if (focused) tabs.children[i].focus();
+    reveal(tabs.children[i]);
     questions.forEach((q, j) => q.hidden = j !== i);
     review.hidden = i !== n;
     if (i === n) {
@@ -87,5 +94,7 @@ next.onclick = event => {
     }
 };
 form.addEventListener('input', render);
+new ResizeObserver(() => tabs.setAttribute('aria-orientation', getComputedStyle(tabs).flexDirection === 'row' ? 'horizontal' : 'vertical')).observe(tabs);
+new ResizeObserver(() => form.style.setProperty('--footer-height', footer.offsetHeight + 'px')).observe(footer, { box: 'border-box' });
 tabs.hidden = back.hidden = reset.hidden = false;
 render();

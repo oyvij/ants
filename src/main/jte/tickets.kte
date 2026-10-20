@@ -16,7 +16,7 @@
 @if(specs.isEmpty())
 <p>No Run has written a Spec yet.</p>
 @else
-<table>
+<table class="specs">
     <tr><th>Spec</th><th>Status</th><th>Tickets</th><th>Run</th></tr>
 @for(row in specs)
     <tr><td><a href="${row.spec.href}">${row.spec.title}</a></td><td>${row.spec.status ?: "open"}</td><td>${row.done}/${row.tickets.size} done</td><td><a href="/runs/${row.run}">${row.name}</a> · ${row.process}</td></tr>
