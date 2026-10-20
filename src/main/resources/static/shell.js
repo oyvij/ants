@@ -166,7 +166,7 @@ document.addEventListener('click', event => {
 for (const box of document.querySelectorAll('.dia')) {
     box.insertAdjacentHTML('beforeend', '<div class="zoom"><button type="button" data-z="in" title="Zoom in">＋</button>' +
         '<button type="button" data-z="out" title="Zoom out">－</button><button type="button" data-z="fit" title="Fit">Fit</button>' +
-        '<button type="button" data-z="full" title="Fullscreen">⛶</button></div>');
+        (document.fullscreenEnabled ? '<button type="button" data-z="full" title="Fullscreen">⛶</button>' : '') + '</div>');
     box.querySelector('.zoom').onclick = event => {
         const zoom = event.target.closest('[data-z]')?.dataset.z, canvas = box.canvas;
         if (!zoom || !canvas) return;

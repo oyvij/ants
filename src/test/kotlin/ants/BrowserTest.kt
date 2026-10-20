@@ -640,7 +640,7 @@ class BrowserTest : AntsTest() {
 
     private fun assertWithinScreen(part: Locator, what: String) {
         val box = part.boundingBox()
-        assertTrue(box.x >= 0 && box.x + box.width <= 390.5, "$what spans ${box.x} to ${box.x + box.width} on a 390px screen")
+        assertTrue(box.x >= 0 && box.x + box.width <= 390, "$what spans ${box.x} to ${box.x + box.width} on a 390px screen")
     }
 
     @Test
@@ -692,27 +692,39 @@ class BrowserTest : AntsTest() {
         for (path in listOf(run, "/processes/tapzoom")) {
             page.navigate(url(path))
             assertThat(shape("wait")).isVisible()
-            val box = page.locator(".dia").first()
-            assertWithinScreen(box, "the diagram box on $path")
-            assertWithinScreen(box.locator(".zoom"), "the zoom buttons on $path")
-            assertWithinScreen(box.locator(".legend"), "the legend on $path")
-            fun zoom() = (box.evaluate("e => e.canvas.zoom()") as Number).toDouble()
-            eventually { assertEquals(true, box.evaluate("e => e.canvas != null"), "the diagram on $path is drawn") }
-            box.locator(".zoom [title='Fit']").tap()
+            val diagram = page.locator(".dia").first()
+            assertWithinScreen(diagram, "the diagram on $path")
+            assertWithinScreen(diagram.locator(".zoom"), "the zoom buttons on $path")
+            assertWithinScreen(diagram.locator(".legend"), "the legend on $path")
+            fun zoom() = (diagram.evaluate("e => e.canvas.zoom()") as Number).toDouble()
+            eventually { assertEquals(true, diagram.evaluate("e => e.canvas != null"), "the diagram on $path is drawn") }
+            diagram.locator(".zoom [title='Fit']").tap()
             val fit = zoom()
 
-            box.locator(".zoom [title='Zoom in']").tap()
+            diagram.locator(".zoom [title='Zoom in']").tap()
             assertEquals(fit * 1.25, zoom(), 0.001, "＋ on $path")
-            box.locator(".zoom [title='Zoom out']").tap()
-            box.locator(".zoom [title='Zoom out']").tap()
+            diagram.locator(".zoom [title='Zoom out']").tap()
+            diagram.locator(".zoom [title='Zoom out']").tap()
             assertEquals(fit / 1.25, zoom(), 0.001, "－ on $path")
-            box.locator(".zoom [title='Fit']").tap()
+            diagram.locator(".zoom [title='Fit']").tap()
             assertEquals(fit, zoom(), 0.001, "Fit on $path")
 
-            box.locator(".zoom [title='Fullscreen']").tap()
-            eventually { assertEquals(true, box.evaluate("e => document.fullscreenElement === e"), "⛶ makes the diagram on $path fullscreen") }
-            box.locator(".zoom [title='Fullscreen']").tap()
+            diagram.locator(".zoom [title='Fullscreen']").tap()
+            eventually { assertEquals(true, diagram.evaluate("e => document.fullscreenElement === e"), "⛶ makes the diagram on $path fullscreen") }
+            diagram.locator(".zoom [title='Fullscreen']").tap()
             eventually { assertEquals(true, page.evaluate("document.fullscreenElement === null"), "⛶ again leaves fullscreen on $path") }
+        }
+    }
+
+    @Test
+    fun `on a phone that can't make a diagram fullscreen, as an iPhone can't, the diagram offers ＋, － and Fit without ⛶`() = browse {
+        val run = waitingRun("unfull")
+        onPhone()
+        page.addInitScript("Object.defineProperty(Document.prototype, 'fullscreenEnabled', { get: () => false })")
+        for (path in listOf(run, "/processes/unfull")) {
+            page.navigate(url(path))
+            assertThat(shape("wait")).isVisible()
+            assertThat(page.locator(".dia .zoom button")).hasText(arrayOf("＋", "－", "Fit"))
         }
     }
 
@@ -738,10 +750,10 @@ class BrowserTest : AntsTest() {
         page.locator("button[name=action][value=updates]").tap()
         val toast = page.locator(".toast")
         assertThat(toast).containsText("Checked")
-        val box = toast.boundingBox()
-        assertEquals(0.0, box.x, 0.5)
-        assertEquals(390.0, box.width, 0.5)
-        assertEquals(0.0, box.y, 0.5)
+        val spot = toast.boundingBox()
+        assertEquals(0.0, spot.x, 0.5)
+        assertEquals(390.0, spot.width, 0.5)
+        assertEquals(0.0, spot.y, 0.5)
         assertNoSidewaysScroll()
         page.screenshot("phone/toast")
 

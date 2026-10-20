@@ -611,7 +611,8 @@ details.example pre { background: var(--line2); border: 0; padding: 10px; border
     :is(#runlist, #tasks, #process-runs) tr { padding: 8px 0; border-bottom: 1px solid var(--line2); }
     :is(#runlist, #tasks, #process-runs) tr:last-child { border-bottom: 0; }
     :is(#runlist, #tasks, #process-runs) td { padding: 4px 16px; border: 0; overflow-wrap: anywhere; }
-    .ph .acts { flex-wrap: wrap; } .ph .sub { overflow-wrap: anywhere; }
+    main:has(> #diagram) .ph .acts { flex-wrap: wrap; }
+    main:has(> #diagram) :is(.ph .sub, .card) { overflow-wrap: anywhere; }
     .dia .legend { right: 12px; flex-wrap: wrap; }
     .drawer { width: 100%; border-left: 0; }
     :is(dialog.modal, dialog#new-process) { width: 100%; border-radius: 0; }
