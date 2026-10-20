@@ -214,8 +214,10 @@ input[type=checkbox], input[type=radio] { width: auto; accent-color: var(--acc);
 .todo { font-size: 13px; padding: 2px 0; } .todo.done { color: var(--muted); text-decoration: line-through; } .todo.now { font-weight: 600; color: var(--run); }
 .modelerWrap { display: grid; grid-template-columns: 1fr 340px; gap: 14px; }
 /* The Process Builder's column (#171), right of the properties panel: the dialog scrolls, the prompt box below it grows to half the column. */
-.modelerWrap:has(> .pb:not([hidden])) { grid-template-columns: minmax(0, 1fr) 340px 360px; }
-.pb { display: flex; flex-direction: column; gap: 8px; height: calc(100vh - 128px); min-width: 0; }
+/* Narrower than that, the canvas would be too small beside both panels: the column goes under them, the whole width. */
+@media (min-width: 1440px) { .modelerWrap:has(> .pb:not([hidden])) { grid-template-columns: minmax(0, 1fr) 340px 360px; } }
+.pb { display: flex; flex-direction: column; gap: 8px; height: calc(100vh - 128px); min-width: 0; grid-column: 1 / -1; }
+@media (min-width: 1440px) { .pb { grid-column: auto; } }
 .pb #pb-dialog { flex: 1; overflow: auto; margin: 0; }
 .pb #pb-dialog .text p { margin: 4px 0; }
 .pb form { display: flex; flex-direction: column; gap: 6px; }
@@ -653,7 +655,7 @@ details.example pre { background: var(--line2); border: 0; padding: 10px; border
     .cfile .mono, .walk .card summary, #comments form > span { min-width: 0; overflow-wrap: anywhere; }
     :is(.stepcomment, #line-comment > .row) { flex-direction: column; align-items: stretch; }
     #line-comment .lc { grid-template-columns: minmax(0, 1fr); }
-    .grid2, .grid3, .modelerWrap, .modelerWrap:has(> .pb:not([hidden])), form.agent .grid2, .grid2.skill-page { grid-template-columns: minmax(0, 1fr); }
+    .grid2, .grid3, .modelerWrap, form.agent .grid2, .grid2.skill-page { grid-template-columns: minmax(0, 1fr); }
     .pb { height: 80vh; } /* under the properties panel, the dialog still scrolling above its prompt box */
     main:has(> :is(.modelerWrap, .skill-page, form.agent, form.settings)) .ph .acts { flex-wrap: wrap; }
     main:has(> :is(.modelerWrap, .skill-page, form.agent, form.settings)) .ph :is(.sub, .acts > span) { overflow-wrap: anywhere; }
