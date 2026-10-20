@@ -32,6 +32,9 @@ class LookTest : AntsTest() {
     private val http by lazy { browser().also { it.login() } }
     private val claude = FakeClaude()
     private val look: Path = Path.of("build/reports/browser/look")
+    private val lookOnPhone: Path = Path.of("build/reports/browser/look-phone")
+
+    private fun phone() = NewContextOptions().setViewportSize(390, 844).setIsMobile(true).setHasTouch(true)
 
     /**
      * A page and its prototype: a hash route in web-ui.html, or another file of the prototype's, each shot after
@@ -42,8 +45,8 @@ class LookTest : AntsTest() {
     private fun result(json: String) = """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":$json}"""
 
     @Test
-    @Timeout(15, unit = TimeUnit.MINUTES) // about 80 screenshots, each given time to load
-    fun `every page beside the prototype, in light and in dark`() {
+    @Timeout(25, unit = TimeUnit.MINUTES)
+    fun `every page beside the prototype, and every app page on a phone, in light and in dark`() {
         Playwright.create().use { playwright ->
             val chromium = launchChromium(playwright)
             val prototype = prototype("prototype/web-ui", "web-ui.html")
@@ -69,6 +72,15 @@ class LookTest : AntsTest() {
                     for (pair in pairs) shoot(page, "http://127.0.0.1:$port${pair.app}", "${pair.name}/app-$theme") { pair.appScript?.let { page.evaluate(it) } }
                     shoot(page, "http://127.0.0.1:$port/runs/${app.getValue("running")}", "drawer/app-$theme") { openDrawer() }
                 }
+                chromium.newContext(phone().setColorScheme(scheme)).use { context ->
+                    val page = context.newPage()
+                    page.onConsoleMessage { if (it.type() == "error") println("LookTest on a phone: ${page.url()}: ${it.text()}") }
+                    page.onPageError { println("LookTest on a phone: ${page.url()}: $it") }
+                    shoot(page, "http://127.0.0.1:$port/login", "login/$theme", lookOnPhone)
+                    logIn(page)
+                    for (pair in pairs) shoot(page, "http://127.0.0.1:$port${pair.app}", "${pair.name}/$theme", lookOnPhone) { pair.appScript?.let { page.evaluate(it) } }
+                    shoot(page, "http://127.0.0.1:$port/runs/${app.getValue("running")}", "drawer/$theme", lookOnPhone) { openDrawer() }
+                }
             }
         }
     }
@@ -81,44 +93,53 @@ class LookTest : AntsTest() {
     private val exemptionsByOffender: Map<String, String> = emptyMap()
 
     @Test
-    @Timeout(10, unit = TimeUnit.MINUTES)
-    fun `every control on the pages LookTest shoots, in the drawer and in the modals' forms has a visible label, and every text field and Markdown editor an example placeholder`() {
+    @Timeout(20, unit = TimeUnit.MINUTES)
+    fun `every control on the pages LookTest shoots, in the drawer and in the modals' forms has a visible label, and every text field and Markdown editor an example placeholder, on a desktop and on a phone`() {
         Playwright.create().use { playwright ->
             val app = seed()
-            val page = launchChromium(playwright).newContext(NewContextOptions().setViewportSize(1440, 900)).newPage()
+            val chromium = launchChromium(playwright)
             val offenders = mutableListOf<String>()
-            fun visit(path: String, where: String, open: Page.() -> Unit = {}) {
-                page.navigate("about:blank")
-                page.navigate("http://127.0.0.1:$port$path")
-                page.waitForTimeout(1500.0)
-                page.open()
-                page.waitForTimeout(300.0)
-                offenders += unlabelled(page).map { "$where: $it" }
-            }
-            visit("/login", "login")
-            logIn(page)
-            for (shot in shots(app, prototype = "", answerPage = "")) visit(shot.app, shot.name) { shot.appScript?.let { evaluate(it) } }
-            for (run in listOf("running", "stuck")) visit("/runs/${app.getValue(run)}", "the drawer on the $run Run") { openDrawer() }
-            visit("/runs/${app.getValue("running")}", "the Run page's Rename") { click("button[popovertarget=rename]") }
-            visit("/processes", "New Process") { click(".ph button.primary") }
-            visit("/settings", "Settings with a row added to every list") { locator("[data-add]").all().forEach { it.click() } }
-            visit("/settings", "a Source map's editor") { locator("[data-edit]").first().click() }
-            visit(entry(app.getValue("review")) + "#s1-1", "a story step's comment") { locator(".step:not([hidden]) [data-comment]").click() }
-            visit(entry(app.getValue("review")) + "?tab=repo", "a line comment") { locator("table.diff tr[data-line] td").nth(1).click() }
-            for (path in listOf("/agents/new", "/skills/new")) visit(path, "the modeler's modal $path")
-            visit("/agents/new", "a new codex Agent") { selectOption("select[name=cli]", "codex") }
-            visit("/agents/new", "a new Agent on another model") { selectOption("select[name=model]", "other") }
-            visit("/agents/new", "a new Agent's tool limited") { locator("input[name='tool.Bash']").check(); locator(".trow:has(input[name='tool.Bash']) [data-limit]").click() }
-            page.navigate("http://127.0.0.1:$port/processes/build_and_ship/edit")
-            page.waitForTimeout(1500.0)
-            val shapes = page.evaluate("[...document.querySelectorAll('#canvas .djs-shape')].map(shape => shape.dataset.elementId)") as List<*>
-            for (shape in shapes) {
-                page.locator("#canvas .djs-element[data-element-id='$shape']").dispatchEvent("click")
-                page.waitForTimeout(300.0)
-                offenders += unlabelled(page).map { "the modeler on $shape: $it" }
+            for ((screen, options) in listOf("desktop" to NewContextOptions().setViewportSize(1440, 900), "phone" to phone())) chromium.newContext(options).use { context ->
+                offenders += unlabelledOn(context.newPage(), app).map { "on a $screen, $it" }
             }
             assertEquals(emptyList(), offenders.distinct().filter { it !in exemptionsByOffender })
         }
+    }
+
+    private fun unlabelledOn(page: Page, app: Map<String, String>): List<String> {
+        val offenders = mutableListOf<String>()
+        fun visit(path: String, where: String, open: Page.() -> Unit = {}) {
+            page.navigate("about:blank")
+            page.navigate("http://127.0.0.1:$port$path")
+            page.waitForTimeout(1500.0)
+            page.open()
+            page.waitForTimeout(300.0)
+            offenders += unlabelled(page).map { "$where: $it" }
+        }
+        visit("/login", "login")
+        logIn(page)
+        if (page.locator("label[for=menu]").isVisible) visit("/", "the ☰ menu") { click("label[for=menu]") }
+        for (shot in shots(app, prototype = "", answerPage = "")) visit(shot.app, shot.name) { shot.appScript?.let { evaluate(it) } }
+        for (run in listOf("running", "stuck")) visit("/runs/${app.getValue(run)}", "the drawer on the $run Run") { openDrawer() }
+        visit("/runs/${app.getValue("running")}", "the Run page's Rename") { click("button[popovertarget=rename]") }
+        visit("/processes", "New Process") { click(".ph button.primary") }
+        visit("/settings", "Settings with a row added to every list") { locator("[data-add]").all().forEach { it.click() } }
+        visit("/settings", "a Source map's editor") { locator("[data-edit]").first().click() }
+        visit(entry(app.getValue("review")) + "#s1-1", "a story step's comment") { locator(".step:not([hidden]) [data-comment]").click() }
+        visit(entry(app.getValue("review")) + "?tab=repo", "a line comment") { locator("table.diff tr[data-line] td").nth(1).click() }
+        for (path in listOf("/agents/new", "/skills/new")) visit(path, "the modeler's modal $path")
+        visit("/agents/new", "a new codex Agent") { selectOption("select[name=cli]", "codex") }
+        visit("/agents/new", "a new Agent on another model") { selectOption("select[name=model]", "other") }
+        visit("/agents/new", "a new Agent's tool limited") { locator("input[name='tool.Bash']").check(); locator(".trow:has(input[name='tool.Bash']) [data-limit]").click() }
+        page.navigate("http://127.0.0.1:$port/processes/build_and_ship/edit")
+        page.waitForTimeout(1500.0)
+        val shapes = page.evaluate("[...document.querySelectorAll('#canvas .djs-shape')].map(shape => shape.dataset.elementId)") as List<*>
+        for (shape in shapes) {
+            page.locator("#canvas .djs-element[data-element-id='$shape']").dispatchEvent("click")
+            page.waitForTimeout(300.0)
+            offenders += unlabelled(page).map { "the modeler on $shape: $it" }
+        }
+        return offenders
     }
 
     private fun unlabelled(page: Page): List<String> = page.frames().flatMap { frame ->
@@ -170,7 +191,7 @@ class LookTest : AntsTest() {
     )
 
     /** Opens [url] in a fresh document, lets its diagrams and editors load, does [then], and saves it as [name]. */
-    private fun shoot(page: Page, url: String, name: String, then: (Page.() -> Unit)? = null) {
+    private fun shoot(page: Page, url: String, name: String, folder: Path = look, then: (Page.() -> Unit)? = null) {
         page.navigate("about:blank")
         page.navigate(url)
         page.waitForTimeout(2500.0) // the pages' streams never let the network idle; bpmn-js and CodeMirror load and lay out
@@ -179,7 +200,7 @@ class LookTest : AntsTest() {
             runCatching { page.it() }.onFailure { println("LookTest: $name: ${it.message}") }
             page.waitForTimeout(500.0) // the drawer slides in
         }
-        page.screenshot(Page.ScreenshotOptions().setPath(look.resolve("$name.png")).setFullPage(true))
+        page.screenshot(Page.ScreenshotOptions().setPath(folder.resolve("$name.png")).setFullPage(true))
     }
 
     private fun logIn(page: Page) {
