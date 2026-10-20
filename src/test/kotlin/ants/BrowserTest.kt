@@ -372,9 +372,10 @@ class BrowserTest : AntsTest() {
         http.import("agent-task.bpmn")
         page.navigate(url("/processes/agent-task/edit"))
         val tool = builder()
-        // Above and below the Process, in view: the canvas doesn't scroll to a shape to click it.
-        for ((i, kind, id) in listOf(Triple(0, "user", "User"), Triple(1, "call", "Call"), Triple(2, "agent", "Loop")))
-            for ((who, y) in listOf("hand" to -130, "tool" to 230)) tool("add_element", mapOf("kind" to kind, "id" to who + id, "x" to -20 + 150 * i, "y" to y))
+        // Above and below the Process, in view, clear of the palette and the minimap button: the canvas doesn't scroll to a
+        // shape to click it. The multi-instance leftmost, so its context pad (the wrench) is on the canvas too.
+        for ((i, kind, id) in listOf(Triple(0, "agent", "Loop"), Triple(1, "user", "User"), Triple(2, "call", "Call")))
+            for ((who, y) in listOf("hand" to -60, "tool" to 230)) tool("add_element", mapOf("kind" to kind, "id" to who + id, "x" to 130 + 150 * i, "y" to y))
 
         shape("handUser").click()
         label("Title").fill("Ship it?")
