@@ -3,6 +3,7 @@ package ants
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
+import org.springframework.web.server.ResponseStatusException
 import tools.jackson.databind.json.JsonMapper
 import java.time.Duration
 import java.util.UUID
@@ -19,13 +20,14 @@ import kotlin.io.path.readText
  * of its own on `/mcp`, which opens only the modeler tools. A tool about the diagram is relayed to the page that holds
  * the token, as an event `builder` on its SSE (`/live?builder=<token>`); the page answers from bpmn-js with a POST to
  * `/process-builder/answer`. The catalogue tools are answered by Ants, from what the modeler's own endpoints serve, and
- * the Checks by the Checks Save and deploy runs, on the page's diagram. The token dies once the page's SSE has been
+ * the Checks by the Checks Save and deploy runs, on the page's diagram. Creating, changing and copying Agents, Skills
+ * and Templates go through their pages' own save and Copy, and answer the item's page. The token dies once the page's SSE has been
  * gone for a minute.
  */
 @RestController
 class ProcessBuilderTools(
     private val mcp: Mcp, private val agents: Agents, private val templates: Templates, private val processes: Processes, private val catalogue: Catalogue,
-    private val json: JsonMapper,
+    private val skills: Skills, private val json: JsonMapper,
 ) {
     private val pages = ConcurrentHashMap<String, Page>()
 
@@ -69,12 +71,27 @@ class ProcessBuilderTools(
                 "templates" -> json.writeValueAsString(templates.json())
                 "references" -> json.writeValueAsString(processes.inputs(xml(), argument("element")))
                 "checks" -> json.writeValueAsString(processes.checks(xml()))
+                "create_agent" -> saved(agents.write(argument("file"), null))
+                "change_agent" -> saved(agents.write(argument("file"), argument("name")))
+                "create_skill" -> saved(skills.write(argument("skill"), arguments["schema"]?.toString().orEmpty(), null))
+                "change_skill" -> saved(skills.write(argument("skill"), arguments["schema"]?.toString().orEmpty(), argument("name")))
+                "copy" -> argument("name").let { item ->
+                    saved(when (argument("kind")) {
+                        "agent" -> agents.copy(item)
+                        "skill" -> skills.copy(item)
+                        "template" -> templates.copy(item)
+                        else -> throw Refused("copy copies an agent, a skill or a template.")
+                    }.removePrefix("redirect:"))
+                }
                 else -> throw Refused("No tool $name here.")
             }
             text to false
         } catch (e: Exception) {
-            (e.message ?: e.toString()) to true
+            ((e as? ResponseStatusException)?.reason ?: e.message ?: e.toString()) to true
         }
+
+        /** What a create, change or copy answers: the item's name and its page, which the panel links to. */
+        fun saved(page: String) = json.writeValueAsString(mapOf("name" to page.substringAfterLast('/'), "page" to page))
 
         /** The page's diagram as BPMN XML, as Save and deploy would send it. */
         fun xml(): String = json.readValue(ask("xml", emptyMap<String, Any>()), String::class.java)
@@ -206,6 +223,21 @@ class ProcessBuilderTools(
             Mcp.tool("references", "The `\${…}` references an element of the open diagram can read: start-form fields, Ants' Run variables and the Results of the Tasks before it.",
                 mapOf("element" to "The element's id.")),
             Mcp.tool("checks", "The Checks on the open diagram, as Save and deploy runs them: each problem's message, the element it is on, and whether it is only a warning."),
+            Mcp.tool("create_agent", "Creates one of the user's own Agents from its agent file, Claude Code's format: frontmatter (name, description, " +
+                "cli claude or codex, skills, tools as permission rules such as `Read, Bash(git log *)`, model; a codex Agent has a sandbox instead of tools) " +
+                "and its standing instructions below. Saved at once, so a Task can pick it; answers its name and page, or what is wrong with it.",
+                mapOf("file" to "The agent file.")),
+            Mcp.tool("create_skill", "Creates one of the user's own Skills from its SKILL.md (frontmatter name and description, " +
+                "metadata.ants-inputs for its inputs; its instructions below) and its Result schema. Saved at once; answers its name and page, or what is wrong with it.",
+                mapOf("skill" to "The SKILL.md.", "schema" to "result.schema.json, a JSON Schema of the Result it promises; none when left out."), optional = setOf("schema")),
+            Mcp.tool("change_agent", "Replaces one of the user's own Agents with a new agent file; a new name in it renames the Agent. Shipped and outside Agents are " +
+                "read-only: copy one first.", mapOf("name" to "The Agent's name now.", "file" to "The whole new agent file.")),
+            Mcp.tool("change_skill", "Replaces one of the user's own Skills' SKILL.md and Result schema; a new name in it renames the Skill. Shipped and outside Skills are " +
+                "read-only: copy one first.",
+                mapOf("name" to "The Skill's name now.", "skill" to "The whole new SKILL.md.", "schema" to "The whole new result.schema.json; none when left out."),
+                optional = setOf("schema")),
+            Mcp.tool("copy", "Copies an Agent, Skill or Template, such as a shipped one, into the user's own as `<name>-copy`, which can then be changed. Answers the copy's name and page.",
+                mapOf("kind" to "agent, skill or template.", "name" to "The name of the one to copy.")),
         ) + WRITE
     }
 }

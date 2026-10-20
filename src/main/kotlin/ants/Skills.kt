@@ -2,6 +2,7 @@ package ants
 
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Controller
+import org.springframework.ui.ExtendedModelMap
 import org.springframework.ui.Model
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -121,6 +122,16 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy) {
     @PostMapping("/skills/schema")
     @ResponseBody
     fun check(@RequestParam schema: String) = ResultContract.schemaErrors(schema)
+
+    /**
+     * The Process Builder's save (ADR 0019): a `SKILL.md` and its result schema through the page's own save, as a new
+     * Skill or over the user's own Skill [name], renaming it without asking. Gives the saved Skill's page, or throws with the page's error.
+     */
+    fun write(skill: String, schema: String, name: String?): String {
+        val model = ExtendedModelMap()
+        val view = save(SkillForm(name, skill, schema), model, confirmed = true)
+        return view.removePrefix("redirect:").takeIf { it != view } ?: throw Refused(model["message"]?.toString())
+    }
 
     /** Saves the Skill and opens it, calling [saved] with its name, else shows the form again with why not. */
     private fun save(posted: SkillForm, model: Model, confirmed: Boolean = false, saved: (String) -> Unit = {}): String {

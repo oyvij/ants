@@ -56,6 +56,7 @@ class ProcessBuilderToolsTest : AntsTest() {
         val task = protectedCommands.open(Files.createTempDirectory("workspace")).first
         try {
             assertEquals(listOf("diagram", "agents", "skills", "skill", "processes", "process", "built_in_tasks", "templates", "references", "checks",
+                "create_agent", "create_skill", "change_agent", "change_skill", "copy",
                 "add_element", "remove", "rename", "move", "connect", "set_condition", "set_default", "set_agent_task", "set_start_form", "drop_template"), tools(page))
             assertEquals(listOf("run"), tools(task))
             assertTrue(call(task, "diagram").second)
@@ -142,6 +143,71 @@ class ProcessBuilderToolsTest : AntsTest() {
         } finally {
             builder.timeLimit = ProcessBuilderTools.TIME_LIMIT
         }
+    }
+
+    @Test
+    fun `an Agent and a Skill created through the Process Builder are in the catalogue at once, and a Task can pick them`() {
+        agentTask(null, emptyMap())
+        home.resolve("agents/writer.md").toFile().delete()
+        val token = open()
+        page(token) { tool, _ -> agentTaskXml.takeIf { tool == "xml" } }
+
+        val skill = call(token, "create_skill", mapOf("skill" to "---\nname: draft\ndescription: Drafts a text.\n---\nDraft it.\n",
+            "schema" to """{"type":"object","properties":{"notes":{"type":"string"}}}"""))
+        assertEquals(false, skill.second, skill.first)
+        assertEquals(mapOf("name" to "draft", "page" to "/skills/draft"), json.readValue(skill.first, Map::class.java))
+        val agent = call(token, "create_agent", mapOf("file" to "---\nname: writer\ndescription: Writes.\nskills: draft\ntools: Read, Bash(git log *)\n---\nWrite plainly.\n"))
+        assertEquals(false, agent.second, agent.first)
+        assertEquals(mapOf("name" to "writer", "page" to "/agents/writer"), json.readValue(agent.first, Map::class.java))
+
+        val catalogue = json.readTree(browser.get("/catalogue.json").body)
+        assertTrue(catalogue["agents"].any { it["name"].asString() == "writer" && it["skills"].toString() == """["draft"]""" })
+        assertTrue(catalogue["skills"].any { it["name"].asString() == "draft" && it["output"]["properties"].has("notes") })
+        assertEquals(listOf("Bash(git log *)", "Read"), Agent(home.resolve("agents/writer.md")).tools!!.sorted())
+        val checks = call(token, "checks").first
+        assertTrue("writer" !in checks && "draft" !in checks, checks)
+    }
+
+    @Test
+    fun `an invalid Agent or Skill gets the page's errors back and writes nothing`() {
+        val token = open()
+        fun refused(tool: String, arguments: Map<String, Any?>) = call(token, tool, arguments).also { assertTrue(it.second, it.first) }.first
+        assertTrue(refused("create_agent", mapOf("file" to "---\nname: [broken\n---\n")).startsWith("The agent file has broken YAML"))
+        assertEquals("Ants runs only claude or codex, not gemini.", refused("create_agent", mapOf("file" to "---\nname: coder\ncli: gemini\n---\n")))
+        assertEquals("codex takes the sandbox read-only, workspace-write or danger-full-access, not yolo.",
+            refused("create_agent", mapOf("file" to "---\nname: coder\ncli: codex\nsandbox: yolo\n---\n")))
+        assertEquals("An Agent's name is up to 64 lowercase letters, digits and hyphens.", refused("create_agent", mapOf("file" to "Code.\n")))
+        assertEquals("An Agent named shipped-writer already exists.", refused("create_agent", mapOf("file" to "---\nname: shipped-writer\n---\n")))
+        assertEquals("A Skill needs a name and a description in its frontmatter.", refused("create_skill", mapOf("skill" to "---\nname: draft\n---\n")))
+        assertTrue(refused("create_skill", mapOf("skill" to "---\nname: draft\ndescription: D.\n---\n", "schema" to """{"type":"nonsense"}"""))
+            .startsWith("result.schema.json is invalid: "))
+        assertEquals(emptyList(), home.resolve("agents").toFile().list()!!.toList())
+        assertEquals(emptyList(), home.resolve("skills").toFile().list()!!.toList())
+    }
+
+    @Test
+    fun `a shipped Agent or Skill can't be changed, and copying one, or a Template, makes the user's own, which can`() {
+        val token = open()
+        val refusedAgent = call(token, "change_agent", mapOf("name" to "shipped-writer", "file" to "---\nname: shipped-writer\n---\nChanged.\n"))
+        assertEquals("shipped-writer is read-only. Copy it to make one you can edit." to true, refusedAgent)
+        val refusedSkill = call(token, "change_skill", mapOf("name" to "shipped-draft", "skill" to "---\nname: shipped-draft\ndescription: D.\n---\n"))
+        assertEquals("The Skill shipped-draft is read-only; Copy it to make your own." to true, refusedSkill)
+        assertTrue("Changed." !in home.resolve("shipped/agents/shipped-writer.md").toFile().readText())
+
+        fun copy(kind: String, name: String) = call(token, "copy", mapOf("kind" to kind, "name" to name)).also { assertEquals(false, it.second, it.first) }
+            .first.let { json.readValue(it, Map::class.java) }
+        assertEquals(mapOf("name" to "shipped-writer-copy", "page" to "/agents/shipped-writer-copy"), copy("agent", "shipped-writer"))
+        assertEquals(mapOf("name" to "shipped-draft-copy", "page" to "/skills/shipped-draft-copy"), copy("skill", "shipped-draft"))
+        assertEquals(mapOf("name" to "review-loop-copy", "page" to "/templates/review-loop-copy"), copy("template", "review-loop"))
+        assertTrue(home.resolve("templates/review-loop-copy.bpmn").toFile().exists())
+        assertTrue(call(token, "copy", mapOf("kind" to "process", "name" to "x")).second)
+
+        val renamed = call(token, "change_agent", mapOf("name" to "shipped-writer-copy", "file" to "---\nname: my-writer\n---\nChanged.\n"))
+        assertEquals(mapOf("name" to "my-writer", "page" to "/agents/my-writer"), json.readValue(renamed.first, Map::class.java))
+        assertEquals("Changed.", Agent(home.resolve("agents/my-writer.md")).instructions)
+        val skill = call(token, "change_skill", mapOf("name" to "shipped-draft-copy", "skill" to "---\nname: shipped-draft-copy\ndescription: Mine.\n---\nMine.\n"))
+        assertEquals(mapOf("name" to "shipped-draft-copy", "page" to "/skills/shipped-draft-copy"), json.readValue(skill.first, Map::class.java))
+        assertTrue(home.resolve("skills/shipped-draft-copy/SKILL.md").toFile().readText().endsWith("Mine.\n"))
     }
 }
 

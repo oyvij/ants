@@ -4,6 +4,7 @@ import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Component
 import org.springframework.stereotype.Controller
+import org.springframework.ui.ExtendedModelMap
 import org.springframework.ui.Model
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -133,6 +134,22 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
         val copy = copyName(agent.name) { it in taken || folder.resolve("$it.md").exists() }
         folder.resolve("$copy.md").writeAtomically(AgentForm.of(agent, copy).text())
         return "redirect:/agents/$copy"
+    }
+
+    /**
+     * The Process Builder's save (ADR 0019): [text], an agent file, through the page's own save, as a new Agent or over
+     * the user's own Agent [name], renaming it without asking. Gives the saved Agent's page, or throws with the page's error.
+     */
+    fun write(text: String, name: String?): String {
+        val agent = name?.let { editable(find(it)) }
+        val parsed = try {
+            Agent(folder.resolve("new.md"), text)
+        } catch (e: YAMLException) {
+            throw Refused("The agent file has broken YAML: ${e.message}")
+        }
+        val model = ExtendedModelMap()
+        val view = save(model, AgentForm.of(parsed, name = parsed.meta["name"]?.toString().orEmpty()), agent, mapOf("confirm" to ""))
+        return view.removePrefix("redirect:").takeIf { it != view } ?: throw Refused(model["error"]?.toString())
     }
 
     private fun save(model: Model, form: AgentForm, agent: Agent?, params: Map<String, String> = emptyMap()): String {
