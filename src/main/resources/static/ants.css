@@ -590,7 +590,15 @@ details.example pre { background: var(--line2); border: 0; padding: 10px; border
     #menu:checked ~ nav.side { visibility: visible; transform: none; box-shadow: 0 0 0 100vmax var(--modalBg); }
     main, main.full { padding-inline: 16px; }
     .composer > :is(div, form), main.full .composer > :is(div, form) { padding-inline: 16px; }
-    #round > footer { --inset: 16px; }
+    .answering { flex-direction: column; align-items: stretch; gap: 16px; }
+    .answering, .answering:has(> #tabs:not([hidden])) { --lead: 0px; }
+    nav#tabs[role=tablist] { position: static; flex: none; flex-direction: row; gap: 6px; max-height: none; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; padding-bottom: 4px; }
+    nav#tabs[role=tablist] > button { flex: none; display: flex; max-width: 240px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 999px; white-space: nowrap; }
+    nav#tabs[role=tablist] > button:last-child { margin-top: 0; }
+    nav#tabs[role=tablist] > [aria-selected=true] { border-color: var(--ask); }
+    nav#tabs[role=tablist] .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    #round { flex: none; padding-bottom: var(--footer-height, 72px); }
+    #round > footer { --inset: 16px; flex-wrap: wrap; }
     .home, .home .grid3 { grid-template-columns: minmax(0, 1fr); }
     #working-now { grid-row: auto; }
     .notes, .notes tbody, .notes tr, .notes td { display: block; }

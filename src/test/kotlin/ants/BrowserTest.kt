@@ -624,6 +624,85 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `on a phone the questions are a strip of chips above the question, which scrolls sideways within itself and switches the question on a tap`() = browse {
+        val titles = (1..6).map { "q$it" to "Question $it asks which option the Run should settle on" }
+        val (_, entry) = answering(FakeClaude(), *titles.toTypedArray())
+        onPhone()
+        page.navigate(url(entry))
+        val strip = page.locator("#tabs")
+        val tabs = page.locator("#tabs [role=tab]")
+        assertThat(tabs).hasCount(7)
+        assertThat(strip).hasAttribute("aria-orientation", "horizontal")
+        assertNoSidewaysScroll()
+        page.screenshot("phone/answer")
+
+        val box = strip.boundingBox()
+        assertTrue(box.x >= 0 && box.x + box.width <= 390, "the strip spans ${box.x} to ${box.x + box.width}")
+        val question = page.locator("section.question:visible")
+        assertTrue(box.y + box.height <= question.boundingBox().y, "the strip sits above the question")
+        assertTrue(tabs.nth(1).boundingBox().y < tabs.nth(0).boundingBox().y + tabs.nth(0).boundingBox().height, "the chips run side by side")
+        assertEquals(true, strip.evaluate("e => e.scrollWidth > e.clientWidth"), "the chips overflow the strip")
+
+        tabs.nth(4).tap()
+        assertThat(tabs.nth(4)).hasAttribute("aria-selected", "true")
+        assertThat(page.locator("#answer-q5 + .ed .cm-content")).isVisible()
+        assertThat(page.locator("#answer-q1 + .ed .cm-content")).isHidden()
+        assertTrue((strip.evaluate("e => e.scrollLeft") as Number).toDouble() > 0, "the strip scrolled sideways to the chip")
+        assertEquals(0, (page.evaluate("scrollX") as Number).toInt(), "the page didn't scroll sideways")
+        assertNoSidewaysScroll()
+
+        page.locator("#next").tap()
+        assertThat(tabs.nth(4)).containsText("✓")
+        assertThat(tabs.nth(5)).hasAttribute("aria-selected", "true")
+        eventually {
+            val chip = tabs.nth(5).boundingBox()
+            val shown = strip.boundingBox()
+            assertTrue(chip.x >= shown.x - 0.5 && chip.x + chip.width <= shown.x + shown.width + 0.5, "Next brings the chip it selects into the strip's view")
+        }
+        page.locator("#answer-q6 + .ed .cm-content").fill("Only admins.")
+        assertThat(tabs.nth(5)).containsText("✓ ✎")
+
+        page.setViewportSize(1024, 844)
+        assertThat(strip).hasAttribute("aria-orientation", "vertical")
+        page.setViewportSize(390, 844)
+        assertThat(strip).hasAttribute("aria-orientation", "horizontal")
+    }
+
+    @Test
+    fun `on a phone the Answer footer spans the screen and never covers the end of the question, even wrapped taller`() = browse {
+        val (_, entry) = answering(FakeClaude(), "who" to "Title who", "scope" to "Title scope")
+        onPhone()
+        page.navigate(url(entry))
+        page.locator("#next").tap()
+        val footer = page.locator("#round > footer")
+        assertThat(page.locator("#back")).isVisible()
+        val box = footer.boundingBox()
+        assertEquals(0.0, box.x, 0.5)
+        assertEquals(390.0, box.width, 0.5)
+        assertEquals(844.0, box.y + box.height, 0.5)
+        val (left, right) = contentEdges("#round > footer")
+        assertEquals(16.0, left, 0.5, "the footer's buttons start 16px in")
+        assertEquals(374.0, right, 0.5, "the footer's buttons end 16px in")
+        for (button in listOf("#back", "#reset", "#next")) {
+            val b = page.locator(button).boundingBox()
+            assertTrue(b.x >= 0 && b.x + b.width <= 390, "$button spans ${b.x} to ${b.x + b.width}")
+        }
+        assertNoSidewaysScroll()
+        page.screenshot("phone/answer-footer")
+
+        fun clear(bar: String) = eventually {
+            page.evaluate("scrollTo(0, document.documentElement.scrollHeight)")
+            val top = footer.boundingBox().y
+            val end = page.locator("section.question:visible .ed").boundingBox()
+            assertTrue(end.y + end.height <= top, "the answer ends at ${end.y + end.height}px, under the $bar footer at ${top}px")
+        }
+        clear("wrapped")
+        footer.evaluate("bar => bar.insertAdjacentHTML('beforeend', '<p style=\"flex-basis: 100%; height: 240px; margin: 0\"></p>')")
+        assertTrue(footer.boundingBox().height > 240)
+        clear("grown")
+    }
+
+    @Test
     fun `a Round of ten long question titles lists every title in full inside the viewport`() = browse {
         val titles = (1..10).map { "q$it" to "Question $it asks which of the many long and winding options the Run should settle on before it goes on" }
         val (_, entry) = answering(FakeClaude(), *titles.toTypedArray())
