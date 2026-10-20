@@ -100,8 +100,9 @@ addEventListener('DOMContentLoaded', liven);
 
 const title = document.title.replace(/^\(\d+\) /, '');
 stream.on('count', data => {
-    const count = data === '0' ? '' : data, waiting = document.getElementById('waiting');
-    if (waiting.textContent !== count) {
+    const count = data === '0' ? '' : data;
+    for (const waiting of [document.getElementById('waiting'), document.getElementById('topbar-waiting')]) {
+        if (waiting.textContent === count) continue;
         waiting.textContent = count;
         flash(waiting);
     }
@@ -135,6 +136,19 @@ for (const link of document.querySelectorAll('nav.side > a')) {
     if (link.pathname === '/' ? location.pathname === '/' : location.pathname.startsWith(link.pathname)) link.classList.add('on');
 }
 
+const menu = document.getElementById('menu');
+document.addEventListener('click', event => {
+    if (!menu.checked || event.target.closest('label[for=menu], #menu')) return;
+    if (event.target.closest('nav.side')) {
+        if (event.target.closest('a')) menu.checked = false;
+        return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    menu.checked = false;
+}, true);
+addEventListener('keydown', event => { if (event.key === 'Escape') menu.checked = false; });
+
 // A clickable row (tr.click) opens its data-href, unless the click was on a link, button or form of its own.
 document.addEventListener('click', event => {
     const row = event.target.closest('tr.click[data-href]');
@@ -152,7 +166,7 @@ document.addEventListener('click', event => {
 for (const box of document.querySelectorAll('.dia')) {
     box.insertAdjacentHTML('beforeend', '<div class="zoom"><button type="button" data-z="in" title="Zoom in">＋</button>' +
         '<button type="button" data-z="out" title="Zoom out">－</button><button type="button" data-z="fit" title="Fit">Fit</button>' +
-        '<button type="button" data-z="full" title="Fullscreen">⛶</button></div>');
+        (document.fullscreenEnabled ? '<button type="button" data-z="full" title="Fullscreen">⛶</button>' : '') + '</div>');
     box.querySelector('.zoom').onclick = event => {
         const zoom = event.target.closest('[data-z]')?.dataset.z, canvas = box.canvas;
         if (!zoom || !canvas) return;

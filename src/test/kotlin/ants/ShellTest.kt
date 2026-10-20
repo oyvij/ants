@@ -50,6 +50,24 @@ class ShellTest : AntsTest() {
     }
 
     @Test
+    fun `every page, the login page too, renders at the device's width`() {
+        val viewport = """<meta name="viewport" content="width=device-width, initial-scale=1">"""
+        assertContains(browser().get("/login").body, viewport)
+        for (path in listOf("/", "/notifications", "/runs", "/processes", "/tickets", "/agents", "/skills", "/templates", "/settings")) {
+            assertContains(browser.get(path).body, viewport, message = path)
+        }
+    }
+
+    @Test
+    fun `the top bar shows Ants, the Notification list count and the ☰ that opens the sidebar`() {
+        waitingRun()
+        val bar = Regex("""<header class="topbar">.*?</header>""", RegexOption.DOT_MATCHES_ALL).find(browser.get("/runs").body)!!.value
+        assertContains(bar, """<b>🐜</b>Ants""")
+        assertContains(bar, """<span id="topbar-waiting" class="n">1</span>""")
+        assertContains(bar, """<label for="menu" title="Menu">☰</label>""")
+    }
+
+    @Test
     fun `the sidebar's Runs line follows the live Runs on the page's stream`() {
         waitingRun()
         val runs = browser.events("", "runs")

@@ -1,5 +1,7 @@
 # A Schedule stays a timer start in the deployed BPMN; Ants stops Operaton from creating its start-timer job
 
+Superseded in part by ADR 0020: a drawn timer is no longer a Schedule; the parse listener stays as a guard.
+
 The spec says that on deploy Ants strips the timer definition, so that Operaton sees a none start event and Ants'
 own loop runs the Schedule. But the deployed XML is the only copy of the Process: the modeler reopens it and Ants'
 loop reads the Schedule's cron from it. If Ants stripped the timer, the Schedule would be lost. So Ants deploys the

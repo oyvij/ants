@@ -38,7 +38,7 @@
 @if(refused != null)<p role="alert">${refused}</p>@endif
 @if(stories != null)!{val uncovered = stories.remainder.values.sum()}
 <div class="storyview">
-    <nav class="spine"><div class="stitle">${stories.title}</div>
+    <details class="spine fold"><summary>Stories</summary><nav><div class="stitle">${stories.title}</div>
         @for(i in stories.stories.indices)!{val story = stories.stories[i]}
         <a class="srow" href="#s${i + 1}-1"><span>${story.name}</span><span class="cnt">${story.steps.size} step${if (story.steps.size == 1) "" else "s"}@if(story.stale > 0) · <span class="stalecnt">${story.stale} stale</span>@endif</span></a>
         <ol class="ssteps" data-story="${i + 1}">@for(j in story.steps.indices)<li><a href="#s${i + 1}-${j + 1}">@if(story.steps[j].stale != null)⚠ @endif${story.steps[j].name}</a></li>@endfor</ol>
@@ -46,7 +46,7 @@
         <div class="srem"><div><b>Remainder</b> · ${uncovered} change${if (uncovered == 1) "" else "s"} no step covers</div>
             @for(file in stories.remainder.entries)<div class="rf"><span class="mono"><b>${file.key.first}</b> · ${file.key.second}</span><span class="muted">${file.value} hunk${if (file.value == 1) "" else "s"}</span></div>
             @endfor</div>
-    </nav>
+    </nav></details>
     <div id="walkMain">
         <div class="card" id="stories"><div class="muted small">Story set</div><h3>${stories.title}</h3>
             @for(i in stories.stories.indices)!{val story = stories.stories[i]}
@@ -99,8 +99,8 @@
 </div>
 @elseif(tab != "story")
 <div class="walk">
-    <nav>@for(changed in changes)<b class="small mono">${changed.repo.repo}</b>@for(k in changed.files.indices)<a class="mono" href="#f-${changed.repo.repo}-${k + 1}">${changed.files[k].path.substringAfterLast('/')}</a>@endfor
-    @endfor</nav>
+    <details class="files fold"><summary>Files</summary><nav>@for(changed in changes)<b class="small mono">${changed.repo.repo}</b>@for(k in changed.files.indices)<a class="mono" href="#f-${changed.repo.repo}-${k + 1}">${changed.files[k].path.substringAfterLast('/')}</a>@endfor
+    @endfor</nav></details>
     <div>
     @for(changed in changes)!{val repo = changed.repo}
     <div class="card" data-repo="${repo.repo}">
