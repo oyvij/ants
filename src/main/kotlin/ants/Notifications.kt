@@ -430,6 +430,9 @@ enum class UserTaskKind(val value: String?, val tag: String, val title: String, 
     APPROVE(null, "[approve]", "Approve", listOf("approved", "comment")),
     ;
 
+    /** The kind as the Process Builder's tools name it: its [value], approve for an Approve. */
+    val key get() = value ?: "approve"
+
     companion object {
         fun of(value: String?) = entries.firstOrNull { it.value == value } ?: APPROVE
     }

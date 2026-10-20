@@ -4,7 +4,6 @@ import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Component
 import org.springframework.stereotype.Controller
-import org.springframework.ui.ExtendedModelMap
 import org.springframework.ui.Model
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -147,9 +146,7 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
         } catch (e: YAMLException) {
             throw Refused("The agent file has broken YAML: ${e.message}")
         }
-        val model = ExtendedModelMap()
-        val view = save(model, AgentForm.of(parsed, name = parsed.meta["name"]?.toString().orEmpty()), agent, mapOf("confirm" to ""))
-        return view.removePrefix("redirect:").takeIf { it != view } ?: throw Refused(model["error"]?.toString())
+        return redirected("error") { save(it, AgentForm.of(parsed, name = parsed.meta["name"]?.toString().orEmpty()), agent, mapOf("confirm" to "")) }
     }
 
     private fun save(model: Model, form: AgentForm, agent: Agent?, params: Map<String, String> = emptyMap()): String {

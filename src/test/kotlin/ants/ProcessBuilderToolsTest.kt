@@ -40,18 +40,7 @@ class ProcessBuilderToolsTest : AntsTest() {
 
     private fun call(token: String, name: String, arguments: Map<String, Any?> = emptyMap()) = mcpCall(port, token, name, arguments)
 
-    /** Acts as the page holding [token]: answers each relayed call with what [answer] gives for its tool. */
-    private fun page(token: String, answer: (String, Map<*, *>) -> Any?) {
-        val events = browser.events("builder=$token", "builder")
-        Thread.ofVirtual().start {
-            while (true) {
-                val relayed = json.readValue(events.take(), Map::class.java)
-                browser.post("/process-builder/answer", mapOf("token" to token, "call" to relayed["id"].toString(),
-                    "answer" to json.writeValueAsString(answer(relayed["tool"].toString(), relayed["arguments"] as Map<*, *>))))
-            }
-        }
-        eventually { assertTrue(builder.connected(token)) }
-    }
+    private fun page(token: String, answer: (String, Map<*, *>) -> Any?) = browser.actAsPage(token, builder, answer)
 
     @Test
     fun `a page's token lists the modeler's read tools and not run, and a Task's token lists run and no modeler tool`() {
@@ -260,4 +249,18 @@ fun mcp(port: Int, token: String, method: String, params: Map<String, Any?> = em
 fun mcpCall(port: Int, token: String, name: String, arguments: Map<String, Any?> = emptyMap()): Pair<String, Boolean> {
     val result = mcp(port, token, "tools/call", mapOf("name" to name, "arguments" to arguments)).second["result"] as Map<*, *>
     return ((result["content"] as List<*>).single() as Map<*, *>)["text"].toString() to (result["isError"] == true)
+}
+
+/** Acts as the modeler page holding [token]: follows its SSE and answers each call relayed to it with what [answer] gives for its tool. */
+fun Browser.actAsPage(token: String, builder: ProcessBuilderTools, answer: (String, Map<*, *>) -> Any?) {
+    val json = JsonMapper.shared()
+    val events = events("builder=$token", "builder")
+    Thread.ofVirtual().start {
+        while (true) {
+            val relayed = json.readValue(events.take(), Map::class.java)
+            post("/process-builder/answer", mapOf("token" to token, "call" to relayed["id"].toString(),
+                "answer" to json.writeValueAsString(answer(relayed["tool"].toString(), relayed["arguments"] as Map<*, *>))))
+        }
+    }
+    eventually { assertTrue(builder.connected(token)) }
 }

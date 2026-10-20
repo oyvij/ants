@@ -318,7 +318,7 @@ class BrowserTest : AntsTest() {
         assertThat(shape("pick")).hasCount(0) // it asks before it builds
         ask("I do.")
         assertThat(dialog).containsText("Built: Pick, then done.")
-        assertThat(dialog).containsText("set_agent_task")
+        assertThat(dialog).containsText("set up the Agent Task pick")
         val built = listOf("pick", "done", "toPick", "toDone")
         for (id in built) assertThat(shape(id)).hasCount(1)
         shape("pick").click()
@@ -334,7 +334,8 @@ class BrowserTest : AntsTest() {
     fun `the Process Builder keeps one session per page, resumes a dead claude, stops a turn, and closing the page ends claude`() = browse {
         val claude = FakeClaude()
         settings(claude)
-        claude.session("process-builder", 1, says("One."), builderResult, "read", says("Two."), "exit 0") // claude dies in the turn
+        val init = """{"type":"system","subtype":"init","session_id":"${'$'}SESSION","apiKeySource":"none"}""" // claude has started the session
+        claude.session("process-builder", 1, init, says("One."), builderResult, "read", says("Two."), "exit 0") // claude dies in the turn
         claude.session("process-builder", 2, says("Three."), "read",
             """{"type":"result","subtype":"error_during_execution","session_id":"${'$'}SESSION"}""", "wait never")
         page.navigate(url("/templates/review-and-push"))
@@ -497,6 +498,23 @@ class BrowserTest : AntsTest() {
             assertContains(element(tag, "tool$id"), if (id == "User") "notes.md" else if (id == "Call") "\${prompt}" else "ticket")
             assertEquals(element(tag, "hand$id"), element(tag, "tool$id"), id)
         }
+    }
+
+    @Test
+    fun `shapes above the Process don't freeze the modeler when a call activity's panel opens and changes`() = browse {
+        agentTask(null)
+        http.import("agent-task.bpmn")
+        page.navigate(url("/processes/agent-task/edit"))
+        val tool = builder()
+        // Above the Process, where a save's align-to-origin moves every shape; the call activity's panel reads the diagram
+        // when it opens and when its Process changes, before the Checks have run and moved them.
+        for ((i, kind) in listOf("agent", "user", "call").withIndex()) tool("add_element", mapOf("kind" to kind, "id" to "above$i", "x" to 130 + 150 * i, "y" to -60))
+        shape("above2").click()
+        label("Process").selectOption("agent-task")
+        assertThat(page.locator("#explain label.row input")).hasCount(1) // its input, for the called Process's prompt
+        tool("rename", mapOf("id" to "above2", "name" to "Again"))
+        assertThat(shape("above2")).containsText("Again")
+        assertEquals(emptyList(), errors.filter { "call stack" in it })
     }
 
     /** The `bpmn` field of a form-encoded body. */

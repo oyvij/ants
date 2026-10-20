@@ -9,15 +9,15 @@ import {camel, cronOf, everies, operators, readCondition, readSchedule, resultFi
 // From the server (modelerFacts in Checks.kt): what Ants calls each element it runs and what it does there (the
 // palette's tooltip and the panel's explanation), the Built-in Tasks by topic with their name and what each does, the start-form field types by the
 // `ants.type` property each field carries (the engine only knows `string`), Items are Tickets' property and help, the
-// Process's Profile property, help and empty choice, Ants' own Run variables, and each User Task kind with its fields
-// and Result.
-const {kinds, builtIns, fieldTypes, itemsAreTickets, profile, runVariables, userTasks} = JSON.parse(document.getElementById("canvas").dataset.facts)
+// Process's Profile property, help and empty choice, Ants' own Run variables, each User Task kind with its fields
+// and Result, what the palette and add_element draw for each kind, and the multi-instance modes.
+const {kinds, builtIns, fieldTypes, itemsAreTickets, profile, runVariables, userTasks, drawn, multiInstanceModes} = JSON.parse(document.getElementById("canvas").dataset.facts)
 
 // The three Tasks Ants runs, as the BPMN each one is, and their colour on the diagram and in the palette.
 const tasks = {
-    agent: {type: "bpmn:ServiceTask", attrs: {"camunda:type": "external", "camunda:topic": "agent"}, icon: "bpmn-icon-service-task ants-pal-agent", marker: "ants-agent"},
-    user: {type: "bpmn:UserTask", attrs: {}, icon: "bpmn-icon-user-task ants-pal-user", marker: "ants-user"},
-    "built-in": {type: "bpmn:ServiceTask", attrs: {"camunda:type": "external", "camunda:topic": "clone-repos"}, icon: "bpmn-icon-screw-wrench ants-pal-builtin", marker: "ants-builtin"},
+    agent: {...drawn.agent, icon: "bpmn-icon-service-task ants-pal-agent", marker: "ants-agent"},
+    user: {...drawn.user, icon: "bpmn-icon-user-task ants-pal-user", marker: "ants-user"},
+    "built-in": {...drawn["built-in"], icon: "bpmn-icon-screw-wrench ants-pal-builtin", marker: "ants-builtin"},
 }
 
 function kindOf(element) {
@@ -64,16 +64,16 @@ function AntsPalette(palette, create, elementFactory, bpmnFactory) {
         "space-tool": entries["space-tool"],
         "global-connect-tool": entries["global-connect-tool"],
         "tool-separator": entries["tool-separator"],
-        "create.start-event": creating("event", "bpmn-icon-start-event-none", "start", shape({type: "bpmn:StartEvent"})),
+        "create.start-event": creating("event", "bpmn-icon-start-event-none", "start", shape(drawn.start)),
         "create.timer": creating("event", "bpmn-icon-intermediate-event-catch-timer", "timer",
-            shape({type: "bpmn:IntermediateCatchEvent", eventDefinitionType: "bpmn:TimerEventDefinition"})),
-        "create.end-event": creating("event", "bpmn-icon-end-event-none", "end", shape({type: "bpmn:EndEvent"})),
-        "create.exclusive-gateway": creating("gateway", "bpmn-icon-gateway-xor", "exclusive", shape({type: "bpmn:ExclusiveGateway"})),
-        "create.parallel-gateway": creating("gateway", "bpmn-icon-gateway-parallel", "parallel", shape({type: "bpmn:ParallelGateway"})),
+            shape(drawn.timer)),
+        "create.end-event": creating("event", "bpmn-icon-end-event-none", "end", shape(drawn.end)),
+        "create.exclusive-gateway": creating("gateway", "bpmn-icon-gateway-xor", "exclusive", shape(drawn.exclusive)),
+        "create.parallel-gateway": creating("gateway", "bpmn-icon-gateway-parallel", "parallel", shape(drawn.parallel)),
         "create.subprocess-expanded": {...entries["create.subprocess-expanded"], title: `${kinds.subprocess.name}: ${kinds.subprocess.explain}`},
-        "create.call-activity": creating("activity", "bpmn-icon-call-activity", "call", shape({type: "bpmn:CallActivity"})),
-        "create.text-annotation": creating("artifact", "bpmn-icon-text-annotation", "annotation", shape({type: "bpmn:TextAnnotation"})),
-        "create.group": creating("artifact", "bpmn-icon-group", "group", shape({type: "bpmn:Group"})),
+        "create.call-activity": creating("activity", "bpmn-icon-call-activity", "call", shape(drawn.call)),
+        "create.text-annotation": creating("artifact", "bpmn-icon-text-annotation", "annotation", shape(drawn.annotation)),
+        "create.group": creating("artifact", "bpmn-icon-group", "group", shape(drawn.group)),
         // The work, at the bottom of the palette.
         "ants-separator": {group: "ants", separator: true},
         ...Object.fromEntries(Object.entries(tasks).map(([kind, {icon}]) =>
@@ -338,8 +338,10 @@ const explainHtml = html => el("div", {className: "explain", innerHTML: html})
 
 // The `${…}` references a picker on [element] offers, from the server: start-form fields, Run variables and the Results
 // of the Tasks before it (`offered` in AgentTaskChecks.kt).
+// The XML is read without saveXML, whose align-to-origin moves the shapes: a panel redrawn inside a move (that very
+// align, when a shape sits above or left of the diagram) would move them again, and again, until the stack overflows.
 async function offeredAt(element) {
-    const {xml} = await modeler.saveXML()
+    const {xml} = await modeler.get("moddle").toXML(modeler.getDefinitions())
     const response = await fetch("/processes/inputs", {method: "POST", body: new URLSearchParams({_csrf: csrf, bpmn: xml, element: element.id})})
     return response.json()
 }
@@ -893,7 +895,7 @@ const relayed = {
         const source = found(from), target = found(to)
         const allowed = modeler.get("bpmnRules").canConnect(source, target)
         if (!allowed?.type) throw new Error(`${from} can't be connected to ${to}.`)
-        unused(id)
+        checkIdValidAndFree(id)
         const businessObject = modeler.get("bpmnFactory").create(allowed.type, id ? {id} : {})
         return {id: edit(() => {
             const connection = modeler.get("modeling").connect(source, target, {type: allowed.type, businessObject})
@@ -942,9 +944,15 @@ function found(id) {
     return element
 }
 
-function unused(id) {
+// A name JUEL can read, as an id or an input name is: letters, digits and underscores, starting with a letter.
+function checkJuelName(name, what) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) throw new Error(`${name} isn't ${what}: use letters, digits and underscores, starting with a letter.`)
+}
+
+// A new element's id, when one is given: a JUEL name no element has yet.
+function checkIdValidAndFree(id) {
     if (id === undefined || id === "") return
-    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(id)) throw new Error(`${id} isn't an id: use letters, digits and underscores, starting with a letter.`)
+    checkJuelName(id, "an id")
     if (modeler.get("elementRegistry").get(id)) throw new Error(`The diagram already has an element ${id}.`)
 }
 
@@ -962,27 +970,15 @@ function path(id) {
     return flow
 }
 
-// What add_element draws for each kind: the BPMN type, its attributes, and what bpmn-js' element factory needs beyond it.
-const drawn = {
-    start: {type: "bpmn:StartEvent"},
-    "timer-start": {type: "bpmn:StartEvent", eventDefinitionType: "bpmn:TimerEventDefinition"},
-    end: {type: "bpmn:EndEvent"},
-    timer: {type: "bpmn:IntermediateCatchEvent", eventDefinitionType: "bpmn:TimerEventDefinition"},
-    exclusive: {type: "bpmn:ExclusiveGateway"},
-    parallel: {type: "bpmn:ParallelGateway"},
-    ...Object.fromEntries(Object.entries(tasks).map(([kind, {type, attrs}]) => [kind, {type, attrs}])),
-    call: {type: "bpmn:CallActivity"},
-    subprocess: {type: "bpmn:SubProcess", isExpanded: true},
-    annotation: {type: "bpmn:TextAnnotation"},
-    group: {type: "bpmn:Group"},
-}
+// The Process's start event, not a sub-process's.
+const startEvent = () => modeler.get("elementRegistry").find(e => e.type === "bpmn:StartEvent" && e.parent.businessObject?.$type === "bpmn:Process")
 
 function addElement(args) {
     const {kind, id, name, topic} = args
     if (!drawn[kind]) throw new Error(`No kind ${kind}: the kinds are ${Object.keys(drawn).join(", ")}.`)
     if (topic !== undefined && kind !== "built-in") throw new Error("Only a Built-in Task takes a topic.")
     if (topic !== undefined && !builtIns[topic]) throw new Error(`No Built-in Task ${topic}: the topics are ${Object.keys(builtIns).join(", ")}.`)
-    unused(id)
+    checkIdValidAndFree(id)
     const registry = modeler.get("elementRegistry")
     let parent = registry.find(e => !e.parent && e.type === "bpmn:Process")
     if (args.in !== undefined) {
@@ -1012,8 +1008,7 @@ function nextTo(parent, shape) {
 
 // The Agent Task's Agent, Skill and inputs, written as the panel's pickers and input boxes write them.
 async function setAgentTask({id, agent, skill, inputs, resultSchema, resume, vault, answerHistory}) {
-    const element = found(id)
-    if (kindOf(element) !== "agent") throw new Error(`${id} is ${kinds[kindOf(element)]?.name || element.type}, not an Agent Task.`)
+    const element = foundAs(id, "agent", "an Agent Task")
     const catalogue = await (await fetch("/catalogue.json")).json()
     const current = agentProperties(element.businessObject)
     const agentName = agent ?? current["ants.agent"]
@@ -1048,7 +1043,7 @@ async function setAgentTask({id, agent, skill, inputs, resultSchema, resume, vau
 
 // The start form's fields, all of them in order, as the panel writes them.
 function setStartForm({fields}) {
-    const start = modeler.get("elementRegistry").find(e => e.type === "bpmn:StartEvent" && e.parent.businessObject?.$type === "bpmn:Process")
+    const start = startEvent()
     if (!start) throw new Error("The Process has no start event: add one first.")
     if (!Array.isArray(fields)) throw new Error("fields must be a list of fields.")
     const written = fields.map((f, i) => {
@@ -1063,9 +1058,10 @@ function setStartForm({fields}) {
     return {id: start.id, fields: written.map(f => f.id)}
 }
 
-function foundAs(id, kind, noun) {
+// The element [id], which must be of [kind]; [what] says what it isn't when it isn't.
+function foundAs(id, kind, what) {
     const element = found(id)
-    if (kindOf(element) !== kind) throw new Error(`${id} is ${kinds[kindOf(element)]?.name || element.type}, not a ${noun}.`)
+    if (kindOf(element) !== kind) throw new Error(`${id} is ${kinds[kindOf(element)]?.name || element.type}, not ${what}.`)
     return element
 }
 
@@ -1081,18 +1077,16 @@ function agentTaskNamed(key, value) {
     if (value && !(task?.businessObject && kindOf(task) === "agent")) throw new Error(`${key} names an Agent Task, and the diagram has no Agent Task ${value}.`)
 }
 
-// The kind of a User Task: Approve has no `ants.user-task`, so the tools call it approve.
-const userTaskKind = k => k.value || "approve"
 const userTaskOf = bo => userTasks.find(k => k.value === (agentProperties(bo)["ants.user-task"] || "")) || userTasks.find(k => !k.value)
 // A User Task field, by its input (title, show) or its property without `ants.` (send-back, asker, walkthrough).
 const userFieldName = f => f.input || f.property.replace(/^ants\./, "")
 
 // The User Task's kind and fields, as the panel's kind picker and field boxes write them.
 function setUserTask({id, kind, fields}) {
-    const element = foundAs(id, "user", "User Task")
+    const element = foundAs(id, "user", "a User Task")
     const bo = element.businessObject
-    const next = kind === undefined ? userTaskOf(bo) : userTasks.find(k => userTaskKind(k) === kind)
-    if (!next) throw new Error(`No User Task kind ${kind}: the kinds are ${userTasks.map(userTaskKind).join(", ")}.`)
+    const next = kind === undefined ? userTaskOf(bo) : userTasks.find(k => k.key === kind)
+    if (!next) throw new Error(`No User Task kind ${kind}: the kinds are ${userTasks.map(k => k.key).join(", ")}.`)
     const given = Object.entries(fields || {}).map(([name, value]) => {
         const f = next.fields.find(f => userFieldName(f) === name)
         if (!f) throw new Error(`${next.name} has no field ${name}: it has ${next.fields.map(userFieldName).join(", ")}.`)
@@ -1108,13 +1102,13 @@ function setUserTask({id, kind, fields}) {
         else inputs = [...inputs.filter(([name]) => name !== f.input), ...(value ? [[f.input, value]] : [])]
     }
     edit(() => writeAgentTask(element, changes, inputs, true))
-    return {id, kind: userTaskKind(next), fields: Object.fromEntries(next.fields.map(f =>
+    return {id, kind: next.key, fields: Object.fromEntries(next.fields.map(f =>
         [userFieldName(f), f.property ? agentProperties(bo)[f.property] || "" : Object.fromEntries(agentInputs(bo))[f.input] || ""]))}
 }
 
 // The call activity's Process and inputs, as the panel's Process picker and input boxes write them.
 async function setCall({id, process, inputs}) {
-    const element = foundAs(id, "call", "call activity")
+    const element = foundAs(id, "call", "a call activity")
     const bo = element.businessObject
     const processes = await (await fetch("/processes.json")).json()
     const key = process ?? bo.calledElement
@@ -1132,14 +1126,16 @@ async function setCall({id, process, inputs}) {
 
 // The Built-in Task's topic, as the panel's picker writes it, and its inputs, written as an Agent Task's are.
 function setBuiltIn({id, topic, inputs, asker}) {
-    const element = foundAs(id, "built-in", "Built-in Task")
+    const element = foundAs(id, "built-in", "a Built-in Task")
     const bo = element.businessObject
     if (topic !== undefined && !builtIns[topic]) throw new Error(`No Built-in Task ${topic}: the topics are ${Object.keys(builtIns).join(", ")}.`)
     const now = topic ?? bo.get("camunda:topic")
-    if (asker !== undefined && now !== "accept-recommendations") throw new Error(`Only accept-recommendations names an asker; ${id} is ${now}.`)
+    if (asker !== undefined && !builtIns[now]?.asker) {
+        throw new Error(`Only ${Object.keys(builtIns).filter(topic => builtIns[topic].asker).join(", ")} names an asker; ${id} is ${now}.`)
+    }
     if (asker !== undefined) agentTaskNamed("asker", asker)
     const given = Object.entries(inputs || {}).map(([name, value]) => {
-        if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) throw new Error(`${name} isn't an input name: use letters, digits and underscores, starting with a letter.`)
+        checkJuelName(name, "an input name")
         return [name, String(value ?? "")]
     })
     const values = Object.fromEntries(given)
@@ -1157,7 +1153,7 @@ function setBuiltIn({id, topic, inputs, asker}) {
 function setMultiInstance({id, mode, collection, elementVariable, itemsAreTickets: tickets}) {
     const element = found(id)
     if (!repeatable.has(kindOf(element))) throw new Error(`${id} is ${kinds[kindOf(element)]?.name || element.type}: only an Agent Task, a sub-process or a call activity runs as a multi-instance.`)
-    if (mode !== undefined && !["parallel", "sequential", "none"].includes(mode)) throw new Error(`mode is parallel, sequential or none, not ${mode}.`)
+    if (mode !== undefined && !multiInstanceModes.includes(mode)) throw new Error(`mode is one of ${multiInstanceModes.join(", ")}, not ${mode}.`)
     const MI = "bpmn:MultiInstanceLoopCharacteristics"
     const on = mode === undefined ? element.businessObject.loopCharacteristics?.$type === MI : mode !== "none"
     const settings = [collection, elementVariable, tickets].some(value => value !== undefined)
@@ -1206,7 +1202,7 @@ async function diagram() {
         return {id: e.id, kind, name: bo.name || "", x: e.x, y: e.y, width: e.width, height: e.height, in: inside, properties,
             inputs: Object.fromEntries(kind === "call" ? callInputs(bo) : agentInputs(bo)), outputs: outputs(e, skills)}
     }
-    const start = all.find(e => e.type === "bpmn:StartEvent" && e.parent.businessObject?.$type === "bpmn:Process")
+    const start = startEvent()
     return {
         elements: all.filter(e => !e.waypoints).map(element),
         connections: all.filter(e => e.type === "bpmn:SequenceFlow").map(e => ({
@@ -1249,9 +1245,7 @@ async function openBuilder() {
         const text = message.value
         message.value = ""
         message.dispatchEvent(new Event("change"))
-        // The Process's key as it is now, whose Build log a new session starts from.
-        const key = modeler.get("elementRegistry").find(e => !e.parent && e.type === "bpmn:Process")?.businessObject.id || ""
-        const answer = await (await post("/process-builder/send", {message: text, key})).json()
+        const answer = await (await post("/process-builder/send", {message: text})).json()
         error.textContent = answer.error || ""
         if (answer.error) {
             message.value = text

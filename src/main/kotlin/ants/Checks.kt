@@ -58,12 +58,13 @@ class Checks(private val catalogue: Catalogue, private val repository: Repositor
 /** The Built-in Tasks, by the topic Ants carries each out on, with their name and what each does. */
 val builtIns = mapOf(
     "clone-repos" to mapOf("name" to "Clone repos", "does" to "clones the named repos into the Run workspace on the work branch."),
-    "accept-recommendations" to mapOf("name" to "Accept recommendations", "does" to "answers a Round with every recommendation."),
+    "accept-recommendations" to mapOf("name" to "Accept recommendations", "does" to "answers a Round with every recommendation.",
+        "asker" to "The Agent Task whose Round it answers."),
     "push" to mapOf("name" to "Push", "does" to "waits for you to push the work branch of every repo."),
 )
 
 /** What Ants calls each element the modeler shows, by the modeler's kind, and what it does there: the palette's tooltip and the panel's explanation. */
-private val elementKinds = mapOf(
+internal val elementKinds = mapOf(
     "process" to ("Process" to "How one kind of job gets done. Every Run of it starts at its start event with the start form's fields."),
     "start" to ("Start event" to "Where a Run begins; a Process has exactly one. Its fields are the start form you fill in on the Process page, and every Task can read them as \${field}."),
     "timer-start" to ("Timer start event" to "Starts a Run on a schedule, with no one pressing Start. Pause or remove the Schedule on the Process page."),
@@ -104,12 +105,37 @@ private val userTaskFields: Map<UserTaskKind, List<Map<String, String>>> = run {
 }
 
 /**
+ * The kinds the palette and the Process Builder's `add_element` draw, in order: the BPMN type of each, its attributes, and
+ * what bpmn-js' element factory needs beyond them.
+ */
+val drawnKinds: Map<String, Map<String, Any>> = linkedMapOf(
+    "start" to mapOf("type" to "bpmn:StartEvent"),
+    "timer-start" to mapOf("type" to "bpmn:StartEvent", "eventDefinitionType" to "bpmn:TimerEventDefinition"),
+    "end" to mapOf("type" to "bpmn:EndEvent"),
+    "timer" to mapOf("type" to "bpmn:IntermediateCatchEvent", "eventDefinitionType" to "bpmn:TimerEventDefinition"),
+    "exclusive" to mapOf("type" to "bpmn:ExclusiveGateway"),
+    "parallel" to mapOf("type" to "bpmn:ParallelGateway"),
+    "agent" to mapOf("type" to "bpmn:ServiceTask", "attrs" to mapOf("camunda:type" to "external", "camunda:topic" to AgentLauncher.TOPIC)),
+    "user" to mapOf("type" to "bpmn:UserTask", "attrs" to emptyMap<String, String>()),
+    "built-in" to mapOf("type" to "bpmn:ServiceTask", "attrs" to mapOf("camunda:type" to "external", "camunda:topic" to builtIns.keys.first())),
+    "call" to mapOf("type" to "bpmn:CallActivity"),
+    "subprocess" to mapOf("type" to "bpmn:SubProcess", "isExpanded" to true),
+    "annotation" to mapOf("type" to "bpmn:TextAnnotation"),
+    "group" to mapOf("type" to "bpmn:Group"),
+)
+
+/** How a multi-instance runs its instances: side by side, one after another, or not at all (it runs once). */
+val multiInstanceModes = listOf("parallel", "sequential", "none")
+
+/**
  * What the modeler page knows of Ants from the server, as JSON on its canvas's `data-facts`: each element kind's name and
  * explanation, the Built-in Tasks, the start-form field types, Items are Tickets' property and what it does, and the Process's Profile property, what it
  * does and how its empty choice reads, Ants' own Run variables, and each User Task kind's fields and Result.
  */
 val modelerFacts: String = JsonMapper.shared().writeValueAsString(mapOf(
     "kinds" to elementKinds,
+    "drawn" to drawnKinds,
+    "multiInstanceModes" to multiInstanceModes,
     "builtIns" to builtIns,
     "fieldTypes" to FieldType.entries.associate { it.name.lowercase() to it.name.lowercase().replaceFirstChar(Char::uppercase) },
     "itemsAreTickets" to mapOf(
@@ -123,7 +149,7 @@ val modelerFacts: String = JsonMapper.shared().writeValueAsString(mapOf(
         "none" to "The default",
     ),
     "runVariables" to RUN_VARIABLES,
-    "userTasks" to userTaskFields.map { (kind, fields) -> mapOf("value" to kind.value.orEmpty(), "name" to kind.title, "result" to kind.result, "fields" to fields) },
+    "userTasks" to userTaskFields.map { (kind, fields) -> mapOf("value" to kind.value.orEmpty(), "key" to kind.key, "name" to kind.title, "result" to kind.result, "fields" to fields) },
 ))
 
 /** The BPMN elements Ants runs, by their XML name; [refusedUses] refuses some uses of them. Anything else is refused. */

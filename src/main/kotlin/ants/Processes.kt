@@ -13,6 +13,7 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.stereotype.Controller
+import org.springframework.ui.ExtendedModelMap
 import org.springframework.ui.Model
 import org.springframework.util.MultiValueMap
 import org.springframework.web.bind.annotation.GetMapping
@@ -309,6 +310,16 @@ class ProcessRow(val process: ProcessDefinition, val shipped: Boolean, val profi
 
 /** Why a Process can't be deployed, in the XML parser's or the engine's words. */
 class Refused(message: String?) : Exception(message)
+
+/**
+ * A page's save run for the Process Builder (ADR 0019), with no page to show: the path [save] redirects to, else a
+ * [Refused] with the error it put on the model as [error].
+ */
+fun redirected(error: String, save: (Model) -> String): String {
+    val model = ExtendedModelMap()
+    val view = save(model)
+    return view.removePrefix("redirect:").takeIf { it != view } ?: throw Refused(model[error]?.toString())
+}
 
 internal fun parse(bpmn: ByteArray): Document = DocumentBuilderFactory.newInstance().apply {
     isNamespaceAware = true

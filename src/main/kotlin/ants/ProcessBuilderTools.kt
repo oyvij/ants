@@ -57,6 +57,9 @@ class ProcessBuilderTools(
 
         val session = UUID.randomUUID().toString()
         val scratch: Path by lazy { Files.createTempDirectory("process-builder") }
+
+        /** Whether claude has started [session] (its `system/init`), so a relaunch resumes it; a launch that died before has none to resume. */
+        @Volatile
         var launched = false
 
         @Volatile
@@ -70,8 +73,8 @@ class ProcessBuilderTools(
         @Volatile
         var closed = false
 
-        /** The dialog, claude's stream-json lines folded in as an Agent Task's Transcript folds them. Guarded by itself. */
-        val dialog = Transcript()
+        /** The dialog, claude's stream-json lines folded in as an Agent Task's Transcript folds them, each tool call as [LINES] words it. Guarded by itself. */
+        val dialog = Transcript { name, input -> LINES[name.removePrefix("mcp__ants__").takeIf { it != name }]?.invoke(input) }
 
         /** The pages of the Agents, Skills and Templates this session made or changed, in order. */
         val made: MutableSet<String> = ConcurrentHashMap.newKeySet()
@@ -124,7 +127,7 @@ class ProcessBuilderTools(
                 "create_skill" -> saved(skills.write(argument("skill"), arguments["schema"]?.toString().orEmpty(), null))
                 "change_skill" -> saved(skills.write(argument("skill"), arguments["schema"]?.toString().orEmpty(), argument("name")))
                 "build_log" -> argument("markdown").let { markdown ->
-                    val key = process(parse(xml().toByteArray())).getAttribute("id")
+                    val key = key()
                     buildLog(key).also { it.parent.createDirectories() }.writeAtomically(markdown)
                     "The Build log of $key is now what you gave."
                 }
@@ -147,15 +150,17 @@ class ProcessBuilderTools(
         fun saved(page: String) = json.writeValueAsString(mapOf("name" to page.substringAfterLast('/'), "page" to page)).also { made += page }
 
         /**
-         * Sends [message] into the session, launching claude first when none is live. A new session on the Process [key]
-         * gets its Build log, when there is one, before the message: the handoff from the dialogs before it.
+         * Sends [message] into the session, launching claude first when none is live. A new session gets the Build log of
+         * the Process the page's diagram is, when there is one, before the message: the handoff from the dialogs before it.
          */
         @Synchronized
-        fun send(message: String, key: String?) {
+        fun send(message: String) {
             val (cli, model) = settings.processBuilder()
             if (cli != "claude") throw Refused(CLAUDE_ONLY)
-            val log = key?.takeIf { !launched }?.let { runCatching { buildLog(it) }.getOrNull() }?.takeIf { it.exists() }
-            if (claude?.isAlive != true || stdin?.open != true) launch(model)
+            val starting = claude?.isAlive != true || stdin?.open != true
+            val key = if (starting && !launched) runCatching { key() }.getOrNull() else null
+            val log = key?.let { runCatching { buildLog(it) }.getOrNull() }?.takeIf { it.exists() }
+            if (starting) launch(model)
             val prompt = log?.let { "The Build log of this Process, from earlier dialogs about it:\n\n${it.readText().trim()}\n\nFrom the user:\n$message" }
             if (prompt != null) {
                 handoff = key
@@ -180,24 +185,18 @@ class ProcessBuilderTools(
                 "--append-system-prompt", INSTRUCTIONS,
             ) + (model?.let { listOf("--model", it) } ?: emptyList())
             val process = launcher.cli("claude", scratch, flags).start()
-            launched = true
             val stdin = AgentLauncher.Stdin(process.outputWriter(), "process-builder", launcher.home)
             claude = process
             this.stdin = stdin
             val stderr = launcher.drain(process)
             Thread.ofVirtual().start { read(process, stdin, stderr) }
-            Thread.ofVirtual().start {
-                while (process.isAlive) {
-                    if (!alive) end(this)
-                    Thread.sleep(500)
-                }
-            }
         }
 
         /** Folds claude's lines into the dialog until it ends; a turn ends at its `result` line. */
         private fun read(process: Process, stdin: AgentLauncher.Stdin, stderr: () -> String?) {
             process.inputReader().forEachLine { line ->
                 val event = runCatching { json.readValue(line, Map::class.java) }.getOrNull() ?: return@forEachLine
+                if (event["type"] == "system" && event["subtype"] == "init") launched = true
                 val apiKey = (event["apiKeySource"] as? String)?.takeIf { event["subtype"] == "init" && it != "none" }
                 if (event["error"] == "authentication_failed" || apiKey != null) {
                     note(AgentLauncher.LOST_LOGIN + (apiKey?.let { ": claude would use an API key (apiKeySource: $it), and Ants runs only on its own login." } ?: "."))
@@ -229,7 +228,7 @@ class ProcessBuilderTools(
         /** The dialog as the panel shows it: the entries, the reply streaming in, what it made, and whether a turn runs. */
         fun html(): String = synchronized(dialog) {
             (handoff?.let { """<p class="ants" id="pb-handoff">Started from this Process's <a href="/processes/${HtmlUtils.htmlEscape(it)}/build-log" target="_blank">Build log</a>.</p>""" } ?: "") +
-                """<div id="pb-entries">${dialog.roots.joinToString("").replace("<b>mcp__ants__", "<b>")}</div>${dialog.html("live")}""" +
+                """<div id="pb-entries">${dialog.roots.joinToString("")}</div>${dialog.html("live")}""" +
                 (if (made.isEmpty()) "" else """<ul id="pb-made" aria-label="Made">""" + made.joinToString("") { page ->
                     val kind = KINDS[page.split('/')[1]]
                     """<li><a href="${HtmlUtils.htmlEscape(page)}" target="_blank">$kind ${HtmlUtils.htmlEscape(page.substringAfterLast('/'))}</a></li>"""
@@ -239,6 +238,9 @@ class ProcessBuilderTools(
 
         /** The page's diagram as BPMN XML, as Save and deploy would send it. */
         fun xml(): String = json.readValue(ask("xml", emptyMap<String, Any>()), String::class.java)
+
+        /** The process id of the page's diagram, which keys its Build log. */
+        fun key(): String = process(parse(xml().toByteArray())).getAttribute("id")
 
         /** Relays [tool] to the page and gives its answer, JSON text; fails when no page is connected or it doesn't answer in time. */
         fun ask(tool: String, arguments: Map<*, *>): String {
@@ -260,22 +262,25 @@ class ProcessBuilderTools(
         }
     }
 
-    /** Opens a session for the modeler page asking: its token. */
+    /** Opens a session for the modeler page asking: its token. It ends once the page's SSE has gone, whether or not claude ever ran. */
     @PostMapping("/process-builder")
     fun open(): Map<String, String> {
-        pages.values.filter { !it.alive }.forEach(::end)
         val page = Page()
         val (token, config) = mcp.open(page)
         page.config = config
         pages[token] = page
+        Thread.ofVirtual().start {
+            while (page.alive) Thread.sleep(500)
+            end(page)
+        }
         return mapOf("token" to token)
     }
 
     /** Sends the user's [message] into the page's claude session: empty, or the [error] that kept it from going. */
     @PostMapping("/process-builder/send")
-    fun send(@RequestParam token: String, @RequestParam message: String, @RequestParam(required = false) key: String?): Map<String, String> = try {
+    fun send(@RequestParam token: String, @RequestParam message: String): Map<String, String> = try {
         if (message.isBlank()) throw Refused("Write a message to send.")
-        (pages[token] ?: throw Refused("This page's Process Builder session has ended. Reload the page.")).send(message, key)
+        (pages[token] ?: throw Refused("This page's Process Builder session has ended. Reload the page.")).send(message)
         emptyMap()
     } catch (e: Exception) {
         mapOf("error" to (e.message ?: e.toString()))
@@ -375,8 +380,7 @@ class ProcessBuilderTools(
         private val WRITE = listOf(
             Mcp.tool("add_element", "Adds an element to the open diagram, as the palette does, and gives its id. Without x and y it goes right of the " +
                 "rightmost element in its container. Connect it with `connect`.", mapOf(
-                "kind" to mapOf("type" to "string", "enum" to listOf("start", "timer-start", "end", "timer", "exclusive", "parallel", "agent", "user", "built-in",
-                    "call", "subprocess", "annotation", "group"), "description" to "What it is: exclusive is a decision; subprocess an expanded embedded sub-process."),
+                "kind" to mapOf("type" to "string", "enum" to drawnKinds.keys.toList(), "description" to "What it is: exclusive is a decision; subprocess an expanded embedded sub-process."),
                 "id" to "Its id, a JUEL name such as `grill` (letters, digits and underscores), by which later Tasks read its Result; left out, bpmn-js makes one.",
                 "name" to "Its name on the diagram.",
                 "x" to number(AT), "y" to number(AT),
@@ -422,7 +426,7 @@ class ProcessBuilderTools(
                 "has. Later Tasks read its Result: approve and review-changes give \${id.approved} and \${id.comment} (review-changes also \${id.comments}), " +
                 "answer-round gives \${id.answers}.", mapOf(
                 "id" to "The User Task's id.",
-                "kind" to mapOf("type" to "string", "enum" to UserTaskKind.entries.map { it.value ?: "approve" }, "description" to "What the user does; left out, the kind it is now."),
+                "kind" to mapOf("type" to "string", "enum" to UserTaskKind.entries.map { it.key }, "description" to "What the user does; left out, the kind it is now."),
                 "fields" to strings("Values by field, empty clearing one: approve takes title (what is asked) and show (a Run workspace file, or a `\${…}` " +
                     "shown as markdown) and send-back; review-changes takes walkthrough and send-back; answer-round takes asker. send-back, walkthrough and " +
                     "asker name an Agent Task: the one Send back resumes, whose Story set is shown, and whose Round is answered."),
@@ -436,12 +440,12 @@ class ProcessBuilderTools(
                 "`\${scout.output.repos}`) and branch; accept-recommendations names its asker.", mapOf(
                 "id" to "The Built-in Task's id.", "topic" to "Its topic (see `built_in_tasks`).",
                 "inputs" to strings("Values by input name, each text or a `\${…}` reference; empty removes one."),
-                "asker" to "accept-recommendations only: the Agent Task whose Round it answers; empty clears it.",
+                "asker" to builtIns.filterValues { "asker" in it }.map { (topic, it) -> "$topic only: ${it["asker"]}" }.joinToString(" ") + " Empty clears it.",
             ), optional = setOf("topic", "inputs", "asker")),
             Mcp.tool("set_multi_instance", "Runs an Agent Task, sub-process or call activity once per item of a list, as the wrench menu's toggles and the " +
                 "properties panel do. Its Result becomes a list of its instances' Results, in item order.", mapOf(
                 "id" to "The element's id.",
-                "mode" to mapOf("type" to "string", "enum" to listOf("parallel", "sequential", "none"), "description" to "none makes it run once; left out, the mode it has."),
+                "mode" to mapOf("type" to "string", "enum" to multiInstanceModes, "description" to "none makes it run once; left out, the mode it has."),
                 "collection" to "The list, a `\${…}` such as `\${totickets.output.tickets}`.",
                 "elementVariable" to "The name each instance reads its item as, such as `ticket`; left out, item.",
                 "itemsAreTickets" to yesNo("Whether each item is a Ticket, which goes in-review as its instance ends."),
@@ -453,6 +457,49 @@ class ProcessBuilderTools(
         )
 
         private val RELAYED = setOf("diagram") + WRITE.map { it["name"] }
+
+        /** `<i>value</i>`, escaped: what a tool call's line names. */
+        private fun named(value: Any?) = "<i>${HtmlUtils.htmlEscape(value?.toString().orEmpty())}</i>"
+
+        /** The `name:` in a file's frontmatter, as an Agent file and a SKILL.md have one. */
+        private fun nameIn(file: Any?) = Regex("(?m)^name:\\s*(.+)$").find(file?.toString().orEmpty())?.groupValues?.get(1)?.trim()
+
+        /** How the dialog shows a call of each tool, as HTML, from its arguments: "added Agent Task <i>Grill</i>". */
+        private val LINES: Map<String, (Map<*, *>) -> String> = mapOf(
+            "diagram" to { _ -> "read the diagram" },
+            "agents" to { _ -> "read the Agents" },
+            "skills" to { _ -> "read the Skills" },
+            "skill" to { it -> "read the Skill ${named(it["name"])}" },
+            "processes" to { _ -> "read the Processes" },
+            "process" to { it -> "read the Process ${named(it["key"])}" },
+            "built_in_tasks" to { _ -> "read the Built-in Tasks" },
+            "templates" to { _ -> "read the Templates" },
+            "references" to { it -> "read what ${named(it["element"])} can refer to" },
+            "checks" to { _ -> "read the Checks" },
+            "create_agent" to { it -> "created the Agent ${named(nameIn(it["file"]))}" },
+            "change_agent" to { it -> "changed the Agent ${named(it["name"])}" },
+            "create_skill" to { it -> "created the Skill ${named(nameIn(it["skill"]))}" },
+            "change_skill" to { it -> "changed the Skill ${named(it["name"])}" },
+            "build_log" to { _ -> "rewrote the Build log" },
+            "copy" to { it -> "copied the ${it["kind"]?.toString()?.let { kind -> KINDS[kind + "s"] } ?: "item"} ${named(it["name"])}" },
+            "add_element" to { it ->
+                "added " + (elementKinds[it["kind"]]?.get("name") ?: it["kind"]?.toString().orEmpty()).let(HtmlUtils::htmlEscape) +
+                    ((it["name"] ?: it["id"])?.let { name -> " " + named(name) } ?: "")
+            },
+            "remove" to { it -> "removed ${named(it["id"])}" },
+            "rename" to { it -> "renamed ${named(it["id"])} to ${named(it["name"])}" },
+            "move" to { it -> "moved ${named(it["id"])}" },
+            "connect" to { it -> "connected ${named(it["from"])} to ${named(it["to"])}" },
+            "set_condition" to { it -> "set the condition on ${named(it["id"])}" },
+            "set_default" to { it -> "made ${named(it["id"])} the default path" },
+            "set_agent_task" to { it -> "set up the Agent Task ${named(it["id"])}" },
+            "set_start_form" to { _ -> "set the start form" },
+            "set_user_task" to { it -> "set up the User Task ${named(it["id"])}" },
+            "set_call" to { it -> "set up the call activity ${named(it["id"])}" },
+            "set_built_in" to { it -> "set up the Built-in Task ${named(it["id"])}" },
+            "set_multi_instance" to { it -> "set how ${named(it["id"])} runs per item" },
+            "drop_template" to { it -> "dropped the Template ${named(it["name"])}" },
+        )
 
         private val TOOLS = listOf(
             Mcp.tool("diagram", "The diagram open in the modeler, as it is now with the user's unsaved edits: its elements (id, kind, name, " +

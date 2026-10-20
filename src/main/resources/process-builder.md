@@ -71,7 +71,7 @@ an element. Fix the ones you can, then say what is left and what the user needs 
 ## The Build log
 
 The Process has a Build log: a short Markdown handoff to the next dialog about it, which starts knowing nothing of
-this one. At the end of every turn in which something was decided, built or learned, rewrite it with `build_log`: what
+this one. At the end of every turn, rewrite it with `build_log`: what
 the Process is for and the user's intent in their words, the decisions taken and why, and what is left. It replaces
 the whole log, so keep it compact and current, never a diary. When a dialog starts from a Build log, it comes before
 the user's first message: build on that intent.

@@ -27,8 +27,16 @@ class ProcessBuilderTest : AntsTest() {
 
     private fun open(): String = json.readValue(browser.post("/process-builder", emptyMap()).body, Map::class.java)["token"].toString()
 
-    private fun send(token: String, message: String, key: String? = null) =
-        browser.post("/process-builder/send", mapOf("token" to token, "message" to message) + listOfNotNull(key?.let { "key" to it }))
+    private fun send(token: String, message: String) = browser.post("/process-builder/send", mapOf("token" to token, "message" to message))
+
+    /** claude's first line in a session, saying it has started it. */
+    private val init = """{"type":"system","subtype":"init","session_id":"${'$'}SESSION","apiKeySource":"none"}"""
+
+    /** Acts as the page holding [token], whose diagram is the Process [key]. */
+    private fun page(token: String, key: String) {
+        val xml = javaClass.getResource("/agent-task.bpmn")!!.readText().replace("""id="agent-task"""", """id="$key"""")
+        browser.actAsPage(token, builder) { tool, _ -> xml.takeIf { tool == "xml" } }
+    }
 
     private fun launches() = claude.launches("process-builder")
 
@@ -64,7 +72,7 @@ class ProcessBuilderTest : AntsTest() {
     fun `a follow-up goes into the same session, and once claude has died the next message resumes it`() {
         settings(claude)
         val done = """{"type":"result","subtype":"success","result":"Done.","session_id":"${'$'}SESSION"}"""
-        claude.session("process-builder", 1, done, "read", "exit 0") // claude dies in the turn
+        claude.session("process-builder", 1, init, done, "read", "exit 0") // claude dies in the turn
         claude.session("process-builder", 2, done)
         val token = open()
         send(token, "First.")
@@ -81,19 +89,37 @@ class ProcessBuilderTest : AntsTest() {
     }
 
     @Test
+    fun `a launch that dies before claude has started its session is launched anew, not resumed`() {
+        settings(claude)
+        claude.session("process-builder", 1, "exit 1")
+        claude.session("process-builder", 2, init, """{"type":"result","subtype":"success","result":"Done.","session_id":"${'$'}SESSION"}""")
+        val token = open()
+        send(token, "First.")
+        eventually { assertEquals(1, launches().size) }
+        eventually { assertTrue(builder.idle(token)) }
+        send(token, "Again.")
+        eventually { assertEquals(2, launches().size) }
+        val (first, second) = launches()
+        assertEquals(null, second.flag("--resume"))
+        assertEquals(first.flag("--session-id"), second.flag("--session-id"))
+    }
+
+    @Test
     fun `the dialog shows the replies and tool calls, and links each Agent the Process Builder makes`() {
         settings(claude)
         claude.session("process-builder",
             """{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Who answers the questions?"}]},"session_id":"${'$'}SESSION"}""",
             """mcp create_agent {"file":"---\nname: picker\ndescription: Picks an issue.\n---\nPick one.\n"}""",
+            """mcp process {"key":"agent-task"}""",
             """{"type":"result","subtype":"success","result":"Done.","session_id":"${'$'}SESSION"}""")
         val token = open()
         val dialog = browser.events("builder=$token", "dialog")
         send(token, "Build it.")
-        val html = dialog.until { "/agents/picker" in it }
+        val html = dialog.until { "/agents/picker" in it && "read the Process" in it }
         assertTrue("Build it." in html, html)
         assertTrue("Who answers the questions?" in html, html)
-        assertTrue("create_agent" in html, html)
+        for (line in listOf("created the Agent <i>picker</i>", "read the Process <i>agent-task</i>")) assertTrue(line in html, html) // what it did, in words
+        assertFalse("mcp__ants__" in html || "create_agent" in html, html)
         assertTrue("""<a href="/agents/picker" target="_blank">Agent picker</a>""" in html, html) // a new tab keeps the unsaved diagram
     }
 
@@ -101,13 +127,15 @@ class ProcessBuilderTest : AntsTest() {
     fun `a new session for a Process with a Build log gets it in the first prompt, and the panel links to it`() {
         settings(claude)
         val done = """{"type":"result","subtype":"success","result":"Done.","session_id":"${'$'}SESSION"}"""
-        claude.session("process-builder", 1, done, "read", "exit 0")
+        claude.session("process-builder", 1, init, done, "read", "exit 0")
         claude.session("process-builder", 2, done)
         home.resolve("processes/picker").createDirectories().resolve("build-log.md").writeText("# Picker\nFor: a PR every morning.\n")
         try {
             val token = open()
-            val dialog = browser.events("builder=$token", "dialog")
-            send(token, "Add a review step.", "picker")
+            page(token, "picker") // the page's diagram, whose process id keys the Build log
+            send(token, "Add a review step.")
+            val dialog = browser.events("builder=$token", "dialog") // after the send: a second stream would take the relayed calls
+
             eventually { assertEquals(1, launches().size) }
             val first = launches().single().stdin
             assertTrue("For: a PR every morning." in first, first)
@@ -118,10 +146,10 @@ class ProcessBuilderTest : AntsTest() {
             assertEquals("# Picker\nFor: a PR every morning.\n", browser.get("/processes/picker/build-log").body)
 
             eventually { assertTrue(builder.idle(token)) }
-            send(token, "Second.", "picker")
+            send(token, "Second.")
             eventually { assertTrue("Second." in launches().single().stdin) }
             eventually { assertTrue(builder.idle(token)) }
-            send(token, "Third.", "picker")
+            send(token, "Third.")
             eventually { assertEquals(2, launches().size) }
             assertFalse("For: a PR every morning." in launches()[1].stdin) // a resumed session has it already
         } finally {
@@ -134,7 +162,8 @@ class ProcessBuilderTest : AntsTest() {
         settings(claude)
         claude.session("process-builder", """{"type":"result","subtype":"success","result":"Done.","session_id":"${'$'}SESSION"}""")
         val token = open()
-        send(token, "Build it.", "no-log-yet")
+        page(token, "no-log-yet")
+        send(token, "Build it.")
         eventually { assertEquals(1, launches().size) }
         assertEquals("Build it.", (json.readValue(launches().single().stdin.lines().first(), Map::class.java)["message"] as Map<*, *>)["content"])
     }
@@ -166,6 +195,20 @@ class ProcessBuilderTest : AntsTest() {
             eventually { assertEquals(1, launches().size) }
             eventually { assertTrue(launches().single().killed) }
             assertNotEquals(200, mcp(port, token, "tools/list").first)
+        } finally {
+            builder.gone = ProcessBuilderTools.GONE
+        }
+    }
+
+    @Test
+    fun `a page that never sent a message ends once its stream has gone`() {
+        settings(claude)
+        builder.gone = Duration.ofSeconds(1)
+        try {
+            val token = open()
+            Thread.sleep(3000) // no stream, and nothing else asks Ants about pages
+            assertContains(send(token, "Build it.").body, "session has ended")
+            assertEquals(0, launches().size)
         } finally {
             builder.gone = ProcessBuilderTools.GONE
         }
