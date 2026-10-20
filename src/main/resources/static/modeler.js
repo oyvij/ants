@@ -502,7 +502,7 @@ panels["timer-start"] = element => el("div", {}, schedulePanel(element), startFo
 panels.process = element => {
     const box = el("div", {}, explainHtml(`<b>Drawing a Process</b><ol>
         <li>A Run begins at the <b>start event</b> (its start form) and finishes at an <b>end event</b>.</li>
-        <li>Add work from the bottom of the palette, or hover a shape and pick the next step from its menu: <b>Agent</b>, <b>User</b> or <b>Built-in Task</b>.</li>
+        <li>Add work from the bottom of the palette, or click a shape and pick the next step from its menu: <b>Agent</b>, <b>User</b> or <b>Built-in Task</b>.</li>
         <li>Choose between paths with a <b>decision</b> (◇ ×). Loop by drawing a path back to an earlier Task.</li>
         <li>Run branches side by side with two <b>parallel gateways</b> (◇ +): one splits, one joins.</li>
         <li>Fix everything under <b>Checks</b>, then <b>Save and deploy</b>.</li></ol>`))

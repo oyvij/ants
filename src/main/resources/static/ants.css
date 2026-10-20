@@ -49,8 +49,8 @@ svg.i { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-widt
 .side a.on { background: #232733; color: #fff; }
 .side .bottom > form > button svg.i { width: 17px; height: 17px; }
 .side .grp { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: #5b6475; padding: 16px 10px 4px; font-weight: 600; }
-.side .n { margin-left: auto; background: var(--wait); color: #fff; font-size: 11px; font-weight: 700; border-radius: 10px; padding: 0 7px; line-height: 18px; }
-.side .n:empty { display: none; }
+:is(.side, .topbar) .n { margin-left: auto; background: var(--wait); color: #fff; font-size: 11px; font-weight: 700; border-radius: 10px; padding: 0 7px; line-height: 18px; }
+:is(.side, .topbar) .n:empty { display: none; }
 .side .m { margin-left: auto; font-size: 12px; color: #6b7385; }
 .side .bottom { margin-top: auto; display: flex; flex-direction: column; gap: 8px; }
 .notice, #paused form, #update:not(:empty) { background: var(--side2); border: 1px solid #262a35; border-radius: 9px; padding: 8px 10px; font-size: 12px; color: #cbd2dd; }
@@ -66,6 +66,12 @@ svg.i { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-widt
 :root:has(meta[name=color-scheme][content=light]) .to-light, :root:has(meta[name=color-scheme][content=dark]) .to-dark { display: none; }
 @media (prefers-color-scheme: light) { :root:has(meta[name=color-scheme][content="light dark"]) .to-light { display: none; } }
 @media (prefers-color-scheme: dark) { :root:has(meta[name=color-scheme][content="light dark"]) .to-dark { display: none; } }
+#menu, .topbar { display: none; }
+.topbar { position: sticky; top: 0; z-index: 9; align-items: center; gap: 4px; padding: 6px 8px 6px 16px; background: var(--side); color: var(--sideText); color-scheme: dark; }
+.topbar .logo { padding: 0; margin-right: auto; }
+.topbar .logo:hover, .topbar .notifications:hover { text-decoration: none; }
+.topbar .notifications, .topbar label { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-radius: 8px; color: #e5e7eb; cursor: pointer; }
+.topbar label { font-size: 20px; line-height: 1; }
 /* The installed app has no browser bar, so the sidebar carries back, forward and reload; a browser tab has its own. */
 #history { display: none; gap: 4px; padding: 0 10px 12px; }
 @media (display-mode: standalone) { #history { display: flex; } }
@@ -256,6 +262,7 @@ div.tools label span { color: var(--muted); font-size: 12px; display: block; }
 
 .storyview { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 20px; align-items: start; }
 .spine { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sh); padding: 16px; position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow-y: auto; overflow-wrap: anywhere; }
+@supports selector(::details-content) { .fold > summary { display: none; } .fold::details-content { content-visibility: visible; } }
 .spine .stitle { font-weight: 700; font-size: 15px; line-height: 1.4; margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--line2); }
 .spine .srow { display: flex; align-items: baseline; gap: 10px; padding: 8px 10px; margin: 0 -10px; border-radius: 8px; color: var(--text); font-size: 13.5px; } .spine .srow .cnt { margin-left: auto; color: var(--muted); font-size: 12px; white-space: nowrap; } .spine .srow:hover { background: var(--line2); text-decoration: none; }
 .spine .srow.on { background: var(--accSoft); font-weight: 600; } .spine .srem { margin-top: 14px; border-top: 1px solid var(--line2); padding-top: 12px; font-size: 12.5px; } .spine .srem .rf { display: flex; justify-content: space-between; padding: 3px 0; color: var(--text2); }
@@ -279,7 +286,7 @@ div.tools label span { color: var(--muted); font-size: 12px; display: block; }
 .tabs button { border: 0; box-shadow: none; background: none; border-radius: 0; padding: 10px 16px; color: var(--muted); border-bottom: 2px solid transparent; }
 .tabs button.on { color: var(--text); border-bottom-color: var(--acc); }
 .walk { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 18px; }
-.walk nav { position: sticky; top: 20px; align-self: start; display: flex; flex-direction: column; gap: 2px; }
+.files { position: sticky; top: 20px; align-self: start; } .walk nav { display: flex; flex-direction: column; gap: 2px; }
 .walk nav a { color: var(--text); padding: 6px 10px; border-radius: 8px; font-size: 13px; overflow-wrap: anywhere; } .walk nav a:hover { background: var(--panel); text-decoration: none; }
 
 /* Liveness: what a running Agent looks like everywhere it appears */
@@ -426,7 +433,7 @@ nav#tabs[role=tablist] .m { color: var(--ans); white-space: nowrap; }
 .walk nav b { padding: 8px 10px 2px; } .walk nav a.mono { font-size: 12px; }
 .walk .card > .row > b.mono { font-size: 16px; } .walk .commits { margin: 8px 0 4px; }
 .walk .card > .row > * { flex-shrink: 0; white-space: nowrap; } .walk .card > .row > .mono.muted { flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.walk details { border-top: 1px solid var(--line2); padding: 8px 0; } .walk summary { cursor: pointer; }
+.walk .card details { border-top: 1px solid var(--line2); padding: 8px 0; } .walk .card summary { cursor: pointer; }
 table.diff { --diff-bg: #0f172a; --num: 56px; --picked: rgba(129, 140, 248, .25); display: block; overflow: auto; max-height: var(--code-max); margin: 6px 0; background: var(--diff-bg); color: #e2e8f0; border: 0; border-radius: 8px; box-shadow: none; font: 12.5px/1.6 var(--mono); padding: 12px 0; }
 table.diff td { padding: 0 14px 0 0; border: 0; white-space: pre; vertical-align: top; background: none !important; }
 table.diff td:nth-child(-n+2) { position: sticky; left: 0; width: var(--num); min-width: var(--num); background: var(--diff-bg) !important; padding: 0 0 0 14px; text-align: right; color: #64748b; cursor: pointer; user-select: none; } table.diff td:nth-child(2) { left: var(--num); }
@@ -576,3 +583,73 @@ details.example pre { background: var(--line2); border: 0; padding: 10px; border
 
 /* Images in the prompt and in Send (#89): a pasted image, shown where the message shows its text */
 .user img, .prompt img { display: block; max-height: 240px; margin: 6px 0; border-radius: 6px; }
+
+@media (max-width: 768px) {
+    :root { --side-width: 0px; }
+    .topbar { display: flex; }
+    nav.side { width: min(280px, 85vw); visibility: hidden; transform: translateX(-100%); transition: transform .2s, visibility .2s; }
+    #menu:checked ~ nav.side { visibility: visible; transform: none; box-shadow: 0 0 0 100vmax var(--modalBg); }
+    main, main.full { padding-inline: 16px; }
+    .composer > :is(div, form), main.full .composer > :is(div, form) { padding-inline: 16px; }
+    .answering { flex-direction: column; align-items: stretch; gap: 16px; }
+    .answering, .answering:has(> #tabs:not([hidden])) { --lead: 0px; }
+    nav#tabs[role=tablist] { position: static; flex: none; flex-direction: row; gap: 6px; max-height: none; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; padding-bottom: 4px; }
+    nav#tabs[role=tablist] > button { flex: none; display: flex; max-width: 240px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 999px; white-space: nowrap; }
+    nav#tabs[role=tablist] > button:last-child { margin-top: 0; }
+    nav#tabs[role=tablist] > [aria-selected=true] { border-color: var(--ask); }
+    nav#tabs[role=tablist] .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    #round { flex: none; padding-bottom: var(--footer-height, 72px); }
+    #round > footer { --inset: 16px; flex-wrap: wrap; }
+    .home, .home .grid3 { grid-template-columns: minmax(0, 1fr); }
+    #working-now { grid-row: auto; }
+    :is(.notes, table.specs), :is(.notes, table.specs) :is(tbody, tr, td) { display: block; }
+    :is(.notes, table.specs) tr:has(> th) { display: none; }
+    :is(.notes, table.specs) tr { padding: 8px 0; border-bottom: 1px solid var(--line2); }
+    :is(.notes, table.specs) tr:last-child { border-bottom: 0; }
+    :is(.notes, table.specs) :is(td, td:first-child) { width: auto; padding: 4px 16px; border: 0; overflow-wrap: anywhere; }
+    :is(#runlist table, #tasks, #process-runs), :is(#runlist, #tasks, #process-runs) :is(tbody, tr, td) { display: block; }
+    :is(#runlist, #tasks, #process-runs) tr:has(> th) { display: none; }
+    :is(#runlist, #tasks, #process-runs) tr { padding: 8px 0; border-bottom: 1px solid var(--line2); }
+    :is(#runlist, #tasks, #process-runs) tr:last-child { border-bottom: 0; }
+    :is(#runlist, #tasks, #process-runs) td { padding: 4px 16px; border: 0; overflow-wrap: anywhere; }
+    main:has(> #diagram) .ph .acts { flex-wrap: wrap; }
+    main:has(> #diagram) :is(.ph .sub, .card) { overflow-wrap: anywhere; }
+    .dia .legend { right: 12px; flex-wrap: wrap; }
+    .drawer { width: 100%; border-left: 0; }
+    :is(dialog.modal, dialog#new-process) { width: 100%; border-radius: 0; }
+    .modal .mb { padding: 16px; }
+    .modal .split { grid-template-columns: minmax(0, 1fr); grid-template-rows: repeat(2, minmax(0, 1fr)); }
+    .modal .split .cm-content { min-height: 0; }
+    .modal .split .md { padding: 16px; border-left: 0; border-top: 1px solid var(--line); }
+    .toast { top: 0; left: 0; right: 0; width: auto; border-radius: 0; }
+    #start :is(.tags .mono, .picks .mono, .combo [role=option]) { overflow-wrap: anywhere; }
+    #start .combo [role=option] { display: flex; align-items: center; min-height: 44px; }
+    :is(button, .btn, .side a, .topbar :is(a, label), .tabs a, .spine .srow, .ssteps a, .walk nav a, .crumbs a, :is(.chipsel, .tags) .c, nav#tabs[role=tablist] > button) { min-height: 44px; }
+    :is(.tabs, .ssteps, .walk nav) a { display: flex; align-items: center; }
+    .crumbs a { display: inline-flex; align-items: center; }
+    :is(input, select, textarea, .ed .cm-content) { font-size: 16px; }
+    .md { max-width: 100%; overflow-wrap: break-word; }
+    .md table { display: block; width: max-content; max-width: 100%; overflow-x: auto; }
+    #ticket input[type=checkbox] { width: 24px; height: 24px; vertical-align: middle; }
+    .card.push .kv { grid-template-columns: 90px minmax(0, 1fr); }
+    .card.push .kv > * { overflow-wrap: anywhere; }
+    main form.row.pushacts { flex-wrap: wrap; }
+    .storyview, .walk { grid-template-columns: minmax(0, 1fr); }
+    .fold { position: static; max-height: none; padding: 0 16px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); }
+    .fold > summary { display: list-item; padding: 12px 0; line-height: 20px; color: var(--text); font-weight: 600; }
+    .fold[open] { padding-bottom: 12px; }
+    .fold:not([open])::details-content { content-visibility: hidden; }
+    .walkhead, .cfile, .bandacts, .walk .card > .row { flex-wrap: wrap; }
+    .walk .card > .row > :not(.mono.muted) { flex-shrink: 1; white-space: normal; overflow-wrap: anywhere; }
+    .cfile .mono, .walk .card summary, #comments form > span { min-width: 0; overflow-wrap: anywhere; }
+    :is(.stepcomment, #line-comment > .row) { flex-direction: column; align-items: stretch; }
+    #line-comment .lc { grid-template-columns: minmax(0, 1fr); }
+    .grid2, .grid3, .modelerWrap, form.agent .grid2, .grid2.skill-page { grid-template-columns: minmax(0, 1fr); }
+    main:has(> :is(.modelerWrap, .skill-page, form.agent, form.settings)) .ph .acts { flex-wrap: wrap; }
+    main:has(> :is(.modelerWrap, .skill-page, form.agent, form.settings)) .ph :is(.sub, .acts > span) { overflow-wrap: anywhere; }
+    .trow { grid-template-columns: minmax(0, 1fr) auto; }
+    .trow > .tdesc { grid-column: 1 / -1; grid-row: 2; }
+    :is(form.agent .add-tool, .settings .row) > input { min-width: 0; }
+    .settings .listed > .row { flex-wrap: wrap; }
+    .settings .listed > .row > :is(.name, .grow) { flex: 1 1 100%; width: auto; }
+}

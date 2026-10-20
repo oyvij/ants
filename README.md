@@ -37,6 +37,20 @@ Then start a Run from one of the shipped Processes, such as **Build and ship**, 
 
 Everything Ants owns lives in `~/.ants`. Set `ANTS_HOME` to move it. `settings.yaml` there takes hand edits.
 
+## Using Ants from a phone
+
+Every page fits a phone screen, so you can follow your Runs and answer what's waiting on you away from your desk.
+This needs no change to your homelab, and no new TLS or auth: the phone reaches the same Ants, behind the same login.
+
+1. Use a phone that can reach the machine Ants runs on, for example one on the same network.
+2. Open the same URL you open on the desktop, and log in as you do there.
+3. Optionally, add Ants to the home screen (**Share** → **Add to Home Screen** in Safari, ⋮ → **Add to Home
+   screen** in Chrome). Ants' web manifest makes it open as its own app, full screen with the Ants icon.
+
+Out of the box Ants listens only on `127.0.0.1`, which no other device can reach. To reach it from the network,
+change the password, then `ants stop` and start it in the foreground on every address with
+`SERVER_ADDRESS=0.0.0.0 ants run`.
+
 ## Developing
 
 Run Ants from source with Java 25 (Gradle and Node are fetched by the build): `./gradlew bootRun`.
