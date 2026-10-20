@@ -4,6 +4,9 @@ import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import tools.jackson.databind.json.JsonMapper
 import java.time.Duration
+import kotlin.io.path.createDirectories
+import kotlin.io.path.deleteIfExists
+import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -24,7 +27,8 @@ class ProcessBuilderTest : AntsTest() {
 
     private fun open(): String = json.readValue(browser.post("/process-builder", emptyMap()).body, Map::class.java)["token"].toString()
 
-    private fun send(token: String, message: String) = browser.post("/process-builder/send", mapOf("token" to token, "message" to message))
+    private fun send(token: String, message: String, key: String? = null) =
+        browser.post("/process-builder/send", mapOf("token" to token, "message" to message) + listOfNotNull(key?.let { "key" to it }))
 
     private fun launches() = claude.launches("process-builder")
 
@@ -91,6 +95,48 @@ class ProcessBuilderTest : AntsTest() {
         assertTrue("Who answers the questions?" in html, html)
         assertTrue("create_agent" in html, html)
         assertTrue("""<a href="/agents/picker" target="_blank">Agent picker</a>""" in html, html) // a new tab keeps the unsaved diagram
+    }
+
+    @Test
+    fun `a new session for a Process with a Build log gets it in the first prompt, and the panel links to it`() {
+        settings(claude)
+        val done = """{"type":"result","subtype":"success","result":"Done.","session_id":"${'$'}SESSION"}"""
+        claude.session("process-builder", 1, done, "read", "exit 0")
+        claude.session("process-builder", 2, done)
+        home.resolve("processes/picker").createDirectories().resolve("build-log.md").writeText("# Picker\nFor: a PR every morning.\n")
+        try {
+            val token = open()
+            val dialog = browser.events("builder=$token", "dialog")
+            send(token, "Add a review step.", "picker")
+            eventually { assertEquals(1, launches().size) }
+            val first = launches().single().stdin
+            assertTrue("For: a PR every morning." in first, first)
+            assertTrue("Add a review step." in first, first)
+            val html = dialog.until { "Add a review step." in it }
+            assertTrue("""<a href="/processes/picker/build-log" target="_blank">""" in html, html)
+            assertFalse("For: a PR every morning." in html, html) // the user's line is what they wrote
+            assertEquals("# Picker\nFor: a PR every morning.\n", browser.get("/processes/picker/build-log").body)
+
+            eventually { assertTrue(builder.idle(token)) }
+            send(token, "Second.", "picker")
+            eventually { assertTrue("Second." in launches().single().stdin) }
+            eventually { assertTrue(builder.idle(token)) }
+            send(token, "Third.", "picker")
+            eventually { assertEquals(2, launches().size) }
+            assertFalse("For: a PR every morning." in launches()[1].stdin) // a resumed session has it already
+        } finally {
+            home.resolve("processes/picker/build-log.md").deleteIfExists()
+        }
+    }
+
+    @Test
+    fun `a new session for a Process without a Build log gets only the user's message`() {
+        settings(claude)
+        claude.session("process-builder", """{"type":"result","subtype":"success","result":"Done.","session_id":"${'$'}SESSION"}""")
+        val token = open()
+        send(token, "Build it.", "no-log-yet")
+        eventually { assertEquals(1, launches().size) }
+        assertEquals("Build it.", (json.readValue(launches().single().stdin.lines().first(), Map::class.java)["message"] as Map<*, *>)["content"])
     }
 
     @Test

@@ -1,5 +1,8 @@
 package ants
 
+import org.springframework.http.HttpStatus
+import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
@@ -17,6 +20,8 @@ import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.TimeUnit.NANOSECONDS
 import java.util.concurrent.TimeoutException
+import kotlin.io.path.createDirectories
+import kotlin.io.path.exists
 import kotlin.io.path.readText
 
 /**
@@ -71,6 +76,14 @@ class ProcessBuilderTools(
         /** The pages of the Agents, Skills and Templates this session made or changed, in order. */
         val made: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
+        /** The key of the Process whose Build log this session started from, which the panel links to. */
+        @Volatile
+        var handoff: String? = null
+
+        /** The first prompt, with the Build log, and the user's own message: the dialog shows its replay as the message alone. */
+        @Volatile
+        private var opening: Pair<String, String>? = null
+
         /** When the page's SSE last asked for calls to send; it has never asked while [polled] is false. */
         @Volatile
         var seen = System.nanoTime()
@@ -110,6 +123,11 @@ class ProcessBuilderTools(
                 "change_agent" -> saved(agents.write(argument("file"), argument("name")))
                 "create_skill" -> saved(skills.write(argument("skill"), arguments["schema"]?.toString().orEmpty(), null))
                 "change_skill" -> saved(skills.write(argument("skill"), arguments["schema"]?.toString().orEmpty(), argument("name")))
+                "build_log" -> argument("markdown").let { markdown ->
+                    val key = process(parse(xml().toByteArray())).getAttribute("id")
+                    buildLog(key).also { it.parent.createDirectories() }.writeAtomically(markdown)
+                    "The Build log of $key is now what you gave."
+                }
                 "copy" -> argument("name").let { item ->
                     saved(when (argument("kind")) {
                         "agent" -> agents.copy(item)
@@ -128,14 +146,23 @@ class ProcessBuilderTools(
         /** What a create, change or copy answers: the item's name and its page, which the panel links to. */
         fun saved(page: String) = json.writeValueAsString(mapOf("name" to page.substringAfterLast('/'), "page" to page)).also { made += page }
 
-        /** Sends [message] into the session, launching claude first when none is live. */
+        /**
+         * Sends [message] into the session, launching claude first when none is live. A new session on the Process [key]
+         * gets its Build log, when there is one, before the message: the handoff from the dialogs before it.
+         */
         @Synchronized
-        fun send(message: String) {
+        fun send(message: String, key: String?) {
             val (cli, model) = settings.processBuilder()
             if (cli != "claude") throw Refused(CLAUDE_ONLY)
+            val log = key?.takeIf { !launched }?.let { runCatching { buildLog(it) }.getOrNull() }?.takeIf { it.exists() }
             if (claude?.isAlive != true || stdin?.open != true) launch(model)
+            val prompt = log?.let { "The Build log of this Process, from earlier dialogs about it:\n\n${it.readText().trim()}\n\nFrom the user:\n$message" }
+            if (prompt != null) {
+                handoff = key
+                opening = prompt to message
+            }
             busy = true
-            if (!stdin!!.say(message)) busy = false.also { throw Refused("claude ended before it read the message. Send it again to resume the session.") }
+            if (!stdin!!.say(prompt ?: message)) busy = false.also { throw Refused("claude ended before it read the message. Send it again to resume the session.") }
         }
 
         private fun launch(model: String?) {
@@ -177,11 +204,21 @@ class ProcessBuilderTools(
                     stdin.close()
                     launcher.kill(process)
                 } else if (event["type"] == "result") busy = false // its text is the last reply's, already shown
-                else synchronized(dialog) { dialog.add(line) }
+                else synchronized(dialog) { dialog.add(opening?.let { shown(event, it) } ?: line) }
             }
             val exit = process.waitFor()
             busy = false
             if (exit != 0 && !stdin.stopping && !closed) note("claude ended (exit $exit)${stderr()?.let { ": ${it.lines().last()}" } ?: ""}. Your next message resumes the session.")
+        }
+
+        /** The replay of the first prompt [opening] as the user's own message, the Build log left out; null for any other line. */
+        private fun shown(event: Map<*, *>, opening: Pair<String, String>): String? {
+            val (prompt, message) = opening
+            val content = (event["message"] as? Map<*, *>)?.get("content")
+            val text = content as? String ?: (content as? List<*>)?.filterIsInstance<Map<*, *>>()?.firstOrNull { it["type"] == "text" }?.get("text")
+            if (event["type"] != "user" || text != prompt) return null
+            this.opening = null
+            return json.writeValueAsString(event + ("message" to mapOf("role" to "user", "content" to message)))
         }
 
         /** A line of Ants' own in the dialog. */
@@ -191,7 +228,8 @@ class ProcessBuilderTools(
 
         /** The dialog as the panel shows it: the entries, the reply streaming in, what it made, and whether a turn runs. */
         fun html(): String = synchronized(dialog) {
-            """<div id="pb-entries">${dialog.roots.joinToString("").replace("<b>mcp__ants__", "<b>")}</div>${dialog.html("live")}""" +
+            (handoff?.let { """<p class="ants" id="pb-handoff">Started from this Process's <a href="/processes/${HtmlUtils.htmlEscape(it)}/build-log" target="_blank">Build log</a>.</p>""" } ?: "") +
+                """<div id="pb-entries">${dialog.roots.joinToString("").replace("<b>mcp__ants__", "<b>")}</div>${dialog.html("live")}""" +
                 (if (made.isEmpty()) "" else """<ul id="pb-made" aria-label="Made">""" + made.joinToString("") { page ->
                     val kind = KINDS[page.split('/')[1]]
                     """<li><a href="${HtmlUtils.htmlEscape(page)}" target="_blank">$kind ${HtmlUtils.htmlEscape(page.substringAfterLast('/'))}</a></li>"""
@@ -235,12 +273,26 @@ class ProcessBuilderTools(
 
     /** Sends the user's [message] into the page's claude session: empty, or the [error] that kept it from going. */
     @PostMapping("/process-builder/send")
-    fun send(@RequestParam token: String, @RequestParam message: String): Map<String, String> = try {
+    fun send(@RequestParam token: String, @RequestParam message: String, @RequestParam(required = false) key: String?): Map<String, String> = try {
         if (message.isBlank()) throw Refused("Write a message to send.")
-        (pages[token] ?: throw Refused("This page's Process Builder session has ended. Reload the page.")).send(message)
+        (pages[token] ?: throw Refused("This page's Process Builder session has ended. Reload the page.")).send(message, key)
         emptyMap()
     } catch (e: Exception) {
         mapOf("error" to (e.message ?: e.toString()))
+    }
+
+    /** A Process's Build log, to read: the Markdown the Process Builder last wrote for it. */
+    @GetMapping("/processes/{key}/build-log", produces = ["text/plain;charset=UTF-8"])
+    fun readBuildLog(@PathVariable key: String): String =
+        runCatching { buildLog(key) }.getOrNull()?.takeIf { it.exists() }?.readText() ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "$key has no Build log.")
+
+    /**
+     * Where the Process [key]'s Build log lives: `ANTS_HOME/processes/<key>/build-log.md`, apart from deploys and drafts,
+     * so it outlives both. A key that isn't a plain folder name is refused, so nothing is written outside that folder.
+     */
+    private fun buildLog(key: String): Path {
+        if (!SAFE_KEY.matches(key)) throw Refused("The Process id `$key` can't name a folder, so it gets no Build log: give it letters, digits, `_`, `-` and `.` only.")
+        return launcher.home.resolve("processes").resolve(key).resolve("build-log.md")
     }
 
     /** Stop: interrupts the turn running in the page's session. */
@@ -299,6 +351,9 @@ class ProcessBuilderTools(
 
         /** A page whose SSE last asked longer ago than this has gone, and its token dies. */
         val GONE: Duration = Duration.ofMinutes(1)
+
+        /** A Process id that is a plain folder name: no separator, and never `.` or `..`. */
+        private val SAFE_KEY = Regex("[A-Za-z_][A-Za-z0-9_.-]*")
 
         const val CLAUDE_ONLY = "The Process Builder runs on claude only for now. Set process-builder's cli to claude in settings.yaml."
 
@@ -389,6 +444,9 @@ class ProcessBuilderTools(
                 "read-only: copy one first.",
                 mapOf("name" to "The Skill's name now.", "skill" to "The whole new SKILL.md.", "schema" to "The whole new result.schema.json; none when left out."),
                 optional = setOf("schema")),
+            Mcp.tool("build_log", "Replaces this Process's Build log, the Markdown handoff the next dialog about it starts from: what the Process is for " +
+                "and the user's intent, the decisions taken, and what is left. Rewrite it whole at the end of every turn; keep it compact.",
+                mapOf("markdown" to "The whole new Build log.")),
             Mcp.tool("copy", "Copies an Agent, Skill or Template, such as a shipped one, into the user's own as `<name>-copy`, which can then be changed. Answers the copy's name and page.",
                 mapOf("kind" to "agent, skill or template.", "name" to "The name of the one to copy.")),
         ) + WRITE

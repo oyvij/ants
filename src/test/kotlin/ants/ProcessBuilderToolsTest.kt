@@ -11,7 +11,10 @@ import java.nio.file.Files
 import java.time.Duration
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit.SECONDS
+import kotlin.io.path.exists
+import kotlin.io.path.readText
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
@@ -56,7 +59,7 @@ class ProcessBuilderToolsTest : AntsTest() {
         val task = protectedCommands.open(Files.createTempDirectory("workspace")).first
         try {
             assertEquals(listOf("diagram", "agents", "skills", "skill", "processes", "process", "built_in_tasks", "templates", "references", "checks",
-                "create_agent", "create_skill", "change_agent", "change_skill", "copy",
+                "create_agent", "create_skill", "change_agent", "change_skill", "build_log", "copy",
                 "add_element", "remove", "rename", "move", "connect", "set_condition", "set_default", "set_agent_task", "set_start_form", "drop_template"), tools(page))
             assertEquals(listOf("run"), tools(task))
             assertTrue(call(task, "diagram").second)
@@ -143,6 +146,37 @@ class ProcessBuilderToolsTest : AntsTest() {
         } finally {
             builder.timeLimit = ProcessBuilderTools.TIME_LIMIT
         }
+    }
+
+    @Test
+    fun `the Build log tool replaces the Build log of the page's Process, which outlives Save and deploy`() {
+        agentTask(null)
+        val token = open()
+        page(token) { tool, _ -> agentTaskXml.takeIf { tool == "xml" } }
+        val log = home.resolve("processes/agent-task/build-log.md")
+
+        assertEquals(false, call(token, "build_log", mapOf("markdown" to "# First draft")).second)
+        val second = call(token, "build_log", mapOf("markdown" to "# Agent Task\nDecided: one Task.\n"))
+        assertEquals(false, second.second, second.first)
+        assertEquals("# Agent Task\nDecided: one Task.\n", log.readText())
+
+        assertEquals("/processes/agent-task", browser.post("/processes/deploy", mapOf("bpmn" to agentTaskXml)).path)
+        assertEquals("# Agent Task\nDecided: one Task.\n", log.readText())
+    }
+
+    @Test
+    fun `a Process key unsafe for a path gets no Build log, and nothing is written outside the processes folder`() {
+        val token = open()
+        var key = ""
+        page(token) { tool, _ -> agentTaskXml.replace("""id="agent-task"""", """id="$key"""").takeIf { tool == "xml" } }
+        for (unsafe in listOf("..", "../escaped", "a/b", "")) {
+            key = unsafe
+            val refused = call(token, "build_log", mapOf("markdown" to "# Escaped"))
+            assertTrue(refused.second, "$key: ${refused.first}")
+        }
+        assertFalse(home.resolve("escaped").exists())
+        assertFalse(home.resolve("processes/build-log.md").exists())
+        assertFalse(home.resolve("build-log.md").exists())
     }
 
     @Test

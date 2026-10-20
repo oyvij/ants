@@ -1104,7 +1104,9 @@ async function openBuilder() {
         const text = message.value
         message.value = ""
         message.dispatchEvent(new Event("change"))
-        const answer = await (await post("/process-builder/send", {message: text})).json()
+        // The Process's key as it is now, whose Build log a new session starts from.
+        const key = modeler.get("elementRegistry").find(e => !e.parent && e.type === "bpmn:Process")?.businessObject.id || ""
+        const answer = await (await post("/process-builder/send", {message: text, key})).json()
         error.textContent = answer.error || ""
         if (answer.error) {
             message.value = text
