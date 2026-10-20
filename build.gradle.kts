@@ -11,7 +11,7 @@ plugins {
 }
 
 group = "no.oyvij"
-version = "0.16.1"
+version = "0.16.2"
 
 kotlin {
     jvmToolchain(25)
