@@ -443,12 +443,7 @@ class BrowserTest : AntsTest() {
         }
 
         page.navigate(url("/"))
-        val cards = listOf("#stats", "#waiting-on-you", "#working-now", "#coming-up", "#start-a-run").map { it to page.locator(it).boundingBox() }
-        for ((above, below) in cards.zipWithNext()) {
-            assertEquals(above.second.x, below.second.x, 0.5, "${below.first} starts where ${above.first} starts")
-            assertEquals(above.second.width, below.second.width, 0.5, "${below.first} is as wide as ${above.first}")
-            assertTrue(below.second.y >= above.second.y + above.second.height, "${below.first} sits under ${above.first}")
-        }
+        assertStacked("/", "#stats", "#waiting-on-you", "#working-now", "#coming-up", "#start-a-run")
 
         page.navigate(url("/notifications"))
         page.locator("tr.click:has(a[href='$run']) td").last().tap()
@@ -638,8 +633,12 @@ class BrowserTest : AntsTest() {
         assertThat(heading).hasText("Agent Task")
     }
 
+    private fun visibleBox(selector: String) = page.locator(selector).first().also { assertThat(it).isVisible() }.boundingBox()
+
+    private fun card(title: String) = ".card:has(> h3:text-is('$title'))"
+
     private fun assertStacked(path: String, vararg parts: String) {
-        val boxes = parts.map { it to page.locator(it).first().also { part -> assertThat(part).isVisible() }.boundingBox() }
+        val boxes = parts.map { it to visibleBox(it) }
         for ((above, below) in boxes.zipWithNext()) {
             assertEquals(above.second.x, below.second.x, 0.5, "${below.first} starts where ${above.first} starts on $path")
             assertEquals(above.second.width, below.second.width, 0.5, "${below.first} is as wide as ${above.first} on $path")
@@ -653,7 +652,6 @@ class BrowserTest : AntsTest() {
         settings(null, "vaults:\n  work: /tmp/work\n  side: /tmp/side\ndefault-vault: work\nagent-folders: [/tmp/a]\n")
         home.resolve("agents").createDirectories().resolve("stacked.md").writeText("---\nname: stacked\ncli: claude\nskills: stacked\ntools: Read, Bash(git log *)\n---\nStacked.\n")
         home.resolve("skills/stacked").createDirectories().resolve("SKILL.md").writeText("---\nname: stacked\ndescription: Stacked.\n---\n" + "A long line of the Skill. ".repeat(40) + "\n")
-        fun card(title: String) = ".card:has(> h3:text-is('$title'))"
         val pages = listOf(
             "/processes/start-end/edit" to arrayOf("#canvas", ".props"),
             "/templates/review-and-push" to arrayOf("#canvas", ".props"),
@@ -662,6 +660,7 @@ class BrowserTest : AntsTest() {
             "/skills/new" to arrayOf(".card:has(#skill)", card("Run by")),
             "/agents/stacked" to arrayOf("#name", "#description", "#cli", "#model"),
             "/agents/new" to arrayOf("#name", "#description", "#cli", "#model"),
+            "/agents/implementer" to arrayOf("#name", "#description", "#cli", "#model"),
             "/settings" to arrayOf(card("Claude login"), card("Commands"), card("Vaults"), card("Agent folders"), card("So far"), card("Theme"), card("Server"), card("Updates")),
         )
         onPhone()
@@ -681,14 +680,14 @@ class BrowserTest : AntsTest() {
         page.setViewportSize(769, 900)
         fun assertBeside(path: String, left: String, right: String) {
             page.navigate(url(path))
-            val (l, r) = listOf(left, right).map { page.locator(it).first().also { part -> assertThat(part).isVisible() }.boundingBox() }
-            assertEquals(l.y, r.y, 1.0, "$right sits level with $left on $path")
-            assertTrue(l.x + l.width < r.x, "$right sits beside $left on $path")
+            val (leftBox, rightBox) = listOf(left, right).map(::visibleBox)
+            assertEquals(leftBox.y, rightBox.y, 1.0, "$right sits level with $left on $path")
+            assertTrue(leftBox.x + leftBox.width < rightBox.x, "$right sits beside $left on $path")
         }
         assertBeside("/processes/start-end/edit", "#canvas", ".props")
-        assertBeside("/skills/new", ".card:has(#skill)", ".card:has(> h3:text-is('Run by'))")
+        assertBeside("/skills/new", ".card:has(#skill)", card("Run by"))
         assertBeside("/agents/beside", "#name", "#description")
-        assertBeside("/settings", ".card:has(> h3:text-is('Claude login'))", ".card:has(> h3:text-is('Commands'))")
+        assertBeside("/settings", card("Claude login"), card("Commands"))
     }
 
     private fun assertWithinScreen(part: Locator, what: String) {

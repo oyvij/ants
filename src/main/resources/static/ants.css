@@ -644,8 +644,9 @@ details.example pre { background: var(--line2); border: 0; padding: 10px; border
     .cfile .mono, .walk .card summary, #comments form > span { min-width: 0; overflow-wrap: anywhere; }
     :is(.stepcomment, #line-comment > .row) { flex-direction: column; align-items: stretch; }
     #line-comment .lc { grid-template-columns: minmax(0, 1fr); }
-    :is(.grid2, .grid3, form.agent .grid2, .grid2.skill-page, .modelerWrap) { grid-template-columns: minmax(0, 1fr); }
-    main:has(> .modelerWrap) .ph .acts { flex-wrap: wrap; }
+    .grid2, .grid3, .modelerWrap, form.agent .grid2, .grid2.skill-page { grid-template-columns: minmax(0, 1fr); }
+    main:has(> :is(.modelerWrap, .skill-page, form.agent, form.settings)) .ph .acts { flex-wrap: wrap; }
+    main:has(> :is(.modelerWrap, .skill-page, form.agent, form.settings)) .ph :is(.sub, .acts > span) { overflow-wrap: anywhere; }
     .trow { grid-template-columns: minmax(0, 1fr) auto; }
     .trow > .tdesc { grid-column: 1 / -1; grid-row: 2; }
     :is(form.agent .add-tool, .settings .row) > input { min-width: 0; }
