@@ -4,8 +4,12 @@ import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.server.ResponseStatusException
+import org.springframework.web.util.HtmlUtils
 import tools.jackson.databind.json.JsonMapper
+import java.nio.file.Files
+import java.nio.file.Path
 import java.time.Duration
+import java.time.Instant
 import java.util.UUID
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
@@ -27,15 +31,46 @@ import kotlin.io.path.readText
 @RestController
 class ProcessBuilderTools(
     private val mcp: Mcp, private val agents: Agents, private val templates: Templates, private val processes: Processes, private val catalogue: Catalogue,
-    private val skills: Skills, private val json: JsonMapper,
+    private val skills: Skills, private val json: JsonMapper, private val launcher: AgentLauncher, private val settings: Settings,
 ) {
     private val pages = ConcurrentHashMap<String, Page>()
 
     /** How long a page has to answer a relayed call. */
     internal var timeLimit: Duration = TIME_LIMIT
 
-    /** One open modeler page: the calls waiting to go out on its SSE, and those waiting for its answer. */
+    /** A page whose SSE last asked longer ago than this has gone: its token dies and its claude ends. */
+    internal var gone: Duration = GONE
+
+    /**
+     * One open modeler page: the calls waiting to go out on its SSE, and those waiting for its answer; and its claude
+     * session, launched on the first message and resumed by the next one after it died, in a scratch folder of its own
+     * (claude finds a session to resume by its working directory), and the dialog it has shown.
+     */
     private inner class Page : McpTools {
+        /** The `--mcp-config` that reaches this page's tools. */
+        lateinit var config: String
+
+        val session = UUID.randomUUID().toString()
+        val scratch: Path by lazy { Files.createTempDirectory("process-builder") }
+        var launched = false
+
+        @Volatile
+        var claude: Process? = null
+        var stdin: AgentLauncher.Stdin? = null
+
+        /** Whether a turn runs: from a message sent until claude's `result` line, or its end. */
+        @Volatile
+        var busy = false
+
+        @Volatile
+        var closed = false
+
+        /** The dialog, claude's stream-json lines folded in as an Agent Task's Transcript folds them. Guarded by itself. */
+        val dialog = Transcript()
+
+        /** The pages of the Agents, Skills and Templates this session made or changed, in order. */
+        val made: MutableSet<String> = ConcurrentHashMap.newKeySet()
+
         /** When the page's SSE last asked for calls to send; it has never asked while [polled] is false. */
         @Volatile
         var seen = System.nanoTime()
@@ -47,7 +82,7 @@ class ProcessBuilderTools(
         val waiting = ConcurrentHashMap<String, CompletableFuture<String>>()
 
         val connected get() = polled && System.nanoTime() - seen < CONNECTED.toNanos()
-        override val alive get() = System.nanoTime() - seen < GONE.toNanos()
+        override val alive get() = !closed && System.nanoTime() - seen < gone.toNanos()
         override val tools = TOOLS
 
         override fun call(name: String, arguments: Map<*, *>): Pair<String, Boolean> = try {
@@ -91,7 +126,78 @@ class ProcessBuilderTools(
         }
 
         /** What a create, change or copy answers: the item's name and its page, which the panel links to. */
-        fun saved(page: String) = json.writeValueAsString(mapOf("name" to page.substringAfterLast('/'), "page" to page))
+        fun saved(page: String) = json.writeValueAsString(mapOf("name" to page.substringAfterLast('/'), "page" to page)).also { made += page }
+
+        /** Sends [message] into the session, launching claude first when none is live. */
+        @Synchronized
+        fun send(message: String) {
+            val (cli, model) = settings.processBuilder()
+            if (cli != "claude") throw Refused(CLAUDE_ONLY)
+            if (claude?.isAlive != true || stdin?.open != true) launch(model)
+            busy = true
+            if (!stdin!!.say(message)) busy = false.also { throw Refused("claude ended before it read the message. Send it again to resume the session.") }
+        }
+
+        private fun launch(model: String?) {
+            // Locked down by its tools (ADR 0019): none of claude's own, only Ants' modeler tools, no settings or hooks of the user's.
+            val flags = AgentLauncher.STREAM_JSON + listOf(
+                if (launched) "--resume" else "--session-id", session,
+                "--permission-mode", "dontAsk",
+                "--setting-sources", "",
+                "--settings", """{"disableAllHooks":true}""",
+                "--strict-mcp-config",
+                "--mcp-config", config,
+                "--disable-slash-commands",
+                "--tools", "",
+                "--allowedTools", "mcp__ants__*",
+                "--append-system-prompt", INSTRUCTIONS,
+            ) + (model?.let { listOf("--model", it) } ?: emptyList())
+            val process = launcher.cli("claude", scratch, flags).start()
+            launched = true
+            val stdin = AgentLauncher.Stdin(process.outputWriter(), "process-builder", launcher.home)
+            claude = process
+            this.stdin = stdin
+            val stderr = launcher.drain(process)
+            Thread.ofVirtual().start { read(process, stdin, stderr) }
+            Thread.ofVirtual().start {
+                while (process.isAlive) {
+                    if (!alive) end(this)
+                    Thread.sleep(500)
+                }
+            }
+        }
+
+        /** Folds claude's lines into the dialog until it ends; a turn ends at its `result` line. */
+        private fun read(process: Process, stdin: AgentLauncher.Stdin, stderr: () -> String?) {
+            process.inputReader().forEachLine { line ->
+                val event = runCatching { json.readValue(line, Map::class.java) }.getOrNull() ?: return@forEachLine
+                val apiKey = (event["apiKeySource"] as? String)?.takeIf { event["subtype"] == "init" && it != "none" }
+                if (event["error"] == "authentication_failed" || apiKey != null) {
+                    note(AgentLauncher.LOST_LOGIN + (apiKey?.let { ": claude would use an API key (apiKeySource: $it), and Ants runs only on its own login." } ?: "."))
+                    stdin.close()
+                    launcher.kill(process)
+                } else if (event["type"] == "result") busy = false // its text is the last reply's, already shown
+                else synchronized(dialog) { dialog.add(line) }
+            }
+            val exit = process.waitFor()
+            busy = false
+            if (exit != 0 && !stdin.stopping && !closed) note("claude ended (exit $exit)${stderr()?.let { ": ${it.lines().last()}" } ?: ""}. Your next message resumes the session.")
+        }
+
+        /** A line of Ants' own in the dialog. */
+        private fun note(text: String) = synchronized(dialog) {
+            dialog.add(json.writeValueAsString(mapOf("type" to "ants", "subtype" to "note", "at" to Instant.now().toString(), "text" to text)))
+        }
+
+        /** The dialog as the panel shows it: the entries, the reply streaming in, what it made, and whether a turn runs. */
+        fun html(): String = synchronized(dialog) {
+            """<div id="pb-entries">${dialog.roots.joinToString("").replace("<b>mcp__ants__", "<b>")}</div>${dialog.html("live")}""" +
+                (if (made.isEmpty()) "" else """<ul id="pb-made" aria-label="Made">""" + made.joinToString("") { page ->
+                    val kind = KINDS[page.split('/')[1]]
+                    """<li><a href="${HtmlUtils.htmlEscape(page)}" target="_blank">$kind ${HtmlUtils.htmlEscape(page.substringAfterLast('/'))}</a></li>"""
+                } + "</ul>") +
+                """<div id="pb-state" data-busy="$busy">${if (busy) """<span class="spin">✻</span> <span class="shimmer" data-rotate>Pondering…</span>""" else ""}</div>"""
+        }
 
         /** The page's diagram as BPMN XML, as Save and deploy would send it. */
         fun xml(): String = json.readValue(ask("xml", emptyMap<String, Any>()), String::class.java)
@@ -119,12 +225,52 @@ class ProcessBuilderTools(
     /** Opens a session for the modeler page asking: its token. */
     @PostMapping("/process-builder")
     fun open(): Map<String, String> {
-        pages.entries.removeIf { (token, page) -> !page.alive.also { if (!it) mcp.close(token) } }
+        pages.values.filter { !it.alive }.forEach(::end)
         val page = Page()
-        val (token, _) = mcp.open(page) // ponytail: the --mcp-config is dropped; the claude session (#171) keeps it
+        val (token, config) = mcp.open(page)
+        page.config = config
         pages[token] = page
         return mapOf("token" to token)
     }
+
+    /** Sends the user's [message] into the page's claude session: empty, or the [error] that kept it from going. */
+    @PostMapping("/process-builder/send")
+    fun send(@RequestParam token: String, @RequestParam message: String): Map<String, String> = try {
+        if (message.isBlank()) throw Refused("Write a message to send.")
+        (pages[token] ?: throw Refused("This page's Process Builder session has ended. Reload the page.")).send(message)
+        emptyMap()
+    } catch (e: Exception) {
+        mapOf("error" to (e.message ?: e.toString()))
+    }
+
+    /** Stop: interrupts the turn running in the page's session. */
+    @PostMapping("/process-builder/stop")
+    fun stop(@RequestParam token: String) {
+        pages[token]?.stdin?.interrupt()
+    }
+
+    /** The page is closing: its session ends now, not a minute later. */
+    @PostMapping("/process-builder/close")
+    fun close(@RequestParam token: String) {
+        pages[token]?.let(::end)
+    }
+
+    /** Ends [page]'s session: its claude, its token and its place here. */
+    private fun end(page: Page) {
+        page.closed = true
+        page.stdin?.close()
+        page.claude?.let(launcher::kill)
+        pages.entries.removeIf { (token, it) -> (it === page).also { gone -> if (gone) mcp.close(token) } }
+    }
+
+    /** The page's dialog, as an event `dialog` whenever it changes. */
+    fun dialog(token: String): Part? = pages[token]?.let { page ->
+        var last: String? = null
+        Part("dialog", Duration.ofMillis(250)) { listOfNotNull(page.html().takeIf { it != last }?.also { last = it }) }
+    }
+
+    /** Whether no turn runs in the session of the page holding [token]. */
+    internal fun idle(token: String) = pages[token]?.busy == false
 
     /** The page's answer to the relayed call [call]: the [answer] as JSON text, or the [error] it met. */
     @PostMapping("/process-builder/answer")
@@ -152,7 +298,14 @@ class ProcessBuilderTools(
         private val CONNECTED = Duration.ofSeconds(10)
 
         /** A page whose SSE last asked longer ago than this has gone, and its token dies. */
-        private val GONE = Duration.ofMinutes(1)
+        val GONE: Duration = Duration.ofMinutes(1)
+
+        const val CLAUDE_ONLY = "The Process Builder runs on claude only for now. Set process-builder's cli to claude in settings.yaml."
+
+        /** The Process Builder's standing instructions, shipped read-only. */
+        private val INSTRUCTIONS = ProcessBuilderTools::class.java.getResource("/process-builder.md")!!.readText()
+
+        private val KINDS = mapOf("agents" to "Agent", "skills" to "Skill", "templates" to "Template")
 
         private fun number(what: String) = mapOf("type" to "number", "description" to what)
 
