@@ -51,7 +51,7 @@ class ProcessBuilderTools(
         override fun call(name: String, arguments: Map<*, *>): Pair<String, Boolean> = try {
             fun argument(key: String) = arguments[key]?.toString() ?: throw Refused("$name needs $key.")
             val text = when (name) {
-                "diagram" -> ask(name, arguments)
+                in RELAYED -> ask(name, arguments)
                 "agents" -> json.writeValueAsString(agents.catalogue()["agents"])
                 "skills" -> json.writeValueAsString(agents.catalogue()["skills"])
                 "skill" -> catalogue.skill(argument("name")).let { skill ->
@@ -137,6 +137,61 @@ class ProcessBuilderTools(
         /** A page whose SSE last asked longer ago than this has gone, and its token dies. */
         private val GONE = Duration.ofMinutes(1)
 
+        private fun number(what: String) = mapOf("type" to "number", "description" to what)
+
+        private const val AT = "Its top-left corner on the diagram, as `diagram` gives positions."
+
+        /** The tools that change the diagram: relayed to the page, which makes each call one undo step (modeler.js). */
+        private val WRITE = listOf(
+            Mcp.tool("add_element", "Adds an element to the open diagram, as the palette does, and gives its id. Without x and y it goes right of the " +
+                "rightmost element in its container. Connect it with `connect`.", mapOf(
+                "kind" to mapOf("type" to "string", "enum" to listOf("start", "timer-start", "end", "timer", "exclusive", "parallel", "agent", "user", "built-in",
+                    "call", "subprocess", "annotation", "group"), "description" to "What it is: exclusive is a decision; subprocess an expanded embedded sub-process."),
+                "id" to "Its id, a JUEL name such as `grill` (letters, digits and underscores), by which later Tasks read its Result; left out, bpmn-js makes one.",
+                "name" to "Its name on the diagram.",
+                "x" to number(AT), "y" to number(AT),
+                "in" to "The id of the sub-process to add it in; left out, the Process itself.",
+                "topic" to "A Built-in Task's topic (see `built_in_tasks`); left out, clone-repos.",
+            ), optional = setOf("id", "name", "x", "y", "in", "topic")),
+            Mcp.tool("remove", "Removes an element, with its connections, or a connection.", mapOf("id" to "The element's or connection's id.")),
+            Mcp.tool("rename", "Names an element or connection, as the diagram shows it.", mapOf("id" to "The element's or connection's id.", "name" to "Its new name; empty clears it.")),
+            Mcp.tool("move", "Moves an element, its connections following.", mapOf("id" to "The element's id.", "x" to number(AT), "y" to number(AT))),
+            Mcp.tool("connect", "Connects two elements with a sequence flow (an association, to an annotation), and gives its id.", mapOf(
+                "from" to "The source element's id.", "to" to "The target element's id.", "id" to "The connection's id; left out, bpmn-js makes one.",
+                "name" to "Its label on the diagram, such as `yes`.",
+            ), optional = setOf("id", "name")),
+            Mcp.tool("set_condition", "Sets the condition of a path out of a decision (exclusive gateway): the Run takes it when the JUEL holds.", mapOf(
+                "id" to "The connection's id.", "condition" to "A JUEL expression, such as `\${grill.output.verdict == 'redo'}` or `\${runs.grill >= 10}`; empty removes it.",
+            )),
+            Mcp.tool("set_default", "Makes a path out of a decision its default, taken when no other condition holds; its condition goes.", mapOf("id" to "The connection's id.")),
+            Mcp.tool("set_agent_task", "Sets an Agent Task's Agent, Skill and inputs, as the properties panel does: a new Agent picks its first Skill unless " +
+                "skill is given, and the inputs are the ones the Skill declares, keeping values already filled in.", mapOf(
+                "id" to "The Agent Task's id.", "agent" to "The Agent's name (see `agents`).", "skill" to "One of the Agent's Skills (see `skills`).",
+                "inputs" to mapOf("type" to "object", "additionalProperties" to mapOf("type" to "string"),
+                    "description" to "Values by input name, each text or a `\${…}` reference (see `references`), such as {\"prompt\": \"\${prompt}\"}."),
+            ), optional = setOf("agent", "skill", "inputs")),
+            Mcp.tool("set_start_form", "Replaces the start form's fields, in order: to add, change, remove or reorder fields, give the whole list, " +
+                "starting from `diagram`'s startForm.", mapOf(
+                "fields" to mapOf("type" to "array", "description" to "The fields. Tasks read each one as \${id}.", "items" to mapOf(
+                    "type" to "object", "required" to listOf("label"), "properties" to mapOf(
+                        "label" to mapOf("type" to "string"),
+                        "id" to mapOf("type" to "string", "description" to "The variable name; left out, derived from the label (camelCase)."),
+                        "type" to mapOf("type" to "string", "enum" to FieldType.entries.map { it.name.lowercase() }, "description" to "Left out, text."),
+                        "required" to mapOf("type" to "boolean"),
+                        "help" to mapOf("type" to "string"),
+                        "example" to mapOf("type" to "string"),
+                        "stored" to mapOf("type" to "string", "description" to "The value a Schedule starts with."),
+                    ),
+                )),
+            )),
+            Mcp.tool("drop_template", "Drops a copy of a Template (see `templates`) as a collapsed sub-process, as the palette does, and gives its id. " +
+                "It keeps the Template's ids, suffixed _2, _3 … on a clash. It reloads the diagram, so Undo can't take it back.", mapOf(
+                "name" to "The Template's name.", "x" to number(AT), "y" to number(AT),
+            ), optional = setOf("x", "y")),
+        )
+
+        private val RELAYED = setOf("diagram") + WRITE.map { it["name"] }
+
         private val TOOLS = listOf(
             Mcp.tool("diagram", "The diagram open in the modeler, as it is now with the user's unsaved edits: its elements (id, kind, name, " +
                 "position and size, the sub-process they are in, and their properties and inputs), its connections (from, to, name, condition, " +
@@ -151,6 +206,6 @@ class ProcessBuilderTools(
             Mcp.tool("references", "The `\${…}` references an element of the open diagram can read: start-form fields, Ants' Run variables and the Results of the Tasks before it.",
                 mapOf("element" to "The element's id.")),
             Mcp.tool("checks", "The Checks on the open diagram, as Save and deploy runs them: each problem's message, the element it is on, and whether it is only a warning."),
-        )
+        ) + WRITE
     }
 }

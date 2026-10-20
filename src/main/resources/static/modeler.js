@@ -137,7 +137,7 @@ function AntsTemplates(palette, popupMenu, canvas) {
     popupMenu.registerProvider("ants-templates", {
         getPopupMenuEntries: () => Object.fromEntries(templates.map(({name, title, shipped}) => [`template-${name}`, {
             label: title, description: name + (shipped ? " (shipped)" : ""), className: "bpmn-icon-subprocess-collapsed",
-            action: () => dropTemplate(name),
+            action: () => dropTemplate(name).catch(error => document.getElementById("refusal").textContent = error.message),
         }])),
     })
     palette.registerProvider(LAST - 1, {
@@ -162,17 +162,19 @@ AntsTemplates.$inject = ["palette", "popupMenu", "canvas"]
 
 // ponytail: the drop replaces the whole diagram (importXML), so Cmd+Z can't undo it and it always lands in the
 // Process's own plane; building the shapes through `modeling` would keep undo but means the id work again in JS.
-async function dropTemplate(name) {
+// Drops it centred on [centre], else in the middle of the view; the dropped sub-process's id.
+async function dropTemplate(name, centre) {
     const canvas = modeler.get("canvas")
     const viewbox = canvas.viewbox()
     const {xml} = await modeler.saveXML()
-    const centre = {x: viewbox.x + viewbox.width / 2, y: viewbox.y + viewbox.height / 2}
-    const response = await fetch(`/templates/${name}/drop`, {method: "POST", body: new URLSearchParams({_csrf: csrf, bpmn: xml, ...centre})})
-    if (!response.ok) return document.getElementById("refusal").textContent = `The Template ${name} can't be dropped here.`
+    centre ||= {x: viewbox.x + viewbox.width / 2, y: viewbox.y + viewbox.height / 2}
+    const response = await fetch(`/templates/${encodeURIComponent(name)}/drop`, {method: "POST", body: new URLSearchParams({_csrf: csrf, bpmn: xml, ...centre})})
+    if (!response.ok) throw new Error(`The Template ${name} can't be dropped here.`)
     const {bpmn, element} = await response.json()
     await modeler.importXML(toCamunda(bpmn))
     canvas.viewbox(viewbox)
     modeler.get("selection").select(modeler.get("elementRegistry").get(element))
+    return element
 }
 
 const modeler = new BpmnModeler({
@@ -352,6 +354,15 @@ async function fieldsBefore(element) {
         startFields, runVariables)
 }
 
+// A path's condition, the JUEL [body] (empty removes it), and making a path its decision's default, which drops its condition.
+const writeCondition = (flow, body) => modeler.get("modeling").updateProperties(flow,
+    {conditionExpression: body ? modeler.get("bpmnFactory").create("bpmn:FormalExpression", {body}) : undefined})
+
+function writeDefault(gateway, flow) {
+    writeCondition(flow, "")
+    modeler.get("modeling").updateProperties(gateway, {default: flow.businessObject})
+}
+
 // The condition builder, for one path out of [gateway]: its label, whether it is the default, else a Result field from
 // [fields], an operator and a value, which write the path's JUEL, shown under it. A condition it can't read back shows
 // as is, and the builder replaces it once the user edits it.
@@ -373,7 +384,7 @@ function pathEditor(gateway, flow, fields) {
         shown.textContent = expression
         quiet = true
         try {
-            modeling.updateProperties(flow, {conditionExpression: modeler.get("bpmnFactory").create("bpmn:FormalExpression", {body: expression})})
+            writeCondition(flow, expression)
         } finally {
             quiet = false
         }
@@ -381,8 +392,7 @@ function pathEditor(gateway, flow, fields) {
     field.onchange = op.onchange = value.oninput = write
     value.hidden = unary.has(read.op)
     const makeDefault = el("input", {type: "radio", name: "default-" + gateway.id, checked: isDefault, onchange: () => {
-        modeling.updateProperties(flow, {conditionExpression: undefined})
-        modeling.updateProperties(gateway, {default: flow.businessObject})
+        writeDefault(gateway, flow)
         explain(modeler.get("selection").get()[0] || gateway)
     }})
     const label = el("input", {value: flow.businessObject.name || "", placeholder: "e.g. yes", onchange: () => modeling.updateLabel(flow, label.value)})
@@ -860,6 +870,179 @@ modeler.on("import.done", check)
 const relayed = {
     diagram,
     xml: async () => (await modeler.saveXML()).xml,
+    add_element: addElement,
+    remove: ({id}) => {
+        const element = found(id)
+        const removed = [element, ...(element.incoming || []), ...(element.outgoing || [])].map(e => e.id)
+        edit(() => modeler.get("modeling").removeElements([element]))
+        return {removed}
+    },
+    rename: ({id, name}) => {
+        const element = found(id)
+        edit(() => modeler.get("modeling").updateLabel(element, name || ""))
+        return {id, name: name || ""}
+    },
+    move: args => {
+        const element = found(args.id)
+        if (element.waypoints) throw new Error(`${args.id} is a connection: move the elements it connects.`)
+        const x = number(args, "x"), y = number(args, "y")
+        edit(() => modeler.get("modeling").moveShape(element, {x: x - element.x, y: y - element.y}))
+        return {id: element.id, x, y}
+    },
+    connect: ({from, to, id, name}) => {
+        const source = found(from), target = found(to)
+        const allowed = modeler.get("bpmnRules").canConnect(source, target)
+        if (!allowed?.type) throw new Error(`${from} can't be connected to ${to}.`)
+        unused(id)
+        const businessObject = modeler.get("bpmnFactory").create(allowed.type, id ? {id} : {})
+        return {id: edit(() => {
+            const connection = modeler.get("modeling").connect(source, target, {type: allowed.type, businessObject})
+            if (name) modeler.get("modeling").updateLabel(connection, name)
+            return connection.id
+        })}
+    },
+    set_condition: ({id, condition}) => {
+        const flow = path(id)
+        edit(() => {
+            if (flow.source.businessObject.default === flow.businessObject) modeler.get("modeling").updateProperties(flow.source, {default: undefined})
+            writeCondition(flow, condition || "")
+        })
+        return {id, condition: condition || null}
+    },
+    set_default: ({id}) => {
+        const flow = path(id)
+        edit(() => writeDefault(flow.source, flow))
+        return {id, default: true}
+    },
+    set_agent_task: setAgentTask,
+    set_start_form: setStartForm,
+    drop_template: async args => {
+        const at = args.x === undefined && args.y === undefined ? undefined : {x: number(args, "x") + 50, y: number(args, "y") + 40} // a collapsed sub-process is 100 by 80
+        return {id: await dropTemplate(String(args.name ?? ""), at)}
+    },
+}
+
+// The Process Builder's changes: each tool checks everything it was given against the diagram as it is now, then
+// changes it through bpmn-js inside one command, so the change is one undo step and nothing is left half done.
+modeler.get("commandStack").register("ants.builder", {preExecute: ({run}) => run()})
+
+function edit(change) {
+    let result
+    modeler.get("commandStack").execute("ants.builder", {run: () => { result = change() }})
+    return result
+}
+
+function found(id) {
+    const element = id ? modeler.get("elementRegistry").get(String(id)) : undefined
+    if (!element?.parent || element.labelTarget) throw new Error(`No element ${id}.`)
+    return element
+}
+
+function unused(id) {
+    if (id === undefined || id === "") return
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(id)) throw new Error(`${id} isn't an id: use letters, digits and underscores, starting with a letter.`)
+    if (modeler.get("elementRegistry").get(id)) throw new Error(`The diagram already has an element ${id}.`)
+}
+
+function number(args, key) {
+    const value = Number(args[key])
+    if (args[key] === undefined || args[key] === "" || Number.isNaN(value)) throw new Error(`${key} must be a number, not ${args[key]}.`)
+    return value
+}
+
+// A path out of a decision, the only paths that take a condition.
+function path(id) {
+    const flow = found(id)
+    if (flow.type !== "bpmn:SequenceFlow") throw new Error(`${id} isn't a connection.`)
+    if (kindOf(flow.source) !== "exclusive") throw new Error(`${id} leaves ${flow.source.id}, which isn't a decision: only a decision's paths take a condition or a default.`)
+    return flow
+}
+
+// What add_element draws for each kind: the BPMN type, its attributes, and what bpmn-js' element factory needs beyond it.
+const drawn = {
+    start: {type: "bpmn:StartEvent"},
+    "timer-start": {type: "bpmn:StartEvent", eventDefinitionType: "bpmn:TimerEventDefinition"},
+    end: {type: "bpmn:EndEvent"},
+    timer: {type: "bpmn:IntermediateCatchEvent", eventDefinitionType: "bpmn:TimerEventDefinition"},
+    exclusive: {type: "bpmn:ExclusiveGateway"},
+    parallel: {type: "bpmn:ParallelGateway"},
+    ...Object.fromEntries(Object.entries(tasks).map(([kind, {type, attrs}]) => [kind, {type, attrs}])),
+    call: {type: "bpmn:CallActivity"},
+    subprocess: {type: "bpmn:SubProcess", isExpanded: true},
+    annotation: {type: "bpmn:TextAnnotation"},
+    group: {type: "bpmn:Group"},
+}
+
+function addElement(args) {
+    const {kind, id, name, topic} = args
+    if (!drawn[kind]) throw new Error(`No kind ${kind}: the kinds are ${Object.keys(drawn).join(", ")}.`)
+    if (topic !== undefined && kind !== "built-in") throw new Error("Only a Built-in Task takes a topic.")
+    if (topic !== undefined && !builtIns[topic]) throw new Error(`No Built-in Task ${topic}: the topics are ${Object.keys(builtIns).join(", ")}.`)
+    unused(id)
+    const registry = modeler.get("elementRegistry")
+    let parent = registry.find(e => !e.parent && e.type === "bpmn:Process")
+    if (args.in !== undefined) {
+        const sub = found(args.in)
+        if (kindOf(sub) !== "subprocess") throw new Error(`${args.in} isn't a sub-process.`)
+        parent = registry.get(sub.id + "_plane") || sub // a collapsed one's inside is a plane of its own
+    }
+    const at = args.x === undefined && args.y === undefined ? undefined : {x: number(args, "x"), y: number(args, "y")}
+    const {type, attrs = {}, ...rest} = drawn[kind]
+    const businessObject = modeler.get("bpmnFactory").create(type, {...attrs, ...(topic ? {"camunda:topic": topic} : {}), ...(id ? {id} : {})})
+    const shape = modeler.get("elementFactory").createShape({...rest, type, businessObject})
+    const centre = at ? {x: at.x + shape.width / 2, y: at.y + shape.height / 2} : nextTo(parent, shape)
+    return {id: edit(() => {
+        const created = modeler.get("modeling").createShape(shape, centre, parent)
+        if (name) modeler.get("modeling").updateLabel(created, name)
+        return created.id
+    })}
+}
+
+// Where an element goes when no position is given: right of the rightmost element in [parent], level with it.
+function nextTo(parent, shape) {
+    const siblings = parent.children.filter(e => !e.waypoints && !e.labelTarget)
+    if (!siblings.length) return parent.parent ? {x: parent.x + 50 + shape.width / 2, y: parent.y + parent.height / 2} : {x: 150 + shape.width / 2, y: 200}
+    const last = siblings.reduce((a, b) => b.x + b.width > a.x + a.width ? b : a)
+    return {x: last.x + last.width + 50 + shape.width / 2, y: last.y + last.height / 2}
+}
+
+// The Agent Task's Agent, Skill and inputs, written as the panel's pickers and input boxes write them.
+async function setAgentTask({id, agent, skill, inputs}) {
+    const element = found(id)
+    if (kindOf(element) !== "agent") throw new Error(`${id} is ${kinds[kindOf(element)]?.name || element.type}, not an Agent Task.`)
+    const catalogue = await (await fetch("/catalogue.json")).json()
+    const current = agentProperties(element.businessObject)
+    const agentName = agent ?? current["ants.agent"]
+    const picked = catalogue.agents.find(a => a.name === agentName)
+    if (agent !== undefined && !picked) throw new Error(`No Agent ${agent}: the Agents are ${catalogue.agents.map(a => a.name).join(", ")}.`)
+    const skillName = skill ?? (agent !== undefined && agent !== current["ants.agent"] ? picked.skills[0] : current["ants.skill"])
+    if (skill !== undefined && !picked?.skills.includes(skill)) throw new Error(`${agentName ? "The Agent " + agentName : "The Task's Agent"} doesn't run the Skill ${skill}` +
+        (picked ? `: it runs ${picked.skills.join(", ") || "none"}.` : ": give the Task an Agent first."))
+    const declared = catalogue.skills.find(s => s.name === skillName)?.inputs || []
+    const given = inputs || {}
+    const unknown = Object.keys(given).filter(name => !declared.includes(name))
+    if (unknown.length) throw new Error(`The Skill ${skillName || "(none yet)"} declares no input ${unknown.join(", ")}; it declares ${declared.join(", ") || "none"}.`)
+    const kept = Object.fromEntries(agentInputs(element.businessObject))
+    const written = declared.map(name => [name, String(given[name] ?? kept[name] ?? "")])
+    edit(() => writeAgentTask(element, {"ants.agent": agentName || undefined, "ants.skill": skillName || undefined}, written, true))
+    return {id, agent: agentName || null, skill: skillName || null, inputs: Object.fromEntries(written)}
+}
+
+// The start form's fields, all of them in order, as the panel writes them.
+function setStartForm({fields}) {
+    const start = modeler.get("elementRegistry").find(e => e.type === "bpmn:StartEvent" && e.parent.businessObject?.$type === "bpmn:Process")
+    if (!start) throw new Error("The Process has no start event: add one first.")
+    if (!Array.isArray(fields)) throw new Error("fields must be a list of fields.")
+    const written = fields.map((f, i) => {
+        const label = String(f?.label ?? ""), id = String(f?.id || camel(label)), type = f?.type || "text"
+        if (!id) throw new Error(`Field ${i + 1} needs a label or an id.`)
+        if (!fieldTypes[type]) throw new Error(`Field ${id} has no type ${type}: the types are ${Object.keys(fieldTypes).join(", ")}.`)
+        return {id, label, type, help: String(f.help ?? ""), example: String(f.example ?? ""), stored: String(f.stored ?? ""), required: f.required === true || f.required === "true"}
+    })
+    const twice = written.map(f => f.id).find((id, i, all) => all.indexOf(id) !== i)
+    if (twice) throw new Error(`Two fields are named ${twice}.`)
+    edit(() => writeForm(start, written))
+    return {id: start.id, fields: written.map(f => f.id)}
 }
 
 // The diagram as the Process Builder reads it: its elements, its connections and the start form.

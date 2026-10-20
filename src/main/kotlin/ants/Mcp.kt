@@ -79,13 +79,16 @@ class Mcp(private val server: WebServerApplicationContext, @Value("\${server.add
 
         private fun error(id: Any?, message: String, code: Int = -32001) = mapOf("jsonrpc" to "2.0", "id" to id, "error" to mapOf("code" to code, "message" to message))
 
-        /** A tool's `tools/list` entry, whose [arguments] are strings, by name and what each is; [optional] ones may be left out. */
-        fun tool(name: String, description: String, arguments: Map<String, String> = emptyMap(), optional: Set<String> = emptySet()) = mapOf(
+        /**
+         * A tool's `tools/list` entry, its [arguments] by name: a string says what a string argument is, a map is the
+         * argument's JSON schema. [optional] ones may be left out.
+         */
+        fun tool(name: String, description: String, arguments: Map<String, Any> = emptyMap(), optional: Set<String> = emptySet()) = mapOf(
             "name" to name,
             "description" to description,
             "inputSchema" to mapOf(
                 "type" to "object",
-                "properties" to arguments.mapValues { (_, what) -> mapOf("type" to "string", "description" to what) },
+                "properties" to arguments.mapValues { (_, what) -> what as? Map<*, *> ?: mapOf("type" to "string", "description" to what) },
                 "required" to (arguments.keys - optional).toList(),
             ),
         )

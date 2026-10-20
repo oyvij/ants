@@ -55,7 +55,8 @@ class ProcessBuilderToolsTest : AntsTest() {
         val page = open()
         val task = protectedCommands.open(Files.createTempDirectory("workspace")).first
         try {
-            assertEquals(listOf("diagram", "agents", "skills", "skill", "processes", "process", "built_in_tasks", "templates", "references", "checks"), tools(page))
+            assertEquals(listOf("diagram", "agents", "skills", "skill", "processes", "process", "built_in_tasks", "templates", "references", "checks",
+                "add_element", "remove", "rename", "move", "connect", "set_condition", "set_default", "set_agent_task", "set_start_form", "drop_template"), tools(page))
             assertEquals(listOf("run"), tools(task))
             assertTrue(call(task, "diagram").second)
             assertTrue(call(page, "run", mapOf("command" to "ls")).second)
@@ -72,6 +73,26 @@ class ProcessBuilderToolsTest : AntsTest() {
         val (text, failed) = call(token, "diagram")
         assertEquals(false, failed, text)
         assertEquals(diagram, json.readValue(text, Map::class.java))
+    }
+
+    @Test
+    fun `a write tool is relayed to the page with its arguments, and the page's refusal comes back as the tool's error`() {
+        val token = open()
+        page(token) { tool, arguments -> if (tool == "add_element") mapOf("id" to arguments["id"], "x" to arguments["x"]) else null }
+        val (text, failed) = call(token, "add_element", mapOf("kind" to "agent", "id" to "grill", "x" to 300))
+        assertEquals(false, failed, text)
+        assertEquals(mapOf("id" to "grill", "x" to 300), json.readValue(text, Map::class.java))
+
+        val refusing = open()
+        val events = browser.events("builder=$refusing", "builder")
+        Thread.ofVirtual().start {
+            val relayed = json.readValue(events.take(), Map::class.java)
+            browser.post("/process-builder/answer", mapOf("token" to refusing, "call" to relayed["id"].toString(), "error" to "No element Task_x."))
+        }
+        eventually { assertTrue(builder.connected(refusing)) }
+        val (refusal, refused) = call(refusing, "remove", mapOf("id" to "Task_x"))
+        assertTrue(refused)
+        assertTrue("No element Task_x." in refusal, refusal)
     }
 
     @Test

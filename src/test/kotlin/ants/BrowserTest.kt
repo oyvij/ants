@@ -154,6 +154,155 @@ class BrowserTest : AntsTest() {
         assertEquals(listOf<Any>("prompt", "markdown", true), listOf(prompt["id"].asString(), prompt["type"].asString(), prompt["required"].asBoolean()))
     }
 
+    private val json = tools.jackson.databind.json.JsonMapper.shared()
+
+    /** The open modeler page's Process Builder tools: calls one through `/mcp` with the page's token and gives its answer; a failure fails the test. */
+    private fun builder(): (String, Map<String, Any?>) -> tools.jackson.databind.JsonNode {
+        assertThat(page.locator("#canvas")).hasAttribute("data-builder", Pattern.compile(".+"))
+        val token = page.locator("#canvas").getAttribute("data-builder")!!
+        eventually { assertFalse(mcpCall(port, token, "diagram").second) } // the page follows its stream
+        return { name, arguments -> mcpCall(port, token, name, arguments).let { (text, failed) -> assertFalse(failed, text); json.readTree(text) } }
+    }
+
+    /** Ctrl-Z on the canvas. */
+    private fun undo() {
+        page.locator("#canvas .djs-container > svg").first().focus()
+        page.keyboard().press("ControlOrMeta+z")
+    }
+
+    @Test
+    fun `each Process Builder write tool changes the open canvas without a reload, Ctrl-Z undoes it, and the Checks follow`() = browse {
+        agentTask(null)
+        http.import("agent-task.bpmn")
+        page.navigate(url("/processes/agent-task/edit"))
+        val tool = builder()
+        page.evaluate("window.unreloaded = true")
+        val checks = page.locator("#checks")
+        fun diagram() = tool("diagram", emptyMap())
+        fun element(id: String) = diagram()["elements"].firstOrNull { it["id"].asString() == id }
+        fun connection(id: String) = diagram()["connections"].firstOrNull { it["id"].asString() == id }
+
+        val grill = mapOf("kind" to "agent", "id" to "grill", "name" to "Grill", "x" to 450, "y" to 250)
+        assertEquals("grill", tool("add_element", grill)["id"].asString())
+        assertThat(shape("grill")).isVisible()
+        assertEquals(listOf(450, 250), element("grill")!!.let { listOf(it["x"].asInt(), it["y"].asInt()) })
+        assertThat(checks).containsText("Grill (grill) has no Agent.")
+        undo()
+        assertThat(shape("grill")).hasCount(0)
+        assertThat(checks).not().containsText("Grill (grill) has no Agent.")
+        tool("add_element", grill)
+
+        assertEquals("draft", tool("set_agent_task", mapOf("id" to "grill", "agent" to "writer"))["skill"].asString())
+        assertThat(checks).not().containsText("Grill (grill) has no Agent.")
+        assertEquals("writer", element("grill")!!["properties"]["ants.agent"].asString())
+        undo()
+        assertThat(checks).containsText("Grill (grill) has no Agent.")
+        tool("set_agent_task", mapOf("id" to "grill", "agent" to "writer"))
+
+        tool("rename", mapOf("id" to "grill", "name" to "Grill hard"))
+        assertThat(shape("grill")).containsText("Grill hard")
+        undo()
+        assertThat(shape("grill")).not().containsText("hard")
+
+        tool("move", mapOf("id" to "grill", "x" to 600, "y" to 250))
+        eventually { assertEquals(600, element("grill")!!["x"].asInt()) }
+        undo()
+        eventually { assertEquals(450, element("grill")!!["x"].asInt()) }
+
+        assertEquals("f3", tool("connect", mapOf("from" to "draft", "to" to "grill", "id" to "f3"))["id"].asString())
+        assertThat(shape("f3")).hasCount(1)
+        undo()
+        assertThat(shape("f3")).hasCount(0)
+
+        tool("add_element", mapOf("kind" to "exclusive", "id" to "decide"))
+        tool("connect", mapOf("from" to "decide", "to" to "end", "id" to "done"))
+        tool("connect", mapOf("from" to "decide", "to" to "grill", "id" to "again", "name" to "again"))
+        assertThat(shape("again_label")).containsText("again")
+        tool("set_condition", mapOf("id" to "done", "condition" to "\${grill.summary == 'done'}"))
+        eventually { assertEquals("\${grill.summary == 'done'}", connection("done")!!["condition"].asString()) }
+        undo()
+        eventually { assertTrue(connection("done")!!["condition"].let { it == null || it.isNull }) }
+        tool("set_default", mapOf("id" to "again"))
+        eventually { assertTrue(connection("again")!!["default"].asBoolean()) }
+        undo()
+        eventually { assertFalse(connection("again")!!["default"].asBoolean()) }
+
+        val fields = listOf(mapOf("label" to "Prompt", "type" to "markdown", "required" to true), mapOf("id" to "repos", "label" to "Repos", "type" to "repos"))
+        assertEquals(listOf("prompt", "repos"), tool("set_start_form", mapOf("fields" to fields))["fields"].iterator().asSequence().map { it.asString() }.toList())
+        eventually { assertEquals(listOf("prompt", "repos"), diagram()["startForm"].iterator().asSequence().map { it["id"].asString() }.toList()) }
+        undo()
+        eventually { assertEquals(listOf("prompt"), diagram()["startForm"].iterator().asSequence().map { it["id"].asString() }.toList()) }
+
+        tool("remove", mapOf("id" to "grill"))
+        assertThat(shape("grill")).hasCount(0)
+        assertThat(shape("again")).hasCount(0)
+        undo()
+        assertThat(shape("grill")).isVisible()
+        assertThat(shape("again")).hasCount(1)
+
+        for (kind in listOf("start", "timer-start", "end", "timer", "exclusive", "parallel", "agent", "user", "built-in", "call", "subprocess", "annotation", "group")) {
+            val id = tool("add_element", mapOf("kind" to kind, "name" to "A $kind"))["id"].asString()
+            assertThat(shape(id)).hasCount(1)
+        }
+        val inside = tool("add_element", mapOf("kind" to "user", "in" to tool("add_element", mapOf("kind" to "subprocess"))["id"].asString()))["id"].asString()
+        assertThat(shape(inside)).hasCount(1)
+        assertEquals("push", tool("add_element", mapOf("kind" to "built-in", "id" to "ship", "topic" to "push")).let { element("ship")!!["properties"]["topic"].asString() })
+
+        val template = json.readTree(http.get("/templates.json").body).first()["name"].asString()
+        val dropped = tool("drop_template", mapOf("name" to template, "x" to 450, "y" to 400))["id"].asString()
+        assertThat(shape(dropped)).isVisible()
+        assertEquals(true, page.evaluate("window.unreloaded"))
+    }
+
+    @Test
+    fun `a Process Builder tool naming a missing element fails naming it, and changes nothing`() = browse {
+        agentTask(null)
+        http.import("agent-task.bpmn")
+        page.navigate(url("/processes/agent-task/edit"))
+        val tool = builder()
+        val token = page.locator("#canvas").getAttribute("data-builder")!!
+        val before = tool("diagram", emptyMap())
+        for ((name, arguments) in listOf(
+            "remove" to mapOf("id" to "Task_x"), "rename" to mapOf("id" to "Task_x", "name" to "X"), "move" to mapOf("id" to "Task_x", "x" to 1, "y" to 1),
+            "connect" to mapOf("from" to "draft", "to" to "Task_x"), "set_agent_task" to mapOf("id" to "Task_x", "agent" to "writer"),
+            "set_condition" to mapOf("id" to "Task_x", "condition" to "\${true}"), "set_default" to mapOf("id" to "Task_x"),
+            "add_element" to mapOf("kind" to "agent", "in" to "Task_x"),
+        )) {
+            val (text, failed) = mcpCall(port, token, name, arguments)
+            assertTrue(failed, "$name: $text")
+            assertContains(text, "No element Task_x", message = name)
+        }
+        assertEquals(before, tool("diagram", emptyMap()))
+    }
+
+    @Test
+    fun `an Agent Task set up by the Process Builder's tools reads in the saved XML as one set up by hand`() = browse {
+        agentTask(null, metadata = "metadata:\n  ants-inputs: prompt\n")
+        val hand = appendAgentTask()
+        label("Agent").selectOption("writer")
+        assertThat(label("Skill")).hasValue("draft")
+        assertThat(page.locator("#explain label.row code").first()).hasText("prompt")
+        page.locator("#explain label.row input").first().fill("\${prompt}")
+        val tool = builder()
+        tool("add_element", mapOf("kind" to "agent", "id" to "byTool"))
+
+        // The page sends its XML to the Checks after each change: the one with both Tasks set up.
+        val sent = page.waitForRequest({ request ->
+            request.url().endsWith("/processes/checks") && Regex("value=\"writer\"").findAll(bpmnOf(request.postData())).count() == 2
+        }) { tool("set_agent_task", mapOf("id" to "byTool", "agent" to "writer", "inputs" to mapOf("prompt" to "\${prompt}"))) }
+        val xml = bpmnOf(sent.postData())
+        // Its attributes but the id, and what its extension elements hold.
+        fun task(id: String) = Regex("""<[\w:]*serviceTask ([^>]*)>(.*?)</[\w:]*serviceTask>""", RegexOption.DOT_MATCHES_ALL).findAll(xml)
+            .map { it.groupValues }.single { (_, attributes) -> """id="$id"""" in attributes }
+            .let { (_, attributes, body) -> attributes.replace("""id="$id"""", "").trim() + body.substringAfter("extensionElements>").substringBefore("extensionElements>") }
+        assertContains(task("byTool"), "\${prompt}")
+        assertEquals(task(hand), task("byTool"))
+    }
+
+    /** The `bpmn` field of a form-encoded body. */
+    private fun bpmnOf(body: String?) = body.orEmpty().split("&").firstOrNull { it.startsWith("bpmn=") }
+        ?.let { java.net.URLDecoder.decode(it.removePrefix("bpmn="), Charsets.UTF_8) }.orEmpty()
+
     @Test
     fun `New Agent's modal keeps the unsaved diagram and picks the new Agent on the Task`() = browse {
         val task = appendAgentTask()
