@@ -129,6 +129,31 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `an open modeler page answers the Process Builder's diagram tool with its real elements, the unsaved edits included`() = browse {
+        agentTask(null)
+        http.import("agent-task.bpmn")
+        page.navigate(url("/processes/agent-task/edit"))
+        shape("draft").click()
+        page.locator("#explain input.name").fill("Draft it")
+        page.locator("#explain input.name").blur() // an unsaved rename, which the answer carries
+        assertThat(page.locator("#canvas")).hasAttribute("data-builder", Pattern.compile(".+"))
+        val token = page.locator("#canvas").getAttribute("data-builder")!!
+
+        var text = ""
+        eventually { mcpCall(port, token, "diagram").let { (answer, failed) -> text = answer; assertFalse(failed, answer) } }
+        val diagram = tools.jackson.databind.json.JsonMapper.shared().readTree(text)
+        val elements = diagram["elements"].associateBy { it["id"].asString() }
+        assertEquals(setOf("start", "draft", "end"), elements.keys)
+        val draft = elements.getValue("draft")
+        assertEquals(listOf<Any>("agent", "Draft it", 200, 80), listOf(draft["kind"].asString(), draft["name"].asString(), draft["x"].asInt(), draft["y"].asInt()))
+        assertEquals("writer", draft["properties"]["ants.agent"].asString())
+        assertEquals("\${prompt}", draft["inputs"]["prompt"].asString())
+        assertEquals(listOf("f1:start>draft", "f2:draft>end"), diagram["connections"].iterator().asSequence().map { "${it["id"].asString()}:${it["from"].asString()}>${it["to"].asString()}" }.toList())
+        val prompt = diagram["startForm"].single()
+        assertEquals(listOf<Any>("prompt", "markdown", true), listOf(prompt["id"].asString(), prompt["type"].asString(), prompt["required"].asBoolean()))
+    }
+
+    @Test
     fun `New Agent's modal keeps the unsaved diagram and picks the new Agent on the Task`() = browse {
         val task = appendAgentTask()
         val modeler = page.url()

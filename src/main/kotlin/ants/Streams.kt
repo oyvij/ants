@@ -93,7 +93,7 @@ class Streams(private val templates: TemplateEngine) {
  * latest the page has shown), on every page, and an event
  * for each part of the page the query names: `home`; `runlist`, the Runs list; `notifications`, the Notification list;
  * `run=<id>`, with `drawer=<task>` while its Task drawer is open, and `tasks=<id>`, the Run page's Tasks table;
- * `transcript=<run>/<task>&from=<byte>`, with `taskhead`, its Task page header; `ticket=<run>/<name>`.
+ * `transcript=<run>/<task>&from=<byte>`, with `taskhead`, its Task page header; `ticket=<run>/<name>`; `builder=<token>`, the calls relayed to a modeler page (ProcessBuilderTools).
  */
 @Controller
 class Live(
@@ -106,6 +106,7 @@ class Live(
     private val runs: Runs,
     private val transcripts: Transcripts,
     private val tickets: Tickets,
+    private val builder: ProcessBuilderTools,
 ) {
     @GetMapping("/live", produces = [TEXT_EVENT_STREAM_VALUE])
     @ResponseBody
@@ -125,6 +126,7 @@ class Live(
             query["transcript"]?.let(::inRun)?.let { (run, task) -> transcripts.events(run, task, query.getValue("from").toLong()) },
             query["transcript"]?.let(::inRun)?.let { (run, task) -> transcripts.head(run, task) },
             query["ticket"]?.let(::inRun)?.let { (run, name) -> tickets.live(run, name) },
+            query["builder"]?.let(builder::relay),
         ),
     )
 

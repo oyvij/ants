@@ -854,3 +854,54 @@ async function check() {
 let pending
 modeler.on("commandStack.changed", () => { clearTimeout(pending); pending = setTimeout(check, 300) })
 modeler.on("import.done", check)
+
+// The Process Builder's session (ADR 0019, ProcessBuilderTools.kt): a page that can be edited by hand opens one, and
+// answers each call Ants relays to it on its stream from bpmn-js, with a POST back. Its token is on the canvas.
+const relayed = {
+    diagram,
+    xml: async () => (await modeler.saveXML()).xml,
+}
+
+// The diagram as the Process Builder reads it: its elements, its connections and the start form.
+function diagram() {
+    const all = modeler.get("elementRegistry").filter(e => e.parent && !e.labelTarget) // a root, the Process or a sub-process's plane, has no parent
+    const element = e => {
+        const bo = e.businessObject, kind = kindOf(e) || e.type.replace("bpmn:", "")
+        const properties = agentProperties(bo)
+        if (kind === "built-in") properties.topic = bo.get("camunda:topic")
+        if (kind === "call") properties.calls = bo.calledElement
+        const timer = bo.eventDefinitions?.[0]
+        for (const key of Object.keys(times)) if (timer?.[key]) properties[key] = timer[key].body
+        const loop = bo.loopCharacteristics
+        if (loop) properties.multiInstance = {sequential: !!loop.isSequential, collection: loop.get("camunda:collection"), elementVariable: loop.get("camunda:elementVariable")}
+        const inside = e.parent.businessObject?.$type === "bpmn:SubProcess" ? e.parent.businessObject.id : undefined
+        return {id: e.id, kind, name: bo.name || "", x: e.x, y: e.y, width: e.width, height: e.height, in: inside, properties,
+            inputs: Object.fromEntries(kind === "call" ? callInputs(bo) : agentInputs(bo))}
+    }
+    const start = all.find(e => e.type === "bpmn:StartEvent" && e.parent.businessObject?.$type === "bpmn:Process")
+    return {
+        elements: all.filter(e => !e.waypoints).map(element),
+        connections: all.filter(e => e.type === "bpmn:SequenceFlow").map(e => ({
+            id: e.id, from: e.source.id, to: e.target.id, name: e.businessObject.name || "",
+            condition: e.businessObject.conditionExpression?.body, default: e.source.businessObject.default === e.businessObject,
+        })),
+        startForm: start ? readForm(start.businessObject) : [],
+    }
+}
+
+async function openBuilder() {
+    const {token} = await (await fetch("/process-builder", {method: "POST", body: new URLSearchParams({_csrf: csrf})})).json()
+    stream.on("builder", async data => {
+        const {id, tool, arguments: args} = JSON.parse(data)
+        const body = {_csrf: csrf, token, call: id}
+        try {
+            body.answer = JSON.stringify(await relayed[tool](args))
+        } catch (error) {
+            body.error = error.message
+        }
+        fetch("/process-builder/answer", {method: "POST", body: new URLSearchParams(body)})
+    })
+    stream.follow("builder=" + token)
+    canvas.dataset.builder = token
+}
+if (!save.hidden) openBuilder()
