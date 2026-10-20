@@ -57,7 +57,8 @@ class ProcessBuilderToolsTest : AntsTest() {
         try {
             assertEquals(listOf("diagram", "agents", "skills", "skill", "processes", "process", "built_in_tasks", "templates", "references", "checks",
                 "create_agent", "create_skill", "change_agent", "change_skill", "copy",
-                "add_element", "remove", "rename", "move", "connect", "set_condition", "set_default", "set_agent_task", "set_start_form", "drop_template"), tools(page))
+                "add_element", "remove", "rename", "move", "connect", "set_condition", "set_default", "set_agent_task", "set_start_form",
+                "set_user_task", "set_call", "set_built_in", "set_multi_instance", "drop_template"), tools(page))
             assertEquals(listOf("run"), tools(task))
             assertTrue(call(task, "diagram").second)
             assertTrue(call(page, "run", mapOf("command" to "ls")).second)
