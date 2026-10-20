@@ -26,6 +26,7 @@ import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -47,9 +48,7 @@ class BrowserTest : AntsTest() {
     fun launch(info: TestInfo) {
         test = info.testMethod.get().name
         playwright = Playwright.create()
-        page = launchChromium(playwright).newPage()
-        page.onConsoleMessage { if (it.type() == "error") errors += "console: ${it.text()}" }
-        page.onPageError { errors += "page error: $it" }
+        page = launchChromium(playwright).newPage().also(::watch)
         page.navigate(url("/login"))
         page.fill("input[name=username]", "admin")
         page.fill("input[name=password]", "admin")
@@ -60,6 +59,11 @@ class BrowserTest : AntsTest() {
     @AfterEach
     fun close() {
         if (::playwright.isInitialized) playwright.close()
+    }
+
+    private fun watch(page: Page) {
+        page.onConsoleMessage { if (it.type() == "error") errors += "console: ${it.text()}" }
+        page.onPageError { errors += "page error: $it" }
     }
 
     private fun url(path: String) = "http://127.0.0.1:$port$path"
@@ -398,6 +402,148 @@ class BrowserTest : AntsTest() {
         assertThat(ask).isHidden()
         page.reload()
         assertThat(ask).isHidden()
+    }
+
+    private fun onPhone(javaScript: Boolean = true) {
+        val cookies = page.context().cookies()
+        page = page.context().browser()!!.newContext(
+            NewContextOptions().setViewportSize(390, 844).setIsMobile(true).setHasTouch(true).setJavaScriptEnabled(javaScript),
+        ).apply { addCookies(cookies) }.newPage().also(::watch)
+    }
+
+    private fun assertNoSidewaysScroll() {
+        val (scroll, client) = (page.evaluate("[document.documentElement.scrollWidth, document.documentElement.clientWidth]") as List<*>).map { (it as Number).toInt() }
+        assertEquals(page.viewportSize().width, client, "${page.url()} renders at the screen's width")
+        assertTrue(scroll <= client, "${page.url()} is ${scroll}px wide on a ${client}px screen")
+    }
+
+    private fun waitingRun(key: String): String {
+        settings(null)
+        val (process, plane) = row(key, """<bpmn:startEvent id="start" />""", """<bpmn:userTask id="wait" name="Wait" />""", """<bpmn:endEvent id="end" />""")
+        deploy(definitions(key, key.replaceFirstChar(Char::uppercase), process, plane))
+        return http.post("/processes/$key/runs", mapOf()).path
+    }
+
+    private val topBar get() = page.locator("body > header")
+    private val drawer get() = page.locator("nav.side")
+    private val menu get() = page.getByText("☰", Page.GetByTextOptions().setExact(true))
+
+    @Test
+    fun `on a phone Home and the Notification list fit the screen with 16px side padding, Home's cards in one column, and an entry opens on a tap`() = browse {
+        val run = waitingRun("phoned")
+        onPhone()
+        for (path in listOf("/", "/notifications")) {
+            page.navigate(url(path))
+            assertThat(page.locator("tr.click:has(a[href='$run'])")).isVisible()
+            assertNoSidewaysScroll()
+            val (left, right) = contentEdges("main")
+            assertEquals(16.0, left, 0.5, "main's content starts 16px in on $path")
+            assertEquals(374.0, right, 0.5, "main's content ends 16px in on $path")
+            page.screenshot("phone${path.replace(Regex("[^a-z0-9]+"), "-")}")
+        }
+
+        page.navigate(url("/"))
+        val cards = listOf("#stats", "#waiting-on-you", "#working-now", "#coming-up", "#start-a-run").map { it to page.locator(it).boundingBox() }
+        for ((above, below) in cards.zipWithNext()) {
+            assertEquals(above.second.x, below.second.x, 0.5, "${below.first} starts where ${above.first} starts")
+            assertEquals(above.second.width, below.second.width, 0.5, "${below.first} is as wide as ${above.first}")
+            assertTrue(below.second.y >= above.second.y + above.second.height, "${below.first} sits under ${above.first}")
+        }
+
+        page.navigate(url("/notifications"))
+        page.locator("tr.click:has(a[href='$run']) td").last().tap()
+        page.waitForURL { "/notifications/" in it }
+    }
+
+    @Test
+    fun `on a phone the top bar shows Ants and the live Notification list count, and the sidebar isn't beside the content`() = browse {
+        waitingRun("counted")
+        onPhone()
+        page.navigate(url("/runs"))
+        assertThat(topBar).containsText("Ants")
+        assertEquals(0.0, topBar.boundingBox().y, 0.5)
+        assertEquals(390.0, topBar.boundingBox().width, 0.5)
+        val count = page.locator("#bar-waiting")
+        assertThat(count).hasText(Pattern.compile("\\d+"))
+        val before = count.textContent().toInt()
+
+        http.post("/processes/counted/runs", mapOf())
+
+        assertThat(count).hasText("${before + 1}")
+        assertThat(drawer).isHidden()
+        val main = page.locator("main").boundingBox()
+        assertEquals(0.0, main.x, 0.5)
+        assertEquals(390.0, main.width, 0.5)
+    }
+
+    @Test
+    fun `on a phone ☰ opens the sidebar as a drawer with the page marked, which closes on a tap outside, on Esc and on following a link`() = browse {
+        onPhone()
+        page.navigate(url("/runs"))
+        menu.tap()
+        assertThat(drawer).isVisible()
+        eventually { assertEquals(0.0, drawer.boundingBox().x, 0.5) }
+        fun link(name: String) = drawer.getByRole(AriaRole.LINK, Locator.GetByRoleOptions().setName(name))
+        for (name in listOf("Home", "Notification list", "Runs", "Processes", "Tickets", "Agents", "Skills", "Templates", "Settings")) assertThat(link(name)).isVisible()
+        assertThat(drawer.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Log out"))).hasText(Pattern.compile("Log out v\\S+"))
+        assertThat(drawer.locator("button[name=theme]:visible")).hasCount(1)
+        for (notice in listOf("#runs", "#paused", "#update")) assertThat(drawer.locator(notice)).hasCount(1)
+        fun background(name: String) = link(name).evaluate("a => getComputedStyle(a).backgroundColor")
+        assertNotEquals(background("Processes"), background("Runs"), "the drawer marks Runs, the page it is on")
+        page.screenshot("phone/drawer")
+
+        page.touchscreen().tap(370.0, 600.0)
+        assertThat(drawer).isHidden()
+        assertTrue(page.url().endsWith("/runs"), "a tap outside the drawer only closes it")
+
+        menu.tap()
+        assertThat(drawer).isVisible()
+        page.keyboard().press("Escape")
+        assertThat(drawer).isHidden()
+
+        menu.tap()
+        link("Processes").tap()
+        page.waitForURL { it.endsWith("/processes") }
+        assertThat(drawer).isHidden()
+    }
+
+    @Test
+    fun `on a phone with JavaScript off ☰ still opens and closes the menu`() = browse {
+        onPhone(javaScript = false)
+        page.navigate(url("/runs"))
+        assertThat(drawer).isHidden()
+        menu.tap()
+        assertThat(drawer).isVisible()
+        assertThat(drawer.getByRole(AriaRole.LINK, Locator.GetByRoleOptions().setName("Processes"))).isVisible()
+        menu.tap()
+        assertThat(drawer).isHidden()
+    }
+
+    @Test
+    fun `on a phone in dark mode the top bar and the drawer are dark like the sidebar`() = browse {
+        settings(null, "theme: dark\n")
+        onPhone()
+        page.navigate(url("/runs"))
+        menu.tap()
+        assertThat(drawer).isVisible()
+        assertEquals("rgb(11, 13, 18)", page.evaluate("getComputedStyle(document.documentElement).backgroundColor"))
+        val side = drawer.evaluate("e => getComputedStyle(e).backgroundColor")
+        assertEquals(side, topBar.evaluate("e => getComputedStyle(e).backgroundColor"))
+        assertEquals("rgb(255, 255, 255)", topBar.getByText("Ants").evaluate("e => getComputedStyle(e).color"))
+        page.screenshot("phone/drawer-dark")
+    }
+
+    @Test
+    fun `above 768px the top bar is hidden and the sidebar sits beside the content`() = browse {
+        page.setViewportSize(769, 900)
+        page.navigate(url("/runs"))
+        assertThat(topBar).isHidden()
+        assertThat(drawer).isVisible()
+        assertEquals(232.0, drawer.boundingBox().width, 0.5)
+        assertEquals(232.0, page.locator("main").boundingBox().x, 0.5)
+        page.setViewportSize(768, 900)
+        assertThat(topBar).isVisible()
+        assertThat(drawer).isHidden()
     }
 
     private fun round(vararg questions: Pair<String, String>) = """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":""" +
