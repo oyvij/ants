@@ -647,7 +647,7 @@ class BrowserTest : AntsTest() {
         assertThat(tabs.nth(4)).hasAttribute("aria-selected", "true")
         assertThat(page.locator("#answer-q5 + .ed .cm-content")).isVisible()
         assertThat(page.locator("#answer-q1 + .ed .cm-content")).isHidden()
-        assertTrue((strip.evaluate("e => e.scrollLeft") as Number).toDouble() > 0, "the strip scrolled sideways to the chip")
+        assertTrue((strip.evaluate("e => e.scrollLeft") as Number).toDouble() > 0, "the strip, not the page, scrolls sideways to reach the chip")
         assertEquals(0, (page.evaluate("scrollX") as Number).toInt(), "the page didn't scroll sideways")
         assertNoSidewaysScroll()
 
@@ -676,6 +676,7 @@ class BrowserTest : AntsTest() {
         page.locator("#next").tap()
         val footer = page.locator("#round > footer")
         assertThat(page.locator("#back")).isVisible()
+        assertTrue(page.locator("#next").boundingBox().y > page.locator("#back").boundingBox().y, "Next wraps under Back and Reset")
         val box = footer.boundingBox()
         assertEquals(0.0, box.x, 0.5)
         assertEquals(390.0, box.width, 0.5)
