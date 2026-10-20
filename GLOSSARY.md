@@ -55,9 +55,9 @@ editing a Template never changes the Processes it was copied into.
 _Avoid_: pattern, snippet, fragment
 
 **Schedule**:
-When a Process starts Runs on its own, such as every night at midnight; it says only when, so a Process can have
-one only when every required start-form field has a stored value.
-_Avoid_: cron, timer, trigger
+A filled-in start form set to start a Run at given times, such as every hour, instead of once now; each of its
+Runs starts with exactly what was filled in. A Process can have any number, each with its own values.
+_Avoid_: cron, timer, trigger, preset
 
 ### Running work
 
@@ -108,6 +108,16 @@ _Avoid_: credential, env var, key
 **Protected Command**:
 A command prefix, such as `yarn` or `mvn deploy`, that Agents may ask Ants to run with any arguments, in their Run
 workspace, with the Secrets linked to it; the Agent gets its output, never the Secrets.
+
+**Process Builder**:
+The AI in the modeler that builds and changes the open Process from what the user writes to it, in a
+continuous dialog; it does no Task, so it is not an Agent, and it never deploys or starts a Run.
+_Avoid_: ProcessBuilderAgent, modeler chat, assistant
+
+**Build log**:
+What the Process Builder keeps of a Process it has worked on: what the Process is for, the decisions
+taken and what is left, read by the next dialog about that Process to carry on.
+_Avoid_: chat history, session log, Transcript
 _Avoid_: build, command, script
 
 **Result**:
