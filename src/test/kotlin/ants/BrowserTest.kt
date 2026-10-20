@@ -760,7 +760,8 @@ class BrowserTest : AntsTest() {
         workspace(run).resolve("tickets/issues").createDirectories().resolve("01-wide.md").writeText("# Wide\n\nStatus: ready-for-agent\n\n" + "A long line of prose. ".repeat(60) + "\n")
         page.setViewportSize(1920, 1080)
         page.navigate(url("/runs/$run/tickets/01-wide"))
-        val ticket = page.locator("#ticket").boundingBox().width
+        // Measured in one step: the live update swaps #ticket for a new one, and boundingBox() reads null mid-swap
+        val ticket = (page.locator("#ticket").evaluate("e => e.getBoundingClientRect().width") as Number).toDouble()
         assertTrue(ticket <= 860, "the Ticket is ${ticket}px wide")
     }
 
@@ -812,12 +813,12 @@ class BrowserTest : AntsTest() {
 
     @Test
     fun `a story step's code wider and taller than its box scrolls sideways inside it, its scrollbar on screen and its line numbers stay put`() = browse {
-        val entry = staleStoryReviewEntry(wideAndTall)
+        val entry = staleStoryReviewEntry(wideAndTall, head = "HEAD")
         page.setViewportSize(1440, 240)
         page.navigate(url("$entry#s1-3"))
         val code = page.locator(".step:not([hidden]) .code")
         assertThat(code).containsText("line 12")
-        assertScrollsBothWaysAboveTheComposerKeepingItsNumbers(code, code.locator(".ln").nth(1))
+        assertScrollsBothWaysAboveTheComposerKeepingItsNumbers(code, code.locator(".ln:visible").nth(1))
     }
 
     @Test
@@ -833,10 +834,11 @@ class BrowserTest : AntsTest() {
         assertThat(page.locator("#line-comment [name=from]")).hasValue("2")
     }
 
-    private fun staleStoryReviewEntry(helloText: String = "hello\nWORLD\n"): String {
+    /** Review changes on a Story set written against [head]; then [helloText] is committed, so against origin/main its steps go stale and against HEAD they show it. */
+    private fun staleStoryReviewEntry(helloText: String = "hello\nWORLD\n", head: String = "origin/main"): String {
         val claude = FakeClaude()
         agentTask(claude, mapOf("narrate" to null, "mend" to null, "ship" to null), extra = reviewSourceMap())
-        val set = """{"title":"Nothing changes","ranges":[{"repo":"api","base":"origin/main","head":"origin/main"}],"stories":[{"id":"s","name":"Greeting",""" +
+        val set = """{"title":"Nothing changes","ranges":[{"repo":"api","base":"origin/main","head":"$head"}],"stories":[{"id":"s","name":"Greeting",""" +
             """"premise":"Hello stays.","steps":[{"id":"hello","name":"Hello","claim":"It greets.","why":"Politeness.",""" +
             """"site":{"file":"repos/api/hello.txt","side":"new","kind":"context","from":1,"to":1}},""" +
             """{"id":"world","name":"World","claim":"It names the world.","why":"Scope.","site":{"file":"repos/api/hello.txt","side":"new","kind":"context","from":2,"to":2}},""" +
@@ -1143,7 +1145,7 @@ class BrowserTest : AntsTest() {
 
     @Test
     fun `the Agent and Skill editors and Review changes use most of the width at 1440px and 1920px, and no page scrolls sideways at 1280px`() = browse {
-        val entry = staleStoryReviewEntry(wideAndTall)
+        val entry = staleStoryReviewEntry(wideAndTall, head = "HEAD")
         home.resolve("agents").createDirectories().resolve("roomy.md").writeText("---\nname: roomy\ncli: claude\ntools: Read\n---\nRoomy.\n")
         home.resolve("skills/roomy").createDirectories().resolve("SKILL.md").writeText("---\nname: roomy\ndescription: Roomy.\n---\n" + "A long line of the Skill. ".repeat(40) + "\n")
         val workAreas = listOf(
