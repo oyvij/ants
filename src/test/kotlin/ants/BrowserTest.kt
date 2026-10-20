@@ -28,6 +28,7 @@ import kotlin.test.assertFails
 import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -271,6 +272,8 @@ class BrowserTest : AntsTest() {
             "connect" to mapOf("from" to "draft", "to" to "Task_x"), "set_agent_task" to mapOf("id" to "Task_x", "agent" to "writer"),
             "set_condition" to mapOf("id" to "Task_x", "condition" to "\${true}"), "set_default" to mapOf("id" to "Task_x"),
             "add_element" to mapOf("kind" to "agent", "in" to "Task_x"),
+            "set_user_task" to mapOf("id" to "Task_x", "kind" to "approve"), "set_call" to mapOf("id" to "Task_x", "process" to "agent-task"),
+            "set_built_in" to mapOf("id" to "Task_x", "topic" to "push"), "set_multi_instance" to mapOf("id" to "Task_x", "mode" to "parallel"),
         )) {
             val (text, failed) = mcpCall(port, token, name, arguments)
             assertTrue(failed, "$name: $text")
@@ -389,6 +392,111 @@ class BrowserTest : AntsTest() {
             .let { (_, attributes, body) -> attributes.replace("""id="$id"""", "").trim() + body.substringAfter("extensionElements>").substringBefore("extensionElements>") }
         assertContains(task("byTool"), "\${prompt}")
         assertEquals(task(hand), task("byTool"))
+    }
+
+    private fun texts(node: tools.jackson.databind.JsonNode?) = node?.iterator()?.asSequence()?.map { it.asString() }?.toList()
+
+    @Test
+    fun `the Process Builder's tools set each Task's inputs, outputs and variables, diagram reads them back, and Ctrl-Z undoes each`() = browse {
+        agentTask(null)
+        http.import("agent-task.bpmn")
+        page.navigate(url("/processes/agent-task/edit"))
+        val tool = builder()
+        page.evaluate("window.unreloaded = true")
+        fun element(id: String) = tool("diagram", emptyMap())["elements"].first { it["id"].asString() == id }
+        fun property(id: String, name: String) = element(id)["properties"][name]?.asString()
+
+        assertEquals(listOf("\${draft.summary}"), texts(element("draft")["outputs"]))
+        tool("set_agent_task", mapOf("id" to "draft", "resultSchema" to """{"type":"object","properties":{"items":{"type":"array"}}}""", "resume" to true, "vault" to false))
+        eventually { assertEquals(listOf("\${draft.output.items}"), texts(element("draft")["outputs"])) }
+        assertEquals(listOf("true", "false"), listOf(property("draft", "ants.resume"), property("draft", "ants.vault")))
+        undo()
+        eventually { assertEquals(listOf("\${draft.summary}"), texts(element("draft")["outputs"])) }
+
+        tool("add_element", mapOf("kind" to "user", "id" to "approve"))
+        tool("set_user_task", mapOf("id" to "approve", "fields" to mapOf("title" to "Ship it?", "send-back" to "draft")))
+        shape("approve").click()
+        assertThat(label("Title")).hasValue("Ship it?")
+        assertEquals("draft", property("approve", "ants.send-back"))
+        assertEquals(listOf("\${approve.approved}", "\${approve.comment}"), texts(element("approve")["outputs"]))
+        tool("set_user_task", mapOf("id" to "approve", "kind" to "review-changes", "fields" to mapOf("walkthrough" to "draft")))
+        eventually { assertEquals("review-changes", property("approve", "ants.user-task")) }
+        assertEquals(listOf("draft", "draft"), listOf(property("approve", "ants.walkthrough"), property("approve", "ants.send-back")))
+        assertEquals(0, element("approve")["inputs"].size()) // Approve's title went with the kind
+        undo()
+        eventually { assertEquals("Ship it?", element("approve")["inputs"]["title"]?.asString()) }
+
+        tool("add_element", mapOf("kind" to "call", "id" to "again"))
+        assertEquals("", tool("set_call", mapOf("id" to "again", "process" to "agent-task"))["inputs"]["prompt"].asString())
+        tool("set_call", mapOf("id" to "again", "inputs" to mapOf("prompt" to "\${prompt}")))
+        eventually { assertEquals("\${prompt}", element("again")["inputs"]["prompt"].asString()) }
+        assertEquals("agent-task", property("again", "calls"))
+        undo()
+        eventually { assertEquals("", element("again")["inputs"]["prompt"].asString()) }
+
+        tool("add_element", mapOf("kind" to "built-in", "id" to "clone"))
+        tool("set_built_in", mapOf("id" to "clone", "inputs" to mapOf("repos" to "\${draft.output.repos}")))
+        eventually { assertEquals("\${draft.output.repos}", element("clone")["inputs"]["repos"]?.asString()) }
+        tool("set_built_in", mapOf("id" to "clone", "topic" to "accept-recommendations", "asker" to "draft"))
+        eventually { assertEquals("accept-recommendations", property("clone", "topic")) }
+        assertEquals("draft", property("clone", "ants.asker"))
+        undo()
+        eventually { assertEquals("clone-repos", property("clone", "topic")) }
+
+        tool("set_multi_instance", mapOf("id" to "draft", "mode" to "parallel", "collection" to "\${items}", "elementVariable" to "ticket", "itemsAreTickets" to true))
+        eventually { assertEquals("ticket", element("draft")["properties"]["multiInstance"]?.get("elementVariable")?.asString()) }
+        val loop = element("draft")["properties"]
+        assertEquals(listOf("\${items}", "false", "true"), listOf(loop["multiInstance"]["collection"].asString(), loop["multiInstance"]["sequential"].asString(), loop["ants.items-are-tickets"].asString()))
+        shape("draft").click()
+        assertThat(panel).containsText("Parallel multi-instance")
+        undo()
+        eventually { assertNull(element("draft")["properties"]["multiInstance"]) }
+        assertEquals(true, page.evaluate("window.unreloaded"))
+    }
+
+    @Test
+    fun `a User Task, a call activity and a multi-instance set up by the Process Builder's tools read in the saved XML as ones set up by hand`() = browse {
+        agentTask(null)
+        http.import("agent-task.bpmn")
+        page.navigate(url("/processes/agent-task/edit"))
+        val tool = builder()
+        // Below the Process, the ones set up by hand in view and clear of the palette: the canvas doesn't scroll to a shape to
+        // click it. The multi-instance leftmost, so its context pad (the wrench) is on the canvas too. Nothing above or left
+        // of the Process, which Save's align-to-origin would move.
+        for ((i, kind, id) in listOf(Triple(0, "agent", "Loop"), Triple(1, "user", "User"), Triple(2, "call", "Call")))
+            for ((who, y) in listOf("hand" to 230, "tool" to 400)) tool("add_element", mapOf("kind" to kind, "id" to who + id, "x" to 130 + 150 * i, "y" to y))
+
+        shape("handUser").click()
+        label("Title").fill("Ship it?")
+        label("Title").press("Tab")
+        label("Show").fill("notes.md")
+        label("Show").press("Tab")
+        label("Send back resumes").selectOption("draft")
+        shape("handCall").click()
+        label("Process").selectOption("agent-task")
+        page.locator("#explain label.row input").first().fill("\${prompt}")
+        shape("handLoop").click()
+        pad.locator("[data-action='replace']").click()
+        page.locator(".djs-popup [data-id='toggle-parallel-mi']").click()
+        label("Collection").fill("\${draft.output.items}")
+        label("Element variable").fill("ticket")
+        page.getByLabel("Items are Tickets").check()
+
+        tool("set_user_task", mapOf("id" to "toolUser", "kind" to "approve", "fields" to mapOf("title" to "Ship it?", "show" to "notes.md", "send-back" to "draft")))
+        tool("set_call", mapOf("id" to "toolCall", "process" to "agent-task", "inputs" to mapOf("prompt" to "\${prompt}")))
+        // The page sends its XML to the Checks after each change: the one with both multi-instances set up.
+        val sent = page.waitForRequest({ request ->
+            request.url().endsWith("/processes/checks") && Regex("ants.items-are-tickets").findAll(bpmnOf(request.postData())).count() == 2
+        }) { tool("set_multi_instance", mapOf("id" to "toolLoop", "mode" to "parallel", "collection" to "\${draft.output.items}", "elementVariable" to "ticket", "itemsAreTickets" to true)) }
+        val xml = bpmnOf(sent.postData())
+        // Its attributes but the id, and all it holds.
+        fun element(tag: String, id: String) = Regex("""<[\w:]*$tag ([^>]*)>(.*?)</[\w:]*$tag>""", RegexOption.DOT_MATCHES_ALL).findAll(xml)
+            .map { it.groupValues }.single { (_, attributes) -> """id="$id"""" in attributes }
+            .let { (_, attributes, body) -> attributes.replace("""id="$id"""", "").trim() + body }
+        for ((tag, id) in listOf("userTask" to "User", "callActivity" to "Call", "serviceTask" to "Loop")) {
+            assertContains(element(tag, "tool$id"), if (id == "User") "notes.md" else if (id == "Call") "\${prompt}" else "ticket")
+            assertEquals(element(tag, "hand$id"), element(tag, "tool$id"), id)
+        }
     }
 
     /** The `bpmn` field of a form-encoded body. */

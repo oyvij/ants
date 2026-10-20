@@ -16,6 +16,7 @@ fails, and closing the page ends the session.
 - **Session:** one live claude process per page (`--input-format stream-json`, `--session-id`), relaunched with
   `--resume` if it dies. A new page starts a new session, which reads the Process's Build log
   (`ANTS_HOME/processes/<key>/build-log.md`), rewritten by the Process Builder at the end of every turn.
+- **Only on a Process's modeler,** never a Template's: a Template is changed in the Processes it is copied into.
 - **CLI:** `process-builder: {cli, model}` in `settings.yaml`. Only claude runs it until codex reaching Ants' MCP
   server is probed (#115).
 

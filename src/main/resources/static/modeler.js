@@ -916,6 +916,10 @@ const relayed = {
     },
     set_agent_task: setAgentTask,
     set_start_form: setStartForm,
+    set_user_task: setUserTask,
+    set_call: setCall,
+    set_built_in: setBuiltIn,
+    set_multi_instance: setMultiInstance,
     drop_template: async args => {
         const at = args.x === undefined && args.y === undefined ? undefined : {x: number(args, "x") + 50, y: number(args, "y") + 40} // a collapsed sub-process is 100 by 80
         return {id: await dropTemplate(String(args.name ?? ""), at)}
@@ -1007,7 +1011,7 @@ function nextTo(parent, shape) {
 }
 
 // The Agent Task's Agent, Skill and inputs, written as the panel's pickers and input boxes write them.
-async function setAgentTask({id, agent, skill, inputs}) {
+async function setAgentTask({id, agent, skill, inputs, resultSchema, resume, vault, answerHistory}) {
     const element = found(id)
     if (kindOf(element) !== "agent") throw new Error(`${id} is ${kinds[kindOf(element)]?.name || element.type}, not an Agent Task.`)
     const catalogue = await (await fetch("/catalogue.json")).json()
@@ -1024,8 +1028,22 @@ async function setAgentTask({id, agent, skill, inputs}) {
     if (unknown.length) throw new Error(`The Skill ${skillName || "(none yet)"} declares no input ${unknown.join(", ")}; it declares ${declared.join(", ") || "none"}.`)
     const kept = Object.fromEntries(agentInputs(element.businessObject))
     const written = declared.map(name => [name, String(given[name] ?? kept[name] ?? "")])
-    edit(() => writeAgentTask(element, {"ants.agent": agentName || undefined, "ants.skill": skillName || undefined}, written, true))
-    return {id, agent: agentName || null, skill: skillName || null, inputs: Object.fromEntries(written)}
+    const changes = {"ants.agent": agentName || undefined, "ants.skill": skillName || undefined}
+    // The panel's Result schema box and toggles: resume is set or gone, Vault and Answer History say true or false.
+    if (resultSchema !== undefined) {
+        const schema = String(resultSchema).trim()
+        let parsed
+        try {
+            parsed = schema && JSON.parse(schema)
+        } catch {}
+        if (schema && (typeof parsed !== "object" || !parsed)) throw new Error("resultSchema isn't a JSON Schema: give a JSON object such as {\"type\": \"object\", \"properties\": {…}}.")
+        changes["ants.result-schema"] = schema || undefined
+    }
+    if (resume !== undefined) changes["ants.resume"] = yes(resume, "resume") ? "true" : undefined
+    if (vault !== undefined) changes["ants.vault"] = String(yes(vault, "vault"))
+    if (answerHistory !== undefined) changes["ants.answer-history"] = String(yes(answerHistory, "answerHistory"))
+    edit(() => writeAgentTask(element, changes, written, true))
+    return {id, agent: agentName || null, skill: skillName || null, inputs: Object.fromEntries(written), properties: agentProperties(element.businessObject)}
 }
 
 // The start form's fields, all of them in order, as the panel writes them.
@@ -1045,9 +1063,136 @@ function setStartForm({fields}) {
     return {id: start.id, fields: written.map(f => f.id)}
 }
 
+function foundAs(id, kind, noun) {
+    const element = found(id)
+    if (kindOf(element) !== kind) throw new Error(`${id} is ${kinds[kindOf(element)]?.name || element.type}, not a ${noun}.`)
+    return element
+}
+
+function yes(value, key) {
+    if (value === true || value === "true") return true
+    if (value === false || value === "false") return false
+    throw new Error(`${key} must be true or false, not ${value}.`)
+}
+
+// An extension property that names an Agent Task, such as a User Task's Send back resumes.
+function agentTaskNamed(key, value) {
+    const task = modeler.get("elementRegistry").get(String(value))
+    if (value && !(task?.businessObject && kindOf(task) === "agent")) throw new Error(`${key} names an Agent Task, and the diagram has no Agent Task ${value}.`)
+}
+
+// The kind of a User Task: Approve has no `ants.user-task`, so the tools call it approve.
+const userTaskKind = k => k.value || "approve"
+const userTaskOf = bo => userTasks.find(k => k.value === (agentProperties(bo)["ants.user-task"] || "")) || userTasks.find(k => !k.value)
+// A User Task field, by its input (title, show) or its property without `ants.` (send-back, asker, walkthrough).
+const userFieldName = f => f.input || f.property.replace(/^ants\./, "")
+
+// The User Task's kind and fields, as the panel's kind picker and field boxes write them.
+function setUserTask({id, kind, fields}) {
+    const element = foundAs(id, "user", "User Task")
+    const bo = element.businessObject
+    const next = kind === undefined ? userTaskOf(bo) : userTasks.find(k => userTaskKind(k) === kind)
+    if (!next) throw new Error(`No User Task kind ${kind}: the kinds are ${userTasks.map(userTaskKind).join(", ")}.`)
+    const given = Object.entries(fields || {}).map(([name, value]) => {
+        const f = next.fields.find(f => userFieldName(f) === name)
+        if (!f) throw new Error(`${next.name} has no field ${name}: it has ${next.fields.map(userFieldName).join(", ")}.`)
+        if (f.property) agentTaskNamed(name, value ?? "")
+        return [f, String(value ?? "")]
+    })
+    // Switching kind drops the fields only the old kind has, as the panel does.
+    const stale = userTasks.flatMap(k => k.fields).filter(f => !next.fields.some(g => g.property === f.property && g.input === f.input))
+    const changes = {...Object.fromEntries(stale.filter(f => f.property).map(f => [f.property, undefined])), "ants.user-task": next.value || undefined}
+    let inputs = agentInputs(bo).filter(([name]) => !stale.some(f => f.input === name))
+    for (const [f, value] of given) {
+        if (f.property) changes[f.property] = value || undefined
+        else inputs = [...inputs.filter(([name]) => name !== f.input), ...(value ? [[f.input, value]] : [])]
+    }
+    edit(() => writeAgentTask(element, changes, inputs, true))
+    return {id, kind: userTaskKind(next), fields: Object.fromEntries(next.fields.map(f =>
+        [userFieldName(f), f.property ? agentProperties(bo)[f.property] || "" : Object.fromEntries(agentInputs(bo))[f.input] || ""]))}
+}
+
+// The call activity's Process and inputs, as the panel's Process picker and input boxes write them.
+async function setCall({id, process, inputs}) {
+    const element = foundAs(id, "call", "call activity")
+    const bo = element.businessObject
+    const processes = await (await fetch("/processes.json")).json()
+    const key = process ?? bo.calledElement
+    const called = processes.find(p => p.key === key)
+    if (process !== undefined && !called) throw new Error(`No Process ${process} is deployed: the Processes are ${processes.map(p => p.key).join(", ")}.`)
+    const kept = Object.fromEntries(callInputs(bo))
+    const names = called ? called.fields.map(f => f.name) : Object.keys(kept)
+    const given = inputs || {}
+    const unknown = Object.keys(given).filter(name => !names.includes(name))
+    if (unknown.length) throw new Error(`${key ? "The Process " + key : "A call activity calling no Process"} has no start-form field ${unknown.join(", ")}; its fields are ${names.join(", ") || "none"}.`)
+    const written = names.map(name => [name, String(given[name] ?? kept[name] ?? "")])
+    edit(() => writeCall(element, {calledElement: key || undefined}, written, true))
+    return {id, process: key || null, inputs: Object.fromEntries(written)}
+}
+
+// The Built-in Task's topic, as the panel's picker writes it, and its inputs, written as an Agent Task's are.
+function setBuiltIn({id, topic, inputs, asker}) {
+    const element = foundAs(id, "built-in", "Built-in Task")
+    const bo = element.businessObject
+    if (topic !== undefined && !builtIns[topic]) throw new Error(`No Built-in Task ${topic}: the topics are ${Object.keys(builtIns).join(", ")}.`)
+    const now = topic ?? bo.get("camunda:topic")
+    if (asker !== undefined && now !== "accept-recommendations") throw new Error(`Only accept-recommendations names an asker; ${id} is ${now}.`)
+    if (asker !== undefined) agentTaskNamed("asker", asker)
+    const given = Object.entries(inputs || {}).map(([name, value]) => {
+        if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) throw new Error(`${name} isn't an input name: use letters, digits and underscores, starting with a letter.`)
+        return [name, String(value ?? "")]
+    })
+    const values = Object.fromEntries(given)
+    const written = [...agentInputs(bo).map(([name, value]) => [name, values[name] ?? value]), ...given.filter(([name]) => !agentInputs(bo).some(([n]) => n === name))]
+        .filter(([, value]) => value)
+    edit(() => {
+        if (topic !== undefined) modeler.get("modeling").updateProperties(element, {"camunda:topic": topic})
+        if (inputs !== undefined || asker !== undefined) writeAgentTask(element, asker === undefined ? {} : {"ants.asker": asker || undefined}, written, true)
+    })
+    return {id, topic: now, inputs: Object.fromEntries(agentInputs(bo)), asker: agentProperties(bo)["ants.asker"] || null}
+}
+
+// Multi-instance, as the wrench menu's parallel and sequential toggles write it, and the panel's collection, element
+// variable and Items are Tickets.
+function setMultiInstance({id, mode, collection, elementVariable, itemsAreTickets: tickets}) {
+    const element = found(id)
+    if (!repeatable.has(kindOf(element))) throw new Error(`${id} is ${kinds[kindOf(element)]?.name || element.type}: only an Agent Task, a sub-process or a call activity runs as a multi-instance.`)
+    if (mode !== undefined && !["parallel", "sequential", "none"].includes(mode)) throw new Error(`mode is parallel, sequential or none, not ${mode}.`)
+    const MI = "bpmn:MultiInstanceLoopCharacteristics"
+    const on = mode === undefined ? element.businessObject.loopCharacteristics?.$type === MI : mode !== "none"
+    const settings = [collection, elementVariable, tickets].some(value => value !== undefined)
+    if (!on && settings) throw new Error(`${id} doesn't run as a multi-instance: give mode parallel or sequential.`)
+    const ticketed = tickets === undefined ? undefined : yes(tickets, "itemsAreTickets")
+    const modeling = modeler.get("modeling")
+    edit(() => {
+        if (mode === "none") return modeling.updateProperties(element, {loopCharacteristics: undefined})
+        let loop = element.businessObject.loopCharacteristics
+        if (mode && loop?.$type === MI) modeling.updateModdleProperties(element, loop, {isSequential: mode === "sequential"})
+        else if (mode) modeling.updateProperties(element, {loopCharacteristics: loop = modeler.get("moddle").create(MI, {isSequential: mode === "sequential"})})
+        if (collection !== undefined) modeling.updateModdleProperties(element, loop, {"camunda:collection": String(collection) || undefined})
+        if (elementVariable !== undefined) modeling.updateModdleProperties(element, loop, {"camunda:elementVariable": String(elementVariable) || undefined})
+        if (ticketed !== undefined) writeAgentTask(element, {[itemsAreTickets.property]: ticketed ? "true" : undefined})
+    })
+    const loop = element.businessObject.loopCharacteristics
+    return {id, mode: loop?.$type === MI ? (loop.isSequential ? "sequential" : "parallel") : "none",
+        collection: loop?.get("camunda:collection") || null, elementVariable: loop?.get("camunda:elementVariable") || null}
+}
+
+// What later Tasks read of a Task's Result, as the panel lists it: an Agent Task's promised fields, else its summary,
+// and a User Task's kind's fields.
+function outputs(e, skills) {
+    const bo = e.businessObject
+    if (kindOf(e) === "user") return userTaskOf(bo).result.map(f => `\${${e.id}.${f}}`)
+    if (kindOf(e) !== "agent") return undefined
+    const props = agentProperties(bo)
+    const fields = promised(skills.find(s => s.name === props["ants.skill"]), props["ants.result-schema"])
+    return fields.length ? fields.map(f => `\${${e.id}.output.${f}}`) : [`\${${e.id}.summary}`]
+}
+
 // The diagram as the Process Builder reads it: its elements, its connections and the start form.
-function diagram() {
+async function diagram() {
     const all = modeler.get("elementRegistry").filter(e => e.parent && !e.labelTarget) // a root, the Process or a sub-process's plane, has no parent
+    const {skills} = await (await fetch("/catalogue.json")).json()
     const element = e => {
         const bo = e.businessObject, kind = kindOf(e) || e.type.replace("bpmn:", "")
         const properties = agentProperties(bo)
@@ -1059,7 +1204,7 @@ function diagram() {
         if (loop) properties.multiInstance = {sequential: !!loop.isSequential, collection: loop.get("camunda:collection"), elementVariable: loop.get("camunda:elementVariable")}
         const inside = e.parent.businessObject?.$type === "bpmn:SubProcess" ? e.parent.businessObject.id : undefined
         return {id: e.id, kind, name: bo.name || "", x: e.x, y: e.y, width: e.width, height: e.height, in: inside, properties,
-            inputs: Object.fromEntries(kind === "call" ? callInputs(bo) : agentInputs(bo))}
+            inputs: Object.fromEntries(kind === "call" ? callInputs(bo) : agentInputs(bo)), outputs: outputs(e, skills)}
     }
     const start = all.find(e => e.type === "bpmn:StartEvent" && e.parent.businessObject?.$type === "bpmn:Process")
     return {

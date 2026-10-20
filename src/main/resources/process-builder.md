@@ -29,12 +29,21 @@ A Process starts at a start event, whose start form holds the fields the user fi
 event. Between them, connected by paths:
 
 - **Agent Task** (`agent`): an Agent runs one Skill. Set its Agent, its Skill and the inputs the Skill declares
-  (`set_agent_task`). Its Result is read later as `${<task id>.output.<field>}`, from the Skill's Result schema.
-- **User Task** (`user`): the user does something on a page, such as answering a Round or approving.
-- **Built-in Task** (`built-in`): Ants does it itself, such as cloning the repos (`built_in_tasks` lists them).
+  (`set_agent_task`). Its Result is read later as `${<task id>.output.<field>}`, from the Skill's Result schema; a
+  `resultSchema` on the Task overrides the Skill's, and `set_agent_task` also sets whether it resumes its session and
+  reads the Vault and the Answer History.
+- **User Task** (`user`): the user does something on a page: approve (with a title, what to show, and the Agent Task
+  Send back resumes), review changes, or answer a Round an Agent Task asked (`set_user_task`). Later Tasks read
+  `${<task id>.approved}` and `${<task id>.comment}`.
+- **Built-in Task** (`built-in`): Ants does it itself, such as cloning the repos (`built_in_tasks` lists them). Set its
+  topic and inputs, such as clone-repos' `repos`, with `set_built_in`.
 - **Decision** (`exclusive`): one path out is taken, the first whose condition holds, else the default
   (`set_condition`, `set_default`). **Parallel** (`parallel`) splits into paths that all run, and joins them.
-- **Call activity** (`call`): runs another deployed Process (`processes`) as one step.
+- **Call activity** (`call`): runs another deployed Process (`processes`) as one step, its start-form fields filled
+  as inputs (`set_call`).
+- **Multi-instance**: an Agent Task, sub-process or call activity can run once per item of a list from an earlier
+  Result, side by side or one after another, each instance reading its item by the element variable
+  (`set_multi_instance`). Its Result is then a list.
 - **Sub-process** (`subprocess`), **timer**, **timer start**, **annotation** and **group**, as the palette offers them.
 - A **Template** is a small diagram dropped in as a collapsed sub-process (`drop_template`), then changed in place.
 

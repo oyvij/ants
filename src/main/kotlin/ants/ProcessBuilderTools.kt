@@ -364,6 +364,11 @@ class ProcessBuilderTools(
 
         private fun number(what: String) = mapOf("type" to "number", "description" to what)
 
+        /** A `{name: text}` argument's schema. */
+        private fun strings(what: String) = mapOf("type" to "object", "additionalProperties" to mapOf("type" to "string"), "description" to what)
+
+        private fun yesNo(what: String) = mapOf("type" to "boolean", "description" to what)
+
         private const val AT = "Its top-left corner on the diagram, as `diagram` gives positions."
 
         /** The tools that change the diagram: relayed to the page, which makes each call one undo step (modeler.js). */
@@ -389,12 +394,16 @@ class ProcessBuilderTools(
                 "id" to "The connection's id.", "condition" to "A JUEL expression, such as `\${grill.output.verdict == 'redo'}` or `\${runs.grill >= 10}`; empty removes it.",
             )),
             Mcp.tool("set_default", "Makes a path out of a decision its default, taken when no other condition holds; its condition goes.", mapOf("id" to "The connection's id.")),
-            Mcp.tool("set_agent_task", "Sets an Agent Task's Agent, Skill and inputs, as the properties panel does: a new Agent picks its first Skill unless " +
+            Mcp.tool("set_agent_task", "Sets an Agent Task's Agent, Skill, inputs, Result schema and toggles, as the properties panel does: a new Agent picks its first Skill unless " +
                 "skill is given, and the inputs are the ones the Skill declares, keeping values already filled in.", mapOf(
                 "id" to "The Agent Task's id.", "agent" to "The Agent's name (see `agents`).", "skill" to "One of the Agent's Skills (see `skills`).",
                 "inputs" to mapOf("type" to "object", "additionalProperties" to mapOf("type" to "string"),
                     "description" to "Values by input name, each text or a `\${…}` reference (see `references`), such as {\"prompt\": \"\${prompt}\"}."),
-            ), optional = setOf("agent", "skill", "inputs")),
+                "resultSchema" to "A JSON Schema of the Result, overriding the Skill's, so later Tasks read its fields as \${id.output.<field>}; empty removes it.",
+                "resume" to yesNo("Whether the flow coming back (Round answers, Send back) resumes its session."),
+                "vault" to yesNo("Whether it reads the Vault and Source map; left unset, the Skill's choice."),
+                "answerHistory" to yesNo("Whether it reads the Answer History; left unset, the Skill's choice."),
+            ), optional = setOf("agent", "skill", "inputs", "resultSchema", "resume", "vault", "answerHistory")),
             Mcp.tool("set_start_form", "Replaces the start form's fields, in order: to add, change, remove or reorder fields, give the whole list, " +
                 "starting from `diagram`'s startForm.", mapOf(
                 "fields" to mapOf("type" to "array", "description" to "The fields. Tasks read each one as \${id}.", "items" to mapOf(
@@ -409,6 +418,34 @@ class ProcessBuilderTools(
                     ),
                 )),
             )),
+            Mcp.tool("set_user_task", "Sets a User Task's kind and its fields, as the properties panel does: a new kind drops the fields only the old kind " +
+                "has. Later Tasks read its Result: approve and review-changes give \${id.approved} and \${id.comment} (review-changes also \${id.comments}), " +
+                "answer-round gives \${id.answers}.", mapOf(
+                "id" to "The User Task's id.",
+                "kind" to mapOf("type" to "string", "enum" to UserTaskKind.entries.map { it.value ?: "approve" }, "description" to "What the user does; left out, the kind it is now."),
+                "fields" to strings("Values by field, empty clearing one: approve takes title (what is asked) and show (a Run workspace file, or a `\${…}` " +
+                    "shown as markdown) and send-back; review-changes takes walkthrough and send-back; answer-round takes asker. send-back, walkthrough and " +
+                    "asker name an Agent Task: the one Send back resumes, whose Story set is shown, and whose Round is answered."),
+            ), optional = setOf("kind", "fields")),
+            Mcp.tool("set_call", "Sets a call activity's Process and inputs, as the properties panel does: its inputs are the called Process's start-form " +
+                "fields (see `processes`), keeping values already filled in. Later Tasks read its Result as \${id.<task-id>…}.", mapOf(
+                "id" to "The call activity's id.", "process" to "The key of the deployed Process it calls.",
+                "inputs" to strings("Values by start-form field name, each text or a `\${…}` reference (see `references`)."),
+            ), optional = setOf("process", "inputs")),
+            Mcp.tool("set_built_in", "Sets a Built-in Task's topic and inputs. clone-repos reads the inputs repos (Source map names or git URLs, such as " +
+                "`\${scout.output.repos}`) and branch; accept-recommendations names its asker.", mapOf(
+                "id" to "The Built-in Task's id.", "topic" to "Its topic (see `built_in_tasks`).",
+                "inputs" to strings("Values by input name, each text or a `\${…}` reference; empty removes one."),
+                "asker" to "accept-recommendations only: the Agent Task whose Round it answers; empty clears it.",
+            ), optional = setOf("topic", "inputs", "asker")),
+            Mcp.tool("set_multi_instance", "Runs an Agent Task, sub-process or call activity once per item of a list, as the wrench menu's toggles and the " +
+                "properties panel do. Its Result becomes a list of its instances' Results, in item order.", mapOf(
+                "id" to "The element's id.",
+                "mode" to mapOf("type" to "string", "enum" to listOf("parallel", "sequential", "none"), "description" to "none makes it run once; left out, the mode it has."),
+                "collection" to "The list, a `\${…}` such as `\${totickets.output.tickets}`.",
+                "elementVariable" to "The name each instance reads its item as, such as `ticket`; left out, item.",
+                "itemsAreTickets" to yesNo("Whether each item is a Ticket, which goes in-review as its instance ends."),
+            ), optional = setOf("mode", "collection", "elementVariable", "itemsAreTickets")),
             Mcp.tool("drop_template", "Drops a copy of a Template (see `templates`) as a collapsed sub-process, as the palette does, and gives its id. " +
                 "It keeps the Template's ids, suffixed _2, _3 … on a clash. It reloads the diagram, so Undo can't take it back.", mapOf(
                 "name" to "The Template's name.", "x" to number(AT), "y" to number(AT),
@@ -419,7 +456,8 @@ class ProcessBuilderTools(
 
         private val TOOLS = listOf(
             Mcp.tool("diagram", "The diagram open in the modeler, as it is now with the user's unsaved edits: its elements (id, kind, name, " +
-                "position and size, the sub-process they are in, and their properties and inputs), its connections (from, to, name, condition, " +
+                "position and size, the sub-process they are in, their properties (multiInstance among them), their inputs, and the outputs later Tasks read of a " +
+                "Task's Result), its connections (from, to, name, condition, " +
                 "and whether it is its gateway's default) and the start form's fields."),
             Mcp.tool("agents", "The Agents a Task can pick: each one's name, description, the Skills it runs, and whether it is the user's own (else read-only)."),
             Mcp.tool("skills", "The Skills: each one's name, description, the inputs it declares (which an Agent Task fills), and the Result schema it promises (output)."),
