@@ -262,6 +262,7 @@ div.tools label span { color: var(--muted); font-size: 12px; display: block; }
 
 .storyview { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 20px; align-items: start; }
 .spine { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sh); padding: 16px; position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow-y: auto; overflow-wrap: anywhere; }
+@supports selector(::details-content) { :is(.spine, .walk > .files) > summary { display: none; } :is(.spine, .walk > .files)::details-content { content-visibility: visible; } }
 .spine .stitle { font-weight: 700; font-size: 15px; line-height: 1.4; margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--line2); }
 .spine .srow { display: flex; align-items: baseline; gap: 10px; padding: 8px 10px; margin: 0 -10px; border-radius: 8px; color: var(--text); font-size: 13.5px; } .spine .srow .cnt { margin-left: auto; color: var(--muted); font-size: 12px; white-space: nowrap; } .spine .srow:hover { background: var(--line2); text-decoration: none; }
 .spine .srow.on { background: var(--accSoft); font-weight: 600; } .spine .srem { margin-top: 14px; border-top: 1px solid var(--line2); padding-top: 12px; font-size: 12.5px; } .spine .srem .rf { display: flex; justify-content: space-between; padding: 3px 0; color: var(--text2); }
@@ -285,7 +286,7 @@ div.tools label span { color: var(--muted); font-size: 12px; display: block; }
 .tabs button { border: 0; box-shadow: none; background: none; border-radius: 0; padding: 10px 16px; color: var(--muted); border-bottom: 2px solid transparent; }
 .tabs button.on { color: var(--text); border-bottom-color: var(--acc); }
 .walk { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 18px; }
-.walk nav { position: sticky; top: 20px; align-self: start; display: flex; flex-direction: column; gap: 2px; }
+.walk > .files { position: sticky; top: 20px; align-self: start; } .walk nav { display: flex; flex-direction: column; gap: 2px; }
 .walk nav a { color: var(--text); padding: 6px 10px; border-radius: 8px; font-size: 13px; overflow-wrap: anywhere; } .walk nav a:hover { background: var(--panel); text-decoration: none; }
 
 /* Liveness: what a running Agent looks like everywhere it appears */
@@ -432,7 +433,7 @@ nav#tabs[role=tablist] .m { color: var(--ans); white-space: nowrap; }
 .walk nav b { padding: 8px 10px 2px; } .walk nav a.mono { font-size: 12px; }
 .walk .card > .row > b.mono { font-size: 16px; } .walk .commits { margin: 8px 0 4px; }
 .walk .card > .row > * { flex-shrink: 0; white-space: nowrap; } .walk .card > .row > .mono.muted { flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.walk details { border-top: 1px solid var(--line2); padding: 8px 0; } .walk summary { cursor: pointer; }
+.walk .card details { border-top: 1px solid var(--line2); padding: 8px 0; } .walk .card summary { cursor: pointer; }
 table.diff { --diff-bg: #0f172a; --num: 56px; --picked: rgba(129, 140, 248, .25); display: block; overflow: auto; max-height: var(--code-max); margin: 6px 0; background: var(--diff-bg); color: #e2e8f0; border: 0; border-radius: 8px; box-shadow: none; font: 12.5px/1.6 var(--mono); padding: 12px 0; }
 table.diff td { padding: 0 14px 0 0; border: 0; white-space: pre; vertical-align: top; background: none !important; }
 table.diff td:nth-child(-n+2) { position: sticky; left: 0; width: var(--num); min-width: var(--num); background: var(--diff-bg) !important; padding: 0 0 0 14px; text-align: right; color: #64748b; cursor: pointer; user-select: none; } table.diff td:nth-child(2) { left: var(--num); }
@@ -631,4 +632,14 @@ details.example pre { background: var(--line2); border: 0; padding: 10px; border
     .card.push .kv { grid-template-columns: 90px minmax(0, 1fr); }
     .card.push .kv > * { overflow-wrap: anywhere; }
     main form.row.pushacts { flex-wrap: wrap; }
+    .storyview, .walk { grid-template-columns: minmax(0, 1fr); }
+    .spine, .walk > .files { position: static; max-height: none; padding: 0 16px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); }
+    :is(.spine, .walk > .files) > summary { display: list-item; padding: 12px 0; color: var(--text); font-weight: 600; }
+    :is(.spine, .walk > .files)[open] { padding-bottom: 12px; }
+    :is(.spine, .walk > .files):not([open])::details-content { content-visibility: hidden; }
+    .walkhead, .cfile, .bandacts, .walk .card > .row { flex-wrap: wrap; }
+    .walk .card > .row > :not(.mono.muted) { flex-shrink: 1; white-space: normal; overflow-wrap: anywhere; }
+    .cfile .mono, .walk .card summary, #comments form > span { min-width: 0; overflow-wrap: anywhere; }
+    :is(.stepcomment, #line-comment > .row) { flex-direction: column; align-items: stretch; }
+    #line-comment .lc { grid-template-columns: minmax(0, 1fr); }
 }

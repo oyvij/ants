@@ -1545,6 +1545,122 @@ class BrowserTest : AntsTest() {
         assertEquals(link.evaluate("e => e.clientWidth"), link.evaluate("e => e.scrollWidth"))
     }
 
+    private fun disclosure(name: String) = page.locator("details", Page.LocatorOptions().setHas(page.getByText(name, Page.GetByTextOptions().setExact(true))))
+
+    private fun assertAtTheTopAcrossTheContent(disclosure: Locator, content: Locator) {
+        val (d, c) = disclosure.boundingBox() to content.boundingBox()
+        assertEquals(16.0, d.x, 0.5, "the disclosure starts at the content's edge")
+        assertEquals(358.0, d.width, 0.5, "the disclosure spans the content")
+        assertTrue(d.y + d.height <= c.y, "the disclosure (${d.y}, ${d.height}) sits above the content (${c.y})")
+    }
+
+    private fun assertOnePerRow(vararg fields: Locator) {
+        for ((above, below) in fields.map { it.boundingBox() }.zipWithNext()) {
+            assertTrue(below.y >= above.y + above.height, "a field at ${below.y} sits under the one ending at ${above.y + above.height}")
+            assertEquals(above.x, below.x, 0.5, "the fields start at one edge")
+        }
+    }
+
+    private fun assertTheComposerSpansThePhoneAndClearsTheEnd(vararg ends: String) {
+        val composer = page.locator(".composer")
+        assertEquals(0.0, composer.boundingBox().x, 0.5)
+        assertEquals(390.0, composer.boundingBox().width, 0.5)
+        fun clear(bar: String) = eventually {
+            page.evaluate("scrollTo(0, document.documentElement.scrollHeight)")
+            val top = composer.boundingBox().y
+            for (selector in ends) {
+                val box = page.locator(selector).boundingBox()
+                assertTrue(box.y + box.height <= top, "$selector ends at ${box.y + box.height}px, under the $bar composer at ${top}px")
+            }
+        }
+        clear("one-line")
+        page.locator(".composer > div").evaluate("bar => { bar.style.flexWrap = 'wrap'; bar.insertAdjacentHTML('beforeend', '<p style=\"flex-basis: 100%; height: 240px; margin: 0\"></p>') }")
+        clear("grown")
+    }
+
+    @Test
+    fun `on a phone the Story tab fits the screen, its stories in a closed Stories disclosure on top that opens on a tap, jumps to a step and marks it`() = browse {
+        val entry = staleStoryReviewEntry(wideAndTall, head = "HEAD")
+        onPhone()
+        page.navigate(url(entry))
+        val stories = disclosure("Stories")
+        val greeting = stories.getByRole(AriaRole.LINK, Locator.GetByRoleOptions().setName("Greeting"))
+        assertThat(greeting).isHidden()
+        assertAtTheTopAcrossTheContent(stories, page.locator("#walkMain"))
+        assertNoSidewaysScroll()
+
+        stories.getByText("Stories", Locator.GetByTextOptions().setExact(true)).tap()
+        assertThat(greeting).isVisible()
+        greeting.tap()
+        val step = page.locator(".step:not([hidden])")
+        assertThat(step.locator(".claim")).hasText("It greets.")
+        val active = stories.locator("[aria-current=step]")
+        assertThat(active).hasText("Hello")
+        assertThat(active).isVisible()
+        stories.getByRole(AriaRole.LINK, Locator.GetByRoleOptions().setName("⚠ World")).tap()
+        assertThat(step.locator(".claim")).hasText("It names the world.")
+        assertThat(active).hasText("⚠ World")
+        assertThat(stories.locator(".srow.on")).containsText("Greeting")
+        assertNoSidewaysScroll()
+        page.screenshot("phone/review-story")
+
+        val before = stories.boundingBox().y
+        page.evaluate("scrollBy(0, 200)")
+        eventually { assertEquals(before - 200, stories.boundingBox().y, 0.5, "the disclosure scrolls away with the page") }
+
+        page.navigate(url("$entry#s1-3"))
+        page.setViewportSize(390, 400)
+        val code = step.locator(".code")
+        assertThat(code).containsText("line 12")
+        assertScrollsBothWaysAboveTheComposerKeepingItsNumbers(code, code.locator(".ln:visible").nth(1))
+
+        page.setViewportSize(390, 844)
+        step.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Comment on this step")).tap()
+        val form = step.locator(".stepcomment")
+        assertOnePerRow(form.locator("[name=type]"), form.locator("[name=body]"), form.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Add")))
+        assertNoSidewaysScroll()
+        assertTheComposerSpansThePhoneAndClearsTheEnd(".step:not([hidden]) .bandacts", "#comment + .ed")
+    }
+
+    @Test
+    fun `on a phone By repo fits the screen, its files in a closed Files disclosure on top that opens on a tap and jumps to a file, whose wide diff scrolls inside its box`() = browse {
+        val entry = byRepoReviewEntryOfApiCommitting("wide.txt", wideAndTall)
+        onPhone()
+        page.navigate(url(entry))
+        val files = disclosure("Files")
+        val wide = files.getByRole(AriaRole.LINK, Locator.GetByRoleOptions().setName("wide.txt"))
+        assertThat(wide).isHidden()
+        assertAtTheTopAcrossTheContent(files, page.locator("[data-repo]").first())
+        assertNoSidewaysScroll()
+
+        files.getByText("Files", Locator.GetByTextOptions().setExact(true)).tap()
+        assertThat(wide).isVisible()
+        assertNoSidewaysScroll()
+        wide.tap()
+        page.waitForURL { it.endsWith("#f-api-1") }
+        eventually {
+            val y = page.locator("#f-api-1").boundingBox().y
+            assertTrue((page.evaluate("scrollY") as Number).toDouble() > 0 && y >= -0.5 && y < 844, "the file is on screen at $y")
+        }
+        page.screenshot("phone/review-by-repo")
+
+        page.setViewportSize(390, 400)
+        val diff = page.locator("table.diff[data-file='repos/api/wide.txt']")
+        val numbers = diff.locator("tr[data-side=new][data-line='2'] td:nth-child(-n+2)")
+        assertScrollsBothWaysAboveTheComposerKeepingItsNumbers(diff, numbers)
+        for (number in numbers.all()) assertEquals(1.0, (number.evaluate("td => getComputedStyle(td).backgroundColor.match(/[\\d.]+/g).map(Number)[3] ?? 1") as Number).toDouble(), "the line number's background is opaque")
+        numbers.nth(1).tap()
+        val form = page.locator("#line-comment")
+        assertThat(form.locator("[name=file]")).hasValue("repos/api/wide.txt")
+        assertThat(form.locator("[name=from]")).hasValue("2")
+        assertThat(form.locator("[name=body]")).isFocused()
+        page.setViewportSize(390, 844)
+        assertOnePerRow(*listOf("repo", "file", "side", "from", "to", "type", "body").map { form.locator("[name=$it]") }.toTypedArray(),
+            form.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Add the comment")))
+        assertNoSidewaysScroll()
+        assertTheComposerSpansThePhoneAndClearsTheEnd("#line-comment", "#comment + .ed")
+    }
+
     @Test
     fun `the diagram box zooms with ＋ and －, and Fit fits the diagram again`() = browse {
         settings(null)
