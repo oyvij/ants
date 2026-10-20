@@ -260,6 +260,8 @@ class AgentsTest : AntsTest() {
         assertContains(page, """<b class="mono">Read</b></label>""")
         assertContains(page, "Open a file.")
         assertContains(page, """data-example="pnpm test"""") // Bash's Limit…
+        // Write has its own Limit…: a ticked Write without one writes anywhere, whatever Edit's limit
+        assertContains(page, """data-tool="Write" data-example="src/**"""")
         assertContains(page, "Claude Code's other ${AgentForm.OTHER_TOOLS.size} tools: usually off for Agents, and why")
         assertContains(page, """name="tool.AskUserQuestion"""")
         assertContains(page, "Nobody is at a terminal, so the question goes unanswered.")
