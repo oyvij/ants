@@ -174,6 +174,7 @@ class Processes(
         model.addAttribute("name", title)
         model.addAttribute("src", "/processes/new.bpmn?" + query.joinToString("&") { (k, v) -> "$k=" + URLEncoder.encode(v, Charsets.UTF_8) })
         model.addAttribute("note", "Draft")
+        model.addAttribute("builder", builder())
         return "modeler"
     }
 
@@ -196,8 +197,12 @@ class Processes(
         model.addAttribute("src", "/processes/$key/diagram.bpmn")
         model.addAttribute("page", "/processes/$key")
         if (process.resourceName.startsWith("shipped/")) model.addAttribute("note", "Shipped: saving makes it your own")
+        model.addAttribute("builder", builder())
         return "modeler"
     }
+
+    /** The modeler's Process Builder column: on, or why it is off. Only a Process has it, never a Template. */
+    private fun builder() = if (settings.processBuilder().first == "claude") "" else ProcessBuilderTools.CLAUDE_ONLY
 
     /** The Process page, its start form for the Profile [profile] picked on it, else the Process's own, else the default. */
     @GetMapping("/processes/{key}")

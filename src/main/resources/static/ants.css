@@ -213,6 +213,17 @@ input[type=checkbox], input[type=radio] { width: auto; accent-color: var(--acc);
 .sofar { background: var(--accSoft); border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; } .sofar p { margin: 4px 0 0; }
 .todo { font-size: 13px; padding: 2px 0; } .todo.done { color: var(--muted); text-decoration: line-through; } .todo.now { font-weight: 600; color: var(--run); }
 .modelerWrap { display: grid; grid-template-columns: 1fr 340px; gap: 14px; }
+/* The Process Builder's column (#171), right of the properties panel: the dialog scrolls, the prompt box below it grows to half the column. */
+/* Narrower than that, the canvas would be too small beside both panels: the column goes under them, the whole width. */
+@media (min-width: 1440px) { .modelerWrap:has(> .pb:not([hidden])) { grid-template-columns: minmax(0, 1fr) 340px 360px; } }
+.pb { display: flex; flex-direction: column; gap: 8px; height: calc(100vh - 128px); min-width: 0; grid-column: 1 / -1; }
+@media (min-width: 1440px) { .pb { grid-column: auto; } }
+.pb #pb-dialog { flex: 1; overflow: auto; margin: 0; }
+.pb #pb-dialog .text p { margin: 4px 0; }
+.pb form { display: flex; flex-direction: column; gap: 6px; }
+.pb form label.f { margin: 0; }
+.pb form .ed .cm-editor { height: 12em; min-height: 4em; max-height: calc(50vh - 100px); resize: vertical; } .pb form .ed .cm-content { min-height: 0; }
+.pb #pb-made { margin: 8px 0; padding-left: 18px; font-size: 13px; }
 .props { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sh); padding: 16px; height: calc(100vh - 128px); overflow: auto; }
 .props h3 { margin: 0; font-size: 15px; } .props .kind { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
 .warn { background: var(--waitSoft); color: var(--warnText); border-radius: 8px; padding: 8px 10px; font-size: 12.5px; margin-top: 8px; }
@@ -645,6 +656,7 @@ details.example pre { background: var(--line2); border: 0; padding: 10px; border
     :is(.stepcomment, #line-comment > .row) { flex-direction: column; align-items: stretch; }
     #line-comment .lc { grid-template-columns: minmax(0, 1fr); }
     .grid2, .grid3, .modelerWrap, form.agent .grid2, .grid2.skill-page { grid-template-columns: minmax(0, 1fr); }
+    .pb { height: 80vh; } /* under the properties panel, the dialog still scrolling above its prompt box */
     main:has(> :is(.modelerWrap, .skill-page, form.agent, form.settings)) .ph .acts { flex-wrap: wrap; }
     main:has(> :is(.modelerWrap, .skill-page, form.agent, form.settings)) .ph :is(.sub, .acts > span) { overflow-wrap: anywhere; }
     .trow { grid-template-columns: minmax(0, 1fr) auto; }

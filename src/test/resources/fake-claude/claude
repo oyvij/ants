@@ -11,19 +11,24 @@
 # exits, `write <file> <text>` writes <text> (`\n` for a newline) to <file> in its working directory, as an Agent's
 # Write tool would, and `sh <command>` runs a shell command in the working directory, where $launch is the launch's
 # record; every other line is printed. $SESSION stands for the --session-id or --resume. A launch that is killed leaves
-# ./launches/<skill>.<n>/killed.
+# ./launches/<skill>.<n>/killed. A launch allowed `mcp__ants__*` is the Process Builder's and plays the Skill
+# `process-builder`; its first stdin line is the user's message. A session line `mcp <tool> <json arguments>` calls the
+# tool on the `--mcp-config`'s server as claude would: it prints the tool_use, then the tool_result with the server's
+# content, and appends the server's response to $launch/mcp.
 dir=$(cd "$(dirname "$0")" && pwd)
 if [ "$1" = --help ]; then cat "$dir/help" 2>/dev/null; exit 0; fi
 if [ "$1 $2" = "auth status" ]; then cat "$CLAUDE_CONFIG_DIR/auth-status.json" 2>/dev/null || { echo '{"loggedIn":false,"authMethod":"none"}'; exit 1; }; exit 0; fi
-session= previous=
-for arg; do case $previous in --session-id|--resume) session=$arg ;; esac; previous=$arg; done
+session= previous= config=
+for arg; do case $previous in --session-id|--resume) session=$arg ;; --mcp-config) config=$arg ;; esac; previous=$arg; done
 IFS= read -r prompt
 skill=$(basename "$(printf '%s' "$prompt" | sed -n 's|.*Follow the Skill in \(.*\)/SKILL.md for.*|\1|p')")
 mkdir -p "$dir/launches" "$dir/skills"
-if [ -n "$skill" ]; then printf '%s' "$skill" > "$dir/skills/$session"
+case " $* " in *" mcp__ants__* "*) skill=process-builder ;; esac
+if [ "$skill" = process-builder ]; then :
+elif [ -n "$skill" ]; then printf '%s' "$skill" > "$dir/skills/$session"
 elif [ -n "$session" ]; then skill=$(cat "$dir/skills/$session")
 else skill=so-far; fi
-n=1
+calls=0 n=1
 while ! mkdir "$dir/launches/$skill.$n" 2>/dev/null; do n=$((n + 1)); done
 launch=$dir/launches/$skill.$n
 printf '%s\n' "$@" > "$launch/argv"
@@ -46,6 +51,19 @@ while IFS= read -r line <&3; do
         "stderr "*) printf '%s\n' "${line#stderr }" >&2 ;;
         "sh "*) (eval "${line#sh }") >&2 ;;
         "exit "*) exit "${line#exit }" ;;
+        "mcp "*) call=${line#mcp }; tool=${call%% *}; arguments=${call#"$tool"}; arguments=${arguments# }; [ -n "$arguments" ] || arguments='{}'
+            calls=$((calls + 1))
+            printf '{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"mcp_%s","name":"mcp__ants__%s","input":%s}]},"session_id":"%s"}\n' \
+                "$calls" "$tool" "$arguments" "$session"
+            url=$(printf '%s' "$config" | sed -n 's/.*"url":"\([^"]*\)".*/\1/p')
+            auth=$(printf '%s' "$config" | sed -n 's/.*"Authorization":"\([^"]*\)".*/\1/p')
+            response=$(curl -s "$url" -H "Authorization: $auth" -H 'Content-Type: application/json' \
+                -d "{\"jsonrpc\":\"2.0\",\"id\":$calls,\"method\":\"tools/call\",\"params\":{\"name\":\"$tool\",\"arguments\":$arguments}}")
+            printf '%s\n' "$response" >> "$launch/mcp"
+            content=${response#*'"result":{"content":'}; content=${content%,'"isError":'*}
+            case $response in *'"isError":true'*) failed=true ;; *) failed=false ;; esac
+            printf '{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"mcp_%s","content":%s,"is_error":%s}]},"session_id":"%s"}\n' \
+                "$calls" "$content" "$failed" "$session" ;;
         "write "*) file=${line#write }; file=${file%% *}; mkdir -p "$(dirname "$file")"; printf '%b' "${line#write "$file" }" > "$file" ;;
         *) printf '%s\n' "$line" ;;
     esac

@@ -1229,7 +1229,52 @@ async function openBuilder() {
         }
         fetch("/process-builder/answer", {method: "POST", body: new URLSearchParams(body)})
     })
+    // The dialog: Send posts the message into the page's claude session, Stop interrupts its turn; the server sends
+    // the whole dialog whenever it changes, with whether a turn runs.
+    const form = document.getElementById("pb-form"), message = document.getElementById("pb-message"), error = document.getElementById("pb-error")
+    const stop = document.getElementById("pb-stop"), send = document.getElementById("pb-send"), live = document.getElementById("pb-live")
+    const dialog = document.getElementById("pb-dialog")
+    const post = (path, fields) => fetch(path, {method: "POST", body: new URLSearchParams({_csrf: csrf, token, ...fields})})
+    stream.on("dialog", html => {
+        const bottom = dialog.scrollHeight - dialog.scrollTop - dialog.clientHeight < 40
+        stream.patch(live, html)
+        const busy = live.querySelector("#pb-state")?.dataset.busy === "true"
+        stop.hidden = !busy
+        send.hidden = busy
+        if (bottom) dialog.scrollTop = dialog.scrollHeight
+    })
+    form.addEventListener("submit", async event => {
+        event.preventDefault()
+        if (send.hidden || !message.value.trim()) return
+        const text = message.value
+        message.value = ""
+        message.dispatchEvent(new Event("change"))
+        const answer = await (await post("/process-builder/send", {message: text})).json()
+        error.textContent = answer.error || ""
+        if (answer.error) {
+            message.value = text
+            message.dispatchEvent(new Event("change"))
+        }
+    })
+    stop.addEventListener("click", () => post("/process-builder/stop", {}))
+    // Closing the page ends its claude now; a page that only loses its stream ends it after a minute (ProcessBuilderTools).
+    addEventListener("pagehide", () => navigator.sendBeacon("/process-builder/close", new URLSearchParams({_csrf: csrf, token})))
     stream.follow("builder=" + token)
     canvas.dataset.builder = token
 }
-if (!save.hidden) openBuilder()
+
+// The Process Builder column, on a Process's modeler only: shown or hidden by its header button, the choice
+// remembered; off, saying why, when the settings run it on a CLI it doesn't run on.
+const builderPanel = document.getElementById("builder")
+if (builderPanel) {
+    const toggle = document.getElementById("builder-toggle")
+    const show = shown => {
+        builderPanel.hidden = !shown
+        toggle.setAttribute("aria-pressed", String(shown))
+        localStorage.setItem("ants.builder", shown ? "shown" : "hidden")
+    }
+    show(localStorage.getItem("ants.builder") !== "hidden")
+    toggle.addEventListener("click", () => show(builderPanel.hidden))
+    document.getElementById("pb-form").addEventListener("submit", event => event.preventDefault()) // never a reload, which would lose the diagram
+    if (!builderPanel.dataset.off) openBuilder()
+}
