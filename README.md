@@ -44,8 +44,8 @@ This needs no change to your homelab, and no new TLS or auth: the phone reaches 
 
 1. Use a phone that can reach the machine Ants runs on, for example one on the same network.
 2. Open the same URL you open on the desktop, and log in as you do there.
-3. Optionally, add Ants to the home screen (**Share** → **Add to Home Screen** in Safari, **Install app** in
-   Chrome). Ants' web manifest makes it open as its own app, full screen with the Ants icon.
+3. Optionally, add Ants to the home screen (**Share** → **Add to Home Screen** in Safari, ⋮ → **Add to Home
+   screen** in Chrome). Ants' web manifest makes it open as its own app, full screen with the Ants icon.
 
 Out of the box Ants listens only on `127.0.0.1`, which no other device can reach. To reach it from the network,
 change the password, then `ants stop` and start it in the foreground on every address with
