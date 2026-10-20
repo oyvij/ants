@@ -13,7 +13,10 @@ Runs BPMN Processes whose Tasks are AI agents.
   no CI; the full suite runs on the pull request and on main, and gates the merge and the release. A red job that
   is a flake reruns alone (`gh run rerun <id> --failed`), and the flaky test gets a fix of its own. Before handing
   tickets to parallel agents, run `gh workflow run soak.yml` (the suite five times at once, under CPU load, in random
-  order) and fix any test it finds flaky.
+  order) and fix any test it finds flaky. Main must never go red after a merge: before marking a PR ready or
+  reporting a spec done, merge main into the branch, run the full suite on CI on that tip
+  (`gh workflow run ci.yml --ref <branch>`), fix every failure and rerun until all shards are green. A green run
+  from before the last merge doesn't count.
 - The spec is `docs/spec.md`, "Spec: Ants v1"; issue #27 points to it and its Tickets hang off #27. It collapses
   the closed `/wayfinder` map #1 and its sub-issues.
 - Helper scripts live in `scripts/` (each prints its usage with `--help`); project skills in `.claude/skills/`.
