@@ -638,6 +638,59 @@ class BrowserTest : AntsTest() {
         assertThat(heading).hasText("Agent Task")
     }
 
+    private fun assertStacked(path: String, vararg parts: String) {
+        val boxes = parts.map { it to page.locator(it).first().also { part -> assertThat(part).isVisible() }.boundingBox() }
+        for ((above, below) in boxes.zipWithNext()) {
+            assertEquals(above.second.x, below.second.x, 0.5, "${below.first} starts where ${above.first} starts on $path")
+            assertEquals(above.second.width, below.second.width, 0.5, "${below.first} is as wide as ${above.first} on $path")
+            assertTrue(below.second.y >= above.second.y + above.second.height, "${below.first} sits under ${above.first} on $path")
+        }
+    }
+
+    @Test
+    fun `on a phone the modeler, a Skill, the Agent form, Templates and Settings fit the screen in one column`() = browse {
+        http.import("start-end.bpmn")
+        settings(null, "vaults:\n  work: /tmp/work\n  side: /tmp/side\ndefault-vault: work\nagent-folders: [/tmp/a]\n")
+        home.resolve("agents").createDirectories().resolve("stacked.md").writeText("---\nname: stacked\ncli: claude\nskills: stacked\ntools: Read, Bash(git log *)\n---\nStacked.\n")
+        home.resolve("skills/stacked").createDirectories().resolve("SKILL.md").writeText("---\nname: stacked\ndescription: Stacked.\n---\n" + "A long line of the Skill. ".repeat(40) + "\n")
+        fun card(title: String) = ".card:has(> h3:text-is('$title'))"
+        val pages = listOf(
+            "/processes/start-end/edit" to arrayOf("#canvas", ".props"),
+            "/templates/review-and-push" to arrayOf("#canvas", ".props"),
+            "/templates" to arrayOf("main form", "main ul"),
+            "/skills/stacked" to arrayOf(".card:has(#skill)", card("Run by")),
+            "/skills/new" to arrayOf(".card:has(#skill)", card("Run by")),
+            "/agents/stacked" to arrayOf("#name", "#description", "#cli", "#model"),
+            "/agents/new" to arrayOf("#name", "#description", "#cli", "#model"),
+            "/settings" to arrayOf(card("Claude login"), card("Commands"), card("Vaults"), card("Agent folders"), card("So far"), card("Theme"), card("Server"), card("Updates")),
+        )
+        onPhone()
+        for ((path, parts) in pages) {
+            page.navigate(url(path))
+            assertStacked(path, *parts)
+            assertNoSidewaysScroll()
+            page.screenshot("phone${path.replace(Regex("[^a-z0-9]+"), "-")}")
+        }
+    }
+
+    @Test
+    fun `just above 768px the modeler, the Skill page, the Agent form and Settings keep their columns side by side`() = browse {
+        http.import("start-end.bpmn")
+        settings(null)
+        home.resolve("agents").createDirectories().resolve("beside.md").writeText("---\nname: beside\ncli: claude\n---\nBeside.\n")
+        page.setViewportSize(769, 900)
+        fun assertBeside(path: String, left: String, right: String) {
+            page.navigate(url(path))
+            val (l, r) = listOf(left, right).map { page.locator(it).first().also { part -> assertThat(part).isVisible() }.boundingBox() }
+            assertEquals(l.y, r.y, 1.0, "$right sits level with $left on $path")
+            assertTrue(l.x + l.width < r.x, "$right sits beside $left on $path")
+        }
+        assertBeside("/processes/start-end/edit", "#canvas", ".props")
+        assertBeside("/skills/new", ".card:has(#skill)", ".card:has(> h3:text-is('Run by'))")
+        assertBeside("/agents/beside", "#name", "#description")
+        assertBeside("/settings", ".card:has(> h3:text-is('Claude login'))", ".card:has(> h3:text-is('Commands'))")
+    }
+
     private fun assertWithinScreen(part: Locator, what: String) {
         val box = part.boundingBox()
         assertTrue(box.x >= 0 && box.x + box.width <= 390, "$what spans ${box.x} to ${box.x + box.width} on a 390px screen")
