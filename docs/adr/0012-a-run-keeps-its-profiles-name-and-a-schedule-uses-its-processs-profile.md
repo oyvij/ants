@@ -1,5 +1,7 @@
 # A Run keeps its Profile's name, and a Schedule uses its Process's Profile
 
+Superseded in part by ADR 0020: a Schedule keeps the Profile picked on its form.
+
 Story 19 asked for named Vaults and Source maps that every Process can pick, but every Run used the defaults. #90
 pairs one Vault with one Source map as a named **Profile** (`work`, `private`), picked per Process and per Run.
 
