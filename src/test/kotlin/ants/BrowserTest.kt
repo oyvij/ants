@@ -638,6 +638,117 @@ class BrowserTest : AntsTest() {
         assertThat(heading).hasText("Agent Task")
     }
 
+    private fun assertWithinScreen(part: Locator, what: String) {
+        val box = part.boundingBox()
+        assertTrue(box.x >= 0 && box.x + box.width <= 390.5, "$what spans ${box.x} to ${box.x + box.width} on a 390px screen")
+    }
+
+    @Test
+    fun `on a phone the Runs list fits the screen, each row within it, and a Run opens on a tap on its row`() = browse {
+        val run = waitingRun("listed")
+        onPhone()
+        page.navigate(url("/runs"))
+        val row = page.locator("tr.click[data-href='$run']")
+        assertThat(row).isVisible()
+        assertNoSidewaysScroll()
+        for (cell in row.locator("td").all()) assertWithinScreen(cell, "a cell of the Run's row")
+        page.screenshot("phone/runs")
+
+        row.locator("td").last().tap()
+        page.waitForURL { it.endsWith(run) }
+    }
+
+    @Test
+    fun `on a phone the Run page's Task drawer spans the screen, and neither the Run page nor the Process page scrolls sideways`() = browse {
+        val run = waitingRun("drawn")
+        onPhone()
+        page.navigate(url(run))
+        assertThat(shape("wait")).isVisible()
+        assertNoSidewaysScroll()
+        eventually { shape("wait").tap() }
+        val drawer = page.locator("#drawer")
+        assertThat(page.locator("#drawer-head")).isVisible()
+        eventually { assertEquals(0.0, drawer.boundingBox().x, 0.5) }
+        assertEquals(390.0, drawer.boundingBox().width, 0.5)
+        assertNoSidewaysScroll()
+        page.screenshot("phone/run-drawer")
+
+        page.navigate(url("/processes/drawn"))
+        assertThat(shape("wait")).isVisible()
+        assertNoSidewaysScroll()
+        page.screenshot("phone/process")
+
+        page.setViewportSize(769, 900)
+        page.navigate(url(run))
+        eventually { shape("wait").click() }
+        assertThat(page.locator("#drawer-head")).isVisible()
+        eventually { assertEquals(460.0, drawer.boundingBox().width, 0.5) }
+    }
+
+    @Test
+    fun `on a phone the Run page's and the Process page's diagrams fit the screen, and ＋, －, Fit and ⛶ work on a tap`() = browse {
+        val run = waitingRun("tapzoom")
+        onPhone()
+        for (path in listOf(run, "/processes/tapzoom")) {
+            page.navigate(url(path))
+            assertThat(shape("wait")).isVisible()
+            val box = page.locator(".dia").first()
+            assertWithinScreen(box, "the diagram box on $path")
+            assertWithinScreen(box.locator(".zoom"), "the zoom buttons on $path")
+            assertWithinScreen(box.locator(".legend"), "the legend on $path")
+            fun zoom() = (box.evaluate("e => e.canvas.zoom()") as Number).toDouble()
+            eventually { assertEquals(true, box.evaluate("e => e.canvas != null"), "the diagram on $path is drawn") }
+            box.locator(".zoom [title='Fit']").tap()
+            val fit = zoom()
+
+            box.locator(".zoom [title='Zoom in']").tap()
+            assertEquals(fit * 1.25, zoom(), 0.001, "＋ on $path")
+            box.locator(".zoom [title='Zoom out']").tap()
+            box.locator(".zoom [title='Zoom out']").tap()
+            assertEquals(fit / 1.25, zoom(), 0.001, "－ on $path")
+            box.locator(".zoom [title='Fit']").tap()
+            assertEquals(fit, zoom(), 0.001, "Fit on $path")
+
+            box.locator(".zoom [title='Fullscreen']").tap()
+            eventually { assertEquals(true, box.evaluate("e => document.fullscreenElement === e"), "⛶ makes the diagram on $path fullscreen") }
+            box.locator(".zoom [title='Fullscreen']").tap()
+            eventually { assertEquals(true, page.evaluate("document.fullscreenElement === null"), "⛶ again leaves fullscreen on $path") }
+        }
+    }
+
+    @Test
+    fun `on a phone a modal spans the screen with its editor and preview stacked, and a toast spans the screen at the top`() = browse {
+        onPhone()
+        page.navigate(url("/agents/new"))
+        page.locator("textarea[name=instructions] + .ed").locator("button", Locator.LocatorOptions().setHasText("Expand")).tap()
+        val modal = page.locator("dialog.modal")
+        assertThat(modal.locator(".split .cm-content")).isVisible()
+        assertEquals(0.0, modal.boundingBox().x, 0.5)
+        assertEquals(390.0, modal.boundingBox().width, 0.5)
+        val (editor, preview) = modal.locator(".split > *").all().map { it.boundingBox() }
+        assertEquals(390.0, editor.width, 0.5, "the editor spans the modal")
+        assertEquals(390.0, preview.width, 0.5, "the preview spans the modal")
+        assertTrue(preview.y >= editor.y + editor.height - 0.5, "the preview sits under the editor")
+        assertTrue(preview.height > 100, "the preview keeps room to read, ${preview.height}px tall")
+        page.screenshot("phone/modal")
+        modal.locator("button[title=Close]").tap()
+        assertThat(modal).hasCount(0)
+
+        page.navigate(url("/settings"))
+        page.locator("button[name=action][value=updates]").tap()
+        val toast = page.locator(".toast")
+        assertThat(toast).containsText("Checked")
+        val box = toast.boundingBox()
+        assertEquals(0.0, box.x, 0.5)
+        assertEquals(390.0, box.width, 0.5)
+        assertEquals(0.0, box.y, 0.5)
+        assertNoSidewaysScroll()
+        page.screenshot("phone/toast")
+
+        page.setViewportSize(769, 900)
+        assertEquals(380.0, toast.boundingBox().width, 0.5)
+    }
+
     private fun round(vararg questions: Pair<String, String>) = """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":""" +
         """{"outcome":"done","summary":"A Round.","output":{"questions":[""" + questions.joinToString(",") { (id, title) ->
             """{"id":"$id","title":"$title","ask":"Ask $id?","context":"Settles $id.","recommendation":"Recommend $id.","why":"Because $id."}"""

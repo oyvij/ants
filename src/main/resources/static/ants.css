@@ -606,6 +606,20 @@ details.example pre { background: var(--line2); border: 0; padding: 10px; border
     .notes tr { padding: 8px 0; border-bottom: 1px solid var(--line2); }
     .notes tr:last-child { border-bottom: 0; }
     .notes td, .notes td:first-child { width: auto; padding: 4px 16px; border: 0; overflow-wrap: anywhere; }
+    :is(#runlist table, #tasks, #process-runs), :is(#runlist, #tasks, #process-runs) :is(tbody, tr, td) { display: block; }
+    :is(#runlist, #tasks, #process-runs) tr:has(> th) { display: none; }
+    :is(#runlist, #tasks, #process-runs) tr { padding: 8px 0; border-bottom: 1px solid var(--line2); }
+    :is(#runlist, #tasks, #process-runs) tr:last-child { border-bottom: 0; }
+    :is(#runlist, #tasks, #process-runs) td { padding: 4px 16px; border: 0; overflow-wrap: anywhere; }
+    .ph .acts { flex-wrap: wrap; } .ph .sub { overflow-wrap: anywhere; }
+    .dia .legend { right: 12px; flex-wrap: wrap; }
+    .drawer { width: 100%; border-left: 0; }
+    :is(dialog.modal, dialog#new-process) { width: 100%; border-radius: 0; }
+    .modal .mb { padding: 16px; }
+    .modal .split { grid-template-columns: minmax(0, 1fr); grid-template-rows: repeat(2, minmax(0, 1fr)); }
+    .modal .split .cm-content { min-height: 0; }
+    .modal .split .md { padding: 16px; border-left: 0; border-top: 1px solid var(--line); }
+    .toast { top: 0; left: 0; right: 0; width: auto; border-radius: 0; }
     :is(button, .btn, .side a, .topbar :is(a, label), .tabs a, .spine .srow, .ssteps a, .walk nav a, .crumbs a, :is(.chipsel, .tags) .c, nav#tabs[role=tablist] > button) { min-height: 44px; }
     :is(.tabs, .ssteps, .walk nav) a { display: flex; align-items: center; }
     .crumbs a { display: inline-flex; align-items: center; }
