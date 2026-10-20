@@ -372,7 +372,9 @@ class BrowserTest : AntsTest() {
         http.import("agent-task.bpmn")
         page.navigate(url("/processes/agent-task/edit"))
         val tool = builder()
-        for ((kind, id) in listOf("user" to "User", "call" to "Call", "agent" to "Loop")) for (who in listOf("hand", "tool")) tool("add_element", mapOf("kind" to kind, "id" to who + id))
+        // Above and below the Process, in view: the canvas doesn't scroll to a shape to click it.
+        for ((i, kind, id) in listOf(Triple(0, "user", "User"), Triple(1, "call", "Call"), Triple(2, "agent", "Loop")))
+            for ((who, y) in listOf("hand" to -130, "tool" to 230)) tool("add_element", mapOf("kind" to kind, "id" to who + id, "x" to -20 + 150 * i, "y" to y))
 
         shape("handUser").click()
         label("Title").fill("Ship it?")
