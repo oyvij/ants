@@ -1206,6 +1206,149 @@ class BrowserTest : AntsTest() {
         assertTrue(ticket <= 860, "the Ticket is ${ticket}px wide")
     }
 
+    private val wideMarkdown = "| Class | Test | Policy | Clock | Ledger | Gateway |\n|---|---|---|---|---|---|\n" +
+        "| PaymentRetryPolicy | PaymentRetryPolicyTest | ExponentialBackoffPolicy | FixedClockForRetries | InMemoryPaymentLedger | StripeWebhookGateway |\n\n" +
+        "![Ants](/icon-512.png)\n"
+
+    private fun assertWideTableScrollsInsideItsBoxAndTheImageFits(body: String) = eventually {
+        val (right, tableRight, scrolled, imageRight, imageWidth) = (page.locator(body).evaluate(
+            "e => { const t = e.querySelector('table'), i = e.querySelector('img'); t.scrollLeft = 100; " +
+                "return [e.getBoundingClientRect().right, t.getBoundingClientRect().right, t.scrollLeft, i.getBoundingClientRect().right, i.complete ? i.getBoundingClientRect().width : 0] }",
+        ) as List<*>).map { (it as Number).toDouble() }
+        assertTrue(right <= 390, "$body ends at ${right}px on a 390px screen")
+        assertTrue(tableRight <= right, "the table ends at ${tableRight}px, past $body's ${right}px")
+        assertTrue(scrolled > 0, "the wide table scrolls sideways inside its own box")
+        assertTrue(imageWidth in 1.0..<512.0, "the 512px image shrinks to fit, at ${imageWidth}px")
+        assertTrue(imageRight <= right, "the image ends at ${imageRight}px, past $body's ${right}px")
+    }
+
+    @Test
+    fun `on a phone the Tickets list, the Spec and a Ticket fit the screen, a wide table scrolls inside its box, an image fits, and a checkbox ticks on a tap`() = browse {
+        val run = waitingRun("specced").removePrefix("/runs/")
+        workspace(run).resolve("tickets/spec.md").also { it.parent.createDirectories() }.writeText("# Paying again\n\n$wideMarkdown")
+        val file = workspace(run).resolve("tickets/issues").createDirectories().resolve("01-retry.md")
+        file.writeText("# Retry a failed payment\n\nStatus: ready-for-agent\n\n- [ ] Retries three times\n\n$wideMarkdown")
+        onPhone()
+
+        page.navigate(url("/tickets"))
+        val cells = page.locator("tr:has(a[href='/runs/$run/tickets/spec']) td")
+        assertThat(cells).hasCount(4)
+        assertNoSidewaysScroll()
+        val boxes = cells.all().map { it.boundingBox() }
+        for ((above, below) in boxes.zipWithNext()) {
+            assertEquals(above.x, below.x, 0.5, "the Spec's row stacks its cells in one column")
+            assertTrue(below.y >= above.y + above.height, "the Spec's row stacks its cells one under the other")
+        }
+        page.screenshot("phone/tickets")
+
+        page.navigate(url("/runs/$run/tickets/spec"))
+        assertThat(page.locator("#ticket")).containsText("Paying again")
+        assertNoSidewaysScroll()
+        assertWideTableScrollsInsideItsBoxAndTheImageFits("#ticket")
+
+        page.navigate(url("/runs/$run/tickets/01-retry"))
+        assertThat(page.locator("#ticket")).containsText("Retries three times")
+        assertNoSidewaysScroll()
+        assertWideTableScrollsInsideItsBoxAndTheImageFits("#ticket")
+        page.screenshot("phone/ticket")
+        val box = page.locator("#ticket input[type=checkbox]")
+        val size = box.boundingBox()
+        assertTrue(size.width >= 24 && size.height >= 24, "the checkbox is ${size.width}×${size.height}px, too small to tap")
+        box.tap()
+        eventually { assertContains(file.readText(), "- [x] Retries three times") }
+        assertThat(page.locator("#ticket input[type=checkbox]")).isChecked()
+        assertNoSidewaysScroll()
+    }
+
+    private fun waitingEntry(after: String? = null): String {
+        var entry = ""
+        eventually { entry = assertNotNull(Regex("""href="(/notifications/[^"]+)"""").find(http.get("/notifications").body)).groupValues[1].also { assertNotEquals(after, it) } }
+        return entry
+    }
+
+    @Test
+    fun `on a phone Approve shows the Spec, the comment and its Send back and Approve in one column, and both work`() = browse {
+        val claude = FakeClaude()
+        val drafted = """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":{"outcome":"done","summary":"Drafted.","output":{"notes":"notes.md"}}}"""
+        claude.session("draft", drafted)
+        claude.session("draft", 2, drafted)
+        claude.session("polish", """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":{"outcome":"done","summary":"Polished.","output":{}}}""")
+        agentTask(claude, mapOf("draft" to """{"type":"object","properties":{"notes":{"type":"string","format":"path"}}}""", "polish" to null))
+        http.import("approve.bpmn")
+        val run = http.post("/processes/approve/runs", mapOf()).path.removePrefix("/runs/")
+        workspace(run).resolve("notes.md").writeText(
+            "# Paying again\n\nSee https://example.com/" + "payments/retries/".repeat(12) + " for the policy.\n\n" +
+                "```\n" + "val policy = PaymentRetryPolicy(".repeat(6) + "\n```\n\n$wideMarkdown",
+        )
+        val first = waitingEntry()
+        onPhone()
+
+        page.navigate(url(first))
+        val spec = page.locator(".card.md")
+        assertThat(spec).containsText("Paying again")
+        assertNoSidewaysScroll()
+        page.screenshot("phone/approve")
+        val (left, right) = contentEdges("main")
+        val comment = page.locator("#comment + .ed")
+        val specBox = spec.boundingBox()
+        val commentBox = comment.boundingBox()
+        assertEquals(left, specBox.x, 0.5, "the Spec starts at the page's content edge")
+        assertEquals(right, specBox.x + specBox.width, 0.5, "the Spec ends at the page's content edge")
+        assertEquals(left, commentBox.x, 0.5, "the comment starts under the Spec")
+        assertTrue(commentBox.y >= specBox.y + specBox.height, "the comment sits under the Spec")
+        fun button(name: String) = page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName(name).setExact(true))
+        for (name in listOf("Send back", "Approve")) {
+            val box = button(name).boundingBox()
+            assertTrue(box.x >= 0 && box.x + box.width <= 390 && box.y + box.height <= 844, "$name is on the screen at $box")
+        }
+
+        comment.locator(".cm-content").tap()
+        page.keyboard().type("Shorter, please.")
+        button("Send back").tap()
+        eventually { assertContains(workspace(run).resolve("run-log.md").readText(), "Send back\n\nShorter, please.\n") }
+
+        page.navigate(url(waitingEntry(after = first)))
+        button("Approve").tap()
+        eventually { assertContains(http.get("/runs/$run").body, """id="state">Completed<""") }
+        assertEquals(2, claude.launches("draft").size)
+    }
+
+    @Test
+    fun `on a phone Push is one column of its repos with Cancel and Push on the screen, and Push pushes on a tap`() = browse {
+        val repos = listOf(repo("api"), repo("web"))
+        settings(null, sourceMapLines(*repos.toTypedArray()))
+        http.import("push.bpmn")
+        val branch = "ants/retry-a-failed-card-payment-three-times-with-backoff"
+        val run = http.post("/processes/ship/runs", repos.map { "repos" to it.name } + ("branch" to branch)).path.removePrefix("/runs/")
+        val work = waitingEntry()
+        for (repo in repos) commitFile(workspace(run).resolve("repos/${repo.name}"), "retry.txt", "three times\n", "Retry a failed card payment three times, with exponential backoff between the tries")
+        http.post(work, mapOf("action" to "approve", "comment" to ""))
+        val push = waitingEntry(after = work)
+        onPhone()
+
+        page.navigate(url(push))
+        val cards = page.locator(".card[data-repo]")
+        assertThat(cards).hasCount(2)
+        assertNoSidewaysScroll()
+        page.screenshot("phone/push")
+        val (left, right) = contentEdges("main")
+        val boxes = cards.all().map { it.boundingBox() }
+        for (box in boxes) {
+            assertEquals(left, box.x, 0.5, "a repo's card starts at the page's content edge")
+            assertEquals(right, box.x + box.width, 0.5, "a repo's card ends at the page's content edge")
+        }
+        assertTrue(boxes[1].y >= boxes[0].y + boxes[0].height, "web's card sits under api's")
+        fun button(name: String) = page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName(name).setExact(true))
+        for (name in listOf("Cancel the Run", "Push 2 branches")) {
+            val box = button(name).boundingBox()
+            assertTrue(box.x >= left - 0.5 && box.x + box.width <= right + 0.5, "$name is within the page at $box")
+        }
+
+        button("Push 2 branches").tap()
+        assertThat(page.locator(".toast")).containsText("Pushing")
+        eventually(30) { for (repo in repos) assertContains(git(repo.remote, "branch", "--list"), branch) }
+    }
+
     @Test
     fun `the Process properties pick the Process's Profile from the settings' Profiles`() = browse {
         settings(null, "profiles:\n  work: {vault: notes}\n  private: {vault: notes}\n")

@@ -625,4 +625,16 @@ details.example pre { background: var(--line2); border: 0; padding: 10px; border
     :is(.tabs, .ssteps, .walk nav) a { display: flex; align-items: center; }
     .crumbs a { display: inline-flex; align-items: center; }
     :is(input, select, textarea, .ed .cm-content) { font-size: 16px; }
+    .md { max-width: 100%; overflow-wrap: break-word; }
+    .md :is(img, pre) { max-width: 100%; }
+    .md table { display: block; width: max-content; max-width: 100%; overflow-x: auto; }
+    #ticket input[type=checkbox] { width: 24px; height: 24px; vertical-align: middle; }
+    table.specs, table.specs tbody, table.specs tr, table.specs td { display: block; }
+    table.specs tr:has(> th) { display: none; }
+    table.specs tr { padding: 8px 0; border-bottom: 1px solid var(--line2); }
+    table.specs tr:last-child { border-bottom: 0; }
+    table.specs td { padding: 4px 16px; border: 0; overflow-wrap: anywhere; }
+    .card.push .kv { grid-template-columns: 90px minmax(0, 1fr); }
+    .card.push .kv > * { overflow-wrap: anywhere; }
+    main form.row.pushacts { flex-wrap: wrap; }
 }
