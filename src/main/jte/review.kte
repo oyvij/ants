@@ -38,7 +38,7 @@
 @if(refused != null)<p role="alert">${refused}</p>@endif
 @if(stories != null)!{val uncovered = stories.remainder.values.sum()}
 <div class="storyview">
-    <details class="spine"><summary>Stories</summary><nav><div class="stitle">${stories.title}</div>
+    <details class="spine fold"><summary>Stories</summary><nav><div class="stitle">${stories.title}</div>
         @for(i in stories.stories.indices)!{val story = stories.stories[i]}
         <a class="srow" href="#s${i + 1}-1"><span>${story.name}</span><span class="cnt">${story.steps.size} step${if (story.steps.size == 1) "" else "s"}@if(story.stale > 0) · <span class="stalecnt">${story.stale} stale</span>@endif</span></a>
         <ol class="ssteps" data-story="${i + 1}">@for(j in story.steps.indices)<li><a href="#s${i + 1}-${j + 1}">@if(story.steps[j].stale != null)⚠ @endif${story.steps[j].name}</a></li>@endfor</ol>
@@ -99,7 +99,7 @@
 </div>
 @elseif(tab != "story")
 <div class="walk">
-    <details class="files"><summary>Files</summary><nav>@for(changed in changes)<b class="small mono">${changed.repo.repo}</b>@for(k in changed.files.indices)<a class="mono" href="#f-${changed.repo.repo}-${k + 1}">${changed.files[k].path.substringAfterLast('/')}</a>@endfor
+    <details class="files fold"><summary>Files</summary><nav>@for(changed in changes)<b class="small mono">${changed.repo.repo}</b>@for(k in changed.files.indices)<a class="mono" href="#f-${changed.repo.repo}-${k + 1}">${changed.files[k].path.substringAfterLast('/')}</a>@endfor
     @endfor</nav></details>
     <div>
     @for(changed in changes)!{val repo = changed.repo}

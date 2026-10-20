@@ -1164,6 +1164,22 @@ class BrowserTest : AntsTest() {
         }
     }
 
+    private fun assertTheComposerNeverCoversTheEnd(vararg ends: String) {
+        val composer = page.locator(".composer")
+        fun clear(bar: String) = eventually {
+            page.evaluate("scrollTo(0, document.documentElement.scrollHeight)")
+            val top = composer.boundingBox().y
+            for (selector in ends) {
+                val box = page.locator(selector).boundingBox()
+                assertTrue(box.y + box.height <= top, "$selector ends at ${box.y + box.height}px, under the $bar composer at ${top}px")
+            }
+        }
+        clear("one-line")
+        page.locator(".composer > div").evaluate("bar => { bar.style.flexWrap = 'wrap'; bar.insertAdjacentHTML('beforeend', '<p style=\"flex-basis: 100%; height: 240px; margin: 0\"></p>') }")
+        assertTrue(composer.boundingBox().height > 240)
+        clear("grown")
+    }
+
     @Test
     fun `the composer never covers the end of Review changes however tall it grows, and a page without one keeps its own bottom padding`() = browse {
         val entry = staleStoryReviewEntry()
@@ -1173,19 +1189,7 @@ class BrowserTest : AntsTest() {
         page.locator(".step:not([hidden]) [name=body]").fill("Why?")
         page.click(".step:not([hidden]) .stepcomment button")
         assertThat(page.locator("#comments")).isVisible()
-        val composer = page.locator(".composer")
-        fun clear(bar: String) = eventually {
-            page.evaluate("scrollTo(0, document.documentElement.scrollHeight)")
-            val top = composer.boundingBox().y
-            for (selector in listOf(".step:not([hidden]) .code", "#comments", "#comment + .ed")) {
-                val box = page.locator(selector).boundingBox()
-                assertTrue(box.y + box.height <= top, "$selector ends at ${box.y + box.height}px, under the $bar composer at ${top}px")
-            }
-        }
-        clear("one-line")
-        page.locator(".composer > div").evaluate("bar => { bar.style.flexWrap = 'wrap'; bar.insertAdjacentHTML('beforeend', '<p style=\"flex-basis: 100%; height: 240px; margin: 0\"></p>') }")
-        assertTrue(composer.boundingBox().height > 240)
-        clear("grown")
+        assertTheComposerNeverCoversTheEnd(".step:not([hidden]) .code", "#comments", "#comment + .ed")
 
         page.navigate(url("/processes"))
         fun padding(side: String) = page.locator("main").evaluate("main => getComputedStyle(main).padding$side") as String
@@ -1561,21 +1565,18 @@ class BrowserTest : AntsTest() {
         }
     }
 
-    private fun assertTheComposerSpansThePhoneAndClearsTheEnd(vararg ends: String) {
-        val composer = page.locator(".composer")
-        assertEquals(0.0, composer.boundingBox().x, 0.5)
-        assertEquals(390.0, composer.boundingBox().width, 0.5)
-        fun clear(bar: String) = eventually {
-            page.evaluate("scrollTo(0, document.documentElement.scrollHeight)")
-            val top = composer.boundingBox().y
-            for (selector in ends) {
-                val box = page.locator(selector).boundingBox()
-                assertTrue(box.y + box.height <= top, "$selector ends at ${box.y + box.height}px, under the $bar composer at ${top}px")
-            }
-        }
-        clear("one-line")
-        page.locator(".composer > div").evaluate("bar => { bar.style.flexWrap = 'wrap'; bar.insertAdjacentHTML('beforeend', '<p style=\"flex-basis: 100%; height: 240px; margin: 0\"></p>') }")
-        clear("grown")
+    private fun assertTheComposerSpansThePhoneAndNeverCoversTheEnd(vararg ends: String) {
+        val composer = page.locator(".composer").boundingBox()
+        assertEquals(0.0, composer.x, 0.5)
+        assertEquals(390.0, composer.width, 0.5)
+        assertTheComposerNeverCoversTheEnd(*ends)
+    }
+
+    private fun assertScrollsAwayWithThePage(disclosure: Locator) {
+        val before = disclosure.boundingBox().y
+        page.evaluate("scrollBy(0, 200)")
+        eventually { assertEquals(before - 200, disclosure.boundingBox().y, 0.5, "the disclosure scrolls away with the page") }
+        page.evaluate("scrollTo(0, 0)")
     }
 
     @Test
@@ -1604,9 +1605,7 @@ class BrowserTest : AntsTest() {
         assertNoSidewaysScroll()
         page.screenshot("phone/review-story")
 
-        val before = stories.boundingBox().y
-        page.evaluate("scrollBy(0, 200)")
-        eventually { assertEquals(before - 200, stories.boundingBox().y, 0.5, "the disclosure scrolls away with the page") }
+        assertScrollsAwayWithThePage(stories)
 
         page.navigate(url("$entry#s1-3"))
         page.setViewportSize(390, 400)
@@ -1619,7 +1618,7 @@ class BrowserTest : AntsTest() {
         val form = step.locator(".stepcomment")
         assertOnePerRow(form.locator("[name=type]"), form.locator("[name=body]"), form.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Add")))
         assertNoSidewaysScroll()
-        assertTheComposerSpansThePhoneAndClearsTheEnd(".step:not([hidden]) .bandacts", "#comment + .ed")
+        assertTheComposerSpansThePhoneAndNeverCoversTheEnd(".step:not([hidden]) .bandacts", "#comment + .ed")
     }
 
     @Test
@@ -1632,6 +1631,7 @@ class BrowserTest : AntsTest() {
         assertThat(wide).isHidden()
         assertAtTheTopAcrossTheContent(files, page.locator("[data-repo]").first())
         assertNoSidewaysScroll()
+        assertScrollsAwayWithThePage(files)
 
         files.getByText("Files", Locator.GetByTextOptions().setExact(true)).tap()
         assertThat(wide).isVisible()
@@ -1658,7 +1658,7 @@ class BrowserTest : AntsTest() {
         assertOnePerRow(*listOf("repo", "file", "side", "from", "to", "type", "body").map { form.locator("[name=$it]") }.toTypedArray(),
             form.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Add the comment")))
         assertNoSidewaysScroll()
-        assertTheComposerSpansThePhoneAndClearsTheEnd("#line-comment", "#comment + .ed")
+        assertTheComposerSpansThePhoneAndNeverCoversTheEnd("#line-comment", "#comment + .ed")
     }
 
     @Test
