@@ -87,6 +87,14 @@ class ProtectedCommandsTest : AntsTest() {
         claude.release("go")
     }
 
+    @Test
+    fun `a GET on the MCP endpoint is a plain 405, not a redirect to the login, so claude stops asking for a stream`() {
+        val request = HttpRequest.newBuilder(URI("http://127.0.0.1:$port/mcp")).GET().build()
+        val response = HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.discarding())
+        assertEquals(405, response.statusCode())
+        assertEquals("POST", response.headers().firstValue("Allow").orElse(null))
+    }
+
     /**
      * A Run whose Task has written `sub/yarn`, a fake yarn that prints its folder, its arguments, a Secret it wasn't
      * given and a line on stderr, writes its environment to `env.out` and exits 3; given `slow`, it first waits on a
