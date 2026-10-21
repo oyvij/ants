@@ -391,6 +391,7 @@ dialog.source-map { width: min(760px, 92vw); height: auto; } .source-map textare
 #schedule .warn { margin-top: 14px; }
 #schedule .failed { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 14px; } #schedule .failed [role=alert] { width: 100%; margin: 0; }
 #schedule .subsec .help { margin: 0; }
+#schedules td.lbl { display: none; }
 
 label > .ed { margin-top: 4px; } .modal .split .cm-scroller { font-family: inherit; line-height: 1.55; }
 .ed.readonly { background: var(--panel2); } .ed.readonly .st { color: var(--muted); }
@@ -621,11 +622,13 @@ details.example pre { background: var(--line2); border: 0; padding: 10px; border
     :is(.notes, table.specs) tr { padding: 8px 0; border-bottom: 1px solid var(--line2); }
     :is(.notes, table.specs) tr:last-child { border-bottom: 0; }
     :is(.notes, table.specs) :is(td, td:first-child) { width: auto; padding: 4px 16px; border: 0; overflow-wrap: anywhere; }
-    :is(#runlist table, #tasks, #process-runs), :is(#runlist, #tasks, #process-runs) :is(tbody, tr, td) { display: block; }
-    :is(#runlist, #tasks, #process-runs) tr:has(> th) { display: none; }
-    :is(#runlist, #tasks, #process-runs) tr { padding: 8px 0; border-bottom: 1px solid var(--line2); }
-    :is(#runlist, #tasks, #process-runs) tr:last-child { border-bottom: 0; }
-    :is(#runlist, #tasks, #process-runs) td { padding: 4px 16px; border: 0; overflow-wrap: anywhere; }
+    :is(#runlist table, #tasks, #process-runs, #schedules), :is(#runlist, #tasks, #process-runs, #schedules) :is(tbody, tr, td) { display: block; }
+    :is(#runlist, #tasks, #process-runs, #schedules) tr:has(> th) { display: none; }
+    :is(#runlist, #tasks, #process-runs, #schedules) tr { padding: 8px 0; border-bottom: 1px solid var(--line2); }
+    :is(#runlist, #tasks, #process-runs, #schedules) tr:last-child { border-bottom: 0; }
+    :is(#runlist, #tasks, #process-runs, #schedules) td { padding: 4px 16px; border: 0; overflow-wrap: anywhere; }
+    #schedules td.lbl { display: block; padding-bottom: 0; font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; }
+    #schedules td.row { display: flex; flex-wrap: wrap; }
     main:has(> #diagram) .ph .acts { flex-wrap: wrap; }
     main:has(> #diagram) :is(.ph .sub, .card) { overflow-wrap: anywhere; }
     .dia .legend { right: 12px; flex-wrap: wrap; }
