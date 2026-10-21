@@ -31,11 +31,7 @@ class ScheduleTest : AntsTest() {
 
     private val key = "nightly"
 
-    /**
-     * The Process [key] with the Schedule [cron] on its timer start, a required `prompt` with the stored value
-     * [stored], then a User Task when [waits], so its Run stays live.
-     */
-    private fun bpmn(cron: String? = "0 0 * * * *", stored: String? = "Sweep", waits: Boolean = false) = """
+    private fun bpmn(cron: String? = null, stored: String? = "Sweep", waits: Boolean = false) = """
         <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
                           id="definitions" targetNamespace="http://bpmn.io/schema/bpmn">
           <bpmn:process id="$key" name="Nightly" isExecutable="true" camunda:historyTimeToLive="180">
@@ -85,7 +81,7 @@ class ScheduleTest : AntsTest() {
     @Test
     fun `a drawn timer becomes a Schedule with its stored values, the Process's Profile and its paused state, and the latest version has no timer`() {
         twoProfiles()
-        val profiled = bpmn().replace("camunda:historyTimeToLive=\"180\">",
+        val profiled = bpmn(cron = "0 0 * * * *").replace("camunda:historyTimeToLive=\"180\">",
             "camunda:historyTimeToLive=\"180\"><bpmn:extensionElements><camunda:properties><camunda:property name=\"$PROFILE\" value=\"other\" /></camunda:properties></bpmn:extensionElements>")
         deployDrawn(profiled)
         drawnState("  paused: true\n  last: '${clock.instant()}'\n")
@@ -110,7 +106,7 @@ class ScheduleTest : AntsTest() {
     @Test
     fun `a migrated Schedule runs the times missed since its last start once, then starts a Run at each time`() {
         home.resolve("settings.yaml").writeAtomically(vault)
-        deployDrawn(bpmn())
+        deployDrawn(bpmn(cron = "0 0 * * * *"))
         assertEquals(0, management.createJobQuery().processDefinitionKey(key).count(), "Operaton runs no start timer of its own")
         drawnState("  last: '${clock.instant().minus(Duration.ofHours(5))}'\n")
 
@@ -199,7 +195,7 @@ class ScheduleTest : AntsTest() {
     @Test
     fun `Schedule is refused, with the filled-in values kept, on an empty required field, a Can't start or a cron Ants can't read`() {
         home.resolve("settings.yaml").writeAtomically(vault)
-        deploy(bpmn(cron = null))
+        deploy()
         assertContains(browser.get("/processes/$key").body, "<fieldset id=\"when\" hidden>")
         val unfilled = browser.post("/processes/$key/schedule", listOf(NAME to "Sweeper", "prompt" to " ", "cron" to "0 0 * * * *"))
         assertEquals(400, unfilled.status)
@@ -225,10 +221,10 @@ class ScheduleTest : AntsTest() {
     @Test
     fun `a page Schedule runs times missed once, on the latest version of its Process`() {
         home.resolve("settings.yaml").writeAtomically(vault)
-        deploy(bpmn(cron = null))
+        deploy()
         browser.get("/processes/$key")
         browser.post("/processes/$key/schedule", listOf("prompt" to "Tidy up", "cron" to "0 0 * * * *"))
-        deploy(bpmn(cron = null, stored = "Edited"))
+        deploy(bpmn(stored = "Edited"))
         clock.offset = Duration.ofHours(5)
         eventually { assertEquals(1, runs()) }
         settle()
@@ -256,7 +252,7 @@ class ScheduleTest : AntsTest() {
     @Test
     fun `Pause stops one Schedule's Runs while the other starts its own, and Resume drops the times passed while paused`() {
         home.resolve("settings.yaml").writeAtomically(vault)
-        deploy(bpmn(cron = null))
+        deploy()
         scheduleHourly("Sweep A")
         scheduleHourly("Sweep B")
         assertEquals("/processes/$key", act("Sweep A", "pause").path)
@@ -281,7 +277,7 @@ class ScheduleTest : AntsTest() {
     @Test
     fun `Remove deletes one Schedule and deploys nothing, and the other keeps starting its Runs`() {
         home.resolve("settings.yaml").writeAtomically(vault)
-        deploy(bpmn(cron = null))
+        deploy()
         scheduleHourly("Sweep A")
         scheduleHourly("Sweep B")
         assertEquals("/processes/$key", act("Sweep A", "remove").path)
@@ -298,7 +294,7 @@ class ScheduleTest : AntsTest() {
     @Test
     fun `Start now starts one Schedule's Run with its values and goes to it`() {
         home.resolve("settings.yaml").writeAtomically(vault)
-        deploy(bpmn(cron = null))
+        deploy()
         scheduleHourly("Sweep A", "Tidy A")
         scheduleHourly("Sweep B", "Tidy B")
         val run = act("Sweep B", "start")
@@ -313,7 +309,7 @@ class ScheduleTest : AntsTest() {
     @Test
     fun `an overlapping time of one Schedule is skipped and noted on its row, while the other Schedule still starts its Run`() {
         home.resolve("settings.yaml").writeAtomically(vault)
-        deploy(bpmn(cron = null, waits = true))
+        deploy(bpmn(waits = true))
         scheduleHourly("Sweep A")
         scheduleHourly("Sweep B")
         clock.offset = Duration.ofHours(1)
@@ -390,11 +386,11 @@ class ScheduleTest : AntsTest() {
     @Test
     fun `a field made required after scheduling fails both Schedules, as two failed entries, and Dismiss on one leaves the other`() {
         home.resolve("settings.yaml").writeAtomically(vault)
-        deploy(bpmn(cron = null))
+        deploy()
         scheduleHourly("Sweep A")
         scheduleHourly("Sweep B")
         val target = """<camunda:formField id="target" label="Target" type="string"><camunda:validation><camunda:constraint name="required" /></camunda:validation></camunda:formField>"""
-        deploy(bpmn(cron = null).replace("</camunda:formData>", "$target</camunda:formData>"))
+        deploy(bpmn().replace("</camunda:formData>", "$target</camunda:formData>"))
 
         clock.offset = Duration.ofHours(1)
         eventually { assertEquals(2, failedEntries().size) }
@@ -414,7 +410,7 @@ class ScheduleTest : AntsTest() {
     @Test
     fun `Home's Coming up lists every unpaused Schedule's next Run by its label, soonest first`() {
         home.resolve("settings.yaml").writeAtomically(vault)
-        deploy(bpmn(cron = null))
+        deploy()
         scheduleHourly("Sweep yearly", cron = "0 0 0 1 1 *")
         scheduleHourly("Sweep hourly")
         scheduleHourly("Sweep paused")
@@ -433,7 +429,7 @@ class ScheduleTest : AntsTest() {
     @Test
     fun `the Processes list shows how many Schedules a Process has, and nothing with none`() {
         home.resolve("settings.yaml").writeAtomically(vault)
-        deploy(bpmn(cron = null))
+        deploy()
         assertFalse("⏰" in processRow(key))
         scheduleHourly("Sweep A")
         assertContains(processRow(key), "<td class=\"small\">⏰ 1</td>")

@@ -77,7 +77,7 @@ class Schedules(
 
     @EventListener(ApplicationReadyEvent::class)
     fun start() {
-        runCatching(::migrate).onFailure { log.warn("The drawn Schedules couldn't be migrated", it) }
+        migrate()
         // Straight away, so a time missed while Ants was off runs now.
         loop.scheduleWithFixedDelay(::tick, 0, every.toMillis(), MILLISECONDS)
     }
@@ -87,13 +87,13 @@ class Schedules(
         loop.shutdownNow()
     }
 
-    fun all(): List<Schedule> = schedules().values.mapNotNull { it.process }.distinct().flatMap(::of).sortedBy { it.next }
+    fun all(): List<Schedule> = scheduleStates().values.mapNotNull { it.process }.distinct().flatMap(::of).sortedBy { it.next }
 
     fun of(processKey: String): List<Schedule> {
         val definition = latest(processKey) ?: return emptyList()
         val fields = startForm.fields(definition)
         val process = definition.name ?: processKey
-        return schedules().filterValues { it.process == processKey }.map { (id, state) ->
+        return scheduleStates().filterValues { it.process == processKey }.map { (id, state) ->
             val repos = fields.filter { it.type == FieldType.REPOS }.flatMap { state.values[it.name].orEmpty() }.flatMap { it.split(Regex("[,\\s]+")) }.filter(String::isNotEmpty)
             val label = runName(state.values[NAME]?.firstOrNull()) ?: listOf(process, repos.joinToString(", ")).filter(String::isNotEmpty).joinToString(" · ")
             val values = fields.associate { field -> field.label to state.values[field.name].orEmpty().filter(String::isNotBlank).joinToString(", ") }.filterValues(String::isNotEmpty)
@@ -135,21 +135,32 @@ class Schedules(
 
     fun migrate() = synchronized(this) {
         for (definition in repository.createProcessDefinitionQuery().latestVersion().list()) {
-            val model = repository.getBpmnModelInstance(definition.id)
-            val timer = model.drawnTimer() ?: continue
-            val cron = timer.timeCycle?.textContent?.trim()?.ifEmpty { null }
-            val drawn = states()[definition.key] ?: State()
-            val deployed = repository.createDeploymentQuery().deploymentId(definition.deploymentId).singleResult().deploymentTime.toInstant()
-            val values = stored(definition) + listOfNotNull(startForm.diagramProfile(definition)?.let { PROFILE to listOf(it) })
-            timer.parentElement.removeChildElement(timer)
+            runCatching { migrate(definition) }.onFailure { log.warn("The drawn Schedule of ${definition.key} couldn't be migrated", it) }
+        }
+    }
+
+    private fun migrate(definition: ProcessDefinition) {
+        val model = repository.getBpmnModelInstance(definition.id)
+        val timer = model.drawnTimer() ?: return
+        val cron = timer.timeCycle?.textContent?.trim()?.ifEmpty { null }
+        val before = states()
+        val perKey = before[definition.key] ?: State()
+        val deployed = repository.createDeploymentQuery().deploymentId(definition.deploymentId).singleResult().deploymentTime.toInstant()
+        val values = stored(definition) + listOfNotNull(startForm.diagramProfile(definition)?.let { PROFILE to listOf(it) })
+        val migrated = cron?.let { State(perKey.paused, perKey.last ?: deployed, process = definition.key, cron = it, values = values) }
+        if (migrated == null) log.warn("The timer start of ${definition.key} has no cron, so it becomes no Schedule")
+        write(before - definition.key + listOfNotNull(migrated?.let { UUID.randomUUID().toString() to it }))
+        timer.parentElement.removeChildElement(timer)
+        try {
             repository.createDeployment().name(definition.resourceName).addString(definition.resourceName, Bpmn.convertToString(model)).deploy()
-            val schedule = cron?.let { State(drawn.paused, drawn.last ?: deployed, process = definition.key, cron = it, values = values) }
-            write(states() - definition.key + listOfNotNull(schedule?.let { UUID.randomUUID().toString() to it }))
+        } catch (e: Exception) {
+            write(before)
+            throw e
         }
     }
 
     private fun tick() = try {
-        for (id in schedules().keys) {
+        for (id in scheduleStates().keys) {
             runCatching { due(id) }.onFailure { log.warn("The Schedule $id failed", it) }
         }
     } catch (e: Exception) {
@@ -157,7 +168,7 @@ class Schedules(
     }
 
     private fun due(id: String): Unit = synchronized(this) {
-        val state = schedules()[id] ?: return
+        val state = scheduleStates()[id] ?: return
         if (state.paused) return
         val cron = CronExpression.parse(state.cron.orEmpty())
         val now = clock.instant()
@@ -179,7 +190,7 @@ class Schedules(
     private fun states(): Map<String, State> = if (!file.exists()) emptyMap()
     else yaml.load<Map<String, Map<*, *>>?>(file.readText()).orEmpty().mapValues { State.of(it.value) }
 
-    private fun schedules() = states().filterValues { it.process != null }
+    private fun scheduleStates() = states().filterValues { it.process != null }
 
     private fun write(states: Map<String, State>) = file.writeAtomically(yaml.dump(states.mapValues { it.value.toYaml() }))
 
