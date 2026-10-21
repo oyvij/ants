@@ -42,13 +42,13 @@ class DeleteProcessTest : AntsTest() {
         </bpmn:definitions>
     """.trimIndent())
 
-    private fun asked(key: String): Browser.Page {
+    private fun confirmation(key: String): Browser.Page {
         browser.get("/processes/$key")
         return browser.post("/processes/$key/delete", emptyMap())
     }
 
     private fun delete(key: String) {
-        asked(key)
+        confirmation(key)
         assertEquals("/processes", browser.post("/processes/$key/delete", mapOf("confirm" to "on")).path)
     }
 
@@ -57,7 +57,7 @@ class DeleteProcessTest : AntsTest() {
         browser.import("start-end.bpmn")
         caller("calls-it", "Calls it", "start-end")
 
-        val asked = asked("start-end")
+        val asked = confirmation("start-end")
         assertContains(asked.body, "Delete the Process Start to end?")
         assertContains(asked.body, """<a href="/processes/calls-it">Calls it</a>""")
         assertContains(asked.body, """action="/processes/start-end/delete"""")

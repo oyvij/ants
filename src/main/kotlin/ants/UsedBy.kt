@@ -3,6 +3,7 @@ package ants
 import org.operaton.bpm.engine.RepositoryService
 import org.operaton.bpm.engine.RuntimeService
 import org.operaton.bpm.engine.repository.ProcessDefinition
+import org.operaton.bpm.model.bpmn.BpmnModelInstance
 import org.operaton.bpm.model.bpmn.instance.CallActivity
 import org.operaton.bpm.model.bpmn.instance.operaton.OperatonProperty
 import org.springframework.stereotype.Component
@@ -23,10 +24,9 @@ class UsedBy(private val repository: RepositoryService, private val runtime: Run
 
     fun skill(name: String) = dependents(processes(SKILL, name), catalogue.skills().filter { name in it.uses })
 
-    fun process(key: String) = Dependents(
-        repository.createProcessDefinitionQuery().latestVersion().orderByProcessDefinitionName().asc().list()
-            .filter { it.key != key && repository.getBpmnModelInstance(it.id).getModelElementsByType(CallActivity::class.java).any { call -> call.calledElement == key } },
-    )
+    fun process(key: String) = dependents(processes { process, model ->
+        process.key != key && model.getModelElementsByType(CallActivity::class.java).any { it.calledElement == key }
+    })
 
     private fun dependents(processes: List<ProcessDefinition>, skills: List<Skill> = emptyList()): Dependents {
         val latest = repository.createProcessDefinitionQuery().latestVersion().list().map { it.id }.toSet()
@@ -37,14 +37,15 @@ class UsedBy(private val repository: RepositoryService, private val runtime: Run
      * Each deployed Process version with an extension property [property] set to [name]: the latest, and any older
      * one that live Runs still run.
      */
-    private fun processes(property: String, name: String): List<ProcessDefinition> {
+    private fun processes(property: String, name: String) = processes { _, model ->
+        model.getModelElementsByType(OperatonProperty::class.java).any { it.operatonName == property && it.operatonValue == name }
+    }
+
+    private fun processes(uses: (ProcessDefinition, BpmnModelInstance) -> Boolean): List<ProcessDefinition> {
         val latest = repository.createProcessDefinitionQuery().latestVersion().list().map { it.id }.toSet()
         return repository.createProcessDefinitionQuery().orderByProcessDefinitionName().asc().orderByProcessDefinitionVersion().desc().list()
             .filter { it.id in latest || runtime.createProcessInstanceQuery().processDefinitionId(it.id).count() > 0 }
-            .filter { process ->
-                repository.getBpmnModelInstance(process.id).getModelElementsByType(OperatonProperty::class.java)
-                    .any { it.operatonName == property && it.operatonValue == name }
-            }
+            .filter { uses(it, repository.getBpmnModelInstance(it.id)) }
     }
 }
 

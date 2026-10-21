@@ -61,7 +61,7 @@ class Processes(
         for (file in folder.listDirectoryEntries("*.bpmn")) try {
             val key = process(parse(file.readBytes())).getAttribute("id")
             val saved = repository.createProcessDefinitionQuery().processDefinitionKey(key).latestVersion().singleResult()
-            if (saved != null && !saved.resourceName.startsWith("shipped/")) {
+            if (saved != null && !saved.shipped) {
                 log.info("The shipped Process $file is not deployed over your Save of $key")
                 continue
             }
@@ -89,7 +89,7 @@ class Processes(
     private fun row(process: ProcessDefinition, scheduleCount: Int, login: () -> Map<*, *>): ProcessRow {
         val profile = startForm.profile(process, null)
         return ProcessRow(
-            process, process.resourceName.startsWith("shipped/"), settings.profile(profile), scheduleCount,
+            process, process.shipped, settings.profile(profile), scheduleCount,
             reasons(process, startForm.fields(process), profile, login).isEmpty(),
             history.createHistoricProcessInstanceQuery().processDefinitionKey(process.key).rootProcessInstances().active().count(),
         )
@@ -198,7 +198,7 @@ class Processes(
         model.addAttribute("name", process.name ?: process.key)
         model.addAttribute("src", "/processes/$key/diagram.bpmn")
         model.addAttribute("page", "/processes/$key")
-        if (process.resourceName.startsWith("shipped/")) model.addAttribute("note", "Shipped: saving makes it your own")
+        if (process.shipped) model.addAttribute("note", "Shipped: saving makes it your own")
         model.addAttribute("builder", builder())
         return "modeler"
     }
@@ -325,7 +325,7 @@ class Processes(
     @ResponseBody
     fun diagram(@PathVariable key: String): ByteArray = repository.getProcessModel(latest(key).id).readAllBytes()
 
-    private fun shipped(key: String) = repository.createProcessDefinitionQuery().processDefinitionKey(key).list().any { it.resourceName.startsWith("shipped/") }
+    private fun shipped(key: String) = repository.createProcessDefinitionQuery().processDefinitionKey(key).list().any { it.shipped }
 
     private fun latest(key: String) = repository.createProcessDefinitionQuery().processDefinitionKey(key).latestVersion().singleResult()
         ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No Process $key")
@@ -335,6 +335,8 @@ private const val CAMUNDA = "http://camunda.org/schema/1.0/bpmn"
 private const val OPERATON = "http://operaton.org/schema/1.0/bpmn"
 internal const val BPMN = "http://www.omg.org/spec/BPMN/20100524/MODEL"
 internal const val BPMNDI = "http://www.omg.org/spec/BPMN/20100524/DI"
+
+private val ProcessDefinition.shipped get() = resourceName.startsWith("shipped/")
 
 class ProcessRow(val process: ProcessDefinition, val shipped: Boolean, val profile: Profile?, val scheduleCount: Int, val ready: Boolean, val live: Long)
 
