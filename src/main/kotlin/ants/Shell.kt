@@ -45,7 +45,9 @@ class Shell(val csrf: CsrfToken?, val version: String, waiting: () -> Int, worki
 fun HistoryService.liveRuns() = createHistoricProcessInstanceQuery().rootProcessInstances().active().count()
 
 /** A toast: its [title] in bold, then its [text]. */
-data class Toast(val title: String, val text: String) : java.io.Serializable
+data class Toast(val title: String, val text: String, val kind: Kind) : java.io.Serializable {
+    enum class Kind { SUCCESS, INFO, WARNING, ERROR }
+}
 
 @ControllerAdvice
 class ShellAdvice(

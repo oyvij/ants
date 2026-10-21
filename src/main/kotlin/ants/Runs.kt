@@ -206,12 +206,12 @@ class Runs(
     }
 
     // The toasts so far, numbered, and what the latest look at the Rounds and slots saw; every page's stream shares them.
-    private val toastLog = ArrayDeque<Pair<Long, String>>()
+    private val toastLog = ArrayDeque<Pair<Long, Toast>>()
     private var toastCount = 0L
     private var looked = 0L
     private var rounds: Set<String>? = null // the Rounds waiting, as last seen; null before the first look
     private var queued = emptySet<String>() // the Agent Tasks seen waiting while every slot was taken
-    private var held = emptyList<String>()
+    private var held = emptyList<Toast>()
 
     /**
      * The toasts after number [after] (the latest a page has shown, which it hands its next stream, so re-following
@@ -222,8 +222,8 @@ class Runs(
         var seen = synchronized(this) { after?.coerceAtMost(toastCount) ?: toastCount }
         return Part("toast") {
             look()
-            synchronized(this) { toastLog.filter { it.first > seen }.also { if (it.isNotEmpty()) seen = it.last().first } }.map { (n, text) ->
-                """<div class="toast" role="status" data-seq="$n">$text<div class="ok"><button type="button" onclick="this.closest('.toast').remove()">OK</button></div></div>"""
+            synchronized(this) { toastLog.filter { it.first > seen }.also { if (it.isNotEmpty()) seen = it.last().first } }.map { (n, toast) ->
+                StringOutput().also { templates.render("toast.kte", mapOf("toast" to toast, "seq" to n), it) }.toString()
             }
         }
     }
@@ -240,7 +240,7 @@ class Runs(
             val asked = notifications.tasks().filter { it.tag == UserTaskKind.ANSWER_ROUND.tag }
             val new = rounds?.let { seen -> asked.filter { it.id !in seen } }.orEmpty().mapNotNull { entry ->
                 notifications.round(entry)?.let { (round, questions) ->
-                    "<b>New: ${HtmlUtils.htmlEscape(entry.runName)} asks Round $round</b> $questions question${if (questions == 1) " is" else "s are"} waiting on you."
+                    Toast("New: ${entry.runName} asks Round $round", "$questions question${if (questions == 1) " is" else "s are"} waiting on you.", Toast.Kind.WARNING)
                 }
             }
             rounds = asked.mapTo(mutableSetOf()) { it.id }
@@ -249,16 +249,16 @@ class Runs(
             val took = locked.filter { it.id in queued }.mapNotNull { task ->
                 val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult()?.rootProcessInstanceId ?: return@mapNotNull null
                 val name = repository.getBpmnModelInstance(task.processDefinitionId).getModelElementById<FlowElement>(task.activityId)?.name ?: task.activityId
-                "<b>${HtmlUtils.htmlEscape(names.name(run))} · ${HtmlUtils.htmlEscape(name)}</b>"
+                "${names.name(run)} · $name"
             }.joinToString(" and ")
             val full = launcher.running >= settings.agentTasks()
             queued = waiting.filter { it.id in queued || full && launcher.pausedUntil(it.id) == null && launcher.heldBy(it.id) == null }.mapTo(mutableSetOf()) { it.id }
             val said = held + new
             held = emptyList()
             when {
-                took.isNotEmpty() && said.isNotEmpty() -> said.dropLast(1) + "${said.last()} Its slot went to $took, which was queued."
-                took.isNotEmpty() -> listOf("<b>A slot came free.</b> It went to $took, which was queued.")
-                new.isNotEmpty() && queued.isNotEmpty() -> emptyList<String>().also { held = said }
+                took.isNotEmpty() && said.isNotEmpty() -> said.dropLast(1) + said.last().let { it.copy(text = "${it.text} Its slot went to $took, which was queued.") }
+                took.isNotEmpty() -> listOf(Toast("A slot came free", "It went to $took, which was queued.", Toast.Kind.INFO))
+                new.isNotEmpty() && queued.isNotEmpty() -> emptyList<Toast>().also { held = said }
                 else -> said
             }.forEach { toastLog.addLast(++toastCount to it) }
         }

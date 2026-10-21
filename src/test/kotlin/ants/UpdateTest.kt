@@ -101,7 +101,7 @@ class UpdateTest : AntsTest() {
         assertContains(browser.get("/settings").body, "Running v$running. Up to date.")
         release("99.0.0")
         val page = browser.post("/settings", mapOf("action" to "updates")).body
-        assertContains(page, """<div class="toast" role="status"><b>Checked</b> Ants 99.0.0 is available.""")
+        assertContains(page, toastMarkup(Toast.Kind.INFO, "Checked", "Ants 99.0.0 is available."))
         assertContains(page, """Running v$running. Ants 99.0.0 is available. <button formaction="/updates/99.0.0">Update</button>""")
     }
 

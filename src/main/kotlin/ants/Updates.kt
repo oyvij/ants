@@ -67,8 +67,8 @@ class Updates(
 
     /** Settings' **Check now**: checks at once, and says what it found. */
     fun checkNow(): Toast = when {
-        !check() -> Toast("Couldn't check", "the release list didn't answer; the log says why.")
-        else -> notice.newer?.let { Toast("Checked", "Ants $it is available.") } ?: Toast("Checked", "nothing newer.")
+        !check() -> Toast("Couldn't check", "the release list didn't answer; the log says why.", Toast.Kind.ERROR)
+        else -> notice.newer?.let { Toast("Checked", "Ants $it is available.", Toast.Kind.INFO) } ?: Toast("Checked", "nothing newer.", Toast.Kind.SUCCESS)
     }
 
     @PreDestroy

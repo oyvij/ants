@@ -249,9 +249,12 @@ dialog.modal::backdrop { background: var(--modalBg); }
 .modal .split > div { overflow: auto; } .modal .split .cm-editor { min-height: 100%; max-height: none; font-size: 15px; } .modal .split .cm-scroller { padding: 12px 8px; }
 .modal .split .md { max-width: none; padding: 20px 28px; border-left: 1px solid var(--line); background: var(--band); font-size: 15px; }
 /* A toast, for an action that left the page it was pressed on, such as a Push: it says what happens next. */
-.toast { position: fixed; top: 16px; right: 16px; z-index: 90; width: 380px; background: #0f172a; color: #e2e8f0; border: 1px solid light-dark(transparent, var(--line)); border-radius: 10px; padding: 12px 14px; box-shadow: 0 10px 30px rgba(0, 0, 0, .25); font-size: 13px; animation: fadein .15s; }
-.toast code { background: #1e293b; color: #e2e8f0; }
-.toast .ok { text-align: right; margin-top: 8px; }
+.toast { position: fixed; top: 16px; right: 16px; z-index: 90; width: 380px; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-left: 3px solid var(--kind, var(--line)); border-radius: 10px; padding: 12px 14px; box-shadow: 0 10px 30px rgba(0, 0, 0, .25); font-size: 13px; animation: fadein .15s; }
+.toast[data-kind] { display: grid; grid-template-columns: auto 1fr auto; column-gap: 10px; align-items: start; }
+.toast[data-kind=success] { --kind: var(--ok); } .toast[data-kind=info] { --kind: var(--run); } .toast[data-kind=warning] { --kind: var(--wait); } .toast[data-kind=error] { --kind: var(--bad); }
+.toast > svg.i { grid-row: 1; color: var(--kind); }
+.toast > b { grid-column: 2; } .toast > span { grid-column: 2; color: var(--text2); }
+.toast > button.ghost { grid-column: 3; grid-row: 1 / span 2; color: var(--muted); margin: -4px -6px 0 0; }
 
 .tgroup { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 700; margin: 16px 0 4px; }
 .trow { display: grid; grid-template-columns: 190px 1fr auto; gap: 2px 14px; align-items: center; padding: 6px 10px; margin: 0 -10px; border-radius: 8px; }

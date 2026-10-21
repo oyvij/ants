@@ -1206,6 +1206,8 @@ class BrowserTest : AntsTest() {
 
         page.setViewportSize(769, 900)
         assertEquals(380.0, toast.boundingBox().width, 0.5)
+        toast.locator("button[aria-label=Close]").tap()
+        assertThat(toast).hasCount(0)
     }
 
     @Test

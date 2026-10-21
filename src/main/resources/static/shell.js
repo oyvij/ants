@@ -121,8 +121,6 @@ stream.on('count', data => {
 stream.on('runs', html => stream.patch(document.getElementById('runs'), html));
 stream.on('pauses', html => document.getElementById('paused').innerHTML = html);
 stream.on('update', html => document.getElementById('update').innerHTML = html);
-// A toast, such as a Round arriving or a queued Task taking a free slot, fades in; it goes by itself after a while,
-// and its OK button takes it away sooner.
 const toast = element => setTimeout(() => element.remove(), 12000);
 // Each is numbered, so one a reconnected stream sends again shows once.
 stream.on('toast', html => {
