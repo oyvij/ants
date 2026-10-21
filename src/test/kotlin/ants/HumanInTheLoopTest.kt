@@ -129,15 +129,15 @@ class HumanInTheLoopTest : AntsTest() {
 
     @Test
     fun `the griller, planner and storyteller get the tool allow-lists the spec gives them, and the implementer fixes the review`() {
-        humanInTheLoop()
+        val ws = workspace(humanInTheLoop())
         fun tools(skill: String) = claude.launches(skill).first().let { it.flag("--tools") to it.flag("--allowedTools")?.removeSuffix(",mcp__ants__run") } // every claude Task has the run tool
 
         assertEquals("Read,Grep,Glob" to "Read,Grep,Glob", tools("grill"))
-        assertEquals("Read,Grep,Glob,Write,Edit" to "Read,Grep,Glob,Write(tickets/**),Edit(tickets/**)", tools("to-spec"))
+        assertEquals("Read,Grep,Glob,Write,Edit" to "Read,Grep,Glob,Write(/$ws/tickets/**),Edit(/$ws/tickets/**)", tools("to-spec"))
         assertEquals(tools("to-spec"), tools("to-tickets"))
         assertEquals(
             "Read,Grep,Glob,Write,Edit,Bash" to
-                "Read,Grep,Glob,Write(walkthrough/**),Edit(walkthrough/**),Bash(git log *),Bash(git diff *),Bash(git show *),Bash(git merge-base *)",
+                "Read,Grep,Glob,Write(/$ws/walkthrough/**),Edit(/$ws/walkthrough/**),Bash(git log *),Bash(git diff *),Bash(git show *),Bash(git merge-base *)",
             tools("walkthrough"),
         )
         assertContains(claude.launches("walkthrough").first().flag("--disallowedTools")!!.split(","), "Bash(git *--output*)") // --output makes git log, diff and show write a file
