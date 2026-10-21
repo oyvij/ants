@@ -125,8 +125,9 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
         return "redirect:/agents"
     }
 
-    fun delete(name: String) {
+    fun delete(name: String): String {
         editable(find(name)).file.deleteIfExists()
+        return "/agents/$name"
     }
 
     /** Writes an editable copy of a read-only Agent into Ants' own folder, under the first free `<name>-copy`. */

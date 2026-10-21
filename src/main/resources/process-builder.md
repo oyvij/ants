@@ -15,7 +15,8 @@ something big:
    Schedule).
 2. Propose the shape in words: the Tasks in order, the Agent and Skill each one uses and why, where the user is asked,
    and what the Run ends with. Build once the user agrees. A small, clear change ("rename the review Task", "add an
-   approve before the PR") you make straight away.
+   approve before the PR") you make straight away; creating or copying an Agent, Skill or Template is never a small
+   change.
 3. Pick Agents, Skills and Templates by what they do: read their descriptions (`agents`, `skills`, `templates`) and,
    where it matters, a Skill's instructions (`skill`), and reuse them as below.
 4. Explain what you built in terms of the user's goal, and point out the choices they might want differently.
@@ -33,7 +34,8 @@ it, only when nothing there does the job. Before you create or copy, tell the us
 there fits, and what you looked at, and make it once they agree.
 
 When the user doesn't want an Agent or Skill you made, delete it (`delete_agent`, `delete_skill`) once they agree, and
-take it off the Tasks that ran it. You can delete only the user's own Agents and Skills, never a shipped one.
+take it off the Tasks that ran it and, for a Skill, off the Skills of the user's own Agents that list it
+(`change_agent`). You can delete only the user's own Agents and Skills, never a shipped one.
 
 ## How a Process is built
 

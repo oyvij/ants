@@ -126,16 +126,8 @@ class ProcessBuilderTools(
                 "change_agent" -> saved(agents.write(argument("file"), argument("name")))
                 "create_skill" -> saved(skills.write(argument("skill"), arguments["schema"]?.toString().orEmpty(), null))
                 "change_skill" -> saved(skills.write(argument("skill"), arguments["schema"]?.toString().orEmpty(), argument("name")))
-                "delete_agent" -> argument("name").let { agent ->
-                    agents.delete(agent)
-                    made -= "/agents/$agent"
-                    "Deleted the Agent $agent."
-                }
-                "delete_skill" -> argument("name").let { skill ->
-                    skills.delete(skill)
-                    made -= "/skills/$skill"
-                    "Deleted the Skill $skill."
-                }
+                "delete_agent" -> deleted(agents.delete(argument("name")))
+                "delete_skill" -> deleted(skills.delete(argument("name")))
                 "build_log" -> argument("markdown").let { markdown ->
                     val key = key()
                     buildLog(key).also { it.parent.createDirectories() }.writeAtomically(markdown)
@@ -158,6 +150,8 @@ class ProcessBuilderTools(
 
         /** What a create, change or copy answers: the item's name and its page, which the panel links to. */
         fun saved(page: String) = json.writeValueAsString(mapOf("name" to page.substringAfterLast('/'), "page" to page)).also { made += page }
+
+        fun deleted(page: String) = "Deleted the ${KINDS[page.split('/')[1]]} ${page.substringAfterLast('/')}.".also { made -= page }
 
         /**
          * Sends [message] into the session, launching claude first when none is live. A new session gets the Build log of

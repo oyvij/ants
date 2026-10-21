@@ -11,8 +11,10 @@ import java.nio.file.Files
 import java.time.Duration
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit.SECONDS
+import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.readText
+import kotlin.io.path.writeText
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -251,6 +253,17 @@ class ProcessBuilderToolsTest : AntsTest() {
         assertEquals("The Skill shipped-draft is read-only; Copy it to make your own." to true, call(token, "delete_skill", mapOf("name" to "shipped-draft")))
         assertTrue(home.resolve("shipped/agents/shipped-writer.md").exists())
         assertTrue(call(token, "delete_agent", mapOf("name" to "nobody")).second)
+    }
+
+    @Test
+    fun `a Skill whose folder holds another Skill isn't deleted`() {
+        val token = open()
+        val outer = home.resolve("skills/outer")
+        outer.resolve("inner").createDirectories().resolve("SKILL.md").writeText("---\nname: inner\ndescription: Inside.\n---\nIn.\n")
+        outer.resolve("SKILL.md").writeText("---\nname: outer\ndescription: Outside.\n---\nOut.\n")
+
+        assertEquals("$outer holds other Skills (inner); move or delete them first." to true, call(token, "delete_skill", mapOf("name" to "outer")))
+        assertTrue(outer.resolve("inner/SKILL.md").exists())
     }
 }
 
