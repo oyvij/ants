@@ -31,7 +31,7 @@ data class Profile(val vault: String?, val sourceMap: String?)
 /** `settings.yaml` in ANTS_HOME, created on first start ([start]) and read fresh each time, so hand edits count. */
 @Component
 class Settings(
-    @Value("\${ants.home}") home: Path,
+    @Value("\${ants.home}") private val home: Path,
     @Value("\${server.address:}") private val address: String,
     @Value("\${ants.shell}") private val shell: String,
     private val encoder: PasswordEncoder,
@@ -173,9 +173,11 @@ class Settings(
      */
     fun profile(name: String?): Profile? = profiles().ifEmpty { return Profile(defaultVault(), defaultSourceMap()) }[name ?: defaultProfile()]
 
-    fun instructions(name: String?): Path? = name?.takeIf { it in profiles() }?.let { file.resolveSibling("profiles").resolve(it).resolve("AGENTS.md") }
+    fun instructions(name: String?): Path? = name?.takeIf { it in profiles() }?.let { home.resolve("profiles").resolve(it).resolve("AGENTS.md") }
 
-    fun hasInstructions(name: String?): Boolean = instructions(name)?.takeIf { it.exists() }?.readText()?.isNotBlank() == true
+    fun instructionsText(name: String?): String = instructions(name)?.takeIf { it.exists() }?.readText().orEmpty()
+
+    fun hasInstructions(name: String?): Boolean = instructionsText(name).isNotBlank()
 
     /** The extra Agent folders, read after Ants' own. */
     fun agentFolders(): List<Path> = folders("agent-folders")

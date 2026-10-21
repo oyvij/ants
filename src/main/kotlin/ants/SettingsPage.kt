@@ -86,9 +86,7 @@ class SettingsPage(
         model.addAttribute("form", form)
         // Each saved Source map's path and text, for its editor.
         model.addAttribute("maps", settings.sourceMaps().mapValues { (name, path) -> path to settings.sourceMap(name)?.takeIf { it.exists() }?.readText().orEmpty() })
-        model.addAttribute("instructions", settings.profiles().keys.associateWith { name ->
-            settings.hasInstructions(name) to settings.instructions(name)?.takeIf { it.exists() }?.readText().orEmpty()
-        })
+        model.addAttribute("instructions", settings.profiles().keys.associateWith { settings.hasInstructions(it) to settings.instructionsText(it) })
         // The Profile Set up Vault runs with for each saved Vault: the first that pairs it; with no Profiles, the default Vault's, blank.
         model.addAttribute("setUp", settings.profiles().ifEmpty { null }?.entries?.reversed()?.associate { (name, profile) -> profile.vault to name }
             ?: listOfNotNull(settings.defaultVault()).associateWith { "" })
