@@ -123,10 +123,9 @@ class Schedules(
         UUID.randomUUID().toString().also { id -> update(id) { State(last = clock.instant(), process = processKey, cron = times, values = kept + listOfNotNull(profile?.let { PROFILE to listOf(it) })) } }
     }
 
-    /** Pauses or resumes the Schedule of [key]; times that come while it is paused never run. */
-    fun pause(key: String, paused: Boolean) = update(key) { it.copy(paused = paused, last = clock.instant()) }
+    fun pause(id: String, paused: Boolean) = update(id) { it.copy(paused = paused, last = clock.instant()) }
 
-    fun remove(key: String) = synchronized(this) { write(states() - key) }
+    fun remove(id: String) = synchronized(this) { write(states() - id) }
 
     /** Dismisses the failed start of [key] from the Notification list. */
     fun dismiss(key: String) = update(key) { it.copy(failed = null) }

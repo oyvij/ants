@@ -1568,6 +1568,11 @@ class BrowserTest : AntsTest() {
         page.waitForURL(Pattern.compile("/processes/picker$"))
         assertThat(rows).hasCount(1)
         assertThat(rows.nth(0)).containsText("api")
+        api.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Resume")).click()
+        page.waitForURL(Pattern.compile("/processes/picker$"))
+        assertThat(api).not().containsText("paused")
+        api.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Start now")).click()
+        page.waitForURL(Pattern.compile("/runs/[^/]+$"))
     }
 
     @Test

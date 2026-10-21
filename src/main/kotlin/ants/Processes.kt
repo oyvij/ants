@@ -277,30 +277,33 @@ class Processes(
 
     @PostMapping("/processes/{key}/schedules/{id}/pause")
     fun pause(@PathVariable key: String, @PathVariable id: String): String {
-        schedules.pause(scheduleOf(key, id), true)
+        schedules.pause(scheduleId(key, id), true)
         return "redirect:/processes/$key"
     }
 
     @PostMapping("/processes/{key}/schedules/{id}/resume")
     fun resume(@PathVariable key: String, @PathVariable id: String): String {
-        schedules.pause(scheduleOf(key, id), false)
+        schedules.pause(scheduleId(key, id), false)
         return "redirect:/processes/$key"
     }
 
     @PostMapping("/processes/{key}/schedules/{id}/remove")
     fun remove(@PathVariable key: String, @PathVariable id: String): String {
-        schedules.remove(scheduleOf(key, id))
+        schedules.remove(scheduleId(key, id))
         return "redirect:/processes/$key"
     }
 
     @PostMapping("/processes/{key}/schedules/{id}/start")
-    fun startNow(@PathVariable key: String, @PathVariable id: String): String = try {
-        "redirect:/runs/" + schedules.startNow(scheduleOf(key, id)).id
-    } catch (_: Exception) {
-        "redirect:/processes/$key"
+    fun startNow(@PathVariable key: String, @PathVariable id: String): String {
+        val schedule = scheduleId(key, id)
+        return try {
+            "redirect:/runs/" + schedules.startNow(schedule).id
+        } catch (_: Exception) {
+            "redirect:/processes/$key"
+        }
     }
 
-    private fun scheduleOf(key: String, id: String) = schedules.of(latest(key).key).firstOrNull { it.id == id }?.id
+    private fun scheduleId(key: String, id: String) = schedules.of(latest(key).key).firstOrNull { it.id == id }?.id
         ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No Schedule $id of $key")
 
     /** Removes the Schedule: the next version of the Process starts by hand only, its start event a none start. */

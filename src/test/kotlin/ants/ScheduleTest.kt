@@ -288,7 +288,7 @@ class ScheduleTest : AntsTest() {
         assertContains(browser.get("/runs/${run.id}").body, "<dt>prompt</dt><dd><code>Tidy up</code></dd>")
     }
 
-    private fun scheduleNightly(name: String, prompt: String = name) {
+    private fun scheduleHourly(name: String, prompt: String = name) {
         browser.get("/processes/$key")
         val saved = browser.post("/processes/$key/schedule", listOf(NAME to name, "prompt" to prompt, "cron" to "0 0 * * * *"))
         assertEquals("/processes/$key", saved.path, saved.body)
@@ -307,8 +307,8 @@ class ScheduleTest : AntsTest() {
     fun `Pause stops one Schedule's Runs while the other starts its own, and Resume drops the times passed while paused`() {
         home.resolve("settings.yaml").writeAtomically(vault)
         deploy(bpmn(cron = null))
-        scheduleNightly("Sweep A")
-        scheduleNightly("Sweep B")
+        scheduleHourly("Sweep A")
+        scheduleHourly("Sweep B")
         assertEquals("/processes/$key", act("Sweep A", "pause").path)
         assertContains(row("Sweep A")!!, "<button>Resume</button>")
         assertContains(row("Sweep A")!!, "<span class=\"muted\">paused</span>")
@@ -332,8 +332,8 @@ class ScheduleTest : AntsTest() {
     fun `Remove deletes one Schedule and deploys nothing, and the other keeps starting its Runs`() {
         home.resolve("settings.yaml").writeAtomically(vault)
         deploy(bpmn(cron = null))
-        scheduleNightly("Sweep A")
-        scheduleNightly("Sweep B")
+        scheduleHourly("Sweep A")
+        scheduleHourly("Sweep B")
         assertEquals("/processes/$key", act("Sweep A", "remove").path)
         assertEquals(null, row("Sweep A"))
         assertContains(row("Sweep B")!!, "<button>Pause</button>")
@@ -349,22 +349,23 @@ class ScheduleTest : AntsTest() {
     fun `Start now starts one Schedule's Run with its values and goes to it`() {
         home.resolve("settings.yaml").writeAtomically(vault)
         deploy(bpmn(cron = null))
-        scheduleNightly("Sweep A", "Tidy A")
-        scheduleNightly("Sweep B", "Tidy B")
+        scheduleHourly("Sweep A", "Tidy A")
+        scheduleHourly("Sweep B", "Tidy B")
         val run = act("Sweep B", "start")
         val started = history.createHistoricProcessInstanceQuery().processDefinitionKey(key).singleResult()
         assertEquals("/runs/${started.id}", run.path)
         assertContains(run.body, "<dt>prompt</dt><dd><code>Tidy B</code></dd>")
         assertContains(run.body, Regex("<span id=\"name\">Sweep B, \\d{1,2} [A-Z][a-z]{2} \\d\\d:\\d\\d</span>"))
         assertEquals(0, runsWith("Tidy A"))
+        assertEquals(404, browser.post("/processes/$key/schedules/none/start", mapOf()).status)
     }
 
     @Test
     fun `an overlapping time of one Schedule is skipped and noted on its row, while the other Schedule still starts its Run`() {
         home.resolve("settings.yaml").writeAtomically(vault)
         deploy(bpmn(cron = null, waits = true))
-        scheduleNightly("Sweep A")
-        scheduleNightly("Sweep B")
+        scheduleHourly("Sweep A")
+        scheduleHourly("Sweep B")
         clock.offset = Duration.ofHours(1)
         eventually { assertEquals(1, runsWith("Sweep A")) }
         eventually { assertEquals(1, runsWith("Sweep B")) }
