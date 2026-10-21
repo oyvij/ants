@@ -1629,8 +1629,8 @@ class BrowserTest : AntsTest() {
     private fun assertWithinCard(part: Locator, card: Locator, what: String) {
         assertThat(part).isVisible()
         assertWithinScreen(part, what)
-        val (box, edges) = part.boundingBox() to card.boundingBox()
-        assertTrue(box.x >= edges.x && box.x + box.width <= edges.x + edges.width, "$what spans ${box.x} to ${box.x + box.width} in a card from ${edges.x} to ${edges.x + edges.width}")
+        val (box, cardBox) = part.boundingBox() to card.boundingBox()
+        assertTrue(box.x >= cardBox.x && box.x + box.width <= cardBox.x + cardBox.width, "$what spans ${box.x} to ${box.x + box.width} in a card from ${cardBox.x} to ${cardBox.x + cardBox.width}")
     }
 
     @Test
@@ -1654,21 +1654,19 @@ class BrowserTest : AntsTest() {
         val unprofiled = page.locator("#schedules tr").filter(Locator.FilterOptions().setHasText("Unprofiled sweep"))
         assertThat(profiled.getByRole(AriaRole.ALERT)).containsText("The scheduled Run didn't start: The Profile work isn't in the settings.")
         assertNoSidewaysScroll()
-        val headers = listOf("Schedule", "Profile", "Values", "Runs", "Cron", "Next Run").map { page.getByRole(AriaRole.COLUMNHEADER, Page.GetByRoleOptions().setName(it).setExact(true)) }
+        val labels = listOf("Profile", "Values", "Runs", "Cron", "Next Run")
+        fun button(row: Locator, name: String) = row.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName(name).setExact(true))
+        val headers = (listOf("Schedule") + labels).map { page.getByRole(AriaRole.COLUMNHEADER, Page.GetByRoleOptions().setName(it).setExact(true)) }
         for (header in headers) assertThat(header).isHidden()
 
         for (row in listOf(profiled, unprofiled)) {
             assertWithinCard(row, card, "a Schedule's block")
             for (cell in row.locator("td").all()) assertWithinCard(cell, card, "a line of a Schedule's block")
-            for (label in listOf("Profile", "Values", "Runs", "Cron", "Next Run")) assertWithinCard(row.getByText(label, Locator.GetByTextOptions().setExact(true)), card, "the label $label")
+            for (label in labels) assertWithinCard(row.getByText(label, Locator.GetByTextOptions().setExact(true)), card, "the label $label")
             val lines = row.locator("td").all().map { it.boundingBox() }
             for ((above, below) in lines.zipWithNext()) assertTrue(below.y >= above.y + above.height - 0.5, "a Schedule's lines sit one under another")
             assertThat(row.locator("td").first()).hasText(Pattern.compile("^(Profiled|Unprofiled) sweep\$"))
-            for (name in listOf("Start now", "Pause", "Remove")) {
-                val button = row.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName(name).setExact(true))
-                assertWithinCard(button, card, name)
-                assertTrue(button.boundingBox().height >= 44, "$name is ${button.boundingBox().height}px tall")
-            }
+            for (name in listOf("Start now", "Pause", "Remove")) assertWithinCard(button(row, name), card, name)
         }
         assertThat(profiled).containsText("work")
         assertThat(unprofiled).containsText("—")
@@ -1677,9 +1675,7 @@ class BrowserTest : AntsTest() {
         assertWithinCard(profiled.getByText("Every hour"), card, "the Runs line")
         assertWithinCard(profiled.locator("code"), card, "the Cron line")
         assertWithinCard(profiled.getByRole(AriaRole.ALERT), card, "the failed note")
-        val dismiss = profiled.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Dismiss"))
-        assertWithinCard(dismiss, card, "Dismiss")
-        assertTrue(dismiss.boundingBox().height >= 44, "Dismiss is ${dismiss.boundingBox().height}px tall")
+        assertWithinCard(button(profiled, "Dismiss"), card, "Dismiss")
         val (first, second) = page.locator("#schedules tr[id]").all().map { it.boundingBox() }
         assertTrue(second.y >= first.y + first.height, "the second Schedule's block sits under the first")
         assertTapSized()
@@ -1688,9 +1684,9 @@ class BrowserTest : AntsTest() {
         page.setViewportSize(1280, 900)
         page.reload()
         for (header in headers) assertThat(header).isVisible()
-        for (label in listOf("Profile", "Values", "Runs", "Cron", "Next Run")) assertThat(profiled.getByText(label, Locator.GetByTextOptions().setExact(true))).isHidden()
+        for (label in labels) assertThat(profiled.getByText(label, Locator.GetByTextOptions().setExact(true))).isHidden()
         assertThat(profiled.getByRole(AriaRole.CELL).nth(1)).hasAccessibleName("work")
-        val buttons = listOf("Start now", "Pause", "Remove").map { profiled.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName(it).setExact(true)).boundingBox() }
+        val buttons = listOf("Start now", "Pause", "Remove").map { button(profiled, it).boundingBox() }
         for ((left, right) in buttons.zipWithNext()) assertEquals(left.y, right.y, 0.5, "on desktop a Schedule's buttons sit in one row")
     }
 
