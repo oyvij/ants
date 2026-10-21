@@ -185,6 +185,7 @@ data class SettingsForm(
     val skillFolders: String,
     val theme: String,
     val soFar: Boolean,
+    val hideShipped: Boolean,
 ) {
     fun error() = when {
         agentTasks.isNotEmpty() && (agentTasks.toIntOrNull() ?: 0) < 1 -> "Agent Tasks at once must be a whole number, 1 or more."
@@ -270,6 +271,7 @@ data class SettingsForm(
         values.keep("theme", theme.takeIf { it in listOf("light", "dark") })
         // Ticked keeps a hand-set time; unticked is `false`.
         values.keep("so-far", if (soFar) values["so-far"].takeIf { it != false && it != true } else false)
+        values.keep("hide-shipped", hideShipped.takeIf { it })
         if (password.isNotEmpty()) values["password"] = encoder.encode(password)
     }
 
@@ -299,6 +301,7 @@ data class SettingsForm(
                 skillFolders = lines(values["skill-folders"]),
                 theme = values["theme"]?.toString() ?: "system",
                 soFar = values["so-far"] != false,
+                hideShipped = values["hide-shipped"] == true,
             )
         }
 
@@ -339,6 +342,7 @@ data class SettingsForm(
                 skillFolders = param("skill-folders"),
                 theme = param("theme").ifEmpty { "system" },
                 soFar = "so-far" in params,
+                hideShipped = "hide-shipped" in params,
             )
         }
 

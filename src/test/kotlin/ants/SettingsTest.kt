@@ -362,6 +362,18 @@ class SettingsTest : AntsTest() {
         assertContains(browser.get("/").body, """<meta name="color-scheme" content="dark">""")
         assertContains(browser.get("/settings").body, """name="theme" value="dark" checked""")
     }
+
+    @Test
+    fun `ticking Hide shipped writes hide-shipped, unticking removes it, and a hand-written one shows ticked`() {
+        press("save", mapOf("hide-shipped" to "on"))
+        assertEquals(true, yaml()["hide-shipped"])
+        press("save", emptyMap())
+        assertFalse("hide-shipped" in yaml())
+        assertContains(browser.get("/settings").body, """<input type="checkbox" name="hide-shipped"> Hide""")
+
+        file.writeText("hide-shipped: true\n")
+        assertContains(browser.get("/settings").body, """<input type="checkbox" name="hide-shipped" checked> Hide""")
+    }
 }
 
 fun toastMarkup(kind: Toast.Kind, title: String, text: String, numbered: Boolean = false) = Regex(
