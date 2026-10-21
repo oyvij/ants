@@ -287,4 +287,100 @@ class ScheduleTest : AntsTest() {
         assertEquals(2, repository.getProcessDefinition(run.processDefinitionId).version)
         assertContains(browser.get("/runs/${run.id}").body, "<dt>prompt</dt><dd><code>Tidy up</code></dd>")
     }
+
+    private fun scheduleNightly(name: String, prompt: String = name) {
+        browser.get("/processes/$key")
+        val saved = browser.post("/processes/$key/schedule", listOf(NAME to name, "prompt" to prompt, "cron" to "0 0 * * * *"))
+        assertEquals("/processes/$key", saved.path, saved.body)
+    }
+
+    private fun row(name: String) = Regex("<tr id=\"schedule-[^\"]+\"><td><b>$name</b>.*?</tr>", RegexOption.DOT_MATCHES_ALL)
+        .find(browser.get("/processes/$key").body)?.value
+
+    private fun idOf(name: String) = Regex("<tr id=\"schedule-([^\"]+)\">").find(row(name)!!)!!.groupValues[1]
+
+    private fun act(name: String, action: String) = browser.post("/processes/$key/schedules/${idOf(name)}/$action", mapOf())
+
+    private fun runsWith(prompt: String) = history.createHistoricProcessInstanceQuery().processDefinitionKey(key).variableValueEquals("prompt", prompt).count()
+
+    @Test
+    fun `Pause stops one Schedule's Runs while the other starts its own, and Resume drops the times passed while paused`() {
+        home.resolve("settings.yaml").writeAtomically(vault)
+        deploy(bpmn(cron = null))
+        scheduleNightly("Sweep A")
+        scheduleNightly("Sweep B")
+        assertEquals("/processes/$key", act("Sweep A", "pause").path)
+        assertContains(row("Sweep A")!!, "<button>Resume</button>")
+        assertContains(row("Sweep A")!!, "<span class=\"muted\">paused</span>")
+        assertContains(row("Sweep B")!!, "<button>Pause</button>")
+
+        clock.offset = Duration.ofHours(3)
+        eventually { assertEquals(1, runsWith("Sweep B")) }
+        settle()
+        assertEquals(0, runsWith("Sweep A"))
+
+        act("Sweep A", "resume")
+        assertContains(row("Sweep A")!!, "<button>Pause</button>")
+        settle()
+        assertEquals(0, runsWith("Sweep A"), "the times passed while paused don't run")
+        clock.offset = Duration.ofHours(4)
+        eventually { assertEquals(1, runsWith("Sweep A")) }
+        eventually { assertEquals(2, runsWith("Sweep B")) }
+    }
+
+    @Test
+    fun `Remove deletes one Schedule and deploys nothing, and the other keeps starting its Runs`() {
+        home.resolve("settings.yaml").writeAtomically(vault)
+        deploy(bpmn(cron = null))
+        scheduleNightly("Sweep A")
+        scheduleNightly("Sweep B")
+        assertEquals("/processes/$key", act("Sweep A", "remove").path)
+        assertEquals(null, row("Sweep A"))
+        assertContains(row("Sweep B")!!, "<button>Pause</button>")
+        assertEquals(1, repository.createProcessDefinitionQuery().processDefinitionKey(key).count(), "Remove makes no new version")
+
+        clock.offset = Duration.ofHours(2)
+        eventually { assertEquals(1, runsWith("Sweep B")) }
+        settle()
+        assertEquals(0, runsWith("Sweep A"))
+    }
+
+    @Test
+    fun `Start now starts one Schedule's Run with its values and goes to it`() {
+        home.resolve("settings.yaml").writeAtomically(vault)
+        deploy(bpmn(cron = null))
+        scheduleNightly("Sweep A", "Tidy A")
+        scheduleNightly("Sweep B", "Tidy B")
+        val run = act("Sweep B", "start")
+        val started = history.createHistoricProcessInstanceQuery().processDefinitionKey(key).singleResult()
+        assertEquals("/runs/${started.id}", run.path)
+        assertContains(run.body, "<dt>prompt</dt><dd><code>Tidy B</code></dd>")
+        assertContains(run.body, Regex("<span id=\"name\">Sweep B, \\d{1,2} [A-Z][a-z]{2} \\d\\d:\\d\\d</span>"))
+        assertEquals(0, runsWith("Tidy A"))
+    }
+
+    @Test
+    fun `an overlapping time of one Schedule is skipped and noted on its row, while the other Schedule still starts its Run`() {
+        home.resolve("settings.yaml").writeAtomically(vault)
+        deploy(bpmn(cron = null, waits = true))
+        scheduleNightly("Sweep A")
+        scheduleNightly("Sweep B")
+        clock.offset = Duration.ofHours(1)
+        eventually { assertEquals(1, runsWith("Sweep A")) }
+        eventually { assertEquals(1, runsWith("Sweep B")) }
+        tasks.complete(tasks.createTaskQuery().processDefinitionKey(key).processVariableValueEquals("prompt", "Sweep B").singleResult().id)
+
+        clock.offset = Duration.ofHours(3)
+        eventually { assertContains(row("Sweep A")!!, "the last Run from this Schedule was still going") }
+        val latest = clock.local(clock.instant().atZone(clock.zone).truncatedTo(ChronoUnit.HOURS).toInstant())
+        assertContains(row("Sweep A")!!, "Skipped $latest:")
+        eventually { assertEquals(2, runsWith("Sweep B")) }
+        assertFalse("Skipped" in row("Sweep B")!!)
+        assertEquals(1, runsWith("Sweep A"))
+
+        tasks.complete(tasks.createTaskQuery().processDefinitionKey(key).processVariableValueEquals("prompt", "Sweep A").singleResult().id)
+        clock.offset = Duration.ofHours(4)
+        eventually { assertEquals(2, runsWith("Sweep A")) }
+        eventually { assertFalse("Skipped" in row("Sweep A")!!) }
+    }
 }

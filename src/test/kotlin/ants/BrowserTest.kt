@@ -1552,6 +1552,25 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `Pause and Remove on a Schedule's row act on that Schedule alone`() = browse {
+        picker()
+        schedulePicked("api")
+        schedulePicked("web")
+        val rows = page.locator("#schedules tr").filter(Locator.FilterOptions().setHasText("Every hour"))
+        val api = rows.filter(Locator.FilterOptions().setHasText("api"))
+        val web = rows.filter(Locator.FilterOptions().setHasText("web"))
+        api.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Pause")).click()
+        page.waitForURL(Pattern.compile("/processes/picker$"))
+        assertThat(api).containsText("paused")
+        assertThat(api.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Resume"))).isVisible()
+        assertThat(web).not().containsText("paused")
+        web.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Remove")).click()
+        page.waitForURL(Pattern.compile("/processes/picker$"))
+        assertThat(rows).hasCount(1)
+        assertThat(rows.nth(0)).containsText("api")
+    }
+
+    @Test
     fun `with JavaScript off the start form's Repos field is the Source map's checkboxes and a text input, which still start the Run`() = browse {
         val elsewhere = repo("elsewhere").remote
         picker()

@@ -275,6 +275,34 @@ class Processes(
         return "redirect:/processes/$key"
     }
 
+    @PostMapping("/processes/{key}/schedules/{id}/pause")
+    fun pause(@PathVariable key: String, @PathVariable id: String): String {
+        schedules.pause(scheduleOf(key, id), true)
+        return "redirect:/processes/$key"
+    }
+
+    @PostMapping("/processes/{key}/schedules/{id}/resume")
+    fun resume(@PathVariable key: String, @PathVariable id: String): String {
+        schedules.pause(scheduleOf(key, id), false)
+        return "redirect:/processes/$key"
+    }
+
+    @PostMapping("/processes/{key}/schedules/{id}/remove")
+    fun remove(@PathVariable key: String, @PathVariable id: String): String {
+        schedules.remove(scheduleOf(key, id))
+        return "redirect:/processes/$key"
+    }
+
+    @PostMapping("/processes/{key}/schedules/{id}/start")
+    fun startNow(@PathVariable key: String, @PathVariable id: String): String = try {
+        "redirect:/runs/" + schedules.startNow(scheduleOf(key, id)).id
+    } catch (_: Exception) {
+        "redirect:/processes/$key"
+    }
+
+    private fun scheduleOf(key: String, id: String) = schedules.of(latest(key).key).firstOrNull { it.id == id }?.id
+        ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No Schedule $id of $key")
+
     /** Removes the Schedule: the next version of the Process starts by hand only, its start event a none start. */
     @PostMapping("/processes/{key}/schedule/remove")
     fun remove(@PathVariable key: String, model: Model, response: HttpServletResponse): String {
@@ -290,7 +318,7 @@ class Processes(
             model.addAttribute("error", e.message)
             return process(key, null, model)
         }
-        schedules.forget(key)
+        schedules.remove(key)
         return "redirect:/processes/$key"
     }
 

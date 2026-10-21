@@ -126,8 +126,7 @@ class Schedules(
     /** Pauses or resumes the Schedule of [key]; times that come while it is paused never run. */
     fun pause(key: String, paused: Boolean) = update(key) { it.copy(paused = paused, last = clock.instant()) }
 
-    /** Forgets what Ants kept of [key]'s Schedule, once the Process has none. */
-    fun forget(key: String) = synchronized(this) { write(states() - key) }
+    fun remove(key: String) = synchronized(this) { write(states() - key) }
 
     /** Dismisses the failed start of [key] from the Notification list. */
     fun dismiss(key: String) = update(key) { it.copy(failed = null) }
@@ -144,7 +143,8 @@ class Schedules(
         }
     }
 
-    private fun startPageSchedule(id: String, state: State) = started(id) {
+    fun startNow(id: String): ProcessInstance = started(id) {
+        val state = states().getValue(id)
         val definition = latest(state.process.orEmpty()) ?: throw Unfilled("There is no Process ${state.process} any more.")
         val name = runName(state.values[NAME]?.firstOrNull())?.let { clock.defaultName(it) }
         startForm.start(definition, state.values + (NAME to listOfNotNull(name)))
@@ -172,7 +172,7 @@ class Schedules(
 
     private fun due(id: String): Unit = synchronized(this) {
         val state = states()[id]?.takeIf { it.process != null } ?: return
-        due(id, state, CronExpression.parse(state.cron.orEmpty()), clock.instant()) { startPageSchedule(id, state) }
+        due(id, state, CronExpression.parse(state.cron.orEmpty()), clock.instant()) { startNow(id) }
     }
 
     private fun due(id: String, state: State, cron: CronExpression, since: Instant, start: () -> ProcessInstance) {
