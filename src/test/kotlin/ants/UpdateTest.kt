@@ -101,8 +101,23 @@ class UpdateTest : AntsTest() {
         assertContains(browser.get("/settings").body, "Running v$running. Up to date.")
         release("99.0.0")
         val page = browser.post("/settings", mapOf("action" to "updates")).body
-        assertContains(page, toastMarkup(Toast.Kind.INFO, "Checked", "Ants 99.0.0 is available."))
+        assertContains(page, toastMarkup(Toast.Kind.INFO, "Update available", "Ants 99.0.0 is out."))
         assertContains(page, """Running v$running. Ants 99.0.0 is available. <button formaction="/updates/99.0.0">Update</button>""")
+    }
+
+    @Test
+    fun `Check now with nothing newer says this Ants is the newest version`() {
+        release("0.0.1")
+        val page = browser.post("/settings", mapOf("action" to "updates")).body
+        assertContains(page, toastMarkup(Toast.Kind.SUCCESS, "Up to date", "Ants $running is the newest version."))
+    }
+
+    @Test
+    fun `Check now that can't reach the release list says why`() {
+        val sums = releases.resolve("SHA256SUMS")
+        sums.deleteIfExists()
+        val page = browser.post("/settings", mapOf("action" to "updates")).body
+        assertContains(page, toastMarkup(Toast.Kind.ERROR, "Couldn't check for updates", "The release list didn't answer: java.io.FileNotFoundException: $sums (No such file or directory)."))
     }
 
     @Test

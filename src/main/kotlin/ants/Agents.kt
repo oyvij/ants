@@ -108,9 +108,9 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
     fun checkModels(request: HttpServletRequest, @RequestHeader("Referer", required = false) from: String?): String {
         val toast = try {
             val new = models.check()
-            if (new.isEmpty()) Toast("Checked", "No new models.", Toast.Kind.SUCCESS) else Toast("Checked", "New: ${new.joinToString(", ")}.", Toast.Kind.INFO)
+            if (new.isEmpty()) Toast("Models up to date", "No new models.", Toast.Kind.SUCCESS) else Toast("New models", "${new.joinToString(", ")}.", Toast.Kind.INFO)
         } catch (e: Exception) {
-            Toast("Not checked", "Anthropic's model list couldn't be read: ${e.message}", Toast.Kind.ERROR)
+            Toast("Couldn't check models", "Anthropic's model list couldn't be read: ${e.message}", Toast.Kind.ERROR)
         }
         Shell.toast(request, toast)
         return back(from ?: "/agents")

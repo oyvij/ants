@@ -1195,7 +1195,7 @@ class BrowserTest : AntsTest() {
         page.navigate(url("/settings"))
         page.locator("button[name=action][value=updates]").tap()
         val toast = page.locator(".toast")
-        assertThat(toast).containsText("Checked")
+        assertThat(toast).containsText("Up to date")
         settled(toast)
         val spot = toast.boundingBox()
         assertEquals(0.0, spot.x, 0.5)
