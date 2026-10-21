@@ -488,7 +488,7 @@ class AgentLauncher(
             .plus(answerHistory(task, skill)?.let { listOf("--add-dir", "${it.createDirectories()}") }.orEmpty()) // so a Read reaches it (ADR 0010)
         val (token, mcp) = protectedCommands.open(workspace) // its Protected Commands run in the Run workspace
         val process = runCatching {
-            cli(agent.cli, cwd, flags(agent, schema, listOf(skill) + used, session!!, resume, mcp, gated?.let { listOf("Write(/$it/**)", "Edit(/$it/**)") }.orEmpty()) + shared + places).start()
+            cli(agent.cli, cwd, flags(agent, cwd, schema, listOf(skill) + used, session!!, resume, mcp, gated?.let { listOf("Write(/$it/**)", "Edit(/$it/**)") }.orEmpty()) + shared + places).start()
         }.onFailure { protectedCommands.close(token) }.getOrThrow()
         val stdin = Stdin(process.outputWriter(), name(task), home)
         clis[process] = run
@@ -726,8 +726,8 @@ class AgentLauncher(
      * claude's flags, with Ants' MCP server [mcp] and its tool `run`, and the permission rules [denied] besides the
      * Subagent types a Limit leaves out and Ants' own files that hold a Secret or the password (ADR 0015).
      */
-    private fun flags(agent: Agent, schema: Map<*, *>, skills: List<Skill>, session: String, resume: Boolean, mcp: String, denied: List<String>): List<String> {
-        val tools = (agent.tools ?: DEFAULT_TOOLS).filter { it.substringBefore('(') != "Skill" }
+    private fun flags(agent: Agent, cwd: Path, schema: Map<*, *>, skills: List<Skill>, session: String, resume: Boolean, mcp: String, denied: List<String>): List<String> {
+        val tools = (agent.tools ?: DEFAULT_TOOLS).filter { it.substringBefore('(') != "Skill" }.map { anchored(it, cwd) }
         val (subagents, types) = subagents(tools)
         // Probed on claude 2.1.299: a rule such as `Bash(git diff *)` lets `git diff --output=<any path>` write a file, and
         // the deny rule `Bash(git *--output*)` refuses it (git takes no abbreviation of `--output`)
@@ -748,6 +748,13 @@ class AgentLauncher(
             "--allowedTools", (tools + tools.filter { it.startsWith("Write(") }.map { "Edit(" + it.removePrefix("Write(") } + RUN_TOOL).distinct().joinToString(","),
         ) + subagents + (if (disallowed.isEmpty()) emptyList() else listOf("--disallowedTools", disallowed.joinToString(","))) + skills.flatMap { listOf("--add-dir", it.folder.toString()) } + (if (agent.model != null) listOf("--model", agent.model) else emptyList()) +
             (if (agent.instructions.isNotEmpty()) listOf("--append-system-prompt", agent.instructions) else emptyList())
+    }
+
+    private fun anchored(rule: String, cwd: Path): String {
+        val tool = rule.substringBefore('(')
+        val path = rule.substringAfter('(', "").removeSuffix(")").removePrefix("./")
+        if (tool !in setOf("Write", "Edit") || path.isEmpty() || path.startsWith("/") || path.startsWith("~")) return rule
+        return "$tool(/${cwd.toAbsolutePath()}/$path)"
     }
 
     /**

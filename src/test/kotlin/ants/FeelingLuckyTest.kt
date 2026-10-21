@@ -76,16 +76,16 @@ class FeelingLuckyTest : AntsTest() {
 
     @Test
     fun `the shipped Agents get the tool allow-lists the spec gives them`() {
-        feelingLucky()
+        val ws = workspace(feelingLucky())
         fun tools(skill: String) = claude.launches(skill).first().let { it.flag("--tools") to it.flag("--allowedTools")?.removeSuffix(",mcp__ants__run") } // every claude Task has the run tool
 
         // claude checks a Write against Edit rules and ignores a Write(path) rule, so the scout's limit goes out as both
-        assertEquals("Read,Grep,Glob,Write,Agent" to "Read,Grep,Glob,Write(scout/**),Agent(knowledge-searcher),Edit(scout/**)", tools("scout"))
-        assertEquals("Read,Grep,Glob,Write,Edit" to "Read,Grep,Glob,Write(proposal/**),Edit(proposal/**)", tools("propose-solution"))
+        assertEquals("Read,Grep,Glob,Write,Agent" to "Read,Grep,Glob,Write(/$ws/scout/**),Agent(knowledge-searcher),Edit(/$ws/scout/**)", tools("scout"))
+        assertEquals("Read,Grep,Glob,Write,Edit" to "Read,Grep,Glob,Write(/$ws/proposal/**),Edit(/$ws/proposal/**)", tools("propose-solution"))
         assertContains(tools("implement").first!!.split(","), "Agent")
         assertFalse("Bash(" in tools("implement").second!!) // Bash unlimited
         // claude refuses `gh pr create --body "…"` with a backtick in the body, so the body goes in a file under pr/
-        assertEquals("Read,Write,Edit,Bash" to "Read,Write(pr/**),Edit(pr/**),Bash(gh pr create *),Bash(gh pr view *),Bash(gh repo view *),Bash(git log *),Bash(git diff *)", tools("pr"))
+        assertEquals("Read,Write,Edit,Bash" to "Read,Write(/$ws/pr/**),Edit(/$ws/pr/**),Bash(gh pr create *),Bash(gh pr view *),Bash(git log *),Bash(git diff *)", tools("pr"))
         assertContains(home.resolve("shipped/skills/pr/SKILL.md").toFile().readText(), "--body-file pr/<repo>.md")
         // and the title, which stays on the command line, so it is written without backticks
         assertContains(home.resolve("shipped/skills/pr/SKILL.md").toFile().readText(), "in plain words with no backticks")

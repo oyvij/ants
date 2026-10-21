@@ -264,6 +264,21 @@ class AgentTaskTest : AntsTest() {
     }
 
     @Test
+    fun `a relative Write or Edit rule goes out anchored at the folder the Agent starts in, so a cd doesn't move it`() {
+        agentTask(agent = "name: writer\ndescription: Writes.\ntools: Read, Write(out/**), Edit(./notes/**), Write(//tmp/x/**), Write, Bash(git log *)\n")
+        claude.session("draft", done)
+        val run = start()
+        eventually { assertContains(page(run), """id="state">Completed<""") }
+        val argv = claude.launches("draft").single().argv
+        val ws = workspace(run)
+        assertEquals(
+            "Read,Write(/$ws/out/**),Edit(/$ws/notes/**),Write(//tmp/x/**),Write,Bash(git log *),Edit(/$ws/out/**),Edit(//tmp/x/**),mcp__ants__run",
+            argv[argv.indexOf("--allowedTools") + 1],
+        )
+        assertEquals("Read,Write,Edit,Bash", argv[argv.indexOf("--tools") + 1])
+    }
+
+    @Test
     fun `a two-level ants-uses chain puts every used Skill in the hand-off line and in --add-dir`() {
         agentTask(metadata = uses("implement-tdd"))
         val tdd = usedSkill("implement-tdd", uses("seams review"))
