@@ -564,7 +564,7 @@ class BrowserTest : AntsTest() {
 
         assertThat(page.locator("dialog")).hasCount(0)
         assertEquals(modeler, page.url())
-        assertThat(shape(task)).hasClass(selected) // the Task drawn, never saved, is still there
+        assertThat(shape(task)).hasClass(selected)
         assertThat(label("Agent").locator("option:checked")).hasText("writer · Writes warmly.")
         assertContains(home.resolve("agents/writer.md").readText(), "Writes warmly.")
     }

@@ -366,8 +366,8 @@ class ChecksTest : AntsTest() {
         assertEquals(setOf("text", "meta"), ((draft["output"] as Map<*, *>)["properties"] as Map<*, *>).keys)
         val other = skills["other"] as Map<*, *>
         assertEquals(listOf(emptyList<String>(), true, true, null), listOf(other["inputs"], other["vault"], other["answerHistory"], other["output"]))
-        assertEquals(listOf(true, false), listOf(draft["own"], (skills["tdd"] as Map<*, *>)["own"])) // so Edit is offered only on the user's own
-        assertEquals(home.resolve("skills").toString(), draft["folder"]) // so a read-only one's Edit can say where it is
+        assertEquals(listOf(true, false), listOf(draft["own"], (skills["tdd"] as Map<*, *>)["own"]))
+        assertEquals(home.resolve("skills").toString(), draft["folder"])
     }
 
     /** Review in a multi-instance over `${prompt}`, its element variable [element] (or the default), reading [reads]. */

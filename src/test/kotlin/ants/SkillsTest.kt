@@ -229,11 +229,11 @@ class SkillsTest : AntsTest() {
         val form = browser.get("/skills/tidy?use=").body
         assertContains(form, """<button class="primary" form="skill">Save</button>""")
         assertContains(form, """<input type="hidden" name="use" value="">""")
-        assertFalse("""<nav class="side">""" in form) // the modeler's own page is behind the modal
+        assertFalse("""<nav class="side">""" in form)
 
         val refused = browser.post("/skills/tidy", mapOf("skill" to "no frontmatter", "schema" to "", "use" to ""))
         assertContains(refused.body, """<button class="primary" form="skill">Save</button>""")
-        assertFalse("""<nav class="side">""" in refused.body) // a refusal stays in the modal
+        assertFalse("""<nav class="side">""" in refused.body)
 
         val saved = browser.post("/skills/tidy", mapOf("skill" to skillMd("tidy", "Tidy up."), "schema" to "", "use" to ""))
         assertEquals("/skills/tidy" to "saved", saved.path to saved.query)

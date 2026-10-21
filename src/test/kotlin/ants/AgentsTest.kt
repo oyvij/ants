@@ -343,11 +343,11 @@ class AgentsTest : AntsTest() {
         val form = browser.get("/agents/editor?use").body
         assertContains(form, """<button class="primary" form="agent">Save</button>""")
         assertContains(form, """<input type="hidden" name="use">""")
-        assertFalse("""<nav class="side">""" in form) // the modeler's own page is behind the modal
+        assertFalse("""<nav class="side">""" in form)
 
         val refused = browser.post("/agents/editor", mapOf("name" to "Editor!", "cli" to "claude", "use" to ""))
         assertContains(refused.body, """<button class="primary" form="agent">Save</button>""")
-        assertFalse("""<nav class="side">""" in refused.body) // a refusal stays in the modal
+        assertFalse("""<nav class="side">""" in refused.body)
 
         val saved = browser.post("/agents/editor", mapOf("name" to "editor", "cli" to "claude", "description" to "Edits warmly.", "use" to ""))
         assertEquals("/agents/editor" to "saved", saved.path to saved.query)
