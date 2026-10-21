@@ -1720,7 +1720,7 @@ class BrowserTest : AntsTest() {
         openSchedule()
         every.selectOption("week")
         val parts = listOf("every", "at", "on").map { line(part(it)).boundingBox() }
-        for ((left, right) in parts.zipWithNext()) assertEquals(left.y, right.y, 0.5, "on desktop the When parts sit in one row")
+        for ((left, right) in parts.zipWithNext()) assertEquals(left.y + left.height / 2, right.y + right.height / 2, 0.5, "on desktop the When parts sit in one row")
     }
 
     @Test
