@@ -169,7 +169,7 @@ class LandingTest : AntsTest() {
     }
 
     @Test
-    fun `each instance launches with its Run's AGENTS md and CLAUDE md in its folder`() {
+    fun `each instance launches with its Run's AGENTS md and CLAUDE md in its folder, and the CLAUDE md files above the Run workspace excluded`() {
         val api = repo("api")
         setUp(api, profiles = "profiles:\n  work:\n    source-map: work\n")
         instruct("work", "Keep it short.\n")
@@ -184,6 +184,7 @@ class LandingTest : AntsTest() {
         for (launch in claude.launches("build")) {
             assertEquals("Keep it short.\n", launch.file("AGENTS.md"))
             assertContains(launch.file("CLAUDE.md"), "those win.\n\nKeep it short.\n")
+            assertEquals(excludingAbove(real(run)), launch.flag("--settings"))
         }
     }
 

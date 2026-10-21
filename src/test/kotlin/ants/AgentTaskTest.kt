@@ -136,6 +136,35 @@ class AgentTaskTest : AntsTest() {
         assertNotEquals(first.flag("--session-id"), polish.flag("--session-id"))
     }
 
+    @Test
+    fun `with a Profile that has instructions, every launch excludes the CLAUDE md files above the Run workspace, the flow coming back too`() {
+        agentTask(extra = "profiles:\n  work:\n    vault: notes\n")
+        instruct("work", "Keep it short.\n")
+        claude.session("draft", done)
+        val run = startWith("instructed", property("ants.resume", "true"), file = "agent-loop")
+        eventually { assertContains(page(run), """id="state">Completed<""") }
+        val launches = claude.launches("draft")
+        assertEquals(3, launches.size)
+        for (launch in launches) {
+            assertEquals("user,project", launch.flag("--setting-sources"))
+            assertEquals(excludingAbove(Path.of(launch.cwd)), launch.flag("--settings"))
+        }
+        assertContains(launches.first().flag("--settings")!!, """"/CLAUDE.md"""")
+        assertFalse("\"${launches.first().cwd}/CLAUDE.md\"" in launches.first().flag("--settings")!!)
+    }
+
+    @Test
+    fun `with a Profile that has no instructions, or blank ones, --settings only disables hooks`() {
+        agentTask(extra = "profiles:\n  work:\n    vault: notes\n")
+        claude.session("draft", done)
+        val none = start()
+        eventually { assertContains(page(none), """id="state">Completed<""") }
+        instruct("work", " \n")
+        val blank = start()
+        eventually { assertContains(page(blank), """id="state">Completed<""") }
+        assertEquals(listOf("""{"disableAllHooks":true}""", """{"disableAllHooks":true}"""), claude.launches("draft").map { it.flag("--settings") })
+    }
+
     private fun page(run: String) = browser.get("/runs/$run").body.replace("&#34;", "\"")
 
     @Test
