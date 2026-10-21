@@ -26,7 +26,7 @@ inputs; paths are relative to the Run workspace:
 
 You run `gh` on the user's own login, and `git log` and `git diff` in the clones. You change
 nothing in the repos and push nothing. Each command is its own Bash call. Run `gh` from wherever
-you are, always with `--repo`. Run git from inside a clone: first `cd repos/<repo>`,
+you are, `gh pr` always with `--repo`. Run git from inside a clone: first `cd repos/<repo>`,
 then a plain `git log …` (the shell stays in the clone); `cd ../..` takes you back to the
 workspace root. Anything else is refused: `git -C …`, `git --git-dir=…`, `git -c …`, `--output`,
 and `cd … && git …` or any other chained command.
@@ -35,7 +35,7 @@ and `cd … && git …` or any other chained command.
    `github.com` gets no pull request from you: open the others first, then answer `stuck`, naming
    each such repo with its `compareUrl` (or its remote and branches when there is none), so the
    user can open it by hand and Continue. When Continued, answer `done` with the pull requests you
-   opened. For each of the others, read `<owner>/<name>` from the remote and run
+   opened. For each github.com repo, read `<owner>/<name>` from the remote and run
    `gh repo view <owner>/<name> --json parent`. If `parent` is null, the pull request goes to
    `<owner>/<name>` from `<branch>` into `<base>`: `<target>` is `<owner>/<name>`, `<head>` is
    `<branch>` and `<target base>` is `<base>`. If it names a parent, the remote is a fork, and the
@@ -51,9 +51,9 @@ and `cd … && git …` or any other chained command.
    claude refuses a command with a backtick in it, and the title goes on the command line.
 3. **Open it:** write the body to `pr/<repo>.md` in the Run workspace, then, from the workspace
    root, run `gh pr create --repo <target> --head <head> --base <target base> --title "…"
-   --body-file pr/<repo>.md`. Never pass the body inline
-   with `--body`: claude refuses a command with a backtick in it, and a body usually has one. If
-   `gh` isn't logged in or is refused, answer `stuck` with its message.
+   --body-file pr/<repo>.md`. Never pass the body inline with `--body`: claude refuses a command
+   with a backtick in it, and a body usually has one. If `gh` isn't logged in or is refused, answer
+   `stuck` with its message.
 
 Answer `done` with `pullRequests: [{repo, url}]`.
 
