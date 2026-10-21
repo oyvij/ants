@@ -61,6 +61,8 @@ class SettingsPage(
             }
             "varde" -> runCatching { form.fromVarde() }.fold({ show(model, it) }, { show(model, form, it.message) })
             else -> form.error()?.let { show(model, form, it) } ?: run {
+                val asked = form.removedProfiles(settings).filter(settings::hasInstructions)
+                if (asked.isNotEmpty() && "confirm" !in params) return confirm(model, removalQuestion(asked), Dependents(emptyList()), "/settings", params, "/settings")
                 form.save(settings, params["password"].orEmpty().takeUnless { settings.passwordFromEnv }.orEmpty(), encoder)
                 "redirect:/settings"
             }
@@ -81,6 +83,9 @@ class SettingsPage(
         file.writeAtomically(text.replace("\r\n", "\n"))
         return "redirect:/settings"
     }
+
+    private fun removalQuestion(names: List<String>) =
+        if (names.size == 1) "Remove the Profile ${names.single()} and delete its instructions?" else "Remove the Profiles ${names.joinToString(", ")} and delete their instructions?"
 
     private fun show(model: Model, form: SettingsForm, message: String? = null): String {
         model.addAttribute("form", form)
@@ -162,8 +167,8 @@ data class Named(val rows: List<Pair<String, String>>, val default: Int) {
     }
 }
 
-/** One Profile on the settings page: its name and the names of its Vault and Source map. */
-data class ProfileRow(val name: String, val vault: String, val sourceMap: String)
+/** One Profile on the settings page: its name, the names of its Vault and Source map, and the name it was saved under. */
+data class ProfileRow(val name: String, val vault: String, val sourceMap: String, val was: String = "")
 
 /**
  * One Secret on the settings page: its label, its variable names, the value typed in, which the page never shows, the
@@ -209,6 +214,8 @@ data class SettingsForm(
     /** The Protected Command rows plus an empty one, which adds the next. */
     val shownProtectedCommands get() = protectedCommands + ProtectedCommandRow("", emptyList())
 
+    fun removedProfiles(settings: Settings) = settings.profiles().keys - profiles.flatMap { listOf(it.name, it.was) }.toSet()
+
     private fun secretError() = when {
         secrets.any { it.label.isEmpty() || words(it.names).isEmpty() || (it.value.isEmpty() && it.was.isEmpty()) } -> "Every Secret needs a label, a value and a variable name."
         secrets.flatMap { words(it.names) }.any { !Regex("[A-Z_][A-Z0-9_]*").matches(it) } ->
@@ -249,8 +256,10 @@ data class SettingsForm(
      */
     fun save(settings: Settings, password: String, encoder: PasswordEncoder) {
         val saved = settings.secretValues()
+        val removed = removedProfiles(settings)
         settings.saveSecretValues(secrets.mapNotNull { row -> row.value.ifEmpty { saved[row.was] }?.let { row.label to it } }.toMap())
         settings.save { values -> write(values, password, encoder) }
+        settings.moveInstructions(profiles.filter { it.was.isNotEmpty() && it.was != it.name }.associate { it.was to it.name }, removed)
     }
 
     private fun write(values: MutableMap<String, Any?>, password: String, encoder: PasswordEncoder) {
@@ -298,7 +307,7 @@ data class SettingsForm(
                 subagentDepth = values["subagent-depth"]?.toString().orEmpty(),
                 vaults = named(settings.vaults(), settings.defaultVault()),
                 sourceMaps = named(settings.sourceMaps(), settings.defaultSourceMap()),
-                profiles = settings.profiles().map { (name, profile) -> ProfileRow(name, profile.vault.orEmpty(), profile.sourceMap.orEmpty()) },
+                profiles = settings.profiles().map { (name, profile) -> ProfileRow(name, profile.vault.orEmpty(), profile.sourceMap.orEmpty(), was = name) },
                 defaultProfile = settings.profiles().keys.indexOf(settings.defaultProfile()),
                 secrets = settings.secretValues().keys.let { set ->
                     settings.secrets().map { (label, names) -> SecretRow(label, names.joinToString(", "), was = label, set = label in set) }
@@ -322,7 +331,7 @@ data class SettingsForm(
             }
             // A row whose name is emptied is removed.
             val allProfiles = generateSequence(0, Int::inc).takeWhile { "profiles[$it].name" in params }
-                .map { ProfileRow(param("profiles[$it].name"), param("profiles[$it].vault"), param("profiles[$it].source-map")) }.toList()
+                .map { ProfileRow(param("profiles[$it].name"), param("profiles[$it].vault"), param("profiles[$it].source-map"), param("profiles[$it].was")) }.toList()
             val profiles = allProfiles.filter { it.name.isNotEmpty() }
             // The value is posted as typed, never trimmed.
             val secrets = generateSequence(0, Int::inc).takeWhile { "secrets[$it].label" in params }

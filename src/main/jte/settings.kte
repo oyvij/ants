@@ -74,6 +74,7 @@
         <div class="listed">
 @for((i, row) in form.shownProfiles.withIndex())
             <div class="row" hidden="${row.name.isEmpty()}">
+                <input type="hidden" name="profiles[${i}].was" value="${row.was}">
                 <label class="cap name">Name<input name="profiles[${i}].name" value="${row.name}" placeholder="e.g. private"></label>
                 <label class="cap grow">Vault<select name="profiles[${i}].vault"><option value="">Vault</option>
 @for(name in (form.vaults.rows.map { it.first } + row.vault).filter(String::isNotEmpty).distinct())

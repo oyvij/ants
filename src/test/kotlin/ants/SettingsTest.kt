@@ -227,6 +227,57 @@ class SettingsTest : AntsTest() {
     }
 
     @Test
+    fun `renaming a Profile moves its instructions, and one without instructions gets no folder`() {
+        val lists = mapOf("vaults[0].name" to "work", "vaults[0].path" to "/tmp/work", "source-maps[0].name" to "work", "source-maps[0].path" to "/tmp/work.md")
+        press("save", lists + mapOf(
+            "profiles[0].name" to "job", "profiles[0].vault" to "work", "profiles[0].source-map" to "work",
+            "profiles[1].name" to "hobby", "profiles[1].vault" to "work", "profiles[1].source-map" to "work",
+        ))
+        assertContains(browser.get("/settings").body, """<input type="hidden" name="profiles[0].was" value="job">""")
+        browser.post("/settings/instructions", mapOf("name" to "job", "text" to "Use conventional commits.\n"))
+
+        press("save", lists + mapOf(
+            "profiles[0].name" to "work", "profiles[0].was" to "job", "profiles[0].vault" to "work", "profiles[0].source-map" to "work",
+            "profiles[1].name" to "fun", "profiles[1].was" to "hobby", "profiles[1].vault" to "work", "profiles[1].source-map" to "work",
+        ))
+        assertEquals("Use conventional commits.\n", home.resolve("profiles/work/AGENTS.md").readText())
+        assertFalse(home.resolve("profiles/job").exists())
+        assertFalse(home.resolve("profiles/hobby").exists())
+        assertFalse(home.resolve("profiles/fun").exists())
+        val page = browser.get("/settings").body
+        assertContains(page, """<button type="button" data-edit="instructions-0">Instructions</button>""")
+        assertContains(page, """<input type="hidden" name="name" value="work">""")
+        assertContains(page, "Use conventional commits.\n</textarea>")
+    }
+
+    @Test
+    fun `removing a Profile with instructions asks first, then deletes them, and one without instructions is removed with no question`() {
+        val lists = mapOf("vaults[0].name" to "work", "vaults[0].path" to "/tmp/work", "source-maps[0].name" to "work", "source-maps[0].path" to "/tmp/work.md")
+        val both = lists + mapOf(
+            "profiles[0].name" to "job", "profiles[0].was" to "job", "profiles[0].vault" to "work", "profiles[0].source-map" to "work",
+            "profiles[1].name" to "hobby", "profiles[1].was" to "hobby", "profiles[1].vault" to "work", "profiles[1].source-map" to "work",
+        )
+        press("save", both)
+        browser.post("/settings/instructions", mapOf("name" to "job", "text" to "Use conventional commits.\n"))
+        val profiles = yaml()["profiles"]
+
+        val withoutJob = lists + mapOf("profiles[0].name" to "", "profiles[0].was" to "job", "profiles[1].name" to "hobby", "profiles[1].was" to "hobby", "profiles[1].vault" to "work", "profiles[1].source-map" to "work")
+        val asked = press("save", withoutJob)
+        assertContains(asked, "Remove the Profile job and delete its instructions?")
+        assertContains(asked, """<input type="hidden" name="confirm" value="on">""")
+        assertEquals(profiles, yaml()["profiles"])
+        assertTrue(home.resolve("profiles/job/AGENTS.md").exists())
+
+        press("save", withoutJob + ("confirm" to "on"))
+        assertEquals(mapOf("hobby" to mapOf("vault" to "work", "source-map" to "work")), yaml()["profiles"])
+        assertFalse(home.resolve("profiles/job").exists())
+
+        val removed = press("save", lists)
+        assertFalse("Remove the Profile" in removed)
+        assertEquals(null, yaml()["profiles"])
+    }
+
+    @Test
     fun `a Profile name that can't be a folder name is refused`() {
         val lists = mapOf("vaults[0].name" to "work", "vaults[0].path" to "/tmp/work", "source-maps[0].name" to "work", "source-maps[0].path" to "/tmp/work.md")
         for (name in listOf("work/job", ".", "..")) {

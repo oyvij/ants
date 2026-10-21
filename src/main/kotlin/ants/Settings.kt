@@ -173,7 +173,14 @@ class Settings(
      */
     fun profile(name: String?): Profile? = profiles().ifEmpty { return Profile(defaultVault(), defaultSourceMap()) }[name ?: defaultProfile()]
 
-    fun instructions(name: String?): Path? = name?.takeIf { it in profiles() }?.let { home.resolve("profiles").resolve(it).resolve("AGENTS.md") }
+    fun instructions(name: String?): Path? = name?.takeIf { it in profiles() }?.let { profileFolder(it).resolve("AGENTS.md") }
+
+    fun moveInstructions(renamed: Map<String, String>, removed: Set<String>) {
+        removed.forEach { profileFolder(it).toFile().deleteRecursively() }
+        renamed.forEach { (was, name) -> profileFolder(was).takeIf { it.exists() }?.let { Files.move(it, profileFolder(name)) } }
+    }
+
+    private fun profileFolder(name: String) = home.resolve("profiles").resolve(name)
 
     fun instructionsText(name: String?): String = instructions(name)?.takeIf { it.exists() }?.readText().orEmpty()
 
