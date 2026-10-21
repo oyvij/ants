@@ -53,9 +53,9 @@ class TaskEntry(
     val instance: String, val activity: String,
 ) : Entry(id, tag, process, task, summary, since)
 
-/** A scheduled Run of the Process [key] that couldn't start, until started now or dismissed. */
-class StartEntry(val key: String, process: String, failed: FailedStart) :
-    Entry("schedule-$key", "[failed]", process, "Scheduled Run", "The scheduled Run didn't start: ${failed.why}", Date.from(failed.at))
+class StartEntry(val schedule: Schedule, failed: FailedStart) : Entry(
+    "schedule-${schedule.id ?: schedule.key}", "[failed]", schedule.process, schedule.label, "The scheduled Run didn't start: ${failed.why}", Date.from(failed.at),
+)
 
 /**
  * The Notification list: one query over what is waiting on the user, with no table of its own, so it can't drift.
@@ -86,7 +86,7 @@ class Notifications(
     fun tasks(): List<TaskEntry> = (rootCauses().map(::entry) + userTasks.createTaskQuery().active().list().map(::entry)).sortedBy { it.since }
 
     /** The scheduled Runs that couldn't start, until started or dismissed. */
-    private fun failedStarts() = schedules.all().mapNotNull { schedule -> schedule.failed?.let { StartEntry(schedule.key, schedule.process, it) } }
+    private fun failedStarts() = schedules.all().mapNotNull { schedule -> schedule.failed?.let { StartEntry(schedule, it) } }
 
     @GetMapping("/notifications")
     fun list(model: Model): String {

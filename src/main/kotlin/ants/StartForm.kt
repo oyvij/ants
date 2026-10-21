@@ -74,7 +74,9 @@ class StartForm(
             field.name to if (field.type == FieldType.REPOS) given.distinct() else given.firstOrNull().orEmpty()
         }
         val repos = fields.filter { it.type == FieldType.REPOS }.flatMap { variables[it.name] as List<*> }.map(Any?::toString).distinct()
-        val profile = profile(definition, values[PROFILE]?.firstOrNull())
+        val picked = values[PROFILE]?.firstOrNull()?.takeIf(String::isNotBlank)
+        if (picked != null && picked !in settings.profiles()) throw CantStart(listOf("The Profile $picked isn't in the settings."))
+        val profile = profile(definition, picked)
         val reasons = preRun.reasons(definition, repos, profile)
         if (reasons.isNotEmpty()) throw CantStart(reasons)
         // The picked repos are kept by remote, so Clone repos clones exactly them whatever the Source map says later.

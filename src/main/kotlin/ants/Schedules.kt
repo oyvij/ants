@@ -34,6 +34,8 @@ class Schedule(
     val id: String? = null, val label: String = process, val profile: String? = null, val values: Map<String, String> = emptyMap(),
 ) {
     val words get() = inWords(cron)
+
+    val actions get() = if (id == null) "/processes/$key/schedule" else "/processes/$key/schedules/$id"
 }
 
 /** A scheduled Run that couldn't start, [why], at [at]. */
@@ -90,8 +92,11 @@ class Schedules(
         loop.shutdownNow()
     }
 
-    /** Every Process with a Schedule, by when it next starts a Run. */
-    fun all(): List<Schedule> = repository.createProcessDefinitionQuery().latestVersion().list().mapNotNull(::of).sortedBy { it.next }
+    fun all(): List<Schedule> {
+        val drawn = repository.createProcessDefinitionQuery().latestVersion().list().mapNotNull(::of)
+        val page = states().values.mapNotNull { it.process }.distinct().flatMap(::of)
+        return (drawn + page).sortedBy { it.next }
+    }
 
     /** The Schedule of [definition], the latest version of its Process, or null without one. */
     fun of(definition: ProcessDefinition): Schedule? {

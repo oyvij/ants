@@ -22,6 +22,6 @@
 <div class="card" id="coming-up"><h3>⏰ Coming up</h3>
 @if(coming.isEmpty())<div class="muted small">Nothing scheduled.</div>@endif
 @for(schedule in coming)
-    <div class="row item"><a class="grow" href="/processes/${schedule.key}">${schedule.process}</a><span class="small muted">${schedule.at} · ${schedule.countdown}</span></div>
+    <div class="row item"><a class="grow" href="/processes/${schedule.key}">${schedule.label}</a><span class="small muted">${schedule.at} · ${schedule.countdown}</span></div>
 @endfor
 </div>

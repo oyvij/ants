@@ -79,16 +79,17 @@ class Processes(
         val processes = repository.createProcessDefinitionQuery().latestVersion().orderByProcessDefinitionName().asc().list()
         model.addAttribute("processes", processes)
         val login = preRun.oneLogin() // asked once for them all
+        val scheduled = schedules.all().groupingBy { it.key }.eachCount()
         model.addAttribute("rows", Executors.newVirtualThreadPerTaskExecutor().use { threads ->
-            processes.map { process -> threads.submit<ProcessRow> { row(process, login) } }.map { it.get() }
+            processes.map { process -> threads.submit<ProcessRow> { row(process, scheduled[process.key] ?: 0, login) } }.map { it.get() }
         })
         return "processes"
     }
 
-    private fun row(process: ProcessDefinition, login: () -> Map<*, *>): ProcessRow {
+    private fun row(process: ProcessDefinition, schedules: Int, login: () -> Map<*, *>): ProcessRow {
         val profile = startForm.profile(process, null)
         return ProcessRow(
-            process, process.resourceName.startsWith("shipped/"), settings.profile(profile), schedules.of(process),
+            process, process.resourceName.startsWith("shipped/"), settings.profile(profile), schedules,
             reasons(process, startForm.fields(process), profile, login).isEmpty(),
             history.createHistoricProcessInstanceQuery().processDefinitionKey(process.key).rootProcessInstances().active().count(),
         )
@@ -303,6 +304,12 @@ class Processes(
         }
     }
 
+    @PostMapping("/processes/{key}/schedules/{id}/dismiss")
+    fun dismiss(@PathVariable key: String, @PathVariable id: String, @RequestParam(required = false) back: String?): String {
+        schedules.dismiss(scheduleId(key, id))
+        return "redirect:" + if (back == "notifications") "/notifications" else "/processes/$key"
+    }
+
     private fun scheduleId(key: String, id: String) = schedules.of(latest(key).key).firstOrNull { it.id == id }?.id
         ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No Schedule $id of $key")
 
@@ -353,11 +360,7 @@ private const val OPERATON = "http://operaton.org/schema/1.0/bpmn"
 internal const val BPMN = "http://www.omg.org/spec/BPMN/20100524/MODEL"
 internal const val BPMNDI = "http://www.omg.org/spec/BPMN/20100524/DI"
 
-/**
- * A row of the Processes list: whether the Process is [shipped] or the user's, the [profile] whose Vault and Source
- * map its Runs use, its [schedule], whether it is [ready] to start, and its [live] Runs.
- */
-class ProcessRow(val process: ProcessDefinition, val shipped: Boolean, val profile: Profile?, val schedule: Schedule?, val ready: Boolean, val live: Long)
+class ProcessRow(val process: ProcessDefinition, val shipped: Boolean, val profile: Profile?, val schedules: Int, val ready: Boolean, val live: Long)
 
 /** Why a Process can't be deployed, in the XML parser's or the engine's words. */
 class Refused(message: String?) : Exception(message)

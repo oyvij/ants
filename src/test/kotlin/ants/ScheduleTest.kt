@@ -288,9 +288,9 @@ class ScheduleTest : AntsTest() {
         assertContains(browser.get("/runs/${run.id}").body, "<dt>prompt</dt><dd><code>Tidy up</code></dd>")
     }
 
-    private fun scheduleHourly(name: String, prompt: String = name) {
+    private fun scheduleHourly(name: String, prompt: String = name, cron: String = "0 0 * * * *") {
         browser.get("/processes/$key")
-        val saved = browser.post("/processes/$key/schedule", listOf(NAME to name, "prompt" to prompt, "cron" to "0 0 * * * *"))
+        val saved = browser.post("/processes/$key/schedule", listOf(NAME to name, "prompt" to prompt, "cron" to cron))
         assertEquals("/processes/$key", saved.path, saved.body)
     }
 
@@ -383,5 +383,115 @@ class ScheduleTest : AntsTest() {
         clock.offset = Duration.ofHours(4)
         eventually { assertEquals(2, runsWith("Sweep A")) }
         eventually { assertFalse("Skipped" in row("Sweep A")!!) }
+    }
+
+    private fun failedEntries() = Regex("href=\"/notifications/(schedule-[^\"]+)\"").findAll(browser.get("/notifications").body).map { it.groupValues[1] }.distinct().toList()
+
+    @Test
+    fun `a Schedule whose Profile is removed fails as one failed entry by its label, with Start now and Dismiss, noted on its row, and never falls back`() {
+        twoProfiles()
+        browser.import("clone-repos.bpmn")
+        schedule(listOf(NAME to "Ship api", PROFILE to "other", "repos" to "api", "branch" to "nightly"))
+        home.resolve("settings.yaml").writeAtomically(vault + sourceMapLines(api, web) + "profiles:\n  work:\n    vault: notes\n    source-map: work\n")
+
+        clock.offset = Duration.ofHours(1)
+        eventually { assertEquals(1, failedEntries().size) }
+        assertEquals(0, cloneRuns().size)
+        val id = browser.get("/processes/clone-repos").body.let { Regex("<tr id=\"schedule-([^\"]+)\">").find(it)!!.groupValues[1] }
+        assertEquals(listOf("schedule-$id"), failedEntries())
+        assertContains(browser.get("/notifications").body, "Ship api")
+
+        val entry = browser.get("/notifications/schedule-$id").body
+        assertContains(entry, "Ship api")
+        assertContains(entry, "The scheduled Run didn't start: The Profile other isn't in the settings.")
+        assertContains(entry, """<form method="post" action="/processes/clone-repos/schedules/$id/start">""")
+        assertContains(entry, """<form method="post" action="/processes/clone-repos/schedules/$id/dismiss">""")
+        val row = browser.get("/processes/clone-repos").body.substringAfter("<tr id=\"schedule-$id\">").substringBefore("</tr>")
+        assertContains(row, "✕ [failed] The scheduled Run didn't start: The Profile other isn't in the settings.")
+
+        home.resolve("settings.yaml").writeAtomically(vault + sourceMapLines(api, web))
+        assertEquals("/processes/clone-repos", browser.post("/processes/clone-repos/schedules/$id/start", mapOf()).path)
+        assertEquals(0, cloneRuns().size, "no Profile at all is no fallback to the defaults either")
+        assertContains(browser.get("/notifications/schedule-$id").body, "The Profile other isn't in the settings.")
+
+        browser.get("/notifications/schedule-$id")
+        assertEquals("/notifications", browser.post("/processes/clone-repos/schedules/$id/dismiss", mapOf("back" to "notifications")).path)
+        assertEquals(emptyList(), failedEntries())
+        assertFalse("[failed]" in browser.get("/processes/clone-repos").body.substringAfter("<tr id=\"schedule-$id\">").substringBefore("</tr>"))
+    }
+
+    @Test
+    fun `a repo gone from the Source map fails its Schedule's start, while the other Schedule of the Process starts its Run`() {
+        twoProfiles()
+        browser.import("clone-repos.bpmn")
+        schedule(listOf(NAME to "Ship api", "repos" to "api", "branch" to "a"))
+        schedule(listOf(NAME to "Ship web", "repos" to "web", "branch" to "w"))
+        home.resolve("settings.yaml").writeAtomically(home.resolve("settings.yaml").readText().replace(Regex("source-maps:\n  work: .*\n"), sourceMapLines(web)))
+
+        clock.offset = Duration.ofHours(1)
+        eventually { assertEquals(1, cloneRuns().size) }
+        eventually { assertEquals(1, failedEntries().size) }
+        assertContains(runPage(cloneRuns().single().id), "<dt>branch</dt><dd><code>w</code></dd>")
+        val entry = browser.get("/notifications/${failedEntries().single()}").body
+        assertContains(entry, "Ship api")
+        assertContains(entry, "The Source map work has no repo api.")
+    }
+
+    @Test
+    fun `a field made required after scheduling fails both Schedules, as two failed entries, and Dismiss on one leaves the other`() {
+        home.resolve("settings.yaml").writeAtomically(vault)
+        deploy(bpmn(cron = null))
+        scheduleHourly("Sweep A")
+        scheduleHourly("Sweep B")
+        val target = """<camunda:formField id="target" label="Target" type="string"><camunda:validation><camunda:constraint name="required" /></camunda:validation></camunda:formField>"""
+        deploy(bpmn(cron = null).replace("</camunda:formData>", "$target</camunda:formData>"))
+
+        clock.offset = Duration.ofHours(1)
+        eventually { assertEquals(2, failedEntries().size) }
+        assertEquals(0, runs())
+        val list = browser.get("/notifications").body
+        assertContains(list, "Sweep A")
+        assertContains(list, "Sweep B")
+        assertContains(row("Sweep A")!!, "✕ [failed] The scheduled Run didn't start: Target is required")
+        assertContains(row("Sweep B")!!, "✕ [failed] The scheduled Run didn't start: Target is required")
+
+        browser.post("/processes/$key/schedules/${idOf("Sweep A")}/dismiss", mapOf("back" to "notifications"))
+        assertEquals(listOf("schedule-${idOf("Sweep B")}"), failedEntries())
+        assertFalse("[failed]" in row("Sweep A")!!)
+        assertContains(row("Sweep B")!!, "[failed]")
+    }
+
+    @Test
+    fun `Home's Coming up lists every unpaused Schedule's next Run by its label, soonest first`() {
+        home.resolve("settings.yaml").writeAtomically(vault)
+        deploy(bpmn(cron = null))
+        scheduleHourly("Sweep yearly", cron = "0 0 0 1 1 *")
+        scheduleHourly("Sweep hourly")
+        scheduleHourly("Sweep paused")
+        act("Sweep paused", "pause")
+
+        val coming = comingUp()
+        assertContains(coming, "Sweep hourly")
+        assertContains(coming, "Sweep yearly")
+        assertFalse("Sweep paused" in coming)
+        assertContains(coming, Regex("Sweep hourly.*Sweep yearly", RegexOption.DOT_MATCHES_ALL))
+        assertContains(coming, Regex("\\d\\d:\\d\\d · in \\d"))
+    }
+
+    private fun processRow(key: String) = Regex("<tr class=\"click\" data-href=\"/processes/$key\">.*?</tr>", RegexOption.DOT_MATCHES_ALL).find(browser.get("/processes").body)!!.value
+
+    @Test
+    fun `the Processes list shows how many Schedules a Process has, and nothing with none`() {
+        home.resolve("settings.yaml").writeAtomically(vault)
+        deploy(bpmn(cron = null))
+        assertFalse("⏰" in processRow(key))
+        scheduleHourly("Sweep A")
+        assertContains(processRow(key), "<td class=\"small\">⏰ 1</td>")
+        scheduleHourly("Sweep B")
+        act("Sweep B", "pause")
+        assertContains(processRow(key), "<td class=\"small\">⏰ 2</td>")
+        act("Sweep A", "remove")
+        act("Sweep B", "remove")
+        assertFalse("⏰" in processRow(key))
     }
 }

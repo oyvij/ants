@@ -47,11 +47,11 @@ class ProcessTest : AntsTest() {
         assertContains(waits, """data-href="/processes/waits"""")
         assertContains(waits, ">you<")
         assertContains(waits, "notes · —")
-        assertContains(waits, """<span title="0 0 0 * * *">⏰ day at 00:00</span>""")
+        assertContains(waits, """<td class="small">⏰ 1</td>""")
         assertContains(waits, """<span class="pill p-ready">Ready</span>""")
         assertContains(waits, """<td class="muted">1</td>""")
         assertContains(waits, """<a href="/processes/waits/edit">Edit diagram</a>""")
-        assertContains(row("Start to end"), """<a href="/processes/start-end#schedule">＋ Schedule</a>""")
+        assertContains(row("Start to end"), """<td class="small"></td>""")
         assertContains(row("Start to end"), """<td class="muted">0</td>""")
         assertContains(row("Set up Vault"), ">shipped<")
 
