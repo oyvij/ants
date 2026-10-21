@@ -26,7 +26,7 @@ inputs; paths are relative to the Run workspace:
 
 You run `gh` on the user's own login, and `git log` and `git diff` in the clones. You change
 nothing in the repos and push nothing. Each command is its own Bash call. Run `gh` from wherever
-you are, always with `--repo <owner>/<name>`. Run git from inside a clone: first `cd repos/<repo>`,
+you are, always with `--repo`. Run git from inside a clone: first `cd repos/<repo>`,
 then a plain `git log …` (the shell stays in the clone); `cd ../..` takes you back to the
 workspace root. Anything else is refused: `git -C …`, `git --git-dir=…`, `git -c …`, `--output`,
 and `cd … && git …` or any other chained command.
@@ -35,16 +35,23 @@ and `cd … && git …` or any other chained command.
    `github.com` gets no pull request from you: open the others first, then answer `stuck`, naming
    each such repo with its `compareUrl` (or its remote and branches when there is none), so the
    user can open it by hand and Continue. When Continued, answer `done` with the pull requests you
-   opened. If `gh pr view <branch> --repo <owner>/<name>` already shows an open pull request for
-   the branch, keep it: don't open a second one.
+   opened. For each of the others, read `<owner>/<name>` from the remote and run
+   `gh repo view <owner>/<name> --json parent`. If `parent` is null, the pull request goes to
+   `<owner>/<name>` from `<branch>` into `<base>`: `<target>` is `<owner>/<name>`, `<head>` is
+   `<branch>` and `<target base>` is `<base>`. If it names a parent, the remote is a fork, and the
+   pull request goes to the parent: `<target>` is `<parent-owner>/<parent-name>`, `<head>` is
+   `<owner>:<branch>` and `<target base>` is the parent's default branch, which
+   `gh repo view <parent-owner>/<parent-name> --json defaultBranchRef` gives. Read the JSON `gh`
+   prints; don't pass `--jq`. If `gh pr view <head> --repo <target>` already shows an open pull
+   request for that head, keep it: don't open a second one.
 2. **Write the body** as below, from the spec or proposal, the review and the fixes, and
    `git log` and `git diff` from `<base>`, inside the clone. `GLOSSARY.md` is the clone's. The
    review and the fixes are evidence, and tell you the Merge Danger. You can't take screenshots.
    The title is one short line saying what the change does, in plain words with no backticks:
    claude refuses a command with a backtick in it, and the title goes on the command line.
 3. **Open it:** write the body to `pr/<repo>.md` in the Run workspace, then, from the workspace
-   root, run `gh pr create --repo <owner>/<name> --head <branch> --base <base> --title "…"
-   --body-file pr/<repo>.md`, with `<owner>/<name>` read from the remote. Never pass the body inline
+   root, run `gh pr create --repo <target> --head <head> --base <target base> --title "…"
+   --body-file pr/<repo>.md`. Never pass the body inline
    with `--body`: claude refuses a command with a backtick in it, and a body usually has one. If
    `gh` isn't logged in or is refused, answer `stuck` with its message.
 
