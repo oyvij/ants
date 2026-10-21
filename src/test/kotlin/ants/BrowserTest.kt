@@ -1521,6 +1521,36 @@ class BrowserTest : AntsTest() {
         assertEquals("""["$elsewhere","web","$mirror"]""", startPicked())
     }
 
+    private fun schedulePicked(repo: String) {
+        page.locator("textarea[name=prompt] + .ed .cm-content").fill("Add dark mode")
+        repoBox.click()
+        repoOption(repo).click()
+        repoBox.press("Escape")
+        page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("⏰ Schedule").setExact(true)).click()
+        val every = page.getByLabel("Every")
+        assertThat(every).isFocused()
+        every.selectOption("day")
+        assertThat(page.getByLabel("Cron")).hasValue("0 0 8 * * *")
+        every.selectOption("hour")
+        assertThat(page.getByLabel("Cron")).hasValue("0 0 * * * *")
+        page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("Save schedule")).click()
+        page.waitForURL(Pattern.compile("/processes/picker$"))
+    }
+
+    @Test
+    fun `Schedule beside Start saves the filled-in start form with times picked in words, and two Schedules are two rows`() = browse {
+        picker()
+        assertThat(page.locator("#when")).isHidden()
+        schedulePicked("api")
+        schedulePicked("web")
+        val rows = page.locator("#schedules tr").filter(Locator.FilterOptions().setHasText("Every hour"))
+        assertThat(rows).hasCount(2)
+        assertThat(rows.nth(0)).containsText("api")
+        assertThat(rows.nth(1)).containsText("web")
+        assertThat(rows.nth(0)).containsText(Pattern.compile(" · in \\d"))
+        page.screenshot("schedules")
+    }
+
     @Test
     fun `with JavaScript off the start form's Repos field is the Source map's checkboxes and a text input, which still start the Run`() = browse {
         val elsewhere = repo("elsewhere").remote

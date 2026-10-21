@@ -3,6 +3,7 @@ package ants
 import org.junit.jupiter.api.Test
 import org.operaton.bpm.engine.HistoryService
 import org.operaton.bpm.engine.ManagementService
+import org.operaton.bpm.engine.RepositoryService
 import org.operaton.bpm.engine.TaskService
 import org.springframework.beans.factory.annotation.Autowired
 import java.time.Duration
@@ -24,13 +25,16 @@ class ScheduleTest : AntsTest() {
     @Autowired
     lateinit var tasks: TaskService
 
+    @Autowired
+    lateinit var repository: RepositoryService
+
     private val key = "nightly"
 
     /**
      * The Process [key] with the Schedule [cron] on its timer start, a required `prompt` with the stored value
      * [stored], then a User Task when [waits], so its Run stays live.
      */
-    private fun bpmn(cron: String = "0 0 * * * *", stored: String? = "Sweep", waits: Boolean = false) = """
+    private fun bpmn(cron: String? = "0 0 * * * *", stored: String? = "Sweep", waits: Boolean = false) = """
         <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
                           id="definitions" targetNamespace="http://bpmn.io/schema/bpmn">
           <bpmn:process id="$key" name="Nightly" isExecutable="true" camunda:historyTimeToLive="180">
@@ -43,7 +47,7 @@ class ScheduleTest : AntsTest() {
                   </camunda:formField>
                 </camunda:formData>
               </bpmn:extensionElements>
-              <bpmn:timerEventDefinition><bpmn:timeCycle>$cron</bpmn:timeCycle></bpmn:timerEventDefinition>
+              ${cron?.let { "<bpmn:timerEventDefinition><bpmn:timeCycle>$it</bpmn:timeCycle></bpmn:timerEventDefinition>" }.orEmpty()}
             </bpmn:startEvent>
             <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="${if (waits) "wait" else "end"}" />
             ${if (waits) """<bpmn:userTask id="wait" /><bpmn:sequenceFlow id="f2" sourceRef="wait" targetRef="end" />""" else ""}
@@ -211,5 +215,73 @@ class ScheduleTest : AntsTest() {
         assertContains(page, "<dt>$PROFILE</dt><dd><code>other</code></dd>")
         assertContains(page, Regex("<span id=\"name\">Ship api, \\d{1,2} [A-Z][a-z]{2} \\d\\d:\\d\\d</span>"))
         eventually { assertEquals(listOf("api"), clones(workspace(run)).map { it.fileName.toString() }) }
+    }
+
+    @Test
+    fun `two Schedules of one Process with different repos are two rows, and each starts its own Runs, cloning only its repos`() {
+        twoProfiles()
+        browser.import("clone-repos.bpmn")
+        schedule(listOf("repos" to "api", "branch" to "a"))
+        schedule(listOf(NAME to "Nightly web", "repos" to "web", "branch" to "w"), "0 30 8 * * MON-FRI")
+        assertEquals(1, repository.createProcessDefinitionQuery().processDefinitionKey("clone-repos").count(), "scheduling makes no new version")
+
+        val rows = browser.get("/processes/clone-repos").body.substringAfter("<table id=\"schedules\">").substringBefore("</table>")
+        assertContains(rows, "<b>Clone repos · api</b>")
+        assertContains(rows, "<b>Nightly web</b>")
+        assertContains(rows, "<td>work</td>")
+        assertContains(rows, "<span class=\"muted\">Branch</span> w")
+        assertContains(rows, "Every hour")
+        assertContains(rows, "<code>0 30 8 * * MON-FRI</code>")
+        assertContains(rows, "Every weekday at 08:30")
+        assertContains(rows, Regex("\\d\\d:\\d\\d · in \\d"))
+
+        clock.offset = Duration.ofDays(4)
+        eventually { assertEquals(2, cloneRuns().size) }
+        val (hourly, weekday) = cloneRuns().partition { "<dt>branch</dt><dd><code>a</code></dd>" in runPage(it.id) }.toList().map { it.single().id }
+        eventually { assertEquals(listOf("api"), clones(workspace(hourly)).map { it.fileName.toString() }) }
+        eventually { assertEquals(listOf("web"), clones(workspace(weekday)).map { it.fileName.toString() }) }
+        assertContains(runPage(hourly), Regex("<span id=\"name\">Clone repos, \\d{1,2} [A-Z][a-z]{2} \\d\\d:\\d\\d</span>"))
+    }
+
+    @Test
+    fun `Schedule is refused, with the filled-in values kept, on an empty required field, a Can't start or a cron Ants can't read`() {
+        home.resolve("settings.yaml").writeAtomically(vault)
+        deploy(bpmn(cron = null))
+        assertContains(browser.get("/processes/$key").body, "<fieldset id=\"when\" hidden>")
+        val unfilled = browser.post("/processes/$key/schedule", listOf(NAME to "Sweeper", "prompt" to " ", "cron" to "0 0 * * * *"))
+        assertEquals(400, unfilled.status)
+        assertContains(unfilled.body, "Prompt is required")
+        assertContains(unfilled.body, "value=\"Sweeper\"")
+
+        val unreadable = browser.post("/processes/$key/schedule", listOf(NAME to "Sweeper", "prompt" to "Tidy up", "cron" to "R/PT1H"))
+        assertEquals(400, unreadable.status)
+        assertContains(unreadable.body, "Ants can't read the cron R/PT1H")
+        assertContains(unreadable.body, "value=\"Tidy up\"")
+        assertContains(unreadable.body, "value=\"R/PT1H\"")
+        assertContains(unreadable.body, "<fieldset id=\"when\">")
+
+        home.resolve("settings.yaml").writeAtomically("")
+        val cantStart = browser.post("/processes/$key/schedule", listOf("prompt" to "Tidy up", "cron" to "0 0 * * * *"))
+        assertEquals(400, cantStart.status)
+        assertContains(cantStart.body, "Configure a Vault")
+        assertContains(cantStart.body, "value=\"Tidy up\"")
+
+        assertFalse("id=\"schedules\"" in browser.get("/processes/$key").body)
+    }
+
+    @Test
+    fun `a page Schedule runs times missed once, on the latest version of its Process`() {
+        home.resolve("settings.yaml").writeAtomically(vault)
+        deploy(bpmn(cron = null))
+        browser.get("/processes/$key")
+        browser.post("/processes/$key/schedule", listOf("prompt" to "Tidy up", "cron" to "0 0 * * * *"))
+        deploy(bpmn(cron = null, stored = "Edited"))
+        clock.offset = Duration.ofHours(5)
+        eventually { assertEquals(1, runs()) }
+        settle()
+        assertEquals(1, runs())
+        val run = history.createHistoricProcessInstanceQuery().processDefinitionKey(key).singleResult()
+        assertEquals(2, repository.getProcessDefinition(run.processDefinitionId).version)
+        assertContains(browser.get("/runs/${run.id}").body, "<dt>prompt</dt><dd><code>Tidy up</code></dd>")
     }
 }
