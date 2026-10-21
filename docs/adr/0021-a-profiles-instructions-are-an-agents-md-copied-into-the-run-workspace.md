@@ -36,21 +36,23 @@ throwaway Run workspace under a folder with its own CLAUDE.md, holding AGENTS.md
 1. **The Run workspace's CLAUDE.md loads and its `@AGENTS.md` import is followed**, with the cwd at the workspace root.
    Holds there, but not in an instance (probe 3), so fallback 1 is applied: CLAUDE.md inlines the AGENTS.md text.
 2. **`claudeMdExcludes` keeps the CLAUDE.md files above the Run workspace out.** Holds with the exact-path list above,
-   passed as a second `--settings` that carries `disableAllHooks` too: the stand-in home CLAUDE.md and `~/.claude/CLAUDE.md`
-   didn't load; the workspace CLAUDE.md, its import and `repos/r/CLAUDE.md` (once a file in `repos/r` was read) did.
+   passed as a second `--settings` that carries `disableAllHooks` too: the stand-in home CLAUDE.md and
+   `~/.claude/CLAUDE.md` didn't load; the workspace CLAUDE.md, its import and `repos/r/CLAUDE.md` (once a file in
+   `repos/r` was read) did.
 3. **In an instance (cwd `instances/k/`) the instructions load once.** The CLAUDE.md loads once, under the root's path:
    the link and the ancestor count as one file. But its `@AGENTS.md` import isn't followed there (three runs, with and
    without the excludes), nor when the root CLAUDE.md is excluded and the link loads instead. With the AGENTS.md text
    inlined, it loads once with the instructions, at the root and in the instance. So fallback 1 is applied, and fallback
    3 (excluding the root CLAUDE.md in an instance) is not.
 4. **codex loads AGENTS.md from its working folder, in the Run workspace and through the link in an instance.** Read
-   from the source of codex `rust-v0.163.0`, not probed: codex wasn't installed. `codex-rs/core/src/agents_md.rs` walks up
-   from the cwd to a `project_root_markers` entry (default `.git`); with none found, "only the current working directory
-   is considered". It checks each candidate with `get_metadata` and reads it with `read_file`, both with default
-   options, which in `codex-rs/file-system/src/lib.rs` have `follow_symlinks: true`, so a linked AGENTS.md is read.
-   `exec_includes_workspace_agents_md_in_request` in `codex-rs/exec/tests/suite/agents_md.rs` checks `codex exec --skip-git-repo-check` sends the cwd's AGENTS.md as a
-   user message. The text is skipped only for a project whose `trust_level` is `untrusted` in config, which Ants' own
-   `CODEX_HOME` never sets, and is capped at `project_doc_max_bytes` (32 KiB by default).
+   from the source of codex `rust-v0.163.0`, not probed: codex wasn't installed. `codex-rs/core/src/agents_md.rs`
+   walks up from the cwd to a `project_root_markers` entry (default `.git`); with none found, "only the current working
+   directory is considered". It checks each candidate with `get_metadata` and reads it with `read_file`, both with
+   default options, which in `codex-rs/file-system/src/lib.rs` have `follow_symlinks: true`, so a linked AGENTS.md is
+   read. `exec_includes_workspace_agents_md_in_request` in `codex-rs/exec/tests/suite/agents_md.rs` checks that
+   `codex exec --skip-git-repo-check` sends the cwd's AGENTS.md as a user message. The text is skipped only for a
+   project whose `trust_level` is `untrusted` in config, which Ants' own `CODEX_HOME` never sets, and is capped at
+   `project_doc_max_bytes` (32 KiB by default).
 
 ## Considered Options
 
