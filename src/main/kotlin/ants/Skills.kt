@@ -175,6 +175,7 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy) {
 
     private fun find(name: String) = runCatching { catalogue.skill(name) }
         .getOrElse { throw ResponseStatusException(HttpStatus.NOT_FOUND, it.message) }
+        .also { if (catalogue.hides(it.file)) throw ResponseStatusException(HttpStatus.NOT_FOUND, "No Skill named $name") }
 
     /** The Skill [name], if it's the user's own; shipped and outside Skills are read-only. */
     private fun yours(name: String) = find(name).takeIf { it.file.startsWith(catalogue.yourSkills) }

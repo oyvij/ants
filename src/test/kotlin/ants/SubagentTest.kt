@@ -60,6 +60,13 @@ class SubagentTest : AntsTest() {
     }
 
     @Test
+    fun `a shipped Subagent is still offered while the settings hide what Ants ships`() {
+        agentTask(claude, agent = "name: writer\ntools: Read, Agent\n", extra = "hide-shipped: true\n")
+        val offered = JsonMapper.shared().readValue(launch().flag("--agents"), Map::class.java)
+        assertContains(offered.keys, "knowledge-searcher")
+    }
+
+    @Test
     fun `an Agent without the Agent tool, such as one with the default tools, gets no Subagent types`() {
         agentTask(claude, agent = "name: writer\ndescription: Writes.\n")
         agent("searcher", "description: Searches.\nants-subagent: true\n")

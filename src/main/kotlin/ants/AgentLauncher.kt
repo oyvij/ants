@@ -767,7 +767,8 @@ class AgentLauncher(
         if (agentTool.isEmpty()) return emptyList<String>() to emptyList()
         // Probed on claude 2.1.295 against a fake API: rules such as `Bash(git log *)` are accepted in `--agents`
         // tools, but a Subagent's permissions are its Task's (`--allowedTools` under dontAsk), so they narrow nothing more.
-        val offered = catalogue.agents().filter { it.subagent && it.cli == "claude" }.associate { agent ->
+        val resolved = catalogue.agents(hidden = true).map { it.name }.distinct().mapNotNull { runCatching { catalogue.agent(it) }.getOrNull() }
+        val offered = resolved.filter { it.subagent && it.cli == "claude" }.associate { agent ->
             agent.name to listOfNotNull(
                 "description" to agent.description,
                 "prompt" to agent.instructions,

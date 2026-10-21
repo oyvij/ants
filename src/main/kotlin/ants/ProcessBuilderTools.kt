@@ -108,6 +108,7 @@ class ProcessBuilderTools(
                 "agents" -> json.writeValueAsString(agents.catalogue()["agents"])
                 "skills" -> json.writeValueAsString(agents.catalogue()["skills"])
                 "skill" -> catalogue.skill(argument("name")).let { skill ->
+                    if (catalogue.hides(skill.file)) throw Refused("No Skill named ${skill.name}")
                     json.writeValueAsString(mapOf(
                         "name" to skill.name, "description" to skill.description, "inputs" to skill.inputs, "uses" to skill.uses,
                         "instructions" to frontmatter(skill.file.readText()).second.trim(), "output" to skill.outputSchema.takeIf { it.isNotEmpty() },

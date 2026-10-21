@@ -43,7 +43,7 @@ class Home(
         // Each Process's pre-Run check, as its page runs it, side by side as the Processes list runs them, asking the
         // Claude login once for them all.
         val login = preRun.oneLogin()
-        val processes = repository.createProcessDefinitionQuery().latestVersion().orderByProcessDefinitionName().asc().list()
+        val processes = repository.createProcessDefinitionQuery().latestVersion().orderByProcessDefinitionName().asc().list().filterNot(settings::hides)
         model.addAttribute("processes", Executors.newVirtualThreadPerTaskExecutor().use { threads ->
             processes.map { process ->
                 threads.submit<Boolean> {
