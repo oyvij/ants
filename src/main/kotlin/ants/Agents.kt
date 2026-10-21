@@ -71,7 +71,7 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
 
     /**
      * The Agents and Skills as the modeler's Agent Task panel picks them, read afresh each time so a new one shows up:
-     * each Agent's description, Skills and folder, and whether it is the user's own (New Skill adds itself only to those, Edit opens only those), and each Skill's declared inputs, whether it is the user's own (Edit opens only those), its Vault and Answer History defaults and its result schema;
+     * each Agent's description, Skills and folder, and whether it is the user's own (New Skill adds itself only to those, Edit opens only those), and each Skill's declared inputs, whether it is the user's own (Edit opens only those) and its folder, its Vault and Answer History defaults and its result schema;
      * and the Profiles a Process can name.
      */
     @GetMapping("/catalogue.json")
@@ -82,7 +82,7 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
         },
         "skills" to catalogue.skills().map { skill ->
             mapOf(
-                "name" to skill.name, "description" to skill.description, "inputs" to skill.inputs, "own" to skill.file.startsWith(catalogue.yourSkills),
+                "name" to skill.name, "description" to skill.description, "inputs" to skill.inputs, "own" to skill.file.startsWith(catalogue.yourSkills), "folder" to skill.folder.parent.toString(),
                 "vault" to runCatching { catalogue.vault(skill) }.getOrDefault(skill.vault), "answerHistory" to skill.answerHistory,
                 "output" to runCatching { skill.outputSchema.takeIf { it.isNotEmpty() } }.getOrNull(),
             )

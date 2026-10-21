@@ -518,30 +518,31 @@ function writeAgentTask(element, changes, inputs, redraw = false) {
     }
 }
 
-// ＋ New Agent and ＋ New Skill: the create form (/agents/new, /skills/new) in a modal over the modeler. The modeler
-// page never navigates, so the diagram, its unsaved changes and the selection stay. Create and use lands the frame on
-// the new one's page; [use] then picks that name on the Task. The modal's header carries the form's title and its
-// Create and use, so the frame shows the form alone; [who] says who runs a new Skill.
-function createAndUse(kind, src, use, who = "") {
-    const title = kind === "agents" ? "New Agent" : "New Skill"
+function formModal(kind, src, use, who = "") {
+    const editing = !src.startsWith(`/${kind}/new`)
+    const title = (editing ? "Edit " : "New ") + (kind === "agents" ? "Agent" : "Skill")
     const frame = el("iframe", {src, title, className: "mb"})
-    const create = el("button", {type: "button", className: "primary", textContent: "Create and use",
+    const primary = el("button", {type: "button", className: "primary", textContent: editing ? "Save" : "Create and use",
         onclick: () => frame.contentDocument.querySelector("input[name=use]")?.form.requestSubmit()})
     const header = el("form", {method: "dialog", className: "mh"}, el("b", {className: `ent ent-${kind.slice(0, -1)}`, textContent: title}),
         el("span", {className: "muted small", textContent: "Esc to close"}), el("span", {className: "sp"}),
-        el("button", {className: "ghost", title: "Close", textContent: "Cancel"}), create)
+        el("button", {className: "ghost", title: "Close", textContent: "Cancel"}), primary)
     const dialog = el("dialog", {className: "modal create"}, header, who, frame)
     dialog.onclose = () => dialog.remove()
     frame.onload = () => {
-        const name = frame.contentWindow.location.pathname.match(new RegExp(`^/${kind}/([^/]+)$`))?.[1]
-        if (name && name !== "new") {
+        const {pathname, search} = frame.contentWindow.location
+        const name = pathname.match(new RegExp(`^/${kind}/([^/]+)$`))?.[1]
+        if (name && (editing ? new URLSearchParams(search).has("saved") : name !== "new")) {
             dialog.close()
             return use(decodeURIComponent(name))
         }
         // The form, or the form refusing a save.
         const page = frame.contentDocument
-        page.querySelector(".ph")?.remove()
-        page.querySelector("input[name=use]")?.form.querySelectorAll("button.primary").forEach(button => button.hidden = true)
+        const form = page.querySelector("input[name=use]")?.form
+        primary.hidden = !form
+        if (!form) return page.querySelector("nav.side")?.remove()
+        page.querySelector(".ph")?.replaceWith(page.querySelector(".ph .sub") || "")
+        form.querySelectorAll("button.primary").forEach(button => button.hidden = true)
     }
     document.body.append(dialog)
     dialog.showModal()
@@ -587,8 +588,15 @@ async function agentPanel(element, box) {
         ...options(catalogue.agents.map(a => a.name), props["ants.agent"], "not found", described))
     const skillSelect = el("select", {disabled: !agent, onchange: () => pickSkill(skillSelect.value)},
         ...options(agent?.skills || [], props["ants.skill"], "not listed by this Agent"))
+    const readOnly = ({name, folder}) => `${name} is in ${folder} and read-only: Copy it on its page to edit.`
+    const editAgent = agent ? el("button", {type: "button", className: "ghost small", textContent: "Edit", disabled: !agent.own, title: agent.own ? "" : readOnly(agent), onclick: () =>
+        formModal("agents", "/agents/" + encodeURIComponent(agent.name) + "?use", name => {
+            if (name !== agent.name) return writeAgentTask(element, {"ants.agent": name}, undefined, true)
+            agentPanel(element, box)
+            check()
+        })}) : ""
     const newAgent = el("button", {type: "button", className: "ghost small", textContent: "＋ New Agent", onclick: () =>
-        createAndUse("agents", "/agents/new?use" + (props["ants.skill"] ? "&skills=" + encodeURIComponent(props["ants.skill"]) : ""), async name => {
+        formModal("agents", "/agents/new?use" + (props["ants.skill"] ? "&skills=" + encodeURIComponent(props["ants.skill"]) : ""), async name => {
             catalogue.agents = (await (await fetch("/catalogue.json")).json()).agents
             pickAgent(name)
         })})
@@ -597,10 +605,18 @@ async function agentPanel(element, box) {
         : agent.own ? note("okbox", `Added to ${agent.name}'s Skills, and picked on this Task.`)
             : note("warn", `${agent.name} is in ${agent.folder} and read-only, so the Skill can't be added to it. Copy the Agent, or pick one of your own, then choose this Skill.`))
     const newSkill = el("button", {type: "button", className: "ghost small", textContent: "＋ New Skill", onclick: () =>
-        createAndUse("skills", "/skills/new?use=" + encodeURIComponent(props["ants.agent"] || ""), async name => {
+        formModal("skills", "/skills/new?use=" + encodeURIComponent(props["ants.agent"] || ""), async name => {
             catalogue.skills = (await (await fetch("/catalogue.json")).json()).skills
             pickSkill(name)
         }, who)})
+    const editSkill = skill ? el("button", {type: "button", className: "ghost small", textContent: "Edit", disabled: !skill.own, title: skill.own ? "" : readOnly(skill), onclick: () =>
+        formModal("skills", "/skills/" + encodeURIComponent(skill.name) + "?use=", async name => {
+            catalogue.skills = (await (await fetch("/catalogue.json")).json()).skills
+            const declared = catalogue.skills.find(s => s.name === name)?.inputs || []
+            if (name !== skill.name || declared.join() !== agentInputs(bo).map(([input]) => input).join()) return pickSkill(name)
+            agentPanel(element, box)
+            check()
+        })}) : ""
     const fields = promised(skill, props["ants.result-schema"])
     const references = el("datalist", {id: "ants-references"}, ...offered.map(value => el("option", {value})))
     const inputs = agentInputs(bo).map(([name, value], i) => {
@@ -612,8 +628,8 @@ async function agentPanel(element, box) {
         input.setAttribute("list", "ants-references")
         return el("label", {className: "row"}, el("code", {textContent: name}), input)
     })
-    const check = (label, checked, onchange) => el("label", {}, el("input", {type: "checkbox", checked, onchange}), " " + label)
-    const toggle = (name, label, fallback) => check(label, props[name] === undefined ? fallback : props[name] === "true",
+    const tick = (label, checked, onchange) => el("label", {}, el("input", {type: "checkbox", checked, onchange}), " " + label)
+    const toggle = (name, label, fallback) => tick(label, props[name] === undefined ? fallback : props[name] === "true",
         event => writeAgentTask(element, {[name]: String(event.target.checked)}))
     const override = el("textarea", {
         rows: 4, value: props["ants.result-schema"] || "",
@@ -621,16 +637,16 @@ async function agentPanel(element, box) {
         oninput: () => writeAgentTask(element, {"ants.result-schema": override.value.trim() || undefined}),
     })
     box.replaceChildren(
-        field("Agent", "Who does it.", agentSelect, newAgent),
+        field("Agent", "Who does it.", agentSelect, editAgent, newAgent),
         props["ants.agent"] && !agent ? note("warn", `No Agent folder holds "${props["ants.agent"]}".`) : "",
-        field("Skill", "One of the Agent's Skills: the one job this Task does.", skillSelect, newSkill),
+        field("Skill", "One of the Agent's Skills: the one job this Task does.", skillSelect, editSkill, newSkill),
         skill ? el("div", {className: "help"}, skill.description || "", skill.description ? el("br") : "", "Later Tasks can read: ",
             ...(fields.length ? fields.flatMap(f => [el("code", {textContent: `\${${element.id}.output.${f}}`}), " "]) : [el("code", {textContent: `\${${element.id}.summary}`})])) : "",
         el("div", {className: "fld"}, el("label", {className: "f", textContent: "Inputs"}),
             note("help", "What it reads: start-form fields, Run variables and Results of Tasks before it in the diagram."), references,
             ...(inputs.length ? inputs : [note("muted small", skill ? "The Skill declares no inputs." : "Pick a Skill to see its inputs.")])),
         el("div", {className: "fld"}, el("label", {className: "f", textContent: "When the flow comes back"}),
-            check("Resume the session (Round answers, Send back)", props["ants.resume"] === "true",
+            tick("Resume the session (Round answers, Send back)", props["ants.resume"] === "true",
                 event => writeAgentTask(element, {"ants.resume": event.target.checked ? "true" : undefined}))),
         el("div", {className: "fld"}, el("label", {className: "f", textContent: "Knowledge"}),
             toggle("ants.vault", "Vault and Source map", skill?.vault || false), toggle("ants.answer-history", "Answer History", skill?.answerHistory || false)),
