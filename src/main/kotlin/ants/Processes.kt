@@ -223,7 +223,6 @@ class Processes(
         model.addAttribute("profileFrom", if (!profile.isNullOrBlank()) "picked here" else if (startForm.diagramProfile(process) != null) "set on the diagram" else "the default")
         model.addAttribute("source", settings.profile(picked))
         model.addAttribute("repos", RunSource(picked).repos(settings).map(Repo::name)) // the Repos field's choices
-        model.addAttribute("schedule", schedules.of(process))
         model.addAttribute("schedules", schedules.of(key))
         val runs = history.createHistoricProcessInstanceQuery().processDefinitionKey(key).rootProcessInstances().orderByProcessInstanceStartTime().desc().list()
         model.addAttribute("runs", runs)
@@ -263,19 +262,6 @@ class Processes(
         return process(key, values.getFirst(PROFILE), model)
     }
 
-    /** Pauses the Process's Schedule: no Run starts on it, not even for the times missed, until it's resumed. */
-    @PostMapping("/processes/{key}/schedule/pause")
-    fun pause(@PathVariable key: String): String {
-        schedules.pause(latest(key).key, true)
-        return "redirect:/processes/$key"
-    }
-
-    @PostMapping("/processes/{key}/schedule/resume")
-    fun resume(@PathVariable key: String): String {
-        schedules.pause(latest(key).key, false)
-        return "redirect:/processes/$key"
-    }
-
     @PostMapping("/processes/{key}/schedules/{id}/pause")
     fun pause(@PathVariable key: String, @PathVariable id: String): String {
         schedules.pause(scheduleId(key, id), true)
@@ -312,40 +298,6 @@ class Processes(
 
     private fun scheduleId(key: String, id: String) = schedules.of(latest(key).key).firstOrNull { it.id == id }?.id
         ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No Schedule $id of $key")
-
-    /** Removes the Schedule: the next version of the Process starts by hand only, its start event a none start. */
-    @PostMapping("/processes/{key}/schedule/remove")
-    fun remove(@PathVariable key: String, model: Model, response: HttpServletResponse): String {
-        if (schedules.of(latest(key)) == null) return "redirect:/processes/$key"
-        val document = parse(repository.getProcessModel(latest(key).id).readAllBytes())
-        for (start in process(document).getElementsByTagNameNS(BPMN, "startEvent").elements().filter { it.parentNode.localName == "process" }) {
-            start.getElementsByTagNameNS(BPMN, "timerEventDefinition").elements().forEach { start.removeChild(it) }
-        }
-        try {
-            deploy(serialize(document).toByteArray())
-        } catch (e: Refused) {
-            response.status = HttpStatus.BAD_REQUEST.value()
-            model.addAttribute("error", e.message)
-            return process(key, null, model)
-        }
-        schedules.remove(key)
-        return "redirect:/processes/$key"
-    }
-
-    /** **Start now** on a scheduled Run that couldn't start: the Run with the stored values, else the Process page and why. */
-    @PostMapping("/processes/{key}/schedule/start")
-    fun startNow(@PathVariable key: String): String = try {
-        "redirect:/runs/" + schedules.startNow(latest(key)).id
-    } catch (_: Exception) {
-        "redirect:/processes/$key" // which shows the reason
-    }
-
-    /** **Dismiss** a scheduled Run that couldn't start, then back to the Notification list when dismissed from there ([back]). */
-    @PostMapping("/processes/{key}/schedule/dismiss")
-    fun dismiss(@PathVariable key: String, @RequestParam(required = false) back: String?): String {
-        schedules.dismiss(latest(key).key)
-        return dismissed(key, back)
-    }
 
     private fun dismissed(key: String, back: String?) = "redirect:" + if (back == "notifications") "/notifications" else "/processes/$key"
 

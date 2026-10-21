@@ -128,7 +128,6 @@ class ProfileTest : AntsTest() {
         assertContains(form, """<option selected>private</option>""")
         assertContains(form, """<span class="pill p-ready">Ready</span>""")
         assertContains(form, "Profile <b>private</b>, set on the diagram")
-        // As a Schedule's Run does, posting no Profile.
         assertContains(page(start()), """<span id="profile">Profile private</span>""")
         assertContains(claude.launches("draft").single().stdin, "The Vault is $privateVault")
         assertContains(page(start(PROFILE to "work")), """<span id="profile">Profile work</span>""")

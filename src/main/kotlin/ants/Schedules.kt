@@ -5,6 +5,7 @@ import org.operaton.bpm.engine.HistoryService
 import org.operaton.bpm.engine.RepositoryService
 import org.operaton.bpm.engine.repository.ProcessDefinition
 import org.operaton.bpm.engine.runtime.ProcessInstance
+import org.operaton.bpm.model.bpmn.Bpmn
 import org.operaton.bpm.model.bpmn.BpmnModelInstance
 import org.operaton.bpm.model.bpmn.instance.Process
 import org.operaton.bpm.model.bpmn.instance.StartEvent
@@ -31,11 +32,11 @@ import kotlin.io.path.readText
  */
 class Schedule(
     val key: String, val process: String, val cron: String, val paused: Boolean, val next: Instant?, val at: String?, val countdown: String?, val skipped: String?, val failed: FailedStart?,
-    val id: String? = null, val label: String = process, val profile: String? = null, val values: Map<String, String> = emptyMap(),
+    val id: String, val label: String, val profile: String?, val values: Map<String, String>,
 ) {
     val words get() = inWords(cron)
 
-    val actions get() = if (id == null) "/processes/$key/schedule" else "/processes/$key/schedules/$id"
+    val actions get() = "/processes/$key/schedules/$id"
 }
 
 /** A scheduled Run that couldn't start, [why], at [at]. */
@@ -61,13 +62,6 @@ private data class State(
     }
 }
 
-/**
- * Ants runs Schedules itself: Operaton never sees the timer start (RunLifecycle drops it), and this loop starts a Run
- * through [StartForm.start], as **Start** does. Each time one or more of its times
- * have come since the last start, it starts one Run, so times missed while Ants was off run once. A time that comes
- * while the Schedule's last Run is still going is skipped and noted until a Run starts again, and a Run that can't
- * start is kept as a [FailedStart] for the Notification list.
- */
 @Component
 class Schedules(
     private val repository: RepositoryService,
@@ -83,6 +77,7 @@ class Schedules(
 
     @EventListener(ApplicationReadyEvent::class)
     fun start() {
+        runCatching(::migrate).onFailure { log.warn("The drawn Schedules couldn't be migrated", it) }
         // Straight away, so a time missed while Ants was off runs now.
         loop.scheduleWithFixedDelay(::tick, 0, every.toMillis(), MILLISECONDS)
     }
@@ -92,27 +87,19 @@ class Schedules(
         loop.shutdownNow()
     }
 
-    fun all(): List<Schedule> {
-        val drawn = repository.createProcessDefinitionQuery().latestVersion().list().mapNotNull(::of)
-        val fromStartForm = states().values.mapNotNull { it.process }.distinct().flatMap(::of)
-        return (drawn + fromStartForm).sortedBy { it.next }
-    }
-
-    /** The Schedule of [definition], the latest version of its Process, or null without one. */
-    fun of(definition: ProcessDefinition): Schedule? {
-        val cron = repository.getBpmnModelInstance(definition.id).schedule() ?: return null
-        return schedule(definition.key, definition.name ?: definition.key, cron, state(definition.key))
-    }
+    fun all(): List<Schedule> = schedules().values.mapNotNull { it.process }.distinct().flatMap(::of).sortedBy { it.next }
 
     fun of(processKey: String): List<Schedule> {
         val definition = latest(processKey) ?: return emptyList()
         val fields = startForm.fields(definition)
         val process = definition.name ?: processKey
-        return states().filterValues { it.process == processKey }.map { (id, state) ->
+        return schedules().filterValues { it.process == processKey }.map { (id, state) ->
             val repos = fields.filter { it.type == FieldType.REPOS }.flatMap { state.values[it.name].orEmpty() }.flatMap { it.split(Regex("[,\\s]+")) }.filter(String::isNotEmpty)
             val label = runName(state.values[NAME]?.firstOrNull()) ?: listOf(process, repos.joinToString(", ")).filter(String::isNotEmpty).joinToString(" · ")
             val values = fields.associate { field -> field.label to state.values[field.name].orEmpty().filter(String::isNotBlank).joinToString(", ") }.filterValues(String::isNotEmpty)
-            schedule(processKey, process, state.cron.orEmpty(), state, id, label, state.values[PROFILE]?.firstOrNull(), values)
+            val next = if (state.paused) null else runCatching { CronExpression.parse(state.cron.orEmpty()).next(clock.instant().atZone(clock.zone))?.toInstant() }.getOrNull()
+            val ahead = next?.let { countdown(Duration.between(clock.instant(), it)) }
+            Schedule(processKey, process, state.cron.orEmpty(), state.paused, next, next?.let(clock::local), ahead, state.skipped, state.failed, id, label, state.values[PROFILE]?.firstOrNull(), values)
         }
     }
 
@@ -134,65 +121,52 @@ class Schedules(
 
     fun dismiss(id: String) = update(id) { it.copy(failed = null) }
 
-    /** **Start now**: the scheduled Run of [definition], with the stored values, as the loop starts it. */
-    fun startNow(definition: ProcessDefinition): ProcessInstance = started(definition.key) { startForm.start(definition, stored(definition)) }
-
-    private fun started(id: String, start: () -> ProcessInstance): ProcessInstance = synchronized(this) {
+    fun startNow(id: String): ProcessInstance = synchronized(this) {
         try {
-            start().also { run -> update(id) { it.copy(run = run.id, skipped = null, failed = null) } }
+            val state = states().getValue(id)
+            val definition = latest(state.process.orEmpty()) ?: throw Unfilled("There is no Process ${state.process} any more.")
+            val name = runName(state.values[NAME]?.firstOrNull())?.let { clock.defaultName(it) }
+            startForm.start(definition, state.values + (NAME to listOfNotNull(name))).also { run -> update(id) { it.copy(run = run.id, skipped = null, failed = null) } }
         } catch (e: Exception) {
             update(id) { it.copy(failed = FailedStart(e.message ?: e.javaClass.simpleName, clock.instant())) }
             throw e
         }
     }
 
-    fun startNow(id: String): ProcessInstance = started(id) {
-        val state = states().getValue(id)
-        val definition = latest(state.process.orEmpty()) ?: throw Unfilled("There is no Process ${state.process} any more.")
-        val name = runName(state.values[NAME]?.firstOrNull())?.let { clock.defaultName(it) }
-        startForm.start(definition, state.values + (NAME to listOfNotNull(name)))
+    fun migrate() = synchronized(this) {
+        for (definition in repository.createProcessDefinitionQuery().latestVersion().list()) {
+            val model = repository.getBpmnModelInstance(definition.id)
+            val timer = model.drawnTimer() ?: continue
+            val cron = timer.timeCycle?.textContent?.trim()?.ifEmpty { null }
+            val drawn = states()[definition.key] ?: State()
+            val deployed = repository.createDeploymentQuery().deploymentId(definition.deploymentId).singleResult().deploymentTime.toInstant()
+            val values = stored(definition) + listOfNotNull(startForm.diagramProfile(definition)?.let { PROFILE to listOf(it) })
+            timer.parentElement.removeChildElement(timer)
+            repository.createDeployment().name(definition.resourceName).addString(definition.resourceName, Bpmn.convertToString(model)).deploy()
+            val schedule = cron?.let { State(drawn.paused, drawn.last ?: deployed, process = definition.key, cron = it, values = values) }
+            write(states() - definition.key + listOfNotNull(schedule?.let { UUID.randomUUID().toString() to it }))
+        }
     }
 
     private fun tick() = try {
-        for (definition in repository.createProcessDefinitionQuery().latestVersion().list()) {
-            val cron = repository.getBpmnModelInstance(definition.id).schedule() ?: continue
-            runCatching { due(definition, CronExpression.parse(cron)) }.onFailure { log.warn("The Schedule of ${definition.key} failed", it) }
-        }
-        for (id in states().filterValues { it.process != null }.keys) {
+        for (id in schedules().keys) {
             runCatching { due(id) }.onFailure { log.warn("The Schedule $id failed", it) }
         }
     } catch (e: Exception) {
         log.warn("The Schedule loop failed", e) // and goes round again
     }
 
-    /** Starts a Run of [definition] if a time of [cron] came since the last start, or notes the latest one skipped. */
-    private fun due(definition: ProcessDefinition, cron: CronExpression): Unit = synchronized(this) {
-        // A version the loop listed before a Save or Remove replaced it: its key's state is the new version's now.
-        if (repository.createProcessDefinitionQuery().processDefinitionKey(definition.key).latestVersion().singleResult()?.id != definition.id) return
-        val deployed = repository.createDeploymentQuery().deploymentId(definition.deploymentId).singleResult().deploymentTime.toInstant()
-        due(definition.key, state(definition.key), cron, deployed) { startNow(definition) }
-    }
-
     private fun due(id: String): Unit = synchronized(this) {
-        val state = states()[id]?.takeIf { it.process != null } ?: return
-        due(id, state, CronExpression.parse(state.cron.orEmpty()), clock.instant()) { startNow(id) }
-    }
-
-    private fun due(id: String, state: State, cron: CronExpression, since: Instant, start: () -> ProcessInstance) {
+        val state = schedules()[id] ?: return
         if (state.paused) return
+        val cron = CronExpression.parse(state.cron.orEmpty())
         val now = clock.instant()
         // ponytail: steps through every time missed, so a cron of every second missed for a month takes a while.
-        val time = generateSequence(cron.next((state.last ?: since).atZone(clock.zone))) { cron.next(it) }.takeWhile { it.toInstant() <= now }.lastOrNull() ?: return
+        val time = generateSequence(cron.next((state.last ?: now).atZone(clock.zone))) { cron.next(it) }.takeWhile { it.toInstant() <= now }.lastOrNull() ?: return
         update(id) { it.copy(last = now) }
         val last = state.run?.let { history.createHistoricProcessInstanceQuery().processInstanceId(it).active().singleResult() }
         if (last != null) update(id) { it.copy(skipped = "Skipped ${clock.local(time.toInstant())}: the last Run from this Schedule was still going.") }
-        else runCatching { start() }
-    }
-
-    private fun schedule(key: String, process: String, cron: String, state: State, id: String? = null, label: String = process, profile: String? = null, values: Map<String, String> = emptyMap()): Schedule {
-        val next = if (state.paused) null else runCatching { CronExpression.parse(cron).next(clock.instant().atZone(clock.zone))?.toInstant() }.getOrNull()
-        val ahead = next?.let { countdown(Duration.between(clock.instant(), it)) }
-        return Schedule(key, process, cron, state.paused, next, next?.let(clock::local), ahead, state.skipped, state.failed, id, label, profile, values)
+        else runCatching { startNow(id) }
     }
 
     private fun latest(key: String): ProcessDefinition? = repository.createProcessDefinitionQuery().processDefinitionKey(key).latestVersion().singleResult()
@@ -205,7 +179,7 @@ class Schedules(
     private fun states(): Map<String, State> = if (!file.exists()) emptyMap()
     else yaml.load<Map<String, Map<*, *>>?>(file.readText()).orEmpty().mapValues { State.of(it.value) }
 
-    private fun state(key: String) = states()[key] ?: State()
+    private fun schedules() = states().filterValues { it.process != null }
 
     private fun write(states: Map<String, State>) = file.writeAtomically(yaml.dump(states.mapValues { it.value.toYaml() }))
 
@@ -215,18 +189,13 @@ class Schedules(
     }
 }
 
-/** The Process's Schedule: the cron on its timer start event, or null when it starts only by hand. */
-fun BpmnModelInstance.schedule(): String? = scheduleTimer()?.timeCycle?.textContent?.trim()?.ifEmpty { null }
-
-/** The timer of the Process's start event, if it has one; a sub-process's start event is not a Schedule. */
-fun BpmnModelInstance.scheduleTimer(): TimerEventDefinition? = getModelElementsByType(Process::class.java)
+private fun BpmnModelInstance.drawnTimer(): TimerEventDefinition? = getModelElementsByType(Process::class.java)
     .flatMap { it.getChildElementsByType(StartEvent::class.java) }
     .firstNotNullOfOrNull { it.getChildElementsByType(TimerEventDefinition::class.java).firstOrNull() }
 
 /** How long until a time [ahead], to the nearest minute: `in 6h 12m`, or `in 1d 6h`. */
 fun countdown(ahead: Duration) = "in " + duration(Duration.ofMinutes((ahead.toSeconds() + 30) / 60), seconds = false)
 
-/** A Schedule in words, as the modeler writes it: every hour, day, weekday, week or month at a time, else its six fields. */
 fun inWords(cron: String): String {
     val fields = cron.trim().split(Regex("\\s+"))
     if (fields.size != 6 || fields[0] != "0" || fields[4] != "*") return "At times $cron"

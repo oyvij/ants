@@ -54,7 +54,7 @@ class TaskEntry(
 ) : Entry(id, tag, process, task, summary, since)
 
 class StartEntry(val schedule: Schedule, failed: FailedStart) : Entry(
-    "schedule-${schedule.id ?: schedule.key}", "[failed]", schedule.process, schedule.label, "The scheduled Run didn't start: ${failed.why}", Date.from(failed.at),
+    "schedule-${schedule.id}", "[failed]", schedule.process, schedule.label, "The scheduled Run didn't start: ${failed.why}", Date.from(failed.at),
 )
 
 /**

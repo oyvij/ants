@@ -4,7 +4,7 @@
 // and explanation (the Agent Task's Agent and Skill, a decision's paths) is a function in `panels`. What it writes as
 // text, with no page, is in modeler-text.js.
 
-import {camel, cronOf, everies, operators, readCondition, readSchedule, resultFields, toCamunda, unary, weekdays} from "/modeler-text.js"
+import {camel, operators, readCondition, resultFields, toCamunda, unary} from "/modeler-text.js"
 
 // From the server (modelerFacts in Checks.kt): what Ants calls each element it runs and what it does there (the
 // palette's tooltip and the panel's explanation), the Built-in Tasks by topic with their name and what each does, the start-form field types by the
@@ -26,7 +26,7 @@ function kindOf(element) {
     const timer = definitions.length === 1 && definitions[0].$type === "bpmn:TimerEventDefinition"
     switch (bo.$type) {
         case "bpmn:Process": return "process"
-        case "bpmn:StartEvent": return timer ? "timer-start" : definitions.length ? null : "start"
+        case "bpmn:StartEvent": return definitions.length ? null : "start"
         case "bpmn:EndEvent": return definitions.length ? null : "end"
         case "bpmn:IntermediateCatchEvent": return timer ? "timer" : null
         case "bpmn:BoundaryEvent": return timer ? "timer-boundary" : null
@@ -108,7 +108,7 @@ AntsContextPad.$inject = ["contextPad", "autoPlace", "create", "elementFactory",
 // The create (N), append (A) and replace (wrench) menus offer only elements Ants runs, by their entry ids without the
 // `create-`, `append-` or `replace-with-` prefix. Agent and Built-in Tasks come from the palette and the hover menu.
 const offered = new Set([
-    "none-start-event", "none-start", "timer-start", "none-end-event", "none-end", "timer-intermediate-catch", "timer-boundary",
+    "none-start-event", "none-start", "none-end-event", "none-end", "timer-intermediate-catch", "timer-boundary",
     "exclusive-gateway", "parallel-gateway", "user-task", "call-activity", "expanded-subprocess", "subprocess", "collapsed-subprocess",
     "sequence-flow", "default-flow", "conditional-flow",
 ])
@@ -298,7 +298,7 @@ function startForm(element) {
                 el("label", {}, el("input", {type: "checkbox", checked: f.required, onchange: event => { f.required = event.target.checked; save() }}), " Required"), el("br"),
                 el("label", {}, "Help ", input(f, "help", {placeholder: "e.g. What the Run should build"})), el("br"),
                 el("label", {}, "Example ", input(f, "example", {placeholder: "e.g. Add a dark mode toggle"})), el("br"),
-                el("label", {title: "Used by the Schedule; Repos as names separated by commas"}, "Stored value ", input(f, "stored", {placeholder: "e.g. api, web"})), el("br"),
+                el("label", {title: "Prefills the start form; Repos as names separated by commas"}, "Stored value ", input(f, "stored", {placeholder: "e.g. api, web"})), el("br"),
                 move(i - 1, "Up"), move(i + 1, "Down"),
                 el("button", {textContent: "Remove", onclick: () => { fields.splice(i, 1); redraw() }}))
         }),
@@ -466,47 +466,6 @@ function timerPanel(element) {
 }
 panels.timer = timerPanel
 panels["timer-boundary"] = timerPanel
-
-// The Schedule in words (readSchedule and cronOf), any other cron under Advanced.
-function schedulePanel(element) {
-    const definition = element.businessObject.eventDefinitions[0]
-    const schedule = readSchedule(definition.timeCycle?.body || "0 0 8 * * *")
-    const every = el("select", {}, ...Object.entries(everies).map(([value, text]) => el("option", {value, textContent: text, selected: value === schedule.every})))
-    const at = el("input", {type: "time", value: schedule.at || "08:00"})
-    const on = el("select", {}, ...Object.entries(weekdays).map(([value, text]) => el("option", {value, textContent: text, selected: value === schedule.on})))
-    const dom = el("input", {type: "number", min: 1, max: 31, value: schedule.dom || 1, placeholder: "e.g. 1"})
-    const cron = el("input", {value: schedule.cron, placeholder: "e.g. 0 0 8 * * MON-FRI", size: 20})
-    const parts = {at: el("label", {}, " at ", at), on: el("label", {}, " on ", on), dom: el("label", {}, " on day ", dom), cron: el("label", {}, " cron ", cron)}
-    const show = () => {
-        parts.at.hidden = ["hour", "advanced"].includes(every.value)
-        parts.on.hidden = every.value !== "week"
-        parts.dom.hidden = every.value !== "month"
-        parts.cron.hidden = every.value !== "advanced"
-    }
-    const write = () => {
-        show()
-        const body = cronOf({every: every.value, at: at.value, on: on.value, dom: dom.value, cron: cron.value.trim()})
-        if (every.value !== "advanced") cron.value = body
-        quiet = true
-        try {
-            modeler.get("modeling").updateModdleProperties(element, definition, {
-                timeDuration: undefined, timeDate: undefined,
-                timeCycle: body ? modeler.get("bpmnFactory").create("bpmn:FormalExpression", {body}) : undefined,
-            })
-        } finally {
-            quiet = false
-        }
-    }
-    every.onchange = on.onchange = write
-    at.oninput = dom.oninput = cron.oninput = write
-    show()
-    if (!definition.timeCycle?.body) write() // a new timer start gets every day at 08:00
-    return el("div", {},
-        el("h3", {textContent: "Schedule"}),
-        el("p", {}, el("label", {}, "Every ", every), parts.at, parts.on, parts.dom, parts.cron),
-        el("p", {textContent: "Every required start-form field needs a stored value, since a scheduled Run starts with no one there. Pause or remove the Schedule on the Process page."}))
-}
-panels["timer-start"] = element => el("div", {}, schedulePanel(element), startForm(element))
 
 // The Process: the Profile (a Vault and a Source map) its Runs use unless the start form picks another, as its
 // Profile property. Offered once the settings have more than one Profile, or when the Process names one.

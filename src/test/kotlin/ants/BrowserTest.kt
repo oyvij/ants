@@ -114,6 +114,20 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `the modeler knows no Schedule, so a start event's panel has no Schedule nor its hint, and the wrench menu offers no timer start`() = browse {
+        page.navigate(url("/processes/new?name=No+schedule&from="))
+        shape("start").click()
+        assertThat(heading).hasText("Start event")
+        button("＋ Add field").click()
+        assertThat(panel).containsText("Stored value")
+        assertThat(panel).not().containsText("Schedule")
+        assertThat(page.locator("#explain [title*='Schedule']")).hasCount(0)
+        pad.locator("[data-action='replace']").click()
+        assertThat(page.locator(".djs-popup")).isVisible()
+        assertThat(page.locator(".djs-popup [data-id='replace-with-timer-start']")).hasCount(0)
+    }
+
+    @Test
     fun `clicking a Check selects its element, inside a collapsed sub-process too`() = browse {
         agentTask(null)
         val outer = agentTaskXml("outer", "Outer")
@@ -245,7 +259,7 @@ class BrowserTest : AntsTest() {
         assertThat(shape("grill")).isVisible()
         assertThat(shape("again")).hasCount(1)
 
-        for (kind in listOf("start", "timer-start", "end", "timer", "exclusive", "parallel", "agent", "user", "built-in", "call", "subprocess", "annotation", "group")) {
+        for (kind in listOf("start", "end", "timer", "exclusive", "parallel", "agent", "user", "built-in", "call", "subprocess", "annotation", "group")) {
             val id = tool("add_element", mapOf("kind" to kind, "name" to "A $kind"))["id"].asString()
             assertThat(shape(id)).hasCount(1)
         }

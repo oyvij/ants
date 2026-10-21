@@ -642,7 +642,6 @@ class RunLifecycle(@Value("\${ants.home}") private val home: Path, private val s
         configuration.customPostBPMNParseListeners = (configuration.customPostBPMNParseListeners ?: mutableListOf()) +
             object : BpmnParseListener {
                 override fun parseProcess(element: Element, process: ProcessDefinitionEntity) {
-                    // A timer start is the Process's Schedule, which Ants runs itself (Schedules), so Operaton gets no timer job.
                     process.setProperty(BpmnParse.PROPERTYNAME_START_TIMER, null)
                     val tasks = process.tasks()
                     tasks.forEach { it.addBuiltInListener(ExecutionListener.EVENTNAME_START, counted) }

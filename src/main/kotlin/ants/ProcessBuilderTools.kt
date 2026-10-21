@@ -418,7 +418,7 @@ class ProcessBuilderTools(
                         "required" to mapOf("type" to "boolean"),
                         "help" to mapOf("type" to "string"),
                         "example" to mapOf("type" to "string"),
-                        "stored" to mapOf("type" to "string", "description" to "The value a Schedule starts with."),
+                        "stored" to mapOf("type" to "string", "description" to "The value the start form is prefilled with."),
                     ),
                 )),
             )),

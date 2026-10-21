@@ -68,119 +68,69 @@ class ScheduleTest : AntsTest() {
     /** Lets the loop go round a few times, for what should not happen. */
     private fun settle() = Thread.sleep(1000)
 
+    @Autowired
+    lateinit var schedules: Schedules
+
+    private fun deployDrawn(bpmn: String) {
+        val operaton = bpmn.replace("http://camunda.org/schema/1.0/bpmn", "http://operaton.org/schema/1.0/bpmn")
+        repository.createDeployment().name("$key.bpmn").addString("$key.bpmn", operaton).deploy()
+    }
+
+    private fun drawnState(state: String) = home.resolve("schedules.yaml").writeText("$key:\n$state")
+
+    private fun versions() = repository.createProcessDefinitionQuery().processDefinitionKey(key).count()
+
+    private fun latestDiagram() = browser.get("/processes/$key/diagram.bpmn").body
+
     @Test
-    fun `a Schedule starts a Run at its time, with the stored values`() {
+    fun `a drawn timer becomes a Schedule with its stored values, the Process's Profile and its paused state, and the latest version has no timer`() {
+        twoProfiles()
+        val profiled = bpmn().replace("camunda:historyTimeToLive=\"180\">",
+            "camunda:historyTimeToLive=\"180\"><bpmn:extensionElements><camunda:properties><camunda:property name=\"$PROFILE\" value=\"other\" /></camunda:properties></bpmn:extensionElements>")
+        deployDrawn(profiled)
+        drawnState("  paused: true\n  last: '${clock.instant()}'\n")
+
+        schedules.migrate()
+        val migrated = row("Nightly")!!
+        val migratedId = idOf("Nightly")
+        assertContains(migrated, "<td>other</td>")
+        assertContains(migrated, "<span class=\"muted\">Prompt</span> Sweep")
+        assertContains(migrated, "Every hour")
+        assertContains(migrated, "<span class=\"muted\">paused</span>")
+        assertEquals(2, versions())
+        assertFalse("timerEventDefinition" in latestDiagram())
+        assertContains(latestDiagram(), "value=\"other\"")
+
+        schedules.migrate()
+        assertEquals(2, versions())
+        assertEquals(1, Regex("<tr id=\"schedule-").findAll(browser.get("/processes/$key").body).count())
+        assertEquals(migratedId, idOf("Nightly"))
+    }
+
+    @Test
+    fun `a migrated Schedule runs the times missed since its last start once, then starts a Run at each time`() {
         home.resolve("settings.yaml").writeAtomically(vault)
-        deploy()
+        deployDrawn(bpmn())
         assertEquals(0, management.createJobQuery().processDefinitionKey(key).count(), "Operaton runs no start timer of its own")
-        settle()
-        assertEquals(0, runs())
-        clock.offset = Duration.ofHours(1)
+        drawnState("  last: '${clock.instant().minus(Duration.ofHours(5))}'\n")
+
+        schedules.migrate()
         eventually { assertEquals(1, runs()) }
+        settle()
+        assertEquals(1, runs())
         val run = history.createHistoricProcessInstanceQuery().processDefinitionKey(key).singleResult()
+        assertEquals(2, repository.getProcessDefinition(run.processDefinitionId).version)
         val page = browser.get("/runs/${run.id}").body
         assertContains(page, "<dt>prompt</dt><dd><code>Sweep</code></dd>")
-        assertContains(page, Regex("<span id=\"name\">Nightly, \\d{1,2} [A-Z][a-z]{2} \\d\\d:\\d\\d</span>")) // named as an unnamed Run is
-    }
+        assertContains(page, Regex("<span id=\"name\">Nightly, \\d{1,2} [A-Z][a-z]{2} \\d\\d:\\d\\d</span>"))
 
-    @Test
-    fun `several missed times run once`() {
-        home.resolve("settings.yaml").writeAtomically(vault)
-        deploy()
-        clock.offset = Duration.ofHours(5)
-        eventually { assertEquals(1, runs()) }
-        settle()
-        assertEquals(1, runs())
-    }
-
-    @Test
-    fun `an overlapping time is skipped and noted on the Process page, by the latest time skipped, until a Run starts again`() {
-        home.resolve("settings.yaml").writeAtomically(vault)
-        deploy(bpmn(waits = true))
         clock.offset = Duration.ofHours(1)
-        eventually { assertEquals(1, runs()) }
-        clock.offset = Duration.ofHours(3) // two times come while the Run waits
-        eventually { assertContains(browser.get("/processes/$key").body, "the last Run from this Schedule was still going") }
-        assertEquals(1, runs())
-        val latest = clock.local(clock.instant().atZone(clock.zone).truncatedTo(ChronoUnit.HOURS).toInstant())
-        assertContains(browser.get("/processes/$key").body, "Skipped $latest:")
-
-        tasks.complete(tasks.createTaskQuery().processDefinitionKey(key).singleResult().id)
-        clock.offset = Duration.ofHours(4)
         eventually { assertEquals(2, runs()) }
-        eventually { assertFalse("Skipped " in browser.get("/processes/$key").body) } // cleared just after the Run starts
-    }
-
-    @Test
-    fun `a scheduled Run that can't start is a failed entry on the Notification list, with Start now and Dismiss`() {
-        home.resolve("settings.yaml").writeAtomically("") // no Vault, so the pre-Run check refuses
-        deploy()
-        clock.offset = Duration.ofHours(1)
-        eventually { assertContains(browser.get("/notifications").body, "Configure a Vault") }
-        val list = browser.get("/notifications").body
-        assertContains(list, "<i>✕</i>[failed]")
-        assertContains(list, "Nightly")
-        assertContains(list, "href=\"/notifications/schedule-$key\"")
-        assertEquals(0, runs())
-
-        val entry = browser.get("/notifications/schedule-$key").body
-        assertContains(entry, "The scheduled Run didn't start: Configure a Vault")
-        assertContains(entry, """<form method="post" action="/processes/$key/schedule/start">""")
-        assertContains(entry, """<form method="post" action="/processes/$key/schedule/dismiss">""")
-        home.resolve("settings.yaml").writeAtomically(vault)
-        val run = browser.post("/processes/$key/schedule/start", mapOf())
-        assertContains(run.path, "/runs/")
-        assertEquals(1, runs())
-        assertFalse("Configure a Vault" in browser.get("/notifications").body)
-
-        home.resolve("settings.yaml").writeAtomically("")
-        clock.offset = Duration.ofHours(2)
-        eventually { assertContains(browser.get("/notifications").body, "Configure a Vault") }
-        assertContains(browser.get("/processes/$key").body, """<button class="primary">Start now</button>""") // the Process page has them too
-        browser.get("/notifications/schedule-$key")
-        assertEquals("/notifications", browser.post("/processes/$key/schedule/dismiss", mapOf("back" to "notifications")).path)
-        assertFalse("Configure a Vault" in browser.get("/notifications").body)
-        assertFalse("Start now" in browser.get("/processes/$key").body)
-        assertEquals(404, browser.get("/notifications/schedule-$key").status)
-    }
-
-    @Test
-    fun `Save and deploy refuses a Schedule while a required field has no stored value, or a time Ants can't run`() {
-        val refused = deploy(bpmn(stored = null))
-        assertEquals(400, refused.status)
-        assertContains(refused.body, "start has a Schedule, so its required start-form field Prompt needs a stored value.")
-        assertContains(deploy(bpmn(cron = "R/PT1H")).body, "start has a Schedule whose times Ants can't read")
-        assertEquals(404, browser.get("/processes/$key").status)
+        assertEquals(0, management.createJobQuery().processDefinitionKey(key).count())
     }
 
     /** Home's Coming up. */
     private fun comingUp() = browser.get("/").body.substringAfter("id=\"coming-up\">").substringBefore("<div class=\"card\" id=")
-
-    @Test
-    fun `Home's Coming up lists the next scheduled Runs, a paused Schedule doesn't run, and a removed one is gone`() {
-        home.resolve("settings.yaml").writeAtomically(vault)
-        deploy(bpmn(cron = "0 30 8 * * *"))
-        assertContains(browser.get("/processes/$key").body, "Every day at 08:30")
-        assertContains(comingUp(), "Nightly")
-        assertContains(comingUp(), "08:30")
-
-        browser.post("/processes/$key/schedule/pause", mapOf())
-        assertContains(browser.get("/processes/$key").body, "paused")
-        assertFalse("Nightly" in comingUp())
-        clock.offset = Duration.ofDays(2)
-        settle()
-        assertEquals(0, runs())
-
-        browser.post("/processes/$key/schedule/resume", mapOf())
-        settle()
-        assertEquals(0, runs(), "the times missed while paused don't run")
-        assertContains(comingUp(), "Nightly")
-
-        browser.post("/processes/$key/schedule/remove", mapOf())
-        assertContains(browser.get("/processes/$key").body, "No schedule. Runs start when someone presses Start.")
-        assertFalse("timerEventDefinition" in browser.get("/processes/$key/diagram.bpmn").body)
-        assertFalse("Nightly" in comingUp())
-    }
 
     private val api by lazy { repo("api") }
     private val web by lazy { repo("web") }

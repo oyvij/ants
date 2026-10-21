@@ -10,7 +10,6 @@
 @param profileFrom: String = "the default"
 @param source: ants.Profile?
 @param reasons: List<String>
-@param schedule: ants.Schedule? = null
 @param schedules: List<ants.Schedule> = emptyList()
 @param runName: String = ""
 @param cron: String? = null
@@ -21,7 +20,7 @@
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
 @param shell: ants.Shell
-!{val key = process.key; val title = process.name ?: key; val scheduled = schedule != null || schedules.isNotEmpty(); val scopable = reasons == listOf(PreRun.CONFIGURE_VAULT) && fields.any { it.type == FieldType.REPOS };}
+!{val key = process.key; val title = process.name ?: key; val scheduled = schedules.isNotEmpty(); val scopable = reasons == listOf(PreRun.CONFIGURE_VAULT) && fields.any { it.type == FieldType.REPOS };}
 <!doctype html>
 <html lang="en">
 <head>
@@ -104,24 +103,7 @@
 @if(!scheduled)
     <h3>⏰ Schedule</h3>
     <div class="row"><span class="muted grow">No schedule. Runs start when someone presses Start.</span><a class="btn" href="#start">＋ Add a schedule</a></div>
-@elseif(schedule != null)
-    <h3>⏰ Schedule <span class="grow"></span>@if(schedule.paused)<span class="pill p-quiet">Paused</span>@else<span class="pill p-ready">On</span>@endif</h3>
-    <div class="kv">
-        <span class="k">Runs</span><span>${schedule.words}</span>
-        <span class="k">Next Run</span><span>@if(schedule.paused)<span class="muted">paused</span>@elseif(reasons.isNotEmpty())<span style="color: var(--bad)">won't start until the check above passes</span>@else${schedule.at} · ${schedule.countdown}@endif</span>
-        <span class="k">Cron</span><span><code>${schedule.cron}</code> <a class="small" href="/processes/${key}/edit">Change it on the diagram</a></span>
-    </div>
-    @if(schedule.skipped != null)<div class="warn">${schedule.skipped}</div>@endif
-    @if(schedule.failed != null)
-    <div class="failed"><p role="alert">✕ [failed] The scheduled Run didn't start: ${schedule.failed.why}</p>
-    <form method="post" action="/processes/${key}/schedule/start"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button class="primary">Start now</button></form>
-    <form method="post" action="/processes/${key}/schedule/dismiss"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>Dismiss</button></form></div>
-    @endif
-    <div class="subsec row"><span class="help grow">Missed while Ants was off or asleep? It runs once when Ants is back, not once per missed time.</span>
-    <form method="post" action="/processes/${key}/schedule/${if (schedule.paused) "resume" else "pause"}"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>${if (schedule.paused) "Resume" else "Pause"}</button></form>
-    <form method="post" action="/processes/${key}/schedule/remove"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button class="danger">Remove</button></form></div>
-@endif
-@if(schedules.isNotEmpty())
+@else
     <h3>⏰ Schedules</h3>
     <table id="schedules">
     <tr><th>Schedule</th><th>Profile</th><th>Values</th><th>Runs</th><th>Cron</th><th>Next Run</th><th></th></tr>
@@ -132,6 +114,7 @@
     <form method="post" action="${each.actions}/remove"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button class="danger">Remove</button></form></td></tr>
     @endfor
     </table>
+    <div class="subsec help">Missed while Ants was off or asleep? It runs once when Ants is back, not once per missed time.</div>
 @endif
 </div>
 <h2>Diagram</h2>
