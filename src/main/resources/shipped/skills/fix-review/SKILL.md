@@ -39,6 +39,7 @@ step each comment points at.
 
 Fix by following the tdd Skill: a failing test for each behaviour the review says is wrong, then
 the fix. Commit in small steps, in the repo's commit-message style, and run each touched repo's
+tests as its `CLAUDE.md`, `AGENTS.md` or `CONTRIBUTING.md` says; where they say nothing, run its
 whole suite once at the end.
 
 ## 3. Review
