@@ -1706,8 +1706,8 @@ class BrowserTest : AntsTest() {
         page.getByText("Advanced", Page.GetByTextOptions().setExact(true)).click()
         assertWithinCard(part("cron"), fieldset, "the Advanced cron field")
         assertWithinCard(page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("Save schedule")), fieldset, "Save schedule")
-        val (fieldsetBox, everyBox) = fieldset.boundingBox() to line(every).boundingBox()
-        assertTrue(everyBox.width >= fieldsetBox.width - 40, "Every's line spans the When fieldset, ${everyBox.width}px of ${fieldsetBox.width}px")
+        val inside = (fieldset.evaluate("f => { const s = getComputedStyle(f); return f.clientWidth - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight) }") as Number).toDouble()
+        assertEquals(inside, line(every).boundingBox().width, 1.0, "Every's line spans the When fieldset")
         page.screenshot("phone/when")
 
         page.setViewportSize(1280, 900)
