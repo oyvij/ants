@@ -155,6 +155,7 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
     }
 
     private fun save(model: Model, form: AgentForm, agent: Agent?, params: Map<String, String> = emptyMap()): String {
+        val modal = if (model.getAttribute("use") == true) "?use" else ""
         val target = if (agent != null && form.name == agent.name) agent.file else folder.resolve("${form.name}.md")
         val error = form.error() ?: when {
             catalogue.agents().any { it.name == form.name && it.file != agent?.file } -> "An Agent named ${form.name} already exists."
@@ -163,11 +164,11 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
         }
         if (error != null) return show(model, form, agent, error)
         if (agent != null && form.name != agent.name && "confirm" !in params) {
-            return confirm(model, "Rename the Agent ${agent.name} to ${form.name}?", usedBy.agent(agent.name), "/agents/${agent.name}", params, "/agents/${agent.name}")
+            return confirm(model, "Rename the Agent ${agent.name} to ${form.name}?", usedBy.agent(agent.name), "/agents/${agent.name}", params, "/agents/${agent.name}$modal")
         }
         target.writeAtomically(form.text())
         if (agent != null && target != agent.file) agent.file.deleteIfExists()
-        return "redirect:/agents/${form.name}" + if (model.getAttribute("use") == true) "?saved" else ""
+        return "redirect:/agents/${form.name}" + if (modal.isEmpty()) "" else "?saved"
     }
 
     private fun show(model: Model, form: AgentForm, agent: Agent?, error: String? = null, notice: String? = null): String {

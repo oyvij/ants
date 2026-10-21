@@ -242,6 +242,7 @@ class SkillsTest : AntsTest() {
         val rename = browser.post("/skills/tidy", mapOf("skill" to skillMd("tidier"), "schema" to "", "use" to ""))
         assertContains(rename.body, "Rename the Skill tidy to tidier?")
         assertContains(rename.body, """<input type="hidden" name="use" value="">""")
+        assertContains(rename.body, """<a href="/skills/tidy?use=">Cancel</a>""")
         val renamed = browser.post("/skills/tidy", mapOf("skill" to skillMd("tidier"), "schema" to "", "use" to "", "confirm" to "on"))
         assertEquals("/skills/tidier" to "saved", renamed.path to renamed.query)
 

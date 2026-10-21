@@ -356,6 +356,7 @@ class AgentsTest : AntsTest() {
         val rename = browser.post("/agents/editor", mapOf("name" to "renamed-editor", "cli" to "claude", "use" to ""))
         assertContains(rename.body, "Rename the Agent editor to renamed-editor?")
         assertContains(rename.body, """<input type="hidden" name="use" value="">""")
+        assertContains(rename.body, """<a href="/agents/editor?use">Cancel</a>""")
         val renamed = browser.post("/agents/editor", mapOf("name" to "renamed-editor", "cli" to "claude", "use" to "", "confirm" to "on"))
         assertEquals("/agents/renamed-editor" to "saved", renamed.path to renamed.query)
 

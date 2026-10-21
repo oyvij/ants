@@ -139,6 +139,7 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy) {
 
     /** Saves the Skill and opens it, calling [saved] with its name, else shows the form again with why not. */
     private fun save(posted: SkillForm, model: Model, confirmed: Boolean = false, saved: (String) -> Unit = {}): String {
+        val modal = model.getAttribute("use")?.let { "?use=$it" }.orEmpty()
         val edited = posted.name?.let(::yours)
         val form = posted.copy(where = edited?.folder?.toString().orEmpty())
         val name = try {
@@ -164,14 +165,14 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy) {
         if (edited != null && name != edited.name) {
             if (!confirmed) {
                 val params = mapOf("skill" to form.skill, "schema" to form.schema) + listOfNotNull(model.getAttribute("use")?.let { "use" to it.toString() })
-                return confirm(model, "Rename the Skill ${edited.name} to $name?", usedBy.skill(edited.name), "/skills/${edited.name}", params, "/skills/${edited.name}")
+                return confirm(model, "Rename the Skill ${edited.name} to $name?", usedBy.skill(edited.name), "/skills/${edited.name}", params, "/skills/${edited.name}$modal")
             }
             if (folder != edited.folder) Files.move(edited.folder, folder)
         }
         folder.resolve("result.schema.json").run { if (form.schema.isBlank()) deleteIfExists() else writeAtomically(form.schema) }
         folder.resolve("SKILL.md").writeAtomically(form.skill)
         saved(name)
-        return "redirect:/skills/$name" + if (model.getAttribute("use") != null) "?saved" else ""
+        return "redirect:/skills/$name" + if (modal.isEmpty()) "" else "?saved"
     }
 
     private fun find(name: String) = runCatching { catalogue.skill(name) }
