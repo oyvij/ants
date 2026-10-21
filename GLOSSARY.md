@@ -108,6 +108,7 @@ _Avoid_: credential, env var, key
 **Protected Command**:
 A command prefix, such as `yarn` or `mvn deploy`, that Agents may ask Ants to run with any arguments, in their Run
 workspace, with the Secrets linked to it; the Agent gets its output, never the Secrets.
+_Avoid_: build, command, script
 
 **Process Builder**:
 The AI in the modeler that builds and changes the open Process from what the user writes to it, in a
@@ -118,7 +119,6 @@ _Avoid_: ProcessBuilderAgent, modeler chat, assistant
 What the Process Builder keeps of a Process it has worked on: what the Process is for, the decisions
 taken and what is left, read by the next dialog about that Process to carry on.
 _Avoid_: chat history, session log, Transcript
-_Avoid_: build, command, script
 
 **Result**:
 What an Agent hands back when its Task ends: either done, carrying what the Task promised, or stuck,

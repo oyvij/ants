@@ -122,6 +122,12 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy) {
     @ResponseBody
     fun check(@RequestParam schema: String) = ResultContract.schemaErrors(schema)
 
+    /**
+     * The Process Builder's save (ADR 0019): a `SKILL.md` and its result schema through the page's own save, as a new
+     * Skill or over the user's own Skill [name], renaming it without asking. Gives the saved Skill's page, or throws with the page's error.
+     */
+    fun write(skill: String, schema: String, name: String?): String = redirected("message") { save(SkillForm(name, skill, schema), it, confirmed = true) }
+
     /** Saves the Skill and opens it, calling [saved] with its name, else shows the form again with why not. */
     private fun save(posted: SkillForm, model: Model, confirmed: Boolean = false, saved: (String) -> Unit = {}): String {
         val edited = posted.name?.let(::yours)

@@ -135,6 +135,20 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
         return "redirect:/agents/$copy"
     }
 
+    /**
+     * The Process Builder's save (ADR 0019): [text], an agent file, through the page's own save, as a new Agent or over
+     * the user's own Agent [name], renaming it without asking. Gives the saved Agent's page, or throws with the page's error.
+     */
+    fun write(text: String, name: String?): String {
+        val agent = name?.let { editable(find(it)) }
+        val parsed = try {
+            Agent(folder.resolve("new.md"), text)
+        } catch (e: YAMLException) {
+            throw Refused("The agent file has broken YAML: ${e.message}")
+        }
+        return redirected("error") { save(it, AgentForm.of(parsed, name = parsed.meta["name"]?.toString().orEmpty()), agent, mapOf("confirm" to "")) }
+    }
+
     private fun save(model: Model, form: AgentForm, agent: Agent?, params: Map<String, String> = emptyMap()): String {
         val target = if (agent != null && form.name == agent.name) agent.file else folder.resolve("${form.name}.md")
         val error = form.error() ?: when {

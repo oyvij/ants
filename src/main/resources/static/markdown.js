@@ -43,6 +43,13 @@ function mount(textarea, cm) {
     const editor = new cm.EditorView({
         doc: textarea.value,
         extensions: [
+            // A chat box's (data-enter-sends) Enter sends its form; Shift+Enter goes on to the keymaps, a new line.
+            textarea.hasAttribute('data-enter-sends') ? cm.Prec.highest(cm.EditorView.domEventHandlers({keydown(event) {
+                if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return false;
+                event.preventDefault();
+                textarea.form.requestSubmit();
+                return true;
+            }})) : [],
             cm.keymap.of([{key: 'Mod-b', run: view => surround(view, '**')}, {key: 'Mod-i', run: view => surround(view, '*')}]),
             cm.history(), cm.drawSelection(), cm.EditorView.lineWrapping, cm.keymap.of([...cm.defaultKeymap, ...cm.historyKeymap]),
             cm.placeholder(textarea.placeholder), cm.EditorState.readOnly.of(textarea.readOnly), cm.markdown(), cm.syntaxHighlighting(style),

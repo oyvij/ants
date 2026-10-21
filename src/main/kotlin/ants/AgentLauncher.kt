@@ -666,7 +666,7 @@ class AgentLauncher(
      * written has been read. A message counts as read when the CLI replays it (`--replay-user-messages`), which claude
      * does as it takes the message in: at the next tool boundary, or in a turn of its own after a `result` line.
      */
-    private class Stdin(private val writer: BufferedWriter, override val task: String, private val home: Path) : Live {
+    internal class Stdin(private val writer: BufferedWriter, override val task: String, private val home: Path) : Live {
         private var unread = 0
 
         @Volatile
@@ -733,10 +733,7 @@ class AgentLauncher(
         // the deny rule `Bash(git *--output*)` refuses it (git takes no abbreviation of `--output`)
         val gitOutput = if (tools.any { it.startsWith("Bash(git ") }) listOf("Bash(git *--output*)") else emptyList()
         val disallowed = types + gitOutput + denied + listOf(settings.secretsFile, settings.file).map(Path::toAbsolutePath).flatMap { listOf("Read(/$it)", "Edit(/$it)") }
-        return listOf(
-            "-p",
-            "--output-format", "stream-json", "--verbose", "--include-partial-messages",
-            "--input-format", "stream-json", "--replay-user-messages",
+        return STREAM_JSON + listOf(
             "--json-schema", json.writeValueAsString(schema),
             if (resume) "--resume" else "--session-id", session,
             "--permission-mode", "dontAsk",
@@ -855,6 +852,14 @@ class AgentLauncher(
         private const val CONFLICT_ROUNDS = 2
         private val GRACE = Duration.ofSeconds(5)
         const val LOST_LOGIN = "Ants' Claude login is missing or expired. Log in again (Settings)"
+
+        /**
+         * The flags of a headless claude session both ways in stream-json, as an Agent Task and the Process Builder run
+         * it: messages in on stdin, each replayed as claude reads it, and its events out with the text as it streams.
+         */
+        val STREAM_JSON = listOf(
+            "-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages", "--input-format", "stream-json", "--replay-user-messages",
+        )
 
         /**
          * An Agent's tools when its file names none. claude 2.1.295 has no TodoWrite; its checklist tools are these four

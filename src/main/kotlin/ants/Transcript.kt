@@ -33,9 +33,10 @@ import kotlin.io.path.name
  * One Agent Task's Transcript, folded into the elements its page shows. The file, `tasks/<task-id>/
  * transcript.jsonl` in the Run workspace, holds the raw stream-json lines of every launch as they arrived, plus Ants' own lines
  * (`"type":"ants"`): a `launch` divider before each launch and an `end` line after it. [add] folds in one line and
- * says which elements it changed, so a page following the file patches only those.
+ * says which elements it changed, so a page following the file patches only those. A tool call shows as its name and
+ * first argument, unless [toolLine] words it, as HTML, from the tool's name and arguments.
  */
-class Transcript {
+class Transcript(private val toolLine: (name: String, input: Map<*, *>) -> String? = { _, _ -> null }) {
     /** The entries in order, as HTML; entry i is the element with id `e<i>`. A Subagent's block is composed in [html]. */
     private val entries = mutableListOf<String>()
     private val launches = mutableListOf<Launch>()
@@ -270,9 +271,8 @@ class Transcript {
                     spawn(block["id"], input["subagent_type"]?.toString() ?: "general-purpose", input["description"]?.toString().orEmpty(), parent)
                 } else {
                     val argument = input.values.firstOrNull { it is String }?.toString().orEmpty()
-                    tools[block["id"]] = append(parent) {
-                        """<div class="tool" id="$it"><b>${esc(name)}</b> <code>${esc(argument.lines().first().take(120))}</code></div>"""
-                    }
+                    val shown = toolLine(name, input) ?: """<b>${esc(name)}</b> <code>${esc(argument.lines().first().take(120))}</code>"""
+                    tools[block["id"]] = append(parent) { """<div class="tool" id="$it">$shown</div>""" }
                 }
                 if (parent == null) verb = doing(name, input.values.firstOrNull { it is String }?.toString().orEmpty())
                 if (name == "TaskUpdate") todo(input)
