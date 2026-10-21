@@ -295,10 +295,7 @@ class ProcessBuilderTools(
      * Where the Process [key]'s Build log lives: `ANTS_HOME/processes/<key>/build-log.md`, apart from deploys and drafts,
      * so it outlives both. A key that isn't a plain folder name is refused, so nothing is written outside that folder.
      */
-    private fun buildLog(key: String): Path {
-        if (!SAFE_KEY.matches(key)) throw Refused("The Process id `$key` can't name a folder, so it gets no Build log: give it letters, digits, `_`, `-` and `.` only.")
-        return launcher.home.resolve("processes").resolve(key).resolve("build-log.md")
-    }
+    private fun buildLog(key: String): Path = processFolder(launcher.home, key)?.resolve("build-log.md") ?: throw Refused("The Process id `$key` can't name a folder, so it gets no Build log: give it letters, digits, `_`, `-` and `.` only.")
 
     /** Stop: interrupts the turn running in the page's session. */
     @PostMapping("/process-builder/stop")
@@ -356,9 +353,6 @@ class ProcessBuilderTools(
 
         /** A page whose SSE last asked longer ago than this has gone, and its token dies. */
         val GONE: Duration = Duration.ofMinutes(1)
-
-        /** A Process id that is a plain folder name: no separator, and never `.` or `..`. */
-        private val SAFE_KEY = Regex("[A-Za-z_][A-Za-z0-9_.-]*")
 
         const val CLAUDE_ONLY = "The Process Builder runs on claude only for now. Set process-builder's cli to claude in settings.yaml."
 
@@ -418,7 +412,7 @@ class ProcessBuilderTools(
                         "required" to mapOf("type" to "boolean"),
                         "help" to mapOf("type" to "string"),
                         "example" to mapOf("type" to "string"),
-                        "stored" to mapOf("type" to "string", "description" to "The value a Schedule starts with."),
+                        "stored" to mapOf("type" to "string", "description" to "The value the start form is prefilled with."),
                     ),
                 )),
             )),

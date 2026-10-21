@@ -61,7 +61,10 @@ class StartForm(
      * ignored. The Run keeps its Profile ([profile]) as [PROFILE], and the repos picked, if any, as [SCOPE]. Refused
      * with [CantStart] while the pre-Run check gives reasons.
      */
-    fun start(definition: ProcessDefinition, values: Map<String, List<String>>): ProcessInstance {
+    fun start(definition: ProcessDefinition, values: Map<String, List<String>>): ProcessInstance =
+        runtime.startProcessInstanceById(definition.id, variables(definition, values))
+
+    fun variables(definition: ProcessDefinition, values: Map<String, List<String>>): Map<String, Any> {
         val fields = fields(definition)
         val variables = fields.associate { field ->
             // A Repos field's typed-in entries come as one value, separated by commas or spaces.
@@ -71,7 +74,9 @@ class StartForm(
             field.name to if (field.type == FieldType.REPOS) given.distinct() else given.firstOrNull().orEmpty()
         }
         val repos = fields.filter { it.type == FieldType.REPOS }.flatMap { variables[it.name] as List<*> }.map(Any?::toString).distinct()
-        val profile = profile(definition, values[PROFILE]?.firstOrNull())
+        val picked = values[PROFILE]?.firstOrNull()?.takeIf(String::isNotBlank)
+        if (picked != null && picked !in settings.profiles()) throw CantStart(listOf(PreRun.profileGone(picked)))
+        val profile = profile(definition, picked)
         val reasons = preRun.reasons(definition, repos, profile)
         if (reasons.isNotEmpty()) throw CantStart(reasons)
         // The picked repos are kept by remote, so Clone repos clones exactly them whatever the Source map says later.
@@ -79,13 +84,13 @@ class StartForm(
         val scope = repos.map { known[it] ?: it }.takeIf { it.isNotEmpty() }?.let { SCOPE to ArrayList(it) }
         // The Name field's, empty when not given: RunLifecycle names the Run then.
         val run = listOfNotNull(NAME to values[NAME]?.firstOrNull().orEmpty(), scope, profile?.let { PROFILE to it })
-        return runtime.startProcessInstanceById(definition.id, variables + run)
+        return variables + run
     }
 
     /**
      * The name of the Profile a Run of [definition] uses: the one [picked] on its start form, else the Process's own
      * (its [PROFILE] property), else the default. Null with no Profiles configured, as every Run then uses the default
-     * Vault and Source map. A Schedule's Run picks none, so it uses the Process's.
+     * Vault and Source map.
      */
     fun profile(definition: ProcessDefinition, picked: String?): String? = if (settings.profiles().isEmpty()) null
     else picked?.takeIf(String::isNotBlank) ?: diagramProfile(definition) ?: settings.defaultProfile()

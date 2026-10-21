@@ -55,7 +55,7 @@ class PreRun(
     fun reasons(definition: ProcessDefinition, repos: List<String>, profile: String?, claudeLogin: () -> Map<*, *> = launcher::login): List<String> {
         val named = repos.distinct()
         val source = RunSource(profile, named)
-        if (source.profile(settings) == null) return listOf("The Profile $profile isn't in the settings.")
+        if (source.profile(settings) == null) return listOf(profileGone(profile))
         val vault = source.vault(settings)
         if (vault == null && named.isEmpty()) return listOf(CONFIGURE_VAULT) // the scout picks the repos from the Vault
         val processes = withCalled(definition)
@@ -160,5 +160,7 @@ class PreRun(
 
         /** How long a logged-in gh is trusted. */
         val GH_LOGIN: Duration = Duration.ofMinutes(1)
+
+        fun profileGone(profile: String?) = "The Profile $profile isn't in the settings."
     }
 }

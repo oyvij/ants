@@ -180,10 +180,13 @@ class ChecksTest : AntsTest() {
     }
 
     @Test
-    fun `a timer start event is allowed`() {
+    fun `a timer start event is refused, since a Schedule is made from the Process page`() {
         val bpmn = diagram("").replace("""<bpmn:startEvent id="start" />""",
-            """<bpmn:startEvent id="start"><bpmn:timerEventDefinition><bpmn:timeCycle>0 0 0 * * ?</bpmn:timeCycle></bpmn:timerEventDefinition></bpmn:startEvent>""")
-        assertEquals(emptyList(), checks(bpmn))
+            """<bpmn:startEvent id="start"><bpmn:timerEventDefinition><bpmn:timeCycle>0 0 0 * * *</bpmn:timeCycle></bpmn:timerEventDefinition></bpmn:startEvent>""")
+        assertEquals(listOf(mapOf("element" to "start", "message" to "A timer start isn't run by Ants: schedule the Process from its page.", "warning" to false)), checks(bpmn))
+        val refused = browser.post("/processes/deploy", mapOf("bpmn" to bpmn))
+        assertEquals(400, refused.status)
+        assertContains(refused.body.replace("&#39;", "'"), "A timer start isn't run by Ants: schedule the Process from its page.")
     }
 
     @Test

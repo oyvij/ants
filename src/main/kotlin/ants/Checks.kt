@@ -24,7 +24,6 @@ import org.operaton.bpm.model.bpmn.instance.operaton.OperatonInputOutput
 import org.operaton.bpm.model.xml.ModelException
 import org.operaton.bpm.model.xml.instance.DomElement
 import org.operaton.bpm.model.xml.instance.ModelElementInstance
-import org.springframework.scheduling.support.CronExpression
 import org.springframework.stereotype.Component
 import org.operaton.bpm.engine.RepositoryService
 import tools.jackson.databind.json.JsonMapper
@@ -38,7 +37,7 @@ data class Check(val element: String?, val message: String, val warning: Boolean
  */
 @Component
 class Checks(private val catalogue: Catalogue, private val repository: RepositoryService) {
-    private val kinds: List<(BpmnModelInstance) -> List<Check>> = listOf(::refusedElements, ::refusedUses, ::oneStartEvent, ::startFormNames, ::emptyInputs, ::defaultPaths, ::timerTimes, ::schedules, ::reviewSendBacks,
+    private val kinds: List<(BpmnModelInstance) -> List<Check>> = listOf(::refusedElements, ::refusedUses, ::oneStartEvent, ::startFormNames, ::emptyInputs, ::defaultPaths, ::timerTimes, ::timerStarts, ::reviewSendBacks,
         { agentTasks(catalogue, it) }, { references(catalogue, it) }, // these two in AgentTaskChecks.kt
         { calls(repository, it) }) // in CallActivityChecks.kt
 
@@ -67,7 +66,6 @@ val builtIns = mapOf(
 internal val elementKinds = mapOf(
     "process" to ("Process" to "How one kind of job gets done. Every Run of it starts at its start event with the start form's fields."),
     "start" to ("Start event" to "Where a Run begins; a Process has exactly one. Its fields are the start form you fill in on the Process page, and every Task can read them as \${field}."),
-    "timer-start" to ("Timer start event" to "Starts a Run on a schedule, with no one pressing Start. Pause or remove the Schedule on the Process page."),
     "end" to ("End event" to "A path ends here, and the Run finishes when every path has. Several end events are fine, named for how the Run ended."),
     "timer" to ("Timer" to "The flow waits here for a while or until a time. No Agent runs and no slot is held. Dropped on the edge of a User Task, it becomes a timer boundary."),
     "timer-boundary" to ("Timer boundary" to "On a User Task only: when it fires, the user's Task is cancelled and the Run takes this path instead, such as Accept recommendations."),
@@ -110,7 +108,6 @@ private val userTaskFields: Map<UserTaskKind, List<Map<String, String>>> = run {
  */
 val drawnKinds: Map<String, Map<String, Any>> = linkedMapOf(
     "start" to mapOf("type" to "bpmn:StartEvent"),
-    "timer-start" to mapOf("type" to "bpmn:StartEvent", "eventDefinitionType" to "bpmn:TimerEventDefinition"),
     "end" to mapOf("type" to "bpmn:EndEvent"),
     "timer" to mapOf("type" to "bpmn:IntermediateCatchEvent", "eventDefinitionType" to "bpmn:TimerEventDefinition"),
     "exclusive" to mapOf("type" to "bpmn:ExclusiveGateway"),
@@ -267,25 +264,10 @@ private fun timerTimes(model: BpmnModelInstance) = model.getModelElementsByType(
     .filter { listOfNotNull(it.timeDuration, it.timeDate, it.timeCycle).all { time -> time.textContent.isBlank() } }
     .map { (it.parentElement as BaseElement).let { event -> Check(event.id, "${event.label} is a timer without a time.") } }
 
-/**
- * A Schedule is a cron Ants can run (Operaton's six fields, seconds first) and starts Runs with no one there, so every
- * required start-form field needs a stored value.
- */
-private fun schedules(model: BpmnModelInstance): List<Check> {
-    val timer = model.scheduleTimer() ?: return emptyList()
-    val start = timer.parentElement as StartEvent
-    val cron = model.schedule()
-    val time = when {
-        cron == null && timer.timeDuration == null && timer.timeDate == null -> null // timerTimes says so
-        cron == null -> "${start.label} has a Schedule without times in six fields: give it some, such as 0 0 8 * * * for every day at 08:00."
-        else -> runCatching { CronExpression.parse(cron) }.exceptionOrNull()
-            ?.let { "${start.label} has a Schedule whose times Ants can't read (${it.message})." }
-    }
-    return listOfNotNull(time?.let { Check(start.id, it) }) + start.formFields()
-        .filter { it.required }
-        .filter { field -> field.operatonProperties?.operatonProperties.orEmpty().none { it.operatonId == STORED && !it.operatonValue.isNullOrBlank() } }
-        .map { Check(start.id, "${start.label} has a Schedule, so its required start-form field ${it.operatonLabel ?: it.operatonId} needs a stored value.") }
-}
+private fun timerStarts(model: BpmnModelInstance) = model.getModelElementsByType(Process::class.java)
+    .flatMap { it.getChildElementsByType(StartEvent::class.java) }
+    .filter { it.getChildElementsByType(TimerEventDefinition::class.java).isNotEmpty() }
+    .map { Check(it.id, "A timer start isn't run by Ants: schedule the Process from its page.") }
 
 /** A Review changes' Send back resumes one Agent Task, so it can't name a multi-instance one, or one inside one. */
 private fun reviewSendBacks(model: BpmnModelInstance) = model.getModelElementsByType(UserTask::class.java)
