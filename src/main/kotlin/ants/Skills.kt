@@ -79,7 +79,8 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy) {
     }
 
     @GetMapping("/skills/{name}")
-    fun skill(@PathVariable name: String, model: Model): String {
+    fun skill(@PathVariable name: String, @RequestParam use: String?, model: Model): String {
+        model.addAttribute("use", use)
         val skill = find(name)
         val schema = skill.folder.resolve("result.schema.json")
         val readOnly = !skill.file.startsWith(catalogue.yourSkills)
@@ -103,8 +104,8 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy) {
     }
 
     @PostMapping("/skills/{name}")
-    fun edit(@PathVariable name: String, @RequestParam skill: String, @RequestParam schema: String, @RequestParam confirm: String?, model: Model) =
-        save(SkillForm(name, skill, schema), model, confirm != null)
+    fun edit(@PathVariable name: String, @RequestParam skill: String, @RequestParam schema: String, @RequestParam confirm: String?, @RequestParam use: String?, model: Model) =
+        save(SkillForm(name, skill, schema), model.addAttribute("use", use), confirm != null)
 
     /** Deletes one of the user's Skills with its folder, once the user has confirmed it, seeing what uses it. */
     @PostMapping("/skills/{name}/delete")
@@ -162,7 +163,7 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy) {
         if (error != null) return show(model, form, error)
         if (edited != null && name != edited.name) {
             if (!confirmed) {
-                val params = mapOf("skill" to form.skill, "schema" to form.schema)
+                val params = mapOf("skill" to form.skill, "schema" to form.schema) + listOfNotNull(model.getAttribute("use")?.let { "use" to it.toString() })
                 return confirm(model, "Rename the Skill ${edited.name} to $name?", usedBy.skill(edited.name), "/skills/${edited.name}", params, "/skills/${edited.name}")
             }
             if (folder != edited.folder) Files.move(edited.folder, folder)
@@ -170,7 +171,7 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy) {
         folder.resolve("result.schema.json").run { if (form.schema.isBlank()) deleteIfExists() else writeAtomically(form.schema) }
         folder.resolve("SKILL.md").writeAtomically(form.skill)
         saved(name)
-        return "redirect:/skills/$name"
+        return "redirect:/skills/$name" + if (model.getAttribute("use") != null) "?saved" else ""
     }
 
     private fun find(name: String) = runCatching { catalogue.skill(name) }
