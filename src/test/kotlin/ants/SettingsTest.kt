@@ -14,6 +14,7 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.io.path.createDirectories
 import kotlin.io.path.deleteIfExists
+import kotlin.io.path.exists
 import kotlin.io.path.readText
 import kotlin.io.path.writeText
 import kotlin.test.assertContains
@@ -32,7 +33,10 @@ class SettingsTest : AntsTest() {
     }
 
     @AfterEach
-    fun restore() = file.writeText(before)
+    fun restore() {
+        file.writeText(before)
+        home.resolve("profiles").toFile().deleteRecursively()
+    }
 
     private fun yaml(): Map<*, *> = Yaml().load(file.readText())
 
@@ -190,6 +194,46 @@ class SettingsTest : AntsTest() {
         assertEquals("# Work\n- api: ~/code/api (git@github.com:acme/api.git)\n", map.readText())
         assertContains(browser.get("/settings").body, "- api: ~/code/api (git@github.com:acme/api.git)\n</textarea>")
         assertEquals(404, browser.post("/settings/source-map", mapOf("name" to "nowhere", "text" to "x")).status)
+    }
+
+    @Test
+    fun `a saved Profile's instructions are edited in their editor, saved to its AGENTS md beside settings yaml`() {
+        val lists = mapOf("vaults[0].name" to "work", "vaults[0].path" to "/tmp/work", "source-maps[0].name" to "work", "source-maps[0].path" to "/tmp/work.md")
+        press("save", lists + mapOf(
+            "profiles[0].name" to "job", "profiles[0].vault" to "work", "profiles[0].source-map" to "work",
+            "profiles[1].name" to "hobby", "profiles[1].vault" to "work", "profiles[1].source-map" to "work",
+        ))
+        assertFalse(home.resolve("profiles").exists())
+        var page = browser.get("/settings").body
+        assertContains(page, """<button type="button" data-edit="instructions-0">Add instructions</button>""")
+        assertContains(page, """<button type="button" data-edit="instructions-1">Add instructions</button>""")
+        assertEquals(2, Regex("data-edit=\"instructions-").findAll(page).count())
+        assertContains(page, "plain markdown the Agents read")
+        assertContains(page, """placeholder="e.g. # Commits""")
+
+        val settings = file.readText()
+        browser.post("/settings/instructions", mapOf("name" to "job", "text" to "# Commits\r\nUse conventional commits.\r\n"))
+        assertEquals("# Commits\nUse conventional commits.\n", home.resolve("profiles/job/AGENTS.md").readText())
+        assertEquals(settings, file.readText())
+        assertFalse(home.resolve("profiles/hobby").exists())
+        page = browser.get("/settings").body
+        assertContains(page, """<button type="button" data-edit="instructions-0">Instructions</button>""")
+        assertContains(page, "Use conventional commits.\n</textarea>")
+
+        browser.post("/settings/instructions", mapOf("name" to "job", "text" to "  \r\n"))
+        assertContains(browser.get("/settings").body, """<button type="button" data-edit="instructions-0">Add instructions</button>""")
+        assertEquals(404, browser.post("/settings/instructions", mapOf("name" to "nobody", "text" to "x")).status)
+        assertFalse(home.resolve("profiles/nobody").exists())
+    }
+
+    @Test
+    fun `a Profile name that can't be a folder name is refused`() {
+        val lists = mapOf("vaults[0].name" to "work", "vaults[0].path" to "/tmp/work", "source-maps[0].name" to "work", "source-maps[0].path" to "/tmp/work.md")
+        for (name in listOf("work/job", ".", "..")) {
+            val refused = press("save", lists + mapOf("profiles[0].name" to name, "profiles[0].vault" to "work", "profiles[0].source-map" to "work"))
+            assertContains(refused, "A Profile's name is a folder name, so it can't hold a / or be . or ..")
+            assertEquals(before, file.readText())
+        }
     }
 
     @Test

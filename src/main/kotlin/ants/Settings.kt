@@ -173,6 +173,10 @@ class Settings(
      */
     fun profile(name: String?): Profile? = profiles().ifEmpty { return Profile(defaultVault(), defaultSourceMap()) }[name ?: defaultProfile()]
 
+    fun instructions(name: String?): Path? = name?.takeIf { it in profiles() }?.let { file.resolveSibling("profiles").resolve(it).resolve("AGENTS.md") }
+
+    fun hasInstructions(name: String?): Boolean = instructions(name)?.takeIf { it.exists() }?.readText()?.isNotBlank() == true
+
     /** The extra Agent folders, read after Ants' own. */
     fun agentFolders(): List<Path> = folders("agent-folders")
 

@@ -75,10 +75,20 @@ class SettingsPage(
         return "redirect:/settings"
     }
 
+    @PostMapping("/settings/instructions")
+    fun instructions(@RequestParam name: String, @RequestParam text: String): String {
+        val file = settings.instructions(name) ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No Profile $name")
+        file.writeAtomically(text.replace("\r\n", "\n"))
+        return "redirect:/settings"
+    }
+
     private fun show(model: Model, form: SettingsForm, message: String? = null): String {
         model.addAttribute("form", form)
         // Each saved Source map's path and text, for its editor.
         model.addAttribute("maps", settings.sourceMaps().mapValues { (name, path) -> path to settings.sourceMap(name)?.takeIf { it.exists() }?.readText().orEmpty() })
+        model.addAttribute("instructions", settings.profiles().keys.associateWith { name ->
+            settings.hasInstructions(name) to settings.instructions(name)?.takeIf { it.exists() }?.readText().orEmpty()
+        })
         // The Profile Set up Vault runs with for each saved Vault: the first that pairs it; with no Profiles, the default Vault's, blank.
         model.addAttribute("setUp", settings.profiles().ifEmpty { null }?.entries?.reversed()?.associate { (name, profile) -> profile.vault to name }
             ?: listOfNotNull(settings.defaultVault()).associateWith { "" })
@@ -216,6 +226,7 @@ data class SettingsForm(
     private fun profileError(): String? {
         val vaultNames = vaults.rows.map { it.first }
         val mapNames = sourceMaps.rows.map { it.first }
+        if (profiles.any { '/' in it.name || it.name in listOf(".", "..") }) return "A Profile's name is a folder name, so it can't hold a / or be . or .."
         return profiles.firstOrNull { it.vault !in vaultNames || it.sourceMap !in mapNames }?.let { "The Profile ${it.name} needs a Vault and a Source map from the lists above." }
             ?: "Two Profiles have the same name.".takeIf { profiles.map { it.name }.toSet().size < profiles.size }
     }
