@@ -119,10 +119,15 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
     /** Deletes one of the user's Agents, once the user has confirmed it, seeing what uses it. */
     @PostMapping("/agents/{name}/delete")
     fun delete(@PathVariable name: String, @RequestParam params: Map<String, String>, model: Model): String {
-        val agent = editable(find(name))
+        editable(find(name))
         if ("confirm" !in params) return confirm(model, "Delete the Agent $name?", usedBy.agent(name), "/agents/$name/delete", emptyMap(), "/agents/$name")
-        agent.file.deleteIfExists()
+        delete(name)
         return "redirect:/agents"
+    }
+
+    fun delete(name: String): String {
+        editable(find(name)).file.deleteIfExists()
+        return "/agents/$name"
     }
 
     /** Writes an editable copy of a read-only Agent into Ants' own folder, under the first free `<name>-copy`. */

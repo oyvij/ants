@@ -62,6 +62,8 @@ class ProcessBuilderTest : AntsTest() {
         assertTrue(launch.flag("--session-id")!!.isNotEmpty())
         assertEquals("# You are the Process Builder", launch.flag("--append-system-prompt")) // argv is recorded a line at a time
         assertContains(launch.argv, "## Work from intent, not orders")
+        assertContains(launch.argv, "## Reuse before you create")
+        assertContains(launch.argv, "## Lay the diagram out to be read")
         assertFalse(launch.env.keys.any { it in AgentLauncher.PAID })
         assertEquals(home.resolve("claude").toString(), launch.env["CLAUDE_CONFIG_DIR"])
         assertFalse(launch.cwd.startsWith(home.toString())) // a scratch folder
