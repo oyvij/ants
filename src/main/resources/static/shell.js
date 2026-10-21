@@ -30,7 +30,16 @@ window.stream = {
     },
     morph: (element, like) => morph(element, like),
 };
-if (window.top === window) addEventListener('DOMContentLoaded', () => source || stream.follow());
+if (window.top === window) {
+    addEventListener('DOMContentLoaded', () => source || stream.follow());
+    let submitted = false;
+    addEventListener('submit', event => submitted = !event.defaultPrevented && event.target.method !== 'dialog');
+    addEventListener('pagehide', () => sessionStorage.setItem('scroll', JSON.stringify({ path: location.pathname, y: scrollY, submitted })));
+    const left = JSON.parse(sessionStorage.getItem('scroll'));
+    sessionStorage.removeItem('scroll');
+    const reloaded = performance.getEntriesByType('navigation')[0]?.type === 'reload';
+    if (left?.path === location.pathname && (reloaded || left.submitted)) addEventListener('load', () => scrollTo(0, left.y), { once: true });
+}
 
 // Brings [old] to look like [now] in place: its attributes, its text and its children, which match by id or data-href,
 // else in order. A new child that has either, a new table's rows, and an element whose data-flash changes flash once,

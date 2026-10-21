@@ -1208,6 +1208,30 @@ class BrowserTest : AntsTest() {
         assertEquals(380.0, toast.boundingBox().width, 0.5)
     }
 
+    @Test
+    fun `a reload or a submit back to the same page keeps the scroll position, and a page opened from the sidebar starts at the top`() = browse {
+        settings(null)
+        fun scrolled() = (page.evaluate("scrollY") as Number).toInt()
+        page.navigate(url("/settings"))
+        val checkNow = page.locator("button[name=action][value=updates]")
+        checkNow.scrollIntoViewIfNeeded()
+        val place = scrolled()
+        assertTrue(place > 0, "Settings is long enough to scroll")
+
+        page.reload()
+        eventually { assertEquals(place, scrolled(), "a reload keeps the place") }
+
+        checkNow.click()
+        assertThat(page.locator(".toast")).isVisible()
+        eventually { assertEquals(place, scrolled(), "Check now keeps the place") }
+
+        page.evaluate("window.unreloaded = true")
+        page.locator("nav.side > a[href='/settings']").click()
+        page.waitForFunction("!window.unreloaded")
+        page.waitForLoadState()
+        assertEquals(0, scrolled(), "a page opened from the sidebar starts at the top")
+    }
+
     private fun round(vararg questions: Pair<String, String>) = """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":""" +
         """{"outcome":"done","summary":"A Round.","output":{"questions":[""" + questions.joinToString(",") { (id, title) ->
             """{"id":"$id","title":"$title","ask":"Ask $id?","context":"Settles $id.","recommendation":"Recommend $id.","why":"Because $id."}"""
