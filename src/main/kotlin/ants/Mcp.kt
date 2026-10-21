@@ -2,9 +2,12 @@ package ants
 
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.web.server.context.WebServerApplicationContext
+import org.springframework.http.HttpHeaders.ALLOW
 import org.springframework.http.HttpHeaders.AUTHORIZATION
+import org.springframework.http.HttpStatus.METHOD_NOT_ALLOWED
 import org.springframework.http.HttpStatus.UNAUTHORIZED
 import org.springframework.http.ResponseEntity
+import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestHeader
@@ -46,6 +49,13 @@ class Mcp(private val server: WebServerApplicationContext, @Value("\${server.add
     fun close(token: String) {
         tokens -= token
     }
+
+    /**
+     * No stream from server to client: MCP's answer to a GET is 405. Without it, Spring's error page redirects to the
+     * login and claude asks again every second.
+     */
+    @GetMapping("/mcp")
+    fun stream(): ResponseEntity<Void> = ResponseEntity.status(METHOD_NOT_ALLOWED).header(ALLOW, "POST").build()
 
     @PostMapping("/mcp")
     fun mcp(@RequestHeader(AUTHORIZATION, required = false) authorization: String?, @RequestBody request: Map<String, Any?>): ResponseEntity<Any> {
