@@ -4,7 +4,9 @@ import org.operaton.bpm.engine.ExternalTaskService
 import org.operaton.bpm.engine.HistoryService
 import org.operaton.bpm.engine.delegate.DelegateExecution
 import org.operaton.bpm.engine.delegate.ExecutionListener
+import org.operaton.bpm.engine.exception.NotFoundException
 import org.operaton.bpm.engine.externaltask.ExternalTask
+import org.operaton.bpm.engine.history.HistoricActivityInstance
 import org.operaton.bpm.engine.history.HistoricProcessInstance
 import org.operaton.bpm.engine.impl.bpmn.behavior.MultiInstanceActivityBehavior
 import org.operaton.bpm.engine.impl.bpmn.behavior.ParallelMultiInstanceActivityBehavior
@@ -93,14 +95,14 @@ val TaskEntry.pill get() = TaskView.state(this).let { (state, label) -> TaskView
  */
 class TaskView(
     val key: String, val element: FlowElement?, val state: String, val label: String, val entry: TaskEntry?, val round: Int?,
-    val transcript: Transcript?, val context: String, val href: String?, val asked: TaskEntry? = null,
+    val transcript: Transcript?, val context: String, val href: String?, val asked: TaskEntry? = null, val reached: HistoricActivityInstance? = null,
 ) {
-    val name: String get() = element?.name ?: key
+    val name: String get() = element?.name ?: reached?.activityName ?: key
 
     /** agent, user or builtin. */
     val kind get() = when {
+        element is UserTask || element == null && reached?.activityType == "userTask" -> "user"
         element is ServiceTask && element.operatonTopic == AgentLauncher.TOPIC || element == null -> "agent"
-        element is UserTask -> "user"
         else -> "builtin"
     }
 
@@ -206,12 +208,12 @@ class Runs(
     }
 
     // The toasts so far, numbered, and what the latest look at the Rounds and slots saw; every page's stream shares them.
-    private val toastLog = ArrayDeque<Pair<Long, String>>()
+    private val toastLog = ArrayDeque<Pair<Long, Toast>>()
     private var toastCount = 0L
     private var looked = 0L
     private var rounds: Set<String>? = null // the Rounds waiting, as last seen; null before the first look
     private var queued = emptySet<String>() // the Agent Tasks seen waiting while every slot was taken
-    private var held = emptyList<String>()
+    private var held = emptyList<Toast>()
 
     /**
      * The toasts after number [after] (the latest a page has shown, which it hands its next stream, so re-following
@@ -222,8 +224,8 @@ class Runs(
         var seen = synchronized(this) { after?.coerceAtMost(toastCount) ?: toastCount }
         return Part("toast") {
             look()
-            synchronized(this) { toastLog.filter { it.first > seen }.also { if (it.isNotEmpty()) seen = it.last().first } }.map { (n, text) ->
-                """<div class="toast" role="status" data-seq="$n">$text<div class="ok"><button type="button" onclick="this.closest('.toast').remove()">OK</button></div></div>"""
+            synchronized(this) { toastLog.filter { it.first > seen }.also { if (it.isNotEmpty()) seen = it.last().first } }.map { (n, toast) ->
+                StringOutput().also { templates.render("toast.kte", mapOf("toast" to toast, "seq" to n), it) }.toString()
             }
         }
     }
@@ -240,7 +242,7 @@ class Runs(
             val asked = notifications.tasks().filter { it.tag == UserTaskKind.ANSWER_ROUND.tag }
             val new = rounds?.let { seen -> asked.filter { it.id !in seen } }.orEmpty().mapNotNull { entry ->
                 notifications.round(entry)?.let { (round, questions) ->
-                    "<b>New: ${HtmlUtils.htmlEscape(entry.runName)} asks Round $round</b> $questions question${if (questions == 1) " is" else "s are"} waiting on you."
+                    Toast("New: ${entry.runName} asks Round $round", "$questions question${if (questions == 1) " is" else "s are"} waiting on you.", Toast.Kind.WARNING)
                 }
             }
             rounds = asked.mapTo(mutableSetOf()) { it.id }
@@ -249,16 +251,16 @@ class Runs(
             val took = locked.filter { it.id in queued }.mapNotNull { task ->
                 val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult()?.rootProcessInstanceId ?: return@mapNotNull null
                 val name = repository.getBpmnModelInstance(task.processDefinitionId).getModelElementById<FlowElement>(task.activityId)?.name ?: task.activityId
-                "<b>${HtmlUtils.htmlEscape(names.name(run))} · ${HtmlUtils.htmlEscape(name)}</b>"
+                "${names.name(run)} · $name"
             }.joinToString(" and ")
             val full = launcher.running >= settings.agentTasks()
             queued = waiting.filter { it.id in queued || full && launcher.pausedUntil(it.id) == null && launcher.heldBy(it.id) == null }.mapTo(mutableSetOf()) { it.id }
             val said = held + new
             held = emptyList()
             when {
-                took.isNotEmpty() && said.isNotEmpty() -> said.dropLast(1) + "${said.last()} Its slot went to $took, which was queued."
-                took.isNotEmpty() -> listOf("<b>A slot came free.</b> It went to $took, which was queued.")
-                new.isNotEmpty() && queued.isNotEmpty() -> emptyList<String>().also { held = said }
+                took.isNotEmpty() && said.isNotEmpty() -> said.dropLast(1) + said.last().let { it.copy(text = "${it.text} Its slot went to $took, which was queued.") }
+                took.isNotEmpty() -> listOf(Toast("A slot came free", "It went to $took, which was queued.", Toast.Kind.INFO))
+                new.isNotEmpty() && queued.isNotEmpty() -> emptyList<Toast>().also { held = said }
                 else -> said
             }.forEach { toastLog.addLast(++toastCount to it) }
         }
@@ -327,7 +329,11 @@ class Runs(
     /** The diagram of the Process version the Run runs. */
     @GetMapping("/runs/{id}/diagram.bpmn", produces = ["application/xml"])
     @ResponseBody
-    fun diagram(@PathVariable id: String): ByteArray = repository.getProcessModel(run(id).processDefinitionId).readAllBytes()
+    fun diagram(@PathVariable id: String): ByteArray = try {
+        repository.getProcessModel(run(id).processDefinitionId).readAllBytes()
+    } catch (_: NotFoundException) {
+        throw ResponseStatusException(HttpStatus.NOT_FOUND, "The Process of Run $id is deleted")
+    }
 
     /**
      * The Run's state, each element's [Shown] and the process instance each call activity called (its latest), as
@@ -359,8 +365,9 @@ class Runs(
      */
     fun drawer(id: String, task: String, csrf: CsrfToken): Part {
         val instance = run(id)
-        val element = repository.getBpmnModelInstance(instance.processDefinitionId).getModelElementById<FlowElement>(task)
-            ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No Task $task")
+        val model = model(instance)
+        val element = model?.getModelElementById<FlowElement>(task)
+        if (model != null && element == null) throw ResponseStatusException(HttpStatus.NOT_FOUND, "No Task $task")
         val top = instance.rootProcessInstanceId
         val key = (history.variable(id, CALLED) as? String).orEmpty() + task
         val file = Transcript.file(names.runWorkspace(top), key)
@@ -394,23 +401,25 @@ class Runs(
     private fun tasks(id: String, transcripts: Map<String, Transcript>): List<TaskView> {
         val instance = run(id)
         val top = instance.rootProcessInstanceId
-        val model = repository.getBpmnModelInstance(instance.processDefinitionId)
+        val model = model(instance)
         val prefix = (history.variable(id, CALLED) as? String).orEmpty()
         val entries = notifications.tasks().filter { it.instance == id }
         val asking = entries.filter { it.tag == UserTaskKind.ANSWER_ROUND.tag }
-            .mapNotNull { round -> model.getModelElementById<BaseElement>(round.activity)?.property(ASKER)?.let { it to round } }.toMap()
+            .mapNotNull { round -> model?.getModelElementById<BaseElement>(round.activity)?.property(ASKER)?.let { it to round } }.toMap()
         val shown = shown(id)
         return history.createHistoricActivityInstanceQuery().processInstanceId(id).orderByHistoricActivityInstanceStartTime().asc().orderPartiallyByOccurrence().asc().list()
             .distinctBy { it.calledProcessInstanceId ?: it.activityId }.flatMap { reached ->
                 reached.calledProcessInstanceId?.let { return@flatMap tasks(it, transcripts) }
-                val task = model.getModelElementById<FlowElement>(reached.activityId) as? org.operaton.bpm.model.bpmn.instance.Task ?: return@flatMap emptyList()
-                val key = prefix + task.id
-                val entry = entries.firstOrNull { it.activity == task.id }
+                val task = model?.let { it.getModelElementById<FlowElement>(reached.activityId) as? org.operaton.bpm.model.bpmn.instance.Task ?: return@flatMap emptyList() }
+                if (model == null && !reached.activityType.endsWith("Task", ignoreCase = true)) return@flatMap emptyList()
+                val activity = reached.activityId
+                val key = prefix + activity
+                val entry = entries.firstOrNull { it.activity == activity }
                 val own = transcripts.filterKeys { it == key || it.startsWith("$key-") }
-                val now = shown[task.id]
+                val now = shown[activity]
                 val (state, label) = when {
                     entry != null -> TaskView.state(entry)
-                    asking[task.id] != null -> "round" to "Waiting on its Round"
+                    asking[activity] != null -> "round" to "Waiting on its Round"
                     now?.state == "queued" -> "queued" to (now.badge?.takeIf { it != "Queued" } ?: "Queued · ${launcher.running} of ${settings.agentTasks()} running")
                     now?.state == "running" -> "running" to "Running"
                     now?.state == "cancelled" -> "cancelled" to "Cancelled"
@@ -419,7 +428,7 @@ class Runs(
                 val href = entry?.let { "/notifications/${it.id}" } ?: own.keys.firstOrNull()?.let { "/runs/$top/tasks/$it/transcript" }
                 listOf(TaskView(
                     key, task, state, label, entry, now?.round, own.values.firstOrNull { it.running } ?: own.values.firstOrNull(), own.values.filter { it.tokens > 0 }.maxByOrNull { it.tokens }?.context.orEmpty(),
-                    href, asking[task.id],
+                    href, asking[activity], reached,
                 ))
             }.distinctBy { it.key }
     }
@@ -487,6 +496,12 @@ class Runs(
     fun dismiss(@PathVariable id: String, @RequestHeader("Referer", required = false) from: String?): String {
         keptWorkspace(run(id))?.let { cleanUp(it.toFile()) }
         return if (from == null) "redirect:/runs/$id" else back(from)
+    }
+
+    private fun model(instance: HistoricProcessInstance) = try {
+        repository.getBpmnModelInstance(instance.processDefinitionId)
+    } catch (_: NotFoundException) {
+        null
     }
 
     private fun run(id: String) = history.createHistoricProcessInstanceQuery().processInstanceId(id).singleResult()
@@ -642,7 +657,6 @@ class RunLifecycle(@Value("\${ants.home}") private val home: Path, private val s
         configuration.customPostBPMNParseListeners = (configuration.customPostBPMNParseListeners ?: mutableListOf()) +
             object : BpmnParseListener {
                 override fun parseProcess(element: Element, process: ProcessDefinitionEntity) {
-                    // A timer start is the Process's Schedule, which Ants runs itself (Schedules), so Operaton gets no timer job.
                     process.setProperty(BpmnParse.PROPERTYNAME_START_TIMER, null)
                     val tasks = process.tasks()
                     tasks.forEach { it.addBuiltInListener(ExecutionListener.EVENTNAME_START, counted) }

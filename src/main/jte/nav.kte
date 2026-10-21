@@ -30,5 +30,5 @@
     </div>
 </nav>
 !{val toast = shell.toast}
-@if(toast != null)<div class="toast" role="status"><b>${toast.title}</b> ${toast.text}<div class="ok"><button type="button" onclick="this.closest('.toast').remove()">OK</button></div></div>@endif
+@if(toast != null)@template.toast(toast = toast)@endif
 <script src="/shell.js" defer></script>

@@ -46,7 +46,7 @@ import javax.xml.transform.stream.StreamResult
 @Controller
 class Processes(
     private val repository: RepositoryService, private val startForm: StartForm, private val settings: Settings, private val checks: Checks, private val preRun: PreRun,
-    private val schedules: Schedules, private val history: HistoryService, private val names: RunNames, private val clock: Clock, @Value("\${ants.home}") private val home: Path,
+    private val schedules: Schedules, private val usedBy: UsedBy, private val history: HistoryService, private val names: RunNames, private val clock: Clock, @Value("\${ants.home}") private val home: Path,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -61,7 +61,7 @@ class Processes(
         for (file in folder.listDirectoryEntries("*.bpmn")) try {
             val key = process(parse(file.readBytes())).getAttribute("id")
             val saved = repository.createProcessDefinitionQuery().processDefinitionKey(key).latestVersion().singleResult()
-            if (saved != null && !saved.resourceName.startsWith("shipped/")) {
+            if (saved != null && !saved.shipped) {
                 log.info("The shipped Process $file is not deployed over your Save of $key")
                 continue
             }
@@ -79,16 +79,17 @@ class Processes(
         val processes = repository.createProcessDefinitionQuery().latestVersion().orderByProcessDefinitionName().asc().list()
         model.addAttribute("processes", processes)
         val login = preRun.oneLogin() // asked once for them all
+        val scheduled = schedules.all().groupingBy { it.key }.eachCount()
         model.addAttribute("rows", Executors.newVirtualThreadPerTaskExecutor().use { threads ->
-            processes.map { process -> threads.submit<ProcessRow> { row(process, login) } }.map { it.get() }
+            processes.map { process -> threads.submit<ProcessRow> { row(process, scheduled[process.key] ?: 0, login) } }.map { it.get() }
         })
         return "processes"
     }
 
-    private fun row(process: ProcessDefinition, login: () -> Map<*, *>): ProcessRow {
+    private fun row(process: ProcessDefinition, scheduleCount: Int, login: () -> Map<*, *>): ProcessRow {
         val profile = startForm.profile(process, null)
         return ProcessRow(
-            process, process.resourceName.startsWith("shipped/"), settings.profile(profile), schedules.of(process),
+            process, process.shipped, settings.profile(profile), scheduleCount,
             reasons(process, startForm.fields(process), profile, login).isEmpty(),
             history.createHistoricProcessInstanceQuery().processDefinitionKey(process.key).rootProcessInstances().active().count(),
         )
@@ -197,7 +198,7 @@ class Processes(
         model.addAttribute("name", process.name ?: process.key)
         model.addAttribute("src", "/processes/$key/diagram.bpmn")
         model.addAttribute("page", "/processes/$key")
-        if (process.resourceName.startsWith("shipped/")) model.addAttribute("note", "Shipped: saving makes it your own")
+        if (process.shipped) model.addAttribute("note", "Shipped: saving makes it your own")
         model.addAttribute("builder", builder())
         return "modeler"
     }
@@ -210,15 +211,20 @@ class Processes(
     fun process(@PathVariable key: String, @RequestParam(PROFILE, required = false) profile: String?, model: Model): String {
         val process = latest(key)
         model.addAttribute("process", process)
-        val fields = startForm.fields(process)
+        val filled = model.getAttribute("filled") as MultiValueMap<*, *>?
+        val fields = startForm.fields(process).map { field ->
+            filled?.let { field.copy(stored = it[field.name].orEmpty().joinToString(" ")) } ?: field
+        }
         model.addAttribute("fields", fields)
+        model.addAttribute("runName", filled?.get(NAME)?.firstOrNull()?.toString().orEmpty())
         val picked = startForm.profile(process, profile)
         model.addAttribute("profiles", settings.profiles().keys.toList())
         model.addAttribute("profile", picked)
         model.addAttribute("profileFrom", if (!profile.isNullOrBlank()) "picked here" else if (startForm.diagramProfile(process) != null) "set on the diagram" else "the default")
         model.addAttribute("source", settings.profile(picked))
         model.addAttribute("repos", RunSource(picked).repos(settings).map(Repo::name)) // the Repos field's choices
-        model.addAttribute("schedule", schedules.of(process))
+        model.addAttribute("schedules", schedules.of(key))
+        model.addAttribute("deletable", !shipped(key))
         val runs = history.createHistoricProcessInstanceQuery().processDefinitionKey(key).rootProcessInstances().orderByProcessInstanceStartTime().desc().list()
         model.addAttribute("runs", runs)
         model.addAttribute("names", runs.associate { it.id to names.name(it.id) })
@@ -230,68 +236,96 @@ class Processes(
 
     /** **Start**: a Run with the start form's values, else the Process page again with what's missing or why it can't start. */
     @PostMapping("/processes/{key}/runs")
-    fun start(@PathVariable key: String, @RequestParam values: MultiValueMap<String, String>, model: Model, response: HttpServletResponse): String = try {
-        "redirect:/runs/" + startForm.start(latest(key), values).id
-    } catch (e: Unfilled) {
-        response.status = HttpStatus.BAD_REQUEST.value()
-        model.addAttribute("error", e.message)
-        process(key, values.getFirst(PROFILE), model)
-    } catch (e: CantStart) {
-        response.status = HttpStatus.BAD_REQUEST.value()
-        model.addAttribute("reasons", e.reasons)
-        process(key, values.getFirst(PROFILE), model)
-    }
+    fun start(@PathVariable key: String, @RequestParam values: MultiValueMap<String, String>, model: Model, response: HttpServletResponse): String =
+        orRefused(key, values, model, response) { "redirect:/runs/" + startForm.start(latest(key), values).id }
 
-    /** Pauses the Process's Schedule: no Run starts on it, not even for the times missed, until it's resumed. */
-    @PostMapping("/processes/{key}/schedule/pause")
-    fun pause(@PathVariable key: String): String {
-        schedules.pause(latest(key).key, true)
-        return "redirect:/processes/$key"
-    }
-
-    @PostMapping("/processes/{key}/schedule/resume")
-    fun resume(@PathVariable key: String): String {
-        schedules.pause(latest(key).key, false)
-        return "redirect:/processes/$key"
-    }
-
-    /** Removes the Schedule: the next version of the Process starts by hand only, its start event a none start. */
-    @PostMapping("/processes/{key}/schedule/remove")
-    fun remove(@PathVariable key: String, model: Model, response: HttpServletResponse): String {
-        if (schedules.of(latest(key)) == null) return "redirect:/processes/$key"
-        val document = parse(repository.getProcessModel(latest(key).id).readAllBytes())
-        for (start in process(document).getElementsByTagNameNS(BPMN, "startEvent").elements().filter { it.parentNode.localName == "process" }) {
-            start.getElementsByTagNameNS(BPMN, "timerEventDefinition").elements().forEach { start.removeChild(it) }
+    @PostMapping("/processes/{key}/schedule")
+    fun schedule(@PathVariable key: String, @RequestParam values: MultiValueMap<String, String>, model: Model, response: HttpServletResponse): String {
+        val cron = values.getFirst("cron").orEmpty()
+        model.addAttribute("cron", cron)
+        return orRefused(key, values, model, response) {
+            schedules.add(latest(key).key, values, cron)
+            "redirect:/processes/$key"
         }
-        try {
-            deploy(serialize(document).toByteArray())
-        } catch (e: Refused) {
-            response.status = HttpStatus.BAD_REQUEST.value()
-            model.addAttribute("error", e.message)
+    }
+
+    private fun orRefused(key: String, values: MultiValueMap<String, String>, model: Model, response: HttpServletResponse, submit: () -> String): String = try {
+        submit()
+    } catch (e: Unfilled) {
+        refused(key, values, model.addAttribute("error", e.message), response)
+    } catch (e: CantStart) {
+        refused(key, values, model.addAttribute("reasons", e.reasons), response)
+    }
+
+    private fun refused(key: String, values: MultiValueMap<String, String>, model: Model, response: HttpServletResponse): String {
+        response.status = HttpStatus.BAD_REQUEST.value()
+        model.addAttribute("filled", values)
+        return process(key, values.getFirst(PROFILE), model)
+    }
+
+    @PostMapping("/processes/{key}/schedules/{id}/pause")
+    fun pause(@PathVariable key: String, @PathVariable id: String): String {
+        schedules.pause(scheduleId(key, id), true)
+        return "redirect:/processes/$key"
+    }
+
+    @PostMapping("/processes/{key}/schedules/{id}/resume")
+    fun resume(@PathVariable key: String, @PathVariable id: String): String {
+        schedules.pause(scheduleId(key, id), false)
+        return "redirect:/processes/$key"
+    }
+
+    @PostMapping("/processes/{key}/schedules/{id}/remove")
+    fun remove(@PathVariable key: String, @PathVariable id: String): String {
+        schedules.remove(scheduleId(key, id))
+        return "redirect:/processes/$key"
+    }
+
+    @PostMapping("/processes/{key}/schedules/{id}/start")
+    fun startNow(@PathVariable key: String, @PathVariable id: String): String {
+        val schedule = scheduleId(key, id)
+        return try {
+            "redirect:/runs/" + schedules.startNow(schedule).id
+        } catch (_: Exception) {
+            "redirect:/processes/$key"
+        }
+    }
+
+    @PostMapping("/processes/{key}/schedules/{id}/dismiss")
+    fun dismiss(@PathVariable key: String, @PathVariable id: String, @RequestParam(required = false) back: String?): String {
+        schedules.dismiss(scheduleId(key, id))
+        return dismissed(key, back)
+    }
+
+    private fun scheduleId(key: String, id: String) = schedules.of(latest(key).key).firstOrNull { it.id == id }?.id
+        ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No Schedule $id of $key")
+
+    private fun dismissed(key: String, back: String?) = "redirect:" + if (back == "notifications") "/notifications" else "/processes/$key"
+
+    @PostMapping("/processes/{key}/delete")
+    fun delete(@PathVariable key: String, @RequestParam params: Map<String, String>, model: Model, response: HttpServletResponse): String {
+        val process = latest(key)
+        if (shipped(key)) throw ResponseStatusException(HttpStatus.FORBIDDEN, "$key is shipped with Ants, so it can't be deleted")
+        val live = history.createHistoricProcessInstanceQuery().processDefinitionKey(key).unfinished().list().map { it.rootProcessInstanceId }.distinct()
+        if (live.isNotEmpty()) {
+            response.status = HttpStatus.CONFLICT.value()
+            model.addAttribute("liveRuns", live.associateWith(names::name))
             return process(key, null, model)
         }
-        schedules.forget(key)
-        return "redirect:/processes/$key"
-    }
-
-    /** **Start now** on a scheduled Run that couldn't start: the Run with the stored values, else the Process page and why. */
-    @PostMapping("/processes/{key}/schedule/start")
-    fun startNow(@PathVariable key: String): String = try {
-        "redirect:/runs/" + schedules.startNow(latest(key)).id
-    } catch (_: Exception) {
-        "redirect:/processes/$key" // which shows the reason
-    }
-
-    /** **Dismiss** a scheduled Run that couldn't start, then back to the Notification list when dismissed from there ([back]). */
-    @PostMapping("/processes/{key}/schedule/dismiss")
-    fun dismiss(@PathVariable key: String, @RequestParam(required = false) back: String?): String {
-        schedules.dismiss(latest(key).key)
-        return "redirect:" + if (back == "notifications") "/notifications" else "/processes/$key"
+        if ("confirm" !in params) return confirm(model, "Delete the Process ${process.name ?: key}?", usedBy.process(key), "/processes/$key/delete", emptyMap(), "/processes/$key")
+        schedules.of(key).forEach { schedules.remove(it.id) }
+        for (deployment in repository.createProcessDefinitionQuery().processDefinitionKey(key).list().map { it.deploymentId }.distinct()) {
+            repository.deleteDeployment(deployment)
+        }
+        processFolder(home, key)?.toFile()?.deleteRecursively()
+        return "redirect:/processes"
     }
 
     @GetMapping("/processes/{key}/diagram.bpmn", produces = ["application/xml"])
     @ResponseBody
     fun diagram(@PathVariable key: String): ByteArray = repository.getProcessModel(latest(key).id).readAllBytes()
+
+    private fun shipped(key: String) = repository.createProcessDefinitionQuery().processDefinitionKey(key).list().any { it.shipped }
 
     private fun latest(key: String) = repository.createProcessDefinitionQuery().processDefinitionKey(key).latestVersion().singleResult()
         ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No Process $key")
@@ -302,11 +336,9 @@ private const val OPERATON = "http://operaton.org/schema/1.0/bpmn"
 internal const val BPMN = "http://www.omg.org/spec/BPMN/20100524/MODEL"
 internal const val BPMNDI = "http://www.omg.org/spec/BPMN/20100524/DI"
 
-/**
- * A row of the Processes list: whether the Process is [shipped] or the user's, the [profile] whose Vault and Source
- * map its Runs use, its [schedule], whether it is [ready] to start, and its [live] Runs.
- */
-class ProcessRow(val process: ProcessDefinition, val shipped: Boolean, val profile: Profile?, val schedule: Schedule?, val ready: Boolean, val live: Long)
+private val ProcessDefinition.shipped get() = resourceName.startsWith("shipped/")
+
+class ProcessRow(val process: ProcessDefinition, val shipped: Boolean, val profile: Profile?, val scheduleCount: Int, val ready: Boolean, val live: Long)
 
 /** Why a Process can't be deployed, in the XML parser's or the engine's words. */
 class Refused(message: String?) : Exception(message)
@@ -365,3 +397,8 @@ internal fun operatonOnly(document: Document) {
     rewrite(document.documentElement)
     document.documentElement.setAttributeNS(XMLNS_ATTRIBUTE_NS_URI, "xmlns:operaton", OPERATON)
 }
+
+/** A Process id that is a plain folder name: no separator, and never `.` or `..`. */
+private val SAFE_KEY = Regex("[A-Za-z_][A-Za-z0-9_.-]*")
+
+internal fun processFolder(home: Path, key: String): Path? = home.resolve("processes").resolve(key).takeIf { SAFE_KEY.matches(key) }

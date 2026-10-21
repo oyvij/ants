@@ -66,9 +66,10 @@ class Updates(
     val current get() = notice
 
     /** Settings' **Check now**: checks at once, and says what it found. */
-    fun checkNow(): Toast = when {
-        !check() -> Toast("Couldn't check", "the release list didn't answer; the log says why.")
-        else -> notice.newer?.let { Toast("Checked", "Ants $it is available.") } ?: Toast("Checked", "nothing newer.")
+    fun checkNow(): Toast {
+        check()?.let { return Toast("Couldn't check for updates", "The release list didn't answer: $it.", Toast.Kind.ERROR) }
+        return notice.newer?.let { Toast("Update available", "Ants $it is out.", Toast.Kind.INFO) }
+            ?: Toast("Up to date", "Ants $version is the newest version.", Toast.Kind.SUCCESS)
     }
 
     @PreDestroy
@@ -78,25 +79,25 @@ class Updates(
 
     /**
      * Reads the newest release's version from its SHA256SUMS, which names its tarball, and refreshes the model list from
-     * the model status table. Offline, the last answers stand. False when the release couldn't be read.
+     * the model status table. Offline, the last answers stand.
      */
-    private fun check(): Boolean {
-        val read = try {
+    private fun check(): Exception? {
+        val failure = try {
             val sums = URI("$releases/SHA256SUMS").toURL().readText()
             val release = Regex(tarball("""(\S+)""")).find(sums)?.groupValues?.get(1) // its dots match any character too
             synchronized(this) { notice = notice.copy(newer = release?.takeIf { Version.parse(it) > version }, unreachable = false) }
-            true
+            null
         } catch (e: Exception) {
             log.info("No update check: $e")
             synchronized(this) { notice = notice.copy(unreachable = true) }
-            false
+            e
         }
         try {
             models.check()
         } catch (e: Exception) {
             log.info("The model list wasn't refreshed: $e")
         }
-        return read
+        return failure
     }
 
     /** The nav's update notice as HTML: a newer release with **Update**, how Update is going, or nothing. */

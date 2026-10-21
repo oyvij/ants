@@ -250,7 +250,19 @@ class AgentsTest : AntsTest() {
     fun `Check now refreshes the model list and goes back to the page`() {
         val checked = post("/models/check", emptyMap()) // the page it was pressed on sends its Referer; without one, the Agents
         assertEquals("/agents", checked.path)
-        assertContains(checked.body, "<b>Checked</b>")
+        assertContains(checked.body, toastMarkup(Toast.Kind.SUCCESS, "Models up to date", "No new models."))
+    }
+
+    @Test
+    fun `Check now says why when Anthropic's model list can't be read`() {
+        models.deleteIfExists()
+        try {
+            val failed = post("/models/check", emptyMap())
+            assertEquals("/agents", failed.path)
+            assertContains(failed.body, toastMarkup(Toast.Kind.ERROR, "Couldn't check models", "Anthropic's model list couldn't be read: $models (No such file or directory)"))
+        } finally {
+            models.writeText("")
+        }
     }
 
     @Test

@@ -91,6 +91,7 @@ class FeelingLuckyTest : AntsTest() {
         assertContains(home.resolve("shipped/skills/pr/SKILL.md").toFile().readText(), "in plain words with no backticks")
         // claude refuses `git -C` and `cd … && git …` under Bash(git log *), but allows a lone cd into the clone
         assertContains(home.resolve("shipped/skills/pr/SKILL.md").toFile().readText(), "first `cd repos/<repo>`,\nthen a plain `git log …`")
+        assertContains(home.resolve("shipped/skills/pr/SKILL.md").toFile().readText(), "gh repo view <owner>/<name> --json parent")
 
         val scout = claude.launches("scout").single()
         val offered = JsonMapper.shared().readValue(scout.flag("--agents"), Map::class.java)

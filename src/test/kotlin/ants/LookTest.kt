@@ -301,11 +301,13 @@ class LookTest : AntsTest() {
             <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
                               id="definitions" targetNamespace="http://bpmn.io/schema/bpmn">
               <bpmn:process id="nightly" name="Nightly knowledge sweep" isExecutable="true" camunda:historyTimeToLive="180">
-                <bpmn:startEvent id="start"><bpmn:timerEventDefinition><bpmn:timeCycle>0 0 0 * * *</bpmn:timeCycle></bpmn:timerEventDefinition></bpmn:startEvent>
+                <bpmn:startEvent id="start" />
                 <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="end" /><bpmn:endEvent id="end" />
               </bpmn:process>
             </bpmn:definitions>
         """.trimIndent()))
+        http.get("/processes/nightly")
+        http.post("/processes/nightly/schedule", mapOf("cron" to "0 0 0 * * *"))
         return runs
     }
 

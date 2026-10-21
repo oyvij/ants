@@ -114,6 +114,20 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `the modeler knows no Schedule, so a start event's panel has no Schedule nor its hint, and the wrench menu offers no timer start`() = browse {
+        page.navigate(url("/processes/new?name=No+schedule&from="))
+        shape("start").click()
+        assertThat(heading).hasText("Start event")
+        button("＋ Add field").click()
+        assertThat(panel).containsText("Stored value")
+        assertThat(panel).not().containsText("Schedule")
+        assertThat(page.locator("#explain [title*='Schedule']")).hasCount(0)
+        pad.locator("[data-action='replace']").click()
+        assertThat(page.locator(".djs-popup")).isVisible()
+        assertThat(page.locator(".djs-popup [data-id='replace-with-timer-start']")).hasCount(0)
+    }
+
+    @Test
     fun `clicking a Check selects its element, inside a collapsed sub-process too`() = browse {
         agentTask(null)
         val outer = agentTaskXml("outer", "Outer")
@@ -245,7 +259,7 @@ class BrowserTest : AntsTest() {
         assertThat(shape("grill")).isVisible()
         assertThat(shape("again")).hasCount(1)
 
-        for (kind in listOf("start", "timer-start", "end", "timer", "exclusive", "parallel", "agent", "user", "built-in", "call", "subprocess", "annotation", "group")) {
+        for (kind in listOf("start", "end", "timer", "exclusive", "parallel", "agent", "user", "built-in", "call", "subprocess", "annotation", "group")) {
             val id = tool("add_element", mapOf("kind" to kind, "name" to "A $kind"))["id"].asString()
             assertThat(shape(id)).hasCount(1)
         }
@@ -1195,7 +1209,7 @@ class BrowserTest : AntsTest() {
         page.navigate(url("/settings"))
         page.locator("button[name=action][value=updates]").tap()
         val toast = page.locator(".toast")
-        assertThat(toast).containsText("Checked")
+        assertThat(toast).containsText("Up to date")
         settled(toast)
         val spot = toast.boundingBox()
         assertEquals(0.0, spot.x, 0.5)
@@ -1206,6 +1220,32 @@ class BrowserTest : AntsTest() {
 
         page.setViewportSize(769, 900)
         assertEquals(380.0, toast.boundingBox().width, 0.5)
+        toast.locator("button[aria-label=Close]").tap()
+        assertThat(toast).hasCount(0)
+    }
+
+    @Test
+    fun `a reload or a submit back to the same page keeps the scroll position, and a page opened from the sidebar starts at the top`() = browse {
+        settings(null)
+        fun scrolled() = (page.evaluate("scrollY") as Number).toInt()
+        page.navigate(url("/settings"))
+        val checkNow = page.locator("button[name=action][value=updates]")
+        checkNow.scrollIntoViewIfNeeded()
+        val place = scrolled()
+        assertTrue(place > 0, "Settings is long enough to scroll")
+
+        page.reload()
+        eventually { assertEquals(place, scrolled(), "a reload keeps the place") }
+
+        checkNow.click()
+        assertThat(page.locator(".toast")).isVisible()
+        eventually { assertEquals(place, scrolled(), "Check now keeps the place") }
+
+        page.evaluate("window.unreloaded = true")
+        page.locator("nav.side > a[href='/settings']").click()
+        page.waitForFunction("!window.unreloaded")
+        page.waitForLoadState()
+        assertEquals(0, scrolled(), "a page opened from the sidebar starts at the top")
     }
 
     private fun round(vararg questions: Pair<String, String>) = """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":""" +
@@ -1519,6 +1559,71 @@ class BrowserTest : AntsTest() {
 
         repoBox.pressSequentially("$mirror")
         assertEquals("""["$elsewhere","web","$mirror"]""", startPicked())
+    }
+
+    private fun schedulePicked(repo: String) {
+        page.locator("textarea[name=prompt] + .ed .cm-content").fill("Add dark mode")
+        repoBox.click()
+        repoOption(repo).click()
+        repoBox.press("Escape")
+        page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("⏰ Schedule").setExact(true)).click()
+        val every = page.getByLabel("Every")
+        assertThat(every).isFocused()
+        every.selectOption("day")
+        assertThat(page.getByLabel("Cron")).hasValue("0 0 8 * * *")
+        every.selectOption("hour")
+        assertThat(page.getByLabel("Cron")).hasValue("0 0 * * * *")
+        page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("Save schedule")).click()
+        page.waitForURL(Pattern.compile("/processes/picker$"))
+    }
+
+    @Test
+    fun `Schedule beside Start saves the filled-in start form with times picked in words, and two Schedules are two rows`() = browse {
+        picker()
+        assertThat(page.locator("#when")).isHidden()
+        schedulePicked("api")
+        schedulePicked("web")
+        val rows = page.locator("#schedules tr").filter(Locator.FilterOptions().setHasText("Every hour"))
+        assertThat(rows).hasCount(2)
+        assertThat(rows.nth(0)).containsText("api")
+        assertThat(rows.nth(1)).containsText("web")
+        assertThat(rows.nth(0)).containsText(Pattern.compile(" · in \\d"))
+        page.screenshot("schedules")
+    }
+
+    @Test
+    fun `Delete on a Process page asks for confirmation, then the Process is gone from the Processes list`() = browse {
+        http.import("start-end.bpmn")
+        page.navigate(url("/processes/start-end"))
+        page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("Delete").setExact(true)).click()
+        assertThat(page.locator("h1")).hasText("Delete the Process Start to end?")
+        page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("Delete").setExact(true)).click()
+        page.waitForURL(Pattern.compile("/processes$"))
+        assertThat(page.locator("a[href='/processes/start-end']")).hasCount(0)
+    }
+
+    @Test
+    fun `Pause and Remove on a Schedule's row act on that Schedule alone`() = browse {
+        picker()
+        schedulePicked("api")
+        schedulePicked("web")
+        val rows = page.locator("#schedules tr").filter(Locator.FilterOptions().setHasText("Every hour"))
+        val api = rows.filter(Locator.FilterOptions().setHasText("api"))
+        val web = rows.filter(Locator.FilterOptions().setHasText("web"))
+        api.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Pause")).click()
+        page.waitForURL(Pattern.compile("/processes/picker$"))
+        assertThat(api).containsText("paused")
+        assertThat(api.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Resume"))).isVisible()
+        assertThat(web).not().containsText("paused")
+        web.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Remove")).click()
+        page.waitForURL(Pattern.compile("/processes/picker$"))
+        assertThat(rows).hasCount(1)
+        assertThat(rows.nth(0)).containsText("api")
+        api.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Resume")).click()
+        page.waitForURL(Pattern.compile("/processes/picker$"))
+        assertThat(api).not().containsText("paused")
+        api.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Start now")).click()
+        page.waitForURL(Pattern.compile("/runs/[^/]+$"))
     }
 
     @Test

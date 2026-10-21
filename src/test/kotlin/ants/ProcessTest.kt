@@ -13,19 +13,18 @@ class ProcessTest : AntsTest() {
     @Autowired
     private lateinit var processes: Processes
 
-    /** Deploys, as Save and deploy does, the Process `waits`: a User Task, and the Schedule [cron] when given. */
     private fun waits(cron: String? = null) {
-        val timer = cron?.let { "<bpmn:timerEventDefinition><bpmn:timeCycle>$it</bpmn:timeCycle></bpmn:timerEventDefinition>" }.orEmpty()
         browser.get("/processes")
         browser.post("/processes/deploy", mapOf("bpmn" to """
             <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
                               id="definitions" targetNamespace="http://bpmn.io/schema/bpmn">
               <bpmn:process id="waits" name="Waits" isExecutable="true" camunda:historyTimeToLive="180">
-                <bpmn:startEvent id="start">$timer</bpmn:startEvent><bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="wait" />
+                <bpmn:startEvent id="start" /><bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="wait" />
                 <bpmn:userTask id="wait" name="Wait" /><bpmn:sequenceFlow id="f2" sourceRef="wait" targetRef="end" /><bpmn:endEvent id="end" />
               </bpmn:process>
             </bpmn:definitions>
         """.trimIndent()))
+        if (cron != null) browser.post("/processes/waits/schedule", mapOf("cron" to cron))
     }
 
     /** The Processes list's row for the Process [name]. */
@@ -47,11 +46,11 @@ class ProcessTest : AntsTest() {
         assertContains(waits, """data-href="/processes/waits"""")
         assertContains(waits, ">you<")
         assertContains(waits, "notes · —")
-        assertContains(waits, """<span title="0 0 0 * * *">⏰ day at 00:00</span>""")
+        assertContains(waits, """<td class="small">⏰ 1</td>""")
         assertContains(waits, """<span class="pill p-ready">Ready</span>""")
         assertContains(waits, """<td class="muted">1</td>""")
         assertContains(waits, """<a href="/processes/waits/edit">Edit diagram</a>""")
-        assertContains(row("Start to end"), """<a href="/processes/start-end#schedule">＋ Schedule</a>""")
+        assertContains(row("Start to end"), """<td class="small"></td>""")
         assertContains(row("Start to end"), """<td class="muted">0</td>""")
         assertContains(row("Set up Vault"), ">shipped<")
 
@@ -76,22 +75,21 @@ class ProcessTest : AntsTest() {
         assertContains(page, """<label class="f" for="field-prompt">Prompt</label>""")
         assertContains(page, """<label class="f" for="field-workBranch">Work branch <span class="muted small" style="font-weight: 500">(optional)</span></label>""")
         assertContains(page, "No schedule. Runs start when someone presses Start.")
-        assertContains(page, """<a class="btn" href="/processes/start-form/edit">＋ Add a schedule</a>""")
+        assertContains(page, """<a class="btn" href="#start">＋ Add a schedule</a>""")
 
         waits(cron = "0 0 0 * * *")
         val run = browser.post("/processes/waits/runs", mapOf(NAME to "Tiny wait")).path
         val scheduled = browser.get("/processes/waits").body
-        assertContains(scheduled, """<span class="pill p-ready">On</span>""")
+        assertContains(scheduled, "<h3>⏰ Schedules</h3>")
         assertContains(scheduled, "Every day at 00:00")
         assertContains(scheduled, "<code>0 0 0 * * *</code>")
         assertContains(scheduled, Regex("""00:00 · in (\d+h )?\d+m"""))
         assertContains(scheduled, "It runs once when Ants is back, not once per missed time.")
         assertContains(scheduled, """<tr class="click" data-href="$run"><td><a href="$run"><b>Tiny wait</b></a></td>""")
 
-        home.resolve("settings.yaml").writeAtomically("") // no Vault
-        assertContains(browser.get("/processes/waits").body, "won't start until the check above passes")
-        browser.post("/processes/waits/schedule/pause", mapOf())
-        assertContains(browser.get("/processes/waits").body, """<span class="pill p-quiet">Paused</span>""")
+        val id = Regex("<tr id=\"schedule-([^\"]+)\">").find(scheduled)!!.groupValues[1]
+        browser.post("/processes/waits/schedules/$id/pause", mapOf())
+        assertContains(browser.get("/processes/waits").body, """<span class="muted">paused</span>""")
     }
 
     @Test

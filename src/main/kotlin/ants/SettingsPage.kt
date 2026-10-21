@@ -51,7 +51,7 @@ class SettingsPage(
         val form = SettingsForm.of(params)
         return when (params["action"]) {
             "login" -> login().let { login ->
-                Shell.toast(request, if (login.loggedIn) Toast("Logged in", login.method) else Toast("Not logged in", "Run the command under Log in again, then press Check login."))
+                Shell.toast(request, if (login.loggedIn) Toast("Logged in", login.method, Toast.Kind.SUCCESS) else Toast("Not logged in", "Run the command under Log in again, then press Check login.", Toast.Kind.ERROR))
                 show(model, form)
             }
             "updates" -> Shell.toast(request, updates.checkNow()).let { show(model, form) }

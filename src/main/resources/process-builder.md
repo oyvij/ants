@@ -44,7 +44,7 @@ event. Between them, connected by paths:
 - **Multi-instance**: an Agent Task, sub-process or call activity can run once per item of a list from an earlier
   Result, side by side or one after another, each instance reading its item by the element variable
   (`set_multi_instance`). Its Result is then a list.
-- **Sub-process** (`subprocess`), **timer**, **timer start**, **annotation** and **group**, as the palette offers them.
+- **Sub-process** (`subprocess`), **timer**, **annotation** and **group**, as the palette offers them.
 - A **Template** is a small diagram dropped in as a collapsed sub-process (`drop_template`), then changed in place.
 
 Give each Task a short JUEL id such as `grill` or `open_pr` (letters, digits and underscores), since later Tasks read
