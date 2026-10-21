@@ -248,6 +248,14 @@ class SettingsTest : AntsTest() {
         assertContains(page, """<button type="button" data-edit="instructions-0">Instructions</button>""")
         assertContains(page, """<input type="hidden" name="name" value="work">""")
         assertContains(page, "Use conventional commits.\n</textarea>")
+
+        browser.post("/settings/instructions", mapOf("name" to "fun", "text" to "Have fun.\n"))
+        press("save", lists + mapOf(
+            "profiles[0].name" to "fun", "profiles[0].was" to "work", "profiles[0].vault" to "work", "profiles[0].source-map" to "work",
+            "profiles[1].name" to "work", "profiles[1].was" to "fun", "profiles[1].vault" to "work", "profiles[1].source-map" to "work",
+        ))
+        assertEquals("Use conventional commits.\n", home.resolve("profiles/fun/AGENTS.md").readText())
+        assertEquals("Have fun.\n", home.resolve("profiles/work/AGENTS.md").readText())
     }
 
     @Test
@@ -263,7 +271,7 @@ class SettingsTest : AntsTest() {
 
         val withoutJob = lists + mapOf("profiles[0].name" to "", "profiles[0].was" to "job", "profiles[1].name" to "hobby", "profiles[1].was" to "hobby", "profiles[1].vault" to "work", "profiles[1].source-map" to "work")
         val asked = press("save", withoutJob)
-        assertContains(asked, "Remove the Profile job and delete its instructions?")
+        assertContains(asked, "Delete the Profile job and its instructions?")
         assertContains(asked, """<input type="hidden" name="confirm" value="on">""")
         assertEquals(profiles, yaml()["profiles"])
         assertTrue(home.resolve("profiles/job/AGENTS.md").exists())
@@ -272,8 +280,18 @@ class SettingsTest : AntsTest() {
         assertEquals(mapOf("hobby" to mapOf("vault" to "work", "source-map" to "work")), yaml()["profiles"])
         assertFalse(home.resolve("profiles/job").exists())
 
+        browser.post("/settings/instructions", mapOf("name" to "hobby", "text" to "Have fun.\n"))
+        press("save", both)
+        browser.post("/settings/instructions", mapOf("name" to "job", "text" to "Use conventional commits.\n"))
+        val renamedOntoJob = lists + mapOf("profiles[0].name" to "", "profiles[0].was" to "job", "profiles[1].name" to "job", "profiles[1].was" to "hobby", "profiles[1].vault" to "work", "profiles[1].source-map" to "work")
+        assertContains(press("save", renamedOntoJob), "Delete the Profile job and its instructions?")
+        press("save", renamedOntoJob + ("confirm" to "on"))
+        assertEquals("Have fun.\n", home.resolve("profiles/job/AGENTS.md").readText())
+        assertFalse(home.resolve("profiles/hobby").exists())
+
+        browser.post("/settings/instructions", mapOf("name" to "job", "text" to ""))
         val removed = press("save", lists)
-        assertFalse("Remove the Profile" in removed)
+        assertFalse("Delete the Profile" in removed)
         assertEquals(null, yaml()["profiles"])
     }
 

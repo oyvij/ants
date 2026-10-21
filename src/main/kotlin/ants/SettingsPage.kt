@@ -85,7 +85,7 @@ class SettingsPage(
     }
 
     private fun removalQuestion(names: List<String>) =
-        if (names.size == 1) "Remove the Profile ${names.single()} and delete its instructions?" else "Remove the Profiles ${names.joinToString(", ")} and delete their instructions?"
+        if (names.size == 1) "Delete the Profile ${names.single()} and its instructions?" else "Delete the Profiles ${names.joinToString(", ")} and their instructions?"
 
     private fun show(model: Model, form: SettingsForm, message: String? = null): String {
         model.addAttribute("form", form)
@@ -167,7 +167,7 @@ data class Named(val rows: List<Pair<String, String>>, val default: Int) {
     }
 }
 
-/** One Profile on the settings page: its name, the names of its Vault and Source map, and the name it was saved under. */
+/** One Profile on the settings page: its name and the names of its Vault and Source map. */
 data class ProfileRow(val name: String, val vault: String, val sourceMap: String, val was: String = "")
 
 /**
@@ -214,7 +214,9 @@ data class SettingsForm(
     /** The Protected Command rows plus an empty one, which adds the next. */
     val shownProtectedCommands get() = protectedCommands + ProtectedCommandRow("", emptyList())
 
-    fun removedProfiles(settings: Settings) = settings.profiles().keys - profiles.flatMap { listOf(it.name, it.was) }.toSet()
+    fun removedProfiles(settings: Settings) = settings.profiles().keys - profiles.map { it.was.ifEmpty { it.name } }.toSet()
+
+    private fun renamedProfiles() = profiles.filter { it.was.isNotEmpty() && it.was != it.name }.associate { it.was to it.name }
 
     private fun secretError() = when {
         secrets.any { it.label.isEmpty() || words(it.names).isEmpty() || (it.value.isEmpty() && it.was.isEmpty()) } -> "Every Secret needs a label, a value and a variable name."
@@ -259,7 +261,7 @@ data class SettingsForm(
         val removed = removedProfiles(settings)
         settings.saveSecretValues(secrets.mapNotNull { row -> row.value.ifEmpty { saved[row.was] }?.let { row.label to it } }.toMap())
         settings.save { values -> write(values, password, encoder) }
-        settings.moveInstructions(profiles.filter { it.was.isNotEmpty() && it.was != it.name }.associate { it.was to it.name }, removed)
+        settings.keepInstructions(renamedProfiles(), removed)
     }
 
     private fun write(values: MutableMap<String, Any?>, password: String, encoder: PasswordEncoder) {

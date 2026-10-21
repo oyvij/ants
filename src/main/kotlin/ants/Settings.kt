@@ -175,9 +175,13 @@ class Settings(
 
     fun instructions(name: String?): Path? = name?.takeIf { it in profiles() }?.let { profileFolder(it).resolve("AGENTS.md") }
 
-    fun moveInstructions(renamed: Map<String, String>, removed: Set<String>) {
+    fun keepInstructions(renamed: Map<String, String>, removed: Set<String>) {
         removed.forEach { profileFolder(it).toFile().deleteRecursively() }
-        renamed.forEach { (was, name) -> profileFolder(was).takeIf { it.exists() }?.let { Files.move(it, profileFolder(name)) } }
+        val parked = Files.createTempDirectory(home, "profiles")
+        renamed.filterKeys { profileFolder(it).exists() }
+            .map { (was, name) -> Files.move(profileFolder(was), parked.resolve(was)) to name }
+            .forEach { (folder, name) -> Files.move(folder, profileFolder(name)) }
+        Files.delete(parked)
     }
 
     private fun profileFolder(name: String) = home.resolve("profiles").resolve(name)
