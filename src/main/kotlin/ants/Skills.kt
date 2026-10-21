@@ -109,13 +109,21 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy) {
     /** Deletes one of the user's Skills with its folder, once the user has confirmed it, seeing what uses it. */
     @PostMapping("/skills/{name}/delete")
     fun delete(@PathVariable name: String, @RequestParam confirm: String?, model: Model): String {
-        val skill = yours(name)
-        val inside = catalogue.skills().filter { it.file != skill.file && it.file.startsWith(skill.folder) }
-        if (inside.isNotEmpty()) return list(model, "${skill.folder} holds other Skills (${inside.joinToString { it.name }}); move or delete them first.")
+        holdingOthers(yours(name))?.let { return list(model, it) }
         if (confirm == null) return confirm(model, "Delete the Skill $name?", usedBy.skill(name), "/skills/$name/delete", emptyMap(), "/skills/$name")
-        skill.folder.toFile().deleteRecursively()
+        delete(name)
         return "redirect:/skills"
     }
+
+    fun delete(name: String): String {
+        val skill = yours(name)
+        holdingOthers(skill)?.let { throw Refused(it) }
+        skill.folder.toFile().deleteRecursively()
+        return "/skills/$name"
+    }
+
+    private fun holdingOthers(skill: Skill): String? = catalogue.skills().filter { it.file != skill.file && it.file.startsWith(skill.folder) }
+        .takeIf { it.isNotEmpty() }?.let { inside -> "${skill.folder} holds other Skills (${inside.joinToString { it.name }}); move or delete them first." }
 
     /** The schema editor's check as you type: why the schema is invalid, as a JSON list; empty when it's valid. */
     @PostMapping("/skills/schema")

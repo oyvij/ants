@@ -36,7 +36,8 @@ There is no Skill tool. To call the Skill tool with a name, read and follow that
   `stuck` with the question.
 - **The pre-agreed seams** are those the Ticket's acceptance criteria and the Spec's Testing
   Decisions name, or the proposal's Tests.
-- **The suites:** run each touched repo's whole suite once at the end.
+- **The suites:** run each touched repo's tests as its `CLAUDE.md`, `AGENTS.md` or
+  `CONTRIBUTING.md` says; where they say nothing, run its whole suite once at the end.
 - **The review** runs from the fixed point, against the Ticket and the Spec, or the proposal. Fix
   each finding you agree with as a new commit, never amending the commits under review, and run
   the suites again.
