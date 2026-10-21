@@ -1561,12 +1561,14 @@ class BrowserTest : AntsTest() {
         assertEquals("""["$elsewhere","web","$mirror"]""", startPicked())
     }
 
+    private fun openSchedule() = page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("⏰ Schedule").setExact(true)).click()
+
     private fun schedulePicked(repo: String) {
         page.locator("textarea[name=prompt] + .ed .cm-content").fill("Add dark mode")
         repoBox.click()
         repoOption(repo).click()
         repoBox.press("Escape")
-        page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("⏰ Schedule").setExact(true)).click()
+        openSchedule()
         val every = page.getByLabel("Every")
         assertThat(every).isFocused()
         every.selectOption("day")
@@ -1634,7 +1636,7 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
-    fun `on a phone each Schedule is a block within the card, its name first, then labelled lines and its buttons at least 44px tall, each When part is a line of its own, and on desktop both are rows`() = browse {
+    fun `on a phone each Schedule is a block within the card, its name first, then labelled lines and its buttons at least 44px tall, each When part is a line of its own, and on desktop a Schedule is a table row and the When parts one row`() = browse {
         val prompt = "Sweep the notes for stale links and rewrite every one of them with a longer explanation than fits on one line"
         picker("", *phoneSourceMap)
         http.get("/processes/picker")
@@ -1681,7 +1683,7 @@ class BrowserTest : AntsTest() {
         assertTapSized()
         page.screenshot("phone/schedules")
 
-        page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("⏰ Schedule").setExact(true)).click()
+        openSchedule()
         val fieldset = page.locator("#when")
         fun part(name: String) = page.locator("#when-$name")
         fun line(control: Locator) = fieldset.locator("label").filter(Locator.FilterOptions().setHas(control))
@@ -1692,7 +1694,7 @@ class BrowserTest : AntsTest() {
             assertThat(line(part(hidden))).isHidden()
             val controls = (listOf("every") + shown).map(::part)
             for (control in controls) {
-                val what = "the When part ${line(control).innerText().trim()}"
+                val what = "the When part ${control.getAttribute("id")}"
                 assertWithinCard(line(control), fieldset, what)
                 val (box, lineBox) = control.boundingBox() to line(control).boundingBox()
                 assertTrue(box.x > lineBox.x + 8, "$what has its text before its control")
@@ -1700,9 +1702,10 @@ class BrowserTest : AntsTest() {
             }
             val lines = controls.map { line(it).boundingBox() }
             for ((above, below) in lines.zipWithNext()) assertTrue(below.y >= above.y + above.height - 0.5, "with Every $choice each When part sits on its own line")
-            assertWithinScreen(part("cron"), "the Advanced cron field")
-            assertWithinScreen(page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("Save schedule")), "Save schedule")
         }
+        page.getByText("Advanced", Page.GetByTextOptions().setExact(true)).click()
+        assertWithinCard(part("cron"), fieldset, "the Advanced cron field")
+        assertWithinCard(page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("Save schedule")), fieldset, "Save schedule")
         val (fieldsetBox, everyBox) = fieldset.boundingBox() to line(every).boundingBox()
         assertTrue(everyBox.width >= fieldsetBox.width - 40, "Every's line spans the When fieldset, ${everyBox.width}px of ${fieldsetBox.width}px")
         page.screenshot("phone/when")
@@ -1714,7 +1717,7 @@ class BrowserTest : AntsTest() {
         assertThat(profiled.getByRole(AriaRole.CELL).nth(1)).hasAccessibleName("work")
         val buttons = listOf("Start now", "Pause", "Remove").map { button(profiled, it).boundingBox() }
         for ((left, right) in buttons.zipWithNext()) assertEquals(left.y, right.y, 0.5, "on desktop a Schedule's buttons sit in one row")
-        page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("⏰ Schedule").setExact(true)).click()
+        openSchedule()
         every.selectOption("week")
         val parts = listOf("every", "at", "on").map { line(part(it)).boundingBox() }
         for ((left, right) in parts.zipWithNext()) assertEquals(left.y, right.y, 0.5, "on desktop the When parts sit in one row")
