@@ -62,9 +62,9 @@ class StartForm(
      * with [CantStart] while the pre-Run check gives reasons.
      */
     fun start(definition: ProcessDefinition, values: Map<String, List<String>>): ProcessInstance =
-        runtime.startProcessInstanceById(definition.id, check(definition, values))
+        runtime.startProcessInstanceById(definition.id, variables(definition, values))
 
-    fun check(definition: ProcessDefinition, values: Map<String, List<String>>): Map<String, Any> {
+    fun variables(definition: ProcessDefinition, values: Map<String, List<String>>): Map<String, Any> {
         val fields = fields(definition)
         val variables = fields.associate { field ->
             // A Repos field's typed-in entries come as one value, separated by commas or spaces.

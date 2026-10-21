@@ -8,6 +8,7 @@ import org.operaton.bpm.engine.TaskService
 import org.springframework.beans.factory.annotation.Autowired
 import java.time.Duration
 import java.time.temporal.ChronoUnit
+import kotlin.io.path.readText
 import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
@@ -234,12 +235,14 @@ class ScheduleTest : AntsTest() {
         assertContains(rows, "<code>0 30 8 * * MON-FRI</code>")
         assertContains(rows, "Every weekday at 08:30")
         assertContains(rows, Regex("\\d\\d:\\d\\d · in \\d"))
+        home.resolve("settings.yaml").writeAtomically(home.resolve("settings.yaml").readText().replace("default-profile: work", "default-profile: other"))
 
         clock.offset = Duration.ofDays(4)
         eventually { assertEquals(2, cloneRuns().size) }
         val (hourly, weekday) = cloneRuns().partition { "<dt>branch</dt><dd><code>a</code></dd>" in runPage(it.id) }.toList().map { it.single().id }
         eventually { assertEquals(listOf("api"), clones(workspace(hourly)).map { it.fileName.toString() }) }
         eventually { assertEquals(listOf("web"), clones(workspace(weekday)).map { it.fileName.toString() }) }
+        assertContains(runPage(hourly), "<dt>$PROFILE</dt><dd><code>work</code></dd>", message = "the Profile in force when it was saved")
         assertContains(runPage(hourly), Regex("<span id=\"name\">Clone repos, \\d{1,2} [A-Z][a-z]{2} \\d\\d:\\d\\d</span>"))
     }
 

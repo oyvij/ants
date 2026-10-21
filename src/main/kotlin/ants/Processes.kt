@@ -236,18 +236,19 @@ class Processes(
     /** **Start**: a Run with the start form's values, else the Process page again with what's missing or why it can't start. */
     @PostMapping("/processes/{key}/runs")
     fun start(@PathVariable key: String, @RequestParam values: MultiValueMap<String, String>, model: Model, response: HttpServletResponse): String =
-        refusedAgain(key, values, model, response) { "redirect:/runs/" + startForm.start(latest(key), values).id }
+        orRefused(key, values, model, response) { "redirect:/runs/" + startForm.start(latest(key), values).id }
 
     @PostMapping("/processes/{key}/schedule")
     fun schedule(@PathVariable key: String, @RequestParam values: MultiValueMap<String, String>, model: Model, response: HttpServletResponse): String {
-        model.addAttribute("cron", values.getFirst("cron").orEmpty())
-        return refusedAgain(key, values, model, response) {
-            schedules.add(latest(key).key, values, values.getFirst("cron").orEmpty())
+        val cron = values.getFirst("cron").orEmpty()
+        model.addAttribute("cron", cron)
+        return orRefused(key, values, model, response) {
+            schedules.add(latest(key).key, values, cron)
             "redirect:/processes/$key"
         }
     }
 
-    private fun refusedAgain(key: String, values: MultiValueMap<String, String>, model: Model, response: HttpServletResponse, submit: () -> String): String = try {
+    private fun orRefused(key: String, values: MultiValueMap<String, String>, model: Model, response: HttpServletResponse, submit: () -> String): String = try {
         submit()
     } catch (e: Unfilled) {
         refused(key, values, model.addAttribute("error", e.message), response)

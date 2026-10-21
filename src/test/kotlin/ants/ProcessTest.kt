@@ -76,7 +76,7 @@ class ProcessTest : AntsTest() {
         assertContains(page, """<label class="f" for="field-prompt">Prompt</label>""")
         assertContains(page, """<label class="f" for="field-workBranch">Work branch <span class="muted small" style="font-weight: 500">(optional)</span></label>""")
         assertContains(page, "No schedule. Runs start when someone presses Start.")
-        assertContains(page, """<a class="btn" href="/processes/start-form/edit">＋ Add a schedule</a>""")
+        assertContains(page, """<a class="btn" href="#start">＋ Add a schedule</a>""")
 
         waits(cron = "0 0 0 * * *")
         val run = browser.post("/processes/waits/runs", mapOf(NAME to "Tiny wait")).path

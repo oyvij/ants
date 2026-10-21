@@ -96,9 +96,7 @@ class Schedules(
     /** The Schedule of [definition], the latest version of its Process, or null without one. */
     fun of(definition: ProcessDefinition): Schedule? {
         val cron = repository.getBpmnModelInstance(definition.id).schedule() ?: return null
-        val state = state(definition.key)
-        val next = next(cron, state.paused)
-        return Schedule(definition.key, definition.name ?: definition.key, cron, state.paused, next, next?.let(clock::local), next?.let { countdown(Duration.between(clock.instant(), it)) }, state.skipped, state.failed)
+        return schedule(definition.key, definition.name ?: definition.key, cron, state(definition.key))
     }
 
     fun of(processKey: String): List<Schedule> {
@@ -106,15 +104,10 @@ class Schedules(
         val fields = startForm.fields(definition)
         val process = definition.name ?: processKey
         return states().filterValues { it.process == processKey }.map { (id, state) ->
-            val cron = state.cron.orEmpty()
-            val next = next(cron, state.paused)
             val repos = fields.filter { it.type == FieldType.REPOS }.flatMap { state.values[it.name].orEmpty() }.flatMap { it.split(Regex("[,\\s]+")) }.filter(String::isNotEmpty)
             val label = runName(state.values[NAME]?.firstOrNull()) ?: listOf(process, repos.joinToString(", ")).filter(String::isNotEmpty).joinToString(" · ")
             val values = fields.associate { field -> field.label to state.values[field.name].orEmpty().filter(String::isNotBlank).joinToString(", ") }.filterValues(String::isNotEmpty)
-            Schedule(
-                processKey, process, cron, state.paused, next, next?.let(clock::local), next?.let { countdown(Duration.between(clock.instant(), it)) }, state.skipped, state.failed,
-                id, label, startForm.profile(definition, state.values[PROFILE]?.firstOrNull()), values,
-            )
+            schedule(processKey, process, state.cron.orEmpty(), state, id, label, state.values[PROFILE]?.firstOrNull(), values)
         }
     }
 
@@ -125,8 +118,9 @@ class Schedules(
         }
         val definition = latest(processKey) ?: throw Unfilled("There is no Process $processKey.")
         val kept = values.filterKeys { it in startForm.fields(definition).map(Field::name) + NAME + PROFILE }
-        startForm.check(definition, kept)
-        UUID.randomUUID().toString().also { id -> update(id) { State(last = clock.instant(), process = processKey, cron = times, values = kept) } }
+        startForm.variables(definition, kept)
+        val profile = startForm.profile(definition, kept[PROFILE]?.firstOrNull())
+        UUID.randomUUID().toString().also { id -> update(id) { State(last = clock.instant(), process = processKey, cron = times, values = kept + listOfNotNull(profile?.let { PROFILE to listOf(it) })) } }
     }
 
     /** Pauses or resumes the Schedule of [key]; times that come while it is paused never run. */
@@ -192,8 +186,11 @@ class Schedules(
         else runCatching { start() }
     }
 
-    private fun next(cron: String, paused: Boolean) =
-        if (paused) null else runCatching { CronExpression.parse(cron).next(clock.instant().atZone(clock.zone))?.toInstant() }.getOrNull()
+    private fun schedule(key: String, process: String, cron: String, state: State, id: String? = null, label: String = process, profile: String? = null, values: Map<String, String> = emptyMap()): Schedule {
+        val next = if (state.paused) null else runCatching { CronExpression.parse(cron).next(clock.instant().atZone(clock.zone))?.toInstant() }.getOrNull()
+        val ahead = next?.let { countdown(Duration.between(clock.instant(), it)) }
+        return Schedule(key, process, cron, state.paused, next, next?.let(clock::local), ahead, state.skipped, state.failed, id, label, profile, values)
+    }
 
     private fun latest(key: String): ProcessDefinition? = repository.createProcessDefinitionQuery().processDefinitionKey(key).latestVersion().singleResult()
 
