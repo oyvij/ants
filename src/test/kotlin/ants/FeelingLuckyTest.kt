@@ -85,12 +85,13 @@ class FeelingLuckyTest : AntsTest() {
         assertContains(tools("implement").first!!.split(","), "Agent")
         assertFalse("Bash(" in tools("implement").second!!) // Bash unlimited
         // claude refuses `gh pr create --body "…"` with a backtick in the body, so the body goes in a file under pr/
-        assertEquals("Read,Write,Edit,Bash" to "Read,Write(pr/**),Edit(pr/**),Bash(gh pr create *),Bash(gh pr view *),Bash(git log *),Bash(git diff *)", tools("pr"))
+        assertEquals("Read,Write,Edit,Bash" to "Read,Write(pr/**),Edit(pr/**),Bash(gh pr create *),Bash(gh pr view *),Bash(gh repo view *),Bash(git log *),Bash(git diff *)", tools("pr"))
         assertContains(home.resolve("shipped/skills/pr/SKILL.md").toFile().readText(), "--body-file pr/<repo>.md")
         // and the title, which stays on the command line, so it is written without backticks
         assertContains(home.resolve("shipped/skills/pr/SKILL.md").toFile().readText(), "in plain words with no backticks")
         // claude refuses `git -C` and `cd … && git …` under Bash(git log *), but allows a lone cd into the clone
         assertContains(home.resolve("shipped/skills/pr/SKILL.md").toFile().readText(), "first `cd repos/<repo>`,\nthen a plain `git log …`")
+        assertContains(home.resolve("shipped/skills/pr/SKILL.md").toFile().readText(), "gh repo view <owner>/<name> --json parent")
 
         val scout = claude.launches("scout").single()
         val offered = JsonMapper.shared().readValue(scout.flag("--agents"), Map::class.java)
