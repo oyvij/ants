@@ -213,7 +213,7 @@ class Notifications(
         // The choice first: the worker can fetch the Task again the moment its retries are back.
         runtime.setVariablesLocal(incident.executionId, mapOf(AgentLauncher.ACTION to action, AgentLauncher.INSTRUCTION to instruction))
         externalTasks.setRetries(incident.configuration, 1)
-        if (action == Push.PUSH) Shell.toast(request, Toast("Pushing", "${entry.summary}. The Run goes on once it is pushed."))
+        if (action == Push.PUSH) Shell.toast(request, Toast("Pushing", "${entry.summary}. The Run goes on once it is pushed.", Toast.Kind.INFO))
         return back(back, entry.run, "/notifications/next?run=${entry.run}")
     }
 

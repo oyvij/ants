@@ -55,7 +55,7 @@ $unsafe{article}
         if (!event.target.matches('#ticket input[type=checkbox]')) return;
         tick.line.value = event.target.dataset.line;
         tick.version.value = document.getElementById('ticket').dataset.version;
-        tick.submit();
+        tick.requestSubmit();
     });
     stream.on('ticket', html => {
         const template = document.createElement('template');

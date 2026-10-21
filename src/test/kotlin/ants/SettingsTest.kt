@@ -313,10 +313,12 @@ class SettingsTest : AntsTest() {
     fun `Check login asks claude again and says what it found, keeping what was typed`() {
         fakeClaude()
         val out = press("login", mapOf("agent-tasks" to "9"))
-        assertContains(out, """<div class="toast" role="status"><b>Not logged in</b>""")
+        assertContains(out, toastMarkup(Toast.Kind.ERROR, "Not logged in", "Run the command under Log in again, then press Check login."))
         assertContains(out, """name="agent-tasks" value="9"""")
         fakeClaude("""{"loggedIn":true,"authMethod":"claude.ai","subscriptionType":"max"}""")
-        assertContains(press("login", emptyMap()), """<div class="toast" role="status"><b>Logged in</b> claude.ai, max""")
+        val loggedIn = press("login", emptyMap())
+        assertContains(loggedIn, toastMarkup(Toast.Kind.SUCCESS, "Logged in", "claude.ai, max"))
+        assertFalse(">OK</button>" in loggedIn)
     }
 
     @Test
@@ -361,3 +363,8 @@ class SettingsTest : AntsTest() {
         assertContains(browser.get("/settings").body, """name="theme" value="dark" checked""")
     }
 }
+
+fun toastMarkup(kind: Toast.Kind, title: String, text: String, numbered: Boolean = false) = Regex(
+    """<div class="toast" role="status" data-kind="${kind.name.lowercase()}"${if (numbered) """ data-seq="(\d+)"""" else ""}><svg class="i" viewBox="0 0 24 24">.*?</svg>""" +
+        """<b>${Regex.escape(title)}</b><span>${Regex.escape(text)}</span><button [^>]*aria-label="Close"[^>]*>✕</button></div>"""
+)
