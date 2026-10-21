@@ -48,7 +48,7 @@ class ProcessBuilderToolsTest : AntsTest() {
         val task = protectedCommands.open(Files.createTempDirectory("workspace")).first
         try {
             assertEquals(listOf("diagram", "agents", "skills", "skill", "processes", "process", "built_in_tasks", "templates", "references", "checks",
-                "create_agent", "create_skill", "change_agent", "change_skill", "build_log", "copy",
+                "create_agent", "create_skill", "change_agent", "change_skill", "delete_agent", "delete_skill", "build_log", "copy",
                 "add_element", "remove", "rename", "move", "connect", "set_condition", "set_default", "set_agent_task", "set_start_form",
                 "set_user_task", "set_call", "set_built_in", "set_multi_instance", "drop_template"), tools(page))
             assertEquals(listOf("run"), tools(task))
@@ -232,6 +232,25 @@ class ProcessBuilderToolsTest : AntsTest() {
         val skill = call(token, "change_skill", mapOf("name" to "shipped-draft-copy", "skill" to "---\nname: shipped-draft-copy\ndescription: Mine.\n---\nMine.\n"))
         assertEquals(mapOf("name" to "shipped-draft-copy", "page" to "/skills/shipped-draft-copy"), json.readValue(skill.first, Map::class.java))
         assertTrue(home.resolve("skills/shipped-draft-copy/SKILL.md").toFile().readText().endsWith("Mine.\n"))
+    }
+
+    @Test
+    fun `an Agent or Skill of the user's own can be deleted, and a shipped one can't`() {
+        val token = open()
+        assertEquals(false, call(token, "create_skill", mapOf("skill" to "---\nname: draft\ndescription: Drafts a text.\n---\nDraft it.\n")).second)
+        assertEquals(false, call(token, "create_agent", mapOf("file" to "---\nname: writer\ndescription: Writes.\nskills: draft\n---\nWrite plainly.\n")).second)
+
+        assertEquals("Deleted the Agent writer." to false, call(token, "delete_agent", mapOf("name" to "writer")))
+        assertEquals("Deleted the Skill draft." to false, call(token, "delete_skill", mapOf("name" to "draft")))
+        val catalogue = json.readTree(browser.get("/catalogue.json").body)
+        assertTrue(catalogue["agents"].none { it["name"].asString() == "writer" })
+        assertTrue(catalogue["skills"].none { it["name"].asString() == "draft" })
+        assertFalse(home.resolve("skills/draft").exists())
+
+        assertEquals("shipped-writer is read-only. Copy it to make one you can edit." to true, call(token, "delete_agent", mapOf("name" to "shipped-writer")))
+        assertEquals("The Skill shipped-draft is read-only; Copy it to make your own." to true, call(token, "delete_skill", mapOf("name" to "shipped-draft")))
+        assertTrue(home.resolve("shipped/agents/shipped-writer.md").exists())
+        assertTrue(call(token, "delete_agent", mapOf("name" to "nobody")).second)
     }
 }
 

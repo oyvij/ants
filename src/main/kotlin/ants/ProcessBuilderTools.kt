@@ -126,6 +126,16 @@ class ProcessBuilderTools(
                 "change_agent" -> saved(agents.write(argument("file"), argument("name")))
                 "create_skill" -> saved(skills.write(argument("skill"), arguments["schema"]?.toString().orEmpty(), null))
                 "change_skill" -> saved(skills.write(argument("skill"), arguments["schema"]?.toString().orEmpty(), argument("name")))
+                "delete_agent" -> argument("name").let { agent ->
+                    agents.delete(agent)
+                    made -= "/agents/$agent"
+                    "Deleted the Agent $agent."
+                }
+                "delete_skill" -> argument("name").let { skill ->
+                    skills.delete(skill)
+                    made -= "/skills/$skill"
+                    "Deleted the Skill $skill."
+                }
                 "build_log" -> argument("markdown").let { markdown ->
                     val key = key()
                     buildLog(key).also { it.parent.createDirectories() }.writeAtomically(markdown)
@@ -474,6 +484,8 @@ class ProcessBuilderTools(
             "change_agent" to { it -> "changed the Agent ${named(it["name"])}" },
             "create_skill" to { it -> "created the Skill ${named(nameIn(it["skill"]))}" },
             "change_skill" to { it -> "changed the Skill ${named(it["name"])}" },
+            "delete_agent" to { it -> "deleted the Agent ${named(it["name"])}" },
+            "delete_skill" to { it -> "deleted the Skill ${named(it["name"])}" },
             "build_log" to { _ -> "rewrote the Build log" },
             "copy" to { it -> "copied the ${it["kind"]?.toString()?.let { kind -> KINDS[kind + "s"] } ?: "item"} ${named(it["name"])}" },
             "add_element" to { it ->
@@ -523,6 +535,10 @@ class ProcessBuilderTools(
                 "read-only: copy one first.",
                 mapOf("name" to "The Skill's name now.", "skill" to "The whole new SKILL.md.", "schema" to "The whole new result.schema.json; none when left out."),
                 optional = setOf("schema")),
+            Mcp.tool("delete_agent", "Deletes one of the user's own Agents, such as one you created that the user doesn't want. Shipped and outside Agents are " +
+                "read-only and can't be deleted. Ask the user first: a Task that runs it fails the Checks.", mapOf("name" to "The Agent's name.")),
+            Mcp.tool("delete_skill", "Deletes one of the user's own Skills with its folder, such as one you created that the user doesn't want. Shipped and outside " +
+                "Skills are read-only and can't be deleted. Ask the user first: a Task that runs it fails the Checks.", mapOf("name" to "The Skill's name.")),
             Mcp.tool("build_log", "Replaces this Process's Build log, the Markdown handoff the next dialog about it starts from: what the Process is for " +
                 "and the user's intent, the decisions taken, and what is left. Rewrite it whole at the end of every turn; keep it compact.",
                 mapOf("markdown" to "The whole new Build log.")),
