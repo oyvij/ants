@@ -91,13 +91,13 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
     )
 
     @GetMapping("/agents/{name}")
-    fun agent(@PathVariable name: String, model: Model) = find(name).let { show(model, AgentForm.of(it), it) }
+    fun agent(@PathVariable name: String, @RequestParam use: String?, model: Model) = find(name).let { show(model.addAttribute("use", use != null), AgentForm.of(it), it) }
 
     @PostMapping("/agents/{name}")
     fun edit(@PathVariable name: String, @RequestParam params: MultiValueMap<String, String>, model: Model): String {
         val agent = editable(find(name))
         val fields = joined(params)
-        return save(model, AgentForm.of(fields).copy(kept = AgentForm.of(agent).kept), agent, fields)
+        return save(model.addAttribute("use", "use" in fields), AgentForm.of(fields).copy(kept = AgentForm.of(agent).kept), agent, fields)
     }
 
     /** The form's fields, which repeat for a rule per Limit…, a chip per Skill and a tick per added tool: the filled ones, comma-separated. */
@@ -167,7 +167,7 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
         }
         target.writeAtomically(form.text())
         if (agent != null && target != agent.file) agent.file.deleteIfExists()
-        return "redirect:/agents/${form.name}"
+        return "redirect:/agents/${form.name}" + if (model.getAttribute("use") == true) "?saved" else ""
     }
 
     private fun show(model: Model, form: AgentForm, agent: Agent?, error: String? = null, notice: String? = null): String {
