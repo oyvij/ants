@@ -35,7 +35,6 @@ class SettingsTest : AntsTest() {
     @AfterEach
     fun restore() {
         file.writeText(before)
-        home.resolve("profiles").toFile().deleteRecursively()
     }
 
     private fun yaml(): Map<*, *> = Yaml().load(file.readText())
