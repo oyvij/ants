@@ -57,14 +57,15 @@ def naming(tests, *names):
 
 def code(text):
     """[text] without its comments, strings and backticked test names, so "the Runs list" in a name isn't a use of Runs."""
-    return re.sub(r'/\*.*?\*/|//[^\n]*|"""(?:.|\n)*?"""|"(?:\\.|[^"\\\n])*"|`[^`\n]*`', " ", text, flags=re.S)
+    return re.sub(r'/\*.*?\*/|//[^\n]*|""".*?"""|"(?:\\.|[^"\\\n])*"|`[^`\n]*`', " ", text, flags=re.S)
 
 
 def using(tests, *names):
     """The test classes whose code uses any of the Kotlin [names]."""
     # A one-word lower-case name (key, json, tasks) is every test's local too; only a capitalised or camelCase one tells.
     words = [re.compile(rf"(?<![\w.]){re.escape(n)}\b") for n in names if re.search("[A-Z]", n)]
-    return {t for t, text in tests.items() if any(w.search(code(text)) for w in words)}
+    stripped = {t: code(text) for t, text in tests.items()} if words else {}
+    return {t for t, text in stripped.items() if any(w.search(text) for w in words)}
 
 
 def named(tests, stem):
