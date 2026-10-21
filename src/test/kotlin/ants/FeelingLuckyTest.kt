@@ -85,7 +85,7 @@ class FeelingLuckyTest : AntsTest() {
         assertContains(tools("implement").first!!.split(","), "Agent")
         assertFalse("Bash(" in tools("implement").second!!) // Bash unlimited
         // claude refuses `gh pr create --body "…"` with a backtick in the body, so the body goes in a file under pr/
-        assertEquals("Read,Write,Edit,Bash" to "Read,Write(/$ws/pr/**),Edit(/$ws/pr/**),Bash(gh pr create *),Bash(gh pr view *),Bash(git log *),Bash(git diff *)", tools("pr"))
+        assertEquals("Read,Write,Edit,Bash" to "Read,Write(/$ws/pr/**),Edit(/$ws/pr/**),Bash(gh pr create *),Bash(gh pr view *),Bash(gh repo view *),Bash(git log *),Bash(git diff *)", tools("pr"))
         assertContains(home.resolve("shipped/skills/pr/SKILL.md").toFile().readText(), "--body-file pr/<repo>.md")
         // and the title, which stays on the command line, so it is written without backticks
         assertContains(home.resolve("shipped/skills/pr/SKILL.md").toFile().readText(), "in plain words with no backticks")

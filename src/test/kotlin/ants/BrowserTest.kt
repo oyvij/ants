@@ -1242,7 +1242,7 @@ class BrowserTest : AntsTest() {
         eventually { assertEquals(place, scrolled(), "Check now keeps the place") }
 
         page.evaluate("window.unreloaded = true")
-        page.locator("nav.side > a[href='/settings']").click()
+        page.locator("nav.side a[href='/settings']").click()
         page.waitForFunction("!window.unreloaded")
         page.waitForLoadState()
         assertEquals(0, scrolled(), "a page opened from the sidebar starts at the top")
