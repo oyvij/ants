@@ -1566,6 +1566,17 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `Delete on a Process page asks for confirmation, then the Process is gone from the Processes list`() = browse {
+        http.import("start-end.bpmn")
+        page.navigate(url("/processes/start-end"))
+        page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("Delete").setExact(true)).click()
+        assertThat(page.locator("h1")).hasText("Delete the Process Start to end?")
+        page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("Delete").setExact(true)).click()
+        page.waitForURL(Pattern.compile("/processes$"))
+        assertThat(page.locator("a[href='/processes/start-end']")).hasCount(0)
+    }
+
+    @Test
     fun `Pause and Remove on a Schedule's row act on that Schedule alone`() = browse {
         picker()
         schedulePicked("api")

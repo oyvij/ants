@@ -17,6 +17,8 @@
 @param names: Map<String, String>
 @param clock: java.time.Clock
 @param error: String? = null
+@param liveRuns: Map<String, String> = emptyMap()
+@param deletable: Boolean = false
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
 @param shell: ants.Shell
@@ -35,8 +37,9 @@
 <main>
 <div class="crumbs"><a href="/processes">Processes</a> / ${title}</div>
 <div class="ph"><h1>${title}</h1>
-    <div class="acts"><a class="btn" href="/processes/new?from=${key}">Copy</a><a class="btn" href="${if (scheduled) "#schedule" else "#start"}">⏰ ${if (scheduled) "Schedule" else "Add a schedule"}</a><a class="btn" href="/processes/${key}/edit">Edit diagram</a></div>
+    <div class="acts"><a class="btn" href="/processes/new?from=${key}">Copy</a><a class="btn" href="${if (scheduled) "#schedule" else "#start"}">⏰ ${if (scheduled) "Schedule" else "Add a schedule"}</a><a class="btn" href="/processes/${key}/edit">Edit diagram</a>@if(deletable)<form method="post" action="/processes/${key}/delete"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button class="danger">Delete</button></form>@endif</div>
     <div class="sub">Vault <b>${source?.vault ?: "—"}</b> · Source map <b>${source?.sourceMap ?: "—"}</b> · @if(profile == null)the defaults in <a href="/settings">Settings</a>@else Profile <b>${profile}</b>, ${profileFrom}@endif</div></div>
+@if(liveRuns.isNotEmpty())<p role="alert">Runs of it are live: @for((i, entry) in liveRuns.entries.withIndex())@if(i > 0), @endif<a href="/runs/${entry.key}">${entry.value}</a>@endfor. Cancel them first.</p>@endif
 <div class="card"><section id="pre-run">
 @if(reasons.isEmpty())
     <span class="pill p-ready">Ready</span> <span class="muted small">&nbsp;Names, schemas, CLI commands, Source map, paths and the login all check out.</span>

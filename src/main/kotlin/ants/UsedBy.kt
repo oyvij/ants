@@ -3,6 +3,7 @@ package ants
 import org.operaton.bpm.engine.RepositoryService
 import org.operaton.bpm.engine.RuntimeService
 import org.operaton.bpm.engine.repository.ProcessDefinition
+import org.operaton.bpm.model.bpmn.instance.CallActivity
 import org.operaton.bpm.model.bpmn.instance.operaton.OperatonProperty
 import org.springframework.stereotype.Component
 import org.springframework.ui.Model
@@ -21,6 +22,11 @@ class UsedBy(private val repository: RepositoryService, private val runtime: Run
     fun agent(name: String) = dependents(processes(AGENT, name))
 
     fun skill(name: String) = dependents(processes(SKILL, name), catalogue.skills().filter { name in it.uses })
+
+    fun process(key: String) = Dependents(
+        repository.createProcessDefinitionQuery().latestVersion().orderByProcessDefinitionName().asc().list()
+            .filter { it.key != key && repository.getBpmnModelInstance(it.id).getModelElementsByType(CallActivity::class.java).any { call -> call.calledElement == key } },
+    )
 
     private fun dependents(processes: List<ProcessDefinition>, skills: List<Skill> = emptyList()): Dependents {
         val latest = repository.createProcessDefinitionQuery().latestVersion().list().map { it.id }.toSet()

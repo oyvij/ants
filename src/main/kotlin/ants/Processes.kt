@@ -46,7 +46,7 @@ import javax.xml.transform.stream.StreamResult
 @Controller
 class Processes(
     private val repository: RepositoryService, private val startForm: StartForm, private val settings: Settings, private val checks: Checks, private val preRun: PreRun,
-    private val schedules: Schedules, private val history: HistoryService, private val names: RunNames, private val clock: Clock, @Value("\${ants.home}") private val home: Path,
+    private val schedules: Schedules, private val usedBy: UsedBy, private val history: HistoryService, private val names: RunNames, private val clock: Clock, @Value("\${ants.home}") private val home: Path,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -224,6 +224,7 @@ class Processes(
         model.addAttribute("source", settings.profile(picked))
         model.addAttribute("repos", RunSource(picked).repos(settings).map(Repo::name)) // the Repos field's choices
         model.addAttribute("schedules", schedules.of(key))
+        model.addAttribute("deletable", !shipped(key))
         val runs = history.createHistoricProcessInstanceQuery().processDefinitionKey(key).rootProcessInstances().orderByProcessInstanceStartTime().desc().list()
         model.addAttribute("runs", runs)
         model.addAttribute("names", runs.associate { it.id to names.name(it.id) })
@@ -301,9 +302,30 @@ class Processes(
 
     private fun dismissed(key: String, back: String?) = "redirect:" + if (back == "notifications") "/notifications" else "/processes/$key"
 
+    @PostMapping("/processes/{key}/delete")
+    fun delete(@PathVariable key: String, @RequestParam params: Map<String, String>, model: Model, response: HttpServletResponse): String {
+        val process = latest(key)
+        if (shipped(key)) throw ResponseStatusException(HttpStatus.FORBIDDEN, "$key is shipped with Ants, so it can't be deleted")
+        val live = history.createHistoricProcessInstanceQuery().processDefinitionKey(key).unfinished().list().map { it.rootProcessInstanceId }.distinct()
+        if (live.isNotEmpty()) {
+            response.status = HttpStatus.CONFLICT.value()
+            model.addAttribute("liveRuns", live.associateWith(names::name))
+            return process(key, null, model)
+        }
+        if ("confirm" !in params) return confirm(model, "Delete the Process ${process.name ?: key}?", usedBy.process(key), "/processes/$key/delete", emptyMap(), "/processes/$key")
+        schedules.of(key).forEach { schedules.remove(it.id) }
+        for (deployment in repository.createProcessDefinitionQuery().processDefinitionKey(key).list().map { it.deploymentId }.distinct()) {
+            repository.deleteDeployment(deployment)
+        }
+        processFolder(home, key)?.toFile()?.deleteRecursively()
+        return "redirect:/processes"
+    }
+
     @GetMapping("/processes/{key}/diagram.bpmn", produces = ["application/xml"])
     @ResponseBody
     fun diagram(@PathVariable key: String): ByteArray = repository.getProcessModel(latest(key).id).readAllBytes()
+
+    private fun shipped(key: String) = repository.createProcessDefinitionQuery().processDefinitionKey(key).list().any { it.resourceName.startsWith("shipped/") }
 
     private fun latest(key: String) = repository.createProcessDefinitionQuery().processDefinitionKey(key).latestVersion().singleResult()
         ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No Process $key")
@@ -373,3 +395,8 @@ internal fun operatonOnly(document: Document) {
     rewrite(document.documentElement)
     document.documentElement.setAttributeNS(XMLNS_ATTRIBUTE_NS_URI, "xmlns:operaton", OPERATON)
 }
+
+/** A Process id that is a plain folder name: no separator, and never `.` or `..`. */
+private val SAFE_KEY = Regex("[A-Za-z_][A-Za-z0-9_.-]*")
+
+internal fun processFolder(home: Path, key: String): Path? = home.resolve("processes").resolve(key).takeIf { SAFE_KEY.matches(key) }
