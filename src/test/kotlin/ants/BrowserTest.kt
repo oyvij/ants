@@ -1561,12 +1561,14 @@ class BrowserTest : AntsTest() {
         assertEquals("""["$elsewhere","web","$mirror"]""", startPicked())
     }
 
+    private fun openSchedule() = page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("⏰ Schedule").setExact(true)).click()
+
     private fun schedulePicked(repo: String) {
         page.locator("textarea[name=prompt] + .ed .cm-content").fill("Add dark mode")
         repoBox.click()
         repoOption(repo).click()
         repoBox.press("Escape")
-        page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("⏰ Schedule").setExact(true)).click()
+        openSchedule()
         val every = page.getByLabel("Every")
         assertThat(every).isFocused()
         every.selectOption("day")
@@ -1624,6 +1626,121 @@ class BrowserTest : AntsTest() {
         assertThat(api).not().containsText("paused")
         api.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Start now")).click()
         page.waitForURL(Pattern.compile("/runs/[^/]+$"))
+    }
+
+    private fun assertWithinCard(part: Locator, card: Locator, what: String) {
+        assertThat(part).isVisible()
+        assertWithinScreen(part, what)
+        val (box, cardBox) = part.boundingBox() to card.boundingBox()
+        assertTrue(box.x >= cardBox.x && box.x + box.width <= cardBox.x + cardBox.width, "$what spans ${box.x} to ${box.x + box.width} in a card from ${cardBox.x} to ${cardBox.x + cardBox.width}")
+    }
+
+    @Test
+    fun `on a phone each Schedule is a block within the card, its name first, then labelled lines and its buttons at least 44px tall, each When part is a line of its own, and on desktop a Schedule is a table row and the When parts one row`() = browse {
+        val prompt = "Sweep the notes for stale links and rewrite every one of them with a longer explanation than fits on one line"
+        picker("", *phoneSourceMap)
+        http.get("/processes/picker")
+        http.post("/processes/picker/schedule", listOf(NAME to "Unprofiled sweep", "prompt" to "Sweep", "cron" to "0 0 * * * *"))
+        val sourceMap = sourceMapLines(*phoneSourceMap.map(::repo).toTypedArray())
+        settings(null, sourceMap + "profiles:\n  work:\n    vault: notes\n    source-map: work\n")
+        http.get("/processes/picker")
+        http.post("/processes/picker/schedule", listOf(NAME to "Profiled sweep", PROFILE to "work", "prompt" to prompt, "repos" to longRepo, "cron" to "0 0 * * * *"))
+        val id = Regex("<tr id=\"schedule-([^\"]+)\"><td><b>Profiled sweep</b>").find(http.get("/processes/picker").body)!!.groupValues[1]
+        settings(null, sourceMap)
+        http.post("/processes/picker/schedules/$id/start", mapOf())
+
+        onPhone()
+        page.navigate(url("/processes/picker"))
+        val card = page.locator("#schedule")
+        val profiled = page.locator("#schedule-$id")
+        val unprofiled = page.locator("#schedules tr").filter(Locator.FilterOptions().setHasText("Unprofiled sweep"))
+        assertThat(profiled.getByRole(AriaRole.ALERT)).containsText("The scheduled Run didn't start: The Profile work isn't in the settings.")
+        assertNoSidewaysScroll()
+        val labels = listOf("Profile", "Values", "Runs", "Cron", "Next Run")
+        fun button(row: Locator, name: String) = row.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName(name).setExact(true))
+        val headers = (listOf("Schedule") + labels).map { page.getByRole(AriaRole.COLUMNHEADER, Page.GetByRoleOptions().setName(it).setExact(true)) }
+        for (header in headers) assertThat(header).isHidden()
+
+        for (row in listOf(profiled, unprofiled)) {
+            assertWithinCard(row, card, "a Schedule's block")
+            for (cell in row.locator("td").all()) assertWithinCard(cell, card, "a line of a Schedule's block")
+            for (label in labels) assertWithinCard(row.getByText(label, Locator.GetByTextOptions().setExact(true)), card, "the label $label")
+            val lines = row.locator("td").all().map { it.boundingBox() }
+            for ((above, below) in lines.zipWithNext()) assertTrue(below.y >= above.y + above.height - 0.5, "a Schedule's lines sit one under another")
+            assertThat(row.locator("td").first()).hasText(Pattern.compile("^(Profiled|Unprofiled) sweep\$"))
+            for (name in listOf("Start now", "Pause", "Remove")) assertWithinCard(button(row, name), card, name)
+        }
+        assertThat(profiled).containsText("work")
+        assertThat(unprofiled).containsText("—")
+        assertWithinCard(profiled.getByText(prompt), card, "the long Prompt value")
+        assertWithinCard(profiled.getByText(longRepo), card, "the long Repos value")
+        assertWithinCard(profiled.getByText("Every hour"), card, "the Runs line")
+        assertWithinCard(profiled.locator("code"), card, "the Cron line")
+        assertWithinCard(profiled.getByRole(AriaRole.ALERT), card, "the failed note")
+        assertWithinCard(button(profiled, "Dismiss"), card, "Dismiss")
+        val (first, second) = page.locator("#schedules tr[id]").all().map { it.boundingBox() }
+        assertTrue(second.y >= first.y + first.height, "the second Schedule's block sits under the first")
+        assertTapSized()
+        page.screenshot("phone/schedules")
+
+        openSchedule()
+        val fieldset = page.locator("#when")
+        fun part(name: String) = page.locator("#when-$name")
+        fun line(control: Locator) = fieldset.locator("label").filter(Locator.FilterOptions().setHas(control))
+        val every = part("every")
+        for ((choice, shown, hidden) in listOf(Triple("week", listOf("at", "on"), "dom"), Triple("month", listOf("at", "dom"), "on"))) {
+            every.selectOption(choice)
+            assertNoSidewaysScroll()
+            assertThat(line(part(hidden))).isHidden()
+            val controls = (listOf("every") + shown).map(::part)
+            for (control in controls) {
+                val what = "the When part ${control.getAttribute("id")}"
+                assertWithinCard(line(control), fieldset, what)
+                val (box, lineBox) = control.boundingBox() to line(control).boundingBox()
+                assertTrue(box.x > lineBox.x + 8, "$what has its text before its control")
+                assertEquals(lineBox.x + lineBox.width, box.x + box.width, 1.0, "$what has its control fill the rest of its line")
+            }
+            val lines = controls.map { line(it).boundingBox() }
+            for ((above, below) in lines.zipWithNext()) assertTrue(below.y >= above.y + above.height - 0.5, "with Every $choice each When part sits on its own line")
+        }
+        page.getByText("Advanced", Page.GetByTextOptions().setExact(true)).click()
+        assertWithinCard(part("cron"), fieldset, "the Advanced cron field")
+        assertWithinCard(page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("Save schedule")), fieldset, "Save schedule")
+        val inside = (fieldset.evaluate("f => { const s = getComputedStyle(f); return f.clientWidth - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight) }") as Number).toDouble()
+        assertEquals(inside, line(every).boundingBox().width, 1.0, "Every's line spans the When fieldset")
+        page.screenshot("phone/when")
+
+        page.setViewportSize(1280, 900)
+        page.reload()
+        for (header in headers) assertThat(header).isVisible()
+        for (label in labels) assertThat(profiled.getByText(label, Locator.GetByTextOptions().setExact(true))).isHidden()
+        assertThat(profiled.getByRole(AriaRole.CELL).nth(1)).hasAccessibleName("work")
+        val buttons = listOf("Start now", "Pause", "Remove").map { button(profiled, it).boundingBox() }
+        for ((left, right) in buttons.zipWithNext()) assertEquals(left.y, right.y, 0.5, "on desktop a Schedule's buttons sit in one row")
+        openSchedule()
+        every.selectOption("week")
+        val parts = listOf("every", "at", "on").map { line(part(it)).boundingBox() }
+        for ((left, right) in parts.zipWithNext()) assertEquals(left.y + left.height / 2, right.y + right.height / 2, 0.5, "on desktop the When parts sit in one row")
+    }
+
+    @Test
+    fun `on a phone a Process with no Schedule shows Add a schedule below the No schedule text, and on desktop beside it`() = browse {
+        http.import("start-end.bpmn")
+        onPhone()
+        page.navigate(url("/processes/start-end"))
+        val text = page.getByText("No schedule. Runs start when someone presses Start.")
+        val add = page.getByRole(AriaRole.LINK, Page.GetByRoleOptions().setName("＋ Add a schedule"))
+        assertNoSidewaysScroll()
+        for ((part, what) in listOf(text to "the No schedule text", add to "＋ Add a schedule")) {
+            assertThat(part).isVisible()
+            assertWithinScreen(part, what)
+        }
+        assertTrue(add.boundingBox().y >= text.boundingBox().y + text.boundingBox().height, "＋ Add a schedule sits below the No schedule text")
+        page.screenshot("phone/no-schedule")
+
+        page.setViewportSize(1280, 900)
+        page.reload()
+        assertTrue(add.boundingBox().y < text.boundingBox().y + text.boundingBox().height, "on desktop ＋ Add a schedule sits beside the No schedule text")
     }
 
     @Test
