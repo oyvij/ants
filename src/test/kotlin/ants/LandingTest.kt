@@ -4,11 +4,9 @@ import org.junit.jupiter.api.Test
 import org.operaton.bpm.engine.RuntimeService
 import org.springframework.beans.factory.annotation.Autowired
 import java.nio.file.Path
-import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.readText
-import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -174,7 +172,7 @@ class LandingTest : AntsTest() {
     fun `each instance launches with its Run's AGENTS md and CLAUDE md in its folder`() {
         val api = repo("api")
         setUp(api, profiles = "profiles:\n  work:\n    source-map: work\n")
-        home.resolve("profiles/work").createDirectories().resolve("AGENTS.md").writeText("Keep it short.\n")
+        instruct("work", "Keep it short.\n")
         val keep = """sh cp AGENTS.md CLAUDE.md "${'$'}launch/""""
         claude.session("build", 1, init, keep, done)
         claude.session("build", 2, init, keep, done)

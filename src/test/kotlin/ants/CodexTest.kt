@@ -97,7 +97,7 @@ class CodexTest : AntsTest() {
     @Test
     fun `a codex Task launches with its Run's AGENTS md in its working folder`() {
         codexTask(profiles = "profiles:\n  work:\n    vault: notes\n")
-        home.resolve("profiles/work").createDirectories().resolve("AGENTS.md").writeText("Keep it short.\n")
+        instruct("work", "Keep it short.\n")
         codex.session("draft", started, turn, "wait go", answer(), completed)
         val run = start()
         eventually { assertEquals(1, codex.launches("draft").size) }

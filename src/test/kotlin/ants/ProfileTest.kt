@@ -3,7 +3,6 @@ package ants
 import org.junit.jupiter.api.Test
 import java.nio.file.Files
 import java.nio.file.Path
-import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.readText
 import kotlin.io.path.writeText
@@ -66,8 +65,6 @@ class ProfileTest : AntsTest() {
 
     private val ranking = "These are the user's standing instructions for this Run. Where they disagree with your Agent or Skill " +
         "instructions, or with a repo's own CLAUDE.md or AGENTS.md, those win."
-
-    private fun instruct(profile: String, text: String) = home.resolve("profiles/$profile").createDirectories().resolve("AGENTS.md").writeText(text)
 
     private fun keepingInstructions(after: String? = null) = claude.session(
         "draft",

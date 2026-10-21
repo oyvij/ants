@@ -96,6 +96,8 @@ abstract class AntsTest {
         synchronized(schedules) { home.resolve("schedules.yaml").toFile().delete() }
     }
 
+    fun instruct(profile: String, text: String) = home.resolve("profiles/$profile").createDirectories().resolve("AGENTS.md").writeText(text)
+
     /**
      * What a Run of an Agent Task needs, in one place: the Agent `writer` listing the [skills] (with [agent] lines in its
      * frontmatter), each Skill with its result schema, none when null (and [metadata] lines in its frontmatter), and
