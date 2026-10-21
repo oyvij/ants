@@ -176,4 +176,40 @@ class ScheduleTest : AntsTest() {
         assertFalse("timerEventDefinition" in browser.get("/processes/$key/diagram.bpmn").body)
         assertFalse("Nightly" in comingUp())
     }
+
+    private val api by lazy { repo("api") }
+    private val web by lazy { repo("web") }
+
+    private fun twoProfiles() = home.resolve("settings.yaml").writeAtomically(
+        vault + sourceMapLines(api, web) +
+            "profiles:\n  work:\n    vault: notes\n    source-map: work\n  other:\n    vault: notes\n    source-map: work\ndefault-profile: work\n",
+    )
+
+    private fun schedule(values: List<Pair<String, String>>, cron: String = "0 0 * * * *"): Browser.Page {
+        browser.get("/processes/clone-repos")
+        return browser.post("/processes/clone-repos/schedule", values + ("cron" to cron))
+    }
+
+    private fun cloneRuns() = history.createHistoricProcessInstanceQuery().processDefinitionKey("clone-repos").orderByProcessInstanceStartTime().asc().list()
+
+    private fun runPage(run: String) = browser.get("/runs/$run").body.replace("&#34;", "\"")
+
+    @Test
+    fun `a Schedule from the start form starts a Run at its time with exactly its values, Profile and Name`() {
+        twoProfiles()
+        browser.import("clone-repos.bpmn")
+        val saved = schedule(listOf(NAME to "Ship api", PROFILE to "other", "repos" to "api", "branch" to "nightly"))
+        assertEquals("/processes/clone-repos", saved.path, saved.body)
+        settle()
+        assertEquals(0, cloneRuns().size)
+
+        clock.offset = Duration.ofHours(1)
+        eventually { assertEquals(1, cloneRuns().size) }
+        val run = cloneRuns().single().id
+        val page = runPage(run)
+        assertContains(page, "<dt>branch</dt><dd><code>nightly</code></dd>")
+        assertContains(page, "<dt>$PROFILE</dt><dd><code>other</code></dd>")
+        assertContains(page, Regex("<span id=\"name\">Ship api, \\d{1,2} [A-Z][a-z]{2} \\d\\d:\\d\\d</span>"))
+        eventually { assertEquals(listOf("api"), clones(workspace(run)).map { it.fileName.toString() }) }
+    }
 }

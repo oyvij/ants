@@ -61,7 +61,10 @@ class StartForm(
      * ignored. The Run keeps its Profile ([profile]) as [PROFILE], and the repos picked, if any, as [SCOPE]. Refused
      * with [CantStart] while the pre-Run check gives reasons.
      */
-    fun start(definition: ProcessDefinition, values: Map<String, List<String>>): ProcessInstance {
+    fun start(definition: ProcessDefinition, values: Map<String, List<String>>): ProcessInstance =
+        runtime.startProcessInstanceById(definition.id, check(definition, values))
+
+    fun check(definition: ProcessDefinition, values: Map<String, List<String>>): Map<String, Any> {
         val fields = fields(definition)
         val variables = fields.associate { field ->
             // A Repos field's typed-in entries come as one value, separated by commas or spaces.
@@ -79,13 +82,13 @@ class StartForm(
         val scope = repos.map { known[it] ?: it }.takeIf { it.isNotEmpty() }?.let { SCOPE to ArrayList(it) }
         // The Name field's, empty when not given: RunLifecycle names the Run then.
         val run = listOfNotNull(NAME to values[NAME]?.firstOrNull().orEmpty(), scope, profile?.let { PROFILE to it })
-        return runtime.startProcessInstanceById(definition.id, variables + run)
+        return variables + run
     }
 
     /**
      * The name of the Profile a Run of [definition] uses: the one [picked] on its start form, else the Process's own
      * (its [PROFILE] property), else the default. Null with no Profiles configured, as every Run then uses the default
-     * Vault and Source map. A Schedule's Run picks none, so it uses the Process's.
+     * Vault and Source map.
      */
     fun profile(definition: ProcessDefinition, picked: String?): String? = if (settings.profiles().isEmpty()) null
     else picked?.takeIf(String::isNotBlank) ?: diagramProfile(definition) ?: settings.defaultProfile()

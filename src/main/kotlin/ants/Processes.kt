@@ -210,8 +210,12 @@ class Processes(
     fun process(@PathVariable key: String, @RequestParam(PROFILE, required = false) profile: String?, model: Model): String {
         val process = latest(key)
         model.addAttribute("process", process)
-        val fields = startForm.fields(process)
+        val filled = model.getAttribute("filled") as MultiValueMap<*, *>?
+        val fields = startForm.fields(process).map { field ->
+            filled?.let { field.copy(stored = it[field.name].orEmpty().joinToString(" ")) } ?: field
+        }
         model.addAttribute("fields", fields)
+        model.addAttribute("runName", filled?.get(NAME)?.firstOrNull()?.toString().orEmpty())
         val picked = startForm.profile(process, profile)
         model.addAttribute("profiles", settings.profiles().keys.toList())
         model.addAttribute("profile", picked)
@@ -219,6 +223,7 @@ class Processes(
         model.addAttribute("source", settings.profile(picked))
         model.addAttribute("repos", RunSource(picked).repos(settings).map(Repo::name)) // the Repos field's choices
         model.addAttribute("schedule", schedules.of(process))
+        model.addAttribute("schedules", schedules.of(key))
         val runs = history.createHistoricProcessInstanceQuery().processDefinitionKey(key).rootProcessInstances().orderByProcessInstanceStartTime().desc().list()
         model.addAttribute("runs", runs)
         model.addAttribute("names", runs.associate { it.id to names.name(it.id) })
@@ -230,16 +235,30 @@ class Processes(
 
     /** **Start**: a Run with the start form's values, else the Process page again with what's missing or why it can't start. */
     @PostMapping("/processes/{key}/runs")
-    fun start(@PathVariable key: String, @RequestParam values: MultiValueMap<String, String>, model: Model, response: HttpServletResponse): String = try {
-        "redirect:/runs/" + startForm.start(latest(key), values).id
+    fun start(@PathVariable key: String, @RequestParam values: MultiValueMap<String, String>, model: Model, response: HttpServletResponse): String =
+        refusedAgain(key, values, model, response) { "redirect:/runs/" + startForm.start(latest(key), values).id }
+
+    @PostMapping("/processes/{key}/schedule")
+    fun schedule(@PathVariable key: String, @RequestParam values: MultiValueMap<String, String>, model: Model, response: HttpServletResponse): String {
+        model.addAttribute("cron", values.getFirst("cron").orEmpty())
+        return refusedAgain(key, values, model, response) {
+            schedules.add(latest(key).key, values, values.getFirst("cron").orEmpty())
+            "redirect:/processes/$key"
+        }
+    }
+
+    private fun refusedAgain(key: String, values: MultiValueMap<String, String>, model: Model, response: HttpServletResponse, submit: () -> String): String = try {
+        submit()
     } catch (e: Unfilled) {
-        response.status = HttpStatus.BAD_REQUEST.value()
-        model.addAttribute("error", e.message)
-        process(key, values.getFirst(PROFILE), model)
+        refused(key, values, model.addAttribute("error", e.message), response)
     } catch (e: CantStart) {
+        refused(key, values, model.addAttribute("reasons", e.reasons), response)
+    }
+
+    private fun refused(key: String, values: MultiValueMap<String, String>, model: Model, response: HttpServletResponse): String {
         response.status = HttpStatus.BAD_REQUEST.value()
-        model.addAttribute("reasons", e.reasons)
-        process(key, values.getFirst(PROFILE), model)
+        model.addAttribute("filled", values)
+        return process(key, values.getFirst(PROFILE), model)
     }
 
     /** Pauses the Process's Schedule: no Run starts on it, not even for the times missed, until it's resumed. */

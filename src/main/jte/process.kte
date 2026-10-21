@@ -11,6 +11,9 @@
 @param source: ants.Profile?
 @param reasons: List<String>
 @param schedule: ants.Schedule? = null
+@param schedules: List<ants.Schedule> = emptyList()
+@param runName: String = ""
+@param cron: String? = null
 @param runs: List<org.operaton.bpm.engine.history.HistoricProcessInstance>
 @param names: Map<String, String>
 @param clock: java.time.Clock
@@ -33,7 +36,7 @@
 <main>
 <div class="crumbs"><a href="/processes">Processes</a> / ${title}</div>
 <div class="ph"><h1>${title}</h1>
-    <div class="acts"><a class="btn" href="/processes/new?from=${key}">Copy</a><a class="btn" href="${if (schedule == null) "/processes/$key/edit" else "#schedule"}">⏰ ${if (schedule == null) "Add a schedule" else "Schedule"}</a><a class="btn" href="/processes/${key}/edit">Edit diagram</a></div>
+    <div class="acts"><a class="btn" href="/processes/new?from=${key}">Copy</a><a class="btn" href="${if (schedule == null && schedules.isEmpty()) "#start" else "#schedule"}">⏰ ${if (schedule == null && schedules.isEmpty()) "Add a schedule" else "Schedule"}</a><a class="btn" href="/processes/${key}/edit">Edit diagram</a></div>
     <div class="sub">Vault <b>${source?.vault ?: "—"}</b> · Source map <b>${source?.sourceMap ?: "—"}</b> · @if(profile == null)the defaults in <a href="/settings">Settings</a>@else Profile <b>${profile}</b>, ${profileFrom}@endif</div></div>
 <div class="card"><section id="pre-run">
 @if(reasons.isEmpty())
@@ -52,7 +55,7 @@
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
 @if(error != null)<p role="alert">${error}</p>@endif
 @if(fields.isEmpty())<div class="help">This Process takes no input: its job is in the diagram.</div>@endif
-    <div class="fld"><label class="f" for="field-name">Name <span class="muted small" style="font-weight: 500">(optional)</span></label><div class="help">Left empty, the Run is named after its Process and start time.</div><input name="${ants.NAME}" id="field-name" placeholder="e.g. Dark mode toggle"></div>
+    <div class="fld"><label class="f" for="field-name">Name <span class="muted small" style="font-weight: 500">(optional)</span></label><div class="help">Left empty, the Run is named after its Process and start time.</div><input name="${ants.NAME}" id="field-name" value="${runName}" placeholder="e.g. Dark mode toggle"></div>
 @if(profiles.size > 1)
     <div class="fld"><label class="f" for="field-profile">Profile</label><div class="help">The Vault and Source map the Run uses.</div>
     <select name="${ants.PROFILE}" id="field-profile" onchange="location.search = '?ants.profile=' + encodeURIComponent(this.value)">
@@ -90,13 +93,18 @@
     @endif
     </div>
 @endfor
-    <div class="go"><button class="primary" disabled="${reasons.isNotEmpty() && !scopable}">Start</button></div>
+    <div class="go row"><button class="primary" disabled="${reasons.isNotEmpty() && !scopable}">Start</button><button type="button" id="schedule-open" disabled="${reasons.isNotEmpty() && !scopable}">⏰ Schedule</button></div>
+    <fieldset id="when" hidden="${cron == null}"><legend>When</legend>
+    <p class="row"><label>Every <select id="when-every"></select></label><label data-part="at"> at <input type="time" id="when-at" value="08:00"></label><label data-part="on"> on <select id="when-on"></select></label><label data-part="dom"> on day <input type="number" id="when-dom" min="1" max="31" value="1"></label></p>
+    <details id="when-advanced" open="${cron != null}"><summary>Advanced</summary><label class="f" for="when-cron">Cron</label><div class="help">Six fields, seconds first, such as <span class="eg">0 0 8 * * MON-FRI</span>.</div><input name="cron" id="when-cron" value="${cron ?: "0 0 * * * *"}"></details>
+    <div class="go"><button class="primary" formaction="/processes/${key}/schedule">Save schedule</button></div>
+    </fieldset>
 </form></div>
 <div class="card" id="schedule">
-@if(schedule == null)
+@if(schedule == null && schedules.isEmpty())
     <h3>⏰ Schedule</h3>
-    <div class="row"><span class="muted grow">No schedule. Runs start when someone presses Start.</span><a class="btn" href="/processes/${key}/edit">＋ Add a schedule</a></div>
-@else
+    <div class="row"><span class="muted grow">No schedule. Runs start when someone presses Start.</span><a class="btn" href="#start">＋ Add a schedule</a></div>
+@elseif(schedule != null)
     <h3>⏰ Schedule <span class="grow"></span>@if(schedule.paused)<span class="pill p-quiet">Paused</span>@else<span class="pill p-ready">On</span>@endif</h3>
     <div class="kv">
         <span class="k">Runs</span><span>${schedule.words}</span>
@@ -112,6 +120,15 @@
     <div class="subsec row"><span class="help grow">Missed while Ants was off or asleep? It runs once when Ants is back, not once per missed time.</span>
     <form method="post" action="/processes/${key}/schedule/${if (schedule.paused) "resume" else "pause"}"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>${if (schedule.paused) "Resume" else "Pause"}</button></form>
     <form method="post" action="/processes/${key}/schedule/remove"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button class="danger">Remove</button></form></div>
+@endif
+@if(schedules.isNotEmpty())
+    <h3>⏰ Schedules</h3>
+    <table id="schedules">
+    <tr><th>Schedule</th><th>Profile</th><th>Values</th><th>Runs</th><th>Cron</th><th>Next Run</th></tr>
+    @for(each in schedules)
+    <tr><td><b>${each.label}</b></td><td>${each.profile ?: "—"}</td><td class="small">@for((label, value) in each.values)<div><span class="muted">${label}</span> ${value}</div>@endfor</td><td>${each.words}</td><td><code>${each.cron}</code></td><td>@if(each.paused)<span class="muted">paused</span>@else${each.at} · ${each.countdown}@endif</td></tr>
+    @endfor
+    </table>
 @endif
 </div>
 <h2>Diagram</h2>
@@ -129,6 +146,7 @@
 </table>
 @endif
 <script src="/repos.js" defer></script>
+<script type="module" src="/schedule.js"></script>
 <script src="/vendor/camunda-bpmn-js/base-navigated-viewer.production.min.js"></script>
 <script>
     const box = document.getElementById('diagram'), viewer = new BpmnNavigatedViewer({ container: box });
