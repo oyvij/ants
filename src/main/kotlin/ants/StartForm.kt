@@ -75,7 +75,7 @@ class StartForm(
         }
         val repos = fields.filter { it.type == FieldType.REPOS }.flatMap { variables[it.name] as List<*> }.map(Any?::toString).distinct()
         val picked = values[PROFILE]?.firstOrNull()?.takeIf(String::isNotBlank)
-        if (picked != null && picked !in settings.profiles()) throw CantStart(listOf("The Profile $picked isn't in the settings."))
+        if (picked != null && picked !in settings.profiles()) throw CantStart(listOf(PreRun.profileGone(picked)))
         val profile = profile(definition, picked)
         val reasons = preRun.reasons(definition, repos, profile)
         if (reasons.isNotEmpty()) throw CantStart(reasons)

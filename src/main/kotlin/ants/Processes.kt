@@ -86,10 +86,10 @@ class Processes(
         return "processes"
     }
 
-    private fun row(process: ProcessDefinition, schedules: Int, login: () -> Map<*, *>): ProcessRow {
+    private fun row(process: ProcessDefinition, scheduleCount: Int, login: () -> Map<*, *>): ProcessRow {
         val profile = startForm.profile(process, null)
         return ProcessRow(
-            process, process.resourceName.startsWith("shipped/"), settings.profile(profile), schedules,
+            process, process.resourceName.startsWith("shipped/"), settings.profile(profile), scheduleCount,
             reasons(process, startForm.fields(process), profile, login).isEmpty(),
             history.createHistoricProcessInstanceQuery().processDefinitionKey(process.key).rootProcessInstances().active().count(),
         )
@@ -307,7 +307,7 @@ class Processes(
     @PostMapping("/processes/{key}/schedules/{id}/dismiss")
     fun dismiss(@PathVariable key: String, @PathVariable id: String, @RequestParam(required = false) back: String?): String {
         schedules.dismiss(scheduleId(key, id))
-        return "redirect:" + if (back == "notifications") "/notifications" else "/processes/$key"
+        return dismissed(key, back)
     }
 
     private fun scheduleId(key: String, id: String) = schedules.of(latest(key).key).firstOrNull { it.id == id }?.id
@@ -344,8 +344,10 @@ class Processes(
     @PostMapping("/processes/{key}/schedule/dismiss")
     fun dismiss(@PathVariable key: String, @RequestParam(required = false) back: String?): String {
         schedules.dismiss(latest(key).key)
-        return "redirect:" + if (back == "notifications") "/notifications" else "/processes/$key"
+        return dismissed(key, back)
     }
+
+    private fun dismissed(key: String, back: String?) = "redirect:" + if (back == "notifications") "/notifications" else "/processes/$key"
 
     @GetMapping("/processes/{key}/diagram.bpmn", produces = ["application/xml"])
     @ResponseBody
@@ -360,7 +362,7 @@ private const val OPERATON = "http://operaton.org/schema/1.0/bpmn"
 internal const val BPMN = "http://www.omg.org/spec/BPMN/20100524/MODEL"
 internal const val BPMNDI = "http://www.omg.org/spec/BPMN/20100524/DI"
 
-class ProcessRow(val process: ProcessDefinition, val shipped: Boolean, val profile: Profile?, val schedules: Int, val ready: Boolean, val live: Long)
+class ProcessRow(val process: ProcessDefinition, val shipped: Boolean, val profile: Profile?, val scheduleCount: Int, val ready: Boolean, val live: Long)
 
 /** Why a Process can't be deployed, in the XML parser's or the engine's words. */
 class Refused(message: String?) : Exception(message)

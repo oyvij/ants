@@ -94,8 +94,8 @@ class Schedules(
 
     fun all(): List<Schedule> {
         val drawn = repository.createProcessDefinitionQuery().latestVersion().list().mapNotNull(::of)
-        val page = states().values.mapNotNull { it.process }.distinct().flatMap(::of)
-        return (drawn + page).sortedBy { it.next }
+        val fromStartForm = states().values.mapNotNull { it.process }.distinct().flatMap(::of)
+        return (drawn + fromStartForm).sortedBy { it.next }
     }
 
     /** The Schedule of [definition], the latest version of its Process, or null without one. */
@@ -132,8 +132,7 @@ class Schedules(
 
     fun remove(id: String) = synchronized(this) { write(states() - id) }
 
-    /** Dismisses the failed start of [key] from the Notification list. */
-    fun dismiss(key: String) = update(key) { it.copy(failed = null) }
+    fun dismiss(id: String) = update(id) { it.copy(failed = null) }
 
     /** **Start now**: the scheduled Run of [definition], with the stored values, as the loop starts it. */
     fun startNow(definition: ProcessDefinition): ProcessInstance = started(definition.key) { startForm.start(definition, stored(definition)) }

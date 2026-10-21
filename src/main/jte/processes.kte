@@ -25,7 +25,7 @@
         <td><a href="/processes/${key}"><b>${row.process.name ?: key}</b></a></td>
         <td class="muted small">${if (row.shipped) "shipped" else "you"}</td>
         <td class="muted small">${row.profile?.vault ?: "—"} · ${row.profile?.sourceMap ?: "—"}</td>
-        <td class="small">@if(row.schedules > 0)⏰ ${row.schedules}@endif</td>
+        <td class="small">@if(row.scheduleCount > 0)⏰ ${row.scheduleCount}@endif</td>
         <td>@if(row.ready)<span class="pill p-ready">Ready</span>@else<span class="pill p-failed">Can't start</span>@endif</td>
         <td class="muted">${row.live}</td>
         <td><a href="/processes/${key}/edit">Edit diagram</a></td>

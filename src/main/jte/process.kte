@@ -126,11 +126,10 @@
     <table id="schedules">
     <tr><th>Schedule</th><th>Profile</th><th>Values</th><th>Runs</th><th>Cron</th><th>Next Run</th><th></th></tr>
     @for(each in schedules)
-    !{val actions = each.actions;}
-    <tr id="schedule-${each.id}"><td><b>${each.label}</b></td><td>${each.profile ?: "—"}</td><td class="small">@for((label, value) in each.values)<div><span class="muted">${label}</span> ${value}</div>@endfor</td><td>${each.words}</td><td><code>${each.cron}</code></td><td>@if(each.paused)<span class="muted">paused</span>@else${each.at} · ${each.countdown}@endif@if(each.skipped != null)<div class="warn">${each.skipped}</div>@endif@if(each.failed != null)<div class="failed"><p role="alert">✕ [failed] The scheduled Run didn't start: ${each.failed.why}</p><form method="post" action="${actions}/dismiss"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>Dismiss</button></form></div>@endif</td>
-    <td class="row"><form method="post" action="${actions}/start"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>Start now</button></form>
-    <form method="post" action="${actions}/${if (each.paused) "resume" else "pause"}"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>${if (each.paused) "Resume" else "Pause"}</button></form>
-    <form method="post" action="${actions}/remove"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button class="danger">Remove</button></form></td></tr>
+    <tr id="schedule-${each.id}"><td><b>${each.label}</b></td><td>${each.profile ?: "—"}</td><td class="small">@for((label, value) in each.values)<div><span class="muted">${label}</span> ${value}</div>@endfor</td><td>${each.words}</td><td><code>${each.cron}</code></td><td>@if(each.paused)<span class="muted">paused</span>@else${each.at} · ${each.countdown}@endif@if(each.skipped != null)<div class="warn">${each.skipped}</div>@endif@if(each.failed != null)<div class="failed"><p role="alert">✕ [failed] The scheduled Run didn't start: ${each.failed.why}</p><form method="post" action="${each.actions}/dismiss"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>Dismiss</button></form></div>@endif</td>
+    <td class="row"><form method="post" action="${each.actions}/start"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>Start now</button></form>
+    <form method="post" action="${each.actions}/${if (each.paused) "resume" else "pause"}"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>${if (each.paused) "Resume" else "Pause"}</button></form>
+    <form method="post" action="${each.actions}/remove"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button class="danger">Remove</button></form></td></tr>
     @endfor
     </table>
 @endif
