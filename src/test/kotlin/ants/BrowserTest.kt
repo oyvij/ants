@@ -1634,7 +1634,7 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
-    fun `on a phone each Schedule is a block within the card, its name first, then labelled lines and its buttons at least 44px tall, and on desktop it is a table row`() = browse {
+    fun `on a phone each Schedule is a block within the card, its name first, then labelled lines and its buttons at least 44px tall, each When part is a line of its own, and on desktop both are rows`() = browse {
         val prompt = "Sweep the notes for stale links and rewrite every one of them with a longer explanation than fits on one line"
         picker("", *phoneSourceMap)
         http.get("/processes/picker")
@@ -1681,6 +1681,32 @@ class BrowserTest : AntsTest() {
         assertTapSized()
         page.screenshot("phone/schedules")
 
+        page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("⏰ Schedule").setExact(true)).click()
+        val fieldset = page.locator("#when")
+        fun part(name: String) = page.locator("#when-$name")
+        fun line(control: Locator) = fieldset.locator("label").filter(Locator.FilterOptions().setHas(control))
+        val every = part("every")
+        for ((choice, shown, hidden) in listOf(Triple("week", listOf("at", "on"), "dom"), Triple("month", listOf("at", "dom"), "on"))) {
+            every.selectOption(choice)
+            assertNoSidewaysScroll()
+            assertThat(line(part(hidden))).isHidden()
+            val controls = (listOf("every") + shown).map(::part)
+            for (control in controls) {
+                val what = "the When part ${line(control).innerText().trim()}"
+                assertWithinCard(line(control), fieldset, what)
+                val (box, lineBox) = control.boundingBox() to line(control).boundingBox()
+                assertTrue(box.x > lineBox.x + 8, "$what has its text before its control")
+                assertEquals(lineBox.x + lineBox.width, box.x + box.width, 1.0, "$what has its control fill the rest of its line")
+            }
+            val lines = controls.map { line(it).boundingBox() }
+            for ((above, below) in lines.zipWithNext()) assertTrue(below.y >= above.y + above.height - 0.5, "with Every $choice each When part sits on its own line")
+            assertWithinScreen(part("cron"), "the Advanced cron field")
+            assertWithinScreen(page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("Save schedule")), "Save schedule")
+        }
+        val (fieldsetBox, everyBox) = fieldset.boundingBox() to line(every).boundingBox()
+        assertTrue(everyBox.width >= fieldsetBox.width - 40, "Every's line spans the When fieldset, ${everyBox.width}px of ${fieldsetBox.width}px")
+        page.screenshot("phone/when")
+
         page.setViewportSize(1280, 900)
         page.reload()
         for (header in headers) assertThat(header).isVisible()
@@ -1688,6 +1714,30 @@ class BrowserTest : AntsTest() {
         assertThat(profiled.getByRole(AriaRole.CELL).nth(1)).hasAccessibleName("work")
         val buttons = listOf("Start now", "Pause", "Remove").map { button(profiled, it).boundingBox() }
         for ((left, right) in buttons.zipWithNext()) assertEquals(left.y, right.y, 0.5, "on desktop a Schedule's buttons sit in one row")
+        page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("⏰ Schedule").setExact(true)).click()
+        every.selectOption("week")
+        val parts = listOf("every", "at", "on").map { line(part(it)).boundingBox() }
+        for ((left, right) in parts.zipWithNext()) assertEquals(left.y, right.y, 0.5, "on desktop the When parts sit in one row")
+    }
+
+    @Test
+    fun `on a phone a Process with no Schedule shows Add a schedule below the No schedule text, and on desktop beside it`() = browse {
+        http.import("start-end.bpmn")
+        onPhone()
+        page.navigate(url("/processes/start-end"))
+        val text = page.getByText("No schedule. Runs start when someone presses Start.")
+        val add = page.getByRole(AriaRole.LINK, Page.GetByRoleOptions().setName("＋ Add a schedule"))
+        assertNoSidewaysScroll()
+        for ((part, what) in listOf(text to "the No schedule text", add to "＋ Add a schedule")) {
+            assertThat(part).isVisible()
+            assertWithinScreen(part, what)
+        }
+        assertTrue(add.boundingBox().y >= text.boundingBox().y + text.boundingBox().height, "＋ Add a schedule sits below the No schedule text")
+        page.screenshot("phone/no-schedule")
+
+        page.setViewportSize(1280, 900)
+        page.reload()
+        assertTrue(add.boundingBox().y < text.boundingBox().y + text.boundingBox().height, "on desktop ＋ Add a schedule sits beside the No schedule text")
     }
 
     @Test
