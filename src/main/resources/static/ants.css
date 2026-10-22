@@ -245,7 +245,7 @@ input[type=checkbox], input[type=radio] { width: auto; accent-color: var(--acc);
 dialog.modal { width: min(1200px, 92vw); height: 86vh; max-width: none; max-height: none; padding: 0; border: 0; background: var(--panel); color: var(--text); border-radius: 12px; box-shadow: 0 24px 60px rgba(0, 0, 0, .3); overflow: hidden; animation: fadein .15s; }
 dialog.modal[open] { display: flex; flex-direction: column; }
 dialog.modal::backdrop { background: var(--modalBg); }
-.modal .mh { display: flex; align-items: center; gap: 10px; padding: 12px 18px; border-bottom: 1px solid var(--line); margin: 0; }
+.modal .mh { display: flex; align-items: baseline; gap: 10px; padding: 12px 18px; border-bottom: 1px solid var(--line); margin: 0; }
 .modal .mh .sp { flex: 1; }
 .modal .mb { flex: 1; overflow: auto; padding: 24px 40px; font-size: 15px; } .modal .mb.md { margin: 0 auto; width: 100%; }
 .modal .split { display: grid; grid-template-columns: 1fr 1fr; flex: 1; min-height: 0; }
@@ -384,8 +384,10 @@ details.session { margin-bottom: 14px; } details.session > .tr { margin-top: 8px
 .df form { margin: 0; } .df .row { margin-top: 8px; }
 /* Processes and the Process page: the list, New Process's modal, the check, the start form, the Schedule card, and its Runs. */
 :is(#processes, #process-runs) td:first-child a { color: inherit; }
-dialog#new-process { width: min(560px, 92vw); height: auto; }
-dialog.source-map { width: min(760px, 92vw); height: auto; } .source-map textarea { width: 100%; margin-top: 8px; } .source-map .go { margin-top: 12px; }
+dialog#new-process { width: min(560px, 92vw); height: fit-content; max-height: 86vh; }
+dialog:is(.source-map, .instructions) { width: min(760px, 92vw); height: fit-content; max-height: 86vh; } :is(.source-map, .instructions) textarea { width: 100%; margin-top: 8px; } :is(.source-map, .instructions) .go { margin-top: 12px; } :is(.source-map, .instructions) .mb { padding: 16px 18px 18px; }
+.instructions .mh label { font-weight: 700; } .instructions .mh .pill::before { content: none; } .instructions .help { margin: 0; } .instructions .ed { margin-top: 12px; }
+.instructions .go { display: flex; justify-content: flex-end; margin: 16px -18px -18px; padding: 12px 18px; border-top: 1px solid var(--line); background: var(--band); }
 #new-process .mb { padding: 4px 24px 24px; font-size: 14px; }
 #new-process form { margin: 0; } #new-process .go { margin-top: 16px; }
 #start .picks { flex-wrap: wrap; gap: 6px 14px; margin-bottom: 8px; } #start .picks label { font-weight: 500; margin: 0; }

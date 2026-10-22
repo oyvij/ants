@@ -31,11 +31,11 @@ class CodexTest : AntsTest() {
     private val env = listOf("PATH", "HOME", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "CODEX_API_KEY")
 
     /** The Agent `writer` on codex, with [agent] lines in its frontmatter, listing the Skill `draft`. */
-    private fun codexTask(agent: String = "", claude: FakeClaude? = null, metadata: String = "") {
+    private fun codexTask(agent: String = "", claude: FakeClaude? = null, metadata: String = "", profiles: String = "") {
         agentTask(claude, agent = "cli: codex\n$agent", metadata = metadata)
         home.resolve("settings.yaml").writeAtomically(
             "codex:\n  command: [${codex.command}]\n  env: [${env.joinToString(", ")}]\n" +
-                (if (claude == null) "" else "claude:\n  command: [${claude.command}]\n") + vault,
+                (if (claude == null) "" else "claude:\n  command: [${claude.command}]\n") + vault + profiles,
         )
     }
 
@@ -92,6 +92,21 @@ class CodexTest : AntsTest() {
         assertContains(transcript, "<b>Shell</b> <code>bash -lc ls</code>")
         assertContains(transcript, "<b>Result: done</b> Drafted.")
         assertContains(transcript, "1.2k tokens")
+    }
+
+    @Test
+    fun `a codex Task launches with its Run's AGENTS md in its working folder`() {
+        codexTask(profiles = "profiles:\n  work:\n    vault: notes\n")
+        instruct("work", "Keep it short.\n")
+        codex.session("draft", started, turn, "wait go", answer(), completed)
+        val run = start()
+        eventually { assertEquals(1, codex.launches("draft").size) }
+
+        val cwd = Path.of(codex.launches("draft").single().cwd)
+        assertEquals(workspace(run).toRealPath(), cwd)
+        assertEquals("Keep it short.\n", cwd.resolve("AGENTS.md").readText())
+        codex.release("go")
+        eventually { assertContains(page(run), """id="state">Completed<""") }
     }
 
     @Test
@@ -343,6 +358,7 @@ class FakeCodex {
         fun flag(flag: String) = argv.let { argv -> argv.indexOf(flag).takeIf { it >= 0 }?.let { argv[it + 1] } }
         val env get() = dir.resolve("env").readLines().associate { it.substringBefore('=') to it.substringAfter('=') }
         val stdin get() = dir.resolve("stdin").readText().trim()
+        val cwd get() = dir.resolve("cwd").readText().trim()
 
         /** The session (codex's thread) it ran: a new one's own id, or the one it resumed. */
         val thread get() = dir.resolve("thread").readText()

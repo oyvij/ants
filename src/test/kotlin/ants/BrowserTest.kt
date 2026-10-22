@@ -2733,6 +2733,21 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `on Settings, the Source map and instructions modals end just under their Save`() = browse {
+        settings(null, sourceMapLines() + "profiles:\n  work: {vault: notes, source-map: work}\n")
+        page.navigate(url("/settings"))
+        for ((id, field) in listOf("source-map-0" to "textarea", "instructions-0" to ".cm-content")) {
+            page.locator("[data-edit=$id]").click()
+            val modal = page.locator("dialog#$id")
+            assertThat(modal.locator(field)).isVisible()
+            settled(modal)
+            val (box, save) = modal.boundingBox() to modal.locator(".go").boundingBox()
+            assertTrue(box.y + box.height - (save.y + save.height) < 60, "$id ends ${box.y + box.height - (save.y + save.height)}px under its Save")
+            modal.locator("button[title=Close]").click()
+        }
+    }
+
+    @Test
     fun `on Settings, a Secret is added with a value the page never shows, and a Protected Command picks Secrets by label`() = browse {
         settings(null, "secrets:\n  npm: [NPM_TOKEN]\n")
         val secrets = home.resolve("secrets.yaml").apply { writeText("npm: tok-old\n") }

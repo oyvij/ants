@@ -63,6 +63,69 @@ class ProfileTest : AntsTest() {
         browser.import("profile.bpmn")
     }
 
+    private val ranking = "These are the user's standing instructions for this Run. Where they disagree with your Agent or Skill " +
+        "instructions, or with a repo's own CLAUDE.md or AGENTS.md, those win."
+
+    private fun keepingInstructions(after: String? = null) = claude.session(
+        "draft",
+        *listOfNotNull(after?.let { "wait $it" }).toTypedArray(),
+        """sh for f in AGENTS.md CLAUDE.md; do [ -e ${'$'}f ] && cp ${'$'}f "${'$'}launch/"; [ -L ${'$'}f ] && touch "${'$'}launch/${'$'}f.link"; done""",
+        """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":{"outcome":"done","summary":"Noted.","output":{}}}""",
+    )
+
+    private fun FakeClaude.Launch.kept(name: String) = runCatching { file(name) }.getOrNull()
+
+    @Test
+    fun `a Run gets a copy of its own Profile's instructions as AGENTS md, and a CLAUDE md ranking them below the Agent's, the Skill's and the repo's`() {
+        setUp()
+        keepingInstructions()
+        instruct("work", "# Work\nUse conventional commits.\n")
+        instruct("private", "# Private\nAnything goes.\n")
+
+        start(PROFILE to "work")
+        start(PROFILE to "private")
+
+        val (work, private) = claude.launches("draft")
+        assertEquals("# Work\nUse conventional commits.\n", work.kept("AGENTS.md"))
+        assertEquals("$ranking\n\n# Work\nUse conventional commits.\n", work.kept("CLAUDE.md"))
+        assertEquals(null, work.kept("AGENTS.md.link"))
+        assertEquals(null, work.kept("CLAUDE.md.link"))
+        assertEquals("# Private\nAnything goes.\n", private.kept("AGENTS.md"))
+        assertEquals("$ranking\n\n# Private\nAnything goes.\n", private.kept("CLAUDE.md"))
+    }
+
+    @Test
+    fun `a Run gets no AGENTS md or CLAUDE md with no Profiles, or a Profile with no instructions or blank ones`() {
+        setUp()
+        keepingInstructions()
+        instruct("private", " \n")
+        start(PROFILE to "work")
+        start(PROFILE to "private")
+        setUp("vaults:\n  work: $workVault\nsource-maps:\n  work: $workMap\n")
+        keepingInstructions()
+        start()
+
+        val launches = claude.launches("draft")
+        assertEquals(3, launches.size)
+        assertTrue(launches.all { it.kept("AGENTS.md") == null && it.kept("CLAUDE.md") == null })
+    }
+
+    @Test
+    fun `editing a Profile's instructions after Run start leaves the Run's copy as it was`() {
+        setUp()
+        keepingInstructions(after = "edited")
+        instruct("work", "Before.\n")
+        val page = browser.post("/processes/profile/runs", listOf(PROFILE to "work"))
+        eventually { assertEquals(1, claude.launches("draft").size) }
+        instruct("work", "After.\n")
+        claude.release("edited")
+        eventually(20) { assertContains(page(page.path.removePrefix("/runs/")), """id="state">Completed<""") }
+
+        val launch = claude.launches("draft").single()
+        assertEquals("Before.\n", launch.kept("AGENTS.md"))
+        assertEquals("$ranking\n\nBefore.\n", launch.kept("CLAUDE.md"))
+    }
+
     private fun page(run: String) = browser.get("/runs/$run").body.replace("&#34;", "\"")
 
     private fun start(vararg values: Pair<String, String>): String {
