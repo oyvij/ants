@@ -335,4 +335,32 @@ class AgentsTest : AntsTest() {
         assertEquals("/agents/helper", browser.post("/agents/new", mapOf("name" to "helper", "cli" to "claude", "use" to "")).path)
         assertTrue(agents.resolve("helper.md").exists())
     }
+
+    @Test
+    fun `Edit from the modeler opens the Agent's page in its modal, and Save lands on it saved`() {
+        listOf("editor", "renamed-editor").forEach { agents.resolve("$it.md").deleteIfExists() }
+        post("/agents/new", mapOf("name" to "editor", "cli" to "claude", "description" to "Edits."))
+        val form = browser.get("/agents/editor?use").body
+        assertContains(form, """<button class="primary" form="agent">Save</button>""")
+        assertContains(form, """<input type="hidden" name="use">""")
+        assertFalse("""<nav class="side">""" in form)
+
+        val refused = browser.post("/agents/editor", mapOf("name" to "Editor!", "cli" to "claude", "use" to ""))
+        assertContains(refused.body, """<button class="primary" form="agent">Save</button>""")
+        assertFalse("""<nav class="side">""" in refused.body)
+
+        val saved = browser.post("/agents/editor", mapOf("name" to "editor", "cli" to "claude", "description" to "Edits warmly.", "use" to ""))
+        assertEquals("/agents/editor" to "saved", saved.path to saved.query)
+        assertContains(agents.resolve("editor.md").readText(), "Edits warmly.")
+
+        val rename = browser.post("/agents/editor", mapOf("name" to "renamed-editor", "cli" to "claude", "use" to ""))
+        assertContains(rename.body, "Rename the Agent editor to renamed-editor?")
+        assertContains(rename.body, """<input type="hidden" name="use" value="">""")
+        assertContains(rename.body, """<a href="/agents/editor?use">Cancel</a>""")
+        val renamed = browser.post("/agents/editor", mapOf("name" to "renamed-editor", "cli" to "claude", "use" to "", "confirm" to "on"))
+        assertEquals("/agents/renamed-editor" to "saved", renamed.path to renamed.query)
+
+        val page = post("/agents/renamed-editor", mapOf("name" to "renamed-editor", "cli" to "claude", "description" to "Edits on its page."))
+        assertEquals("/agents/renamed-editor" to null, page.path to page.query)
+    }
 }

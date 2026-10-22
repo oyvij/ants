@@ -71,7 +71,7 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
 
     /**
      * The Agents and Skills as the modeler's Agent Task panel picks them, read afresh each time so a new one shows up:
-     * each Agent's description, Skills and folder, and whether it is the user's own (New Skill adds itself only to those), and each Skill's declared inputs, its Vault and Answer History defaults and its result schema;
+     * each Agent's description, Skills and folder, and whether it is the user's own (New Skill adds itself only to those, Edit opens only those), and each Skill's declared inputs, whether it is the user's own (Edit opens only those) and its folder, its Vault and Answer History defaults and its result schema;
      * and the Profiles a Process can name.
      */
     @GetMapping("/catalogue.json")
@@ -82,7 +82,7 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
         },
         "skills" to catalogue.skills().map { skill ->
             mapOf(
-                "name" to skill.name, "description" to skill.description, "inputs" to skill.inputs,
+                "name" to skill.name, "description" to skill.description, "inputs" to skill.inputs, "own" to skill.file.startsWith(catalogue.yourSkills), "folder" to skill.folder.parent.toString(),
                 "vault" to runCatching { catalogue.vault(skill) }.getOrDefault(skill.vault), "answerHistory" to skill.answerHistory,
                 "output" to runCatching { skill.outputSchema.takeIf { it.isNotEmpty() } }.getOrNull(),
             )
@@ -91,13 +91,13 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
     )
 
     @GetMapping("/agents/{name}")
-    fun agent(@PathVariable name: String, model: Model) = find(name).let { show(model, AgentForm.of(it), it) }
+    fun agent(@PathVariable name: String, @RequestParam use: String?, model: Model) = find(name).let { show(model.addAttribute("use", use != null), AgentForm.of(it), it) }
 
     @PostMapping("/agents/{name}")
     fun edit(@PathVariable name: String, @RequestParam params: MultiValueMap<String, String>, model: Model): String {
         val agent = editable(find(name))
         val fields = joined(params)
-        return save(model, AgentForm.of(fields).copy(kept = AgentForm.of(agent).kept), agent, fields)
+        return save(model.addAttribute("use", "use" in fields), AgentForm.of(fields).copy(kept = AgentForm.of(agent).kept), agent, fields)
     }
 
     /** The form's fields, which repeat for a rule per Limit…, a chip per Skill and a tick per added tool: the filled ones, comma-separated. */
@@ -155,6 +155,7 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
     }
 
     private fun save(model: Model, form: AgentForm, agent: Agent?, params: Map<String, String> = emptyMap()): String {
+        val modal = if (model.getAttribute("use") == true) "?use" else ""
         val target = if (agent != null && form.name == agent.name) agent.file else folder.resolve("${form.name}.md")
         val error = form.error() ?: when {
             catalogue.agents().any { it.name == form.name && it.file != agent?.file } -> "An Agent named ${form.name} already exists."
@@ -163,11 +164,11 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
         }
         if (error != null) return show(model, form, agent, error)
         if (agent != null && form.name != agent.name && "confirm" !in params) {
-            return confirm(model, "Rename the Agent ${agent.name} to ${form.name}?", usedBy.agent(agent.name), "/agents/${agent.name}", params, "/agents/${agent.name}")
+            return confirm(model, "Rename the Agent ${agent.name} to ${form.name}?", usedBy.agent(agent.name), "/agents/${agent.name}", params, "/agents/${agent.name}$modal")
         }
         target.writeAtomically(form.text())
         if (agent != null && target != agent.file) agent.file.deleteIfExists()
-        return "redirect:/agents/${form.name}"
+        return "redirect:/agents/${form.name}" + if (modal.isEmpty()) "" else "?saved"
     }
 
     private fun show(model: Model, form: AgentForm, agent: Agent?, error: String? = null, notice: String? = null): String {

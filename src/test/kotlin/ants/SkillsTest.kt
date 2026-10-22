@@ -221,4 +221,32 @@ class SkillsTest : AntsTest() {
         assertEquals("/skills/also-chosen", browser.post("/skills/new", mapOf("skill" to skillMd("also-chosen"), "schema" to "", "use" to "shipped-writer")).path)
         assertEquals(shipped, Agent(home.resolve("shipped/agents/shipped-writer.md")).skills)
     }
+
+    @Test
+    fun `Edit from the modeler opens the Skill's page in its modal, and Save lands on it saved`() {
+        listOf("tidy", "tidier").forEach { home.resolve("skills/$it").toFile().deleteRecursively() }
+        save(skillMd("tidy"))
+        val form = browser.get("/skills/tidy?use=").body
+        assertContains(form, """<button class="primary" form="skill">Save</button>""")
+        assertContains(form, """<input type="hidden" name="use" value="">""")
+        assertFalse("""<nav class="side">""" in form)
+
+        val refused = browser.post("/skills/tidy", mapOf("skill" to "no frontmatter", "schema" to "", "use" to ""))
+        assertContains(refused.body, """<button class="primary" form="skill">Save</button>""")
+        assertFalse("""<nav class="side">""" in refused.body)
+
+        val saved = browser.post("/skills/tidy", mapOf("skill" to skillMd("tidy", "Tidy up."), "schema" to "", "use" to ""))
+        assertEquals("/skills/tidy" to "saved", saved.path to saved.query)
+        assertEquals(skillMd("tidy", "Tidy up."), home.resolve("skills/tidy/SKILL.md").readText())
+
+        val rename = browser.post("/skills/tidy", mapOf("skill" to skillMd("tidier"), "schema" to "", "use" to ""))
+        assertContains(rename.body, "Rename the Skill tidy to tidier?")
+        assertContains(rename.body, """<input type="hidden" name="use" value="">""")
+        assertContains(rename.body, """<a href="/skills/tidy?use=">Cancel</a>""")
+        val renamed = browser.post("/skills/tidy", mapOf("skill" to skillMd("tidier"), "schema" to "", "use" to "", "confirm" to "on"))
+        assertEquals("/skills/tidier" to "saved", renamed.path to renamed.query)
+
+        val page = save(skillMd("tidier", "Tidy it on its page."), name = "tidier")
+        assertEquals("/skills/tidier" to null, page.path to page.query)
+    }
 }
