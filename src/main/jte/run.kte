@@ -18,6 +18,7 @@
 @param repos: List<String>
 @param scope: List<String>?
 @param profile: String? = null
+@param verbosity: ants.Verbosity = ants.Verbosity.NORMAL
 @param shell: ants.Shell
 <!doctype html>
 <html lang="en">
@@ -58,6 +59,7 @@
         · repos @if(cloned.isEmpty())none yet@else@for(repo in cloned)<code>${repo}</code> @endfor@endif
 @if(scope != null)        · <span id="scope">Repos picked: @for((i, repo) in scope.withIndex())@if(i > 0), @endif<code>${repo}</code>@endfor</span>@endif
 @if(profile != null)        · <span id="profile">Profile ${profile}</span>@endif
+        · <span id="verbosity">Verbosity ${verbosity.value}</span>
 @if(vault != null)        · Vault ${vault}@endif
         · <small>${run.id}</small></div>
 </div>

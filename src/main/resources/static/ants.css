@@ -387,6 +387,11 @@ details.session { margin-bottom: 14px; } details.session > .tr { margin-top: 8px
 dialog#new-process { width: min(560px, 92vw); height: fit-content; max-height: 86vh; }
 dialog:is(.source-map, .instructions) { width: min(760px, 92vw); height: fit-content; max-height: 86vh; } :is(.source-map, .instructions) textarea { width: 100%; margin-top: 8px; } :is(.source-map, .instructions) .go { margin-top: 12px; } :is(.source-map, .instructions) .mb { padding: 16px 18px 18px; }
 .instructions .mh label { font-weight: 700; } .instructions .mh .pill::before { content: none; } .instructions .help { margin: 0; } .instructions .ed { margin-top: 12px; }
+.seg { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--fieldLine); border-radius: 8px; background: var(--field); }
+.seg label { display: inline-flex; align-items: center; padding: 4px 12px; border-radius: 6px; font-size: 13px; font-weight: 600; color: var(--muted); cursor: pointer; }
+.seg label:has(:checked) { background: var(--accSoft); color: var(--accText); } .seg label:has(:focus-visible) { outline: 2px solid var(--acc); }
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.instructions .go { align-items: center; gap: 10px; } .instructions .go .seg { margin-right: auto; }
 .instructions .go { display: flex; justify-content: flex-end; margin: 16px -18px -18px; padding: 12px 18px; border-top: 1px solid var(--line); background: var(--band); }
 #new-process .mb { padding: 4px 24px 24px; font-size: 14px; }
 #new-process form { margin: 0; } #new-process .go { margin-top: 16px; }
@@ -663,7 +668,7 @@ details.example pre { background: var(--line2); border: 0; padding: 10px; border
     .toast { top: 0; left: 0; right: 0; width: auto; border-radius: 0; }
     #start :is(.tags .mono, .picks .mono, .combo [role=option]) { overflow-wrap: anywhere; }
     #start .combo [role=option] { display: flex; align-items: center; min-height: 44px; }
-    :is(button, .btn, .side a, .topbar :is(a, label), .tabs a, .spine .srow, .ssteps a, .walk nav a, .crumbs a, :is(.chipsel, .tags) .c, nav#tabs[role=tablist] > button) { min-height: 44px; }
+    :is(button, .btn, .side a, .topbar :is(a, label), .tabs a, .spine .srow, .ssteps a, .walk nav a, .crumbs a, :is(.chipsel, .tags) .c, nav#tabs[role=tablist] > button, .seg label) { min-height: 44px; }
     :is(.tabs, .ssteps, .walk nav) a { display: flex; align-items: center; }
     .crumbs a { display: inline-flex; align-items: center; }
     :is(input, select, textarea, .ed .cm-content) { font-size: 16px; }

@@ -222,6 +222,7 @@ class Processes(
         model.addAttribute("profile", picked)
         model.addAttribute("profileFrom", if (!profile.isNullOrBlank()) "picked here" else if (startForm.diagramProfile(process) != null) "set on the diagram" else "the default")
         model.addAttribute("source", settings.profile(picked))
+        model.addAttribute("verbosity", startForm.verbosity(filled?.get(VERBOSITY)?.firstOrNull()?.toString(), picked))
         model.addAttribute("repos", RunSource(picked).repos(settings).map(Repo::name)) // the Repos field's choices
         model.addAttribute("schedules", schedules.of(key))
         model.addAttribute("deletable", !shipped(key))

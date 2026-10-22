@@ -108,6 +108,11 @@ class SkillsTest : AntsTest() {
     }
 
     @Test
+    fun `the SKILL md help names the Verbosity opt-in`() {
+        assertContains(page("/skills/new"), "<code>ants-verbosity: true</code> to write at the Run's Verbosity")
+    }
+
+    @Test
     fun `a user Skill named like a shipped one shows greyed out`() {
         val yours = home.resolve("skills/mine/shipped-draft").createDirectories()
         try {

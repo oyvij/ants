@@ -1,6 +1,8 @@
 ---
 name: codebase-design
 description: Shared vocabulary for designing deep modules, which the tdd Skill consults. Used by other Skills, never picked by a Task.
+metadata:
+  ants-verbosity: true
 ---
 
 <!-- Matt Pocock's codebase-design Skill (https://github.com/mattpocock/skills, v1.3.1), word for word below the line,

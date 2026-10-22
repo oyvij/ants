@@ -5,6 +5,7 @@ metadata:
   ants-inputs: rounds spec review clones approval
   ants-uses: search-knowledge
   varde-vault: true
+  ants-verbosity: true
 ---
 
 <!-- Adapted from Varde's update-knowledge Skill (https://github.com/oyvij/varde-editor).

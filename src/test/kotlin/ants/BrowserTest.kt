@@ -2152,6 +2152,19 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `switching the Profile on the start form reloads it with Verbosity prefilled from the new Profile`() = browse {
+        settings(null, "profiles:\n  work: {vault: notes, verbosity: brief}\n  private: {vault: notes, verbosity: detailed}\n")
+        val (process, plane) = row("profiled", """<bpmn:startEvent id="start" />""", """<bpmn:endEvent id="end" />""")
+        deploy(definitions("profiled", "Profiled", process, plane))
+
+        page.navigate(url("/processes/profiled"))
+        assertThat(page.getByLabel("Verbosity")).hasValue("brief")
+        page.getByLabel("Profile", Page.GetByLabelOptions().setExact(true)).selectOption("private")
+        assertThat(page).hasURL(Pattern.compile(".*/processes/profiled\\?ants\\.profile=private$"))
+        assertThat(page.getByLabel("Verbosity")).hasValue("detailed")
+    }
+
+    @Test
     fun `ticking Items are Tickets on a multi-instance saves it on the element`() = browse {
         agentTask(null, mapOf("draft" to """{"type":"object","properties":{"items":{"type":"array"}}}"""))
         val loop = """<bpmn:multiInstanceLoopCharacteristics operaton:collection="${'$'}{plan.output.items}" /></bpmn:serviceTask>"""
@@ -2745,6 +2758,22 @@ class BrowserTest : AntsTest() {
             assertTrue(box.y + box.height - (save.y + save.height) < 60, "$id ends ${box.y + box.height - (save.y + save.height)}px under its Save")
             modal.locator("button[title=Close]").click()
         }
+    }
+
+    @Test
+    fun `on Settings, a Profile's Verbosity is picked beside its instructions' Save`() = browse {
+        settings(null, sourceMapLines() + "profiles:\n  work: {vault: notes, source-map: work}\n")
+        page.navigate(url("/settings"))
+        page.locator("[data-edit=instructions-0]").click()
+        val modal = page.locator("dialog#instructions-0")
+        val verbosity = modal.getByRole(AriaRole.RADIOGROUP, Locator.GetByRoleOptions().setName("Verbosity"))
+        assertThat(verbosity.getByLabel("Normal")).isChecked()
+        verbosity.getByText("Brief").click()
+        modal.locator(".go button").click()
+        page.waitForURL(url("/settings"))
+        val saved = org.yaml.snakeyaml.Yaml().load<Map<*, *>>(home.resolve("settings.yaml").readText())
+        assertEquals("brief", ((saved["profiles"] as Map<*, *>)["work"] as Map<*, *>)["verbosity"])
+        assertThat(page.locator("input[name='profiles[0].verbosity']")).hasValue("brief")
     }
 
     @Test

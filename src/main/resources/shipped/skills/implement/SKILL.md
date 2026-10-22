@@ -4,6 +4,7 @@ description: Build a Ticket of the Run's Spec, or the Run's proposal, test-first
 metadata:
   ants-inputs: ticket spec prompt proposal
   ants-uses: tdd code-review
+  ants-verbosity: true
 ---
 
 <!-- Matt Pocock's implement Skill (https://github.com/mattpocock/skills, v1.3.1), word for word below the line.

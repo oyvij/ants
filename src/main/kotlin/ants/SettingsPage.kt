@@ -77,10 +77,13 @@ class SettingsPage(
         return "redirect:/settings"
     }
 
+    /** Save in a Profile's instructions modal: rewrites its instructions file, and its Verbosity when that changed. */
     @PostMapping("/settings/instructions")
-    fun instructions(@RequestParam name: String, @RequestParam text: String): String {
+    fun instructions(@RequestParam name: String, @RequestParam text: String, @RequestParam verbosity: String?): String {
         val file = settings.instructions(name) ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No Profile $name")
         file.writeAtomically(text.replace("\r\n", "\n"))
+        val level = Verbosity.parse(verbosity)
+        if (level != null && level != settings.profile(name)?.verbosity) settings.verbosity(name, level)
         return "redirect:/settings"
     }
 
@@ -91,7 +94,7 @@ class SettingsPage(
         model.addAttribute("form", form)
         // Each saved Source map's path and text, for its editor.
         model.addAttribute("maps", settings.sourceMaps().mapValues { (name, path) -> path to settings.sourceMap(name)?.takeIf { it.exists() }?.readText().orEmpty() })
-        model.addAttribute("instructions", settings.profiles().keys.associateWith { settings.hasInstructions(it) to settings.instructionsText(it) })
+        model.addAttribute("instructions", settings.profiles().mapValues { (name, profile) -> ProfileInstructions(settings.hasInstructions(name), settings.instructionsText(name), profile.verbosity) })
         // The Profile Set up Vault runs with for each saved Vault: the first that pairs it; with no Profiles, the default Vault's, blank.
         model.addAttribute("setUp", settings.profiles().ifEmpty { null }?.entries?.reversed()?.associate { (name, profile) -> profile.vault to name }
             ?: listOfNotNull(settings.defaultVault()).associateWith { "" })
@@ -167,8 +170,11 @@ data class Named(val rows: List<Pair<String, String>>, val default: Int) {
     }
 }
 
+/** A saved Profile's instructions modal: whether it has instructions, their text, and its Verbosity. */
+data class ProfileInstructions(val has: Boolean, val text: String, val verbosity: Verbosity)
+
 /** One Profile on the settings page: its name and the names of its Vault and Source map. */
-data class ProfileRow(val name: String, val vault: String, val sourceMap: String, val was: String = "")
+data class ProfileRow(val name: String, val vault: String, val sourceMap: String, val was: String = "", val verbosity: Verbosity = Verbosity.NORMAL)
 
 /**
  * One Secret on the settings page: its label, its variable names, the value typed in, which the page never shows, the
@@ -282,7 +288,7 @@ data class SettingsForm(
         values.keep("default-vault", vaults.rows.getOrNull(vaults.default)?.first)
         values.keep("source-maps", sourceMaps.rows.toMap())
         values.keep("default-source-map", sourceMaps.rows.getOrNull(sourceMaps.default)?.first)
-        values.keep("profiles", profiles.associate { it.name to mapOf("vault" to it.vault, "source-map" to it.sourceMap) })
+        values.keep("profiles", profiles.associate { it.name to mapOf("vault" to it.vault, "source-map" to it.sourceMap) + it.verbosity.setting })
         values.keep("default-profile", profiles.getOrNull(defaultProfile)?.name)
         values.keep("secrets", secrets.associate { it.label to words(it.names) })
         values.keep("protected-commands", protectedCommands.associate { it.prefix to it.secrets })
@@ -311,7 +317,7 @@ data class SettingsForm(
                 subagentDepth = values["subagent-depth"]?.toString().orEmpty(),
                 vaults = named(settings.vaults(), settings.defaultVault()),
                 sourceMaps = named(settings.sourceMaps(), settings.defaultSourceMap()),
-                profiles = settings.profiles().map { (name, profile) -> ProfileRow(name, profile.vault.orEmpty(), profile.sourceMap.orEmpty(), was = name) },
+                profiles = settings.profiles().map { (name, profile) -> ProfileRow(name, profile.vault.orEmpty(), profile.sourceMap.orEmpty(), was = name, verbosity = profile.verbosity) },
                 defaultProfile = settings.profiles().keys.indexOf(settings.defaultProfile()),
                 secrets = settings.secretValues().keys.let { set ->
                     settings.secrets().map { (label, names) -> SecretRow(label, names.joinToString(", "), was = label, set = label in set) }
@@ -336,7 +342,7 @@ data class SettingsForm(
             }
             // A row whose name is emptied is removed.
             val allProfiles = generateSequence(0, Int::inc).takeWhile { "profiles[$it].name" in params }
-                .map { ProfileRow(param("profiles[$it].name"), param("profiles[$it].vault"), param("profiles[$it].source-map"), param("profiles[$it].was")) }.toList()
+                .map { ProfileRow(param("profiles[$it].name"), param("profiles[$it].vault"), param("profiles[$it].source-map"), param("profiles[$it].was"), Verbosity.of(param("profiles[$it].verbosity"))) }.toList()
             val profiles = allProfiles.filter { it.name.isNotEmpty() }
             // The value is posted as typed, never trimmed.
             val secrets = generateSequence(0, Int::inc).takeWhile { "secrets[$it].label" in params }

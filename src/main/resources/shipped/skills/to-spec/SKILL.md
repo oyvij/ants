@@ -3,6 +3,7 @@ name: to-spec
 description: Write the Run's Spec, tickets/spec.md, from the prompt, the brief, every Round and the clones.
 metadata:
   ants-inputs: prompt brief rounds clones repos
+  ants-verbosity: true
 ---
 
 <!-- Matt Pocock's to-spec Skill (https://github.com/mattpocock/skills, v1.3.1), word for word below the line.

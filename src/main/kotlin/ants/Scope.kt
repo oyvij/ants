@@ -17,11 +17,11 @@ fun newRepo(entry: String) = Regex("[A-Za-z0-9-]+/[A-Za-z0-9._-]+").matches(entr
 const val PROFILE = "ants.profile"
 
 /**
- * What a Run draws on: its Profile [name] ([PROFILE], the default one when null) and the repos the user [picked]
- * ([SCOPE]). Which Vault, Source map and repos a Run uses is decided here alone: its Profile's, none for a Profile no
- * longer in the settings. Picked repos never change that (ADR 0014).
+ * What a Run draws on: its Profile [name] ([PROFILE], the default one when null), the repos the user [picked]
+ * ([SCOPE]) and its [verbosity] ([VERBOSITY]). Which Vault, Source map and repos a Run uses is decided here alone: its
+ * Profile's, none for a Profile no longer in the settings. Picked repos never change that (ADR 0014).
  */
-data class RunSource(val name: String?, val picked: List<String> = emptyList()) {
+data class RunSource(val name: String?, val picked: List<String> = emptyList(), val verbosity: Verbosity = Verbosity.NORMAL) {
     /** The Profile the Run uses; none for a Profile no longer in [settings]. */
     fun profile(settings: Settings): Profile? = settings.profile(name)
 
@@ -36,11 +36,12 @@ data class RunSource(val name: String?, val picked: List<String> = emptyList()) 
 
     companion object {
         /**
-         * The source a Run keeps as it started, from its [SCOPE] and [PROFILE] variables as [variable] reads them. A Run
-         * started before ADR 0014, scoped with no Profile, reads as one with the default Profile.
+         * The source a Run keeps as it started, from its [SCOPE], [PROFILE] and [VERBOSITY] variables as [variable] reads
+         * them. A Run started before ADR 0014, scoped with no Profile, reads as one with the default Profile, and one
+         * started before Verbosity as normal.
          */
         fun read(variable: (String) -> Any?): RunSource =
-            RunSource(variable(PROFILE) as? String, (variable(SCOPE) as? List<*>).orEmpty().map(Any?::toString))
+            RunSource(variable(PROFILE) as? String, (variable(SCOPE) as? List<*>).orEmpty().map(Any?::toString), Verbosity.of(variable(VERBOSITY)))
     }
 }
 

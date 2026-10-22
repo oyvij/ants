@@ -148,6 +148,17 @@ class CodexTest : AntsTest() {
         assertFalse("--add-dir" in codex.launches("draft").last().argv)
     }
 
+    @Test
+    fun `a codex Task at brief gets the Verbosity sentence and no --add-dir for it`() {
+        codexTask(metadata = "metadata:\n  ants-verbosity: true\n", profiles = "profiles:\n  work:\n    vault: notes\n    verbosity: brief\n")
+        codex.session("draft", started, turn, answer(), completed)
+        val run = start()
+        eventually { assertContains(page(run), """id="state">Completed<""") }
+        val launch = codex.launches("draft").single()
+        assertContains(launch.stdin, "Write what the user reads at the brief verbosity defined in ${home.resolve("shipped/verbosity/verbosity.md")}.")
+        assertFalse("--add-dir" in launch.argv)
+    }
+
     /** codex's Usage limit [message], as an `error` and the `turn.failed` it ends, and the exit that follows. */
     private fun limit(message: String) = arrayOf(
         """{"type":"error","message":"$message"}""", """{"type":"turn.failed","error":{"message":"$message"}}""", "exit 1",

@@ -3,6 +3,7 @@ name: tdd
 description: Test-driven development, red-green at pre-agreed seams. Used by other Skills, never picked by a Task.
 metadata:
   ants-uses: codebase-design
+  ants-verbosity: true
 ---
 
 <!-- Matt Pocock's tdd Skill (https://github.com/mattpocock/skills, v1.3.1), word for word below the line, with its

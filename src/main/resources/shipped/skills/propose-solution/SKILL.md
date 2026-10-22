@@ -3,6 +3,7 @@ name: propose-solution
 description: Read the Run's clones and propose how to build what the prompt asks, as proposal/proposal.md, for an implementer to follow.
 metadata:
   ants-inputs: prompt brief clones
+  ants-verbosity: true
 ---
 
 # Propose a Solution
