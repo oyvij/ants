@@ -33,6 +33,13 @@ Each question is an entry rather than the chat format below:
 - `recommendation`: your recommended answer, concrete enough to build from;
 - `why`: the reason for your recommendation.
 
+**Write for a quick read.** The user reads each question on the Answer page, often on a phone, not
+in a chat. `ask` is one sentence. `context` names the choices, one short sentence each, and leaves
+out what the user already knows. `recommendation` is one sentence the user could send back as their
+answer, and `why` is one sentence. Put code, file names, commands and names from the code in
+backticks: the page shows them as code. Your `summary` heads the page, so name the Round's topic in a
+few words, such as "Hello CLI: language, greeting, how it runs", rather than describing the Round.
+
 You are resumed with the round's answers as `{answers: [{id, answer, source}]}`. Take each answer
 as settled, whoever gave it, and recompute the frontier. Never ask a settled question again unless
 a later answer reopens it, and then say so in its `context`.

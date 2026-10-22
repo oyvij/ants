@@ -427,7 +427,7 @@ nav#tabs[role=tablist] .m { color: var(--ans); white-space: nowrap; }
 #round .part { --part: var(--ask); border-left: 4px solid var(--part); padding: 2px 0 2px 14px; margin-bottom: 20px; font-size: 15px; }
 #round .part h3 { margin: 0 0 4px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--part); }
 #round .part h3 label { font: inherit; color: inherit; }
-#round .part p { margin: 0; }
+#round .part p { margin: 0; } #round .part code, .ph h1 code { font-size: .88em; }
 #round .ask p { font-size: 19px; font-weight: 600; }
 #round .ctx { --part: var(--ctx); }
 #round .rec { --part: var(--rec); } #round .rec p { color: var(--text2); }

@@ -89,6 +89,18 @@ class AnswerRoundTest : AntsTest() {
     }
 
     @Test
+    fun `the Answer page shows backticked text as code, escaped, and the recommendation to send back as written`() {
+        val ticked = """{"id":"run","title":"How it runs","ask":"Run `hello.js` or a `bin`?","context":"`<b>` stays text.",""" +
+            """"recommendation":"Run `node hello.js`.","why":"One `file`."}"""
+        claude.session("quiz", 1, round("Hello CLI: `hello.js`", ticked))
+        val body = browser.get(entry(start())).body
+        for (text in listOf(
+            "Hello CLI: <code>hello.js</code></h1>", "Run <code>hello.js</code> or a <code>bin</code>?", "<code>&lt;b&gt;</code> stays text.",
+            "Run <code>node hello.js</code>.</p>", "One <code>file</code>.", ">Run `node hello.js`.</textarea>",
+        )) assertContains(body, text)
+    }
+
+    @Test
     fun `a Round with an unanswered question is refused`() {
         claude.session("quiz", 1, round("First round.", question("who", "Who exports"), question("scope", "Which invoices")))
         val run = start()
