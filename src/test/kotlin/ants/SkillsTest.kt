@@ -94,7 +94,7 @@ class SkillsTest : AntsTest() {
     fun `the editors' scripts are all served`() {
         val page = browser.get("/skills/new").body
         val scripts = Regex(""""(/vendor/codemirror/[^"]+)"""").findAll(page).map { it.groupValues[1] }.toList() + "/skill-editor.js" + "/markdown.js"
-        assertEquals(28, scripts.size)
+        assertEquals(45, scripts.size)
         for (script in scripts) assertEquals(200, browser.get(script).status, script)
     }
 

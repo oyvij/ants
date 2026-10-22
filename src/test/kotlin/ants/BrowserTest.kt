@@ -1871,13 +1871,14 @@ class BrowserTest : AntsTest() {
         assertEquals("""["web","$longRepo","$elsewhere"]""", startPicked(page, page.locator("textarea[name=prompt]")) { it.tap() })
     }
 
-    private fun byRepoReviewEntryOfApiCommitting(file: String, text: String): String {
+    private fun byRepoReviewEntryOfApiCommitting(file: String, text: String, also: Map<String, String> = emptyMap()): String {
         agentTask(FakeClaude(), mapOf("mend" to null, "ship" to null), extra = reviewSourceMap())
         http.upload("/processes", "file", "review.bpmn", javaClass.getResource("/review.bpmn")!!.readBytes())
         val run = http.post("/processes/review/runs", listOf("repos" to "api", "repos" to "web")).path.removePrefix("/runs/")
         var entry = ""
         eventually { entry = assertNotNull(Regex("""href="(/notifications/[^"]+)"""").find(http.get("/notifications").body)).groupValues[1] }
         commitFile(workspace(run).resolve("repos/api"), file, text, "Change $file")
+        for ((other, otherText) in also) commitFile(workspace(run).resolve("repos/api"), other, otherText, "Change $other")
         return entry
     }
 
@@ -2203,6 +2204,24 @@ class BrowserTest : AntsTest() {
         numbers.nth(1).click()
         assertThat(page.locator("#line-comment [name=file]")).hasValue("repos/api/wide.txt")
         assertThat(page.locator("#line-comment [name=from]")).hasValue("2")
+    }
+
+    @Test
+    fun `a By repo file's diff is coloured by its language, a comment over lines whole, and a file of no known language stays plain`() = browse {
+        val entry = byRepoReviewEntryOfApiCommitting("Retry.kt", "/* Retries\n   an invoice. */\nclass Retry(val times: Int = 3)\n", mapOf("notes.txt" to "class Retry\n"))
+        page.navigate(url(entry))
+        val diff = page.locator("table.diff[data-file='repos/api/Retry.kt']")
+        assertThat(diff).hasClass(Pattern.compile("\\bhl\\b"))
+        val line = { n: Int -> diff.locator("tr[data-side=new][data-line='$n'] td").nth(2) }
+        assertThat(line(2).locator(".tok-comment")).hasText("   an invoice. */")
+        assertThat(line(3).locator(".tok-keyword").first()).hasText("class")
+        assertThat(line(3).locator(".tok-number")).hasText("3")
+        assertThat(line(3)).hasText("+class Retry(val times: Int = 3)")
+        assertThat(line(3).locator(".sign")).hasText("+")
+        val notes = page.locator("table.diff[data-file='repos/api/notes.txt']")
+        assertThat(notes.locator("[class^=tok-]")).hasCount(0)
+        assertThat(notes).not().hasClass(Pattern.compile("\\bhl\\b"))
+        page.screenshot("review-coloured")
     }
 
     /** Review changes on a Story set written against [head]; then [helloText] is committed, so against origin/main its steps go stale and against HEAD they show it. */
