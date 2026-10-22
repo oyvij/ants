@@ -77,8 +77,7 @@ _Avoid_: preflight, validation
 **Run workspace**:
 The folder a Run works in, holding its clones and intermediate files, deleted when the Run ends, or kept
 until the user dismisses it if the Run failed. Named after the Run as it started, `runs/<slug>-<uuid>/`. When the
-Run's Profile has instructions, its root holds their copy, `AGENTS.md`, and a `CLAUDE.md` ranking and inlining them,
-and claude launches keep out every CLAUDE.md above it.
+Run's Profile has instructions, it holds their copy as `AGENTS.md` and `CLAUDE.md`.
 _Avoid_: sandbox, scratch dir
 
 **Run log**:
