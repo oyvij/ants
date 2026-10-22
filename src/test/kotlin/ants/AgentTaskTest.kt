@@ -149,9 +149,11 @@ class AgentTaskTest : AntsTest() {
             assertEquals("user,project", launch.flag("--setting-sources"))
             assertEquals(excludingAbove(Path.of(launch.cwd)), launch.flag("--settings"))
         }
+        val cwd = Path.of(launches.first().cwd)
         val settings = launches.first().flag("--settings")!!
-        for (above in listOf("${Path.of(launches.first().cwd).parent}/CLAUDE.md", "${home.toRealPath()}/CLAUDE.local.md", "${home.toRealPath()}/.claude/CLAUDE.md", "/CLAUDE.md")) assertContains(settings, "\"$above\"")
-        assertFalse("\"${launches.first().cwd}/CLAUDE.md\"" in settings)
+        val above = listOf("${cwd.parent}/CLAUDE.md", "${home.toRealPath()}/CLAUDE.local.md", "${home.toRealPath()}/.claude/CLAUDE.md", "/CLAUDE.md")
+        for (file in above) assertContains(settings, "\"$file\"")
+        assertFalse("\"$cwd/CLAUDE.md\"" in settings)
     }
 
     @Test

@@ -751,11 +751,11 @@ class AgentLauncher(
     }
 
     private fun claudeSettings(workspace: Path): String {
-        val hooks = mapOf("disableAllHooks" to true)
-        if (!workspace.resolve("AGENTS.md").exists()) return json.writeValueAsString(hooks)
+        val base = mapOf("disableAllHooks" to true)
+        if (!workspace.resolve("AGENTS.md").exists()) return json.writeValueAsString(base)
         val above = generateSequence(workspace.toRealPath().parent) { it.parent }
             .flatMap { listOf(it.resolve("CLAUDE.md"), it.resolve("CLAUDE.local.md"), it.resolve(".claude/CLAUDE.md")) }
-        return json.writeValueAsString(hooks + ("claudeMdExcludes" to above.map(Path::toString).toList()))
+        return json.writeValueAsString(base +("claudeMdExcludes" to above.map(Path::toString).toList()))
     }
 
     /**
