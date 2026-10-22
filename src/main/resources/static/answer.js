@@ -56,7 +56,7 @@ function render() {
     if (i === n) {
         // Each full question, with the answer under it.
         document.getElementById('review-list').replaceChildren(...questions.map((q, j) => {
-            const item = button(j, `${marks(j)} ${q.querySelector('.ask p').textContent}`);
+            const item = button(j, `${marks(j)} ${q.querySelector('.ask .tx').textContent.trim()}`);
             item.append(Object.assign(document.createElement('div'), {className: 'a', textContent: answer(j).value}));
             return item;
         }));

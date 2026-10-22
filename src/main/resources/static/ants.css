@@ -17,6 +17,9 @@
     --ok: light-dark(#16a34a, #4ade80); --okSoft: light-dark(#e7f8ed, #0f2a1a); --okText: light-dark(#166534, #86efac);
     --bad: light-dark(#dc2626, #f87171); --badSoft: light-dark(#fdecec, #2c1416); --badText: light-dark(#991b1b, #fca5a5);
     --vio: light-dark(#7c3aed, #a78bfa); --vioSoft: light-dark(#f3edff, #211a38);
+    /* Code's colours by token, highlight.js's: GitHub's light and dark. */
+    --tokKey: light-dark(#cf222e, #ff7b72); --tokStr: light-dark(#0a3069, #a5d6ff); --tokNum: light-dark(#0550ae, #79c0ff);
+    --tokType: light-dark(#953800, #ffa657); --tokDef: light-dark(#8250df, #d2a8ff); --tokCom: light-dark(#6e7781, #8b949e);
     --codeBg: light-dark(#fff, #0f1218); --dimCode: light-dark(#b8bec9, #4b5363); --lnum: light-dark(#b0b7c3, #4b5363); --band: light-dark(#fcfcfd, #161a22);
     --composer: light-dark(rgba(255, 255, 255, .96), rgba(19, 22, 29, .94)); --dotgrid: light-dark(#d9dde5, #252b38);
     --citeC: light-dark(#0e7490, #67e8f9); --invC: light-dark(#b45309, #fbbf24); --modalBg: light-dark(rgba(15, 23, 42, .5), rgba(0, 0, 0, .6));
@@ -290,6 +293,14 @@ div.tools label span { color: var(--muted); font-size: 12px; display: block; }
 .cl { display: grid; grid-template-columns: 44px 3px 1fr; gap: 12px; white-space: pre; padding-right: 16px; background: var(--codeBg); } .cl .ln { position: sticky; left: 0; margin-right: -12px; padding-right: 12px; background: inherit; text-align: right; color: var(--lnum); }
 .cl.dim .tx { color: var(--dimCode); } .cl.site.changed .bar { background: #eab308; } .cl.site.context .bar { background: #3b82f6; } .cl.site .tx { color: var(--text); }
 .diff .cl.add { background: var(--okSoft); } .diff .cl.add .tx { color: var(--okText); } .diff .cl.del { background: var(--badSoft); } .diff .cl.del .tx { color: var(--badText); text-decoration: line-through; }
+/* Coloured code (highlight.js): the tokens carry the colour, so a line's text is plain, a dim line faint and a diff's line its background. */
+:is(.code.hl, table.diff.hl) :is(.tok-keyword, .tok-operator.tok-keyword, .tok-meta) { color: var(--tokKey); }
+:is(.code.hl, table.diff.hl) :is(.tok-string, .tok-string2) { color: var(--tokStr); }
+:is(.code.hl, table.diff.hl) :is(.tok-number, .tok-bool, .tok-atom, .tok-literal, .tok-propertyName) { color: var(--tokNum); }
+:is(.code.hl, table.diff.hl) :is(.tok-typeName, .tok-className, .tok-namespace, .tok-attributeName) { color: var(--tokType); }
+:is(.code.hl, table.diff.hl) :is(.tok-definition, .tok-macroName, .tok-labelName) { color: var(--tokDef); }
+:is(.code.hl, table.diff.hl) .tok-comment { color: var(--tokCom); font-style: italic; }
+.code.hl .cl.dim .tx { color: var(--text); opacity: .5; } .diff .code.hl .cl.add .tx, .diff .code.hl .cl.del .tx { color: var(--text); }
 .band { border-top: 1px solid var(--line); padding: 16px 18px; background: var(--band); }
 .band .claim { font-size: 15px; font-weight: 600; } .band .stale { background: var(--waitSoft); color: var(--warnText); font-size: 11px; font-weight: 800; padding: 1px 6px; border-radius: 4px; letter-spacing: .05em; }
 .vals { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 10px; font-size: 12.5px; } .vals .cited { color: var(--citeC); } .vals .inv { color: var(--invC); }
@@ -418,10 +429,13 @@ nav#tabs[role=tablist] .m { color: var(--ans); white-space: nowrap; }
 #round .part { --part: var(--ask); border-left: 4px solid var(--part); padding: 2px 0 2px 14px; margin-bottom: 20px; font-size: 15px; }
 #round .part h3 { margin: 0 0 4px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--part); }
 #round .part h3 label { font: inherit; color: inherit; }
-#round .part p { margin: 0; }
-#round .ask p { font-size: 19px; font-weight: 600; }
+#round .part code, .ph h1 code { font-size: .88em; }
+#round .tx { max-width: 68ch; line-height: 1.6; } #round .tx > :first-child { margin-top: 0; } #round .tx > :last-child { margin-bottom: 0; }
+#round .tx p { margin: 0 0 8px; } #round .tx :is(ul, ol) { margin: 4px 0 8px; padding-left: 20px; } #round .tx li + li { margin-top: 4px; }
+#round .ask .tx { font-size: 19px; font-weight: 600; line-height: 1.4; }
 #round .ctx { --part: var(--ctx); }
-#round .rec { --part: var(--rec); } #round .rec p { color: var(--text2); }
+#round .rec { --part: var(--rec); } #round .rec .pick { font-weight: 500; }
+#round .rec .why { margin-top: 6px; color: var(--text2); font-size: 14px; } #round .rec .why b { color: var(--muted); font-weight: 600; margin-right: 4px; }
 #round .ans { --part: var(--ans); } #round .ans .ed { font-size: 15px; }
 #round .ans .ed:focus-within { border-color: var(--ans); outline-color: color-mix(in srgb, var(--ans) 25%, transparent); }
 #review-list > button { display: block; width: 100%; margin-bottom: 8px; padding: 10px 12px; text-align: left; white-space: normal; font-size: 15px; font-weight: 400; background: var(--panel); border-radius: 6px; }
@@ -456,6 +470,8 @@ table.diff td { padding: 0 14px 0 0; border: 0; white-space: pre; vertical-align
 table.diff td:nth-child(-n+2) { position: sticky; left: 0; width: var(--num); min-width: var(--num); background: var(--diff-bg) !important; padding: 0 0 0 14px; text-align: right; color: #64748b; cursor: pointer; user-select: none; } table.diff td:nth-child(2) { left: var(--num); }
 table.diff td:nth-child(3) { padding-left: 14px; width: auto; }
 table.diff tr.add { color: #86efac; } table.diff tr.del { color: #fca5a5; } table.diff tr.hunk { color: #93c5fd; }
+table.diff.hl { color-scheme: dark; } table.diff.hl :is(tr.add, tr.del) { color: #e2e8f0; } table.diff.hl tr.add { background: rgba(46, 160, 67, .18); } table.diff.hl tr.del { background: rgba(248, 81, 73, .16); }
+table.diff.hl tr.add .sign { color: #86efac; } table.diff.hl tr.del .sign { color: #fca5a5; } table.diff.hl tr.picked { background: var(--picked); }
 table.diff tr.picked { background: var(--picked); } table.diff tr.picked td:nth-child(-n+2) { background: linear-gradient(var(--picked), var(--picked)), var(--diff-bg) !important; }
 #line-comment .lc { display: grid; grid-template-columns: 1fr 2fr 1fr 1fr 1fr 1.4fr; gap: 8px 12px; margin-bottom: 10px; }
 #comments { margin: 16px 0 0; } .cbody { white-space: pre-wrap; } #comments form { margin: 0; padding: 3px 0; gap: 6px; }

@@ -17,6 +17,7 @@
     <meta name="color-scheme" content="${colorScheme}">
     <title>${entry.icon} ${entry.tag} ${entry.task} · Ants</title>
     <script src="/review.js" defer></script>
+    <script type="module" src="/highlight.js"></script>
 </head>
 <body>
 @template.nav(shell = shell)
@@ -61,7 +62,7 @@
             @for(j in story.steps.indices)!{val step = story.steps[j]}
             <div class="step" data-step="${j + 1}">
                 <div class="cfile"><span class="mono"><b>${step.repo}</b> · ${step.path}</span><span class="grow"></span><label class="small row"><input type="checkbox" class="showdiff"> Show the diff</label></div>
-                <div class="code">@for(line in step.code)<div class="${line.css}"><span class="ln">${line.number}</span><span class="bar"></span><span class="tx">${line.text}</span></div>@endfor</div>
+                <div class="code" data-file="${step.path}">@for(line in step.code)<div class="${line.css}"><span class="ln">${line.number}</span><span class="bar"></span><span class="tx">${line.text}</span></div>@endfor</div>
                 <div class="band">
                     <div class="claim">@if(step.stale != null)<span class="stale">STALE</span> @endif$unsafe{inlineCode(step.claim)}</div>
                     @if(step.values.isNotEmpty())<div class="vals">@for(value in step.values)<span class="${if (value.cite != null) "cited" else "inv"}" title="${if (value.cite != null) "from ${value.cite}" else "not found in the code"}">${value.name}: <b>${value.value}</b> <span class="small">[${value.provenance}]</span></span>@endfor</div>@endif

@@ -9,10 +9,10 @@
         "properties": {
           "id": { "type": "string" },
           "title": { "type": "string" },
-          "ask": { "type": "string" },
-          "context": { "type": "string", "description": "What the answer settles." },
-          "recommendation": { "type": "string" },
-          "why": { "type": "string" }
+          "ask": { "type": "string", "description": "One sentence. Code in backticks." },
+          "context": { "type": "string", "description": "What the answer settles, briefly. Code in backticks." },
+          "recommendation": { "type": "string", "description": "One sentence. Code in backticks." },
+          "why": { "type": "string", "description": "One sentence." }
         },
         "required": ["id", "title", "ask", "context", "recommendation", "why"],
         "additionalProperties": false
