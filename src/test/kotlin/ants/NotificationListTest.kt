@@ -151,6 +151,23 @@ class NotificationListTest : AntsTest() {
     }
 
     @Test
+    fun `with a Profile that has instructions, a Continue and a Start fresh launch with the first launch's --settings`() {
+        agentTask(claude, extra = "profiles:\n  work:\n    vault: notes\n")
+        instruct("work", "Keep it short.\n")
+        claude.session("draft", stuck)
+        claude.session("draft", 3, done)
+        val run = start()
+        browser.post(entry(run), mapOf("action" to "continue", "instruction" to "Dry, please."))
+        eventually { assertEquals(2, claude.launches("draft").size) }
+        browser.post(entry(run), mapOf("action" to "fresh", "instruction" to ""))
+        eventually { assertContains(page(run), """id="state">Completed<""") }
+        val (first, continued, fresh) = claude.launches("draft")
+        assertEquals(excludingAbove(workspace(run).toRealPath()), first.flag("--settings"))
+        assertEquals(first.flag("--settings"), continued.flag("--settings"))
+        assertEquals(first.flag("--settings"), fresh.flag("--settings"))
+    }
+
+    @Test
     fun `Start fresh needs no instruction`() {
         setUp()
         claude.session("draft", stuck)

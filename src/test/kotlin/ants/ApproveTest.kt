@@ -17,8 +17,8 @@ class ApproveTest : AntsTest() {
     private val polished = result("""{"outcome":"done","summary":"Polished.","output":{}}""")
 
     /** Starts a Run of `approve.bpmn`: Draft → Check the draft (an Approve showing `notes.md`) → Polish, or back to Draft. */
-    private fun start(): String {
-        agentTask(claude, mapOf("draft" to """{"type":"object","properties":{"notes":{"type":"string","format":"path"}}}""", "polish" to null))
+    private fun start(extra: String = ""): String {
+        agentTask(claude, mapOf("draft" to """{"type":"object","properties":{"notes":{"type":"string","format":"path"}}}""", "polish" to null), extra = extra)
         browser.import("approve.bpmn")
         browser.get("/processes/approve")
         val run = browser.post("/processes/approve/runs", emptyMap()).path.removePrefix("/runs/")
@@ -92,5 +92,20 @@ class ApproveTest : AntsTest() {
         assertEquals(first.flag("--session-id"), second.flag("--resume"))
         assertEquals("""{"type":"user","message":{"role":"user","content":"Shorter, please."}}""", second.stdin)
         assertContains(claude.launches("polish").single().stdin, """{\"verdict\":{\"approved\":true,\"comment\":\"\"}}""")
+    }
+
+    @Test
+    fun `with a Profile that has instructions, a Send back's fix launches with the first launch's --settings`() {
+        claude.session("draft", drafted)
+        claude.session("polish", polished)
+        instruct("work", "Keep it short.\n")
+        val run = start("profiles:\n  work:\n    vault: notes\n")
+        browser.post(entry(run), mapOf("action" to "send-back", "comment" to "Shorter, please."))
+        eventually { assertEquals(2, claude.launches("draft").size) }
+        browser.post(entry(run), mapOf("action" to "approve", "comment" to ""))
+        eventually { assertContains(page(run), """id="state">Completed<""") }
+        val (first, fix) = claude.launches("draft")
+        assertEquals(excludingAbove(workspace(run).toRealPath()), first.flag("--settings"))
+        assertEquals(first.flag("--settings"), fix.flag("--settings"))
     }
 }

@@ -14,6 +14,7 @@ import org.springframework.context.annotation.Import
 import org.springframework.context.annotation.Primary
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
+import tools.jackson.databind.json.JsonMapper
 import java.net.CookieManager
 import java.net.URI
 import java.net.URLEncoder
@@ -95,6 +96,14 @@ abstract class AntsTest {
         // once started, which would bring back that test's last start and leave this test's first time not yet due.
         synchronized(schedules) { home.resolve("schedules.yaml").toFile().delete() }
     }
+
+    fun instruct(profile: String, text: String) = home.resolve("profiles/$profile").createDirectories().resolve("AGENTS.md").writeText(text)
+
+    fun excludingAbove(workspace: Path): String = JsonMapper.shared().writeValueAsString(mapOf(
+        "disableAllHooks" to true,
+        "claudeMdExcludes" to generateSequence(workspace.parent) { it.parent }
+            .flatMap { listOf(it.resolve("CLAUDE.md"), it.resolve("CLAUDE.local.md"), it.resolve(".claude/CLAUDE.md")) }.map(Path::toString).toList(),
+    ))
 
     /**
      * What a Run of an Agent Task needs, in one place: the Agent `writer` listing the [skills] (with [agent] lines in its
