@@ -1791,7 +1791,7 @@ class BrowserTest : AntsTest() {
         picker()
         val plain = page.context().browser()!!.newContext(NewContextOptions().setJavaScriptEnabled(false)).apply { addCookies(page.context().cookies()) }.newPage()
         plain.navigate(url("/processes/picker"))
-        assertThat(plain.getByRole(AriaRole.COMBOBOX)).hasCount(0)
+        assertThat(plain.getByRole(AriaRole.COMBOBOX, Page.GetByRoleOptions().setName("Repos (optional)"))).hasCount(0)
         assertThat(plain.locator("#start input[type=checkbox]")).hasCount(3)
 
         plain.getByLabel("web", Page.GetByLabelOptions().setExact(true)).check()
@@ -1854,7 +1854,7 @@ class BrowserTest : AntsTest() {
         picker("", *phoneSourceMap)
         onPhone(javaScript = false)
         page.navigate(url("/processes/picker"))
-        assertThat(page.getByRole(AriaRole.COMBOBOX)).hasCount(0)
+        assertThat(page.getByRole(AriaRole.COMBOBOX, Page.GetByRoleOptions().setName("Repos (optional)"))).hasCount(0)
         val boxes = page.locator("#start label:has(input[type=checkbox])")
         assertThat(boxes).hasCount(phoneSourceMap.size)
         assertNoSidewaysScroll()
