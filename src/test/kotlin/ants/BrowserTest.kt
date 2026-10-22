@@ -552,6 +552,48 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `Edit's modal saves the Task's Agent and keeps the unsaved diagram`() = browse {
+        agentTask(null)
+        val task = appendAgentTask()
+        label("Agent").selectOption("writer")
+        val modeler = page.url()
+        page.locator("#explain button", Page.LocatorOptions().setHasText("Edit")).first().click()
+        assertThat(page.locator("dialog.modal")).containsText("Edit Agent")
+        page.frameLocator("dialog iframe").locator("input[name=description]").fill("Writes warmly.")
+        page.locator("dialog .mh button", Page.LocatorOptions().setHasText("Save")).click()
+
+        assertThat(page.locator("dialog")).hasCount(0)
+        assertEquals(modeler, page.url())
+        assertThat(shape(task)).hasClass(selected)
+        assertThat(label("Agent").locator("option:checked")).hasText("writer · Writes warmly.")
+        assertContains(home.resolve("agents/writer.md").readText(), "Writes warmly.")
+    }
+
+    @Test
+    fun `Edit's modal saves the Task's Skill, and the panel shows the input it now declares`() = browse {
+        agentTask(null)
+        appendAgentTask()
+        label("Agent").selectOption("writer")
+        assertThat(label("Skill")).hasValue("draft")
+        page.locator("#explain button", Page.LocatorOptions().setHasText("Edit")).nth(1).click()
+        assertThat(page.locator("dialog.modal")).containsText("Edit Skill")
+        page.frameLocator("dialog iframe").locator("#skill-md + .ed .cm-content")
+            .fill("---\nname: draft\ndescription: Does draft.\nmetadata:\n  ants-inputs: tone\n---\nDo it.\n")
+        page.locator("dialog .mh button", Page.LocatorOptions().setHasText("Save")).click()
+
+        assertThat(page.locator("dialog")).hasCount(0)
+        assertThat(panel.locator("label.row code")).hasText("tone")
+    }
+
+    @Test
+    fun `Edit is off for a read-only Agent`() = browse {
+        agentTask(null)
+        appendAgentTask()
+        label("Agent").selectOption("shipped-writer")
+        assertThat(page.locator("#explain button", Page.LocatorOptions().setHasText("Edit")).first()).isDisabled()
+    }
+
+    @Test
     fun `picking an Agent picks its first Skill and says what later Tasks can read, and the Checks turn Ready to deploy`() = browse {
         agentTask(null, mapOf("draft" to """{"type":"object","properties":{"notes":{"type":"string"}}}""", "polish" to null))
         val task = appendAgentTask()
