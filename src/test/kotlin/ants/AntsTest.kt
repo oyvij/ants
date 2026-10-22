@@ -109,7 +109,7 @@ abstract class AntsTest {
         extra: String = "",
         env: List<String>? = null,
     ) {
-        val shipped = catalogue.skills(hidden = true).filter(catalogue::shipped).map { it.name }
+        val shipped = catalogue.skills(withHidden = true).filter(catalogue::shipped).map { it.name }
         for (name in skills.keys) require(name !in shipped) { "$name is hidden by the shipped Skill of that name; give the test's Skill another name." }
         settings(claude, extra, env)
         home.resolve("agents/writer.md").writeText("---\n${agent}skills: ${skills.keys.joinToString(", ")}\n---\nWrite plainly.\n")

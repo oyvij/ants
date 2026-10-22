@@ -95,9 +95,9 @@ class Skill(
 class Catalogue(@Value("\${ants.home}") private val home: Path, private val settings: Settings) {
     private val shipped = home.resolve("shipped")
     // A Path is an Iterable of its names, so `list + path` would add the names; each folder goes in as a list.
-    private fun agentFolders(hidden: Boolean) = listOf(home.resolve("agents")) + settings.agentFolders() + shippedFolder("agents", hidden)
-    private fun skillFolders(hidden: Boolean) = listOf(home.resolve("skills")) + settings.skillFolders() + shippedFolder("skills", hidden)
-    private fun shippedFolder(kind: String, hidden: Boolean) = if (hidden || !settings.hideShipped()) listOf(shipped.resolve(kind)) else emptyList()
+    private fun agentFolders(withHidden: Boolean) = listOf(home.resolve("agents")) + settings.agentFolders() + shippedFolder("agents", withHidden)
+    private fun skillFolders(withHidden: Boolean) = listOf(home.resolve("skills")) + settings.skillFolders() + shippedFolder("skills", withHidden)
+    private fun shippedFolder(kind: String, withHidden: Boolean) = if (withHidden || !settings.hideShipped()) listOf(shipped.resolve(kind)) else emptyList()
 
     init {
         val resources = PathMatchingResourcePatternResolver()
@@ -113,10 +113,10 @@ class Catalogue(@Value("\${ants.home}") private val home: Path, private val sett
         }
     }
 
-    fun agents(hidden: Boolean = false): List<Agent> = agentFolders(hidden).filter { it.exists() }.flatMap { it.listDirectoryEntries("*.md").sorted() }.map(::Agent)
+    fun agents(withHidden: Boolean = false): List<Agent> = agentFolders(withHidden).filter { it.exists() }.flatMap { it.listDirectoryEntries("*.md").sorted() }.map(::Agent)
 
     /** The Agent [name]. */
-    fun agent(name: String): Agent = named("Agent", name, agents(hidden = true).filter { it.name == name }, ::shipped)
+    fun agent(name: String): Agent = named("Agent", name, agents(withHidden = true).filter { it.name == name }, ::shipped)
 
     /** The user's own Skills, the one Skill folder the Skills page writes to. */
     val yourSkills: Path = home.resolve("skills")
@@ -124,7 +124,7 @@ class Catalogue(@Value("\${ants.home}") private val home: Path, private val sett
     /** The user's own Agents, the one Agent folder Ants writes to. */
     val yourAgents: Path = home.resolve("agents")
 
-    fun skills(hidden: Boolean = false): List<Skill> = skillFolders(hidden).filter { it.exists() }.flatMap { folder ->
+    fun skills(withHidden: Boolean = false): List<Skill> = skillFolders(withHidden).filter { it.exists() }.flatMap { folder ->
         folder.walk().filter { it.fileName.toString() == "SKILL.md" }.sorted().map { file ->
             val meta = frontmatter(file.readText()).first
             val metadata = meta["metadata"] as? Map<*, *> ?: emptyMap<String, Any?>()
@@ -153,7 +153,7 @@ class Catalogue(@Value("\${ants.home}") private val home: Path, private val sett
         return if (folder.startsWith(user)) "~/${user.relativize(folder)}" else folder.toString()
     }
 
-    fun skill(name: String): Skill = named("Skill", name, skills(hidden = true).filter { it.name == name }, ::shipped)
+    fun skill(name: String): Skill = named("Skill", name, skills(withHidden = true).filter { it.name == name }, ::shipped)
 
     private fun <T> named(kind: String, name: String, items: List<T>, shipped: (T) -> Boolean): T =
         items.singleOrNull() ?: items.filter { shipped(it) != settings.hideShipped() }.singleOrNull()
