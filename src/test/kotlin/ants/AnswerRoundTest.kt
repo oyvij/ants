@@ -89,13 +89,13 @@ class AnswerRoundTest : AntsTest() {
     }
 
     @Test
-    fun `the Answer page shows backticked text as code, escaped, and the recommendation to send back as written`() {
-        val ticked = """{"id":"run","title":"How it runs","ask":"Run `hello.js` or a `bin`?","context":"`<b>` stays text.",""" +
+    fun `the Answer page shows the question's Markdown, backticks as code and lists as lists, its HTML escaped, and the recommendation to send back as written`() {
+        val ticked = """{"id":"run","title":"How it runs","ask":"Run `hello.js` or a `bin`?","context":"`<b>` stays text.\n\n- `node hello.js`\n- a `bin` entry",""" +
             """"recommendation":"Run `node hello.js`.","why":"One `file`."}"""
         claude.session("quiz", 1, round("Hello CLI: `hello.js`", ticked))
         val body = browser.get(entry(start())).body
         for (text in listOf(
-            "Hello CLI: <code>hello.js</code></h1>", "Run <code>hello.js</code> or a <code>bin</code>?", "<code>&lt;b&gt;</code> stays text.",
+            "Hello CLI: <code>hello.js</code></h1>", "Run <code>hello.js</code> or a <code>bin</code>?", "<code>&lt;b&gt;</code> stays text.", "<li><code>node hello.js</code></li>",
             "Run <code>node hello.js</code>.</p>", "One <code>file</code>.", ">Run `node hello.js`.</textarea>",
         )) assertContains(body, text)
     }

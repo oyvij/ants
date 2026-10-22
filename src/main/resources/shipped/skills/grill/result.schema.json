@@ -9,7 +9,7 @@
           "id": { "type": "string", "description": "Short and unique across the Run." },
           "title": { "type": "string", "description": "A few words." },
           "ask": { "type": "string", "description": "The question, one decision, in one sentence. Code in backticks." },
-          "context": { "type": "string", "description": "The choices, one short sentence each. Code in backticks." },
+          "context": { "type": "string", "description": "The choices as a Markdown list, one short line each. Code in backticks." },
           "recommendation": { "type": "string", "description": "The answer you would give, in one sentence. Code in backticks." },
           "why": { "type": "string", "description": "The reason for the recommendation, in one sentence." }
         },
