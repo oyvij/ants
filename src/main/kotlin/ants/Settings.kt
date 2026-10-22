@@ -31,7 +31,7 @@ data class Profile(val vault: String?, val sourceMap: String?)
 /** `settings.yaml` in ANTS_HOME, created on first start ([start]) and read fresh each time, so hand edits count. */
 @Component
 class Settings(
-    @Value("\${ants.home}") home: Path,
+    @Value("\${ants.home}") private val home: Path,
     @Value("\${server.address:}") private val address: String,
     @Value("\${ants.shell}") private val shell: String,
     private val encoder: PasswordEncoder,
@@ -172,6 +172,23 @@ class Settings(
      * there is just one, whatever [name] says: the default Vault and the default Source map.
      */
     fun profile(name: String?): Profile? = profiles().ifEmpty { return Profile(defaultVault(), defaultSourceMap()) }[name ?: defaultProfile()]
+
+    fun instructions(name: String?): Path? = name?.takeIf { it in profiles() }?.let { profileFolder(it).resolve("AGENTS.md") }
+
+    fun keepInstructions(renamed: Map<String, String>, removed: Set<String>) {
+        removed.forEach { profileFolder(it).toFile().deleteRecursively() }
+        val parked = Files.createTempDirectory(home, "profiles")
+        renamed.filterKeys { profileFolder(it).exists() }
+            .map { (was, name) -> Files.move(profileFolder(was), parked.resolve(was)) to name }
+            .forEach { (folder, name) -> Files.move(folder, profileFolder(name)) }
+        Files.delete(parked)
+    }
+
+    private fun profileFolder(name: String) = home.resolve("profiles").resolve(name)
+
+    fun instructionsText(name: String?): String = instructions(name)?.takeIf { it.exists() }?.readText().orEmpty()
+
+    fun hasInstructions(name: String?): Boolean = instructionsText(name).isNotBlank()
 
     /** The extra Agent folders, read after Ants' own. */
     fun agentFolders(): List<Path> = folders("agent-folders")

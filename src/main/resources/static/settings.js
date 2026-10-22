@@ -5,7 +5,9 @@ document.addEventListener('click', event => {
     const button = event.target.closest('[data-add], [data-remove], [data-copy], [data-edit]');
     if (!button) return;
     if ('edit' in button.dataset) {
-        document.getElementById(button.dataset.edit).showModal();
+        const dialog = document.getElementById(button.dataset.edit);
+        dialog.showModal();
+        dialog.querySelector('.cm-content')?.focus();
         return;
     }
     if ('copy' in button.dataset) {

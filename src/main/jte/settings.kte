@@ -9,6 +9,7 @@
 @param update: ants.UpdateNotice
 @param docker: Boolean
 @param maps: Map<String, Pair<String, String>>
+@param instructions: Map<String, Pair<Boolean, String>>
 @param setUp: Map<String?, String>
 @param colorScheme: String = "light dark"
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
@@ -73,6 +74,7 @@
         <div class="listed">
 @for((i, row) in form.shownProfiles.withIndex())
             <div class="row" hidden="${row.name.isEmpty()}">
+                <input type="hidden" name="profiles[${i}].was" value="${row.was}">
                 <label class="cap name">Name<input name="profiles[${i}].name" value="${row.name}" placeholder="e.g. private"></label>
                 <label class="cap grow">Vault<select name="profiles[${i}].vault"><option value="">Vault</option>
 @for(name in (form.vaults.rows.map { it.first } + row.vault).filter(String::isNotEmpty).distinct())
@@ -85,6 +87,9 @@
 @endfor
                 </select></label>
                 <label class="row small"><input type="radio" name="default-profile" value="${i}" checked="${i == form.defaultProfile}"> default</label>
+@if(row.name in instructions)
+                <button type="button" data-edit="instructions-${instructions.keys.indexOf(row.name)}">${if (instructions.getValue(row.name).first) "Instructions" else "Add instructions"}</button>
+@endif
                 <button type="button" class="ghost" data-remove>Remove</button>
             </div>
 @endfor
@@ -175,6 +180,18 @@
         <label class="f" for="source-map-text-${i}">Source map</label>
         <div class="help">One repo per line, <code>- &lt;name&gt;: &lt;local path&gt; (&lt;git remote&gt;)</code>; Processes and Tasks name it by its name. Other lines are ignored.</div>
         <textarea class="mono" id="source-map-text-${i}" name="text" rows="14" placeholder="e.g. - ants: ~/code/ants (git@github.com:oyvij/ants.git)&#10;- web: ~/code/web (https://github.com/acme/web.git)">${map.value.second}</textarea>
+        <div class="go"><button class="primary">Save</button></div>
+    </form>
+</dialog>
+@endfor
+@for((i, profile) in instructions.entries.withIndex())
+<dialog class="modal instructions" id="instructions-${i}">
+    <form method="dialog" class="mh"><label for="instructions-text-${i}">Optional instructions</label><span class="pill p-quiet" title="Profile">${profile.key}</span><span class="sp"></span><span class="muted small">Esc to close</span><button class="ghost" title="Close" aria-label="Close">✕</button></form>
+    <form method="post" action="/settings/instructions" class="mb">
+        <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+        <input type="hidden" name="name" value="${profile.key}">
+        <div class="help">Every Agent in this Profile's Runs gets this as its <code>AGENTS.md</code>. Plain markdown only - images and other rich content don't reach the Agents.</div>
+        <textarea id="instructions-text-${i}" name="text" rows="14" placeholder="e.g. # Commits&#10;Use conventional commits, such as feat: add login.&#10;&#10;# Code&#10;Prefer early returns over nested branches." data-markdown>${profile.value.second}</textarea>
         <div class="go"><button class="primary">Save</button></div>
     </form>
 </dialog>
