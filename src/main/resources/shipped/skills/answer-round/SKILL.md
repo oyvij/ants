@@ -6,6 +6,7 @@ metadata:
   ants-uses: search-knowledge
   ants-answer-history: true
   varde-vault: true
+  ants-verbosity: true
 ---
 
 # Answer a Round

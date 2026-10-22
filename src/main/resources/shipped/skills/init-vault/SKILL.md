@@ -5,6 +5,7 @@ metadata:
   ants-inputs: approval
   ants-uses: search-knowledge
   varde-vault: true
+  ants-verbosity: true
 ---
 
 <!-- Adapted from Varde's init-vault Skill (https://github.com/oyvij/varde-editor).

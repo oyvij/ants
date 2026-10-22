@@ -286,6 +286,7 @@ class Runs(
         val source = scopes.of(id)
         model.addAttribute("scope", source.picked.ifEmpty { null })
         model.addAttribute("profile", source.name)
+        model.addAttribute("verbosity", source.verbosity)
         model.addAttribute("kept", keptWorkspace(run)?.toString())
         // Where the work lives, in full, as long as it is on disk: the shared clones, then each instance's worktrees.
         val workspace = names.runWorkspace(id)

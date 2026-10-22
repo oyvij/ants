@@ -13,6 +13,7 @@ import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 
 class ScheduleTest : AntsTest() {
     private val browser by lazy { browser().also { it.login() } }
@@ -131,9 +132,9 @@ class ScheduleTest : AntsTest() {
     private val api by lazy { repo("api") }
     private val web by lazy { repo("web") }
 
-    private fun twoProfiles() = home.resolve("settings.yaml").writeAtomically(
+    private fun twoProfiles(other: Verbosity = Verbosity.NORMAL) = home.resolve("settings.yaml").writeAtomically(
         vault + sourceMapLines(api, web) +
-            "profiles:\n  work:\n    vault: notes\n    source-map: work\n  other:\n    vault: notes\n    source-map: work\ndefault-profile: work\n",
+            "profiles:\n  work:\n    vault: notes\n    source-map: work\n  other:\n    vault: notes\n    source-map: work\n    verbosity: ${other.value}\ndefault-profile: work\n",
     )
 
     private fun schedule(values: List<Pair<String, String>>, cron: String = "0 0 * * * *"): Browser.Page {
@@ -162,6 +163,42 @@ class ScheduleTest : AntsTest() {
         assertContains(page, "<dt>$PROFILE</dt><dd><code>other</code></dd>")
         assertContains(page, Regex("<span id=\"name\">Ship api, \\d{1,2} [A-Z][a-z]{2} \\d\\d:\\d\\d</span>"))
         eventually { assertEquals(listOf("api"), clones(workspace(run)).map { it.fileName.toString() }) }
+    }
+
+    @Test
+    fun `a Schedule saved at detailed starts detailed Runs at its times and on Start now, and its row shows detailed beside its Profile`() {
+        twoProfiles()
+        browser.import("clone-repos.bpmn")
+        schedule(listOf(NAME to "Ship api", PROFILE to "other", VERBOSITY to "detailed", "repos" to "api", "branch" to "nightly"))
+        assertContains(row("Ship api", "clone-repos")!!, Regex("<td>other</td><td class=\"k\">Verbosity</td><td>detailed</td>"))
+
+        clock.offset = Duration.ofHours(1)
+        eventually { assertEquals(1, cloneRuns().size) }
+        assertContains(runPage(cloneRuns().single().id), """<span id="verbosity">Verbosity detailed</span>""")
+
+        val started = browser.post("/processes/clone-repos/schedules/${idOf("Ship api", "clone-repos")}/start", mapOf())
+        assertContains(started.body, """<span id="verbosity">Verbosity detailed</span>""")
+    }
+
+    @Test
+    fun `a Schedule stored without a Verbosity starts its Runs at its Profile's default at each start`() {
+        twoProfiles(other = Verbosity.BRIEF)
+        browser.import("clone-repos.bpmn")
+        home.resolve("schedules.yaml").writeText(
+            "old:\n  paused: false\n  last: '${clock.instant()}'\n  process: clone-repos\n  cron: 0 0 * * * *\n" +
+                "  values:\n    repos: [api]\n    branch: [nightly]\n    $PROFILE: [other]\n",
+        )
+        assertContains(browser.get("/processes/clone-repos").body, Regex("<td>other</td><td class=\"k\">Verbosity</td><td>brief</td>"))
+
+        clock.offset = Duration.ofHours(1)
+        eventually { assertEquals(1, cloneRuns().size) }
+        assertContains(runPage(cloneRuns().single().id), """<span id="verbosity">Verbosity brief</span>""")
+        eventually { tasks.complete(assertNotNull(tasks.createTaskQuery().processInstanceId(cloneRuns().single().id).singleResult()).id) }
+
+        twoProfiles(other = Verbosity.DETAILED)
+        clock.offset = Duration.ofHours(2)
+        eventually { assertEquals(2, cloneRuns().size) }
+        assertContains(runPage(cloneRuns().last().id), """<span id="verbosity">Verbosity detailed</span>""")
     }
 
     @Test
@@ -240,10 +277,10 @@ class ScheduleTest : AntsTest() {
         assertEquals("/processes/$key", saved.path, saved.body)
     }
 
-    private fun row(name: String) = Regex("<tr id=\"schedule-[^\"]+\"><td><b>$name</b>.*?</tr>", RegexOption.DOT_MATCHES_ALL)
-        .find(browser.get("/processes/$key").body)?.value
+    private fun row(name: String, process: String = key) = Regex("<tr id=\"schedule-[^\"]+\"><td><b>$name</b>.*?</tr>", RegexOption.DOT_MATCHES_ALL)
+        .find(browser.get("/processes/$process").body)?.value
 
-    private fun idOf(name: String) = Regex("<tr id=\"schedule-([^\"]+)\">").find(row(name)!!)!!.groupValues[1]
+    private fun idOf(name: String, process: String = key) = Regex("<tr id=\"schedule-([^\"]+)\">").find(row(name, process)!!)!!.groupValues[1]
 
     private fun act(name: String, action: String) = browser.post("/processes/$key/schedules/${idOf(name)}/$action", mapOf())
 

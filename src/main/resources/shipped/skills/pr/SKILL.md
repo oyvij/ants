@@ -3,6 +3,7 @@ name: pr
 description: Open a pull request on GitHub for each repo the Run pushed, with a body written from the commits, the Spec or proposal and the review.
 metadata:
   ants-inputs: push spec proposal review fixes
+  ants-verbosity: true
 ---
 
 <!-- Matt Pocock's pr Skill (https://github.com/mattpocock/skills, v1.3.1), word for word below the line, with its

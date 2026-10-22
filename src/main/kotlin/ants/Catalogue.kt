@@ -78,6 +78,8 @@ class Skill(
     val inputs: List<String> = emptyList(),
     /** Whether it opts in to the Answer History (`metadata.ants-answer-history: true`). */
     val answerHistory: Boolean = false,
+    /** Whether it opts in to the Run's Verbosity (`metadata.ants-verbosity: true`). */
+    val verbosity: Boolean = false,
 ) {
     val folder: Path get() = file.parent
 
@@ -94,6 +96,9 @@ class Skill(
 @Component
 class Catalogue(@Value("\${ants.home}") private val home: Path, private val settings: Settings) {
     private val shipped = home.resolve("shipped")
+
+    /** The shipped file that defines the Verbosity levels. */
+    val verbosityFile: Path = shipped.resolve("verbosity/verbosity.md")
     // A Path is an Iterable of its names, so `list + path` would add the names; each folder goes in as a list.
     private fun agentFolders(withHidden: Boolean) = listOf(home.resolve("agents")) + settings.agentFolders() + shippedFolder("agents", withHidden)
     private fun skillFolders(withHidden: Boolean) = listOf(home.resolve("skills")) + settings.skillFolders() + shippedFolder("skills", withHidden)
@@ -136,6 +141,7 @@ class Catalogue(@Value("\${ants.home}") private val home: Path, private val sett
                 vault = metadata["varde-vault"] == true,
                 inputs = Settings.strings(metadata["ants-inputs"]?.toString()).orEmpty(),
                 answerHistory = metadata["ants-answer-history"] == true,
+                verbosity = metadata["ants-verbosity"] == true,
             )
         }
     }
@@ -175,6 +181,9 @@ class Catalogue(@Value("\${ants.home}") private val home: Path, private val sett
 
     /** Whether a Task running [skill] gets the Vault by default: when it or any Skill it uses opts in. */
     fun vault(skill: Skill) = skill.vault || uses(skill).any { it.vault }
+
+    /** Whether a Task running [skill] writes at the Run's Verbosity: when it or any Skill it uses opts in. */
+    fun verbosity(skill: Skill) = skill.verbosity || uses(skill).any { it.verbosity }
 }
 
 /**

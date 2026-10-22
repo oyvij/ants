@@ -5,6 +5,7 @@ metadata:
   ants-inputs: prompt sourceMap repos
   ants-uses: search-knowledge
   varde-vault: true
+  ants-verbosity: true
 ---
 
 # Scout

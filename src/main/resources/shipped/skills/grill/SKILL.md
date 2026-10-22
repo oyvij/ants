@@ -3,6 +3,7 @@ name: grill
 description: Grill the user on what a Run should build, one Round of questions at a time, until nothing is left to settle, naming any repo the work turns out to need.
 metadata:
   ants-inputs: prompt brief clones
+  ants-verbosity: true
 ---
 
 <!-- Matt Pocock's grilling Skill (https://github.com/mattpocock/skills, v1.3.1), word for word below the line.

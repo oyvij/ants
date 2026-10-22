@@ -74,6 +74,8 @@ class StartForm(
             field.name to if (field.type == FieldType.REPOS) given.distinct() else given.firstOrNull().orEmpty()
         }
         val repos = fields.filter { it.type == FieldType.REPOS }.flatMap { variables[it.name] as List<*> }.map(Any?::toString).distinct()
+        val posted = values[VERBOSITY]?.firstOrNull()?.takeIf(String::isNotBlank)
+        if (posted != null && Verbosity.parse(posted) == null) throw Unfilled("Verbosity is none of its choices")
         val picked = values[PROFILE]?.firstOrNull()?.takeIf(String::isNotBlank)
         if (picked != null && picked !in settings.profiles()) throw CantStart(listOf(PreRun.profileGone(picked)))
         val profile = profile(definition, picked)
@@ -83,9 +85,11 @@ class StartForm(
         val known = RunSource(profile).repos(settings).associate { it.name to it.remote }
         val scope = repos.map { known[it] ?: it }.takeIf { it.isNotEmpty() }?.let { SCOPE to ArrayList(it) }
         // The Name field's, empty when not given: RunLifecycle names the Run then.
-        val run = listOfNotNull(NAME to values[NAME]?.firstOrNull().orEmpty(), scope, profile?.let { PROFILE to it })
+        val run = listOfNotNull(NAME to values[NAME]?.firstOrNull().orEmpty(), scope, profile?.let { PROFILE to it }, VERBOSITY to verbosity(posted, profile).value)
         return variables + run
     }
+
+    fun verbosity(posted: String?, profile: String?): Verbosity = Verbosity.parse(posted) ?: settings.profile(profile)?.verbosity ?: Verbosity.NORMAL
 
     /**
      * The name of the Profile a Run of [definition] uses: the one [picked] on its start form, else the Process's own

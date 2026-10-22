@@ -472,8 +472,9 @@ class AgentLauncher(
         // A called Process's Task uses its top Run's Profile: [run] is the top Run.
         val source = scopes.of(run)
         val vault = vault(task, skill, source)
+        val verbosity = verbosity(skill, source)
         val prompt = if (!handedOff) instruction.orEmpty()
-        else handOff(task, skill, used, cwd, vault, source.sourceMap(settings)) + "\n\n" + json.writeValueAsString(inputs) + (if (instruction.isNullOrBlank()) "" else "\n\nFrom the user:\n$instruction")
+        else handOff(task, skill, used, cwd, vault, source.sourceMap(settings), verbosity) + "\n\n" + json.writeValueAsString(inputs) + (if (instruction.isNullOrBlank()) "" else "\n\nFrom the user:\n$instruction")
         // The Task's result-schema override replaces the Skill's result.schema.json; Checks refuse one that isn't valid.
         val override = task.extensionProperties[RESULT_SCHEMA]?.takeIf(String::isNotBlank)?.let { json.readValue(it, Map::class.java) }
         val output = override ?: skill.outputSchema
@@ -486,6 +487,7 @@ class AgentLauncher(
         val shared = if (cwd == workspace) emptyList() else listOf("--add-dir", "$workspace") // what an instance's links lead to
         val places = vault?.let { listOf("--add-dir", "$it") }.orEmpty() // the Vault's path goes nowhere else (ADR 0002)
             .plus(answerHistory(task, skill)?.let { listOf("--add-dir", "${it.createDirectories()}") }.orEmpty()) // so a Read reaches it (ADR 0010)
+            .plus(if (verbosity == null) emptyList() else listOf("--add-dir", "${catalogue.verbosityFile.parent}"))
         val (token, mcp) = protectedCommands.open(workspace) // its Protected Commands run in the Run workspace
         val process = runCatching {
             cli(agent.cli, cwd, flags(agent, cwd, schema, listOf(skill) + used, session!!, resume, mcp, workspace, gated?.let { listOf("Write(/$it/**)", "Edit(/$it/**)") }.orEmpty()) + shared + places).start()
@@ -603,10 +605,18 @@ class AgentLauncher(
         ?.takeIf { task.extensionProperties[VAULT]?.toBooleanStrictOrNull() ?: catalogue.vault(skill) }
 
     /**
-     * The hand-off line: the Skill and the workspace, the Skills it [used], and where the [vault] and [sourceMap] and the
-     * Answer History are, each only when on: the Task's [ANSWER_HISTORY] toggle has the final say, else the Skill's opt-in.
+     * The Run's Verbosity when a Task running [skill] writes at it: brief or detailed, and the Skill or one it uses opts
+     * in. Null at normal, so a normal Run's hand-off line and flags stay as they were.
      */
-    private fun handOff(task: LockedExternalTask, skill: Skill, used: List<Skill>, workspace: Path, vault: Path?, sourceMap: Path?): String {
+    private fun verbosity(skill: Skill, source: RunSource): Verbosity? =
+        source.verbosity.takeIf { it != Verbosity.NORMAL && catalogue.verbosity(skill) }
+
+    /**
+     * The hand-off line: the Skill and the workspace, the Skills it [used], where the [vault] and [sourceMap] and the
+     * Answer History are, each only when on, and the [verbosity] to write at, if any. The Task's [ANSWER_HISTORY] toggle
+     * has the final say on the Answer History, else the Skill's opt-in.
+     */
+    private fun handOff(task: LockedExternalTask, skill: Skill, used: List<Skill>, workspace: Path, vault: Path?, sourceMap: Path?, verbosity: Verbosity?): String {
         val places = if (vault == null) emptyList() else listOfNotNull(
             "the Vault is $vault",
             sourceMap?.let { "the Source map is $it" },
@@ -614,7 +624,8 @@ class AgentLauncher(
         return "Follow the Skill in ${skill.file} for the workspace at $workspace." +
             (if (used.isEmpty()) "" else " It uses the Skills ${used.joinToString { "${it.name} (${it.file})" }}.") +
             (if (places.isEmpty()) "" else " " + places.joinToString(" and ").replaceFirstChar(Char::uppercase) + ".") +
-            (answerHistory(task, skill)?.let { " The Answer History is $it." } ?: "")
+            (answerHistory(task, skill)?.let { " The Answer History is $it." } ?: "") +
+            (verbosity?.let { " Write what the user reads at the ${it.value} verbosity defined in ${catalogue.verbosityFile}." } ?: "")
     }
 
     /** The Answer History's folder when [task] gets it: its toggle ([ANSWER_HISTORY]) has the final say, else its [skill]'s opt-in. */

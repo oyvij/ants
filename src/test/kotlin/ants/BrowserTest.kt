@@ -1791,7 +1791,7 @@ class BrowserTest : AntsTest() {
         picker()
         val plain = page.context().browser()!!.newContext(NewContextOptions().setJavaScriptEnabled(false)).apply { addCookies(page.context().cookies()) }.newPage()
         plain.navigate(url("/processes/picker"))
-        assertThat(plain.getByRole(AriaRole.COMBOBOX)).hasCount(0)
+        assertThat(plain.getByRole(AriaRole.COMBOBOX, Page.GetByRoleOptions().setName("Repos (optional)"))).hasCount(0)
         assertThat(plain.locator("#start input[type=checkbox]")).hasCount(3)
 
         plain.getByLabel("web", Page.GetByLabelOptions().setExact(true)).check()
@@ -1854,7 +1854,7 @@ class BrowserTest : AntsTest() {
         picker("", *phoneSourceMap)
         onPhone(javaScript = false)
         page.navigate(url("/processes/picker"))
-        assertThat(page.getByRole(AriaRole.COMBOBOX)).hasCount(0)
+        assertThat(page.getByRole(AriaRole.COMBOBOX, Page.GetByRoleOptions().setName("Repos (optional)"))).hasCount(0)
         val boxes = page.locator("#start label:has(input[type=checkbox])")
         assertThat(boxes).hasCount(phoneSourceMap.size)
         assertNoSidewaysScroll()
@@ -2149,6 +2149,19 @@ class BrowserTest : AntsTest() {
         page.locator("#save").click()
         assertThat(page).hasURL(Pattern.compile(".*/processes/profiled$"))
         assertContains(http.get("/processes/profiled/diagram.bpmn").body, """name="ants.profile" value="private"""")
+    }
+
+    @Test
+    fun `switching the Profile on the start form reloads it with Verbosity prefilled from the new Profile`() = browse {
+        settings(null, "profiles:\n  work: {vault: notes, verbosity: brief}\n  private: {vault: notes, verbosity: detailed}\n")
+        val (process, plane) = row("profiled", """<bpmn:startEvent id="start" />""", """<bpmn:endEvent id="end" />""")
+        deploy(definitions("profiled", "Profiled", process, plane))
+
+        page.navigate(url("/processes/profiled"))
+        assertThat(page.getByLabel("Verbosity")).hasValue("brief")
+        page.getByLabel("Profile", Page.GetByLabelOptions().setExact(true)).selectOption("private")
+        assertThat(page).hasURL(Pattern.compile(".*/processes/profiled\\?ants\\.profile=private$"))
+        assertThat(page.getByLabel("Verbosity")).hasValue("detailed")
     }
 
     @Test
@@ -2745,6 +2758,22 @@ class BrowserTest : AntsTest() {
             assertTrue(box.y + box.height - (save.y + save.height) < 60, "$id ends ${box.y + box.height - (save.y + save.height)}px under its Save")
             modal.locator("button[title=Close]").click()
         }
+    }
+
+    @Test
+    fun `on Settings, a Profile's Verbosity is picked beside its instructions' Save`() = browse {
+        settings(null, sourceMapLines() + "profiles:\n  work: {vault: notes, source-map: work}\n")
+        page.navigate(url("/settings"))
+        page.locator("[data-edit=instructions-0]").click()
+        val modal = page.locator("dialog#instructions-0")
+        val verbosity = modal.getByRole(AriaRole.RADIOGROUP, Locator.GetByRoleOptions().setName("Verbosity"))
+        assertThat(verbosity.getByLabel("Normal")).isChecked()
+        verbosity.getByText("Brief").click()
+        modal.locator(".go button").click()
+        page.waitForURL(url("/settings"))
+        val saved = org.yaml.snakeyaml.Yaml().load<Map<*, *>>(home.resolve("settings.yaml").readText())
+        assertEquals("brief", ((saved["profiles"] as Map<*, *>)["work"] as Map<*, *>)["verbosity"])
+        assertThat(page.locator("input[name='profiles[0].verbosity']")).hasValue("brief")
     }
 
     @Test

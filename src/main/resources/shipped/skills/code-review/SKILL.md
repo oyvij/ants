@@ -1,6 +1,8 @@
 ---
 name: code-review
 description: Review commits since a fixed point along two axes, Standards and Spec, in two parallel Subagents, and report them side by side. Used by other Skills, never picked by a Task.
+metadata:
+  ants-verbosity: true
 ---
 
 <!-- Matt Pocock's code-review Skill (https://github.com/mattpocock/skills, v1.3.1), word for word below the line.

@@ -9,6 +9,7 @@
 @param profile: String?
 @param profileFrom: String = "the default"
 @param source: ants.Profile?
+@param verbosity: ants.Verbosity = ants.Verbosity.NORMAL
 @param reasons: List<String>
 @param schedules: List<ants.Schedule> = emptyList()
 @param runName: String = ""
@@ -66,6 +67,12 @@
     @endfor
     </select></div>
 @endif
+    <div class="fld"><label class="f" for="field-verbosity">Verbosity</label><div class="help">How much the Run's Agents write for you to read.</div>
+    <select name="${ants.VERBOSITY}" id="field-verbosity">
+    @for(level in ants.Verbosity.entries)
+        <option value="${level.value}" selected="${level == verbosity}">${level.label}</option>
+    @endfor
+    </select></div>
 @for(field in fields)
     <div class="fld" data-filter-placeholder="${if (field.type == FieldType.REPOS) "Filter Source map repos, or type a git URL / owner/name" else null}"><label class="f" for="field-${field.name}">${field.label}@if(!field.required) <span class="muted small" style="font-weight: 500">(optional)</span>@endif</label>
     @if(field.type == FieldType.REPOS)
@@ -109,9 +116,9 @@
 @else
     <h3>⏰ Schedules</h3>
     <table id="schedules">
-    <tr><th>Schedule</th><th>Profile</th><th>Values</th><th>Runs</th><th>Cron</th><th>Next Run</th><th></th></tr>
+    <tr><th>Schedule</th><th>Profile</th><th>Verbosity</th><th>Values</th><th>Runs</th><th>Cron</th><th>Next Run</th><th></th></tr>
     @for(each in schedules)
-    <tr id="schedule-${each.id}"><td><b>${each.label}</b></td><td class="k">Profile</td><td>${each.profile ?: "—"}</td><td class="k">Values</td><td class="small">@for((label, value) in each.values)<div><span class="muted">${label}</span> ${value}</div>@endfor</td><td class="k">Runs</td><td>${each.words}</td><td class="k">Cron</td><td><code>${each.cron}</code></td><td class="k">Next Run</td><td>@if(each.paused)<span class="muted">paused</span>@else${each.at} · ${each.countdown}@endif@if(each.skipped != null)<div class="warn">${each.skipped}</div>@endif@if(each.failed != null)<div class="failed"><p role="alert">✕ [failed] The scheduled Run didn't start: ${each.failed.why}</p><form method="post" action="${each.actions}/dismiss"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>Dismiss</button></form></div>@endif</td>
+    <tr id="schedule-${each.id}"><td><b>${each.label}</b></td><td class="k">Profile</td><td>${each.profile ?: "—"}</td><td class="k">Verbosity</td><td>${each.verbosity.value}</td><td class="k">Values</td><td class="small">@for((label, value) in each.values)<div><span class="muted">${label}</span> ${value}</div>@endfor</td><td class="k">Runs</td><td>${each.words}</td><td class="k">Cron</td><td><code>${each.cron}</code></td><td class="k">Next Run</td><td>@if(each.paused)<span class="muted">paused</span>@else${each.at} · ${each.countdown}@endif@if(each.skipped != null)<div class="warn">${each.skipped}</div>@endif@if(each.failed != null)<div class="failed"><p role="alert">✕ [failed] The scheduled Run didn't start: ${each.failed.why}</p><form method="post" action="${each.actions}/dismiss"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>Dismiss</button></form></div>@endif</td>
     <td class="row"><form method="post" action="${each.actions}/start"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>Start now</button></form>
     <form method="post" action="${each.actions}/${if (each.paused) "resume" else "pause"}"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>${if (each.paused) "Resume" else "Pause"}</button></form>
     <form method="post" action="${each.actions}/remove"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button class="danger">Remove</button></form></td></tr>

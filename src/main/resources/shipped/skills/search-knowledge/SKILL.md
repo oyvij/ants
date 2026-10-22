@@ -3,6 +3,7 @@ name: search-knowledge
 description: Find what the user's knowledge Vault, and the code it names, says on a subject, citing the Notes. Used by other Skills, never picked by a Task.
 metadata:
   varde-vault: true
+  ants-verbosity: true
 ---
 
 <!-- Adapted from Varde's search-knowledge Skill and knowledge-searcher agent (https://github.com/oyvij/varde-editor).

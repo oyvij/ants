@@ -4,6 +4,7 @@ description: Fix what the user's review of the Run's changes asks for, test-firs
 metadata:
   ants-inputs: review spec stories
   ants-uses: tdd code-review
+  ants-verbosity: true
 ---
 
 # Fix the Review

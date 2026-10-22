@@ -128,7 +128,7 @@ class PickedReposTest : AntsTest() {
         assertContains(page, "Repos picked: <code>${api.remote}</code>")
         assertFalse("No scout" in page || "no scout" in page)
         val report = browser.report(run)
-        assertContains(report, "Repos picked: <code>${api.remote}</code>")
+        assertContains(report, Regex("Repos picked: <code>${Regex.escape(api.remote.toString())}</code>.</p>\n<p>Verbosity normal</p>"))
         assertFalse("No scout" in report)
     }
 

@@ -3,6 +3,7 @@ name: walkthrough
 description: Write a Story set for the Run's changes, guided stories that follow the code across its repos, as walkthrough/stories.json for Review changes.
 metadata:
   ants-inputs: spec clones
+  ants-verbosity: true
 ---
 
 <!-- Adapted from Varde's walkthrough Skill (https://github.com/oyvij/varde-editor).

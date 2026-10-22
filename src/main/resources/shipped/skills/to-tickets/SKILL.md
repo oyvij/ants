@@ -3,6 +3,7 @@ name: to-tickets
 description: Cut the Run's Spec into Tickets, tracer-bullet vertical slices with their Blocked by, as files in tickets/issues/.
 metadata:
   ants-inputs: spec clones
+  ants-verbosity: true
 ---
 
 <!-- Matt Pocock's to-tickets Skill (https://github.com/mattpocock/skills, v1.3.1), word for word below the line.

@@ -71,6 +71,17 @@ class ProcessBuilderTest : AntsTest() {
     }
 
     @Test
+    fun `the Process Builder gets no Verbosity, whatever the default Profile's`() {
+        settings(claude, "profiles:\n  work:\n    vault: notes\n    verbosity: brief\n")
+        claude.session("process-builder", """{"type":"result","subtype":"success","result":"Hello.","session_id":"${'$'}SESSION"}""")
+        send(open(), "Every morning, pick a small issue and get it to a PR.")
+        eventually { assertEquals(1, launches().size) }
+        val launch = launches().single()
+        assertFalse("--add-dir" in launch.argv)
+        assertFalse("Write what the user reads at" in launch.stdin)
+    }
+
+    @Test
     fun `a follow-up goes into the same session, and once claude has died the next message resumes it`() {
         settings(claude)
         val done = """{"type":"result","subtype":"success","result":"Done.","session_id":"${'$'}SESSION"}"""

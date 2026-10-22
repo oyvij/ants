@@ -26,7 +26,7 @@ import kotlin.io.path.writeText
 data class Repo(val name: String, val path: String, val remote: String)
 
 /** A Profile: the names of the Vault and the Source map it pairs, null where it names none. */
-data class Profile(val vault: String?, val sourceMap: String?)
+data class Profile(val vault: String?, val sourceMap: String?, val verbosity: Verbosity = Verbosity.NORMAL)
 
 /** `settings.yaml` in ANTS_HOME, created on first start ([start]) and read fresh each time, so hand edits count. */
 @Component
@@ -161,7 +161,14 @@ class Settings(
     /** The named Profiles, each a Vault and a Source map by name. */
     fun profiles(): Map<String, Profile> = (read()["profiles"] as? Map<*, *>).orEmpty().entries.associate { (name, value) ->
         val profile = value as? Map<*, *> ?: emptyMap<String, Any?>()
-        "$name" to Profile(profile["vault"]?.toString(), profile["source-map"]?.toString())
+        "$name" to Profile(profile["vault"]?.toString(), profile["source-map"]?.toString(), Verbosity.of(profile["verbosity"]))
+    }
+
+    /** Sets the Profile [name]'s Verbosity, leaving the key out at normal. */
+    fun verbosity(name: String, level: Verbosity) = save { values ->
+        val profiles = (values["profiles"] as? Map<*, *>).orEmpty().mapKeys { "${it.key}" }
+        val profile = (profiles[name] as? Map<*, *>).orEmpty().mapKeys { "${it.key}" } - "verbosity"
+        values["profiles"] = profiles + (name to profile + level.setting)
     }
 
     /** The default Profile's name: the one the user picked, else the first; null with none. */
@@ -295,9 +302,10 @@ class Settings(
             #   env: [PATH, HOME]  claude and codex only: the environment allow-list; Ants may narrow it, never widen it
             # varde-config: Varde's config.toml, whose [ai] command and env the settings page fills in
             # vaults, source-maps: name: path. default-vault, default-source-map: a name; without one, the first.
-            # profiles: name: {vault: <a Vault's name>, source-map: <a Source map's name>}. default-profile: a name;
-            #   without one, the first. With no Profiles, every Run uses the default Vault and Source map. Ants ships
-            #   the Profile Anthill, over knowledge-vault/ and source-map.md beside this file.
+            # profiles: name: {vault: <a Vault's name>, source-map: <a Source map's name>, verbosity: brief, normal or
+            #   detailed (default normal)}. default-profile: a name; without one, the first. With no Profiles, every Run
+            #   uses the default Vault and Source map at normal. Ants ships the Profile Anthill, over knowledge-vault/
+            #   and source-map.md beside this file.
             # agent-folders, skill-folders: extra folders, read after Ants' own
             # secrets: label: [VARIABLE, NAMES], the variables a Protected Command reads it under; the values are in
             #   secrets.yaml, never here

@@ -181,6 +181,29 @@ class SettingsTest : AntsTest() {
     }
 
     @Test
+    fun `a Profile's Verbosity is set in its instructions, kept by Save, and normal when missing or unknown`() {
+        val lists = mapOf("vaults[0].name" to "work", "vaults[0].path" to "/tmp/work", "source-maps[0].name" to "work", "source-maps[0].path" to "/tmp/work.md")
+        press("save", lists + mapOf("profiles[0].name" to "work", "profiles[0].vault" to "work", "profiles[0].source-map" to "work"))
+        fun work() = (yaml()["profiles"] as Map<*, *>)["work"]
+        fun checked() = Regex("""<input type="radio" name="verbosity" value="(\w+)" checked>""").find(browser.get("/settings").body)!!.groupValues[1]
+        assertEquals("normal", checked())
+
+        browser.post("/settings/instructions", mapOf("name" to "work", "text" to "", "verbosity" to "brief"))
+        assertEquals(mapOf("vault" to "work", "source-map" to "work", "verbosity" to "brief"), work())
+        assertEquals("brief", checked())
+        assertContains(browser.get("/settings").body, """<input type="hidden" name="profiles[0].verbosity" value="brief">""")
+
+        press("save", lists + mapOf("profiles[0].name" to "work", "profiles[0].vault" to "work", "profiles[0].source-map" to "work", "profiles[0].verbosity" to "brief"))
+        assertEquals("brief", (work() as Map<*, *>)["verbosity"])
+
+        browser.post("/settings/instructions", mapOf("name" to "work", "text" to "", "verbosity" to "normal"))
+        assertEquals(mapOf("vault" to "work", "source-map" to "work"), work())
+
+        settings(null, "source-maps:\n  work: /tmp/work.md\nprofiles:\n  work: {vault: notes, source-map: work, verbosity: loud}\n")
+        assertEquals("normal", checked())
+    }
+
+    @Test
     fun `a saved Source map is edited in its editor, which shows an example while it's empty`() {
         val map = Files.createTempDirectory("source-map").resolve("work.md")
         press("save", mapOf("source-maps[0].name" to "work", "source-maps[0].path" to "$map"))
