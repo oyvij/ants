@@ -535,6 +535,15 @@ fun runLog(workspace: Path, task: String, what: String, text: String) {
     Files.writeString(workspace.resolve("run-log.md"), "## ${Instant.now().truncatedTo(SECONDS)} · $task · $what\n\n${text.trim()}\n\n", CREATE, APPEND)
 }
 
+const val INSTRUCTIONS_RANKING = "These are the user's standing instructions for this Run. Where they disagree with your Agent or Skill " +
+    "instructions, or with a repo's own CLAUDE.md or AGENTS.md, those win."
+
+fun profileInstructions(workspace: Path, text: String) {
+    if (text.isBlank()) return
+    Files.writeString(workspace.resolve("AGENTS.md"), text)
+    Files.writeString(workspace.resolve("CLAUDE.md"), "$INSTRUCTIONS_RANKING\n\n$text")
+}
+
 /** The pill of each Run state, by how it reads; any other is quiet. */
 val RUN_PILLS = mapOf("Running" to "running", "Completed" to "done", "Cancelled" to "failed")
 
@@ -569,6 +578,7 @@ class RunLifecycle(@Value("\${ants.home}") private val home: Path, private val s
             val workspace = home.runWorkspace(run.processInstanceId, folder).createDirectories()
             trackerDoc(workspace)
             Files.writeString(workspace.resolve("run-log.md"), "# $name\n\n$process\n\n")
+            profileInstructions(workspace, settings.instructionsText(run.getVariable(PROFILE) as? String))
         } else run.setVariable(CALLED, called(run.superExecution))
         for (id in results) run.setVariable(id, null)
         run.setVariable("runs", tasks.associateWith { 0 })

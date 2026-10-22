@@ -14,6 +14,7 @@ import org.springframework.context.annotation.Import
 import org.springframework.context.annotation.Primary
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
+import tools.jackson.databind.json.JsonMapper
 import java.net.CookieManager
 import java.net.URI
 import java.net.URLEncoder
@@ -90,10 +91,19 @@ abstract class AntsTest {
         }
         Settings.AI_CLIS.forEach { launcher.tryNow(it) }
         for (folder in listOf("agents", "skills", "templates")) home.resolve(folder).toFile().run { deleteRecursively(); mkdirs() }
+        home.resolve("profiles").toFile().deleteRecursively()
         // Under the Schedule loop's lock: a Run it was starting for the last test, at that test's clock, writes its state
         // once started, which would bring back that test's last start and leave this test's first time not yet due.
         synchronized(schedules) { home.resolve("schedules.yaml").toFile().delete() }
     }
+
+    fun instruct(profile: String, text: String) = home.resolve("profiles/$profile").createDirectories().resolve("AGENTS.md").writeText(text)
+
+    fun excludingAbove(workspace: Path): String = JsonMapper.shared().writeValueAsString(mapOf(
+        "disableAllHooks" to true,
+        "claudeMdExcludes" to generateSequence(workspace.parent) { it.parent }
+            .flatMap { listOf(it.resolve("CLAUDE.md"), it.resolve("CLAUDE.local.md"), it.resolve(".claude/CLAUDE.md")) }.map(Path::toString).toList(),
+    ))
 
     /**
      * What a Run of an Agent Task needs, in one place: the Agent `writer` listing the [skills] (with [agent] lines in its

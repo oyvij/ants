@@ -33,11 +33,11 @@ class LandingTest : AntsTest() {
     )
 
     /** The Agent `writer` with `plan` and `build`, and a Source map of [repos]; `plan` gives [items]. */
-    private fun setUp(vararg repos: Remote, items: Int = 2, agentTasks: Int = 3) {
+    private fun setUp(vararg repos: Remote, items: Int = 2, agentTasks: Int = 3, profiles: String = "") {
         agentTask(
             claude,
             mapOf("plan" to """{"type":"object","properties":{"items":{"type":"array"}}}""", "build" to null),
-            extra = "agent-tasks: $agentTasks\n" + sourceMapLines(*repos),
+            extra = "agent-tasks: $agentTasks\n" + sourceMapLines(*repos) + profiles,
             env = listOf("PATH", "HOME"),
         )
         val list = (1..items).joinToString(",") { "\"$it\"" }
@@ -166,6 +166,26 @@ class LandingTest : AntsTest() {
         val page = browser.get("/runs/$run").body
         assertContains(page, "<code>${workspace(run)}</code>")
         assertContains(page, "<code>${workspace(run)}/repos/api</code>")
+    }
+
+    @Test
+    fun `each instance launches with its Run's AGENTS md and CLAUDE md in its folder, and the CLAUDE md files above the Run workspace excluded`() {
+        val api = repo("api")
+        setUp(api, profiles = "profiles:\n  work:\n    source-map: work\n")
+        instruct("work", "Keep it short.\n")
+        val keep = """sh cp AGENTS.md CLAUDE.md "${'$'}launch/""""
+        claude.session("build", 1, init, keep, done)
+        claude.session("build", 2, init, keep, done)
+        val run = start("api")
+
+        landed(run)
+        val instances = real(run).resolve("instances")
+        assertEquals(setOf("implement-1", "implement-2").map { "${instances.resolve(it)}" }.toSet(), claude.launches("build").map { it.cwd }.toSet())
+        for (launch in claude.launches("build")) {
+            assertEquals("Keep it short.\n", launch.file("AGENTS.md"))
+            assertContains(launch.file("CLAUDE.md"), "those win.\n\nKeep it short.\n")
+            assertEquals(excludingAbove(real(run)), launch.flag("--settings"))
+        }
     }
 
     @Test

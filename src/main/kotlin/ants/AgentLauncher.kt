@@ -488,7 +488,7 @@ class AgentLauncher(
             .plus(answerHistory(task, skill)?.let { listOf("--add-dir", "${it.createDirectories()}") }.orEmpty()) // so a Read reaches it (ADR 0010)
         val (token, mcp) = protectedCommands.open(workspace) // its Protected Commands run in the Run workspace
         val process = runCatching {
-            cli(agent.cli, cwd, flags(agent, cwd, schema, listOf(skill) + used, session!!, resume, mcp, gated?.let { listOf("Write(/$it/**)", "Edit(/$it/**)") }.orEmpty()) + shared + places).start()
+            cli(agent.cli, cwd, flags(agent, cwd, schema, listOf(skill) + used, session!!, resume, mcp, workspace, gated?.let { listOf("Write(/$it/**)", "Edit(/$it/**)") }.orEmpty()) + shared + places).start()
         }.onFailure { protectedCommands.close(token) }.getOrThrow()
         val stdin = Stdin(process.outputWriter(), name(task), home)
         clis[process] = run
@@ -726,7 +726,7 @@ class AgentLauncher(
      * claude's flags, with Ants' MCP server [mcp] and its tool `run`, and the permission rules [denied] besides the
      * Subagent types a Limit leaves out and Ants' own files that hold a Secret or the password (ADR 0015).
      */
-    private fun flags(agent: Agent, cwd: Path, schema: Map<*, *>, skills: List<Skill>, session: String, resume: Boolean, mcp: String, denied: List<String>): List<String> {
+    private fun flags(agent: Agent, cwd: Path, schema: Map<*, *>, skills: List<Skill>, session: String, resume: Boolean, mcp: String, workspace: Path, denied: List<String>): List<String> {
         val tools = (agent.tools ?: DEFAULT_TOOLS).filter { it.substringBefore('(') != "Skill" }.map { anchored(it, cwd) }
         val (subagents, types) = subagents(tools)
         // Probed on claude 2.1.299: a rule such as `Bash(git diff *)` lets `git diff --output=<any path>` write a file, and
@@ -738,7 +738,7 @@ class AgentLauncher(
             if (resume) "--resume" else "--session-id", session,
             "--permission-mode", "dontAsk",
             "--setting-sources", "user,project",
-            "--settings", """{"disableAllHooks":true}""",
+            "--settings", claudeSettings(workspace),
             "--strict-mcp-config",
             "--mcp-config", mcp,
             "--disable-slash-commands",
@@ -755,6 +755,14 @@ class AgentLauncher(
         val path = rule.substringAfter('(', "").removeSuffix(")").removePrefix("./")
         if (tool !in setOf("Write", "Edit") || path.isEmpty() || path.startsWith("/") || path.startsWith("~")) return rule
         return "$tool(/${cwd.toAbsolutePath()}/$path)"
+    }
+
+    private fun claudeSettings(workspace: Path): String {
+        val base = mapOf("disableAllHooks" to true)
+        if (!workspace.resolve("AGENTS.md").exists()) return json.writeValueAsString(base)
+        val above = generateSequence(workspace.toRealPath().parent) { it.parent }
+            .flatMap { listOf(it.resolve("CLAUDE.md"), it.resolve("CLAUDE.local.md"), it.resolve(".claude/CLAUDE.md")) }
+        return json.writeValueAsString(base +("claudeMdExcludes" to above.map(Path::toString).toList()))
     }
 
     /**
