@@ -107,6 +107,11 @@ in ANTS_HOME, edited on the Settings page; a missing or blank file means none. E
 they rank below an Agent's and a Skill's own instructions and a repo's own CLAUDE.md or AGENTS.md.
 _Avoid_: user CLAUDE.md, global instructions, system prompt
 
+**Verbosity**:
+How much an Agent writes for the user to read: brief, normal or detailed. It changes wording and explanation only,
+never content. Each Profile has a default; a Run keeps its own.
+_Avoid_: tone, style, detail level
+
 **Secret**:
 A value the user gives Ants, such as a registry token, under one or more variable names, that Protected Commands use
 and Agents never see.
