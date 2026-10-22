@@ -133,6 +133,10 @@
 @endfor
     </div>
 
+    <div class="grid2"><div class="card"><h3>Shipped with Ants</h3>
+        <label class="row"><input type="checkbox" name="hide-shipped" checked="${form.hideShipped}"> Hide the Processes, Skills and Agents Ants ships</label>
+        <div class="help">For a clean slate: they leave every list and picker, and nothing is deleted. Processes that already use them, and Runs already going, keep working.</div></div></div>
+
     <div class="grid2"><div class="card"><h3>So far</h3>
         <label class="row"><input type="checkbox" name="so-far" checked="${form.soFar}"> Write a So far paragraph on running Tasks</label>
         <div class="help">haiku rewrites each Task's new Transcript lines every couple of minutes, in a session of its own.</div></div>

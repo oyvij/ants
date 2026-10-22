@@ -205,6 +205,8 @@ class Settings(
     /** The pages' `color-scheme`: the system's until the user picks light or dark. */
     fun colorScheme(): String = read()["theme"]?.toString()?.takeIf { it in listOf("light", "dark") } ?: "light dark"
 
+    fun hideShipped(): Boolean = read()["hide-shipped"] == true
+
     /** Every key in the file, as YAML reads it. */
     fun read(): Map<String, Any?> = if (file.exists()) Yaml().load(file.readText()) ?: emptyMap() else emptyMap()
 
@@ -286,6 +288,7 @@ class Settings(
             # theme: light or dark; without it, the pages follow the system
             # so-far: false switches off the So far paragraph on running Tasks; a time (90s, 5m) sets how often it's
             #   rewritten (default 2m)
+            # hide-shipped: true hides the Processes, Skills and Agents Ants ships from every list and picker; they stay on disk
 
             """.trimIndent() + "\n"
     }

@@ -76,7 +76,7 @@ class Processes(
     /** The Processes list: a row each, its pre-Run checks run side by side, since each may ask claude, gh and git. */
     @GetMapping("/processes")
     fun list(model: Model): String {
-        val processes = repository.createProcessDefinitionQuery().latestVersion().orderByProcessDefinitionName().asc().list()
+        val processes = repository.createProcessDefinitionQuery().latestVersion().orderByProcessDefinitionName().asc().list().filterNot(settings::hides)
         model.addAttribute("processes", processes)
         val login = preRun.oneLogin() // asked once for them all
         val scheduled = schedules.all().groupingBy { it.key }.eachCount()
@@ -102,7 +102,7 @@ class Processes(
     /** The deployed Processes as the modeler's call activity panel picks them: each one's start-form fields are the call's inputs. */
     @GetMapping("/processes.json")
     @ResponseBody
-    fun processes() = repository.createProcessDefinitionQuery().latestVersion().orderByProcessDefinitionName().asc().list().map { process ->
+    fun processes() = repository.createProcessDefinitionQuery().latestVersion().orderByProcessDefinitionName().asc().list().filterNot(settings::hides).map { process ->
         mapOf("key" to process.key, "name" to (process.name ?: process.key),
             "fields" to startForm.fields(process).map { mapOf("name" to it.name, "label" to it.label, "required" to it.required) })
     }
@@ -327,7 +327,7 @@ class Processes(
 
     private fun shipped(key: String) = repository.createProcessDefinitionQuery().processDefinitionKey(key).list().any { it.shipped }
 
-    private fun latest(key: String) = repository.createProcessDefinitionQuery().processDefinitionKey(key).latestVersion().singleResult()
+    private fun latest(key: String) = repository.createProcessDefinitionQuery().processDefinitionKey(key).latestVersion().singleResult()?.takeUnless(settings::hides)
         ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No Process $key")
 }
 
@@ -337,6 +337,8 @@ internal const val BPMN = "http://www.omg.org/spec/BPMN/20100524/MODEL"
 internal const val BPMNDI = "http://www.omg.org/spec/BPMN/20100524/DI"
 
 private val ProcessDefinition.shipped get() = resourceName.startsWith("shipped/")
+
+internal fun Settings.hides(process: ProcessDefinition) = hideShipped() && process.shipped
 
 class ProcessRow(val process: ProcessDefinition, val shipped: Boolean, val profile: Profile?, val scheduleCount: Int, val ready: Boolean, val live: Long)
 

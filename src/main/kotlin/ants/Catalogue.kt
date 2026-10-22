@@ -95,8 +95,9 @@ class Skill(
 class Catalogue(@Value("\${ants.home}") private val home: Path, private val settings: Settings) {
     private val shipped = home.resolve("shipped")
     // A Path is an Iterable of its names, so `list + path` would add the names; each folder goes in as a list.
-    private val agentFolders get() = listOf(home.resolve("agents")) + settings.agentFolders() + listOf(shipped.resolve("agents"))
-    private val skillFolders get() = listOf(home.resolve("skills")) + settings.skillFolders() + listOf(shipped.resolve("skills"))
+    private fun agentFolders(withHidden: Boolean) = listOf(home.resolve("agents")) + settings.agentFolders() + shippedFolder("agents", withHidden)
+    private fun skillFolders(withHidden: Boolean) = listOf(home.resolve("skills")) + settings.skillFolders() + shippedFolder("skills", withHidden)
+    private fun shippedFolder(kind: String, withHidden: Boolean) = if (withHidden || !settings.hideShipped()) listOf(shipped.resolve(kind)) else emptyList()
 
     init {
         val resources = PathMatchingResourcePatternResolver()
@@ -112,14 +113,10 @@ class Catalogue(@Value("\${ants.home}") private val home: Path, private val sett
         }
     }
 
-    /** Every Agent in every Agent folder, Ants' own first. */
-    fun agents(): List<Agent> = agentFolders.filter { it.exists() }.flatMap { it.listDirectoryEntries("*.md").sorted() }.map(::Agent)
+    fun agents(withHidden: Boolean = false): List<Agent> = agentFolders(withHidden).filter { it.exists() }.flatMap { it.listDirectoryEntries("*.md").sorted() }.map(::Agent)
 
     /** The Agent [name]. */
-    fun agent(name: String): Agent {
-        val agents = agents().filter { it.name == name }
-        return agents.singleOrNull() ?: error(if (agents.isEmpty()) "No Agent named $name" else "More than one Agent is named $name")
-    }
+    fun agent(name: String): Agent = named("Agent", name, agents(withHidden = true).filter { it.name == name }, ::shipped)
 
     /** The user's own Skills, the one Skill folder the Skills page writes to. */
     val yourSkills: Path = home.resolve("skills")
@@ -127,8 +124,7 @@ class Catalogue(@Value("\${ants.home}") private val home: Path, private val sett
     /** The user's own Agents, the one Agent folder Ants writes to. */
     val yourAgents: Path = home.resolve("agents")
 
-    /** Every Skill in every Skill folder, a folder holding a `SKILL.md` at any depth, in folder order. */
-    fun skills(): List<Skill> = skillFolders.filter { it.exists() }.flatMap { folder ->
+    fun skills(withHidden: Boolean = false): List<Skill> = skillFolders(withHidden).filter { it.exists() }.flatMap { folder ->
         folder.walk().filter { it.fileName.toString() == "SKILL.md" }.sorted().map { file ->
             val meta = frontmatter(file.readText()).first
             val metadata = meta["metadata"] as? Map<*, *> ?: emptyMap<String, Any?>()
@@ -146,6 +142,10 @@ class Catalogue(@Value("\${ants.home}") private val home: Path, private val sett
 
     fun shipped(skill: Skill) = skill.file.startsWith(shipped)
 
+    fun shipped(agent: Agent) = agent.file.startsWith(shipped)
+
+    fun hides(file: Path) = settings.hideShipped() && file.startsWith(shipped)
+
     /** Where the Agents and Skills pages say [folder] is: "shipped with Ants", or the folder, with `~` for the home folder. */
     fun where(folder: Path): String {
         if (folder.startsWith(shipped)) return "shipped with Ants"
@@ -153,12 +153,11 @@ class Catalogue(@Value("\${ants.home}") private val home: Path, private val sett
         return if (folder.startsWith(user)) "~/${user.relativize(folder)}" else folder.toString()
     }
 
-    /** The Skill [name]; a shipped Skill wins its name. */
-    fun skill(name: String): Skill {
-        val skills = skills().filter { it.name == name }
-        return skills.singleOrNull() ?: skills.firstOrNull(::shipped)
-            ?: error(if (skills.isEmpty()) "No Skill named $name" else "More than one Skill is named $name")
-    }
+    fun skill(name: String): Skill = named("Skill", name, skills(withHidden = true).filter { it.name == name }, ::shipped)
+
+    private fun <T> named(kind: String, name: String, items: List<T>, shipped: (T) -> Boolean): T =
+        items.singleOrNull() ?: items.filter { shipped(it) != settings.hideShipped() }.singleOrNull()
+            ?: error(if (items.isEmpty()) "No $kind named $name" else "More than one $kind is named $name")
 
     /** Every Skill [skill] uses through `ants-uses`, at any depth, each once in the order first named; a cycle is refused, naming it. */
     fun uses(skill: Skill): List<Skill> {
