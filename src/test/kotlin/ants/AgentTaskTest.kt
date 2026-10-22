@@ -137,7 +137,7 @@ class AgentTaskTest : AntsTest() {
     }
 
     @Test
-    fun `with a Profile that has instructions, every launch excludes the CLAUDE md files above the Run workspace, the flow coming back too`() {
+    fun `with a Profile that has instructions, every launch excludes the CLAUDE md files above the Run workspace, a Task the flow comes back to too`() {
         agentTask(extra = "profiles:\n  work:\n    vault: notes\n")
         instruct("work", "Keep it short.\n")
         claude.session("draft", done)
@@ -149,8 +149,9 @@ class AgentTaskTest : AntsTest() {
             assertEquals("user,project", launch.flag("--setting-sources"))
             assertEquals(excludingAbove(Path.of(launch.cwd)), launch.flag("--settings"))
         }
-        assertContains(launches.first().flag("--settings")!!, """"/CLAUDE.md"""")
-        assertFalse("\"${launches.first().cwd}/CLAUDE.md\"" in launches.first().flag("--settings")!!)
+        val settings = launches.first().flag("--settings")!!
+        for (above in listOf("${Path.of(launches.first().cwd).parent}/CLAUDE.md", "${home.toRealPath()}/CLAUDE.local.md", "${home.toRealPath()}/.claude/CLAUDE.md", "/CLAUDE.md")) assertContains(settings, "\"$above\"")
+        assertFalse("\"${launches.first().cwd}/CLAUDE.md\"" in settings)
     }
 
     @Test
