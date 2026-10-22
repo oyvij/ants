@@ -54,6 +54,7 @@ const language = path => {
 
 // The lines of text, each its coloured spans and plain text as a fragment.
 const paint = (lines, lang) => {
+    if (!lines.length) return []
     const text = lines.join("\n")
     const out = [document.createDocumentFragment()]
     highlightCode(text, lang.parser.parse(text), classHighlighter,
@@ -66,7 +67,6 @@ const sign = text => Object.assign(document.createElement("span"), {className: "
 
 // Colours the cells, each by the text it holds after its first `skip` characters, read in order as one text.
 const colour = (cells, lang, skip = 0) => {
-    if (!cells.length) return
     paint(cells.map(it => it.textContent.slice(skip)), lang).forEach((line, i) => {
         const cell = cells[i]
         cell.replaceChildren(...(skip ? [sign(cell.textContent.slice(0, skip))] : []), line)
