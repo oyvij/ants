@@ -76,7 +76,9 @@ _Avoid_: preflight, validation
 
 **Run workspace**:
 The folder a Run works in, holding its clones and intermediate files, deleted when the Run ends, or kept
-until the user dismisses it if the Run failed. Named after the Run as it started, `runs/<slug>-<uuid>/`.
+until the user dismisses it if the Run failed. Named after the Run as it started, `runs/<slug>-<uuid>/`. When the
+Run's Profile has instructions, its root holds their copy, `AGENTS.md`, and a `CLAUDE.md` ranking and inlining them,
+and claude launches keep out every CLAUDE.md above it.
 _Avoid_: sandbox, scratch dir
 
 **Run log**:
@@ -97,8 +99,14 @@ _Avoid_: knowledge base, wiki, memory
 **Profile**:
 A named pair of one Vault and one Source map, such as `work` and `private`, one of them the default. A Process
 can name its Profile and the start form picks the Run's; the Run then uses that Vault and Source map alone,
-whether or not its repos are picked.
+whether or not its repos are picked. It may also have Profile instructions.
 _Avoid_: group, context, account
+
+**Profile instructions**:
+A Profile's standing instructions for every Agent in its Runs, the plain markdown file `profiles/<profile>/AGENTS.md`
+in ANTS_HOME, edited on the Settings page; a missing or blank file means none. Each Run gets a copy at its start, and
+they rank below an Agent's and a Skill's own instructions and a repo's own CLAUDE.md or AGENTS.md.
+_Avoid_: user CLAUDE.md, global instructions, system prompt
 
 **Secret**:
 A value the user gives Ants, such as a registry token, under one or more variable names, that Protected Commands use
