@@ -85,11 +85,11 @@ class PickedReposTest : AntsTest() {
     }
 
     /**
-     * Plays Feeling lucky with [repos] picked: the scout gives them back as they are, the proposal keeps the brief it read,
-     * the implementer commits in [repo], the user pushes and approves the Notes Update the Vault proposes.
+     * Plays Feeling lucky with [repos] picked: the scout gives back [answered], them as they are unless given, the proposal
+     * keeps the brief it read, the implementer commits in [repo], the user pushes and approves the Notes Update the Vault proposes.
      */
-    private fun shipSmall(repo: String, vararg repos: String): String {
-        val picked = repos.joinToString(",") { "\"$it\"" }
+    private fun shipSmall(repo: String, vararg repos: String, answered: List<String> = repos.toList()): String {
+        val picked = answered.joinToString(",") { "\"$it\"" }
         claude.session("scout", "write scout/brief.md Add a hello endpoint to $repo.\\n", result("""{"repos":[$picked],"branch":"","brief":"scout/brief.md"}"""))
         claude.session("propose-solution", "sh cp scout/brief.md \$launch/brief", "write proposal/proposal.md # Hello\\n", result("""{"proposal":"proposal/proposal.md"}"""))
         claude.session("implement", "sh git -C repos/$repo -c user.name=Ants -c user.email=ants@example.com -c commit.gpgsign=false commit -q --allow-empty -m 'Add hello'", result("""{"review":"No findings."}"""))
@@ -142,6 +142,14 @@ class PickedReposTest : AntsTest() {
         assertEquals("Add hello", git(github.resolve("you/app.git"), "log", "-1", "--format=%s", "ants/hello-api"))
         assertEquals("Initial commit", git(github.resolve("you/app.git"), "log", "-1", "--format=%s", "main"))
         assertContains(browser.get("/runs/$run").body, "Repos picked: <code>you/app</code>")
+    }
+
+    @Test
+    fun `a Run with repos picked leaves unchecked the repos a Result names, since Clone repos clones the picked ones whatever they are`() {
+        settings()
+        shipSmall("api", "api", answered = listOf("api", "nowhere"))
+
+        assertEquals(1, claude.launches("scout").single().stdin.lines().filter(String::isNotEmpty).size) // the hand-off alone, no fix request
     }
 
     @Test

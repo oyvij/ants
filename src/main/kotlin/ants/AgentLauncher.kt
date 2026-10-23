@@ -479,7 +479,8 @@ class AgentLauncher(
         val override = task.extensionProperties[RESULT_SCHEMA]?.takeIf(String::isNotBlank)?.let { json.readValue(it, Map::class.java) }
         val output = override ?: skill.outputSchema
         val schema = ResultContract.schema(output)
-        val judge = Judge(agent.cli, schema, workspace, walkthrough(task))
+        // A Run with repos picked clones exactly them, so the `repos` a Result names there go unchecked.
+        val judge = Judge(agent.cli, schema, workspace, walkthrough(task), source.repos(settings).takeIf { source.picked.isEmpty() })
         // A knowledge Task, one with an `approval` input, may write the Vault only once it holds the user's approval
         // (ADR 0007): until then the Vault is read-only to it, but for Bash. codex can read it without an --add-dir.
         val gated = vault?.takeIf { "approval" in inputs && (inputs["approval"] as? Map<*, *>)?.get("approved") != true }
@@ -557,10 +558,11 @@ class AgentLauncher(
     }
 
     /**
-     * Judges each Result a session gives as it comes, the last valid one counting. An invalid one, or a walkthrough's
-     * Story set failing its checks, is sent back into the session once; the second is a [failure].
+     * Judges each Result a session gives as it comes, the last valid one counting. An invalid one, one whose `repos`
+     * Clone repos couldn't clone from [sourceMap] when given, or a walkthrough's Story set failing its checks, is sent
+     * back into the session once; the second is a [failure].
      */
-    internal inner class Judge(private val cli: String, private val schema: Map<*, *>, private val workspace: Path, private val walkthrough: Boolean) {
+    internal inner class Judge(private val cli: String, private val schema: Map<*, *>, private val workspace: Path, private val walkthrough: Boolean, private val sourceMap: List<Repo>?) {
         var valid: Map<*, *>? = null
             private set
         var failure: Failed? = null
@@ -569,7 +571,7 @@ class AgentLauncher(
 
         /** Judges [result], null when a turn ended without one, as [ended] tells; [say] sends a fix into the session. */
         fun judge(result: Any?, ended: List<Any?>, say: (String) -> Unit) {
-            val errors = result?.let { ResultContract.errors(it, schema, workspace) }
+            val errors = result?.let { ResultContract.errors(it, schema, workspace) + sourceMap?.let { map -> CloneRepos.reposErrors(it, map) }.orEmpty() }
             valid = null // the last result is the one that counts
             when {
                 errors == null -> failure = Failed((listOf("$cli ended without a Result:") + ended).filter { it != null && it != "" }.joinToString(" "))

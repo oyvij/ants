@@ -228,6 +228,22 @@ class AgentTaskTest : AntsTest() {
     }
 
     @Test
+    fun `a done Result whose repos names neither a Source map repo nor a git URL resumes the session once with the Source map's names`() {
+        val map = Files.createTempFile("source-map", ".md")
+        map.writeText("- si_client_plans: ~/plans (git@example.com:plans.git)\n- si_client_collateral_analysis: ~/collateral (git@example.com:collateral.git)\n")
+        agentTask("""{"type":"object","properties":{"repos":{"type":"array","items":{"type":"string"}}},"required":["repos"]}""", extra = "source-maps:\n  stacc: $map\n")
+        claude.session(
+            "draft", done("""{"repos":["si_client_plans","si-client-collateral-analysis","git@example.com:other.git"]}"""),
+            "read", done("""{"repos":["si_client_plans","si_client_collateral_analysis","git@example.com:other.git"]}"""),
+        )
+        val run = start()
+        eventually { assertContains(page(run), """id="state">Completed<""") }
+        val retry = claude.launches("draft").single().stdin.lines()[1]
+        assertContains(retry, "Your Result is invalid")
+        assertContains(retry, "/output/repos: si-client-collateral-analysis is neither a Source map name nor a git URL; the Source map's names are si_client_plans, si_client_collateral_analysis")
+    }
+
+    @Test
     fun `a file reference in output that escapes the Run workspace is rejected as invalid`() {
         agentTask(fileSchema)
         claude.session("draft", done("""{"file":"../other-run/notes.md"}"""), "read", done("""{"file":"/etc/passwd"}"""))
