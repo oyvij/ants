@@ -227,11 +227,18 @@ class AgentTaskTest : AntsTest() {
         assertContains(page(run), """id="state">Running<""")
     }
 
-    @Test
-    fun `a done Result whose repos names neither a Source map repo nor a git URL resumes the session once with the Source map's names`() {
+    /** A Source map of the two repos si_client_plans and si_client_collateral_analysis, as `source-maps` settings. */
+    private fun sourceMap(): String {
         val map = Files.createTempFile("source-map", ".md")
         map.writeText("- si_client_plans: ~/plans (git@example.com:plans.git)\n- si_client_collateral_analysis: ~/collateral (git@example.com:collateral.git)\n")
-        agentTask("""{"type":"object","properties":{"repos":{"type":"array","items":{"type":"string"}}},"required":["repos"]}""", extra = "source-maps:\n  stacc: $map\n")
+        return "source-maps:\n  stacc: $map\n"
+    }
+
+    private val reposSchema = """{"type":"object","properties":{"repos":{"type":"array","items":{"type":"string","format":"repo"}}},"required":["repos"]}"""
+
+    @Test
+    fun `a done Result naming a repo that is neither a Source map repo nor a git URL resumes the session once with the Source map's names`() {
+        agentTask(reposSchema, extra = sourceMap())
         claude.session(
             "draft", done("""{"repos":["si_client_plans","si-client-collateral-analysis","git@example.com:other.git"]}"""),
             "read", done("""{"repos":["si_client_plans","si_client_collateral_analysis","git@example.com:other.git"]}"""),
@@ -240,7 +247,31 @@ class AgentTaskTest : AntsTest() {
         eventually { assertContains(page(run), """id="state">Completed<""") }
         val retry = claude.launches("draft").single().stdin.lines()[1]
         assertContains(retry, "Your Result is invalid")
-        assertContains(retry, "/output/repos: si-client-collateral-analysis is neither a Source map name nor a git URL; the Source map's names are si_client_plans, si_client_collateral_analysis")
+        assertContains(retry, "si-client-collateral-analysis is neither a Source map name nor a git URL; the Source map's names are si_client_plans, si_client_collateral_analysis")
+    }
+
+    @Test
+    fun `a Task whose result schema marks a repo, however deep, gets the Source map's names in its hand-off line`() {
+        val nested = """{"type":"object","properties":{"plan":{"type":"object","properties":{"repo":{"type":"string","format":"repo"}}}},"required":["plan"]}"""
+        agentTask(nested, extra = sourceMap())
+        claude.session("draft", done("""{"plan":{"repo":"si_client_plans"}}"""))
+        val run = start()
+        eventually { assertContains(page(run), """id="state">Completed<""") }
+        assertContains(
+            claude.launches("draft").single().stdin,
+            " Name each repo in your Result by its Source map name or a git URL; the Source map's names are si_client_plans, si_client_collateral_analysis.\\n",
+        )
+    }
+
+    @Test
+    fun `a field named repos without format repo is neither checked nor given the Source map's names`() {
+        agentTask("""{"type":"object","properties":{"repos":{"type":"array","items":{"type":"string"}}},"required":["repos"]}""", extra = sourceMap())
+        claude.session("draft", done("""{"repos":["the quarter's plans"]}"""))
+        val run = start()
+        eventually { assertContains(page(run), """id="state">Completed<""") }
+        val stdin = claude.launches("draft").single().stdin
+        assertEquals(1, stdin.lines().filter(String::isNotEmpty).size) // the hand-off alone, no fix request
+        assertFalse("Source map" in stdin)
     }
 
     @Test

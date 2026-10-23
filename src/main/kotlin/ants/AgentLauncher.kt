@@ -473,14 +473,15 @@ class AgentLauncher(
         val source = scopes.of(run)
         val vault = vault(task, skill, source)
         val verbosity = verbosity(skill, source)
-        val prompt = if (!handedOff) instruction.orEmpty()
-        else handOff(task, skill, used, cwd, vault, source.sourceMap(settings), verbosity) + "\n\n" + json.writeValueAsString(inputs) + (if (instruction.isNullOrBlank()) "" else "\n\nFrom the user:\n$instruction")
         // The Task's result-schema override replaces the Skill's result.schema.json; Checks refuse one that isn't valid.
         val override = task.extensionProperties[RESULT_SCHEMA]?.takeIf(String::isNotBlank)?.let { json.readValue(it, Map::class.java) }
         val output = override ?: skill.outputSchema
         val schema = ResultContract.schema(output)
-        // A Run with repos picked clones exactly them, so the `repos` a Result names there go unchecked.
-        val judge = Judge(agent.cli, schema, workspace, walkthrough(task), source.repos(settings).takeIf { source.picked.isEmpty() })
+        // A Run with repos picked clones exactly them, so the repos a Result names there go unchecked.
+        val repos = source.repos(settings).takeIf { source.picked.isEmpty() && ResultContract.namesRepos(output) }
+        val prompt = if (!handedOff) instruction.orEmpty()
+        else handOff(task, skill, used, cwd, vault, source.sourceMap(settings), repos, verbosity) + "\n\n" + json.writeValueAsString(inputs) + (if (instruction.isNullOrBlank()) "" else "\n\nFrom the user:\n$instruction")
+        val judge = Judge(agent.cli, schema, workspace, walkthrough(task), repos)
         // A knowledge Task, one with an `approval` input, may write the Vault only once it holds the user's approval
         // (ADR 0007): until then the Vault is read-only to it, but for Bash. codex can read it without an --add-dir.
         val gated = vault?.takeIf { "approval" in inputs && (inputs["approval"] as? Map<*, *>)?.get("approved") != true }
@@ -558,9 +559,9 @@ class AgentLauncher(
     }
 
     /**
-     * Judges each Result a session gives as it comes, the last valid one counting. An invalid one, one whose `repos`
-     * Clone repos couldn't clone from [sourceMap] when given, or a walkthrough's Story set failing its checks, is sent
-     * back into the session once; the second is a [failure].
+     * Judges each Result a session gives as it comes, the last valid one counting. An invalid one, its repos checked
+     * against [sourceMap] when given, or a walkthrough's Story set failing its checks, is sent back into the session
+     * once; the second is a [failure].
      */
     internal inner class Judge(private val cli: String, private val schema: Map<*, *>, private val workspace: Path, private val walkthrough: Boolean, private val sourceMap: List<Repo>?) {
         var valid: Map<*, *>? = null
@@ -571,7 +572,7 @@ class AgentLauncher(
 
         /** Judges [result], null when a turn ended without one, as [ended] tells; [say] sends a fix into the session. */
         fun judge(result: Any?, ended: List<Any?>, say: (String) -> Unit) {
-            val errors = result?.let { ResultContract.errors(it, schema, workspace) + sourceMap?.let { map -> CloneRepos.reposErrors(it, map) }.orEmpty() }
+            val errors = result?.let { ResultContract.errors(it, schema, workspace, sourceMap) }
             valid = null // the last result is the one that counts
             when {
                 errors == null -> failure = Failed((listOf("$cli ended without a Result:") + ended).filter { it != null && it != "" }.joinToString(" "))
@@ -615,10 +616,11 @@ class AgentLauncher(
 
     /**
      * The hand-off line: the Skill and the workspace, the Skills it [used], where the [vault] and [sourceMap] and the
-     * Answer History are, each only when on, and the [verbosity] to write at, if any. The Task's [ANSWER_HISTORY] toggle
-     * has the final say on the Answer History, else the Skill's opt-in.
+     * Answer History are, each only when on, the names of the [repos] its Result may name, if checked, and the
+     * [verbosity] to write at, if any. The Task's [ANSWER_HISTORY] toggle has the final say on the Answer History,
+     * else the Skill's opt-in.
      */
-    private fun handOff(task: LockedExternalTask, skill: Skill, used: List<Skill>, workspace: Path, vault: Path?, sourceMap: Path?, verbosity: Verbosity?): String {
+    private fun handOff(task: LockedExternalTask, skill: Skill, used: List<Skill>, workspace: Path, vault: Path?, sourceMap: Path?, repos: List<Repo>?, verbosity: Verbosity?): String {
         val places = if (vault == null) emptyList() else listOfNotNull(
             "the Vault is $vault",
             sourceMap?.let { "the Source map is $it" },
@@ -627,6 +629,7 @@ class AgentLauncher(
             (if (used.isEmpty()) "" else " It uses the Skills ${used.joinToString { "${it.name} (${it.file})" }}.") +
             (if (places.isEmpty()) "" else " " + places.joinToString(" and ").replaceFirstChar(Char::uppercase) + ".") +
             (answerHistory(task, skill)?.let { " The Answer History is $it." } ?: "") +
+            (repos?.let { " Name each repo in your Result by its Source map name or a git URL; ${ResultContract.names(it)}." } ?: "") +
             (verbosity?.let { " Write what the user reads at the ${it.value} verbosity defined in ${catalogue.verbosityFile}." } ?: "")
     }
 

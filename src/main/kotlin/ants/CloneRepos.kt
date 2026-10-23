@@ -157,18 +157,5 @@ class CloneRepos(
          * checkout; null when [url] isn't one.
          */
         fun url(url: String) = if ('/' !in url && ':' !in url) null else Repo(url.trimEnd('/').substringAfterLast('/').substringAfterLast(':').removeSuffix(".git"), "", url)
-
-        /**
-         * Why Clone repos couldn't clone the `repos` of [result]'s `output`: the entries that are neither a repo of
-         * [sourceMap] nor a git URL, in one error that lists every Source map name; empty when it could clone them all.
-         */
-        fun reposErrors(result: Any?, sourceMap: List<Repo>): List<String> {
-            val repos = ((result as? Map<*, *>)?.get("output") as? Map<*, *>)?.get("repos") as? List<*> ?: return emptyList()
-            val names = sourceMap.map(Repo::name)
-            val unknown = repos.filterIsInstance<String>().filter { it !in names && url(it) == null }
-            if (unknown.isEmpty()) return emptyList()
-            val known = if (names.isEmpty()) "the Run's Source map has no repos" else "the Source map's names are ${names.joinToString()}"
-            return listOf("/output/repos: ${unknown.joinToString()} ${if (unknown.size == 1) "is" else "are"} neither a Source map name nor a git URL; $known")
-        }
     }
 }
