@@ -384,7 +384,7 @@ class Runs(
             val entry = view.entry
             val model = mapOf(
                 "run" to top, "runName" to names.name(top), "task" to key, "view" to view, "transcript" to transcript,
-                "details" to entry?.let(notifications::details), "push" to (entry?.let(notifications::isPush) == true), "sendHint" to launcher.sendHint(top, key), "_csrf" to csrf,
+                "details" to entry?.let(notifications::details), "topic" to entry?.let(notifications::topic), "sendHint" to launcher.sendHint(top, key), "_csrf" to csrf,
             )
             StringOutput().also { templates.render("drawer.kte", model, it) }.toString()
         }
