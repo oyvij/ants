@@ -47,12 +47,13 @@ as settled, whoever gave it, and recompute the frontier. Never ask a settled que
 a later answer reopens it, and then say so in its `context`.
 
 **Repos.** When the answers show the work needs a repo that wasn't in `clones` when you started,
-or may need it and nothing you have read rules it out, name it in `repos`, as the user's Source
-map names it in the brief or as a git URL the user gave. Never take a repo you haven't read to need
-no change. Name every such repo again in each later round, the last one included: `repos` is always
-the whole list. Each is cloned at `repos/<name>/` before your next round, so read it then. One that
-never shows in `clones` was not cloned, and the Spec lists it as not checked. With none, `repos` is
-`[]`.
+or may need it and nothing you have read rules it out, name it in `repos` by one of the Source map
+names your hand-off line lists, or by a git URL the user gave; never by a package, folder or
+product name you found in the code. Ants sends back any other name. Never take a repo you haven't
+read to need no change. Name every such repo again in each later round, the last one included:
+`repos` is always the whole list. Each is cloned at `repos/<name>/` before your next round, so read
+it then. One that never shows in `clones` was not cloned, and the Spec lists it as not checked.
+With none, `repos` is `[]`.
 
 **The end.** When the frontier is empty, answer `done` with `questions: []`, and `repos` as
 before. The Run then writes the Spec from the Run log, which holds every round, and the user

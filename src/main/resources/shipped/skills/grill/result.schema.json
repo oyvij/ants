@@ -20,7 +20,7 @@
     },
     "repos": {
       "type": "array",
-      "items": { "type": "string" },
+      "items": { "type": "string", "format": "repo" },
       "description": "Every repo the work needs beyond the clones you started with, named again each Round: Source map names or git URLs the user gave; empty when none."
     }
   },
