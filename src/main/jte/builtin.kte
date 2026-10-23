@@ -1,0 +1,34 @@
+@param entry: ants.TaskEntry
+@param details: String?
+@param view: ants.TaskView
+@param error: String? = null
+@param _csrf: org.springframework.security.web.csrf.CsrfToken
+@param colorScheme: String = "light dark"
+@param shell: ants.Shell
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    @template.app()
+    <meta name="color-scheme" content="${colorScheme}">
+    <title>${entry.icon} ${entry.tag} ${entry.task} · Ants</title>
+</head>
+<body>
+@template.nav(shell = shell)
+<main>
+@template.taskhead(view = view, run = entry.run, runName = entry.runName, tokens = view.context)
+@if(details != null)
+<div class="card"><h3>Why it failed</h3><pre>${details}</pre></div>
+@endif
+<div class="help">Retry runs it again with the same inputs, once what failed outside the Run is fixed, such as the Source map in Settings or a remote that was down.</div>
+@if(error != null)<p role="alert">${error}</p>@endif
+<form method="post" class="row">
+    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+    <input type="hidden" name="instruction" value="">
+    <button class="danger" name="action" value="cancel">Cancel the Run</button>
+    <span class="grow"></span>
+    <button class="primary" name="action" value="retry">Retry</button>
+</form>
+</main>
+</body>
+</html>
