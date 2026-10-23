@@ -101,6 +101,7 @@ abstract class AntsTest {
 
     fun excludingAbove(workspace: Path): String = JsonMapper.shared().writeValueAsString(mapOf(
         "disableAllHooks" to true,
+        "attribution" to mapOf("commit" to "", "pr" to "🐜 Created with Ants"),
         "claudeMdExcludes" to generateSequence(workspace.parent) { it.parent }
             .flatMap { listOf(it.resolve("CLAUDE.md"), it.resolve("CLAUDE.local.md"), it.resolve(".claude/CLAUDE.md")) }.map(Path::toString).toList(),
     ))

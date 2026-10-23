@@ -157,7 +157,7 @@ class AgentTaskTest : AntsTest() {
     }
 
     @Test
-    fun `with a Profile that has no instructions, or blank ones, --settings only disables hooks`() {
+    fun `with a Profile that has no instructions, or blank ones, --settings excludes no CLAUDE md files`() {
         agentTask(extra = "profiles:\n  work:\n    vault: notes\n")
         claude.session("draft", done)
         val none = start()
@@ -165,7 +165,8 @@ class AgentTaskTest : AntsTest() {
         instruct("work", " \n")
         val blank = start()
         eventually { assertContains(page(blank), """id="state">Completed<""") }
-        assertEquals(listOf("""{"disableAllHooks":true}""", """{"disableAllHooks":true}"""), claude.launches("draft").map { it.flag("--settings") })
+        val settings = """{"disableAllHooks":true,"attribution":{"commit":"","pr":"🐜 Created with Ants"}}"""
+        assertEquals(listOf(settings, settings), claude.launches("draft").map { it.flag("--settings") })
     }
 
     private fun page(run: String) = browser.get("/runs/$run").body.replace("&#34;", "\"")
@@ -276,7 +277,7 @@ class AgentTaskTest : AntsTest() {
         val argv = launch.argv.joinToString(" ")
         for (flags in listOf(
             "-p", "--output-format stream-json --verbose --include-partial-messages", "--input-format stream-json --replay-user-messages",
-            "--permission-mode dontAsk", "--setting-sources user,project", """--settings {"disableAllHooks":true}""",
+            "--permission-mode dontAsk", "--setting-sources user,project", """--settings {"disableAllHooks":true,"attribution":{"commit":"","pr":"🐜 Created with Ants"}}""",
             "--strict-mcp-config", "--disable-slash-commands", "--append-system-prompt Write plainly.", "--model sonnet",
             "--tools Read,Grep,Bash", "--allowedTools Read,Grep,Bash(git log:*)", "--add-dir ${home.resolve("skills/draft")}",
         )) assertContains(argv, flags)
