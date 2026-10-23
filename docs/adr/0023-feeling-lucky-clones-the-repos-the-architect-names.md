@@ -23,15 +23,9 @@ no dead push URL, and a `git clone` Protected Command would let any Agent clone 
   make itself. Other git commands an Agent without Bash may want, such as `git log`, are fine as Protected Commands,
   and `git push` fails on the dead push URL whoever runs it.
 
-This extends ADR 0017 to Feeling lucky, though ADR 0017 widens only where the user sees every repo at Approve the
-Spec, and Feeling lucky has none. Feeling lucky widens anyway: Push still shows every repo the Run changes before
-anything leaves the machine, and the user may ask the architect for a repo, as in the Run above, with no other way to
-get it cloned. Hands-off until review still never widens; whether it should is #209.
+This extends ADR 0017 to Feeling lucky.
 
 ## Considered Options
-
-- **Never widen in Feeling lucky, as Hands-off until review doesn't**: the architect ends stuck naming the repo, and
-  the user starts the Run again with it picked, even when the user asked for the repo.
 
 - **Give the architect Bash for `git clone`**: the clone would still lack the work branch and dead push URL, and the
   architect would no longer only read.
