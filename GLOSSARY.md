@@ -122,6 +122,12 @@ A command prefix, such as `yarn` or `mvn deploy`, that Agents may ask Ants to ru
 workspace, with the Secrets linked to it; the Agent gets its output, never the Secrets.
 _Avoid_: build, command, script
 
+**Toolchain**:
+A named list of folders, such as one Node version's `bin`, and the repos whose commands find their tools there
+first: a Protected Command in one of those repos runs with them first on PATH, and the hand-off line tells the Agent
+to put them first in its own Bash. Kept in `settings.yaml`.
+_Avoid_: Node version, runtime, environment
+
 **Process Builder**:
 The AI in the modeler that builds and changes the open Process from what the user writes to it, in a
 continuous dialog; it does no Task, so it is not an Agent, and it never deploys or starts a Run.

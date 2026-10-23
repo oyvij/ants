@@ -16,6 +16,7 @@ import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Component
 import tools.jackson.databind.json.JsonMapper
 import java.io.BufferedWriter
+import java.io.File
 import java.io.IOException
 import java.nio.file.Path
 import java.time.Clock
@@ -34,6 +35,9 @@ import kotlin.io.path.readText
 import kotlin.io.path.writeText
 import kotlin.io.path.deleteIfExists
 import kotlin.io.path.exists
+import kotlin.io.path.isDirectory
+import kotlin.io.path.listDirectoryEntries
+import kotlin.io.path.name
 
 /**
  * The in-process worker. It fetches ready Agent Tasks (external tasks on topic `agent`) only for free slots under
@@ -625,7 +629,17 @@ class AgentLauncher(
             (if (used.isEmpty()) "" else " It uses the Skills ${used.joinToString { "${it.name} (${it.file})" }}.") +
             (if (places.isEmpty()) "" else " " + places.joinToString(" and ").replaceFirstChar(Char::uppercase) + ".") +
             (answerHistory(task, skill)?.let { " The Answer History is $it." } ?: "") +
-            (verbosity?.let { " Write what the user reads at the ${it.value} verbosity defined in ${catalogue.verbosityFile}." } ?: "")
+            (verbosity?.let { " Write what the user reads at the ${it.value} verbosity defined in ${catalogue.verbosityFile}." } ?: "") +
+            toolchains(workspace)
+    }
+
+    /** The PATH each repo cloned in [workspace] with a Toolchain puts first, for the Agent's own Bash (ADR 0024). */
+    private fun toolchains(workspace: Path): String {
+        val repos = workspace.resolve("repos").takeIf { it.isDirectory() }?.listDirectoryEntries()?.map { it.name }?.sorted().orEmpty()
+        val prefixes = repos.mapNotNull { repo ->
+            settings.toolchain(repo).takeIf { it.isNotEmpty() }?.let { "`PATH=${it.joinToString(File.pathSeparator)}:\$PATH` in repos/$repo" }
+        }
+        return if (prefixes.isEmpty()) "" else " Prefix each Bash command in these repos with its PATH: ${prefixes.joinToString()}; the run tool puts it there itself."
     }
 
     /** The Answer History's folder when [task] gets it: its toggle ([ANSWER_HISTORY]) has the final say, else its [skill]'s opt-in. */

@@ -210,6 +210,13 @@ class Settings(
     fun protectedCommands(): Map<String, List<String>> =
         (read()["protected-commands"] as? Map<*, *>).orEmpty().entries.associate { (prefix, labels) -> "$prefix" to strings(labels).orEmpty() }
 
+    /**
+     * The Toolchain of [repo], a Source map name or a clone's folder name: the `bin` folders of the first Toolchain
+     * whose `repos` names it, `~` expanded; none when no Toolchain does.
+     */
+    fun toolchain(repo: String): List<Path> = (read()["toolchains"] as? Map<*, *>).orEmpty().values.filterIsInstance<Map<*, *>>()
+        .firstOrNull { repo in strings(it["repos"]).orEmpty() }?.let { strings(it["bin"]) }.orEmpty().map(::expand)
+
     /** `secrets.yaml`, beside this file: each Secret's value by label, readable by Ants' OS user alone. */
     val secretsFile: Path = home.resolve("secrets.yaml")
 
@@ -310,6 +317,10 @@ class Settings(
             # secrets: label: [VARIABLE, NAMES], the variables a Protected Command reads it under; the values are in
             #   secrets.yaml, never here
             # protected-commands: prefix: [Secret labels], such as `mvn deploy: [maven]`; Agents ask Ants to run them
+            # toolchains: name: {bin: [folders], repos: [repo names]}, such as
+            #   node22: {bin: [~/.nvm/versions/node/v22.23.2/bin], repos: [web]}. A Protected Command in one of those
+            #   repos runs with the folders first on PATH, and the hand-off line tells Agents to put them first in Bash;
+            #   a repo takes the first Toolchain that names it
             # theme: light or dark; without it, the pages follow the system
             # so-far: false switches off the So far paragraph on running Tasks; a time (90s, 5m) sets how often it's
             #   rewritten (default 2m)
