@@ -231,6 +231,9 @@ class Settings(
 
     fun hideShipped(): Boolean = read()["hide-shipped"] == true
 
+    /** Whether the update check offers beta versions (GitHub prereleases) too. */
+    fun prereleases(): Boolean = read()["prereleases"] == true
+
     /** Every key in the file, as YAML reads it. */
     fun read(): Map<String, Any?> = if (file.exists()) Yaml().load(file.readText()) ?: emptyMap() else emptyMap()
 
@@ -314,6 +317,7 @@ class Settings(
             # so-far: false switches off the So far paragraph on running Tasks; a time (90s, 5m) sets how often it's
             #   rewritten (default 2m)
             # hide-shipped: true hides the Processes, Skills and Agents Ants ships from every list and picker; they stay on disk
+            # prereleases: true has the update check offer beta versions too
 
             """.trimIndent() + "\n"
     }

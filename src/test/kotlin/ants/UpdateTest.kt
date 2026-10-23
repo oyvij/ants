@@ -127,6 +127,24 @@ class UpdateTest : AntsTest() {
     }
 
     @Test
+    fun `with prereleases on, the newest release in the release list shows, betas too, and off again only stable ones`() {
+        release("98.0.0")
+        val beta = Files.createTempDirectory("beta").also { it.resolve("SHA256SUMS").writeText(sums("99.0.0-beta.1")) }
+        releases.resolve("releases.json").writeText(
+            """[{"tag_name": "v99.0.0-beta.1", "draft": false, "prerelease": true, "assets": [{"name": "SHA256SUMS", "browser_download_url": "${beta.toUri()}SHA256SUMS"}]},
+               {"tag_name": "v98.0.0", "draft": false, "prerelease": false, "assets": [{"name": "SHA256SUMS", "browser_download_url": "${releases.toUri()}SHA256SUMS"}]}]""",
+        )
+        settings(null, extra = "prereleases: true\n")
+        try {
+            eventually(60) { assertContains(notice(), "Ants 99.0.0-beta.1 is available") }
+            assertContains(browser.get("/settings").body, """<input type="checkbox" name="prereleases" checked> Follow beta versions""")
+        } finally {
+            settings(null)
+        }
+        eventually(60) { assertContains(notice(), "Ants 98.0.0 is available") }
+    }
+
+    @Test
     fun `an older release shows nothing`() {
         release("0.0.1")
 

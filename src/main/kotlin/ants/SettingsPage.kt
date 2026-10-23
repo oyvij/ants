@@ -64,6 +64,7 @@ class SettingsPage(
                 val asked = form.removedProfiles(settings).filter(settings::hasInstructions)
                 if (asked.isNotEmpty() && "confirm" !in params) return confirm(model, removalQuestion(asked), Dependents(emptyList()), "/settings", params, "/settings")
                 form.save(settings, params["password"].orEmpty().takeUnless { settings.passwordFromEnv }.orEmpty(), encoder)
+                updates.checkSoon()
                 "redirect:/settings"
             }
         }
@@ -205,6 +206,7 @@ data class SettingsForm(
     val theme: String,
     val soFar: Boolean,
     val hideShipped: Boolean,
+    val prereleases: Boolean,
 ) {
     fun error() = when {
         agentTasks.isNotEmpty() && (agentTasks.toIntOrNull() ?: 0) < 1 -> "Agent Tasks at once must be a whole number, 1 or more."
@@ -298,6 +300,7 @@ data class SettingsForm(
         // Ticked keeps a hand-set time; unticked is `false`.
         values.keep("so-far", if (soFar) values["so-far"].takeIf { it != false && it != true } else false)
         values.keep("hide-shipped", hideShipped.takeIf { it })
+        values.keep("prereleases", prereleases.takeIf { it })
         if (password.isNotEmpty()) values["password"] = encoder.encode(password)
     }
 
@@ -328,6 +331,7 @@ data class SettingsForm(
                 theme = values["theme"]?.toString() ?: "system",
                 soFar = values["so-far"] != false,
                 hideShipped = values["hide-shipped"] == true,
+                prereleases = values["prereleases"] == true,
             )
         }
 
@@ -369,6 +373,7 @@ data class SettingsForm(
                 theme = param("theme").ifEmpty { "system" },
                 soFar = "so-far" in params,
                 hideShipped = "hide-shipped" in params,
+                prereleases = "prereleases" in params,
             )
         }
 
