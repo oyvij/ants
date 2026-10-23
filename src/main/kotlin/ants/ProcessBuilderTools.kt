@@ -22,6 +22,7 @@ import java.util.concurrent.ExecutionException
 import java.util.concurrent.TimeUnit.MILLISECONDS
 import java.util.concurrent.TimeUnit.NANOSECONDS
 import java.util.concurrent.TimeoutException
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.readText
@@ -105,6 +106,9 @@ class ProcessBuilderTools(
 
         @Volatile
         var polled = false
+
+        /** The page's newest SSE: only it takes the calls, as one from before a reload may still be polling until a write fails. */
+        val streams = AtomicInteger()
 
         val outbox = ConcurrentLinkedQueue<String>()
         val waiting = ConcurrentHashMap<String, CompletableFuture<String>>()
@@ -372,7 +376,9 @@ class ProcessBuilderTools(
 
     /** The page's part of its SSE: each call relayed to it, as an event `builder`, `{id, tool, arguments}`. */
     fun relay(token: String): Part? = pages[token]?.takeIf { it.alive }?.let { page ->
+        val stream = page.streams.incrementAndGet()
         Part("builder", Duration.ofMillis(100)) {
+            if (page.streams.get() != stream) return@Part emptyList()
             page.seen = System.nanoTime()
             page.polled = true
             generateSequence { page.outbox.poll() }.toList()

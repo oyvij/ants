@@ -45,6 +45,16 @@ class ProcessBuilderToolsTest : AntsTest() {
     private fun page(token: String, answer: (String, Map<*, *>) -> Any?) = browser.actAsPage(token, builder, answer)
 
     @Test
+    fun `after a reload only the page's newest stream takes the relayed calls`() {
+        val token = open()
+        browser.events("builder=$token", "builder") // the page before the reload, its stream not yet found gone
+        eventually { assertTrue(builder.connected(token)) }
+        browser.actAsPage(token, builder) { _, _ -> mapOf("elements" to emptyList<Any>()) }
+        val (text, failed) = CompletableFuture.supplyAsync { call(token, "diagram") }.get(10, SECONDS)
+        assertFalse(failed, text)
+    }
+
+    @Test
     fun `a page's token lists the modeler's read tools and not run, and a Task's token lists run and no modeler tool`() {
         val page = open()
         val task = protectedCommands.open(Files.createTempDirectory("workspace")).first
