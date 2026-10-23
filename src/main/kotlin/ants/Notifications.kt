@@ -97,7 +97,7 @@ class Notifications(
     /**
      * An entry's page. A Review changes' has two tabs ([tab]): Story, the Story set of the Task its Walkthrough field
      * names, first, and By repo; without a Walkthrough, By repo only. Both show a card per repo. Push's page shows each
-     * repo's changes as it will push them.
+     * repo's changes as it will push them; any other Built-in Task's, why it failed.
      */
     @GetMapping("/notifications/{id}")
     fun entry(@PathVariable id: String, model: Model, response: HttpServletResponse, @RequestParam(required = false) tab: String? = null): String {
@@ -149,12 +149,13 @@ class Notifications(
         val entry = entry(incident)
         model.addAttribute("entry", entry)
         model.addAttribute("details", details(entry))
-        if (isPush(incident)) {
+        val topic = topic(incident)
+        if (topic == Push.TOPIC) {
             model.addAttribute("repos", changes(push.pushing(entry.run), cloneRepos::git))
             return "push"
         }
         model.addAttribute("view", view(entry))
-        return "notification"
+        return if (topic == AgentLauncher.TOPIC) "notification" else "builtin"
     }
 
     /** [entry]'s Task as its page heads it, with its Transcript, if it has one. */
@@ -171,16 +172,17 @@ class Notifications(
     fun details(entry: TaskEntry): String? = runtime.createIncidentQuery().incidentId(entry.id).singleResult()
         ?.let { externalTasks.getExternalTaskErrorDetails(it.configuration) }
 
-    /** Whether [entry] is a Push waiting or failed, whose page is Push's own. */
-    fun isPush(entry: TaskEntry) = runtime.createIncidentQuery().incidentId(entry.id).singleResult()?.let(::isPush) == true
+    /** The topic of the Task the incident [entry] holds, which picks its page: an Agent Task's, Push's or another Built-in Task's. Null for a User Task. */
+    fun topic(entry: TaskEntry) = runtime.createIncidentQuery().incidentId(entry.id).singleResult()?.let(::topic)
 
-    private fun isPush(incident: Incident) = externalTasks.createExternalTaskQuery().externalTaskId(incident.configuration).topicName(Push.TOPIC).count() > 0
+    private fun topic(incident: Incident) = externalTasks.createExternalTaskQuery().externalTaskId(incident.configuration).singleResult()?.topicName
 
     /**
      * Continue the session (instruction required) or Start fresh (instruction optional), then Next up, or back to
      * the Run page when the user acted from its Task drawer ([back] is `run`); or Cancel the Run, which ends it and
      * keeps its Run workspace until the user dismisses it on the Run page. A Push offers Push, and Continue (no
-     * instruction) after the user pushed by hand, instead.
+     * instruction) after the user pushed by hand, instead; any other Built-in Task, which has no session, Retry, which
+     * runs it again with the same inputs.
      */
     @PostMapping("/notifications/{id}")
     fun act(
@@ -189,17 +191,20 @@ class Notifications(
     ): String {
         val incident = incidents().incidentId(id).singleResult() ?: return gone(model, response)
         val entry = entry(incident)
-        val pushing = isPush(incident)
+        val topic = topic(incident)
+        val pushing = topic == Push.TOPIC
+        val agent = topic == AgentLauncher.TOPIC
         val name = when {
             // Continue on a Push completes it with what the remotes hold, so only after a failed Push: there is no Skip.
             action == AgentLauncher.CONTINUE && pushing && entry.tag != "[failed]" -> throw ResponseStatusException(HttpStatus.BAD_REQUEST, "A waiting Push has no Continue")
-            action == AgentLauncher.CONTINUE -> if (pushing) "Continue" else "Continue the session"
-            action == AgentLauncher.FRESH && !pushing -> "Start fresh"
+            action == AgentLauncher.CONTINUE && (agent || pushing) -> if (pushing) "Continue" else "Continue the session"
+            action == AgentLauncher.FRESH && agent -> "Start fresh"
             action == Push.PUSH && pushing -> "Push"
+            action == RETRY && !agent && !pushing -> "Retry"
             action == CANCEL -> "Cancel the Run"
             else -> throw ResponseStatusException(HttpStatus.BAD_REQUEST, "No action $action")
         }
-        if (action == AgentLauncher.CONTINUE && instruction.isBlank() && !pushing) {
+        if (action == AgentLauncher.CONTINUE && instruction.isBlank() && agent) {
             model.addAttribute("error", "Continue the session needs an instruction.")
             return entry(id, model, response)
         }
@@ -408,6 +413,7 @@ class Notifications(
 
     private companion object {
         const val CANCEL = "cancel"
+        const val RETRY = "retry"
         const val APPROVE = "approve"
         const val SEND_BACK_ACTION = "send-back"
 

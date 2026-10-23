@@ -4,7 +4,7 @@
 @param view: ants.TaskView
 @param transcript: ants.Transcript
 @param details: String?
-@param push: Boolean
+@param topic: String?
 @param sendHint: String?
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 !{val entry = view.entry}
@@ -34,8 +34,17 @@
 <footer id="drawer-action" class="df">
     @if(entry.tag == "[approve]")
     <a class="btn primary" href="/notifications/${entry.id}">Approve or send back</a>
-    @elseif(push)
+    @elseif(topic == ants.Push.TOPIC)
     <a class="btn primary" href="/notifications/${entry.id}">@if(entry.tag == "[push]")Push@else Continue@endif or cancel the Run</a>
+    @elseif(topic != null && topic != ants.AgentLauncher.TOPIC)
+    <form method="post" action="/notifications/${entry.id}" class="row">
+        <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+        <input type="hidden" name="back" value="run">
+        <input type="hidden" name="instruction" value="">
+        <button class="danger" name="action" value="cancel">Cancel the Run</button>
+        <span class="grow"></span>
+        <button class="primary" name="action" value="retry">Retry</button>
+    </form>
     @elseif(entry.tag == "[questions]")
     <a class="btn primary" href="/notifications/${entry.id}">Answer the Round</a>
     @elseif(entry.tag == "[review]")

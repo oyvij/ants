@@ -6,9 +6,12 @@ import org.operaton.bpm.engine.RuntimeService
 import org.springframework.beans.factory.annotation.Autowired
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.TimeUnit
 import kotlin.io.path.writeText
+import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 
 class CloneReposTest : AntsTest() {
@@ -80,6 +83,31 @@ class CloneReposTest : AntsTest() {
         val clones = listOf(api, web).map { mapOf("name" to it.name, "path" to "repos/${it.name}", "commit" to git(it.remote, "rev-parse", "main")) }
         assertEquals(clones.drop(1), runtime.getVariable(run, "clone")) // this attempt's Result: only web
         assertEquals(clones.reversed(), runtime.getVariable(run, "clones"))
+    }
+
+    @Test
+    fun `a failed Clone repos offers Retry and Cancel the Run, not an Agent's session, and Retry runs it again with the same inputs`() {
+        val api = repo("api")
+        val web = repo("web")
+        sourceMap(api)
+        browser.import("clone-repos.bpmn")
+        val run = runtime.startProcessInstanceByKey("clone-repos", mapOf("repos" to listOf("api", "web"), "branch" to "feature-x")).id
+        eventually { assertNotNull(runtime.createIncidentQuery().processInstanceId(run).singleResult()) }
+        val entry = "/notifications/" + runtime.createIncidentQuery().processInstanceId(run).singleResult().id
+        val page = browser.get(entry).body
+        assertContains(page, "The Source map work has no repo web")
+        assertContains(page, """value="retry">Retry</button>""")
+        assertContains(page, """value="cancel">Cancel the Run</button>""")
+        listOf("The session so far", "Your instruction", "Continue the session", "Start fresh").forEach { assertFalse(it in page, it) }
+        val drawer = assertNotNull(browser.events("run=$run&drawer=clone", "drawer").poll(10, TimeUnit.SECONDS))
+        assertContains(drawer, """value="retry">Retry</button>""")
+        assertFalse("Your instruction" in drawer)
+        listOf("continue", "fresh", "push").forEach { assertEquals(400, browser.post(entry, mapOf("action" to it, "instruction" to "Go on")).status, it) }
+
+        sourceMap(api, web)
+        browser.post(entry, mapOf("action" to "retry", "instruction" to ""))
+        eventually { assertNotNull(runtime.getVariable(run, "again")) }
+        assertEquals(listOf("api", "web"), clones(workspace(run)).map { it.fileName.toString() }.sorted())
     }
 
     @Test
