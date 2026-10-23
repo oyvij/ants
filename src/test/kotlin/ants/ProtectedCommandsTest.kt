@@ -153,6 +153,12 @@ class ProtectedCommandsTest : AntsTest() {
             text(call(url, authorization, "touch ran")),
         )
         assertFalse(workspace(run).resolve("ran").exists())
+        // A clone made outside Clone repos has no work branch, so the Agent names the repo instead of asking for the command.
+        assertEquals(
+            "`git clone git@example.com:o/web.git` is no Protected Command, so Ants ran nothing. Ants clones the Run's repos itself, on the work branch: " +
+                "name the repo where your Skill says to name repos, else end stuck with the repo in needs. Never ask for `git clone` as a Protected Command.",
+            text(call(url, authorization, "git clone git@example.com:o/web.git", folder = "sub")),
+        )
         assertEquals("../.. is no folder in the Run workspace, so Ants ran nothing.", text(call(url, authorization, "./yarn", folder = "../..")))
         workspace(run).resolve("out").createSymbolicLinkPointingTo(Files.createTempDirectory("outside"))
         assertEquals("out is no folder in the Run workspace, so Ants ran nothing.", text(call(url, authorization, "./yarn", folder = "out")))
