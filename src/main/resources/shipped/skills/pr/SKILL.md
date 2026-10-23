@@ -33,9 +33,11 @@ workspace root. Anything else is refused: `git -C …`, `git --git-dir=…`, `gi
 and `cd … && git …` or any other chained command.
 
 1. **Pick the repos.** Only entries with `pushed: true`. A repo whose `remote` isn't on
-   `github.com` gets no pull request from you: open the others first, then answer `stuck`, naming
-   each such repo with its `compareUrl` (or its remote and branches when there is none), so the
-   user can open it by hand and Continue. When Continued, answer `done` with the pull requests you
+   `github.com` gets a pull request from you only if the user's standing instructions for this Run
+   say how to open one on its host, such as through a Protected Command: write its body to
+   `pr/<repo>.md` as below and follow them. Otherwise open the others first, then answer `stuck`,
+   naming each such repo with its `compareUrl` (or its remote and branches when there is none), so
+   the user can open it by hand and Continue. When Continued, answer `done` with the pull requests you
    opened. For each github.com repo, read `<owner>/<name>` from the remote and run
    `gh repo view <owner>/<name> --json parent`. If `parent` is null, the pull request goes to
    `<owner>/<name>` from `<branch>` into `<base>`: `<target>` is `<owner>/<name>`, `<head>` is

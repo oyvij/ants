@@ -233,4 +233,14 @@ class PushTest : AntsTest() {
         )
         assertContains(report, "<li><strong>web</strong> · not pushed: The remote's feature-x isn't where this clone has it.</li>")
     }
+
+    @Test
+    fun `a Bitbucket remote's compare link is its new pull request page, on the web host`() {
+        fun url(remote: String) = Push.compareUrl(Outgoing("api", Path.of("api"), remote, "feature-x", "master", emptyList(), isNew = true, toPush = true))
+        val page = "https://bitbucket.org/stacc/api/pull-requests/new?source=feature-x&dest=master"
+        assertEquals(page, url("git@bitbucket.org:stacc/api.git"))
+        assertEquals(page, url("ssh://git@ssh.bitbucket.org/stacc/api.git"))
+        assertEquals(page, url("https://arne@bitbucket.org/stacc/api.git"))
+        assertEquals("https://github.com/oyvij/api/compare/master...feature-x", url("ssh://git@ssh.github.com:443/oyvij/api.git"))
+    }
 }
