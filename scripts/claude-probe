@@ -42,7 +42,6 @@ FLAGS = [
     "--setting-sources", "user,project",
     "--settings", '{"disableAllHooks":true}',
     "--strict-mcp-config",
-    "--disable-slash-commands",
     "--forward-subagent-text",
 ]
 

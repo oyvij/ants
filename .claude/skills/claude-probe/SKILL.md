@@ -53,6 +53,11 @@ test scripts, so it passes whatever you assume. Facts the real CLI has already s
   (a `<command-name>/x</command-name>` user message, no `Skill` tool call), and the model follows it.
 - claude 2.1.309 loads a skill whose folder is a symlink under an `--add-dir`'s `.claude/skills`, but under `dontAsk`
   refuses a Read of a file in it (via the symlink path) until the symlink's target folder is an `--add-dir` too.
+- claude 2.1.309 with Ants' launch (no `--disable-slash-commands`, `Skill` in `--tools` and `--allowedTools`, a
+  per-session folder whose `.claude/skills/grill` links the shipped `grill`, and `grill`'s own folder, both
+  `--add-dir`) expands a first message `/grill The workspace is …\n\n{inputs}` into the skill, with the rest of
+  the message as its `<command-args>`, and hands back a Round: one `done` Result whose `questions` match `grill`'s
+  schema. Glob doesn't list files through the symlinked skill folder.
 
 ## Steps
 

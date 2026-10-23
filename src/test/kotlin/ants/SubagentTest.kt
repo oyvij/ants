@@ -82,7 +82,7 @@ class SubagentTest : AntsTest() {
         agent("reviewer", "description: Reviews.\nants-subagent: true\n")
 
         val launch = launch()
-        assertEquals("Read,Agent", launch.flag("--tools"))
+        assertEquals("Read,Agent,Skill", launch.flag("--tools"))
         val denied = launch.flag("--disallowedTools")!!.split(",")
         for (type in listOf("Agent(reviewer)", "Agent(general-purpose)", "Agent(Explore)", "Agent(Plan)")) assertContains(denied, type)
         assertFalse("Agent(searcher)" in denied)

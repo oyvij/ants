@@ -29,7 +29,10 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit.MILLISECONDS
 import java.util.concurrent.TimeUnit.SECONDS
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.io.path.ExperimentalPathApi
 import kotlin.io.path.createDirectories
+import kotlin.io.path.createSymbolicLinkPointingTo
+import kotlin.io.path.deleteRecursively
 import kotlin.io.path.readText
 import kotlin.io.path.writeText
 import kotlin.io.path.deleteIfExists
@@ -480,7 +483,7 @@ class AgentLauncher(
         // A Run with repos picked clones exactly them, so the repos a Result names there go unchecked.
         val repos = source.repos(settings).takeIf { source.picked.isEmpty() && ResultContract.namesRepos(output) }
         val prompt = if (!handedOff) instruction.orEmpty()
-        else handOff(task, skill, used, cwd, vault, source.sourceMap(settings), repos, verbosity) + "\n\n" + json.writeValueAsString(inputs) + (if (instruction.isNullOrBlank()) "" else "\n\nFrom the user:\n$instruction")
+        else handOff(agent.cli, task, skill, used, cwd, vault, source.sourceMap(settings), repos, verbosity) + "\n\n" + json.writeValueAsString(inputs) + (if (instruction.isNullOrBlank()) "" else "\n\nFrom the user:\n$instruction")
         val judge = Judge(agent.cli, schema, workspace, walkthrough(task), repos)
         // A knowledge Task, one with an `approval` input, may write the Vault only once it holds the user's approval
         // (ADR 0007): until then the Vault is read-only to it, but for Bash. codex can read it without an --add-dir.
@@ -492,7 +495,8 @@ class AgentLauncher(
             .plus(if (verbosity == null) emptyList() else listOf("--add-dir", "${catalogue.verbosityFile.parent}"))
         val (token, mcp) = protectedCommands.open(workspace) // its Protected Commands run in the Run workspace
         val process = runCatching {
-            cli(agent.cli, cwd, flags(agent, cwd, schema, listOf(skill) + used, session!!, resume, mcp, workspace, gated?.let { listOf("Write(/$it/**)", "Edit(/$it/**)") }.orEmpty()) + shared + places).start()
+            val skills = listOf(skill) + used
+            cli(agent.cli, cwd, flags(agent, cwd, schema, skills, skillsFolder(workspace, instance, skills), session!!, resume, mcp, workspace, gated?.let { listOf("Write(/$it/**)", "Edit(/$it/**)") }.orEmpty()) + shared + places).start()
         }.onFailure { protectedCommands.close(token) }.getOrThrow()
         val stdin = Stdin(process.outputWriter(), name(task), home)
         clis[process] = run
@@ -615,18 +619,33 @@ class AgentLauncher(
         source.verbosity.takeIf { it != Verbosity.NORMAL && catalogue.verbosity(skill) }
 
     /**
-     * The hand-off line: the Skill and the workspace, the Skills it [used], where the [vault] and [sourceMap] and the
+     * The folder whose `.claude/skills` links each of [skills], the Skills a session of [instance] may use, so claude
+     * loads them as its own (ADR 0024). Made anew for each launch, a resumed one too. It sits in the Run [workspace]
+     * but outside what outlives the Run (`tasks/`), so it goes with the workspace ([cleanUp] doesn't follow links).
+     */
+    @OptIn(ExperimentalPathApi::class)
+    private fun skillsFolder(workspace: Path, instance: String, skills: List<Skill>): Path {
+        val folder = workspace.resolve(".skills").resolve(instance)
+        folder.deleteRecursively() // leaves what the links lead to
+        val links = folder.resolve(".claude/skills").createDirectories()
+        for (skill in skills.distinctBy { it.name }) links.resolve(skill.name).createSymbolicLinkPointingTo(skill.folder)
+        return folder
+    }
+
+    /**
+     * The hand-off line: for claude, `/<skill>`, which runs the Skill as a real skill, and the workspace; for codex, the Skill's file to follow and the workspace, the Skills it [used], where the [vault] and [sourceMap] and the
      * Answer History are, each only when on, the names of the [repos] its Result may name, if checked, and the
      * [verbosity] to write at, if any. The Task's [ANSWER_HISTORY] toggle has the final say on the Answer History,
      * else the Skill's opt-in.
      */
-    private fun handOff(task: LockedExternalTask, skill: Skill, used: List<Skill>, workspace: Path, vault: Path?, sourceMap: Path?, repos: List<Repo>?, verbosity: Verbosity?): String {
+    private fun handOff(cli: String, task: LockedExternalTask, skill: Skill, used: List<Skill>, workspace: Path, vault: Path?, sourceMap: Path?, repos: List<Repo>?, verbosity: Verbosity?): String {
         val places = if (vault == null) emptyList() else listOfNotNull(
             "the Vault is $vault",
             sourceMap?.let { "the Source map is $it" },
         )
-        return "Follow the Skill in ${skill.file} for the workspace at $workspace." +
-            (if (used.isEmpty()) "" else " It uses the Skills ${used.joinToString { "${it.name} (${it.file})" }}.") +
+        // ponytail: codex keeps reading the Skill as a file until its skills are probed (#225).
+        return (if (cli == "claude") "/${skill.name} The workspace is $workspace." else "Follow the Skill in ${skill.file} for the workspace at $workspace.") +
+            (if (used.isEmpty() || cli == "claude") "" else " It uses the Skills ${used.joinToString { "${it.name} (${it.file})" }}.") +
             (if (places.isEmpty()) "" else " " + places.joinToString(" and ").replaceFirstChar(Char::uppercase) + ".") +
             (answerHistory(task, skill)?.let { " The Answer History is $it." } ?: "") +
             (repos?.let { " Name each repo in your Result by its Source map name or a git URL; ${ResultContract.names(it)}." } ?: "") +
@@ -742,7 +761,7 @@ class AgentLauncher(
      * claude's flags, with Ants' MCP server [mcp] and its tool `run`, and the permission rules [denied] besides the
      * Subagent types a Limit leaves out and Ants' own files that hold a Secret or the password (ADR 0015).
      */
-    private fun flags(agent: Agent, cwd: Path, schema: Map<*, *>, skills: List<Skill>, session: String, resume: Boolean, mcp: String, workspace: Path, denied: List<String>): List<String> {
+    private fun flags(agent: Agent, cwd: Path, schema: Map<*, *>, skills: List<Skill>, skillsFolder: Path, session: String, resume: Boolean, mcp: String, workspace: Path, denied: List<String>): List<String> {
         val tools = (agent.tools ?: DEFAULT_TOOLS).filter { it.substringBefore('(') != "Skill" }.map { anchored(it, cwd) }
         val (subagents, types) = subagents(tools)
         // Probed on claude 2.1.299: a rule such as `Bash(git diff *)` lets `git diff --output=<any path>` write a file, and
@@ -757,12 +776,14 @@ class AgentLauncher(
             "--settings", claudeSettings(workspace),
             "--strict-mcp-config",
             "--mcp-config", mcp,
-            "--disable-slash-commands",
             "--forward-subagent-text",
-            "--tools", tools.map { it.substringBefore('(') }.distinct().joinToString(","),
+            // Skill, for the Skills [skillsFolder] loads: which are loaded is what limits them, not a Skill(x) rule.
+            "--tools", (tools.map { it.substringBefore('(') } + "Skill").distinct().joinToString(","),
             // claude checks a Write against Edit rules and ignores a Write(path) one, so a Write limit also goes out as Edit
-            "--allowedTools", (tools + tools.filter { it.startsWith("Write(") }.map { "Edit(" + it.removePrefix("Write(") } + RUN_TOOL).distinct().joinToString(","),
-        ) + subagents + (if (disallowed.isEmpty()) emptyList() else listOf("--disallowedTools", disallowed.joinToString(","))) + skills.flatMap { listOf("--add-dir", it.folder.toString()) } + (if (agent.model != null) listOf("--model", agent.model) else emptyList()) +
+            "--allowedTools", (tools + tools.filter { it.startsWith("Write(") }.map { "Edit(" + it.removePrefix("Write(") } + "Skill" + RUN_TOOL).distinct().joinToString(","),
+        ) + subagents + (if (disallowed.isEmpty()) emptyList() else listOf("--disallowedTools", disallowed.joinToString(","))) + listOf("--add-dir", "$skillsFolder") +
+            // A symlinked Skill's files can be read only with its real folder added too.
+            skills.flatMap { listOf("--add-dir", it.folder.toString()) } + (if (agent.model != null) listOf("--model", agent.model) else emptyList()) +
             (if (agent.instructions.isNotEmpty()) listOf("--append-system-prompt", agent.instructions) else emptyList())
     }
 

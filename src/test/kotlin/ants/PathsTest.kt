@@ -101,7 +101,7 @@ class PathsTest : AntsTest() {
         val answerer = claude.launches("answer-round").single()
         assertContains(answerer.stdin, "The Answer History is ${home.resolve("answer-history")}.")
         assertContains(answerer.stdin, "Who exports?")
-        assertEquals("Read,Grep,Glob" to "Read,Grep,Glob", answerer.flag("--tools") to answerer.flag("--allowedTools")?.removeSuffix(",mcp__ants__run"))
+        assertEquals("Read,Grep,Glob" to "Read,Grep,Glob", answerer.flag("--tools")?.removeSuffix(",Skill") to answerer.flag("--allowedTools")?.removeSuffix(",Skill,mcp__ants__run"))
         assertContains(claude.launches("grill")[1].stdin, """\"source\":\"agent\"""")
         // Clone new repos cloned the repo the first Round named, so to-spec has it in its clones.
         assertContains(claude.launches("to-spec").single().stdin, """\"repos\":[\"web\"]""")

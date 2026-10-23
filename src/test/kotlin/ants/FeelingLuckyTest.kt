@@ -97,7 +97,7 @@ class FeelingLuckyTest : AntsTest() {
     @Test
     fun `the shipped Agents get the tool allow-lists the spec gives them`() {
         val ws = workspace(feelingLucky())
-        fun tools(skill: String) = claude.launches(skill).first().let { it.flag("--tools") to it.flag("--allowedTools")?.removeSuffix(",mcp__ants__run") } // every claude Task has the run tool
+        fun tools(skill: String) = claude.launches(skill).first().let { it.flag("--tools")?.removeSuffix(",Skill") to it.flag("--allowedTools")?.removeSuffix(",Skill,mcp__ants__run") } // every claude Task has Skill and the run tool
 
         // claude checks a Write against Edit rules and ignores a Write(path) rule, so the scout's limit goes out as both
         assertEquals("Read,Grep,Glob,Write,Agent" to "Read,Grep,Glob,Write(/$ws/scout/**),Agent(knowledge-searcher),Edit(/$ws/scout/**)", tools("scout"))

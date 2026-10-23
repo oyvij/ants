@@ -130,7 +130,7 @@ class HumanInTheLoopTest : AntsTest() {
     @Test
     fun `the griller, planner and storyteller get the tool allow-lists the spec gives them, and the implementer fixes the review`() {
         val ws = workspace(humanInTheLoop())
-        fun tools(skill: String) = claude.launches(skill).first().let { it.flag("--tools") to it.flag("--allowedTools")?.removeSuffix(",mcp__ants__run") } // every claude Task has the run tool
+        fun tools(skill: String) = claude.launches(skill).first().let { it.flag("--tools")?.removeSuffix(",Skill") to it.flag("--allowedTools")?.removeSuffix(",Skill,mcp__ants__run") } // every claude Task has Skill and the run tool
 
         assertEquals("Read,Grep,Glob" to "Read,Grep,Glob", tools("grill"))
         assertEquals("Read,Grep,Glob,Write,Edit" to "Read,Grep,Glob,Write(/$ws/tickets/**),Edit(/$ws/tickets/**)", tools("to-spec"))
@@ -144,7 +144,7 @@ class HumanInTheLoopTest : AntsTest() {
         assertEquals(tools("implement"), tools("fix-review"))
         // Every implementer builds with tdd and reviews with code-review.
         for (skill in listOf("implement", "fix-review")) {
-            for (used in listOf("tdd", "code-review")) assertContains(claude.launches(skill).first().stdin, "/$used/SKILL.md", message = skill)
+            assertEquals(setOf(skill, "tdd", "code-review", "codebase-design"), claude.launches(skill).first().skills.keys, skill)
         }
     }
 

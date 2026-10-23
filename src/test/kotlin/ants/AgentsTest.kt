@@ -314,8 +314,8 @@ class AgentsTest : AntsTest() {
             browser.post(entry, mapOf("action" to "fresh", "instruction" to ""))
             eventually { assertContains(browser.get(run).body, """id="state">Completed<""") }
             val (first, second) = claude.launches("draft")
-            assertEquals(listOf("sonnet", "Write plainly.", "Read"), listOf(first.flag("--model"), first.flag("--append-system-prompt"), first.flag("--tools")))
-            assertEquals(listOf("opus", "Write warmly.", "Grep,Read"), listOf(second.flag("--model"), second.flag("--append-system-prompt"), second.flag("--tools")))
+            assertEquals(listOf("sonnet", "Write plainly.", "Read,Skill"), listOf(first.flag("--model"), first.flag("--append-system-prompt"), first.flag("--tools")))
+            assertEquals(listOf("opus", "Write warmly.", "Grep,Read,Skill"), listOf(second.flag("--model"), second.flag("--append-system-prompt"), second.flag("--tools")))
         } finally {
             settings.writeText(before)
         }

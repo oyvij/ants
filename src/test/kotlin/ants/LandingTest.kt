@@ -147,7 +147,11 @@ class LandingTest : AntsTest() {
             assertEquals(setOf("implement-1", "implement-2").map { "${instances.resolve(it)}" }.toSet(), claude.launches("build").map { it.cwd }.toSet())
             for (launch in claude.launches("build")) {
                 assertEquals("${workspace(run)}", launch.argv.zipWithNext().filter { it.first == "--add-dir" }.map { it.second }.first { "skills" !in it })
-                assertContains(launch.stdin, "for the workspace at ${workspace(run)}/instances/${launch.cwd.substringAfterLast('/')}.")
+                assertContains(launch.stdin, "The workspace is ${workspace(run)}/instances/${launch.cwd.substringAfterLast('/')}.")
+                // Each instance gets a skills folder of its own, linking the same Skill.
+                val skills = workspace(run).resolve(".skills/${launch.cwd.substringAfterLast('/')}")
+                assertContains(launch.argv.zipWithNext(), "--add-dir" to "$skills")
+                assertEquals(setOf("build"), launch.skills.keys)
             }
         }
         val one = instances.resolve("implement-1")

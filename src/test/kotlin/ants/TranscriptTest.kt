@@ -66,7 +66,7 @@ class TranscriptTest : AntsTest() {
         val transcript = page("/runs/$run/tasks/draft/transcript") // the Run has ended, and its Transcript is still there
         val order = listOf(
             """<h3 class="launch" id="e0">Launch 1""",
-            """<details class="prompt" id="e1"><summary>Opening prompt</summary><pre>Follow the Skill in ${home.resolve("skills/draft/SKILL.md")}""",
+            """<details class="prompt" id="e1"><summary>Opening prompt</summary><pre>/draft The workspace is """,
             """<p>Let me <strong>look</strong>.</p>""",
             """<details class="thinking" id="e3"><summary>✻ Thinking</summary>Which files?</details>""",
             """<div class="tool" id="e4"><b>Bash</b> <code>ls -1</code></div>""",

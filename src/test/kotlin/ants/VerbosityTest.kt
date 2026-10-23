@@ -181,7 +181,7 @@ class VerbosityTest : AntsTest() {
         return claude.launches("draft").last()
     }
 
-    private val FakeClaude.Launch.handOff get() = "Follow the Skill" + stdin.substringAfter("Follow the Skill").substringBefore("\\n")
+    private val FakeClaude.Launch.handOff get() = "/draft" + stdin.substringAfter("/draft").substringBefore("\\n")
 
     private val FakeClaude.Launch.readsVerbosity get() = "--add-dir" to "$verbosityFolder" in argv.zipWithNext()
 
@@ -195,10 +195,10 @@ class VerbosityTest : AntsTest() {
     }
 
     private val FakeClaude.Launch.comparableArgv
-        get() = argv.withIndex().filterNot { (i, _) -> i > 0 && argv[i - 1] in setOf("--session-id", "--mcp-config") }.map { it.value }
+        get() = argv.withIndex().filterNot { (i, arg) -> i > 0 && (argv[i - 1] in setOf("--session-id", "--mcp-config") || "/.skills/" in arg) }.map { it.value }
 
     private fun assertToday(launch: FakeClaude.Launch) {
-        assertTrue(launch.handOff.matches(Regex("Follow the Skill in ${home.resolve("skills/draft/SKILL.md")} for the workspace at [^ ]+\\.")), launch.handOff)
+        assertTrue(launch.handOff.matches(Regex("/draft The workspace is [^ ]+\\.")), launch.handOff)
         assertFalse(launch.readsVerbosity)
         assertFalse(launch.argv.any { "$verbosityFolder" in it })
     }

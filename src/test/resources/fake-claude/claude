@@ -1,9 +1,9 @@
 #!/bin/bash
 # A fake `claude` for tests, run from a copy in its own folder. `--help` prints ./help, if there is one. `auth status`
 # prints $CLAUDE_CONFIG_DIR/auth-status.json, or, like a logged-out claude, a loggedIn false and exit 1. Otherwise it
-# records its argv, environment, working directory and stdin's first line under ./launches/<skill>.<n> for the nth
+# records its argv, environment, working directory, loaded skills and stdin's first line under ./launches/<skill>.<n> for the nth
 # launch of that Skill, appends its working directory to ./launches.log, and plays ./sessions/<skill>.<n>.jsonl, or
-# ./sessions/<skill>.jsonl when there is none. The Skill is picked by the hand-off line, or for `--resume` by the
+# ./sessions/<skill>.jsonl when there is none. The Skill is picked by the first message's leading `/<skill>`, or for `--resume` by the
 # session's first launch; a launch with neither, a So far rewrite, plays the Skill `so-far`. Like claude with
 # --replay-user-messages, it echoes every stdin message with "isReplay":true.
 # A session line `wait <file>` waits until ./<file> exists, `read` reads the next stdin line into the launch's stdin
@@ -21,7 +21,7 @@ if [ "$1 $2" = "auth status" ]; then cat "$CLAUDE_CONFIG_DIR/auth-status.json" 2
 session= previous= config=
 for arg; do case $previous in --session-id|--resume) session=$arg ;; --mcp-config) config=$arg ;; esac; previous=$arg; done
 IFS= read -r prompt
-skill=$(basename "$(printf '%s' "$prompt" | sed -n 's|.*Follow the Skill in \(.*\)/SKILL.md for.*|\1|p')")
+skill=$(printf '%s' "$prompt" | sed -nE 's#.*"(content|text)":"/([A-Za-z0-9_.:-]+).*#\2#p')
 mkdir -p "$dir/launches" "$dir/skills"
 case " $* " in *" mcp__ants__* "*) skill=process-builder ;; esac
 if [ "$skill" = process-builder ]; then :
@@ -34,6 +34,10 @@ launch=$dir/launches/$skill.$n
 printf '%s\n' "$@" > "$launch/argv"
 env > "$launch/env"
 pwd > "$launch/cwd"
+# The skills an --add-dir's .claude/skills loads, one `<name> <link target>` line each, recorded now: the folder goes
+# with the Run workspace.
+previous=; for arg; do [ "$previous" = --add-dir ] && for link in "$arg"/.claude/skills/*; do
+    [ -L "$link" ] && printf '%s %s\n' "$(basename "$link")" "$(readlink "$link")"; done; previous=$arg; done > "$launch/skills"
 # stdin comes last and whole (renamed into place), so a launch whose stdin exists has its full record.
 printf '%s\n' "$prompt" > "$launch/stdin.tmp" && mv "$launch/stdin.tmp" "$launch/stdin"
 pwd >> "$dir/launches.log"
