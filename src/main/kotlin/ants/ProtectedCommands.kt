@@ -46,7 +46,10 @@ class ProtectedCommands(private val settings: Settings, private val mcp: Mcp) {
         val words = WORD.findAll(command).map { match -> match.groups.drop(1).firstNotNullOf { it?.value } }.toList()
         val prefixes = settings.protectedCommands().mapKeys { (prefix) -> Settings.strings(prefix).orEmpty() }
         val labels = prefixes.filterKeys { it.isNotEmpty() && words.take(it.size) == it }.maxByOrNull { it.key.size }?.value
-            ?: throw Refused("`$command` is no Protected Command, so Ants ran nothing. End stuck, with `$command` in needs: the user adds it in Settings, then continues your session, and you ask again.")
+            ?: throw Refused(
+                if (words.take(2) == listOf("git", "clone")) "`$command` is no Protected Command, so Ants ran nothing. Ants clones the Run's repos itself, on the work branch: name the repo where your Skill says to name repos, else end stuck with the repo in needs. Never ask for `git clone` as a Protected Command."
+                else "`$command` is no Protected Command, so Ants ran nothing. End stuck, with `$command` in needs: the user adds it in Settings, then continues your session, and you ask again.",
+            )
         val root = workspace.toRealPath()
         val dir = runCatching { root.resolve(folder).toRealPath() }.getOrNull()?.takeIf { it.startsWith(root) && it.isDirectory() }
             ?: throw Refused("$folder is no folder in the Run workspace, so Ants ran nothing.")

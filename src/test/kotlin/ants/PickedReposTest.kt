@@ -91,7 +91,7 @@ class PickedReposTest : AntsTest() {
     private fun shipSmall(repo: String, vararg repos: String): String {
         val picked = repos.joinToString(",") { "\"$it\"" }
         claude.session("scout", "write scout/brief.md Add a hello endpoint to $repo.\\n", result("""{"repos":[$picked],"branch":"","brief":"scout/brief.md"}"""))
-        claude.session("propose-solution", "sh cp scout/brief.md \$launch/brief", "write proposal/proposal.md # Hello\\n", result("""{"proposal":"proposal/proposal.md"}"""))
+        claude.session("propose-solution", "sh cp scout/brief.md \$launch/brief", "write proposal/proposal.md # Hello\\n", result("""{"proposal":"proposal/proposal.md","repos":[]}"""))
         claude.session("implement", "sh git -C repos/$repo -c user.name=Ants -c user.email=ants@example.com -c commit.gpgsign=false commit -q --allow-empty -m 'Add hello'", result("""{"review":"No findings."}"""))
         claude.session("pr", result("""{"pullRequests":[]}"""))
         claude.session("update-knowledge", 1, "write vault/proposal.md One Note.\\n", result("""{"proposal":"vault/proposal.md","written":false}"""))

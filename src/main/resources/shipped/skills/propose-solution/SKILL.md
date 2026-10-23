@@ -1,6 +1,6 @@
 ---
 name: propose-solution
-description: Read the Run's clones and propose how to build what the prompt asks, as proposal/proposal.md, for an implementer to follow.
+description: Read the Run's clones and propose how to build what the prompt asks, as proposal/proposal.md, for an implementer to follow, naming any repo the work turns out to need.
 metadata:
   ants-inputs: prompt brief clones
   ants-verbosity: true
@@ -16,7 +16,7 @@ Your inputs:
 - `prompt`: what the user wants, in their words.
 - `brief`: the scout's brief, relative to the Run workspace: the repos and why, and what the Vault
   says.
-- `clones`: the repos cloned for the Run, `[{name, path, commit}]`, `path` relative to the Run
+- `clones`: the repos cloned so far, `[{name, path, commit}]`, `path` relative to the Run
   workspace.
 
 You read the clones; you write only in `proposal/`.
@@ -30,6 +30,15 @@ You read the clones; you write only in `proposal/`.
 If the prompt can't be built without a decision only the user can make, answer `stuck`, naming
 the decision and the options, with the one you recommend.
 
+**Repos.** When the work needs a repo that wasn't in `clones` when you started, or may need it and
+nothing you have read rules it out, or the user asks you to look at one, name it in `repos`, as the
+user's Source map names it in the brief or as a git URL the user gave. Ants clones it: never clone
+it yourself, nor ask for a command that does. Name every such repo again each time you answer:
+`repos` is always the whole list. Never take a repo you haven't read to need no change: until it
+shows in `clones`, the proposal lists it as not checked, with what to check there. Each is cloned
+at `repos/<name>/` and your session resumed, so read it then and propose again. With none, `repos`
+is `[]`.
+
 ## 2. Write the proposal
 
 Write `proposal/proposal.md`:
@@ -40,4 +49,4 @@ Write `proposal/proposal.md`:
 - **Tests**: the behaviours to test, through which public interface, and how the repo runs them.
 - **Out of scope**: what a reader might expect that this change leaves alone.
 
-Answer `done` with `proposal: "proposal/proposal.md"`.
+Answer `done` with `proposal: "proposal/proposal.md"`, and `repos`.
