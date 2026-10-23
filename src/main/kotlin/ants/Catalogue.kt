@@ -215,8 +215,8 @@ fun Path.writeAtomically(text: String) {
     Files.move(next, this, ATOMIC_MOVE, REPLACE_EXISTING)
 }
 
-/** The YAML Ants writes: block style, a long value kept on one line. */
-val yaml = Yaml(DumperOptions().apply { defaultFlowStyle = DumperOptions.FlowStyle.BLOCK; splitLines = false })
+/** The YAML Ants writes: block style, a long value kept on one line. A new one on each use, since a [Yaml] isn't thread-safe. */
+val yaml get() = Yaml(DumperOptions().apply { defaultFlowStyle = DumperOptions.FlowStyle.BLOCK; splitLines = false })
 
 /** A list as a form's field holds it: words separated by commas or white space, such as `code-review, tdd`. */
 fun words(text: String?) = text.orEmpty().split(Regex("[\\s,]+")).filter(String::isNotEmpty)
