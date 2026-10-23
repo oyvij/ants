@@ -24,8 +24,13 @@ One step of a Process, reading the inputs it names and ending in a result the ne
 _Avoid_: job, step, activity
 
 **Agent Task**:
-A Task an Agent carries out by running one Skill.
+A Task an Agent carries out from its Assignment, or from the one Skill the Task names when it has no
+Assignment, using the Skills the Task allows.
 _Avoid_: AI task, service task
+
+**Assignment**:
+What an Agent Task asks its Agent to do: the job, what to read and what to hand back.
+_Avoid_: instruction, prompt, brief, task description
 
 **User Task**:
 A Task the user carries out on a page, such as answering a Round or approving.
@@ -41,13 +46,14 @@ element; a warning is a Check that doesn't refuse.
 _Avoid_: lint, validation error, rule
 
 **Agent**:
-A reusable definition of who does a Task: which AI CLI it runs, which tools it may use and its
-standing instructions.
+A reusable definition of who does a Task: which AI CLI it runs, which tools and Skills it may use and
+its standing instructions.
 _Avoid_: worker, bot, ant
 
 **Skill**:
-A `SKILL.md` saying how to do one job; the instructions a Task hands its Agent.
-_Avoid_: prompt, task instructions
+A `SKILL.md` saying how to do one kind of job, which an Agent picks up on its own when its Task calls
+for it; it knows nothing of Runs or Tasks.
+_Avoid_: prompt, task instructions, Assignment
 
 **Template**:
 A named piece of a Process, kept in a library, that is copied into another Process and changed there;
@@ -104,7 +110,8 @@ _Avoid_: group, context, account
 **Profile instructions**:
 A Profile's standing instructions for every Agent in its Runs, the plain markdown file `profiles/<profile>/AGENTS.md`
 in ANTS_HOME, edited on the Settings page; a missing or blank file means none. Each Run gets a copy at its start, and
-they rank below an Agent's and a Skill's own instructions and a repo's own CLAUDE.md or AGENTS.md.
+they rank below a Task's Assignment, an Agent's and a Skill's own instructions and a repo's own CLAUDE.md or
+AGENTS.md.
 _Avoid_: user CLAUDE.md, global instructions, system prompt
 
 **Verbosity**:

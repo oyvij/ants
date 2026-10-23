@@ -42,6 +42,17 @@ test scripts, so it passes whatever you assume. Facts the real CLI has already s
   `Write(pr/**)` and running `gh pr create … --body-file pr/x.md` is allowed, so the `pr` Skill does that.
   claude 2.1.303 still refuses it with a backtick in `--title`, and allows `--title "… (#110)"` and `--body-file`
   from inside a clone (`../../pr/x.md`) or by absolute path, so the Skill's titles have no backticks.
+- claude 2.1.309 with `--disable-slash-commands` has no `Skill` tool and lists no skills. Without it, a
+  `<dir>/.claude/skills/x/SKILL.md` under `--add-dir <dir>` loads as the skill `x`, and `skills/x/SKILL.md` under
+  `--plugin-dir <dir>` as `<plugin>:x`; the model invokes either on its own from the description.
+- Under `dontAsk`, claude 2.1.309 runs any loaded skill: `--allowedTools 'Skill(x)'` limits nothing.
+  `--disallowedTools 'Skill(y)'` refuses `y` ("Skill execution blocked by permission rules") but still lists it in
+  the init event's `skills`, and `--disallowedTools Skill` removes the tool even beside an allowed `Skill(x)`. So
+  only which skills are loaded limits an Agent, and leaving `Skill` out of `--tools` turns them all off.
+- claude 2.1.309 `-p` without `--disable-slash-commands` expands a prompt of `/x` into the loaded skill `x` itself
+  (a `<command-name>/x</command-name>` user message, no `Skill` tool call), and the model follows it.
+- claude 2.1.309 loads a skill whose folder is a symlink under an `--add-dir`'s `.claude/skills`, but under `dontAsk`
+  refuses a Read of a file in it (via the symlink path) until the symlink's target folder is an `--add-dir` too.
 
 ## Steps
 
