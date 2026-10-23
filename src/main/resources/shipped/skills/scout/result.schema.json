@@ -3,7 +3,7 @@
   "properties": {
     "repos": {
       "type": "array",
-      "items": { "type": "string" },
+      "items": { "type": "string", "format": "repo" },
       "description": "The repos the user picked, exactly as given; else the ones the scout picks: Source map names, or git URLs word for word from the prompt."
     },
     "branch": {
