@@ -774,7 +774,7 @@ class AgentLauncher(
     }
 
     private fun claudeSettings(workspace: Path): String {
-        val base = mapOf("disableAllHooks" to true)
+        val base = mapOf("disableAllHooks" to true, "attribution" to mapOf("commit" to "", "pr" to "🐜 Created with Ants"))
         if (!workspace.resolve("AGENTS.md").exists()) return json.writeValueAsString(base)
         val above = generateSequence(workspace.toRealPath().parent) { it.parent }
             .flatMap { listOf(it.resolve("CLAUDE.md"), it.resolve("CLAUDE.local.md"), it.resolve(".claude/CLAUDE.md")) }
