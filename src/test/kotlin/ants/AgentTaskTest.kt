@@ -165,7 +165,7 @@ class AgentTaskTest : AntsTest() {
         instruct("work", " \n")
         val blank = start()
         eventually { assertContains(page(blank), """id="state">Completed<""") }
-        val settings = """{"disableAllHooks":true,"attribution":{"commit":"","pr":"🐜 Created with Ants"}}"""
+        val settings = """{"disableAllHooks":true,"attribution":{"commit":"","pr":"🐜 Created with [Ants](https://github.com/oyvij/ants)"}}"""
         assertEquals(listOf(settings, settings), claude.launches("draft").map { it.flag("--settings") })
     }
 
@@ -324,7 +324,7 @@ class AgentTaskTest : AntsTest() {
         val argv = launch.argv.joinToString(" ")
         for (flags in listOf(
             "-p", "--output-format stream-json --verbose --include-partial-messages", "--input-format stream-json --replay-user-messages",
-            "--permission-mode dontAsk", "--setting-sources user,project", """--settings {"disableAllHooks":true,"attribution":{"commit":"","pr":"🐜 Created with Ants"}}""",
+            "--permission-mode dontAsk", "--setting-sources user,project", """--settings {"disableAllHooks":true,"attribution":{"commit":"","pr":"🐜 Created with [Ants](https://github.com/oyvij/ants)"}}""",
             "--strict-mcp-config", "--disable-slash-commands", "--append-system-prompt Write plainly.", "--model sonnet",
             "--tools Read,Grep,Bash", "--allowedTools Read,Grep,Bash(git log:*)", "--add-dir ${home.resolve("skills/draft")}",
         )) assertContains(argv, flags)
