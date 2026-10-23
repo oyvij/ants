@@ -5,7 +5,7 @@ Its MCP tools act on the diagram in the open modeler page, not on a copy on the 
 the page, which applies it through bpmn-js' modeling API and answers with the result. The diagram already lives only
 in the page until **Save and deploy**, and going through bpmn-js puts every change on the canvas as it happens, on the
 undo stack (one step per tool call) and in the live Checks, exactly like a hand edit. A tool call with no page open
-fails, and closing the page ends the session.
+fails.
 
 - **Transport:** the same `/mcp` endpoint as Protected Commands (ADR 0015). A page opening the Process Builder gets a
   token of its own, which opens only the modeler tools; a Task's token opens only `run`.
@@ -13,8 +13,12 @@ fails, and closing the page ends the session.
   `mcp__ants__*` allowed (no Bash, Read, Write or Skills), no setting sources, a scratch folder as working directory,
   and its standing instructions shipped read-only and passed with `--append-system-prompt`. So it can't deploy, start
   a Run, read a Secret or edit a shipped Agent, Skill or Template: no tool does that. To change one it makes a copy.
-- **Session:** one live claude process per page (`--input-format stream-json`, `--session-id`), relaunched with
-  `--resume` if it dies. A new page starts a new session, which reads the Process's Build log
+- **Session:** one claude session per page (`--input-format stream-json`, `--session-id`), relaunched with
+  `--resume` at the next message once its process has ended. A page reloaded in its tab keeps its session (the token
+  in `sessionStorage`). A process lives only while someone uses it (#217), so an idle one never holds back an update:
+  it ends, never mid-turn, once the page's stream has been gone for `ants.builder.disconnect-grace` (10m) or no
+  message has come for `ants.builder.idle-timeout` (2h). Browser unload events aren't relied on: they don't fire when
+  the tab is killed or the machine sleeps. A new page starts a new session, which reads the Process's Build log
   (`ANTS_HOME/processes/<key>/build-log.md`), rewritten by the Process Builder at the end of every turn.
 - **Only on a Process's modeler,** never a Template's: a Template is changed in the Processes it is copied into.
 - **CLI:** `process-builder: {cli, model}` in `settings.yaml`. Only claude runs it until codex reaching Ants' MCP
