@@ -170,6 +170,7 @@
 @if(update.failed != null)
         <p role="alert">Update failed: ${update.failed}</p>
 @endif
+        <label class="row"><input type="checkbox" name="prereleases" checked="${form.prereleases}"> Follow beta versions</label>
         <button name="action" value="updates">Check now</button></div></div>
 </form>
 @for((i, map) in maps.entries.withIndex())

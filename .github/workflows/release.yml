@@ -1,0 +1,62 @@
+name: release
+
+# Makes the newest beta the stable release, by hand: `gh workflow run release.yml`. It builds the beta's commit again as
+# the version without -beta (0.27.0-beta.412 → 0.27.0), which CI's tests already passed, and publishes it as the latest
+# release, which install.sh installs, then the image (image.yml, called here, since a release made with GITHUB_TOKEN
+# starts no other workflow). The next push to main starts the betas of the next minor version. `-f version=1.0.0`
+# releases the beta as another version, such as a major one.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: the stable version, if not the newest beta's without -beta
+        type: string
+        default: ''
+
+jobs:
+  release:
+    # Apple silicon: the tarball's Java runtime is the build machine's.
+    runs-on: macos-15
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.beta.outputs.version }}
+    steps:
+      - id: beta
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          beta=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName,isPrerelease,createdAt \
+            --jq '[.[] | select(.isPrerelease)] | max_by(.createdAt) | .tagName')
+          if [ -z "$beta" ]; then echo "No beta to release" >&2; exit 1; fi
+          version=${VERSION:-${beta%%-*}}
+          version=${version#v}
+          if gh release view "v$version" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then echo "v$version is already released" >&2; exit 1; fi
+          echo "Releasing $beta as $version"
+          echo "beta=$beta" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ steps.beta.outputs.beta }}
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 25
+      - uses: gradle/actions/setup-gradle@v5
+      - run: ./gradlew tarball -Prelease=$VERSION
+        env:
+          VERSION: ${{ steps.beta.outputs.version }}
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.beta.outputs.version }}
+        run: gh release create "v$VERSION" build/dist/* install.sh --target "$(git rev-parse HEAD)" --title "Ants $VERSION" --generate-notes --latest
+
+  image:
+    needs: release
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/image.yml
+    with:
+      version: ${{ needs.release.outputs.version }}

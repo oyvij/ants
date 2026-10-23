@@ -11,7 +11,8 @@ plugins {
 }
 
 group = "no.oyvij"
-version = "0.26.0"
+// A local build's version. CI's releases pass theirs, from the release tags: -Prelease=0.27.0-beta.412.
+version = findProperty("release")?.toString() ?: "0.26.0"
 
 kotlin {
     jvmToolchain(25)

@@ -172,6 +172,7 @@ abstract class AntsTest {
             "--ants.shell=$shell",
             "--server.port=0",
             "--ants.releases=${releases.toUri()}",
+            "--ants.prereleases=${releases.resolve("releases.json").toUri()}",
             "--ants.models=${models.toUri()}",
             "--operaton.bpm.process-engine-name=another",
             "--spring.autoconfigure.exclude=org.operaton.bpm.spring.boot.starter.webapp.OperatonBpmWebappAutoConfiguration",
@@ -201,6 +202,7 @@ abstract class AntsTest {
             registry.add("ants.schedule-every") { "200ms" }
             registry.add("ants.update-every") { "200ms" }
             registry.add("ants.releases") { releases.toUri().toString() }
+            registry.add("ants.prereleases") { releases.resolve("releases.json").toUri().toString() }
             registry.add("ants.models") { models.toUri().toString() }
         }
     }
