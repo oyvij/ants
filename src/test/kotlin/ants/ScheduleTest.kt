@@ -477,4 +477,11 @@ class ScheduleTest : AntsTest() {
         act("Sweep B", "remove")
         assertFalse("⏰" in processRow(key))
     }
+
+    @Test
+    fun `Schedules read on many threads at once all read whole`() {
+        val text = yaml.dump((1..50).associate { "sweep-$it" to mapOf("process" to key, "cron" to "0 0 * * * *", "paused" to false) })
+        val failures = (1..2000).toList().parallelStream().map { runCatching { yaml.load<Any>(text) }.exceptionOrNull() }.toList().filterNotNull()
+        assertEquals(emptyList(), failures.map { it.toString() }.distinct())
+    }
 }
