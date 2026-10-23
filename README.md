@@ -2,7 +2,7 @@
 
 Runs BPMN Processes whose Tasks are AI agents. You draw how a kind of job gets done once, as a Process, then start a
 Run with a prompt and walk away. Agents do the steps they can, and the Run waits on you only where the Process says
-it must. The spec is `docs/spec.md`; the vocabulary is `GLOSSARY.md`.
+it must. The vocabulary is `GLOSSARY.md`; the decisions are `docs/adr/`.
 
 ## Getting started
 

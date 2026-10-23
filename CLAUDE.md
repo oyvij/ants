@@ -18,6 +18,6 @@ Runs BPMN Processes whose Tasks are AI agents.
   reporting a spec done, merge main into the branch, run the full suite on CI on that tip
   (`gh workflow run ci.yml --ref <branch>`), fix every failure and rerun until all shards are green. A green run
   from before the last merge doesn't count.
-- The spec is `docs/spec.md`, "Spec: Ants v1"; issue #27 points to it and its Tickets hang off #27. It collapses
-  the closed `/wayfinder` map #1 and its sub-issues.
+- A spec is a GitHub issue, and its Tickets are its sub-issues. The first one, "Spec: Ants v1" (#27), lived in
+  `docs/spec.md` until it was deleted; #27 links its last version.
 - Helper scripts live in `scripts/` (each prints its usage with `--help`); project skills in `.claude/skills/`.

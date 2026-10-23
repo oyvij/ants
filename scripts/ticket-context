@@ -1,24 +1,17 @@
 #!/usr/bin/env python3
 """What a ticket's implementer must read, in one call.
 
-    scripts/ticket-context [--full] <n>
+    scripts/ticket-context <n>
 
 Prints the ticket and its comments, then every ticket it is blocked by and every ticket it blocks, each whole with
-its comments (the upstream ones say what exists, the downstream ones settle scope), then the spec sections the ticket
-cites: the user stories it names by number ("story 12", "stories 51-53"), and each section whose heading's words (or
-the words in its parentheses) all appear in the ticket, then the headings it left out (for #71, 41 KB against 92 KB).
-Read the whole of `docs/spec.md` when a left-out section bears on the ticket.
-
---full prints the whole spec instead of the cited sections.
+its comments (the upstream ones say what exists, the downstream ones settle scope), then its spec: the parent issue
+it is a sub-issue of, with its comments.
 """
 import json
-import re
 import subprocess
 import sys
-from pathlib import Path
 
 REPO = "oyvij/ants"
-SPEC = Path(__file__).resolve().parent.parent / "docs/spec.md"
 
 
 def gh(*args):
@@ -36,35 +29,8 @@ def show(found, level="#"):
         print(f"{level}# Comment on #{n} by {comment['author']['login']}\n\n{comment['body'].strip()}\n")
 
 
-def stems(text):
-    """Words of three letters or more, an ending dropped and cut to five, so "Drawing" meets "drawn" and "Checks" "check"."""
-    return {re.sub(r"(ing|ed|es|s|n)$", "", word)[:5] for word in re.findall(r"[a-z0-9]{3,}", text.lower())
-            if word not in ("the", "and", "for", "with")}
-
-
-def cited(spec, ticket):
-    """The spec's sections and user stories that [ticket]'s text cites, in spec order, then the headings left out."""
-    words = stems(ticket)
-    stories = set()
-    for numbers in re.findall(r"(?i)\bstor(?:y|ies)\s+([\d\s,–-]+(?:and\s+\d+)?)", ticket):
-        for a, b in re.findall(r"(\d+)(?:\s*[–-]\s*(\d+))?", numbers):
-            stories.update(range(int(a), int(b or a) + 1))
-    out, left = [], []
-    for section in re.split(r"(?m)^(?=##+ )", spec):
-        heading = section.splitlines()[0] if section.startswith("#") else ""
-        names = [re.sub(r"\(.*?\)", "", heading.lstrip("# "))] + re.findall(r"\((.*?)\)", heading)
-        if heading and any(stems(name) and stems(name) <= words for name in names):
-            out.append(section.rstrip() + "\n")
-        else:
-            out += [line for line in section.splitlines() if (m := re.match(r"(\d+)\. ", line)) and int(m[1]) in stories]
-            left += [heading.lstrip("# ")] if heading else []
-    return "\n".join(out + [f"\nLeft out: {'; '.join(left)}."])
-
-
 def main():
     args = sys.argv[1:]
-    full = "--full" in args
-    args = [a for a in args if a not in ("--full", "--lean")]
     if len(args) != 1 or args[0] in ("-h", "--help"):
         sys.exit(__doc__.strip())
     n = int(args[0])
@@ -74,12 +40,10 @@ def main():
         for other in gh("api", f"repos/{REPO}/issues/{n}/dependencies/{relation}"):
             print(f"---\n\n**{relation.replace('_', ' ').capitalize()}:**\n")
             show(issue(other["number"]), "##")
-    spec = SPEC.read_text()
-    if not full:
-        text = " ".join([ticket["title"], ticket["body"] or ""] + [c["body"] for c in ticket["comments"]])
-        print(f"---\n\n**The spec (docs/spec.md), only what #{n} cites:**\n\n{cited(spec, text)}")
-    else:
-        print(f"---\n\n**The spec (docs/spec.md):**\n\n{spec}")
+    parent = subprocess.run(["gh", "api", f"repos/{REPO}/issues/{n}/parent", "--jq", ".number"], capture_output=True, text=True)
+    if parent.returncode == 0:
+        print("---\n\n**The spec:**\n")
+        show(issue(int(parent.stdout)), "##")
 
 
 if __name__ == "__main__":

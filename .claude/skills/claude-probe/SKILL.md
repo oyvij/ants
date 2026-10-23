@@ -57,8 +57,8 @@ test scripts, so it passes whatever you assume. Facts the real CLI has already s
 3. To make a test play the same session, pass `--fixture <file>`. It writes fake-`claude` session lines: partial
    stream events dropped, the session id as `$SESSION`, a `read` line where the probe sent a message. Trim it to
    the lines the test needs before using it.
-4. Record what you learned where the next reader looks: a deviation from the spec (`docs/spec.md`) goes into an ADR and the spec's
-   text (`docs/agents/issue-tracker.md`, Resolve a ticket); a fact the code depends on goes in a comment beside
-   that code.
+4. Record what you learned where the next reader looks: a deviation from the spec (the ticket's parent issue) goes
+   into an ADR and the spec's text (`docs/agents/issue-tracker.md`, Resolve a ticket); a fact the code depends on
+   goes in a comment beside that code.
 
 Done when the question has a printed answer from the real CLI and the answer is recorded.
