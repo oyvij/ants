@@ -105,13 +105,16 @@ class Push(
         const val PUSH = "push"
 
         /**
-         * The forge page comparing the work branch with the base, for an https or ssh remote: GitLab's `/-/compare/`
-         * on a host named gitlab, else GitHub's (and Gitea's) `/compare/`. Null for a local remote or no base.
+         * The forge page comparing the work branch with the base, for an https or ssh remote, on its host without a
+         * leading `ssh.`: GitLab's `/-/compare/` on a host named gitlab, Bitbucket's new pull request page on a host
+         * named bitbucket, else GitHub's (and Gitea's) `/compare/`. Null for a local remote or no base.
          */
-        // ponytail: two URL shapes guessed from the host name; a per-remote setting if Bitbucket or a renamed GitLab turns up.
+        // ponytail: three URL shapes guessed from the host name; a per-remote setting if a renamed forge turns up.
         fun compareUrl(repo: Outgoing): String? {
-            val (host, path) = Regex("""^(?:[a-z+]+://)?(?:[^@/]+@)?([^/:]+\.[^/:]+)(?::\d+)?[:/](.+?)(?:\.git)?/?$""").find(repo.remote)?.destructured ?: return null
+            val (sshHost, path) = Regex("""^(?:[a-z+]+://)?(?:[^@/]+@)?([^/:]+\.[^/:]+)(?::\d+)?[:/](.+?)(?:\.git)?/?$""").find(repo.remote)?.destructured ?: return null
             if (repo.base == null) return null
+            val host = sshHost.removePrefix("ssh.")
+            if ("bitbucket" in host) return "https://$host/$path/pull-requests/new?source=${repo.branch}&dest=${repo.base}"
             return "https://$host/$path/${if ("gitlab" in host) "-/" else ""}compare/${repo.base}...${repo.branch}"
         }
     }
