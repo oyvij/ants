@@ -1189,7 +1189,10 @@ async function diagram() {
 }
 
 async function openBuilder() {
-    const {token} = await (await fetch("/process-builder", {method: "POST", body: new URLSearchParams({_csrf: csrf})})).json()
+    // A reload in the tab gives the token it had, so it keeps its session and dialog while Ants does (ProcessBuilderTools).
+    const kept = "ants.builder." + location.pathname
+    const {token} = await (await fetch("/process-builder", {method: "POST", body: new URLSearchParams({_csrf: csrf, token: sessionStorage.getItem(kept) ?? ""})})).json()
+    sessionStorage.setItem(kept, token)
     stream.on("builder", async data => {
         const {id, tool, arguments: args} = JSON.parse(data)
         const body = {_csrf: csrf, token, call: id}
@@ -1228,8 +1231,6 @@ async function openBuilder() {
         }
     })
     stop.addEventListener("click", () => post("/process-builder/stop", {}))
-    // Closing the page ends its claude now; a page that only loses its stream ends it after a minute (ProcessBuilderTools).
-    addEventListener("pagehide", () => navigator.sendBeacon("/process-builder/close", new URLSearchParams({_csrf: csrf, token})))
     stream.follow("builder=" + token)
     canvas.dataset.builder = token
 }

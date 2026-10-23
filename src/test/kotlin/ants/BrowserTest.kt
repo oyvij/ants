@@ -345,7 +345,7 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
-    fun `the Process Builder keeps one session per page, resumes a dead claude, stops a turn, and closing the page ends claude`() = browse {
+    fun `the Process Builder keeps one session per page, resumes a dead claude, stops a turn, and a reload keeps the dialog`() = browse {
         val claude = FakeClaude()
         settings(claude)
         val init = """{"type":"system","subtype":"init","session_id":"${'$'}SESSION","apiKeySource":"none"}""" // claude has started the session
@@ -381,8 +381,11 @@ class BrowserTest : AntsTest() {
         page.click("#pb-stop")
         assertThat(page.locator("#pb-send")).isVisible()
         assertTrue("interrupt" in second.stdin)
-        page.navigate(url("/processes")) // leaving the page, as closing its tab, ends its claude
-        eventually { assertTrue(second.killed) }
+        page.reload() // the tab keeps its session: the same claude, the dialog intact
+        assertThat(dialog).containsText("Three.")
+        assertEquals(2, claude.launches("process-builder").size)
+        assertFalse(second.killed)
+        claude.release("never")
     }
 
     @Test

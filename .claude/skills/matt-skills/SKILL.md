@@ -31,8 +31,7 @@ it stays his.
 
    Done when every note is resolved and every changed paragraph of his has a mapping or needs none.
 4. **Check the contract.** Each Skill's In Ants still ends in its `result.schema.json`'s answer, and no new text of
-   his contradicts an Ants rule that In Ants leaves unaddressed. Update the list of his Skills in `docs/spec.md`
-   (Shipped content) when it changes.
+   his contradicts an Ants rule that In Ants leaves unaddressed.
 5. **Test and ship.** `scripts/affected-tests --run`, then the browser shard on CI as `CLAUDE.md` says. Commit
    (`Matt Pocock's Skills are his v<version>`), push, and open a pull request listing each In Ants line you added and
    why. Done when the tests are green and the pull request is open.
