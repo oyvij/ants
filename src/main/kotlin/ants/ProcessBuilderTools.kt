@@ -1,5 +1,6 @@
 package ants
 
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpStatus
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -18,6 +19,7 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.ExecutionException
+import java.util.concurrent.TimeUnit.MILLISECONDS
 import java.util.concurrent.TimeUnit.NANOSECONDS
 import java.util.concurrent.TimeoutException
 import kotlin.io.path.createDirectories
@@ -30,21 +32,27 @@ import kotlin.io.path.readText
  * the token, as an event `builder` on its SSE (`/live?builder=<token>`); the page answers from bpmn-js with a POST to
  * `/process-builder/answer`. The catalogue tools are answered by Ants, from what the modeler's own endpoints serve, and
  * the Checks by the Checks Save and deploy runs, on the page's diagram. Creating, changing and copying Agents, Skills
- * and Templates go through their pages' own save and Copy, and answer the item's page. The token dies once the page's SSE has been
- * gone for a minute.
+ * and Templates go through their pages' own save and Copy, and answer the item's page. A page reloaded in its tab keeps its
+ * token, so its session and dialog. Its claude ends, to resume at the next message, once no turn runs and the page's SSE
+ * has been gone for [grace], or no message has come for [idleTimeout]; the token dies once the SSE has been gone for
+ * [grace] with no session started, or for [KEPT] with one.
  */
 @RestController
 class ProcessBuilderTools(
     private val mcp: Mcp, private val agents: Agents, private val templates: Templates, private val processes: Processes, private val catalogue: Catalogue,
     private val skills: Skills, private val json: JsonMapper, private val launcher: AgentLauncher, private val settings: Settings,
+    @Value("\${ants.builder.disconnect-grace:10m}") grace: Duration, @Value("\${ants.builder.idle-timeout:2h}") idleTimeout: Duration,
 ) {
     private val pages = ConcurrentHashMap<String, Page>()
 
     /** How long a page has to answer a relayed call. */
     internal var timeLimit: Duration = TIME_LIMIT
 
-    /** A page whose SSE last asked longer ago than this has gone: its token dies and its claude ends. */
-    internal var gone: Duration = GONE
+    /** A page whose SSE last asked longer ago than this has gone: its claude ends once no turn runs. */
+    internal var grace: Duration = grace
+
+    /** A session no message has come to for this long ends its claude once no turn runs, even with its page open. */
+    internal var idleTimeout: Duration = idleTimeout
 
     /**
      * One open modeler page: the calls waiting to go out on its SSE, and those waiting for its answer; and its claude
@@ -73,6 +81,10 @@ class ProcessBuilderTools(
         @Volatile
         var closed = false
 
+        /** When the last message was sent or the last turn ended, which [idleTimeout] counts from. */
+        @Volatile
+        var active = System.nanoTime()
+
         /** The dialog, claude's stream-json lines folded in as an Agent Task's Transcript folds them, each tool call as [LINES] words it. Guarded by itself. */
         val dialog = Transcript { name, input -> LINES[name.removePrefix("mcp__ants__").takeIf { it != name }]?.invoke(input) }
 
@@ -98,7 +110,7 @@ class ProcessBuilderTools(
         val waiting = ConcurrentHashMap<String, CompletableFuture<String>>()
 
         val connected get() = polled && System.nanoTime() - seen < CONNECTED.toNanos()
-        override val alive get() = !closed && System.nanoTime() - seen < gone.toNanos()
+        override val alive get() = !closed
         override val tools = TOOLS
 
         override fun call(name: String, arguments: Map<*, *>): Pair<String, Boolean> = try {
@@ -172,6 +184,7 @@ class ProcessBuilderTools(
                 opening = prompt to message
             }
             busy = true
+            active = System.nanoTime()
             if (!stdin!!.say(prompt ?: message)) busy = false.also { throw Refused("claude ended before it read the message. Send it again to resume the session.") }
         }
 
@@ -207,12 +220,15 @@ class ProcessBuilderTools(
                     note(AgentLauncher.LOST_LOGIN + (apiKey?.let { ": claude would use an API key (apiKeySource: $it), and Ants runs only on its own login." } ?: "."))
                     stdin.close()
                     launcher.kill(process)
-                } else if (event["type"] == "result") busy = false // its text is the last reply's, already shown
+                } else if (event["type"] == "result") { // its text is the last reply's, already shown
+                    busy = false
+                    active = System.nanoTime()
+                }
                 else synchronized(dialog) { dialog.add(opening?.let { shown(event, it) } ?: line) }
             }
             val exit = process.waitFor()
             busy = false
-            if (exit != 0 && !stdin.stopping && !closed) note("claude ended (exit $exit)${stderr()?.let { ": ${it.lines().last()}" } ?: ""}. Your next message resumes the session.")
+            if (exit != 0 && stdin.open && !stdin.stopping && !closed) note("claude ended (exit $exit)${stderr()?.let { ": ${it.lines().last()}" } ?: ""}. Your next message resumes the session.")
         }
 
         /** The replay of the first prompt [opening] as the user's own message, the Build log left out; null for any other line. */
@@ -223,6 +239,17 @@ class ProcessBuilderTools(
             if (event["type"] != "user" || text != prompt) return null
             this.opening = null
             return json.writeValueAsString(event + ("message" to mapOf("role" to "user", "content" to message)))
+        }
+
+        /**
+         * Ends claude while no turn runs, as the page has gone or the session is idle: closing its stdin ends it, else it is
+         * killed. The session stays, so the next message resumes it.
+         */
+        @Synchronized
+        fun rest() {
+            val process = claude?.takeIf { it.isAlive && !busy } ?: return
+            stdin?.close()
+            if (!process.waitFor(REST.toMillis(), MILLISECONDS)) launcher.kill(process)
         }
 
         /** A line of Ants' own in the dialog. */
@@ -267,18 +294,26 @@ class ProcessBuilderTools(
         }
     }
 
-    /** Opens a session for the modeler page asking: its token. It ends once the page's SSE has gone, whether or not claude ever ran. */
+    /**
+     * Opens a session for the modeler page asking: its token. A page reloaded in its tab gives the [token] it had, and
+     * gets that session back while it lives.
+     */
     @PostMapping("/process-builder")
-    fun open(): Map<String, String> {
+    fun open(@RequestParam(required = false) token: String?): Map<String, String> {
+        if (token != null && pages[token]?.closed == false) return mapOf("token" to token)
         val page = Page()
-        val (token, config) = mcp.open(page)
+        val (opened, config) = mcp.open(page)
         page.config = config
-        pages[token] = page
+        pages[opened] = page
         Thread.ofVirtual().start {
-            while (page.alive) Thread.sleep(500)
-            end(page)
+            while (!page.closed) {
+                Thread.sleep(500)
+                val away = System.nanoTime() - page.seen
+                if (away > grace.toNanos() || System.nanoTime() - page.active > idleTimeout.toNanos()) page.rest()
+                if (away > grace.toNanos() && (!page.launched || away > KEPT.toNanos()) && page.claude?.isAlive != true) end(page)
+            }
         }
-        return mapOf("token" to token)
+        return mapOf("token" to opened)
     }
 
     /** Sends the user's [message] into the page's claude session: empty, or the [error] that kept it from going. */
@@ -308,12 +343,6 @@ class ProcessBuilderTools(
         pages[token]?.stdin?.interrupt()
     }
 
-    /** The page is closing: its session ends now, not a minute later. */
-    @PostMapping("/process-builder/close")
-    fun close(@RequestParam token: String) {
-        pages[token]?.let(::end)
-    }
-
     /** Ends [page]'s session: its claude, its token and its place here. */
     private fun end(page: Page) {
         page.closed = true
@@ -327,6 +356,9 @@ class ProcessBuilderTools(
         var last: String? = null
         Part("dialog", Duration.ofMillis(250)) { listOfNotNull(page.html().takeIf { it != last }?.also { last = it }) }
     }
+
+    /** Whether claude runs for the session of the page holding [token]. */
+    internal fun running(token: String) = pages[token]?.claude?.isAlive == true
 
     /** Whether no turn runs in the session of the page holding [token]. */
     internal fun idle(token: String) = pages[token]?.busy == false
@@ -356,8 +388,12 @@ class ProcessBuilderTools(
         /** A page whose SSE last asked longer ago than this is not connected; its next stream asks again within seconds. */
         private val CONNECTED = Duration.ofSeconds(10)
 
-        /** A page whose SSE last asked longer ago than this has gone, and its token dies. */
-        val GONE: Duration = Duration.ofMinutes(1)
+        /** How long a resting claude has to end once its stdin is closed, before it is killed. */
+        private val REST = Duration.ofSeconds(5)
+
+        /** How long a page's session, its dialog, outlives its SSE, for the tab to come back to. */
+        // ponytail: kept in memory, so a restart of Ants loses the dialog (the Build log is the handoff then)
+        private val KEPT = Duration.ofDays(1)
 
         const val CLAUDE_ONLY = "The Process Builder runs on claude only for now. Set process-builder's cli to claude in settings.yaml."
 

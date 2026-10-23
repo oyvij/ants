@@ -182,9 +182,9 @@ class ProcessBuilderTest : AntsTest() {
     }
 
     @Test
-    fun `Stop interrupts the turn, and closing the page ends claude`() {
+    fun `Stop interrupts the turn`() {
         settings(claude)
-        claude.session("process-builder", "read", """{"type":"result","subtype":"error_during_execution","session_id":"${'$'}SESSION"}""", "wait never")
+        claude.session("process-builder", "read", """{"type":"result","subtype":"error_during_execution","session_id":"${'$'}SESSION"}""")
         val token = open()
         send(token, "Build it.")
         eventually { assertEquals(1, launches().size) }
@@ -192,38 +192,70 @@ class ProcessBuilderTest : AntsTest() {
         browser.post("/process-builder/stop", mapOf("token" to token))
         eventually { assertTrue("interrupt" in launches().single().stdin) }
         eventually { assertTrue(builder.idle(token)) }
-
-        browser.post("/process-builder/close", mapOf("token" to token))
-        eventually { assertTrue(launches().single().killed) }
     }
 
     @Test
-    fun `a page whose stream has gone for a while ends its claude`() {
+    fun `a page reloaded in its tab gets its session back`() {
         settings(claude)
-        claude.session("process-builder", "wait never")
-        builder.gone = Duration.ofSeconds(1)
+        val token = open()
+        assertEquals(token, json.readValue(browser.post("/process-builder", mapOf("token" to token)).body, Map::class.java)["token"])
+        assertNotEquals(token, json.readValue(browser.post("/process-builder", mapOf("token" to "gone")).body, Map::class.java)["token"])
+    }
+
+    @Test
+    fun `a page whose stream has gone for a while ends its claude once the turn is done, and the next message resumes it`() {
+        settings(claude)
+        val done = """{"type":"result","subtype":"success","result":"Done.","session_id":"${'$'}SESSION"}"""
+        claude.session("process-builder", 1, init, "wait turn", done)
+        claude.session("process-builder", 2, done)
+        builder.grace = Duration.ofSeconds(1)
+        try {
+            val token = open()
+            send(token, "First.")
+            eventually { assertEquals(1, launches().size) }
+            Thread.sleep(2000) // gone, but a turn runs, which is never ended
+            assertTrue(builder.running(token))
+            claude.release("turn")
+            eventually { assertFalse(builder.running(token)) }
+            assertFalse(launches().single().killed) // closing its stdin ended it
+            assertEquals(200, mcp(port, token, "tools/list").first) // the session stays, to resume
+
+            send(token, "Second.")
+            eventually { assertEquals(2, launches().size) }
+            val (first, second) = launches()
+            assertEquals(first.flag("--session-id"), second.flag("--resume"))
+        } finally {
+            builder.grace = Duration.ofMinutes(10)
+        }
+    }
+
+    @Test
+    fun `a session no message has come to for a while ends its claude, though its page is open`() {
+        settings(claude)
+        claude.session("process-builder", """{"type":"result","subtype":"success","result":"Done.","session_id":"${'$'}SESSION"}""")
+        builder.idleTimeout = Duration.ofSeconds(1)
         try {
             val token = open()
             send(token, "Build it.")
             eventually { assertEquals(1, launches().size) }
-            eventually { assertTrue(launches().single().killed) }
-            assertNotEquals(200, mcp(port, token, "tools/list").first)
+            eventually { assertFalse(builder.running(token)) }
         } finally {
-            builder.gone = ProcessBuilderTools.GONE
+            builder.idleTimeout = Duration.ofHours(2)
         }
     }
 
     @Test
     fun `a page that never sent a message ends once its stream has gone`() {
         settings(claude)
-        builder.gone = Duration.ofSeconds(1)
+        builder.grace = Duration.ofSeconds(1)
         try {
             val token = open()
             Thread.sleep(3000) // no stream, and nothing else asks Ants about pages
             assertContains(send(token, "Build it.").body, "session has ended")
             assertEquals(0, launches().size)
+            assertNotEquals(200, mcp(port, token, "tools/list").first)
         } finally {
-            builder.gone = ProcessBuilderTools.GONE
+            builder.grace = Duration.ofMinutes(10)
         }
     }
 
