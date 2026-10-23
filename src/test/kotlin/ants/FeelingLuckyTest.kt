@@ -25,22 +25,22 @@ class FeelingLuckyTest : AntsTest() {
         return path
     }
 
-    /** Build and ship's Process page, set up with the fake claude, a Vault and a Source map holding [api]. */
-    private fun page(): String {
-        settings(claude, sourceMapLines(api))
+    /** Build and ship's Process page, set up with the fake claude, a Vault and a Source map holding [repos]. */
+    private fun page(vararg repos: Remote = arrayOf(api)): String {
+        settings(claude, sourceMapLines(*repos))
         assertFalse("role=\"alert\"" in browser.import("shipped/processes/build-and-ship.bpmn").body)
         return browser.get("/processes/build_and_ship").body
     }
 
-    private fun start(prompt: String): String {
-        page()
+    private fun start(prompt: String, vararg repos: Remote = arrayOf(api)): String {
+        page(*repos)
         return browser.post("/processes/build_and_ship/runs", mapOf("prompt" to prompt, "path" to "lucky", "branch" to "")).path.removePrefix("/runs/")
     }
 
     /** Plays a whole Build and ship's Feeling lucky: the scout picks api and names the branch, the implementer commits, the user pushes. */
     private fun feelingLucky(): String {
         claude.session("scout", "write scout/brief.md Add a hello endpoint to api.\\n", result("""{"repos":["api"],"branch":"add-hello","brief":"scout/brief.md"}"""))
-        claude.session("propose-solution", "write proposal/proposal.md # Hello\\n\\nOne endpoint.\\n", result("""{"proposal":"proposal/proposal.md"}"""))
+        claude.session("propose-solution", "write proposal/proposal.md # Hello\\n\\nOne endpoint.\\n", result("""{"proposal":"proposal/proposal.md","repos":[]}"""))
         claude.session("implement", "sh git -C repos/api -c user.name=Ants -c user.email=ants@example.com -c commit.gpgsign=false commit -q --allow-empty -m 'Add hello'", result("""{"review":"No findings."}"""))
         claude.session("pr", result("""{"pullRequests":[{"repo":"api","url":"https://github.com/oyvij/api/pull/7"}]}"""))
         claude.session("update-knowledge", 1, "write vault/proposal.md One Note.\\n", result("""{"proposal":"vault/proposal.md","written":false}"""))
@@ -72,6 +72,26 @@ class FeelingLuckyTest : AntsTest() {
         assertContains(report, "<h2>Push</h2>")
         assertContains(report, "<h2>Pull requests</h2>")
         assertContains(report, """<li><strong>api</strong> · <a rel="nofollow" href="https://github.com/oyvij/api/pull/7">https://github.com/oyvij/api/pull/7</a></li>""")
+    }
+
+    @Test
+    fun `Feeling lucky clones a repo the architect names and resumes it to propose again with the new clone`() {
+        val web = repo("web")
+        claude.session("scout", "write scout/brief.md Add a hello endpoint to api.\\n", result("""{"repos":["api"],"branch":"add-hello","brief":"scout/brief.md"}"""))
+        claude.session("propose-solution", 1, "write proposal/proposal.md # Hello\\n\\nweb not checked.\\n", result("""{"proposal":"proposal/proposal.md","repos":["web"]}"""))
+        claude.session("propose-solution", 2, "write proposal/proposal.md # Hello\\n\\nOne endpoint, shown in web.\\n", result("""{"proposal":"proposal/proposal.md","repos":["web"]}"""))
+        claude.session("implement", "sh git -C repos/web -c user.name=Ants -c user.email=ants@example.com -c commit.gpgsign=false commit -q --allow-empty -m 'Show hello'", result("""{"review":"No findings."}"""))
+        claude.session("pr", result("""{"pullRequests":[]}"""))
+        val run = start("Add a hello endpoint to api and show it in web", api, web)
+        browser.post(entry(run), mapOf("action" to "push", "instruction" to ""))
+
+        val (first, again) = claude.launches("propose-solution")
+        assertFalse("repos/web" in first.stdin)
+        assertContains(again.stdin, "repos/web")
+        assertEquals(first.flag("--session-id"), again.flag("--resume"))
+        assertEquals(1, claude.launches("implement").size)
+        // Clone new repos put web on the Run's work branch, so Push pushes it.
+        eventually(20) { assertEquals("Show hello", git(web.remote, "log", "-1", "--format=%s", "add-hello")) }
     }
 
     @Test
