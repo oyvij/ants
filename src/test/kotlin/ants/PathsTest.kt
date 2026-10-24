@@ -66,8 +66,8 @@ class PathsTest : AntsTest() {
             result("""{"stories":"walkthrough/stories.json"}"""),
         )
         claude.session("pr", result("""{"pullRequests":[{"repo":"api","url":"https://github.com/oyvij/api/pull/9"}]}"""))
-        claude.session("update-knowledge", 1, "write vault/proposal.md One Note.\\n", result("""{"proposal":"vault/proposal.md","written":false}"""))
-        claude.session("update-knowledge", 2, result("""{"written":true}"""))
+        claude.session("updateknowledge", 1, "write vault/proposal.md One Note.\\n", result("""{"proposal":"vault/proposal.md","written":false}"""))
+        claude.session("updateknowledge", 2, result("""{"written":true}"""))
     }
 
     private fun start(path: String): String {
@@ -92,13 +92,13 @@ class PathsTest : AntsTest() {
     fun `Answered as me has an answer-round Agent answer the Rounds, and Clone new repos clones a repo a Round names`() {
         afterTheGrilling()
         claude.session("grill", 1, round)
-        claude.session("answer-round", result("""{"answers":[{"id":"who","answer":"Only admins.","why":"The Answer History says so."}]}"""))
+        claude.session("answerer", result("""{"answers":[{"id":"who","answer":"Only admins.","why":"The Answer History says so."}]}"""))
         claude.session("grill", 2, result("""{"questions":[],"repos":["web"]}"""))
         val run = start("as-me")
         finish(run)
 
         assertEquals(listOf("[approve]", "[review]", "[push]", "[approve]"), waited)
-        val answerer = claude.launches("answer-round").single()
+        val answerer = claude.launches("answerer").single()
         assertContains(answerer.stdin, "The Answer History is ${home.resolve("answer-history")}.")
         assertContains(answerer.stdin, "Who exports?")
         assertEquals("Read,Grep,Glob" to "Read,Grep,Glob", answerer.flag("--tools")?.removeSuffix(",Skill") to answerer.flag("--allowedTools")?.removeSuffix(",Skill,mcp__ants__run"))
@@ -114,12 +114,12 @@ class PathsTest : AntsTest() {
     fun `Answered as me hands Round 10 to the user`() {
         claude.session("scout", "write scout/brief.md Hello.\\n", result("""{"repos":["api"],"branch":"add-hello","brief":"scout/brief.md"}"""))
         claude.session("grill", round)
-        claude.session("answer-round", result("""{"answers":[{"id":"who","answer":"Only admins.","why":"Because."}]}"""))
+        claude.session("answerer", result("""{"answers":[{"id":"who","answer":"Only admins.","why":"Because."}]}"""))
         val run = start("as-me")
 
         val entry = entry(run, "<i>?</i>[questions]", seconds = 60)
         assertEquals(10, claude.launches("grill").size)
-        assertEquals(9, claude.launches("answer-round").size)
+        assertEquals(9, claude.launches("answerer").size)
         assertContains(browser.get(entry).body, "Round 10")
     }
 
@@ -140,13 +140,13 @@ class PathsTest : AntsTest() {
     fun `Hands-off until review answers every Round by proxy, ends the grilling at the cap, and waits on the user only at Review changes, Push and the Notes`() {
         afterTheGrilling()
         claude.session("grill", round)
-        claude.session("answer-round", result("""{"answers":[{"id":"who","answer":"Only admins.","why":"Because."}]}"""))
+        claude.session("answerer", result("""{"answers":[{"id":"who","answer":"Only admins.","why":"Because."}]}"""))
         val run = start("hands-off")
         finish(run, spec = false)
 
         assertEquals(listOf("[review]", "[push]", "[approve]"), waited)
         assertEquals(9, claude.launches("grill").size) // no Round 10 is asked
-        assertEquals(9, claude.launches("answer-round").size)
+        assertEquals(9, claude.launches("answerer").size)
         assertEquals("refs/heads/main", git(web.remote, "for-each-ref", "--format=%(refname)"))
         assertContains(claude.launches("to-spec").single().stdin, """\"repos\":[\"web\"]""")
     }

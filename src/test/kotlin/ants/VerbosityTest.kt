@@ -154,10 +154,11 @@ class VerbosityTest : AntsTest() {
     }
 
     @Test
-    fun `every shipped Skill opts in to Verbosity`() {
+    fun `every shipped Skill but the plain ones opts in to Verbosity`() {
         val shipped = catalogue.skills(withHidden = true).filter { catalogue.shipped(it) && it.name != "shipped-draft" }
-        assertEquals(16, shipped.size)
-        assertEquals(emptyList(), shipped.filterNot { it.verbosity }.map { it.name })
+        assertEquals(12, shipped.size)
+        // The plain ones run in Tasks with an Assignment, which write at the Run's Verbosity anyway (ADR 0024).
+        assertEquals(listOf("init-vault", "search-knowledge", "update-knowledge", "walkthrough"), shipped.filterNot { it.verbosity }.map { it.name }.sorted())
     }
 
     private val optIn = "metadata:\n  ants-verbosity: true\n"

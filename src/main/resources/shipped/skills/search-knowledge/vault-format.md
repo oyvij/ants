@@ -2,8 +2,8 @@
 
 <!-- Adapted from Varde's shared/vault-format.md (https://github.com/oyvij/varde-editor).
 Copyright (c) 2026 Øyvind Johannessen. MIT License: see LICENSE beside this file.
-Kept in step with Varde's by hand (Ants ADR 0002): a change to the format is made in both. Only "Proposals" and "Writing to the Vault" differ, since an Ants Task asks no questions
-and the user approves on an Approve page. -->
+Kept in step with Varde's by hand (ADR 0002): a change to the format is made in both. Only "Proposals" and "Writing to the Vault" differ, since the
+user approves a written proposal. -->
 
 Shared by the Vault Skills. This file fixes the shape of a Note and how it reaches the Vault. What
 is worth keeping, and how the Vault is organised, belongs to the user: the **Vault rules** decide
@@ -51,11 +51,8 @@ Every change starts as a proposal: one bullet per Note, starting with its verb.
 Mark a Topic or Kind that would be new `(new Topic)` or `(new Kind)` and name the closest existing
 one.
 
-In Ants, the proposal is the file `vault/proposal.md` in the Run workspace, which the user reads on
-an Approve page. Answer `written: false` with `proposal: "vault/proposal.md"`. The user either
-approves it, and you are launched again with an `approval` input whose `approved` is true, or sends
-it back with a comment, and you revise the proposal from it, write the whole file again and answer
-`written: false` again.
+The proposal is a file the user reads before they approve. They either approve it, or send it back
+with a comment, and you revise the proposal from it and write the whole file again.
 
 ## Names and links
 
@@ -90,10 +87,10 @@ it back with a comment, and you revise the proposal from it, write the whole fil
 
 ## Writing to the Vault
 
-Steps 1 to 5 happen while you propose, before the user approves; step 6 only once your `approval`
-input says `approved: true`.
+Steps 1 to 5 happen while you propose, before the user approves; step 6 only once they have
+approved.
 
-1. Stage in the Run workspace's `vault/staging/` folder, outside the Vault, so the staged files
+1. Stage in the working directory's `vault/staging/` folder, outside the Vault, so the staged files
    last until the user approves. Inside it, give every file the same relative path it will have in
    the Vault.
 2. Stage every file you will create or change: new Notes, existing Notes you change (copy them in
@@ -104,7 +101,7 @@ input says `approved: true`.
    different audiences to each other.
 4. **Index and Base.** For every Topic you touched, stage its index Note and its Base, creating
    them if they are missing.
-5. **Leak check.** Run `sh <folder of this file>/leak-check.sh vault/staging`. Every line it
+5. **Leak check.** Check with `sh <folder of this file>/leak-check.sh vault/staging`. Every line it
    prints is a leak: rewrite it using a Source map name, a path inside a codebase or a remote URL,
    then run the check again. If a printed line names nothing about this machine, for example a URL
    route like `/api/orders/` or an ordinary word that happens to be the user name, list it in the

@@ -71,10 +71,10 @@ class HumanInTheLoopTest : AntsTest() {
             result("""{"review":"Reviewed the Ticket."}"""),
         )
         claude.session("walkthrough", 1, stories("01"), result("""{"stories":"walkthrough/stories.json"}"""))
-        claude.session("fix-review", commit("01.txt", "ONE"), result("""{"review":"Shouted one."}"""))
+        claude.session("fix", commit("01.txt", "ONE"), result("""{"review":"Shouted one."}"""))
         claude.session("walkthrough", 2, stories("ONE"), result("""{"stories":"walkthrough/stories.json"}"""))
         claude.session("pr", result("""{"pullRequests":[{"repo":"api","url":"https://github.com/oyvij/api/pull/8"}]}"""))
-        claude.session("update-knowledge", result("""{"written":true}"""))
+        claude.session("updateknowledge", result("""{"written":true}"""))
 
         settings(claude, sourceMapLines(api, web))
         assertFalse("role=\"alert\"" in browser.import("shipped/processes/build-and-ship.bpmn").body)
@@ -112,11 +112,11 @@ class HumanInTheLoopTest : AntsTest() {
         // Ticket 03 launched only once its blocker 01 had landed.
         val three = claude.launches("implement").single { "issues/03" in it.stdin }
         assertContains(three.file("seen"), "01.txt")
-        assertContains(claude.launches("fix-review").single().stdin, "From the user:\\nShout one.")
+        assertContains(claude.launches("fix").single().stdin, "From the user:\\nShout one.")
         // pr reads the implementers' reviews and the fixer's; update-knowledge reads the implementers'.
         for (text in listOf("Reviewed the Ticket.", "Shouted one.")) assertContains(claude.launches("pr").single().stdin, text)
-        assertContains(claude.launches("update-knowledge").single().stdin, """\"review\":[{""")
-        assertContains(claude.launches("update-knowledge").single().stdin, "Reviewed the Ticket.")
+        assertContains(claude.launches("updateknowledge").single().stdin, """\"review\":[{""")
+        assertContains(claude.launches("updateknowledge").single().stdin, "Reviewed the Ticket.")
 
         val report = browser.report(run)
         for (text in listOf("<h2>Rounds</h2>", "Title who: Recommend who. (accepted)", "Title format: Recommend format. (accepted)", "<h2>Tickets</h2>", "<h2>Review</h2>", "Shouted one.", "Reviewed the Ticket.", "<h2>Push</h2>", "<h2>Pull requests</h2>", "https://github.com/oyvij/api/pull/8")) {
@@ -141,11 +141,10 @@ class HumanInTheLoopTest : AntsTest() {
             tools("walkthrough"),
         )
         assertContains(claude.launches("walkthrough").first().flag("--disallowedTools")!!.split(","), "Bash(git *--output*)") // --output makes git log, diff and show write a file
-        assertEquals(tools("implement"), tools("fix-review"))
+        assertEquals(tools("implement"), tools("fix"))
         // Every implementer builds with tdd and reviews with code-review.
-        for (skill in listOf("implement", "fix-review")) {
-            assertEquals(setOf(skill, "tdd", "code-review", "codebase-design"), claude.launches(skill).first().skills.keys, skill)
-        }
+        assertEquals(setOf("implement", "tdd", "code-review", "codebase-design"), claude.launches("implement").first().skills.keys)
+        assertEquals(setOf("tdd", "code-review", "codebase-design"), claude.launches("fix").first().skills.keys) // its Assignment is the job
     }
 
     @Test

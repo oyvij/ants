@@ -1,6 +1,6 @@
 ---
 name: knowledge-searcher
-description: Searches the user's knowledge Vault for Notes on a subject and reports what it holds and what it doesn't. Give it the Vault's path, the search-knowledge Skill's path and the subject.
+description: Searches the user's knowledge Vault for Notes on a subject and reports what it holds and what it doesn't. Give it the Vault's path, the search-knowledge Skill's folder and the subject.
 tools: Read, Grep, Glob
 ants-subagent: true
 ---

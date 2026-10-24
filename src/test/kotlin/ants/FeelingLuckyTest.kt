@@ -40,11 +40,11 @@ class FeelingLuckyTest : AntsTest() {
     /** Plays a whole Build and ship's Feeling lucky: the scout picks api and names the branch, the implementer commits, the user pushes. */
     private fun feelingLucky(): String {
         claude.session("scout", "write scout/brief.md Add a hello endpoint to api.\\n", result("""{"repos":["api"],"branch":"add-hello","brief":"scout/brief.md"}"""))
-        claude.session("propose-solution", "write proposal/proposal.md # Hello\\n\\nOne endpoint.\\n", result("""{"proposal":"proposal/proposal.md","repos":[]}"""))
+        claude.session("proposesolution", "write proposal/proposal.md # Hello\\n\\nOne endpoint.\\n", result("""{"proposal":"proposal/proposal.md","repos":[]}"""))
         claude.session("implement", "sh git -C repos/api -c user.name=Ants -c user.email=ants@example.com -c commit.gpgsign=false commit -q --allow-empty -m 'Add hello'", result("""{"review":"No findings."}"""))
         claude.session("pr", result("""{"pullRequests":[{"repo":"api","url":"https://github.com/oyvij/api/pull/7"}]}"""))
-        claude.session("update-knowledge", 1, "write vault/proposal.md One Note.\\n", result("""{"proposal":"vault/proposal.md","written":false}"""))
-        claude.session("update-knowledge", 2, result("""{"written":true}"""))
+        claude.session("updateknowledge", 1, "write vault/proposal.md One Note.\\n", result("""{"proposal":"vault/proposal.md","written":false}"""))
+        claude.session("updateknowledge", 2, result("""{"written":true}"""))
         val run = start("Add a hello endpoint to api")
         val push = entry(run)
         assertContains(row(run)!!, "<i>↑</i>[push]")
@@ -65,7 +65,7 @@ class FeelingLuckyTest : AntsTest() {
         assertContains(scout.stdin, """\"sourceMap\":[{\"name\":\"api\",\"remote\":\"${api.remote}\"}]""")
         assertContains(claude.launches("implement").single().stdin, """\"proposal\":\"proposal/proposal.md\"""")
         assertContains(claude.launches("pr").single().stdin, """\"pushed\":true""")
-        val (proposed, written) = claude.launches("update-knowledge")
+        val (proposed, written) = claude.launches("updateknowledge")
         for (text in listOf("""\"spec\":\"proposal/proposal.md\"""", """\"review\":\"No findings.\"""", """\"approval\":null""")) assertContains(proposed.stdin, text)
         assertContains(written.stdin, """\"approval\":{\"approved\":true""")
         val report = browser.report(run)
@@ -78,14 +78,14 @@ class FeelingLuckyTest : AntsTest() {
     fun `Feeling lucky clones a repo the architect names and resumes it to propose again with the new clone`() {
         val web = repo("web")
         claude.session("scout", "write scout/brief.md Add a hello endpoint to api.\\n", result("""{"repos":["api"],"branch":"add-hello","brief":"scout/brief.md"}"""))
-        claude.session("propose-solution", 1, "write proposal/proposal.md # Hello\\n\\nweb not checked.\\n", result("""{"proposal":"proposal/proposal.md","repos":["web"]}"""))
-        claude.session("propose-solution", 2, "write proposal/proposal.md # Hello\\n\\nOne endpoint, shown in web.\\n", result("""{"proposal":"proposal/proposal.md","repos":["web"]}"""))
+        claude.session("proposesolution", 1, "write proposal/proposal.md # Hello\\n\\nweb not checked.\\n", result("""{"proposal":"proposal/proposal.md","repos":["web"]}"""))
+        claude.session("proposesolution", 2, "write proposal/proposal.md # Hello\\n\\nOne endpoint, shown in web.\\n", result("""{"proposal":"proposal/proposal.md","repos":["web"]}"""))
         claude.session("implement", "sh git -C repos/web -c user.name=Ants -c user.email=ants@example.com -c commit.gpgsign=false commit -q --allow-empty -m 'Show hello'", result("""{"review":"No findings."}"""))
         claude.session("pr", result("""{"pullRequests":[]}"""))
         val run = start("Add a hello endpoint to api and show it in web", api, web)
         browser.post(entry(run), mapOf("action" to "push", "instruction" to ""))
 
-        val (first, again) = claude.launches("propose-solution")
+        val (first, again) = claude.launches("proposesolution")
         assertFalse("repos/web" in first.stdin)
         assertContains(again.stdin, "repos/web")
         assertEquals(first.flag("--session-id"), again.flag("--resume"))
@@ -97,11 +97,11 @@ class FeelingLuckyTest : AntsTest() {
     @Test
     fun `the shipped Agents get the tool allow-lists the spec gives them`() {
         val ws = workspace(feelingLucky())
-        fun tools(skill: String) = claude.launches(skill).first().let { it.flag("--tools")?.removeSuffix(",Skill") to it.flag("--allowedTools")?.removeSuffix(",Skill,mcp__ants__run") } // every claude Task has Skill and the run tool
+        fun tools(skill: String) = claude.launches(skill).first().let { it.flag("--tools")?.removeSuffix(",Skill") to it.flag("--allowedTools")?.removeSuffix(",mcp__ants__run")?.removeSuffix(",Skill") } // every claude Task has the run tool, and Skill when it has Skills
 
         // claude checks a Write against Edit rules and ignores a Write(path) rule, so the scout's limit goes out as both
         assertEquals("Read,Grep,Glob,Write,Agent" to "Read,Grep,Glob,Write(/$ws/scout/**),Agent(knowledge-searcher),Edit(/$ws/scout/**)", tools("scout"))
-        assertEquals("Read,Grep,Glob,Write,Edit" to "Read,Grep,Glob,Write(/$ws/proposal/**),Edit(/$ws/proposal/**)", tools("propose-solution"))
+        assertEquals("Read,Grep,Glob,Write,Edit" to "Read,Grep,Glob,Write(/$ws/proposal/**),Edit(/$ws/proposal/**)", tools("proposesolution"))
         assertContains(tools("implement").first!!.split(","), "Agent")
         assertFalse("Bash(" in tools("implement").second!!) // Bash unlimited
         // claude refuses `gh pr create --body "…"` with a backtick in the body, so the body goes in a file under pr/
