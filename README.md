@@ -57,7 +57,8 @@ Run Ants from source with Java 25 (Gradle and Node are fetched by the build): `.
 `./gradlew tarball` builds the release, `build/dist/ants-<version>-macos-arm64.tar.gz` and its `SHA256SUMS`. Each merge
 to main publishes a beta, the next minor version after the latest release with CI's run number (`0.27.0-beta.412`), as
 a GitHub prerelease, which Ants offers only with **Follow beta versions** ticked in Settings, and as the image
-`ghcr.io/oyvij/ants:<version>` and `:beta`. `gh workflow run
+`ghcr.io/oyvij/ants:<version>` and `:beta`. A stable release's image is tagged `:latest` and `:beta`, so `:beta` follows
+both. `gh workflow run
 release.yml` makes the newest beta the stable release (`0.27.0`) and its image; `-f version=1.0.0` names another.
 
 ## Tests
