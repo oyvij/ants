@@ -26,7 +26,7 @@ ROOT = Path(__file__).resolve().parent.parent
 SHIPPED = ROOT / "src/main/resources/shipped/skills"
 PINNED = ROOT / "src/test/resources/matt-skills.sha256"
 CACHE = Path.home() / ".claude/plugins/cache/mattpocock/mattpocock-skills"
-IDS = "ants.yaml"
+ANTS_YAML = "ants.yaml"
 
 # His Skills Ants ships, under his skills/. Each ships under his name.
 SKILLS = [
@@ -76,7 +76,7 @@ def main(args):
         shipped.add(name)
         target = SHIPPED / name
         old = {f.relative_to(target): f.read_bytes() for f in target.rglob("*") if f.is_file()} if target.exists() else None
-        ids = old.pop(Path(IDS), None) if old is not None else None
+        ids = old.pop(Path(ANTS_YAML), None) if old is not None else None
         shutil.rmtree(target, ignore_errors=True)
         notes = []
         for file in sorted(source.rglob("*")):
@@ -95,7 +95,7 @@ def main(args):
             elif old is not None and old[relative] != data and relative.name != "SKILL.md":
                 notes.append(f"{relative} changed")
         shutil.copyfile(plugin / "LICENSE", target / "LICENSE")
-        (target / IDS).write_bytes(ids or f"id: k-{name}\n".encode())
+        (target / ANTS_YAML).write_bytes(ids or f"id: k-{name}\n".encode())
         if old is None:
             notes.append("new: list it on the shipped Agents and Tasks that should use it")
         else:

@@ -26,7 +26,7 @@ import kotlin.io.path.writeText
  * Who does a Task, read from its agent file: the CLI it runs, its tools, its model and its standing instructions. A
  * file without frontmatter is an Agent with defaults, named after the file. [meta] is the whole frontmatter.
  */
-class Agent(val file: Path, text: String = file.readText(), keptElsewhere: String? = null) {
+class Agent(val file: Path, text: String = file.readText(), outsideId: String? = null) {
     val meta: Map<*, *>
     val instructions: String
 
@@ -36,7 +36,7 @@ class Agent(val file: Path, text: String = file.readText(), keptElsewhere: Strin
         instructions = body.trim()
     }
 
-    val id = keptElsewhere ?: meta["id"]?.toString()?.takeIf(String::isNotBlank)
+    val id = outsideId ?: meta["id"]?.toString()?.takeIf(String::isNotBlank)
 
     val name = meta["name"]?.toString() ?: file.nameWithoutExtension
     val description = meta["description"]?.toString().orEmpty()
@@ -121,7 +121,7 @@ class Catalogue(@Value("\${ants.home}") private val home: Path, private val sett
     fun agents(withHidden: Boolean = false): List<Agent> {
         val outside = settings.agentFolders().toSet()
         return agentFolders(withHidden).filter { it.exists() }.flatMap { folder ->
-            folder.listDirectoryEntries("*.md").sorted().map { file -> if (folder in outside) Agent(file, keptElsewhere = agentIds.of(file)) else Agent(file) }
+            folder.listDirectoryEntries("*.md").sorted().map { file -> if (folder in outside) Agent(file, outsideId = agentIds.of(file)) else Agent(file) }
         }
     }
 
@@ -157,8 +157,7 @@ class Catalogue(@Value("\${ants.home}") private val home: Path, private val sett
         return newId(prefix) { it in taken }
     }
 
-    fun identified(): List<Identified> = agents(withHidden = true).mapNotNull { agent -> agent.id?.let { Identified(it, "Agent", agent.name, agent.file) } } +
-        skills(withHidden = true).mapNotNull { skill -> skill.id?.let { Identified(it, "Skill", skill.name, skill.folder) } }
+    fun identified(): List<Identified> = agents(withHidden = true).mapNotNull { it.identified } + skills(withHidden = true).mapNotNull { it.identified }
 
     fun shipped(skill: Skill) = skill.file.startsWith(shipped)
 

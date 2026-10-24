@@ -17,7 +17,6 @@ import org.operaton.bpm.model.bpmn.instance.operaton.OperatonIn
 import org.operaton.bpm.model.bpmn.instance.operaton.OperatonInputParameter
 import org.operaton.bpm.model.bpmn.instance.operaton.OperatonProperties
 import org.operaton.bpm.model.xml.instance.ModelElementInstance
-import java.nio.file.Path
 
 // The Checks on Agent Tasks and on what a Process's expressions read, two kinds of [Checks].
 
@@ -77,10 +76,10 @@ private fun agentTask(task: ServiceTask, catalogue: Catalogue, identified: () ->
     val listed = job.listed.orEmpty().map { runCatching { catalogue.skill(it) } }
     val schema = ResultContract.schemaErrors(task.property(RESULT_SCHEMA).orEmpty())
     val lacking = agent?.getOrNull()?.let { a -> listed.mapNotNull { it.getOrNull() }.filter { !a.allows(it.name) }.map { check("The Agent ${a.name} doesn't list the Skill ${it.name}.") } }
-    fun twins(kind: String, name: String, id: String?, where: Path) = identified().filter { id != null && it.id == id && it.where != where }
-        .map { check("The $kind $name has the same id as the ${it.kind} ${it.name}, in ${it.where}. Delete the id of one of them and restart Ants to give it a new one.") }
-    val sharing = agent?.getOrNull()?.let { twins("Agent", it.name, it.id, it.file) }.orEmpty() +
-        listed.mapNotNull { it.getOrNull() }.flatMap { twins("Skill", it.name, it.id, it.folder) }
+    fun twins(item: Identified) = identified().filter { it.id == item.id && it.where != item.where }
+        .map { check("The ${item.kind} ${item.name} has the same id as the ${it.kind} ${it.name}, in ${it.where}. Delete the id of one of them and restart Ants to give it a new one.") }
+    val sharing = agent?.getOrNull()?.identified?.let(::twins).orEmpty() +
+        listed.mapNotNull { it.getOrNull()?.identified }.flatMap(::twins)
     return listOfNotNull(
         if (agentName == null) Check(task.id, "${task.label} has no Agent.") else agent!!.exceptionOrNull()?.let { check("${it.message}.") },
         Check(task.id, "${task.label} has no Assignment and doesn't list exactly one Skill.").takeIf { !job.valid },

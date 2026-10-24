@@ -19,6 +19,10 @@ fun newId(prefix: Char, taken: (String) -> Boolean): String =
 
 data class Identified(val id: String, val kind: String, val name: String, val where: Path)
 
+val Agent.identified get() = id?.let { Identified(it, "Agent", name, file) }
+
+val Skill.identified get() = id?.let { Identified(it, "Skill", name, folder) }
+
 class IdFile(private val file: Path, private val prefix: Char) {
     @Synchronized
     fun of(path: Path): String {
