@@ -71,14 +71,15 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
 
     /**
      * The Agents and Skills as the modeler's Agent Task panel picks them, read afresh each time so a new one shows up:
-     * each Agent's description, Skills and folder, and whether it is the user's own (New Skill adds itself only to those, Edit opens only those), and each Skill's declared inputs, whether it is the user's own (Edit opens only those) and its folder, its Vault and Answer History defaults and its result schema;
+     * each Agent's description, Skills (every one by name for `skills: "*"`) and folder, and whether it is the user's own (New Skill adds itself only to those, Edit opens only those), and each Skill's declared inputs, whether it is the user's own (Edit opens only those) and its folder, its Vault and Answer History defaults and its result schema;
      * and the Profiles a Process can name.
      */
     @GetMapping("/catalogue.json")
     @ResponseBody
     fun catalogue() = mapOf(
         "agents" to catalogue.agents().map {
-            mapOf("name" to it.name, "description" to it.description, "skills" to it.skills, "own" to (it.file.parent == folder), "folder" to it.file.parent.toString())
+            val skills = if (it.allSkills) catalogue.skills().map { skill -> skill.name }.distinct() else it.skills
+            mapOf("name" to it.name, "description" to it.description, "skills" to skills, "own" to (it.file.parent == folder), "folder" to it.file.parent.toString())
         },
         "skills" to catalogue.skills().map { skill ->
             mapOf(

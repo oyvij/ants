@@ -488,9 +488,9 @@ panels.process = element => {
     return box
 }
 
-// The Agent Task: its Agent from a live dropdown, then one of the Skills that Agent lists, one input per name the Skill
-// declares (its pickers offer only start-form fields, Run variables and earlier Results), the Vault and Answer History
-// toggles (defaulting from the Skill), resume, and a result-schema override. All of it lives in the Task's
+// The Agent Task (ADR 0024): its Agent from a live dropdown, its Assignment, the Skills it may use of that Agent's (all,
+// none or a ticked few), its inputs (whose pickers offer only start-form fields, Run variables and earlier Results),
+// the Vault and Answer History toggles (defaulting from the Skill it starts with), resume, and its Result schema. All of it lives in the Task's
 // `camunda:properties` (ants.*) and `camunda:inputOutput`.
 function agentProperties(bo) {
     const properties = (bo.extensionElements?.values || []).find(value => value.$type === "camunda:Properties")
@@ -563,31 +563,64 @@ function promised(skill, override) {
     }
 }
 
+// The Skills an Agent Task lists itself (ADR 0024): its ants.skills, an empty one none, else its old ants.skill; null
+// when it lists none and gets its Agent's.
+function listedSkills(props) {
+    if (props["ants.skills"] !== undefined) return props["ants.skills"].split(/[\s,]+/).filter(Boolean)
+    return props["ants.skill"] ? [props["ants.skill"]] : null
+}
+
+// The Skill a Task starts with as its job: its one listed Skill, when it has no Assignment.
+function startingSkill(props, skills) {
+    const listed = listedSkills(props)
+    return !props["ants.assignment"]?.trim() && listed?.length === 1 ? skills.find(s => s.name === listed[0]) : undefined
+}
+
+// What the panel says once it is drawn again, by element id: the Skills a new Agent dropped.
+const agentNotes = {}
+
 async function agentPanel(element, box) {
     const [catalogue, offered] = await Promise.all([fetch("/catalogue.json").then(response => response.json()), offeredAt(element)])
+    const refresh = async () => Object.assign(catalogue, await (await fetch("/catalogue.json")).json())
     const bo = element.businessObject
     const props = agentProperties(bo)
     const agent = catalogue.agents.find(a => a.name === props["ants.agent"])
-    const skill = catalogue.skills.find(s => s.name === props["ants.skill"])
+    const listed = listedSkills(props)
+    const start = startingSkill(props, catalogue.skills)
+    const dropped = agentNotes[element.id]
+    delete agentNotes[element.id]
     const options = (names, current, missing, text = name => name) => [el("option", {value: "", textContent: "Choose…", selected: !current}),
         ...(current && !names.includes(current) ? [el("option", {value: current, textContent: `${current} (${missing})`, selected: true})] : []),
         ...names.map(name => el("option", {value: name, textContent: text(name), selected: name === current}))]
-    // One input per name the Skill [name] declares, keeping what the user already filled in.
-    const skillWrite = name => {
-        const kept = Object.fromEntries(agentInputs(bo))
-        return [{"ants.skill": name || undefined}, (catalogue.skills.find(s => s.name === name)?.inputs || []).map(input => [input, kept[input] || ""])]
+    // The Task's inputs, and an empty one per name a listed Skill declares that it doesn't have yet.
+    const withDeclared = names => {
+        const kept = agentInputs(bo)
+        const have = new Set(kept.map(([name]) => name))
+        const declared = (names || []).flatMap(name => catalogue.skills.find(s => s.name === name)?.inputs || [])
+            .filter(name => !have.has(name) && have.add(name))
+        return [...kept, ...declared.map(name => [name, ""])]
     }
-    const pickSkill = name => writeAgentTask(element, ...skillWrite(name), true)
-    // Picking an Agent picks its first Skill.
+    // The Task's own list of Skills: null for the Agent's, [] for none. It replaces an old ants.skill.
+    const skillChanges = names => ({"ants.skills": names?.join(", "), "ants.skill": undefined})
+    const pickSkills = names => writeAgentTask(element, skillChanges(names), withDeclared(names), true)
+    // A Task with no Assignment and no Skills picks the Agent's first; a listed Skill the new Agent lacks is dropped.
     const pickAgent = name => {
-        const [changes, inputs] = skillWrite(catalogue.agents.find(a => a.name === name)?.skills[0])
-        writeAgentTask(element, {"ants.agent": name || undefined, ...changes}, inputs, true)
+        const next = catalogue.agents.find(a => a.name === name)
+        let changes = {}, names = listed
+        if (listed === null && !props["ants.assignment"]?.trim()) {
+            if (next?.skills.length) changes = skillChanges(names = next.skills.slice(0, 1))
+        } else if (listed && next) {
+            const lacking = listed.filter(skill => !next.skills.includes(skill))
+            if (lacking.length) {
+                agentNotes[element.id] = `Dropped ${lacking.join(", ")}: ${name} doesn't have ${lacking.length > 1 ? "them" : "it"}.`
+                changes = skillChanges(names = listed.filter(skill => next.skills.includes(skill)))
+            }
+        }
+        writeAgentTask(element, {"ants.agent": name || undefined, ...changes}, withDeclared(names), true)
     }
     const described = name => [name, catalogue.agents.find(a => a.name === name)?.description].filter(Boolean).join(" · ")
     const agentSelect = el("select", {onchange: () => pickAgent(agentSelect.value)},
         ...options(catalogue.agents.map(a => a.name), props["ants.agent"], "not found", described))
-    const skillSelect = el("select", {disabled: !agent, onchange: () => pickSkill(skillSelect.value)},
-        ...options(agent?.skills || [], props["ants.skill"], "not listed by this Agent"))
     const readOnly = ({name, folder}) => `${name} is in ${folder} and read-only: Copy it on its page to edit.`
     const editAgent = agent ? el("button", {type: "button", className: "ghost small", textContent: "Edit", disabled: !agent.own, title: agent.own ? "" : readOnly(agent), onclick: () =>
         formModal("agents", "/agents/" + encodeURIComponent(agent.name) + "?use", name => {
@@ -596,8 +629,8 @@ async function agentPanel(element, box) {
             check()
         })}) : ""
     const newAgent = el("button", {type: "button", className: "ghost small", textContent: "＋ New Agent", onclick: () =>
-        formModal("agents", "/agents/new?use" + (props["ants.skill"] ? "&skills=" + encodeURIComponent(props["ants.skill"]) : ""), async name => {
-            catalogue.agents = (await (await fetch("/catalogue.json")).json()).agents
+        formModal("agents", "/agents/new?use" + (listed?.length ? "&skills=" + encodeURIComponent(listed.join(", ")) : ""), async name => {
+            await refresh()
             pickAgent(name)
         })})
     // The Skill's page adds it to the Task's Agent when that Agent is the user's own.
@@ -606,18 +639,37 @@ async function agentPanel(element, box) {
             : note("warn", `${agent.name} is in ${agent.folder} and read-only, so the Skill can't be added to it. Copy the Agent, or pick one of your own, then choose this Skill.`))
     const newSkill = el("button", {type: "button", className: "ghost small", textContent: "＋ New Skill", onclick: () =>
         formModal("skills", "/skills/new?use=" + encodeURIComponent(props["ants.agent"] || ""), async name => {
-            catalogue.skills = (await (await fetch("/catalogue.json")).json()).skills
-            pickSkill(name)
+            await refresh()
+            pickSkills(listed === null && props["ants.assignment"]?.trim() ? null : [...(listed || []), name])
         }, who)})
-    const editSkill = skill ? el("button", {type: "button", className: "ghost small", textContent: "Edit", disabled: !skill.own, title: skill.own ? "" : readOnly(skill), onclick: () =>
+    const editSkill = skill => el("button", {type: "button", className: "ghost small", textContent: "Edit", disabled: !skill.own, title: skill.own ? "" : readOnly(skill), onclick: () =>
         formModal("skills", "/skills/" + encodeURIComponent(skill.name) + "?use=", async name => {
-            catalogue.skills = (await (await fetch("/catalogue.json")).json()).skills
-            const declared = catalogue.skills.find(s => s.name === name)?.inputs || []
-            if (name !== skill.name || declared.join() !== agentInputs(bo).map(([input]) => input).join()) return pickSkill(name)
+            await refresh()
+            if (name !== skill.name && listed?.includes(skill.name)) return pickSkills(listed.map(n => n === skill.name ? name : n))
+            const inputs = withDeclared(listed)
+            if (inputs.length !== agentInputs(bo).length) return writeAgentTask(element, {}, inputs, true)
             agentPanel(element, box)
             check()
-        })}) : ""
-    const fields = promised(skill, props["ants.result-schema"])
+        })})
+    // The Skills picker: the Agent's Skills, none, or only those ticked of the Agent's.
+    const mode = listed === null ? "agent" : listed.length ? "some" : "none"
+    const offeredSkills = agent?.skills || []
+    const modeSelect = el("select", {id: "ants-skills", disabled: !agent, onchange: () =>
+        pickSkills(modeSelect.value === "agent" ? null : modeSelect.value === "none" ? [] : offeredSkills)},
+        ...[["agent", "The Agent's Skills"], ["none", "None"], ["some", "Only these"]].map(([value, textContent]) => el("option", {value, textContent, selected: value === mode})))
+    const skillRows = [...offeredSkills, ...(listed || []).filter(name => !offeredSkills.includes(name))].map(name => {
+        const skill = catalogue.skills.find(s => s.name === name)
+        const box = el("input", {type: "checkbox", id: "ants-skill-" + name, checked: mode === "agent" || listed.includes(name), disabled: mode !== "some",
+            onchange: () => pickSkills([...offeredSkills, ...listed].filter((n, i, all) => all.indexOf(n) === i && (n === name ? box.checked : listed.includes(n))))})
+        const missing = !skill ? "not found" : offeredSkills.includes(name) ? "" : "not listed by this Agent"
+        return el("div", {className: "row"}, box, el("label", {htmlFor: box.id, textContent: name}),
+            el("span", {className: "muted small grow", textContent: missing || skill.description || ""}), skill ? editSkill(skill) : "")
+    })
+    const assignment = el("textarea", {id: "ants-assignment", rows: 4, value: props["ants.assignment"] || "",
+        placeholder: "e.g. Write the release notes for the merged PRs, one line each.",
+        oninput: () => writeAgentTask(element, {"ants.assignment": assignment.value.trim() ? assignment.value : undefined})})
+    assignment.dataset.markdown = ""
+    const fields = promised(start, props["ants.result-schema"])
     const references = el("datalist", {id: "ants-references"}, ...offered.map(value => el("option", {value})))
     const inputs = agentInputs(bo).map(([name, value], i) => {
         const input = el("input", {className: "mono grow", value, placeholder: `e.g. \${${name}}`, oninput: () => {
@@ -626,31 +678,41 @@ async function agentPanel(element, box) {
             writeAgentTask(element, {}, all)
         }})
         input.setAttribute("list", "ants-references")
-        return el("label", {className: "row"}, el("code", {textContent: name}), input)
+        const remove = el("button", {type: "button", className: "ghost small", textContent: "×", title: `Remove ${name}`,
+            onclick: () => writeAgentTask(element, {}, agentInputs(bo).filter((_, j) => j !== i), true)})
+        return el("label", {className: "row"}, el("code", {textContent: name}), input, remove)
     })
+    const newInput = el("input", {id: "ants-new-input", className: "mono grow", placeholder: "Input name, e.g. ticket"})
+    const addInput = el("button", {type: "button", className: "ghost small", textContent: "＋ Add input", onclick: () => {
+        const name = newInput.value.trim()
+        if (name && !agentInputs(bo).some(([n]) => n === name)) writeAgentTask(element, {}, [...agentInputs(bo), [name, ""]], true)
+    }})
     const tick = (label, checked, onchange) => el("label", {}, el("input", {type: "checkbox", checked, onchange}), " " + label)
     const toggle = (name, label, fallback) => tick(label, props[name] === undefined ? fallback : props[name] === "true",
         event => writeAgentTask(element, {[name]: String(event.target.checked)}))
     const override = el("textarea", {
         rows: 4, value: props["ants.result-schema"] || "",
-        placeholder: skill?.output ? JSON.stringify(skill.output) : "The Skill promises no result schema: give one here to read its Result's fields",
+        placeholder: start?.output ? JSON.stringify(start.output) : "No Result schema: the Task hands back done or stuck and a summary. Give one here to read its Result's fields.",
         oninput: () => writeAgentTask(element, {"ants.result-schema": override.value.trim() || undefined}),
     })
     box.replaceChildren(
         field("Agent", "Who does it.", agentSelect, editAgent, newAgent),
         props["ants.agent"] && !agent ? note("warn", `No Agent folder holds "${props["ants.agent"]}".`) : "",
-        field("Skill", "One of the Agent's Skills: the one job this Task does.", skillSelect, editSkill, newSkill),
-        skill ? el("div", {className: "help"}, skill.description || "", skill.description ? el("br") : "", "Later Tasks can read: ",
-            ...(fields.length ? fields.flatMap(f => [el("code", {textContent: `\${${element.id}.output.${f}}`}), " "]) : [el("code", {textContent: `\${${element.id}.summary}`})])) : "",
+        field("Assignment", "The job, in a few lines. Leave it out when the Task lists one Skill: that Skill is then the job.", assignment),
+        field("Skills", "What the Agent may use for it: all of its Skills, none, or only the ones ticked.", modeSelect,
+            el("div", {className: "skillpick"}, ...(skillRows.length ? skillRows : [note("muted small", agent ? "The Agent has no Skills." : "Pick an Agent to see its Skills.")])),
+            dropped ? note("warn", dropped) : "", newSkill),
+        el("div", {className: "help"}, start?.description || "", start?.description ? el("br") : "", "Later Tasks can read: ",
+            ...(fields.length ? fields.flatMap(f => [el("code", {textContent: `\${${element.id}.output.${f}}`}), " "]) : [el("code", {textContent: `\${${element.id}.summary}`})])),
         el("div", {className: "fld"}, el("label", {className: "f", textContent: "Inputs"}),
             note("help", "What it reads: start-form fields, Run variables and Results of Tasks before it in the diagram."), references,
-            ...(inputs.length ? inputs : [note("muted small", skill ? "The Skill declares no inputs." : "Pick a Skill to see its inputs.")])),
+            ...(inputs.length ? inputs : [note("muted small", "No inputs yet.")]), el("div", {className: "row"}, el("label", {htmlFor: newInput.id, textContent: "New input"}), newInput, addInput)),
         el("div", {className: "fld"}, el("label", {className: "f", textContent: "When the flow comes back"}),
             tick("Resume the session (Round answers, Send back)", props["ants.resume"] === "true",
                 event => writeAgentTask(element, {"ants.resume": event.target.checked ? "true" : undefined}))),
         el("div", {className: "fld"}, el("label", {className: "f", textContent: "Knowledge"}),
-            toggle("ants.vault", "Vault and Source map", skill?.vault || false), toggle("ants.answer-history", "Answer History", skill?.answerHistory || false)),
-        field("Result schema", "Overrides the Skill's result.schema.json, so an unmodified Skill can still answer in JSON.", override),
+            toggle("ants.vault", "Vault and Source map", start?.vault || false), toggle("ants.answer-history", "Answer History", start?.answerHistory || false)),
+        field("Result schema", "The fields of its Result, as a JSON Schema, for later Tasks to read. Without one, a Task that starts with a Skill uses that Skill's.", override),
     )
 }
 
@@ -1156,7 +1218,7 @@ function outputs(e, skills) {
     if (kindOf(e) === "user") return userTaskOf(bo).result.map(f => `\${${e.id}.${f}}`)
     if (kindOf(e) !== "agent") return undefined
     const props = agentProperties(bo)
-    const fields = promised(skills.find(s => s.name === props["ants.skill"]), props["ants.result-schema"])
+    const fields = promised(startingSkill(props, skills), props["ants.result-schema"])
     return fields.length ? fields.map(f => `\${${e.id}.output.${f}}`) : [`\${${e.id}.summary}`]
 }
 
