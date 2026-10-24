@@ -211,7 +211,7 @@ class BrowserTest : AntsTest() {
         assertThat(checks).not().containsText("Grill (grill) has no Agent.")
         tool("add_element", grill)
 
-        assertEquals("draft", tool("set_agent_task", mapOf("id" to "grill", "agent" to "writer"))["skill"].asString())
+        assertEquals("""["draft"]""", tool("set_agent_task", mapOf("id" to "grill", "agent" to "writer"))["skills"].toString())
         assertThat(checks).not().containsText("Grill (grill) has no Agent.")
         assertEquals("writer", element("grill")!!["properties"]["ants.agent"].asString())
         undo()
@@ -412,6 +412,36 @@ class BrowserTest : AntsTest() {
             .let { (_, attributes, body) -> attributes.replace("""id="$id"""", "").trim() + body.substringAfter("extensionElements>").substringBefore("extensionElements>") }
         assertContains(task("byTool"), "\${prompt}")
         assertEquals(task(hand), task("byTool"))
+    }
+
+    @Test
+    fun `the Process Builder sets an Assignment and two Skills that Save and deploy takes, and gets the Check back for a Task with neither`() = browse {
+        agentTask(null, mapOf("draft" to null, "polish" to null))
+        home.resolve("skills/unlisted").createDirectories().resolve("SKILL.md").writeText("---\nname: unlisted\ndescription: Not the writer's.\n---\nNo.\n")
+        http.import("agent-task.bpmn")
+        page.navigate(url("/processes/agent-task/edit"))
+        val tool = builder()
+        val set = tool("set_agent_task", mapOf("id" to "draft", "assignment" to "Greet the user.\nKeep it short.", "skills" to listOf("draft", "polish")))
+        assertEquals("""["draft","polish"]""", set["skills"].toString())
+        assertEquals("[]", set["checks"].toString())
+        assertThat(page.locator("#summary")).hasText("Ready to deploy")
+        shape("draft").click()
+        assertThat(label("polish")).isChecked()
+        page.locator("#save").click()
+        assertThat(page).hasURL(Pattern.compile(".*/processes/agent-task$"))
+        val saved = http.get("/processes/agent-task/diagram.bpmn").body
+        assertContains(saved, """name="ants.skills" value="draft, polish"""")
+        assertContains(saved, """name="ants.assignment" value="Greet the user.""")
+
+        page.navigate(url("/processes/agent-task/edit"))
+        val token = builder().let { page.locator("#canvas").getAttribute("data-builder")!! }
+        val (lacking, refused) = mcpCall(port, token, "set_agent_task", mapOf("id" to "draft", "skills" to listOf("unlisted")))
+        assertTrue(refused, lacking)
+        assertContains(lacking, "The Agent writer doesn't have the Skill unlisted: it has draft, polish.")
+        val (neither, failed) = mcpCall(port, token, "set_agent_task", mapOf("id" to "draft", "assignment" to "", "skills" to null))
+        assertFalse(failed, neither)
+        assertEquals("""["Draft (draft) has no Assignment and doesn't list exactly one Skill."]""", json.readTree(neither)["checks"].toString())
+        assertThat(page.locator("#checks")).containsText("Draft (draft) has no Assignment and doesn't list exactly one Skill.")
     }
 
     private fun texts(node: tools.jackson.databind.JsonNode?) = node?.iterator()?.asSequence()?.map { it.asString() }?.toList()

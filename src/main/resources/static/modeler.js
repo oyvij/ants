@@ -1032,20 +1032,29 @@ function nextTo(parent, shape) {
     return {x: last.x + last.width + 50 + shape.width / 2, y: last.y + last.height / 2}
 }
 
-// The Agent Task's Agent, Skill and inputs, written as the panel's pickers and input boxes write them.
-async function setAgentTask({id, agent, skill, inputs, resultSchema, resume, vault, answerHistory}) {
+// The Agent Task's Agent, Assignment, Skills and inputs, written as the panel's pickers and input boxes write them
+// (ADR 0024): skills null gives the Task its Agent's, [] none; a new Agent drops the listed Skills it lacks, and picks
+// its first for a Task with neither an Assignment nor a list.
+async function setAgentTask({id, agent, assignment, skills, inputs, resultSchema, resume, vault, answerHistory}) {
     const element = foundAs(id, "agent", "an Agent Task")
     const catalogue = await (await fetch("/catalogue.json")).json()
     const current = agentProperties(element.businessObject)
     const agentName = agent ?? current["ants.agent"]
     const picked = catalogue.agents.find(a => a.name === agentName)
     if (agent !== undefined && !picked) throw new Error(`No Agent ${agent}: the Agents are ${catalogue.agents.map(a => a.name).join(", ")}.`)
-    const skillName = skill ?? (agent !== undefined && agent !== current["ants.agent"] ? picked.skills[0] : listedSkills(current)?.[0])
-    if (skill !== undefined && !picked?.skills.includes(skill)) throw new Error(`${agentName ? "The Agent " + agentName : "The Task's Agent"} doesn't run the Skill ${skill}` +
-        (picked ? `: it runs ${picked.skills.join(", ") || "none"}.` : ": give the Task an Agent first."))
-    // ponytail: until #230 gives it assignment and skills, it lists its one Skill, and takes any inputs.
+    if (skills !== undefined && skills !== null && (!Array.isArray(skills) || skills.some(s => typeof s !== "string"))) throw new Error("skills must be a list of Skill names, or null.")
+    const text = assignment === undefined ? current["ants.assignment"] : String(assignment ?? "").trim()
+    let listed = skills === undefined ? listedSkills(current) : skills && [...new Set(skills)]
+    let dropped = []
+    if (skills === undefined && agent !== undefined && agent !== current["ants.agent"]) {
+        if (listed === null && !text?.trim()) listed = picked.skills.length ? picked.skills.slice(0, 1) : null
+        else if (listed) [listed, dropped] = [listed.filter(s => picked.skills.includes(s)), listed.filter(s => !picked.skills.includes(s))]
+    }
+    const lacking = skills ? listed.filter(s => !picked?.skills.includes(s)) : []
+    if (lacking.length) throw new Error(`${agentName ? "The Agent " + agentName : "The Task's Agent"} doesn't have the Skill${lacking.length > 1 ? "s" : ""} ${lacking.join(", ")}` +
+        (picked ? `: it has ${picked.skills.join(", ") || "none"}.` : ": give the Task an Agent first."))
     const written = Object.entries({...Object.fromEntries(agentInputs(element.businessObject)), ...(inputs || {})}).map(([name, value]) => [name, String(value ?? "")])
-    const changes = {"ants.agent": agentName || undefined, "ants.skills": skillName || undefined}
+    const changes = {"ants.agent": agentName || undefined, "ants.assignment": text || undefined, "ants.skills": listed?.join(", ")}
     // The panel's Result schema box and toggles: resume is set or gone, Vault and Answer History say true or false.
     if (resultSchema !== undefined) {
         const schema = String(resultSchema).trim()
@@ -1060,7 +1069,8 @@ async function setAgentTask({id, agent, skill, inputs, resultSchema, resume, vau
     if (vault !== undefined) changes["ants.vault"] = String(yes(vault, "vault"))
     if (answerHistory !== undefined) changes["ants.answer-history"] = String(yes(answerHistory, "answerHistory"))
     edit(() => writeAgentTask(element, changes, written, true))
-    return {id, agent: agentName || null, skill: skillName || null, inputs: Object.fromEntries(written), properties: agentProperties(element.businessObject)}
+    return {id, agent: agentName || null, assignment: text || null, skills: listed, ...(dropped.length ? {dropped} : {}), inputs: Object.fromEntries(written),
+        properties: agentProperties(element.businessObject)}
 }
 
 // The start form's fields, all of them in order, as the panel writes them.

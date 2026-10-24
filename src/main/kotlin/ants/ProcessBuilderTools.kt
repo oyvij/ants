@@ -30,6 +30,9 @@ import kotlin.io.path.readText
 import kotlin.io.path.relativeTo
 import kotlin.io.path.walk
 
+/** What create_skill and change_skill answer when given a `schema`: a Skill has none (ADR 0024), so it isn't written. */
+const val SCHEMA_IGNORED = "The schema wasn't written: a Skill has no Result schema. Put it on the Agent Task that needs it, as set_agent_task's resultSchema."
+
 /**
  * The Process Builder's MCP session (ADR 0019): a modeler page that can be edited by hand opens one and gets a token
  * of its own on `/mcp`, which opens only the modeler tools. A tool about the diagram is relayed to the page that holds
@@ -123,6 +126,10 @@ class ProcessBuilderTools(
         override fun call(name: String, arguments: Map<*, *>): Pair<String, Boolean> = try {
             fun argument(key: String) = arguments[key]?.toString() ?: throw Refused("$name needs $key.")
             val text = when (name) {
+                "set_agent_task" -> ask(name, arguments).let { written ->
+                    val refusals = processes.checks(xml()).filter { it.element == arguments["id"] && !it.warning }.map { it.message }
+                    json.writeValueAsString(json.readValue(written, Map::class.java) + ("checks" to refusals))
+                }
                 in RELAYED -> ask(name, arguments)
                 "agents" -> json.writeValueAsString(agents.catalogue()["agents"])
                 "skills" -> json.writeValueAsString(agents.catalogue()["skills"])
@@ -144,8 +151,8 @@ class ProcessBuilderTools(
                 "checks" -> json.writeValueAsString(processes.checks(xml()))
                 "create_agent" -> saved(agents.write(argument("file"), null))
                 "change_agent" -> saved(agents.write(argument("file"), argument("name")))
-                "create_skill" -> saved(skills.write(argument("skill"), arguments["schema"]?.toString().orEmpty(), null))
-                "change_skill" -> saved(skills.write(argument("skill"), arguments["schema"]?.toString().orEmpty(), argument("name")))
+                "create_skill" -> saved(skills.write(argument("skill"), null), arguments)
+                "change_skill" -> saved(skills.write(argument("skill"), argument("name")), arguments)
                 "delete_agent" -> deleted(agents.delete(argument("name")))
                 "delete_skill" -> deleted(skills.delete(argument("name")))
                 "build_log" -> argument("markdown").let { markdown ->
@@ -169,7 +176,9 @@ class ProcessBuilderTools(
         }
 
         /** What a create, change or copy answers: the item's name and its page, which the panel links to. */
-        fun saved(page: String) = json.writeValueAsString(mapOf("name" to page.substringAfterLast('/'), "page" to page)).also { made += page }
+        fun saved(page: String, arguments: Map<*, *> = emptyMap<String, Any>()) = json.writeValueAsString(
+            mapOf("name" to page.substringAfterLast('/'), "page" to page) + listOfNotNull(("note" to SCHEMA_IGNORED).takeIf { arguments["schema"] != null }),
+        ).also { made += page }
 
         fun deleted(page: String) = "Deleted the ${KINDS[page.split('/')[1]]} ${page.substringAfterLast('/')}.".also { made -= page }
 
@@ -418,6 +427,10 @@ class ProcessBuilderTools(
 
         private fun yesNo(what: String) = mapOf("type" to "boolean", "description" to what)
 
+        /** What a Skill is, for create_skill and change_skill (ADR 0024). */
+        private const val PLAIN = "A Skill is plain and reusable: it must not mention Runs, Tasks or Rounds, nor declare inputs or a Result. What a step must do " +
+            "and hand back goes on its Agent Task (set_agent_task's assignment and resultSchema), and the Agent invokes a Skill on its own."
+
         private const val AT = "Its top-left corner on the diagram, as `diagram` gives positions."
 
         /** The tools that change the diagram: relayed to the page, which makes each call one undo step (modeler.js). */
@@ -442,16 +455,23 @@ class ProcessBuilderTools(
                 "id" to "The connection's id.", "condition" to "A JUEL expression, such as `\${grill.output.verdict == 'redo'}` or `\${runs.grill >= 10}`; empty removes it.",
             )),
             Mcp.tool("set_default", "Makes a path out of a decision its default, taken when no other condition holds; its condition goes.", mapOf("id" to "The connection's id.")),
-            Mcp.tool("set_agent_task", "Sets an Agent Task's Agent, Skill, inputs, Result schema and toggles, as the properties panel does: a new Agent picks its first Skill unless " +
-                "skill is given, and the inputs are the ones the Skill declares, keeping values already filled in.", mapOf(
-                "id" to "The Agent Task's id.", "agent" to "The Agent's name (see `agents`).", "skill" to "One of the Agent's Skills (see `skills`).",
+            Mcp.tool("set_agent_task", "Sets an Agent Task's Agent, Assignment, Skills, inputs, Result schema and toggles, as the properties panel does. " +
+                "A Task needs an Assignment, or no Assignment and exactly one listed Skill, which is then its job (as typing /<skill>). Its listed Skills " +
+                "must be its Agent's (see `agents`); a new Agent drops the listed Skills it lacks, and picks its first Skill for a Task with neither. " +
+                "Don't name a Skill to use in the Assignment: the list decides it. Answers what was written, and the Checks Save and deploy " +
+                "refuses on this Task: fix each before you're done.", mapOf(
+                "id" to "The Agent Task's id.", "agent" to "The Agent's name (see `agents`).",
+                "assignment" to "The job, in a few lines: what this step must do and hand back. Empty removes it.",
+                "skills" to mapOf("type" to listOf("array", "null"), "items" to mapOf("type" to "string"),
+                    "description" to "The Agent's Skills this Task may use: [] for none, null for all of the Agent's."),
                 "inputs" to mapOf("type" to "object", "additionalProperties" to mapOf("type" to "string"),
                     "description" to "Values by input name, each text or a `\${…}` reference (see `references`), such as {\"prompt\": \"\${prompt}\"}."),
-                "resultSchema" to "A JSON Schema of the Result, overriding the Skill's, so later Tasks read its fields as \${id.output.<field>}; empty removes it.",
+                "resultSchema" to "A JSON Schema of the Result the Task hands back, so later Tasks read its fields as \${id.output.<field>}; empty removes it, " +
+                    "and the Task hands back only done or stuck with a summary.",
                 "resume" to yesNo("Whether the flow coming back (Round answers, Send back) resumes its session."),
-                "vault" to yesNo("Whether it reads the Vault and Source map; left unset, the Skill's choice."),
-                "answerHistory" to yesNo("Whether it reads the Answer History; left unset, the Skill's choice."),
-            ), optional = setOf("agent", "skill", "inputs", "resultSchema", "resume", "vault", "answerHistory")),
+                "vault" to yesNo("Whether it reads the Vault and Source map."),
+                "answerHistory" to yesNo("Whether it reads the Answer History."),
+            ), optional = setOf("agent", "assignment", "skills", "inputs", "resultSchema", "resume", "vault", "answerHistory")),
             Mcp.tool("set_start_form", "Replaces the start form's fields, in order: to add, change, remove or reorder fields, give the whole list, " +
                 "starting from `diagram`'s startForm.", mapOf(
                 "fields" to mapOf("type" to "array", "description" to "The fields. Tasks read each one as \${id}.", "items" to mapOf(
@@ -538,7 +558,13 @@ class ProcessBuilderTools(
             "connect" to { it -> "connected ${named(it["from"])} to ${named(it["to"])}" },
             "set_condition" to { it -> "set the condition on ${named(it["id"])}" },
             "set_default" to { it -> "made ${named(it["id"])} the default path" },
-            "set_agent_task" to { it -> "set up the Agent Task ${named(it["id"])}" },
+            "set_agent_task" to { it ->
+                val skills = (it["skills"] as? List<*>)?.let { names -> if (names.isEmpty()) "no Skills" else "the Skills " + names.joinToString { name -> named(name) } }
+                    ?: "the Agent's Skills".takeIf { _ -> it.containsKey("skills") }
+                val assignment = (it["assignment"] as? String)?.trim()?.takeIf(String::isNotEmpty)
+                    ?.let { text -> "the Assignment " + named(if (text.length > 80) text.take(79) + "…" else text) }
+                "set up the Agent Task ${named(it["id"])}" + listOfNotNull(assignment, skills).joinToString(" and ").let { parts -> if (parts.isEmpty()) "" else " with $parts" }
+            },
             "set_start_form" to { _ -> "set the start form" },
             "set_user_task" to { it -> "set up the User Task ${named(it["id"])}" },
             "set_call" to { it -> "set up the call activity ${named(it["id"])}" },
@@ -566,15 +592,14 @@ class ProcessBuilderTools(
                 "cli claude or codex, skills, tools as permission rules such as `Read, Bash(git log *)`, model; a codex Agent has a sandbox instead of tools) " +
                 "and its standing instructions below. Saved at once, so a Task can pick it; answers its name and page, or what is wrong with it.",
                 mapOf("file" to "The agent file.")),
-            Mcp.tool("create_skill", "Creates one of the user's own Skills from its SKILL.md (frontmatter name and description, " +
-                "metadata.ants-inputs for its inputs; its instructions below) and its Result schema. Saved at once; answers its name and page, or what is wrong with it.",
-                mapOf("skill" to "The SKILL.md.", "schema" to "result.schema.json, a JSON Schema of the Result it promises; none when left out."), optional = setOf("schema")),
+            Mcp.tool("create_skill", "Creates one of the user's own Skills from its SKILL.md, as Claude Code knows one: frontmatter name and description " +
+                "(when to use it), and how to do the work below. $PLAIN Saved at once; answers its name and page, or what is wrong with it.",
+                mapOf("skill" to "The SKILL.md.")),
             Mcp.tool("change_agent", "Replaces one of the user's own Agents with a new agent file; a new name in it renames the Agent. Shipped and outside Agents are " +
                 "read-only: copy one first.", mapOf("name" to "The Agent's name now.", "file" to "The whole new agent file.")),
-            Mcp.tool("change_skill", "Replaces one of the user's own Skills' SKILL.md and Result schema; a new name in it renames the Skill. Shipped and outside Skills are " +
-                "read-only: copy one first.",
-                mapOf("name" to "The Skill's name now.", "skill" to "The whole new SKILL.md.", "schema" to "The whole new result.schema.json; none when left out."),
-                optional = setOf("schema")),
+            Mcp.tool("change_skill", "Replaces one of the user's own Skills' SKILL.md; a new name in it renames the Skill. $PLAIN Shipped and outside " +
+                "Skills are read-only: copy one first.",
+                mapOf("name" to "The Skill's name now.", "skill" to "The whole new SKILL.md.")),
             Mcp.tool("delete_agent", "Deletes one of the user's own Agents, such as one you created that the user doesn't want. Shipped and outside Agents are " +
                 "read-only and can't be deleted. Ask the user first: a Task that runs it fails the Checks.", mapOf("name" to "The Agent's name.")),
             Mcp.tool("delete_skill", "Deletes one of the user's own Skills with its folder, such as one you created that the user doesn't want. Shipped and outside " +

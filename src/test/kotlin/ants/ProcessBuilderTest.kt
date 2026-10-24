@@ -124,14 +124,23 @@ class ProcessBuilderTest : AntsTest() {
             """{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Who answers the questions?"}]},"session_id":"${'$'}SESSION"}""",
             """mcp create_agent {"file":"---\nname: picker\ndescription: Picks an issue.\n---\nPick one.\n"}""",
             """mcp process {"key":"agent-task"}""",
+            """mcp set_agent_task {"id":"pick","assignment":"Pick one issue.","skills":["draft","notes"]}""",
+            """mcp set_agent_task {"id":"none","skills":[]}""",
             """{"type":"result","subtype":"success","result":"Done.","session_id":"${'$'}SESSION"}""")
         val token = open()
         val dialog = browser.events("builder=$token", "dialog")
-        send(token, "Build it.")
-        val html = dialog.until { "/agents/picker" in it && "read the Process" in it }
+        builder.timeLimit = Duration.ofMillis(200) // no page answers set_agent_task here: its line shows all the same
+        val html = try {
+            send(token, "Build it.")
+            dialog.until { "/agents/picker" in it && "read the Process" in it && "Agent Task <i>none</i>" in it }
+        } finally {
+            builder.timeLimit = ProcessBuilderTools.TIME_LIMIT
+        }
         assertTrue("Build it." in html, html)
         assertTrue("Who answers the questions?" in html, html)
-        for (line in listOf("created the Agent <i>picker</i>", "read the Process <i>agent-task</i>")) assertTrue(line in html, html) // what it did, in words
+        for (line in listOf("created the Agent <i>picker</i>", "read the Process <i>agent-task</i>",
+                "set up the Agent Task <i>pick</i> with the Assignment <i>Pick one issue.</i> and the Skills <i>draft</i>, <i>notes</i>",
+                "set up the Agent Task <i>none</i> with no Skills")) assertTrue(line in html, html) // what it did, in words
         assertFalse("mcp__ants__" in html || "create_agent" in html, html)
         assertTrue("""<a href="/agents/picker" target="_blank">Agent picker</a>""" in html, html) // a new tab keeps the unsaved diagram
     }

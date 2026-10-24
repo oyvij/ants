@@ -13,7 +13,6 @@ import org.yaml.snakeyaml.error.YAMLException
 import java.nio.file.Files
 import kotlin.io.path.copyTo
 import kotlin.io.path.createDirectories
-import kotlin.io.path.deleteIfExists
 import kotlin.io.path.exists
 import kotlin.io.path.readText
 import kotlin.io.path.relativeTo
@@ -140,13 +139,7 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy) {
      * The Process Builder's save (ADR 0019): a `SKILL.md` through the page's own save, as a new Skill or over the user's
      * own Skill [name], renaming it without asking. Gives the saved Skill's page, or throws with the page's error.
      */
-    fun write(skill: String, schema: String, name: String?): String {
-        // ponytail: until #230 drops `schema` from create_skill and change_skill, it is still written, and nothing reads it.
-        ResultContract.schemaErrors(schema).takeIf { it.isNotEmpty() }?.let { throw Refused("result.schema.json is invalid: ${it.joinToString("; ")}") }
-        val page = redirected("message") { save(SkillForm(name, skill), it, confirmed = true) }
-        catalogue.skill(page.substringAfterLast('/').substringBefore('?')).folder.resolve("result.schema.json").run { if (schema.isBlank()) deleteIfExists() else writeAtomically(schema) }
-        return page
-    }
+    fun write(skill: String, name: String?): String = redirected("message") { save(SkillForm(name, skill), it, confirmed = true) }
 
     /** Saves the Skill and opens it, calling [saved] with its name, else shows the form again with why not. */
     private fun save(posted: SkillForm, model: Model, confirmed: Boolean = false, saved: (String) -> Unit = {}): String {
