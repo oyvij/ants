@@ -575,7 +575,7 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
-    fun `Edit's modal saves the Task's Skill, and the panel shows the input it now declares`() = browse {
+    fun `Edit's modal saves the Task's Skill, and the panel shows its new description`() = browse {
         agentTask(null)
         appendAgentTask()
         label("Agent").selectOption("writer")
@@ -583,11 +583,11 @@ class BrowserTest : AntsTest() {
         page.locator("#explain button", Page.LocatorOptions().setHasText("Edit")).nth(1).click()
         assertThat(page.locator("dialog.modal")).containsText("Edit Skill")
         page.frameLocator("dialog iframe").locator("#skill-md + .ed .cm-content")
-            .fill("---\nname: draft\ndescription: Does draft.\nmetadata:\n  ants-inputs: tone\n---\nDo it.\n")
+            .fill("---\nname: draft\ndescription: Drafts it better.\n---\nDo it.\n")
         page.locator("dialog .mh button", Page.LocatorOptions().setHasText("Save")).click()
 
         assertThat(page.locator("dialog")).hasCount(0)
-        assertThat(panel.locator("label.row code")).hasText("tone")
+        assertThat(panel.locator(".skillpick")).containsText("Drafts it better.")
     }
 
     @Test
