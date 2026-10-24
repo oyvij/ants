@@ -345,7 +345,10 @@ class AgentTaskTest : AntsTest() {
         assertEquals("1", launch.env["CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH"])
         assertEquals(null, launch.env["JAVA_HOME"]) // outside the allow-list
 
+        // A Task no Answer the Round names gets the ranking and no Round protocol.
         val prompt = "/draft The workspace is ${workspace(run)}." +
+            "\\n\\nWhere instructions disagree, the Task's Assignment wins, then your Agent's instructions, then the Skill's, " +
+            "then a repo's own CLAUDE.md or AGENTS.md, then the user's Profile instructions in the workspace's CLAUDE.md or AGENTS.md." +
             """\n\n{\"prompt\":\"Say hello\",\"tone\":\"dry\"}"""
         assertEquals("""{"type":"user","message":{"role":"user","content":"$prompt"}}""", launch.stdin)
     }

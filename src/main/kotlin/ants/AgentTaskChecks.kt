@@ -65,10 +65,14 @@ internal fun agentTasks(catalogue: Catalogue, model: BpmnModelInstance) = model.
     ) + found?.inputs.orEmpty().filter { it !in filled }.map { Check(task.id, "${task.label} has an empty input $it.", warning = true) }
 }
 
-/** What an Agent Task promises in its Result's `output`: its override, else its Skill's schema; null when neither can be read. */
+/**
+ * What an Agent Task promises in its Result's `output`: its override, else its Skill's schema, with `questions` when it
+ * [asksRounds]; null when neither can be read.
+ */
 private fun promised(catalogue: Catalogue, task: ServiceTask): Map<*, *>? {
-    task.property(RESULT_SCHEMA)?.takeIf(String::isNotBlank)?.let { return runCatching { JsonMapper.shared().readValue(it, Map::class.java) }.getOrNull() }
-    return runCatching { catalogue.skill(task.property(SKILL).orEmpty()).outputSchema }.getOrNull()
+    val output = task.property(RESULT_SCHEMA)?.takeIf(String::isNotBlank)?.let { runCatching { JsonMapper.shared().readValue(it, Map::class.java) }.getOrNull() ?: return null }
+        ?: runCatching { catalogue.skill(task.property(SKILL).orEmpty()).outputSchema }.getOrNull() ?: return null
+    return if (asksRounds(task)) withQuestions(output) else output
 }
 
 /** The names an expression anywhere may start with besides start-form fields and Task ids: Ants' Run variables and the engine's own. */

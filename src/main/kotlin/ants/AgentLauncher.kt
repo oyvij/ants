@@ -478,12 +478,14 @@ class AgentLauncher(
         val verbosity = verbosity(skill, source)
         // The Task's result-schema override replaces the Skill's result.schema.json; Checks refuse one that isn't valid.
         val override = task.extensionProperties[RESULT_SCHEMA]?.takeIf(String::isNotBlank)?.let { json.readValue(it, Map::class.java) }
-        val output = override ?: skill.outputSchema
+        val asks = asksRounds(repository.getBpmnModelInstance(task.processDefinitionId).getModelElementById(task.activityId))
+        val output = (override ?: skill.outputSchema).let { if (asks) withQuestions(it) else it }
         val schema = ResultContract.schema(output)
         // A Run with repos picked clones exactly them, so the repos a Result names there go unchecked.
         val repos = source.repos(settings).takeIf { source.picked.isEmpty() && ResultContract.namesRepos(output) }
         val prompt = if (!handedOff) instruction.orEmpty()
-        else handOff(agent.cli, task, skill, used, cwd, vault, source.sourceMap(settings), repos, verbosity) + "\n\n" + json.writeValueAsString(inputs) + (if (instruction.isNullOrBlank()) "" else "\n\nFrom the user:\n$instruction")
+        else handOff(agent.cli, task, skill, used, cwd, vault, source.sourceMap(settings), repos, verbosity) + "\n\n$RANKING" +
+            (if (asks) "\n\n$ROUND_PROTOCOL" else "") + "\n\n" + json.writeValueAsString(inputs) + (if (instruction.isNullOrBlank()) "" else "\n\nFrom the user:\n$instruction")
         val judge = Judge(agent.cli, schema, workspace, walkthrough(task), repos)
         // A knowledge Task, one with an `approval` input, may write the Vault only once it holds the user's approval
         // (ADR 0007): until then the Vault is read-only to it, but for Bash. codex can read it without an --add-dir.
