@@ -34,7 +34,7 @@ class AnswerRoundTest : AntsTest() {
         )
         browser.get("/processes")
         val bpmn = javaClass.getResource("/$process.bpmn")!!.readText().replace("PT1H", timer).replace("runs.grill >= 10", "runs.grill >= $cap")
-            .let { if (assignment == null) it else it.replace("""name="ants.skill" value="quiz"""", """name="ants.assignment" value="$assignment"""") }
+            .let { if (assignment == null) it else it.replace("""name="ants.skills" value="quiz"""", """name="ants.assignment" value="$assignment"""") }
         browser.upload("/processes", "file", "$process.bpmn", bpmn.toByteArray())
         browser.get("/processes/$process")
         return browser.post("/processes/$process/runs", emptyMap()).path.removePrefix("/runs/")

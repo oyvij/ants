@@ -316,7 +316,7 @@ class BrowserTest : AntsTest() {
     @Test
     fun `the Process Builder asks first, then builds a small Process on the open canvas from the answer, each change one undo step`() = browse {
         val claude = FakeClaude()
-        agentTask(claude, metadata = "metadata:\n  ants-inputs: prompt\n")
+        agentTask(claude)
         claude.session("process-builder",
             says("Who answers the questions it asks?"), builderResult, "read",
             """mcp add_element {"kind":"agent","id":"pick","name":"Pick","x":300,"y":80}""",
@@ -390,10 +390,12 @@ class BrowserTest : AntsTest() {
 
     @Test
     fun `an Agent Task set up by the Process Builder's tools reads in the saved XML as one set up by hand`() = browse {
-        agentTask(null, metadata = "metadata:\n  ants-inputs: prompt\n")
+        agentTask(null)
         val hand = appendAgentTask()
         label("Agent").selectOption("writer")
         assertThat(label("draft")).isChecked()
+        page.locator("#ants-new-input").fill("prompt")
+        button("＋ Add input").click()
         assertThat(page.locator("#explain label.row code").first()).hasText("prompt")
         page.locator("#explain label.row input").first().fill("\${prompt}")
         val tool = builder()
@@ -409,8 +411,7 @@ class BrowserTest : AntsTest() {
             .map { it.groupValues }.single { (_, attributes) -> """id="$id"""" in attributes }
             .let { (_, attributes, body) -> attributes.replace("""id="$id"""", "").trim() + body.substringAfter("extensionElements>").substringBefore("extensionElements>") }
         assertContains(task("byTool"), "\${prompt}")
-        // The panel writes ants.skills (ADR 0024); set_agent_task still writes the old ants.skill until #230.
-        assertEquals(task(hand), task("byTool").replace("\"ants.skill\"", "\"ants.skills\""))
+        assertEquals(task(hand), task("byTool"))
     }
 
     private fun texts(node: tools.jackson.databind.JsonNode?) = node?.iterator()?.asSequence()?.map { it.asString() }?.toList()
@@ -599,12 +600,12 @@ class BrowserTest : AntsTest() {
 
     @Test
     fun `picking an Agent picks its first Skill and says what later Tasks can read, and the Checks turn Ready to deploy`() = browse {
-        agentTask(null, mapOf("draft" to """{"type":"object","properties":{"notes":{"type":"string"}}}""", "polish" to null))
+        agentTask(null, mapOf("draft" to null, "polish" to null))
         val task = appendAgentTask()
         assertThat(page.locator("#summary")).hasText(Pattern.compile("\\d+ to fix"))
         label("Agent").selectOption("writer")
         assertThat(label("draft")).isChecked()
-        assertThat(panel).containsText("Later Tasks can read: ${'$'}{$task.output.notes}")
+        assertThat(panel).containsText("Later Tasks can read: ${'$'}{$task.summary}")
         assertThat(page.locator("#summary")).hasText("Ready to deploy")
         page.screenshot("modeler-agent-task")
     }
@@ -624,7 +625,7 @@ class BrowserTest : AntsTest() {
         http.import("agent-task.bpmn")
         page.navigate(url("/processes/agent-task/edit"))
         shape("draft").click()
-        // The old ants.skill shows as the one listed Skill; the picker offers only the Agent's.
+        // The Task's one listed Skill is ticked; the picker offers only the Agent's.
         assertThat(label("Skills")).hasValue("some")
         assertThat(page.locator("#explain .skillpick label")).hasText(arrayOf("draft", "polish", "extra"))
         assertThat(label("draft")).isChecked()
@@ -640,7 +641,6 @@ class BrowserTest : AntsTest() {
         assertThat(page).hasURL(Pattern.compile(".*/processes/agent-task$"))
         val saved = http.get("/processes/agent-task/diagram.bpmn").body
         assertContains(saved, """name="ants.skills" value="draft, polish"""")
-        assertFalse("""name="ants.skill"""" in saved)
 
         claude.session("draft", """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":{"outcome":"done","summary":"Greeted.","output":{}}}""")
         http.post("/processes/agent-task/runs", mapOf("prompt" to "Say hello"))
@@ -657,11 +657,10 @@ class BrowserTest : AntsTest() {
         http.import("agent-task.bpmn")
         page.navigate(url("/processes/agent-task/edit"))
         shape("draft").click()
-        val none = checked({ "name=\"ants.skills\" value=\"\"" in it }) { label("Skills").selectOption("none") }
-        assertFalse("""name="ants.skill"""" in none)
+        checked({ "name=\"ants.skills\" value=\"\"" in it }) { label("Skills").selectOption("none") }
         assertThat(skillBoxes).hasCount(2)
         for (box in skillBoxes.all()) assertThat(box).not().isChecked()
-        checked({ "ants.skills" !in it && "name=\"ants.skill\"" !in it }) { label("Skills").selectOption("agent") }
+        checked({ "ants.skills" !in it }) { label("Skills").selectOption("agent") }
         for (box in skillBoxes.all()) { assertThat(box).isChecked(); assertThat(box).isDisabled() }
     }
 
@@ -2766,14 +2765,10 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
-    fun `the Skill page's schema editor says whether the schema is valid`() = browse {
+    fun `the Skill page edits only SKILL md, with no Result schema editor`() = browse {
         page.navigate(url("/skills/new"))
-        val bar = page.locator(".ed.json .bar")
-        page.locator(".ed.json .cm-content").fill("""{"type": "strin"}""")
-        assertThat(bar).containsText("✗")
-        assertThat(page.locator("button[form=skill]")).isDisabled()
-        page.locator(".ed.json .cm-content").fill("""{"type": "object", "properties": {"text": {"type": "string"}}}""")
-        assertThat(bar).containsText("✓ valid schema")
+        assertThat(page.locator("#skill .ed")).hasCount(1)
+        assertThat(page.locator(".ed.json")).hasCount(0)
         assertThat(page.locator("button[form=skill]")).isEnabled()
     }
 
@@ -2983,7 +2978,7 @@ class BrowserTest : AntsTest() {
     /** An Agent Task [id] running `writer`'s Skill `draft`. */
     private fun agentTaskXml(id: String, name: String) = """<bpmn:serviceTask id="$id" name="$name" operaton:type="external" operaton:topic="agent">""" +
         """<bpmn:extensionElements><operaton:properties><operaton:property name="ants.agent" value="writer" />""" +
-        """<operaton:property name="ants.skill" value="draft" /></operaton:properties></bpmn:extensionElements></bpmn:serviceTask>"""
+        """<operaton:property name="ants.skills" value="draft" /></operaton:properties></bpmn:extensionElements></bpmn:serviceTask>"""
 
     /**
      * [steps], BPMN elements one after another, joined by sequence flows; and the plane of [owner] laying them out in a

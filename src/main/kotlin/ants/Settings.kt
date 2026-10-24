@@ -281,8 +281,7 @@ class Settings(
         val DEFAULT_ENV = listOf("PATH", "HOME", "USER", "LOGNAME", "SHELL", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE", "TERM")
 
         /**
-         * A YAML list, or a string read as space-separated words, so `command: claude` works too, as do a Skill's
-         * `ants-uses` names.
+         * A YAML list, or a string read as space-separated words, so `command: claude` works too.
          */
         // ponytail: a string splits on spaces, so a path with a space in it needs the YAML list form
         fun strings(value: Any?) = when (value) {

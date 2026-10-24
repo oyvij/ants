@@ -114,7 +114,7 @@ class HideShippedTest : AntsTest() {
                 <bpmn:serviceTask id="draft" name="Draft" operaton:type="external" operaton:topic="agent">
                   <bpmn:extensionElements><operaton:properties>
                     <operaton:property name="ants.agent" value="shipped-writer" />
-                    <operaton:property name="ants.skill" value="shipped-draft" />
+                    <operaton:property name="ants.skills" value="shipped-draft" />
                   </operaton:properties></bpmn:extensionElements>
                 </bpmn:serviceTask>
               </bpmn:process>

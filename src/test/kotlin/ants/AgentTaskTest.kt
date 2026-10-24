@@ -40,12 +40,6 @@ class AgentTaskTest : AntsTest() {
     private fun agentTask(schema: String? = null, agent: String = "", metadata: String = "", agentTasks: Int = 3, extra: String = "") =
         agentTask(claude, mapOf("draft" to schema), agent, metadata, "agent-tasks: $agentTasks\n$extra", env)
 
-    /** A Skill [name] that only other Skills use, its frontmatter carrying [metadata]. */
-    private fun usedSkill(name: String, metadata: String = ""): Path = home.resolve("skills/used/$name").createDirectories().resolve("SKILL.md")
-        .also { it.writeText("---\nname: $name\ndescription: Used.\n$metadata---\nUse it.\n") }
-
-    private fun uses(names: String) = "metadata:\n  ants-uses: $names\n"
-
     /** The launch's skills folder: the one --add-dir in the Run workspace's `.skills`. */
     private fun skillsFolder(launch: FakeClaude.Launch): Path =
         launch.argv.zipWithNext().filter { it.first == "--add-dir" && "/.skills/" in it.second }.map { Path.of(it.second) }.single()
@@ -70,7 +64,7 @@ class AgentTaskTest : AntsTest() {
     /** Deploys [file] as the Process [key], its first Agent Task given [properties] too, and starts a Run of it. */
     private fun startWith(key: String, properties: String, file: String = "agent-task") : String {
         val bpmn = javaClass.getResource("/$file.bpmn")!!.readText().replace("\"$file\"", "\"$key\"")
-            .replaceFirst("""<operaton:property name="ants.skill" value="draft" />""", """<operaton:property name="ants.skill" value="draft" />$properties""")
+            .replaceFirst("""<operaton:property name="ants.skills" value="draft" />""", """<operaton:property name="ants.skills" value="draft" />$properties""")
         browser.get("/processes")
         assertFalse("role=\"alert\"" in browser.upload("/processes", "file", "$key.bpmn", bpmn.toByteArray()).body)
         browser.get("/processes/$key")
@@ -97,11 +91,14 @@ class AgentTaskTest : AntsTest() {
     }
 
     @Test
-    fun `the Vault and Answer History toggles reach the hand-off line and --add-dir only when on, defaulting from the Skill`() {
+    fun `the Vault and Answer History toggles reach the hand-off line and --add-dir only when on, and are off unless the Task sets them`() {
         val map = Files.createTempFile("source-map", ".md")
-        agentTask(metadata = "metadata:\n  varde-vault: true\n", extra = "source-maps:\n  mine: $map\n")
+        agentTask(extra = "source-maps:\n  mine: $map\n")
         claude.session("draft", done)
-        val byDefault = startWith("toggles-default", "")
+        val unset = startWith("toggles-unset", "")
+        eventually { assertContains(page(unset), """id="state">Completed<""") }
+        assertFalse(Regex("Vault|Answer History").containsMatchIn(claude.launches("draft").last().stdin))
+        val byDefault = startWith("toggles-default", property("ants.vault", "true"))
         eventually { assertContains(page(byDefault), """id="state">Completed<""") }
         val defaults = claude.launches("draft").last().stdin
         assertContains(defaults, "The workspace is ${workspace(byDefault)}. The Vault is $vaultPath and the Source map is $map.\\n")
@@ -369,26 +366,6 @@ class AgentTaskTest : AntsTest() {
     }
 
     @Test
-    fun `a two-level ants-uses chain links the Skill and every used one into the session's skills folder, each folder an --add-dir`() {
-        agentTask(metadata = uses("implement-tdd"))
-        val tdd = usedSkill("implement-tdd", uses("seams review"))
-        val seams = usedSkill("seams")
-        val review = usedSkill("review", uses("seams"))
-        usedSkill("unused")
-        claude.session("draft", done)
-        val run = start()
-        eventually { assertContains(page(run), """id="state">Completed<""") }
-        val launch = claude.launches("draft").single()
-        assertFalse("It uses the Skills" in launch.stdin)
-        val argv = launch.argv.joinToString(" ")
-        for (folder in listOf(home.resolve("skills/draft"), tdd.parent, seams.parent, review.parent)) assertContains(argv, "--add-dir $folder")
-        val skills = skillsFolder(launch)
-        assertTrue(skills.startsWith(workspace(run)), "$skills is in the Run workspace")
-        assertEquals(mapOf("draft" to home.resolve("skills/draft"), "implement-tdd" to tdd.parent, "seams" to seams.parent, "review" to review.parent), launch.skills)
-        assertFalse(skills.exists(), "the skills folder goes with the Run workspace")
-    }
-
-    @Test
     fun `a resumed session gets the same skills folder and flags as its first launch`() {
         agentTask()
         claude.session("draft", done)
@@ -399,32 +376,6 @@ class AgentTaskTest : AntsTest() {
         assertEquals(first.flag("--tools"), again.flag("--tools"))
         assertEquals(first.flag("--allowedTools"), again.flag("--allowedTools"))
         assertEquals(mapOf("draft" to home.resolve("skills/draft")), again.skills)
-    }
-
-    @Test
-    fun `an ants-uses cycle fails before launch, naming the cycle`() {
-        agentTask(metadata = uses("implement-tdd"), agentTasks = 0) // the pre-Run check refuses a cycle, so it closes after the Run starts
-        usedSkill("implement-tdd", uses("seams"))
-        usedSkill("seams")
-        claude.session("draft", done)
-        val run = start()
-        usedSkill("seams", uses("draft"))
-        settings()
-        eventually { assertContains(page(run), "<dt>draft</dt><dd>[failed] The Skills draft → implement-tdd → seams → draft use each other in a cycle</dd>") }
-        assertEquals(emptyList(), claude.launches("draft"))
-    }
-
-    @Test
-    fun `a used Skill's Vault opt-in turns the Task's Vault on`() {
-        agentTask(metadata = uses("search"))
-        usedSkill("search", "metadata:\n  varde-vault: true\n")
-        claude.session("draft", done)
-        assertTrue(catalogue.vault(catalogue.skill("draft")))
-        val run = start()
-        eventually { assertContains(page(run), """id="state">Completed<""") }
-        assertContains(claude.launches("draft").single().argv.zipWithNext(), "--add-dir" to "$vaultPath")
-        usedSkill("search")
-        assertFalse(catalogue.vault(catalogue.skill("draft")))
     }
 
     @Test

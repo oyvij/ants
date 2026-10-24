@@ -107,7 +107,8 @@ class TaskView(
     }
 
     val agent get() = element?.property(AGENT)
-    val skill get() = element?.property(SKILL)
+    /** The Skill the Task starts with as its job: its one listed Skill, when it has no Assignment (ADR 0024). */
+    val skill get() = element?.takeIf { it.property(ASSIGNMENT).isNullOrBlank() }?.property(SKILLS)?.let(::words)?.singleOrNull()
 
     /** The state as a pill; a page puts the entry's tag (tag.kte) beside it while the Task waits on the user. */
     val badge get() = """<span class="pill p-${PILLS[state]}">${HtmlUtils.htmlEscape(label)}</span>"""

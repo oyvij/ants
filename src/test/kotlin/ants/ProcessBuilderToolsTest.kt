@@ -103,7 +103,8 @@ class ProcessBuilderToolsTest : AntsTest() {
 
     @Test
     fun `the catalogue tools and the Checks answer as the modeler's endpoints do, the Checks on the page's diagram`() {
-        agentTask(null, mapOf("draft" to """{"type":"object","properties":{"notes":{"type":"string"}}}"""))
+        agentTask(null)
+        home.resolve("skills/draft/reference.md").writeText("A file beside it.")
         browser.import("agent-task.bpmn")
         val token = open()
         val broken = agentTaskXml.replace("value=\"writer\"", "value=\"nobody\"")
@@ -123,7 +124,7 @@ class ProcessBuilderToolsTest : AntsTest() {
 
         val skill = tool("skill", mapOf("name" to "draft"))
         assertEquals("Do it.", skill["instructions"].asString())
-        assertEquals(listOf("notes"), skill["output"]["properties"].propertyNames().toList())
+        assertEquals("""["reference.md"]""", skill["files"].toString())
         assertTrue(call(token, "skill", mapOf("name" to "nothing")).second)
         assertTrue(call(token, "process", mapOf("key" to "agent-task")).first.contains("""<bpmn:serviceTask id="draft""""))
         assertTrue(call(token, "process", mapOf("key" to "nothing")).second)
@@ -198,7 +199,7 @@ class ProcessBuilderToolsTest : AntsTest() {
 
         val catalogue = json.readTree(browser.get("/catalogue.json").body)
         assertTrue(catalogue["agents"].any { it["name"].asString() == "writer" && it["skills"].toString() == """["draft"]""" })
-        assertTrue(catalogue["skills"].any { it["name"].asString() == "draft" && it["output"]["properties"].has("notes") })
+        assertTrue(catalogue["skills"].any { it["name"].asString() == "draft" })
         assertEquals(listOf("Bash(git log *)", "Read"), Agent(home.resolve("agents/writer.md")).tools!!.sorted())
         val checks = call(token, "checks").first
         assertTrue("writer" !in checks && "draft" !in checks, checks)

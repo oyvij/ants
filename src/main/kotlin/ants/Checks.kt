@@ -38,11 +38,11 @@ data class Check(val element: String?, val message: String, val warning: Boolean
 @Component
 class Checks(private val catalogue: Catalogue, private val repository: RepositoryService) {
     private val kinds: List<(BpmnModelInstance) -> List<Check>> = listOf(::refusedElements, ::refusedUses, ::oneStartEvent, ::startFormNames, ::emptyInputs, ::defaultPaths, ::timerTimes, ::timerStarts, ::reviewSendBacks,
-        { agentTasks(catalogue, it) }, { references(catalogue, it) }, // these two in AgentTaskChecks.kt
+        { agentTasks(catalogue, it) }, { references(it) }, // these two in AgentTaskChecks.kt
         { calls(repository, it) }) // in CallActivityChecks.kt
 
     /** What the input pickers of the Task [element] in [bpmn] offer, as `${…}` references; see [offered]. */
-    fun inputs(bpmn: String, element: String) = offered(catalogue, Bpmn.readModelFromStream(bpmn.byteInputStream()), element) { key ->
+    fun inputs(bpmn: String, element: String) = offered(Bpmn.readModelFromStream(bpmn.byteInputStream()), element) { key ->
         repository.createProcessDefinitionQuery().processDefinitionKey(key).latestVersion().singleResult()?.let { repository.getBpmnModelInstance(it.id) }
     }
 

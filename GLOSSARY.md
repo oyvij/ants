@@ -97,8 +97,8 @@ and Tasks can name repos by that name.
 _Avoid_: repo list, registry
 
 **Vault**:
-The user's store of knowledge Notes, kept across Runs and shared with Varde; only a Skill that opts in
-is told where it is.
+The user's store of knowledge Notes, kept across Runs and shared with Varde; only a Task whose Vault toggle
+is on is told where it is.
 _Avoid_: knowledge base, wiki, memory
 
 **Profile**:

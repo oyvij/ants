@@ -129,10 +129,10 @@ function mount(textarea, cm) {
 }
 
 /**
- * The editor box this editor and the Skill page's schema editor (skill-editor.js) put after their hidden [textarea]:
+ * The editor box this editor puts after its hidden [textarea]:
  * div.ed, tall or readonly as the textarea is, with its bar and the bar's status, for the caller to fill.
  */
-export function editorBox(textarea) {
+function editorBox(textarea) {
     const ed = Object.assign(document.createElement('div'), {className: 'ed'});
     ed.classList.toggle('tall', textarea.hasAttribute('data-tall'));
     ed.classList.toggle('readonly', textarea.readOnly);

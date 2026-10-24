@@ -26,7 +26,7 @@ class AssignmentTest : AntsTest() {
      */
     private fun start(key: String, vararg properties: Pair<String, String>): String {
         val bpmn = javaClass.getResource("/agent-task.bpmn")!!.readText().replace("\"agent-task\"", "\"$key\"")
-            .replace("""<operaton:property name="ants.skill" value="draft" />""", "PROPERTIES")
+            .replace("""<operaton:property name="ants.skills" value="draft" />""", "PROPERTIES")
             .replace("\"draft\"", "\"greet\"")
             .replace("PROPERTIES", properties.joinToString("") { (name, value) -> """<operaton:property name="$name" value="${value.replace("\n", "&#10;")}" />""" })
         browser.get("/processes")

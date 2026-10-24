@@ -40,7 +40,7 @@ class ShippedSkillsTest {
         val found = files.flatMap { file ->
             Bpmn.readModelFromFile(file.toFile()).getModelElementsByType(ServiceTask::class.java).filter { it.operatonTopic == AgentLauncher.TOPIC }
                 .filter { task ->
-                    task.property(SKILL) != null || task.property(ASSIGNMENT).isNullOrBlank() && task.property(SKILLS)?.let(::words)?.size != 1
+                    task.property("ants.skill") != null || task.property(ASSIGNMENT).isNullOrBlank() && task.property(SKILLS)?.let(::words)?.size != 1
                 }.map { "${file.name}: ${it.id}" }
         }
         assertEquals(emptyList(), found)

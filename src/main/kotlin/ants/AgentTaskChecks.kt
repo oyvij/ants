@@ -18,37 +18,32 @@ import org.operaton.bpm.model.bpmn.instance.operaton.OperatonInputParameter
 import org.operaton.bpm.model.bpmn.instance.operaton.OperatonProperties
 import org.operaton.bpm.model.xml.instance.ModelElementInstance
 import tools.jackson.databind.json.JsonMapper
-import kotlin.io.path.exists
-import kotlin.io.path.readText
 
 // The Checks on Agent Tasks and on what a Process's expressions read, two kinds of [Checks].
 
 // An Agent Task's extension properties.
 const val AGENT = "ants.agent"
-const val SKILL = "ants.skill"
 /** The Skills a Task may use, comma or space separated, an empty list none; without it, its Agent's (ADR 0024). */
 const val SKILLS = "ants.skills"
 /** What a Task asks its Agent to do, the job, in a few lines (ADR 0024). */
 const val ASSIGNMENT = "ants.assignment"
 /** "true" when the flow coming back to the Task resumes its last session. */
 const val RESUME = "ants.resume"
-/** "true" or "false": the Task's Vault toggle, over its Skill's opt-in. */
+/** "true" when the Task gets the Vault and the Source map. */
 const val VAULT = "ants.vault"
-/** "true" or "false": the Task's Answer History toggle, over its Skill's. */
+/** "true" when the Task gets the Answer History. */
 const val ANSWER_HISTORY = "ants.answer-history"
-/** JSON text that replaces the Skill's `result.schema.json`. */
+/** JSON text: the JSON Schema of the `output` the Task's Result promises; without it, any output. */
 const val RESULT_SCHEMA = "ants.result-schema"
 
-/** The value of an element's extension property [name], such as an Agent Task's [SKILL]. */
+/** The value of an element's extension property [name], such as an Agent Task's [AGENT]. */
 fun BaseElement.property(name: String): String? = extensions<OperatonProperties>().flatMap { it.operatonProperties }.firstOrNull { it.operatonName == name }?.operatonValue
 
 private val BpmnModelInstance.agentTasks get() = getModelElementsByType(ServiceTask::class.java).filter { it.operatonTopic == AgentLauncher.TOPIC }
 
 /**
  * Each Agent Task's Agent and Skills: unknown or ambiguous names, no Assignment and not exactly one Skill listed on the
- * Task, a listed Skill the Agent doesn't list (ADR 0024), the Skill it starts with using a Skill that can't be found or
- * a cycle of them, and an invalid result schema, that Skill's or the Task's override. A declared input the Task
- * doesn't fill is a warning.
+ * Task, a listed Skill the Agent doesn't list (ADR 0024), and an invalid result schema.
  */
 internal fun agentTasks(catalogue: Catalogue, model: BpmnModelInstance) = model.agentTasks.flatMap { task ->
     fun check(message: String) = Check(task.id, "${task.label}: $message")
@@ -56,32 +51,22 @@ internal fun agentTasks(catalogue: Catalogue, model: BpmnModelInstance) = model.
     val agent = agentName?.let { runCatching { catalogue.agent(it) } }
     val listed = listed(task).map { runCatching { catalogue.skill(it) } }
     val assignment = !task.property(ASSIGNMENT).isNullOrBlank()
-    val found = listed.singleOrNull()?.getOrNull()?.takeIf { !assignment }
-    val schema = found?.folder?.resolve("result.schema.json")?.takeIf { it.exists() }?.let { ResultContract.schemaErrors(it.readText()) }.orEmpty()
-    val override = ResultContract.schemaErrors(task.property(RESULT_SCHEMA).orEmpty())
-    val filled = task.inputs().map { it.operatonName }.toSet()
+    val schema = ResultContract.schemaErrors(task.property(RESULT_SCHEMA).orEmpty())
     val lacking = agent?.getOrNull()?.let { a -> listed.mapNotNull { it.getOrNull() }.filter { !a.allows(it.name) }.map { check("The Agent ${a.name} doesn't list the Skill ${it.name}.") } }
     listOfNotNull(
         if (agentName == null) Check(task.id, "${task.label} has no Agent.") else agent!!.exceptionOrNull()?.let { check("${it.message}.") },
         Check(task.id, "${task.label} has no Assignment and doesn't list exactly one Skill.").takeIf { !assignment && listed.size != 1 },
-    ) + listed.mapNotNull { it.exceptionOrNull()?.let { e -> check("${e.message}.") } } + lacking.orEmpty() + listOfNotNull(
-        found?.let { runCatching { catalogue.uses(it) }.exceptionOrNull() }?.let { check("${it.message}.") },
-        schema.takeIf { it.isNotEmpty() }?.let { check("The Skill ${found!!.name}'s result.schema.json is invalid: ${it.joinToString("; ")}") },
-        override.takeIf { it.isNotEmpty() }?.let { check("Its result-schema override is invalid: ${it.joinToString("; ")}") },
-    ) + found?.inputs.orEmpty().filter { it !in filled }.map { Check(task.id, "${task.label} has an empty input $it.", warning = true) }
+    ) + listed.mapNotNull { it.exceptionOrNull()?.let { e -> check("${e.message}.") } } + lacking.orEmpty() +
+        listOfNotNull(schema.takeIf { it.isNotEmpty() }?.let { check("Its result schema is invalid: ${it.joinToString("; ")}") })
 }
 
-/** The Skills an Agent Task lists itself: its [SKILLS], else its old [SKILL], if any. */
-private fun listed(task: ServiceTask) = task.property(SKILLS)?.let(::words) ?: listOfNotNull(task.property(SKILL)?.takeIf(String::isNotBlank))
+/** The Skills an Agent Task lists itself, its [SKILLS]. */
+private fun listed(task: ServiceTask) = task.property(SKILLS)?.let(::words).orEmpty()
 
-/**
- * What an Agent Task promises in its Result's `output`: its override, else the schema of the Skill it starts with;
- * nothing with an Assignment; with `questions` when it [asksRounds]; null when none can be read.
- */
-private fun promised(catalogue: Catalogue, task: ServiceTask): Map<*, *>? {
+/** What an Agent Task promises in its Result's `output`: its result schema, with `questions` when it [asksRounds]; null when it can't be read. */
+private fun promised(task: ServiceTask): Map<*, *>? {
     val output = task.property(RESULT_SCHEMA)?.takeIf(String::isNotBlank)?.let { runCatching { JsonMapper.shared().readValue(it, Map::class.java) }.getOrNull() ?: return null }
-        ?: if (!task.property(ASSIGNMENT).isNullOrBlank()) emptyMap<String, Any?>()
-        else runCatching { catalogue.skill(listed(task).single()).outputSchema }.getOrNull() ?: return null
+        ?: emptyMap<String, Any?>()
     return if (asksRounds(task)) withQuestions(output) else output
 }
 
@@ -114,12 +99,12 @@ internal fun reads(expression: String): List<List<String>> =
  * Task, start-form field or Run variable that doesn't exist, or a field an Agent Task's Result doesn't have: its
  * `outcome`, its `summary` and the `output` its schema promises. More complex JUEL fails at runtime, as an incident.
  */
-internal fun references(catalogue: Catalogue, model: BpmnModelInstance): List<Check> {
+internal fun references(model: BpmnModelInstance): List<Check> {
     val activities = model.getModelElementsByType(Activity::class.java).associateBy { it.id }
     val names = model.getModelElementsByType(OperatonFormField::class.java).map { it.operatonId }.toSet() + activities.keys + runVariables
     return expressions(model).flatMap { (owner, text) ->
         val inScope = names + loops(owner).flatMap { listOf(it.element) + loopVariables }
-        reads(text).mapNotNull { path -> problem(catalogue, path, inScope, activities)?.let { owner to it } }
+        reads(text).mapNotNull { path -> problem(path, inScope, activities)?.let { owner to it } }
     }
         .distinct().map { (owner, problem) -> Check(owner.id, "${owner.label} reads $problem") }
 }
@@ -134,7 +119,7 @@ internal fun expressions(model: BpmnModelInstance): List<Pair<FlowElement, Strin
 }
 
 /** What's wrong with reading [path], or null when it names something that exists. */
-private fun problem(catalogue: Catalogue, path: List<String>, names: Set<String>, activities: Map<String, Activity>): String? {
+private fun problem(path: List<String>, names: Set<String>, activities: Map<String, Activity>): String? {
     val (root, field) = path[0] to path.getOrNull(1)
     val task = activities[root] as? ServiceTask
     return when {
@@ -144,7 +129,7 @@ private fun problem(catalogue: Catalogue, path: List<String>, names: Set<String>
         field !in setOf("outcome", "summary", "output") -> "$root.$field, which $root's Result doesn't have."
         path.size < 3 -> null
         else -> {
-            var schema = promised(catalogue, task) ?: return null
+            var schema = promised(task) ?: return null
             if (schema.isEmpty()) return "${path.joinToString(".")}, but $root promises no result schema."
             for ((i, name) in path.drop(2).withIndex()) {
                 val properties = schema["properties"] as? Map<*, *> ?: return null
@@ -162,7 +147,7 @@ private fun problem(catalogue: Catalogue, path: List<String>, names: Set<String>
  * [called] Process's Task. The modeler's condition builder offers those of a decision too. A Task is before
  * it when a path leads from it to [id], so a loop puts later Tasks before it too; they read `null` until run.
  */
-internal fun offered(catalogue: Catalogue, model: BpmnModelInstance, id: String, called: (String) -> BpmnModelInstance?): List<String> {
+internal fun offered(model: BpmnModelInstance, id: String, called: (String) -> BpmnModelInstance?): List<String> {
     val target = model.getModelElementById<FlowNode>(id) ?: return emptyList()
     val before = mutableSetOf<String>() // ids: the model hands out a new object for an element each time
     // From the sequence flows, since a file need not list a node's `incoming`.
@@ -177,7 +162,7 @@ internal fun offered(catalogue: Catalogue, model: BpmnModelInstance, id: String,
     fun results(task: Activity, key: String): List<String> = when {
         task is UserTask -> listOf(key) + UserTaskKind.of(task.property(USER_TASK)).result.map { "$key.$it" }
         task !is ServiceTask || task.operatonTopic != AgentLauncher.TOPIC -> listOf(key)
-        else -> listOf("$key.summary", "$key.output") + (promised(catalogue, task)?.get("properties") as? Map<*, *>).orEmpty().keys.map { "$key.output.$it" }
+        else -> listOf("$key.summary", "$key.output") + (promised(task)?.get("properties") as? Map<*, *>).orEmpty().keys.map { "$key.output.$it" }
     }
     val results = model.getModelElementsByType(Activity::class.java).filter { it.id in before && it.givesResult }.flatMap { task ->
         val process = (task as? CallActivity)?.calledElement?.let(called)

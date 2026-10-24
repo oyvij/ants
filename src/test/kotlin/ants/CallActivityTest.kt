@@ -37,7 +37,7 @@ class CallActivityTest : AntsTest() {
           <bpmn:extensionElements>
             <operaton:properties>
               <operaton:property name="ants.agent" value="writer" />
-              <operaton:property name="ants.skill" value="$skill" />
+              <operaton:property name="ants.skills" value="$skill" />
             </operaton:properties>
             ${if (inputs.isEmpty()) "" else "<operaton:inputOutput>$inputs</operaton:inputOutput>"}
           </bpmn:extensionElements>

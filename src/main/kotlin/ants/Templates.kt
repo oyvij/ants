@@ -168,7 +168,7 @@ internal fun drop(target: Document, template: Document, name: String, x: Int, y:
             val diagram = element.namespaceURI == BPMN || element.namespaceURI == BPMNDI
             for (attribute in List(element.attributes.length) { element.attributes.item(it) }) attribute.nodeValue = when {
                 attribute.localName == "id" && diagram || attribute.localName in references -> renamed[attribute.nodeValue]
-                // The properties that name a Task; `ants.agent` and `ants.skill` may equal a Task's id but never name one.
+                // The properties that name a Task; `ants.agent` and `ants.skills` may equal a Task's id but never name one.
                 attribute.localName == "value" && element.getAttribute("name") in namesATask -> renamed[attribute.nodeValue]
                 else -> null
             } ?: expressions(attribute.nodeValue)

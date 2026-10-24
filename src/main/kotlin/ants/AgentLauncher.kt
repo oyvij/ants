@@ -166,7 +166,7 @@ class AgentLauncher(
             fetched.forEach { task ->
                 Thread.ofVirtual().start {
                     try {
-                        launch(task)
+                        launch(migrated(task, repository))
                     } finally {
                         live.decrementAndGet()
                     }
@@ -459,15 +459,14 @@ class AgentLauncher(
 
     /**
      * The Skill a Task with [properties] starts with, `/<skill>`, and the other Skills it may use (ADR 0024). With an
-     * [ASSIGNMENT] it starts with none, and may use them all. Its own [SKILLS] list them, an empty one none; else an old
-     * [SKILL] and the Skills that one uses; else the [agent]'s. Without an Assignment the Task lists exactly one.
+     * [ASSIGNMENT] it starts with none, and may use them all. Its own [SKILLS] list them, an empty one none; else the
+     * [agent]'s. Without an Assignment the Task lists exactly one.
      */
     private fun skills(properties: Map<String, String>, agent: Agent, id: String): Pair<Skill?, List<Skill>> {
         val listed = properties[SKILLS]?.let(::words)?.map(catalogue::skill)
-        val old = properties[SKILL]?.takeIf { listed == null && it.isNotBlank() }?.let(catalogue::skill)
-        val allowed = listed ?: old?.let { listOf(it) + catalogue.uses(it) } ?: catalogue.allowed(agent)
+        val allowed = listed ?: catalogue.allowed(agent)
         if (!properties[ASSIGNMENT].isNullOrBlank()) return null to allowed
-        val skill = old ?: listed?.singleOrNull() ?: error("$id has no Assignment and doesn't list exactly one Skill")
+        val skill = listed?.singleOrNull() ?: error("$id has no Assignment and doesn't list exactly one Skill")
         return skill to allowed.drop(1)
     }
 
@@ -486,12 +485,13 @@ class AgentLauncher(
         if (handedOff) Transcript.file(workspace, instance).resolveSibling(INPUTS).writeText(json.writeValueAsString(inputs))
         // A called Process's Task uses its top Run's Profile: [run] is the top Run.
         val source = scopes.of(run)
-        val vault = vault(task, skill, source)
-        val verbosity = verbosity(skill, source)
-        // The Task's result-schema override replaces the Skill's result.schema.json; Checks refuse one that isn't valid.
+        val vault = vault(task, source)
+        // At normal, a Run's hand-off line and flags stay as they were.
+        val verbosity = source.verbosity.takeIf { it != Verbosity.NORMAL }
+        // The Task's result schema; Checks refuse one that isn't valid.
         val override = task.extensionProperties[RESULT_SCHEMA]?.takeIf(String::isNotBlank)?.let { json.readValue(it, Map::class.java) }
         val asks = asksRounds(repository.getBpmnModelInstance(task.processDefinitionId).getModelElementById(task.activityId))
-        val output = (override ?: skill?.outputSchema ?: emptyMap<String, Any?>()).let { if (asks) withQuestions(it) else it }
+        val output = (override ?: emptyMap<String, Any?>()).let { if (asks) withQuestions(it) else it }
         val schema = ResultContract.schema(output)
         // A Run with repos picked clones exactly them, so the repos a Result names there go unchecked.
         val repos = source.repos(settings).takeIf { source.picked.isEmpty() && ResultContract.namesRepos(output) }
@@ -506,7 +506,7 @@ class AgentLauncher(
         if (agent.cli == "codex") return codex(task, instance, agent, run, workspace, cwd, vault.takeIf { gated == null }, transcript, session, started, prompt, ResultContract.strict(output), judge)
         val shared = if (cwd == workspace) emptyList() else listOf("--add-dir", "$workspace") // what an instance's links lead to
         val places = vault?.let { listOf("--add-dir", "$it") }.orEmpty() // the Vault's path goes nowhere else (ADR 0002)
-            .plus(answerHistory(task, skill)?.let { listOf("--add-dir", "${it.createDirectories()}") }.orEmpty()) // so a Read reaches it (ADR 0010)
+            .plus(answerHistory(task)?.let { listOf("--add-dir", "${it.createDirectories()}") }.orEmpty()) // so a Read reaches it (ADR 0010)
             .plus(if (verbosity == null) emptyList() else listOf("--add-dir", "${catalogue.verbosityFile.parent}"))
         val (token, mcp) = protectedCommands.open(workspace) // its Protected Commands run in the Run workspace
         val process = runCatching {
@@ -621,19 +621,11 @@ class AgentLauncher(
     }
 
     /**
-     * The Vault's folder when [task] gets the Vault: its toggle ([VAULT]) has the final say, else its [skill]'s opt-in.
-     * Null when off, or with no Vault configured for the Run's Profile ([source]), which the pre-Run check (#55) refuses
-     * unless the user picked the Run's repos.
+     * The Vault's folder when [task]'s toggle ([VAULT]) gives it the Vault. Null when off, or with no Vault configured
+     * for the Run's Profile ([source]), which the pre-Run check (#55) refuses unless the user picked the Run's repos.
      */
-    private fun vault(task: LockedExternalTask, skill: Skill?, source: RunSource): Path? = source.vault(settings)
-        ?.takeIf { task.extensionProperties[VAULT]?.toBooleanStrictOrNull() ?: skill?.let(catalogue::vault) ?: false }
-
-    /**
-     * The Run's Verbosity when a Task running [skill] writes at it: brief or detailed, and the Skill or one it uses opts
-     * in. Null at normal, so a normal Run's hand-off line and flags stay as they were.
-     */
-    private fun verbosity(skill: Skill?, source: RunSource): Verbosity? =
-        source.verbosity.takeIf { it != Verbosity.NORMAL && (skill == null || catalogue.verbosity(skill)) }
+    private fun vault(task: LockedExternalTask, source: RunSource): Path? = source.vault(settings)
+        ?.takeIf { task.extensionProperties[VAULT]?.toBooleanStrictOrNull() ?: false }
 
     /**
      * The folder whose `.claude/skills` links each of [skills], the Skills a session of [instance] may use, so claude
@@ -653,8 +645,7 @@ class AgentLauncher(
     /**
      * The hand-off line: for claude, `/<skill>`, which runs the Skill as a real skill, and the workspace; for codex, the Skill's file to follow and the workspace, the Skills it [used], where the [vault] and [sourceMap] and the
      * Answer History are, each only when on, the names of the [repos] its Result may name, if checked, and the
-     * [verbosity] to write at, if any. The Task's [ANSWER_HISTORY] toggle has the final say on the Answer History,
-     * else the Skill's opt-in.
+     * [verbosity] to write at, if any.
      */
     private fun handOff(cli: String, task: LockedExternalTask, skill: Skill?, used: List<Skill>, workspace: Path, vault: Path?, sourceMap: Path?, repos: List<Repo>?, verbosity: Verbosity?): String {
         val places = if (vault == null) emptyList() else listOfNotNull(
@@ -669,14 +660,14 @@ class AgentLauncher(
             (if (userOnly.isEmpty()) "" else " Only a user can invoke the Skill${if (userOnly.size > 1) "s" else ""} ${userOnly.joinToString { "${it.name} (${it.file})" }}, " +
                 "so where your Assignment names ${if (userOnly.size > 1) "one" else "it"}, read that file and follow it.") +
             (if (places.isEmpty()) "" else " " + places.joinToString(" and ").replaceFirstChar(Char::uppercase) + ".") +
-            (answerHistory(task, skill)?.let { " The Answer History is $it." } ?: "") +
+            (answerHistory(task)?.let { " The Answer History is $it." } ?: "") +
             (repos?.let { " Name each repo in your Result by its Source map name or a git URL; ${ResultContract.names(it)}." } ?: "") +
             (verbosity?.let { " Write what the user reads at the ${it.value} verbosity defined in ${catalogue.verbosityFile}." } ?: "")
     }
 
-    /** The Answer History's folder when [task] gets it: its toggle ([ANSWER_HISTORY]) has the final say, else its [skill]'s opt-in. */
-    private fun answerHistory(task: LockedExternalTask, skill: Skill?): Path? = home.resolve("answer-history")
-        .takeIf { task.extensionProperties[ANSWER_HISTORY]?.toBooleanStrictOrNull() ?: skill?.answerHistory ?: false }
+    /** The Answer History's folder when [task]'s toggle ([ANSWER_HISTORY]) gives it the Answer History. */
+    private fun answerHistory(task: LockedExternalTask): Path? = home.resolve("answer-history")
+        .takeIf { task.extensionProperties[ANSWER_HISTORY]?.toBooleanStrictOrNull() ?: false }
 
     /**
      * When the Usage limit that [event] reports resets, or null if it reports none: a `rate_limit_event` rejection

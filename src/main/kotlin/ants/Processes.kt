@@ -145,7 +145,7 @@ class Processes(
      * Ants' own deploy path: everything reaches Operaton through here, written with `operaton:` only, and only when no
      * Check fails. Gives the Process's key.
      */
-    private fun deploy(bpmn: ByteArray, name: String? = null): String = try {
+    internal fun deploy(bpmn: ByteArray, name: String? = null): String = try {
         val xml = operatonOnly(bpmn)
         val failed = checks.of(xml).filterNot { it.warning }
         if (failed.isNotEmpty()) throw Refused(failed.joinToString("\n") { it.message })

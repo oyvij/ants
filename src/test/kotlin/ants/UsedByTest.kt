@@ -24,9 +24,9 @@ class UsedByTest : AntsTest() {
     /** The Agent [name] in the user's folder. */
     private fun agent(name: String) = home.resolve("agents").createDirectories().resolve("$name.md").also { it.writeText("---\nname: $name\n---\nKeep it.\n") }
 
-    /** The Skill [name] in the user's folder, using [uses]. */
-    private fun skill(name: String, uses: String? = null) = home.resolve("skills/$name").createDirectories().resolve("SKILL.md").also {
-        it.writeText("---\nname: $name\ndescription: Keeps notes.\n" + uses?.let { "metadata:\n  ants-uses: $it\n" }.orEmpty() + "---\nKeep notes.\n")
+    /** The Skill [name] in the user's folder. */
+    private fun skill(name: String) = home.resolve("skills/$name").createDirectories().resolve("SKILL.md").also {
+        it.writeText("---\nname: $name\ndescription: Keeps notes.\n---\nKeep notes.\n")
     }
 
     /** Deploys the Process used-by, "Keep notes", whose one Agent Task runs [agent] with [skill]; the Agent lists the Skill, and both exist. */
@@ -41,10 +41,10 @@ class UsedByTest : AntsTest() {
     private val keepNotes = """<a href="/processes/used-by">Keep notes</a>"""
 
     @Test
-    fun `Used by lists the deployed Processes and using Skills`() {
+    fun `Used by lists the deployed Processes whose Tasks name an Agent or list a Skill`() {
         agent("keeper")
         skill("keep-notes")
-        skill("keep-index", uses = "keep-notes")
+        skill("keep-index")
         deploy("keeper", "keep-notes")
 
         val agent = get("/agents/keeper")
@@ -53,8 +53,7 @@ class UsedByTest : AntsTest() {
 
         val skill = get("/skills/keep-notes")
         assertContains(skill, keepNotes)
-        assertContains(skill, """<a href="/skills/keep-index">keep-index</a>""")
-        assertContains(get("/skills/keep-index"), "Used by: no Process or Skill")
+        assertContains(get("/skills/keep-index"), "Used by: no Process")
     }
 
     @Test
@@ -108,15 +107,13 @@ class UsedByTest : AntsTest() {
     @Test
     fun `renaming a Skill asks for confirmation, lists what would break and leaves deployed Processes unchanged`() {
         val file = skill("renamed-skill")
-        skill("renamed-skill-user", uses = "renamed-skill")
         deploy("renamed-skill-agent", "renamed-skill")
         val diagram = browser.get("/processes/used-by/diagram.bpmn").body
-        val form = mapOf("skill" to file.readText().replace("name: renamed-skill", "name: renamed-skill-2"), "schema" to "")
+        val form = mapOf("skill" to file.readText().replace("name: renamed-skill", "name: renamed-skill-2"))
 
         val asked = post("/skills/renamed-skill", form)
         assertContains(asked.body, "Rename the Skill renamed-skill to renamed-skill-2?")
         assertContains(asked.body, keepNotes)
-        assertContains(asked.body, """<a href="/skills/renamed-skill-user">renamed-skill-user</a>""")
         assertTrue(file.exists())
 
         assertEquals("/skills/renamed-skill-2", browser.post("/skills/renamed-skill", form + ("confirm" to "on")).path)
@@ -128,10 +125,10 @@ class UsedByTest : AntsTest() {
     @Test
     fun `deleting a Skill asks for confirmation and lists what would break`() {
         val file = skill("deleted-skill")
-        skill("deleted-skill-user", uses = "deleted-skill")
+        deploy("deleted-skill-agent", "deleted-skill")
         val asked = post("/skills/deleted-skill/delete", emptyMap())
         assertContains(asked.body, "Delete the Skill deleted-skill?")
-        assertContains(asked.body, """<a href="/skills/deleted-skill-user">deleted-skill-user</a>""")
+        assertContains(asked.body, keepNotes)
         assertTrue(file.exists())
 
         assertEquals("/skills", browser.post("/skills/deleted-skill/delete", mapOf("confirm" to "on")).path)

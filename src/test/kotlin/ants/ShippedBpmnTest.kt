@@ -55,7 +55,7 @@ class ShippedBpmnTest {
         var tasks = 0
         for (file in files("processes") + files("templates")) for (task in read(file).getModelElementsByType(ServiceTask::class.java)) {
             val properties = task.extensions<OperatonProperties>().flatMap { it.operatonProperties }.associate { it.operatonName to it.operatonValue }
-            assert(properties[SKILL] !in his + "grill") { "${file.name}: ${task.id} still names ${properties[SKILL]} as its ants.skill" }
+            assert(properties["ants.skill"] !in his + "grill") { "${file.name}: ${task.id} still names ${properties["ants.skill"]} as its ants.skill" }
             if (words(properties[SKILLS].orEmpty()).none { it in his }) continue
             tasks++
             assert(!properties[ASSIGNMENT].isNullOrBlank()) { "${file.name}: ${task.id} has no Assignment" }

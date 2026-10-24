@@ -82,7 +82,7 @@ object ResultContract {
     fun names(sourceMap: List<Repo>) =
         if (sourceMap.isEmpty()) "the Run's Source map has no repos" else "the Source map's names are ${sourceMap.joinToString { it.name }}"
 
-    /** Why [text] isn't a valid `result.schema.json` (a JSON Schema object, draft 2020-12); empty when it is, or when it's blank. */
+    /** Why [text] isn't a valid result schema (a JSON Schema object, draft 2020-12); empty when it is, or when it's blank. */
     fun schemaErrors(text: String): List<String> {
         if (text.isBlank()) return emptyList()
         val node = try {

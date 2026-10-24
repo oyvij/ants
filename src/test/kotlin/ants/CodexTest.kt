@@ -47,9 +47,10 @@ class CodexTest : AntsTest() {
         """"text":"{\"outcome\":\"done\",\"summary\":\"$summary\",\"output\":{\"text\":\"Hello\"},\"needs\":null}"}}"""
     private val completed = """{"type":"turn.completed","usage":{"input_tokens":1200,"cached_input_tokens":200,"output_tokens":34}}"""
 
-    private fun start(key: String = "agent-task", agent: String = "writer", prompt: String = "Say hello"): String {
+    private fun start(key: String = "agent-task", agent: String = "writer", prompt: String = "Say hello", properties: String = ""): String {
         val bpmn = javaClass.getResource("/agent-task.bpmn")!!.readText().replace("\"agent-task\"", "\"$key\"")
             .replace("""name="ants.agent" value="writer"""", """name="ants.agent" value="$agent"""")
+            .replace("""<operaton:property name="ants.skills" value="draft" />""", """<operaton:property name="ants.skills" value="draft" />$properties""")
         browser.get("/processes")
         assertFalse("role=\"alert\"" in browser.upload("/processes", "file", "$key.bpmn", bpmn.toByteArray()).body)
         browser.get("/processes/$key")
@@ -136,9 +137,9 @@ class CodexTest : AntsTest() {
 
     @Test
     fun `a codex Task with the Vault on may write it, and one without has no Vault`() {
-        codexTask(metadata = "metadata:\n  varde-vault: true\n")
+        codexTask()
         codex.session("draft", started, turn, answer(), completed)
-        val run = start()
+        val run = start(properties = """<operaton:property name="ants.vault" value="true" />""")
         eventually { assertContains(page(run), """id="state">Completed<""") }
         assertEquals(vaultPath.toString(), codex.launches("draft").single().flag("--add-dir"))
 
@@ -150,7 +151,7 @@ class CodexTest : AntsTest() {
 
     @Test
     fun `a codex Task at brief gets the Verbosity sentence and no --add-dir for it`() {
-        codexTask(metadata = "metadata:\n  ants-verbosity: true\n", profiles = "profiles:\n  work:\n    vault: notes\n    verbosity: brief\n")
+        codexTask(profiles = "profiles:\n  work:\n    vault: notes\n    verbosity: brief\n")
         codex.session("draft", started, turn, answer(), completed)
         val run = start()
         eventually { assertContains(page(run), """id="state">Completed<""") }

@@ -25,7 +25,10 @@ import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
+import kotlin.io.path.isRegularFile
 import kotlin.io.path.readText
+import kotlin.io.path.relativeTo
+import kotlin.io.path.walk
 
 /**
  * The Process Builder's MCP session (ADR 0019): a modeler page that can be edited by hand opens one and gets a token
@@ -126,8 +129,8 @@ class ProcessBuilderTools(
                 "skill" -> catalogue.skill(argument("name")).let { skill ->
                     if (catalogue.hides(skill.file)) throw Refused("No Skill named ${skill.name}")
                     json.writeValueAsString(mapOf(
-                        "name" to skill.name, "description" to skill.description, "inputs" to skill.inputs, "uses" to skill.uses,
-                        "instructions" to frontmatter(skill.file.readText()).second.trim(), "output" to skill.outputSchema.takeIf { it.isNotEmpty() },
+                        "name" to skill.name, "description" to skill.description, "instructions" to frontmatter(skill.file.readText()).second.trim(),
+                        "files" to skill.folder.walk().filter { it != skill.file && it.isRegularFile() }.map { it.relativeTo(skill.folder).toString() }.sorted().toList(),
                     ))
                 }
                 "processes" -> json.writeValueAsString(processes.processes())
@@ -550,8 +553,8 @@ class ProcessBuilderTools(
                 "Task's Result), its connections (from, to, name, condition, " +
                 "and whether it is its gateway's default) and the start form's fields."),
             Mcp.tool("agents", "The Agents a Task can pick: each one's name, description, the Skills it runs, and whether it is the user's own (else read-only)."),
-            Mcp.tool("skills", "The Skills: each one's name, description, the inputs it declares (which an Agent Task fills), and the Result schema it promises (output)."),
-            Mcp.tool("skill", "One Skill in full: its instructions, the inputs it declares, the Skills it uses and its Result schema.", mapOf("name" to "The Skill's name.")),
+            Mcp.tool("skills", "The Skills: each one's name, description, and whether it is the user's own (else read-only)."),
+            Mcp.tool("skill", "One Skill in full: its instructions and the files beside its SKILL.md.", mapOf("name" to "The Skill's name.")),
             Mcp.tool("processes", "The deployed Processes, the shipped ones included, which a call activity can call: each one's key, name and start-form fields (its inputs)."),
             Mcp.tool("process", "A deployed Process's BPMN XML, to read as an example.", mapOf("key" to "The Process's key.")),
             Mcp.tool("built_in_tasks", "The Built-in Tasks, by topic: what each one is called and what Ants does in it."),

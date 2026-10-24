@@ -44,7 +44,11 @@ an Agent talks to it.
   fallback, never the default.
 - **The user's files are migrated once, at startup**, with the old file kept beside the new: `ants.skill=X` becomes
   `ants.skills=X` with no Assignment, which runs the same job, and each user Skill's `result.schema.json` and
-  `ants-inputs` move onto every Task that names it. Only the migration reads the old format.
+  `ants-inputs` move onto every Task that names it. Only the migration reads the old format. Since only one listed
+  Skill can be the job, an X that used other Skills is listed with them and an Assignment to follow X; its Vault and
+  Answer History opt-ins become the Task's toggles; a Task naming a shipped Skill whose job became a shipped Task's
+  Assignment takes that Task's Assignment, Skills, schema and toggles; and the user's own Agents list what their Tasks
+  now name. A Run in flight on an older version runs its Task as the latest version has it.
 - **Where it is edited**: the modeler's Agent Task panel gets the Assignment, the allowed Skills (picked from the
   Agent's), the inputs and the Result schema; the Skills page edits only `SKILL.md`; the Process Builder's
   `create_skill` and `change_skill` lose `schema`, and its Agent Task tool gains `assignment` and `skills`.

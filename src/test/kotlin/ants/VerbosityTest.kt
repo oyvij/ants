@@ -153,16 +153,6 @@ class VerbosityTest : AntsTest() {
         for (level in listOf("## brief", "## normal", "## detailed")) assertContains(file, level)
     }
 
-    @Test
-    fun `no shipped Skill opts in to Verbosity, since each runs under an Assignment, which writes at the Run's Verbosity anyway`() {
-        val shipped = catalogue.skills(withHidden = true).filter { catalogue.shipped(it) && it.name != "shipped-draft" }
-        assertEquals(12, shipped.size)
-        // Matt Pocock's ship word for word, and the plain ones run in Tasks with an Assignment (ADR 0024).
-        assertEquals(emptyList(), shipped.filter { it.verbosity }.map { it.name })
-    }
-
-    private val optIn = "metadata:\n  ants-verbosity: true\n"
-
     private val verbosityFolder: Path get() = home.resolve("shipped/verbosity")
 
     private fun sentence(level: String) = " Write what the user reads at the $level verbosity defined in ${verbosityFolder.resolve("verbosity.md")}."
@@ -172,11 +162,13 @@ class VerbosityTest : AntsTest() {
 
     private fun completed(run: String) = eventually(20) { assertContains(runPage(run), """id="state">Completed<""") }
 
-    /** The launch of `draft`, its Skill's frontmatter carrying [metadata], in a Run of agent-task started at [verbosity]. */
-    private fun launch(metadata: String, verbosity: String): FakeClaude.Launch {
-        agentTask(claude, metadata = metadata, extra = profiles())
+    /** The launch of `draft`, its Task carrying [properties] too, in a Run of agent-task started at [verbosity]. */
+    private fun launch(properties: String, verbosity: String): FakeClaude.Launch {
+        agentTask(claude, extra = profiles())
         claude.session("draft", done)
-        browser.import("agent-task.bpmn")
+        browser.get("/processes")
+        browser.upload("/processes", "file", "agent-task.bpmn", javaClass.getResource("/agent-task.bpmn")!!.readText()
+            .replace("""<operaton:property name="ants.skills" value="draft" />""", """<operaton:property name="ants.skills" value="draft" />$properties""").toByteArray())
         browser.get("/processes/agent-task")
         completed(browser.post("/processes/agent-task/runs", listOf("prompt" to "Say hello", VERBOSITY to verbosity)).path.removePrefix("/runs/"))
         return claude.launches("draft").last()
@@ -187,16 +179,14 @@ class VerbosityTest : AntsTest() {
     private val FakeClaude.Launch.readsVerbosity get() = "--add-dir" to "$verbosityFolder" in argv.zipWithNext()
 
     @Test
-    fun `an opted-in Skill at brief or detailed names the level and the verbosity file after the Answer History, and gets read access to it`() {
+    fun `a Task at brief or detailed names the level and the verbosity file after the Answer History, and gets read access to it`() {
         for (level in listOf("brief", "detailed")) {
-            val launch = launch("$optIn  ants-answer-history: true\n", level)
+            val launch = launch("""<operaton:property name="ants.answer-history" value="true" />""", level)
             assertTrue(launch.handOff.endsWith(" The Answer History is ${home.resolve("answer-history")}.${sentence(level)}"), launch.handOff)
             assertTrue(launch.readsVerbosity, launch.argv.toString())
         }
     }
 
-    private val FakeClaude.Launch.comparableArgv
-        get() = argv.withIndex().filterNot { (i, arg) -> i > 0 && (argv[i - 1] in setOf("--session-id", "--mcp-config") || "/.skills/" in arg) }.map { it.value }
 
     private fun assertToday(launch: FakeClaude.Launch) {
         assertTrue(launch.handOff.matches(Regex("/draft The workspace is [^ ]+\\.")), launch.handOff)
@@ -205,26 +195,13 @@ class VerbosityTest : AntsTest() {
     }
 
     @Test
-    fun `at normal an opted-in Skill gets today's hand-off line and flags, and at brief a Skill that doesn't opt in gets them too`() {
-        val normal = launch(optIn, "normal")
-        assertToday(normal)
-        val notOptedIn = launch("", "brief")
-        assertToday(notOptedIn)
-        assertEquals(normal.comparableArgv, notOptedIn.comparableArgv)
-    }
-
-    @Test
-    fun `a Skill that uses an opted-in Skill through ants-uses gets the level and read access`() {
-        home.resolve("skills/used/styled").createDirectories().resolve("SKILL.md")
-            .writeText("---\nname: styled\ndescription: Used.\n${optIn}---\nUse it.\n")
-        val launch = launch("metadata:\n  ants-uses: styled\n", "detailed")
-        assertTrue(launch.handOff.endsWith(sentence("detailed")), launch.handOff)
-        assertTrue(launch.readsVerbosity)
+    fun `at normal a Task gets today's hand-off line and flags`() {
+        assertToday(launch("", "normal"))
     }
 
     @Test
     fun `a Run started at brief writes at brief in its next Task after its Profile's default changes`() {
-        agentTask(claude, metadata = optIn, extra = profiles(work = "verbosity: brief\n"))
+        agentTask(claude, extra = profiles(work = "verbosity: brief\n"))
         claude.session("draft", 1, "wait go", done)
         claude.session("draft", done)
         browser.import("agent-loop.bpmn")
@@ -258,8 +235,8 @@ class VerbosityTest : AntsTest() {
     }
 
     @Test
-    fun `a called Process's opted-in Task writes at its top Run's level, one and two levels down`() {
-        agentTask(claude, metadata = optIn, extra = profiles())
+    fun `a called Process's Task writes at its top Run's level, one and two levels down`() {
+        agentTask(claude, extra = profiles())
         claude.session("draft", done)
         browser.import("agent-task.bpmn")
         caller("middle", "agent-task")
@@ -291,7 +268,7 @@ class VerbosityTest : AntsTest() {
 
     @Test
     fun `a Run started before Verbosity existed reads as normal on its page, in its Report and in its hand-off line`() {
-        agentTask(claude, metadata = optIn, extra = profiles())
+        agentTask(claude, extra = profiles())
         claude.session("draft", done)
         browser.import("agent-task.bpmn")
         val run = runtime.startProcessInstanceByKey("agent-task", mapOf("prompt" to "Say hello")).id

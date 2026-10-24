@@ -5,7 +5,6 @@ import org.springframework.core.io.support.PathMatchingResourcePatternResolver
 import org.springframework.stereotype.Component
 import org.yaml.snakeyaml.DumperOptions
 import org.yaml.snakeyaml.Yaml
-import tools.jackson.databind.json.JsonMapper
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption.ATOMIC_MOVE
@@ -74,27 +73,13 @@ class Agent(val file: Path, text: String = file.readText()) {
     }
 }
 
-/**
- * A `SKILL.md` and the folder it lives in, with the Skills it names in `metadata.ants-uses` and whether it opts in to
- * the Vault (`metadata.varde-vault: true`).
- */
+/** A `SKILL.md` and the folder it lives in, with the files beside it, as Claude Code knows a Skill (ADR 0024). */
 class Skill(
-    val name: String, val description: String, val file: Path, val uses: List<String>, val vault: Boolean,
-    /** The inputs it declares (`metadata.ants-inputs`), one per name, which a Task fills. */
-    val inputs: List<String> = emptyList(),
-    /** Whether it opts in to the Answer History (`metadata.ants-answer-history: true`). */
-    val answerHistory: Boolean = false,
+    val name: String, val description: String, val file: Path,
     /** Whether only a user can invoke it (`disable-model-invocation: true`): claude doesn't show it to the model. */
     val userOnly: Boolean = false,
-    /** Whether it opts in to the Run's Verbosity (`metadata.ants-verbosity: true`). */
-    val verbosity: Boolean = false,
 ) {
     val folder: Path get() = file.parent
-
-    /** The schema of the `output` the Skill promises, from `result.schema.json` beside it; without one, any output. */
-    val outputSchema: Map<*, *>
-        get() = folder.resolve("result.schema.json").takeIf { it.exists() }?.let { JsonMapper.shared().readValue(it.toFile(), Map::class.java) }
-            ?: emptyMap<String, Any?>()
 }
 
 /**
@@ -140,18 +125,7 @@ class Catalogue(@Value("\${ants.home}") private val home: Path, private val sett
     fun skills(withHidden: Boolean = false): List<Skill> = skillFolders(withHidden).filter { it.exists() }.flatMap { folder ->
         folder.walk().filter { it.fileName.toString() == "SKILL.md" }.sorted().map { file ->
             val meta = frontmatter(file.readText()).first
-            val metadata = meta["metadata"] as? Map<*, *> ?: emptyMap<String, Any?>()
-            Skill(
-                name = meta["name"]?.toString() ?: "",
-                description = meta["description"]?.toString() ?: "",
-                file = file,
-                uses = Settings.strings(metadata["ants-uses"]?.toString()).orEmpty(),
-                vault = metadata["varde-vault"] == true,
-                inputs = Settings.strings(metadata["ants-inputs"]?.toString()).orEmpty(),
-                answerHistory = metadata["ants-answer-history"] == true,
-                verbosity = metadata["ants-verbosity"] == true,
-                userOnly = meta["disable-model-invocation"] == true,
-            )
+            Skill(meta["name"]?.toString() ?: "", meta["description"]?.toString() ?: "", file, userOnly = meta["disable-model-invocation"] == true)
         }
     }
 
@@ -174,28 +148,8 @@ class Catalogue(@Value("\${ants.home}") private val home: Path, private val sett
         items.singleOrNull() ?: items.filter { shipped(it) != settings.hideShipped() }.singleOrNull()
             ?: error(if (items.isEmpty()) "No $kind named $name" else "More than one $kind is named $name")
 
-    /** Every Skill [skill] uses through `ants-uses`, at any depth, each once in the order first named; a cycle is refused, naming it. */
-    fun uses(skill: Skill): List<Skill> {
-        val closure = LinkedHashMap<String, Skill>()
-        fun visit(user: Skill, chain: List<String>) {
-            for (name in user.uses) {
-                check(name !in chain) { "The Skills ${(chain.dropWhile { it != name } + name).joinToString(" → ")} use each other in a cycle" }
-                val used = closure[name] ?: skill(name).also { closure[name] = it }
-                visit(used, chain + name)
-            }
-        }
-        visit(skill, listOf(skill.name))
-        return closure.values.toList()
-    }
-
     /** The Skills [agent] may use: every one with `skills: "*"`. */
     fun allowed(agent: Agent): List<Skill> = (if (agent.allSkills) skills().map { it.name }.distinct() else agent.skills).map(::skill)
-
-    /** Whether a Task running [skill] gets the Vault by default: when it or any Skill it uses opts in. */
-    fun vault(skill: Skill) = skill.vault || uses(skill).any { it.vault }
-
-    /** Whether a Task running [skill] writes at the Run's Verbosity: when it or any Skill it uses opts in. */
-    fun verbosity(skill: Skill) = skill.verbosity || uses(skill).any { it.verbosity }
 }
 
 /**
@@ -204,7 +158,7 @@ class Catalogue(@Value("\${ants.home}") private val home: Path, private val sett
  */
 fun nameError(kind: String, name: String) = when {
     !Regex("[a-z0-9][a-z0-9-]{0,63}").matches(name) -> "$kind's name is up to 64 lowercase letters, digits and hyphens."
-    name in setOf("new", "import", "schema") -> "The ${kind.substringAfter(' ')}s page keeps the name $name for itself."
+    name in setOf("new", "import") -> "The ${kind.substringAfter(' ')}s page keeps the name $name for itself."
     else -> null
 }
 
