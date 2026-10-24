@@ -17,7 +17,10 @@ class ChecksTest : AntsTest() {
     private val browser by lazy { browser().also { it.login(); it.get("/processes") } }
 
     @BeforeEach
-    fun writer() = writerAndDraft(inputs = "")
+    fun writer() {
+        settings(null) // its own, so a hide-shipped left by an earlier test doesn't hide the shipped Agents and Skills
+        writerAndDraft(inputs = "")
+    }
 
     /** A Process `checked` with one start event and [body], and [outside] after the Process (such as a pool). */
     private fun diagram(body: String, outside: String = "") = """
