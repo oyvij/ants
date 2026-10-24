@@ -1,4 +1,5 @@
 ---
+id: a-storyteller
 name: storyteller
 description: Writes a Story set for the Run's changes, reading the clones and their history, writing only in walkthrough/.
 skills: walkthrough

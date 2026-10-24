@@ -17,6 +17,7 @@ import org.operaton.bpm.model.bpmn.instance.operaton.OperatonIn
 import org.operaton.bpm.model.bpmn.instance.operaton.OperatonInputParameter
 import org.operaton.bpm.model.bpmn.instance.operaton.OperatonProperties
 import org.operaton.bpm.model.xml.instance.ModelElementInstance
+import java.nio.file.Path
 
 // The Checks on Agent Tasks and on what a Process's expressions read, two kinds of [Checks].
 
@@ -63,7 +64,12 @@ class Job(property: (String) -> String?) {
  * Each Agent Task's Agent and Skills: unknown or ambiguous names, no Assignment and not exactly one Skill listed on the
  * Task, a listed Skill the Agent doesn't list (ADR 0024), and an invalid result schema.
  */
-internal fun agentTasks(catalogue: Catalogue, model: BpmnModelInstance) = model.agentTasks.flatMap { task ->
+internal fun agentTasks(catalogue: Catalogue, model: BpmnModelInstance): List<Check> {
+    val identified by lazy { catalogue.identified() }
+    return model.agentTasks.flatMap { task -> agentTask(task, catalogue) { identified } }
+}
+
+private fun agentTask(task: ServiceTask, catalogue: Catalogue, identified: () -> List<Identified>): List<Check> {
     fun check(message: String) = Check(task.id, "${task.label}: $message")
     val agentName = task.property(AGENT)?.takeIf(String::isNotBlank)
     val agent = agentName?.let { runCatching { catalogue.agent(it) } }
@@ -71,11 +77,15 @@ internal fun agentTasks(catalogue: Catalogue, model: BpmnModelInstance) = model.
     val listed = job.listed.orEmpty().map { runCatching { catalogue.skill(it) } }
     val schema = ResultContract.schemaErrors(task.property(RESULT_SCHEMA).orEmpty())
     val lacking = agent?.getOrNull()?.let { a -> listed.mapNotNull { it.getOrNull() }.filter { !a.allows(it.name) }.map { check("The Agent ${a.name} doesn't list the Skill ${it.name}.") } }
-    listOfNotNull(
+    fun twins(kind: String, name: String, id: String?, where: Path) = identified().filter { id != null && it.id == id && it.where != where }
+        .map { check("The $kind $name has the same id as the ${it.kind} ${it.name}, in ${it.where}. Delete the id of one of them and restart Ants to give it a new one.") }
+    val sharing = agent?.getOrNull()?.let { twins("Agent", it.name, it.id, it.file) }.orEmpty() +
+        listed.mapNotNull { it.getOrNull() }.flatMap { twins("Skill", it.name, it.id, it.folder) }
+    return listOfNotNull(
         if (agentName == null) Check(task.id, "${task.label} has no Agent.") else agent!!.exceptionOrNull()?.let { check("${it.message}.") },
         Check(task.id, "${task.label} has no Assignment and doesn't list exactly one Skill.").takeIf { !job.valid },
     ) + listed.mapNotNull { it.exceptionOrNull()?.let { e -> check("${e.message}.") } } + lacking.orEmpty() +
-        listOfNotNull(schema.takeIf { it.isNotEmpty() }?.let { check("Its result schema is invalid: ${it.joinToString("; ")}") })
+        listOfNotNull(schema.takeIf { it.isNotEmpty() }?.let { check("Its result schema is invalid: ${it.joinToString("; ")}") }) + sharing
 }
 
 /** What an Agent Task promises in its Result's `output`; null when it can't be read. */

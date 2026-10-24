@@ -1,4 +1,5 @@
 ---
+id: a-implementer
 name: implementer
 description: Builds a Ticket or a proposal, or fixes a review, test-first in the Run's clones, reviews its own commits and commits on the work branch.
 skills: implement, tdd, code-review, codebase-design

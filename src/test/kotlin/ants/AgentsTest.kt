@@ -1,6 +1,8 @@
 package ants
 
 import org.junit.jupiter.api.Test
+import org.springframework.beans.factory.annotation.Autowired
+import org.yaml.snakeyaml.Yaml
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
@@ -15,6 +17,9 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class AgentsTest : AntsTest() {
+    @Autowired
+    lateinit var catalogue: Catalogue
+
     private val browser by lazy { browser().also { it.login() } }
     private val agents = home.resolve("agents").createDirectories()
 
@@ -58,7 +63,7 @@ class AgentsTest : AntsTest() {
         agents.resolve("reviewer.md").deleteIfExists()
         val created = post("/agents/new", reviewer)
         assertEquals("/agents/reviewer", created.path)
-        assertEquals(reviewerFile, agents.resolve("reviewer.md").readText())
+        assertEquals(reviewerFile, withoutId(agents.resolve("reviewer.md")))
 
         val page = get("/agents/reviewer")
         assertContains(page, """name="description" value="Reviews changes."""")
@@ -72,7 +77,7 @@ class AgentsTest : AntsTest() {
         assertContains(page, ">Review carefully.</textarea>")
 
         post("/agents/reviewer", reviewer)
-        assertEquals(reviewerFile, agents.resolve("reviewer.md").readText())
+        assertEquals(reviewerFile, withoutId(agents.resolve("reviewer.md")))
 
         // As the page posts it: a field per rule, chip and ticked tool, the empty ones left blank.
         browser.post("/agents/reviewer", reviewer.toList().filter { it.first !in setOf("skills", "limit.Bash", "other-tools") } + listOf(
@@ -80,7 +85,7 @@ class AgentsTest : AntsTest() {
             "limit.Bash" to "git log *", "limit.Bash" to "", "limit.Bash" to "git diff *",
             "other-tools" to "mcp__github__get_issue", "other-tools" to "",
         ))
-        assertEquals(reviewerFile, agents.resolve("reviewer.md").readText())
+        assertEquals(reviewerFile, withoutId(agents.resolve("reviewer.md")))
 
         post("/agents/reviewer", reviewer + ("model" to "other") + ("model-other" to "claude-opus-5-5[1m]") + ("instructions" to "Review harder."))
         val edited = agents.resolve("reviewer.md").readText()
@@ -97,7 +102,7 @@ class AgentsTest : AntsTest() {
         assertContains(page, """name="limit.Agent" value="knowledge-searcher"""")
         assertContains(page, """name="limit.Agent" value="worker"""")
         post("/agents/seeker", mapOf("name" to "seeker", "cli" to "claude", "tool.Read" to "on", "instructions" to "Scout."))
-        assertEquals("---\nname: seeker\ncli: claude\ntools: Read\ncolor: blue\n---\nScout.\n", agents.resolve("seeker.md").readText())
+        assertEquals("---\nname: seeker\ncli: claude\ntools: Read\ncolor: blue\n---\nScout.\n", withoutId(agents.resolve("seeker.md")))
     }
 
     @Test
@@ -141,13 +146,62 @@ class AgentsTest : AntsTest() {
             }
             assertEquals("/agents/outsider-copy", post("/agents/outsider/copy", emptyMap()).path)
             assertEquals("---\nname: outsider-copy\ndescription: From Varde.\ncli: claude\ntools: ${AgentLauncher.DEFAULT_TOOLS.joinToString(", ")}\ncolor: red\n---\nLook around.\n",
-                agents.resolve("outsider-copy.md").readText())
+                withoutId(agents.resolve("outsider-copy.md")))
             assertFalse("<fieldset disabled>" in get("/agents/outsider-copy"))
             post("/agents/outsider-copy", mapOf("name" to "outsider-copy", "cli" to "claude", "instructions" to "Look closer."))
             assertContains(agents.resolve("outsider-copy.md").readText(), "Look closer.")
             assertEquals("Look around.\n", extra.resolve("outsider.md").readText().substringAfterLast("---\n"))
             assertEquals("/agents/shipped-writer-copy", post("/agents/shipped-writer/copy", emptyMap()).path)
         }
+    }
+
+    private fun idOf(file: Path) = Regex("(?m)^id: (a-[a-z0-9]{6})$").find(file.readText())?.groupValues?.get(1)
+
+    private fun withoutId(file: Path) = file.readText().also { assertNotNull(idOf(file), it) }.replaceFirst(Regex("(?m)^id: a-[a-z0-9]{6}\n"), "")
+
+    private fun assertNoPageShows(id: String, vararg paths: String) {
+        for (path in paths) assertFalse(id in get(path), "$path shows the id $id")
+    }
+
+    @Test
+    fun `creating, importing or copying an Agent gives it a new id in its file, which no page shows and the Catalogue finds it by`() {
+        agents.resolve("reviewer.md").deleteIfExists()
+        post("/agents/new", reviewer)
+        val created = assertNotNull(idOf(agents.resolve("reviewer.md")))
+        post("/agents/reviewer", reviewer + ("description" to "Reviews more."))
+        assertEquals(created, idOf(agents.resolve("reviewer.md")))
+        assertEquals("reviewer", catalogue.agentWithId(created).name)
+        assertNoPageShows(created, "/agents", "/agents/reviewer")
+
+        assertFalse("a-theirs" in import("theirs.md", "---\nname: theirs\nid: a-theirs\n---\nTheirs.\n"))
+        post("/agents/new", mapOf("name" to "theirs", "cli" to "claude", "instructions" to "Theirs."))
+        val imported = assertNotNull(idOf(agents.resolve("theirs.md")))
+        assertTrue(imported != created)
+
+        agents.resolve("shipped-writer-copy.md").deleteIfExists()
+        post("/agents/shipped-writer/copy", emptyMap())
+        val copied = assertNotNull(idOf(agents.resolve("shipped-writer-copy.md")))
+        assertTrue(copied !in setOf(created, imported, "a-shipped-writer"))
+        assertEquals("shipped-writer", catalogue.agentWithId("a-shipped-writer").name)
+    }
+
+    @Test
+    fun `an Agent from an extra folder gets its id in agent-ids yaml, and its folder is untouched`() {
+        val extra = Files.createTempDirectory("extra-agents")
+        val text = "---\nname: outsider\ndescription: From Varde.\n---\nLook around.\n"
+        extra.resolve("outsider.md").writeText(text)
+        withExtraFolder(extra) {
+            get("/agents")
+            val ids = Yaml().load<Map<String, String>>(home.resolve("agent-ids.yaml").readText())
+            val id = ids.entries.single { it.value == extra.resolve("outsider.md").toString() }.key
+            assertTrue(Regex("a-[a-z0-9]{6}").matches(id), id)
+            assertEquals("outsider", catalogue.agentWithId(id).name)
+            get("/agents")
+            assertEquals(ids, Yaml().load<Map<String, String>>(home.resolve("agent-ids.yaml").readText()))
+            assertNoPageShows(id, "/agents", "/agents/outsider")
+        }
+        assertEquals(listOf("outsider.md"), extra.toFile().list()!!.toList())
+        assertEquals(text, extra.resolve("outsider.md").readText())
     }
 
     @Test
@@ -207,7 +261,7 @@ class AgentsTest : AntsTest() {
         agents.resolve("coder.md").deleteIfExists()
         assertContains(get("/agents/new"), """name="sandbox"""")
         post("/agents/new", mapOf("name" to "coder", "cli" to "codex", "sandbox" to "read-only", "tool.Read" to "on", "instructions" to "Code."))
-        assertEquals("---\nname: coder\ncli: codex\nsandbox: read-only\n---\nCode.\n", agents.resolve("coder.md").readText())
+        assertEquals("---\nname: coder\ncli: codex\nsandbox: read-only\n---\nCode.\n", withoutId(agents.resolve("coder.md")))
         val coder = get("/agents/coder")
         assertContains(coder, """value="read-only" selected""")
         assertContains(coder, """<fieldset data-cli="claude" disabled>""") // Claude's tools and models, off for a codex Agent

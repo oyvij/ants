@@ -65,7 +65,7 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
         Agent.sandboxError(agent.cli, agent.sandbox)?.let { return list(model, "$filename: $it") }
         val form = AgentForm.of(agent)
         val notice = form.kept.keys.takeIf { it.isNotEmpty() }?.let { "Dropped the keys Ants doesn't use: ${it.joinToString(", ")}." }
-        return show(model, form.copy(kept = emptyMap<String, Any?>()), null, notice = notice)
+        return show(model, form.copy(kept = emptyMap<String, Any?>(), id = null), null, notice = notice)
     }
 
     /**
@@ -132,7 +132,7 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
         val agent = find(name)
         val taken = catalogue.agents().map { it.name }.toSet()
         val copy = copyName(agent.name) { it in taken || folder.resolve("$it.md").exists() }
-        folder.resolve("$copy.md").writeAtomically(AgentForm.of(agent, copy).text())
+        folder.resolve("$copy.md").writeAtomically(AgentForm.of(agent, copy).copy(id = catalogue.unusedId(AGENT_ID)).text())
         return "redirect:/agents/$copy"
     }
 
@@ -162,7 +162,7 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
         if (agent != null && form.name != agent.name && "confirm" !in params) {
             return confirm(model, "Rename the Agent ${agent.name} to ${form.name}?", usedBy.agent(agent.name), "/agents/${agent.name}", params, "/agents/${agent.name}$modal")
         }
-        target.writeAtomically(form.text())
+        target.writeAtomically(form.copy(id = agent?.id ?: catalogue.unusedId(AGENT_ID)).text())
         if (agent != null && target != agent.file) agent.file.deleteIfExists()
         return "redirect:/agents/${form.name}" + if (modal.isEmpty()) "" else "?saved"
     }
@@ -213,6 +213,7 @@ data class AgentForm(
     val subagent: Boolean,
     val instructions: String,
     val kept: Map<*, *> = emptyMap<String, Any?>(),
+    val id: String? = null,
 ) {
     /** Each rule of [tool]'s **Limit…**, as the page lists them. */
     fun limits(tool: String) = rules(tools[tool].orEmpty())
@@ -229,7 +230,9 @@ data class AgentForm(
 
     /** The agent file: Claude Code's format, with `cli`, `skills` and `ants-subagent` for Ants. */
     fun text(): String {
-        val meta = linkedMapOf<Any?, Any?>("name" to name)
+        val meta = linkedMapOf<Any?, Any?>()
+        if (id != null) meta["id"] = id
+        meta["name"] = name
         if (description.isNotEmpty()) meta["description"] = description
         meta["cli"] = cli
         if (skills.isNotBlank()) meta["skills"] = words(skills).joinToString(", ")
@@ -318,7 +321,7 @@ data class AgentForm(
         const val MCP_NOTE = "An MCP tool. Ants starts Agents with MCP off, so it needs an MCP server Ants doesn't configure yet."
         const val UNKNOWN_NOTE = "Not a tool Ants knows. Passed to Claude Code as written."
 
-        private val KEYS = setOf("name", "description", "cli", "skills", "tools", "sandbox", "model", "ants-subagent")
+        private val KEYS = setOf("id", "name", "description", "cli", "skills", "tools", "sandbox", "model", "ants-subagent")
 
         fun of(agent: Agent, name: String = agent.name): AgentForm {
             val rules = agent.tools ?: AgentLauncher.DEFAULT_TOOLS
@@ -336,6 +339,7 @@ data class AgentForm(
                 subagent = agent.subagent,
                 instructions = agent.instructions,
                 kept = agent.meta.filterKeys { it !in KEYS },
+                id = agent.id,
             )
         }
 

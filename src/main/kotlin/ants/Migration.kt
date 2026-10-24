@@ -95,8 +95,9 @@ class Migration(
             failed += changed.named
         }
         agents.list(needs)
-        agents.keepOld()
+        val keptOld = agents.keepOld()
         skills(failed)
+        ids(keptOld)
     }
 
     private class Changed(val process: ProcessDefinition, val document: Document, val named: Set<String>, val needs: Needs)
@@ -135,9 +136,8 @@ class Migration(
         }
 
         /** Each Agent rewritten keeps its old version beside it. */
-        fun keepOld() {
-            for ((file, text) in before) if (file.readText() != text) file.resolveSibling("${file.fileName}.old").writeText(text)
-        }
+        fun keepOld(): Set<Path> = before.filter { (file, text) -> file.readText() != text }
+            .onEach { (file, text) -> file.resolveSibling("${file.fileName}.old").writeText(text) }.keys
     }
 
     /** Each shipped Task that named an old shipped Skill, by that Skill's name: its element id and its job's properties. */
@@ -214,6 +214,25 @@ class Migration(
             }
             if (schema.exists()) schema.moveTo(schema.resolveSibling("result.schema.json.old"), overwrite = true)
         }
+    }
+
+    private fun ids(keptOld: Set<Path>) {
+        for (agent in catalogue.agents(withHidden = true).filter { it.file.parent == catalogue.yourAgents && it.id == null }) {
+            val text = agent.file.readText()
+            if (agent.file !in keptOld) agent.file.resolveSibling("${agent.file.fileName}.old").writeText(text)
+            agent.file.writeAtomically(withId(text, catalogue.unusedId(AGENT_ID)))
+        }
+        for (skill in catalogue.skills(withHidden = true).filter { it.file.startsWith(catalogue.yourSkills) && it.id == null }) {
+            val file = skill.folder.resolve(SKILL_ID_FILE)
+            if (file.exists()) file.resolveSibling("$SKILL_ID_FILE.old").writeBytes(file.readBytes())
+            catalogue.giveSkillId(skill.folder)
+        }
+    }
+
+    private fun withId(text: String, id: String): String = when {
+        "id" in frontmatter(text).first -> Regex("(?m)^id:.*$").replaceFirst(text, "id: $id")
+        Regex("""\A---\R.*?\R---""", RegexOption.DOT_MATCHES_ALL).containsMatchIn(text) -> text.replaceFirst(Regex("""\A---\R"""), "---\nid: $id\n")
+        else -> "---\nid: $id\n---\n$text"
     }
 
     /** A Skill as it was before ADR 0024: its Ants metadata and `result.schema.json`. */

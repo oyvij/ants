@@ -4,7 +4,9 @@ import org.junit.jupiter.api.Test
 import org.operaton.bpm.engine.RepositoryService
 import org.operaton.bpm.engine.RuntimeService
 import org.springframework.beans.factory.annotation.Autowired
+import org.yaml.snakeyaml.Yaml
 import tools.jackson.databind.json.JsonMapper
+import java.nio.file.Files
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.isRegularFile
@@ -126,6 +128,44 @@ class MigrationTest : AntsTest() {
     }
 
     @Test
+    fun `every Agent and Skill without an id gets one, an outside one in ANTS_HOME, and a second start changes nothing`() {
+        val outsideAgents = Files.createTempDirectory("outside-agents")
+        outsideAgents.resolve("outsider.md").writeText("---\nname: outsider\n---\nLook around.\n")
+        val outsideSkills = Files.createTempDirectory("outside-skills")
+        outsideSkills.resolve("far").createDirectories().resolve("SKILL.md").writeText("---\nname: far\ndescription: Far away.\n---\nGo.\n")
+        settings(claude, "agent-folders: [$outsideAgents]\nskill-folders: [$outsideSkills]\n")
+        home.resolve("agents/writer.md").writeText("---\nname: writer\nskills: brief\n---\nWrite plainly.\n")
+        home.resolve("agents/plain.md").writeText("Just do it.\n")
+        home.resolve("agents/kept.md").writeText("---\nid: a-kept01\nname: kept\n---\nKeep it.\n")
+        home.resolve("skills/brief").createDirectories().resolve("SKILL.md").writeText("---\nname: brief\ndescription: Writes a brief.\n---\nWrite the brief.\n")
+        val before = files()
+        val outside = listOf(outsideAgents, outsideSkills).flatMap { folder -> folder.walk().map { it.toString() to it.readText() } }
+
+        migration.migrate()
+
+        val idLine = Regex("(?m)^id: (a-[a-z0-9]{6})$")
+        val writer = home.resolve("agents/writer.md").readText()
+        assertEquals("---\nid: ${idLine.find(writer)!!.groupValues[1]}\nname: writer\nskills: brief\n---\nWrite plainly.\n", writer)
+        assertEquals(before.getValue("agents/writer.md"), home.resolve("agents/writer.md.old").readText())
+        val plain = home.resolve("agents/plain.md").readText()
+        assertEquals("---\nid: ${idLine.find(plain)!!.groupValues[1]}\n---\nJust do it.\n", plain)
+        assertEquals("plain", Agent(home.resolve("agents/plain.md")).name)
+        assertEquals(before.getValue("agents/plain.md"), home.resolve("agents/plain.md.old").readText())
+        assertEquals(before.getValue("agents/kept.md"), home.resolve("agents/kept.md").readText())
+        assertFalse(home.resolve("agents/kept.md.old").exists())
+        assertTrue(Regex("id: k-[a-z0-9]{6}\n").matches(home.resolve("skills/brief/ants.yaml").readText()))
+        assertEquals(before.getValue("skills/brief/SKILL.md"), home.resolve("skills/brief/SKILL.md").readText())
+
+        assertEquals(outside, listOf(outsideAgents, outsideSkills).flatMap { folder -> folder.walk().map { it.toString() to it.readText() } })
+        assertEquals(listOf(outsideAgents.resolve("outsider.md").toString()), Yaml().load<Map<String, String>>(home.resolve("agent-ids.yaml").readText()).values.toList())
+        assertEquals(listOf(outsideSkills.resolve("far").toString()), Yaml().load<Map<String, String>>(home.resolve("skill-ids.yaml").readText()).values.toList())
+
+        val after = files() + listOf("agent-ids.yaml", "skill-ids.yaml").associateWith { home.resolve(it).readText() }
+        migration.migrate()
+        assertEquals(after, files() + listOf("agent-ids.yaml", "skill-ids.yaml").associateWith { home.resolve(it).readText() })
+    }
+
+    @Test
     fun `a Skill used by two Tasks with different overrides keeps each Task's own`() {
         oldSkills()
         val verdict = """{"type":"object","properties":{"verdict":{"type":"string"}}}"""
@@ -188,6 +228,7 @@ class MigrationTest : AntsTest() {
     fun `a Process the Checks refuse after migration leaves its Agents as they were, and its Runs fail saying what to fix`() {
         oldSkills()
         settings(claude, "agent-tasks: 0\n") // held until the migration
+        home.resolve("agents/writer.md").writeText("---\nid: a-writer\nskills: brief\n---\nWrite plainly.\n")
         val agent = home.resolve("agents/writer.md").readText()
         // An old Ants deployed it without today's Checks, which refuse its result schema.
         deployedByOlderAnts("refused", oldShape("refused", extra = property("ants.result-schema", "[1]")))

@@ -7,6 +7,7 @@ import org.junit.jupiter.params.provider.CsvSource
 import tools.jackson.databind.json.JsonMapper
 import kotlin.io.path.createDirectories
 import kotlin.io.path.deleteIfExists
+import kotlin.io.path.readText
 import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
@@ -277,6 +278,24 @@ class ChecksTest : AntsTest() {
             home.resolve("skills/twin-1").toFile().deleteRecursively()
             home.resolve("skills/twin-2").toFile().deleteRecursively()
         }
+    }
+
+    @Test
+    fun `an Agent or a Skill sharing its id with another is refused, without showing the id`() {
+        writerAndDraft()
+        val agents = home.resolve("agents")
+        agents.resolve("writer.md").writeText("---\nid: a-twin01\n" + agents.resolve("writer.md").readText().removePrefix("---\n"))
+        agents.resolve("copied.md").writeText("---\nid: a-twin01\nname: copied\n---\nCopied by hand.\n")
+        refuses(diagram(withAgent("writer")), "draft",
+            "Draft (draft): The Agent writer has the same id as the Agent copied, in ${agents.resolve("copied.md")}. Delete the id of one of them and restart Ants to give it a new one.")
+        assertFalse(checks(diagram(withAgent("writer"))).any { "a-twin01" in it["message"].toString() })
+        agents.resolve("copied.md").deleteIfExists()
+
+        home.resolve("skills/draft/ants.yaml").writeText("id: k-twin01\n")
+        skill("echo", folder = "echo")
+        home.resolve("skills/echo/ants.yaml").writeText("id: k-twin01\n")
+        refuses(diagram(withAgent("writer")), "draft",
+            "Draft (draft): The Skill draft has the same id as the Skill echo, in ${home.resolve("skills/echo")}. Delete the id of one of them and restart Ants to give it a new one.")
     }
 
     /** The Agent Task `draft` with [properties] in place of its `ants.skill`. */

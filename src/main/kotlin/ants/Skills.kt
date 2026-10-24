@@ -69,6 +69,7 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy) {
         val beside = paths.filterKeys { it != main && it.startsWith(root) }.mapKeys { folder.resolve(it.key.removePrefix(root)).normalize() }
         if (beside.keys.any { !it.startsWith(folder) }) return list(model, "$main: a file beside it lies outside its folder.")
         for ((path, upload) in beside) path.also { it.parent.createDirectories() }.writeBytes(upload.bytes)
+        catalogue.giveSkillId(folder)
         folder.resolve("SKILL.md").writeAtomically(skill) // last, so a launch finds the Skill only once it is whole
         return "redirect:/skills/$name"
     }
@@ -107,6 +108,7 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy) {
         for (file in source.folder.walk().filter { file -> generateSequence(file.parent) { it.parent }.takeWhile { it != source.folder }.none { it.resolve("SKILL.md").exists() } }) {
             if (file != source.file) folder.resolve(file.relativeTo(source.folder).toString()).also { it.parent.createDirectories() }.let { file.copyTo(it) }
         }
+        catalogue.giveSkillId(folder)
         folder.resolve("SKILL.md").writeAtomically(Regex("(?m)^name:.*$").replaceFirst(source.file.readText(), "name: $copy"))
         return "redirect:/skills/$copy"
     }
@@ -164,6 +166,7 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy) {
             }
             if (folder != edited.folder) Files.move(edited.folder, folder)
         }
+        if (edited == null) catalogue.giveSkillId(folder)
         folder.resolve("SKILL.md").writeAtomically(form.skill)
         saved(name)
         return "redirect:/skills/$name" + if (modal.isEmpty()) "" else "?saved"

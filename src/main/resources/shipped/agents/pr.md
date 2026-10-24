@@ -1,4 +1,5 @@
 ---
+id: a-pr
 name: pr
 description: Opens a pull request for each pushed repo, with a body written from the commits and the review, on the user's gh login, or on another forge as the user's instructions say.
 skills: pr

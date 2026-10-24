@@ -1,4 +1,5 @@
 ---
+id: a-planner
 name: planner
 description: Writes the Run's Spec and cuts it into Tickets, as files in tickets/, reading the clones.
 skills: to-spec, to-tickets

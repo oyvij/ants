@@ -213,11 +213,11 @@ class ProcessBuilderToolsTest : AntsTest() {
         val answer = json.readValue(made, Map::class.java)
         assertEquals("draft", answer["name"])
         assertEquals(SCHEMA_IGNORED, answer["note"])
-        assertEquals(listOf("SKILL.md"), home.resolve("skills/draft").toFile().list()!!.toList())
+        assertEquals(listOf("SKILL.md", "ants.yaml"), home.resolve("skills/draft").toFile().list()!!.sorted())
         val (changed, refused) = call(token, "change_skill", mapOf("name" to "draft", "skill" to "---\nname: draft\ndescription: Drafts.\n---\nDraft.\n", "schema" to schema))
         assertFalse(refused, changed)
         assertEquals(SCHEMA_IGNORED, json.readValue(changed, Map::class.java)["note"])
-        assertEquals(listOf("SKILL.md"), home.resolve("skills/draft").toFile().list()!!.toList())
+        assertEquals(listOf("SKILL.md", "ants.yaml"), home.resolve("skills/draft").toFile().list()!!.sorted())
         assertFalse("note" in json.readValue(call(token, "change_skill", mapOf("name" to "draft", "skill" to "---\nname: draft\ndescription: D.\n---\n")).first, Map::class.java))
     }
 

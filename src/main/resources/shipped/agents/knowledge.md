@@ -1,4 +1,5 @@
 ---
+id: a-knowledge
 name: knowledge
 description: Keeps the user's knowledge Vault, in Varde's format, proposing every change before it writes it.
 skills: update-knowledge, init-vault, search-knowledge

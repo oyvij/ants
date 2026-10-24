@@ -1,8 +1,11 @@
 package ants
 
 import org.junit.jupiter.api.Test
+import org.springframework.beans.factory.annotation.Autowired
+import org.yaml.snakeyaml.Yaml
 import tools.jackson.databind.json.JsonMapper
 import java.nio.file.Files
+import java.nio.file.Path
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.readText
@@ -10,8 +13,13 @@ import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 
 class SkillsTest : AntsTest() {
+    @Autowired
+    lateinit var catalogue: Catalogue
+
     private val browser by lazy { browser().also { it.login() } }
 
     /** A `SKILL.md` named [name]. */
@@ -135,6 +143,56 @@ class SkillsTest : AntsTest() {
         } finally {
             settings.writeText(before)
         }
+    }
+
+    private fun idOf(folder: Path) = Regex("^id: (k-[a-z0-9]{6})\n$").find(folder.resolve("ants.yaml").readText())?.groupValues?.get(1)
+
+    private fun assertNoPageShows(id: String, vararg paths: String) {
+        for (path in paths) assertFalse(id in page(path), "$path shows the id $id")
+    }
+
+    @Test
+    fun `creating, importing or copying a Skill gives it a new id in its ants yaml, which no page shows and the Catalogue finds it by`() {
+        val skills = home.resolve("skills")
+        save(skillMd("summary"))
+        val created = assertNotNull(idOf(skills.resolve("summary")))
+        browser.get("/skills/summary")
+        browser.post("/skills/summary", mapOf("skill" to skillMd("summing-up"), "confirm" to "on"))
+        assertEquals(created, idOf(skills.resolve("summing-up")))
+        assertEquals("summing-up", catalogue.skillWithId(created).name)
+        assertNoPageShows(created, "/skills", "/skills/summing-up")
+
+        import("theirs/SKILL.md" to skillMd("theirs"), "theirs/ants.yaml" to "id: k-theirs\n")
+        val imported = assertNotNull(idOf(skills.resolve("theirs")))
+        assertTrue(imported != created)
+
+        browser.post("/skills/shipped-draft/copy", emptyMap())
+        val copied = assertNotNull(idOf(skills.resolve("shipped-draft-copy")))
+        assertTrue(copied !in setOf(created, imported, "k-shipped-draft"))
+        assertEquals("shipped-draft", catalogue.skillWithId("k-shipped-draft").name)
+    }
+
+    @Test
+    fun `a Skill from an extra folder gets its id in skill-ids yaml, and its folder is untouched`() {
+        val extra = Files.createTempDirectory("extra").resolve("outside").createDirectories()
+        extra.resolve("SKILL.md").writeText(skillMd("outside"))
+        val settings = home.resolve("settings.yaml")
+        val before = settings.readText()
+        try {
+            settings.writeText("skill-folders: [${extra.parent}]\n")
+            page("/skills")
+            val ids = Yaml().load<Map<String, String>>(home.resolve("skill-ids.yaml").readText())
+            val id = ids.entries.single { it.value == extra.toString() }.key
+            assertTrue(Regex("k-[a-z0-9]{6}").matches(id), id)
+            assertEquals("outside", catalogue.skillWithId(id).name)
+            page("/skills")
+            assertEquals(ids, Yaml().load<Map<String, String>>(home.resolve("skill-ids.yaml").readText()))
+            assertNoPageShows(id, "/skills", "/skills/outside")
+        } finally {
+            settings.writeText(before)
+        }
+        assertEquals(listOf("SKILL.md"), extra.toFile().list()!!.toList())
+        assertEquals(skillMd("outside"), extra.resolve("SKILL.md").readText())
     }
 
     private fun import(vararg files: Pair<String, String>): Browser.Page {
