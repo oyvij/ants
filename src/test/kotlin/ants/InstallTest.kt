@@ -6,6 +6,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.copyTo
 import kotlin.io.path.createDirectories
+import kotlin.io.path.createSymbolicLinkPointingTo
 import kotlin.io.path.exists
 import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.name
@@ -60,6 +61,19 @@ class InstallTest {
         assertEquals(antsHome.resolve("current/bin/ants"), link.readSymbolicLink())
         assertEquals(listOf("ants.jar"), antsHome.resolve("versions/$version/lib").listDirectoryEntries().map { it.name })
         assertEquals(listOf(version), antsHome.resolve("versions").listDirectoryEntries().map { it.name })
+    }
+
+    @Test
+    fun `install sh keeps only the new version and the one before it`() {
+        for (old in listOf("0.0.1", "0.0.2", "0.0.3")) antsHome.resolve("versions/$old").createDirectories()
+        antsHome.resolve("current").createSymbolicLinkPointingTo(Path.of("versions/0.0.3"))
+        antsHome.resolve("previous").createSymbolicLinkPointingTo(Path.of("versions/0.0.2"))
+
+        val installed = install()
+
+        assertEquals(0, installed.exit, installed.output)
+        assertEquals(Path.of("versions/0.0.3"), antsHome.resolve("previous").readSymbolicLink())
+        assertEquals(listOf("0.0.3", version), antsHome.resolve("versions").listDirectoryEntries().map { it.name }.sorted())
     }
 
     @Test

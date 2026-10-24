@@ -40,6 +40,11 @@ was=$(readlink "$ANTS_HOME/current" || true)
 if [ "$update" = --update ] && [ -n "$running" ] && [ -d "$ANTS_HOME/versions/$running" ]; then was=versions/$running; fi
 if [ -n "$was" ] && [ "$was" != "versions/$version" ]; then ln -sfn "$was" "$ANTS_HOME/previous"; fi
 ln -sfn "versions/$version" "$ANTS_HOME/current"
+# Each version brings its own Java runtime, so only current and previous, all `ants rollback` needs, stay on disk.
+for folder in "$ANTS_HOME"/versions/*; do
+  kept=versions/${folder##*/}
+  if [ "$kept" != "versions/$version" ] && [ "$kept" != "$(readlink "$ANTS_HOME/previous" || true)" ]; then rm -rf "$folder"; fi
+done
 echo "Installed Ants $version in $ANTS_HOME/versions/$version"
 if [ "$update" = --update ]; then exit 0; fi
 
