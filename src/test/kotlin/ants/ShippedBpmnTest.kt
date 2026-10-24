@@ -61,7 +61,7 @@ class ShippedBpmnTest {
             assert(!properties[ASSIGNMENT].isNullOrBlank()) { "${file.name}: ${task.id} has no Assignment" }
             assert(!properties[RESULT_SCHEMA].isNullOrBlank()) { "${file.name}: ${task.id} has no Result schema" }
         }
-        assertEquals(15, tasks)
+        assertEquals(17, tasks) // 15 of his own, and the two fix Tasks, which list tdd, code-review and codebase-design
     }
 
     /** The elements of a Template, less what a copy renames: its events' ids, its flows' ids, its inputs' values. */

@@ -27,7 +27,7 @@ class ShippedSkillsTest {
     fun `no shipped Skill mentions Runs, Tasks, Rounds, Results or Ants, nor has ants- metadata or a result schema`() {
         val found = shipped.resolve("skills").listDirectoryEntries().flatMap { folder ->
             (if (folder.resolve("result.schema.json").exists()) listOf("${folder.name}/result.schema.json") else emptyList()) +
-                if (folder.name in matts) emptyList() else folder.walk().filter { it.isRegularFile() }.flatMap { file ->
+                if (folder.name in matts) emptySequence() else folder.walk().filter { it.isRegularFile() }.flatMap { file ->
                     file.readText().lines().withIndex().mapNotNull { (n, line) -> coupling.find(line)?.let { "${folder.name}/${file.name}:${n + 1}: ${it.value}" } }
                 }
         }
