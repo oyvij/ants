@@ -1,5 +1,5 @@
-The knowledge Skills Ants ships (search-knowledge, update-knowledge, init-vault), with vault-format.md,
-leak-check.sh and topic.base, are adapted from Varde's knowledge-vault Skills
+The knowledge Skills search-knowledge, update-knowledge and init-vault, the walkthrough Skill, and
+vault-format.md, leak-check.sh and topic.base, are adapted from Varde's knowledge-vault Skills
 (https://github.com/oyvij/varde-editor, ai/skills/workflows/knowledge-vault), under this licence:
 
 MIT License

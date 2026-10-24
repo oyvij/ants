@@ -156,9 +156,9 @@ class ReviewChangesTest : AntsTest() {
         agentTask(null, mapOf("mend" to null, "ship" to null))
         browser.get("/processes")
         val bpmn = javaClass.getResource("/review.bpmn")!!.readText()
-            .replace("""<operaton:property name="ants.skill" value="mend" />
+            .replace("""<operaton:property name="ants.skills" value="mend" />
         </operaton:properties>
-      </bpmn:extensionElements>""", """<operaton:property name="ants.skill" value="mend" />
+      </bpmn:extensionElements>""", """<operaton:property name="ants.skills" value="mend" />
         </operaton:properties>
       </bpmn:extensionElements>
       <bpmn:multiInstanceLoopCharacteristics operaton:collection="${'$'}{repos}" />""")

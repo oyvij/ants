@@ -46,7 +46,7 @@ class ModelerTest : AntsTest() {
         // camunda-bpmn-js writes camunda:, such as an Agent Task's topic.
         val drawn = blank.replace("<bpmn:definitions ", """<bpmn:definitions xmlns:camunda="http://camunda.org/schema/1.0/bpmn" """)
             .replace("</bpmn:process>", """<bpmn:serviceTask id="draft" camunda:type="external" camunda:topic="agent"><bpmn:extensionElements><camunda:properties>""" +
-                """<camunda:property name="ants.agent" value="writer" /><camunda:property name="ants.skill" value="draft" /></camunda:properties></bpmn:extensionElements></bpmn:serviceTask></bpmn:process>""")
+                """<camunda:property name="ants.agent" value="writer" /><camunda:property name="ants.skills" value="draft" /></camunda:properties></bpmn:extensionElements></bpmn:serviceTask></bpmn:process>""")
         browser.post("/processes/deploy", mapOf("bpmn" to drawn))
         val diagram = browser.get("/processes/topic-in-the-modeler/diagram.bpmn").body
         assertContains(diagram, """operaton:topic="agent"""")

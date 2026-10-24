@@ -65,7 +65,7 @@ class GatewaysTest : AntsTest() {
           <bpmn:extensionElements>
             <operaton:properties>
               <operaton:property name="ants.agent" value="writer" />
-              <operaton:property name="ants.skill" value="draft" />
+              <operaton:property name="ants.skills" value="draft" />
             </operaton:properties>
           </bpmn:extensionElements>
         </bpmn:serviceTask>

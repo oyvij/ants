@@ -1,5 +1,7 @@
 # A Run keeps its Verbosity, a Profile default, and the hand-off line names it
 
+Superseded in part by ADR 0024: no Skill opts in; every Agent Task writes at the Run's Verbosity.
+
 Everything Ants' Agents write for the user to read (Rounds, the Spec, Tickets, proposals, the Story set, Notes
 proposals, Result summaries, stuck messages, PR bodies and the summaries in Reports) came at one level of wording.
 The only way to change it was to edit Skills or Profile instructions, which changes every Run and can't stop a terse

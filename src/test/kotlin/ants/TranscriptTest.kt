@@ -66,7 +66,7 @@ class TranscriptTest : AntsTest() {
         val transcript = page("/runs/$run/tasks/draft/transcript") // the Run has ended, and its Transcript is still there
         val order = listOf(
             """<h3 class="launch" id="e0">Launch 1""",
-            """<details class="prompt" id="e1"><summary>Opening prompt</summary><pre>Follow the Skill in ${home.resolve("skills/draft/SKILL.md")}""",
+            """<details class="prompt" id="e1"><summary>Opening prompt</summary><pre>/draft The workspace is """,
             """<p>Let me <strong>look</strong>.</p>""",
             """<details class="thinking" id="e3"><summary>✻ Thinking</summary>Which files?</details>""",
             """<div class="tool" id="e4"><b>Bash</b> <code>ls -1</code></div>""",
@@ -77,6 +77,19 @@ class TranscriptTest : AntsTest() {
         assertEquals(order, order.sortedBy { transcript.indexOf(it) })
         assertContains(transcript, """"text" : "Hello"""")
         assertContains(transcript, """<div id="live"></div>""") // the streamed preview gives way to the whole message
+    }
+
+    @Test
+    fun `the Transcript says which Skill the Agent invoked`() {
+        claude.session(
+            "draft", init,
+            """{"type":"assistant","message":{"id":"m1","content":[{"type":"tool_use","id":"t1","name":"Skill","input":{"skill":"tdd","args":"red first"}}]}}""",
+            """{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"Launching skill: tdd"}]}}""",
+            done,
+        )
+        val run = start("agent-task")
+        eventually { assertContains(page("/runs/$run"), """id="state">Completed<""") }
+        assertContains(page("/runs/$run/tasks/draft/transcript"), """<div class="tool" id="e2">Used the Skill <b>tdd</b></div>""")
     }
 
     @Test

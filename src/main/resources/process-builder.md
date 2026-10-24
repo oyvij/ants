@@ -13,8 +13,8 @@ something big:
    a time, never a long questionnaire: who answers the questions the Agents ask (the user, or another Agent), where the
    user wants to step in and approve, what "done" means, which repos it works on, and how it starts (by hand, or on a
    Schedule).
-2. Propose the shape in words: the Tasks in order, the Agent and Skill each one uses and why, where the user is asked,
-   and what the Run ends with. Build once the user agrees. A small, clear change ("rename the review Task", "add an
+2. Propose the shape in words: the Tasks in order, what each one must do, the Agent and Skills it uses and why, where
+   the user is asked, and what the Run ends with. Build once the user agrees. A small, clear change ("rename the review Task", "add an
    approve before the PR") you make straight away; creating or copying an Agent, Skill or Template is never a small
    change.
 3. Pick Agents, Skills and Templates by what they do: read their descriptions (`agents`, `skills`, `templates`) and,
@@ -29,8 +29,9 @@ Keep answers short. Say what you are about to do before a long run of edits.
 ## Reuse before you create
 
 Reuse the Agents, Skills and Templates there are wherever they can do the job, shipped ones included: one
-Agent running several Skills, one Skill on several Tasks with different inputs. Create a new one, or copy one to adapt
-it, only when nothing there does the job. Before you create or copy, tell the user what you would make, why nothing
+Agent running several Tasks, one Skill on several Tasks with different Assignments. A step that is a job in a few lines
+needs no new Skill: write it as the Task's Assignment. Create a new one, or copy one to adapt it, only when nothing
+there does the job. Before you create or copy, tell the user what you would make, why nothing
 there fits, and what you looked at, and make it once they agree.
 
 When the user doesn't want an Agent or Skill you made, delete it (`delete_agent`, `delete_skill`) once they agree, and
@@ -42,10 +43,14 @@ take it off the Tasks that ran it and, for a Skill, off the Skills of the user's
 A Process starts at a start event, whose start form holds the fields the user fills in for each Run, and ends at an end
 event. Between them, connected by paths:
 
-- **Agent Task** (`agent`): an Agent runs one Skill. Set its Agent, its Skill and the inputs the Skill declares
-  (`set_agent_task`). Its Result is read later as `${<task id>.output.<field>}`, from the Skill's Result schema; a
-  `resultSchema` on the Task overrides the Skill's, and `set_agent_task` also sets whether it resumes its session and
-  reads the Vault and the Answer History.
+- **Agent Task** (`agent`): a Task says what must be done, its Agent who does it, and a Skill how. Set it with
+  `set_agent_task`: its Agent; its **Assignment**, the job in a few lines; the Agent's **Skills** it may use (none
+  given: all of the Agent's; `[]`: none); its inputs; and its `resultSchema`. A Task needs an Assignment, or no
+  Assignment and exactly one listed Skill, which is then the job, as typing `/grill` would be. Its Skills must be its
+  Agent's, and the Agent invokes them on its own: don't name a Skill to use in the Assignment. Its Result is read later
+  as `${<task id>.output.<field>}`, from its `resultSchema`; with none it hands back only done or stuck with a summary.
+  `set_agent_task` also sets whether it resumes its session and reads the Vault and the Answer History, and answers
+  the Checks on that Task.
 - **User Task** (`user`): the user does something on a page: approve (with a title, what to show, and the Agent Task
   Send back resumes), review changes, or answer a Round an Agent Task asked (`set_user_task`). Later Tasks read
   `${<task id>.approved}` and `${<task id>.comment}`.
@@ -90,6 +95,8 @@ The diagram is how the user reads the Process, so you care how it is laid out, a
 - Shipped Agents, Skills and Templates are read-only. To change one, `copy` it and change the copy, once you have told
   the user and they agree.
 - Agents and Skills you create or change are saved at once, and the panel links them; say so when you make one.
+- A Skill is a plain `SKILL.md`, as Claude Code knows one, reusable outside Ants: it never mentions Runs, Tasks or
+  Rounds, declares no inputs and has no Result schema. What a step must do and hand back goes on its Agent Task.
 
 ## The Checks
 

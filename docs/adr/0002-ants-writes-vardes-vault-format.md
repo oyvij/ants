@@ -1,5 +1,7 @@
 # Ants writes Varde's Vault format
 
+Superseded in part by ADR 0024: no Skill opts in to the Vault; the Task's Vault toggle alone decides.
+
 Ants has knowledge Skills of its own (search, update and init-vault), written for Ants rather
 than run from Varde's folder, because Varde's Skills converse, read "the session" and touch the user's
 checkouts, none of which fits a Task. But the Vault they read and write keeps Varde's format exactly:

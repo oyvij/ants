@@ -27,7 +27,7 @@
       <bpmn:extensionElements>
         <operaton:properties>
           <operaton:property name="ants.agent" value="writer" />
-          <operaton:property name="ants.skill" value="narrate" />
+          <operaton:property name="ants.skills" value="narrate" />
           <operaton:property name="ants.resume" value="true" />
         </operaton:properties>
       </bpmn:extensionElements>
@@ -52,7 +52,7 @@
       <bpmn:extensionElements>
         <operaton:properties>
           <operaton:property name="ants.agent" value="writer" />
-          <operaton:property name="ants.skill" value="mend" />
+          <operaton:property name="ants.skills" value="mend" />
         </operaton:properties>
       </bpmn:extensionElements>
     </bpmn:serviceTask>
@@ -61,7 +61,7 @@
       <bpmn:extensionElements>
         <operaton:properties>
           <operaton:property name="ants.agent" value="writer" />
-          <operaton:property name="ants.skill" value="ship" />
+          <operaton:property name="ants.skills" value="ship" />
         </operaton:properties>
         <operaton:inputOutput>
           <operaton:inputParameter name="verdict">${changes}</operaton:inputParameter>

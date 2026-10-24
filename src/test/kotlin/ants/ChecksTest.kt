@@ -17,7 +17,10 @@ class ChecksTest : AntsTest() {
     private val browser by lazy { browser().also { it.login(); it.get("/processes") } }
 
     @BeforeEach
-    fun writer() = writerAndDraft(inputs = "")
+    fun writer() {
+        settings(null) // its own, so a hide-shipped left by an earlier test doesn't hide the shipped Agents and Skills
+        writerAndDraft()
+    }
 
     /** A Process `checked` with one start event and [body], and [outside] after the Process (such as a pool). */
     private fun diagram(body: String, outside: String = "") = """
@@ -37,7 +40,7 @@ class ChecksTest : AntsTest() {
           <bpmn:extensionElements>
             <operaton:properties>
               <operaton:property name="ants.agent" value="writer" />
-              <operaton:property name="ants.skill" value="draft" />
+              <operaton:property name="ants.skills" value="draft" />
             </operaton:properties>
             <operaton:inputOutput>$inputs</operaton:inputOutput>
           </bpmn:extensionElements>
@@ -211,17 +214,15 @@ class ChecksTest : AntsTest() {
         assertEquals(404, browser.get("/processes/checked").status)
     }
 
-    /** The Agent `writer`, listing [skills], and the Skill `draft` promising `{text}` and declaring [inputs]. */
-    private fun writerAndDraft(skills: String = "draft, other", inputs: String = "tone") {
+    /** The Agent `writer`, listing [skills], and the Skill `draft`, whose Tasks promise `{text, meta}` ([promising]). */
+    private fun writerAndDraft(skills: String = "draft, other") {
         home.resolve("agents").createDirectories().resolve("writer.md").writeText("---\nskills: $skills\n---\nWrite plainly.\n")
-        skill("draft", schema = """{"type":"object","properties":{"text":{"type":"string"},"meta":{"type":"object","properties":{"words":{"type":"integer"}}}}}""",
-            metadata = "metadata:\n  ants-inputs: $inputs\n")
+        skill("draft")
+        promises["draft"] = """{"type":"object","properties":{"text":{"type":"string"},"meta":{"type":"object","properties":{"words":{"type":"integer"}}}}}"""
     }
 
-    private fun skill(name: String, schema: String? = null, metadata: String = "", folder: String = name) {
-        val dir = home.resolve("skills/$folder").createDirectories()
-        dir.resolve("SKILL.md").writeText("---\nname: $name\ndescription: A Skill.\n$metadata---\nDo it.\n")
-        dir.resolve("result.schema.json").run { if (schema != null) writeText(schema) else deleteIfExists() }
+    private fun skill(name: String, folder: String = name) {
+        home.resolve("skills/$folder").createDirectories().resolve("SKILL.md").writeText("---\nname: $name\ndescription: A Skill.\n---\nDo it.\n")
     }
 
     /** Draft, then Review reading [reads] from Draft, with the start-form field `prompt`. */
@@ -267,7 +268,7 @@ class ChecksTest : AntsTest() {
     fun `an unknown, ambiguous or missing Skill name is refused`() {
         writerAndDraft()
         refuses(diagram(withAgent("writer", "nothing")), "draft", "Draft (draft): No Skill named nothing.")
-        refuses(diagram(withAgent("writer", "")), "draft", "Draft (draft) has no Skill.")
+        refuses(diagram(withAgent("writer", "")), "draft", "Draft (draft) has no Assignment and doesn't list exactly one Skill.")
         skill("other", folder = "twin-1")
         skill("other", folder = "twin-2")
         try {
@@ -278,6 +279,32 @@ class ChecksTest : AntsTest() {
         }
     }
 
+    /** The Agent Task `draft` with [properties] in place of its `ants.skill`. */
+    private fun job(vararg properties: Pair<String, String>) = agentTask("draft").replace("""<operaton:property name="ants.skills" value="draft" />""",
+        properties.joinToString("") { (name, value) -> """<operaton:property name="$name" value="$value" />""" })
+
+    @Test
+    fun `an Agent Task with no Assignment must list exactly one Skill of its own, and each listed Skill must be the Agent's and known`() {
+        writerAndDraft()
+        skill("other")
+        val one = "Draft (draft) has no Assignment and doesn't list exactly one Skill."
+        refuses(diagram(job()), "draft", one) // the Agent's Skills don't count
+        refuses(diagram(job("ants.skills" to "")), "draft", one)
+        refuses(diagram(job("ants.skills" to "draft, other")), "draft", one)
+        refuses(diagram(job("ants.assignment" to "Draft it.", "ants.skills" to "draft, nothing")), "draft", "Draft (draft): No Skill named nothing.")
+        skill("extra")
+        try {
+            refuses(diagram(job("ants.assignment" to "Draft it.", "ants.skills" to "draft, extra")), "draft", "Draft (draft): The Agent writer doesn't list the Skill extra.")
+            for (fine in listOf(job("ants.skills" to "other"), job("ants.assignment" to "Draft it."), job("ants.assignment" to "Draft it.", "ants.skills" to ""),
+                job("ants.assignment" to "Draft it.", "ants.skills" to "draft other")))
+                assertEquals(emptyList(), checks(diagram(fine)).filter { it["warning"] == false })
+            home.resolve("agents/writer.md").writeText("---\nskills: \"*\"\n---\nWrite plainly.\n")
+            assertEquals(emptyList(), checks(diagram(job("ants.assignment" to "Draft it.", "ants.skills" to "extra"))).filter { it["warning"] == false })
+        } finally {
+            home.resolve("skills/extra").toFile().deleteRecursively()
+        }
+    }
+
     @Test
     fun `a Skill the Agent doesn't list is refused`() {
         writerAndDraft(skills = "other")
@@ -285,32 +312,10 @@ class ChecksTest : AntsTest() {
     }
 
     @Test
-    fun `an unknown used Skill or a cycle of used Skills is refused`() {
+    fun `an invalid result schema is refused`() {
         writerAndDraft()
-        skill("other", metadata = "metadata:\n  ants-uses: helper\n")
-        refuses(diagram(withAgent("writer", "other")), "draft", "Draft (draft): No Skill named helper.")
-        skill("helper", metadata = "metadata:\n  ants-uses: other\n")
-        try {
-            refuses(diagram(withAgent("writer", "other")), "draft", "Draft (draft): The Skills other → helper → other use each other in a cycle.")
-        } finally {
-            home.resolve("skills/helper").toFile().deleteRecursively()
-            skill("other")
-        }
-    }
-
-    @Test
-    fun `an invalid result schema, the Skill's or the Task's override, is refused`() {
-        writerAndDraft()
-        skill("other", schema = """{"type":"object","properties":"text"}""")
-        try {
-            val message = checks(diagram(withAgent("writer", "other"))).single()["message"] as String
-            assertContains(message, "Draft (draft): The Skill other's result.schema.json is invalid: ")
-            refuses(diagram(withAgent("writer", "other")), "draft", message)
-        } finally {
-            skill("other")
-        }
-        val override = agentTask("draft").replace("</operaton:properties>", """<operaton:property name="ants.result-schema" value="[1]" /></operaton:properties>""")
-        refuses(diagram(override), "draft", "Draft (draft): Its result-schema override is invalid: A result schema is a JSON object.")
+        val invalid = agentTask("draft").replace("</operaton:properties>", """<operaton:property name="ants.result-schema" value="[1]" /></operaton:properties>""")
+        refuses(diagram(invalid), "draft", "Draft (draft): Its result schema is invalid: A result schema is a JSON object.")
     }
 
     @Test
@@ -329,7 +334,7 @@ class ChecksTest : AntsTest() {
     }
 
     @Test
-    fun `reading the output of a Task whose Skill promises no result schema is refused`() {
+    fun `reading the output of a Task that promises no result schema is refused`() {
         writerAndDraft()
         skill("other")
         refuses(twoTasks("${'$'}{draft.output.text}").replace(Regex("""(<bpmn:serviceTask id="draft"(?:(?!</bpmn:serviceTask>).)*?)value="draft""", RegexOption.DOT_MATCHES_ALL), "$1value=\"other"),
@@ -337,22 +342,22 @@ class ChecksTest : AntsTest() {
     }
 
     @Test
-    fun `references to start-form fields, Run variables and Result fields deploy, and an override replaces the Skill's schema`() {
+    fun `references to start-form fields, Run variables and Result fields deploy, as the Task's own result schema has them`() {
         writerAndDraft()
         val reads = "${'$'}{draft.output.text}${'$'}{draft.output.meta.words}${'$'}{draft.summary}${'$'}{runs.draft >= 2 and empty clones}" +
             "${'$'}{prompt.trim()}${'$'}{draft.output.text.length() > 0 ? 'a.b' : \"c.d\"}${'$'}{true}"
         assertEquals(emptyList(), checks(twoTasks(reads)))
         val override = twoTasks("${'$'}{draft.output.verdict}").replace(
-            """<operaton:property name="ants.skill" value="draft" />""",
-            """<operaton:property name="ants.skill" value="draft" /><operaton:property name="ants.result-schema" value="{&quot;type&quot;:&quot;object&quot;,&quot;properties&quot;:{&quot;verdict&quot;:{}}}" />""",
+            """<operaton:property name="ants.skills" value="draft" />""",
+            """<operaton:property name="ants.skills" value="draft" /><operaton:property name="ants.result-schema" value="{&quot;type&quot;:&quot;object&quot;,&quot;properties&quot;:{&quot;verdict&quot;:{}}}" />""",
         )
         assertEquals(emptyList(), checks(override))
     }
 
     @Test
-    fun `the Agent Task panel's catalogue lists each Agent's Skills and each Skill's declared inputs, toggles and schema`() {
-        writerAndDraft(inputs = "tone length")
-        skill("other", metadata = "metadata:\n  ants-answer-history: true\n  varde-vault: true\n")
+    fun `the Agent Task panel's catalogue lists each Agent's Skills, and each Skill's description, folder and whether it is the user's own`() {
+        writerAndDraft()
+        skill("other")
         val catalogue = JsonMapper.shared().readValue(browser.get("/catalogue.json").body, Map::class.java)
         val writer = (catalogue["agents"] as List<*>).single { (it as Map<*, *>)["name"] == "writer" }
         assertEquals(listOf("draft", "other"), (writer as Map<*, *>)["skills"])
@@ -361,13 +366,20 @@ class ChecksTest : AntsTest() {
         assertTrue(shipped.isNotEmpty() && shipped.none { it["own"] == true })
         val skills = (catalogue["skills"] as List<*>).associateBy { (it as Map<*, *>)["name"] }
         val draft = skills["draft"] as Map<*, *>
-        assertEquals(listOf("tone", "length"), draft["inputs"])
-        assertEquals(listOf(false, false), listOf(draft["vault"], draft["answerHistory"]))
-        assertEquals(setOf("text", "meta"), ((draft["output"] as Map<*, *>)["properties"] as Map<*, *>).keys)
-        val other = skills["other"] as Map<*, *>
-        assertEquals(listOf(emptyList<String>(), true, true, null), listOf(other["inputs"], other["vault"], other["answerHistory"], other["output"]))
+        assertEquals(setOf("name", "description", "own", "folder"), draft.keys)
         assertEquals(listOf(true, false), listOf(draft["own"], (skills["tdd"] as Map<*, *>)["own"]))
         assertEquals(home.resolve("skills").toString(), draft["folder"])
+    }
+
+    @Test
+    fun `the catalogue gives an Agent with every Skill, skills star, each Skill by name`() {
+        writerAndDraft()
+        home.resolve("agents/everyone.md").writeText("---\nskills: \"*\"\n---\nAll.\n")
+        val catalogue = JsonMapper.shared().readValue(browser.get("/catalogue.json").body, Map::class.java)
+        val everyone = (catalogue["agents"] as List<*>).map { it as Map<*, *> }.single { it["name"] == "everyone" }
+        val names = (catalogue["skills"] as List<*>).map { (it as Map<*, *>)["name"] }.distinct()
+        assertEquals(names, everyone["skills"])
+        assertTrue("draft" in names && "tdd" in names)
     }
 
     /** Review in a multi-instance over `${prompt}`, its element variable [element] (or the default), reading [reads]. */
@@ -430,12 +442,17 @@ class ChecksTest : AntsTest() {
     }
 
     @Test
-    fun `a declared input with no value is a warning`() {
-        writerAndDraft(inputs = "tone length")
-        assertEquals(
-            listOf(mapOf("element" to "draft", "message" to "Draft (draft) has an empty input length.", "warning" to true)),
-            checks(diagram(agentTask("draft", inputs = """<operaton:inputParameter name="tone">dry</operaton:inputParameter>"""))),
+    fun `later Tasks read an Agent Task's promised fields, questions too when it asks Rounds, else its summary, and a User Task's fields`() {
+        promises.clear() // a test before may have had its Skill promise a schema
+        val schema = """<operaton:property name="ants.result-schema" value="{&quot;type&quot;:&quot;object&quot;,&quot;properties&quot;:{&quot;note&quot;:{&quot;type&quot;:&quot;string&quot;}}}" />"""
+        val bpmn = diagram(
+            agentTask("asker").replace("</operaton:properties>", "$schema</operaton:properties>") + agentTask("plain") +
+                """<bpmn:userTask id="answer"><bpmn:extensionElements><operaton:properties><operaton:property name="ants.asker" value="asker" /></operaton:properties></bpmn:extensionElements></bpmn:userTask>""",
         )
+        val read = JsonMapper.shared().readValue(browser.post("/processes/outputs", mapOf("bpmn" to bpmn)).body, Map::class.java)
+        assertEquals(listOf("${'$'}{asker.output.note}", "${'$'}{asker.output.questions}"), read["asker"])
+        assertEquals(listOf("${'$'}{plain.summary}"), read["plain"])
+        assertEquals(listOf("${'$'}{answer.approved}", "${'$'}{answer.comment}"), read["answer"])
     }
 
     @Test

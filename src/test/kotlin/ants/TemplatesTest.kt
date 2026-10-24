@@ -76,7 +76,7 @@ class TemplatesTest : AntsTest() {
               <bpmn:process id="grilling" isExecutable="true">
                 <bpmn:serviceTask id="grill" operaton:type="external" operaton:topic="agent">
                   <bpmn:extensionElements><operaton:properties>
-                    <operaton:property name="ants.agent" value="grill" /><operaton:property name="ants.skill" value="grill" />
+                    <operaton:property name="ants.agent" value="grill" /><operaton:property name="ants.skills" value="grill" />
                   </operaton:properties></bpmn:extensionElements>
                 </bpmn:serviceTask>
               </bpmn:process>

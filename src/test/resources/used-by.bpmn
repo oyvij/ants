@@ -9,7 +9,7 @@
       <bpmn:extensionElements>
         <operaton:properties>
           <operaton:property name="ants.agent" value="keeper" />
-          <operaton:property name="ants.skill" value="keep-notes" />
+          <operaton:property name="ants.skills" value="keep-notes" />
         </operaton:properties>
       </bpmn:extensionElements>
     </bpmn:serviceTask>

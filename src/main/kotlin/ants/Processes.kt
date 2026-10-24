@@ -141,11 +141,16 @@ class Processes(
     @ResponseBody
     fun inputs(@RequestParam bpmn: String, @RequestParam element: String): List<String> = checks.inputs(operatonOnly(bpmn.toByteArray()), element)
 
+    /** What later Tasks read of each Task's Result, by id, as the Checks read it: a Task that asks Rounds promises `questions` too. */
+    @PostMapping("/processes/outputs")
+    @ResponseBody
+    fun outputs(@RequestParam bpmn: String): Map<String, List<String>> = checks.laterRead(operatonOnly(bpmn.toByteArray()))
+
     /**
      * Ants' own deploy path: everything reaches Operaton through here, written with `operaton:` only, and only when no
      * Check fails. Gives the Process's key.
      */
-    private fun deploy(bpmn: ByteArray, name: String? = null): String = try {
+    internal fun deploy(bpmn: ByteArray, name: String? = null): String = try {
         val xml = operatonOnly(bpmn)
         val failed = checks.of(xml).filterNot { it.warning }
         if (failed.isNotEmpty()) throw Refused(failed.joinToString("\n") { it.message })

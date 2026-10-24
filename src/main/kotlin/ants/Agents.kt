@@ -36,8 +36,7 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
     fun list(model: Model) = list(model, null)
 
     private fun list(model: Model, error: String?): String {
-        val vault = catalogue.skills().map { it.name }.distinct().associateWith { name -> runCatching { catalogue.vault(catalogue.skill(name)) }.getOrDefault(false) }
-        model.addAttribute("agents", catalogue.agents().sortedBy { it.name }.map { AgentRow(it, catalogue.where(it.file.parent), it.skills.any { name -> vault[name] == true }) })
+        model.addAttribute("agents", catalogue.agents().sortedBy { it.name }.map { AgentRow(it, catalogue.where(it.file.parent)) })
         model.addAttribute("error", error)
         return "agents"
     }
@@ -71,21 +70,18 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
 
     /**
      * The Agents and Skills as the modeler's Agent Task panel picks them, read afresh each time so a new one shows up:
-     * each Agent's description, Skills and folder, and whether it is the user's own (New Skill adds itself only to those, Edit opens only those), and each Skill's declared inputs, whether it is the user's own (Edit opens only those) and its folder, its Vault and Answer History defaults and its result schema;
+     * each Agent's description, Skills (every one by name for `skills: "*"`) and folder, and whether it is the user's own (New Skill adds itself only to those, Edit opens only those), and each Skill's description, whether it is the user's own (Edit opens only those) and its folder;
      * and the Profiles a Process can name.
      */
     @GetMapping("/catalogue.json")
     @ResponseBody
     fun catalogue() = mapOf(
         "agents" to catalogue.agents().map {
-            mapOf("name" to it.name, "description" to it.description, "skills" to it.skills, "own" to (it.file.parent == folder), "folder" to it.file.parent.toString())
+            val skills = catalogue.allowedNames(it)
+            mapOf("name" to it.name, "description" to it.description, "skills" to skills, "own" to (it.file.parent == folder), "folder" to it.file.parent.toString())
         },
         "skills" to catalogue.skills().map { skill ->
-            mapOf(
-                "name" to skill.name, "description" to skill.description, "inputs" to skill.inputs, "own" to skill.file.startsWith(catalogue.yourSkills), "folder" to skill.folder.parent.toString(),
-                "vault" to runCatching { catalogue.vault(skill) }.getOrDefault(skill.vault), "answerHistory" to skill.answerHistory,
-                "output" to runCatching { skill.outputSchema.takeIf { it.isNotEmpty() } }.getOrNull(),
-            )
+            mapOf("name" to skill.name, "description" to skill.description, "own" to skill.file.startsWith(catalogue.yourSkills), "folder" to skill.folder.parent.toString())
         },
         "profiles" to settings.profiles().keys,
     )
@@ -191,8 +187,8 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
         ?: throw ResponseStatusException(HttpStatus.FORBIDDEN, "${agent.name} is read-only. Copy it to make one you can edit.")
 }
 
-/** An Agent on the list: the folder it comes from, and whether any of its Skills reads the Vault. */
-class AgentRow(val agent: Agent, val where: String, val vault: Boolean)
+/** An Agent on the list, and the folder it comes from. */
+class AgentRow(val agent: Agent, val where: String)
 
 /**
  * A Claude Code tool as the Agent page offers it: what it [does], and for one with **Limit…**, what its rules narrow

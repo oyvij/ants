@@ -16,7 +16,7 @@
 <main>
 <div class="ph"><h1>Skills</h1>
     <div class="acts">
-        <form method="post" action="/skills/import" enctype="multipart/form-data"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><label class="btn" title="Import one SKILL.md into the New Skill form">Import…<input type="file" name="file" accept=".md" required hidden onchange="this.form.submit()"></label></form>
+        <form method="post" action="/skills/import" enctype="multipart/form-data"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><label class="btn" title="Add one SKILL.md as a Skill">Import…<input type="file" name="file" accept=".md" required hidden onchange="this.form.submit()"></label><label class="btn" title="Add a Skill's folder: its SKILL.md and the files beside it">Import folder…<input type="file" name="file" webkitdirectory required hidden onchange="this.form.submit()"></label></form>
         <a class="btn primary" href="/skills/new">New Skill</a>
     </div>
     <div class="sub">From the folders in <a href="/settings">Settings</a>. Ants writes only into <code>~/.ants/skills</code>; the rest are read-only, with Copy.</div></div>
@@ -28,7 +28,7 @@
 @if(row.hidden)
     <tr class="hidden"><td><b>${row.skill.name}</b></td><td></td><td class="small">${row.skill.description}</td><td class="muted small">${row.where}, hidden by the shipped Skill</td></tr>
 @else
-    <tr class="click" data-href="/skills/${row.skill.name}"><td><b><a href="/skills/${row.skill.name}">${row.skill.name}</a></b>@if(row.vault) <span class="tag t-vault">Vault</span>@endif</td><td class="small">@for(agent in row.runBy)<a href="/agents/${agent}">${agent}</a>@if(agent != row.runBy.last()) @endif@endfor@if(row.runBy.isEmpty())<span class="muted">no Agent</span>@endif</td><td class="small">${row.skill.description}</td><td class="muted small">${row.where}</td></tr>
+    <tr class="click" data-href="/skills/${row.skill.name}"><td><b><a href="/skills/${row.skill.name}">${row.skill.name}</a></b></td><td class="small">@for(agent in row.runBy)<a href="/agents/${agent}">${agent}</a>@if(agent != row.runBy.last()) @endif@endfor@if(row.runBy.isEmpty())<span class="muted">no Agent</span>@endif</td><td class="small">${row.skill.description}</td><td class="muted small">${row.where}</td></tr>
 @endif
 @endfor
     </tbody>

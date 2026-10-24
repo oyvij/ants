@@ -103,7 +103,8 @@ class ProcessBuilderToolsTest : AntsTest() {
 
     @Test
     fun `the catalogue tools and the Checks answer as the modeler's endpoints do, the Checks on the page's diagram`() {
-        agentTask(null, mapOf("draft" to """{"type":"object","properties":{"notes":{"type":"string"}}}"""))
+        agentTask(null)
+        home.resolve("skills/draft/reference.md").writeText("A file beside it.")
         browser.import("agent-task.bpmn")
         val token = open()
         val broken = agentTaskXml.replace("value=\"writer\"", "value=\"nobody\"")
@@ -123,7 +124,7 @@ class ProcessBuilderToolsTest : AntsTest() {
 
         val skill = tool("skill", mapOf("name" to "draft"))
         assertEquals("Do it.", skill["instructions"].asString())
-        assertEquals(listOf("notes"), skill["output"]["properties"].propertyNames().toList())
+        assertEquals("""["reference.md"]""", skill["files"].toString())
         assertTrue(call(token, "skill", mapOf("name" to "nothing")).second)
         assertTrue(call(token, "process", mapOf("key" to "agent-task")).first.contains("""<bpmn:serviceTask id="draft""""))
         assertTrue(call(token, "process", mapOf("key" to "nothing")).second)
@@ -188,8 +189,7 @@ class ProcessBuilderToolsTest : AntsTest() {
         val token = open()
         page(token) { tool, _ -> agentTaskXml.takeIf { tool == "xml" } }
 
-        val skill = call(token, "create_skill", mapOf("skill" to "---\nname: draft\ndescription: Drafts a text.\n---\nDraft it.\n",
-            "schema" to """{"type":"object","properties":{"notes":{"type":"string"}}}"""))
+        val skill = call(token, "create_skill", mapOf("skill" to "---\nname: draft\ndescription: Drafts a text.\n---\nDraft it.\n"))
         assertEquals(false, skill.second, skill.first)
         assertEquals(mapOf("name" to "draft", "page" to "/skills/draft"), json.readValue(skill.first, Map::class.java))
         val agent = call(token, "create_agent", mapOf("file" to "---\nname: writer\ndescription: Writes.\nskills: draft\ntools: Read, Bash(git log *)\n---\nWrite plainly.\n"))
@@ -198,10 +198,45 @@ class ProcessBuilderToolsTest : AntsTest() {
 
         val catalogue = json.readTree(browser.get("/catalogue.json").body)
         assertTrue(catalogue["agents"].any { it["name"].asString() == "writer" && it["skills"].toString() == """["draft"]""" })
-        assertTrue(catalogue["skills"].any { it["name"].asString() == "draft" && it["output"]["properties"].has("notes") })
+        assertTrue(catalogue["skills"].any { it["name"].asString() == "draft" })
         assertEquals(listOf("Bash(git log *)", "Read"), Agent(home.resolve("agents/writer.md")).tools!!.sorted())
         val checks = call(token, "checks").first
         assertTrue("writer" !in checks && "draft" !in checks, checks)
+    }
+
+    @Test
+    fun `a Skill made or changed with a schema is a plain SKILL md, and the answer says the schema belongs on the Task`() {
+        val token = open()
+        val schema = """{"type":"object","properties":{"notes":{"type":"string"}}}"""
+        val (made, failed) = call(token, "create_skill", mapOf("skill" to "---\nname: draft\ndescription: Drafts a text.\n---\nDraft it.\n", "schema" to schema))
+        assertFalse(failed, made)
+        val answer = json.readValue(made, Map::class.java)
+        assertEquals("draft", answer["name"])
+        assertEquals(SCHEMA_IGNORED, answer["note"])
+        assertEquals(listOf("SKILL.md"), home.resolve("skills/draft").toFile().list()!!.toList())
+        val (changed, refused) = call(token, "change_skill", mapOf("name" to "draft", "skill" to "---\nname: draft\ndescription: Drafts.\n---\nDraft.\n", "schema" to schema))
+        assertFalse(refused, changed)
+        assertEquals(SCHEMA_IGNORED, json.readValue(changed, Map::class.java)["note"])
+        assertEquals(listOf("SKILL.md"), home.resolve("skills/draft").toFile().list()!!.toList())
+        assertFalse("note" in json.readValue(call(token, "change_skill", mapOf("name" to "draft", "skill" to "---\nname: draft\ndescription: D.\n---\n")).first, Map::class.java))
+    }
+
+    @Test
+    fun `set_agent_task answers with what the page wrote and the Checks Save and deploy refuses on that Task`() {
+        agentTask(null)
+        val token = open()
+        val neither = agentTaskXml.replace("""<operaton:property name="ants.skills" value="draft" />""", "")
+        val written = mapOf("id" to "draft", "agent" to "writer", "assignment" to null, "skills" to null)
+        page(token) { tool, _ -> when (tool) { "set_agent_task" -> written; "xml" -> neither; else -> null } }
+        val (text, failed) = call(token, "set_agent_task", mapOf("id" to "draft", "skills" to null))
+        assertFalse(failed, text)
+        val answer = json.readValue(text, Map::class.java)
+        assertEquals("draft", answer["id"])
+        assertEquals(listOf("Draft (draft) has no Assignment and doesn't list exactly one Skill."), answer["checks"])
+
+        val fine = open()
+        page(fine) { tool, _ -> when (tool) { "set_agent_task" -> written; "xml" -> agentTaskXml; else -> null } }
+        assertEquals(emptyList<Any>(), json.readValue(call(fine, "set_agent_task", mapOf("id" to "draft")).first, Map::class.java)["checks"])
     }
 
     @Test
@@ -215,8 +250,6 @@ class ProcessBuilderToolsTest : AntsTest() {
         assertEquals("An Agent's name is up to 64 lowercase letters, digits and hyphens.", refused("create_agent", mapOf("file" to "Code.\n")))
         assertEquals("An Agent named shipped-writer already exists.", refused("create_agent", mapOf("file" to "---\nname: shipped-writer\n---\n")))
         assertEquals("A Skill needs a name and a description in its frontmatter.", refused("create_skill", mapOf("skill" to "---\nname: draft\n---\n")))
-        assertTrue(refused("create_skill", mapOf("skill" to "---\nname: draft\ndescription: D.\n---\n", "schema" to """{"type":"nonsense"}"""))
-            .startsWith("result.schema.json is invalid: "))
         assertEquals(emptyList(), home.resolve("agents").toFile().list()!!.toList())
         assertEquals(emptyList(), home.resolve("skills").toFile().list()!!.toList())
     }

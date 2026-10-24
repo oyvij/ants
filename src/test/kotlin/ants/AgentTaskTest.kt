@@ -40,11 +40,9 @@ class AgentTaskTest : AntsTest() {
     private fun agentTask(schema: String? = null, agent: String = "", metadata: String = "", agentTasks: Int = 3, extra: String = "") =
         agentTask(claude, mapOf("draft" to schema), agent, metadata, "agent-tasks: $agentTasks\n$extra", env)
 
-    /** A Skill [name] that only other Skills use, its frontmatter carrying [metadata]. */
-    private fun usedSkill(name: String, metadata: String = ""): Path = home.resolve("skills/used/$name").createDirectories().resolve("SKILL.md")
-        .also { it.writeText("---\nname: $name\ndescription: Used.\n$metadata---\nUse it.\n") }
-
-    private fun uses(names: String) = "metadata:\n  ants-uses: $names\n"
+    /** The launch's skills folder: the one --add-dir in the Run workspace's `.skills`. */
+    private fun skillsFolder(launch: FakeClaude.Launch): Path =
+        launch.argv.zipWithNext().filter { it.first == "--add-dir" && "/.skills/" in it.second }.map { Path.of(it.second) }.single()
 
     /** The `--json-schema` the launch was given. */
     private fun FakeClaude.Launch.schema(): Map<*, *> = JsonMapper.shared().readValue(argv[argv.indexOf("--json-schema") + 1], Map::class.java)
@@ -66,7 +64,7 @@ class AgentTaskTest : AntsTest() {
     /** Deploys [file] as the Process [key], its first Agent Task given [properties] too, and starts a Run of it. */
     private fun startWith(key: String, properties: String, file: String = "agent-task") : String {
         val bpmn = javaClass.getResource("/$file.bpmn")!!.readText().replace("\"$file\"", "\"$key\"")
-            .replaceFirst("""<operaton:property name="ants.skill" value="draft" />""", """<operaton:property name="ants.skill" value="draft" />$properties""")
+            .replaceFirst("""<operaton:property name="ants.skills" value="draft" />""", """<operaton:property name="ants.skills" value="draft" />$properties""")
         browser.get("/processes")
         assertFalse("role=\"alert\"" in browser.upload("/processes", "file", "$key.bpmn", bpmn.toByteArray()).body)
         browser.get("/processes/$key")
@@ -77,8 +75,8 @@ class AgentTaskTest : AntsTest() {
 
     @Test
     fun `a test's Skill named like a shipped one fails at once, since the shipped Skill would hide it`() {
-        val failure = kotlin.test.assertFailsWith<IllegalArgumentException> { agentTask(claude, mapOf("grill" to null)) }
-        assertEquals("grill is hidden by the shipped Skill of that name; give the test's Skill another name.", failure.message)
+        val failure = kotlin.test.assertFailsWith<IllegalArgumentException> { agentTask(claude, mapOf("grilling" to null)) }
+        assertEquals("grilling is hidden by the shipped Skill of that name; give the test's Skill another name.", failure.message)
     }
 
     @Test
@@ -93,21 +91,24 @@ class AgentTaskTest : AntsTest() {
     }
 
     @Test
-    fun `the Vault and Answer History toggles reach the hand-off line and --add-dir only when on, defaulting from the Skill`() {
+    fun `the Vault and Answer History toggles reach the hand-off line and --add-dir only when on, and are off unless the Task sets them`() {
         val map = Files.createTempFile("source-map", ".md")
-        agentTask(metadata = "metadata:\n  varde-vault: true\n", extra = "source-maps:\n  mine: $map\n")
+        agentTask(extra = "source-maps:\n  mine: $map\n")
         claude.session("draft", done)
-        val byDefault = startWith("toggles-default", "")
+        val unset = startWith("toggles-unset", "")
+        eventually { assertContains(page(unset), """id="state">Completed<""") }
+        assertFalse(Regex("Vault|Answer History").containsMatchIn(claude.launches("draft").last().stdin))
+        val byDefault = startWith("toggles-default", property("ants.vault", "true"))
         eventually { assertContains(page(byDefault), """id="state">Completed<""") }
         val defaults = claude.launches("draft").last().stdin
-        assertContains(defaults, "for the workspace at ${workspace(byDefault)}. The Vault is $vaultPath and the Source map is $map.\\n")
+        assertContains(defaults, "The workspace is ${workspace(byDefault)}. The Vault is $vaultPath and the Source map is $map.\\n")
         assertFalse("Answer History" in defaults)
         assertContains(claude.launches("draft").last().argv.zipWithNext(), "--add-dir" to "$vaultPath")
 
         val flipped = startWith("toggles-flipped", property("ants.vault", "false") + property("ants.answer-history", "true"))
         eventually { assertContains(page(flipped), """id="state">Completed<""") }
         val toggled = claude.launches("draft").last().stdin
-        assertContains(toggled, "for the workspace at ${workspace(flipped)}. The Answer History is ${home.resolve("answer-history")}.\\n")
+        assertContains(toggled, "The workspace is ${workspace(flipped)}. The Answer History is ${home.resolve("answer-history")}.\\n")
         assertFalse("Vault" in toggled)
         // Off, the Task learns the Vault and Source map from nowhere: not its prompt, environment or --add-dir.
         val off = claude.launches("draft").last()
@@ -325,9 +326,12 @@ class AgentTaskTest : AntsTest() {
         for (flags in listOf(
             "-p", "--output-format stream-json --verbose --include-partial-messages", "--input-format stream-json --replay-user-messages",
             "--permission-mode dontAsk", "--setting-sources user,project", """--settings {"disableAllHooks":true,"attribution":{"commit":"","pr":"🐜 Created with [Ants](https://github.com/oyvij/ants)"}}""",
-            "--strict-mcp-config", "--disable-slash-commands", "--append-system-prompt Write plainly.", "--model sonnet",
-            "--tools Read,Grep,Bash", "--allowedTools Read,Grep,Bash(git log:*)", "--add-dir ${home.resolve("skills/draft")}",
+            "--strict-mcp-config", "--append-system-prompt Write plainly.", "--model sonnet",
+            "--add-dir ${home.resolve("skills/draft")}",
         )) assertContains(argv, flags)
+        assertFalse("--disable-slash-commands" in launch.argv)
+        assertEquals("Read,Grep,Bash,Skill", launch.flag("--tools")) // the Agent's own Skill rule goes, Ants' Skill comes
+        assertEquals("Read,Grep,Bash(git log:*),Skill,mcp__ants__run", launch.flag("--allowedTools"))
         assertContains(argv, Regex("--session-id [0-9a-f-]{36}"))
         assertEquals(workspace(run).toRealPath().toString(), launch.cwd)
 
@@ -338,7 +342,10 @@ class AgentTaskTest : AntsTest() {
         assertEquals("1", launch.env["CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH"])
         assertEquals(null, launch.env["JAVA_HOME"]) // outside the allow-list
 
-        val prompt = "Follow the Skill in ${home.resolve("skills/draft/SKILL.md")} for the workspace at ${workspace(run)}." +
+        // A Task no Answer the Round names gets the ranking and no Round protocol.
+        val prompt = "/draft The workspace is ${workspace(run)}." +
+            "\\n\\nWhere instructions disagree, the Task's Assignment wins, then your Agent's instructions, then the Skill's, " +
+            "then a repo's own CLAUDE.md or AGENTS.md, then the user's Profile instructions in the workspace's CLAUDE.md or AGENTS.md." +
             """\n\n{\"prompt\":\"Say hello\",\"tone\":\"dry\"}"""
         assertEquals("""{"type":"user","message":{"role":"user","content":"$prompt"}}""", launch.stdin)
     }
@@ -352,51 +359,23 @@ class AgentTaskTest : AntsTest() {
         val argv = claude.launches("draft").single().argv
         val ws = workspace(run)
         assertEquals(
-            "Read,Write(/$ws/out/**),Edit(/$ws/notes/**),Write(//tmp/x/**),Write,Bash(git log *),Edit(/$ws/out/**),Edit(//tmp/x/**),mcp__ants__run",
+            "Read,Write(/$ws/out/**),Edit(/$ws/notes/**),Write(//tmp/x/**),Write,Bash(git log *),Edit(/$ws/out/**),Edit(//tmp/x/**),Skill,mcp__ants__run",
             argv[argv.indexOf("--allowedTools") + 1],
         )
-        assertEquals("Read,Write,Edit,Bash", argv[argv.indexOf("--tools") + 1])
+        assertEquals("Read,Write,Edit,Bash,Skill", argv[argv.indexOf("--tools") + 1])
     }
 
     @Test
-    fun `a two-level ants-uses chain puts every used Skill in the hand-off line and in --add-dir`() {
-        agentTask(metadata = uses("implement-tdd"))
-        val tdd = usedSkill("implement-tdd", uses("seams review"))
-        val seams = usedSkill("seams")
-        val review = usedSkill("review", uses("seams"))
+    fun `a resumed session gets the same skills folder and flags as its first launch`() {
+        agentTask()
         claude.session("draft", done)
-        val run = start()
+        val run = startWith("resumed-skills", property("ants.resume", "true"), file = "agent-loop")
         eventually { assertContains(page(run), """id="state">Completed<""") }
-        val launch = claude.launches("draft").single()
-        assertContains(launch.stdin, "for the workspace at ${workspace(run)}. It uses the Skills implement-tdd ($tdd), seams ($seams), review ($review).")
-        val argv = launch.argv.joinToString(" ")
-        for (folder in listOf(home.resolve("skills/draft"), tdd.parent, seams.parent, review.parent)) assertContains(argv, "--add-dir $folder")
-    }
-
-    @Test
-    fun `an ants-uses cycle fails before launch, naming the cycle`() {
-        agentTask(metadata = uses("implement-tdd"), agentTasks = 0) // the pre-Run check refuses a cycle, so it closes after the Run starts
-        usedSkill("implement-tdd", uses("seams"))
-        usedSkill("seams")
-        claude.session("draft", done)
-        val run = start()
-        usedSkill("seams", uses("draft"))
-        settings()
-        eventually { assertContains(page(run), "<dt>draft</dt><dd>[failed] The Skills draft → implement-tdd → seams → draft use each other in a cycle</dd>") }
-        assertEquals(emptyList(), claude.launches("draft"))
-    }
-
-    @Test
-    fun `a used Skill's Vault opt-in turns the Task's Vault on`() {
-        agentTask(metadata = uses("search"))
-        usedSkill("search", "metadata:\n  varde-vault: true\n")
-        claude.session("draft", done)
-        assertTrue(catalogue.vault(catalogue.skill("draft")))
-        val run = start()
-        eventually { assertContains(page(run), """id="state">Completed<""") }
-        assertContains(claude.launches("draft").single().argv.zipWithNext(), "--add-dir" to "$vaultPath")
-        usedSkill("search")
-        assertFalse(catalogue.vault(catalogue.skill("draft")))
+        val (first, again) = claude.launches("draft")
+        assertEquals(skillsFolder(first), skillsFolder(again))
+        assertEquals(first.flag("--tools"), again.flag("--tools"))
+        assertEquals(first.flag("--allowedTools"), again.flag("--allowedTools"))
+        assertEquals(mapOf("draft" to home.resolve("skills/draft")), again.skills)
     }
 
     @Test
@@ -584,6 +563,9 @@ class FakeClaude {
         val env get() = dir.resolve("env").readLines().associate { it.substringBefore('=') to it.substringAfter('=') }
         val cwd get() = dir.resolve("cwd").readText().trim()
         val stdin get() = dir.resolve("stdin").readText().trim()
+
+        /** The skills its --add-dirs' `.claude/skills` linked at launch, by name, to the folder each links. */
+        val skills get() = dir.resolve("skills").readLines().associate { it.substringBefore(' ') to Path.of(it.substringAfter(' ')) }
 
         /** A file the launch's session wrote into its record (`$launch`). */
         fun file(name: String) = dir.resolve(name).readText()

@@ -18,12 +18,11 @@ class PreRunTest : AntsTest() {
     private fun settings(extra: String = "", vaults: String = "vaults:\n  notes: $vault\n") =
         home.resolve("settings.yaml").writeAtomically("claude:\n  command: [${claude.command}]\n$vaults$extra")
 
-    /** The Agent `writer` listing the Skill `draft`, whose output has a `text`; [frontmatter] is added to the Agent's. */
+    /** The Agent `writer` listing the Skill `draft`; [frontmatter] is added to the Agent's. */
     private fun catalogue(frontmatter: String = "") {
         home.resolve("agents").createDirectories().resolve("writer.md").writeText("---\nskills: draft\n$frontmatter---\nWrite plainly.\n")
         val skill = home.resolve("skills/draft").createDirectories()
         skill.resolve("SKILL.md").writeText("---\nname: draft\ndescription: Drafts a text.\n---\nDraft the text.\n")
-        skill.resolve("result.schema.json").writeText("""{"type":"object","properties":{"text":{"type":"string"}}}""")
     }
 
     /** The Process page's pre-Run check: Ready, or Can't start and every reason. */
@@ -104,32 +103,6 @@ class PreRunTest : AntsTest() {
         cantStart("Ants' Claude login is missing or expired.", key = "caller") {
             catalogue()
             home.resolve("claude/auth-status.json").deleteIfExists()
-        }
-    }
-
-    @Test
-    fun `a Skill's result schema that became invalid`() {
-        ready()
-        cantStart("The Skill draft's result.schema.json is invalid") { home.resolve("skills/draft/result.schema.json").writeText("""{"type":"thing"}""") }
-    }
-
-    @Test
-    fun `a reference to a field the Result no longer has`() {
-        settings()
-        catalogue()
-        val bpmn = javaClass.getResource("/agent-task.bpmn")!!.readText().replace(">dry<", ">\${draft.output.text}<")
-        browser.get("/processes")
-        assertFalse("role=\"alert\"" in browser.upload("/processes", "file", "agent-task.bpmn", bpmn.toByteArray()).body)
-        cantStart("reads draft.output.text, which draft's output schema doesn't have.") {
-            home.resolve("skills/draft/result.schema.json").writeText("""{"type":"object","properties":{"body":{"type":"string"}}}""")
-        }
-    }
-
-    @Test
-    fun `a used Skill that no longer resolves`() {
-        ready()
-        cantStart("No Skill named gone.") {
-            home.resolve("skills/draft/SKILL.md").writeText("---\nname: draft\ndescription: Drafts a text.\nmetadata:\n  ants-uses: gone\n---\nDraft.\n")
         }
     }
 

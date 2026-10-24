@@ -55,9 +55,9 @@ class HumanInTheLoopTest : AntsTest() {
         claude.session("grill", 1, result("""{"questions":[${question("who")},${question("scope")}],"repos":["web"]}"""))
         claude.session("grill", 2, result("""{"questions":[${question("format")}],"repos":[]}"""))
         claude.session("grill", 3, result("""{"questions":[],"repos":[]}"""))
-        claude.session("to-spec", "write tickets/spec.md # Hello\\n\\nSay hello.\\n", result("""{"spec":"tickets/spec.md"}"""))
+        claude.session("tospec", "write tickets/spec.md # Hello\\n\\nSay hello.\\n", result("""{"spec":"tickets/spec.md"}"""))
         claude.session(
-            "to-tickets",
+            "totickets",
             "write tickets/issues/01-one.md # One\\n\\nStatus: ready-for-agent\\n\\nBlocked by: none\\n",
             "write tickets/issues/02-two.md # Two\\n\\nStatus: ready-for-agent\\n\\nBlocked by: none\\n",
             "write tickets/issues/03-three.md # Three\\n\\nStatus: ready-for-agent\\n\\nBlocked by: 01\\n",
@@ -71,10 +71,10 @@ class HumanInTheLoopTest : AntsTest() {
             result("""{"review":"Reviewed the Ticket."}"""),
         )
         claude.session("walkthrough", 1, stories("01"), result("""{"stories":"walkthrough/stories.json"}"""))
-        claude.session("fix-review", commit("01.txt", "ONE"), result("""{"review":"Shouted one."}"""))
+        claude.session("fix", commit("01.txt", "ONE"), result("""{"review":"Shouted one."}"""))
         claude.session("walkthrough", 2, stories("ONE"), result("""{"stories":"walkthrough/stories.json"}"""))
         claude.session("pr", result("""{"pullRequests":[{"repo":"api","url":"https://github.com/oyvij/api/pull/8"}]}"""))
-        claude.session("update-knowledge", result("""{"written":true}"""))
+        claude.session("updateknowledge", result("""{"written":true}"""))
 
         settings(claude, sourceMapLines(api, web))
         assertFalse("role=\"alert\"" in browser.import("shipped/processes/build-and-ship.bpmn").body)
@@ -112,11 +112,11 @@ class HumanInTheLoopTest : AntsTest() {
         // Ticket 03 launched only once its blocker 01 had landed.
         val three = claude.launches("implement").single { "issues/03" in it.stdin }
         assertContains(three.file("seen"), "01.txt")
-        assertContains(claude.launches("fix-review").single().stdin, "From the user:\\nShout one.")
+        assertContains(claude.launches("fix").single().stdin, "From the user:\\nShout one.")
         // pr reads the implementers' reviews and the fixer's; update-knowledge reads the implementers'.
         for (text in listOf("Reviewed the Ticket.", "Shouted one.")) assertContains(claude.launches("pr").single().stdin, text)
-        assertContains(claude.launches("update-knowledge").single().stdin, """\"review\":[{""")
-        assertContains(claude.launches("update-knowledge").single().stdin, "Reviewed the Ticket.")
+        assertContains(claude.launches("updateknowledge").single().stdin, """\"review\":[{""")
+        assertContains(claude.launches("updateknowledge").single().stdin, "Reviewed the Ticket.")
 
         val report = browser.report(run)
         for (text in listOf("<h2>Rounds</h2>", "Title who: Recommend who. (accepted)", "Title format: Recommend format. (accepted)", "<h2>Tickets</h2>", "<h2>Review</h2>", "Shouted one.", "Reviewed the Ticket.", "<h2>Push</h2>", "<h2>Pull requests</h2>", "https://github.com/oyvij/api/pull/8")) {
@@ -130,28 +130,27 @@ class HumanInTheLoopTest : AntsTest() {
     @Test
     fun `the griller, planner and storyteller get the tool allow-lists the spec gives them, and the implementer fixes the review`() {
         val ws = workspace(humanInTheLoop())
-        fun tools(skill: String) = claude.launches(skill).first().let { it.flag("--tools") to it.flag("--allowedTools")?.removeSuffix(",mcp__ants__run") } // every claude Task has the run tool
+        fun tools(skill: String) = claude.launches(skill).first().let { it.flag("--tools")?.removeSuffix(",Skill") to it.flag("--allowedTools")?.removeSuffix(",Skill,mcp__ants__run") } // every claude Task has Skill and the run tool
 
         assertEquals("Read,Grep,Glob" to "Read,Grep,Glob", tools("grill"))
-        assertEquals("Read,Grep,Glob,Write,Edit" to "Read,Grep,Glob,Write(/$ws/tickets/**),Edit(/$ws/tickets/**)", tools("to-spec"))
-        assertEquals(tools("to-spec"), tools("to-tickets"))
+        assertEquals("Read,Grep,Glob,Write,Edit" to "Read,Grep,Glob,Write(/$ws/tickets/**),Edit(/$ws/tickets/**)", tools("tospec"))
+        assertEquals(tools("tospec"), tools("totickets"))
         assertEquals(
             "Read,Grep,Glob,Write,Edit,Bash" to
                 "Read,Grep,Glob,Write(/$ws/walkthrough/**),Edit(/$ws/walkthrough/**),Bash(git log *),Bash(git diff *),Bash(git show *),Bash(git merge-base *)",
             tools("walkthrough"),
         )
         assertContains(claude.launches("walkthrough").first().flag("--disallowedTools")!!.split(","), "Bash(git *--output*)") // --output makes git log, diff and show write a file
-        assertEquals(tools("implement"), tools("fix-review"))
+        assertEquals(tools("implement"), tools("fix"))
         // Every implementer builds with tdd and reviews with code-review.
-        for (skill in listOf("implement", "fix-review")) {
-            for (used in listOf("tdd", "code-review")) assertContains(claude.launches(skill).first().stdin, "/$used/SKILL.md", message = skill)
-        }
+        assertEquals(setOf("implement", "tdd", "code-review", "codebase-design"), claude.launches("implement").first().skills.keys)
+        assertEquals(setOf("tdd", "code-review", "codebase-design"), claude.launches("fix").first().skills.keys) // its Assignment is the job
     }
 
     @Test
     fun `the Skills adapted from Matt Pocock's and Varde's keep their MIT notices`() {
         val skills = home.resolve("shipped/skills")
-        for (skill in listOf("grill", "to-spec", "to-tickets")) {
+        for (skill in listOf("grilling", "to-spec", "to-tickets")) {
             assertContains(skills.resolve("$skill/SKILL.md").toFile().readText(), "Copyright (c) 2026 Matt Pocock. MIT License", message = skill)
         }
         assertContains(skills.resolve("walkthrough/SKILL.md").toFile().readText(), "Copyright (c) 2026 Øyvind Johannessen. MIT License")

@@ -271,7 +271,9 @@ class Transcript(private val toolLine: (name: String, input: Map<*, *>) -> Strin
                     spawn(block["id"], input["subagent_type"]?.toString() ?: "general-purpose", input["description"]?.toString().orEmpty(), parent)
                 } else {
                     val argument = input.values.firstOrNull { it is String }?.toString().orEmpty()
-                    val shown = toolLine(name, input) ?: """<b>${esc(name)}</b> <code>${esc(argument.lines().first().take(120))}</code>"""
+                    val shown = toolLine(name, input)
+                        ?: input["skill"]?.takeIf { name == "Skill" }?.let { """Used the Skill <b>${esc(it)}</b>""" } // which Skill did the job (ADR 0024)
+                        ?: """<b>${esc(name)}</b> <code>${esc(argument.lines().first().take(120))}</code>"""
                     tools[block["id"]] = append(parent) { """<div class="tool" id="$it">$shown</div>""" }
                 }
                 if (parent == null) verb = doing(name, input.values.firstOrNull { it is String }?.toString().orEmpty())

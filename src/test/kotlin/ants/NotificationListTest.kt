@@ -130,7 +130,7 @@ class NotificationListTest : AntsTest() {
         val (first, second) = claude.launches("draft")
         assertNotEquals(first.flag("--session-id"), assertNotNull(second.flag("--session-id")))
         assertEquals(null, second.flag("--resume"))
-        assertContains(second.stdin, """Follow the Skill in ${home.resolve("skills/draft/SKILL.md")}""")
+        assertContains(second.stdin, "/draft The workspace is ")
         assertContains(second.stdin, """\n\nFrom the user:\nWarm, please."}}""")
     }
 

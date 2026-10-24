@@ -2,7 +2,6 @@
 @param message: String? = null
 @param dependents: ants.Dependents?
 @param runBy: List<ants.Agent> = emptyList()
-@param fields: List<String> = emptyList()
 @param use: String? = null
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
@@ -33,7 +32,7 @@
         <button class="primary" form="skill">${if (use != null && form.name == null) "Create and use" else "Save"}</button>
 @endif
     </div>
-@if(dependents != null)    <div class="sub">@template.usedby(dependents = dependents, none = "no Process or Skill")</div>@endif
+@if(dependents != null)    <div class="sub">@template.usedby(dependents = dependents, none = "no Process")</div>@endif
 </div>
 @if(message != null)<p role="alert">${message}</p>@endif
 <div class="grid2 skill-page">
@@ -43,19 +42,8 @@
 @if(use != null)
     <input type="hidden" name="use" value="${use}">
 @endif
-    <div class="fld"><label class="f" for="skill-md">SKILL.md</label><div class="help">The instructions the Agent follows for this job. Markdown, with its frontmatter on top: the <code>name</code> Agents and Tasks call it by, unique across all Skill folders; the <code>description</code>, when to use it in one line; and in <code>metadata</code>, <code>varde-vault: true</code> to tell Agents running it where the Vault is, and <code>ants-verbosity: true</code> to write at the Run's Verbosity.</div>
+    <div class="fld"><label class="f" for="skill-md">SKILL.md</label><div class="help">How to do something, as Claude Code knows a Skill: Markdown, with its frontmatter on top: the <code>name</code> Agents and Tasks call it by, unique across all Skill folders, and the <code>description</code>, when to use it in one line, which the Agent reads to pick it. What a Task must do, its inputs and its Result belong on the Task.</div>
         <textarea id="skill-md" name="skill" rows="20" placeholder="e.g. ---&#10;name: release-notes&#10;description: Writes the release notes for a version.&#10;---&#10;Read the commits since the last tag and sum them up for users." data-markdown readonly="${form.readOnly}" data-tall>${form.skill}</textarea></div>
-    <div class="fld"><label class="f" for="result-schema">result.schema.json</label><div class="help">A JSON Schema for the Result's <code>output</code>; empty for any output. Later Tasks read each field as <code>${"\${taskId.output.field}"}</code>, so every property here becomes an input others can use.</div>
-        <textarea id="result-schema" name="schema" rows="12" placeholder="e.g. {&quot;type&quot;: &quot;object&quot;, &quot;properties&quot;: {&quot;notes&quot;: {&quot;type&quot;: &quot;string&quot;}}}" readonly="${form.readOnly}" data-tall>${form.schema}</textarea></div>
-    <details class="small example"><summary>Example: scout's schema</summary><pre class="mono">{
-  "type": "object",
-  "required": ["repos", "brief"],
-  "properties": {
-    "repos": { "type": "array", "items": { "type": "string" }, "description": "Source map names of the repos to clone" },
-    "branch": { "type": "string", "description": "A suggested work branch" },
-    "brief": { "type": "string", "format": "path", "description": "The brief, scout/brief.md" }
-  }
-}</pre>Later Tasks then take <code>${"\${scout.output.repos}"}</code> and <code>${"\${scout.output.brief}"}</code> as inputs.</details>
 </form>
 </div>
 <div class="card"><h3>Run by</h3><div class="help">Agents whose <b>Skills it runs</b> list this Skill. Edit that list on the Agent.</div>
@@ -65,16 +53,8 @@
 @if(runBy.isEmpty())
     <div class="warn">No Agent runs this Skill yet, so no Task can use it.</div>
 @endif
-    <h3 class="fields">Result fields</h3><div class="help">Inputs this Skill offers the Tasks after it, under the id of the Task that runs it.</div>
-@for(field in fields)
-    <code>${"\${<task>.output." + field + "}"}</code>
-@endfor
-@if(fields.isEmpty())
-    <span class="muted small">none</span>
-@endif
 </div>
 </div>
-<script type="module" src="/skill-editor.js"></script>
 </main>
 </body>
 </html>

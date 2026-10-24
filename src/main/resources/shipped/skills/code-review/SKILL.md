@@ -1,30 +1,8 @@
 ---
 name: code-review
-description: Review commits since a fixed point along two axes, Standards and Spec, in two parallel Subagents, and report them side by side. Used by other Skills, never picked by a Task.
-metadata:
-  ants-verbosity: true
+description: "Review the changes since a fixed point (commit, branch, tag, or merge-base) along two axes: Standards (does the code follow this repo's documented coding standards?) and Spec (does the code match what the originating issue/spec asked for?). Runs both reviews in parallel sub-agents and reports them side by side. Use when the user wants to review a branch, a PR, work-in-progress changes, or asks to \"review since X\"."
 ---
-
-<!-- Matt Pocock's code-review Skill (https://github.com/mattpocock/skills, v1.3.1), word for word below the line.
-Copyright (c) 2026 Matt Pocock. MIT License: see LICENSE beside this file. -->
-
-## In Ants
-
-Below the line is Matt Pocock's code-review Skill, word for word. Follow it. Ants runs it without
-a chat, so where the two differ, this section wins.
-
-- **The user** is the Skill using this one: it gives the fixed point, each clone's commit before
-  the work began, and the spec, by path. Never ask; never tell anyone to run
-  `/setup-matt-pocock-skills`. The issue tracker doc is `docs/agents/issue-tracker.md` in the Run
-  workspace.
-- **Each clone** with commits since its fixed point is reviewed; one with none is left out. Run
-  git inside it, `repos/<name>/`.
-- **The sub-agents** are Subagents, started with the Agent tool. Without it, run the two reviews
-  yourself, one after the other, finishing and writing down the first before starting the second.
-- **Presenting** the reports means handing them back to the Skill using this one, which fixes what
-  they find. Change no code yourself.
-
----
+<!-- Matt Pocock's code-review Skill (https://github.com/mattpocock/skills, v1.3.1), word for word. Copyright (c) 2026 Matt Pocock. MIT License: see LICENSE beside this file. -->
 
 Two-axis review of the diff between `HEAD` and a fixed point the user supplies:
 

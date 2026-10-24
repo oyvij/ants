@@ -1,5 +1,9 @@
 # A Vault write is staged in the Run workspace and written on the launch after Approve
 
+Superseded in part by ADR 0024: no Skill uses another through `ants-uses`; a knowledge Task lists search-knowledge
+among its own Skills, which makes its folder an `--add-dir`, and Ants adds the Round's `questions` to the Result schema
+of init-vault's Task.
+
 The spec says every Vault write is proposed first and written only after the user approves it, that Update the Vault
 is update-knowledge → **Written?** → if no, Approve the Notes and loop back, and that Set up Vault is init-vault → its
 Round → Approve the rule Notes. It doesn't say how the knowledge Task learns that the user approved, where the Notes

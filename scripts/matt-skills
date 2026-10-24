@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Updates the shipped Skills that are Matt Pocock's to his latest release, keeping each one's In Ants section.
+"""Ships Matt Pocock's Skills as his latest release has them, word for word (ADR 0024).
 
     scripts/matt-skills [<plugin>]
 
@@ -7,14 +7,15 @@
 https://github.com/mattpocock/skills, or by default the newest version Claude Code has cached in
 ~/.claude/plugins/cache/mattpocock/mattpocock-skills/.
 
-Each shipped SKILL.md is Ants' frontmatter and In Ants section, down to the `---` line under it, then Matt's SKILL.md
-word for word without its frontmatter. This keeps everything down to that line, stamps his version into the header,
-and puts his current body below it. His other files in the Skill's folder (`tests.md`, `CREDITS.md`, …) are copied
-beside it; his `agents/` (Codex display names) are not.
+Each Skill in SKILLS is copied whole into src/main/resources/shipped/skills/<his name>/, replacing what was there:
+his SKILL.md with a licence comment under its frontmatter, his other files (`tests.md`, `CREDITS.md`, …), and his
+LICENSE; not his `agents/` (Codex display names). It pins each file's SHA-256 in src/test/resources/matt-skills.sha256,
+which MattSkillsTest checks, since CI has no copy of his release.
 
-Then it prints what changed. Read `git diff` before committing: a new step of his that needs a user, a new file or a
-new Skill he calls may need a line in the In Ants section, or a new shipped Skill (add it to SKILLS below).
+Then it prints what changed. What ties a Skill to a Run lives in the Assignments of the shipped Tasks that use it, so
+read `git diff` against them: see .claude/skills/matt-skills/SKILL.md.
 """
+import hashlib
 import re
 import shutil
 import sys
@@ -22,32 +23,30 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SHIPPED = ROOT / "src/main/resources/shipped/skills"
+PINNED = ROOT / "src/test/resources/matt-skills.sha256"
 CACHE = Path.home() / ".claude/plugins/cache/mattpocock/mattpocock-skills"
 
-# The shipped Skill, and his Skill it is, under his skills/.
-SKILLS = {
-    "grill": "productivity/grilling",
-    "to-spec": "engineering/to-spec",
-    "to-tickets": "engineering/to-tickets",
-    "implement": "engineering/implement",
-    "tdd": "engineering/tdd",
-    "code-review": "engineering/code-review",
-    "pr": "engineering/pr",
-    "codebase-design": "engineering/codebase-design",
-}
+# His Skills Ants ships, under his skills/. Each ships under his name.
+SKILLS = [
+    "productivity/grilling",
+    "engineering/to-spec",
+    "engineering/to-tickets",
+    "engineering/implement",
+    "engineering/tdd",
+    "engineering/code-review",
+    "engineering/pr",
+    "engineering/codebase-design",
+]
 
 
-def body(text):
-    """A SKILL.md without its frontmatter and the blank line after it."""
-    return re.sub(r"\A---\n.*?\n---\n\n?", "", text, flags=re.S)
-
-
-def header(text, name):
-    """A shipped SKILL.md down to the `---` line that ends its In Ants section, and the blank line after it."""
-    match = re.match(r"\A---\n.*?\n---\n.*?\n---\n\n", text, flags=re.S)
+def licensed(text, name, version):
+    """His SKILL.md with the licence comment under its frontmatter; MattSkillsTest strips exactly this."""
+    comment = (f"<!-- Matt Pocock's {name} Skill (https://github.com/mattpocock/skills, v{version}), word for word. "
+               "Copyright (c) 2026 Matt Pocock. MIT License: see LICENSE beside this file. -->\n")
+    match = re.match(r"\A---\n.*?\n---\n", text, flags=re.S)
     if not match:
-        sys.exit(f"{name}/SKILL.md has no `---` line under its In Ants section")
-    return match.group(0)
+        sys.exit(f"{name}/SKILL.md has no frontmatter")
+    return text[:match.end()] + comment + text[match.end():]
 
 
 def newest():
@@ -64,45 +63,46 @@ def main(args):
     plugin = Path(args[0]).expanduser() if args else newest()
     version = re.search(r'"version":\s*"([^"]+)"', (plugin / ".claude-plugin/plugin.json").read_text()).group(1)
     print(f"Matt Pocock's skills v{version}, from {plugin}")
-    for name, path in SKILLS.items():
+    pins = [f"# Matt Pocock's skills v{version}, as scripts/matt-skills copied them: SHA-256, two spaces, file."]
+    shipped = set()
+    for path in SKILLS:
         source = plugin / "skills" / path
+        name = source.name
         if not (source / "SKILL.md").exists():
-            print(f"  {name}: {path} is gone from his skills; find what replaced it and fix SKILLS")
+            print(f"  {name}: {path} is gone from his skills; find what replaced it in his CHANGELOG.md and fix SKILLS")
             continue
+        shipped.add(name)
         target = SHIPPED / name
-        target.mkdir(exist_ok=True)
-        skill = target / "SKILL.md"
-        old = skill.read_text() if skill.exists() else ""
-        if not old:
-            print(f"  {name}: new; write its frontmatter and In Ants section, ending in a `---` line, first")
-            continue
-        new_body = body((source / "SKILL.md").read_text())
-        head = header(old, name)
-        same = old[len(head):] == new_body
-        head = re.sub(r"(mattpocock/skills, )v[\w.-]+", rf"\g<1>v{version}", head)
-        skill.write_text(head + new_body)
-        notes = ["same text" if same else "text changed"]
+        old = {f.relative_to(target): f.read_bytes() for f in target.rglob("*") if f.is_file()} if target.exists() else None
+        shutil.rmtree(target, ignore_errors=True)
+        notes = []
         for file in sorted(source.rglob("*")):
             relative = file.relative_to(source)
-            if file.is_dir() or relative.name == "SKILL.md" or relative.parts[0] == "agents":
+            if file.is_dir() or relative.parts[0] == "agents":
                 continue
             copy = target / relative
-            if not copy.exists():
-                notes.append(f"new file {relative}")
-            elif copy.read_bytes() != file.read_bytes():
-                notes.append(f"{relative} changed")
             copy.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(file, copy)
-        ours = {"SKILL.md", "LICENSE", "result.schema.json", "story-set.schema.json"}
-        for file in sorted(target.rglob("*")):
-            relative = file.relative_to(target)
-            if file.is_file() and relative.name not in ours and not (source / relative).exists():
-                notes.append(f"{relative} is no longer his; delete it if nothing of Ants' uses it")
-        uses = re.search(r"ants-uses:(.*)", head)
-        for called in sorted(set(re.findall(r'Skill tool with "([\w-]+)"', new_body))):
-            if called not in (uses.group(1).split() if uses else []):
-                notes.append(f'calls "{called}", which isn\'t in its ants-uses')
-        print(f"  {name}: " + "; ".join(notes))
+            data = file.read_bytes()
+            pins.append(f"{hashlib.sha256(data).hexdigest()}  {name}/{relative}")
+            if relative.name == "SKILL.md":
+                data = licensed(data.decode(), name, version).encode()
+            copy.write_bytes(data)
+            if old is not None and relative not in old:
+                notes.append(f"new file {relative}")
+            elif old is not None and old[relative] != data and relative.name != "SKILL.md":
+                notes.append(f"{relative} changed")
+        shutil.copyfile(plugin / "LICENSE", target / "LICENSE")
+        if old is None:
+            notes.append("new: list it on the shipped Agents and Tasks that should use it")
+        else:
+            skill = Path("SKILL.md")
+            if skill in old and re.sub(r"<!-- Matt Pocock's .*? -->\n", "", old[skill].decode(), count=1) != (source / "SKILL.md").read_text():
+                notes.append("text changed")
+            notes += [f"{r} is no longer his" for r in sorted(old) if r.name != "LICENSE" and not (target / r).exists()]
+        for called in sorted(set(re.findall(r'Skill tool with "([\w-]+)"', (source / "SKILL.md").read_text())) - {s.split("/")[-1] for s in SKILLS}):
+            notes.append(f'calls "{called}", which Ants doesn\'t ship')
+        print(f"  {name}: " + ("; ".join(notes) or "same"))
+    PINNED.write_text("\n".join(pins) + "\n")
 
 
 if __name__ == "__main__":

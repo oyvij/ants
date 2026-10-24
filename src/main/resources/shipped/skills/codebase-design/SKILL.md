@@ -1,21 +1,8 @@
 ---
 name: codebase-design
-description: Shared vocabulary for designing deep modules, which the tdd Skill consults. Used by other Skills, never picked by a Task.
-metadata:
-  ants-verbosity: true
+description: Shared vocabulary for designing deep modules. Use when the user wants to design or improve a module's interface, find deepening opportunities, decide where a seam goes, make code more testable or AI-navigable, or when another skill needs the deep-module vocabulary.
 ---
-
-<!-- Matt Pocock's codebase-design Skill (https://github.com/mattpocock/skills, v1.3.1), word for word below the line,
-with DEEPENING.md and DESIGN-IT-TWICE.md beside it. Copyright (c) 2026 Matt Pocock. MIT License: see LICENSE beside
-this file. -->
-
-## In Ants
-
-Below the line is Matt Pocock's codebase-design Skill, word for word. Consult it as the reference
-it is. Ants runs it without a chat: there is no user to show designs to, so make the call yourself
-and say why in your answer. `DEEPENING.md` and `DESIGN-IT-TWICE.md` are beside this file.
-
----
+<!-- Matt Pocock's codebase-design Skill (https://github.com/mattpocock/skills, v1.3.1), word for word. Copyright (c) 2026 Matt Pocock. MIT License: see LICENSE beside this file. -->
 
 # Codebase Design
 

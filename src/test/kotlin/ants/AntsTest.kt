@@ -40,7 +40,22 @@ abstract class AntsTest {
     @LocalServerPort
     var port = 0
 
-    fun browser() = Browser("http://127.0.0.1:$port")
+    fun browser() = Browser("http://127.0.0.1:$port", ::promising)
+
+    /** The Result schema the Tasks listing each of [agentTask]'s Skills promise, by Skill. */
+    protected val promises = mutableMapOf<String, String>()
+
+    /**
+     * [bpmn] with each Agent Task that lists one Skill [agentTask] gave a schema promising that schema
+     * (`ants.result-schema`), unless it promises its own: since ADR 0024 the Task holds its schema, and a test's Skill
+     * stands for the job it is drawn to do. [browser] sends every diagram through it.
+     */
+    fun promising(bpmn: String): String = Regex("""<((?:\w+:)?)serviceTask\b.*?</\1serviceTask>""", RegexOption.DOT_MATCHES_ALL).replace(bpmn) { task ->
+        val prefix = Regex("""<((?:\w+:)?)property name="ants\.skills" value="([^"]*)"\s*/>""").find(task.value)
+        val schema = prefix?.let { promises[it.groupValues[2].trim()] }
+        if (schema == null || "ants.result-schema" in task.value) task.value
+        else task.value.replace(prefix.value, prefix.value + """<${prefix.groupValues[1]}property name="ants.result-schema" value="${schema.replace("&", "&amp;").replace("\"", "&quot;").replace("<", "&lt;")}" />""")
+    }
 
     @Autowired
     private lateinit var repository: RepositoryService
@@ -71,6 +86,7 @@ abstract class AntsTest {
     @BeforeEach
     fun cleanSlate() {
         clock.offset = Duration.ZERO
+        promises.clear()
         val runs = runtime.createProcessInstanceQuery().rootProcessInstances().list().map { it.id }
         // Deleting a deployment deletes its Runs and their history too; Schedules read the deployed Processes.
         for (deployment in repository.createDeploymentQuery().list()) {
@@ -108,7 +124,7 @@ abstract class AntsTest {
 
     /**
      * What a Run of an Agent Task needs, in one place: the Agent `writer` listing the [skills] (with [agent] lines in its
-     * frontmatter), each Skill with its result schema, none when null (and [metadata] lines in its frontmatter), and
+     * frontmatter), each Skill with the result schema the Tasks listing it promise ([promising]), none when null (and [metadata] lines in its frontmatter), and
      * [settings] with [claude] and [extra]. gh is the fake on the tests' PATH, logged in; a [FakeClaude] logs claude in.
      * A Skill named like a shipped one fails at once: the shipped Skill wins its name, so the test's would never launch.
      */
@@ -123,11 +139,12 @@ abstract class AntsTest {
         val shipped = catalogue.skills(withHidden = true).filter(catalogue::shipped).map { it.name }
         for (name in skills.keys) require(name !in shipped) { "$name is hidden by the shipped Skill of that name; give the test's Skill another name." }
         settings(claude, extra, env)
+        promises.clear()
+        skills.forEach { (name, schema) -> if (schema != null) promises[name] = schema }
         home.resolve("agents/writer.md").writeText("---\n${agent}skills: ${skills.keys.joinToString(", ")}\n---\nWrite plainly.\n")
         for ((name, schema) in skills) {
             val folder = home.resolve("skills/$name").createDirectories()
             folder.resolve("SKILL.md").writeText("---\nname: $name\ndescription: Does $name.\n$metadata---\nDo it.\n")
-            folder.resolve("result.schema.json").run { if (schema != null) writeText(schema) else deleteIfExists() }
         }
     }
 
@@ -223,7 +240,7 @@ class MovableClock(@Volatile var offset: Duration = Duration.ZERO) : Clock() {
 }
 
 /** A user with a browser: keeps cookies, follows redirects and posts forms with their CSRF token. */
-class Browser(private val base: String) {
+class Browser(private val base: String, private val diagram: (String) -> String = { it }) {
     class Page(val status: Int, val path: String, val body: String, val headers: java.net.http.HttpHeaders? = null, val query: String? = null)
 
     private val client = HttpClient.newBuilder()
@@ -251,7 +268,7 @@ class Browser(private val base: String) {
 
     /** Posts a form whose fields may repeat, such as a multi-select's. */
     fun post(path: String, form: List<Pair<String, String>>): Page {
-        val body = (form + listOfNotNull(csrf?.let { "_csrf" to it }))
+        val body = (form.map { (k, v) -> k to if (k == "bpmn") diagram(v) else v } + listOfNotNull(csrf?.let { "_csrf" to it }))
             .joinToString("&") { (k, v) -> "${enc(k)}=${enc(v)}" }
         return send(
             HttpRequest.newBuilder(URI("$base$path"))
@@ -261,12 +278,18 @@ class Browser(private val base: String) {
     }
 
     /** Posts one file the way a form with an `<input type="file">` does. */
-    fun upload(path: String, field: String, filename: String, content: ByteArray): Page {
+    fun upload(path: String, field: String, filename: String, content: ByteArray): Page = upload(path, field, listOf(filename to content))
+
+    /** Posts several files under one field, as an `<input type="file" multiple>` or a folder pick does, each by its path. */
+    fun upload(path: String, field: String, files: List<Pair<String, ByteArray>>): Page {
         val boundary = "ants-${System.nanoTime()}"
         val csrfPart = csrf?.let { "--$boundary\r\nContent-Disposition: form-data; name=\"_csrf\"\r\n\r\n$it\r\n" }.orEmpty()
-        val head = "$csrfPart--$boundary\r\nContent-Disposition: form-data; name=\"$field\"; filename=\"$filename\"\r\n" +
-            "Content-Type: application/octet-stream\r\n\r\n"
-        val body = head.toByteArray() + content + "\r\n--$boundary--\r\n".toByteArray()
+        val parts = files.map { (name, content) -> name to if (name.endsWith(".bpmn")) diagram(content.decodeToString()).toByteArray() else content }
+            .fold(csrfPart.toByteArray()) { body, (filename, content) ->
+            body + ("--$boundary\r\nContent-Disposition: form-data; name=\"$field\"; filename=\"$filename\"\r\n" +
+                "Content-Type: application/octet-stream\r\n\r\n").toByteArray() + content + "\r\n".toByteArray()
+        }
+        val body = parts + "--$boundary--\r\n".toByteArray()
         return send(
             HttpRequest.newBuilder(URI("$base$path"))
                 .header("Content-Type", "multipart/form-data; boundary=$boundary")

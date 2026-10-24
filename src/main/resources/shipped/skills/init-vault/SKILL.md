@@ -1,11 +1,6 @@
 ---
 name: init-vault
-description: Set up or revise the knowledge Vault's rules, asking its decisions as a Round, and write the rule Notes once the user approves.
-metadata:
-  ants-inputs: approval
-  ants-uses: search-knowledge
-  varde-vault: true
-  ants-verbosity: true
+description: Set up or revise a knowledge Vault's rules, what it keeps and how it is organised, by asking the user its open decisions and writing the rule Notes once they approve.
 ---
 
 <!-- Adapted from Varde's init-vault Skill (https://github.com/oyvij/varde-editor).
@@ -16,20 +11,9 @@ Copyright (c) 2026 Øyvind Johannessen. MIT License: see LICENSE in the search-k
 Write the Vault rules: what the Vault keeps and how it is organised. Every other Vault Skill reads
 them before it touches a Note, and stops when they are missing.
 
-The line that handed you this Skill names the Run workspace, the Vault, the Source map and the
-search-knowledge Skill, whose folder holds `vault-format.md` and `leak-check.sh`. Your one input,
-`approval`, is the user's answer to your last proposal, `{approved, comment}`, or null before you
-have proposed.
+`vault-format.md` and `leak-check.sh` are in the search-knowledge Skill's folder.
 
-## If `approval.approved` is true: write
-
-The user approved the rule Notes in `vault/proposal.md`. Write the staged Notes in
-`vault/staging/` by following step 6 of "Writing to the Vault" in `vault-format.md`, after a last
-leak check. Answer `done` with `questions: []` and `written: true`.
-
-## Otherwise
-
-### 1. Read
+## 1. Read
 
 1. Read `vault-format.md` in full. It fixes the shape of a Note; the rules you write here decide
    content and organisation within that shape.
@@ -39,12 +23,12 @@ leak check. Answer `done` with `questions: []` and `written: true`.
 3. List the Vault's Topics and Kinds and read a few Notes from each, so your recommendations rest
    on what is there. An empty Vault is fine.
 
-### 2. Ask one Round
+## 2. Ask the decisions
 
-Ask every open decision below in one Round: answer `done` with `questions` (one per decision, its
-id the decision's word in lowercase) and `written: false`. Each question says what it asks in
-`ask`, what the answer settles in `context`, and gives your `recommendation` and `why`. When the
-Vault already answers a decision, say what you found in `context` and recommend it.
+Ask the user every open decision below at once, one question each. Each question says what it
+asks, what the answer settles, and gives your recommendation and why. When the Vault already
+answers a decision, say what you found and recommend it. An answer that contradicts another, or
+`vault-format.md`, may take one more question; otherwise every decision is settled.
 
 Topic and Kind names grow from content, so leave them to the first capture.
 
@@ -66,11 +50,7 @@ Topic and Kind names grow from content, so leave them to the first capture.
 7. **Never in the Vault**: what is never written down, in the user's own words. Recommend:
    credentials, personal data, and anything naming this machine (the leak check enforces the last).
 
-You are resumed with the answers as `{answers: [{id, answer, source}]}`. An answer that
-contradicts another, or `vault-format.md`, may take one more Round of one question each; otherwise
-every decision is settled.
-
-### 3. Stage and propose
+## 3. Stage and propose
 
 Stage both Notes by following steps 1 to 5 of "Writing to the Vault" in `vault-format.md`:
 
@@ -81,10 +61,9 @@ Stage both Notes by following steps 1 to 5 of "Writing to the Vault" in `vault-f
 
 When revising, change the existing Notes in place, with a `## History` entry for each change.
 
-Write `vault/proposal.md` showing both Notes in full, and answer `done` with `questions: []`,
-`proposal: "vault/proposal.md"` and `written: false`.
+Show the user both Notes in full, and revise them from what they say until they approve.
 
-## When the user sends the proposal back
+## 4. Write
 
-You are resumed with their comment. Revise the staged Notes and `vault/proposal.md` from it, and
-answer `questions: []`, the proposal and `written: false` again.
+Once the user approves, write the staged Notes by following step 6 of "Writing to the Vault" in
+`vault-format.md`, after a last leak check.

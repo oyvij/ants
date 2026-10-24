@@ -7,8 +7,5 @@
 @for(process in dependents.processes)
     <li>Process <a href="/processes/${process.key}">${process.name ?: process.key}</a>@if(process.id in dependents.older) · version ${process.version}, which live Runs still run@endif</li>
 @endfor
-@for(skill in dependents.skills)
-    <li>Skill <a href="/skills/${skill.name}">${skill.name}</a></li>
-@endfor
 </ul>
 @endif

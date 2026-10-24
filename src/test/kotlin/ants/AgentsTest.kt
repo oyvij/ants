@@ -100,6 +100,17 @@ class AgentsTest : AntsTest() {
         assertEquals("---\nname: seeker\ncli: claude\ntools: Read\ncolor: blue\n---\nScout.\n", agents.resolve("seeker.md").readText())
     }
 
+    @Test
+    fun `an Agent with every Skill, skills star, shows every Skill on its page and keeps the star on Save`() {
+        agents.resolve("all.md").writeText("---\nname: all\nskills: \"*\"\n---\nDo it.\n")
+        val page = get("/agents/all")
+        assertContains(page, """every Skill<input type="hidden" name="skills" value="*">""")
+        assertContains(page, "The Skills this Agent may use")
+        assertFalse("A Task picks one of them" in page)
+        post("/agents/all", mapOf("name" to "all", "cli" to "claude", "skills" to "*", "instructions" to "Do it."))
+        assertContains(agents.resolve("all.md").readText(), "skills: '*'")
+    }
+
     /** Runs [check] with [folder] as an extra Agent folder in settings. */
     private fun withExtraFolder(folder: Path, check: () -> Unit) {
         val settings = home.resolve("settings.yaml")
@@ -314,8 +325,8 @@ class AgentsTest : AntsTest() {
             browser.post(entry, mapOf("action" to "fresh", "instruction" to ""))
             eventually { assertContains(browser.get(run).body, """id="state">Completed<""") }
             val (first, second) = claude.launches("draft")
-            assertEquals(listOf("sonnet", "Write plainly.", "Read"), listOf(first.flag("--model"), first.flag("--append-system-prompt"), first.flag("--tools")))
-            assertEquals(listOf("opus", "Write warmly.", "Grep,Read"), listOf(second.flag("--model"), second.flag("--append-system-prompt"), second.flag("--tools")))
+            assertEquals(listOf("sonnet", "Write plainly.", "Read,Skill"), listOf(first.flag("--model"), first.flag("--append-system-prompt"), first.flag("--tools")))
+            assertEquals(listOf("opus", "Write warmly.", "Grep,Read,Skill"), listOf(second.flag("--model"), second.flag("--append-system-prompt"), second.flag("--tools")))
         } finally {
             settings.writeText(before)
         }

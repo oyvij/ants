@@ -11,36 +11,32 @@ import org.springframework.ui.Model
 
 /**
  * What uses an Agent or a Skill, and so would break if it were renamed or deleted: Process versions, of which [older]
- * are the ids of those that aren't the latest, and Skills. Ants never rewrites a Process.
+ * are the ids of those that aren't the latest. Ants never rewrites a Process.
  */
-class Dependents(val processes: List<ProcessDefinition>, val older: Set<String> = emptySet(), val skills: List<Skill> = emptyList()) {
-    val none get() = processes.isEmpty() && skills.isEmpty()
+class Dependents(val processes: List<ProcessDefinition>, val older: Set<String> = emptySet()) {
+    val none get() = processes.isEmpty()
 }
 
-/** **Used by**: the deployed Processes whose Agent Tasks name an Agent or a Skill, and the Skills that use a Skill. */
+/** **Used by**: the deployed Processes whose Agent Tasks name an Agent, or list a Skill. */
 @Component
-class UsedBy(private val repository: RepositoryService, private val runtime: RuntimeService, private val catalogue: Catalogue) {
-    fun agent(name: String) = dependents(processes(AGENT, name))
+class UsedBy(private val repository: RepositoryService, private val runtime: RuntimeService) {
+    fun agent(name: String) = dependents(processes { _, model -> model.properties(AGENT).any { it == name } })
 
-    fun skill(name: String) = dependents(processes(SKILL, name), catalogue.skills().filter { name in it.uses })
+    fun skill(name: String) = dependents(processes { _, model -> model.agentTasks.any { name in Job(it).listed.orEmpty() } })
 
     fun process(key: String) = dependents(processes { process, model ->
         process.key != key && model.getModelElementsByType(CallActivity::class.java).any { it.calledElement == key }
     })
 
-    private fun dependents(processes: List<ProcessDefinition>, skills: List<Skill> = emptyList()): Dependents {
+    private fun dependents(processes: List<ProcessDefinition>): Dependents {
         val latest = repository.createProcessDefinitionQuery().latestVersion().list().map { it.id }.toSet()
-        return Dependents(processes, processes.map { it.id }.filter { it !in latest }.toSet(), skills)
+        return Dependents(processes, processes.map { it.id }.filter { it !in latest }.toSet())
     }
 
-    /**
-     * Each deployed Process version with an extension property [property] set to [name]: the latest, and any older
-     * one that live Runs still run.
-     */
-    private fun processes(property: String, name: String) = processes { _, model ->
-        model.getModelElementsByType(OperatonProperty::class.java).any { it.operatonName == property && it.operatonValue == name }
-    }
+    /** The values of the extension properties [name] in [this]. */
+    private fun BpmnModelInstance.properties(name: String) = getModelElementsByType(OperatonProperty::class.java).filter { it.operatonName == name }.map { it.operatonValue.orEmpty() }
 
+    /** Each deployed Process version that [uses]: the latest, and any older one that live Runs still run. */
     private fun processes(uses: (ProcessDefinition, BpmnModelInstance) -> Boolean): List<ProcessDefinition> {
         val latest = repository.createProcessDefinitionQuery().latestVersion().list().map { it.id }.toSet()
         return repository.createProcessDefinitionQuery().orderByProcessDefinitionName().asc().orderByProcessDefinitionVersion().desc().list()

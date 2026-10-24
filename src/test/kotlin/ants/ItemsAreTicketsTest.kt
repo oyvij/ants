@@ -85,7 +85,7 @@ class ItemsAreTicketsTest : AntsTest() {
           <bpmn:extensionElements>
             <operaton:properties>
               <operaton:property name="ants.agent" value="writer" />
-              <operaton:property name="ants.skill" value="$skill" />
+              <operaton:property name="ants.skills" value="$skill" />
               $property
             </operaton:properties>
           </bpmn:extensionElements>

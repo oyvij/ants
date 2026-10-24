@@ -1,9 +1,6 @@
 ---
 name: search-knowledge
-description: Find what the user's knowledge Vault, and the code it names, says on a subject, citing the Notes. Used by other Skills, never picked by a Task.
-metadata:
-  varde-vault: true
-  ants-verbosity: true
+description: Find what the user's knowledge Vault, and the code it names, says on a subject, citing the Notes. Used by other Skills and by whoever needs a subject looked up in the Vault.
 ---
 
 <!-- Adapted from Varde's search-knowledge Skill and knowledge-searcher agent (https://github.com/oyvij/varde-editor).
@@ -14,7 +11,7 @@ Copyright (c) 2026 Øyvind Johannessen. MIT License: see LICENSE beside this fil
 Find what the Vault says on a subject the Skill using this one names, and report it back to that
 Skill. You only read: the Vault's path and the Source map's path stay in this session.
 
-The line that handed you your Skill names the Vault and the Source map. This folder also holds
+You are told where the Vault and the Source map are. This folder also holds
 `vault-format.md`, `leak-check.sh` and `topic.base`, which the other knowledge Skills use.
 
 ## The Vault
@@ -36,8 +33,8 @@ The line that handed you your Skill names the Vault and the Source map. This fol
 
 The Source map is a file outside the Vault. Each line names a codebase and where it is on this
 machine: `- <name>: <path> (<remote URL>)`. A Note names code as `<name>: <path inside it>`.
-Resolve that name through the Source map to read the code, or through the Run workspace's
-`repos/<name>/` when the Run cloned it. When neither names a codebase, report that the code could
+Resolve that name through the Source map to read the code, or through `repos/<name>/` in the
+working directory when the repo is cloned there. When neither names a codebase, report that the code could
 not be checked.
 
 ## Search

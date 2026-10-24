@@ -1,5 +1,5 @@
 {
-  "$comment": "Varde's story format (varde-editor src/story.rs) widened to a Run: `ranges` replaces `range`, one per repo, and every file is relative to the Run workspace root.",
+  "$comment": "Varde's story format (varde-editor src/story.rs) widened to several repos: `ranges` replaces `range`, one per repo, and every file is a path from one root folder that holds the repos.",
   "type": "object",
   "required": ["title", "ranges", "stories"],
   "properties": {

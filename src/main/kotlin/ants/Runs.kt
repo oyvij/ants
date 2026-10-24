@@ -107,7 +107,8 @@ class TaskView(
     }
 
     val agent get() = element?.property(AGENT)
-    val skill get() = element?.property(SKILL)
+    /** The Skill the Task starts with as its job: its one listed Skill, when it has no Assignment (ADR 0024). */
+    val skill get() = element?.let { Job(it) }?.skill
 
     /** The state as a pill; a page puts the entry's tag (tag.kte) beside it while the Task waits on the user. */
     val badge get() = """<span class="pill p-${PILLS[state]}">${HtmlUtils.htmlEscape(label)}</span>"""
@@ -536,8 +537,12 @@ fun runLog(workspace: Path, task: String, what: String, text: String) {
     Files.writeString(workspace.resolve("run-log.md"), "## ${Instant.now().truncatedTo(SECONDS)} · $task · $what\n\n${text.trim()}\n\n", CREATE, APPEND)
 }
 
-const val INSTRUCTIONS_RANKING = "These are the user's standing instructions for this Run. Where they disagree with your Agent or Skill " +
-    "instructions, or with a repo's own CLAUDE.md or AGENTS.md, those win."
+const val INSTRUCTIONS_RANKING = "These are the user's standing instructions for this Run. Where they disagree with your Assignment, " +
+    "your Agent's or Skill's instructions, or a repo's own CLAUDE.md or AGENTS.md, those win."
+
+/** The ranking every Agent Task's hand-off carries: which instructions win where they disagree (ADR 0024). */
+const val RANKING = "Where instructions disagree, the Task's Assignment wins, then your Agent's instructions, then the Skill's, " +
+    "then a repo's own CLAUDE.md or AGENTS.md, then the user's Profile instructions in the workspace's CLAUDE.md or AGENTS.md."
 
 fun profileInstructions(workspace: Path, text: String) {
     if (text.isBlank()) return

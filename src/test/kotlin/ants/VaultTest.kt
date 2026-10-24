@@ -48,18 +48,18 @@ class VaultTest : AntsTest() {
     fun `Update the Vault writes nothing until the Notes are approved`() {
         settings()
         claude.session(
-            "update-knowledge", 1,
+            "updateknowledge", 1,
             "write vault/proposal.md - **add** `Billing/Decisions/Monthly invoices`\\n",
             result("""{"proposal":"vault/proposal.md","written":false}"""),
         )
-        claude.session("update-knowledge", 2, "write $vault/Billing/Decisions/Monthly-invoices.md Invoices go out monthly.\\n", result("""{"written":true}"""))
+        claude.session("updateknowledge", 2, "write $vault/Billing/Decisions/Monthly-invoices.md Invoices go out monthly.\\n", result("""{"written":true}"""))
         val run = start("shipped/templates/update-the-vault.bpmn", "update_the_vault") // a Template runs as a Process of its own
 
         val approve = entry(run)
         for (cell in listOf("<i>✓</i>[approve]", "Approve the Notes")) assertContains(row(run)!!, cell)
         assertContains(browser.get(approve).body, "<strong>add</strong> <code>Billing/Decisions/Monthly invoices</code>")
         assertEquals(emptyList(), notes())
-        val first = claude.launches("update-knowledge").single()
+        val first = claude.launches("updateknowledge").single()
         assertContains(first.argv.zipWithNext(), "--add-dir" to "$vault")
         assertContains(first.stdin, """\"approval\":null""")
         // Ants holds the write back too: Write and Edit on the Vault are denied until the launch after Approve.
@@ -68,7 +68,7 @@ class VaultTest : AntsTest() {
         browser.post(approve, mapOf("action" to "approve", "comment" to ""))
         eventually { assertContains(page(run), """id="state">Completed<""") }
         assertEquals(listOf("Billing/Decisions/Monthly-invoices.md"), notes())
-        val second = claude.launches("update-knowledge")[1]
+        val second = claude.launches("updateknowledge")[1]
         assertEquals(first.flag("--session-id"), second.flag("--resume"))
         assertContains(second.stdin, """\"approval\":{\"approved\":true""")
         assertFalse(second.flag("--disallowedTools")!!.contains("$vault"))
@@ -78,10 +78,10 @@ class VaultTest : AntsTest() {
     fun `Set up Vault asks its Round, then leaves the rule Notes in the Vault once they are approved`() {
         settings()
         val question = """{"id":"readers","title":"Readers","ask":"Who reads the Vault?","context":"Sets how much context a Note carries.","recommendation":"The user alone.","why":"It is personal."}"""
-        claude.session("init-vault", 1, result("""{"questions":[$question],"written":false}"""))
-        claude.session("init-vault", 2, "write vault/proposal.md # Vault rules\\n\\nFor the user alone.\\n", result("""{"questions":[],"proposal":"vault/proposal.md","written":false}"""))
+        claude.session("initvault", 1, result("""{"questions":[$question],"written":false}"""))
+        claude.session("initvault", 2, "write vault/proposal.md # Vault rules\\n\\nFor the user alone.\\n", result("""{"questions":[],"proposal":"vault/proposal.md","written":false}"""))
         claude.session(
-            "init-vault", 3,
+            "initvault", 3,
             "sh mkdir -p '$vault/Vault/Guidelines' && echo '[[Writing knowledge Notes]]' > '$vault/Vault/Vault.md' && echo Readers > '$vault/Vault/Guidelines/Writing knowledge Notes.md'",
             result("""{"questions":[],"written":true}"""),
         )
@@ -98,7 +98,7 @@ class VaultTest : AntsTest() {
         browser.post(approve, mapOf("action" to "approve", "comment" to ""))
         eventually { assertContains(page(run), """id="state">Completed<""") }
         assertEquals(listOf("Vault/Guidelines/Writing knowledge Notes.md", "Vault/Vault.md"), notes())
-        val (first, answered, approved) = claude.launches("init-vault")
+        val (first, answered, approved) = claude.launches("initvault")
         assertContains(first.stdin, """{\"approval\":null}""")
         assertContains(answered.stdin, """"content":"{\"answers\":[{\"id\":\"readers\",\"answer\":\"The user alone.\",\"source\":\"accepted\"}]}"""")
         assertContains(approved.stdin, """\"approval\":{\"approved\":true""")

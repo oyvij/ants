@@ -69,7 +69,7 @@ class ImagesTest : AntsTest() {
         val (image, text) = blocks(claude.launches("draft").single().stdin)
         assertEquals(mapOf("type" to "base64", "media_type" to "image/png", "data" to Base64.getEncoder().encodeToString(RED_PNG)), image["source"])
         assertEquals("image", image["type"])
-        assertContains(text["text"].toString(), "Follow the Skill in ")
+        assertContains(text["text"].toString(), "/draft The workspace is ")
         assertContains(text["text"].toString(), "Make it look like this: ![image]($RED_PATH)")
     }
 
@@ -106,7 +106,7 @@ class ImagesTest : AntsTest() {
         claude.session("draft", init, done)
         val run = start("Say hello")
         eventually { assertContains(browser.get("/runs/$run").body, """id="state">Completed<""") }
-        assertContains(claude.launches("draft").single().stdin, """"content":"Follow the Skill in """)
+        assertContains(claude.launches("draft").single().stdin, """"content":"/draft The workspace is """)
     }
 
     companion object {
