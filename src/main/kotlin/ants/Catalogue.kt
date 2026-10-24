@@ -9,6 +9,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption.ATOMIC_MOVE
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
+import java.nio.file.attribute.PosixFilePermissions
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.isRegularFile
@@ -180,6 +181,13 @@ fun freeName(name: String, taken: (String) -> Boolean): String {
  */
 fun Path.writeAtomically(text: String) {
     val next = Files.createTempFile(parent.createDirectories(), ".$fileName", ".tmp")
+    next.writeText(text)
+    Files.move(next, this, ATOMIC_MOVE, REPLACE_EXISTING)
+}
+
+fun Path.writePrivately(text: String) {
+    val owner = PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------"))
+    val next = Files.createTempFile(parent.createDirectories(), ".$fileName", ".tmp", owner)
     next.writeText(text)
     Files.move(next, this, ATOMIC_MOVE, REPLACE_EXISTING)
 }

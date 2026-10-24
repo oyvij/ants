@@ -7,16 +7,10 @@ import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Duration
-import java.util.concurrent.CompletableFuture
-import java.util.concurrent.TimeUnit.MILLISECONDS
-import java.util.concurrent.TimeUnit.SECONDS
-import java.util.concurrent.TimeoutException
 import kotlin.io.path.deleteIfExists
 import kotlin.io.path.readText
 
-data class ScriptRun(val exitCode: Int, val output: String, val payload: Any?) {
-    val failed get() = exitCode != 0
-}
+data class ScriptRun(val exitCode: Int, val output: String, val payload: Any?)
 
 @Component
 class ScriptRunner(private val settings: Settings) {
@@ -28,29 +22,19 @@ class ScriptRunner(private val settings: Settings) {
         val output = Files.createTempFile("ants-output", ".json")
         try {
             val masked = secrets.values + settings.secretValues().values
+            val ants = mapOf("ANTS_RUN_WORKSPACE" to workspace.toString(), "ANTS_RUN_ID" to runId, "ANTS_OUTPUT" to output.toString())
             val process = try {
                 ProcessBuilder(settings.path("node") ?: "node", code.toAbsolutePath().toString()).directory(workspace.toFile()).redirectErrorStream(true)
-                    .apply {
-                        environment().keys.retainAll(settings.env("claude").toSet())
-                        environment() -= AgentLauncher.PAID
-                        environment() += vars
-                        environment() += secrets
-                        environment() += mapOf("ANTS_RUN_WORKSPACE" to workspace.toString(), "ANTS_RUN_ID" to runId, "ANTS_OUTPUT" to output.toString())
-                    }.start()
+                    .onAllowList(settings, vars + secrets + ants).start()
             } catch (e: IOException) {
                 return ScriptRun(-1, "Ants can't run node: ${e.message}", null)
             }
             Thread.ofVirtual().start {
                 runCatching { process.outputStream.use { it.write(json.writeValueAsBytes(inputs)) } }
             }
-            val text = CompletableFuture.supplyAsync({ process.inputStream.readAllBytes().toString(Charsets.UTF_8) }) { Thread.ofVirtual().start(it) }
-            if (!process.waitFor(timeLimit.toMillis(), MILLISECONDS)) {
-                (process.descendants().toList() + process.toHandle()).forEach(ProcessHandle::destroyForcibly)
-                process.waitFor()
-                val limit = timeLimit.toString().removePrefix("PT").lowercase()
-                return ScriptRun(process.exitValue().takeIf { it != 0 } ?: -1, ProtectedCommands.mask(read(text) + "The Script ran past its time limit of $limit, so Ants killed it.\n", masked), null)
-            }
-            val printed = ProtectedCommands.mask(read(text), masked)
+            val (finished, text) = process.within(timeLimit, "(Ants stopped reading: a process the Script left running still holds its output.)\n")
+            val printed = ProtectedCommands.mask(text, masked)
+            if (!finished) return ScriptRun(-1, printed + "The Script ran past its time limit of ${timeLimit.short()}, so Ants killed it.\n", null)
             val written = ProtectedCommands.mask(output.readText(), masked)
             if (written.isBlank()) return ScriptRun(process.exitValue(), printed, null)
             return try {
@@ -61,11 +45,5 @@ class ScriptRunner(private val settings: Settings) {
         } finally {
             output.deleteIfExists()
         }
-    }
-
-    private fun read(text: CompletableFuture<String>) = try {
-        text.get(5, SECONDS)
-    } catch (_: TimeoutException) {
-        "(Ants stopped reading: a process the Script left running still holds its output.)\n"
     }
 }

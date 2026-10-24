@@ -3,17 +3,13 @@ package ants
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
 import org.yaml.snakeyaml.Yaml
-import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.StandardCopyOption
-import java.nio.file.attribute.PosixFilePermissions
 import kotlin.io.path.createDirectories
 import kotlin.io.path.deleteIfExists
 import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
 import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.readText
-import kotlin.io.path.writeText
 
 data class Script(
     val id: String,
@@ -60,11 +56,7 @@ class Scripts(@Value("\${ants.home}") home: Path, private val settings: Settings
         dir.resolve("script.mjs").writeAtomically(code)
         val secrets = dir.resolve("secrets.yaml")
         if (own.isEmpty()) secrets.deleteIfExists()
-        else {
-            val next = Files.createTempFile(dir, ".secrets.yaml", ".tmp", PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------")))
-            next.writeText(yaml.dump(own))
-            Files.move(next, secrets, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
-        }
+        else secrets.writePrivately(yaml.dump(own))
         dir.resolve("script.yaml").writeAtomically(yaml.dump(script.definition()))
     }
 

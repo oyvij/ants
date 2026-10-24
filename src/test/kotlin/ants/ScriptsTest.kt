@@ -124,6 +124,7 @@ class ScriptsTest : AntsTest() {
         assertContains(create(form("post-message")).body, "A Script named post-message already exists.")
         assertContains(create(form("Not A Name")).body, "A Script's name is up to 64 lowercase letters, digits and hyphens.")
         assertContains(create(form("bad-var", vars = "lower=1")).body, "A var or Secret's name is upper case letters, digits and underscores")
+        assertContains(create(form("no-value", own = listOf("SLACK_TOKEN" to ""))).body, "The Secret SLACK_TOKEN needs a value.")
         assertEquals(1, scripts.listDirectoryEntries().size)
     }
 

@@ -61,26 +61,14 @@ class ProtectedCommands(private val settings: Settings, private val mcp: Mcp) {
         }
         val process = try {
             ProcessBuilder(words).directory(dir.toFile()).redirectErrorStream(true).redirectInput(File("/dev/null"))
-                .apply {
-                    environment().keys.retainAll(settings.env("claude").toSet())
-                    environment() -= AgentLauncher.PAID
-                    environment() += secrets
-                }.start()
+                .onAllowList(settings, secrets.toMap()).start()
         } catch (e: IOException) {
             throw Refused("Ants can't run `$command`: ${e.message}")
         }
-        val output = CompletableFuture.supplyAsync({ process.inputStream.readAllBytes().toString(Charsets.UTF_8) }) { Thread.ofVirtual().start(it) }
-        if (!process.waitFor(timeLimit.toMillis(), MILLISECONDS)) {
-            (process.descendants().toList() + process.toHandle()).forEach(ProcessHandle::destroyForcibly)
-            throw Refused("`$command` ran past its time limit of ${timeLimit.toString().removePrefix("PT").lowercase()}, so Ants killed it.")
-        }
         // ponytail: a child left running that holds the output is never killed, only stopped being read; kill the
         // process group if a build tool's daemon ever does this.
-        val text = try {
-            output.get(5, SECONDS)
-        } catch (_: TimeoutException) {
-            "(Ants stopped reading: a process `$command` left running still holds its output.)"
-        }
+        val (finished, text) = process.within(timeLimit, "(Ants stopped reading: a process `$command` left running still holds its output.)")
+        if (!finished) throw Refused("`$command` ran past its time limit of ${timeLimit.short()}, so Ants killed it.")
         return process.exitValue() to mask(text, values.values)
     }
 
@@ -111,3 +99,23 @@ class ProtectedCommands(private val settings: Settings, private val mcp: Mcp) {
         )
     }
 }
+
+fun ProcessBuilder.onAllowList(settings: Settings, variables: Map<String, String>): ProcessBuilder = apply {
+    environment().keys.retainAll(settings.env("claude").toSet())
+    environment() -= AgentLauncher.PAID
+    environment() += variables
+}
+
+fun Process.within(limit: Duration, held: String): Pair<Boolean, String> {
+    val output = CompletableFuture.supplyAsync({ inputStream.readAllBytes().toString(Charsets.UTF_8) }) { Thread.ofVirtual().start(it) }
+    val finished = waitFor(limit.toMillis(), MILLISECONDS)
+    if (!finished) (descendants().toList() + toHandle()).forEach(ProcessHandle::destroyForcibly)
+    val text = try {
+        output.get(5, SECONDS)
+    } catch (_: TimeoutException) {
+        held
+    }
+    return finished to text
+}
+
+fun Duration.short() = toString().removePrefix("PT").lowercase()
