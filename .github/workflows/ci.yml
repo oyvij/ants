@@ -2,7 +2,8 @@ name: ci
 
 # The tests, as three jobs at once (build.gradle.kts' shards). On main, each push then publishes a beta on these same
 # tests: a GitHub prerelease holding the macOS arm64 tarball, its SHA256SUMS and install.sh, which only an Ants with
-# prereleases on in settings offers. release.yml makes the newest beta the stable release.
+# prereleases on in settings offers, and its image, tagged with the version and beta. release.yml makes the newest beta
+# the stable release.
 # The full suite gates a merge and a release, not each push: a branch's work is checked locally with
 # scripts/affected-tests, and an agent that can't run the browser shard locally runs it here by hand:
 # gh workflow run ci.yml --ref <branch> -f shards='["browser","look"]'
@@ -58,3 +59,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.version.outputs.version }}
         run: gh release create "v$VERSION" build/dist/* install.sh --target "$GITHUB_SHA" --title "Ants $VERSION" --generate-notes --prerelease
+
+  image:
+    needs: [version, prerelease]
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/image.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
