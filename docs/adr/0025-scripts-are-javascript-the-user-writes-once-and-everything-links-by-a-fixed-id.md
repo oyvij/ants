@@ -75,6 +75,8 @@ broke what named them and needed a confirm, Scripts, Agents and Skills all link 
   `<file>.old`, and a Process keeps its older version. What is already in the new shape is left as it is, so a second
   start changes nothing. This reverses the rule that Ants never rewrites a Process, once, as ADR 0024's migration
   already redeploys Processes.
+- **This amends ADR 0024**, whose `ants.skills` and an Agent's `skills:` named Skills by name: they now hold ids, with
+  the names kept beside them.
 
 ## Considered Options
 
