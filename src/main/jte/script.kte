@@ -1,0 +1,79 @@
+@param form: ants.ScriptForm
+@param saved: String?
+@param labels: List<String>
+@param placeholder: String
+@param message: String? = null
+@param dependents: ants.Dependents?
+@param _csrf: org.springframework.security.web.csrf.CsrfToken
+@param colorScheme: String = "light dark"
+@param shell: ants.Shell
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    @template.app()
+    <meta name="color-scheme" content="${colorScheme}">
+    <title>${saved ?: "New Script"} · Scripts · Ants</title>
+    <script type="module" src="/code-editor.js"></script>
+</head>
+<body>
+@template.nav(shell = shell)
+<main>
+<div class="crumbs"><a href="/scripts">Scripts</a> / ${saved ?: "New"}</div>
+<div class="ph"><h1><span class="ent ent-script"><svg class="i" viewBox="0 0 24 24"><path d="m8 7-5 5 5 5M16 7l5 5-5 5M14 4l-4 16"/></svg>${saved ?: "New Script"}</span></h1>
+    <div class="acts">
+@if(saved != null)
+        <form method="post" action="/scripts/${saved}/delete"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button class="danger">Delete</button></form>
+@endif
+        <button class="primary" form="script">Save</button>
+    </div>
+@if(dependents != null)    <div class="sub">@template.usedby(dependents = dependents, none = "no Process")</div>@endif
+</div>
+@if(message != null)<p role="alert">${message}</p>@endif
+<form id="script" method="post" action="/scripts/${saved ?: "new"}" class="script">
+    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+@if(saved != null)
+    <input type="hidden" name="script" value="${saved}">
+@endif
+    <div class="card"><h3>What it is</h3>
+        <div class="grid2">
+            <div class="fld"><label class="f" for="name">Name</label><div class="help">How you pick it: lowercase letters, digits and hyphens. Renaming breaks nothing.</div>
+                <input id="name" name="name" value="${form.name}" placeholder="e.g. post-message" required pattern="[a-z0-9][a-z0-9\-]*"></div>
+            <div class="fld"><label class="f" for="description">Description</label><div class="help">What it does, in one line.</div>
+                <input id="description" name="description" value="${form.description}" placeholder="e.g. Posts a message to a Slack channel." required></div>
+        </div>
+    </div>
+    <div class="card"><h3>Code</h3><div class="help">A JavaScript ES module, run as <code>node script.mjs</code> with Node's built-ins only. Its inputs arrive as one JSON object on stdin, its vars and Secrets as <code>process.env.NAME</code>, and the JSON it writes to the file <code>process.env.ANTS_OUTPUT</code> names is its payload.</div>
+        <textarea id="code" name="code" rows="20" data-code-editor="/scripts/test-run" placeholder="${placeholder}">${form.code}</textarea>
+    </div>
+    <div class="grid2">
+    <div class="card"><h3>Inputs and vars</h3>
+        <div class="fld"><label class="f" for="inputs">Inputs</label><div class="help">The names of the inputs a caller passes, separated by commas.</div>
+            <input id="inputs" class="mono" name="inputs" value="${form.inputs}" placeholder="e.g. channel, text"></div>
+        <div class="fld"><label class="f" for="vars">Vars</label><div class="help">Settings that aren't secret, one <code>NAME=value</code> a line.</div>
+            <textarea id="vars" class="mono" name="vars" rows="4" placeholder="e.g. CHANNEL=general">${form.vars}</textarea></div>
+    </div>
+    <div class="card"><h3>Secrets</h3><div class="help">The Script's own Secrets: a value is kept in its <code>secrets.yaml</code>, never shown again; left blank, the saved one stays. Clear a name to remove it.</div>
+        <div class="listed">
+@for((i, row) in form.shownOwn.withIndex())
+            <div class="row">
+                <input type="hidden" name="secrets[${i}].was" value="${row.was}">
+                <label class="cap grow">Name<input class="mono" name="secrets[${i}].name" value="${row.name}" placeholder="e.g. SLACK_TOKEN"></label>
+                <label class="cap grow">Value<input type="password" name="secrets[${i}].value" placeholder="${if (row.set) "••••" else "e.g. xoxb-1234"}" autocomplete="new-password"></label>
+            </div>
+@endfor
+        </div>
+        <div class="fld"><label class="f">From Settings</label><div class="help">Secrets kept in <a href="/settings">Settings</a>, each under its variable names.</div>
+@for(label in labels)
+            <label class="nowrap"><input type="checkbox" name="linked" value="${label}" checked="${label in form.linked}"> ${label}</label>
+@endfor
+@if(labels.isEmpty())
+            <span class="muted small">No Secret in Settings yet.</span>
+@endif
+        </div>
+    </div>
+    </div>
+</form>
+</main>
+</body>
+</html>

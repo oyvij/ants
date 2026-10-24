@@ -24,6 +24,8 @@ class UsedBy(private val repository: RepositoryService, private val runtime: Run
 
     fun skill(name: String) = dependents(processes { _, model -> model.agentTasks.any { name in Job(it).listed.orEmpty() } })
 
+    fun script(id: String) = dependents(processes { _, model -> model.properties("ants.script").any { it == id } })
+
     fun process(key: String) = dependents(processes { process, model ->
         process.key != key && model.getModelElementsByType(CallActivity::class.java).any { it.calledElement == key }
     })

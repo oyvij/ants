@@ -117,7 +117,7 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--hover); }
 .t-failed { background: var(--badSoft); color: var(--bad); border-color: color-mix(in srgb, var(--bad) 35%, transparent); }
 .t-vault, .t-ISSUE, .t-NOTE, .t-SUGGESTION, .t-COMMENT { background: var(--accSoft); color: var(--accText); border-color: color-mix(in srgb, var(--acc) 30%, transparent); }
 .ent { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; vertical-align: middle; } .ent svg.i { width: 15px; height: 15px; }
-.ent-agent svg.i { color: var(--acc); } .ent-skill svg.i { color: var(--citeC); } .ent a { color: inherit; } .ent a:hover { color: var(--acc); }
+.ent-agent svg.i { color: var(--acc); } .ent-skill svg.i { color: var(--citeC); } .ent-script svg.i { color: var(--invC); } .ent a { color: inherit; } .ent a:hover { color: var(--acc); }
 h1 .ent svg.i { width: 22px; height: 22px; } .ph h1 .ent { gap: 9px; }
 .live { display: inline-flex; align-items: center; gap: 7px; } .live i { width: 8px; height: 8px; border-radius: 50%; background: var(--run); animation: pulse 1.4s infinite; }
 
@@ -698,3 +698,8 @@ details.example pre { background: var(--line2); border: 0; padding: 10px; border
     .settings .listed > .row { flex-wrap: wrap; }
     .settings .listed > .row > :is(.name, .grow) { flex: 1 1 100%; width: auto; }
 }
+.code-editor .ed .cm-gutters { background: var(--panel2); border-right: 1px solid var(--line2); color: var(--text3); }
+.code-editor .test-bar { margin-top: 10px; } .code-editor .sample { font-size: 12.5px; }
+.test-run { margin-top: 10px; } .test-run h4 { margin: 12px 0 4px; font-size: 12.5px; }
+.test-run pre { margin: 0; padding: 8px 10px; font-family: var(--mono); font-size: 12.5px; max-height: 320px; }
+.test-run .j-key { color: var(--acc); } .test-run .j-str { color: var(--ok); } .test-run .j-num { color: var(--invC); } .test-run .j-lit { color: var(--bad); }

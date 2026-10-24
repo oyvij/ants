@@ -629,6 +629,34 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `a new Script's editor shows its placeholder, and a Test run shows the exit code as a badge and the payload as coloured JSON`() = browse {
+        home.resolve("settings.yaml").writeText("node: {path: ${ScriptsTest.NODE}}\n")
+        page.navigate(url("/scripts/new"))
+        val editor = page.locator(".code-editor .cm-content")
+        assertThat(page.locator(".code-editor .cm-placeholder")).containsText("process.env.ANTS_OUTPUT")
+        assertThat(page.locator(".code-editor .cm-placeholder")).containsText("process.stdin")
+        editor.click()
+        page.keyboard().insertText("import {readFileSync, writeFileSync} from 'node:fs'\nconst {text} = JSON.parse(readFileSync(0, 'utf8'))\nconsole.log('posting')\nwriteFileSync(process.env.ANTS_OUTPUT, JSON.stringify({posted: text, count: 2}))\n")
+        page.getByLabel("Sample inputs, as JSON").fill("""{"text": "hello"}""")
+        page.locator(".code-editor button", Page.LocatorOptions().setHasText("Test run")).click()
+
+        val result = page.locator(".test-run")
+        assertThat(result.locator(".pill.p-done")).hasText("Succeeded · exit 0")
+        assertThat(result.locator("pre.output")).hasText("posting\n")
+        assertThat(result.locator("pre.payload")).hasText("{\n  \"posted\": \"hello\",\n  \"count\": 2\n}")
+        assertThat(result.locator("pre.payload .j-key")).hasCount(2)
+        assertThat(result.locator("pre.payload .j-str")).hasText("\"hello\"")
+        assertThat(result.locator("pre.payload .j-num")).hasText("2")
+        page.screenshot("script-test-run")
+
+        editor.click()
+        page.keyboard().press("Control+End")
+        page.keyboard().insertText("process.exit(3)\n")
+        page.locator(".code-editor button", Page.LocatorOptions().setHasText("Test run")).click()
+        assertThat(result.locator(".pill.p-failed")).hasText("Failed · exit 3")
+    }
+
+    @Test
     fun `picking an Agent picks its first Skill and says what later Tasks can read, and the Checks turn Ready to deploy`() = browse {
         agentTask(null, mapOf("draft" to null, "polish" to null))
         val task = appendAgentTask()
