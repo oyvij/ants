@@ -396,6 +396,17 @@ class ChecksTest : AntsTest() {
         assertEquals(home.resolve("skills").toString(), draft["folder"])
     }
 
+    @Test
+    fun `the catalogue gives an Agent with every Skill, skills star, each Skill by name`() {
+        writerAndDraft()
+        home.resolve("agents/everyone.md").writeText("---\nskills: \"*\"\n---\nAll.\n")
+        val catalogue = JsonMapper.shared().readValue(browser.get("/catalogue.json").body, Map::class.java)
+        val everyone = (catalogue["agents"] as List<*>).map { it as Map<*, *> }.single { it["name"] == "everyone" }
+        val names = (catalogue["skills"] as List<*>).map { (it as Map<*, *>)["name"] }.distinct()
+        assertEquals(names, everyone["skills"])
+        assertTrue("draft" in names && "tdd" in names)
+    }
+
     /** Review in a multi-instance over `${prompt}`, its element variable [element] (or the default), reading [reads]. */
     private fun inLoop(reads: String, element: String? = null) = twoTasks(reads, agentTask(
         "review",
