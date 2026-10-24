@@ -706,7 +706,7 @@ async function agentPanel(element, box) {
             ...(fields.length ? fields.flatMap(f => [el("code", {textContent: `\${${element.id}.output.${f}}`}), " "]) : [el("code", {textContent: `\${${element.id}.summary}`})])),
         el("div", {className: "fld"}, el("label", {className: "f", textContent: "Inputs"}),
             note("help", "What it reads: start-form fields, Run variables and Results of Tasks before it in the diagram."), references,
-            ...(inputs.length ? inputs : [note("muted small", "No inputs yet.")]), el("div", {className: "row"}, newInput, addInput)),
+            ...(inputs.length ? inputs : [note("muted small", "No inputs yet.")]), el("div", {className: "row"}, el("label", {htmlFor: newInput.id, textContent: "New input"}), newInput, addInput)),
         el("div", {className: "fld"}, el("label", {className: "f", textContent: "When the flow comes back"}),
             tick("Resume the session (Round answers, Send back)", props["ants.resume"] === "true",
                 event => writeAgentTask(element, {"ants.resume": event.target.checked ? "true" : undefined}))),

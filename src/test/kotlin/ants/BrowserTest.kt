@@ -629,7 +629,7 @@ class BrowserTest : AntsTest() {
         assertThat(page.locator("#explain .skillpick label")).hasText(arrayOf("draft", "polish", "extra"))
         assertThat(label("draft")).isChecked()
         label("polish").check()
-        assertThat(page.locator("#checks")).containsText("Draft has no Assignment and doesn't list exactly one Skill.")
+        assertThat(page.locator("#checks")).containsText("Draft (draft) has no Assignment and doesn't list exactly one Skill.")
         page.locator("#ants-assignment + .ed .cm-content").fill("Greet the user.\nKeep it short.")
         assertThat(page.locator("#summary")).hasText("Ready to deploy")
         page.locator("#ants-new-input").fill("audience")
