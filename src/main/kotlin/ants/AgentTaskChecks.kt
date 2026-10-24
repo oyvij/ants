@@ -76,12 +76,13 @@ private fun listed(task: ServiceTask) = task.property(SKILLS)?.let(::words) ?: l
 
 /**
  * What an Agent Task promises in its Result's `output`: its override, else the schema of the Skill it starts with;
- * nothing with an Assignment; null when neither can be read.
+ * nothing with an Assignment; with `questions` when it [asksRounds]; null when none can be read.
  */
 private fun promised(catalogue: Catalogue, task: ServiceTask): Map<*, *>? {
-    task.property(RESULT_SCHEMA)?.takeIf(String::isNotBlank)?.let { return runCatching { JsonMapper.shared().readValue(it, Map::class.java) }.getOrNull() }
-    if (!task.property(ASSIGNMENT).isNullOrBlank()) return emptyMap<String, Any?>()
-    return runCatching { catalogue.skill(listed(task).single()).outputSchema }.getOrNull()
+    val output = task.property(RESULT_SCHEMA)?.takeIf(String::isNotBlank)?.let { runCatching { JsonMapper.shared().readValue(it, Map::class.java) }.getOrNull() ?: return null }
+        ?: if (!task.property(ASSIGNMENT).isNullOrBlank()) emptyMap<String, Any?>()
+        else runCatching { catalogue.skill(listed(task).single()).outputSchema }.getOrNull() ?: return null
+    return if (asksRounds(task)) withQuestions(output) else output
 }
 
 /** The names an expression anywhere may start with besides start-form fields and Task ids: Ants' Run variables and the engine's own. */

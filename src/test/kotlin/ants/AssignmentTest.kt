@@ -47,7 +47,7 @@ class AssignmentTest : AntsTest() {
         val run = start("assigned", "ants.assignment" to "Greet the user.\nKeep it short.", "ants.skills" to "draft, notes")
         completed(run)
         val launch = claude.launches("greet").single()
-        val prompt = "The workspace is ${workspace(run)}.\\n\\nGreet the user.\\nKeep it short." +
+        val prompt = "The workspace is ${workspace(run)}.\\n\\nGreet the user.\\nKeep it short.\\n\\n$RANKING" +
             """\n\n{\"prompt\":\"Say hello\",\"tone\":\"dry\"}"""
         assertEquals("""{"type":"user","message":{"role":"user","content":"$prompt"}}""", launch.stdin)
         assertEquals(skillsOf("draft", "notes"), launch.skills)
@@ -88,7 +88,7 @@ class AssignmentTest : AntsTest() {
         val run = start("one", "ants.skills" to "draft")
         completed(run)
         val launch = claude.launches("draft").single()
-        assertContains(launch.stdin, """"content":"/draft The workspace is ${workspace(run)}.\n\n{""")
+        assertContains(launch.stdin, """"content":"/draft The workspace is ${workspace(run)}.\n\n$RANKING\n\n{""")
         assertEquals(skillsOf("draft"), launch.skills)
     }
 }

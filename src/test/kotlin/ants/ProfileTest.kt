@@ -63,8 +63,8 @@ class ProfileTest : AntsTest() {
         browser.import("profile.bpmn")
     }
 
-    private val ranking = "These are the user's standing instructions for this Run. Where they disagree with your Agent or Skill " +
-        "instructions, or with a repo's own CLAUDE.md or AGENTS.md, those win."
+    private val ranking = "These are the user's standing instructions for this Run. Where they disagree with your Assignment, " +
+        "your Agent's or Skill's instructions, or a repo's own CLAUDE.md or AGENTS.md, those win."
 
     private fun keepingInstructions(after: String? = null) = claude.session(
         "draft",

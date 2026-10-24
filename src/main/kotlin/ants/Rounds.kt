@@ -43,6 +43,37 @@ fun answers(questions: List<Question>, source: (Question) -> String = { if (it.a
 /** The Agent Task an answerer names as its asker: the one whose `output.questions` it answers and whose session it resumes. */
 const val ASKER = "ants.asker"
 
+/** Whether [task] asks Rounds: another element of its Process names it as its asker ([ASKER]). */
+fun asksRounds(task: FlowElement) = task.modelInstance.getModelElementsByType(FlowElement::class.java).any { it.property(ASKER) == task.id }
+
+/** The hand-off paragraph of a Task that [asksRounds]: how a Round is one Result, and how it is resumed. */
+const val ROUND_PROTOCOL = "This Task asks Rounds of questions. A Round is one Result: answer `done` with the Round's questions as " +
+    "`questions` in your `output`, each an entry with `id` (short and unique across the Run, such as `export-format`), " +
+    "`title`, `ask` (the question itself, one decision), `context` (what it settles, and the choices), `recommendation` " +
+    "(your recommended answer, concrete enough to build from) and `why` (the reason for it). Write for a quick read on a " +
+    "phone: `ask` is one sentence, `context` lists the choices as a short Markdown list, `recommendation` is one sentence " +
+    "the user could send back as their answer, `why` is one sentence, and code, file names and commands go in backticks. " +
+    "Your `summary` heads the page, so name the Round's topic in a few words. You are resumed with the Round's answers as " +
+    "`{answers: [{id, answer, source}]}`. Take each answer as settled, whoever gave it. Never ask a settled question again " +
+    "unless a later answer reopens it, and then say so in its `context`. When nothing is left to ask, answer `done` with " +
+    "`questions: []`."
+
+/** The `questions` a Task that [asksRounds] hands back, as its Result schema gets them when it doesn't declare them. */
+private val questions: Map<*, *> = JsonMapper.shared().readValue(
+    """{"type":"array","description":"This Round's questions; empty when nothing is left to ask.","items":{"type":"object",
+    "properties":{"id":{"type":"string"},"title":{"type":"string"},"ask":{"type":"string"},"context":{"type":"string"},
+    "recommendation":{"type":"string"},"why":{"type":"string"}},
+    "required":["id","title","ask","context","recommendation","why"],"additionalProperties":false}}""",
+    Map::class.java,
+)
+
+/** [output], the Result schema of a Task that asks Rounds, with [questions] added, and required, unless it has them. */
+fun withQuestions(output: Map<*, *>): Map<*, *> {
+    val properties = output["properties"] as? Map<*, *> ?: emptyMap<String, Any>()
+    if ("questions" in properties) return output
+    return output + mapOf("properties" to properties + ("questions" to questions), "required" to (output["required"] as? List<*>).orEmpty() + "questions")
+}
+
 /** Which Round the asker [asker] is on, seen from the execution [execution]: its run count in the Run's `runs`. */
 fun RuntimeService.round(execution: String, asker: String) = ((getVariable(execution, "runs") as? Map<*, *>)?.get(asker) as? Number)?.toInt() ?: 1
 
