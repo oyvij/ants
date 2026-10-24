@@ -12,6 +12,7 @@ import org.operaton.bpm.model.bpmn.instance.UserTask
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.context.event.ApplicationReadyEvent
+import org.springframework.context.annotation.Lazy
 import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Component
 import tools.jackson.databind.json.JsonMapper
@@ -61,6 +62,7 @@ class AgentLauncher(
     private val names: RunNames,
     private val scopes: Scopes,
     private val protectedCommands: ProtectedCommands,
+    @Lazy private val migration: Migration, // lazy: it deploys through Processes, which reach this launcher
     @Value("\${ants.home}") internal val home: Path,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -232,6 +234,7 @@ class AgentLauncher(
             val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult().rootProcessInstanceId
             val workspace = names.runWorkspace(run)
             if (ticketed(task, run, workspace)) return
+            migration.unmigrated(task)?.let { throw Failed(it) }
             val agent = catalogue.agent(task.extensionProperties[AGENT] ?: error("${task.activityId} names no $AGENT"))
             if (hold(task, agent.cli)) return // keeping its choice for the launch after the reset
             runtime.removeVariablesLocal(task.executionId, listOf(ACTION, INSTRUCTION, SESSION)) // the choice is used once
@@ -463,11 +466,11 @@ class AgentLauncher(
      * [agent]'s. Without an Assignment the Task lists exactly one.
      */
     private fun skills(properties: Map<String, String>, agent: Agent, id: String): Pair<Skill?, List<Skill>> {
-        val listed = properties[SKILLS]?.let(::words)?.map(catalogue::skill)
-        val allowed = listed ?: catalogue.allowed(agent)
-        if (!properties[ASSIGNMENT].isNullOrBlank()) return null to allowed
-        val skill = listed?.singleOrNull() ?: error("$id has no Assignment and doesn't list exactly one Skill")
-        return skill to allowed.drop(1)
+        val job = Job(properties::get)
+        val allowed = job.listed?.map(catalogue::skill) ?: catalogue.allowed(agent)
+        if (job.assignment != null) return null to allowed
+        if (!job.valid) error("$id has no Assignment and doesn't list exactly one Skill")
+        return allowed.single() to emptyList()
     }
 
     /**
@@ -489,9 +492,8 @@ class AgentLauncher(
         // At normal, a Run's hand-off line and flags stay as they were.
         val verbosity = source.verbosity.takeIf { it != Verbosity.NORMAL }
         // The Task's result schema; Checks refuse one that isn't valid.
-        val override = task.extensionProperties[RESULT_SCHEMA]?.takeIf(String::isNotBlank)?.let { json.readValue(it, Map::class.java) }
         val asks = asksRounds(repository.getBpmnModelInstance(task.processDefinitionId).getModelElementById(task.activityId))
-        val output = (override ?: emptyMap<String, Any?>()).let { if (asks) withQuestions(it) else it }
+        val output = promised(task.extensionProperties[RESULT_SCHEMA], asks) ?: error("${task.activityId}'s result schema isn't a JSON object")
         val schema = ResultContract.schema(output)
         // A Run with repos picked clones exactly them, so the repos a Result names there go unchecked.
         val repos = source.repos(settings).takeIf { source.picked.isEmpty() && ResultContract.namesRepos(output) }

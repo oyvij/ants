@@ -104,4 +104,11 @@ class AssignmentTest : AntsTest() {
             "(${home.resolve("skills/notes/SKILL.md")}), so where your Assignment names it, read that file and follow it.\\n\\nFollow the notes Skill.")
         assertEquals(skillsOf("draft", "notes"), launch.skills)
     }
+
+    @Test
+    fun `a Task with no Result schema hands back done with a summary only`() {
+        writer("draft", "draft")
+        claude.session("greet", """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":{"outcome":"done","summary":"Greeted."}}""")
+        completed(start("summary-only", "ants.assignment" to "Greet the user."))
+    }
 }

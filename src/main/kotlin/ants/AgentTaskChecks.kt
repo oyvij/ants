@@ -17,7 +17,6 @@ import org.operaton.bpm.model.bpmn.instance.operaton.OperatonIn
 import org.operaton.bpm.model.bpmn.instance.operaton.OperatonInputParameter
 import org.operaton.bpm.model.bpmn.instance.operaton.OperatonProperties
 import org.operaton.bpm.model.xml.instance.ModelElementInstance
-import tools.jackson.databind.json.JsonMapper
 
 // The Checks on Agent Tasks and on what a Process's expressions read, two kinds of [Checks].
 
@@ -39,7 +38,26 @@ const val RESULT_SCHEMA = "ants.result-schema"
 /** The value of an element's extension property [name], such as an Agent Task's [AGENT]. */
 fun BaseElement.property(name: String): String? = extensions<OperatonProperties>().flatMap { it.operatonProperties }.firstOrNull { it.operatonName == name }?.operatonValue
 
-private val BpmnModelInstance.agentTasks get() = getModelElementsByType(ServiceTask::class.java).filter { it.operatonTopic == AgentLauncher.TOPIC }
+internal val BpmnModelInstance.agentTasks get() = getModelElementsByType(ServiceTask::class.java).filter { it.operatonTopic == AgentLauncher.TOPIC }
+
+/**
+ * An Agent Task's job, from its extension properties, each by name in [property] (ADR 0024): its [ASSIGNMENT], the
+ * Skills it lists in [SKILLS], and the one Skill that is its job when it has no Assignment.
+ */
+class Job(property: (String) -> String?) {
+    constructor(task: BaseElement) : this(task::property)
+
+    val assignment = property(ASSIGNMENT)?.takeIf(String::isNotBlank)
+
+    /** The Skills the Task lists itself, an empty list none; null when it lists none and so inherits its Agent's. */
+    val listed: List<String>? = property(SKILLS)?.let(::words)
+
+    /** Whether the Task has a job: an Assignment, or exactly one listed Skill (only its own list counts). */
+    val valid get() = assignment != null || listed?.size == 1
+
+    /** The Skill the Task starts with as its job, `/<skill>`: its one listed Skill when it has no Assignment, else null. */
+    val skill get() = listed?.singleOrNull()?.takeIf { assignment == null }
+}
 
 /**
  * Each Agent Task's Agent and Skills: unknown or ambiguous names, no Assignment and not exactly one Skill listed on the
@@ -49,26 +67,34 @@ internal fun agentTasks(catalogue: Catalogue, model: BpmnModelInstance) = model.
     fun check(message: String) = Check(task.id, "${task.label}: $message")
     val agentName = task.property(AGENT)?.takeIf(String::isNotBlank)
     val agent = agentName?.let { runCatching { catalogue.agent(it) } }
-    val listed = listed(task).map { runCatching { catalogue.skill(it) } }
-    val assignment = !task.property(ASSIGNMENT).isNullOrBlank()
+    val job = Job(task)
+    val listed = job.listed.orEmpty().map { runCatching { catalogue.skill(it) } }
     val schema = ResultContract.schemaErrors(task.property(RESULT_SCHEMA).orEmpty())
     val lacking = agent?.getOrNull()?.let { a -> listed.mapNotNull { it.getOrNull() }.filter { !a.allows(it.name) }.map { check("The Agent ${a.name} doesn't list the Skill ${it.name}.") } }
     listOfNotNull(
         if (agentName == null) Check(task.id, "${task.label} has no Agent.") else agent!!.exceptionOrNull()?.let { check("${it.message}.") },
-        Check(task.id, "${task.label} has no Assignment and doesn't list exactly one Skill.").takeIf { !assignment && listed.size != 1 },
+        Check(task.id, "${task.label} has no Assignment and doesn't list exactly one Skill.").takeIf { !job.valid },
     ) + listed.mapNotNull { it.exceptionOrNull()?.let { e -> check("${e.message}.") } } + lacking.orEmpty() +
         listOfNotNull(schema.takeIf { it.isNotEmpty() }?.let { check("Its result schema is invalid: ${it.joinToString("; ")}") })
 }
 
-/** The Skills an Agent Task lists itself, its [SKILLS]. */
-private fun listed(task: ServiceTask) = task.property(SKILLS)?.let(::words).orEmpty()
+/** What an Agent Task promises in its Result's `output`; null when it can't be read. */
+private fun promised(task: ServiceTask) = promised(task.property(RESULT_SCHEMA), asksRounds(task))
 
-/** What an Agent Task promises in its Result's `output`: its result schema, with `questions` when it [asksRounds]; null when it can't be read. */
-private fun promised(task: ServiceTask): Map<*, *>? {
-    val output = task.property(RESULT_SCHEMA)?.takeIf(String::isNotBlank)?.let { runCatching { JsonMapper.shared().readValue(it, Map::class.java) }.getOrNull() ?: return null }
-        ?: emptyMap<String, Any?>()
-    return if (asksRounds(task)) withQuestions(output) else output
-}
+/** The fields of the `output` an Agent Task promises, `questions` too when it asks Rounds. */
+private fun fields(task: ServiceTask) = (promised(task)?.get("properties") as? Map<*, *>).orEmpty().keys.map { it.toString() }
+
+/**
+ * What later Tasks read of each Task's Result in [model], by id, as the modeler's panel and the Process Builder show it:
+ * an Agent Task's promised fields, else its summary, and a User Task's kind's fields.
+ */
+internal fun laterRead(model: BpmnModelInstance): Map<String, List<String>> = model.getModelElementsByType(Activity::class.java).mapNotNull { task ->
+    when {
+        task is UserTask -> UserTaskKind.of(task.property(USER_TASK)).result.map { "\${${task.id}.$it}" }
+        task is ServiceTask && task.operatonTopic == AgentLauncher.TOPIC -> fields(task).map { "\${${task.id}.output.$it}" }.ifEmpty { listOf("\${${task.id}.summary}") }
+        else -> null
+    }?.let { task.id to it }
+}.toMap()
 
 /** The names an expression anywhere may start with besides start-form fields and Task ids: Ants' Run variables and the engine's own. */
 private val runVariables = RUN_VARIABLES + "execution"
@@ -162,7 +188,7 @@ internal fun offered(model: BpmnModelInstance, id: String, called: (String) -> B
     fun results(task: Activity, key: String): List<String> = when {
         task is UserTask -> listOf(key) + UserTaskKind.of(task.property(USER_TASK)).result.map { "$key.$it" }
         task !is ServiceTask || task.operatonTopic != AgentLauncher.TOPIC -> listOf(key)
-        else -> listOf("$key.summary", "$key.output") + (promised(task)?.get("properties") as? Map<*, *>).orEmpty().keys.map { "$key.output.$it" }
+        else -> listOf("$key.summary", "$key.output") + fields(task).map { "$key.output.$it" }
     }
     val results = model.getModelElementsByType(Activity::class.java).filter { it.id in before && it.givesResult }.flatMap { task ->
         val process = (task as? CallActivity)?.calledElement?.let(called)

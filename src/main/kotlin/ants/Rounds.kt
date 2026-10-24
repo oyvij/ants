@@ -67,11 +67,18 @@ private val questions: Map<*, *> = JsonMapper.shared().readValue(
     Map::class.java,
 )
 
-/** [output], the Result schema of a Task that asks Rounds, with [questions] added, and required, unless it has them. */
-fun withQuestions(output: Map<*, *>): Map<*, *> {
+/**
+ * What an Agent Task promises in its Result's `output`: its Result schema, the JSON text [schema] (none promises
+ * nothing), with [questions] added, and required, when it [asks] Rounds, unless it has them; null when [schema] isn't a
+ * JSON object. The launch and the Checks both read it here.
+ */
+fun promised(schema: String?, asks: Boolean): Map<*, *>? {
+    val output = schema?.takeIf(String::isNotBlank)?.let { runCatching { JsonMapper.shared().readValue(it, Map::class.java) }.getOrNull() ?: return null }
+        ?: emptyMap<String, Any?>()
+    if (!asks) return output
     val properties = output["properties"] as? Map<*, *> ?: emptyMap<String, Any>()
     if ("questions" in properties) return output
-    return output + mapOf("properties" to properties + ("questions" to questions), "required" to (output["required"] as? List<*>).orEmpty() + "questions")
+    return mapOf("type" to "object") + output + mapOf("properties" to properties + ("questions" to questions), "required" to (output["required"] as? List<*>).orEmpty() + "questions")
 }
 
 /** Which Round the asker [asker] is on, seen from the execution [execution]: its run count in the Run's `runs`. */

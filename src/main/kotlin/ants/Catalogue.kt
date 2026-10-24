@@ -148,8 +148,11 @@ class Catalogue(@Value("\${ants.home}") private val home: Path, private val sett
         items.singleOrNull() ?: items.filter { shipped(it) != settings.hideShipped() }.singleOrNull()
             ?: error(if (items.isEmpty()) "No $kind named $name" else "More than one $kind is named $name")
 
-    /** The Skills [agent] may use: every one with `skills: "*"`. */
-    fun allowed(agent: Agent): List<Skill> = (if (agent.allSkills) skills().map { it.name }.distinct() else agent.skills).map(::skill)
+    /** The names of the Skills [agent] may use: every one in the catalogue with `skills: "*"`. */
+    fun allowedNames(agent: Agent): List<String> = if (agent.allSkills) skills().map { it.name }.distinct() else agent.skills
+
+    /** The Skills [agent] may use ([allowedNames]). */
+    fun allowed(agent: Agent): List<Skill> = allowedNames(agent).map(::skill)
 }
 
 /**

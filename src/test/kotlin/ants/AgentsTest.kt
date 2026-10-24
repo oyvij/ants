@@ -100,6 +100,17 @@ class AgentsTest : AntsTest() {
         assertEquals("---\nname: seeker\ncli: claude\ntools: Read\ncolor: blue\n---\nScout.\n", agents.resolve("seeker.md").readText())
     }
 
+    @Test
+    fun `an Agent with every Skill, skills star, shows every Skill on its page and keeps the star on Save`() {
+        agents.resolve("all.md").writeText("---\nname: all\nskills: \"*\"\n---\nDo it.\n")
+        val page = get("/agents/all")
+        assertContains(page, """every Skill<input type="hidden" name="skills" value="*">""")
+        assertContains(page, "The Skills this Agent may use")
+        assertFalse("A Task picks one of them" in page)
+        post("/agents/all", mapOf("name" to "all", "cli" to "claude", "skills" to "*", "instructions" to "Do it."))
+        assertContains(agents.resolve("all.md").readText(), "skills: '*'")
+    }
+
     /** Runs [check] with [folder] as an extra Agent folder in settings. */
     private fun withExtraFolder(folder: Path, check: () -> Unit) {
         val settings = home.resolve("settings.yaml")

@@ -121,6 +121,7 @@ class AnswerRoundTest : AntsTest() {
         val argv = launch.argv
         val output = (JsonMapper.shared().readValue(argv[argv.indexOf("--json-schema") + 1], Map::class.java)["properties"] as Map<*, *>)["output"] as Map<*, *>
         assertEquals(listOf("questions"), output["required"])
+        assertEquals("object", output["type"]) // a valid object schema though the Task declares none
     }
 
     @Test

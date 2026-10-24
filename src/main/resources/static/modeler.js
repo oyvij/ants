@@ -554,13 +554,11 @@ panels.agent = element => {
     return box
 }
 
-// The fields of the Result a Task promises by its Result schema, as later Tasks read them.
-function promised(schema) {
-    try {
-        return Object.keys((schema ? JSON.parse(schema) : undefined)?.properties || {})
-    } catch {
-        return []
-    }
+// What later Tasks read of each Task's Result, by id, as the Checks read it (a Task that asks Rounds promises
+// `questions` too): an Agent Task's promised fields, else its summary, and a User Task's kind's fields.
+async function laterRead() {
+    const {xml} = await modeler.get("moddle").toXML(modeler.getDefinitions())
+    return (await fetch("/processes/outputs", {method: "POST", body: new URLSearchParams({_csrf: csrf, bpmn: xml})})).json()
 }
 
 // The Skills an Agent Task lists itself (ADR 0024): its ants.skills, an empty one none; null when it lists none and
@@ -575,11 +573,20 @@ function startingSkill(props, skills) {
     return !props["ants.assignment"]?.trim() && listed?.length === 1 ? skills.find(s => s.name === listed[0]) : undefined
 }
 
+// A Task's list of Skills once it gets the Agent [agent], and the Skills dropped from it (ADR 0024): a new Agent drops
+// the listed Skills it lacks, and a Task with neither an Assignment nor a list picks the Agent's first. [listed] as it
+// was, the same array, when nothing changes.
+function newAgentSkills(listed, assignment, agent) {
+    if (listed === null && !assignment?.trim()) return [agent?.skills.length ? agent.skills.slice(0, 1) : null, []]
+    const dropped = listed && agent ? listed.filter(s => !agent.skills.includes(s)) : []
+    return [dropped.length ? listed.filter(s => agent.skills.includes(s)) : listed, dropped]
+}
+
 // What the panel says once it is drawn again, by element id: the Skills a new Agent dropped.
 const agentNotes = {}
 
 async function agentPanel(element, box) {
-    const [catalogue, offered] = await Promise.all([fetch("/catalogue.json").then(response => response.json()), offeredAt(element)])
+    const [catalogue, offered, read] = await Promise.all([fetch("/catalogue.json").then(response => response.json()), offeredAt(element), laterRead()])
     const refresh = async () => Object.assign(catalogue, await (await fetch("/catalogue.json")).json())
     const bo = element.businessObject
     const props = agentProperties(bo)
@@ -594,20 +601,10 @@ async function agentPanel(element, box) {
     // The Task's own list of Skills: null for the Agent's, [] for none.
     const skillChanges = names => ({"ants.skills": names?.join(", ")})
     const pickSkills = names => writeAgentTask(element, skillChanges(names), undefined, true)
-    // A Task with no Assignment and no Skills picks the Agent's first; a listed Skill the new Agent lacks is dropped.
     const pickAgent = name => {
-        const next = catalogue.agents.find(a => a.name === name)
-        let changes = {}, names = listed
-        if (listed === null && !props["ants.assignment"]?.trim()) {
-            if (next?.skills.length) changes = skillChanges(names = next.skills.slice(0, 1))
-        } else if (listed && next) {
-            const lacking = listed.filter(skill => !next.skills.includes(skill))
-            if (lacking.length) {
-                agentNotes[element.id] = `Dropped ${lacking.join(", ")}: ${name} doesn't have ${lacking.length > 1 ? "them" : "it"}.`
-                changes = skillChanges(names = listed.filter(skill => next.skills.includes(skill)))
-            }
-        }
-        writeAgentTask(element, {"ants.agent": name || undefined, ...changes}, undefined, true)
+        const [names, dropped] = newAgentSkills(listed, props["ants.assignment"], catalogue.agents.find(a => a.name === name))
+        if (dropped.length) agentNotes[element.id] = `Dropped ${dropped.join(", ")}: ${name} doesn't have ${dropped.length > 1 ? "them" : "it"}.`
+        writeAgentTask(element, {"ants.agent": name || undefined, ...(names === listed ? {} : skillChanges(names))}, undefined, true)
     }
     const described = name => [name, catalogue.agents.find(a => a.name === name)?.description].filter(Boolean).join(" · ")
     const agentSelect = el("select", {onchange: () => pickAgent(agentSelect.value)},
@@ -658,7 +655,6 @@ async function agentPanel(element, box) {
         placeholder: "e.g. Write the release notes for the merged PRs, one line each.",
         oninput: () => writeAgentTask(element, {"ants.assignment": assignment.value.trim() ? assignment.value : undefined})})
     assignment.dataset.markdown = ""
-    const fields = promised(props["ants.result-schema"])
     const references = el("datalist", {id: "ants-references"}, ...offered.map(value => el("option", {value})))
     const inputs = agentInputs(bo).map(([name, value], i) => {
         const input = el("input", {className: "mono grow", value, placeholder: `e.g. \${${name}}`, oninput: () => {
@@ -692,7 +688,7 @@ async function agentPanel(element, box) {
             el("div", {className: "skillpick"}, ...(skillRows.length ? skillRows : [note("muted small", agent ? "The Agent has no Skills." : "Pick an Agent to see its Skills.")])),
             dropped ? note("warn", dropped) : "", newSkill),
         el("div", {className: "help"}, start?.description || "", start?.description ? el("br") : "", "Later Tasks can read: ",
-            ...(fields.length ? fields.flatMap(f => [el("code", {textContent: `\${${element.id}.output.${f}}`}), " "]) : [el("code", {textContent: `\${${element.id}.summary}`})])),
+            ...(read[element.id] || []).flatMap(reference => [el("code", {textContent: reference}), " "])),
         el("div", {className: "fld"}, el("label", {className: "f", textContent: "Inputs"}),
             note("help", "What it reads: start-form fields, Run variables and Results of Tasks before it in the diagram."), references,
             ...(inputs.length ? inputs : [note("muted small", "No inputs yet.")]), el("div", {className: "row"}, el("label", {htmlFor: newInput.id, textContent: "New input"}), newInput, addInput)),
@@ -1046,10 +1042,7 @@ async function setAgentTask({id, agent, assignment, skills, inputs, resultSchema
     const text = assignment === undefined ? current["ants.assignment"] : String(assignment ?? "").trim()
     let listed = skills === undefined ? listedSkills(current) : skills && [...new Set(skills)]
     let dropped = []
-    if (skills === undefined && agent !== undefined && agent !== current["ants.agent"]) {
-        if (listed === null && !text?.trim()) listed = picked.skills.length ? picked.skills.slice(0, 1) : null
-        else if (listed) [listed, dropped] = [listed.filter(s => picked.skills.includes(s)), listed.filter(s => !picked.skills.includes(s))]
-    }
+    if (skills === undefined && agent !== undefined && agent !== current["ants.agent"]) [listed, dropped] = newAgentSkills(listed, text, picked)
     const lacking = skills ? listed.filter(s => !picked?.skills.includes(s)) : []
     if (lacking.length) throw new Error(`${agentName ? "The Agent " + agentName : "The Task's Agent"} doesn't have the Skill${lacking.length > 1 ? "s" : ""} ${lacking.join(", ")}` +
         (picked ? `: it has ${picked.skills.join(", ") || "none"}.` : ": give the Task an Agent first."))
@@ -1206,20 +1199,10 @@ function setMultiInstance({id, mode, collection, elementVariable, itemsAreTicket
         collection: loop?.get("camunda:collection") || null, elementVariable: loop?.get("camunda:elementVariable") || null}
 }
 
-// What later Tasks read of a Task's Result, as the panel lists it: an Agent Task's promised fields, else its summary,
-// and a User Task's kind's fields.
-function outputs(e) {
-    const bo = e.businessObject
-    if (kindOf(e) === "user") return userTaskOf(bo).result.map(f => `\${${e.id}.${f}}`)
-    if (kindOf(e) !== "agent") return undefined
-    const props = agentProperties(bo)
-    const fields = promised(props["ants.result-schema"])
-    return fields.length ? fields.map(f => `\${${e.id}.output.${f}}`) : [`\${${e.id}.summary}`]
-}
-
 // The diagram as the Process Builder reads it: its elements, its connections and the start form.
 async function diagram() {
     const all = modeler.get("elementRegistry").filter(e => e.parent && !e.labelTarget) // a root, the Process or a sub-process's plane, has no parent
+    const read = await laterRead()
     const element = e => {
         const bo = e.businessObject, kind = kindOf(e) || e.type.replace("bpmn:", "")
         const properties = agentProperties(bo)
@@ -1231,7 +1214,7 @@ async function diagram() {
         if (loop) properties.multiInstance = {sequential: !!loop.isSequential, collection: loop.get("camunda:collection"), elementVariable: loop.get("camunda:elementVariable")}
         const inside = e.parent.businessObject?.$type === "bpmn:SubProcess" ? e.parent.businessObject.id : undefined
         return {id: e.id, kind, name: bo.name || "", x: e.x, y: e.y, width: e.width, height: e.height, in: inside, properties,
-            inputs: Object.fromEntries(kind === "call" ? callInputs(bo) : agentInputs(bo)), outputs: outputs(e)}
+            inputs: Object.fromEntries(kind === "call" ? callInputs(bo) : agentInputs(bo)), outputs: read[e.id]}
     }
     const start = startEvent()
     return {

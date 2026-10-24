@@ -22,7 +22,10 @@ import kotlin.io.path.exists
  * to the Run workspace root, and a repo to clone is one with `"format": "repo"`, a Source map name or a git URL.
  */
 object ResultContract {
-    /** The `--json-schema` for a Task promising output of [outputSchema]. */
+    /**
+     * The `--json-schema` for a Task promising output of [outputSchema]. A Task that promises nothing, an empty schema,
+     * may hand back `done` with a summary only.
+     */
     fun schema(outputSchema: Map<*, *>): Map<String, Any> = mapOf(
         "type" to "object",
         "properties" to mapOf(
@@ -34,7 +37,7 @@ object ResultContract {
         "required" to listOf("outcome", "summary"),
         "additionalProperties" to false,
         "if" to mapOf("properties" to mapOf("outcome" to mapOf("const" to "done"))),
-        "then" to mapOf("required" to listOf("output"), "not" to mapOf("required" to listOf("needs"))),
+        "then" to mapOf("required" to listOfNotNull("output".takeIf { outputSchema.isNotEmpty() }), "not" to mapOf("required" to listOf("needs"))),
         "else" to mapOf("required" to listOf("needs"), "not" to mapOf("required" to listOf("output"))),
     )
 

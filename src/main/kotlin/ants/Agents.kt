@@ -77,7 +77,7 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
     @ResponseBody
     fun catalogue() = mapOf(
         "agents" to catalogue.agents().map {
-            val skills = if (it.allSkills) catalogue.skills().map { skill -> skill.name }.distinct() else it.skills
+            val skills = catalogue.allowedNames(it)
             mapOf("name" to it.name, "description" to it.description, "skills" to skills, "own" to (it.file.parent == folder), "folder" to it.file.parent.toString())
         },
         "skills" to catalogue.skills().map { skill ->
@@ -187,7 +187,7 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
         ?: throw ResponseStatusException(HttpStatus.FORBIDDEN, "${agent.name} is read-only. Copy it to make one you can edit.")
 }
 
-/** An Agent on the list: the folder it comes from, and whether any of its Skills reads the Vault. */
+/** An Agent on the list, and the folder it comes from. */
 class AgentRow(val agent: Agent, val where: String)
 
 /**

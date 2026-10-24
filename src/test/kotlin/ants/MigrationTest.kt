@@ -183,6 +183,24 @@ class MigrationTest : AntsTest() {
         val schema = JsonMapper.shared().readValue(launch.flag("--json-schema")!!, Map::class.java)
         assertEquals(JsonMapper.shared().readValue(textSchema, Map::class.java), (schema["properties"] as Map<*, *>)["output"])
     }
+
+    @Test
+    fun `a Process the Checks refuse after migration leaves its Agents as they were, and its Runs fail saying what to fix`() {
+        oldSkills()
+        settings(claude, "agent-tasks: 0\n") // held until the migration
+        val agent = home.resolve("agents/writer.md").readText()
+        // An old Ants deployed it without today's Checks, which refuse its result schema.
+        deployedByOlderAnts("refused", oldShape("refused", extra = property("ants.result-schema", "[1]")))
+        val run = runtime.startProcessInstanceByKey("refused", mapOf("prompt" to "Say hello")).id
+
+        migration.migrate()
+
+        assertEquals(agent, home.resolve("agents/writer.md").readText())
+        assertFalse(home.resolve("agents/writer.md.old").exists())
+        settings(claude, "agent-tasks: 3\n")
+        eventually { assertContains(browser.get("/runs/$run").body, "[failed] The Process refused was not migrated to Assignments and Skills when Ants started") }
+        assertContains(browser.get("/runs/$run").body, "Its result schema is invalid")
+    }
 }
 
 /** The migration runs as Ants starts. */

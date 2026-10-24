@@ -46,6 +46,9 @@ class Checks(private val catalogue: Catalogue, private val repository: Repositor
         repository.createProcessDefinitionQuery().processDefinitionKey(key).latestVersion().singleResult()?.let { repository.getBpmnModelInstance(it.id) }
     }
 
+    /** What later Tasks read of each Task's Result in [bpmn], by id; see [laterRead]. */
+    fun laterRead(bpmn: String) = laterRead(Bpmn.readModelFromStream(bpmn.byteInputStream()))
+
     fun of(bpmn: String): List<Check> = try {
         Bpmn.readModelFromStream(bpmn.byteInputStream()).let { model -> kinds.flatMap { it(model) } }
     } catch (e: ModelException) {

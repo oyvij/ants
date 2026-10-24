@@ -1,5 +1,8 @@
 # The Result envelope splits on `outcome` with if/then/else, and marks file references `"format": "path"`
 
+Superseded in part by ADR 0024: a Task's Result schema is its own `ants.result-schema`, not a Skill's
+`result.schema.json`, and a Task with none hands back `done` with a summary only, no `output` required.
+
 The spec asked for `oneOf` on `outcome` to enforce the two Result cases, but `claude --json-schema` hands the schema
 to the API as a tool's input schema, and the API refuses it: `input_schema does not support oneOf, allOf, or anyOf
 at the top level` (claude 2.1.295). So the envelope lists `outcome` (`enum: [done, stuck]`), `summary`, `output` and

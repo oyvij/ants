@@ -22,7 +22,7 @@ class Dependents(val processes: List<ProcessDefinition>, val older: Set<String> 
 class UsedBy(private val repository: RepositoryService, private val runtime: RuntimeService) {
     fun agent(name: String) = dependents(processes { _, model -> model.properties(AGENT).any { it == name } })
 
-    fun skill(name: String) = dependents(processes { _, model -> model.properties(SKILLS).any { name in words(it) } })
+    fun skill(name: String) = dependents(processes { _, model -> model.agentTasks.any { name in Job(it).listed.orEmpty() } })
 
     fun process(key: String) = dependents(processes { process, model ->
         process.key != key && model.getModelElementsByType(CallActivity::class.java).any { it.calledElement == key }

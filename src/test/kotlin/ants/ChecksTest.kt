@@ -442,6 +442,20 @@ class ChecksTest : AntsTest() {
     }
 
     @Test
+    fun `later Tasks read an Agent Task's promised fields, questions too when it asks Rounds, else its summary, and a User Task's fields`() {
+        promises.clear() // a test before may have had its Skill promise a schema
+        val schema = """<operaton:property name="ants.result-schema" value="{&quot;type&quot;:&quot;object&quot;,&quot;properties&quot;:{&quot;note&quot;:{&quot;type&quot;:&quot;string&quot;}}}" />"""
+        val bpmn = diagram(
+            agentTask("asker").replace("</operaton:properties>", "$schema</operaton:properties>") + agentTask("plain") +
+                """<bpmn:userTask id="answer"><bpmn:extensionElements><operaton:properties><operaton:property name="ants.asker" value="asker" /></operaton:properties></bpmn:extensionElements></bpmn:userTask>""",
+        )
+        val read = JsonMapper.shared().readValue(browser.post("/processes/outputs", mapOf("bpmn" to bpmn)).body, Map::class.java)
+        assertEquals(listOf("${'$'}{asker.output.note}", "${'$'}{asker.output.questions}"), read["asker"])
+        assertEquals(listOf("${'$'}{plain.summary}"), read["plain"])
+        assertEquals(listOf("${'$'}{answer.approved}", "${'$'}{answer.comment}"), read["answer"])
+    }
+
+    @Test
     fun `a file that isn't BPMN is one Check on the whole file`() {
         val checks = checks("not xml")
         assertEquals(1, checks.size)

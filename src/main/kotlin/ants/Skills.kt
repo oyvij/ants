@@ -11,6 +11,7 @@ import org.springframework.web.multipart.MultipartFile
 import org.springframework.web.server.ResponseStatusException
 import org.yaml.snakeyaml.error.YAMLException
 import java.nio.file.Files
+import java.nio.file.Path
 import kotlin.io.path.copyTo
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
@@ -64,9 +65,7 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy) {
             return list(model, "$main: ${e.message}")
         }
         val folder = catalogue.yourSkills.resolve(name)
-        val error = nameError("A Skill", name) ?: catalogue.skills().firstOrNull { it.name == name }?.let { "A Skill named $name already exists, in ${it.folder}." }
-            ?: "$folder already exists.".takeIf { folder.exists() }
-        if (error != null) return list(model, "$main: $error")
+        nameProblem(name, null, folder, null)?.let { return list(model, "$main: $it") }
         val beside = paths.filterKeys { it != main && it.startsWith(root) }.mapKeys { folder.resolve(it.key.removePrefix(root)).normalize() }
         if (beside.keys.any { !it.startsWith(folder) }) return list(model, "$main: a file beside it lies outside its folder.")
         for ((path, upload) in beside) path.also { it.parent.createDirectories() }.writeBytes(upload.bytes)
@@ -151,19 +150,13 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy) {
         } catch (e: IllegalArgumentException) {
             return show(model, form, e.message)
         }
-        val taken = catalogue.skills().firstOrNull { it.name == name }
         // A renamed Skill's folder follows the name when it was named after the Skill.
         val folder = when {
             edited == null -> catalogue.yourSkills.resolve(name)
             edited.folder.fileName.toString() == edited.name -> edited.folder.resolveSibling(name)
             else -> edited.folder
         }
-        val error = nameError("A Skill", name) ?: when {
-            name != form.name && taken != null -> "A Skill named $name already exists, in ${taken.folder}."
-            folder != edited?.folder && folder.exists() -> "$folder already exists."
-            else -> null
-        }
-        if (error != null) return show(model, form, error)
+        nameProblem(name, form.name, folder, edited?.folder)?.let { return show(model, form, it) }
         if (edited != null && name != edited.name) {
             if (!confirmed) {
                 val params = mapOf("skill" to form.skill) + listOfNotNull(model.getAttribute("use")?.let { "use" to it.toString() })
@@ -175,6 +168,14 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy) {
         saved(name)
         return "redirect:/skills/$name" + if (modal.isEmpty()) "" else "?saved"
     }
+
+    /**
+     * Why a Skill can't be saved as [name] into [folder], or null: a name that isn't valid or another Skill has, or a
+     * folder taken. [was] is the Skill's name before, null for a new one, and [current] its folder.
+     */
+    private fun nameProblem(name: String, was: String?, folder: Path, current: Path?): String? = nameError("A Skill", name)
+        ?: catalogue.skills().firstOrNull { name != was && it.name == name }?.let { "A Skill named $name already exists, in ${it.folder}." }
+        ?: "$folder already exists.".takeIf { folder != current && folder.exists() }
 
     private fun find(name: String) = runCatching { catalogue.skill(name) }
         .getOrElse { throw ResponseStatusException(HttpStatus.NOT_FOUND, it.message) }

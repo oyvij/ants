@@ -102,10 +102,10 @@
                     <div class="help checked">codex's model ID, as <code>codex -m</code> takes it; empty for codex's default.</div>
                 </fieldset></div>
         </div>
-        <div class="fld"><label class="f" for="add-skill">Skills it runs</label><div class="help">The jobs this Agent may do. A Task picks one of them; the modeler only offers these. &nbsp;e.g. <span class="eg">implement, tdd</span></div>
+        <div class="fld"><label class="f" for="add-skill">Skills it may use</label><div class="help">The Skills this Agent may use, or <code>*</code> for every Skill. A Task lists the ones it allows, or allows them all; the modeler only offers these. &nbsp;e.g. <span class="eg">implement, tdd</span></div>
             <div class="chipsel">
 @for(skill in ants.words(form.skills))
-                <span class="c">$unsafe{skillIcon}${skill}<input type="hidden" name="skills" value="${skill}">@if(!readOnly)<button type="button" title="Remove">×</button>@endif</span>
+                <span class="c">$unsafe{skillIcon}${if (skill == "*") "every Skill" else skill}<input type="hidden" name="skills" value="${skill}">@if(!readOnly)<button type="button" title="Remove">×</button>@endif</span>
 @endfor
 @if(!readOnly)
                 <input id="add-skill" name="skills" list="skill-list" placeholder="Add a Skill, e.g. implement" autocomplete="off">
@@ -125,7 +125,7 @@
     </div>
     <div class="card"><h3>What it may do</h3>
         <fieldset data-cli="claude" disabled="${!claude}">
-            <div class="help">Tick each tool this Agent may use. Anything unticked is refused: an Agent without <b>Edit</b> and <b>Write</b> can't change code, whatever its Skill says.</div>
+            <div class="help">Tick each tool this Agent may use. Anything unticked is refused: an Agent without <b>Edit</b> and <b>Write</b> can't change code, whatever its Skills say.</div>
 @for(group in AgentForm.GROUPS)
             <div class="tgroup">${group.key}</div>
 @for(tool in group.value)
@@ -156,7 +156,7 @@
             </select>
         </fieldset>
     </div>
-    <div class="card"><h3><label for="instructions">Standing instructions</label></h3><div class="help">Who the Agent is and how it works, whatever the Skill. Markdown; <b>Expand</b> gives you a big editor with a live preview.</div>
+    <div class="card"><h3><label for="instructions">Standing instructions</label></h3><div class="help">Who the Agent is and how it works, whatever the Skills. Markdown; <b>Expand</b> gives you a big editor with a live preview.</div>
         <textarea id="instructions" name="instructions" rows="14" placeholder="e.g. You implement one Ticket at a time, test first, and commit once the suite passes." data-markdown data-tall>${form.instructions}</textarea></div>
     </fieldset>
 </form>

@@ -2,6 +2,7 @@ package ants
 
 import org.operaton.bpm.engine.RepositoryService
 import org.operaton.bpm.engine.externaltask.LockedExternalTask
+import org.operaton.bpm.engine.repository.ProcessDefinition
 import org.operaton.bpm.model.bpmn.instance.BaseElement
 import org.operaton.bpm.model.bpmn.instance.operaton.OperatonProperties
 import org.slf4j.LoggerFactory
@@ -14,12 +15,14 @@ import org.springframework.stereotype.Component
 import org.w3c.dom.Document
 import org.w3c.dom.Element
 import java.nio.file.Path
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.io.path.exists
 import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.moveTo
 import kotlin.io.path.readBytes
 import kotlin.io.path.readText
 import kotlin.io.path.writeBytes
+import kotlin.io.path.writeText
 
 /** The property an Agent Task named its one Skill by before ADR 0024; only the migration reads it. */
 private const val OLD_SKILL = "ants.skill"
@@ -46,9 +49,11 @@ private val GONE_SKILLS = mapOf("grill" to "grilling", "scout" to null, "answer-
  * [SKILLS] instead, taking over what X gave it unless the Task sets it itself: its result schema, its declared inputs,
  * its Vault and Answer History opt-ins; when X used other Skills, they are listed too, with an Assignment to follow X,
  * since only one listed Skill can be the job. A Task naming a shipped Skill whose job is now a shipped Task's gets that
- * Task's Assignment, Skills, schema and toggles. Then the user's Agents list what their Tasks now do, and the user's
- * Skills drop their Ants metadata and `result.schema.json`. Each changed file keeps its old version beside it as
- * `<file>.old`; a Process keeps its older version. What is already in the new shape is left as it is.
+ * Task's Assignment, Skills, schema and toggles. The user's Agents list what the Tasks of the migrated Templates and of
+ * the Processes that deploy now do, and the user's Skills drop their Ants metadata and `result.schema.json`. A Process
+ * the Checks refuse stays as it was, and so do its Agents' lists and its Skills; its Runs fail saying why ([unmigrated]).
+ * Each changed file keeps its old version beside it as `<file>.old`; a Process keeps its older version. What is already
+ * in the new shape is left as it is.
  */
 @Component
 class Migration(
@@ -60,28 +65,79 @@ class Migration(
     @Order(Ordered.HIGHEST_PRECEDENCE) // before the shipped Processes deploy and Agent Tasks launch
     fun migrate() {
         val shipped = shippedJobs()
-        val needs = mutableMapOf<String, MutableSet<String>>()
         val templates = home.resolve("templates").takeIf { it.exists() }?.listDirectoryEntries("*.bpmn").orEmpty().mapNotNull { file ->
             runCatching { parse(file.readBytes()) }.onFailure { log.warn("The Template $file can't be read to migrate it: ${it.message}") }.getOrNull()?.let { file to it }
         }
         val saved = repository.createProcessDefinitionQuery().latestVersion().list().filter { !it.resourceName.startsWith("shipped/") }
             .map { it to parse(repository.getProcessModel(it.id).readAllBytes()) }
-        // Every Task first, so the Agents list what the Tasks need before the Checks of each deploy read them.
-        val changedTemplates = templates.filter { (_, document) -> migrate(document, shipped, needs).isNotEmpty() }
-        val changedProcesses = saved.mapNotNull { (process, document) -> migrate(document, shipped, needs).takeIf { it.isNotEmpty() }?.let { Triple(process, document, it) } }
-        agents(needs)
+        // The Agents list what the migrated Templates and the Processes that deploy need: a Process's needs go in before
+        // the Checks of its deploy read the Agents, and out again if they refuse it, so it keeps its old shape coherently.
+        val agents = Agents()
+        var needs: Needs = emptyMap()
+        val changedTemplates = templates.filter { (_, document) -> migrate(document, shipped).let { (named, own) -> needs = needs.and(own); named.isNotEmpty() } }
+        val changedProcesses = saved.mapNotNull { (process, document) ->
+            migrate(document, shipped).takeIf { it.first.isNotEmpty() }?.let { (named, own) -> Changed(process, document, named, own) }
+        }
+        agents.list(needs)
         for ((file, document) in changedTemplates) {
             file.resolveSibling("${file.fileName}.old").writeBytes(file.readBytes())
             file.writeAtomically(serialize(document))
         }
         val failed = mutableSetOf<String>()
-        for ((process, document, named) in changedProcesses) try {
-            processes.deploy(serialize(document).toByteArray(), process.resourceName)
+        refused.clear()
+        for (changed in changedProcesses) try {
+            agents.list(needs.and(changed.needs))
+            processes.deploy(serialize(changed.document).toByteArray(), changed.process.resourceName)
+            needs = needs.and(changed.needs)
         } catch (e: Refused) {
-            log.warn("The Process ${process.key} can't be migrated, so it stays as it was: ${e.message}")
-            failed += named
+            log.warn("The Process ${changed.process.key} can't be migrated, so it stays as it was: ${e.message}")
+            refused[changed.process.key] = e.message.orEmpty()
+            failed += changed.named
         }
+        agents.list(needs)
+        agents.keepOld()
         skills(failed)
+    }
+
+    private class Changed(val process: ProcessDefinition, val document: Document, val named: Set<String>, val needs: Needs)
+
+    /** Why the Checks refused each Process, by key, that the last [migrate] couldn't migrate. */
+    private val refused = ConcurrentHashMap<String, String>()
+
+    /**
+     * Why [task] can't run, when its Process still has it the old way (`ants.skill`) since the Checks refused its
+     * migration, saying what to fix; null when it can run.
+     */
+    fun unmigrated(task: LockedExternalTask): String? {
+        if (OLD_SKILL !in task.extensionProperties) return null
+        val why = refused[task.processDefinitionKey]?.let { "The Checks refused it:\n$it" } ?: "Why is in Ants' log."
+        return "The Process ${task.processDefinitionKey} was not migrated to Assignments and Skills when Ants started, so its Task " +
+            "${task.activityId} still names its Skill the old way. $why\nFix that in the Process, give the Task an Assignment or list " +
+            "its Skill, have its Agent list that Skill, Save, and Retry."
+    }
+
+    /**
+     * The user's own Agents (not `*`) as they were before the migration, which [list] rewrites from: each lists the
+     * Skills the migrated Tasks need, and no gone shipped Skill: `grill` is `grilling` now, and the Skills that became
+     * shipped Assignments drop out, unless the user has one by that name.
+     */
+    private inner class Agents {
+        private val before = catalogue.agents(withHidden = true).filter { it.file.parent == catalogue.yourAgents && !it.allSkills }.associate { it.file to it.file.readText() }
+
+        fun list(needs: Needs) {
+            for ((file, text) in before) {
+                val agent = Agent(file, text)
+                val kept = agent.skills.mapNotNull { name -> if (name in GONE_SKILLS && runCatching { catalogue.skill(name) }.isFailure) GONE_SKILLS[name] else name }
+                val skills = (kept + needs[agent.name].orEmpty()).distinct()
+                val now = if (skills == agent.skills) text else AgentForm.of(agent).copy(skills = skills.joinToString(", ")).text()
+                if (file.readText() != now) file.writeAtomically(now)
+            }
+        }
+
+        /** Each Agent rewritten keeps its old version beside it. */
+        fun keepOld() {
+            for ((file, text) in before) if (file.readText() != text) file.resolveSibling("${file.fileName}.old").writeText(text)
+        }
     }
 
     /** Each shipped Task that named an old shipped Skill, by that Skill's name: its element id and its job's properties. */
@@ -91,9 +147,10 @@ class Migration(
             .map { task -> SHIPPED_TASKS.getValue(task.getAttribute("id")) to (task.getAttribute("id") to properties(task).filterKeys { it in JOB }.mapValues { it.value.getAttribute("value") }) }
             .groupBy({ it.first }, { it.second })
 
-    /** Migrates each old-shape Agent Task in [document], noting the Skills each Agent now needs; gives the Skills the changed Tasks named, empty when none changed. */
-    private fun migrate(document: Document, shipped: Map<String, List<Pair<String, Map<String, String>>>>, needs: MutableMap<String, MutableSet<String>>): Set<String> {
+    /** Migrates each old-shape Agent Task in [document]; gives the Skills the changed Tasks named, empty when none changed, and the Skills each Agent now needs for them. */
+    private fun migrate(document: Document, shipped: Map<String, List<Pair<String, Map<String, String>>>>): Pair<Set<String>, Needs> {
         val named = mutableSetOf<String>()
+        val needs = mutableMapOf<String, MutableSet<String>>()
         for (task in agentTasks(document)) {
             val properties = properties(task)
             val old = properties[OLD_SKILL] ?: continue
@@ -124,12 +181,12 @@ class Migration(
                     skill?.inputs?.forEach { input(task, it) }
                 }
             }
-            properties(task)[SKILLS]?.getAttribute("value")?.let(::words)?.let { listed ->
+            Job { properties(task)[it]?.getAttribute("value") }.listed?.let { listed ->
                 properties[AGENT]?.getAttribute("value")?.let { needs.getOrPut(it) { mutableSetOf() } += listed }
             }
             old.parentNode.removeChild(old)
         }
-        return named
+        return named to needs
     }
 
     /** Adds an empty input [name] to [task], as the modeler adds a declared one, unless the Task has it. */
@@ -140,22 +197,6 @@ class Migration(
             ?: extensions.appendChild(task.ownerDocument.createElementNS(properties.namespaceURI, "${properties.prefix}:inputOutput")) as Element
         if (io.getElementsByTagNameNS("*", "inputParameter").elements().any { it.getAttribute("name") == name }) return
         io.appendChild(task.ownerDocument.createElementNS(properties.namespaceURI, "${properties.prefix}:inputParameter")).let { (it as Element).setAttribute("name", name) }
-    }
-
-    /**
-     * The user's own Agents list each Skill their migrated Tasks now name, and no gone shipped Skill: `grill` is
-     * `grilling` now, and the Skills that became shipped Assignments drop out, unless the user has one by that name.
-     */
-    private fun agents(needs: Map<String, Set<String>>) {
-        for (agent in catalogue.agents(withHidden = true).filter { it.file.parent == catalogue.yourAgents && !it.allSkills }) {
-            val kept = agent.skills.mapNotNull { name ->
-                if (name in GONE_SKILLS && runCatching { catalogue.skill(name) }.isFailure) GONE_SKILLS[name] else name
-            }
-            val skills = (kept + needs[agent.name].orEmpty()).distinct()
-            if (skills == agent.skills) continue
-            agent.file.resolveSibling("${agent.file.fileName}.old").writeBytes(agent.file.readBytes())
-            agent.file.writeAtomically(AgentForm.of(agent).copy(skills = skills.joinToString(", ")).text())
-        }
     }
 
     /** The user's own Skills drop their Ants metadata and `result.schema.json`, all but those a Process that couldn't be migrated still names. */
@@ -201,6 +242,12 @@ class Migration(
         }
     }
 }
+
+/** The Skills each Agent needs, by the Agent's name. */
+private typealias Needs = Map<String, Set<String>>
+
+/** These needs and [more]. */
+private fun Needs.and(more: Needs): Needs = (keys + more.keys).associateWith { this[it].orEmpty() + more[it].orEmpty() }
 
 /** The Agent Tasks in [document]. */
 private fun agentTasks(document: Document) = document.getElementsByTagNameNS(BPMN, "serviceTask").elements()
