@@ -1,8 +1,7 @@
 name: image
 
-# Publishes the multi-arch Ants image of the release v<version> to GHCR, tagged with the version and beta, and a stable
-# release with latest too, so beta is always the newest image, beta (0.27.0-beta.412) or stable. release.yml and ci.yml
-# call it;
+# Publishes the multi-arch Ants image of the release v<version> to GHCR, tagged with the version and with latest for a
+# stable release or beta for a beta (0.27.0-beta.412). release.yml and ci.yml call it;
 # `gh workflow run image.yml -f version=x.y.z` publishes one by hand.
 on:
   workflow_call:
@@ -46,4 +45,4 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ghcr.io/${{ github.repository }}:${{ inputs.version }},ghcr.io/${{ github.repository }}:beta${{ !contains(inputs.version, '-') && format(',ghcr.io/{0}:latest', github.repository) || '' }}
+          tags: ghcr.io/${{ github.repository }}:${{ inputs.version }},ghcr.io/${{ github.repository }}:${{ contains(inputs.version, '-') && 'beta' || 'latest' }}
