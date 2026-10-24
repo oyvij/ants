@@ -393,7 +393,7 @@ class BrowserTest : AntsTest() {
         agentTask(null, metadata = "metadata:\n  ants-inputs: prompt\n")
         val hand = appendAgentTask()
         label("Agent").selectOption("writer")
-        assertThat(label("Skill")).hasValue("draft")
+        assertThat(label("draft")).isChecked()
         assertThat(page.locator("#explain label.row code").first()).hasText("prompt")
         page.locator("#explain label.row input").first().fill("\${prompt}")
         val tool = builder()
@@ -409,7 +409,8 @@ class BrowserTest : AntsTest() {
             .map { it.groupValues }.single { (_, attributes) -> """id="$id"""" in attributes }
             .let { (_, attributes, body) -> attributes.replace("""id="$id"""", "").trim() + body.substringAfter("extensionElements>").substringBefore("extensionElements>") }
         assertContains(task("byTool"), "\${prompt}")
-        assertEquals(task(hand), task("byTool"))
+        // The panel writes ants.skills (ADR 0024); set_agent_task still writes the old ants.skill until #230.
+        assertEquals(task(hand), task("byTool").replace("\"ants.skill\"", "\"ants.skills\""))
     }
 
     private fun texts(node: tools.jackson.databind.JsonNode?) = node?.iterator()?.asSequence()?.map { it.asString() }?.toList()
@@ -577,7 +578,7 @@ class BrowserTest : AntsTest() {
         agentTask(null)
         appendAgentTask()
         label("Agent").selectOption("writer")
-        assertThat(label("Skill")).hasValue("draft")
+        assertThat(label("draft")).isChecked()
         page.locator("#explain button", Page.LocatorOptions().setHasText("Edit")).nth(1).click()
         assertThat(page.locator("dialog.modal")).containsText("Edit Skill")
         page.frameLocator("dialog iframe").locator("#skill-md + .ed .cm-content")
@@ -602,10 +603,80 @@ class BrowserTest : AntsTest() {
         val task = appendAgentTask()
         assertThat(page.locator("#summary")).hasText(Pattern.compile("\\d+ to fix"))
         label("Agent").selectOption("writer")
-        assertThat(label("Skill")).hasValue("draft")
+        assertThat(label("draft")).isChecked()
         assertThat(panel).containsText("Later Tasks can read: ${'$'}{$task.output.notes}")
         assertThat(page.locator("#summary")).hasText("Ready to deploy")
         page.screenshot("modeler-agent-task")
+    }
+
+    /** The Agent Task panel's Skill checkboxes. */
+    private val skillBoxes get() = page.locator("#explain .skillpick input[type=checkbox]")
+
+    /** The diagram the page sends to the Checks once [action] has changed it so that [sent] holds. */
+    private fun checked(sent: (String) -> Boolean, action: () -> Unit) =
+        bpmnOf(page.waitForRequest({ it.url().endsWith("/processes/checks") && sent(bpmnOf(it.postData())) }, action).postData())
+
+    @Test
+    fun `an Assignment, Skills and an input set in the Agent Task panel are saved on the Task and reach the next launch`() = browse {
+        val claude = FakeClaude()
+        agentTask(claude, mapOf("draft" to null, "polish" to null, "extra" to null))
+        home.resolve("skills/unlisted").createDirectories().resolve("SKILL.md").writeText("---\nname: unlisted\ndescription: Not the writer's.\n---\nNo.\n")
+        http.import("agent-task.bpmn")
+        page.navigate(url("/processes/agent-task/edit"))
+        shape("draft").click()
+        // The old ants.skill shows as the one listed Skill; the picker offers only the Agent's.
+        assertThat(label("Skills")).hasValue("some")
+        assertThat(page.locator("#explain .skillpick label")).hasText(arrayOf("draft", "polish", "extra"))
+        assertThat(label("draft")).isChecked()
+        label("polish").check()
+        assertThat(page.locator("#checks")).containsText("Draft has no Assignment and doesn't list exactly one Skill.")
+        page.locator("#ants-assignment + .ed .cm-content").fill("Greet the user.\nKeep it short.")
+        assertThat(page.locator("#summary")).hasText("Ready to deploy")
+        page.locator("#ants-new-input").fill("audience")
+        button("＋ Add input").click()
+        panel.locator("label.row", Locator.LocatorOptions().setHasText("audience")).locator("input").fill("friends")
+        page.screenshot("modeler-assignment")
+        page.locator("#save").click()
+        assertThat(page).hasURL(Pattern.compile(".*/processes/agent-task$"))
+        val saved = http.get("/processes/agent-task/diagram.bpmn").body
+        assertContains(saved, """name="ants.skills" value="draft, polish"""")
+        assertFalse("""name="ants.skill"""" in saved)
+
+        claude.session("draft", """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":{"outcome":"done","summary":"Greeted.","output":{}}}""")
+        http.post("/processes/agent-task/runs", mapOf("prompt" to "Say hello"))
+        eventually { assertEquals(1, claude.launches("draft").size) }
+        val launch = claude.launches("draft").single()
+        assertContains(launch.stdin, "Greet the user.\\nKeep it short.")
+        assertContains(launch.stdin, """\"audience\":\"friends\"""")
+        assertEquals(setOf("draft", "polish"), launch.skills.keys)
+    }
+
+    @Test
+    fun `the Skills picker saves none as an empty list and the Agent's Skills as no list`() = browse {
+        agentTask(null, mapOf("draft" to null, "polish" to null))
+        http.import("agent-task.bpmn")
+        page.navigate(url("/processes/agent-task/edit"))
+        shape("draft").click()
+        val none = checked({ "name=\"ants.skills\" value=\"\"" in it }) { label("Skills").selectOption("none") }
+        assertFalse("""name="ants.skill"""" in none)
+        assertThat(skillBoxes).hasCount(2)
+        for (box in skillBoxes.all()) assertThat(box).not().isChecked()
+        checked({ "ants.skills" !in it && "name=\"ants.skill\"" !in it }) { label("Skills").selectOption("agent") }
+        for (box in skillBoxes.all()) { assertThat(box).isChecked(); assertThat(box).isDisabled() }
+    }
+
+    @Test
+    fun `changing the Agent drops the listed Skills the new Agent doesn't have, and says so`() = browse {
+        agentTask(null, mapOf("draft" to null, "polish" to null))
+        home.resolve("agents/editor.md").writeText("---\nskills: polish\n---\nEdit.\n")
+        http.import("agent-task.bpmn")
+        page.navigate(url("/processes/agent-task/edit"))
+        shape("draft").click()
+        label("polish").check()
+        checked({ "name=\"ants.agent\" value=\"editor\"" in it && "name=\"ants.skills\" value=\"polish\"" in it }) { label("Agent").selectOption("editor") }
+        assertThat(panel).containsText("Dropped draft: editor doesn't have it.")
+        assertThat(page.locator("#explain .skillpick label")).hasText(arrayOf("polish"))
+        assertThat(label("polish")).isChecked()
     }
 
     @Test
@@ -616,7 +687,7 @@ class BrowserTest : AntsTest() {
         assertThat(page.locator("dialog.modal")).containsText("This Task has no Agent yet.")
         page.keyboard().press("Escape")
         label("Agent").selectOption("writer")
-        assertThat(label("Skill")).hasValue("draft")
+        assertThat(label("draft")).isChecked()
         button("New Skill").click()
         assertThat(page.locator("dialog.modal")).containsText("Added to writer's Skills, and picked on this Task.")
         page.waitForTimeout(1000.0) // the form loads in its frame
