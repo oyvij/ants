@@ -1,6 +1,7 @@
 package ants
 
 import org.junit.jupiter.api.Test
+import tools.jackson.databind.json.JsonMapper
 import kotlin.io.path.exists
 import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.readText
@@ -23,16 +24,17 @@ class AnswerRoundTest : AntsTest() {
      * Starts a Run of `round.bpmn`: Grill the idea → Asked? → Answer the Round → back to Grill the idea, until a Round
      * asks nothing; the Round's timer boundary is [timer] (an hour in the file).
      */
-    private fun start(timer: String = "PT1H", process: String = "round", cap: Int = 10): String {
+    private fun start(timer: String = "PT1H", process: String = "round", cap: Int = 10, quiz: String? = """{"type":"object","properties":{"questions":{"type":"array"}}}""", assignment: String? = null): String {
         agentTask(
             claude,
             mapOf(
-                "quiz" to """{"type":"object","properties":{"questions":{"type":"array"}}}""",
+                "quiz" to quiz,
                 "stand-in" to """{"type":"object","properties":{"answers":{"type":"array"}}}""",
             ),
         )
         browser.get("/processes")
         val bpmn = javaClass.getResource("/$process.bpmn")!!.readText().replace("PT1H", timer).replace("runs.grill >= 10", "runs.grill >= $cap")
+            .let { if (assignment == null) it else it.replace("""name="ants.skill" value="quiz"""", """name="ants.assignment" value="$assignment"""") }
         browser.upload("/processes", "file", "$process.bpmn", bpmn.toByteArray())
         browser.get("/processes/$process")
         return browser.post("/processes/$process/runs", emptyMap()).path.removePrefix("/runs/")
@@ -86,6 +88,39 @@ class AnswerRoundTest : AntsTest() {
             """{"type":"user","message":{"role":"user","content":"{\"answers\":[{\"id\":\"format\",\"answer\":\"Recommend format.\",\"source\":\"accepted\"}]}"}}""",
             three.stdin,
         )
+    }
+
+    @Test
+    fun `a Task that asks Rounds gets the Round protocol in its hand-off, and questions added to a Result schema without them`() {
+        claude.session("quiz", 1, round("First round.", question("who", "Who exports")))
+        val run = start(quiz = """{"type":"object","properties":{"note":{"type":"string"}},"additionalProperties":false}""")
+        val body = browser.get(entry(run)).body
+        for (text in listOf("Who exports", "Ask who?", ">Recommend who.</textarea>")) assertContains(body, text)
+
+        val launch = claude.launches("quiz").single()
+        for (text in listOf(
+            "A Round is one Result:", "`id`", "`title`", "`ask`", "`context`", "`recommendation`", "`why`", "on a phone",
+            "{answers: [{id, answer, source}]}", "Never ask a settled question again unless a later answer reopens it",
+        )) assertContains(launch.stdin, text)
+        val argv = launch.argv
+        val output = (JsonMapper.shared().readValue(argv[argv.indexOf("--json-schema") + 1], Map::class.java)["properties"] as Map<*, *>)["output"] as Map<*, *>
+        assertEquals(setOf("note", "questions"), (output["properties"] as Map<*, *>).keys)
+        assertEquals(listOf("questions"), output["required"])
+        val item = ((output["properties"] as Map<*, *>)["questions"] as Map<*, *>)["items"] as Map<*, *>
+        assertEquals(listOf("id", "title", "ask", "context", "recommendation", "why"), item["required"])
+    }
+
+    @Test
+    fun `a Task with an Assignment that asks Rounds gets the ranking, the Round protocol and questions in its schema`() {
+        claude.session("grill", 1, round("First round.", question("who", "Who exports")))
+        val run = start(assignment = "Grill the idea.")
+        assertContains(browser.get(entry(run)).body, "Who exports")
+
+        val launch = claude.launches("grill").single()
+        for (text in listOf("Grill the idea.", RANKING, "A Round is one Result:")) assertContains(launch.stdin, text)
+        val argv = launch.argv
+        val output = (JsonMapper.shared().readValue(argv[argv.indexOf("--json-schema") + 1], Map::class.java)["properties"] as Map<*, *>)["output"] as Map<*, *>
+        assertEquals(listOf("questions"), output["required"])
     }
 
     @Test
