@@ -65,7 +65,7 @@ class AssignmentTest : AntsTest() {
         completed(start("everything", "ants.assignment" to "Greet the user."))
         val every = claude.launches("greet").last().skills
         assertEquals(skillsOf("draft", "notes", "extra"), every.filterKeys { it in setOf("draft", "notes", "extra") })
-        assertContains(every.keys, "grill") // shipped ones too
+        assertContains(every.keys, "grilling") // shipped ones too
     }
 
     @Test
@@ -90,5 +90,18 @@ class AssignmentTest : AntsTest() {
         val launch = claude.launches("draft").single()
         assertContains(launch.stdin, """"content":"/draft The workspace is ${workspace(run)}.\n\n$RANKING\n\n{""")
         assertEquals(skillsOf("draft"), launch.skills)
+    }
+
+    @Test
+    fun `the hand-off names the listed Skills only a user can invoke, so an Assignment can have them followed`() {
+        writer("draft, notes", "draft", "notes")
+        home.resolve("skills/notes/SKILL.md").writeText("---\nname: notes\ndescription: Takes notes.\ndisable-model-invocation: true\n---\nTake notes.\n")
+        claude.session("greet", done)
+        val run = start("user-only", "ants.assignment" to "Follow the notes Skill.", "ants.skills" to "draft, notes")
+        completed(run)
+        val launch = claude.launches("greet").single()
+        assertContains(launch.stdin, "\"content\":\"The workspace is ${workspace(run)}. Only a user can invoke the Skill notes " +
+            "(${home.resolve("skills/notes/SKILL.md")}), so where your Assignment names it, read that file and follow it.\\n\\nFollow the notes Skill.")
+        assertEquals(skillsOf("draft", "notes"), launch.skills)
     }
 }

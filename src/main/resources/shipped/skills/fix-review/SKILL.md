@@ -3,7 +3,7 @@ name: fix-review
 description: Fix what the user's review of the Run's changes asks for, test-first in the clones, review the fixes, and comment on each Ticket they touch.
 metadata:
   ants-inputs: review spec stories
-  ants-uses: tdd code-review
+  ants-uses: tdd code-review codebase-design
   ants-verbosity: true
 ---
 

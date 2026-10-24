@@ -84,6 +84,8 @@ class Skill(
     val inputs: List<String> = emptyList(),
     /** Whether it opts in to the Answer History (`metadata.ants-answer-history: true`). */
     val answerHistory: Boolean = false,
+    /** Whether only a user can invoke it (`disable-model-invocation: true`): claude doesn't show it to the model. */
+    val userOnly: Boolean = false,
     /** Whether it opts in to the Run's Verbosity (`metadata.ants-verbosity: true`). */
     val verbosity: Boolean = false,
 ) {
@@ -148,6 +150,7 @@ class Catalogue(@Value("\${ants.home}") private val home: Path, private val sett
                 inputs = Settings.strings(metadata["ants-inputs"]?.toString()).orEmpty(),
                 answerHistory = metadata["ants-answer-history"] == true,
                 verbosity = metadata["ants-verbosity"] == true,
+                userOnly = meta["disable-model-invocation"] == true,
             )
         }
     }

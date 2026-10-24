@@ -1,66 +1,14 @@
 ---
 name: pr
-description: Open a pull request on GitHub for each repo the Run pushed, with a body written from the commits, the Spec or proposal and the review.
+description: "Use when writing a PR body."
 metadata:
-  ants-inputs: push spec proposal review fixes
-  ants-verbosity: true
+  credits:
+    skill: show-me
+    author: Dex Horthy
+    organisation: Humanlayer
+    url: "https://github.com/humanlayer/skills/blob/main/plugins/show-me/skills/show-me/SKILL.md"
 ---
-
-<!-- Matt Pocock's pr Skill (https://github.com/mattpocock/skills, v1.3.1), word for word below the line, with its
-CREDITS.md beside it. Copyright (c) 2026 Matt Pocock. MIT License: see LICENSE in the tdd Skill's folder. -->
-
-## In Ants
-
-Below the line is Matt Pocock's pr Skill, word for word: it writes the body. This section opens
-the pull requests. Ants runs it without a chat, so where the two differ, this section wins.
-
-Open one pull request per pushed repo, so the user's reviewers get the context of the Run. Your
-inputs; paths are relative to the Run workspace:
-
-- `push`: the Push Result, one entry per repo:
-  `{repo, remote, branch, base, isNew, commits: [{sha, subject}], pushed, error, compareUrl}`.
-  The clone is `repos/<repo>/`.
-- `spec` or `proposal`: what the Run built, `tickets/spec.md` or `proposal/proposal.md`.
-- `review`: the implementers' review of their commits, if any: a summary, or their Results, each
-  with the summary as `output.review`.
-- `fixes`: the review of the fixes made after the user sent the changes back, if any.
-
-You run `gh` on the user's own login, and `git log` and `git diff` in the clones. You change
-nothing in the repos and push nothing. Each command is its own Bash call. Run `gh` from wherever
-you are, `gh pr` always with `--repo`. Run git from inside a clone: first `cd repos/<repo>`,
-then a plain `git log …` (the shell stays in the clone); `cd ../..` takes you back to the
-workspace root. Anything else is refused: `git -C …`, `git --git-dir=…`, `git -c …`, `--output`,
-and `cd … && git …` or any other chained command.
-
-1. **Pick the repos.** Only entries with `pushed: true`. A repo whose `remote` isn't on
-   `github.com` gets a pull request from you only if the user's standing instructions for this Run
-   say how to open one on its host, such as through a Protected Command: write its body to
-   `pr/<repo>.md` as below and follow them. Otherwise open the others first, then answer `stuck`,
-   naming each such repo with its `compareUrl` (or its remote and branches when there is none), so
-   the user can open it by hand and Continue. When Continued, answer `done` with the pull requests you
-   opened. For each github.com repo, read `<owner>/<name>` from the remote and run
-   `gh repo view <owner>/<name> --json parent`. If `parent` is null, the pull request goes to
-   `<owner>/<name>` from `<branch>` into `<base>`: `<target>` is `<owner>/<name>`, `<head>` is
-   `<branch>` and `<target base>` is `<base>`. If it names a parent, the remote is a fork, and the
-   pull request goes to the parent: `<target>` is `<parent-owner>/<parent-name>`, `<head>` is
-   `<owner>:<branch>` and `<target base>` is the parent's default branch, which
-   `gh repo view <parent-owner>/<parent-name> --json defaultBranchRef` gives. Read the JSON `gh`
-   prints; don't pass `--jq`. If `gh pr view <head> --repo <target>` already shows an open pull
-   request for that head, keep it: don't open a second one.
-2. **Write the body** as below, from the spec or proposal, the review and the fixes, and
-   `git log` and `git diff` from `<base>`, inside the clone. `GLOSSARY.md` is the clone's. The
-   review and the fixes are evidence, and tell you the Merge Danger. You can't take screenshots.
-   The title is one short line saying what the change does, in plain words with no backticks:
-   claude refuses a command with a backtick in it, and the title goes on the command line.
-3. **Open it:** write the body to `pr/<repo>.md` in the Run workspace, then, from the workspace
-   root, run `gh pr create --repo <target> --head <head> --base <target base> --title "…"
-   --body-file pr/<repo>.md`. Never pass the body inline with `--body`: claude refuses a command
-   with a backtick in it, and a body usually has one. If `gh` isn't logged in or is refused, answer
-   `stuck` with its message.
-
-Answer `done` with `pullRequests: [{repo, url}]`.
-
----
+<!-- Matt Pocock's pr Skill (https://github.com/mattpocock/skills, v1.3.1), word for word. Copyright (c) 2026 Matt Pocock. MIT License: see LICENSE beside this file. -->
 
 Use this template for writing the PR body:
 

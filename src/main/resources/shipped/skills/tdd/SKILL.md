@@ -1,28 +1,8 @@
 ---
 name: tdd
-description: Test-driven development, red-green at pre-agreed seams. Used by other Skills, never picked by a Task.
-metadata:
-  ants-uses: codebase-design
-  ants-verbosity: true
+description: Test-driven development. Use when the user wants to build features or fix bugs test-first, mentions "red-green-refactor", or wants integration tests.
 ---
-
-<!-- Matt Pocock's tdd Skill (https://github.com/mattpocock/skills, v1.3.1), word for word below the line, with its
-tests.md and mocking.md beside it. Copyright (c) 2026 Matt Pocock. MIT License: see LICENSE beside this file. -->
-
-## In Ants
-
-Below the line is Matt Pocock's tdd Skill, word for word. Follow it. Ants runs it without a chat,
-so where the two differ, this section wins.
-
-- **Confirming the seams with the user:** there is no user to ask. The seams were agreed before
-  you started: those the work's acceptance criteria and Spec name, or the proposal's Tests, or
-  the review comments you are fixing. Prefer the seams the repo's own tests already use. Write the
-  seams down before the first test. Answer `stuck` only when the work names no behaviour you could
-  test at any seam, saying what you would need.
-- There is no Skill tool. To call the Skill tool with "codebase-design", read its `SKILL.md`: the
-  line that handed you your Skill gives its path. `tests.md` and `mocking.md` are beside this file.
-
----
+<!-- Matt Pocock's tdd Skill (https://github.com/mattpocock/skills, v1.3.1), word for word. Copyright (c) 2026 Matt Pocock. MIT License: see LICENSE beside this file. -->
 
 # Test-Driven Development
 

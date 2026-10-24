@@ -1,43 +1,9 @@
 ---
 name: to-tickets
-description: Cut the Run's Spec into Tickets, tracer-bullet vertical slices with their Blocked by, as files in tickets/issues/.
-metadata:
-  ants-inputs: spec clones
-  ants-verbosity: true
+description: Break a plan, spec, or the current conversation into a set of tracer-bullet tickets, each declaring its blocking edges, published to the configured tracker (edges as text in one file per ticket locally, or native blocking links on a real tracker).
+disable-model-invocation: true
 ---
-
-<!-- Matt Pocock's to-tickets Skill (https://github.com/mattpocock/skills, v1.3.1), word for word below the line.
-Copyright (c) 2026 Matt Pocock. MIT License: see LICENSE in the tdd Skill's folder. -->
-
-## In Ants
-
-Below the line is Matt Pocock's to-tickets Skill, word for word. Follow it. Ants runs it without
-a chat, so where the two differ, this section wins.
-
-Your inputs; paths are relative to the Run workspace:
-
-- `spec`: the approved Spec, `tickets/spec.md`. It is the plan to break up.
-- `clones`: the repos cloned for the Run, `[{name, path, commit}]`. They are the codebase.
-
-You read the clones; you write only in `tickets/`.
-
-- **Quiz the user:** there is no one to ask before you publish. Put the three questions to
-  yourself, fix the breakdown until each answer is yes, then publish. If you are resumed with a
-  comment, that is the user's answer: revise the Tickets from it, and answer again.
-- **The tracker** is local files, laid out as `docs/agents/issue-tracker.md` in the Run workspace
-  says. Where it differs from the local-ticket-template, the tracker doc wins: Tickets go in
-  `tickets/issues/NN-<slug>.md`, never `.scratch/`; `Status:` and `Blocked by:` are plain lines,
-  not bold, since Ants reads them; `Blocked by:` names Tickets by number only, such as
-  `Blocked by: 01, 03`, or `Blocked by: none`; and each Ticket ends with `## Comments`.
-- **Blocking edges decide parallelism.** Every unblocked Ticket is built at once, each in its own
-  worktree, and lands on the work branch when done. Block only where it is true, and know that two
-  Tickets editing the same lines conflict when the second lands.
-- **ready-for-human:** a slice only the user can do, such as a decision, a credential or a manual
-  check, is `ready-for-human`; its dependents wait until the user marks it done.
-
-Answer `done` with `tickets`: every Ticket's path, in number order.
-
----
+<!-- Matt Pocock's to-tickets Skill (https://github.com/mattpocock/skills, v1.3.1), word for word. Copyright (c) 2026 Matt Pocock. MIT License: see LICENSE beside this file. -->
 
 # To Tickets
 

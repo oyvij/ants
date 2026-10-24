@@ -92,8 +92,8 @@ class PickedReposTest : AntsTest() {
         val picked = answered.joinToString(",") { "\"$it\"" }
         claude.session("scout", "write scout/brief.md Add a hello endpoint to $repo.\\n", result("""{"repos":[$picked],"branch":"","brief":"scout/brief.md"}"""))
         claude.session("propose-solution", "sh cp scout/brief.md \$launch/brief", "write proposal/proposal.md # Hello\\n", result("""{"proposal":"proposal/proposal.md","repos":[]}"""))
-        claude.session("implement", "sh git -C repos/$repo -c user.name=Ants -c user.email=ants@example.com -c commit.gpgsign=false commit -q --allow-empty -m 'Add hello'", result("""{"review":"No findings."}"""))
-        claude.session("pr", result("""{"pullRequests":[]}"""))
+        claude.session("implementproposal", "sh git -C repos/$repo -c user.name=Ants -c user.email=ants@example.com -c commit.gpgsign=false commit -q --allow-empty -m 'Add hello'", result("""{"review":"No findings."}"""))
+        claude.session("prproposal", result("""{"pullRequests":[]}"""))
         claude.session("update-knowledge", 1, "write vault/proposal.md One Note.\\n", result("""{"proposal":"vault/proposal.md","written":false}"""))
         claude.session("update-knowledge", 2, result("""{"written":true}"""))
         val page = start(*repos)

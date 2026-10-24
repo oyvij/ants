@@ -154,10 +154,11 @@ class VerbosityTest : AntsTest() {
     }
 
     @Test
-    fun `every shipped Skill opts in to Verbosity`() {
+    fun `every shipped Skill but Matt Pocock's, which ship word for word and run under an Assignment, opts in to Verbosity`() {
+        val his = setOf("grilling", "to-spec", "to-tickets", "implement", "tdd", "code-review", "pr", "codebase-design")
         val shipped = catalogue.skills(withHidden = true).filter { catalogue.shipped(it) && it.name != "shipped-draft" }
         assertEquals(16, shipped.size)
-        assertEquals(emptyList(), shipped.filterNot { it.verbosity }.map { it.name })
+        assertEquals(his, shipped.filterNot { it.verbosity }.map { it.name }.toSet())
     }
 
     private val optIn = "metadata:\n  ants-verbosity: true\n"

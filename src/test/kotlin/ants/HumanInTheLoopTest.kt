@@ -55,9 +55,9 @@ class HumanInTheLoopTest : AntsTest() {
         claude.session("grill", 1, result("""{"questions":[${question("who")},${question("scope")}],"repos":["web"]}"""))
         claude.session("grill", 2, result("""{"questions":[${question("format")}],"repos":[]}"""))
         claude.session("grill", 3, result("""{"questions":[],"repos":[]}"""))
-        claude.session("to-spec", "write tickets/spec.md # Hello\\n\\nSay hello.\\n", result("""{"spec":"tickets/spec.md"}"""))
+        claude.session("tospec", "write tickets/spec.md # Hello\\n\\nSay hello.\\n", result("""{"spec":"tickets/spec.md"}"""))
         claude.session(
-            "to-tickets",
+            "totickets",
             "write tickets/issues/01-one.md # One\\n\\nStatus: ready-for-agent\\n\\nBlocked by: none\\n",
             "write tickets/issues/02-two.md # Two\\n\\nStatus: ready-for-agent\\n\\nBlocked by: none\\n",
             "write tickets/issues/03-three.md # Three\\n\\nStatus: ready-for-agent\\n\\nBlocked by: 01\\n",
@@ -133,8 +133,8 @@ class HumanInTheLoopTest : AntsTest() {
         fun tools(skill: String) = claude.launches(skill).first().let { it.flag("--tools")?.removeSuffix(",Skill") to it.flag("--allowedTools")?.removeSuffix(",Skill,mcp__ants__run") } // every claude Task has Skill and the run tool
 
         assertEquals("Read,Grep,Glob" to "Read,Grep,Glob", tools("grill"))
-        assertEquals("Read,Grep,Glob,Write,Edit" to "Read,Grep,Glob,Write(/$ws/tickets/**),Edit(/$ws/tickets/**)", tools("to-spec"))
-        assertEquals(tools("to-spec"), tools("to-tickets"))
+        assertEquals("Read,Grep,Glob,Write,Edit" to "Read,Grep,Glob,Write(/$ws/tickets/**),Edit(/$ws/tickets/**)", tools("tospec"))
+        assertEquals(tools("tospec"), tools("totickets"))
         assertEquals(
             "Read,Grep,Glob,Write,Edit,Bash" to
                 "Read,Grep,Glob,Write(/$ws/walkthrough/**),Edit(/$ws/walkthrough/**),Bash(git log *),Bash(git diff *),Bash(git show *),Bash(git merge-base *)",
@@ -151,7 +151,7 @@ class HumanInTheLoopTest : AntsTest() {
     @Test
     fun `the Skills adapted from Matt Pocock's and Varde's keep their MIT notices`() {
         val skills = home.resolve("shipped/skills")
-        for (skill in listOf("grill", "to-spec", "to-tickets")) {
+        for (skill in listOf("grilling", "to-spec", "to-tickets")) {
             assertContains(skills.resolve("$skill/SKILL.md").toFile().readText(), "Copyright (c) 2026 Matt Pocock. MIT License", message = skill)
         }
         assertContains(skills.resolve("walkthrough/SKILL.md").toFile().readText(), "Copyright (c) 2026 Øyvind Johannessen. MIT License")

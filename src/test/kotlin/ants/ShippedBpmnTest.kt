@@ -49,6 +49,21 @@ class ShippedBpmnTest {
         for ((file, id, shape) in embedded) assertEquals(templates[id], shape, "$file: $id drifted from templates/${id.replace('_', '-')}.bpmn")
     }
 
+    @Test
+    fun `each shipped Task that uses one of Matt Pocock's Skills carries its Assignment and Result schema, as his Skills hold neither`() {
+        val his = setOf("grilling", "to-spec", "to-tickets", "implement", "tdd", "code-review", "pr", "codebase-design")
+        var tasks = 0
+        for (file in files("processes") + files("templates")) for (task in read(file).getModelElementsByType(ServiceTask::class.java)) {
+            val properties = task.extensions<OperatonProperties>().flatMap { it.operatonProperties }.associate { it.operatonName to it.operatonValue }
+            assert(properties[SKILL] !in his + "grill") { "${file.name}: ${task.id} still names ${properties[SKILL]} as its ants.skill" }
+            if (words(properties[SKILLS].orEmpty()).none { it in his }) continue
+            tasks++
+            assert(!properties[ASSIGNMENT].isNullOrBlank()) { "${file.name}: ${task.id} has no Assignment" }
+            assert(!properties[RESULT_SCHEMA].isNullOrBlank()) { "${file.name}: ${task.id} has no Result schema" }
+        }
+        assertEquals(15, tasks)
+    }
+
     /** The elements of a Template, less what a copy renames: its events' ids, its flows' ids, its inputs' values. */
     private fun shape(elements: Collection<FlowElement>): List<String> {
         fun ref(node: FlowNode) = when (node) {

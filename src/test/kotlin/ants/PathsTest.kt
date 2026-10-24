@@ -51,8 +51,8 @@ class PathsTest : AntsTest() {
     /** Sessions for everything after the grilling: one Ticket implemented, a Story set over it, the pull request, and Notes proposed, then written. */
     private fun afterTheGrilling() {
         claude.session("scout", "write scout/brief.md Hello.\\n", result("""{"repos":["api"],"branch":"add-hello","brief":"scout/brief.md"}"""))
-        claude.session("to-spec", "write tickets/spec.md # Hello\\n\\nSay hello.\\n", result("""{"spec":"tickets/spec.md"}"""))
-        claude.session("to-tickets", "write tickets/issues/01-one.md # One\\n\\nStatus: ready-for-agent\\n\\nBlocked by: none\\n", result("""{"tickets":["tickets/issues/01-one.md"]}"""))
+        claude.session("tospec", "write tickets/spec.md # Hello\\n\\nSay hello.\\n", result("""{"spec":"tickets/spec.md"}"""))
+        claude.session("totickets", "write tickets/issues/01-one.md # One\\n\\nStatus: ready-for-agent\\n\\nBlocked by: none\\n", result("""{"tickets":["tickets/issues/01-one.md"]}"""))
         claude.session(
             "implement",
             "sh cd repos/api && echo 01 > 01.txt && git add 01.txt && git -c user.name=Ants -c user.email=ants@example.com -c commit.gpgsign=false commit -qm 'Add 01.txt'",
@@ -104,8 +104,8 @@ class PathsTest : AntsTest() {
         assertEquals("Read,Grep,Glob" to "Read,Grep,Glob", answerer.flag("--tools")?.removeSuffix(",Skill") to answerer.flag("--allowedTools")?.removeSuffix(",Skill,mcp__ants__run"))
         assertContains(claude.launches("grill")[1].stdin, """\"source\":\"agent\"""")
         // Clone new repos cloned the repo the first Round named, so to-spec has it in its clones.
-        assertContains(claude.launches("to-spec").single().stdin, """\"repos\":[\"web\"]""")
-        assertContains(claude.launches("to-spec").single().stdin, "repos/web")
+        assertContains(claude.launches("tospec").single().stdin, """\"repos\":[\"web\"]""")
+        assertContains(claude.launches("tospec").single().stdin, "repos/web")
         val report = browser.report(run)
         assertContains(report.substringAfter("<h2>Answers you didn't give</h2>"), "Who exports: Only admins. (agent)")
     }
@@ -133,7 +133,7 @@ class PathsTest : AntsTest() {
 
         assertEquals(listOf("[approve]", "[review]", "[push]", "[approve]"), waited)
         assertContains(claude.launches("grill")[1].stdin, """{\"id\":\"who\",\"answer\":\"Admins.\",\"source\":\"recommended\"}""")
-        assertContains(claude.launches("to-spec").single().stdin, "repos/web")
+        assertContains(claude.launches("tospec").single().stdin, "repos/web")
     }
 
     @Test
@@ -148,6 +148,6 @@ class PathsTest : AntsTest() {
         assertEquals(9, claude.launches("grill").size) // no Round 10 is asked
         assertEquals(9, claude.launches("answer-round").size)
         assertEquals("refs/heads/main", git(web.remote, "for-each-ref", "--format=%(refname)"))
-        assertContains(claude.launches("to-spec").single().stdin, """\"repos\":[\"web\"]""")
+        assertContains(claude.launches("tospec").single().stdin, """\"repos\":[\"web\"]""")
     }
 }

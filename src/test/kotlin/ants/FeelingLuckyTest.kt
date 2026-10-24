@@ -41,8 +41,8 @@ class FeelingLuckyTest : AntsTest() {
     private fun feelingLucky(): String {
         claude.session("scout", "write scout/brief.md Add a hello endpoint to api.\\n", result("""{"repos":["api"],"branch":"add-hello","brief":"scout/brief.md"}"""))
         claude.session("propose-solution", "write proposal/proposal.md # Hello\\n\\nOne endpoint.\\n", result("""{"proposal":"proposal/proposal.md","repos":[]}"""))
-        claude.session("implement", "sh git -C repos/api -c user.name=Ants -c user.email=ants@example.com -c commit.gpgsign=false commit -q --allow-empty -m 'Add hello'", result("""{"review":"No findings."}"""))
-        claude.session("pr", result("""{"pullRequests":[{"repo":"api","url":"https://github.com/oyvij/api/pull/7"}]}"""))
+        claude.session("implementproposal", "sh git -C repos/api -c user.name=Ants -c user.email=ants@example.com -c commit.gpgsign=false commit -q --allow-empty -m 'Add hello'", result("""{"review":"No findings."}"""))
+        claude.session("prproposal", result("""{"pullRequests":[{"repo":"api","url":"https://github.com/oyvij/api/pull/7"}]}"""))
         claude.session("update-knowledge", 1, "write vault/proposal.md One Note.\\n", result("""{"proposal":"vault/proposal.md","written":false}"""))
         claude.session("update-knowledge", 2, result("""{"written":true}"""))
         val run = start("Add a hello endpoint to api")
@@ -63,8 +63,8 @@ class FeelingLuckyTest : AntsTest() {
         assertEquals(setOf("refs/heads/main", "refs/heads/add-hello"), git(api.remote, "for-each-ref", "--format=%(refname)").lines().toSet())
         val scout = claude.launches("scout").single()
         assertContains(scout.stdin, """\"sourceMap\":[{\"name\":\"api\",\"remote\":\"${api.remote}\"}]""")
-        assertContains(claude.launches("implement").single().stdin, """\"proposal\":\"proposal/proposal.md\"""")
-        assertContains(claude.launches("pr").single().stdin, """\"pushed\":true""")
+        assertContains(claude.launches("implementproposal").single().stdin, """\"proposal\":\"proposal/proposal.md\"""")
+        assertContains(claude.launches("prproposal").single().stdin, """\"pushed\":true""")
         val (proposed, written) = claude.launches("update-knowledge")
         for (text in listOf("""\"spec\":\"proposal/proposal.md\"""", """\"review\":\"No findings.\"""", """\"approval\":null""")) assertContains(proposed.stdin, text)
         assertContains(written.stdin, """\"approval\":{\"approved\":true""")
@@ -80,8 +80,8 @@ class FeelingLuckyTest : AntsTest() {
         claude.session("scout", "write scout/brief.md Add a hello endpoint to api.\\n", result("""{"repos":["api"],"branch":"add-hello","brief":"scout/brief.md"}"""))
         claude.session("propose-solution", 1, "write proposal/proposal.md # Hello\\n\\nweb not checked.\\n", result("""{"proposal":"proposal/proposal.md","repos":["web"]}"""))
         claude.session("propose-solution", 2, "write proposal/proposal.md # Hello\\n\\nOne endpoint, shown in web.\\n", result("""{"proposal":"proposal/proposal.md","repos":["web"]}"""))
-        claude.session("implement", "sh git -C repos/web -c user.name=Ants -c user.email=ants@example.com -c commit.gpgsign=false commit -q --allow-empty -m 'Show hello'", result("""{"review":"No findings."}"""))
-        claude.session("pr", result("""{"pullRequests":[]}"""))
+        claude.session("implementproposal", "sh git -C repos/web -c user.name=Ants -c user.email=ants@example.com -c commit.gpgsign=false commit -q --allow-empty -m 'Show hello'", result("""{"review":"No findings."}"""))
+        claude.session("prproposal", result("""{"pullRequests":[]}"""))
         val run = start("Add a hello endpoint to api and show it in web", api, web)
         browser.post(entry(run), mapOf("action" to "push", "instruction" to ""))
 
@@ -89,7 +89,7 @@ class FeelingLuckyTest : AntsTest() {
         assertFalse("repos/web" in first.stdin)
         assertContains(again.stdin, "repos/web")
         assertEquals(first.flag("--session-id"), again.flag("--resume"))
-        assertEquals(1, claude.launches("implement").size)
+        assertEquals(1, claude.launches("implementproposal").size)
         // Clone new repos put web on the Run's work branch, so Push pushes it.
         eventually(20) { assertEquals("Show hello", git(web.remote, "log", "-1", "--format=%s", "add-hello")) }
     }
@@ -102,16 +102,17 @@ class FeelingLuckyTest : AntsTest() {
         // claude checks a Write against Edit rules and ignores a Write(path) rule, so the scout's limit goes out as both
         assertEquals("Read,Grep,Glob,Write,Agent" to "Read,Grep,Glob,Write(/$ws/scout/**),Agent(knowledge-searcher),Edit(/$ws/scout/**)", tools("scout"))
         assertEquals("Read,Grep,Glob,Write,Edit" to "Read,Grep,Glob,Write(/$ws/proposal/**),Edit(/$ws/proposal/**)", tools("propose-solution"))
-        assertContains(tools("implement").first!!.split(","), "Agent")
-        assertFalse("Bash(" in tools("implement").second!!) // Bash unlimited
+        assertContains(tools("implementproposal").first!!.split(","), "Agent")
+        assertFalse("Bash(" in tools("implementproposal").second!!) // Bash unlimited
         // claude refuses `gh pr create --body "…"` with a backtick in the body, so the body goes in a file under pr/
-        assertEquals("Read,Write,Edit,Bash" to "Read,Write(/$ws/pr/**),Edit(/$ws/pr/**),Bash(gh pr create *),Bash(gh pr view *),Bash(gh repo view *),Bash(git log *),Bash(git diff *)", tools("pr"))
-        assertContains(home.resolve("shipped/skills/pr/SKILL.md").toFile().readText(), "--body-file pr/<repo>.md")
+        assertEquals("Read,Write,Edit,Bash" to "Read,Write(/$ws/pr/**),Edit(/$ws/pr/**),Bash(gh pr create *),Bash(gh pr view *),Bash(gh repo view *),Bash(git log *),Bash(git diff *)", tools("prproposal"))
+        val assignment = claude.launches("prproposal").single().stdin // the pr Task's Assignment says how
+        assertContains(assignment, "--body-file pr/<repo>.md")
         // and the title, which stays on the command line, so it is written without backticks
-        assertContains(home.resolve("shipped/skills/pr/SKILL.md").toFile().readText(), "in plain words with no backticks")
+        assertContains(assignment, "in plain words with no backticks")
         // claude refuses `git -C` and `cd … && git …` under Bash(git log *), but allows a lone cd into the clone
-        assertContains(home.resolve("shipped/skills/pr/SKILL.md").toFile().readText(), "first `cd repos/<repo>`,\nthen a plain `git log …`")
-        assertContains(home.resolve("shipped/skills/pr/SKILL.md").toFile().readText(), "gh repo view <owner>/<name> --json parent")
+        assertContains(assignment, "first `cd repos/<repo>`, then a plain `git log …`")
+        assertContains(assignment, "gh repo view <owner>/<name> --json parent")
 
         val scout = claude.launches("scout").single()
         val offered = JsonMapper.shared().readValue(scout.flag("--agents"), Map::class.java)

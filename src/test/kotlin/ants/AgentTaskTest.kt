@@ -81,8 +81,8 @@ class AgentTaskTest : AntsTest() {
 
     @Test
     fun `a test's Skill named like a shipped one fails at once, since the shipped Skill would hide it`() {
-        val failure = kotlin.test.assertFailsWith<IllegalArgumentException> { agentTask(claude, mapOf("grill" to null)) }
-        assertEquals("grill is hidden by the shipped Skill of that name; give the test's Skill another name.", failure.message)
+        val failure = kotlin.test.assertFailsWith<IllegalArgumentException> { agentTask(claude, mapOf("grilling" to null)) }
+        assertEquals("grilling is hidden by the shipped Skill of that name; give the test's Skill another name.", failure.message)
     }
 
     @Test

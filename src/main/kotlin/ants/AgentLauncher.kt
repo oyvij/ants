@@ -662,8 +662,12 @@ class AgentLauncher(
             sourceMap?.let { "the Source map is $it" },
         )
         // ponytail: codex keeps reading the Skill as a file until its skills are probed (#225).
+        // claude shows the model no Skill only a user can invoke, so an Assignment that names one has it read as a file.
+        val userOnly = used.filter { it.userOnly }.takeIf { skill == null && cli == "claude" }.orEmpty()
         return (if (skill == null) "The workspace is $workspace." else if (cli == "claude") "/${skill.name} The workspace is $workspace." else "Follow the Skill in ${skill.file} for the workspace at $workspace.") +
             (if (used.isEmpty() || cli == "claude") "" else (if (skill == null) " You may follow" else " It uses") + " the Skills ${used.joinToString { "${it.name} (${it.file})" }}.") +
+            (if (userOnly.isEmpty()) "" else " Only a user can invoke the Skill${if (userOnly.size > 1) "s" else ""} ${userOnly.joinToString { "${it.name} (${it.file})" }}, " +
+                "so where your Assignment names ${if (userOnly.size > 1) "one" else "it"}, read that file and follow it.") +
             (if (places.isEmpty()) "" else " " + places.joinToString(" and ").replaceFirstChar(Char::uppercase) + ".") +
             (answerHistory(task, skill)?.let { " The Answer History is $it." } ?: "") +
             (repos?.let { " Name each repo in your Result by its Source map name or a git URL; ${ResultContract.names(it)}." } ?: "") +
