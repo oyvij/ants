@@ -25,7 +25,7 @@
     <thead><tr><th>Name</th><th>CLI · model</th><th>Skills</th><th>Description</th><th>Folder</th></tr></thead>
     <tbody>
 @for(row in agents)
-    <tr class="click" data-href="/agents/${row.agent.name}"><td><b><a href="/agents/${row.agent.name}">${row.agent.name}</a></b>@if(row.vault) <span class="tag t-vault">Vault</span>@endif</td><td class="small">${row.agent.cli} · ${row.agent.model ?: "default"}</td><td class="small">@for(skill in row.agent.skills)<a href="/skills/${skill}">${skill}</a>@if(skill != row.agent.skills.last()) @endif@endfor</td><td class="small">${row.agent.description}</td><td class="muted small">${row.where}</td></tr>
+    <tr class="click" data-href="/agents/${row.agent.name}"><td><b><a href="/agents/${row.agent.name}">${row.agent.name}</a></b>@if(row.vault) <span class="tag t-vault">Vault</span>@endif</td><td class="small">${row.agent.cli} · ${row.agent.model ?: "default"}</td><td class="small">@for(skill in row.agent.skills)@if(skill == "*")every Skill@else<a href="/skills/${skill}">${skill}</a>@endif@if(skill != row.agent.skills.last()) @endif@endfor</td><td class="small">${row.agent.description}</td><td class="muted small">${row.where}</td></tr>
 @endfor
     </tbody>
 </table>

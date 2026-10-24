@@ -4,7 +4,9 @@
 # records its argv, environment, working directory, loaded skills and stdin's first line under ./launches/<skill>.<n> for the nth
 # launch of that Skill, appends its working directory to ./launches.log, and plays ./sessions/<skill>.<n>.jsonl, or
 # ./sessions/<skill>.jsonl when there is none. The Skill is picked by the first message's leading `/<skill>`, or for `--resume` by the
-# session's first launch; a launch with neither, a So far rewrite, plays the Skill `so-far`. Like claude with
+# session's first launch. A launch that starts with an Assignment, no `/<skill>`, is keyed by its Task's element id,
+# $ANTS_TASK, in place of a Skill: tests read `launches/<task id>.<n>` and write `sessions/<task id>.jsonl` for it. A
+# launch with none of these, a So far rewrite, plays the Skill `so-far`. Like claude with
 # --replay-user-messages, it echoes every stdin message with "isReplay":true.
 # A session line `wait <file>` waits until ./<file> exists, `read` reads the next stdin line into the launch's stdin
 # record (a control request, such as Stop's interrupt, is not echoed), `stderr <text>` prints to stderr, `exit <code>`
@@ -26,7 +28,8 @@ mkdir -p "$dir/launches" "$dir/skills"
 case " $* " in *" mcp__ants__* "*) skill=process-builder ;; esac
 if [ "$skill" = process-builder ]; then :
 elif [ -n "$skill" ]; then printf '%s' "$skill" > "$dir/skills/$session"
-elif [ -n "$session" ]; then skill=$(cat "$dir/skills/$session")
+elif [ -n "$session" ] && [ -e "$dir/skills/$session" ]; then skill=$(cat "$dir/skills/$session")
+elif [ -n "$ANTS_TASK" ]; then skill=$ANTS_TASK; [ -n "$session" ] && printf '%s' "$skill" > "$dir/skills/$session"
 else skill=so-far; fi
 calls=0 n=1
 while ! mkdir "$dir/launches/$skill.$n" 2>/dev/null; do n=$((n + 1)); done

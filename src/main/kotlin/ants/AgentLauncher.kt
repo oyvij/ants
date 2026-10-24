@@ -235,8 +235,7 @@ class AgentLauncher(
             val agent = catalogue.agent(task.extensionProperties[AGENT] ?: error("${task.activityId} names no $AGENT"))
             if (hold(task, agent.cli)) return // keeping its choice for the launch after the reset
             runtime.removeVariablesLocal(task.executionId, listOf(ACTION, INSTRUCTION, SESSION)) // the choice is used once
-            val skill = catalogue.skill(task.extensionProperties[SKILL] ?: error("${task.activityId} names no $SKILL"))
-            val used = catalogue.uses(skill)
+            val (skill, used) = skills(task.extensionProperties, agent, task.activityId)
             if (agent.cli == "claude") refuseBareByDefault(agent.cli, workspace)
             val instance = instance(task)
             // An instance of a parallel multi-instance works in a folder of its own, and lands when done.
@@ -389,7 +388,7 @@ class AgentLauncher(
     private fun fix(held: LockedExternalTask, run: String, workspace: Path, fix: Fix, message: String) {
         val key = fix.key
         val agent = catalogue.agent(held.extensionProperties[AGENT] ?: error("${held.activityId} names no $AGENT"))
-        val skill = catalogue.skill(held.extensionProperties[SKILL] ?: error("${held.activityId} names no $SKILL"))
+        val (skill, used) = skills(held.extensionProperties, agent, held.activityId)
         if (agent.cli == "claude") refuseBareByDefault(agent.cli, workspace)
         val last = Transcript.file(workspace, key).resolveSibling("session")
         val resumed = last.exists()
@@ -400,7 +399,6 @@ class AgentLauncher(
         val transcript = Transcript.Writer(Transcript.file(workspace, key)).apply { ants("launch") }
         session?.let(last::writeText)
         val started = { id: String -> session = id; last.writeText(id) }
-        val used = catalogue.uses(skill)
         try {
             val first = session(held, key, agent, skill, used, run, workspace, cwd, transcript, session, started, resumed, message, inputs = inputs)
             val result = land(workspace, key, first) { session(held, key, agent, skill, used, run, workspace, cwd, transcript, session, started, true, it, handedOff = false) }
@@ -460,14 +458,28 @@ class AgentLauncher(
     }.onFailure { log.warn("Agent Task ${task.activityId} couldn't be put on hold", it) }
 
     /**
-     * Runs [skill], which uses [used], in one CLI session in [cwd] (the Run [workspace], or an instance's folder in it),
+     * The Skill a Task with [properties] starts with, `/<skill>`, and the other Skills it may use (ADR 0024). With an
+     * [ASSIGNMENT] it starts with none, and may use them all. Its own [SKILLS] list them, an empty one none; else an old
+     * [SKILL] and the Skills that one uses; else the [agent]'s. Without an Assignment the Task lists exactly one.
+     */
+    private fun skills(properties: Map<String, String>, agent: Agent, id: String): Pair<Skill?, List<Skill>> {
+        val listed = properties[SKILLS]?.let(::words)?.map(catalogue::skill)
+        val old = properties[SKILL]?.takeIf { listed == null && it.isNotBlank() }?.let(catalogue::skill)
+        val allowed = listed ?: old?.let { listOf(it) + catalogue.uses(it) } ?: catalogue.allowed(agent)
+        if (!properties[ASSIGNMENT].isNullOrBlank()) return null to allowed
+        val skill = old ?: listed?.singleOrNull() ?: error("$id has no Assignment and doesn't list exactly one Skill")
+        return skill to allowed.drop(1)
+    }
+
+    /**
+     * Runs [skill], or with none the Task's Assignment, using [used] too, in one CLI session in [cwd] (the Run [workspace], or an instance's folder in it),
      * every line it prints going to [transcript], and returns its Result: the last valid one, once every message written to the session has been read. A new
      * [session] starts with the hand-off prompt and the user's [instruction], if any; a [resume]d one with the
      * instruction alone, unless it is [handedOff] again, as when the flow comes back to the Task. A CLI that names its
      * own sessions, codex, tells Ants a new one's id through [started].
      */
     private fun session(
-        task: LockedExternalTask, instance: String, agent: Agent, skill: Skill, used: List<Skill>, run: String, workspace: Path, cwd: Path, transcript: Transcript.Writer,
+        task: LockedExternalTask, instance: String, agent: Agent, skill: Skill?, used: List<Skill>, run: String, workspace: Path, cwd: Path, transcript: Transcript.Writer,
         session: String?, started: (String) -> Unit, resume: Boolean, instruction: String?, handedOff: Boolean = !resume, inputs: Map<String, Any?> = inputs(task),
     ): Map<*, *> {
         // Kept for a Send back that finds no session to resume ([fix]).
@@ -478,12 +490,13 @@ class AgentLauncher(
         val verbosity = verbosity(skill, source)
         // The Task's result-schema override replaces the Skill's result.schema.json; Checks refuse one that isn't valid.
         val override = task.extensionProperties[RESULT_SCHEMA]?.takeIf(String::isNotBlank)?.let { json.readValue(it, Map::class.java) }
-        val output = override ?: skill.outputSchema
+        val output = override ?: skill?.outputSchema ?: emptyMap<String, Any?>()
         val schema = ResultContract.schema(output)
         // A Run with repos picked clones exactly them, so the repos a Result names there go unchecked.
         val repos = source.repos(settings).takeIf { source.picked.isEmpty() && ResultContract.namesRepos(output) }
         val prompt = if (!handedOff) instruction.orEmpty()
-        else handOff(agent.cli, task, skill, used, cwd, vault, source.sourceMap(settings), repos, verbosity) + "\n\n" + json.writeValueAsString(inputs) + (if (instruction.isNullOrBlank()) "" else "\n\nFrom the user:\n$instruction")
+        else handOff(agent.cli, task, skill, used, cwd, vault, source.sourceMap(settings), repos, verbosity) +
+            task.extensionProperties[ASSIGNMENT]?.takeIf { skill == null }?.let { "\n\n$it" }.orEmpty() + "\n\n" + json.writeValueAsString(inputs) + (if (instruction.isNullOrBlank()) "" else "\n\nFrom the user:\n$instruction")
         val judge = Judge(agent.cli, schema, workspace, walkthrough(task), repos)
         // A knowledge Task, one with an `approval` input, may write the Vault only once it holds the user's approval
         // (ADR 0007): until then the Vault is read-only to it, but for Bash. codex can read it without an --add-dir.
@@ -495,8 +508,10 @@ class AgentLauncher(
             .plus(if (verbosity == null) emptyList() else listOf("--add-dir", "${catalogue.verbosityFile.parent}"))
         val (token, mcp) = protectedCommands.open(workspace) // its Protected Commands run in the Run workspace
         val process = runCatching {
-            val skills = listOf(skill) + used
-            cli(agent.cli, cwd, flags(agent, cwd, schema, skills, skillsFolder(workspace, instance, skills), session!!, resume, mcp, workspace, gated?.let { listOf("Write(/$it/**)", "Edit(/$it/**)") }.orEmpty()) + shared + places).start()
+            val skills = listOfNotNull(skill) + used
+            cli(agent.cli, cwd, flags(agent, cwd, schema, skills, skillsFolder(workspace, instance, skills), session!!, resume, mcp, workspace, gated?.let { listOf("Write(/$it/**)", "Edit(/$it/**)") }.orEmpty()) + shared + places)
+                .apply { environment()["ANTS_TASK"] = task.activityId } // names the Task to its session; the fake claude keys on it
+                .start()
         }.onFailure { protectedCommands.close(token) }.getOrThrow()
         val stdin = Stdin(process.outputWriter(), name(task), home)
         clis[process] = run
@@ -608,15 +623,15 @@ class AgentLauncher(
      * Null when off, or with no Vault configured for the Run's Profile ([source]), which the pre-Run check (#55) refuses
      * unless the user picked the Run's repos.
      */
-    private fun vault(task: LockedExternalTask, skill: Skill, source: RunSource): Path? = source.vault(settings)
-        ?.takeIf { task.extensionProperties[VAULT]?.toBooleanStrictOrNull() ?: catalogue.vault(skill) }
+    private fun vault(task: LockedExternalTask, skill: Skill?, source: RunSource): Path? = source.vault(settings)
+        ?.takeIf { task.extensionProperties[VAULT]?.toBooleanStrictOrNull() ?: skill?.let(catalogue::vault) ?: false }
 
     /**
      * The Run's Verbosity when a Task running [skill] writes at it: brief or detailed, and the Skill or one it uses opts
      * in. Null at normal, so a normal Run's hand-off line and flags stay as they were.
      */
-    private fun verbosity(skill: Skill, source: RunSource): Verbosity? =
-        source.verbosity.takeIf { it != Verbosity.NORMAL && catalogue.verbosity(skill) }
+    private fun verbosity(skill: Skill?, source: RunSource): Verbosity? =
+        source.verbosity.takeIf { it != Verbosity.NORMAL && (skill == null || catalogue.verbosity(skill)) }
 
     /**
      * The folder whose `.claude/skills` links each of [skills], the Skills a session of [instance] may use, so claude
@@ -624,9 +639,10 @@ class AgentLauncher(
      * but outside what outlives the Run (`tasks/`), so it goes with the workspace ([cleanUp] doesn't follow links).
      */
     @OptIn(ExperimentalPathApi::class)
-    private fun skillsFolder(workspace: Path, instance: String, skills: List<Skill>): Path {
+    private fun skillsFolder(workspace: Path, instance: String, skills: List<Skill>): Path? {
         val folder = workspace.resolve(".skills").resolve(instance)
         folder.deleteRecursively() // leaves what the links lead to
+        if (skills.isEmpty()) return null
         val links = folder.resolve(".claude/skills").createDirectories()
         for (skill in skills.distinctBy { it.name }) links.resolve(skill.name).createSymbolicLinkPointingTo(skill.folder)
         return folder
@@ -638,14 +654,14 @@ class AgentLauncher(
      * [verbosity] to write at, if any. The Task's [ANSWER_HISTORY] toggle has the final say on the Answer History,
      * else the Skill's opt-in.
      */
-    private fun handOff(cli: String, task: LockedExternalTask, skill: Skill, used: List<Skill>, workspace: Path, vault: Path?, sourceMap: Path?, repos: List<Repo>?, verbosity: Verbosity?): String {
+    private fun handOff(cli: String, task: LockedExternalTask, skill: Skill?, used: List<Skill>, workspace: Path, vault: Path?, sourceMap: Path?, repos: List<Repo>?, verbosity: Verbosity?): String {
         val places = if (vault == null) emptyList() else listOfNotNull(
             "the Vault is $vault",
             sourceMap?.let { "the Source map is $it" },
         )
         // ponytail: codex keeps reading the Skill as a file until its skills are probed (#225).
-        return (if (cli == "claude") "/${skill.name} The workspace is $workspace." else "Follow the Skill in ${skill.file} for the workspace at $workspace.") +
-            (if (used.isEmpty() || cli == "claude") "" else " It uses the Skills ${used.joinToString { "${it.name} (${it.file})" }}.") +
+        return (if (skill == null) "The workspace is $workspace." else if (cli == "claude") "/${skill.name} The workspace is $workspace." else "Follow the Skill in ${skill.file} for the workspace at $workspace.") +
+            (if (used.isEmpty() || cli == "claude") "" else (if (skill == null) " You may follow" else " It uses") + " the Skills ${used.joinToString { "${it.name} (${it.file})" }}.") +
             (if (places.isEmpty()) "" else " " + places.joinToString(" and ").replaceFirstChar(Char::uppercase) + ".") +
             (answerHistory(task, skill)?.let { " The Answer History is $it." } ?: "") +
             (repos?.let { " Name each repo in your Result by its Source map name or a git URL; ${ResultContract.names(it)}." } ?: "") +
@@ -653,8 +669,8 @@ class AgentLauncher(
     }
 
     /** The Answer History's folder when [task] gets it: its toggle ([ANSWER_HISTORY]) has the final say, else its [skill]'s opt-in. */
-    private fun answerHistory(task: LockedExternalTask, skill: Skill): Path? = home.resolve("answer-history")
-        .takeIf { task.extensionProperties[ANSWER_HISTORY]?.toBooleanStrictOrNull() ?: skill.answerHistory }
+    private fun answerHistory(task: LockedExternalTask, skill: Skill?): Path? = home.resolve("answer-history")
+        .takeIf { task.extensionProperties[ANSWER_HISTORY]?.toBooleanStrictOrNull() ?: skill?.answerHistory ?: false }
 
     /**
      * When the Usage limit that [event] reports resets, or null if it reports none: a `rate_limit_event` rejection
@@ -761,8 +777,9 @@ class AgentLauncher(
      * claude's flags, with Ants' MCP server [mcp] and its tool `run`, and the permission rules [denied] besides the
      * Subagent types a Limit leaves out and Ants' own files that hold a Secret or the password (ADR 0015).
      */
-    private fun flags(agent: Agent, cwd: Path, schema: Map<*, *>, skills: List<Skill>, skillsFolder: Path, session: String, resume: Boolean, mcp: String, workspace: Path, denied: List<String>): List<String> {
+    private fun flags(agent: Agent, cwd: Path, schema: Map<*, *>, skills: List<Skill>, skillsFolder: Path?, session: String, resume: Boolean, mcp: String, workspace: Path, denied: List<String>): List<String> {
         val tools = (agent.tools ?: DEFAULT_TOOLS).filter { it.substringBefore('(') != "Skill" }.map { anchored(it, cwd) }
+        val skill = listOf("Skill").takeIf { skillsFolder != null } // with no Skills allowed, no Skill tool
         val (subagents, types) = subagents(tools)
         // Probed on claude 2.1.299: a rule such as `Bash(git diff *)` lets `git diff --output=<any path>` write a file, and
         // the deny rule `Bash(git *--output*)` refuses it (git takes no abbreviation of `--output`)
@@ -778,10 +795,10 @@ class AgentLauncher(
             "--mcp-config", mcp,
             "--forward-subagent-text",
             // Skill, for the Skills [skillsFolder] loads: which are loaded is what limits them, not a Skill(x) rule.
-            "--tools", (tools.map { it.substringBefore('(') } + "Skill").distinct().joinToString(","),
+            "--tools", (tools.map { it.substringBefore('(') } + skill.orEmpty()).distinct().joinToString(","),
             // claude checks a Write against Edit rules and ignores a Write(path) one, so a Write limit also goes out as Edit
-            "--allowedTools", (tools + tools.filter { it.startsWith("Write(") }.map { "Edit(" + it.removePrefix("Write(") } + "Skill" + RUN_TOOL).distinct().joinToString(","),
-        ) + subagents + (if (disallowed.isEmpty()) emptyList() else listOf("--disallowedTools", disallowed.joinToString(","))) + listOf("--add-dir", "$skillsFolder") +
+            "--allowedTools", (tools + tools.filter { it.startsWith("Write(") }.map { "Edit(" + it.removePrefix("Write(") } + skill.orEmpty() + RUN_TOOL).distinct().joinToString(","),
+        ) + subagents + (if (disallowed.isEmpty()) emptyList() else listOf("--disallowedTools", disallowed.joinToString(","))) + (skillsFolder?.let { listOf("--add-dir", "$it") } ?: emptyList()) +
             // A symlinked Skill's files can be read only with its real folder added too.
             skills.flatMap { listOf("--add-dir", it.folder.toString()) } + (if (agent.model != null) listOf("--model", agent.model) else emptyList()) +
             (if (agent.instructions.isNotEmpty()) listOf("--append-system-prompt", agent.instructions) else emptyList())

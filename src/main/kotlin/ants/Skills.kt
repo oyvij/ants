@@ -44,7 +44,7 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy) {
         val agents = catalogue.agents()
         model.addAttribute("skills", skills.map { skill ->
             val hidden = !catalogue.shipped(skill) && skill.name in shipped
-            val runBy = agents.filter { skill.name in it.skills }.map { it.name }.sorted()
+            val runBy = agents.filter { it.allows(skill.name) }.map { it.name }.sorted()
             SkillRow(skill, catalogue.where(skill.folder), hidden, runBy, runCatching { catalogue.vault(skill) }.getOrDefault(skill.vault))
         })
         model.addAttribute("message", message)
@@ -200,7 +200,7 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy) {
         model.addAttribute("message", message)
         model.addAttribute("dependents", form.name?.let(usedBy::skill))
         val skill = form.name?.let { runCatching { catalogue.skill(it) }.getOrNull() }
-        model.addAttribute("runBy", skill?.let { catalogue.agents().filter { agent -> skill.name in agent.skills }.sortedBy { it.name } }.orEmpty())
+        model.addAttribute("runBy", skill?.let { catalogue.agents().filter { agent -> agent.allows(skill.name) }.sortedBy { it.name } }.orEmpty())
         model.addAttribute("fields", skill?.let { runCatching { (it.outputSchema["properties"] as? Map<*, *>)?.keys?.map(Any?::toString) }.getOrNull() }.orEmpty())
         return "skill"
     }

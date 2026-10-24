@@ -267,7 +267,7 @@ class ChecksTest : AntsTest() {
     fun `an unknown, ambiguous or missing Skill name is refused`() {
         writerAndDraft()
         refuses(diagram(withAgent("writer", "nothing")), "draft", "Draft (draft): No Skill named nothing.")
-        refuses(diagram(withAgent("writer", "")), "draft", "Draft (draft) has no Skill.")
+        refuses(diagram(withAgent("writer", "")), "draft", "Draft (draft) has no Assignment and doesn't list exactly one Skill.")
         skill("other", folder = "twin-1")
         skill("other", folder = "twin-2")
         try {
@@ -275,6 +275,32 @@ class ChecksTest : AntsTest() {
         } finally {
             home.resolve("skills/twin-1").toFile().deleteRecursively()
             home.resolve("skills/twin-2").toFile().deleteRecursively()
+        }
+    }
+
+    /** The Agent Task `draft` with [properties] in place of its `ants.skill`. */
+    private fun job(vararg properties: Pair<String, String>) = agentTask("draft").replace("""<operaton:property name="ants.skill" value="draft" />""",
+        properties.joinToString("") { (name, value) -> """<operaton:property name="$name" value="$value" />""" })
+
+    @Test
+    fun `an Agent Task with no Assignment must list exactly one Skill of its own, and each listed Skill must be the Agent's and known`() {
+        writerAndDraft()
+        skill("other")
+        val one = "Draft (draft) has no Assignment and doesn't list exactly one Skill."
+        refuses(diagram(job()), "draft", one) // the Agent's Skills don't count
+        refuses(diagram(job("ants.skills" to "")), "draft", one)
+        refuses(diagram(job("ants.skills" to "draft, other")), "draft", one)
+        refuses(diagram(job("ants.assignment" to "Draft it.", "ants.skills" to "draft, nothing")), "draft", "Draft (draft): No Skill named nothing.")
+        skill("extra")
+        try {
+            refuses(diagram(job("ants.assignment" to "Draft it.", "ants.skills" to "draft, extra")), "draft", "Draft (draft): The Agent writer doesn't list the Skill extra.")
+            for (fine in listOf(job("ants.skills" to "other"), job("ants.assignment" to "Draft it."), job("ants.assignment" to "Draft it.", "ants.skills" to ""),
+                job("ants.assignment" to "Draft it.", "ants.skills" to "draft other")))
+                assertEquals(emptyList(), checks(diagram(fine)).filter { it["warning"] == false })
+            home.resolve("agents/writer.md").writeText("---\nskills: \"*\"\n---\nWrite plainly.\n")
+            assertEquals(emptyList(), checks(diagram(job("ants.assignment" to "Draft it.", "ants.skills" to "extra"))).filter { it["warning"] == false })
+        } finally {
+            home.resolve("skills/extra").toFile().deleteRecursively()
         }
     }
 

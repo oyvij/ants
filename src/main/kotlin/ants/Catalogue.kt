@@ -41,6 +41,12 @@ class Agent(val file: Path, text: String = file.readText()) {
     val cli = meta["cli"]?.toString() ?: "claude"
     val skills = list(meta["skills"]).orEmpty()
 
+    /** Whether it may use every Skill, `skills: "*"`. */
+    val allSkills get() = "*" in skills
+
+    /** Whether it may use the Skill [name]. */
+    fun allows(name: String) = allSkills || name in skills
+
     /** The tools as permission rules, such as `Bash(git log *)`; null for the default tools. */
     val tools = list(meta["tools"])
     val model = meta["model"]?.toString()
@@ -178,6 +184,9 @@ class Catalogue(@Value("\${ants.home}") private val home: Path, private val sett
         visit(skill, listOf(skill.name))
         return closure.values.toList()
     }
+
+    /** The Skills [agent] may use: every one with `skills: "*"`. */
+    fun allowed(agent: Agent): List<Skill> = (if (agent.allSkills) skills().map { it.name }.distinct() else agent.skills).map(::skill)
 
     /** Whether a Task running [skill] gets the Vault by default: when it or any Skill it uses opts in. */
     fun vault(skill: Skill) = skill.vault || uses(skill).any { it.vault }

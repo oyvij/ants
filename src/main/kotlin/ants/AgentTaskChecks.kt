@@ -26,6 +26,10 @@ import kotlin.io.path.readText
 // An Agent Task's extension properties.
 const val AGENT = "ants.agent"
 const val SKILL = "ants.skill"
+/** The Skills a Task may use, comma or space separated, an empty list none; without it, its Agent's (ADR 0024). */
+const val SKILLS = "ants.skills"
+/** What a Task asks its Agent to do, the job, in a few lines (ADR 0024). */
+const val ASSIGNMENT = "ants.assignment"
 /** "true" when the flow coming back to the Task resumes its last session. */
 const val RESUME = "ants.resume"
 /** "true" or "false": the Task's Vault toggle, over its Skill's opt-in. */
@@ -41,34 +45,43 @@ fun BaseElement.property(name: String): String? = extensions<OperatonProperties>
 private val BpmnModelInstance.agentTasks get() = getModelElementsByType(ServiceTask::class.java).filter { it.operatonTopic == AgentLauncher.TOPIC }
 
 /**
- * Each Agent Task's Agent and Skill: unknown or ambiguous names, a Skill the Agent doesn't list, a used Skill that
- * can't be found or a cycle of them, and an invalid result schema, the Skill's or the Task's override. A declared
- * input the Task doesn't fill is a warning.
+ * Each Agent Task's Agent and Skills: unknown or ambiguous names, no Assignment and not exactly one Skill listed on the
+ * Task, a listed Skill the Agent doesn't list (ADR 0024), the Skill it starts with using a Skill that can't be found or
+ * a cycle of them, and an invalid result schema, that Skill's or the Task's override. A declared input the Task
+ * doesn't fill is a warning.
  */
 internal fun agentTasks(catalogue: Catalogue, model: BpmnModelInstance) = model.agentTasks.flatMap { task ->
     fun check(message: String) = Check(task.id, "${task.label}: $message")
     val agentName = task.property(AGENT)?.takeIf(String::isNotBlank)
-    val skillName = task.property(SKILL)?.takeIf(String::isNotBlank)
     val agent = agentName?.let { runCatching { catalogue.agent(it) } }
-    val skill = skillName?.let { runCatching { catalogue.skill(it) } }
-    val found = skill?.getOrNull()
+    val listed = listed(task).map { runCatching { catalogue.skill(it) } }
+    val assignment = !task.property(ASSIGNMENT).isNullOrBlank()
+    val found = listed.singleOrNull()?.getOrNull()?.takeIf { !assignment }
     val schema = found?.folder?.resolve("result.schema.json")?.takeIf { it.exists() }?.let { ResultContract.schemaErrors(it.readText()) }.orEmpty()
     val override = ResultContract.schemaErrors(task.property(RESULT_SCHEMA).orEmpty())
     val filled = task.inputs().map { it.operatonName }.toSet()
+    val lacking = agent?.getOrNull()?.let { a -> listed.mapNotNull { it.getOrNull() }.filter { !a.allows(it.name) }.map { check("The Agent ${a.name} doesn't list the Skill ${it.name}.") } }
     listOfNotNull(
         if (agentName == null) Check(task.id, "${task.label} has no Agent.") else agent!!.exceptionOrNull()?.let { check("${it.message}.") },
-        if (skillName == null) Check(task.id, "${task.label} has no Skill.") else skill!!.exceptionOrNull()?.let { check("${it.message}.") },
-        agent?.getOrNull()?.takeIf { found != null && found.name !in it.skills }?.let { check("The Agent ${it.name} doesn't list the Skill ${found!!.name}.") },
+        Check(task.id, "${task.label} has no Assignment and doesn't list exactly one Skill.").takeIf { !assignment && listed.size != 1 },
+    ) + listed.mapNotNull { it.exceptionOrNull()?.let { e -> check("${e.message}.") } } + lacking.orEmpty() + listOfNotNull(
         found?.let { runCatching { catalogue.uses(it) }.exceptionOrNull() }?.let { check("${it.message}.") },
         schema.takeIf { it.isNotEmpty() }?.let { check("The Skill ${found!!.name}'s result.schema.json is invalid: ${it.joinToString("; ")}") },
         override.takeIf { it.isNotEmpty() }?.let { check("Its result-schema override is invalid: ${it.joinToString("; ")}") },
     ) + found?.inputs.orEmpty().filter { it !in filled }.map { Check(task.id, "${task.label} has an empty input $it.", warning = true) }
 }
 
-/** What an Agent Task promises in its Result's `output`: its override, else its Skill's schema; null when neither can be read. */
+/** The Skills an Agent Task lists itself: its [SKILLS], else its old [SKILL], if any. */
+private fun listed(task: ServiceTask) = task.property(SKILLS)?.let(::words) ?: listOfNotNull(task.property(SKILL)?.takeIf(String::isNotBlank))
+
+/**
+ * What an Agent Task promises in its Result's `output`: its override, else the schema of the Skill it starts with;
+ * nothing with an Assignment; null when neither can be read.
+ */
 private fun promised(catalogue: Catalogue, task: ServiceTask): Map<*, *>? {
     task.property(RESULT_SCHEMA)?.takeIf(String::isNotBlank)?.let { return runCatching { JsonMapper.shared().readValue(it, Map::class.java) }.getOrNull() }
-    return runCatching { catalogue.skill(task.property(SKILL).orEmpty()).outputSchema }.getOrNull()
+    if (!task.property(ASSIGNMENT).isNullOrBlank()) return emptyMap<String, Any?>()
+    return runCatching { catalogue.skill(listed(task).single()).outputSchema }.getOrNull()
 }
 
 /** The names an expression anywhere may start with besides start-form fields and Task ids: Ants' Run variables and the engine's own. */
