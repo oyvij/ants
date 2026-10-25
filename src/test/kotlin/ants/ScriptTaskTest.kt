@@ -43,7 +43,7 @@ class ScriptTaskTest : AntsTest() {
     }
 
     private fun saveScript(name: String, code: String, inputs: String = "", vars: String = "", own: List<Pair<String, String>> = emptyList(), linked: List<String> = emptyList(), was: String? = null) {
-        val form = listOf("name" to name, "description" to "Does $name.", "code" to code, "inputs" to inputs, "vars" to vars) +
+        val form = listOf("name" to name, "description" to "Does $name.", "code" to code, "vars" to vars) + ScriptsTest.inputRows(inputs) +
             own.withIndex().flatMap { (i, secret) -> listOf("secrets[$i].name" to secret.first, "secrets[$i].value" to secret.second, "secrets[$i].was" to if (was == null) "" else secret.first) } +
             linked.map { "linked" to it }
         browser.get("/scripts/${was ?: "new"}")
@@ -107,7 +107,7 @@ class ScriptTaskTest : AntsTest() {
                     workspace: e.ANTS_RUN_WORKSPACE, run: e.ANTS_RUN_ID, cwd: process.cwd()})
             """.trimIndent(),
         )
-        saveScript("echo", inputs = "posted, code", code = "ants.output(await Promise.resolve(ants.inputs))\n")
+        saveScript("echo", inputs = "posted, code:number", code = "ants.output(await Promise.resolve(ants.inputs))\n")
         deploy("posting", scriptTask("post", "post-message", mapOf("text" to "\${text}")), scriptTask("echo", "echo", mapOf("posted" to "\${post.payload.inputs.text}", "code" to "\${post.exitCode}")))
 
         val run = start("posting")
@@ -144,6 +144,18 @@ class ScriptTaskTest : AntsTest() {
         browser.post(entry, mapOf("action" to "retry", "instruction" to ""))
         eventually { assertNotNull(runtime.getVariable(run, "flaky")) }
         assertEquals(mapOf("exitCode" to 0, "output" to "", "payload" to mapOf("fixed" to true)), runtime.getVariable(run, "flaky"))
+    }
+
+    @Test
+    fun `a Script Task whose inputs break the Script's input schema fails before the Script runs, with the reason`() {
+        saveScript("count-up", inputs = "count:number", code = "console.log('node ran')\nants.output({next: ants.inputs.count + 1})\n")
+        deploy("counting", scriptTask("count", "count-up", mapOf("count" to "\${text}")))
+        val run = start("counting", text = "three")
+        eventually { assertNotNull(incident(run)) }
+        val page = browser.get("/notifications/" + incident(run).id).body
+        assertContains(page, "The inputs break the Script's input schema, so it didn't run:\n- /count: string found, number expected")
+        assertContains(page, "count")
+        assertFalse("node ran" in page)
     }
 
     @Test

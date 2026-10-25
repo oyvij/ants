@@ -12,11 +12,17 @@ broke what named them and needed a confirm, Scripts, Agents and Skills all link 
   are left for later.
 - **On disk**, a Script is the folder `ANTS_HOME/scripts/<id>/`: `script.mjs` (the code), `script.yaml` (`id`, `name`,
   `description`, `inputs`, `vars` and `secrets`) and, when it has Secrets of its own, `secrets.yaml` with their values.
+  `inputs` is the input schema, an object JSON Schema (`type: object`, `properties`, `required`), each property an input
+  with a `type`, a `description`, and nested `properties` and `required` for an object or `items` for a list. The
+  page edits that subset as rows; whatever else the file holds (`enum`, `minimum`, an `integer`) is kept where a row
+  still has the same name and type. A file still holding a list of names reads as untyped properties.
   `secrets` in `script.yaml` lists the names of the Secrets it uses, its own and those it links from Settings, and never
   a value; linked Secrets keep their values where Settings keeps them (ADR 0015). So `script.yaml` can be read and
   shared without leaking a token.
 - **One runner runs a Script, whoever calls it**: a Script Task, an Agent's Script tool, or a Test run from the user or
   the editor's AI helper. It runs `node script.mjs` with no shell, in a given folder, as Protected Commands run.
+  - It checks the inputs against the input schema first, with the JSON Schema validator the Result contract uses, and
+    refuses ones that break it, before Node starts: the run fails with each problem in its output.
   - The environment is the CLI's allow-list, the Script's vars and Secrets each as `process.env.<NAME>`, and
     `ANTS_RUN_WORKSPACE` and `ANTS_RUN_ID`.
   - Node starts with an Ants module loaded before the Script (`node --import`), which defines the global `ants`. The

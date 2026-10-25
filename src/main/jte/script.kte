@@ -16,6 +16,7 @@
     <meta name="color-scheme" content="${colorScheme}">
     <title>${saved ?: "New Script"} · Scripts · Ants</title>
     <script type="module" src="/code-editor.js"></script>
+    <script type="module" src="/schema-card.js"></script>
 </head>
 <body>
 @if(!use)
@@ -56,9 +57,22 @@
         <textarea id="code" name="code" rows="20" data-code-editor="/scripts/test-run" data-helper="script-helper" placeholder="${placeholder}">${form.code}</textarea>
     </div>
     <div class="grid2">
-    <div class="card"><h3>Inputs and vars</h3>
-        <div class="fld"><label class="f" for="inputs">Inputs</label><div class="help">The names of the inputs a caller passes, separated by commas.</div>
-            <input id="inputs" class="mono" name="inputs" value="${form.inputs}" placeholder="e.g. channel, text"></div>
+    <div class="card schema" id="schema">
+        <div class="tabs" role="tablist">
+            <button type="button" role="tab" id="input-schema-tab" aria-controls="input-schema" aria-selected="true" class="on">Input schema</button>
+            <button type="button" role="tab" id="output-schema-tab" aria-controls="output-schema" aria-selected="false">Output schema</button>
+        </div>
+        <div role="tabpanel" id="input-schema" aria-labelledby="input-schema-tab">
+            <div class="help">The inputs a caller passes, as <code>ants.inputs</code>. Ants refuses inputs that don't fit before the Script runs. Clear a name to remove its row.</div>
+            @template.schemarows(rows = form.inputs, prefix = "inputs")
+        </div>
+        <div role="tabpanel" id="output-schema" aria-labelledby="output-schema-tab" hidden>
+            <p class="muted small">No output schema: any JSON payload is accepted.</p>
+        </div>
+        <template id="schema-row">@template.schemarow(row = ants.SchemaRow("", "string"), at = "new", depth = 1)</template>
+    </div>
+    <div>
+    <div class="card"><h3>Vars</h3>
         <div class="fld"><label class="f" for="vars">Vars</label><div class="help">Settings that aren't secret, one <code>NAME=value</code> a line.</div>
             <textarea id="vars" class="mono" name="vars" rows="4" placeholder="e.g. CHANNEL=general">${form.vars}</textarea></div>
     </div>
@@ -80,6 +94,7 @@
             <span class="muted small">No Secret in Settings yet.</span>
 @endif
         </div>
+    </div>
     </div>
     </div>
 </form>

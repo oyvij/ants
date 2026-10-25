@@ -12,7 +12,7 @@ internal fun scriptTasks(scripts: Scripts, catalogue: Catalogue, model: BpmnMode
         val value = task.property(SCRIPT)?.trim()?.takeIf(String::isNotEmpty) ?: return@flatMap listOf(Check(task.id, "${task.label} has no Script."))
         val kept = task.property(nameBeside(value))
         val script = runCatching { scripts.linked(value, kept) }.getOrNull() ?: return@flatMap listOf(check("No Script named ${kept ?: value}."))
-        val undeclared = task.inputs().map { it.operatonName }.filter { it !in script.inputs }
+        val undeclared = task.inputs().map { it.operatonName }.filter { it !in script.inputNames }
             .map { check("The Script ${script.name} doesn't declare the input $it.") }
         val where = scripts.where(script)
         val twins = identified.filter { it.id == script.id && it.where != where }.map {

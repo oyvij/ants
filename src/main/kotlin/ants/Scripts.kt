@@ -15,10 +15,13 @@ data class Script(
     val id: String,
     val name: String,
     val description: String,
-    val inputs: List<String> = emptyList(),
+    /** The input schema: an object JSON Schema, each property an input (ADR 0025). */
+    val inputs: Map<*, *> = ScriptSchema.EMPTY,
     val vars: Map<String, String> = emptyMap(),
     val secrets: List<String> = emptyList(),
 ) {
+    val inputNames: List<String> get() = (inputs["properties"] as? Map<*, *>).orEmpty().keys.map { "$it" }
+
     fun definition(): Map<String, Any> = linkedMapOf("id" to id, "name" to name, "description" to description, "inputs" to inputs, "vars" to vars, "secrets" to secrets)
 
     companion object {
@@ -26,7 +29,11 @@ data class Script(
             id = definition["id"].toString(),
             name = definition["name"]?.toString().orEmpty(),
             description = definition["description"]?.toString().orEmpty(),
-            inputs = Settings.strings(definition["inputs"]).orEmpty(),
+            inputs = when (val inputs = definition["inputs"]) {
+                is Map<*, *> -> inputs
+                is List<*> -> mapOf("type" to "object", "properties" to inputs.associate { "$it" to emptyMap<String, Any>() }) // the names a Script had before its schema
+                else -> ScriptSchema.EMPTY
+            },
             vars = (definition["vars"] as? Map<*, *>).orEmpty().entries.associate { (name, value) -> "$name" to "$value" },
             secrets = Settings.strings(definition["secrets"]).orEmpty(),
         )

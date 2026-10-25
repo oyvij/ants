@@ -1,3 +1,5 @@
+import {sample as inputsSample} from '/schema-card.js';
+
 const selector = 'textarea[data-code-editor]:not([data-mounted])';
 let codemirror;
 
@@ -43,6 +45,17 @@ function mount(textarea, cm) {
     box.append(ed, bar, result);
     textarea.hidden = true;
     textarea.after(box);
+    const schema = textarea.form?.querySelector('#schema');
+    if (schema) { // the sample follows the input schema until the user writes one of their own
+        let own = false;
+        const fill = () => {
+            if (!own) sample.value = JSON.stringify(inputsSample(schema));
+        };
+        sample.addEventListener('input', () => own = sample.value.trim() !== '');
+        schema.addEventListener('input', fill);
+        schema.addEventListener('change', fill);
+        fill();
+    }
     run.addEventListener('click', async () => {
         run.disabled = true;
         result.replaceChildren(element('span', 'muted small', 'Running…'));

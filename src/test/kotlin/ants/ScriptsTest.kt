@@ -19,6 +19,9 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
+/** An input schema declaring [names], each any JSON value and optional. */
+fun untypedInputs(vararg names: String): Map<String, Any> = mapOf("type" to "object", "properties" to names.associateWith { emptyMap<String, Any>() })
+
 /**
  * Scripts: the user's library of JavaScript in `ANTS_HOME/scripts/<id>/`, edited on the Scripts pages, and a Test run
  * of the unsaved code through the one runner every caller uses, on the real `node` the build fetched.
@@ -55,7 +58,7 @@ class ScriptsTest : AntsTest() {
         vars: String = "",
         own: List<Pair<String, String>> = emptyList(),
         linked: List<String> = emptyList(),
-    ): List<Pair<String, String>> = listOf("name" to name, "description" to description, "code" to code, "inputs" to inputs, "vars" to vars) +
+    ): List<Pair<String, String>> = listOf("name" to name, "description" to description, "code" to code, "vars" to vars) + inputRows(inputs) +
         own.withIndex().flatMap { (i, secret) -> listOf("secrets[$i].name" to secret.first, "secrets[$i].value" to secret.second, "secrets[$i].was" to "") } +
         linked.map { "linked" to it }
 
@@ -102,7 +105,8 @@ class ScriptsTest : AntsTest() {
         assertEquals("console.log(process.env.SLACK_TOKEN)\n", folder.resolve("script.mjs").readText())
         assertEquals(
             mapOf(
-                "id" to folder.fileName.toString(), "name" to "post-message", "description" to "Posts a message.", "inputs" to listOf("channel", "text"),
+                "id" to folder.fileName.toString(), "name" to "post-message", "description" to "Posts a message.",
+                "inputs" to mapOf("type" to "object", "properties" to mapOf("channel" to mapOf("type" to "string"), "text" to mapOf("type" to "string"))),
                 "vars" to mapOf("CHANNEL" to "general", "URL" to "https://example.com/?a=b"), "secrets" to listOf("SLACK_TOKEN", "npm"),
             ),
             definition(folder),
@@ -272,7 +276,125 @@ class ScriptsTest : AntsTest() {
         assertContains(result["output"].toString(), "Cannot find package 'chalk'")
     }
 
+    @Test
+    fun `saving a Script writes its input rows as an object JSON Schema, nested rows as nested properties, and opening it shows the same rows`() {
+        val rows = listOf(
+            "inputs[0].name" to "text", "inputs[0].type" to "string", "inputs[0].description" to "What to post.", "inputs[0].required" to "on",
+            "inputs[1].name" to "ticket", "inputs[1].type" to "object", "inputs[1].description" to "",
+            "inputs[1].rows[0].name" to "title", "inputs[1].rows[0].type" to "string", "inputs[1].rows[0].description" to "", "inputs[1].rows[0].required" to "on",
+            "inputs[1].rows[1].name" to "labels", "inputs[1].rows[1].type" to "array:string", "inputs[1].rows[1].description" to "Its labels.",
+            "inputs[2].name" to "comments", "inputs[2].type" to "array:object", "inputs[2].description" to "",
+            "inputs[2].rows[0].name" to "body", "inputs[2].rows[0].type" to "string", "inputs[2].rows[0].description" to "", "inputs[2].rows[0].required" to "on",
+            "inputs[2].rows[1].name" to "votes", "inputs[2].rows[1].type" to "number", "inputs[2].rows[1].description" to "",
+            "inputs[3].name" to "", "inputs[3].type" to "string", "inputs[3].description" to "", // a row left blank is no input
+            "inputs[4].name" to "urgent", "inputs[4].type" to "boolean", "inputs[4].description" to "",
+            "inputs[0].rows[0].name" to "ignored", "inputs[0].rows[0].type" to "string", // rows under a text input are no fields
+        )
+        create(form("post-ticket") + rows)
+        assertEquals(
+            mapOf(
+                "type" to "object",
+                "properties" to mapOf(
+                    "text" to mapOf("type" to "string", "description" to "What to post."),
+                    "ticket" to mapOf(
+                        "type" to "object",
+                        "properties" to mapOf("title" to mapOf("type" to "string"), "labels" to mapOf("type" to "array", "items" to mapOf("type" to "string"), "description" to "Its labels.")),
+                        "required" to listOf("title"),
+                    ),
+                    "comments" to mapOf(
+                        "type" to "array",
+                        "items" to mapOf("type" to "object", "properties" to mapOf("body" to mapOf("type" to "string"), "votes" to mapOf("type" to "number")), "required" to listOf("body")),
+                    ),
+                    "urgent" to mapOf("type" to "boolean"),
+                ),
+                "required" to listOf("text"),
+            ),
+            definition(folder("post-ticket"))["inputs"],
+        )
+
+        val page = browser.get("/scripts/post-ticket").body
+        assertContains(page, """name="inputs[0].name" value="text"""")
+        assertContains(page, """name="inputs[0].description" value="What to post."""")
+        assertTrue(Regex("""name="inputs\[0]\.required"[^>]*checked""").containsMatchIn(page))
+        assertFalse(Regex("""name="inputs\[1]\.required"[^>]*checked""").containsMatchIn(page))
+        assertContains(page, """name="inputs[1].rows[1].name" value="labels"""")
+        assertTrue(Regex("""name="inputs\[1]\.rows\[1]\.type"(?:(?!</select>).)*value="array:string" selected""", RegexOption.DOT_MATCHES_ALL).containsMatchIn(page))
+        assertContains(page, """name="inputs[2].rows[1].name" value="votes"""")
+        assertTrue(Regex("""name="inputs\[3]\.type"(?:(?!</select>).)*value="boolean" selected""", RegexOption.DOT_MATCHES_ALL).containsMatchIn(page))
+
+        val saved = definition(folder("post-ticket"))["inputs"]
+        browser.post("/scripts/post-ticket", form("post-ticket") + rows)
+        assertEquals(saved, definition(folder("post-ticket"))["inputs"])
+    }
+
+    @Test
+    fun `saving a Script keeps what its schema file holds beyond the rows the page edits`() {
+        val folder = scripts.resolve("s-kept01").also { it.toFile().mkdirs() }
+        folder.resolve("script.mjs").writeText("console.log('hi')\n")
+        val inputs = mapOf(
+            "type" to "object",
+            "properties" to mapOf(
+                "mode" to mapOf("type" to "string", "enum" to listOf("fast", "slow"), "description" to "How."),
+                "count" to mapOf("type" to "integer", "minimum" to 1),
+                "anything" to emptyMap<String, Any>(),
+            ),
+            "required" to listOf("mode"),
+            "additionalProperties" to false,
+        )
+        folder.resolve("script.yaml").writeText(yaml.dump(mapOf("id" to "s-kept01", "name" to "kept", "description" to "Keeps.", "inputs" to inputs, "vars" to emptyMap<String, String>(), "secrets" to emptyList<String>())))
+
+        val page = browser.get("/scripts/kept").body
+        assertContains(page, """name="inputs[0].name" value="mode"""")
+        assertContains(page, """name="inputs[1].name" value="count"""")
+        assertContains(page, """name="inputs[2].name" value="anything"""")
+        val asShown = listOf(
+            "inputs[0].name" to "mode", "inputs[0].type" to "string", "inputs[0].description" to "How.", "inputs[0].required" to "on",
+            "inputs[1].name" to "count", "inputs[1].type" to "number", "inputs[1].description" to "",
+            "inputs[2].name" to "anything", "inputs[2].type" to "string", "inputs[2].description" to "",
+        )
+        browser.post("/scripts/kept", form("kept", description = "Keeps.") + asShown)
+        assertEquals(inputs, definition(folder)["inputs"])
+
+        browser.post("/scripts/kept", form("kept", description = "Keeps.") + listOf("inputs[0].name" to "mode", "inputs[0].type" to "number", "inputs[0].description" to ""))
+        assertEquals(mapOf("type" to "object", "properties" to mapOf("mode" to mapOf("type" to "number")), "additionalProperties" to false), definition(folder)["inputs"])
+    }
+
+    @Test
+    fun `an input's name, nested ones too, is letters, digits, hyphens and underscores`() {
+        val nested = listOf("inputs[0].name" to "ticket", "inputs[0].type" to "object", "inputs[0].rows[0].name" to "the title", "inputs[0].rows[0].type" to "string")
+        assertContains(create(form("bad-input") + nested).body, "An input's name is letters, digits, hyphens and underscores, not the title.")
+        assertFalse(scripts.exists() && scripts.listDirectoryEntries().isNotEmpty())
+    }
+
+    @Test
+    fun `a Test run whose sample inputs break the input schema is refused before Node starts, naming each problem`() {
+        val rows = listOf(
+            "inputs[0].name" to "text", "inputs[0].type" to "string", "inputs[0].required" to "on",
+            "inputs[1].name" to "count", "inputs[1].type" to "number",
+            "inputs[2].name" to "ticket", "inputs[2].type" to "object", "inputs[2].rows[0].name" to "title", "inputs[2].rows[0].type" to "string", "inputs[2].rows[0].required" to "on",
+        )
+        val code = "console.log('node ran')\nants.output(ants.inputs)\n"
+        val refused = testRun(form("strict", code = code) + rows, sample = """{"count": "three", "ticket": {}}""")
+        assertTrue(refused["exitCode"] != 0)
+        val output = refused["output"].toString()
+        assertFalse("node ran" in output)
+        assertContains(output, "The inputs break the Script's input schema, so it didn't run")
+        assertContains(output, "text")
+        assertContains(output, "count")
+        assertContains(output, "title")
+        assertNull(refused["payload"])
+
+        val accepted = testRun(form("strict", code = code) + rows, sample = """{"text": "hi", "count": 3, "ticket": {"title": "Bug"}}""")
+        assertEquals(0, accepted["exitCode"], accepted["output"].toString())
+        assertEquals(mapOf("text" to "hi", "count" to 3, "ticket" to mapOf("title" to "Bug")), accepted["payload"])
+    }
+
     companion object {
+        /** The schema card's rows for [spec], inputs such as `text, count:number`, each optional and with no description, as the page posts them. */
+        fun inputRows(spec: String): List<Pair<String, String>> = spec.split(',').map(String::trim).filter(String::isNotEmpty).withIndex().flatMap { (i, input) ->
+            listOf("inputs[$i].name" to input.substringBefore(':'), "inputs[$i].type" to input.substringAfter(':', "string"), "inputs[$i].description" to "")
+        }
+
         /** The `node` the build fetched (`node { download = true }`), as the tests' PATH holds no other. */
         val NODE: Path = Path.of(".gradle/nodejs").listDirectoryEntries().single().resolve("bin/node").toAbsolutePath()
     }

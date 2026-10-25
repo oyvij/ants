@@ -20,9 +20,14 @@ class ScriptRunner(private val settings: Settings) {
 
     private val json = JsonMapper.shared()
 
-    /** Runs [code] with Node, the global `ants` defined before it: `ants.inputs` is [inputs], `ants.output(value)` sets the payload. */
+    /**
+     * Runs [code] with Node, the global `ants` defined before it: `ants.inputs` is [inputs], `ants.output(value)` sets
+     * the payload. Inputs that break [schema], the Script's input schema, are refused before Node starts.
+     */
     @OptIn(kotlin.io.path.ExperimentalPathApi::class)
-    fun run(code: Path, workspace: Path, runId: String, inputs: Map<String, Any?>, vars: Map<String, String>, secrets: Map<String, String>): ScriptRun {
+    fun run(code: Path, workspace: Path, runId: String, inputs: Map<String, Any?>, schema: Map<*, *>, vars: Map<String, String>, secrets: Map<String, String>): ScriptRun {
+        val broken = ScriptSchema.errors(inputs, schema)
+        if (broken.isNotEmpty()) return ScriptRun(-1, "The inputs break the Script's input schema, so it didn't run:\n" + broken.joinToString("") { "- $it\n" }, null)
         val scratch = Files.createTempDirectory("ants-script")
         try {
             val payload = scratch.resolve("payload.json")
