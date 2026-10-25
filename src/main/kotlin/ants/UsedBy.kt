@@ -31,7 +31,7 @@ class UsedBy(private val repository: RepositoryService, private val runtime: Run
 
     fun script(script: Script): Dependents {
         val agents = catalogue.agents().filter { it.allows(script) }.map { it.name }
-        val processes = processes { _, model -> model.properties("ants.script").any { it == script.id } || model.agentTasks.any { task -> Links(task).scripts(scripts).orEmpty().any { it.getOrNull()?.id == script.id } } }
+        val processes = processes { _, model -> model.properties(SCRIPT).any { it == script.id } || model.agentTasks.any { task -> Links(task).scripts(scripts).orEmpty().any { it.getOrNull()?.id == script.id } } }
         return dependents(processes).let { Dependents(it.processes, it.older, agents) }
     }
 

@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test
 import org.operaton.bpm.engine.RepositoryService
 import org.operaton.bpm.engine.RuntimeService
 import org.springframework.beans.factory.annotation.Autowired
+import tools.jackson.databind.json.JsonMapper
 import java.nio.file.Path
 import java.time.Duration
 import kotlin.io.path.deleteIfExists
@@ -19,6 +20,7 @@ import kotlin.test.assertTrue
 class ScriptTaskTest : AntsTest() {
     private val browser by lazy { browser().also { it.login() } }
     private val secrets = home.resolve("secrets.yaml")
+    private val json = JsonMapper.shared()
 
     @Autowired
     lateinit var runtime: RuntimeService
@@ -87,6 +89,8 @@ class ScriptTaskTest : AntsTest() {
         assertTrue(started.path.startsWith("/runs/"), Regex("role=\"alert\"[^<]*|class=\"warn\"[^<]*").findAll(started.body).joinToString { it.value })
         return started.path.removePrefix("/runs/")
     }
+
+    private fun deployed(key: String): String = repository.getProcessModel(repository.createProcessDefinitionQuery().processDefinitionKey(key).latestVersion().singleResult().id).readAllBytes().decodeToString()
 
     private fun incident(run: String) = runtime.createIncidentQuery().processInstanceId(run).singleResult()
 
@@ -157,5 +161,33 @@ class ScriptTaskTest : AntsTest() {
         } finally {
             runner.timeLimit = Duration.ofMinutes(10)
         }
+    }
+
+    @Test
+    fun `renaming the Script leaves the Process working, its page shows the Process using it, and the catalogue gives its new name`() {
+        saveScript("greet", inputs = "text", code = "import {writeFileSync} from 'node:fs'\nwriteFileSync(process.env.ANTS_OUTPUT, JSON.stringify({greeted: true}))\n")
+        deploy("greeting", scriptTask("greet", "greet", mapOf("text" to "\${text}")))
+        val id = Regex("""name="ants.script" value="(s-[a-z0-9]{6})"""").find(deployed("greeting"))!!.groupValues[1]
+        assertContains(deployed("greeting"), """name="ants.name.$id" value="greet"""")
+
+        saveScript("say-hello", inputs = "text", was = "greet", code = "import {writeFileSync} from 'node:fs'\nwriteFileSync(process.env.ANTS_OUTPUT, JSON.stringify({greeted: true}))\n")
+        assertContains(browser.get("/scripts/say-hello").body, """<a href="/processes/greeting">greeting</a>""")
+        val catalogue = json.readValue(browser.get("/catalogue.json").body, Map::class.java)
+        assertEquals(mapOf("id" to id, "name" to "say-hello", "description" to "Does say-hello.", "inputs" to listOf("text")), (catalogue["scripts"] as List<*>).single { (it as Map<*, *>)["id"] == id })
+
+        val run = start("greeting")
+        eventually { assertNotNull(runtime.getVariable(run, "greet")) }
+        assertEquals(mapOf("greeted" to true), (runtime.getVariable(run, "greet") as Map<*, *>)["payload"])
+    }
+
+    @Test
+    fun `deleting a Script confirms with the Processes that use it`() {
+        saveScript("cleanup", code = "console.log('clean')\n")
+        deploy("cleaning", scriptTask("clean", "cleanup"))
+        val confirm = browser.post("/scripts/cleanup/delete", emptyMap())
+        assertContains(confirm.body, "Delete the Script cleanup?")
+        assertContains(confirm.body, """<a href="/processes/cleaning">cleaning</a>""")
+        browser.post("/scripts/cleanup/delete", mapOf("confirm" to "on"))
+        assertEquals(404, browser.get("/scripts/cleanup").status)
     }
 }
