@@ -16,6 +16,7 @@
     <meta name="color-scheme" content="${colorScheme}">
     <title>${saved ?: "New Script"} · Scripts · Ants</title>
     <script type="module" src="/code-editor.js"></script>
+    <script src="/script.js" defer></script>
 </head>
 <body>
 @if(!use)
@@ -62,8 +63,8 @@
         <div class="fld"><label class="f" for="vars">Vars</label><div class="help">Settings that aren't secret, one <code>NAME=value</code> a line.</div>
             <textarea id="vars" class="mono" name="vars" rows="4" placeholder="e.g. CHANNEL=general">${form.vars}</textarea></div>
     </div>
-    <div class="card"><h3>Secrets</h3><div class="help">The Script's own Secrets: a value is kept in its <code>secrets.yaml</code>, never shown again; left blank, the saved one stays. Clear a name to remove it.</div>
-        <div class="listed">
+    <div class="card"><h3>Secrets</h3><div class="help">The Script's own Secrets: a value is kept in its <code>secrets.yaml</code>, never shown again; left blank, the saved one stays. A Secret removed, or with its name cleared, goes when you save.</div>
+        <div class="listed" data-secrets>
 @for((i, row) in form.shownOwn.withIndex())
             <div class="row">
                 <input type="hidden" name="secrets[${i}].was" value="${row.was}">

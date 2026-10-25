@@ -757,6 +757,50 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `the Secrets card adds two Secrets for one Save, and its ✕ asks first, so Cancel keeps a Secret and Delete removes it once saved`() = browse {
+        http.get("/scripts/new")
+        http.post("/scripts/new", listOf("name" to "post", "description" to "Posts.", "code" to "console.log('hi')\n", "inputs" to "", "vars" to "",
+            "secrets[0].name" to "OLD_TOKEN", "secrets[0].value" to "tok-old", "secrets[0].was" to ""))
+        val folder = home.resolve("scripts").toFile().listFiles()!!.single { "name: post" in it.resolve("script.yaml").readText() }.toPath()
+        fun ownSecrets() = org.yaml.snakeyaml.Yaml().load<Map<*, *>?>(folder.resolve("secrets.yaml").toFile().takeIf { it.exists() }?.readText() ?: "").orEmpty()
+        fun listed() = org.yaml.snakeyaml.Yaml().load<Map<*, *>>(folder.resolve("script.yaml").readText())["secrets"]
+        page.navigate(url("/scripts/post"))
+        val card = page.locator(card("Secrets"))
+        val rows = card.locator(".listed > .row")
+        assertThat(rows).hasCount(2)
+
+        card.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Add Secret")).click()
+        card.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Add Secret")).click()
+        assertThat(rows).hasCount(4)
+        rows.nth(2).getByLabel("Name").fill("A_TOKEN")
+        rows.nth(2).getByLabel("Value").fill("a-1")
+        rows.nth(3).getByLabel("Name").fill("B_TOKEN")
+        rows.nth(3).getByLabel("Value").fill("b-2")
+
+        val confirm = page.locator("dialog.modal.confirm")
+        rows.first().locator("button.x").click()
+        assertThat(confirm).containsText("Delete the Secret OLD_TOKEN? Its value can't be shown again.")
+        confirm.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Cancel")).click()
+        assertThat(confirm).hasCount(0)
+        assertThat(rows).hasCount(4)
+        assertThat(rows.first().getByLabel("Name")).hasValue("OLD_TOKEN")
+
+        rows.first().locator("button.x").click()
+        confirm.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Delete")).click()
+        assertThat(rows).hasCount(3)
+        assertThat(card.getByLabel("Name").first()).hasValue("")
+        assertEquals(mapOf("OLD_TOKEN" to "tok-old"), ownSecrets())
+        assertEquals(listOf("OLD_TOKEN"), listed())
+        page.screenshot("script-secrets")
+
+        page.locator(".ph button.primary").click()
+        eventually {
+            assertEquals(mapOf("A_TOKEN" to "a-1", "B_TOKEN" to "b-2"), ownSecrets())
+            assertEquals(listOf("A_TOKEN", "B_TOKEN"), listed())
+        }
+    }
+
+    @Test
     fun `picking an Agent picks its first Skill and says what later Tasks can read, and the Checks turn Ready to deploy`() = browse {
         agentTask(null, mapOf("draft" to null, "polish" to null))
         val task = appendAgentTask()

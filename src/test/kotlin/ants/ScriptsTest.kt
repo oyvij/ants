@@ -112,6 +112,11 @@ class ScriptsTest : AntsTest() {
         assertFalse("xoxb-s3cret" in page.body)
         assertFalse(folder.fileName.toString() in page.body)
 
+        val shown = browser.get("/scripts/post-message").body // without JS: the saved Secret, and one empty row to add one
+        assertContains(shown, """name="secrets[0].name" value="SLACK_TOKEN"""")
+        assertContains(shown, """name="secrets[1].name" value=""""")
+        assertFalse("secrets[2]" in shown)
+
         browser.post("/scripts/post-message", form("post-message", inputs = "channel", own = listOf("SLACK_TOKEN" to "")))
         assertEquals(mapOf("SLACK_TOKEN" to "xoxb-s3cret"), Yaml().load<Map<*, *>>(folder.resolve("secrets.yaml").readText()))
         browser.post("/scripts/post-message", form("post-message"))
