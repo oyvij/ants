@@ -6,9 +6,9 @@ let codemirror;
 async function mountAll() {
     if (!document.querySelector(selector)) return;
     codemirror ??= Promise.all(['@codemirror/view', '@codemirror/state', '@codemirror/commands', '@codemirror/language',
-        '@codemirror/lang-javascript'].map(module => import(module)));
-    const [view, state, commands, language, javascript] = await codemirror;
-    document.querySelectorAll(selector).forEach(textarea => mount(textarea, {...view, ...state, ...commands, ...language, ...javascript}));
+        '@codemirror/lang-javascript', '@codemirror/lint'].map(module => import(module)));
+    const [view, state, commands, language, javascript, lint] = await codemirror;
+    document.querySelectorAll(selector).forEach(textarea => mount(textarea, {...view, ...state, ...commands, ...language, ...javascript, ...lint}));
 }
 
 function element(tag, className, text) {
@@ -19,6 +19,7 @@ function element(tag, className, text) {
 
 function mount(textarea, cm) {
     textarea.dataset.mounted = '';
+    let changed = () => {};
     const box = element('div', 'code-editor');
     const ed = element('div', 'ed tall json');
     const editor = new cm.EditorView({
@@ -28,8 +29,11 @@ function mount(textarea, cm) {
             cm.keymap.of([...cm.defaultKeymap, ...cm.historyKeymap, cm.indentWithTab]),
             cm.placeholder(textarea.placeholder), cm.javascript(), cm.syntaxHighlighting(cm.defaultHighlightStyle, {fallback: true}),
             cm.EditorView.updateListener.of(update => {
-                if (update.docChanged) textarea.value = update.state.doc.toString();
+                if (!update.docChanged) return;
+                textarea.value = update.state.doc.toString();
+                changed();
             }),
+            ...textarea.dataset.check ? [cm.lintGutter()] : [],
         ],
     });
     ed.append(editor.dom);
@@ -71,7 +75,48 @@ function mount(textarea, cm) {
             run.disabled = false;
         }
     });
+    if (textarea.dataset.check) changed = checking(textarea, editor, cm, schema);
     if (textarea.dataset.helper) openHelper(textarea, editor, cm);
+}
+
+/**
+ * Asks the validator about the page's unsaved code and schemas a moment after each edit, and shows its findings: on
+ * the code's lines with CodeMirror's lint marks, and on the schema rows. Calls the returned function on each edit.
+ */
+function checking(textarea, editor, cm, schema) {
+    let timer, asked = 0;
+    const check = async () => {
+        const mine = ++asked;
+        const body = new URLSearchParams(new FormData(textarea.form));
+        body.set(textarea.name, editor.state.doc.toString());
+        let findings;
+        try {
+            ({findings} = await (await fetch(textarea.dataset.check, {method: 'POST', body})).json());
+        } catch {
+            return;
+        }
+        if (mine !== asked) return; // a later edit's answer is on its way
+        const doc = editor.state.doc;
+        editor.dispatch(cm.setDiagnostics(editor.state, findings.filter(f => f.line).map(f => {
+            const line = doc.line(Math.min(f.line, doc.lines));
+            return {from: line.from, to: line.to, severity: f.severity, message: f.message};
+        })));
+        textarea.form.querySelectorAll('[data-finding]').forEach(mark => mark.remove());
+        for (const {row, severity, message} of findings.filter(f => f.row)) {
+            const li = textarea.form.querySelector(`[name="${CSS.escape(row)}.name"]`)?.closest('.schema-row');
+            const mark = element('div', `finding f-${severity}`, message);
+            mark.dataset.finding = '';
+            li?.querySelector(':scope > .row').after(mark);
+        }
+    };
+    const soon = () => {
+        clearTimeout(timer);
+        timer = setTimeout(check, 400);
+    };
+    schema?.addEventListener('input', soon);
+    schema?.addEventListener('change', soon);
+    check();
+    return soon;
 }
 
 async function openHelper(textarea, editor, cm) {

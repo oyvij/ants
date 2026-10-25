@@ -459,6 +459,101 @@ class ScriptsTest : AntsTest() {
         assertEquals(emptyList<Any>(), free["mismatches"])
     }
 
+    /** What the validator finds in the page's unsaved [form], each as `severity line-or-row: message`. */
+    private fun check(form: List<Pair<String, String>>): List<String> {
+        browser.get("/scripts/new")
+        val page = browser.post("/script-check", form)
+        assertEquals(200, page.status, page.body)
+        return (json.readValue(page.body, Map::class.java)["findings"] as List<*>).map {
+            val finding = it as Map<*, *>
+            "${finding["severity"]} ${finding["line"] ?: finding["row"]}: ${finding["message"]}"
+        }
+    }
+
+    @Test
+    fun `the validator marks a syntax error on its line with Node's message`() {
+        assertEquals(listOf("error 2: SyntaxError: Unexpected token ';'"), check(form("broken", code = "const a = 1\nconst x = ;\n")))
+        assertEquals(emptyList(), check(form("fine", code = "const a = await Promise.resolve(1)\nconsole.log(a)\n")))
+    }
+
+    @Test
+    fun `the validator marks a read of an undeclared input as an error on its line, and a declared input never read as a warning on its row`() {
+        val code = "// ants.inputs.commented is no read\nconst greeting = `hi ${'$'}{ants.inputs.txt}`\nconsole.log(greeting, ants.inputs.channel, 'ants.inputs.quoted')\n"
+        assertEquals(
+            listOf("error 2: ants.inputs.txt reads an input the input schema doesn't declare.", "warning inputs[0]: The input text is never read."),
+            check(form("typo", code = code, inputs = "text, channel")),
+        )
+    }
+
+    @Test
+    fun `the validator marks an undeclared payload field as an error on its line, and a required one never written as a warning on its row`() {
+        val output = listOf(
+            "output[0].name" to "ts", "output[0].type" to "string", "output[0].required" to "on",
+            "output[1].name" to "posted", "output[1].type" to "boolean",
+        )
+        val code = "const ok = true\nants.output({\n  posted: ok,\n  'channel': 'general',\n  user: {id: 7, ts: 1},\n})\n"
+        assertEquals(
+            listOf(
+                "error 4: ants.output writes channel, a field the output schema doesn't declare.",
+                "error 5: ants.output writes user, a field the output schema doesn't declare.",
+                "warning output[0]: The required payload field ts is never written.",
+            ),
+            check(form("payload", code = code) + output),
+        )
+        assertEquals(emptyList(), check(form("free", code = code)), "with no output schema any payload is accepted")
+    }
+
+    @Test
+    fun `the validator marks a missing or repeated name and an object with no fields as errors on their rows`() {
+        val rows = listOf(
+            "inputs[0].name" to "text", "inputs[0].type" to "string",
+            "inputs[1].name" to "text", "inputs[1].type" to "number",
+            "inputs[2].name" to "", "inputs[2].type" to "string", "inputs[2].description" to "What to post.",
+            "inputs[3].name" to "", "inputs[3].type" to "string", "inputs[3].description" to "",
+            "inputs[4].name" to "ticket", "inputs[4].type" to "object",
+            "inputs[5].name" to "tickets", "inputs[5].type" to "array:object", "inputs[5].rows[0].name" to "", "inputs[5].rows[0].description" to "A title.",
+            "output[0].name" to "user", "output[0].type" to "object", "output[0].rows[0].name" to "id", "output[0].rows[1].name" to "id",
+        )
+        val code = "console.log(ants.inputs.text, ants.inputs.ticket, ants.inputs.tickets)\nants.output({user: {}})\n"
+        assertEquals(
+            listOf(
+                "error inputs[1]: Another input is named text too.",
+                "error inputs[2]: Input row 3 has no name.",
+                "error inputs[4]: ticket is an object with no fields.",
+                "error inputs[5].rows[0]: Field 1 of tickets has no name.",
+                "error output[0].rows[1]: Another field of user is named id too.",
+            ),
+            check(form("rows", code = code) + rows),
+        )
+    }
+
+    @Test
+    fun `the validator gives no finding for code passing ants inputs or the payload on under another name`() {
+        val output = listOf("output[0].name" to "ts", "output[0].type" to "string", "output[0].required" to "on")
+        val code = "const {text} = ants.inputs\nconst payload = {ts: text}\nants.output(payload)\n"
+        assertEquals(emptyList(), check(form("passes-on", code = code, inputs = "text, channel") + output))
+        val spread = "const given = ants.inputs\nants.output({...given})\n"
+        assertEquals(emptyList(), check(form("spreads", code = spread, inputs = "text") + output))
+    }
+
+    @Test
+    fun `Save refuses a Script with an error, listing each one, and saves one with only warnings`() {
+        val refused = create(form("broken", code = "console.log(ants.inputs.txt)\nconst x = ;\n", inputs = "text, text"))
+        assertContains(refused.body, "The Script has 2 errors, so it wasn't saved:")
+        assertContains(refused.body, "<li>Line 2: SyntaxError: Unexpected token ';'</li>")
+        assertContains(refused.body, "<li>Another input is named text too.</li>")
+        assertFalse(scripts.exists() && scripts.listDirectoryEntries().isNotEmpty())
+
+        val warned = create(form("warned", code = "console.log('hi')\n", inputs = "text"))
+        assertFalse("wasn't saved" in warned.body)
+        assertEquals("warned", definition(folder("warned"))["name"])
+
+        val edited = browser.post("/scripts/warned", form("warned", code = "console.log(ants.inputs.txt)\n", inputs = "text"))
+        assertContains(edited.body, "The Script has an error, so it wasn't saved:")
+        assertContains(edited.body, "<li>Line 1: ants.inputs.txt reads an input the input schema doesn't declare.</li>")
+        assertEquals("console.log('hi')\n", folder("warned").resolve("script.mjs").readText())
+    }
+
     companion object {
         /** The schema card's rows for [spec], inputs such as `text, count:number`, each optional and with no description, as the page posts them. */
         fun inputRows(spec: String): List<Pair<String, String>> = spec.split(',').map(String::trim).filter(String::isNotEmpty).withIndex().flatMap { (i, input) ->

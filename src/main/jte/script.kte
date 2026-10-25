@@ -3,6 +3,7 @@
 @param labels: List<String>
 @param placeholder: String
 @param message: String? = null
+@param errors: List<String> = emptyList()
 @param dependents: ants.Dependents?
 @param use: Boolean = false
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
@@ -36,7 +37,7 @@
     </div>
 @if(dependents != null)    <div class="sub">@template.usedby(dependents = dependents, none = "no Agent or Process")</div>@endif
 </div>
-@if(message != null)<p role="alert">${message}</p>@endif
+@if(message != null && errors.isEmpty())<p role="alert">${message}</p>@elseif(message != null)<div role="alert">${message}<ul class="findings">@for(error in errors)<li>${error}</li>@endfor</ul></div>@endif
 <div class="scriptWrap">
 <form id="script" method="post" action="/scripts/${saved ?: "new"}" class="script">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
@@ -55,7 +56,7 @@
         </div>
     </div>
     <div class="card"><h3>Code</h3><div class="help">A JavaScript ES module, run as <code>node script.mjs</code> with Node's built-ins only. Its inputs are ready as <code>ants.inputs</code>, its vars and Secrets as <code>process.env.NAME</code>, and it hands back its payload with <code>ants.output(value)</code>.</div>
-        <textarea id="code" name="code" rows="20" data-code-editor="/scripts/test-run" data-helper="script-helper" placeholder="${placeholder}">${form.code}</textarea>
+        <textarea id="code" name="code" rows="20" data-code-editor="/scripts/test-run" data-check="/script-check" data-helper="script-helper" placeholder="${placeholder}">${form.code}</textarea>
     </div>
     <div class="grid2">
     <div class="card schema" id="schema">
@@ -64,7 +65,7 @@
             <button type="button" role="tab" id="output-schema-tab" aria-controls="output-schema" aria-selected="false">Output schema</button>
         </div>
         <div role="tabpanel" id="input-schema" aria-labelledby="input-schema-tab">
-            <div class="help">The inputs a caller passes, as <code>ants.inputs</code>. Ants refuses inputs that don't fit before the Script runs. Clear a name to remove its row.</div>
+            <div class="help">The inputs a caller passes, as <code>ants.inputs</code>. Ants refuses inputs that don't fit before the Script runs. Clear a name and its description to remove the row.</div>
             @template.schemarows(rows = form.inputs, prefix = "inputs")
         </div>
         <div role="tabpanel" id="output-schema" aria-labelledby="output-schema-tab" hidden>

@@ -836,6 +836,28 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `the Script editor marks the validator's findings on the code's lines and the schema rows as the user types`() = browse {
+        home.resolve("settings.yaml").writeText("node: {path: ${ScriptsTest.NODE}}\n")
+        page.navigate(url("/scripts/new"))
+        page.locator("#input-schema > .schema-level > [data-add-row]").click()
+        page.locator("input[name='inputs[0].name']").fill("text")
+        val row = page.locator("#input-schema .schema-row").first()
+        assertThat(row.locator(".finding.f-warning")).hasText("The input text is never read.")
+
+        page.locator(".code-editor .cm-content").click()
+        page.keyboard().insertText("console.log(ants.inputs.txt)")
+        val marked = page.locator(".code-editor .cm-lintRange-error")
+        assertThat(marked).hasCount(1)
+        assertThat(page.locator(".code-editor .cm-lint-marker-error")).hasCount(1)
+        assertThat(row.locator(".finding")).hasCount(1)
+
+        repeat(3) { page.keyboard().press("Backspace") }
+        page.keyboard().insertText("ext)")
+        assertThat(marked).hasCount(0)
+        assertThat(row.locator(".finding")).hasCount(0)
+    }
+
+    @Test
     fun `the Script editor's helper reads the unsaved code and replaces it in the editor, unsaved, and Ctrl-Z takes it back`() = browse {
         page.navigate(url("/scripts/new"))
         val editor = page.locator(".code-editor .cm-content")
