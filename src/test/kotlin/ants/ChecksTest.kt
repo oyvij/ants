@@ -574,6 +574,28 @@ class ChecksTest : AntsTest() {
         refuses(bpmn, "draft", "Draft (draft) reads post.nothing, which post's Result doesn't have.")
         assertEquals(emptyList(), checks(bpmn.replace("post.nothing", "post.payload.posted")).filter { it["warning"] == false })
     }
+
+    @Test
+    fun `reads of a Script Task's payload are checked against its Script's output schema, nested fields included, and offered`() = withoutScripts {
+        home.resolve("scripts/s-post01").createDirectories().run {
+            resolve("script.yaml").writeText(
+                "id: s-post01\nname: post-message\ndescription: Posts.\ninputs: {type: object, properties: {}}\n" +
+                    "output: {type: object, properties: {ts: {type: string}, meta: {type: object, properties: {channel: {type: string}}}, tags: {type: array, items: {type: string}}}}\n" +
+                    "vars: {}\nsecrets: []\n")
+            resolve("script.mjs").writeText("ants.output({ts: '1'})\n")
+        }
+        fun reading(read: String) = diagram(scriptTask("post", "s-post01") + agentTask("draft", inputs = """<operaton:inputParameter name="code">${'$'}{$read}</operaton:inputParameter>""") +
+            """<bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="post" /><bpmn:sequenceFlow id="f2" sourceRef="post" targetRef="draft" />""")
+        refuses(reading("post.payload.tss"), "draft", "Draft (draft) reads post.payload.tss, which post's output schema doesn't have.")
+        refuses(reading("post.payload.meta.chanel"), "draft", "Draft (draft) reads post.payload.meta.chanel, which post's output schema doesn't have.")
+        for (fine in listOf("post.payload", "post.payload.ts", "post.payload.meta.channel", "post.payload.tags")) {
+            assertEquals(emptyList(), checks(reading(fine)).filter { it["warning"] == false }, fine)
+        }
+        val payload = listOf("post.payload.ts", "post.payload.meta", "post.payload.meta.channel", "post.payload.tags").map { "${'$'}{$it}" }
+        assertTrue(offered(reading("post.payload"), "draft").containsAll(listOf("${'$'}{post.exitCode}", "${'$'}{post.output}") + payload))
+        val read = JsonMapper.shared().readValue(browser.post("/processes/outputs", mapOf("bpmn" to reading("post.payload"))).body, Map::class.java)
+        assertEquals(listOf("${'$'}{post.exitCode}", "${'$'}{post.output}", "${'$'}{post.payload}") + payload, read["post"])
+    }
     @Test
     fun `a file that isn't BPMN is one Check on the whole file`() {
         val checks = checks("not xml")

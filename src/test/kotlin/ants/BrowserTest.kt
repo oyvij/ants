@@ -692,6 +692,34 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `the input pickers and the condition builder offer a Script Task's payload fields from its output schema, nested ones too`() = browse {
+        agentTask(null)
+        http.get("/scripts/new")
+        http.post("/scripts/new", listOf("name" to "post-ts", "description" to "Posts.", "code" to "ants.output({ts: '1'})\n", "vars" to "",
+            "output[0].name" to "ts", "output[0].type" to "string",
+            "output[1].name" to "meta", "output[1].type" to "object", "output[1].rows[0].name" to "channel", "output[1].rows[0].type" to "string"))
+        val post = """<bpmn:serviceTask id="post" name="Post" operaton:type="external" operaton:topic="script"><bpmn:extensionElements><operaton:properties>""" +
+            """<operaton:property name="ants.script" value="post-ts" /></operaton:properties></bpmn:extensionElements></bpmn:serviceTask>"""
+        val (process, plane) = row("posted", """<bpmn:startEvent id="start" />""", post, agentTaskXml("draft", "Draft"),
+            """<bpmn:exclusiveGateway id="ok" name="Ok?" default="ok-end" />""", """<bpmn:endEvent id="end" />""")
+        val back = """<bpmn:sequenceFlow id="ok-draft" sourceRef="ok" targetRef="draft"><bpmn:conditionExpression>${'$'}{post.exitCode == 0}</bpmn:conditionExpression></bpmn:sequenceFlow>"""
+        val edge = """<bpmndi:BPMNEdge id="ok-draft_di" bpmnElement="ok-draft"><di:waypoint x="600" y="80" /><di:waypoint x="600" y="40" />""" +
+            """<di:waypoint x="450" y="40" /><di:waypoint x="450" y="80" /></bpmndi:BPMNEdge>"""
+        deploy(definitions("posted", "Posted", process + back, plane.replace("</bpmndi:BPMNPlane>", "$edge</bpmndi:BPMNPlane>")))
+
+        page.navigate(url("/processes/posted/edit"))
+        shape("draft").click()
+        for (offered in listOf("post.exitCode", "post.output", "post.payload.ts", "post.payload.meta", "post.payload.meta.channel")) {
+            assertThat(page.locator("#ants-references option[value='${'$'}{$offered}']")).hasCount(1)
+        }
+        shape("ok").click()
+        val field = page.locator("#explain .card", Page.LocatorOptions().setHasText("→ Draft")).locator("select").first()
+        assertThat(field.locator("option[value='post.payload.ts']")).hasText("post.payload.ts (from Post)")
+        assertThat(field.locator("option[value='post.payload.meta.channel']")).hasText("post.payload.meta.channel (from Post)")
+        assertThat(field.locator("option[value='post.exitCode']")).hasText("post.exitCode (from Post)")
+    }
+
+    @Test
     fun `Edit's modal renames the Task's Script, and the panel shows the new name`() = browse {
         http.get("/scripts/new")
         http.post("/scripts/new", listOf("name" to "tidy-up", "description" to "Tidies up.", "code" to "console.log('tidy')\n", "vars" to ""))

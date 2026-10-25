@@ -38,17 +38,17 @@ data class Check(val element: String?, val message: String, val warning: Boolean
 @Component
 class Checks(private val catalogue: Catalogue, private val scripts: Scripts, private val repository: RepositoryService) {
     private val kinds: List<(BpmnModelInstance) -> List<Check>> = listOf(::refusedElements, ::refusedUses, ::oneStartEvent, ::startFormNames, ::emptyInputs, ::defaultPaths, ::timerTimes, ::timerStarts, ::reviewSendBacks,
-        { agentTasks(catalogue, scripts, it) }, { references(it) }, // these two in AgentTaskChecks.kt
+        { agentTasks(catalogue, scripts, it) }, { references(it, scripts) }, // these two in AgentTaskChecks.kt
         { scriptTasks(scripts, catalogue, it) },
         { calls(repository, it) }) // in CallActivityChecks.kt
 
     /** What the input pickers of the Task [element] in [bpmn] offer, as `${…}` references; see [offered]. */
-    fun inputs(bpmn: String, element: String) = offered(Bpmn.readModelFromStream(bpmn.byteInputStream()), element) { key ->
+    fun inputs(bpmn: String, element: String) = offered(Bpmn.readModelFromStream(bpmn.byteInputStream()), element, scripts) { key ->
         repository.createProcessDefinitionQuery().processDefinitionKey(key).latestVersion().singleResult()?.let { repository.getBpmnModelInstance(it.id) }
     }
 
     /** What later Tasks read of each Task's Result in [bpmn], by id; see [laterRead]. */
-    fun laterRead(bpmn: String) = laterRead(Bpmn.readModelFromStream(bpmn.byteInputStream()))
+    fun laterRead(bpmn: String) = laterRead(Bpmn.readModelFromStream(bpmn.byteInputStream()), scripts)
 
     fun of(bpmn: String): List<Check> = try {
         Bpmn.readModelFromStream(bpmn.byteInputStream()).let { model -> kinds.flatMap { it(model) } }
