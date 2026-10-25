@@ -27,7 +27,11 @@ class ScriptTask(
         val script = scripts.linked(linked, kept)
         val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult().rootProcessInstanceId
         val inputNames = element?.inputs().orEmpty().map { it.operatonName }.toSet()
-        val inputs = task.variables.filterKeys { it in inputNames }.toSortedMap()
+        val literals = element?.literalInputs().orEmpty().keys
+        val properties = (script.inputs["properties"] as? Map<*, *>).orEmpty()
+        val inputs = task.variables.filterKeys { it in inputNames }.mapValues { (name, value) ->
+            if (name in literals && value is String) ScriptSchema.literal(value, properties[name] as? Map<*, *>).getOrDefault(value) else value
+        }.toSortedMap()
         val result = runner.run(script, scripts.secretEnvironment(script), scripts.file(script), names.runWorkspace(run).createDirectories(), run, inputs)
         if (result.exitCode != 0) throw Failed("The Script ${script.name} failed" + if (result.exitCode > 0) " with exit code ${result.exitCode}" else "", result.reported)
         if (result.failed) throw Failed("The payload of the Script ${script.name} breaks its output schema", result.reported)

@@ -532,6 +532,22 @@ class ChecksTest : AntsTest() {
     }
 
     @Test
+    fun `a Script Task's literal input that isn't its input schema's type is refused, naming the input and the type, and an expression is left to the run`() = withoutScripts {
+        home.resolve("scripts/s-count1").createDirectories().run {
+            resolve("script.yaml").writeText(
+                "id: s-count1\nname: count-up\ndescription: Counts.\n" +
+                    "inputs: {type: object, properties: {count: {type: number}, flag: {type: boolean}, tags: {type: array, items: {type: string}}, label: {type: string}}}\nvars: {}\nsecrets: []\n")
+            resolve("script.mjs").writeText("console.log('hi')\n")
+        }
+        refuses(diagram(scriptTask("post", "s-count1", mapOf("count" to "five"))), "post", "Post (post): The input count is a number, which five isn't.")
+        refuses(diagram(scriptTask("post", "s-count1", mapOf("flag" to "yes"))), "post", "Post (post): The input flag is a yes/no, which yes isn't.")
+        refuses(diagram(scriptTask("post", "s-count1", mapOf("tags" to "a, b"))), "post", "Post (post): The input tags is a list of text, which a, b isn't.")
+        val fine = mapOf("count" to "5", "flag" to "false", "tags" to """["a"]""", "label" to "anything")
+        assertEquals(emptyList(), checks(diagram(scriptTask("post", "s-count1", fine))).filter { it["warning"] == false })
+        assertEquals(emptyList(), checks(diagram(scriptTask("post", "s-count1", mapOf("count" to "\${count}")))).filter { "The input count" in it["message"].toString() })
+    }
+
+    @Test
     fun `a Script Task leaving out a required input is refused, naming the input, and one leaving out an optional input is not`() = withoutScripts {
         home.resolve("scripts/s-post01").createDirectories().run {
             resolve("script.yaml").writeText(

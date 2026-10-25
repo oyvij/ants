@@ -178,6 +178,15 @@ class ScriptTaskTest : AntsTest() {
     }
 
     @Test
+    fun `a literal typed into a Script Task's input reaches the Script as the input schema's type, and a text input keeps it as text`() {
+        saveScript("echo-typed", inputs = "count:number, flag:boolean, tags:array:string, label", code = "ants.output(ants.inputs)\n")
+        deploy("typed", scriptTask("echo", "echo-typed", mapOf("count" to "5", "flag" to "true", "tags" to """["a", "b"]""", "label" to "7")))
+        val run = start("typed")
+        eventually { assertNotNull(runtime.getVariable(run, "echo"), browser.get("/runs/$run").body) }
+        assertEquals(mapOf("count" to 5, "flag" to true, "tags" to listOf("a", "b"), "label" to "7"), (runtime.getVariable(run, "echo") as Map<*, *>)["payload"])
+    }
+
+    @Test
     fun `a Script past its time limit fails its Task with what it printed`() {
         runner.timeLimit = Duration.ofSeconds(1)
         try {

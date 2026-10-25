@@ -52,7 +52,10 @@ broke what named them and needed a confirm, Scripts, Agents and Skills all link 
   branch on is an exit 0 with the problem in the payload: an expected problem is a path, not a failure. There are no
   inline Scripts: a Script Task names one in the library, and the modeler's **New Script** and **Edit** open the Script
   editor in a modal that saves there. Checks refuse a Script Task that names a missing Script or passes an input its
-  Script doesn't declare.
+  Script doesn't declare. An input written as a literal, with no `${…}`, arrives as text, so before the runner checks it Ants converts it
+  to the input schema's type: a number, a yes/no (`true`, `false`), or a list or object written as JSON. Checks
+  refuse a literal that isn't a value of its input's type, naming the element, the input and the type; an expression's
+  value is left to the runner's check.
 - **Only claude Agents get Script tools.** An Agent lists the Scripts it may call under `scripts:`, and an Agent Task may
   narrow them with `ants.scripts`, as with Skills (ADR 0024). At launch, a claude Agent Task's MCP session serves, beside
   `run`, one tool per allowed Script, `script_<name>`, with the Script's description and its inputs as the input schema,

@@ -105,6 +105,27 @@ object ScriptSchema {
     /** Every row's name, nested ones too. */
     fun names(rows: List<SchemaRow>): List<String> = rows.flatMap { listOf(it.name) + names(it.rows) }
 
+    /**
+     * [text], a literal a Script Task's input holds, as the type of [property], the input's schema, says: a number, a
+     * yes/no, or a list or an object written as JSON. Text, or an input of no type, stays as it is. A failure when
+     * [text] is no value of that type.
+     */
+    fun literal(text: String, property: Map<*, *>?): Result<Any?> {
+        val type = type(property.orEmpty())
+        if (type == "string") return Result.success(text)
+        val value = runCatching { json.readValue(text, Any::class.java) }.getOrNull()
+        val fits = when (type) {
+            "number" -> value is Number
+            "boolean" -> value is Boolean
+            "object" -> value is Map<*, *>
+            else -> value is List<*>
+        }
+        return if (fits) Result.success(value) else Result.failure(IllegalArgumentException("$text is no ${TYPES[type]}"))
+    }
+
+    /** The page's name for [property]'s type, with its article: "a number", "an object". */
+    fun named(property: Map<*, *>?): String = TYPES.getValue(type(property.orEmpty())).let { (if (it[0] in "aeiou") "an " else "a ") + it }
+
     /** Why [value] breaks [schema], one sentence each; empty when it doesn't. */
     fun errors(value: Any?, schema: Map<*, *>): List<String> =
         registry.getSchema(json.writeValueAsString(schema), InputFormat.JSON).validate(json.writeValueAsString(value), InputFormat.JSON).map { it.toString() }
