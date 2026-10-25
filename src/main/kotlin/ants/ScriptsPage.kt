@@ -82,7 +82,7 @@ data class ScriptForm(
 }
 
 @Controller
-class ScriptsPage(private val scripts: Scripts, private val runner: ScriptRunner, private val settings: Settings, private val usedBy: UsedBy) {
+class ScriptsPage(private val scripts: Scripts, private val runner: ScriptRunner, private val settings: Settings, private val usedBy: UsedBy, private val validator: ScriptCheck) {
     private val json = JsonMapper.shared()
 
     @GetMapping("/scripts")
@@ -96,8 +96,7 @@ class ScriptsPage(private val scripts: Scripts, private val runner: ScriptRunner
 
     @PostMapping("/scripts/new")
     fun create(@RequestParam params: MultiValueMap<String, String>, model: Model): String {
-        val form = ScriptForm.of(params)
-        return save(form, null, "use" in params, model)
+        return save(params, null, model)
     }
 
     @GetMapping("/scripts/{name}")
@@ -109,7 +108,7 @@ class ScriptsPage(private val scripts: Scripts, private val runner: ScriptRunner
     @PostMapping("/scripts/{name}")
     fun update(@PathVariable name: String, @RequestParam params: MultiValueMap<String, String>, model: Model): String {
         val script = find(name)
-        return save(ScriptForm.of(params), script, "use" in params, model)
+        return save(params, script, model)
     }
 
     @PostMapping("/scripts/{name}/delete")
@@ -119,6 +118,11 @@ class ScriptsPage(private val scripts: Scripts, private val runner: ScriptRunner
         scripts.delete(script)
         return "redirect:/scripts"
     }
+
+    /** The validator's findings for the Script page's unsaved form. */
+    @PostMapping("/script-check", produces = [APPLICATION_JSON_VALUE])
+    @ResponseBody
+    fun check(@RequestParam params: MultiValueMap<String, String>): Map<String, Any?> = mapOf("findings" to validator.findings(params))
 
     @PostMapping("/scripts/$TEST_RUN", produces = [APPLICATION_JSON_VALUE])
     @ResponseBody
@@ -148,10 +152,17 @@ class ScriptsPage(private val scripts: Scripts, private val runner: ScriptRunner
     private fun ownValues(form: ScriptForm, savedSecrets: Map<String, String>) =
         form.own.mapNotNull { row -> row.value.ifEmpty { savedSecrets[row.was.ifEmpty { row.name }] }?.let { row.name to it } }.toMap()
 
-    private fun save(form: ScriptForm, edited: Script?, modal: Boolean, model: Model): String {
+    private fun save(params: MultiValueMap<String, String>, edited: Script?, model: Model): String {
+        val form = ScriptForm.of(params)
+        val modal = "use" in params
         val own = ownValues(form, edited?.let(scripts::ownSecrets).orEmpty())
         val error = form.error(scripts.all(), edited?.name) ?: form.own.firstOrNull { it.name !in own }?.let { "The Secret ${it.name} needs a value." }
         if (error != null) return show(model.addAttribute("use", modal), form, edited, error)
+        val errors = validator.findings(params).filter { it.error }
+        if (errors.isNotEmpty()) {
+            model.addAttribute("errors", errors.map { it.told })
+            return show(model.addAttribute("use", modal), form, edited, "The Script has ${if (errors.size == 1) "an error" else "${errors.size} errors"}, so it wasn't saved:")
+        }
         val script = form.script(edited?.id ?: scripts.newId(), edited)
         scripts.save(script, form.code, own)
         return "redirect:/scripts/${script.name}" + if (modal) "?saved" else ""
