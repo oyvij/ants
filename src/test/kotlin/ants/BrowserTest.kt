@@ -1362,7 +1362,7 @@ class BrowserTest : AntsTest() {
         onPhone()
         for ((path, parts) in pages) {
             page.navigate(url(path))
-            assertStacked(path, *parts)
+            eventually { assertStacked(path, *parts) } // a markdown editor replaces its taller textarea once its module loads
             assertNoSidewaysScroll()
             page.screenshot("phone${path.replace(Regex("[^a-z0-9]+"), "-")}")
         }
