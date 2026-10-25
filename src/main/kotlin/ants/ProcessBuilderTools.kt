@@ -174,7 +174,7 @@ class ProcessBuilderTools(
             "does" to "runs one of your Scripts (see `scripts`) in the Run workspace: draw it with add_element's script kind, not as a Built-in Task."))
 
         private const val MISSING_SCRIPT = "You can't write or change a Script. When a Task needs one that doesn't exist, tell the user so plainly and " +
-            "hand them a text to paste into the Script editor's helper, saying what the Script must take, do and return."
+            "hand them a text to paste into the Script editor's helper, saying what the Script must take, do and return. Make the gap prominent in your reply, so the user doesn't forget it before deploying."
 
         private val KINDS = mapOf("agents" to "Agent", "skills" to "Skill", "templates" to "Template")
 

@@ -199,11 +199,13 @@ class ProcessBuilderToolsTest : AntsTest() {
         assertContains(instructions, "Script Task")
         assertContains(instructions, "can't write a Script")
         assertContains(instructions, "Script editor's helper")
+        assertContains(instructions, "can't overlook it")
         val listed = (mcp(port, open(), "tools/list").second["result"] as Map<*, *>)["tools"] as List<*>
         fun described(name: String) = json.writeValueAsString(listed.single { (it as Map<*, *>)["name"] == name })
         for (tool in listOf("scripts", "add_element")) {
             assertContains(described(tool), "can't write", message = tool)
             assertContains(described(tool), "Script editor's helper", message = tool)
+            assertContains(described(tool), "prominent", message = tool)
         }
     }
 

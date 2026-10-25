@@ -1200,7 +1200,6 @@ async function setCall({id, process, inputs}) {
     return {id, process: key || null, inputs: Object.fromEntries(written)}
 }
 
-// The Built-in Task's topic, as the panel's picker writes it, and its inputs, written as an Agent Task's are.
 function setBuiltIn({id, topic, inputs, asker}) {
     const script = kindOf(found(id)) === "script"
     const element = script ? found(id) : foundAs(id, "built-in", "a Built-in Task or a Script Task")
