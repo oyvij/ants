@@ -11,9 +11,9 @@ class ScriptHelper(private val chats: PageChats, private val scripts: ScriptsPag
     private inner class Page : PageChat(chats) {
         override val name = "script-helper"
         override val title = "Script helper"
-        override val page = "Script editor"
+        override val pageName = "Script editor"
         override val instructions = INSTRUCTIONS
-        override val prefix = "sh"
+        override val idPrefix = "sh"
         override val lines = LINES
         override val tools = TOOLS
 

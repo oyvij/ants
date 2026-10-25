@@ -327,15 +327,15 @@ fun mcpCall(port: Int, token: String, name: String, arguments: Map<String, Any?>
 }
 
 /** Acts as the modeler page holding [token]: follows its SSE and answers each call relayed to it with what [answer] gives for its tool. */
-fun Browser.actAsPage(token: String, builder: PageChats, at: String = "/process-builder/answer", answer: (String, Map<*, *>) -> Any?) {
+fun Browser.actAsPage(token: String, chats: PageChats, answerPath: String = "/process-builder/answer", answer: (String, Map<*, *>) -> Any?) {
     val json = JsonMapper.shared()
     val events = events("builder=$token", "builder")
     Thread.ofVirtual().start {
         while (true) {
             val relayed = json.readValue(events.take(), Map::class.java)
-            post(at, mapOf("token" to token, "call" to relayed["id"].toString(),
+            post(answerPath, mapOf("token" to token, "call" to relayed["id"].toString(),
                 "answer" to json.writeValueAsString(answer(relayed["tool"].toString(), relayed["arguments"] as Map<*, *>))))
         }
     }
-    eventually { assertTrue(builder.connected(token)) }
+    eventually { assertTrue(chats.connected(token)) }
 }

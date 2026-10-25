@@ -22,11 +22,11 @@ abstract class PageChat(protected val chats: PageChats) : McpTools {
 
     abstract val title: String
 
-    protected abstract val page: String
+    protected abstract val pageName: String
 
     protected abstract val instructions: String
 
-    protected abstract val prefix: String
+    protected abstract val idPrefix: String
 
     protected abstract val lines: Map<String, (Map<*, *>) -> String>
 
@@ -165,13 +165,13 @@ abstract class PageChat(protected val chats: PageChats) : McpTools {
     }
 
     fun html(): String = synchronized(dialog) {
-        head() + """<div id="$prefix-entries">${dialog.roots.joinToString("")}</div>${dialog.html("live")}""" + foot() +
-            """<div id="$prefix-state" data-busy="$busy">${if (busy) """<span class="spin">✻</span> <span class="shimmer" data-rotate>Pondering…</span>""" else ""}</div>"""
+        head() + """<div id="$idPrefix-entries">${dialog.roots.joinToString("")}</div>${dialog.html("live")}""" + foot() +
+            """<div id="$idPrefix-state" data-busy="$busy">${if (busy) """<span class="spin">✻</span> <span class="shimmer" data-rotate>Pondering…</span>""" else ""}</div>"""
     }
 
     /** Relays [tool] to the page and gives its answer, JSON text; fails when no page is connected or it doesn't answer in time. */
     fun ask(tool: String, arguments: Map<*, *>): String {
-        if (!connected) throw Refused("No $page is open for this $title session, so `$tool` can't be read: the page was closed or lost its connection.")
+        if (!connected) throw Refused("No $pageName is open for this $title session, so `$tool` can't be read: the page was closed or lost its connection.")
         val id = UUID.randomUUID().toString()
         val answer = CompletableFuture<String>().also { waiting[id] = it }
         val event = chats.json.writeValueAsString(mapOf("id" to id, "tool" to tool, "arguments" to arguments))
@@ -179,9 +179,9 @@ abstract class PageChat(protected val chats: PageChats) : McpTools {
         try {
             return answer.get(chats.timeLimit.toNanos(), NANOSECONDS)
         } catch (_: TimeoutException) {
-            throw Refused("The $page didn't answer `$tool` within ${chats.timeLimit.toString().removePrefix("PT").lowercase()}.")
+            throw Refused("The $pageName didn't answer `$tool` within ${chats.timeLimit.toString().removePrefix("PT").lowercase()}.")
         } catch (e: ExecutionException) {
-            throw Refused("The $page couldn't answer `$tool`: ${e.cause?.message}")
+            throw Refused("The $pageName couldn't answer `$tool`: ${e.cause?.message}")
         } finally {
             waiting -= id
             outbox -= event
@@ -200,12 +200,9 @@ abstract class PageChat(protected val chats: PageChats) : McpTools {
 }
 
 /**
- * The claude chats on open pages (ADR 0019): a page opens one and gets a token of its own on `/mcp`, which opens only
- * its chat's tools. A tool about the page is relayed to the page that holds the token, as an event `builder` on its SSE
- * (`/live?builder=<token>`); the page answers with a POST to its chat's answer endpoint. A page reloaded in its tab keeps
- * its token, so its session and dialog. Its claude ends, to resume at the next message, once no turn runs and the page's
- * SSE has been gone for [grace], or no message has come for [idleTimeout]; the token dies once the SSE has been gone for
- * [grace] with no session started, or for [KEPT] with one.
+ * A page reloaded in its tab keeps its token, so its session and dialog. Its claude ends, to resume at the next message,
+ * once no turn runs and the page's SSE has been gone for [grace], or no message has come for [idleTimeout]; the token dies
+ * once the SSE has been gone for [grace] with no session started, or for [KEPT] with one.
  */
 @Component
 class PageChats(

@@ -119,9 +119,6 @@ class Settings(
     /** How deep claude's Subagents may nest: 1 lets a Task start Subagents, and them none of their own. */
     fun subagentDepth(): Int = (read()["subagent-depth"] as? Int) ?: 1
 
-    /** The Process Builder's CLI and model, `process-builder: {cli, model}`: claude on its default model unless set. */
-    fun processBuilder(): Pair<String, String?> = chat("process-builder")
-
     fun chat(name: String): Pair<String, String?> = (read()[name] as? Map<*, *>).let { (it?.get("cli")?.toString() ?: "claude") to it?.get("model")?.toString() }
 
     /** Where [cli] lives, as Detect found it or the user set it. */

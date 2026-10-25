@@ -22,29 +22,24 @@ import kotlin.io.path.walk
 const val SCHEMA_IGNORED = "The schema wasn't written: a Skill has no Result schema. Put it on the Agent Task that needs it, as set_agent_task's resultSchema."
 
 /**
- * The Process Builder's MCP session (ADR 0019), a [PageChat]: a modeler page that can be edited by hand opens one and
- * gets a token of its own on `/mcp`, which opens only the modeler tools. A tool about the diagram is relayed to the page
- * that holds the token; the page answers from bpmn-js with a POST to `/process-builder/answer`. The catalogue tools are
- * answered by Ants, from what the modeler's own endpoints serve, and the Checks by the Checks Save and deploy runs, on
- * the page's diagram. Creating, changing and copying Agents, Skills and Templates go through their pages' own save and
- * Copy, and answer the item's page.
+ * The Process Builder's MCP session (ADR 0019): a modeler page that can be edited by hand opens one and gets a token
+ * of its own on `/mcp`, which opens only the modeler tools. A tool about the diagram is relayed to the page that holds
+ * the token, as an event `builder` on its SSE (`/live?builder=<token>`); the page answers from bpmn-js with a POST to
+ * `/process-builder/answer`. The catalogue tools are answered by Ants, from what the modeler's own endpoints serve, and
+ * the Checks by the Checks Save and deploy runs, on the page's diagram. Creating, changing and copying Agents, Skills
+ * and Templates go through their pages' own save and Copy, and answer the item's page.
  */
 @RestController
 class ProcessBuilderTools(
     private val chats: PageChats, private val agents: Agents, private val templates: Templates, private val processes: Processes, private val catalogue: Catalogue,
     private val skills: Skills, private val json: JsonMapper, private val launcher: AgentLauncher,
 ) {
-    /**
-     * One open modeler page: the calls waiting to go out on its SSE, and those waiting for its answer; and its claude
-     * session, launched on the first message and resumed by the next one after it died, in a scratch folder of its own
-     * (claude finds a session to resume by its working directory), and the dialog it has shown.
-     */
     private inner class Page : PageChat(chats) {
         override val name = "process-builder"
         override val title = "Process Builder"
-        override val page = "modeler page"
+        override val pageName = "modeler page"
         override val instructions = INSTRUCTIONS
-        override val prefix = "pb"
+        override val idPrefix = "pb"
         override val lines = LINES
         override val tools = TOOLS
 
