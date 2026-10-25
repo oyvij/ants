@@ -2,7 +2,7 @@ package ants
 
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
-import java.nio.file.Files
+import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
 import kotlin.io.path.copyTo
 import kotlin.io.path.createDirectories
@@ -19,10 +19,11 @@ import kotlin.test.assertFalse
 /**
  * `curl … install.sh | bash`, run as the user runs it, against a release folder holding what CI publishes: the
  * tarball the build makes and its SHA256SUMS, fetched over `file://` instead of from GitHub. HOME is temporary and a
- * fake `launchctl` is first on PATH, as in [LauncherTest].
+ * fake `launchctl` is first on PATH, as in [LauncherTest]. JUnit deletes HOME after each test, also when it fails:
+ * each holds an installed release, hundreds of MB.
  */
-class InstallTest {
-    private val home: Path = Files.createTempDirectory("ants-install").toRealPath()
+class InstallTest(@TempDir temp: Path) {
+    private val home: Path = temp.toRealPath()
     private val antsHome = home.resolve(".ants")
     private val release = home.resolve("release").createDirectories()
     private val tarball = Path.of(System.getProperty("ants.tarball"))
