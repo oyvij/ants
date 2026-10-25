@@ -628,6 +628,52 @@ class BrowserTest : AntsTest() {
         assertThat(page.locator("#explain button", Page.LocatorOptions().setHasText("Edit")).first()).isDisabled()
     }
 
+    /** Opens the modeler on a blank Process and appends a Script Task to its start event; the Task's id. */
+    private fun appendScriptTask(): String {
+        page.navigate(url("/processes/new?name=Drawn+here&from="))
+        assertThat(page.locator(".djs-palette [data-action='create.script-task']")).hasAttribute("title", Pattern.compile("^Script Task: Runs one of your Scripts"))
+        shape("start").click()
+        pad.locator("[data-action='append.script-task']").click()
+        assertThat(heading).hasText("Script Task")
+        return page.locator("#canvas .djs-shape.selected").getAttribute("data-element-id")!!
+    }
+
+    @Test
+    fun `New Script's modal saves a Script to the library and picks it on the Script Task, with a field for each input`() = browse {
+        val task = appendScriptTask()
+        val modeler = page.url()
+        button("New Script").click()
+        assertThat(page.locator("dialog.modal")).containsText("New Script")
+        val form = page.frameLocator("dialog iframe")
+        form.locator("input[name=name]").fill("post-to-chat")
+        form.locator("input[name=description]").fill("Posts to the chat.")
+        form.locator("input[name=inputs]").fill("channel, text")
+        page.locator("dialog .mh button", Page.LocatorOptions().setHasText("Create and use")).click()
+
+        assertThat(page.locator("dialog")).hasCount(0)
+        assertEquals(modeler, page.url())
+        assertThat(shape(task)).hasClass(selected)
+        assertThat(label("Script").locator("option:checked")).hasText("post-to-chat")
+        label("channel").fill("general")
+        label("text").fill("\${prompt}")
+        assertTrue(home.resolve("scripts").toFile().listFiles()!!.any { it.resolve("script.yaml").readText().contains("name: post-to-chat") })
+    }
+
+    @Test
+    fun `Edit's modal renames the Task's Script, and the panel shows the new name`() = browse {
+        http.get("/scripts/new")
+        http.post("/scripts/new", listOf("name" to "tidy-up", "description" to "Tidies up.", "code" to "console.log('tidy')\n", "inputs" to "", "vars" to ""))
+        appendScriptTask()
+        label("Script").selectOption("tidy-up")
+        button("Edit").click()
+        assertThat(page.locator("dialog.modal")).containsText("Edit Script")
+        page.frameLocator("dialog iframe").locator("input[name=name]").fill("clean-up")
+        page.locator("dialog .mh button", Page.LocatorOptions().setHasText("Save")).click()
+
+        assertThat(page.locator("dialog")).hasCount(0)
+        assertThat(label("Script").locator("option:checked")).hasText("clean-up")
+    }
+
     @Test
     fun `a new Script's editor shows its placeholder, and a Test run shows the exit code as a badge and the payload as coloured JSON`() = browse {
         home.resolve("settings.yaml").writeText("node: {path: ${ScriptsTest.NODE}}\n")

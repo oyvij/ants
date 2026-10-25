@@ -86,24 +86,24 @@ class ScriptsPage(private val scripts: Scripts, private val runner: ScriptRunner
     }
 
     @GetMapping("/scripts/new")
-    fun new(model: Model) = show(model, ScriptForm("", "", "", "", "", emptyList(), emptyList()), null)
+    fun new(@RequestParam use: String?, model: Model) = show(model.addAttribute("use", use != null), ScriptForm("", "", "", "", "", emptyList(), emptyList()), null)
 
     @PostMapping("/scripts/new")
     fun create(@RequestParam params: MultiValueMap<String, String>, model: Model): String {
         val form = ScriptForm.of(params)
-        return save(form, null, model)
+        return save(form, null, model.addAttribute("use", "use" in params))
     }
 
     @GetMapping("/scripts/{name}")
-    fun edit(@PathVariable name: String, model: Model): String {
+    fun edit(@PathVariable name: String, @RequestParam use: String?, model: Model): String {
         val script = find(name)
-        return show(model, ScriptForm.of(script, scripts.code(script), scripts.ownSecrets(script).keys), script)
+        return show(model.addAttribute("use", use != null), ScriptForm.of(script, scripts.code(script), scripts.ownSecrets(script).keys), script)
     }
 
     @PostMapping("/scripts/{name}")
     fun update(@PathVariable name: String, @RequestParam params: MultiValueMap<String, String>, model: Model): String {
         val script = find(name)
-        return save(ScriptForm.of(params), script, model)
+        return save(ScriptForm.of(params), script, model.addAttribute("use", "use" in params))
     }
 
     @PostMapping("/scripts/{name}/delete")
@@ -147,7 +147,7 @@ class ScriptsPage(private val scripts: Scripts, private val runner: ScriptRunner
         if (error != null) return show(model, form, edited, error)
         val script = form.script(edited?.id ?: scripts.newId())
         scripts.save(script, form.code, own)
-        return "redirect:/scripts/${script.name}"
+        return "redirect:/scripts/${script.name}" + if (model.getAttribute("use") == true) "?saved" else ""
     }
 
     private fun find(name: String) = scripts.named(name) ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No Script named $name")

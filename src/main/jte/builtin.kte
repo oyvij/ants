@@ -20,7 +20,7 @@
 @if(details != null)
 <div class="card"><h3>Why it failed</h3><pre>${details}</pre></div>
 @endif
-<div class="help">Retry runs it again with the same inputs, once what failed outside the Run is fixed, such as the Source map in Settings or a remote that was down.</div>
+<div class="help">Retry runs it again with the same inputs, once what failed outside the Run is fixed, such as the Source map in Settings, a remote that was down, or the Script it runs.</div>
 @if(error != null)<p role="alert">${error}</p>@endif
 <form method="post" class="row">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">

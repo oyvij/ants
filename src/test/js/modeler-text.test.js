@@ -108,3 +108,18 @@ test("a link that matches nothing here keeps its id and the name beside it when 
     assert.deepEqual(linkedChanges(props, {"ants.assignment": "Go."}, catalogue),
         {"ants.assignment": "Go.", "ants.name.a-zz0002": "gone", "ants.name.k-zz0003": "lost", "ants.agent": "a-zz0002", "ants.skills": "k-zz0003"})
 })
+
+const withScripts = {...catalogue, scripts: [{id: "s-post01", name: "post-message", inputs: ["text"]}]}
+
+test("a Script Task's Script reads as its current name, found by id, else by the name kept beside the id, and no id shows", () => {
+    assert.deepEqual(linkedProperties({"ants.script": "s-post01", "ants.name.s-post01": "old-name"}, withScripts), {"ants.script": "post-message"})
+    assert.deepEqual(linkedProperties({"ants.script": "s-zz0004", "ants.name.s-zz0004": "post-message"}, withScripts), {"ants.script": "post-message"})
+    assert.deepEqual(linkedProperties({"ants.script": "s-zz0005", "ants.name.s-zz0005": "gone"}, withScripts), {"ants.script": "gone"})
+})
+
+test("a Script picked by name is written as its id with its name beside it, and one that matches nothing keeps its id", () => {
+    assert.deepEqual(linkedChanges({"ants.script": "s-zz0005", "ants.name.s-zz0005": "gone"}, {"ants.script": "post-message"}, withScripts),
+        {"ants.script": "s-post01", "ants.name.s-zz0005": undefined, "ants.name.s-post01": "post-message"})
+    assert.deepEqual(linkedChanges({"ants.script": "s-zz0005", "ants.name.s-zz0005": "gone"}, {}, withScripts),
+        {"ants.script": "s-zz0005", "ants.name.s-zz0005": "gone"})
+})

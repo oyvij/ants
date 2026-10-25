@@ -165,6 +165,21 @@ class ScriptsTest : AntsTest() {
     }
 
     @Test
+    fun `the Script page in the modeler's modal has no nav, and saving there opens the saved Script`() {
+        val modal = browser.get("/scripts/new?use").body
+        assertContains(modal, """<input type="hidden" name="use" value="">""")
+        assertFalse("""<a href="/scripts">""" in modal)
+        val created = browser.post("/scripts/new", form("in-modal") + ("use" to ""))
+        assertEquals("/scripts/in-modal", created.path)
+        assertEquals("saved", created.query)
+        val renamed = browser.post("/scripts/in-modal", form("renamed-in-modal") + ("use" to ""))
+        assertEquals("/scripts/renamed-in-modal", renamed.path)
+        assertEquals("saved", renamed.query)
+        assertEquals(null, browser.post("/scripts/renamed-in-modal", form("renamed-in-modal")).query)
+        assertContains(browser.post("/scripts/new", form("Bad Name") + ("use" to "")).body, """<input type="hidden" name="use" value="">""")
+    }
+
+    @Test
     fun `a new Script's editor shows a placeholder reading inputs, vars and Secrets, and writing the payload`() {
         val page = browser.get("/scripts/new").body.replace("&#34;", "\"").replace("&#39;", "'")
         assertContains(page, "data-code-editor")

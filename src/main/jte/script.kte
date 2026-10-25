@@ -4,6 +4,7 @@
 @param placeholder: String
 @param message: String? = null
 @param dependents: ants.Dependents?
+@param use: Boolean = false
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
 @param shell: ants.Shell
@@ -17,9 +18,11 @@
     <script type="module" src="/code-editor.js"></script>
 </head>
 <body>
+@if(!use)
 @template.nav(shell = shell)
+@endif
 <main>
-<div class="crumbs"><a href="/scripts">Scripts</a> / ${saved ?: "New"}</div>
+@if(!use)<div class="crumbs"><a href="/scripts">Scripts</a> / ${saved ?: "New"}</div>@endif
 <div class="ph"><h1><span class="ent ent-script"><svg class="i" viewBox="0 0 24 24"><path d="m8 7-5 5 5 5M16 7l5 5-5 5M14 4l-4 16"/></svg>${saved ?: "New Script"}</span></h1>
     <div class="acts">
 @if(saved != null)
@@ -35,6 +38,9 @@
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
 @if(saved != null)
     <input type="hidden" name="script" value="${saved}">
+@endif
+@if(use)
+    <input type="hidden" name="use" value="">
 @endif
     <div class="card"><h3>What it is</h3>
         <div class="grid2">
