@@ -490,7 +490,7 @@ class ChecksTest : AntsTest() {
     }
 
     private fun script(id: String, name: String, inputs: List<String> = emptyList()) = home.resolve("scripts/$id").createDirectories().run {
-        resolve("script.yaml").writeText("id: $id\nname: $name\ndescription: Does $name.\ninputs: [${inputs.joinToString(", ")}]\nvars: {}\nsecrets: []\n")
+        resolve("script.yaml").writeText("id: $id\nname: $name\ndescription: Does $name.\ninputs: {type: object, properties: {${inputs.joinToString(", ") { "$it: {}" }}}}\nvars: {}\nsecrets: []\n")
         resolve("script.mjs").writeText("console.log('hi')\n")
     }
 

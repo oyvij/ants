@@ -32,11 +32,7 @@ data class Script(
             id = definition["id"].toString(),
             name = definition["name"]?.toString().orEmpty(),
             description = definition["description"]?.toString().orEmpty(),
-            inputs = when (val inputs = definition["inputs"]) {
-                is Map<*, *> -> inputs
-                is List<*> -> mapOf("type" to "object", "properties" to inputs.associate { "$it" to emptyMap<String, Any>() }) // the names a Script had before its schema
-                else -> ScriptSchema.EMPTY
-            },
+            inputs = definition["inputs"] as? Map<*, *> ?: ScriptSchema.EMPTY,
             output = definition["output"] as? Map<*, *>,
             vars = (definition["vars"] as? Map<*, *>).orEmpty().entries.associate { (name, value) -> "$name" to "$value" },
             secrets = Settings.strings(definition["secrets"]).orEmpty(),

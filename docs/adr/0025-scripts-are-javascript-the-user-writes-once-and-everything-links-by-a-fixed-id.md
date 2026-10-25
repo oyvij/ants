@@ -15,7 +15,7 @@ broke what named them and needed a confirm, Scripts, Agents and Skills all link 
   `inputs` is the input schema, an object JSON Schema (`type: object`, `properties`, `required`), each property an input
   with a `type`, a `description`, and nested `properties` and `required` for an object or `items` for a list. The
   page edits that subset as rows; whatever else the file holds (`enum`, `minimum`, an `integer`) is kept where a row
-  still has the same name and type. A file still holding a list of names reads as untyped properties. `output`, the
+  still has the same name and type. `output`, the
   output schema, is the payload's object JSON Schema in the same subset, edited the same way; with none, any JSON
   payload is accepted.
   `secrets` in `script.yaml` lists the names of the Secrets it uses, its own and those it links from Settings, and never
