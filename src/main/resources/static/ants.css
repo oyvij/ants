@@ -704,7 +704,7 @@ details.example pre { background: var(--line2); border: 0; padding: 10px; border
 /* The Script page's schema card: tabs over rows, an object's fields nested and indented under it (schema-card.js). */
 .card.schema .tabs { margin: -4px 0 12px; }
 .schema-rows { list-style: none; margin: 0; padding: 0; } .schema-row > .row { margin-bottom: 6px; } .schema-row .row > .name { width: 140px; flex: none; }
-.schema-row .row > select { flex: none; } .schema-level > [data-add-row] { margin-bottom: 4px; }
+.schema-row .row > select { flex: none; } .schema-row .row > [data-move-row] { padding-inline: 6px; } .schema-level > [data-add-row] { margin-bottom: 4px; }
 .schema-fields { margin: 0 0 8px 18px; padding-left: 10px; border-left: 2px solid var(--line2); }
 .schema-row > .finding { font-size: 12.5px; margin: -2px 0 6px; } .finding.f-error { color: var(--badText); } .finding.f-warning { color: var(--warnText); }
 .test-run { margin-top: 10px; } .test-run h4 { margin: 12px 0 4px; font-size: 12.5px; }

@@ -1,4 +1,4 @@
-// The Script page's schema card: its tabs, and rows added, removed and nested, each named for where it sits, as the form posts it.
+// The Script page's schema card: its tabs, and rows added, removed, moved and nested, each named for where it sits, as the form posts it.
 // The server says which types nest (data-nesting) and gives a sample of each (data-samples).
 const types = card => ({nesting: JSON.parse(card.dataset.nesting), samples: JSON.parse(card.dataset.samples)});
 
@@ -50,7 +50,7 @@ function mount(card) {
     tabs.forEach(tab => tab.addEventListener('click', () => select(tab)));
     select(tabs.find(tab => tab.getAttribute('aria-selected') === 'true'));
     card.addEventListener('click', event => {
-        const add = event.target.closest('[data-add-row]'), remove = event.target.closest('[data-remove-row]');
+        const add = event.target.closest('[data-add-row]'), remove = event.target.closest('[data-remove-row]'), move = event.target.closest('[data-move-row]');
         if (add) {
             const li = card.querySelector('template#schema-row').content.firstElementChild.cloneNode(true);
             add.closest('.schema-level').querySelector(':scope > ol').append(li);
@@ -59,6 +59,13 @@ function mount(card) {
         } else if (remove) {
             remove.closest('.schema-row').remove();
             changed();
+        } else if (move) { // among its level's rows; the first stays first and the last last
+            const li = move.closest('.schema-row');
+            const other = move.dataset.moveRow === 'up' ? li.previousElementSibling : li.nextElementSibling;
+            if (!other) return;
+            if (move.dataset.moveRow === 'up') other.before(li); else other.after(li);
+            changed();
+            move.focus();
         }
     });
     card.addEventListener('change', event => {
@@ -67,8 +74,9 @@ function mount(card) {
     });
     card.addEventListener('input', event => {
         if (event.target.dataset?.field !== 'name') return;
-        const li = event.target.closest('.schema-row');
-        li.querySelector(':scope > .row [data-remove-row]').setAttribute('aria-label', `Remove ${event.target.value.trim() || 'this row'}`);
+        const li = event.target.closest('.schema-row'), name = event.target.value.trim() || 'this row';
+        li.querySelector(':scope > .row [data-remove-row]').setAttribute('aria-label', `Remove ${name}`);
+        li.querySelectorAll(':scope > .row [data-move-row]').forEach(button => button.setAttribute('aria-label', `Move ${name} ${button.dataset.moveRow}`));
     });
 }
 

@@ -830,6 +830,54 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `the Script page's schema rows move up and down, nested ones and payload rows too, renumbered for Save`() = browse {
+        page.navigate(url("/scripts/new"))
+        val inputs = page.locator("#input-schema > .schema-level")
+        for ((i, name) in listOf("text", "channel", "ticket").withIndex()) {
+            inputs.locator(":scope > [data-add-row]").click()
+            page.locator("input[name='inputs[$i].name']").fill(name)
+        }
+        page.locator("select[name='inputs[2].type']").selectOption("object")
+        val ticket = inputs.locator(":scope > ol > li").nth(2)
+        for ((i, name) in listOf("id", "title").withIndex()) {
+            ticket.locator(":scope > .schema-fields > .schema-level > [data-add-row]").click()
+            page.locator("input[name='inputs[2].rows[$i].name']").fill(name)
+        }
+        fun button(name: String) = page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName(name).setExact(true))
+
+        button("Move ticket up").click()
+        button("Move text down").click()
+        assertThat(page.locator("input[name='inputs[0].name']")).hasValue("ticket")
+        assertThat(page.locator("input[name='inputs[1].name']")).hasValue("text")
+        assertThat(page.locator("input[name='inputs[2].name']")).hasValue("channel")
+        button("Move title up").click()
+        assertThat(page.locator("input[name='inputs[0].rows[0].name']")).hasValue("title")
+        assertThat(page.locator("input[name='inputs[0].rows[1].name']")).hasValue("id")
+        button("Move ticket up").click() // the first row stays first
+        assertThat(page.locator("input[name='inputs[0].name']")).hasValue("ticket")
+        assertThat(page.getByLabel("Sample inputs, as JSON")).hasValue("""{"ticket":{"title":"","id":""},"text":"","channel":""}""")
+
+        page.locator("#schema").getByRole(AriaRole.TAB, Locator.GetByRoleOptions().setName("Output schema")).click()
+        val output = page.locator("#output-schema > .schema-level")
+        for ((i, name) in listOf("ts", "user").withIndex()) {
+            output.locator(":scope > [data-add-row]").click()
+            page.locator("input[name='output[$i].name']").fill(name)
+        }
+        button("Move user up").click()
+        assertThat(page.locator("input[name='output[0].name']")).hasValue("user")
+
+        page.locator("#name").fill("ordered")
+        page.locator("#description").fill("Keeps its order.")
+        page.locator(".ph button.primary").click()
+        assertThat(page).hasURL(Pattern.compile(".*/scripts/ordered$"))
+        val saved = org.yaml.snakeyaml.Yaml().load<Map<*, *>>(home.resolve("scripts").toFile().listFiles()!!.map { it.resolve("script.yaml").readText() }.single { "name: ordered" in it })
+        val properties = (saved["inputs"] as Map<*, *>)["properties"] as Map<*, *>
+        assertEquals(listOf("ticket", "text", "channel"), properties.keys.toList())
+        assertEquals(listOf("title", "id"), ((properties["ticket"] as Map<*, *>)["properties"] as Map<*, *>).keys.toList())
+        assertEquals(listOf("user", "ts"), ((saved["output"] as Map<*, *>)["properties"] as Map<*, *>).keys.toList())
+    }
+
+    @Test
     fun `the Script page's Output schema tab adds payload rows, a Test run shows each mismatch beside the result, and the rows save as output`() = browse {
         home.resolve("settings.yaml").writeText("node: {path: ${ScriptsTest.NODE}}\n")
         page.navigate(url("/scripts/new"))

@@ -11,6 +11,8 @@
         </select>
         <input class="grow" name="${at}.description" value="${row.description}" data-field="description" aria-label="Description" placeholder="What it is">
         <label class="nowrap"><input type="checkbox" name="${at}.required" data-field="required" checked="${row.required}"> required</label>
+        <button type="button" class="ghost" data-move-row="up" aria-label="Move ${row.name.ifEmpty { "this row" }} up">↑</button>
+        <button type="button" class="ghost" data-move-row="down" aria-label="Move ${row.name.ifEmpty { "this row" }} down">↓</button>
         <button type="button" class="ghost danger" data-remove-row aria-label="Remove ${row.name.ifEmpty { "this row" }}">✕</button>
     </div>
     <div class="schema-fields" hidden="${!row.nests}">
