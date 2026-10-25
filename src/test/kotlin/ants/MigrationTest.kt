@@ -120,7 +120,7 @@ class MigrationTest : AntsTest() {
         assertFalse(home.resolve("skills/brief/result.schema.json").exists())
         assertEquals(textSchema, home.resolve("skills/brief/result.schema.json.old").readText())
         assertEquals(before.getValue("agents/writer.md"), home.resolve("agents/writer.md.old").readText())
-        assertContains(home.resolve("agents/writer.md").readText(), "helper")
+        assertContains(home.resolve("agents/writer.md").readText(), "skills: ${catalogue.skill("brief").id}, ${catalogue.skill("helper").id}\n")
 
         // A second start changes nothing.
         val after = files()
@@ -148,7 +148,7 @@ class MigrationTest : AntsTest() {
 
         val idLine = Regex("(?m)^id: (a-[a-z0-9]{6})$")
         val writer = home.resolve("agents/writer.md").readText()
-        assertEquals("---\nid: ${idLine.find(writer)!!.groupValues[1]}\nname: writer\nskills: brief\n---\nWrite plainly.\n", writer)
+        assertEquals("---\nid: ${idLine.find(writer)!!.groupValues[1]}\nname: writer\nskills: ${catalogue.skill("brief").id}\n---\nWrite plainly.\n", writer)
         assertEquals(before.getValue("agents/writer.md"), home.resolve("agents/writer.md.old").readText())
         val plain = home.resolve("agents/plain.md").readText()
         assertEquals("---\nid: ${idLine.find(plain)!!.groupValues[1]}\n---\nJust do it.\n", plain)
@@ -197,6 +197,35 @@ class MigrationTest : AntsTest() {
         migration.migrate()
         assertEquals(after, files())
         assertEquals(versions, repository.createProcessDefinitionQuery().count())
+    }
+
+    @Test
+    fun `the names in the user's Agents' skills become ids once, the old file kept, and outside Agents are untouched`() {
+        val outsideAgents = Files.createTempDirectory("outside-agents")
+        outsideAgents.resolve("outsider.md").writeText("---\nname: outsider\nskills: brief\n---\nLook around.\n")
+        settings(claude, "agent-folders: [$outsideAgents]\n")
+        home.resolve("skills/brief").createDirectories().resolve("SKILL.md").writeText("---\nname: brief\ndescription: Writes a brief.\n---\nWrite the brief.\n")
+        home.resolve("skills/brief/ants.yaml").writeText("id: k-brief01\n")
+        home.resolve("agents/writer.md").writeText("---\nid: a-writer1\nname: writer\nskills: brief, k-brief01, tdd, missing\n---\nWrite plainly.\n")
+        home.resolve("agents/linked.md").writeText("---\nid: a-linked1\nname: linked\nskills: k-brief01\n---\nLinked.\n")
+        home.resolve("agents/all.md").writeText("---\nid: a-every1\nname: all\nskills: '*'\n---\nEverything.\n")
+        val before = files()
+        val outside = outsideAgents.resolve("outsider.md").readText()
+
+        migration.migrate()
+
+        assertEquals("---\nid: a-writer1\nname: writer\nskills: k-brief01, k-tdd, missing\n---\nWrite plainly.\n", home.resolve("agents/writer.md").readText())
+        assertEquals(before.getValue("agents/writer.md"), home.resolve("agents/writer.md.old").readText())
+        for (unchanged in listOf("agents/linked.md", "agents/all.md")) {
+            assertEquals(before.getValue(unchanged), home.resolve(unchanged).readText())
+            assertFalse(home.resolve("$unchanged.old").exists())
+        }
+        assertEquals(outside, outsideAgents.resolve("outsider.md").readText())
+        assertEquals(listOf("outsider.md"), outsideAgents.toFile().list()!!.toList())
+
+        val after = files()
+        migration.migrate()
+        assertEquals(after, files())
     }
 
     @Test
@@ -270,8 +299,8 @@ class MigrationTest : AntsTest() {
 
         migration.migrate()
 
-        assertEquals(agent, home.resolve("agents/writer.md").readText())
-        assertFalse(home.resolve("agents/writer.md.old").exists())
+        assertEquals(agent.replace("skills: brief", "skills: ${catalogue.skill("brief").id}"), home.resolve("agents/writer.md").readText())
+        assertEquals(agent, home.resolve("agents/writer.md.old").readText())
         settings(claude, "agent-tasks: 3\n")
         eventually { assertContains(browser.get("/runs/$run").body, "[failed] The Process refused was not migrated to Assignments and Skills when Ants started") }
         assertContains(browser.get("/runs/$run").body, "Its result schema is invalid")

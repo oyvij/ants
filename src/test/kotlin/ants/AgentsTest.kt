@@ -50,7 +50,7 @@ class AgentsTest : AntsTest() {
         name: reviewer
         description: Reviews changes.
         cli: claude
-        skills: code-review, tdd
+        skills: k-code-review, k-tdd
         tools: Bash(git log *), Bash(git diff *), Grep, Read, mcp__github__get_issue
         model: claude-sonnet-5-5
         ---
@@ -228,12 +228,34 @@ class AgentsTest : AntsTest() {
     }
 
     @Test
-    fun `renaming an Agent moves its file`() {
-        agents.resolve("old-name.md").writeText("---\nname: old-name\n---\nHi.\n")
+    fun `renaming an Agent saves at once with no confirm, moves its file and keeps its id`() {
+        agents.resolve("old-name.md").writeText("---\nid: a-oldname\nname: old-name\n---\nHi.\n")
         agents.resolve("new-name.md").deleteIfExists()
-        assertEquals("/agents/new-name", post("/agents/old-name", mapOf("name" to "new-name", "cli" to "claude", "instructions" to "Hi.", "confirm" to "on")).path)
+        assertEquals("/agents/new-name", post("/agents/old-name", mapOf("name" to "new-name", "cli" to "claude", "instructions" to "Hi.")).path)
         assertFalse(agents.resolve("old-name.md").exists())
-        assertContains(agents.resolve("new-name.md").readText(), "name: new-name\n")
+        assertContains(agents.resolve("new-name.md").readText(), "id: a-oldname\nname: new-name\n")
+        assertEquals("new-name", catalogue.agentWithId("a-oldname").name)
+    }
+
+    @Test
+    fun `an Agent saved with Skill names holds their ids, and the Agents and Skills pages show their names`() {
+        agents.resolve("linker.md").deleteIfExists()
+        post("/agents/new", mapOf("name" to "linker", "cli" to "claude", "skills" to "shipped-draft, code-review"))
+        assertContains(agents.resolve("linker.md").readText(), "skills: k-shipped-draft, k-code-review\n")
+
+        val page = get("/agents/linker")
+        assertContains(page, """<input type="hidden" name="skills" value="shipped-draft">""")
+        assertContains(page, """<input type="hidden" name="skills" value="code-review">""")
+        val list = get("/agents")
+        assertContains(list, """<a href="/skills/shipped-draft">shipped-draft</a> <a href="/skills/code-review">code-review</a>""")
+        val skills = get("/skills")
+        assertContains(skills, """<a href="/agents/linker">linker</a>""")
+        val skill = get("/skills/shipped-draft")
+        assertContains(skill, """<a href="/agents/linker">linker</a>""")
+        for (shown in listOf(page, list, skills, skill)) assertFalse(Regex("k-shipped-draft|k-code-review").containsMatchIn(shown))
+
+        post("/agents/linker", mapOf("name" to "linker", "cli" to "claude", "skills" to "shipped-draft, code-review"))
+        assertContains(agents.resolve("linker.md").readText(), "skills: k-shipped-draft, k-code-review\n")
     }
 
     private fun import(name: String, text: String): String {
@@ -418,11 +440,7 @@ class AgentsTest : AntsTest() {
         assertEquals("/agents/editor" to "saved", saved.path to saved.query)
         assertContains(agents.resolve("editor.md").readText(), "Edits warmly.")
 
-        val rename = browser.post("/agents/editor", mapOf("name" to "renamed-editor", "cli" to "claude", "use" to ""))
-        assertContains(rename.body, "Rename the Agent editor to renamed-editor?")
-        assertContains(rename.body, """<input type="hidden" name="use" value="">""")
-        assertContains(rename.body, """<a href="/agents/editor?use">Cancel</a>""")
-        val renamed = browser.post("/agents/editor", mapOf("name" to "renamed-editor", "cli" to "claude", "use" to "", "confirm" to "on"))
+        val renamed = browser.post("/agents/editor", mapOf("name" to "renamed-editor", "cli" to "claude", "use" to ""))
         assertEquals("/agents/renamed-editor" to "saved", renamed.path to renamed.query)
 
         val page = post("/agents/renamed-editor", mapOf("name" to "renamed-editor", "cli" to "claude", "description" to "Edits on its page."))

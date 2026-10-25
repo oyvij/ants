@@ -41,7 +41,7 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy) {
         val agents = catalogue.agents()
         model.addAttribute("skills", skills.map { skill ->
             val hidden = !catalogue.shipped(skill) && skill.name in shipped
-            val runBy = agents.filter { it.allows(skill.name) }.map { it.name }.sorted()
+            val runBy = agents.filter { it.allows(skill) }.map { it.name }.sorted()
             SkillRow(skill, catalogue.where(skill.folder), hidden, runBy)
         })
         model.addAttribute("message", message)
@@ -85,7 +85,7 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy) {
     fun create(@RequestParam skill: String, @RequestParam use: String?, model: Model): String {
         val agent = catalogue.agents().firstOrNull { it.name == use && it.file.parent == catalogue.yourAgents }
         return save(SkillForm(null, skill), model.addAttribute("use", use)) { name ->
-            if (agent != null) agent.file.writeAtomically(AgentForm.of(agent).copy(skills = (agent.skills + name).distinct().joinToString(", ")).text())
+            if (agent != null) agent.file.writeAtomically(AgentForm.of(agent).copy(skills = (agent.skills + (catalogue.skill(name).id ?: name)).distinct().joinToString(", ")).text())
         }
     }
 
@@ -114,8 +114,8 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy) {
     }
 
     @PostMapping("/skills/{name}")
-    fun edit(@PathVariable name: String, @RequestParam skill: String, @RequestParam confirm: String?, @RequestParam use: String?, model: Model) =
-        save(SkillForm(name, skill), model.addAttribute("use", use), confirm != null)
+    fun edit(@PathVariable name: String, @RequestParam skill: String, @RequestParam use: String?, model: Model) =
+        save(SkillForm(name, skill), model.addAttribute("use", use))
 
     /** Deletes one of the user's Skills with its folder, once the user has confirmed it, seeing what uses it. */
     @PostMapping("/skills/{name}/delete")
@@ -140,10 +140,10 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy) {
      * The Process Builder's save (ADR 0019): a `SKILL.md` through the page's own save, as a new Skill or over the user's
      * own Skill [name], renaming it without asking. Gives the saved Skill's page, or throws with the page's error.
      */
-    fun write(skill: String, name: String?): String = redirected("message") { save(SkillForm(name, skill), it, confirmed = true) }
+    fun write(skill: String, name: String?): String = redirected("message") { save(SkillForm(name, skill), it) }
 
     /** Saves the Skill and opens it, calling [saved] with its name, else shows the form again with why not. */
-    private fun save(posted: SkillForm, model: Model, confirmed: Boolean = false, saved: (String) -> Unit = {}): String {
+    private fun save(posted: SkillForm, model: Model, saved: (String) -> Unit = {}): String {
         val modal = model.getAttribute("use")?.let { "?use=$it" }.orEmpty()
         val edited = posted.name?.let(::yours)
         val form = posted.copy(where = edited?.folder?.toString().orEmpty())
@@ -159,13 +159,7 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy) {
             else -> edited.folder
         }
         nameProblem(name, form.name, folder, edited?.folder)?.let { return show(model, form, it) }
-        if (edited != null && name != edited.name) {
-            if (!confirmed) {
-                val params = mapOf("skill" to form.skill) + listOfNotNull(model.getAttribute("use")?.let { "use" to it.toString() })
-                return confirm(model, "Rename the Skill ${edited.name} to $name?", usedBy.skill(edited.name), "/skills/${edited.name}", params, "/skills/${edited.name}$modal")
-            }
-            if (folder != edited.folder) Files.move(edited.folder, folder)
-        }
+        if (edited != null && folder != edited.folder) Files.move(edited.folder, folder)
         if (edited == null) catalogue.giveSkillId(folder)
         folder.resolve("SKILL.md").writeAtomically(form.skill)
         saved(name)
@@ -205,7 +199,7 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy) {
         model.addAttribute("message", message)
         model.addAttribute("dependents", form.name?.let(usedBy::skill))
         val skill = form.name?.let { runCatching { catalogue.skill(it) }.getOrNull() }
-        model.addAttribute("runBy", skill?.let { catalogue.agents().filter { agent -> agent.allows(skill.name) }.sortedBy { it.name } }.orEmpty())
+        model.addAttribute("runBy", skill?.let { catalogue.agents().filter { agent -> agent.allows(skill) }.sortedBy { it.name } }.orEmpty())
         return "skill"
     }
 }

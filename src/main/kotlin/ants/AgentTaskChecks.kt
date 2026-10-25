@@ -75,7 +75,7 @@ private fun agentTask(task: ServiceTask, catalogue: Catalogue, identified: () ->
     val job = Job(task)
     val listed = links.skills(catalogue).orEmpty()
     val schema = ResultContract.schemaErrors(task.property(RESULT_SCHEMA).orEmpty())
-    val lacking = agent?.getOrNull()?.let { a -> listed.mapNotNull { it.getOrNull() }.filter { !a.allows(it.name) }.map { check("The Agent ${a.name} doesn't list the Skill ${it.name}.") } }
+    val lacking = agent?.getOrNull()?.let { a -> listed.mapNotNull { it.getOrNull() }.filter { !a.allows(it) }.map { check("The Agent ${a.name} doesn't list the Skill ${it.name}.") } }
     fun twins(item: Identified) = identified().filter { it.id == item.id && it.where != item.where }
         .map { check("The ${item.kind} ${item.name} has the same id as the ${it.kind} ${it.name}, in ${it.where}. Delete the id of one of them and restart Ants to give it a new one.") }
     val sharing = agent?.getOrNull()?.identified?.let(::twins).orEmpty() +

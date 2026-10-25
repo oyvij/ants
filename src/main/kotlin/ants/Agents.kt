@@ -36,7 +36,7 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
     fun list(model: Model) = list(model, null)
 
     private fun list(model: Model, error: String?): String {
-        model.addAttribute("agents", catalogue.agents().sortedBy { it.name }.map { AgentRow(it, catalogue.where(it.file.parent)) })
+        model.addAttribute("agents", catalogue.agents().sortedBy { it.name }.map { AgentRow(it, catalogue.where(it.file.parent), catalogue.skillNames(it.skills)) })
         model.addAttribute("error", error)
         return "agents"
     }
@@ -94,7 +94,7 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
     fun edit(@PathVariable name: String, @RequestParam params: MultiValueMap<String, String>, model: Model): String {
         val agent = editable(find(name))
         val fields = joined(params)
-        return save(model.addAttribute("use", "use" in fields), AgentForm.of(fields).copy(kept = AgentForm.of(agent).kept), agent, fields)
+        return save(model.addAttribute("use", "use" in fields), AgentForm.of(fields).copy(kept = AgentForm.of(agent).kept), agent)
     }
 
     /** The form's fields, which repeat for a rule per Limit…, a chip per Skill and a tick per added tool: the filled ones, comma-separated. */
@@ -148,10 +148,10 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
         } catch (e: YAMLException) {
             throw Refused("The agent file has broken YAML: ${e.message}")
         }
-        return redirected("error") { save(it, AgentForm.of(parsed, name = parsed.meta["name"]?.toString().orEmpty()), agent, mapOf("confirm" to "")) }
+        return redirected("error") { save(it, AgentForm.of(parsed, name = parsed.meta["name"]?.toString().orEmpty()), agent) }
     }
 
-    private fun save(model: Model, form: AgentForm, agent: Agent?, params: Map<String, String> = emptyMap()): String {
+    private fun save(model: Model, form: AgentForm, agent: Agent?): String {
         val modal = if (model.getAttribute("use") == true) "?use" else ""
         val target = if (agent != null && form.name == agent.name) agent.file else folder.resolve("${form.name}.md")
         val error = form.error() ?: when {
@@ -160,16 +160,13 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
             else -> null
         }
         if (error != null) return show(model, form, agent, error)
-        if (agent != null && form.name != agent.name && "confirm" !in params) {
-            return confirm(model, "Rename the Agent ${agent.name} to ${form.name}?", usedBy.agent(agent.name), "/agents/${agent.name}", params, "/agents/${agent.name}$modal")
-        }
-        target.writeAtomically(form.copy(id = agent?.id ?: catalogue.unusedId(AGENT_ID)).text())
+        target.writeAtomically(form.copy(id = agent?.id ?: catalogue.unusedId(AGENT_ID), skills = catalogue.skillIds(words(form.skills)).joinToString(", ")).text())
         if (agent != null && target != agent.file) agent.file.deleteIfExists()
         return "redirect:/agents/${form.name}" + if (modal.isEmpty()) "" else "?saved"
     }
 
     private fun show(model: Model, form: AgentForm, agent: Agent?, error: String? = null, notice: String? = null): String {
-        model.addAttribute("form", form)
+        model.addAttribute("form", form.copy(skills = catalogue.skillNames(words(form.skills)).joinToString(", ")))
         model.addAttribute("action", agent?.let { "/agents/${it.name}" } ?: "/agents/new")
         model.addAttribute("file", agent?.file?.toString())
         model.addAttribute("readOnly", agent != null && agent.file.parent != folder)
@@ -189,7 +186,7 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
 }
 
 /** An Agent on the list, and the folder it comes from. */
-class AgentRow(val agent: Agent, val where: String)
+class AgentRow(val agent: Agent, val where: String, val skills: List<String>)
 
 /**
  * A Claude Code tool as the Agent page offers it: what it [does], and for one with **Limit…**, what its rules narrow

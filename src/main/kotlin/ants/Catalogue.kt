@@ -46,8 +46,7 @@ class Agent(val file: Path, text: String = file.readText(), outsideId: String? =
     /** Whether it may use every Skill, `skills: "*"`. */
     val allSkills get() = "*" in skills
 
-    /** Whether it may use the Skill [name]. */
-    fun allows(name: String) = allSkills || name in skills
+    fun allows(skill: Skill) = allSkills || skill.id in skills || skill.name in skills
 
     /** The tools as permission rules, such as `Bash(git log *)`; null for the default tools. */
     val tools = list(meta["tools"])
@@ -180,10 +179,16 @@ class Catalogue(@Value("\${ants.home}") private val home: Path, private val sett
         items.singleOrNull() ?: items.filter { shipped(it) != settings.hideShipped() }.singleOrNull() ?: error(if (items.isEmpty()) none else many)
 
     /** The names of the Skills [agent] may use: every one in the catalogue with `skills: "*"`. */
-    fun allowedNames(agent: Agent): List<String> = if (agent.allSkills) skills().map { it.name }.distinct() else agent.skills
+    fun allowedNames(agent: Agent): List<String> = if (agent.allSkills) skills().map { it.name }.distinct() else skillNames(agent.skills)
 
     /** The Skills [agent] may use ([allowedNames]). */
-    fun allowed(agent: Agent): List<Skill> = allowedNames(agent).map(::skill)
+    fun allowed(agent: Agent): List<Skill> = if (agent.allSkills) allowedNames(agent).map(::skill) else agent.skills.map { linkedSkill(it, null) }
+
+    fun listedSkill(value: String): Skill? = runCatching { linkedSkill(value, null) }.getOrNull()
+
+    fun skillNames(listed: List<String>): List<String> = listed.map { if (it == "*") it else listedSkill(it)?.name ?: it }
+
+    fun skillIds(listed: List<String>): List<String> = listed.map { if (it == "*") it else listedSkill(it)?.id ?: it }.distinct()
 }
 
 /**

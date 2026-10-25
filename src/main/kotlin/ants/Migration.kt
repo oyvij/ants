@@ -97,7 +97,7 @@ class Migration(
         agents.list(needs)
         val keptOld = agents.keepOld()
         skills(failed)
-        ids(keptOld)
+        skillIds(keptOld + ids(keptOld))
         links(changedTemplates.map { it.first }.toSet())
     }
 
@@ -130,7 +130,8 @@ class Migration(
             for ((file, text) in before) {
                 val agent = Agent(file, text)
                 val kept = agent.skills.mapNotNull { name -> if (name in GONE_SKILLS && runCatching { catalogue.skill(name) }.isFailure) GONE_SKILLS[name] else name }
-                val skills = (kept + needs[agent.name].orEmpty()).distinct()
+                val listed = catalogue.skillNames(kept)
+                val skills = (kept + needs[agent.name].orEmpty().filter { it !in listed }).distinct()
                 val now = if (skills == agent.skills) text else AgentForm.of(agent).copy(skills = skills.joinToString(", ")).text()
                 if (file.readText() != now) file.writeAtomically(now)
             }
@@ -218,16 +219,29 @@ class Migration(
         }
     }
 
-    private fun ids(keptOld: Set<Path>) {
-        for (agent in catalogue.agents(withHidden = true).filter { it.file.parent == catalogue.yourAgents && it.id == null }) {
+    private fun ids(keptOld: Set<Path>): Set<Path> {
+        val given = catalogue.agents(withHidden = true).filter { it.file.parent == catalogue.yourAgents && it.id == null }.map { agent ->
             val text = agent.file.readText()
             if (agent.file !in keptOld) agent.file.resolveSibling("${agent.file.fileName}.old").writeText(text)
             agent.file.writeAtomically(withId(text, catalogue.unusedId(AGENT_ID)))
+            agent.file
         }
         for (skill in catalogue.skills(withHidden = true).filter { it.file.startsWith(catalogue.yourSkills) && it.id == null }) {
             val file = skill.folder.resolve(SKILL_ID_FILE)
             if (file.exists()) file.resolveSibling("$SKILL_ID_FILE.old").writeBytes(file.readBytes())
             catalogue.giveSkillId(skill.folder)
+        }
+        return given.toSet()
+    }
+
+    private fun skillIds(keptOld: Set<Path>) {
+        for (agent in catalogue.agents(withHidden = true).filter { it.file.parent == catalogue.yourAgents && !it.allSkills }) {
+            val ids = catalogue.skillIds(agent.skills)
+            if (ids == agent.skills) continue
+            val text = agent.file.readText()
+            if (agent.file !in keptOld) agent.file.resolveSibling("${agent.file.fileName}.old").writeText(text)
+            val (meta, body) = frontmatter(text)
+            agent.file.writeAtomically("---\n" + yaml.dump(LinkedHashMap(meta).apply { put("skills", ids.joinToString(", ")) }) + "---\n" + body)
         }
     }
 

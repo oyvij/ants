@@ -9,10 +9,6 @@ import org.operaton.bpm.model.bpmn.instance.operaton.OperatonProperty
 import org.springframework.stereotype.Component
 import org.springframework.ui.Model
 
-/**
- * What uses an Agent or a Skill, and so would break if it were renamed or deleted: Process versions, of which [older]
- * are the ids of those that aren't the latest.
- */
 class Dependents(val processes: List<ProcessDefinition>, val older: Set<String> = emptySet()) {
     val none get() = processes.isEmpty()
 }
