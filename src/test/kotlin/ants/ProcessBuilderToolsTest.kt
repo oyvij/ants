@@ -31,7 +31,7 @@ class ProcessBuilderToolsTest : AntsTest() {
     private lateinit var protectedCommands: ProtectedCommands
 
     @Autowired
-    private lateinit var builder: ProcessBuilderTools
+    private lateinit var builder: PageChats
 
     private val agentTaskXml = javaClass.getResource("/agent-task.bpmn")!!.readText()
 
@@ -147,7 +147,7 @@ class ProcessBuilderToolsTest : AntsTest() {
             assertTrue(late.second)
             assertTrue("didn't answer" in late.first, late.first)
         } finally {
-            builder.timeLimit = ProcessBuilderTools.TIME_LIMIT
+            builder.timeLimit = PageChats.TIME_LIMIT
         }
     }
 
@@ -327,7 +327,7 @@ fun mcpCall(port: Int, token: String, name: String, arguments: Map<String, Any?>
 }
 
 /** Acts as the modeler page holding [token]: follows its SSE and answers each call relayed to it with what [answer] gives for its tool. */
-fun Browser.actAsPage(token: String, builder: ProcessBuilderTools, answer: (String, Map<*, *>) -> Any?) {
+fun Browser.actAsPage(token: String, builder: PageChats, answer: (String, Map<*, *>) -> Any?) {
     val json = JsonMapper.shared()
     val events = events("builder=$token", "builder")
     Thread.ofVirtual().start {

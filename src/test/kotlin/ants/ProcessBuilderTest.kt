@@ -23,7 +23,7 @@ class ProcessBuilderTest : AntsTest() {
     private val json = JsonMapper.shared()
 
     @Autowired
-    private lateinit var builder: ProcessBuilderTools
+    private lateinit var builder: PageChats
 
     private fun open(): String = json.readValue(browser.post("/process-builder", emptyMap()).body, Map::class.java)["token"].toString()
 
@@ -134,7 +134,7 @@ class ProcessBuilderTest : AntsTest() {
             send(token, "Build it.")
             dialog.until { "/agents/picker" in it && "read the Process" in it && "Agent Task <i>none</i>" in it }
         } finally {
-            builder.timeLimit = ProcessBuilderTools.TIME_LIMIT
+            builder.timeLimit = PageChats.TIME_LIMIT
         }
         assertTrue("Build it." in html, html)
         assertTrue("Who answers the questions?" in html, html)
