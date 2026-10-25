@@ -30,7 +30,7 @@ class ScriptHelperTest : AntsTest() {
     @Test
     fun `a Script editor's token opens the helper's tools only, and buffer reads the page's unsaved code`() {
         val token = open()
-        assertEquals(listOf("buffer", "replace_buffer", "test_run"), tools(token))
+        assertEquals(listOf("buffer", "replace_buffer", "schemas", "replace_schemas", "check", "test_run"), tools(token))
         assertEquals(true, call(token, "diagram").second)
 
         browser.actAsPage(token, chats, "/script-helper/answer") { tool, _ -> "console.log('unsaved')\n".takeIf { tool == "buffer" } }
@@ -58,6 +58,87 @@ class ScriptHelperTest : AntsTest() {
         val (refusal, refused) = call(refusing, "replace_buffer", mapOf("code" to "x"))
         assertTrue(refused)
         assertContains(refusal, "The editor is read-only.")
+    }
+
+    @Test
+    fun `schemas reads the page's unsaved input and output schemas, and no output rows is no output schema`() {
+        var output = listOf(listOf("output[0].name", "ts"), listOf("output[0].type", "string"), listOf("output[0].required", "on"))
+        fun form() = listOf(
+            listOf("name", "post-message"), listOf("code", "ants.output({ts: '1'})\n"),
+            listOf("inputs[0].name", "text"), listOf("inputs[0].type", "string"), listOf("inputs[0].description", "What to post"), listOf("inputs[0].required", "on"),
+            listOf("inputs[1].name", "ticket"), listOf("inputs[1].type", "object"),
+            listOf("inputs[1].rows[0].name", "labels"), listOf("inputs[1].rows[0].type", "array:string"),
+        ) + output
+        val token = open()
+        browser.actAsPage(token, chats, "/script-helper/answer") { tool, _ -> form().takeIf { tool == "form" } }
+
+        val (text, failed) = call(token, "schemas")
+        assertFalse(failed, text)
+        assertEquals(mapOf(
+            "inputs" to mapOf("type" to "object", "properties" to mapOf(
+                "text" to mapOf("type" to "string", "description" to "What to post"),
+                "ticket" to mapOf("type" to "object", "properties" to mapOf("labels" to mapOf("type" to "array", "items" to mapOf("type" to "string")))),
+            ), "required" to listOf("text")),
+            "output" to mapOf("type" to "object", "properties" to mapOf("ts" to mapOf("type" to "string")), "required" to listOf("ts")),
+        ), json.readValue(text, Map::class.java))
+
+        output = emptyList()
+        assertEquals(null, json.readValue(call(token, "schemas").first, Map::class.java).let { assertTrue("output" in it); it["output"] })
+    }
+
+    @Test
+    fun `replace_schemas gives the page rows for each schema it's given, and refuses a schema that isn't an object's`() {
+        val token = open()
+        val replaced = mutableListOf<Map<*, *>>()
+        browser.actAsPage(token, chats, "/script-helper/answer") { tool, arguments -> null.also { if (tool == "replace_schemas") replaced += arguments } }
+        val inputs = mapOf("type" to "object", "properties" to mapOf(
+            "text" to mapOf("type" to "string", "description" to "What to post"),
+            "ticket" to mapOf("type" to "object", "properties" to mapOf("title" to mapOf("type" to "string")), "required" to listOf("title")),
+        ), "required" to listOf("text"))
+
+        val (text, failed) = call(token, "replace_schemas", mapOf("inputs" to inputs))
+        assertFalse(failed, text)
+        val page = replaced.single()
+        assertEquals(setOf("inputs"), page.keys)
+        val rows = page["inputs"].toString()
+        assertContains(rows, """name="inputs[0].name" value="text"""")
+        assertContains(rows, """name="inputs[0].description" value="What to post"""")
+        assertContains(rows, """name="inputs[1].rows[0].name" value="title"""")
+        assertContains(rows, """<option value="object" selected>""")
+        assertEquals(2, Regex("""<input type="checkbox" name="[^"]+\.required" data-field="required" checked>""").findAll(rows).count(), rows)
+        assertContains(text, "unsaved")
+
+        val (none, removed) = call(token, "replace_schemas", mapOf("output" to mapOf("type" to "object", "properties" to emptyMap<String, Any>())))
+        assertFalse(removed, none)
+        assertEquals(setOf("output"), replaced.last().keys)
+        assertFalse("<li" in replaced.last()["output"].toString())
+
+        val (refusal, refused) = call(token, "replace_schemas", mapOf("output" to mapOf("type" to "string")))
+        assertTrue(refused)
+        assertContains(refusal, "object")
+        val (nothing, empty) = call(token, "replace_schemas")
+        assertTrue(empty, nothing)
+        assertEquals(2, replaced.size)
+    }
+
+    @Test
+    fun `check answers the findings the editor shows for the page's unsaved code and schemas`() {
+        val form = listOf(
+            listOf("name", "post-message"), listOf("code", "console.log(ants.inputs.txt)\nants.output({posted: true})\n"),
+            listOf("inputs[0].name", "text"), listOf("inputs[0].type", "string"),
+            listOf("output[0].name", "ts"), listOf("output[0].type", "string"), listOf("output[0].required", "on"),
+        )
+        val token = open()
+        browser.actAsPage(token, chats, "/script-helper/answer") { tool, _ -> form.takeIf { tool == "form" } }
+
+        val (text, failed) = call(token, "check")
+        assertFalse(failed, text)
+        val findings = json.readValue(text, Map::class.java)["findings"] as List<*>
+        val txt = findings.map { it as Map<*, *> }.single { "txt" in it["message"].toString() }
+        assertEquals("error" to 1, txt["severity"] to txt["line"])
+        assertTrue(findings.any { "posted" in (it as Map<*, *>)["message"].toString() && it["line"] == 2 }, text)
+        val editor = json.readValue(browser.post("/script-check", form.map { (name, value) -> name to value }).body, Map::class.java)
+        assertEquals(editor, json.readValue(text, Map::class.java))
     }
 
     @Test

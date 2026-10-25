@@ -31,13 +31,13 @@ function renumber(level, prefix) {
 }
 
 function mount(card) {
-    const tops = [...card.querySelectorAll('[role=tabpanel] > .schema-level')];
-    const none = card.querySelector('[data-no-output]'), output = card.querySelector('#output-schema > .schema-level');
-    const changed = () => {
-        tops.forEach(top => renumber(top, top.dataset.prefix));
-        if (none) none.hidden = rows(output).length > 0;
+    const none = card.querySelector('[data-no-output]');
+    const changed = () => { // the levels are looked up each time, since the Script helper swaps whole levels in
+        card.querySelectorAll('[role=tabpanel] > .schema-level').forEach(top => renumber(top, top.dataset.prefix));
+        if (none) none.hidden = rows(card.querySelector('#output-schema > .schema-level')).length > 0;
         card.dispatchEvent(new Event('change', {bubbles: true}));
     };
+    card.addEventListener('schema-replaced', changed);
     card.querySelectorAll('[role=tab]').forEach(tab => tab.addEventListener('click', () => {
         card.querySelectorAll('[role=tab]').forEach(other => {
             const on = other === tab;

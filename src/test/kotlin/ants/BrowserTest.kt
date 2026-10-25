@@ -909,6 +909,51 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `the Script editor's helper replaces both schemas with rows on the page, unsaved, and one Ctrl-Z takes the replace back`() = browse {
+        page.navigate(url("/scripts/new"))
+        val editor = page.locator(".code-editor .cm-content")
+        editor.click()
+        page.keyboard().insertText("console.log(ants.inputs.text)")
+        page.locator("#input-schema > .schema-level > [data-add-row]").click()
+        page.locator("input[name='inputs[0].name']").fill("mine")
+        val helper = page.getByRole(AriaRole.COMPLEMENTARY, Page.GetByRoleOptions().setName("Script helper"))
+        assertThat(helper).hasAttribute("data-token", Pattern.compile(".+"))
+        val token = helper.getAttribute("data-token")!!
+        val inputs = mapOf("type" to "object", "properties" to mapOf(
+            "text" to mapOf("type" to "string", "description" to "What to post"),
+            "ticket" to mapOf("type" to "object", "properties" to mapOf("title" to mapOf("type" to "string"))),
+        ), "required" to listOf("text"))
+        val output = mapOf("type" to "object", "properties" to mapOf("ts" to mapOf("type" to "string")), "required" to listOf("ts"))
+
+        val (text, failed) = mcpCall(port, token, "replace_schemas", mapOf("inputs" to inputs, "output" to output))
+        assertFalse(failed, text)
+        assertThat(page.locator("input[name='inputs[0].name']")).hasValue("text")
+        assertThat(page.locator("input[name='inputs[0].required']")).isChecked()
+        assertThat(page.locator("input[name='inputs[1].rows[0].name']")).isVisible()
+        assertThat(page.locator("input[name='inputs[1].rows[0].name']")).hasValue("title")
+        assertThat(page.getByLabel("Sample inputs, as JSON")).hasValue("""{"text":"","ticket":{"title":""}}""")
+        assertThat(page.locator("input[name='output[0].name']")).hasValue("ts")
+        assertEquals(true, page.locator("[data-no-output]").evaluate("note => note.hidden"))
+        val (read, _) = mcpCall(port, token, "schemas")
+        assertEquals(mapOf("inputs" to inputs, "output" to output), tools.jackson.databind.json.JsonMapper.shared().readValue(read, Map::class.java))
+        assertFalse(home.resolve("scripts").toFile().walk().any { it.name == "script.yaml" })
+        page.locator("input[name='inputs[1].rows[0].name']").fill("heading")
+        assertThat(page.locator("input[name='inputs[1].rows[0].name']")).hasValue("heading")
+
+        editor.click()
+        page.keyboard().press("ControlOrMeta+z")
+        assertThat(page.locator("input[name='inputs[0].name']")).hasValue("mine")
+        assertThat(page.locator("#input-schema .schema-row")).hasCount(1)
+        assertThat(page.locator("#output-schema .schema-row")).hasCount(0)
+        assertEquals(false, page.locator("[data-no-output]").evaluate("note => note.hidden"))
+        assertThat(editor).hasText("console.log(ants.inputs.text)")
+        assertThat(page.getByLabel("Sample inputs, as JSON")).hasValue("""{"mine":""}""")
+
+        page.keyboard().press("ControlOrMeta+y")
+        assertThat(page.locator("input[name='inputs[1].rows[0].name']")).hasValue("heading")
+    }
+
+    @Test
     fun `the Secrets card adds two Secrets for one Save, and its ✕ asks first, so Cancel keeps a Secret and Delete removes it once saved`() = browse {
         http.get("/scripts/new")
         http.post("/scripts/new", listOf("name" to "post", "description" to "Posts.", "code" to "console.log('hi')\n", "inputs" to "", "vars" to "",

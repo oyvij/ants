@@ -20,6 +20,9 @@ function element(tag, className, text) {
 function mount(textarea, cm) {
     textarea.dataset.mounted = '';
     let changed = () => {};
+    const schema = textarea.form?.querySelector('#schema');
+    // A schema card level swapped for another, kept in the code's history so that Ctrl-Z takes it back as it does a code replace.
+    const swap = cm.StateEffect.define();
     const box = element('div', 'code-editor');
     const ed = element('div', 'ed tall json');
     const editor = new cm.EditorView({
@@ -28,7 +31,11 @@ function mount(textarea, cm) {
             cm.history(), cm.drawSelection(), cm.lineNumbers(), cm.indentOnInput(), cm.bracketMatching(),
             cm.keymap.of([...cm.defaultKeymap, ...cm.historyKeymap, cm.indentWithTab]),
             cm.placeholder(textarea.placeholder), cm.javascript(), cm.syntaxHighlighting(cm.defaultHighlightStyle, {fallback: true}),
+            cm.invertedEffects.of(tr => tr.effects.filter(effect => effect.is(swap)).map(({value: {old, now}}) => swap.of({old: now, now: old}))),
             cm.EditorView.updateListener.of(update => {
+                const swaps = update.transactions.flatMap(tr => tr.effects.filter(effect => effect.is(swap)));
+                swaps.forEach(({value: {old, now}}) => old.replaceWith(now));
+                if (swaps.length) schema.dispatchEvent(new Event('schema-replaced'));
                 if (!update.docChanged) return;
                 textarea.value = update.state.doc.toString();
                 changed();
@@ -49,7 +56,6 @@ function mount(textarea, cm) {
     box.append(ed, bar, result);
     textarea.hidden = true;
     textarea.after(box);
-    const schema = textarea.form?.querySelector('#schema');
     if (schema) { // the sample follows the input schema until the user writes one of their own
         let own = false;
         const fill = () => {
@@ -76,7 +82,7 @@ function mount(textarea, cm) {
         }
     });
     if (textarea.dataset.check) changed = checking(textarea, editor, cm, schema);
-    if (textarea.dataset.helper) openHelper(textarea, editor, cm);
+    if (textarea.dataset.helper) openHelper(textarea, editor, cm, swap);
 }
 
 /**
@@ -119,7 +125,7 @@ function checking(textarea, editor, cm, schema) {
     return soon;
 }
 
-async function openHelper(textarea, editor, cm) {
+async function openHelper(textarea, editor, cm, swap) {
     if (document.readyState === 'loading') await new Promise(loaded => addEventListener('DOMContentLoaded', loaded, {once: true}));
     const panel = document.getElementById(textarea.dataset.helper);
     const csrf = new FormData(textarea.form).get('_csrf');
@@ -134,7 +140,16 @@ async function openHelper(textarea, editor, cm) {
             editor.dispatch({changes: {from: 0, to: editor.state.doc.length, insert: code}, annotations: cm.isolateHistory.of('full')}); // its own undo step, never joined to the user's typing
             return null;
         },
-        form: () => [...new FormData(textarea.form)].filter(([name]) => name !== '_csrf'),
+        replace_schemas: levels => { // each schema given arrives as its card level, rendered: swapped in together, as one undo step
+            const effects = Object.entries({inputs: 'input-schema', output: 'output-schema'}).filter(([name]) => levels[name] !== undefined).map(([name, panel]) => {
+                const rendered = document.createElement('template');
+                rendered.innerHTML = levels[name];
+                return swap.of({old: textarea.form.querySelector(`#${panel} > .schema-level`), now: rendered.content.firstElementChild});
+            });
+            editor.dispatch({effects, annotations: cm.isolateHistory.of('full')});
+            return null;
+        },
+        form:() => [...new FormData(textarea.form)].filter(([name]) => name !== '_csrf'),
     };
     stream.on('builder', async data => {
         const {id, tool, arguments: args} = JSON.parse(data);
