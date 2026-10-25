@@ -673,6 +673,25 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `a Script Task's panel shows each input's type, description and whether it is required`() = browse {
+        http.get("/scripts/new")
+        http.post("/scripts/new", listOf("name" to "post-it", "description" to "Posts it.", "code" to "console.log('hi')\n", "vars" to "",
+            "inputs[0].name" to "channel", "inputs[0].type" to "string", "inputs[0].description" to "Where to post.", "inputs[0].required" to "on",
+            "inputs[1].name" to "count", "inputs[1].type" to "number"))
+        appendScriptTask()
+        label("Script").selectOption("post-it")
+
+        val channel = page.locator("#explain [data-input=channel]")
+        assertThat(channel).containsText("text")
+        assertThat(channel).containsText("required")
+        assertThat(channel).containsText("Where to post.")
+        val count = page.locator("#explain [data-input=count]")
+        assertThat(count).containsText("number")
+        assertThat(count).not().containsText("required")
+        label("channel").fill("general")
+    }
+
+    @Test
     fun `Edit's modal renames the Task's Script, and the panel shows the new name`() = browse {
         http.get("/scripts/new")
         http.post("/scripts/new", listOf("name" to "tidy-up", "description" to "Tidies up.", "code" to "console.log('tidy')\n", "vars" to ""))

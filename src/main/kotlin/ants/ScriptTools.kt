@@ -11,7 +11,7 @@ class ScriptTools(private val scripts: Scripts, private val runner: ScriptRunner
     fun of(allowed: List<Script>, workspace: Path, run: String): McpTools {
         val named = toolNames(allowed)
         return object : McpTools {
-            override val tools = named.map { (name, script) -> Mcp.tool(name, script.description, script.inputNames.associateWith { mapOf("description" to "The Script's input $it, any JSON value.") }) }
+            override val tools = named.map { (name, script) -> mapOf("name" to name, "description" to script.description, "inputSchema" to ScriptSchema.EMPTY + script.inputs.entries.associate { (key, value) -> "$key" to value }) }
 
             override fun call(name: String, arguments: Map<*, *>): Pair<String, Boolean> {
                 val script = named.getValue(name)

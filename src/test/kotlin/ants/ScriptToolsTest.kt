@@ -77,8 +77,21 @@ class ScriptToolsTest : AntsTest() {
     private fun scriptTools(launch: FakeClaude.Launch) = launch.flag("--allowedTools")!!.split(",").filter { it.startsWith("mcp__ants__script_") }
 
     @Test
-    fun `a claude Agent Task gets exactly its Agent's Scripts as tools, each with the Script's description and inputs as its schema`() {
-        script("s-post01", "post-message", "Posts a message to Slack.", listOf("channel", "text"))
+    fun `a claude Agent Task gets exactly its Agent's Scripts as tools, each with the Script's description and input schema as its own`() {
+        val inputs = mapOf(
+            "type" to "object",
+            "properties" to mapOf(
+                "channel" to mapOf("type" to "string", "description" to "Where to post."),
+                "text" to mapOf("type" to "string"),
+                "ticket" to mapOf(
+                    "type" to "object", "description" to "The ticket it's about.",
+                    "properties" to mapOf("title" to mapOf("type" to "string"), "labels" to mapOf("type" to "array", "items" to mapOf("type" to "string"))),
+                    "required" to listOf("title"),
+                ),
+            ),
+            "required" to listOf("channel"),
+        )
+        scripts.save(Script("s-post01", "post-message", "Posts a message to Slack.", inputs), "console.log('hi')\n", emptyMap())
         script("s-tidy01", "tidy")
         script("s-other1", "other")
         agentWithScripts("s-post01", "s-tidy01")
@@ -90,10 +103,7 @@ class ScriptToolsTest : AntsTest() {
         assertEquals(setOf("run", "script_post-message", "script_tidy"), listed.keys)
         val post = listed.getValue("script_post-message")
         assertEquals("Posts a message to Slack.", post["description"])
-        val schema = post["inputSchema"] as Map<*, *>
-        assertEquals("object", schema["type"])
-        assertEquals(setOf("channel", "text"), (schema["properties"] as Map<*, *>).keys)
-        assertEquals(listOf("channel", "text"), schema["required"])
+        assertEquals(inputs, post["inputSchema"])
         assertEquals(emptyMap<Any, Any>(), (listed.getValue("script_tidy")["inputSchema"] as Map<*, *>)["properties"])
         claude.release("go")
     }
@@ -130,6 +140,29 @@ class ScriptToolsTest : AntsTest() {
         claude.release("go")
         eventually { assertContains(browser.get("/runs/$run").body, """id="state">Completed<""") }
         assertFalse(Files.walk(workspace).filter { it.isRegularFile() }.anyMatch { "s3cret" in it.readText() || "ants.output" in it.readText() })
+    }
+
+    @Test
+    fun `a Script tool call whose arguments break the input schema answers an error with the reason, and the Script doesn't run`() {
+        val inputs = mapOf("type" to "object", "properties" to mapOf("count" to mapOf("type" to "number"), "text" to mapOf("type" to "string")), "required" to listOf("text"))
+        scripts.save(Script("s-count01", "count", "Counts.", inputs), "import {writeFileSync} from 'node:fs'\nwriteFileSync('ran.txt', 'ran')\nants.output({ok: true})\n", emptyMap())
+        agentWithScripts("s-count01")
+        val run = start()
+        val launch = launch()
+
+        val (refused, error) = call(launch, "script_count", mapOf("count" to "three"))
+        assertEquals(true, error)
+        val output = refused["output"].toString()
+        assertContains(output, "The inputs break the Script's input schema, so it didn't run:")
+        assertContains(output, "/count")
+        assertContains(output, "text")
+        assertEquals(null, refused["payload"])
+        assertFalse(workspace(run).resolve("ran.txt").isRegularFile())
+
+        val (ran, failed) = call(launch, "script_count", mapOf("text" to "hi"))
+        assertEquals(false, failed)
+        assertEquals(mapOf("ok" to true), ran["payload"])
+        claude.release("go")
     }
 
     @Test

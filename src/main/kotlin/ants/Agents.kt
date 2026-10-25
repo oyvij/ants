@@ -71,6 +71,7 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
     /**
      * The Agents and Skills as the modeler's Agent Task panel picks them, read afresh each time so a new one shows up:
      * each Agent's description, Skills (every one by name for `skills: "*"`) and folder, and whether it is the user's own (New Skill adds itself only to those, Edit opens only those), and each Skill's description, whether it is the user's own (Edit opens only those) and its folder;
+     * each Script's input names, and the type, description and required mark of each as `about`;
      * and the Profiles a Process can name.
      */
     @GetMapping("/catalogue.json")
@@ -83,7 +84,10 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
         "skills" to catalogue.skills().map { skill ->
             mapOf("id" to skill.id, "name" to skill.name, "description" to skill.description, "own" to skill.file.startsWith(catalogue.yourSkills), "folder" to skill.folder.parent.toString())
         },
-        "scripts" to scripts.all().map { mapOf("id" to it.id, "name" to it.name, "description" to it.description, "inputs" to it.inputNames) },
+        "scripts" to scripts.all().map { script ->
+            val about = ScriptSchema.rows(script.inputs).associate { it.name to mapOf("type" to ScriptSchema.TYPES[it.type], "description" to it.description, "required" to it.required) }
+            mapOf("id" to script.id, "name" to script.name, "description" to script.description, "inputs" to script.inputNames, "about" to about)
+        },
         "profiles" to settings.profiles().keys,
         "nameBeside" to LINKED_NAME,
     )
