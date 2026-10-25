@@ -1247,9 +1247,14 @@ class BrowserTest : AntsTest() {
     private val tapTargets = "button, .btn, .topbar a, .topbar label, nav.side a, .tabs a, .fold > summary, .spine a, .walk nav a, .crumbs a, :is(.chipsel, .tags) .c, [role=tab]"
     private val textFields = "input:not([type=checkbox], [type=radio], [type=hidden], [type=file]), select, textarea, .cm-content"
 
-    private fun visible(selector: String, measure: String) = (page.locator(selector).evaluateAll(
-        "es => es.filter(e => e.checkVisibility({visibilityProperty: true})).map(e => [e.outerHTML.slice(0, 100), $measure])",
-    ) as List<*>).map { (it as List<*>).let { (html, value) -> html as String to value } }.also { assertTrue(it.isNotEmpty(), "${page.url()} shows a $selector") }
+    // Measured once the page is whole: parsed, and each Markdown field turned into its editor, which markdown.js does
+    // after CodeMirror's modules load; before then the textarea stands in for the editor, so the editor went unmeasured.
+    private fun visible(selector: String, measure: String): List<Pair<String, Any?>> {
+        page.waitForFunction("document.readyState === 'complete' && !document.querySelector('textarea[data-markdown]:not([data-mounted])')")
+        return (page.locator(selector).evaluateAll(
+            "es => es.filter(e => e.checkVisibility({visibilityProperty: true})).map(e => [e.outerHTML.slice(0, 100), $measure])",
+        ) as List<*>).map { (it as List<*>).let { (html, value) -> html as String to value } }.also { assertTrue(it.isNotEmpty(), "${page.url()} shows a $selector") }
+    }
 
     private fun assertTapSized() {
         val short = visible(tapTargets, "e.getBoundingClientRect().height").filter { (_, height) -> (height as Number).toDouble() < 44 }
