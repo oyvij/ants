@@ -90,8 +90,26 @@ private fun addNameBeside(linking: Element, link: Link) {
     linking.parentNode.insertBefore(named, linking.nextSibling)
 }
 
-internal fun agentTaskElements(document: Document) = document.getElementsByTagNameNS(BPMN, "serviceTask").elements()
-    .filter { task -> List(task.attributes.length) { task.attributes.item(it) }.any { it.localName == "topic" && it.nodeValue == AgentLauncher.TOPIC } }
+internal fun agentTaskElements(document: Document) = serviceTaskElements(document, AgentLauncher.TOPIC)
+
+internal fun serviceTaskElements(document: Document, topic: String) = document.getElementsByTagNameNS(BPMN, "serviceTask").elements()
+    .filter { task -> List(task.attributes.length) { task.attributes.item(it) }.any { it.localName == "topic" && it.nodeValue == topic } }
 
 internal fun propertyElements(task: Element) = task.getElementsByTagNameNS("*", "property").elements()
     .filter { it.parentNode.localName == "properties" && it.parentNode.parentNode.localName == "extensionElements" }.associateBy { it.getAttribute("name") }
+
+fun Scripts.linkById(document: Document): Boolean {
+    var relinked = false
+    for (task in serviceTaskElements(document, ScriptTask.TOPIC)) {
+        val properties = propertyElements(task)
+        val linking = properties[SCRIPT] ?: continue
+        val value = linking.getAttribute("value").trim()
+        val kept = properties[nameBeside(value)]?.getAttribute("value")
+        val link = runCatching { linked(value, kept) }.getOrNull()?.let { Link(it.id, it.name) } ?: Link(value, kept)
+        properties.filterKeys { it.startsWith(LINKED_NAME) }.values.forEach { it.parentNode.removeChild(it) }
+        if (link.value != linking.getAttribute("value")) relinked = true
+        linking.setAttribute("value", link.value)
+        addNameBeside(linking, link)
+    }
+    return relinked
+}

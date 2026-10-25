@@ -153,7 +153,7 @@ class Processes(
      * Check fails. Gives the Process's key.
      */
     internal fun deploy(bpmn: ByteArray, name: String? = null): String = try {
-        val xml = operatonOnly(bpmn) { catalogue.linkById(it, scripts) }
+        val xml = operatonOnly(bpmn) { catalogue.linkById(it, scripts); scripts.linkById(it) }
         val failed = checks.of(xml).filterNot { it.warning }
         if (failed.isNotEmpty()) throw Refused(failed.joinToString("\n") { it.message })
         val key = process(parse(xml.toByteArray())).getAttribute("id")
