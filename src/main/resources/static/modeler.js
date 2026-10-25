@@ -1042,11 +1042,15 @@ function path(id) {
 const startEvent = () => modeler.get("elementRegistry").find(e => e.type === "bpmn:StartEvent" && e.parent.businessObject?.$type === "bpmn:Process")
 
 function addElement(args) {
-    const {kind, id, name, topic} = args
+    const {kind, id, name, topic, properties = {}} = args
     if (!drawn[kind]) throw new Error(`No kind ${kind}: the kinds are ${Object.keys(drawn).join(", ")}.`)
     if (topic !== undefined && kind !== "built-in") throw new Error("Only a Built-in Task takes a topic.")
     if (topic !== undefined && !builtIns[topic]) throw new Error(`No Built-in Task ${topic}: the topics are ${Object.keys(builtIns).join(", ")}.`)
     checkIdValidAndFree(id)
+    const inputs = Object.entries(args.inputs || {}).map(([input, value]) => {
+        checkJuelName(input, "an input name")
+        return [input, String(value ?? "")]
+    })
     const registry = modeler.get("elementRegistry")
     let parent = registry.find(e => !e.parent && e.type === "bpmn:Process")
     if (args.in !== undefined) {
@@ -1062,6 +1066,7 @@ function addElement(args) {
     return {id: edit(() => {
         const created = modeler.get("modeling").createShape(shape, centre, parent)
         if (name) modeler.get("modeling").updateLabel(created, name)
+        if (Object.keys(properties).length || inputs.length) writeAgentTask(created, properties, inputs, true)
         return created.id
     })}
 }
@@ -1197,7 +1202,9 @@ async function setCall({id, process, inputs}) {
 
 // The Built-in Task's topic, as the panel's picker writes it, and its inputs, written as an Agent Task's are.
 function setBuiltIn({id, topic, inputs, asker}) {
-    const element = foundAs(id, "built-in", "a Built-in Task")
+    const script = kindOf(found(id)) === "script"
+    const element = script ? found(id) : foundAs(id, "built-in", "a Built-in Task or a Script Task")
+    if (script && (topic !== undefined || asker !== undefined)) throw new Error(`${id} is a Script Task: set only its inputs.`)
     const bo = element.businessObject
     if (topic !== undefined && !builtIns[topic]) throw new Error(`No Built-in Task ${topic}: the topics are ${Object.keys(builtIns).join(", ")}.`)
     const now = topic ?? bo.get("camunda:topic")

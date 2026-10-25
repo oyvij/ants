@@ -16,6 +16,7 @@ import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.readText
 import kotlin.io.path.writeText
+import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -33,6 +34,9 @@ class ProcessBuilderToolsTest : AntsTest() {
 
     @Autowired
     private lateinit var builder: PageChats
+
+    @Autowired
+    private lateinit var scripts: Scripts
 
     private val agentTaskXml = javaClass.getResource("/agent-task.bpmn")!!.readText()
 
@@ -60,7 +64,7 @@ class ProcessBuilderToolsTest : AntsTest() {
         val page = open()
         val task = protectedCommands.open(Files.createTempDirectory("workspace")).first
         try {
-            assertEquals(listOf("diagram", "agents", "skills", "skill", "processes", "process", "built_in_tasks", "templates", "references", "checks",
+            assertEquals(listOf("diagram", "agents", "skills", "skill", "scripts", "processes", "process", "built_in_tasks", "templates", "references", "checks",
                 "create_agent", "create_skill", "change_agent", "change_skill", "delete_agent", "delete_skill", "build_log", "copy",
                 "add_element", "remove", "rename", "move", "connect", "set_condition", "set_default", "set_agent_task", "set_start_form",
                 "set_user_task", "set_call", "set_built_in", "set_multi_instance", "drop_template"), tools(page))
@@ -120,7 +124,10 @@ class ProcessBuilderToolsTest : AntsTest() {
         }
         assertEquals(endpoint(browser.get("/processes.json").body), tool("processes"))
         assertEquals(endpoint(browser.get("/templates.json").body), tool("templates"))
-        assertEquals(json.valueToTree(builtIns), tool("built_in_tasks"))
+        val listed = tool("built_in_tasks")
+        assertEquals(json.valueToTree(builtIns), (listed.deepCopy() as ObjectNode).apply { remove("script") })
+        assertEquals("Script Task", listed["script"]["name"].asString())
+        assertContains(listed["script"]["does"].asString(), "Script")
         assertEquals(endpoint(browser.post("/processes/checks", mapOf("bpmn" to broken)).body), tool("checks"))
         assertTrue(tool("checks").toString().contains("nobody"))
         assertEquals(endpoint(browser.post("/processes/inputs", mapOf("bpmn" to broken, "element" to "draft")).body), tool("references", mapOf("element" to "draft")))
@@ -131,6 +138,73 @@ class ProcessBuilderToolsTest : AntsTest() {
         assertTrue(call(token, "skill", mapOf("name" to "nothing")).second)
         assertTrue(call(token, "process", mapOf("key" to "agent-task")).first.contains("""<bpmn:serviceTask id="draft""""))
         assertTrue(call(token, "process", mapOf("key" to "nothing")).second)
+    }
+
+    @Test
+    fun `add_element with the script kind draws a Script Task naming an existing Script by name, relayed to the page with its id`() {
+        scripts.save(Script("s-post01", "post", "Posts a message.", listOf("text", "channel")), "console.log('posted')\n", emptyMap())
+        val token = open()
+        val relayed = mutableListOf<Map<*, *>>()
+        page(token) { tool, arguments -> if (tool == "add_element") mapOf("id" to arguments["id"]).also { relayed += arguments } else null }
+
+        val (text, failed) = call(token, "add_element", mapOf("kind" to "script", "id" to "notify", "script" to "post", "inputs" to mapOf("text" to "\${prompt}")))
+        assertFalse(failed, text)
+        assertEquals(mapOf("id" to "notify"), json.readValue(text, Map::class.java))
+        assertEquals(mapOf(SCRIPT to "s-post01", nameBeside("s-post01") to "post"), relayed.single()["properties"])
+        assertEquals(mapOf("text" to "\${prompt}"), relayed.single()["inputs"])
+
+        page(token) { tool, arguments -> if (tool == "add_element") mapOf("id" to "plain", "properties" to arguments["properties"]) else null }
+        val plain = call(token, "add_element", mapOf("kind" to "agent", "properties" to mapOf(SCRIPT to "s-post01")))
+        assertEquals(mapOf("id" to "plain", "properties" to emptyMap<String, String>()), json.readValue(plain.first, Map::class.java))
+    }
+
+    @Test
+    fun `add_element naming a missing Script is refused, saying the Process Builder can't write one and to hand the user a text for the Script editor's helper`() {
+        val token = open()
+        val relayed = mutableListOf<String>()
+        page(token) { tool, _ -> null.also { relayed += tool } }
+
+        val (missing, refused) = call(token, "add_element", mapOf("kind" to "script", "script" to "post"))
+        assertTrue(refused, missing)
+        assertContains(missing, "No Script named post")
+        assertContains(missing, "can't write")
+        assertContains(missing, "Script editor's helper")
+        assertEquals("Only a Script Task takes a script or inputs." to true, call(token, "add_element", mapOf("kind" to "agent", "script" to "post")))
+        assertEquals(emptyList(), relayed)
+    }
+
+    @Test
+    fun `the scripts tool lists each Script's name, description and inputs, never its id, source, vars or Secrets`() {
+        scripts.save(Script("s-post01", "post", "Posts a message.", listOf("text", "channel"), mapOf("CHANNEL" to "general")), "console.log('a secret recipe')\n", mapOf("TOKEN" to "t0ps3cret"))
+        val (text, failed) = call(open(), "scripts")
+        assertFalse(failed, text)
+        assertEquals(listOf(mapOf("name" to "post", "description" to "Posts a message.", "inputs" to listOf("text", "channel"))), json.readValue(text, List::class.java))
+        for (hidden in listOf("s-post01", "secret recipe", "t0ps3cret", "general")) assertFalse(hidden in text, hidden)
+    }
+
+    @Test
+    fun `no Process Builder tool writes a Script`() {
+        scripts.save(Script("s-post01", "post", "Posts a message."), "console.log('posted')\n", emptyMap())
+        fun library() = home.resolve("scripts").toFile().walk().map { it.relativeTo(home.toFile()).path to (if (it.isFile) it.readText() else null) }.toList()
+        val before = library()
+        val token = open()
+        assertEquals(listOf("scripts"), tools(token).filter { "script" in it.toString() })
+        assertTrue(call(token, "copy", mapOf("kind" to "script", "name" to "post")).second)
+        assertEquals(before, library())
+    }
+
+    @Test
+    fun `the instructions and tool descriptions say a missing Script is handed off to the user, never written`() {
+        val instructions = javaClass.getResource("/process-builder.md")!!.readText()
+        assertContains(instructions, "Script Task")
+        assertContains(instructions, "can't write a Script")
+        assertContains(instructions, "Script editor's helper")
+        val listed = (mcp(port, open(), "tools/list").second["result"] as Map<*, *>)["tools"] as List<*>
+        fun described(name: String) = json.writeValueAsString(listed.single { (it as Map<*, *>)["name"] == name })
+        for (tool in listOf("scripts", "add_element")) {
+            assertContains(described(tool), "can't write", message = tool)
+            assertContains(described(tool), "Script editor's helper", message = tool)
+        }
     }
 
     @Test

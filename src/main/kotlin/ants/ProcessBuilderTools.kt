@@ -32,7 +32,7 @@ const val SCHEMA_IGNORED = "The schema wasn't written: a Skill has no Result sch
 @RestController
 class ProcessBuilderTools(
     private val chats: PageChats, private val agents: Agents, private val templates: Templates, private val processes: Processes, private val catalogue: Catalogue,
-    private val skills: Skills, private val json: JsonMapper, private val launcher: AgentLauncher,
+    private val skills: Skills, private val scripts: Scripts, private val json: JsonMapper, private val launcher: AgentLauncher,
 ) {
     private inner class Page : PageChat(chats) {
         override val name = "process-builder"
@@ -57,7 +57,9 @@ class ProcessBuilderTools(
                     val refusals = processes.checks(xml()).filter { it.element == arguments["id"] && !it.warning }.map { it.message }
                     json.writeValueAsString(json.readValue(written, Map::class.java) + ("checks" to refusals))
                 }
+                "add_element" -> ask(name, arguments - "properties" + ("properties" to scriptProperties(arguments)))
                 in RELAYED -> ask(name, arguments)
+                "scripts" -> json.writeValueAsString(scripts.all().map { mapOf("name" to it.name, "description" to it.description, "inputs" to it.inputs) })
                 "agents", "skills" -> json.writeValueAsString((agents.catalogue()[name] as List<*>).map { (it as Map<*, *>) - "id" })
                 "skill" -> catalogue.skill(argument("name")).let { skill ->
                     if (catalogue.hides(skill.file)) throw Refused("No Skill named ${skill.name}")
@@ -71,7 +73,7 @@ class ProcessBuilderTools(
                     if (processes.processes().none { it["key"] == key }) throw Refused("No Process $key is deployed.")
                     processes.diagram(key).decodeToString()
                 }
-                "built_in_tasks" -> json.writeValueAsString(builtIns)
+                "built_in_tasks" -> json.writeValueAsString(BUILT_IN_TASKS)
                 "templates" -> json.writeValueAsString(templates.json())
                 "references" -> json.writeValueAsString(processes.inputs(xml(), argument("element")))
                 "checks" -> json.writeValueAsString(processes.checks(xml()))
@@ -105,6 +107,14 @@ class ProcessBuilderTools(
         fun saved(page: String, arguments: Map<*, *> = emptyMap<String, Any>()) = json.writeValueAsString(
             mapOf("name" to page.substringAfterLast('/'), "page" to page) + listOfNotNull(("note" to SCHEMA_IGNORED).takeIf { arguments["schema"] != null }),
         ).also { made += page }
+
+        fun scriptProperties(arguments: Map<*, *>): Map<String, String> {
+            val named = arguments["script"]?.toString()
+            if (arguments["kind"] != "script") return if (named == null && arguments["inputs"] == null) emptyMap() else throw Refused("Only a Script Task takes a script or inputs.")
+            if (named == null) return emptyMap()
+            val script = scripts.named(named) ?: throw Refused("No Script named $named. $MISSING_SCRIPT")
+            return mapOf(SCRIPT to script.id, nameBeside(script.id) to script.name)
+        }
 
         fun deleted(page: String) = "Deleted the ${KINDS[page.split('/')[1]]} ${page.substringAfterLast('/')}.".also { made -= page }
 
@@ -160,6 +170,12 @@ class ProcessBuilderTools(
         /** The Process Builder's standing instructions, shipped read-only. */
         private val INSTRUCTIONS = ProcessBuilderTools::class.java.getResource("/process-builder.md")!!.readText()
 
+        private val BUILT_IN_TASKS = builtIns + (ScriptTask.TOPIC to mapOf("name" to elementKinds.getValue("script").getValue("name"),
+            "does" to "runs one of your Scripts (see `scripts`) in the Run workspace: draw it with add_element's script kind, not as a Built-in Task."))
+
+        private const val MISSING_SCRIPT = "You can't write or change a Script. When a Task needs one that doesn't exist, tell the user so plainly and " +
+            "hand them a text to paste into the Script editor's helper, saying what the Script must take, do and return."
+
         private val KINDS = mapOf("agents" to "Agent", "skills" to "Skill", "templates" to "Template")
 
         private fun number(what: String) = mapOf("type" to "number", "description" to what)
@@ -185,7 +201,9 @@ class ProcessBuilderTools(
                 "x" to number(AT), "y" to number(AT),
                 "in" to "The id of the sub-process to add it in; left out, the Process itself.",
                 "topic" to "A Built-in Task's topic (see `built_in_tasks`); left out, clone-repos.",
-            ), optional = setOf("id", "name", "x", "y", "in", "topic")),
+                "script" to "A Script Task's Script, by its name (see `scripts`); Ants links it by its id. $MISSING_SCRIPT",
+                "inputs" to strings("A Script Task's inputs, by the Script's input names, each text or a `\${…}` reference (see `references`)."),
+            ), optional = setOf("id", "name", "x", "y", "in", "topic", "script", "inputs")),
             Mcp.tool("remove", "Removes an element, with its connections, or a connection.", mapOf("id" to "The element's or connection's id.")),
             Mcp.tool("rename", "Names an element or connection, as the diagram shows it.", mapOf("id" to "The element's or connection's id.", "name" to "Its new name; empty clears it.")),
             Mcp.tool("move", "Moves an element, its connections following.", mapOf("id" to "The element's id.", "x" to number(AT), "y" to number(AT))),
@@ -243,8 +261,8 @@ class ProcessBuilderTools(
                 "inputs" to strings("Values by start-form field name, each text or a `\${…}` reference (see `references`)."),
             ), optional = setOf("process", "inputs")),
             Mcp.tool("set_built_in", "Sets a Built-in Task's topic and inputs. clone-repos reads the inputs repos (Source map names or git URLs, such as " +
-                "`\${scout.output.repos}`) and branch; accept-recommendations names its asker.", mapOf(
-                "id" to "The Built-in Task's id.", "topic" to "Its topic (see `built_in_tasks`).",
+                "`\${scout.output.repos}`) and branch; accept-recommendations names its asker. It sets a Script Task's inputs too, by its Script's input names (see `scripts`).", mapOf(
+                "id" to "The Built-in Task's or Script Task's id.", "topic" to "Its topic (see `built_in_tasks`).",
                 "inputs" to strings("Values by input name, each text or a `\${…}` reference; empty removes one."),
                 "asker" to builtIns.filterValues { "asker" in it }.map { (topic, it) -> "$topic only: ${it["asker"]}" }.joinToString(" ") + " Empty clears it.",
             ), optional = setOf("topic", "inputs", "asker")),
@@ -276,6 +294,7 @@ class ProcessBuilderTools(
             "agents" to { _ -> "read the Agents" },
             "skills" to { _ -> "read the Skills" },
             "skill" to { it -> "read the Skill ${named(it["name"])}" },
+            "scripts" to { _ -> "read the Scripts" },
             "processes" to { _ -> "read the Processes" },
             "process" to { it -> "read the Process ${named(it["key"])}" },
             "built_in_tasks" to { _ -> "read the Built-in Tasks" },
@@ -323,6 +342,7 @@ class ProcessBuilderTools(
             Mcp.tool("agents", "The Agents a Task can pick: each one's name, description, the Skills it runs, and whether it is the user's own (else read-only)."),
             Mcp.tool("skills", "The Skills: each one's name, description, and whether it is the user's own (else read-only)."),
             Mcp.tool("skill", "One Skill in full: its instructions and the files beside its SKILL.md.", mapOf("name" to "The Skill's name.")),
+            Mcp.tool("scripts", "The user's Scripts, which a Script Task runs: each one's name, description and inputs, never its code. $MISSING_SCRIPT"),
             Mcp.tool("processes", "The deployed Processes, the shipped ones included, which a call activity can call: each one's key, name and start-form fields (its inputs)."),
             Mcp.tool("process", "A deployed Process's BPMN XML, to read as an example.", mapOf("key" to "The Process's key.")),
             Mcp.tool("built_in_tasks", "The Built-in Tasks, by topic: what each one is called and what Ants does in it."),

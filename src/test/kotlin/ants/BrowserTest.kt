@@ -684,6 +684,27 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `the Process Builder's add_element draws a Script Task naming a Script, which Save and deploy keeps as its id`() = browse {
+        http.get("/scripts/new")
+        http.post("/scripts/new", listOf("name" to "tidy-up", "description" to "Tidies up.", "code" to "console.log('tidy')\n", "inputs" to "folder", "vars" to ""))
+        agentTask(null)
+        http.import("agent-task.bpmn")
+        page.navigate(url("/processes/agent-task/edit"))
+        val tool = builder()
+
+        tool("add_element", mapOf("kind" to "script", "id" to "tidy", "name" to "Tidy", "script" to "tidy-up", "inputs" to mapOf("folder" to "\${prompt}")))
+        assertThat(shape("tidy")).isVisible()
+        val drawn = tool("diagram", emptyMap())["elements"].single { it["id"].asString() == "tidy" }
+        assertEquals("script", drawn["kind"].asString())
+        assertEquals("tidy-up", drawn["properties"]["ants.script"].asString())
+        assertEquals("\${prompt}", drawn["inputs"]["folder"].asString())
+        assertEquals("out", tool("set_built_in", mapOf("id" to "tidy", "inputs" to mapOf("folder" to "out")))["inputs"]["folder"].asString())
+        assertTrue(tool("checks", emptyMap()).none { "tidy" in it["message"].asString().lowercase() && "script" in it["message"].asString().lowercase() })
+        undo()
+        assertEquals("\${prompt}", tool("diagram", emptyMap())["elements"].single { it["id"].asString() == "tidy" }["inputs"]["folder"].asString())
+    }
+
+    @Test
     fun `a new Script's editor shows its placeholder, and a Test run shows the exit code as a badge and the payload as coloured JSON`() = browse {
         home.resolve("settings.yaml").writeText("node: {path: ${ScriptsTest.NODE}}\n")
         page.navigate(url("/scripts/new"))
