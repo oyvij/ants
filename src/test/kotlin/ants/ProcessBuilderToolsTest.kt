@@ -174,12 +174,36 @@ class ProcessBuilderToolsTest : AntsTest() {
     }
 
     @Test
-    fun `the scripts tool lists each Script's name, description and inputs, never its id, source, vars or Secrets`() {
-        scripts.save(Script("s-post01", "post", "Posts a message.", untypedInputs("text", "channel"), mapOf("CHANNEL" to "general")), "console.log('a secret recipe')\n", mapOf("TOKEN" to "t0ps3cret"))
+    fun `the scripts tool lists each Script's name, description, input schema and output schema, never its id, code, vars or Secrets`() {
+        val inputs = mapOf("type" to "object", "required" to listOf("text"), "properties" to mapOf(
+            "text" to mapOf("type" to "string", "description" to "What to post."),
+            "ticket" to mapOf("type" to "object", "required" to listOf("title"), "properties" to mapOf(
+                "title" to mapOf("type" to "string"), "labels" to mapOf("type" to "array", "items" to mapOf("type" to "string")),
+            )),
+        ))
+        val output = mapOf("type" to "object", "required" to listOf("ts"), "properties" to mapOf("ts" to mapOf("type" to "string", "description" to "The message's timestamp.")))
+        scripts.save(Script("s-post01", "post", "Posts a message.", inputs, output, mapOf("CHANNEL" to "general")), "ants.output({ts: 'a secret recipe'})\n", mapOf("TOKEN" to "t0ps3cret"))
+        scripts.save(Script("s-log0001", "log", "Logs a line.", untypedInputs("line")), "console.log(ants.inputs.line)\n", emptyMap())
         val (text, failed) = call(open(), "scripts")
         assertFalse(failed, text)
-        assertEquals(listOf(mapOf("name" to "post", "description" to "Posts a message.", "inputs" to listOf("text", "channel"))), json.readValue(text, List::class.java))
+        assertEquals(setOf(
+            mapOf("name" to "post", "description" to "Posts a message.", "inputs" to inputs, "output" to output),
+            mapOf("name" to "log", "description" to "Logs a line.", "inputs" to untypedInputs("line"), "output" to null),
+        ), json.readValue(text, List::class.java).toSet())
         for (hidden in listOf("s-post01", "secret recipe", "t0ps3cret", "general")) assertFalse(hidden in text, hidden)
+    }
+
+    @Test
+    fun `the tool descriptions tell the Builder to set every required input of a Script Task and to read only declared payload fields`() {
+        val listed = (mcp(port, open(), "tools/list").second["result"] as Map<*, *>)["tools"] as List<*>
+        fun described(name: String) = json.writeValueAsString(listed.single { (it as Map<*, *>)["name"] == name })
+        for (tool in listOf("scripts", "add_element", "set_built_in")) {
+            assertContains(described(tool), "every input its input schema marks required", message = tool)
+            assertContains(described(tool), "only the payload fields its output schema declares", message = tool)
+        }
+        val instructions = javaClass.getResource("/process-builder.md")!!.readText()
+        assertContains(instructions, "every input its input schema marks required")
+        assertContains(instructions, "only the payload fields its output schema declares")
     }
 
     @Test
@@ -200,12 +224,16 @@ class ProcessBuilderToolsTest : AntsTest() {
         assertContains(instructions, "can't write a Script")
         assertContains(instructions, "Script editor's helper")
         assertContains(instructions, "can't overlook it")
+        assertContains(instructions, "its inputs as a JSON Schema")
+        assertContains(instructions, "its payload as a JSON Schema")
         val listed = (mcp(port, open(), "tools/list").second["result"] as Map<*, *>)["tools"] as List<*>
         fun described(name: String) = json.writeValueAsString(listed.single { (it as Map<*, *>)["name"] == name })
         for (tool in listOf("scripts", "add_element")) {
             assertContains(described(tool), "can't write", message = tool)
             assertContains(described(tool), "Script editor's helper", message = tool)
             assertContains(described(tool), "prominent", message = tool)
+            assertContains(described(tool), "its inputs as a JSON Schema", message = tool)
+            assertContains(described(tool), "its payload as a JSON Schema", message = tool)
         }
     }
 
