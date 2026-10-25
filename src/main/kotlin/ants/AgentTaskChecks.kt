@@ -103,7 +103,7 @@ internal fun laterRead(model: BpmnModelInstance, scripts: Scripts): Map<String, 
 }.toMap()
 
 /** What a Script Task's Result holds: [ScriptTask.RESULT], and each field its Script's output schema declares, as `payload.<field…>`. */
-private fun scriptResult(task: ServiceTask, scripts: Scripts) = ScriptTask.RESULT + task.payload(scripts)?.let(::fieldPaths).orEmpty().map { "payload.$it" }
+private fun scriptResult(task: ServiceTask, scripts: Scripts) = ScriptTask.RESULT + task.linkedScript(scripts)?.output?.let(::fieldPaths).orEmpty().map { "payload.$it" }
 
 /** The names an expression anywhere may start with besides start-form fields and Task ids: Ants' Run variables and the engine's own. */
 private val runVariables = RUN_VARIABLES + "execution"
@@ -165,7 +165,7 @@ private fun problem(path: List<String>, names: Set<String>, activities: Map<Stri
             field == null -> null
             field !in ScriptTask.RESULT -> "$root.$field, which $root's Result doesn't have."
             field != "payload" || path.size < 3 -> null
-            else -> undeclared(path, task.payload(scripts) ?: return null)
+            else -> undeclared(path, task.linkedScript(scripts)?.output ?: return null)
         }
         task?.operatonTopic != AgentLauncher.TOPIC || field == null -> null
         field !in setOf("outcome", "summary", "output") -> "$root.$field, which $root's Result doesn't have."

@@ -28,9 +28,9 @@ class ScriptTask(
         val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult().rootProcessInstanceId
         val inputNames = element?.inputs().orEmpty().map { it.operatonName }.toSet()
         val inputs = task.variables.filterKeys { it in inputNames }.toSortedMap()
-        val result = runner.run(scripts.file(script), names.runWorkspace(run).createDirectories(), run, inputs, script.inputs, script.vars, scripts.secretEnvironment(script, scripts.ownSecrets(script)), script.output)
-        if (result.exitCode != 0) throw Failed("The Script ${script.name} failed" + if (result.exitCode > 0) " with exit code ${result.exitCode}" else "", result.told)
-        if (result.failed) throw Failed("The payload of the Script ${script.name} breaks its output schema", result.told)
+        val result = runner.run(script, scripts.secretEnvironment(script), scripts.file(script), names.runWorkspace(run).createDirectories(), run, inputs)
+        if (result.exitCode != 0) throw Failed("The Script ${script.name} failed" + if (result.exitCode > 0) " with exit code ${result.exitCode}" else "", result.reported)
+        if (result.failed) throw Failed("The payload of the Script ${script.name} breaks its output schema", result.reported)
         externalTasks.complete(task.id, WORKER, mapOf(task.activityId to linkedMapOf("exitCode" to result.exitCode, "output" to result.output, "payload" to result.payload)))
     }
 

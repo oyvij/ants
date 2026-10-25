@@ -36,10 +36,10 @@ data class ScriptForm(
     val varsMap: Map<String, String>
         get() = vars.lines().filter(String::isNotBlank).associate { it.substringBefore('=').trim() to it.substringAfter('=', "") }
 
-    /** The Script this form saves, each schema keeping what [kept], the saved Script's, holds beyond the rows. No output rows is no output schema. */
-    fun script(id: String, kept: Script? = null) = Script(
-        id, name, description, ScriptSchema.schema(inputs, kept?.inputs.orEmpty()),
-        output.takeIf { it.isNotEmpty() }?.let { ScriptSchema.schema(it, kept?.output.orEmpty()) },
+    /** The Script this form saves, each schema keeping what [old], the saved Script's, holds that the rows don't edit. No output rows is no output schema. */
+    fun script(id: String, old: Script? = null) = Script(
+        id, name, description, ScriptSchema.schema(inputs, old?.inputs.orEmpty()),
+        output.takeIf { it.isNotEmpty() }?.let { ScriptSchema.schema(it, old?.output.orEmpty()) },
         varsMap, (own.map { it.name } + linked).distinct(),
     )
 
@@ -47,12 +47,14 @@ data class ScriptForm(
         ?: "The Scripts page keeps the name $name for itself.".takeIf { name == TEST_RUN }
         ?: "A Script named $name already exists.".takeIf { name != was && others.any { it.name == name } }
         ?: "A Script needs a description.".takeIf { description.isBlank() }
-        ?: ScriptSchema.names(output).firstOrNull { !Regex("[A-Za-z_][A-Za-z0-9_-]*").matches(it) }?.let { "A payload field's name is letters, digits, hyphens and underscores, not $it." }
-        ?: ScriptSchema.names(inputs).firstOrNull { !Regex("[A-Za-z_][A-Za-z0-9_-]*").matches(it) }?.let { "An input's name is letters, digits, hyphens and underscores, not $it." }
+        ?: ScriptSchema.names(output).firstOrNull { !FIELD_NAME.matches(it) }?.let { "A payload field's name is letters, digits, hyphens and underscores, not $it." }
+        ?: ScriptSchema.names(inputs).firstOrNull { !FIELD_NAME.matches(it) }?.let { "An input's name is letters, digits, hyphens and underscores, not $it." }
         ?: (varsMap.keys + own.map { it.name }).firstOrNull { !Regex("[A-Z_][A-Z0-9_]*").matches(it) }
             ?.let { "A var or Secret's name is upper case letters, digits and underscores, such as SLACK_TOKEN, not $it." }
 
     companion object {
+        private val FIELD_NAME = Regex("[A-Za-z_][A-Za-z0-9_-]*")
+
         fun of(params: Map<String, List<String>>): ScriptForm {
             fun param(name: String) = params[name]?.firstOrNull().orEmpty()
             val own = generateSequence(0, Int::inc).takeWhile { "secrets[$it].name" in params }
@@ -141,7 +143,7 @@ class ScriptsPage(private val scripts: Scripts, private val runner: ScriptRunner
         try {
             val code = scratch.resolve("script.mjs").apply { writeText(form.code) }
             val workspace = scratch.resolve("workspace").createDirectories()
-            return result(runner.run(code, workspace, TEST_RUN, inputs.entries.associate { (key, value) -> "$key" to value }, script.inputs, script.vars, scripts.secretEnvironment(script, own), script.output))
+            return result(runner.run(script, scripts.secretEnvironment(script, own), code, workspace, TEST_RUN, inputs))
         } finally {
             scratch.toFile().deleteRecursively()
         }
@@ -160,7 +162,7 @@ class ScriptsPage(private val scripts: Scripts, private val runner: ScriptRunner
         if (error != null) return show(model.addAttribute("use", modal), form, edited, error)
         val errors = validator.findings(params).filter { it.error }
         if (errors.isNotEmpty()) {
-            model.addAttribute("errors", errors.map { it.told })
+            model.addAttribute("errors", errors.map { it.sentence })
             return show(model.addAttribute("use", modal), form, edited, "The Script has ${if (errors.size == 1) "an error" else "${errors.size} errors"}, so it wasn't saved:")
         }
         val script = form.script(edited?.id ?: scripts.newId(), edited)

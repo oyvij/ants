@@ -5,10 +5,10 @@ import org.operaton.bpm.model.bpmn.instance.ServiceTask
 
 internal val BpmnModelInstance.scriptTasks get() = getModelElementsByType(ServiceTask::class.java).filter { it.operatonTopic == ScriptTask.TOPIC }
 
-/** The output schema of the Script this Script Task runs; null when it has none, or names no Script the library has. */
-internal fun ServiceTask.payload(scripts: Scripts): Map<*, *>? {
+/** The Script this Script Task runs; null when it names none, or none the library has. */
+internal fun ServiceTask.linkedScript(scripts: Scripts): Script? {
     val value = property(SCRIPT)?.trim()?.takeIf(String::isNotEmpty) ?: return null
-    return runCatching { scripts.linked(value, property(nameBeside(value))) }.getOrNull()?.output
+    return runCatching { scripts.linked(value, property(nameBeside(value))) }.getOrNull()
 }
 
 /** The dotted paths of every field the object schema [schema] declares, a nested object's fields after it. */
@@ -21,8 +21,7 @@ internal fun scriptTasks(scripts: Scripts, catalogue: Catalogue, model: BpmnMode
     return model.scriptTasks.flatMap { task ->
         fun check(message: String) = Check(task.id, "${task.label}: $message")
         val value = task.property(SCRIPT)?.trim()?.takeIf(String::isNotEmpty) ?: return@flatMap listOf(Check(task.id, "${task.label} has no Script."))
-        val kept = task.property(nameBeside(value))
-        val script = runCatching { scripts.linked(value, kept) }.getOrNull() ?: return@flatMap listOf(check("No Script named ${kept ?: value}."))
+        val script = task.linkedScript(scripts) ?: return@flatMap listOf(check("No Script named ${task.property(nameBeside(value)) ?: value}."))
         val passed = task.inputs().map { it.operatonName }
         val undeclared = passed.filter { it !in script.inputNames }
             .map { check("The Script ${script.name} doesn't declare the input $it.") }

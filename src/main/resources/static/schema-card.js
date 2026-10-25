@@ -1,19 +1,20 @@
 // The Script page's schema card: its tabs, and rows added, removed and nested, each named for where it sits, as the form posts it.
-const NESTING = ['object', 'array:object'];
+// The server says which types nest (data-nesting) and gives a sample of each (data-samples).
+const types = card => ({nesting: JSON.parse(card.dataset.nesting), samples: JSON.parse(card.dataset.samples)});
 
 /** A value for each row of the schema card's top level, for a Test run's sample inputs to start from. */
 export function sample(card) {
-    return values(card.querySelector('#input-schema > .schema-level'));
+    return values(card.querySelector('#input-schema > .schema-level'), types(card));
 }
 
-function values(level) {
+function values(level, {nesting, samples}) {
     return Object.fromEntries(rows(level).flatMap(li => {
         const name = field(li, 'name').value.trim();
         if (!name) return [];
-        const type = field(li, 'type').value;
-        if (type === 'object') return [[name, values(fields(li))]];
-        if (type === 'array:object') return [[name, [values(fields(li))]]];
-        return [[name, type.startsWith('array:') ? [] : {string: '', number: 0, boolean: false}[type]]];
+        const type = field(li, 'type').value, value = samples[type];
+        if (!nesting.includes(type)) return [[name, value]];
+        const nested = values(fields(li), {nesting, samples}); // in place of the sample's {}
+        return [[name, Array.isArray(value) ? [nested] : nested]];
     }));
 }
 
@@ -31,6 +32,7 @@ function renumber(level, prefix) {
 }
 
 function mount(card) {
+    const {nesting} = types(card);
     const none = card.querySelector('[data-no-output]');
     const changed = () => { // the levels are looked up each time, since the Script helper swaps whole levels in
         card.querySelectorAll('[role=tabpanel] > .schema-level').forEach(top => renumber(top, top.dataset.prefix));
@@ -60,7 +62,7 @@ function mount(card) {
     });
     card.addEventListener('change', event => {
         if (event.target.dataset?.field !== 'type') return;
-        event.target.closest('.schema-row').querySelector(':scope > .schema-fields').hidden = !NESTING.includes(event.target.value);
+        event.target.closest('.schema-row').querySelector(':scope > .schema-fields').hidden = !nesting.includes(event.target.value);
     });
     card.addEventListener('input', event => {
         if (event.target.dataset?.field !== 'name') return;

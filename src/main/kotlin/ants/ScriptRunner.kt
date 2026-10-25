@@ -17,8 +17,11 @@ data class ScriptRun(val exitCode: Int, val output: String, val payload: Any?, v
     val failed get() = exitCode != 0 || mismatches.isNotEmpty()
 
     /** [output], and after it why the payload breaks the output schema, for a Script Task's output and a Script tool's answer. */
-    val told get() = output + if (mismatches.isEmpty()) "" else "The payload breaks the Script's output schema:\n" + mismatches.joinToString("") { "- $it\n" }
+    val reported get() = output + if (mismatches.isEmpty()) "" else "The payload breaks the Script's output schema:\n" + listed(mismatches)
 }
+
+/** [problems] as a list, one `- ` line each. */
+private fun listed(problems: List<String>) = problems.joinToString("") { "- $it\n" }
 
 @Component
 class ScriptRunner(private val settings: Settings) {
@@ -27,14 +30,16 @@ class ScriptRunner(private val settings: Settings) {
     private val json = JsonMapper.shared()
 
     /**
-     * Runs [code] with Node, the global `ants` defined before it: `ants.inputs` is [inputs], `ants.output(value)` sets
-     * the payload. Inputs that break [schema], the Script's input schema, are refused before Node starts; once Node
-     * exits 0, the payload is checked against [output], the output schema, if the Script has one.
+     * Runs [code], the [script]'s, with Node, the global `ants` defined before it: `ants.inputs` is [given],
+     * `ants.output(value)` sets the payload. The environment holds the Script's vars and [secrets], its Secrets' values.
+     * Inputs that break the input schema are refused before Node starts; once Node exits 0, the payload is checked
+     * against the output schema, if the Script has one.
      */
     @OptIn(kotlin.io.path.ExperimentalPathApi::class)
-    fun run(code: Path, workspace: Path, runId: String, inputs: Map<String, Any?>, schema: Map<*, *>, vars: Map<String, String>, secrets: Map<String, String>, output: Map<*, *>? = null): ScriptRun {
-        val broken = ScriptSchema.errors(inputs, schema)
-        if (broken.isNotEmpty()) return ScriptRun(-1, "The inputs break the Script's input schema, so it didn't run:\n" + broken.joinToString("") { "- $it\n" }, null)
+    fun run(script: Script, secrets: Map<String, String>, code: Path, workspace: Path, runId: String, given: Map<*, *>): ScriptRun {
+        val inputs = given.entries.associate { (key, value) -> "$key" to value }
+        val broken = ScriptSchema.errors(inputs, script.inputs)
+        if (broken.isNotEmpty()) return ScriptRun(-1, "The inputs break the Script's input schema, so it didn't run:\n" + listed(broken), null)
         val scratch = Files.createTempDirectory("ants-script")
         try {
             val payload = scratch.resolve("payload.json")
@@ -47,7 +52,7 @@ class ScriptRunner(private val settings: Settings) {
             val process = try {
                 ProcessBuilder(settings.path("node") ?: "node", "--import", module.toUri().toString(), code.toAbsolutePath().toString())
                     .directory(workspace.toFile()).redirectErrorStream(true)
-                    .onAllowList(settings, vars + secrets + ants).start()
+                    .onAllowList(settings, script.vars + secrets + ants).start()
             } catch (e: IOException) {
                 return ScriptRun(-1, "Ants can't run node: ${e.message}", null)
             }
@@ -60,7 +65,7 @@ class ScriptRunner(private val settings: Settings) {
                 return ScriptRun(process.exitValue().takeIf { it != 0 } ?: 1, printed + "ants.output got a value JSON can't hold, so the run failed: $reason\n", null)
             }
             val value = if (payload.exists()) json.readValue(ProtectedCommands.mask(payload.readText(), masked), Any::class.java) else null
-            val mismatches = if (output == null || process.exitValue() != 0) emptyList() else ScriptSchema.errors(value, output)
+            val mismatches = if (script.output == null || process.exitValue() != 0) emptyList() else ScriptSchema.errors(value, script.output)
             return ScriptRun(process.exitValue(), printed, value, mismatches)
         } finally {
             scratch.deleteRecursively()

@@ -87,7 +87,8 @@ class Scripts(@Value("\${ants.home}") home: Path, private val settings: Settings
         folder(script).toFile().deleteRecursively()
     }
 
-    fun secretEnvironment(script: Script, own: Map<String, String>): Map<String, String> {
+    /** The environment holding [script]'s Secrets' values, [own] being its own ones. */
+    fun secretEnvironment(script: Script, own: Map<String, String> = ownSecrets(script)): Map<String, String> {
         val names = settings.secrets()
         val values = settings.secretValues()
         return script.secrets.flatMap { secret ->

@@ -15,8 +15,8 @@ class ScriptTools(private val scripts: Scripts, private val runner: ScriptRunner
 
             override fun call(name: String, arguments: Map<*, *>): Pair<String, Boolean> {
                 val script = named.getValue(name)
-                val result = runner.run(scripts.file(script), workspace, run, arguments.entries.associate { (key, value) -> "$key" to value }, script.inputs, script.vars, scripts.secretEnvironment(script, scripts.ownSecrets(script)), script.output)
-                return json.writeValueAsString(mapOf("exitCode" to result.exitCode, "output" to withoutSource(result.told, scripts.file(script)), "payload" to result.payload)) to result.failed
+                val result = runner.run(script, scripts.secretEnvironment(script), scripts.file(script), workspace, run, arguments)
+                return json.writeValueAsString(mapOf("exitCode" to result.exitCode, "output" to withoutSource(result.reported, scripts.file(script)), "payload" to result.payload)) to result.failed
             }
         }
     }

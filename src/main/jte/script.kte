@@ -59,7 +59,7 @@
         <textarea id="code" name="code" rows="20" data-code-editor="/scripts/test-run" data-check="/script-check" data-helper="script-helper" placeholder="${placeholder}">${form.code}</textarea>
     </div>
     <div class="grid2">
-    <div class="card schema" id="schema">
+    <div class="card schema" id="schema" data-nesting="${ants.ScriptSchema.nestingJson}" data-samples="${ants.ScriptSchema.samplesJson}">
         <div class="tabs" role="tablist">
             <button type="button" role="tab" id="input-schema-tab" aria-controls="input-schema" aria-selected="true" class="on">Input schema</button>
             <button type="button" role="tab" id="output-schema-tab" aria-controls="output-schema" aria-selected="false">Output schema</button>
