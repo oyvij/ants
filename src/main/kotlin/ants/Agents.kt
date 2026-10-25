@@ -133,7 +133,7 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
         val agent = find(name)
         val taken = catalogue.agents().map { it.name }.toSet()
         val copy = copyName(agent.name) { it in taken || folder.resolve("$it.md").exists() }
-        folder.resolve("$copy.md").writeAtomically(AgentForm.of(agent, copy).copy(id = catalogue.unusedId(AGENT_ID)).text())
+        folder.resolve("$copy.md").writeAtomically(AgentForm.of(agent, copy).copy(id = catalogue.unusedId(AGENT_ID), skills = catalogue.skillIds(agent.skills).joinToString(", ")).text())
         return "redirect:/agents/$copy"
     }
 

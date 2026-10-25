@@ -131,7 +131,7 @@ class AgentsTest : AntsTest() {
     @Test
     fun `shipped Agents and Agents from extra folders are read-only, and Copy makes an editable one`() {
         val extra = Files.createTempDirectory("extra-agents")
-        extra.resolve("outsider.md").writeText("---\nname: outsider\ndescription: From Varde.\ncolor: red\n---\nLook around.\n")
+        extra.resolve("outsider.md").writeText("---\nname: outsider\ndescription: From Varde.\nskills: tdd\ncolor: red\n---\nLook around.\n")
         agents.resolve("outsider-copy.md").deleteIfExists()
         agents.resolve("shipped-writer-copy.md").deleteIfExists()
         withExtraFolder(extra) {
@@ -145,7 +145,7 @@ class AgentsTest : AntsTest() {
                 assertEquals(403, post("/agents/$name", mapOf("name" to name, "instructions" to "Changed.")).status)
             }
             assertEquals("/agents/outsider-copy", post("/agents/outsider/copy", emptyMap()).path)
-            assertEquals("---\nname: outsider-copy\ndescription: From Varde.\ncli: claude\ntools: ${AgentLauncher.DEFAULT_TOOLS.joinToString(", ")}\ncolor: red\n---\nLook around.\n",
+            assertEquals("---\nname: outsider-copy\ndescription: From Varde.\ncli: claude\nskills: k-tdd\ntools: ${AgentLauncher.DEFAULT_TOOLS.joinToString(", ")}\ncolor: red\n---\nLook around.\n",
                 withoutId(agents.resolve("outsider-copy.md")))
             assertFalse("<fieldset disabled>" in get("/agents/outsider-copy"))
             post("/agents/outsider-copy", mapOf("name" to "outsider-copy", "cli" to "claude", "instructions" to "Look closer."))

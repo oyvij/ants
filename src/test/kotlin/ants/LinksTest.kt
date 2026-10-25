@@ -97,7 +97,7 @@ class LinksTest : AntsTest() {
         writerAndDraft()
         claude.session("draft", done)
         deploy(linking("renamed", property("ants.agent", "writer") + property("ants.skills", "draft")))
-        home.resolve("agents/writer.md").writeText("---\nid: a-writer\nname: author\nskills: drafting\n---\nWrite plainly.\n")
+        home.resolve("agents/writer.md").writeText("---\nid: a-writer\nname: author\nskills: k-draft\n---\nWrite plainly.\n")
         home.resolve("skills/draft/SKILL.md").writeText("---\nname: drafting\ndescription: Drafts.\n---\nDo it.\n")
         claude.session("drafting", done)
 

@@ -97,7 +97,7 @@ class Migration(
         agents.list(needs)
         val keptOld = agents.keepOld()
         skills(failed)
-        skillIds(keptOld + ids(keptOld))
+        linkSkillsById(keptOld + giveIds(keptOld))
         links(changedTemplates.map { it.first }.toSet())
     }
 
@@ -130,8 +130,8 @@ class Migration(
             for ((file, text) in before) {
                 val agent = Agent(file, text)
                 val kept = agent.skills.mapNotNull { name -> if (name in GONE_SKILLS && runCatching { catalogue.skill(name) }.isFailure) GONE_SKILLS[name] else name }
-                val listed = catalogue.skillNames(kept)
-                val skills = (kept + needs[agent.name].orEmpty().filter { it !in listed }).distinct()
+                val listedNames = catalogue.skillNames(kept)
+                val skills = (kept + needs[agent.name].orEmpty().filter { it !in listedNames }).distinct()
                 val now = if (skills == agent.skills) text else AgentForm.of(agent).copy(skills = skills.joinToString(", ")).text()
                 if (file.readText() != now) file.writeAtomically(now)
             }
@@ -219,7 +219,7 @@ class Migration(
         }
     }
 
-    private fun ids(keptOld: Set<Path>): Set<Path> {
+    private fun giveIds(keptOld: Set<Path>): Set<Path> {
         val given = catalogue.agents(withHidden = true).filter { it.file.parent == catalogue.yourAgents && it.id == null }.map { agent ->
             val text = agent.file.readText()
             if (agent.file !in keptOld) agent.file.resolveSibling("${agent.file.fileName}.old").writeText(text)
@@ -234,7 +234,7 @@ class Migration(
         return given.toSet()
     }
 
-    private fun skillIds(keptOld: Set<Path>) {
+    private fun linkSkillsById(keptOld: Set<Path>) {
         for (agent in catalogue.agents(withHidden = true).filter { it.file.parent == catalogue.yourAgents && !it.allSkills }) {
             val ids = catalogue.skillIds(agent.skills)
             if (ids == agent.skills) continue

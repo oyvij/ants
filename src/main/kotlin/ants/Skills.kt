@@ -85,7 +85,7 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy) {
     fun create(@RequestParam skill: String, @RequestParam use: String?, model: Model): String {
         val agent = catalogue.agents().firstOrNull { it.name == use && it.file.parent == catalogue.yourAgents }
         return save(SkillForm(null, skill), model.addAttribute("use", use)) { name ->
-            if (agent != null) agent.file.writeAtomically(AgentForm.of(agent).copy(skills = (agent.skills + (catalogue.skill(name).id ?: name)).distinct().joinToString(", ")).text())
+            if (agent != null) agent.file.writeAtomically(AgentForm.of(agent).copy(skills = catalogue.skillIds(agent.skills + name).joinToString(", ")).text())
         }
     }
 

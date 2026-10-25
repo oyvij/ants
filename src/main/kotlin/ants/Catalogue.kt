@@ -186,9 +186,11 @@ class Catalogue(@Value("\${ants.home}") private val home: Path, private val sett
 
     fun listedSkill(value: String): Skill? = runCatching { linkedSkill(value, null) }.getOrNull()
 
-    fun skillNames(listed: List<String>): List<String> = listed.map { if (it == "*") it else listedSkill(it)?.name ?: it }
+    fun skillNames(listed: List<String>): List<String> = listed.map { value -> eachListed(value) { it.name } }
 
-    fun skillIds(listed: List<String>): List<String> = listed.map { if (it == "*") it else listedSkill(it)?.id ?: it }.distinct()
+    fun skillIds(listed: List<String>): List<String> = listed.map { value -> eachListed(value) { it.id } }.distinct()
+
+    private fun eachListed(value: String, shown: (Skill) -> String?) = if (value == "*") value else listedSkill(value)?.let(shown) ?: value
 }
 
 /**

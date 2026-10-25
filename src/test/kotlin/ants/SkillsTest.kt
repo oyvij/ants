@@ -240,7 +240,7 @@ class SkillsTest : AntsTest() {
         val refused = browser.post("/skills/new", mapOf("skill" to "no frontmatter", "use" to "picker"))
         assertContains(refused.body, """<button class="primary" form="skill">Create and use</button>""") // a refusal stays in the modal
         assertEquals("/skills/chosen", browser.post("/skills/new", mapOf("skill" to skillMd("chosen"), "use" to "picker")).path)
-        assertEquals(listOf("tdd", catalogue.skill("chosen").id), Agent(agent).skills)
+        assertEquals(listOf("k-tdd", catalogue.skill("chosen").id), Agent(agent).skills)
 
         // A read-only Agent is left as it is: the Task's Checks say it doesn't list the Skill.
         home.resolve("skills/also-chosen").toFile().deleteRecursively()
