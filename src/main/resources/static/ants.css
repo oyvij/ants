@@ -701,11 +701,24 @@ details.example pre { background: var(--line2); border: 0; padding: 10px; border
 }
 .code-editor .ed .cm-gutters { background: var(--panel2); border-right: 1px solid var(--line2); color: var(--text3); }
 .code-editor .test-bar { margin-top: 10px; } .code-editor .sample { font-size: 12.5px; }
+/* The Script page's schema card: tabs over rows, an object's fields nested and indented under it (schema-card.js). */
+.card.schema .tabs { margin: -4px 0 12px; }
+.schema-rows { list-style: none; margin: 0; padding: 0; } .schema-row > .row { margin-bottom: 6px; } .schema-row .row > .name { width: 140px; flex: none; }
+.schema-row .row > select { flex: none; } .schema-row .row > [data-move-row] { padding-inline: 6px; } .schema-level > [data-add-row] { margin-bottom: 4px; }
+.schema-fields { margin: 0 0 8px 18px; padding-left: 10px; border-left: 2px solid var(--line2); }
+.schema-row > .finding { font-size: 12.5px; margin: -2px 0 6px; } .finding.f-error { color: var(--badText); } .finding.f-warning { color: var(--warnText); }
 .test-run { margin-top: 10px; } .test-run h4 { margin: 12px 0 4px; font-size: 12.5px; }
 .test-run pre { margin: 0; padding: 8px 10px; font-family: var(--mono); font-size: 12.5px; max-height: 320px; }
 .test-run .j-key { color: var(--acc); } .test-run .j-str { color: var(--ok); } .test-run .j-num { color: var(--invC); } .test-run .j-lit { color: var(--bad); }
+.test-run .mismatches { margin: 8px 0 0; padding-left: 26px; font-family: var(--mono); }
 .scriptWrap { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: start; }
 @media (min-width: 1200px) { .scriptWrap { grid-template-columns: minmax(0, 1fr) 360px; } }
+/* The Secrets card's rows, each with a red ✕, its Add Secret, and the modal that confirms a ✕. */
+[data-secrets] .row { align-items: end; } [data-secrets] button.x { color: var(--bad); font-size: 15px; padding: 6px 8px; }
+.add-secret { margin-bottom: 4px; }
+dialog.modal.confirm { width: min(480px, 92vw); height: fit-content; max-height: 86vh; }
+.modal.confirm .mb { padding: 16px 18px 18px; font-size: 14px; } .modal.confirm .mb p { margin: 0; }
+.modal.confirm .go { display: flex; justify-content: flex-end; gap: 8px; margin: 16px -18px -18px; padding: 12px 18px; border-top: 1px solid var(--line); background: var(--band); }
 .helper { display: flex; flex-direction: column; gap: 8px; height: calc(100vh - 128px); min-width: 0; position: sticky; top: 14px; }
 .helper h3 { margin: 0; } .helper .dialog { flex: 1; overflow: auto; margin: 0; } .helper .dialog .text p { margin: 4px 0; }
 .helper form { display: flex; flex-direction: column; gap: 6px; } .helper form label.f { margin: 0; }

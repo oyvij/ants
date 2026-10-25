@@ -594,13 +594,18 @@ async function scriptPanel(element, box) {
         const undeclared = !script?.inputs.includes(input)
         const remove = undeclared ? el("button", {type: "button", className: "ghost small", textContent: "×", title: `Remove ${input}`,
             onclick: () => write({}, agentInputs(element.businessObject).filter(([n]) => n !== input))}) : ""
-        return el("div", {className: "row"}, el("label", {htmlFor: field.id}, el("code", {textContent: input})), field,
-            undeclared ? el("span", {className: "muted small", textContent: "not declared by the Script"}) : "", remove)
+        const about = script?.about?.[input]
+        const row = el("div", {className: "row"}, el("label", {htmlFor: field.id}, el("code", {textContent: input})), field,
+            undeclared ? el("span", {className: "muted small", textContent: "not declared by the Script"}) : "",
+            about ? el("span", {className: "muted small nowrap", textContent: [about.type, about.required ? "required" : ""].filter(Boolean).join(" · ")}) : "", remove)
+        const entry = el("div", {}, row, about?.description ? note("help", about.description) : "")
+        entry.dataset.input = input
+        return entry
     })
     box.replaceChildren(
         field("Script", "What it runs, from your Scripts.", select, edit, create),
         el("div", {className: "fld"}, el("label", {className: "f", textContent: "Inputs"}),
-            note("help", "What the Script reads on stdin, each from start-form fields, Run variables or Results of Tasks before it, as ${…}."), references,
+            note("help", "What the Script reads as ants.inputs, each from start-form fields, Run variables or Results of Tasks before it, as ${…}."), references,
             ...(rows.length ? rows : [note("muted small", script ? "The Script declares no inputs." : "Pick a Script to see its inputs.")])),
         el("div", {className: "help"}, "Later Tasks can read: ", ...(read[element.id] || []).flatMap(reference => [el("code", {textContent: reference}), " "])),
     )

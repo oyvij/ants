@@ -11,39 +11,56 @@ broke what named them and needed a confirm, Scripts, Agents and Skills all link 
   packages, so an import of one fails with Node's own error, and the user needs nothing new. Python and other languages
   are left for later.
 - **On disk**, a Script is the folder `ANTS_HOME/scripts/<id>/`: `script.mjs` (the code), `script.yaml` (`id`, `name`,
-  `description`, `inputs`, `vars` and `secrets`) and, when it has Secrets of its own, `secrets.yaml` with their values.
+  `description`, `inputs`, an optional `output`, `vars` and `secrets`) and, when it has Secrets of its own, `secrets.yaml` with their values.
+  `inputs` is the input schema, an object JSON Schema (`type: object`, `properties`, `required`), each property an input
+  with a `type`, a `description`, and nested `properties` and `required` for an object or `items` for a list. The
+  page edits that subset as rows; whatever else the file holds (`enum`, `minimum`, an `integer`) is kept where a row
+  still has the same name and type. `output`, the
+  output schema, is the payload's object JSON Schema in the same subset, edited the same way; with none, any JSON
+  payload is accepted.
   `secrets` in `script.yaml` lists the names of the Secrets it uses, its own and those it links from Settings, and never
   a value; linked Secrets keep their values where Settings keeps them (ADR 0015). So `script.yaml` can be read and
   shared without leaking a token.
 - **One runner runs a Script, whoever calls it**: a Script Task, an Agent's Script tool, or a Test run from the user or
   the editor's AI helper. It runs `node script.mjs` with no shell, in a given folder, as Protected Commands run.
+  - It checks the inputs against the input schema first, with the JSON Schema validator the Result contract uses, and
+    refuses ones that break it, before Node starts: the run fails with each problem in its output.
   - The environment is the CLI's allow-list, the Script's vars and Secrets each as `process.env.<NAME>`, and
-    `ANTS_RUN_WORKSPACE`, `ANTS_RUN_ID` and `ANTS_OUTPUT`.
-  - The inputs arrive as one JSON object on stdin.
-  - `ANTS_OUTPUT` names a fresh file the Script may write JSON to, its payload, so logging to stdout never breaks what
-    later Tasks read.
+    `ANTS_RUN_WORKSPACE` and `ANTS_RUN_ID`.
+  - Node starts with an Ants module loaded before the Script (`node --import`), which defines the global `ants`. The
+    Script reads its parsed inputs as `ants.inputs` and hands back its payload with `ants.output(value)`; a later call
+    replaces an earlier one, and the payload is serialised when the process ends. How the module gets the inputs and
+    hands back the payload is the runner's business, not the Script's: no stdin to parse, no file to write. The payload
+    never mixes with stdout, so logging never breaks what later Tasks read. The Script is still a plain ES module, so
+    top-level `await` works.
   - It answers `{exitCode, output, payload}`: `output` is stdout and stderr together, with every Secret value, the
     Script's own and its linked ones, masked as `••••` by the masking Protected Commands use; `payload` is the parsed
-    JSON, or empty when the Script wrote none.
+    JSON, or empty when the Script handed none back.
+  - Once Node exits 0, it checks the payload against the output schema, if there is one, with the same validator. A
+    payload that breaks it, an empty one included, fails the run though the exit code stays 0, each mismatch named: a
+    Test run shows them beside the result, and a Script Task's output and a Script tool's answer end with them.
   - After 10 minutes, as for `run`, Ants kills the process tree and the run fails.
-  - A payload that isn't JSON fails the run, and its output says so. The Spec left this open; failing is the safe
-    choice, since a later Task would otherwise read a payload that isn't there.
+  - A value `ants.output` can't serialise to JSON fails the run, and its output says so. The Spec left this open;
+    failing is the safe choice, since a later Task would otherwise read a payload that isn't there.
   - A Test run runs the editor's unsaved code with sample inputs, in a new scratch folder deleted afterwards, with the
     Script's real Secrets and vars.
 - **A Script Task** is a `bpmn:ServiceTask` on topic `script` with `ants.script=<id>`, the Script's inputs as its input
   parameters, so `${…}` works in them. A Built-in worker runs the Script in the Run workspace and completes the Task
   with `{exitCode, output, payload}` as its Result under the Task's id. A non-zero exit or a timeout fails the Task the
-  way a failed Built-in Task fails, `[failed]` with the masked output, offering Retry and Cancel the Run. **Retry runs
+  way a failed Built-in Task fails, `[failed]` with the masked output, and so does a payload that breaks the output schema, offering Retry and Cancel the Run. **Retry runs
   the Script as it is on disk at that moment**, so the user fixes the Script and retries. A problem the Process should
   branch on is an exit 0 with the problem in the payload: an expected problem is a path, not a failure. There are no
   inline Scripts: a Script Task names one in the library, and the modeler's **New Script** and **Edit** open the Script
   editor in a modal that saves there. Checks refuse a Script Task that names a missing Script or passes an input its
-  Script doesn't declare.
+  Script doesn't declare. An input written as a literal, with no `${…}`, arrives as text, so before the runner checks it Ants converts it
+  to the input schema's type: a number, a yes/no (`true`, `false`), or a list or object written as JSON. Checks
+  refuse a literal that isn't a value of its input's type, naming the element, the input and the type; an expression's
+  value is left to the runner's check.
 - **Only claude Agents get Script tools.** An Agent lists the Scripts it may call under `scripts:`, and an Agent Task may
   narrow them with `ants.scripts`, as with Skills (ADR 0024). At launch, a claude Agent Task's MCP session serves, beside
   `run`, one tool per allowed Script, `script_<name>`, with the Script's description and its inputs as the input schema,
-  each in `--allowedTools`. It runs the Script through the runner in the Task's Run workspace and answers the exit code,
-  the masked output and the payload, as an error when the exit is non-zero. The tool name follows the Script's current
+  each in `--allowedTools`. With an output schema, the description goes on to give it, as what the payload holds. It runs the Script through the runner in the Task's Run workspace and answers the exit code,
+  the masked output and the payload, as an error when the exit is non-zero or the payload breaks the output schema. The tool name follows the Script's current
   name, sanitised to what a tool name may hold and kept unique within a launch, so a rename shows at the next launch.
   codex Agents get none: codex has no MCP yet (ADR 0015).
 - **The source stays hidden.** Every claude Agent's `--disallowedTools` denies `Read` and `Edit` of
@@ -85,7 +102,8 @@ broke what named them and needed a confirm, Scripts, Agents and Skills all link 
 - **A Protected Command the Agent assembles**: still an Agent, and a prefix, not code the user wrote.
 - **npm packages with an install step**, or **Python**: something more to install and keep working on every machine.
   Left for later.
-- **The payload on stdout**: any log line would break it. Hence the `ANTS_OUTPUT` file.
+- **The payload on stdout**: any log line would break it. Hence `ants.output`. Before it, a file named
+  by `ANTS_OUTPUT` and the inputs on stdin, which made every Script write that plumbing itself.
 - **Inline Scripts on a Task**: code nobody else can reuse, and a second place to edit and hide it.
 - **Script tools for codex**: they need MCP in codex first.
 - **Keeping names as links, with a rename confirm**: every rename stays a risk and a question. A fixed id makes it

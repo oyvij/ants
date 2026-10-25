@@ -25,58 +25,66 @@ data class ScriptForm(
     val name: String,
     val description: String,
     val code: String,
-    val inputs: String,
+    val inputs: List<SchemaRow>,
     val vars: String,
     val own: List<OwnSecretRow>,
     val linked: List<String>,
+    val output: List<SchemaRow> = emptyList(),
 ) {
     val shownOwn get() = own + OwnSecretRow("")
 
     val varsMap: Map<String, String>
         get() = vars.lines().filter(String::isNotBlank).associate { it.substringBefore('=').trim() to it.substringAfter('=', "") }
 
-    fun script(id: String) = Script(id, name, description, words(inputs), varsMap, (own.map { it.name } + linked).distinct())
+    /** The Script this form saves, each schema keeping what [old], the saved Script's, holds that the rows don't edit. No output rows is no output schema. */
+    fun script(id: String, old: Script? = null) = Script(
+        id, name, description, ScriptSchema.schema(inputs, old?.inputs.orEmpty()),
+        output.takeIf { it.isNotEmpty() }?.let { ScriptSchema.schema(it, old?.output.orEmpty()) },
+        varsMap, (own.map { it.name } + linked).distinct(),
+    )
 
     fun error(others: List<Script>, was: String?): String? = nameError("A Script", name)
         ?: "The Scripts page keeps the name $name for itself.".takeIf { name == TEST_RUN }
         ?: "A Script named $name already exists.".takeIf { name != was && others.any { it.name == name } }
         ?: "A Script needs a description.".takeIf { description.isBlank() }
-        ?: words(inputs).firstOrNull { !Regex("[A-Za-z_][A-Za-z0-9_-]*").matches(it) }?.let { "An input's name is letters, digits, hyphens and underscores, not $it." }
+        ?: ScriptSchema.names(output).firstOrNull { !FIELD_NAME.matches(it) }?.let { "A payload field's name is letters, digits, hyphens and underscores, not $it." }
+        ?: ScriptSchema.names(inputs).firstOrNull { !FIELD_NAME.matches(it) }?.let { "An input's name is letters, digits, hyphens and underscores, not $it." }
         ?: (varsMap.keys + own.map { it.name }).firstOrNull { !Regex("[A-Z_][A-Z0-9_]*").matches(it) }
             ?.let { "A var or Secret's name is upper case letters, digits and underscores, such as SLACK_TOKEN, not $it." }
 
     companion object {
+        private val FIELD_NAME = Regex("[A-Za-z_][A-Za-z0-9_-]*")
+
         fun of(params: Map<String, List<String>>): ScriptForm {
             fun param(name: String) = params[name]?.firstOrNull().orEmpty()
             val own = generateSequence(0, Int::inc).takeWhile { "secrets[$it].name" in params }
                 .map { OwnSecretRow(param("secrets[$it].name").trim(), param("secrets[$it].value"), param("secrets[$it].was")) }
                 .filter { it.name.isNotEmpty() }.toList()
-            return ScriptForm(param("name").trim(), param("description").trim(), param("code"), param("inputs"), param("vars"), own, params["linked"].orEmpty())
+            return ScriptForm(param("name").trim(), param("description").trim(), param("code"), ScriptSchema.rows(params, "inputs"), param("vars"), own, params["linked"].orEmpty(), ScriptSchema.rows(params, "output"))
         }
 
         fun of(script: Script, code: String, own: Set<String>) = ScriptForm(
-            script.name, script.description, code, script.inputs.joinToString(", "),
+            script.name, script.description, code, ScriptSchema.rows(script.inputs),
             script.vars.entries.joinToString("\n") { (name, value) -> "$name=$value" },
             script.secrets.filter { it in own }.map { OwnSecretRow(it, was = it) },
             script.secrets.filter { it !in own },
+            script.output?.let(ScriptSchema::rows).orEmpty(),
         )
 
         val PLACEHOLDER = """
-            |import {readFileSync, writeFileSync} from 'node:fs'
-            |
-            |const inputs = JSON.parse(readFileSync(process.stdin.fd, 'utf8') || '{}')
+            |const text = ants.inputs.text
             |const channel = process.env.CHANNEL
             |const token = process.env.SLACK_TOKEN
             |
-            |console.log(`Posting to ${'$'}{channel}: ${'$'}{inputs.text}`)
+            |console.log(`Posting to ${'$'}{channel}: ${'$'}{text}`)
             |
-            |writeFileSync(process.env.ANTS_OUTPUT, JSON.stringify({posted: true}))
+            |ants.output({posted: true})
         """.trimMargin()
     }
 }
 
 @Controller
-class ScriptsPage(private val scripts: Scripts, private val runner: ScriptRunner, private val settings: Settings, private val usedBy: UsedBy) {
+class ScriptsPage(private val scripts: Scripts, private val runner: ScriptRunner, private val settings: Settings, private val usedBy: UsedBy, private val validator: ScriptCheck) {
     private val json = JsonMapper.shared()
 
     @GetMapping("/scripts")
@@ -86,12 +94,11 @@ class ScriptsPage(private val scripts: Scripts, private val runner: ScriptRunner
     }
 
     @GetMapping("/scripts/new")
-    fun new(@RequestParam use: String?, model: Model) = show(model.addAttribute("use", use != null), ScriptForm("", "", "", "", "", emptyList(), emptyList()), null)
+    fun new(@RequestParam use: String?, model: Model) = show(model.addAttribute("use", use != null), ScriptForm("", "", "", emptyList(), "", emptyList(), emptyList()), null)
 
     @PostMapping("/scripts/new")
     fun create(@RequestParam params: MultiValueMap<String, String>, model: Model): String {
-        val form = ScriptForm.of(params)
-        return save(form, null, "use" in params, model)
+        return save(params, null, model)
     }
 
     @GetMapping("/scripts/{name}")
@@ -103,7 +110,7 @@ class ScriptsPage(private val scripts: Scripts, private val runner: ScriptRunner
     @PostMapping("/scripts/{name}")
     fun update(@PathVariable name: String, @RequestParam params: MultiValueMap<String, String>, model: Model): String {
         val script = find(name)
-        return save(ScriptForm.of(params), script, "use" in params, model)
+        return save(params, script, model)
     }
 
     @PostMapping("/scripts/{name}/delete")
@@ -114,38 +121,51 @@ class ScriptsPage(private val scripts: Scripts, private val runner: ScriptRunner
         return "redirect:/scripts"
     }
 
+    /** The validator's findings for the Script page's unsaved form. */
+    @PostMapping("/script-check", produces = [APPLICATION_JSON_VALUE])
+    @ResponseBody
+    fun check(@RequestParam params: MultiValueMap<String, String>): Map<String, Any?> = mapOf("findings" to validator.findings(params))
+
     @PostMapping("/scripts/$TEST_RUN", produces = [APPLICATION_JSON_VALUE])
     @ResponseBody
     fun testRun(@RequestParam params: MultiValueMap<String, String>): Map<String, Any?> {
         val form = ScriptForm.of(params)
-        val savedSecrets = params["script"]?.firstOrNull()?.let(scripts::named)?.let(scripts::ownSecrets).orEmpty()
+        val saved = params["script"]?.firstOrNull()?.let(scripts::named)
+        val savedSecrets = saved?.let(scripts::ownSecrets).orEmpty()
         val inputs = try {
             json.readValue(params["sample"]?.firstOrNull()?.ifBlank { null } ?: "{}", Map::class.java)
         } catch (e: JacksonException) {
             return result(ScriptRun(-1, "The sample inputs aren't a JSON object: ${e.originalMessage}\n", null))
         }
-        val script = form.script(TEST_RUN)
+        val script = form.script(TEST_RUN, saved)
         val own = ownValues(form, savedSecrets)
         val scratch = Files.createTempDirectory("ants-test-run")
         try {
             val code = scratch.resolve("script.mjs").apply { writeText(form.code) }
             val workspace = scratch.resolve("workspace").createDirectories()
-            return result(runner.run(code, workspace, TEST_RUN, inputs.entries.associate { (key, value) -> "$key" to value }, script.vars, scripts.secretEnvironment(script, own)))
+            return result(runner.run(script, scripts.secretEnvironment(script, own), code, workspace, TEST_RUN, inputs))
         } finally {
             scratch.toFile().deleteRecursively()
         }
     }
 
-    private fun result(run: ScriptRun) = mapOf("exitCode" to run.exitCode, "output" to run.output, "payload" to run.payload)
+    private fun result(run: ScriptRun) = mapOf("exitCode" to run.exitCode, "output" to run.output, "payload" to run.payload, "mismatches" to run.mismatches)
 
     private fun ownValues(form: ScriptForm, savedSecrets: Map<String, String>) =
         form.own.mapNotNull { row -> row.value.ifEmpty { savedSecrets[row.was.ifEmpty { row.name }] }?.let { row.name to it } }.toMap()
 
-    private fun save(form: ScriptForm, edited: Script?, modal: Boolean, model: Model): String {
+    private fun save(params: MultiValueMap<String, String>, edited: Script?, model: Model): String {
+        val form = ScriptForm.of(params)
+        val modal = "use" in params
         val own = ownValues(form, edited?.let(scripts::ownSecrets).orEmpty())
         val error = form.error(scripts.all(), edited?.name) ?: form.own.firstOrNull { it.name !in own }?.let { "The Secret ${it.name} needs a value." }
         if (error != null) return show(model.addAttribute("use", modal), form, edited, error)
-        val script = form.script(edited?.id ?: scripts.newId())
+        val errors = validator.findings(params).filter { it.error }
+        if (errors.isNotEmpty()) {
+            model.addAttribute("errors", errors.map { it.sentence })
+            return show(model.addAttribute("use", modal), form, edited, "The Script has ${if (errors.size == 1) "an error" else "${errors.size} errors"}, so it wasn't saved:")
+        }
+        val script = form.script(edited?.id ?: scripts.newId(), edited)
         scripts.save(script, form.code, own)
         return "redirect:/scripts/${script.name}" + if (modal) "?saved" else ""
     }

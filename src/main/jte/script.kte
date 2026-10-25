@@ -3,6 +3,7 @@
 @param labels: List<String>
 @param placeholder: String
 @param message: String? = null
+@param errors: List<String> = emptyList()
 @param dependents: ants.Dependents?
 @param use: Boolean = false
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
@@ -16,6 +17,8 @@
     <meta name="color-scheme" content="${colorScheme}">
     <title>${saved ?: "New Script"} · Scripts · Ants</title>
     <script type="module" src="/code-editor.js"></script>
+    <script src="/script.js" defer></script>
+    <script type="module" src="/schema-card.js"></script>
 </head>
 <body>
 @if(!use)
@@ -34,7 +37,7 @@
     </div>
 @if(dependents != null)    <div class="sub">@template.usedby(dependents = dependents, none = "no Agent or Process")</div>@endif
 </div>
-@if(message != null)<p role="alert">${message}</p>@endif
+@if(message != null && errors.isEmpty())<p role="alert">${message}</p>@elseif(message != null)<div role="alert">${message}<ul class="findings">@for(error in errors)<li>${error}</li>@endfor</ul></div>@endif
 <div class="scriptWrap">
 <form id="script" method="post" action="/scripts/${saved ?: "new"}" class="script">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
@@ -52,18 +55,33 @@
                 <input id="description" name="description" value="${form.description}" placeholder="e.g. Posts a message to a Slack channel." required></div>
         </div>
     </div>
-    <div class="card"><h3>Code</h3><div class="help">A JavaScript ES module, run as <code>node script.mjs</code> with Node's built-ins only. Its inputs arrive as one JSON object on stdin, its vars and Secrets as <code>process.env.NAME</code>, and the JSON it writes to the file <code>process.env.ANTS_OUTPUT</code> names is its payload.</div>
-        <textarea id="code" name="code" rows="20" data-code-editor="/scripts/test-run" data-helper="script-helper" placeholder="${placeholder}">${form.code}</textarea>
+    <div class="card"><h3>Code</h3><div class="help">A JavaScript ES module, run as <code>node script.mjs</code> with Node's built-ins only. Its inputs are ready as <code>ants.inputs</code>, its vars and Secrets as <code>process.env.NAME</code>, and it hands back its payload with <code>ants.output(value)</code>.</div>
+        <textarea id="code" name="code" rows="20" data-code-editor="/scripts/test-run" data-check="/script-check" data-helper="script-helper" placeholder="${placeholder}">${form.code}</textarea>
     </div>
     <div class="grid2">
-    <div class="card"><h3>Inputs and vars</h3>
-        <div class="fld"><label class="f" for="inputs">Inputs</label><div class="help">The names of the inputs a caller passes, separated by commas.</div>
-            <input id="inputs" class="mono" name="inputs" value="${form.inputs}" placeholder="e.g. channel, text"></div>
+    <div class="card schema" id="schema" data-nesting="${ants.ScriptSchema.nestingJson}" data-samples="${ants.ScriptSchema.samplesJson}">
+        <div class="tabs" role="tablist">
+            <button type="button" role="tab" id="input-schema-tab" aria-controls="input-schema" aria-selected="true" class="on">Input schema</button>
+            <button type="button" role="tab" id="output-schema-tab" aria-controls="output-schema" aria-selected="false">Output schema</button>
+        </div>
+        <div role="tabpanel" id="input-schema" aria-labelledby="input-schema-tab">
+            <div class="help">The inputs a caller passes, as <code>ants.inputs</code>. Ants refuses inputs that don't fit before the Script runs. Clear a name and its description to remove the row.</div>
+            @template.schemarows(rows = form.inputs, prefix = "inputs")
+        </div>
+        <div role="tabpanel" id="output-schema" aria-labelledby="output-schema-tab">
+            <div class="help">The payload the Script hands back with <code>ants.output</code>, for later Tasks and Agents to read. Ants fails a run whose payload doesn't fit. Optional: with no rows, there is none.</div>
+            <p class="muted small" data-no-output hidden="${form.output.isNotEmpty()}">No output schema: any JSON payload is accepted.</p>
+            @template.schemarows(rows = form.output, prefix = "output", field = "field")
+        </div>
+        <template id="schema-row">@template.schemarow(row = ants.SchemaRow("", "string"), at = "new", depth = 1)</template>
+    </div>
+    <div>
+    <div class="card"><h3>Vars</h3>
         <div class="fld"><label class="f" for="vars">Vars</label><div class="help">Settings that aren't secret, one <code>NAME=value</code> a line.</div>
             <textarea id="vars" class="mono" name="vars" rows="4" placeholder="e.g. CHANNEL=general">${form.vars}</textarea></div>
     </div>
-    <div class="card"><h3>Secrets</h3><div class="help">The Script's own Secrets: a value is kept in its <code>secrets.yaml</code>, never shown again; left blank, the saved one stays. Clear a name to remove it.</div>
-        <div class="listed">
+    <div class="card"><h3>Secrets</h3><div class="help">The Script's own Secrets: a value is kept in its <code>secrets.yaml</code>, never shown again; left blank, the saved one stays. A Secret removed, or with its name cleared, goes when you save.</div>
+        <div class="listed" data-secrets>
 @for((i, row) in form.shownOwn.withIndex())
             <div class="row">
                 <input type="hidden" name="secrets[${i}].was" value="${row.was}">
@@ -80,6 +98,7 @@
             <span class="muted small">No Secret in Settings yet.</span>
 @endif
         </div>
+    </div>
     </div>
     </div>
 </form>
