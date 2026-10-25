@@ -61,7 +61,7 @@ class Job(property: (String) -> String?) {
 }
 
 internal fun agentTasks(catalogue: Catalogue, scripts: Scripts, model: BpmnModelInstance): List<Check> {
-    val identified by lazy { catalogue.identified() }
+    val identified by lazy { catalogue.identified() + scripts.identified() }
     return model.agentTasks.flatMap { task -> agentTask(task, catalogue, scripts) { identified } }
 }
 
@@ -101,6 +101,7 @@ internal fun laterRead(model: BpmnModelInstance): Map<String, List<String>> = mo
     when {
         task is UserTask -> UserTaskKind.of(task.property(USER_TASK)).result.map { "\${${task.id}.$it}" }
         task is ServiceTask && task.operatonTopic == AgentLauncher.TOPIC -> fields(task).map { "\${${task.id}.output.$it}" }.ifEmpty { listOf("\${${task.id}.summary}") }
+        task is ServiceTask && task.operatonTopic == ScriptTask.TOPIC -> ScriptTask.RESULT.map { "\${${task.id}.$it}" }
         else -> null
     }?.let { task.id to it }
 }.toMap()
@@ -160,6 +161,7 @@ private fun problem(path: List<String>, names: Set<String>, activities: Map<Stri
     return when {
         root !in names -> "$root, which is no Task, start-form field or Run variable."
         root == "runs" && field != null && field !in activities -> "runs.$field, which is no Task."
+        task?.operatonTopic == ScriptTask.TOPIC -> if (field == null || field in ScriptTask.RESULT) null else "$root.$field, which $root's Result doesn't have."
         task?.operatonTopic != AgentLauncher.TOPIC || field == null -> null
         field !in setOf("outcome", "summary", "output") -> "$root.$field, which $root's Result doesn't have."
         path.size < 3 -> null
@@ -196,6 +198,7 @@ internal fun offered(model: BpmnModelInstance, id: String, called: (String) -> B
     val fields = model.getModelElementsByType(OperatonFormField::class.java).map { it.operatonId }
     fun results(task: Activity, key: String): List<String> = when {
         task is UserTask -> listOf(key) + UserTaskKind.of(task.property(USER_TASK)).result.map { "$key.$it" }
+        task is ServiceTask && task.operatonTopic == ScriptTask.TOPIC -> listOf(key) + ScriptTask.RESULT.map { "$key.$it" }
         task !is ServiceTask || task.operatonTopic != AgentLauncher.TOPIC -> listOf(key)
         else -> listOf("$key.summary", "$key.output") + fields(task).map { "$key.output.$it" }
     }

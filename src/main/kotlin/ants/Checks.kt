@@ -39,6 +39,7 @@ data class Check(val element: String?, val message: String, val warning: Boolean
 class Checks(private val catalogue: Catalogue, private val scripts: Scripts, private val repository: RepositoryService) {
     private val kinds: List<(BpmnModelInstance) -> List<Check>> = listOf(::refusedElements, ::refusedUses, ::oneStartEvent, ::startFormNames, ::emptyInputs, ::defaultPaths, ::timerTimes, ::timerStarts, ::reviewSendBacks,
         { agentTasks(catalogue, scripts, it) }, { references(it) }, // these two in AgentTaskChecks.kt
+        { scriptTasks(scripts, catalogue, it) },
         { calls(repository, it) }) // in CallActivityChecks.kt
 
     /** What the input pickers of the Task [element] in [bpmn] offer, as `${…}` references; see [offered]. */

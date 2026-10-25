@@ -37,14 +37,19 @@ data class Script(
 class Scripts(@Value("\${ants.home}") home: Path, private val settings: Settings) {
     val folder: Path = home.resolve("scripts")
 
-    fun all(): List<Script> = if (!folder.isDirectory()) emptyList()
+    fun all(): List<Script> = inFolders().map { it.second }.sortedBy { it.name }
+
+    fun identified(): List<Identified> = inFolders().map { (dir, script) -> Identified(script.id, "Script", script.name, dir) }
+
+    private fun inFolders(): List<Pair<Path, Script>> = if (!folder.isDirectory()) emptyList()
     else folder.listDirectoryEntries().filter { it.resolve("script.yaml").exists() }
-        .map { Script.of(Yaml().load<Map<*, *>>(it.resolve("script.yaml").readText()) ?: emptyMap<String, Any>()) }
-        .sortedBy { it.name }
+        .map { it to Script.of(Yaml().load<Map<*, *>>(it.resolve("script.yaml").readText()) ?: emptyMap<String, Any>()) }
 
     fun named(name: String): Script? = all().firstOrNull { it.name == name }
 
-    fun withId(id: String): Script? = all().firstOrNull { it.id == id }
+    fun withId(id: String): Script? = inFolders().filter { it.second.id == id }.minByOrNull { it.first.fileName.toString() != id }?.second
+
+    fun where(script: Script): Path = inFolders().filter { it.second == script }.map { it.first }.minByOrNull { it.fileName.toString() != script.id } ?: folder(script)
 
     fun linked(value: String, kept: String? = null): Script = withId(value) ?: named(kept ?: value) ?: error("No Script named ${kept ?: value}")
 

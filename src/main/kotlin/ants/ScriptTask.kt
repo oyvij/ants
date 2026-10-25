@@ -35,5 +35,7 @@ class ScriptTask(
 
     companion object {
         const val TOPIC = "script"
+
+        val RESULT = listOf("exitCode", "output", "payload")
     }
 }

@@ -489,6 +489,78 @@ class ChecksTest : AntsTest() {
         assertEquals(listOf("${'$'}{answer.approved}", "${'$'}{answer.comment}"), read["answer"])
     }
 
+    private fun script(id: String, name: String, inputs: List<String> = emptyList()) = home.resolve("scripts/$id").createDirectories().run {
+        resolve("script.yaml").writeText("id: $id\nname: $name\ndescription: Does $name.\ninputs: [${inputs.joinToString(", ")}]\nvars: {}\nsecrets: []\n")
+        resolve("script.mjs").writeText("console.log('hi')\n")
+    }
+
+    private fun scriptTask(id: String, script: String, inputs: Map<String, String> = emptyMap(), kept: String? = null) = """
+        <bpmn:serviceTask id="$id" name="Post" operaton:type="external" operaton:topic="script">
+          <bpmn:extensionElements>
+            <operaton:properties>
+              <operaton:property name="ants.script" value="$script" />
+              ${kept?.let { """<operaton:property name="ants.name.$script" value="$it" />""" }.orEmpty()}
+            </operaton:properties>
+            <operaton:inputOutput>${inputs.entries.joinToString("") { (name, value) -> """<operaton:inputParameter name="$name">$value</operaton:inputParameter>""" }}</operaton:inputOutput>
+          </bpmn:extensionElements>
+        </bpmn:serviceTask>
+    """
+
+    private fun withoutScripts(test: () -> Unit) = try {
+        test()
+    } finally {
+        home.resolve("scripts").toFile().deleteRecursively()
+    }
+
+    @Test
+    fun `a Script Task naming no Script, or one the library doesn't have by id or by name, is refused`() = withoutScripts {
+        script("s-post01", "post-message", listOf("text"))
+        refuses(diagram(scriptTask("post", "")), "post", "Post (post) has no Script.")
+        refuses(diagram(scriptTask("post", "nothing")), "post", "Post (post): No Script named nothing.")
+        refuses(diagram(scriptTask("post", "s-gone01", kept = "gone")), "post", "Post (post): No Script named gone.")
+        for (fine in listOf(scriptTask("post", "post-message"), scriptTask("post", "s-post01"), scriptTask("post", "s-other1", kept = "post-message"))) {
+            assertEquals(emptyList(), checks(diagram(fine)).filter { it["warning"] == false }, fine)
+        }
+    }
+
+    @Test
+    fun `a Script Task passing an input its Script doesn't declare is refused`() = withoutScripts {
+        script("s-post01", "post-message", listOf("text", "channel"))
+        refuses(diagram(scriptTask("post", "s-post01", mapOf("text" to "hi", "chanel" to "general"))), "post",
+            "Post (post): The Script post-message doesn't declare the input chanel.")
+        assertEquals(emptyList(), checks(diagram(scriptTask("post", "s-post01", mapOf("text" to "hi", "channel" to "general")))).filter { it["warning"] == false })
+    }
+
+    @Test
+    fun `a Script sharing its id with another Script, an Agent or a Skill is refused`() = withoutScripts {
+        script("s-twin01", "post-message")
+        home.resolve("scripts/copied").createDirectories().resolve("script.yaml").writeText("id: s-twin01\nname: copied\ndescription: Copied by hand.\n")
+        refuses(diagram(scriptTask("post", "post-message")), "post",
+            "Post (post): The Script post-message has the same id as the Script copied, in ${home.resolve("scripts/copied")}. Delete one of them.")
+        home.resolve("scripts/copied").toFile().deleteRecursively()
+
+        val agents = home.resolve("agents")
+        agents.resolve("twin.md").writeText("---\nid: s-twin01\nname: twin\n---\nAn Agent with a Script's id.\n")
+        try {
+            refuses(diagram(scriptTask("post", "post-message")), "post",
+                "Post (post): The Script post-message has the same id as the Agent twin, in ${agents.resolve("twin.md")}. Delete the id of the Agent and restart Ants to give it a new one.")
+        } finally {
+            agents.resolve("twin.md").deleteIfExists()
+        }
+    }
+
+    @Test
+    fun `later Tasks read a Script Task's exitCode, output and payload, and nothing else of it`() = withoutScripts {
+        script("s-post01", "post-message")
+        val bpmn = diagram(scriptTask("post", "s-post01") + agentTask("draft", inputs = """<operaton:inputParameter name="code">${'$'}{post.nothing}</operaton:inputParameter>""") +
+            """<bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="post" /><bpmn:sequenceFlow id="f2" sourceRef="post" targetRef="draft" />""")
+        val read = JsonMapper.shared().readValue(browser.post("/processes/outputs", mapOf("bpmn" to bpmn)).body, Map::class.java)
+        assertEquals(listOf("${'$'}{post.exitCode}", "${'$'}{post.output}", "${'$'}{post.payload}"), read["post"])
+        val offered = JsonMapper.shared().readValue(browser.post("/processes/inputs", mapOf("bpmn" to bpmn, "element" to "draft")).body, List::class.java)
+        assertTrue(offered.containsAll(listOf("${'$'}{post.exitCode}", "${'$'}{post.output}", "${'$'}{post.payload}")), offered.toString())
+        refuses(bpmn, "draft", "Draft (draft) reads post.nothing, which post's Result doesn't have.")
+        assertEquals(emptyList(), checks(bpmn.replace("post.nothing", "post.payload.posted")).filter { it["warning"] == false })
+    }
     @Test
     fun `a file that isn't BPMN is one Check on the whole file`() {
         val checks = checks("not xml")
