@@ -204,7 +204,8 @@ class ScriptTaskTest : AntsTest() {
         saveScript("say-hello", inputs = "text", was = "greet", code = "ants.output({greeted: true})\n")
         assertContains(browser.get("/scripts/say-hello").body, """<a href="/processes/greeting">greeting</a>""")
         val catalogue = json.readValue(browser.get("/catalogue.json").body, Map::class.java)
-        assertEquals(mapOf("id" to id, "name" to "say-hello", "description" to "Does say-hello.", "inputs" to listOf("text")), (catalogue["scripts"] as List<*>).single { (it as Map<*, *>)["id"] == id })
+        assertEquals(mapOf("id" to id, "name" to "say-hello", "description" to "Does say-hello.", "inputs" to listOf("text"),
+            "about" to mapOf("text" to mapOf("type" to "text", "description" to "", "required" to false))), (catalogue["scripts"] as List<*>).single { (it as Map<*, *>)["id"] == id })
 
         val run = start("greeting")
         eventually { assertNotNull(runtime.getVariable(run, "greet")) }

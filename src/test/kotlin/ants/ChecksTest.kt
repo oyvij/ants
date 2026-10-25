@@ -532,6 +532,19 @@ class ChecksTest : AntsTest() {
     }
 
     @Test
+    fun `a Script Task leaving out a required input is refused, naming the input, and one leaving out an optional input is not`() = withoutScripts {
+        home.resolve("scripts/s-post01").createDirectories().run {
+            resolve("script.yaml").writeText(
+                "id: s-post01\nname: post-message\ndescription: Posts.\n" +
+                    "inputs: {type: object, properties: {text: {type: string}, channel: {type: string}}, required: [text]}\nvars: {}\nsecrets: []\n")
+            resolve("script.mjs").writeText("console.log('hi')\n")
+        }
+        refuses(diagram(scriptTask("post", "s-post01", mapOf("channel" to "general"))), "post",
+            "Post (post): The Script post-message needs the input text.")
+        assertEquals(emptyList(), checks(diagram(scriptTask("post", "s-post01", mapOf("text" to "hi")))).filter { it["warning"] == false })
+    }
+
+    @Test
     fun `a Script sharing its id with another Script, an Agent or a Skill is refused`() = withoutScripts {
         script("s-twin01", "post-message")
         home.resolve("scripts/copied").createDirectories().resolve("script.yaml").writeText("id: s-twin01\nname: copied\ndescription: Copied by hand.\n")

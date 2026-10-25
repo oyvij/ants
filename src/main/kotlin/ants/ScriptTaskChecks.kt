@@ -12,13 +12,16 @@ internal fun scriptTasks(scripts: Scripts, catalogue: Catalogue, model: BpmnMode
         val value = task.property(SCRIPT)?.trim()?.takeIf(String::isNotEmpty) ?: return@flatMap listOf(Check(task.id, "${task.label} has no Script."))
         val kept = task.property(nameBeside(value))
         val script = runCatching { scripts.linked(value, kept) }.getOrNull() ?: return@flatMap listOf(check("No Script named ${kept ?: value}."))
-        val undeclared = task.inputs().map { it.operatonName }.filter { it !in script.inputNames }
+        val passed = task.inputs().map { it.operatonName }
+        val undeclared = passed.filter { it !in script.inputNames }
             .map { check("The Script ${script.name} doesn't declare the input $it.") }
+        val missing = Settings.strings(script.inputs["required"]).orEmpty().filter { it !in passed }
+            .map { check("The Script ${script.name} needs the input $it.") }
         val where = scripts.where(script)
         val twins = identified.filter { it.id == script.id && it.where != where }.map {
             val remedy = if (it.kind == "Script") "Delete one of them." else "Delete the id of the ${it.kind} and restart Ants to give it a new one."
             check("The Script ${script.name} has the same id as the ${it.kind} ${it.name}, in ${it.where}. $remedy")
         }
-        undeclared + twins
+        undeclared + missing + twins
     }
 }
