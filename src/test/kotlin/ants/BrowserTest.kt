@@ -631,7 +631,7 @@ class BrowserTest : AntsTest() {
     /** Opens the modeler on a blank Process and appends a Script Task to its start event; the Task's id. */
     private fun appendScriptTask(): String {
         page.navigate(url("/processes/new?name=Drawn+here&from="))
-        assertThat(page.locator(".djs-palette [data-action='create.script-task']")).hasAttribute("title", Pattern.compile("^Script Task: Runs one of your Scripts"))
+        assertThat(page.locator(".djs-palette [data-action='create.script-task']")).hasAttribute("aria-label", Pattern.compile("^Script Task: Runs one of your Scripts"))
         shape("start").click()
         pad.locator("[data-action='append.script-task']").click()
         assertThat(heading).hasText("Script Task")
@@ -2799,7 +2799,7 @@ class BrowserTest : AntsTest() {
     fun `the Agent page's chips, Limit rules, added tools and CLI switch save what the page shows`() = browse {
         home.resolve("skills/chip-skill").createDirectories().resolve("SKILL.md").writeText("---\nname: chip-skill\ndescription: Chips.\n---\nChip.\n")
         val file = home.resolve("agents").createDirectories().resolve("chipper.md")
-        file.writeText("---\nname: chipper\ncli: claude\nskills: gone, kept\ntools: Read\n---\nChip.\n")
+        file.writeText("---\nid: a-chip01\nname: chipper\ncli: claude\nskills: gone, kept\ntools: Read\n---\nChip.\n")
         page.navigate(url("/agents/chipper"))
 
         page.locator(".chipsel .c", Page.LocatorOptions().setHasText("gone")).locator("button").click()
@@ -2826,7 +2826,7 @@ class BrowserTest : AntsTest() {
 
         page.click("button[form=agent]")
         eventually {
-            assertEquals("---\nname: chipper\ncli: claude\nskills: kept, chip-skill\ntools: AskUserQuestion, Bash(git log *), Bash(git diff *), Read, mcp__github__get_issue\n---\nChip.\n", file.readText())
+            assertEquals("---\nid: a-chip01\nname: chipper\ncli: claude\nskills: kept, chip-skill\ntools: AskUserQuestion, Bash(git log *), Bash(git diff *), Read, mcp__github__get_issue\n---\nChip.\n", file.readText())
         }
 
         page.navigate(url("/agents/chipper"))
