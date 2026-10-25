@@ -27,7 +27,7 @@
 @endif
         <button class="primary" form="script">Save</button>
     </div>
-@if(dependents != null)    <div class="sub">@template.usedby(dependents = dependents, none = "no Process")</div>@endif
+@if(dependents != null)    <div class="sub">@template.usedby(dependents = dependents, none = "no Agent or Process")</div>@endif
 </div>
 @if(message != null)<p role="alert">${message}</p>@endif
 <div class="scriptWrap">

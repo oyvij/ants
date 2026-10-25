@@ -147,6 +147,24 @@ class ScriptsTest : AntsTest() {
     }
 
     @Test
+    fun `deleting a Script confirms with the Agents that list it and the Processes whose Agent Tasks narrow to it`() {
+        create(form("post-message"))
+        val id = folder("post-message").fileName.toString()
+        agentTask(null, agent = "scripts: [$id]\n")
+        home.resolve("agents/bystander.md").writeText("---\nname: bystander\n---\nWatch.\n")
+        val bpmn = javaClass.getResource("/agent-task.bpmn")!!.readText()
+            .replace("""<operaton:property name="ants.skills" value="draft" />""", """<operaton:property name="ants.skills" value="draft" /><operaton:property name="ants.scripts" value="post-message" />""")
+        browser.get("/processes")
+        assertFalse("role=\"alert\"" in browser.upload("/processes", "file", "agent-task.bpmn", bpmn.toByteArray()).body)
+
+        val confirm = browser.post("/scripts/post-message/delete", emptyMap()).body
+        assertContains(confirm, """Agent <a href="/agents/writer">writer</a>""")
+        assertContains(confirm, """Process <a href="/processes/agent-task">Agent Task</a>""")
+        assertFalse("bystander" in confirm)
+        assertContains(browser.get("/scripts/post-message").body, """<a href="/agents/writer">writer</a>""")
+    }
+
+    @Test
     fun `a new Script's editor shows a placeholder reading inputs, vars and Secrets, and writing the payload`() {
         val page = browser.get("/scripts/new").body.replace("&#34;", "\"").replace("&#39;", "'")
         assertContains(page, "data-code-editor")

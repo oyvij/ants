@@ -9,13 +9,13 @@ import org.operaton.bpm.model.bpmn.instance.operaton.OperatonProperty
 import org.springframework.stereotype.Component
 import org.springframework.ui.Model
 
-class Dependents(val processes: List<ProcessDefinition>, val older: Set<String> = emptySet()) {
-    val none get() = processes.isEmpty()
+class Dependents(val processes: List<ProcessDefinition>, val older: Set<String> = emptySet(), val agents: List<String> = emptyList()) {
+    val none get() = processes.isEmpty() && agents.isEmpty()
 }
 
 /** **Used by**: the deployed Processes whose Agent Tasks name an Agent, or list a Skill. */
 @Component
-class UsedBy(private val repository: RepositoryService, private val runtime: RuntimeService, private val catalogue: Catalogue) {
+class UsedBy(private val repository: RepositoryService, private val runtime: RuntimeService, private val catalogue: Catalogue, private val scripts: Scripts) {
     fun agent(name: String): Dependents {
         val agent = runCatching { catalogue.agent(name) }.getOrNull()
         return dependents(processes { _, model ->
@@ -30,7 +30,11 @@ class UsedBy(private val repository: RepositoryService, private val runtime: Run
         })
     }
 
-    fun script(id: String) = dependents(processes { _, model -> model.properties("ants.script").any { it == id } })
+    fun script(script: Script): Dependents {
+        val listing = catalogue.agents().filter { it.allows(script) }.map { it.name }
+        val processes = processes { _, model -> model.properties("ants.script").any { it == script.id } || model.agentTasks.any { task -> Links(task).scripts(scripts).orEmpty().any { it.getOrNull()?.id == script.id } } }
+        return dependents(processes).let { Dependents(it.processes, it.older, listing) }
+    }
 
     fun process(key: String) = dependents(processes { process, model ->
         process.key != key && model.getModelElementsByType(CallActivity::class.java).any { it.calledElement == key }

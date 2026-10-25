@@ -109,7 +109,7 @@ class ScriptsPage(private val scripts: Scripts, private val runner: ScriptRunner
     @PostMapping("/scripts/{name}/delete")
     fun delete(@PathVariable name: String, @RequestParam confirm: String?, model: Model): String {
         val script = find(name)
-        if (confirm == null) return confirm(model, "Delete the Script $name?", usedBy.script(script.id), "/scripts/$name/delete", emptyMap(), "/scripts/$name")
+        if (confirm == null) return confirm(model, "Delete the Script $name?", usedBy.script(script), "/scripts/$name/delete", emptyMap(), "/scripts/$name")
         scripts.delete(script)
         return "redirect:/scripts"
     }
@@ -158,7 +158,7 @@ class ScriptsPage(private val scripts: Scripts, private val runner: ScriptRunner
         model.addAttribute("labels", (settings.secrets().keys + form.linked).distinct())
         model.addAttribute("placeholder", ScriptForm.PLACEHOLDER)
         model.addAttribute("message", message)
-        model.addAttribute("dependents", script?.let { usedBy.script(it.id) })
+        model.addAttribute("dependents", script?.let { usedBy.script(it) })
         return "script"
     }
 }
