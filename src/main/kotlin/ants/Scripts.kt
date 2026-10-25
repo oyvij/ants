@@ -44,12 +44,13 @@ class Scripts(@Value("\${ants.home}") home: Path, private val settings: Settings
     private fun inFolders(): List<Pair<Path, Script>> = if (!folder.isDirectory()) emptyList()
     else folder.listDirectoryEntries().filter { it.resolve("script.yaml").exists() }
         .map { it to Script.of(Yaml().load<Map<*, *>>(it.resolve("script.yaml").readText()) ?: emptyMap<String, Any>()) }
+        .sortedBy { (dir, script) -> dir.fileName.toString() != script.id }
 
     fun named(name: String): Script? = all().firstOrNull { it.name == name }
 
-    fun withId(id: String): Script? = inFolders().filter { it.second.id == id }.minByOrNull { it.first.fileName.toString() != id }?.second
+    fun withId(id: String): Script? = inFolders().firstOrNull { it.second.id == id }?.second
 
-    fun where(script: Script): Path = inFolders().filter { it.second == script }.map { it.first }.minByOrNull { it.fileName.toString() != script.id } ?: folder(script)
+    fun where(script: Script): Path = inFolders().firstOrNull { it.second == script }?.first ?: folder(script)
 
     fun linked(value: String, kept: String? = null): Script = withId(value) ?: named(kept ?: value) ?: error("No Script named ${kept ?: value}")
 

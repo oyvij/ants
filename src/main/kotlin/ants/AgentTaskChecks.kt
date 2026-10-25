@@ -93,10 +93,6 @@ private fun promised(task: ServiceTask) = promised(task.property(RESULT_SCHEMA),
 /** The fields of the `output` an Agent Task promises, `questions` too when it asks Rounds. */
 private fun fields(task: ServiceTask) = (promised(task)?.get("properties") as? Map<*, *>).orEmpty().keys.map { it.toString() }
 
-/**
- * What later Tasks read of each Task's Result in [model], by id, as the modeler's panel and the Process Builder show it:
- * an Agent Task's promised fields, else its summary, and a User Task's kind's fields.
- */
 internal fun laterRead(model: BpmnModelInstance): Map<String, List<String>> = model.getModelElementsByType(Activity::class.java).mapNotNull { task ->
     when {
         task is UserTask -> UserTaskKind.of(task.property(USER_TASK)).result.map { "\${${task.id}.$it}" }
@@ -177,13 +173,6 @@ private fun problem(path: List<String>, names: Set<String>, activities: Map<Stri
     }
 }
 
-/**
- * What an input picker on the Task [id] offers: the start-form fields, the Run variables, the element variable of each
- * multi-instance it runs in, and the Results of the Tasks before it, an Agent Task's by field (its `summary`, its
- * `output` and each field its schema promises), a User Task's by its kind's Result fields, and a call activity's by the
- * [called] Process's Task. The modeler's condition builder offers those of a decision too. A Task is before
- * it when a path leads from it to [id], so a loop puts later Tasks before it too; they read `null` until run.
- */
 internal fun offered(model: BpmnModelInstance, id: String, called: (String) -> BpmnModelInstance?): List<String> {
     val target = model.getModelElementById<FlowNode>(id) ?: return emptyList()
     val before = mutableSetOf<String>() // ids: the model hands out a new object for an element each time

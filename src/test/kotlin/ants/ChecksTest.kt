@@ -74,7 +74,7 @@ class ChecksTest : AntsTest() {
         <bpmn:sendTask id="x" />                                                                          | is a send task
         <bpmn:receiveTask id="x" />                                                                       | is a receive task
         <bpmn:businessRuleTask id="x" />                                                                  | is a business rule task (DMN)
-        <bpmn:serviceTask id="x" operaton:class="a.B" />                                                  | is a service task that isn't an Agent or Built-in Task
+        <bpmn:serviceTask id="x" operaton:class="a.B" />                                                  | is a service task that isn't an Agent, Script or Built-in Task
         <bpmn:serviceTask id="x" operaton:type="external" operaton:topic="mail" />                        | is on topic mail, which no Built-in Task has.
         <bpmn:endEvent id="x"><bpmn:errorEventDefinition /></bpmn:endEvent>                               | is an error end event
         <bpmn:endEvent id="x"><bpmn:messageEventDefinition /></bpmn:endEvent>                             | is a message end event

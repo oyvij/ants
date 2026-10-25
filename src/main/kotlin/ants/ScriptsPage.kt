@@ -91,7 +91,7 @@ class ScriptsPage(private val scripts: Scripts, private val runner: ScriptRunner
     @PostMapping("/scripts/new")
     fun create(@RequestParam params: MultiValueMap<String, String>, model: Model): String {
         val form = ScriptForm.of(params)
-        return save(form, null, model.addAttribute("use", "use" in params))
+        return save(form, null, "use" in params, model)
     }
 
     @GetMapping("/scripts/{name}")
@@ -103,7 +103,7 @@ class ScriptsPage(private val scripts: Scripts, private val runner: ScriptRunner
     @PostMapping("/scripts/{name}")
     fun update(@PathVariable name: String, @RequestParam params: MultiValueMap<String, String>, model: Model): String {
         val script = find(name)
-        return save(ScriptForm.of(params), script, model.addAttribute("use", "use" in params))
+        return save(ScriptForm.of(params), script, "use" in params, model)
     }
 
     @PostMapping("/scripts/{name}/delete")
@@ -141,13 +141,13 @@ class ScriptsPage(private val scripts: Scripts, private val runner: ScriptRunner
     private fun ownValues(form: ScriptForm, savedSecrets: Map<String, String>) =
         form.own.mapNotNull { row -> row.value.ifEmpty { savedSecrets[row.was.ifEmpty { row.name }] }?.let { row.name to it } }.toMap()
 
-    private fun save(form: ScriptForm, edited: Script?, model: Model): String {
+    private fun save(form: ScriptForm, edited: Script?, modal: Boolean, model: Model): String {
         val own = ownValues(form, edited?.let(scripts::ownSecrets).orEmpty())
         val error = form.error(scripts.all(), edited?.name) ?: form.own.firstOrNull { it.name !in own }?.let { "The Secret ${it.name} needs a value." }
-        if (error != null) return show(model, form, edited, error)
+        if (error != null) return show(model.addAttribute("use", modal), form, edited, error)
         val script = form.script(edited?.id ?: scripts.newId())
         scripts.save(script, form.code, own)
-        return "redirect:/scripts/${script.name}" + if (model.getAttribute("use") == true) "?saved" else ""
+        return "redirect:/scripts/${script.name}" + if (modal) "?saved" else ""
     }
 
     private fun find(name: String) = scripts.named(name) ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No Script named $name")

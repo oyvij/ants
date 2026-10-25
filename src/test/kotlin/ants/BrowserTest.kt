@@ -639,6 +639,15 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `the palette's Script Task drops on the canvas and opens its panel`() = browse {
+        page.navigate(url("/processes/new?name=From+the+palette&from="))
+        page.locator(".djs-palette [data-action='create.script-task']").click()
+        page.locator("#canvas").click(Locator.ClickOptions().setPosition(500.0, 300.0))
+        assertThat(heading).hasText("Script Task")
+        assertThat(label("Script")).isVisible()
+    }
+
+    @Test
     fun `New Script's modal saves a Script to the library and picks it on the Script Task, with a field for each input`() = browse {
         val task = appendScriptTask()
         val modeler = page.url()

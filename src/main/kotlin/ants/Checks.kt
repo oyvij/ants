@@ -219,7 +219,7 @@ private fun refusedUses(model: BpmnModelInstance) = model.getModelElementsByType
         element is BoundaryEvent && element.attachedTo !is UserTask -> "is a timer boundary event on something other than a User Task"
         element is IntermediateCatchEvent && definitions.isEmpty() -> "is an intermediate catch event without a timer"
         element is SubProcess && element.domElement.localName == "subProcess" && element.triggeredByEvent() -> "is an event sub-process"
-        element is ServiceTask && element.operatonType != "external" -> "is a service task that isn't an Agent or Built-in Task"
+        element is ServiceTask && element.operatonType != "external" -> "is a service task that isn't an Agent, Script or Built-in Task"
         element is ServiceTask && element.operatonTopic != AgentLauncher.TOPIC && element.operatonTopic != ScriptTask.TOPIC && element.operatonTopic !in builtIns ->
             return@mapNotNull Check(element.id, "${element.label} is on topic ${element.operatonTopic}, which no Built-in Task has.")
         loop == null -> null

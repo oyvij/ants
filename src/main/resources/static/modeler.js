@@ -599,7 +599,6 @@ async function scriptPanel(element, box) {
     })
     box.replaceChildren(
         field("Script", "What it runs, from your Scripts.", select, edit, create),
-        name && !script ? note("warn", `No Script named "${name}".`) : "",
         el("div", {className: "fld"}, el("label", {className: "f", textContent: "Inputs"}),
             note("help", "What the Script reads on stdin, each from start-form fields, Run variables or Results of Tasks before it, as ${…}."), references,
             ...(rows.length ? rows : [note("muted small", script ? "The Script declares no inputs." : "Pick a Script to see its inputs.")])),
@@ -607,8 +606,6 @@ async function scriptPanel(element, box) {
     )
 }
 
-// What later Tasks read of each Task's Result, by id, as the Checks read it (a Task that asks Rounds promises
-// `questions` too): an Agent Task's promised fields, else its summary, and a User Task's kind's fields.
 async function laterRead() {
     const {xml} = await modeler.get("moddle").toXML(modeler.getDefinitions())
     return (await fetch("/processes/outputs", {method: "POST", body: new URLSearchParams({_csrf: csrf, bpmn: xml})})).json()
