@@ -62,6 +62,8 @@ class AgentLauncher(
     private val names: RunNames,
     private val scopes: Scopes,
     private val protectedCommands: ProtectedCommands,
+    private val scriptTools: ScriptTools,
+    private val scripts: Scripts,
     @Lazy private val migration: Migration, // lazy: it deploys through Processes, which reach this launcher
     @Value("\${ants.home}") internal val home: Path,
 ) {
@@ -235,7 +237,7 @@ class AgentLauncher(
             val workspace = names.runWorkspace(run)
             if (ticketed(task, run, workspace)) return
             migration.unmigrated(task)?.let { throw Failed(it) }
-            val agent = catalogue.agent(task.extensionProperties[AGENT] ?: error("${task.activityId} names no $AGENT"))
+            val agent = Links(task.extensionProperties::get).agent(catalogue)
             if (hold(task, agent.cli)) return // keeping its choice for the launch after the reset
             runtime.removeVariablesLocal(task.executionId, listOf(ACTION, INSTRUCTION, SESSION)) // the choice is used once
             val (skill, used) = skills(task.extensionProperties, agent, task.activityId)
@@ -390,7 +392,7 @@ class AgentLauncher(
      */
     private fun fix(held: LockedExternalTask, run: String, workspace: Path, fix: Fix, message: String) {
         val key = fix.key
-        val agent = catalogue.agent(held.extensionProperties[AGENT] ?: error("${held.activityId} names no $AGENT"))
+        val agent = Links(held.extensionProperties::get).agent(catalogue)
         val (skill, used) = skills(held.extensionProperties, agent, held.activityId)
         if (agent.cli == "claude") refuseBareByDefault(agent.cli, workspace)
         val last = Transcript.file(workspace, key).resolveSibling("session")
@@ -467,11 +469,14 @@ class AgentLauncher(
      */
     private fun skills(properties: Map<String, String>, agent: Agent, id: String): Pair<Skill?, List<Skill>> {
         val job = Job(properties::get)
-        val allowed = job.listed?.map(catalogue::skill) ?: catalogue.allowed(agent)
+        val allowed = Links(properties::get).skills(catalogue)?.map { it.getOrThrow() } ?: catalogue.allowed(agent)
         if (job.assignment != null) return null to allowed
         if (!job.valid) error("$id has no Assignment and doesn't list exactly one Skill")
         return allowed.single() to emptyList()
     }
+
+    private fun allowedScripts(properties: Map<String, String>, agent: Agent): List<Script> =
+        Links(properties::get).scripts(scripts)?.map { it.getOrThrow() } ?: agent.scripts.map { scripts.linked(it) }
 
     /**
      * Runs [skill], or with none the Task's Assignment, using [used] too, in one CLI session in [cwd] (the Run [workspace], or an instance's folder in it),
@@ -510,10 +515,11 @@ class AgentLauncher(
         val places = vault?.let { listOf("--add-dir", "$it") }.orEmpty() // the Vault's path goes nowhere else (ADR 0002)
             .plus(answerHistory(task)?.let { listOf("--add-dir", "${it.createDirectories()}") }.orEmpty()) // so a Read reaches it (ADR 0010)
             .plus(if (verbosity == null) emptyList() else listOf("--add-dir", "${catalogue.verbosityFile.parent}"))
-        val (token, mcp) = protectedCommands.open(workspace) // its Protected Commands run in the Run workspace
+        val tools = scriptTools.of(allowedScripts(task.extensionProperties, agent), workspace, run)
+        val (token, mcp) = protectedCommands.open(workspace, tools) // its Protected Commands run in the Run workspace
         val process = runCatching {
             val skills = listOfNotNull(skill) + used
-            cli(agent.cli, cwd, flags(agent, cwd, schema, skills, skillsFolder(workspace, instance, skills), session!!, resume, mcp, workspace, gated?.let { listOf("Write(/$it/**)", "Edit(/$it/**)") }.orEmpty()) + shared + places)
+            cli(agent.cli, cwd, flags(agent, cwd, schema, skills, skillsFolder(workspace, instance, skills), session!!, resume, mcp, tools.tools.map { Mcp.CLAUDE_PREFIX + it["name"] }, workspace, gated?.let { listOf("Write(/$it/**)", "Edit(/$it/**)") }.orEmpty()) + shared + places)
                 .apply { environment()["ANTS_TASK"] = task.activityId } // names the Task to its session; the fake claude keys on it
                 .start()
         }.onFailure { protectedCommands.close(token) }.getOrThrow()
@@ -772,18 +778,14 @@ class AgentLauncher(
         }
     }
 
-    /**
-     * claude's flags, with Ants' MCP server [mcp] and its tool `run`, and the permission rules [denied] besides the
-     * Subagent types a Limit leaves out and Ants' own files that hold a Secret or the password (ADR 0015).
-     */
-    private fun flags(agent: Agent, cwd: Path, schema: Map<*, *>, skills: List<Skill>, skillsFolder: Path?, session: String, resume: Boolean, mcp: String, workspace: Path, denied: List<String>): List<String> {
+    private fun flags(agent: Agent, cwd: Path, schema: Map<*, *>, skills: List<Skill>, skillsFolder: Path?, session: String, resume: Boolean, mcp: String, scriptTools: List<String>, workspace: Path, denied: List<String>): List<String> {
         val tools = (agent.tools ?: DEFAULT_TOOLS).filter { it.substringBefore('(') != "Skill" }.map { anchored(it, cwd) }
         val skill = listOf("Skill").takeIf { skillsFolder != null } // with no Skills allowed, no Skill tool
         val (subagents, types) = subagents(tools)
         // Probed on claude 2.1.299: a rule such as `Bash(git diff *)` lets `git diff --output=<any path>` write a file, and
         // the deny rule `Bash(git *--output*)` refuses it (git takes no abbreviation of `--output`)
         val gitOutput = if (tools.any { it.startsWith("Bash(git ") }) listOf("Bash(git *--output*)") else emptyList()
-        val disallowed = types + gitOutput + denied + listOf(settings.secretsFile, settings.file).map(Path::toAbsolutePath).flatMap { listOf("Read(/$it)", "Edit(/$it)") }
+        val disallowed = types + gitOutput + denied + (listOf(settings.secretsFile, settings.file).map(Path::toAbsolutePath).map(Path::toString) + "${home.resolve("scripts").toAbsolutePath()}/**").flatMap { listOf("Read(/$it)", "Edit(/$it)") }
         return STREAM_JSON + listOf(
             "--json-schema", json.writeValueAsString(schema),
             if (resume) "--resume" else "--session-id", session,
@@ -796,7 +798,7 @@ class AgentLauncher(
             // Skill, for the Skills [skillsFolder] loads: which are loaded is what limits them, not a Skill(x) rule.
             "--tools", (tools.map { it.substringBefore('(') } + skill.orEmpty()).distinct().joinToString(","),
             // claude checks a Write against Edit rules and ignores a Write(path) one, so a Write limit also goes out as Edit
-            "--allowedTools", (tools + tools.filter { it.startsWith("Write(") }.map { "Edit(" + it.removePrefix("Write(") } + skill.orEmpty() + RUN_TOOL).distinct().joinToString(","),
+            "--allowedTools", (tools + tools.filter { it.startsWith("Write(") }.map { "Edit(" + it.removePrefix("Write(") } + skill.orEmpty() + RUN_TOOL + scriptTools).distinct().joinToString(","),
         ) + subagents + (if (disallowed.isEmpty()) emptyList() else listOf("--disallowedTools", disallowed.joinToString(","))) + (skillsFolder?.let { listOf("--add-dir", "$it") } ?: emptyList()) +
             // A symlinked Skill's files can be read only with its real folder added too.
             skills.flatMap { listOf("--add-dir", it.folder.toString()) } + (if (agent.model != null) listOf("--model", agent.model) else emptyList()) +
@@ -941,7 +943,7 @@ class AgentLauncher(
         val PAID = listOf("ANTHROPIC_API_KEY", "CLAUDE_CODE_RETRY_WATCHDOG", "OPENAI_API_KEY", "CODEX_API_KEY")
 
         /** Ants' MCP tool `run`, which runs a Protected Command ([ProtectedCommands]). */
-        const val RUN_TOOL = "mcp__ants__run"
+        const val RUN_TOOL = "${Mcp.CLAUDE_PREFIX}run"
 
         /** The tool that starts Subagents: `Agent`, formerly `Task`. */
         val SUBAGENT_TOOLS = setOf("Agent", "Task")

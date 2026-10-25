@@ -1,8 +1,11 @@
 package ants
 
 import org.junit.jupiter.api.Test
+import org.springframework.beans.factory.annotation.Autowired
+import org.yaml.snakeyaml.Yaml
 import tools.jackson.databind.json.JsonMapper
 import java.nio.file.Files
+import java.nio.file.Path
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.readText
@@ -10,8 +13,13 @@ import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 
 class SkillsTest : AntsTest() {
+    @Autowired
+    lateinit var catalogue: Catalogue
+
     private val browser by lazy { browser().also { it.login() } }
 
     /** A `SKILL.md` named [name]. */
@@ -137,6 +145,56 @@ class SkillsTest : AntsTest() {
         }
     }
 
+    private fun idOf(folder: Path) = Regex("^id: (k-[a-z0-9]{6})\n$").find(folder.resolve("ants.yaml").readText())?.groupValues?.get(1)
+
+    private fun assertNoPageShows(id: String, vararg paths: String) {
+        for (path in paths) assertFalse(id in page(path), "$path shows the id $id")
+    }
+
+    @Test
+    fun `creating, importing or copying a Skill gives it a new id in its ants yaml, which no page shows and the Catalogue finds it by`() {
+        val skills = home.resolve("skills")
+        save(skillMd("summary"))
+        val created = assertNotNull(idOf(skills.resolve("summary")))
+        browser.get("/skills/summary")
+        browser.post("/skills/summary", mapOf("skill" to skillMd("summing-up")))
+        assertEquals(created, idOf(skills.resolve("summing-up")))
+        assertEquals("summing-up", catalogue.skillWithId(created).name)
+        assertNoPageShows(created, "/skills", "/skills/summing-up")
+
+        import("theirs/SKILL.md" to skillMd("theirs"), "theirs/ants.yaml" to "id: k-theirs\n")
+        val imported = assertNotNull(idOf(skills.resolve("theirs")))
+        assertTrue(imported != created)
+
+        browser.post("/skills/shipped-draft/copy", emptyMap())
+        val copied = assertNotNull(idOf(skills.resolve("shipped-draft-copy")))
+        assertTrue(copied !in setOf(created, imported, "k-shipped-draft"))
+        assertEquals("shipped-draft", catalogue.skillWithId("k-shipped-draft").name)
+    }
+
+    @Test
+    fun `a Skill from an extra folder gets its id in skill-ids yaml, and its folder is untouched`() {
+        val extra = Files.createTempDirectory("extra").resolve("outside").createDirectories()
+        extra.resolve("SKILL.md").writeText(skillMd("outside"))
+        val settings = home.resolve("settings.yaml")
+        val before = settings.readText()
+        try {
+            settings.writeText("skill-folders: [${extra.parent}]\n")
+            page("/skills")
+            val ids = Yaml().load<Map<String, String>>(home.resolve("skill-ids.yaml").readText())
+            val id = ids.entries.single { it.value == extra.toString() }.key
+            assertTrue(Regex("k-[a-z0-9]{6}").matches(id), id)
+            assertEquals("outside", catalogue.skillWithId(id).name)
+            page("/skills")
+            assertEquals(ids, Yaml().load<Map<String, String>>(home.resolve("skill-ids.yaml").readText()))
+            assertNoPageShows(id, "/skills", "/skills/outside")
+        } finally {
+            settings.writeText(before)
+        }
+        assertEquals(listOf("SKILL.md"), extra.toFile().list()!!.toList())
+        assertEquals(skillMd("outside"), extra.resolve("SKILL.md").readText())
+    }
+
     private fun import(vararg files: Pair<String, String>): Browser.Page {
         browser.get("/skills")
         return browser.upload("/skills/import", "file", files.map { (name, text) -> name to text.toByteArray() })
@@ -182,13 +240,28 @@ class SkillsTest : AntsTest() {
         val refused = browser.post("/skills/new", mapOf("skill" to "no frontmatter", "use" to "picker"))
         assertContains(refused.body, """<button class="primary" form="skill">Create and use</button>""") // a refusal stays in the modal
         assertEquals("/skills/chosen", browser.post("/skills/new", mapOf("skill" to skillMd("chosen"), "use" to "picker")).path)
-        assertEquals(listOf("tdd", "chosen"), Agent(agent).skills)
+        assertEquals(listOf("k-tdd", catalogue.skill("chosen").id), Agent(agent).skills)
 
         // A read-only Agent is left as it is: the Task's Checks say it doesn't list the Skill.
         home.resolve("skills/also-chosen").toFile().deleteRecursively()
         val shipped = Agent(home.resolve("shipped/agents/shipped-writer.md")).skills
         assertEquals("/skills/also-chosen", browser.post("/skills/new", mapOf("skill" to skillMd("also-chosen"), "use" to "shipped-writer")).path)
         assertEquals(shipped, Agent(home.resolve("shipped/agents/shipped-writer.md")).skills)
+    }
+
+    @Test
+    fun `renaming a Skill saves at once with no confirm, keeps its id, and the Agent that lists it shows the new name`() {
+        listOf("listed", "relisted").forEach { home.resolve("skills/$it").toFile().deleteRecursively() }
+        save(skillMd("listed"))
+        val id = catalogue.skill("listed").id!!
+        val agent = home.resolve("agents").createDirectories().resolve("lister.md")
+        agent.writeText("---\nname: lister\ncli: claude\nskills: $id\n---\nList.\n")
+
+        assertEquals("/skills/relisted", save(skillMd("relisted"), name = "listed").path)
+        assertEquals("relisted", catalogue.skillWithId(id).name)
+        assertEquals(listOf(id), Agent(agent).skills)
+        assertContains(page("/agents/lister"), """<input type="hidden" name="skills" value="relisted">""")
+        assertContains(page("/skills/relisted"), """<a href="/agents/lister">lister</a>""")
     }
 
     @Test
@@ -208,11 +281,7 @@ class SkillsTest : AntsTest() {
         assertEquals("/skills/tidy" to "saved", saved.path to saved.query)
         assertEquals(skillMd("tidy", "Tidy up."), home.resolve("skills/tidy/SKILL.md").readText())
 
-        val rename = browser.post("/skills/tidy", mapOf("skill" to skillMd("tidier"), "use" to ""))
-        assertContains(rename.body, "Rename the Skill tidy to tidier?")
-        assertContains(rename.body, """<input type="hidden" name="use" value="">""")
-        assertContains(rename.body, """<a href="/skills/tidy?use=">Cancel</a>""")
-        val renamed = browser.post("/skills/tidy", mapOf("skill" to skillMd("tidier"), "use" to "", "confirm" to "on"))
+        val renamed = browser.post("/skills/tidy", mapOf("skill" to skillMd("tidier"), "use" to ""))
         assertEquals("/skills/tidier" to "saved", renamed.path to renamed.query)
 
         val page = save(skillMd("tidier", "Tidy it on its page."), name = "tidier")

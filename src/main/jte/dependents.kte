@@ -4,6 +4,9 @@
 <p>Nothing uses it.</p>
 @else
 <ul>
+@for(agent in dependents.agents)
+    <li>Agent <a href="/agents/${agent}">${agent}</a></li>
+@endfor
 @for(process in dependents.processes)
     <li>Process <a href="/processes/${process.key}">${process.name ?: process.key}</a>@if(process.id in dependents.older) · version ${process.version}, which live Runs still run@endif</li>
 @endfor

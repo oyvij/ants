@@ -52,9 +52,11 @@ abstract class BuiltInWorker(
         } catch (e: Exception) {
             if (poller.isShutdown) return
             log.warn("$name ${task.activityId} failed", e)
-            runCatching { externalTasks.handleFailure(task.id, WORKER, "[failed] ${e.message ?: e}", null, 0, 0) }
+            runCatching { externalTasks.handleFailure(task.id, WORKER, "[failed] ${e.message ?: e}", (e as? Failed)?.details, 0, 0) }
         }
     }
+
+    class Failed(message: String, val details: String) : RuntimeException(message)
 
     companion object {
         const val WORKER = "ants"

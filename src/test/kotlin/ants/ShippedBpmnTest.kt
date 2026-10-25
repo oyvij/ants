@@ -15,9 +15,11 @@ import org.operaton.bpm.model.bpmn.instance.ServiceTask
 import org.operaton.bpm.model.bpmn.instance.StartEvent
 import org.operaton.bpm.model.bpmn.instance.SubProcess
 import org.operaton.bpm.model.bpmn.instance.operaton.OperatonProperties
+import org.yaml.snakeyaml.Yaml
 import java.nio.file.Path
 import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.name
+import kotlin.io.path.readText
 import kotlin.test.assertEquals
 
 /** A drift guard over the shipped `.bpmn` files: no dangling flow refs, and each Template a Process embeds still matches the Template. */
@@ -56,12 +58,31 @@ class ShippedBpmnTest {
         for (file in files("processes") + files("templates")) for (task in read(file).getModelElementsByType(ServiceTask::class.java)) {
             val properties = task.extensions<OperatonProperties>().flatMap { it.operatonProperties }.associate { it.operatonName to it.operatonValue }
             assert(properties["ants.skill"] !in his + "grill") { "${file.name}: ${task.id} still names ${properties["ants.skill"]} as its ants.skill" }
-            if (words(properties[SKILLS].orEmpty()).none { it in his }) continue
+            if (words(properties[SKILLS].orEmpty()).none { properties[nameBeside(it)] in his }) continue
             tasks++
             assert(!properties[ASSIGNMENT].isNullOrBlank()) { "${file.name}: ${task.id} has no Assignment" }
             assert(!properties[RESULT_SCHEMA].isNullOrBlank()) { "${file.name}: ${task.id} has no Result schema" }
         }
         assertEquals(17, tasks) // 15 of his own, and the two fix Tasks, which list tdd, code-review and codebase-design
+    }
+
+    @Test
+    fun `every shipped Agent Task links its Agent and Skills by their shipped ids, each shipped name beside its id`() {
+        val shipped = Path.of("src/main/resources/shipped")
+        val agents = shipped.resolve("agents").listDirectoryEntries("*.md").associate { file -> Agent(file).let { it.id to it.name } }
+        val skills = shipped.resolve("skills").listDirectoryEntries().associate { folder ->
+            Yaml().load<Map<*, *>>(folder.resolve(SKILL_ID_FILE).readText())["id"] to frontmatter(folder.resolve("SKILL.md").readText()).first["name"]
+        }
+        var links = 0
+        for (file in files("processes") + files("templates")) for (task in read(file).agentTasks) {
+            val properties = task.extensions<OperatonProperties>().flatMap { it.operatonProperties }.associate { it.operatonName to it.operatonValue }
+            for ((id, names) in listOfNotNull(properties[AGENT]?.let { it to agents }) + words(properties[SKILLS]).map { it to skills }) {
+                assert(id in names) { "${file.name}: ${task.id} links $id, which is no shipped id" }
+                assertEquals(names[id], properties[nameBeside(id)], "${file.name}: ${task.id}'s name beside $id")
+                links++
+            }
+        }
+        assert(links > 50) { "only $links links found" }
     }
 
     /** The elements of a Template, less what a copy renames: its events' ids, its flows' ids, its inputs' values. */

@@ -106,8 +106,9 @@ abstract class AntsTest {
             Thread.sleep(50)
         }
         Settings.AI_CLIS.forEach { launcher.tryNow(it) }
-        for (folder in listOf("agents", "skills", "templates")) home.resolve(folder).toFile().run { deleteRecursively(); mkdirs() }
+        for (folder in listOf("agents", "skills", "templates", "scripts")) home.resolve(folder).toFile().run { deleteRecursively(); mkdirs() }
         home.resolve("profiles").toFile().deleteRecursively()
+        listOf("agent-ids.yaml", "skill-ids.yaml").forEach { home.resolve(it).deleteIfExists() }
         // Under the Schedule loop's lock: a Run it was starting for the last test, at that test's clock, writes its state
         // once started, which would bring back that test's last start and leave this test's first time not yet due.
         synchronized(schedules) { home.resolve("schedules.yaml").toFile().delete() }
@@ -250,6 +251,8 @@ class Browser(private val base: String, private val diagram: (String) -> String 
     private var csrf: String? = null
 
     fun get(path: String) = send(HttpRequest.newBuilder(URI("$base$path")).GET())
+
+    fun close() = client.shutdownNow()
 
     /**
      * The Report of [run], once Ants has written it. It writes it just after the Run's end commits, so a test that has

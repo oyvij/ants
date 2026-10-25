@@ -96,6 +96,7 @@ val TaskEntry.pill get() = TaskView.state(this).let { (state, label) -> TaskView
 class TaskView(
     val key: String, val element: FlowElement?, val state: String, val label: String, val entry: TaskEntry?, val round: Int?,
     val transcript: Transcript?, val context: String, val href: String?, val asked: TaskEntry? = null, val reached: HistoricActivityInstance? = null,
+    private val catalogue: Catalogue,
 ) {
     val name: String get() = element?.name ?: reached?.activityName ?: key
 
@@ -106,9 +107,9 @@ class TaskView(
         else -> "builtin"
     }
 
-    val agent get() = element?.property(AGENT)
+    val agent get() = element?.let { Links(it).agentName(catalogue) }
     /** The Skill the Task starts with as its job: its one listed Skill, when it has no Assignment (ADR 0024). */
-    val skill get() = element?.let { Job(it) }?.skill
+    val skill get() = element?.let { Links(it).startingSkillName(catalogue) }
 
     /** The state as a pill; a page puts the entry's tag (tag.kte) beside it while the Task waits on the user. */
     val badge get() = """<span class="pill p-${PILLS[state]}">${HtmlUtils.htmlEscape(label)}</span>"""
@@ -148,6 +149,7 @@ class Runs(
     private val scopes: Scopes,
     private val schedules: Schedules,
     private val cloneRepos: CloneRepos,
+    private val catalogue: Catalogue,
 ) {
     /** The Runs list: Coming up, then the live Runs with what each is doing now, then the ended ones. */
     @GetMapping("/runs")
@@ -381,7 +383,7 @@ class Runs(
             offset = end
             lines.forEach(transcript::add)
             val view = tasks(id) { emptyMap() }.firstOrNull { it.key == key }
-                ?: TaskView(key, element, "queued", "Not reached", null, null, null, "", null)
+                ?: TaskView(key, element, "queued", "Not reached", null, null, null, "", null, catalogue = catalogue)
             val entry = view.entry
             val model = mapOf(
                 "run" to top, "runName" to names.name(top), "task" to key, "view" to view, "transcript" to transcript,
@@ -430,7 +432,7 @@ class Runs(
                 val href = entry?.let { "/notifications/${it.id}" } ?: own.keys.firstOrNull()?.let { "/runs/$top/tasks/$it/transcript" }
                 listOf(TaskView(
                     key, task, state, label, entry, now?.round, own.values.firstOrNull { it.running } ?: own.values.firstOrNull(), own.values.filter { it.tokens > 0 }.maxByOrNull { it.tokens }?.context.orEmpty(),
-                    href, asking[activity], reached,
+                    href, asking[activity], reached, catalogue,
                 ))
             }.distinctBy { it.key }
     }
@@ -442,7 +444,7 @@ class Runs(
     fun task(run: String, key: String, transcript: Transcript): TaskView = tasks(run).firstOrNull { key == it.key || key.startsWith(it.key + "-") }
         ?: notifications.tasks().firstOrNull { it.run == run && it.taskId == key }.let { entry ->
             val (state, label) = entry?.let(TaskView::state) ?: if (transcript.running) "running" to "Running" else "done" to "Done"
-            TaskView(key, null, state, label, entry, null, transcript, transcript.context, entry?.let { "/notifications/${it.id}" })
+            TaskView(key, null, state, label, entry, null, transcript, transcript.context, entry?.let { "/notifications/${it.id}" }, catalogue = catalogue)
         }
 
     /**

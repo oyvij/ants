@@ -9,20 +9,31 @@ import org.operaton.bpm.model.bpmn.instance.operaton.OperatonProperty
 import org.springframework.stereotype.Component
 import org.springframework.ui.Model
 
-/**
- * What uses an Agent or a Skill, and so would break if it were renamed or deleted: Process versions, of which [older]
- * are the ids of those that aren't the latest. Ants never rewrites a Process.
- */
-class Dependents(val processes: List<ProcessDefinition>, val older: Set<String> = emptySet()) {
-    val none get() = processes.isEmpty()
+class Dependents(val processes: List<ProcessDefinition>, val older: Set<String> = emptySet(), val agents: List<String> = emptyList()) {
+    val none get() = processes.isEmpty() && agents.isEmpty()
 }
 
-/** **Used by**: the deployed Processes whose Agent Tasks name an Agent, or list a Skill. */
 @Component
-class UsedBy(private val repository: RepositoryService, private val runtime: RuntimeService) {
-    fun agent(name: String) = dependents(processes { _, model -> model.properties(AGENT).any { it == name } })
+class UsedBy(private val repository: RepositoryService, private val runtime: RuntimeService, private val catalogue: Catalogue, private val scripts: Scripts) {
+    fun agent(name: String): Dependents {
+        val agent = runCatching { catalogue.agent(name) }.getOrNull()
+        return dependents(processes { _, model ->
+            model.agentTasks.any { task -> task.property(AGENT) == name || agent != null && runCatching { Links(task).agent(catalogue).file == agent.file }.getOrDefault(false) }
+        })
+    }
 
-    fun skill(name: String) = dependents(processes { _, model -> model.agentTasks.any { name in Job(it).listed.orEmpty() } })
+    fun skill(name: String): Dependents {
+        val skill = runCatching { catalogue.skill(name) }.getOrNull()
+        return dependents(processes { _, model ->
+            model.agentTasks.any { task -> name in Job(task).listed.orEmpty() || skill != null && Links(task).skills(catalogue).orEmpty().any { it.getOrNull()?.file == skill.file } }
+        })
+    }
+
+    fun script(script: Script): Dependents {
+        val agents = catalogue.agents().filter { it.allows(script) }.map { it.name }
+        val processes = processes { _, model -> model.properties(SCRIPT).any { it == script.id } || model.agentTasks.any { task -> Links(task).scripts(scripts).orEmpty().any { it.getOrNull()?.id == script.id } } }
+        return dependents(processes).let { Dependents(it.processes, it.older, agents) }
+    }
 
     fun process(key: String) = dependents(processes { process, model ->
         process.key != key && model.getModelElementsByType(CallActivity::class.java).any { it.calledElement == key }

@@ -3,6 +3,7 @@ package ants
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
+import org.springframework.beans.factory.annotation.Autowired
 import tools.jackson.databind.json.JsonMapper
 import java.nio.file.Files
 import java.nio.file.Path
@@ -335,6 +336,21 @@ class CodexTest : AntsTest() {
         clock.offset = Duration.ZERO
         browser.get("/processes") // for a CSRF token
         browser.post("/pauses/codex", emptyMap())
+    }
+
+    @Autowired
+    lateinit var scripts: Scripts
+
+    @Test
+    fun `a codex Agent that lists Scripts gets no Script tools, and its hand-off names none`() {
+        scripts.save(Script("s-post01", "post-message", "Posts a message."), "console.log('hi')\n", emptyMap())
+        codexTask("scripts: [s-post01]\n")
+        codex.session("draft", started, turn, answer(), completed)
+        val run = start(properties = """<operaton:property name="ants.scripts" value="post-message" />""")
+        eventually { assertContains(page(run), """id="state">Completed<""") }
+
+        val launch = codex.launches("draft").single()
+        assertFalse((launch.argv + launch.stdin).any { "script_" in it || "post-message" in it || "mcp" in it })
     }
 }
 
