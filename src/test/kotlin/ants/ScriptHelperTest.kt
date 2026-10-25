@@ -94,7 +94,7 @@ class ScriptHelperTest : AntsTest() {
             code = "console.error(process.env.SLACK_TOKEN)\nprocess.exit(3)\n"
             val (failure, failing) = call(token, "test_run")
             assertTrue(failing, failure)
-            assertEquals(mapOf("exitCode" to 3, "output" to "••••\n", "payload" to null), json.readValue(failure, Map::class.java))
+            assertEquals(mapOf("exitCode" to 3, "output" to "••••\n", "payload" to null, "mismatches" to emptyList<String>()), json.readValue(failure, Map::class.java))
         } finally {
             secrets.deleteIfExists()
         }
