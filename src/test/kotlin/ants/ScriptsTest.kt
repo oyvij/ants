@@ -487,6 +487,18 @@ class ScriptsTest : AntsTest() {
     }
 
     @Test
+    fun `without a node to run the validator warns so, and still marks what the code reads against the schemas`() {
+        home.resolve("settings.yaml").writeText("node: {path: ${home.resolve("no-such-node")}}\nclaude: {env: [PATH, HOME]}\n")
+        val findings = check(form("typo", code = "console.log(ants.inputs.txt)\n", inputs = "txt2"))
+        assertEquals(3, findings.size, findings.toString())
+        assertTrue(findings[0].startsWith("warning null: Ants can't run node to check the syntax"), findings.toString())
+        assertEquals(
+            listOf("error 1: ants.inputs.txt reads an input the input schema doesn't declare.", "warning inputs[0]: The input txt2 is never read."),
+            findings.drop(1),
+        )
+    }
+
+    @Test
     fun `the validator marks a read of an undeclared input as an error on its line, and a declared input never read as a warning on its row`() {
         val code = "// ants.inputs.commented is no read\nconst greeting = `hi ${'$'}{ants.inputs.txt}`\nconsole.log(greeting, ants.inputs.channel, 'ants.inputs.quoted')\n"
         assertEquals(

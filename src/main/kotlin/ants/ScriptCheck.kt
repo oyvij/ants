@@ -39,8 +39,9 @@ class ScriptCheck(private val settings: Settings) {
         val schema = rowFindings(inputs, "input", "Input row") + rowFindings(output, "payload field", "Payload row")
         val code = params["code"]?.firstOrNull().orEmpty()
         val syntax = syntax(code)
-        if (syntax != null) return listOf(syntax) + schema
-        return codeFindings(code, inputs.filter { it.name.isNotEmpty() }, output.filter { it.name.isNotEmpty() }) + schema
+        // Only a syntax error hides the code's findings; Node missing is a warning, and the code reads literally anyway.
+        if (syntax?.error == true) return listOf(syntax) + schema
+        return listOfNotNull(syntax) + codeFindings(code, inputs.filter { it.name.isNotEmpty() }, output.filter { it.name.isNotEmpty() }) + schema
     }
 
     /** A missing or repeated name, or an object with no fields, among [rows], each a [kind] at the top level. */
@@ -60,7 +61,7 @@ class ScriptCheck(private val settings: Settings) {
         }
     }
 
-    /** Node's verdict on [code]'s syntax, as an error on its line, or null when Node accepts it. */
+    /** Node's verdict on [code]'s syntax, as an error on its line, a warning when Node can't run, or null when Node accepts it. */
     private fun syntax(code: String): Finding? {
         val scratch = Files.createTempDirectory("ants-check")
         try {

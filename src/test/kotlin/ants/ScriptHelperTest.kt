@@ -128,6 +128,8 @@ class ScriptHelperTest : AntsTest() {
             listOf("inputs[0].name", "text"), listOf("inputs[0].type", "string"),
             listOf("output[0].name", "ts"), listOf("output[0].type", "string"), listOf("output[0].required", "on"),
         )
+        // Its own node, so the syntax check runs whatever an earlier test's settings or the tests' PATH hold.
+        home.resolve("settings.yaml").writeText("node: {path: ${ScriptsTest.NODE}}\nclaude: {env: [PATH, HOME]}\n")
         val token = open()
         browser.actAsPage(token, chats, "/script-helper/answer") { tool, _ -> form.takeIf { tool == "form" } }
 
