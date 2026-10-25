@@ -190,4 +190,17 @@ class ScriptTaskTest : AntsTest() {
         browser.post("/scripts/cleanup/delete", mapOf("confirm" to "on"))
         assertEquals(404, browser.get("/scripts/cleanup").status)
     }
+
+    @Test
+    fun `an imported Script Task whose id is unknown here links the Script by the name kept beside it`() {
+        saveScript("archive", code = "console.log('archived')\n")
+        val shared = scriptTask("store", "s-zz9999").replace("""<operaton:property name="ants.script" value="s-zz9999" />""",
+            """<operaton:property name="ants.script" value="s-zz9999" /><operaton:property name="ants.name.s-zz9999" value="archive" />""")
+        deploy("archiving", shared)
+        val id = Regex("""name="ants.script" value="(s-[a-z0-9]{6})"""").find(deployed("archiving"))!!.groupValues[1]
+        assertEquals(id, json.readValue(browser.get("/catalogue.json").body, Map::class.java)["scripts"].let { it as List<*> }.map { it as Map<*, *> }.single { it["name"] == "archive" }["id"])
+        assertFalse("value=\"s-zz9999\"" in deployed("archiving"))
+        val run = start("archiving")
+        eventually { assertNotNull(runtime.getVariable(run, "store")) }
+    }
 }
