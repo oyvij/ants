@@ -710,10 +710,10 @@ class BrowserTest : AntsTest() {
         home.resolve("settings.yaml").writeText("node: {path: ${ScriptsTest.NODE}}\n")
         page.navigate(url("/scripts/new"))
         val editor = page.locator(".code-editor .cm-content")
-        assertThat(page.locator(".code-editor .cm-placeholder")).containsText("process.env.ANTS_OUTPUT")
-        assertThat(page.locator(".code-editor .cm-placeholder")).containsText("process.stdin")
+        assertThat(page.locator(".code-editor .cm-placeholder")).containsText("ants.inputs")
+        assertThat(page.locator(".code-editor .cm-placeholder")).containsText("ants.output(")
         editor.click()
-        page.keyboard().insertText("import {readFileSync, writeFileSync} from 'node:fs'\nconst {text} = JSON.parse(readFileSync(0, 'utf8'))\nconsole.log('posting')\nwriteFileSync(process.env.ANTS_OUTPUT, JSON.stringify({posted: text, count: 2}))\n")
+        page.keyboard().insertText("const {text} = ants.inputs\nconsole.log('posting')\nants.output({posted: text, count: 2})\n")
         page.getByLabel("Sample inputs, as JSON").fill("""{"text": "hello"}""")
         page.locator(".code-editor button", Page.LocatorOptions().setHasText("Test run")).click()
 

@@ -95,19 +95,19 @@ class ScriptTaskTest : AntsTest() {
     private fun incident(run: String) = runtime.createIncidentQuery().processInstanceId(run).singleResult()
 
     @Test
-    fun `a Script Task runs its Script in the Run workspace, with its inputs on stdin and its vars, Secrets and ANTS_ variables in the environment, and a later Task reads its Result`() {
+    fun `a Script Task runs its Script in the Run workspace, with its inputs as ants inputs and its vars, Secrets and ANTS_ variables in the environment, and a later Task reads what it handed back with ants output`() {
         saveScript(
             "post-message", inputs = "text", vars = "CHANNEL=general", own = listOf("SLACK_TOKEN" to "xoxb-s3cret"), linked = listOf("npm"),
             code = """
-                import {readFileSync, writeFileSync} from 'node:fs'
-                const inputs = JSON.parse(readFileSync(0, 'utf8'))
+                const inputs = ants.inputs
                 const e = process.env
                 console.log('posting', inputs.text, 'with', e.SLACK_TOKEN)
-                writeFileSync(e.ANTS_OUTPUT, JSON.stringify({inputs, channel: e.CHANNEL, slack: e.SLACK_TOKEN, npm: e.NPM_TOKEN,
-                    workspace: e.ANTS_RUN_WORKSPACE, run: e.ANTS_RUN_ID, cwd: process.cwd()}))
+                ants.output({draft: true})
+                ants.output({inputs, channel: e.CHANNEL, slack: e.SLACK_TOKEN, npm: e.NPM_TOKEN,
+                    workspace: e.ANTS_RUN_WORKSPACE, run: e.ANTS_RUN_ID, cwd: process.cwd()})
             """.trimIndent(),
         )
-        saveScript("echo", inputs = "posted, code", code = "import {readFileSync, writeFileSync} from 'node:fs'\nwriteFileSync(process.env.ANTS_OUTPUT, readFileSync(0, 'utf8'))\n")
+        saveScript("echo", inputs = "posted, code", code = "ants.output(await Promise.resolve(ants.inputs))\n")
         deploy("posting", scriptTask("post", "post-message", mapOf("text" to "\${text}")), scriptTask("echo", "echo", mapOf("posted" to "\${post.payload.inputs.text}", "code" to "\${post.exitCode}")))
 
         val run = start("posting")
@@ -140,7 +140,7 @@ class ScriptTaskTest : AntsTest() {
         assertContains(page, """value="retry">Retry</button>""")
         assertContains(page, """value="cancel">Cancel the Run</button>""")
 
-        saveScript("flaky", own = listOf("TOKEN" to ""), was = "flaky", code = "import {writeFileSync} from 'node:fs'\nwriteFileSync(process.env.ANTS_OUTPUT, JSON.stringify({fixed: true}))\n")
+        saveScript("flaky", own = listOf("TOKEN" to ""), was = "flaky", code = "ants.output({fixed: true})\n")
         browser.post(entry, mapOf("action" to "retry", "instruction" to ""))
         eventually { assertNotNull(runtime.getVariable(run, "flaky")) }
         assertEquals(mapOf("exitCode" to 0, "output" to "", "payload" to mapOf("fixed" to true)), runtime.getVariable(run, "flaky"))
@@ -165,12 +165,12 @@ class ScriptTaskTest : AntsTest() {
 
     @Test
     fun `renaming the Script leaves the Process working, its page shows the Process using it, and the catalogue gives its new name`() {
-        saveScript("greet", inputs = "text", code = "import {writeFileSync} from 'node:fs'\nwriteFileSync(process.env.ANTS_OUTPUT, JSON.stringify({greeted: true}))\n")
+        saveScript("greet", inputs = "text", code = "ants.output({greeted: true})\n")
         deploy("greeting", scriptTask("greet", "greet", mapOf("text" to "\${text}")))
         val id = Regex("""name="ants.script" value="(s-[a-z0-9]{6})"""").find(deployed("greeting"))!!.groupValues[1]
         assertContains(deployed("greeting"), """name="ants.name.$id" value="greet"""")
 
-        saveScript("say-hello", inputs = "text", was = "greet", code = "import {writeFileSync} from 'node:fs'\nwriteFileSync(process.env.ANTS_OUTPUT, JSON.stringify({greeted: true}))\n")
+        saveScript("say-hello", inputs = "text", was = "greet", code = "ants.output({greeted: true})\n")
         assertContains(browser.get("/scripts/say-hello").body, """<a href="/processes/greeting">greeting</a>""")
         val catalogue = json.readValue(browser.get("/catalogue.json").body, Map::class.java)
         assertEquals(mapOf("id" to id, "name" to "say-hello", "description" to "Does say-hello.", "inputs" to listOf("text")), (catalogue["scripts"] as List<*>).single { (it as Map<*, *>)["id"] == id })

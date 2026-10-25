@@ -69,10 +69,9 @@ class ScriptHelperTest : AntsTest() {
             browser.post("/scripts/new", listOf("name" to "post-message", "description" to "Posts a message.", "code" to "console.log('saved')\n",
                 "inputs" to "text", "vars" to "", "secrets[0].name" to "SLACK_TOKEN", "secrets[0].value" to "xoxb-s3cret", "secrets[0].was" to ""))
             val unsaved = """
-                import {readFileSync, writeFileSync} from 'node:fs'
-                const inputs = JSON.parse(readFileSync(0, 'utf8'))
+                const inputs = ants.inputs
                 console.log(`unsaved ${'$'}{inputs.text} to ${'$'}{process.env.CHANNEL} with ${'$'}{process.env.SLACK_TOKEN} and ${'$'}{process.env.NPM_TOKEN}`)
-                writeFileSync(process.env.ANTS_OUTPUT, JSON.stringify({posted: inputs.text, token: process.env.SLACK_TOKEN}))
+                ants.output({posted: inputs.text, token: process.env.SLACK_TOKEN})
             """.trimIndent()
             var code = unsaved
             fun form() = listOf(

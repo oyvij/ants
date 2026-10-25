@@ -8,12 +8,13 @@ Process runs as a Script Task or an Agent calls as a tool, the same way every ti
 
 - A JavaScript ES module, run as `node script.mjs` with Node's built-ins only: no npm packages, so `import` only
   `node:` modules. A package import fails with Node's own error.
-- Its inputs arrive as one JSON object on stdin: `JSON.parse(readFileSync(process.stdin.fd, 'utf8') || '{}')`.
+- Its inputs are ready, parsed, as the global `ants.inputs`, such as `ants.inputs.text`. Don't read stdin.
+- It hands back its payload with `ants.output(value)`: what later Tasks read. A later call replaces an earlier one, and
+  a value JSON can't hold fails the run. Log to stdout and stderr as you like; only `ants.output` is the payload.
 - Its vars and Secrets arrive as `process.env.<NAME>`. You never see a Secret's value, and you never need it: read it
   from `process.env`.
-- `process.env.ANTS_RUN_WORKSPACE` is the folder it runs in, `process.env.ANTS_RUN_ID` the Run's id, and
-  `process.env.ANTS_OUTPUT` names a file it may write its payload to, as JSON: what later Tasks read. Log to stdout and
-  stderr as you like; only the file is the payload.
+- `process.env.ANTS_RUN_WORKSPACE` is the folder it runs in, and `process.env.ANTS_RUN_ID` the Run's id.
+- Top-level `await` works, so `const answer = await fetch(...)` needs no wrapper.
 - A non-zero exit fails the Task that runs it. A problem the Process should branch on is a payload, with exit 0.
 
 ## How you work

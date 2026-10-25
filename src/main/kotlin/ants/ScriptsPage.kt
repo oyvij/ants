@@ -62,15 +62,13 @@ data class ScriptForm(
         )
 
         val PLACEHOLDER = """
-            |import {readFileSync, writeFileSync} from 'node:fs'
-            |
-            |const inputs = JSON.parse(readFileSync(process.stdin.fd, 'utf8') || '{}')
+            |const text = ants.inputs.text
             |const channel = process.env.CHANNEL
             |const token = process.env.SLACK_TOKEN
             |
-            |console.log(`Posting to ${'$'}{channel}: ${'$'}{inputs.text}`)
+            |console.log(`Posting to ${'$'}{channel}: ${'$'}{text}`)
             |
-            |writeFileSync(process.env.ANTS_OUTPUT, JSON.stringify({posted: true}))
+            |ants.output({posted: true})
         """.trimMargin()
     }
 }

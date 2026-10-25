@@ -127,7 +127,7 @@ function show(result, {exitCode, output, payload}) {
     }
     sections.push(parsed === undefined ? element('pre', 'output', output || '(none)') : pretty(parsed, 'output'));
     sections.push(element('h4', '', 'Payload'));
-    sections.push(payload === null || payload === undefined ? element('span', 'muted small', 'None written to ANTS_OUTPUT') : pretty(payload, 'payload'));
+    sections.push(payload === null || payload === undefined ? element('span', 'muted small', 'None handed back with ants.output') : pretty(payload, 'payload'));
     result.replaceChildren(...sections);
 }
 

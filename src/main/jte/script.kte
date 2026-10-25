@@ -52,7 +52,7 @@
                 <input id="description" name="description" value="${form.description}" placeholder="e.g. Posts a message to a Slack channel." required></div>
         </div>
     </div>
-    <div class="card"><h3>Code</h3><div class="help">A JavaScript ES module, run as <code>node script.mjs</code> with Node's built-ins only. Its inputs arrive as one JSON object on stdin, its vars and Secrets as <code>process.env.NAME</code>, and the JSON it writes to the file <code>process.env.ANTS_OUTPUT</code> names is its payload.</div>
+    <div class="card"><h3>Code</h3><div class="help">A JavaScript ES module, run as <code>node script.mjs</code> with Node's built-ins only. Its inputs are ready as <code>ants.inputs</code>, its vars and Secrets as <code>process.env.NAME</code>, and it hands back its payload with <code>ants.output(value)</code>.</div>
         <textarea id="code" name="code" rows="20" data-code-editor="/scripts/test-run" data-helper="script-helper" placeholder="${placeholder}">${form.code}</textarea>
     </div>
     <div class="grid2">

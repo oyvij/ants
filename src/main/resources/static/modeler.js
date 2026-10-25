@@ -600,7 +600,7 @@ async function scriptPanel(element, box) {
     box.replaceChildren(
         field("Script", "What it runs, from your Scripts.", select, edit, create),
         el("div", {className: "fld"}, el("label", {className: "f", textContent: "Inputs"}),
-            note("help", "What the Script reads on stdin, each from start-form fields, Run variables or Results of Tasks before it, as ${…}."), references,
+            note("help", "What the Script reads as ants.inputs, each from start-form fields, Run variables or Results of Tasks before it, as ${…}."), references,
             ...(rows.length ? rows : [note("muted small", script ? "The Script declares no inputs." : "Pick a Script to see its inputs.")])),
         el("div", {className: "help"}, "Later Tasks can read: ", ...(read[element.id] || []).flatMap(reference => [el("code", {textContent: reference}), " "])),
     )

@@ -18,16 +18,19 @@ broke what named them and needed a confirm, Scripts, Agents and Skills all link 
 - **One runner runs a Script, whoever calls it**: a Script Task, an Agent's Script tool, or a Test run from the user or
   the editor's AI helper. It runs `node script.mjs` with no shell, in a given folder, as Protected Commands run.
   - The environment is the CLI's allow-list, the Script's vars and Secrets each as `process.env.<NAME>`, and
-    `ANTS_RUN_WORKSPACE`, `ANTS_RUN_ID` and `ANTS_OUTPUT`.
-  - The inputs arrive as one JSON object on stdin.
-  - `ANTS_OUTPUT` names a fresh file the Script may write JSON to, its payload, so logging to stdout never breaks what
-    later Tasks read.
+    `ANTS_RUN_WORKSPACE` and `ANTS_RUN_ID`.
+  - Node starts with an Ants module loaded before the Script (`node --import`), which defines the global `ants`. The
+    Script reads its parsed inputs as `ants.inputs` and hands back its payload with `ants.output(value)`; a later call
+    replaces an earlier one, and the payload is serialised when the process ends. How the module gets the inputs and
+    hands back the payload is the runner's business, not the Script's: no stdin to parse, no file to write. The payload
+    never mixes with stdout, so logging never breaks what later Tasks read. The Script is still a plain ES module, so
+    top-level `await` works.
   - It answers `{exitCode, output, payload}`: `output` is stdout and stderr together, with every Secret value, the
     Script's own and its linked ones, masked as `••••` by the masking Protected Commands use; `payload` is the parsed
-    JSON, or empty when the Script wrote none.
+    JSON, or empty when the Script handed none back.
   - After 10 minutes, as for `run`, Ants kills the process tree and the run fails.
-  - A payload that isn't JSON fails the run, and its output says so. The Spec left this open; failing is the safe
-    choice, since a later Task would otherwise read a payload that isn't there.
+  - A value `ants.output` can't serialise to JSON fails the run, and its output says so. The Spec left this open;
+    failing is the safe choice, since a later Task would otherwise read a payload that isn't there.
   - A Test run runs the editor's unsaved code with sample inputs, in a new scratch folder deleted afterwards, with the
     Script's real Secrets and vars.
 - **A Script Task** is a `bpmn:ServiceTask` on topic `script` with `ants.script=<id>`, the Script's inputs as its input
@@ -85,7 +88,8 @@ broke what named them and needed a confirm, Scripts, Agents and Skills all link 
 - **A Protected Command the Agent assembles**: still an Agent, and a prefix, not code the user wrote.
 - **npm packages with an install step**, or **Python**: something more to install and keep working on every machine.
   Left for later.
-- **The payload on stdout**: any log line would break it. Hence the `ANTS_OUTPUT` file.
+- **The payload on stdout**: any log line would break it. Hence `ants.output`. Before it, a file named
+  by `ANTS_OUTPUT` and the inputs on stdin, which made every Script write that plumbing itself.
 - **Inline Scripts on a Task**: code nobody else can reuse, and a second place to edit and hide it.
 - **Script tools for codex**: they need MCP in codex first.
 - **Keeping names as links, with a rename confirm**: every rename stays a risk and a question. A fixed id makes it
