@@ -26,6 +26,8 @@ class Links(private val property: (String) -> String?) {
 
     fun skills(catalogue: Catalogue): List<Result<Skill>>? = Job(property).listed?.map { runCatching { catalogue.linkedSkill(it, kept(it)) } }
 
+    fun scripts(scripts: Scripts): List<Result<Script>>? = property(SCRIPTS)?.let(::words)?.map { runCatching { scripts.linked(it, kept(it)) } }
+
     fun agentName(catalogue: Catalogue): String? = agentValue?.let { shown(it) { agent(catalogue).name } }
 
     fun startingSkillName(catalogue: Catalogue): String? = Job(property).skill?.let { shown(it) { catalogue.linkedSkill(it, kept(it)).name } }
@@ -37,7 +39,7 @@ class Links(private val property: (String) -> String?) {
 
 private data class Link(val value: String, val name: String?)
 
-fun Catalogue.linkById(document: Document): Boolean {
+fun Catalogue.linkById(document: Document, scripts: Scripts): Boolean {
     var relinked = false
     for (task in agentTaskElements(document)) {
         val properties = propertyElements(task)
@@ -53,6 +55,9 @@ fun Catalogue.linkById(document: Document): Boolean {
         val skills = properties[SKILLS]
         val listed = words(skills?.getAttribute("value"))
         val skillLinks = listed.map { value -> link(value) { v, kept -> linkedSkill(v, kept).let { it.id to it.name } } }
+        val scriptsProperty = properties[SCRIPTS]
+        val listedScripts = words(scriptsProperty?.getAttribute("value"))
+        val scriptLinks = listedScripts.map { value -> link(value) { v, kept -> scripts.linked(v, kept).let { it.id to it.name } } }
         properties.filterKeys { it.startsWith(LINKED_NAME) }.values.forEach { it.parentNode.removeChild(it) }
         if (agent != null && agentLink != null) {
             if (agentLink.value != agent.getAttribute("value")) relinked = true
@@ -65,6 +70,13 @@ fun Catalogue.linkById(document: Document): Boolean {
                 skills.setAttribute("value", skillLinks.joinToString(", ") { it.value })
             }
             skillLinks.distinctBy { it.value }.reversed().forEach { addNameBeside(skills, it) }
+        }
+        if (scriptsProperty != null) {
+            if (scriptLinks.map { it.value } != listedScripts) {
+                relinked = true
+                scriptsProperty.setAttribute("value", scriptLinks.joinToString(", ") { it.value })
+            }
+            scriptLinks.distinctBy { it.value }.reversed().forEach { addNameBeside(scriptsProperty, it) }
         }
     }
     return relinked

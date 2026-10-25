@@ -2,6 +2,7 @@ package ants
 
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.springframework.beans.factory.annotation.Autowired
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.CsvSource
 import tools.jackson.databind.json.JsonMapper
@@ -322,6 +323,20 @@ class ChecksTest : AntsTest() {
         } finally {
             home.resolve("skills/extra").toFile().deleteRecursively()
         }
+    }
+
+    @Autowired
+    lateinit var scripts: Scripts
+
+    @Test
+    fun `an Agent Task's Scripts must each be known and listed by its Agent`() {
+        scripts.save(Script("s-post01", "post-message", "Posts a message."), "", emptyMap())
+        scripts.save(Script("s-other1", "other", "Does other."), "", emptyMap())
+        home.resolve("agents/writer.md").writeText("---\nskills: draft\nscripts: [s-post01]\n---\nWrite plainly.\n")
+        refuses(diagram(job("ants.skills" to "draft", "ants.scripts" to "post-message, other")), "draft", "Draft (draft): The Agent writer doesn't list the Script other.")
+        refuses(diagram(job("ants.skills" to "draft", "ants.scripts" to "nothing")), "draft", "Draft (draft): No Script named nothing.")
+        for (fine in listOf(job("ants.skills" to "draft", "ants.scripts" to "post-message"), job("ants.skills" to "draft", "ants.scripts" to "s-post01"), job("ants.skills" to "draft", "ants.scripts" to "")))
+            assertEquals(emptyList(), checks(diagram(fine)).filter { it["warning"] == false })
     }
 
     @Test

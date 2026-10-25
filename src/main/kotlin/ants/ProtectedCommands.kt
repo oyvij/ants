@@ -23,10 +23,10 @@ class ProtectedCommands(private val settings: Settings, private val mcp: Mcp) {
     internal var timeLimit: Duration = Duration.ofMinutes(10)
 
     /** Gives the Task working in [workspace] a token for `run`, until [close], and returns it with the Task's `--mcp-config`. */
-    fun open(workspace: Path): Pair<String, String> = mcp.open(object : McpTools {
-        override val tools = listOf(TOOL)
+    fun open(workspace: Path, also: McpTools = NO_TOOLS): Pair<String, String> = mcp.open(object : McpTools {
+        override val tools = listOf(TOOL) + also.tools
 
-        override fun call(name: String, arguments: Map<*, *>) = try {
+        override fun call(name: String, arguments: Map<*, *>) = if (name != TOOL["name"]) also.call(name, arguments) else try {
             run(workspace, arguments["command"]?.toString().orEmpty(), arguments["folder"]?.toString() ?: ".").let { (exit, output) -> "Exit code $exit\n\n$output" to (exit != 0) }
         } catch (refused: Refused) {
             refused.message to true
@@ -76,6 +76,12 @@ class ProtectedCommands(private val settings: Settings, private val mcp: Mcp) {
     class Refused(override val message: String) : Exception(message)
 
     companion object {
+        private val NO_TOOLS = object : McpTools {
+            override val tools = emptyList<Map<String, Any?>>()
+
+            override fun call(name: String, arguments: Map<*, *>) = "No tool $name here." to true
+        }
+
         /** What stands for a Secret's value wherever Ants shows output. */
         const val MASK = "••••"
 

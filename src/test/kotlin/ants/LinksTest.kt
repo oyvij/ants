@@ -1,6 +1,7 @@
 package ants
 
 import org.junit.jupiter.api.Test
+import org.springframework.beans.factory.annotation.Autowired
 import tools.jackson.databind.json.JsonMapper
 import kotlin.io.path.createDirectories
 import kotlin.io.path.readText
@@ -48,6 +49,24 @@ class LinksTest : AntsTest() {
         writerAndDraft()
         assertEquals("/processes/by-name", deploy(linking("by-name", property("ants.agent", "writer") + property("ants.skills", "draft"))).path)
         linksById(diagram("by-name"))
+    }
+
+    @Autowired
+    lateinit var scripts: Scripts
+
+    @Test
+    fun `a Task's Scripts written by name, or by an id unknown here, are saved as ids, each current name beside its id`() {
+        writerAndDraft()
+        scripts.save(Script("s-post01", "post-message", "Posts a message."), "", emptyMap())
+        scripts.save(Script("s-tidy01", "tidy", "Tidies."), "", emptyMap())
+        home.resolve("agents/writer.md").writeText("---\nid: a-writer\nskills: draft\nscripts: [s-post01, s-tidy01]\n---\nWrite plainly.\n")
+        deploy(linking("scripted", property("ants.agent", "writer") + property("ants.skills", "draft") +
+            property("ants.scripts", "post-message, s-zz0001") + property("ants.name.s-zz0001", "tidy")))
+        val diagram = diagram("scripted")
+        assertContains(diagram, """name="ants.scripts" value="s-post01, s-tidy01"""")
+        assertContains(diagram, """name="ants.name.s-post01" value="post-message"""")
+        assertContains(diagram, """name="ants.name.s-tidy01" value="tidy"""")
+        assertFalse("zz0001" in diagram)
     }
 
     @Test

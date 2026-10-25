@@ -57,7 +57,7 @@ private val GONE_SKILLS = mapOf("grill" to "grilling", "scout" to null, "answer-
  */
 @Component
 class Migration(
-    private val repository: RepositoryService, private val processes: Processes, private val catalogue: Catalogue, @Value("\${ants.home}") private val home: Path,
+    private val repository: RepositoryService, private val processes: Processes, private val catalogue: Catalogue, private val scripts: Scripts, @Value("\${ants.home}") private val home: Path,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -248,13 +248,13 @@ class Migration(
     private fun links(templatesKeptOld: Set<Path>) {
         for (file in home.resolve("templates").takeIf { it.exists() }?.listDirectoryEntries("*.bpmn").orEmpty()) {
             val document = runCatching { parse(file.readBytes()) }.getOrNull() ?: continue
-            if (!catalogue.linkById(document)) continue
+            if (!catalogue.linkById(document, scripts)) continue
             if (file !in templatesKeptOld) file.resolveSibling("${file.fileName}.old").writeBytes(file.readBytes())
             file.writeAtomically(serialize(document))
         }
         for (process in repository.createProcessDefinitionQuery().latestVersion().list().filter { !it.resourceName.startsWith("shipped/") }) {
             val bpmn = repository.getProcessModel(process.id).readAllBytes()
-            if (!catalogue.linkById(parse(bpmn))) continue
+            if (!catalogue.linkById(parse(bpmn), scripts)) continue
             try {
                 processes.deploy(bpmn, process.resourceName)
             } catch (e: Refused) {

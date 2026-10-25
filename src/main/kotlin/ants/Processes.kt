@@ -47,6 +47,7 @@ import javax.xml.transform.stream.StreamResult
 class Processes(
     private val repository: RepositoryService, private val startForm: StartForm, private val settings: Settings, private val checks: Checks, private val preRun: PreRun,
     private val schedules: Schedules, private val usedBy: UsedBy, private val history: HistoryService, private val names: RunNames, private val clock: Clock, private val catalogue: Catalogue,
+    private val scripts: Scripts,
     @Value("\${ants.home}") private val home: Path,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -152,7 +153,7 @@ class Processes(
      * Check fails. Gives the Process's key.
      */
     internal fun deploy(bpmn: ByteArray, name: String? = null): String = try {
-        val xml = operatonOnly(bpmn, catalogue::linkById)
+        val xml = operatonOnly(bpmn) { catalogue.linkById(it, scripts) }
         val failed = checks.of(xml).filterNot { it.warning }
         if (failed.isNotEmpty()) throw Refused(failed.joinToString("\n") { it.message })
         val key = process(parse(xml.toByteArray())).getAttribute("id")

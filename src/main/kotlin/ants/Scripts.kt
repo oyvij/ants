@@ -44,7 +44,13 @@ class Scripts(@Value("\${ants.home}") home: Path, private val settings: Settings
 
     fun named(name: String): Script? = all().firstOrNull { it.name == name }
 
-    fun code(script: Script): String = folder(script).resolve("script.mjs").takeIf { it.exists() }?.readText().orEmpty()
+    fun withId(id: String): Script? = all().firstOrNull { it.id == id }
+
+    fun linked(value: String, kept: String? = null): Script = withId(value) ?: named(kept ?: value) ?: error("No Script named ${kept ?: value}")
+
+    fun file(script: Script): Path = folder(script).resolve("script.mjs")
+
+    fun code(script: Script): String = file(script).takeIf { it.exists() }?.readText().orEmpty()
 
     fun ownSecrets(script: Script): Map<String, String> = folder(script).resolve("secrets.yaml").takeIf { it.exists() }
         ?.let { Yaml().load<Map<*, *>>(it.readText()) }.orEmpty().entries.associate { (name, value) -> "$name" to "$value" }

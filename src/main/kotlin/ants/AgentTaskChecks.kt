@@ -24,6 +24,7 @@ import org.operaton.bpm.model.xml.instance.ModelElementInstance
 const val AGENT = "ants.agent"
 /** The Skills a Task may use, comma or space separated, an empty list none; without it, its Agent's (ADR 0024). */
 const val SKILLS = "ants.skills"
+const val SCRIPTS = "ants.scripts"
 /** What a Task asks its Agent to do, the job, in a few lines (ADR 0024). */
 const val ASSIGNMENT = "ants.assignment"
 /** "true" when the flow coming back to the Task resumes its last session. */
@@ -63,12 +64,12 @@ class Job(property: (String) -> String?) {
  * Each Agent Task's Agent and Skills: unknown or ambiguous names, no Assignment and not exactly one Skill listed on the
  * Task, a listed Skill the Agent doesn't list (ADR 0024), and an invalid result schema.
  */
-internal fun agentTasks(catalogue: Catalogue, model: BpmnModelInstance): List<Check> {
+internal fun agentTasks(catalogue: Catalogue, scripts: Scripts, model: BpmnModelInstance): List<Check> {
     val identified by lazy { catalogue.identified() }
-    return model.agentTasks.flatMap { task -> agentTask(task, catalogue) { identified } }
+    return model.agentTasks.flatMap { task -> agentTask(task, catalogue, scripts) { identified } }
 }
 
-private fun agentTask(task: ServiceTask, catalogue: Catalogue, identified: () -> List<Identified>): List<Check> {
+private fun agentTask(task: ServiceTask, catalogue: Catalogue, scripts: Scripts, identified: () -> List<Identified>): List<Check> {
     fun check(message: String) = Check(task.id, "${task.label}: $message")
     val links = Links(task)
     val agent = if (links.hasAgent) runCatching { links.agent(catalogue) } else null
@@ -76,6 +77,8 @@ private fun agentTask(task: ServiceTask, catalogue: Catalogue, identified: () ->
     val listed = links.skills(catalogue).orEmpty()
     val schema = ResultContract.schemaErrors(task.property(RESULT_SCHEMA).orEmpty())
     val lacking = agent?.getOrNull()?.let { a -> listed.mapNotNull { it.getOrNull() }.filter { !a.allows(it) }.map { check("The Agent ${a.name} doesn't list the Skill ${it.name}.") } }
+    val listedScripts = links.scripts(scripts).orEmpty()
+    val lackingScripts = agent?.getOrNull()?.let { a -> listedScripts.mapNotNull { it.getOrNull() }.filter { !a.allows(it) }.map { check("The Agent ${a.name} doesn't list the Script ${it.name}.") } }
     fun twins(item: Identified) = identified().filter { it.id == item.id && it.where != item.where }
         .map { check("The ${item.kind} ${item.name} has the same id as the ${it.kind} ${it.name}, in ${it.where}. Delete the id of one of them and restart Ants to give it a new one.") }
     val sharing = agent?.getOrNull()?.identified?.let(::twins).orEmpty() +
@@ -84,6 +87,7 @@ private fun agentTask(task: ServiceTask, catalogue: Catalogue, identified: () ->
         if (agent == null) Check(task.id, "${task.label} has no Agent.") else agent.exceptionOrNull()?.let { check("${it.message}.") },
         Check(task.id, "${task.label} has no Assignment and doesn't list exactly one Skill.").takeIf { !job.valid },
     ) + listed.mapNotNull { it.exceptionOrNull()?.let { e -> check("${e.message}.") } } + lacking.orEmpty() +
+        listedScripts.mapNotNull { it.exceptionOrNull()?.let { e -> check("${e.message}.") } } + lackingScripts.orEmpty() +
         listOfNotNull(schema.takeIf { it.isNotEmpty() }?.let { check("Its result schema is invalid: ${it.joinToString("; ")}") }) + sharing
 }
 

@@ -42,11 +42,14 @@ class Agent(val file: Path, text: String = file.readText(), outsideId: String? =
     val description = meta["description"]?.toString().orEmpty()
     val cli = meta["cli"]?.toString() ?: "claude"
     val skills = list(meta["skills"]).orEmpty()
+    val scripts = list(meta["scripts"]).orEmpty()
 
     /** Whether it may use every Skill, `skills: "*"`. */
     val allSkills get() = "*" in skills
 
     fun allows(skill: Skill) = allSkills || skill.id in skills || skill.name in skills
+
+    fun allows(script: Script) = script.id in scripts || script.name in scripts
 
     /** The tools as permission rules, such as `Bash(git log *)`; null for the default tools. */
     val tools = list(meta["tools"])
