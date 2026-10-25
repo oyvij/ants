@@ -256,6 +256,7 @@ class AgentsTest : AntsTest() {
 
         post("/agents/linker", mapOf("name" to "linker", "cli" to "claude", "skills" to "shipped-draft, code-review"))
         assertContains(agents.resolve("linker.md").readText(), "skills: k-shipped-draft, k-code-review\n")
+        agents.resolve("linker.md").deleteIfExists()
     }
 
     private fun import(name: String, text: String): String {
