@@ -231,16 +231,16 @@ class Migration(
         }
     }
 
-    private fun links(keptOld: Set<Path>) {
+    private fun links(templatesKeptOld: Set<Path>) {
         for (file in home.resolve("templates").takeIf { it.exists() }?.listDirectoryEntries("*.bpmn").orEmpty()) {
             val document = runCatching { parse(file.readBytes()) }.getOrNull() ?: continue
-            if (!catalogue.link(document)) continue
-            if (file !in keptOld) file.resolveSibling("${file.fileName}.old").writeBytes(file.readBytes())
+            if (!catalogue.linkById(document)) continue
+            if (file !in templatesKeptOld) file.resolveSibling("${file.fileName}.old").writeBytes(file.readBytes())
             file.writeAtomically(serialize(document))
         }
         for (process in repository.createProcessDefinitionQuery().latestVersion().list().filter { !it.resourceName.startsWith("shipped/") }) {
             val bpmn = repository.getProcessModel(process.id).readAllBytes()
-            if (!catalogue.link(parse(bpmn))) continue
+            if (!catalogue.linkById(parse(bpmn))) continue
             try {
                 processes.deploy(bpmn, process.resourceName)
             } catch (e: Refused) {

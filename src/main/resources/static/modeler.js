@@ -4,7 +4,7 @@
 // and explanation (the Agent Task's Agent and Skill, a decision's paths) is a function in `panels`. What it writes as
 // text, with no page, is in modeler-text.js.
 
-import {camel, linkedChanges, linkedProperties, operators, readCondition, resultFields, toCamunda, unary} from "/modeler-text.js"
+import {camel, linkedChanges, linkedProperties, listedSkills, operators, readCondition, resultFields, toCamunda, unary} from "/modeler-text.js"
 
 // From the server (modelerFacts in Checks.kt): what Ants calls each element it runs and what it does there (the
 // palette's tooltip and the panel's explanation), the Built-in Tasks by topic with their name and what each does, the start-form field types by the
@@ -559,12 +559,6 @@ panels.agent = element => {
 async function laterRead() {
     const {xml} = await modeler.get("moddle").toXML(modeler.getDefinitions())
     return (await fetch("/processes/outputs", {method: "POST", body: new URLSearchParams({_csrf: csrf, bpmn: xml})})).json()
-}
-
-// The Skills an Agent Task lists itself (ADR 0024): its ants.skills, an empty one none; null when it lists none and
-// gets its Agent's.
-function listedSkills(props) {
-    return props["ants.skills"] === undefined ? null : props["ants.skills"].split(/[\s,]+/).filter(Boolean)
 }
 
 // The Skill a Task starts with as its job: its one listed Skill, when it has no Assignment.

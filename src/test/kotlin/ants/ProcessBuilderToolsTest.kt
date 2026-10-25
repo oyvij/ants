@@ -3,6 +3,7 @@ package ants
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import tools.jackson.databind.json.JsonMapper
+import tools.jackson.databind.node.ObjectNode
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -113,8 +114,10 @@ class ProcessBuilderToolsTest : AntsTest() {
         fun tool(name: String, arguments: Map<String, Any?> = emptyMap()) = call(token, name, arguments).also { assertEquals(false, it.second, it.first) }.first.let { json.readTree(it) }
         fun endpoint(body: String) = json.readTree(body)
         val catalogue = endpoint(browser.get("/catalogue.json").body)
-        assertEquals(catalogue["agents"], tool("agents"))
-        assertEquals(catalogue["skills"], tool("skills"))
+        for (kind in listOf("agents", "skills")) {
+            assertTrue(tool(kind).none { it.has("id") })
+            assertEquals(catalogue[kind].onEach { (it as ObjectNode).remove("id") }, tool(kind))
+        }
         assertEquals(endpoint(browser.get("/processes.json").body), tool("processes"))
         assertEquals(endpoint(browser.get("/templates.json").body), tool("templates"))
         assertEquals(json.valueToTree(builtIns), tool("built_in_tasks"))

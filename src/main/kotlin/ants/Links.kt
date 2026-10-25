@@ -26,22 +26,25 @@ class Links(private val property: (String) -> String?) {
 
     fun skills(catalogue: Catalogue): List<Result<Skill>>? = Job(property).listed?.map { runCatching { catalogue.linkedSkill(it, kept(it)) } }
 
-    fun agentName(catalogue: Catalogue): String? = agentValue?.let { runCatching { agent(catalogue).name }.getOrNull() ?: kept(it) ?: it }
+    fun agentName(catalogue: Catalogue): String? = agentValue?.let { shown(it) { agent(catalogue).name } }
 
-    fun startingSkillName(catalogue: Catalogue): String? = Job(property).skill?.let { runCatching { catalogue.linkedSkill(it, kept(it)).name }.getOrNull() ?: kept(it) ?: it }
+    fun startingSkillName(catalogue: Catalogue): String? = Job(property).skill?.let { shown(it) { catalogue.linkedSkill(it, kept(it)).name } }
+
+    private fun shown(value: String, current: () -> String) = runCatching(current).getOrNull() ?: kept(value) ?: value
 
     private fun kept(value: String) = property(nameBeside(value))
 }
 
-fun Catalogue.link(document: Document): Boolean {
+private data class Link(val value: String, val name: String?)
+
+fun Catalogue.linkById(document: Document): Boolean {
     var relinked = false
     for (task in agentTaskElements(document)) {
         val properties = propertyElements(task)
-        fun value(name: String) = properties[name]?.getAttribute("value")
-        fun link(value: String, find: (String, String?) -> Pair<String?, String>?): Pair<String, String?> {
-            val kept = value(nameBeside(value))
-            val found = runCatching { find(value, kept) }.getOrNull() ?: return value to kept
-            return (found.first ?: found.second) to found.second.takeIf { found.first != null }
+        fun link(value: String, find: (String, String?) -> Pair<String?, String>): Link {
+            val kept = properties[nameBeside(value)]?.getAttribute("value")
+            val (id, name) = runCatching { find(value, kept) }.getOrNull() ?: return Link(value, kept)
+            return if (id == null) Link(name, null) else Link(id, name)
         }
         val agent = properties[AGENT]
         val agentLink = agent?.getAttribute("value")?.trim()?.takeIf(String::isNotBlank)?.let { value ->
@@ -52,24 +55,25 @@ fun Catalogue.link(document: Document): Boolean {
         val skillLinks = listed.map { value -> link(value) { v, kept -> linkedSkill(v, kept).let { it.id to it.name } } }
         properties.filterKeys { it.startsWith(LINKED_NAME) }.values.forEach { it.parentNode.removeChild(it) }
         if (agent != null && agentLink != null) {
-            if (agentLink.first != agent.getAttribute("value")) relinked = true
-            agent.setAttribute("value", agentLink.first)
-            agentLink.second?.let { besides(agent, agentLink.first, it) }
+            if (agentLink.value != agent.getAttribute("value")) relinked = true
+            agent.setAttribute("value", agentLink.value)
+            addNameBeside(agent, agentLink)
         }
         if (skills != null) {
-            if (skillLinks.map { it.first } != listed) {
+            if (skillLinks.map { it.value } != listed) {
                 relinked = true
-                skills.setAttribute("value", skillLinks.joinToString(", ") { it.first })
+                skills.setAttribute("value", skillLinks.joinToString(", ") { it.value })
             }
-            skillLinks.distinctBy { it.first }.reversed().forEach { (id, name) -> name?.let { besides(skills, id, it) } }
+            skillLinks.distinctBy { it.value }.reversed().forEach { addNameBeside(skills, it) }
         }
     }
     return relinked
 }
 
-private fun besides(linking: Element, id: String, name: String) {
+private fun addNameBeside(linking: Element, link: Link) {
+    val name = link.name ?: return
     val named = linking.cloneNode(false) as Element
-    named.setAttribute("name", nameBeside(id))
+    named.setAttribute("name", nameBeside(link.value))
     named.setAttribute("value", name)
     linking.parentNode.insertBefore(named, linking.nextSibling)
 }

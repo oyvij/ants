@@ -85,31 +85,33 @@ export function cronOf({every, at, on, dom, cron}) {
     return `0 ${m} ${h} ` + {day: "* * *", weekday: "* * MON-FRI", week: `* * ${on || "MON"}`, month: `${dom || 1} * *`}[every]
 }
 
-const nameBeside = id => "ants.name." + id
+export const listedSkills = props => props["ants.skills"] === undefined ? null : props["ants.skills"].split(/[\s,]+/).filter(Boolean)
 
-const listed = props => props["ants.skills"] === undefined ? null : props["ants.skills"].split(/[\s,]+/).filter(Boolean)
-
-function linkedName(props, value, items) {
-    const kept = props[nameBeside(value)]
+function linkedName(props, value, items, nameBeside) {
+    const kept = props[nameBeside + value]
     return (items.find(item => item.id === value) || items.find(item => item.name === (kept ?? value)))?.name ?? kept ?? value
 }
 
 export function linkedProperties(props, catalogue) {
-    const named = Object.fromEntries(Object.entries(props).filter(([name]) => !name.startsWith(nameBeside(""))))
-    if (props["ants.agent"] !== undefined) named["ants.agent"] = linkedName(props, props["ants.agent"], catalogue.agents)
-    if (props["ants.skills"] !== undefined) named["ants.skills"] = listed(props).map(value => linkedName(props, value, catalogue.skills)).join(", ")
+    const {nameBeside} = catalogue
+    const named = Object.fromEntries(Object.entries(props).filter(([name]) => !name.startsWith(nameBeside)))
+    if (props["ants.agent"] !== undefined) named["ants.agent"] = linkedName(props, props["ants.agent"], catalogue.agents, nameBeside)
+    if (props["ants.skills"] !== undefined) named["ants.skills"] = listedSkills(props).map(value => linkedName(props, value, catalogue.skills, nameBeside)).join(", ")
     return named
 }
 
 export function linkedChanges(props, changes, catalogue) {
+    const {nameBeside} = catalogue
     const now = {...linkedProperties(props, catalogue), ...changes}
+    const unmatched = Object.fromEntries([props["ants.agent"], ...(listedSkills(props) || [])].filter(value => props[nameBeside + value] !== undefined)
+        .map(value => [props[nameBeside + value], [value, props[nameBeside + value]]]))
     const link = (name, items) => {
         const item = items.find(i => i.name === name)
-        return item?.id ? [item.id, name] : [name, null]
+        return item?.id ? [item.id, name] : unmatched[name] ?? [name, null]
     }
     const agent = now["ants.agent"] === undefined ? null : link(now["ants.agent"], catalogue.agents)
-    const skills = listed(now)?.map(name => link(name, catalogue.skills)) ?? null
-    const names = Object.fromEntries(Object.keys(props).filter(name => name.startsWith(nameBeside(""))).map(name => [name, undefined]))
-    for (const [id, name] of [agent, ...(skills || [])].filter(Boolean)) if (name) names[nameBeside(id)] = name
+    const skills = listedSkills(now)?.map(name => link(name, catalogue.skills)) ?? null
+    const names = Object.fromEntries(Object.keys(props).filter(name => name.startsWith(nameBeside)).map(name => [name, undefined]))
+    for (const [id, name] of [agent, ...(skills || [])].filter(Boolean)) if (name) names[nameBeside + id] = name
     return {...changes, ...names, ...(agent ? {"ants.agent": agent[0]} : {}), ...(skills ? {"ants.skills": skills.map(([id]) => id).join(", ")} : {})}
 }

@@ -90,7 +90,7 @@ class Templates(@Value("\${ants.home}") home: Path, private val catalogue: Catal
     fun save(@PathVariable name: String, @RequestParam bpmn: String): ResponseEntity<String> {
         val file = file(name).takeIf { it.startsWith(yours) }
             ?: throw ResponseStatusException(HttpStatus.FORBIDDEN, "The Template $name is read-only; Copy it to make your own.")
-        file.writeAtomically(serialize(read(bpmn.toByteArray()).also(catalogue::link)))
+        file.writeAtomically(serialize(read(bpmn.toByteArray()).also(catalogue::linkById)))
         return ResponseEntity.status(HttpStatus.SEE_OTHER).location(URI("/templates/$name")).build()
     }
 

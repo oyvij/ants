@@ -77,6 +77,7 @@ test("the diagram opens in camunda's namespace, which Ants' deploy path turns ba
 })
 
 const catalogue = {
+    nameBeside: "ants.name.",
     agents: [{id: "a-writer", name: "author"}, {id: null, name: "plain"}],
     skills: [{id: "k-draft", name: "drafting"}, {id: "k-tdd", name: "tdd"}],
 }
@@ -100,4 +101,10 @@ test("an Agent and Skills picked by name are written as ids, each current name b
     assert.deepEqual(linkedChanges({"ants.agent": "a-writer", "ants.skills": "k-draft", "ants.name.k-draft": "drafting"}, {"ants.skills": undefined}, catalogue),
         {"ants.skills": undefined, "ants.name.k-draft": undefined, "ants.agent": "a-writer", "ants.name.a-writer": "author"})
     assert.deepEqual(linkedChanges({}, {"ants.agent": "plain"}, catalogue), {"ants.agent": "plain"})
+})
+
+test("a link that matches nothing here keeps its id and the name beside it when the Task is written again", () => {
+    const props = {"ants.agent": "a-zz0002", "ants.name.a-zz0002": "gone", "ants.skills": "k-zz0003", "ants.name.k-zz0003": "lost"}
+    assert.deepEqual(linkedChanges(props, {"ants.assignment": "Go."}, catalogue),
+        {"ants.assignment": "Go.", "ants.name.a-zz0002": "gone", "ants.name.k-zz0003": "lost", "ants.agent": "a-zz0002", "ants.skills": "k-zz0003"})
 })

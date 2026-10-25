@@ -84,6 +84,7 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
             mapOf("id" to skill.id, "name" to skill.name, "description" to skill.description, "own" to skill.file.startsWith(catalogue.yourSkills), "folder" to skill.folder.parent.toString())
         },
         "profiles" to settings.profiles().keys,
+        "nameBeside" to LINKED_NAME,
     )
 
     @GetMapping("/agents/{name}")

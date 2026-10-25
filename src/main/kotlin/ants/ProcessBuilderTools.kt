@@ -58,8 +58,7 @@ class ProcessBuilderTools(
                     json.writeValueAsString(json.readValue(written, Map::class.java) + ("checks" to refusals))
                 }
                 in RELAYED -> ask(name, arguments)
-                "agents" -> json.writeValueAsString(agents.catalogue()["agents"])
-                "skills" -> json.writeValueAsString(agents.catalogue()["skills"])
+                "agents", "skills" -> json.writeValueAsString((agents.catalogue()[name] as List<*>).map { (it as Map<*, *>) - "id" })
                 "skill" -> catalogue.skill(argument("name")).let { skill ->
                     if (catalogue.hides(skill.file)) throw Refused("No Skill named ${skill.name}")
                     json.writeValueAsString(mapOf(
