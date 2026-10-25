@@ -34,12 +34,14 @@ function renumber(level, prefix) {
 function mount(card) {
     const {nesting} = types(card);
     const none = card.querySelector('[data-no-output]');
-    const changed = () => { // the levels are looked up each time, since the Script helper swaps whole levels in
+    // Renumbers the rows and says so with a change event from [where] it changed: within the card for the user's own edit,
+    // on the card itself when the Script helper swapped a level in. The levels are looked up each time for those swaps.
+    const changed = (where = card) => {
         card.querySelectorAll('[role=tabpanel] > .schema-level').forEach(top => renumber(top, top.dataset.prefix));
         if (none) none.hidden = rows(card.querySelector('#output-schema > .schema-level')).length > 0;
-        card.dispatchEvent(new Event('change', {bubbles: true}));
+        where.dispatchEvent(new Event('change', {bubbles: true}));
     };
-    card.addEventListener('schema-replaced', changed);
+    card.addEventListener('schema-replaced', () => changed());
     const tabs = [...card.querySelectorAll('[role=tab]')];
     const select = tab => tabs.forEach(other => { // without JS both panels show, so their rows can still be edited
         const on = other === tab;
@@ -54,17 +56,18 @@ function mount(card) {
         if (add) {
             const li = card.querySelector('template#schema-row').content.firstElementChild.cloneNode(true);
             add.closest('.schema-level').querySelector(':scope > ol').append(li);
-            changed();
+            changed(li);
             field(li, 'name').focus();
         } else if (remove) {
+            const level = remove.closest('.schema-level');
             remove.closest('.schema-row').remove();
-            changed();
+            changed(level);
         } else if (move) { // among its level's rows; the first stays first and the last last
             const li = move.closest('.schema-row');
             const other = move.dataset.moveRow === 'up' ? li.previousElementSibling : li.nextElementSibling;
             if (!other) return;
             if (move.dataset.moveRow === 'up') other.before(li); else other.after(li);
-            changed();
+            changed(li);
             move.focus();
         }
     });

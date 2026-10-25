@@ -21,8 +21,15 @@ function mount(textarea, cm) {
     textarea.dataset.mounted = '';
     let changed = () => {};
     const schema = textarea.form?.querySelector('#schema');
-    // A schema card level swapped for another, kept in the code's history so that Ctrl-Z takes it back as it does a code replace.
+    // A schema card level swapped for another, kept in the code's history so that Ctrl-Z takes it back as it does a code
+    // replace. Each swap holds the count of the user's own schema edits when it was made: once the user edits the rows
+    // after it, undoing or redoing it would drop those edits, so it no longer touches the card.
     const swap = cm.StateEffect.define();
+    let edits = 0, swapping = false;
+    // Not the card's own change after a swap, which is on the card, nor the blur of a focused row as its level goes.
+    const edited = event => { if (event.target !== schema && !swapping) edits++; };
+    schema?.addEventListener('input', edited);
+    schema?.addEventListener('change', edited);
     const box = element('div', 'code-editor');
     const ed = element('div', 'ed tall json');
     const editor = new cm.EditorView({
@@ -31,10 +38,12 @@ function mount(textarea, cm) {
             cm.history(), cm.drawSelection(), cm.lineNumbers(), cm.indentOnInput(), cm.bracketMatching(),
             cm.keymap.of([...cm.defaultKeymap, ...cm.historyKeymap, cm.indentWithTab]),
             cm.placeholder(textarea.placeholder), cm.javascript(), cm.syntaxHighlighting(cm.defaultHighlightStyle, {fallback: true}),
-            cm.invertedEffects.of(tr => tr.effects.filter(effect => effect.is(swap)).map(({value: {old, now}}) => swap.of({old: now, now: old}))),
+            cm.invertedEffects.of(tr => tr.effects.filter(effect => effect.is(swap)).map(({value: {old, now, at}}) => swap.of({old: now, now: old, at}))),
             cm.EditorView.updateListener.of(update => {
-                const swaps = update.transactions.flatMap(tr => tr.effects.filter(effect => effect.is(swap)));
+                const swaps = update.transactions.flatMap(tr => tr.effects.filter(effect => effect.is(swap) && effect.value.at === edits));
+                swapping = true;
                 swaps.forEach(({value: {old, now}}) => old.replaceWith(now));
+                swapping = false;
                 if (swaps.length) schema.dispatchEvent(new Event('schema-replaced'));
                 if (!update.docChanged) return;
                 textarea.value = update.state.doc.toString();
@@ -82,7 +91,7 @@ function mount(textarea, cm) {
         }
     });
     if (textarea.dataset.check) changed = checking(textarea, editor, cm, schema);
-    if (textarea.dataset.helper) openHelper(textarea, editor, cm, swap);
+    if (textarea.dataset.helper) openHelper(textarea, editor, cm, swap, () => edits);
 }
 
 /**
@@ -125,7 +134,7 @@ function checking(textarea, editor, cm, schema) {
     return soon;
 }
 
-async function openHelper(textarea, editor, cm, swap) {
+async function openHelper(textarea, editor, cm, swap, edits) {
     if (document.readyState === 'loading') await new Promise(loaded => addEventListener('DOMContentLoaded', loaded, {once: true}));
     const panel = document.getElementById(textarea.dataset.helper);
     const csrf = new FormData(textarea.form).get('_csrf');
@@ -144,7 +153,7 @@ async function openHelper(textarea, editor, cm, swap) {
             const effects = Object.entries({inputs: 'input-schema', output: 'output-schema'}).filter(([name]) => levels[name] !== undefined).map(([name, panel]) => {
                 const rendered = document.createElement('template');
                 rendered.innerHTML = levels[name];
-                return swap.of({old: textarea.form.querySelector(`#${panel} > .schema-level`), now: rendered.content.firstElementChild});
+                return swap.of({old: textarea.form.querySelector(`#${panel} > .schema-level`), now: rendered.content.firstElementChild, at: edits()});
             });
             editor.dispatch({effects, annotations: cm.isolateHistory.of('full')});
             return null;

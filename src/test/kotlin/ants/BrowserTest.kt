@@ -985,8 +985,6 @@ class BrowserTest : AntsTest() {
         val (read, _) = mcpCall(port, token, "schemas")
         assertEquals(mapOf("inputs" to inputs, "output" to output), tools.jackson.databind.json.JsonMapper.shared().readValue(read, Map::class.java))
         assertFalse(home.resolve("scripts").toFile().walk().any { it.name == "script.yaml" })
-        page.locator("input[name='inputs[1].rows[0].name']").fill("heading")
-        assertThat(page.locator("input[name='inputs[1].rows[0].name']")).hasValue("heading")
 
         editor.click()
         page.keyboard().press("ControlOrMeta+z")
@@ -998,7 +996,34 @@ class BrowserTest : AntsTest() {
         assertThat(page.getByLabel("Sample inputs, as JSON")).hasValue("""{"mine":""}""")
 
         page.keyboard().press("ControlOrMeta+y")
-        assertThat(page.locator("input[name='inputs[1].rows[0].name']")).hasValue("heading")
+        assertThat(page.locator("input[name='inputs[1].rows[0].name']")).hasValue("title")
+    }
+
+    @Test
+    fun `once the user edits the schema rows after the Script helper's replace, Ctrl-Z no longer swaps the old rows back over the edits`() = browse {
+        page.navigate(url("/scripts/new"))
+        val editor = page.locator(".code-editor .cm-content")
+        editor.click()
+        page.keyboard().insertText("console.log(ants.inputs.text)")
+        val helper = page.getByRole(AriaRole.COMPLEMENTARY, Page.GetByRoleOptions().setName("Script helper"))
+        assertThat(helper).hasAttribute("data-token", Pattern.compile(".+"))
+        val inputs = mapOf("type" to "object", "properties" to mapOf("text" to mapOf("type" to "string")))
+        val (text, failed) = mcpCall(port, helper.getAttribute("data-token")!!, "replace_schemas", mapOf("inputs" to inputs))
+        assertFalse(failed, text)
+        assertThat(page.locator("input[name='inputs[0].name']")).hasValue("text")
+        page.locator("#input-schema > .schema-level > [data-add-row]").click()
+        page.locator("input[name='inputs[1].name']").fill("channel")
+
+        editor.click()
+        page.keyboard().press("ControlOrMeta+z")
+        page.keyboard().press("ControlOrMeta+z")
+        assertThat(page.locator("textarea#code")).hasValue("")
+        assertThat(page.locator("input[name='inputs[0].name']")).hasValue("text")
+        assertThat(page.locator("input[name='inputs[1].name']")).hasValue("channel")
+        page.keyboard().press("ControlOrMeta+y")
+        page.keyboard().press("ControlOrMeta+y")
+        assertThat(editor).hasText("console.log(ants.inputs.text)")
+        assertThat(page.locator("input[name='inputs[1].name']")).hasValue("channel")
     }
 
     @Test
