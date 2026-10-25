@@ -28,7 +28,7 @@ class ScriptTask(
         val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult().rootProcessInstanceId
         val inputNames = element?.inputs().orEmpty().map { it.operatonName }.toSet()
         val inputs = task.variables.filterKeys { it in inputNames }.toSortedMap()
-        val result = runner.run(scripts.file(script), names.runWorkspace(run).createDirectories(), run, inputs, script.vars, scripts.secretEnvironment(script, scripts.ownSecrets(script)))
+        val result = runner.run(scripts.file(script), names.runWorkspace(run).createDirectories(), run, inputs, script.inputs, script.vars, scripts.secretEnvironment(script, scripts.ownSecrets(script)))
         if (result.exitCode != 0) throw Failed("The Script ${script.name} failed" + if (result.exitCode > 0) " with exit code ${result.exitCode}" else "", result.output)
         externalTasks.complete(task.id, WORKER, mapOf(task.activityId to linkedMapOf("exitCode" to result.exitCode, "output" to result.output, "payload" to result.payload)))
     }

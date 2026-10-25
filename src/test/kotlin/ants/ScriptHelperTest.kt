@@ -67,7 +67,7 @@ class ScriptHelperTest : AntsTest() {
         try {
             browser.get("/scripts/new")
             browser.post("/scripts/new", listOf("name" to "post-message", "description" to "Posts a message.", "code" to "console.log('saved')\n",
-                "inputs" to "text", "vars" to "", "secrets[0].name" to "SLACK_TOKEN", "secrets[0].value" to "xoxb-s3cret", "secrets[0].was" to ""))
+                "inputs[0].name" to "text", "inputs[0].type" to "string", "vars" to "", "secrets[0].name" to "SLACK_TOKEN", "secrets[0].value" to "xoxb-s3cret", "secrets[0].was" to ""))
             val unsaved = """
                 const inputs = ants.inputs
                 console.log(`unsaved ${'$'}{inputs.text} to ${'$'}{process.env.CHANNEL} with ${'$'}{process.env.SLACK_TOKEN} and ${'$'}{process.env.NPM_TOKEN}`)
@@ -76,7 +76,7 @@ class ScriptHelperTest : AntsTest() {
             var code = unsaved
             fun form() = listOf(
                 listOf("name", "post-message"), listOf("description", "Posts a message."), listOf("script", "post-message"), listOf("code", code),
-                listOf("inputs", "text"), listOf("vars", "CHANNEL=general"), listOf("secrets[0].name", "SLACK_TOKEN"), listOf("secrets[0].value", ""),
+                listOf("inputs[0].name", "text"), listOf("inputs[0].type", "string"), listOf("vars", "CHANNEL=general"), listOf("secrets[0].name", "SLACK_TOKEN"), listOf("secrets[0].value", ""),
                 listOf("secrets[0].was", "SLACK_TOKEN"), listOf("linked", "npm"),
             )
             val token = open()

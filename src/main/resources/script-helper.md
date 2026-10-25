@@ -23,7 +23,8 @@ Process runs as a Script Task or an Agent calls as a tool, the same way every ti
 2. Write the whole new code with `replace_buffer`. It lands in the editor unsaved, and the user saves it.
 3. Check your own work with `test_run`, giving sample inputs like the ones a caller passes. It runs the editor's code
    with the Script's real vars and Secrets and gives the exit code, the output with every Secret masked as `••••`, and
-   the payload. Fix what fails and run it again.
+   the payload. Sample inputs that break the Script's input schema are refused before it runs, with each problem.
+   Fix what fails and run it again.
 4. Say what you changed, what the test run showed, and what the user should check: the inputs, vars and Secrets the
    Script expects, which they declare on the page.
 

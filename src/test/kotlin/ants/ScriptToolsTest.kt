@@ -36,7 +36,7 @@ class ScriptToolsTest : AntsTest() {
     }
 
     private fun script(id: String, name: String, description: String = "Does $name.", inputs: List<String> = emptyList(), code: String = "console.log('hi')\n") =
-        Script(id, name, description, inputs).also { scripts.save(it, code, emptyMap()) }
+        Script(id, name, description, untypedInputs(*inputs.toTypedArray())).also { scripts.save(it, code, emptyMap()) }
 
     private fun agentWithScripts(vararg ids: String, cli: String = "") {
         agentTask(claude, agent = cli + "scripts: [${ids.joinToString(", ")}]\n", extra = "node: {path: ${ScriptsTest.NODE}}\n", env = listOf("PATH", "HOME"))
@@ -112,7 +112,7 @@ class ScriptToolsTest : AntsTest() {
             |ants.output({posted: inputs.text, run: process.env.ANTS_RUN_ID})
             |process.exit(inputs.fail ? 4 : 0)
         """.trimMargin()
-        Script("s-post01", "post-message", "Posts a message.", listOf("channel", "text", "fail"), secrets = listOf("SLACK_TOKEN"))
+        Script("s-post01", "post-message", "Posts a message.", untypedInputs("channel", "text", "fail"), secrets = listOf("SLACK_TOKEN"))
             .also { scripts.save(it, code, mapOf("SLACK_TOKEN" to "s3cret-slack")) }
         agentWithScripts("s-post01")
         val run = start()

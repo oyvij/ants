@@ -11,11 +11,11 @@ class ScriptTools(private val scripts: Scripts, private val runner: ScriptRunner
     fun of(allowed: List<Script>, workspace: Path, run: String): McpTools {
         val named = toolNames(allowed)
         return object : McpTools {
-            override val tools = named.map { (name, script) -> Mcp.tool(name, script.description, script.inputs.associateWith { mapOf("description" to "The Script's input $it, any JSON value.") }) }
+            override val tools = named.map { (name, script) -> Mcp.tool(name, script.description, script.inputNames.associateWith { mapOf("description" to "The Script's input $it, any JSON value.") }) }
 
             override fun call(name: String, arguments: Map<*, *>): Pair<String, Boolean> {
                 val script = named.getValue(name)
-                val result = runner.run(scripts.file(script), workspace, run, arguments.entries.associate { (key, value) -> "$key" to value }, script.vars, scripts.secretEnvironment(script, scripts.ownSecrets(script)))
+                val result = runner.run(scripts.file(script), workspace, run, arguments.entries.associate { (key, value) -> "$key" to value }, script.inputs, script.vars, scripts.secretEnvironment(script, scripts.ownSecrets(script)))
                 return json.writeValueAsString(mapOf("exitCode" to result.exitCode, "output" to withoutSource(result.output, scripts.file(script)), "payload" to result.payload)) to (result.exitCode != 0)
             }
         }

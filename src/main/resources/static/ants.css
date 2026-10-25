@@ -701,6 +701,11 @@ details.example pre { background: var(--line2); border: 0; padding: 10px; border
 }
 .code-editor .ed .cm-gutters { background: var(--panel2); border-right: 1px solid var(--line2); color: var(--text3); }
 .code-editor .test-bar { margin-top: 10px; } .code-editor .sample { font-size: 12.5px; }
+/* The Script page's schema card: tabs over rows, an object's fields nested and indented under it (schema-card.js). */
+.card.schema .tabs { margin: -4px 0 12px; }
+.schema-rows { list-style: none; margin: 0; padding: 0; } .schema-row > .row { margin-bottom: 6px; } .schema-row .row > .name { width: 140px; flex: none; }
+.schema-row .row > select { flex: none; } .schema-level > [data-add-row] { margin-bottom: 4px; }
+.schema-fields { margin: 0 0 8px 18px; padding-left: 10px; border-left: 2px solid var(--line2); }
 .test-run { margin-top: 10px; } .test-run h4 { margin: 12px 0 4px; font-size: 12.5px; }
 .test-run pre { margin: 0; padding: 8px 10px; font-family: var(--mono); font-size: 12.5px; max-height: 320px; }
 .test-run .j-key { color: var(--acc); } .test-run .j-str { color: var(--ok); } .test-run .j-num { color: var(--invC); } .test-run .j-lit { color: var(--bad); }

@@ -59,7 +59,7 @@ class ProcessBuilderTools(
                 }
                 "add_element" -> ask(name, arguments - "properties" + ("properties" to scriptProperties(arguments)))
                 in RELAYED -> ask(name, arguments)
-                "scripts" -> json.writeValueAsString(scripts.all().map { mapOf("name" to it.name, "description" to it.description, "inputs" to it.inputs) })
+                "scripts" -> json.writeValueAsString(scripts.all().map { mapOf("name" to it.name, "description" to it.description, "inputs" to it.inputNames) })
                 "agents", "skills" -> json.writeValueAsString((agents.catalogue()[name] as List<*>).map { (it as Map<*, *>) - "id" })
                 "skill" -> catalogue.skill(argument("name")).let { skill ->
                     if (catalogue.hides(skill.file)) throw Refused("No Skill named ${skill.name}")

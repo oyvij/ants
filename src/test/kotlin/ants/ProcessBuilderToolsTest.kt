@@ -142,7 +142,7 @@ class ProcessBuilderToolsTest : AntsTest() {
 
     @Test
     fun `add_element with the script kind draws a Script Task naming an existing Script by name, relayed to the page with its id`() {
-        scripts.save(Script("s-post01", "post", "Posts a message.", listOf("text", "channel")), "console.log('posted')\n", emptyMap())
+        scripts.save(Script("s-post01", "post", "Posts a message.", untypedInputs("text", "channel")), "console.log('posted')\n", emptyMap())
         val token = open()
         val relayed = mutableListOf<Map<*, *>>()
         page(token) { tool, arguments -> if (tool == "add_element") mapOf("id" to arguments["id"]).also { relayed += arguments } else null }
@@ -175,7 +175,7 @@ class ProcessBuilderToolsTest : AntsTest() {
 
     @Test
     fun `the scripts tool lists each Script's name, description and inputs, never its id, source, vars or Secrets`() {
-        scripts.save(Script("s-post01", "post", "Posts a message.", listOf("text", "channel"), mapOf("CHANNEL" to "general")), "console.log('a secret recipe')\n", mapOf("TOKEN" to "t0ps3cret"))
+        scripts.save(Script("s-post01", "post", "Posts a message.", untypedInputs("text", "channel"), mapOf("CHANNEL" to "general")), "console.log('a secret recipe')\n", mapOf("TOKEN" to "t0ps3cret"))
         val (text, failed) = call(open(), "scripts")
         assertFalse(failed, text)
         assertEquals(listOf(mapOf("name" to "post", "description" to "Posts a message.", "inputs" to listOf("text", "channel"))), json.readValue(text, List::class.java))
