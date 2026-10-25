@@ -31,9 +31,11 @@ function renumber(level, prefix) {
 }
 
 function mount(card) {
-    const top = card.querySelector('#input-schema > .schema-level');
+    const tops = [...card.querySelectorAll('[role=tabpanel] > .schema-level')];
+    const none = card.querySelector('[data-no-output]'), output = card.querySelector('#output-schema > .schema-level');
     const changed = () => {
-        renumber(top, top.dataset.prefix);
+        tops.forEach(top => renumber(top, top.dataset.prefix));
+        if (none) none.hidden = rows(output).length > 0;
         card.dispatchEvent(new Event('change', {bubbles: true}));
     };
     card.querySelectorAll('[role=tab]').forEach(tab => tab.addEventListener('click', () => {

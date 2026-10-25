@@ -129,8 +129,10 @@ async function openHelper(textarea, editor, cm) {
     panel.dataset.token = token;
 }
 
-function show(result, {exitCode, output, payload}) {
-    const badge = element('span', `pill ${exitCode === 0 ? 'p-done' : 'p-failed'}`, exitCode === 0 ? 'Succeeded · exit 0' : `Failed · exit ${exitCode}`);
+function show(result, {exitCode, output, payload, mismatches = []}) {
+    const fits = mismatches.length === 0;
+    const badge = element('span', `pill ${exitCode === 0 && fits ? 'p-done' : 'p-failed'}`,
+        exitCode !== 0 ? `Failed · exit ${exitCode}` : fits ? 'Succeeded · exit 0' : 'Failed · exit 0, the payload breaks the output schema');
     const sections = [badge, element('h4', '', 'Output')];
     let parsed;
     try {
@@ -141,6 +143,12 @@ function show(result, {exitCode, output, payload}) {
     sections.push(parsed === undefined ? element('pre', 'output', output || '(none)') : pretty(parsed, 'output'));
     sections.push(element('h4', '', 'Payload'));
     sections.push(payload === null || payload === undefined ? element('span', 'muted small', 'None handed back with ants.output') : pretty(payload, 'payload'));
+    if (!fits) {
+        const list = element('ul', 'warn mismatches');
+        list.setAttribute('aria-label', 'How the payload breaks the output schema');
+        list.append(...mismatches.map(mismatch => element('li', '', mismatch)));
+        sections.push(list);
+    }
     result.replaceChildren(...sections);
 }
 

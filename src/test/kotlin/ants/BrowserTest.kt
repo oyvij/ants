@@ -783,6 +783,40 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `the Script page's Output schema tab adds payload rows, a Test run shows each mismatch beside the result, and the rows save as output`() = browse {
+        home.resolve("settings.yaml").writeText("node: {path: ${ScriptsTest.NODE}}\n")
+        page.navigate(url("/scripts/new"))
+        page.locator("#schema").getByRole(AriaRole.TAB, Locator.GetByRoleOptions().setName("Output schema")).click()
+        val none = page.locator("#output-schema [data-no-output]")
+        assertThat(none).hasText("No output schema: any JSON payload is accepted.")
+        val output = page.locator("#output-schema > .schema-level")
+        output.locator(":scope > [data-add-row]").click()
+        assertThat(none).isHidden()
+        page.locator("input[name='output[0].name']").fill("ts")
+        page.locator("input[name='output[0].required']").check()
+        assertThat(page.getByLabel("Sample inputs, as JSON")).hasValue("{}")
+
+        page.locator(".code-editor .cm-content").click()
+        page.keyboard().insertText("ants.output({ts: 12})\n")
+        page.locator(".code-editor button", Page.LocatorOptions().setHasText("Test run")).click()
+        val result = page.locator(".test-run")
+        assertThat(result.locator(".pill.p-failed")).hasText("Failed · exit 0, the payload breaks the output schema")
+        assertThat(result.getByRole(AriaRole.LIST, Locator.GetByRoleOptions().setName("How the payload breaks the output schema"))).hasText("/ts: integer found, string expected")
+
+        page.locator("#name").fill("post-ts")
+        page.locator("#description").fill("Posts.")
+        page.locator(".ph button.primary").click()
+        assertThat(page).hasURL(Pattern.compile(".*/scripts/post-ts$"))
+        assertThat(page.locator("input[name='output[0].name']")).hasValue("ts")
+        val saved = home.resolve("scripts").toFile().listFiles()!!.map { it.resolve("script.yaml").readText() }.single { "name: post-ts" in it }
+        assertEquals(mapOf("type" to "object", "properties" to mapOf("ts" to mapOf("type" to "string")), "required" to listOf("ts")), org.yaml.snakeyaml.Yaml().load<Map<*, *>>(saved)["output"])
+
+        page.locator("#schema").getByRole(AriaRole.TAB, Locator.GetByRoleOptions().setName("Output schema")).click()
+        page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("Remove ts").setExact(true)).click()
+        assertThat(none).isVisible()
+    }
+
+    @Test
     fun `the Script editor's helper reads the unsaved code and replaces it in the editor, unsaved, and Ctrl-Z takes it back`() = browse {
         page.navigate(url("/scripts/new"))
         val editor = page.locator(".code-editor .cm-content")

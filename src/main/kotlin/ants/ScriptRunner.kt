@@ -12,7 +12,13 @@ import kotlin.io.path.readText
 import kotlin.io.path.writeBytes
 import kotlin.io.path.writeText
 
-data class ScriptRun(val exitCode: Int, val output: String, val payload: Any?)
+/** A run of a Script. [mismatches] say how a payload breaks the output schema; a run with any failed, though Node exited 0. */
+data class ScriptRun(val exitCode: Int, val output: String, val payload: Any?, val mismatches: List<String> = emptyList()) {
+    val failed get() = exitCode != 0 || mismatches.isNotEmpty()
+
+    /** [output], and after it why the payload breaks the output schema, for a Script Task's output and a Script tool's answer. */
+    val told get() = output + if (mismatches.isEmpty()) "" else "The payload breaks the Script's output schema:\n" + mismatches.joinToString("") { "- $it\n" }
+}
 
 @Component
 class ScriptRunner(private val settings: Settings) {
@@ -22,10 +28,11 @@ class ScriptRunner(private val settings: Settings) {
 
     /**
      * Runs [code] with Node, the global `ants` defined before it: `ants.inputs` is [inputs], `ants.output(value)` sets
-     * the payload. Inputs that break [schema], the Script's input schema, are refused before Node starts.
+     * the payload. Inputs that break [schema], the Script's input schema, are refused before Node starts; once Node
+     * exits 0, the payload is checked against [output], the output schema, if the Script has one.
      */
     @OptIn(kotlin.io.path.ExperimentalPathApi::class)
-    fun run(code: Path, workspace: Path, runId: String, inputs: Map<String, Any?>, schema: Map<*, *>, vars: Map<String, String>, secrets: Map<String, String>): ScriptRun {
+    fun run(code: Path, workspace: Path, runId: String, inputs: Map<String, Any?>, schema: Map<*, *>, vars: Map<String, String>, secrets: Map<String, String>, output: Map<*, *>? = null): ScriptRun {
         val broken = ScriptSchema.errors(inputs, schema)
         if (broken.isNotEmpty()) return ScriptRun(-1, "The inputs break the Script's input schema, so it didn't run:\n" + broken.joinToString("") { "- $it\n" }, null)
         val scratch = Files.createTempDirectory("ants-script")
@@ -52,8 +59,9 @@ class ScriptRunner(private val settings: Settings) {
                 val reason = ProtectedCommands.mask(refused.readText(), masked)
                 return ScriptRun(process.exitValue().takeIf { it != 0 } ?: 1, printed + "ants.output got a value JSON can't hold, so the run failed: $reason\n", null)
             }
-            if (!payload.exists()) return ScriptRun(process.exitValue(), printed, null)
-            return ScriptRun(process.exitValue(), printed, json.readValue(ProtectedCommands.mask(payload.readText(), masked), Any::class.java))
+            val value = if (payload.exists()) json.readValue(ProtectedCommands.mask(payload.readText(), masked), Any::class.java) else null
+            val mismatches = if (output == null || process.exitValue() != 0) emptyList() else ScriptSchema.errors(value, output)
+            return ScriptRun(process.exitValue(), printed, value, mismatches)
         } finally {
             scratch.deleteRecursively()
         }

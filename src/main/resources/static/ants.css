@@ -709,6 +709,7 @@ details.example pre { background: var(--line2); border: 0; padding: 10px; border
 .test-run { margin-top: 10px; } .test-run h4 { margin: 12px 0 4px; font-size: 12.5px; }
 .test-run pre { margin: 0; padding: 8px 10px; font-family: var(--mono); font-size: 12.5px; max-height: 320px; }
 .test-run .j-key { color: var(--acc); } .test-run .j-str { color: var(--ok); } .test-run .j-num { color: var(--invC); } .test-run .j-lit { color: var(--bad); }
+.test-run .mismatches { margin: 8px 0 0; padding-left: 26px; font-family: var(--mono); }
 .scriptWrap { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: start; }
 @media (min-width: 1200px) { .scriptWrap { grid-template-columns: minmax(0, 1fr) 360px; } }
 /* The Secrets card's rows, each with a red ✕, its Add Secret, and the modal that confirms a ✕. */

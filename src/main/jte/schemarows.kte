@@ -1,11 +1,12 @@
 @param rows: List<ants.SchemaRow>
 @param prefix: String
 @param depth: Int = 0
+@param field: String = "input"
 <div class="schema-level" data-prefix="${prefix}">
     <ol class="schema-rows">
 @for((i, row) in rows.withIndex())
         @template.schemarow(row = row, at = "${prefix}[${i}]", depth = depth)
 @endfor
     </ol>
-    <button type="button" class="ghost" data-add-row>+ Add @if(depth == 0)input@else field@endif</button>
+    <button type="button" class="ghost" data-add-row>+ Add @if(depth == 0)${field}@else field@endif</button>
 </div>

@@ -17,12 +17,15 @@ data class Script(
     val description: String,
     /** The input schema: an object JSON Schema, each property an input (ADR 0025). */
     val inputs: Map<*, *> = ScriptSchema.EMPTY,
+    /** The output schema: the payload's object JSON Schema, or null when any JSON payload is accepted. */
+    val output: Map<*, *>? = null,
     val vars: Map<String, String> = emptyMap(),
     val secrets: List<String> = emptyList(),
 ) {
     val inputNames: List<String> get() = (inputs["properties"] as? Map<*, *>).orEmpty().keys.map { "$it" }
 
-    fun definition(): Map<String, Any> = linkedMapOf("id" to id, "name" to name, "description" to description, "inputs" to inputs, "vars" to vars, "secrets" to secrets)
+    fun definition(): Map<String, Any> = linkedMapOf<String, Any>("id" to id, "name" to name, "description" to description, "inputs" to inputs)
+        .apply { output?.let { put("output", it) } } + mapOf("vars" to vars, "secrets" to secrets)
 
     companion object {
         fun of(definition: Map<*, *>) = Script(
@@ -34,6 +37,7 @@ data class Script(
                 is List<*> -> mapOf("type" to "object", "properties" to inputs.associate { "$it" to emptyMap<String, Any>() }) // the names a Script had before its schema
                 else -> ScriptSchema.EMPTY
             },
+            output = definition["output"] as? Map<*, *>,
             vars = (definition["vars"] as? Map<*, *>).orEmpty().entries.associate { (name, value) -> "$name" to "$value" },
             secrets = Settings.strings(definition["secrets"]).orEmpty(),
         )

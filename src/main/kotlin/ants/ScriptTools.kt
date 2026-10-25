@@ -11,15 +11,19 @@ class ScriptTools(private val scripts: Scripts, private val runner: ScriptRunner
     fun of(allowed: List<Script>, workspace: Path, run: String): McpTools {
         val named = toolNames(allowed)
         return object : McpTools {
-            override val tools = named.map { (name, script) -> Mcp.tool(name, script.description, script.inputNames.associateWith { mapOf("description" to "The Script's input $it, any JSON value.") }) }
+            override val tools = named.map { (name, script) -> Mcp.tool(name, description(script), script.inputNames.associateWith { mapOf("description" to "The Script's input $it, any JSON value.") }) }
 
             override fun call(name: String, arguments: Map<*, *>): Pair<String, Boolean> {
                 val script = named.getValue(name)
-                val result = runner.run(scripts.file(script), workspace, run, arguments.entries.associate { (key, value) -> "$key" to value }, script.inputs, script.vars, scripts.secretEnvironment(script, scripts.ownSecrets(script)))
-                return json.writeValueAsString(mapOf("exitCode" to result.exitCode, "output" to withoutSource(result.output, scripts.file(script)), "payload" to result.payload)) to (result.exitCode != 0)
+                val result = runner.run(scripts.file(script), workspace, run, arguments.entries.associate { (key, value) -> "$key" to value }, script.inputs, script.vars, scripts.secretEnvironment(script, scripts.ownSecrets(script)), script.output)
+                return json.writeValueAsString(mapOf("exitCode" to result.exitCode, "output" to withoutSource(result.told, scripts.file(script)), "payload" to result.payload)) to result.failed
             }
         }
     }
+
+    /** The Script's description, and with an output schema what the payload holds. */
+    private fun description(script: Script): String = script.description +
+        script.output?.let { "\n\nThe answer's payload holds what it hands back, fitting this JSON Schema: " + json.writeValueAsString(it) }.orEmpty()
 
     private fun withoutSource(output: String, file: Path): String =
         output.replace(Regex("""(?m)^((?:file://)?${Regex.escape(file.toAbsolutePath().toString())}:\d+)\n.*\n[ \t]*\^+[ \t]*$"""), "\$1\n(Ants hides the Script's line.)")

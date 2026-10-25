@@ -68,7 +68,9 @@
             @template.schemarows(rows = form.inputs, prefix = "inputs")
         </div>
         <div role="tabpanel" id="output-schema" aria-labelledby="output-schema-tab" hidden>
-            <p class="muted small">No output schema: any JSON payload is accepted.</p>
+            <div class="help">The payload the Script hands back with <code>ants.output</code>, for later Tasks and Agents to read. Ants fails a run whose payload doesn't fit. Optional: with no rows, there is none.</div>
+            <p class="muted small" data-no-output hidden="${form.output.isNotEmpty()}">No output schema: any JSON payload is accepted.</p>
+            @template.schemarows(rows = form.output, prefix = "output", field = "field")
         </div>
         <template id="schema-row">@template.schemarow(row = ants.SchemaRow("", "string"), at = "new", depth = 1)</template>
     </div>

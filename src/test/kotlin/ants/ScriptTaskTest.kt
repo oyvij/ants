@@ -42,8 +42,8 @@ class ScriptTaskTest : AntsTest() {
         secrets.deleteIfExists()
     }
 
-    private fun saveScript(name: String, code: String, inputs: String = "", vars: String = "", own: List<Pair<String, String>> = emptyList(), linked: List<String> = emptyList(), was: String? = null) {
-        val form = listOf("name" to name, "description" to "Does $name.", "code" to code, "vars" to vars) + ScriptsTest.inputRows(inputs) +
+    private fun saveScript(name: String, code: String, inputs: String = "", vars: String = "", own: List<Pair<String, String>> = emptyList(), linked: List<String> = emptyList(), was: String? = null, output: List<Pair<String, String>> = emptyList()) {
+        val form = listOf("name" to name, "description" to "Does $name.", "code" to code, "vars" to vars) + ScriptsTest.inputRows(inputs) + output +
             own.withIndex().flatMap { (i, secret) -> listOf("secrets[$i].name" to secret.first, "secrets[$i].value" to secret.second, "secrets[$i].was" to if (was == null) "" else secret.first) } +
             linked.map { "linked" to it }
         browser.get("/scripts/${was ?: "new"}")
@@ -144,6 +144,25 @@ class ScriptTaskTest : AntsTest() {
         browser.post(entry, mapOf("action" to "retry", "instruction" to ""))
         eventually { assertNotNull(runtime.getVariable(run, "flaky")) }
         assertEquals(mapOf("exitCode" to 0, "output" to "", "payload" to mapOf("fixed" to true)), runtime.getVariable(run, "flaky"))
+    }
+
+    @Test
+    fun `a Script Task whose payload breaks the Script's output schema fails with the mismatch in its output, and Retry after fixing the Script completes it`() {
+        val output = listOf("output[0].name" to "ts", "output[0].type" to "string", "output[0].required" to "on")
+        saveScript("post-ts", output = output, code = "console.log('posted')\nants.output({ts: 12})\n")
+        deploy("posting-ts", scriptTask("post", "post-ts"))
+        val run = start("posting-ts")
+        eventually { assertNotNull(incident(run)) }
+
+        val entry = "/notifications/" + incident(run).id
+        val page = browser.get(entry).body
+        assertContains(page, "The payload of the Script post-ts breaks its output schema")
+        assertContains(page, "posted\nThe payload breaks the Script's output schema:\n- /ts: integer found, string expected")
+
+        saveScript("post-ts", output = output, was = "post-ts", code = "ants.output({ts: '12'})\n")
+        browser.post(entry, mapOf("action" to "retry", "instruction" to ""))
+        eventually { assertNotNull(runtime.getVariable(run, "post")) }
+        assertEquals(mapOf("exitCode" to 0, "output" to "", "payload" to mapOf("ts" to "12")), runtime.getVariable(run, "post"))
     }
 
     @Test

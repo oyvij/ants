@@ -394,6 +394,71 @@ class ScriptsTest : AntsTest() {
         assertEquals(mapOf("text" to "hi", "count" to 3, "ticket" to mapOf("title" to "Bug")), accepted["payload"])
     }
 
+    @Test
+    fun `saving a Script writes its output rows as output in script yaml, opening it shows them, and with none the tab says any payload is accepted`() {
+        create(form("no-output"))
+        assertFalse("output" in definition(folder("no-output")))
+        assertTrue(Regex("""<p[^>]*data-no-output[^>]*>No output schema: any JSON payload is accepted.""").containsMatchIn(browser.get("/scripts/no-output").body))
+        assertFalse(Regex("""<p[^>]* hidden[^>]*>No output schema""").containsMatchIn(browser.get("/scripts/no-output").body))
+
+        val rows = listOf(
+            "output[0].name" to "ts", "output[0].type" to "string", "output[0].description" to "When it was posted.", "output[0].required" to "on",
+            "output[1].name" to "user", "output[1].type" to "object", "output[1].description" to "",
+            "output[1].rows[0].name" to "id", "output[1].rows[0].type" to "number", "output[1].rows[0].description" to "",
+        )
+        create(form("posts", inputs = "text") + rows)
+        val definition = definition(folder("posts"))
+        assertEquals(
+            mapOf(
+                "type" to "object",
+                "properties" to mapOf(
+                    "ts" to mapOf("type" to "string", "description" to "When it was posted."),
+                    "user" to mapOf("type" to "object", "properties" to mapOf("id" to mapOf("type" to "number"))),
+                ),
+                "required" to listOf("ts"),
+            ),
+            definition["output"],
+        )
+        val page = browser.get("/scripts/posts").body
+        assertContains(page, """name="output[0].name" value="ts"""")
+        assertContains(page, """name="output[0].description" value="When it was posted."""")
+        assertTrue(Regex("""name="output\[0]\.required"[^>]*checked""").containsMatchIn(page))
+        assertContains(page, """name="output[1].rows[0].name" value="id"""")
+        assertContains(page, """name="inputs[0].name" value="text"""")
+        assertTrue(Regex("""<p[^>]* hidden[^>]*>No output schema""").containsMatchIn(page))
+
+        browser.post("/scripts/posts", form("posts", inputs = "text"))
+        assertFalse("output" in definition(folder("posts")))
+    }
+
+    @Test
+    fun `a Test run whose payload breaks the output schema fails, naming each mismatch, and one with no output schema accepts any payload`() {
+        val output = listOf(
+            "output[0].name" to "ts", "output[0].type" to "string", "output[0].required" to "on",
+            "output[1].name" to "user", "output[1].type" to "object", "output[1].rows[0].name" to "id", "output[1].rows[0].type" to "number",
+        )
+        val code = "console.log('ran')\nants.output({user: {id: 'seven'}})\n"
+        val broken = testRun(form("checked", code = code) + output)
+        assertEquals(0, broken["exitCode"])
+        assertContains(broken["output"].toString(), "ran")
+        assertEquals(mapOf("user" to mapOf("id" to "seven")), broken["payload"])
+        val mismatches = broken["mismatches"] as List<*>
+        assertEquals(2, mismatches.size, mismatches.toString())
+        assertTrue(mismatches.any { "ts" in it.toString() }, mismatches.toString())
+        assertTrue(mismatches.any { "/user/id" in it.toString() }, mismatches.toString())
+
+        val nothing = testRun(form("checked", code = "console.log('none')\n") + output)
+        assertEquals(1, (nothing["mismatches"] as List<*>).size, nothing.toString())
+
+        val fits = testRun(form("checked", code = "ants.output({ts: '1.2', user: {id: 7}})\n") + output)
+        assertEquals(emptyList<Any>(), fits["mismatches"])
+
+        val free = testRun(form("free", code = "ants.output([1, 'two'])\n"))
+        assertEquals(0, free["exitCode"])
+        assertEquals(listOf(1, "two"), free["payload"])
+        assertEquals(emptyList<Any>(), free["mismatches"])
+    }
+
     companion object {
         /** The schema card's rows for [spec], inputs such as `text, count:number`, each optional and with no description, as the page posts them. */
         fun inputRows(spec: String): List<Pair<String, String>> = spec.split(',').map(String::trim).filter(String::isNotEmpty).withIndex().flatMap { (i, input) ->

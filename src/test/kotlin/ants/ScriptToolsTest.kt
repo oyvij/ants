@@ -98,6 +98,35 @@ class ScriptToolsTest : AntsTest() {
         claude.release("go")
     }
 
+    @Test
+    fun `a Script tool's description says what the payload holds, from the output schema, and a payload that breaks it answers an error naming the mismatch`() {
+        val output = mapOf("type" to "object", "properties" to mapOf("ts" to mapOf("type" to "string", "description" to "When it was posted.")), "required" to listOf("ts"))
+        Script("s-post01", "post-message", "Posts a message.", untypedInputs("ts"), output).also { scripts.save(it, "ants.output({ts: ants.inputs.ts})\n", emptyMap()) }
+        script("s-tidy01", "tidy")
+        agentWithScripts("s-post01", "s-tidy01")
+        start()
+        val launch = launch()
+
+        val listed = tools(launch).associateBy { it["name"] }
+        assertEquals(
+            "Posts a message.\n\nThe answer's payload holds what it hands back, fitting this JSON Schema: " +
+                """{"type":"object","properties":{"ts":{"type":"string","description":"When it was posted."}},"required":["ts"]}""",
+            listed.getValue("script_post-message")["description"],
+        )
+        assertEquals("Does tidy.", listed.getValue("script_tidy")["description"])
+
+        val (fits, fine) = call(launch, "script_post-message", mapOf("ts" to "1.2"))
+        assertEquals(false, fine, fits.toString())
+        assertEquals(mapOf("ts" to "1.2"), fits["payload"])
+
+        val (broken, error) = call(launch, "script_post-message", mapOf("ts" to 12))
+        assertEquals(true, error)
+        assertEquals(0, broken["exitCode"])
+        assertEquals("The payload breaks the Script's output schema:\n- /ts: integer found, string expected\n", broken["output"])
+        assertEquals(mapOf("ts" to 12), broken["payload"])
+        claude.release("go")
+    }
+
     private fun call(launch: FakeClaude.Launch, tool: String, arguments: Map<String, Any?>): Pair<Map<*, *>, Boolean> {
         val result = rpc(launch, "tools/call", mapOf("name" to tool, "arguments" to arguments))
         val text = ((result["content"] as List<*>).single() as Map<*, *>)["text"].toString()
