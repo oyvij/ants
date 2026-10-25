@@ -16,15 +16,18 @@ class ScriptTools(private val scripts: Scripts, private val runner: ScriptRunner
             override fun call(name: String, arguments: Map<*, *>): Pair<String, Boolean> {
                 val script = named.getValue(name)
                 val result = runner.run(scripts.file(script), workspace, run, arguments.entries.associate { (key, value) -> "$key" to value }, script.vars, scripts.secretEnvironment(script, scripts.ownSecrets(script)))
-                return json.writeValueAsString(mapOf("exitCode" to result.exitCode, "output" to result.output, "payload" to result.payload)) to (result.exitCode != 0)
+                return json.writeValueAsString(mapOf("exitCode" to result.exitCode, "output" to withoutSource(result.output, scripts.file(script)), "payload" to result.payload)) to (result.exitCode != 0)
             }
         }
     }
 
+    private fun withoutSource(output: String, file: Path): String =
+        output.replace(Regex("""(?m)^((?:file://)?${Regex.escape(file.toAbsolutePath().toString())}:\d+)\n.*\n[ \t]*\^+[ \t]*$"""), "\$1\n(Ants hides the Script's line.)")
+
     companion object {
         const val PREFIX = "script_"
 
-        private const val LONGEST = 64 - "mcp__ants__".length
+        private const val LONGEST = 64 - Mcp.CLAUDE_PREFIX.length
 
         fun toolNames(scripts: List<Script>): Map<String, Script> {
             val named = linkedMapOf<String, Script>()

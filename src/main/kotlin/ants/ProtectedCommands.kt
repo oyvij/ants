@@ -22,11 +22,10 @@ class ProtectedCommands(private val settings: Settings, private val mcp: Mcp) {
     /** How long a Protected Command may run before Ants kills it. */
     internal var timeLimit: Duration = Duration.ofMinutes(10)
 
-    /** Gives the Task working in [workspace] a token for `run`, until [close], and returns it with the Task's `--mcp-config`. */
-    fun open(workspace: Path, also: McpTools = NO_TOOLS): Pair<String, String> = mcp.open(object : McpTools {
-        override val tools = listOf(TOOL) + also.tools
+    fun open(workspace: Path, scripts: McpTools = NO_TOOLS): Pair<String, String> = mcp.open(object : McpTools {
+        override val tools = listOf(TOOL) + scripts.tools
 
-        override fun call(name: String, arguments: Map<*, *>) = if (name != TOOL["name"]) also.call(name, arguments) else try {
+        override fun call(name: String, arguments: Map<*, *>) = if (name != TOOL["name"]) scripts.call(name, arguments) else try {
             run(workspace, arguments["command"]?.toString().orEmpty(), arguments["folder"]?.toString() ?: ".").let { (exit, output) -> "Exit code $exit\n\n$output" to (exit != 0) }
         } catch (refused: Refused) {
             refused.message to true

@@ -519,7 +519,7 @@ class AgentLauncher(
         val (token, mcp) = protectedCommands.open(workspace, tools) // its Protected Commands run in the Run workspace
         val process = runCatching {
             val skills = listOfNotNull(skill) + used
-            cli(agent.cli, cwd, flags(agent, cwd, schema, skills, skillsFolder(workspace, instance, skills), session!!, resume, mcp, tools.tools.map { "mcp__ants__${it["name"]}" }, workspace, gated?.let { listOf("Write(/$it/**)", "Edit(/$it/**)") }.orEmpty()) + shared + places)
+            cli(agent.cli, cwd, flags(agent, cwd, schema, skills, skillsFolder(workspace, instance, skills), session!!, resume, mcp, tools.tools.map { Mcp.CLAUDE_PREFIX + it["name"] }, workspace, gated?.let { listOf("Write(/$it/**)", "Edit(/$it/**)") }.orEmpty()) + shared + places)
                 .apply { environment()["ANTS_TASK"] = task.activityId } // names the Task to its session; the fake claude keys on it
                 .start()
         }.onFailure { protectedCommands.close(token) }.getOrThrow()
@@ -778,10 +778,6 @@ class AgentLauncher(
         }
     }
 
-    /**
-     * claude's flags, with Ants' MCP server [mcp] and its tool `run`, and the permission rules [denied] besides the
-     * Subagent types a Limit leaves out and Ants' own files that hold a Secret or the password (ADR 0015).
-     */
     private fun flags(agent: Agent, cwd: Path, schema: Map<*, *>, skills: List<Skill>, skillsFolder: Path?, session: String, resume: Boolean, mcp: String, scriptTools: List<String>, workspace: Path, denied: List<String>): List<String> {
         val tools = (agent.tools ?: DEFAULT_TOOLS).filter { it.substringBefore('(') != "Skill" }.map { anchored(it, cwd) }
         val skill = listOf("Skill").takeIf { skillsFolder != null } // with no Skills allowed, no Skill tool
@@ -947,7 +943,7 @@ class AgentLauncher(
         val PAID = listOf("ANTHROPIC_API_KEY", "CLAUDE_CODE_RETRY_WATCHDOG", "OPENAI_API_KEY", "CODEX_API_KEY")
 
         /** Ants' MCP tool `run`, which runs a Protected Command ([ProtectedCommands]). */
-        const val RUN_TOOL = "mcp__ants__run"
+        const val RUN_TOOL = "${Mcp.CLAUDE_PREFIX}run"
 
         /** The tool that starts Subagents: `Agent`, formerly `Task`. */
         val SUBAGENT_TOOLS = setOf("Agent", "Task")

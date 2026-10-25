@@ -60,10 +60,6 @@ class Job(property: (String) -> String?) {
     val skill get() = listed?.singleOrNull()?.takeIf { assignment == null }
 }
 
-/**
- * Each Agent Task's Agent and Skills: unknown or ambiguous names, no Assignment and not exactly one Skill listed on the
- * Task, a listed Skill the Agent doesn't list (ADR 0024), and an invalid result schema.
- */
 internal fun agentTasks(catalogue: Catalogue, scripts: Scripts, model: BpmnModelInstance): List<Check> {
     val identified by lazy { catalogue.identified() }
     return model.agentTasks.flatMap { task -> agentTask(task, catalogue, scripts) { identified } }

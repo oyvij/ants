@@ -13,7 +13,6 @@ class Dependents(val processes: List<ProcessDefinition>, val older: Set<String> 
     val none get() = processes.isEmpty() && agents.isEmpty()
 }
 
-/** **Used by**: the deployed Processes whose Agent Tasks name an Agent, or list a Skill. */
 @Component
 class UsedBy(private val repository: RepositoryService, private val runtime: RuntimeService, private val catalogue: Catalogue, private val scripts: Scripts) {
     fun agent(name: String): Dependents {
@@ -31,9 +30,9 @@ class UsedBy(private val repository: RepositoryService, private val runtime: Run
     }
 
     fun script(script: Script): Dependents {
-        val listing = catalogue.agents().filter { it.allows(script) }.map { it.name }
+        val agents = catalogue.agents().filter { it.allows(script) }.map { it.name }
         val processes = processes { _, model -> model.properties("ants.script").any { it == script.id } || model.agentTasks.any { task -> Links(task).scripts(scripts).orEmpty().any { it.getOrNull()?.id == script.id } } }
-        return dependents(processes).let { Dependents(it.processes, it.older, listing) }
+        return dependents(processes).let { Dependents(it.processes, it.older, agents) }
     }
 
     fun process(key: String) = dependents(processes { process, model ->

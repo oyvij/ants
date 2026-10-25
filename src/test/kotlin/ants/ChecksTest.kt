@@ -2,9 +2,9 @@ package ants
 
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import org.springframework.beans.factory.annotation.Autowired
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.CsvSource
+import org.springframework.beans.factory.annotation.Autowired
 import tools.jackson.databind.json.JsonMapper
 import kotlin.io.path.createDirectories
 import kotlin.io.path.deleteIfExists

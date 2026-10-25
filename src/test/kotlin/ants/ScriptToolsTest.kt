@@ -132,6 +132,7 @@ class ScriptToolsTest : AntsTest() {
         eventually { assertContains(browser.get("/runs/$run").body, """id="state">Completed<""") }
         assertFalse(Files.walk(workspace).filter { it.isRegularFile() }.anyMatch { "s3cret" in it.readText() || "ANTS_OUTPUT" in it.readText() })
     }
+
     @Test
     fun `ants scripts narrows the Agent's Scripts to the ones the Task lists, by id or by name`() {
         script("s-post01", "post-message")
@@ -144,6 +145,7 @@ class ScriptToolsTest : AntsTest() {
         assertEquals(setOf("run", "script_tidy"), tools(launch).map { it["name"] }.toSet())
         claude.release("go")
     }
+
     @Test
     fun `a Script name a tool name can't hold is sanitised and cut to fit, and each tool name is unique within the launch`() {
         script("s-slack01", "post to slack!")
@@ -157,6 +159,21 @@ class ScriptToolsTest : AntsTest() {
         assertEquals(listOf("mcp__ants__script_" + "a".repeat(46), "mcp__ants__script_post_to_slack_", "mcp__ants__script_post_to_slack__2"), names.sorted())
         assertTrue(names.all { Regex("[A-Za-z0-9_-]{1,64}").matches(it) })
         assertEquals(names.map { it.removePrefix("mcp__ants__") }.toSet() + "run", tools(launch).map { it["name"] }.toSet())
+        claude.release("go")
+    }
+
+    @Test
+    fun `a Script that throws answers with Node's error but not the line of source Node quotes`() {
+        script("s-throw01", "thrower", code = "const secretPlan = 'the-plan'\nthrow new Error('boom ' + secretPlan.length)\n")
+        agentWithScripts("s-throw01")
+        start()
+        val launch = launch()
+
+        val (thrown, failed) = call(launch, "script_thrower", emptyMap())
+        assertEquals(true, failed)
+        val output = thrown["output"].toString()
+        assertContains(output, "Error: boom 8")
+        assertFalse("secretPlan" in output, output)
         claude.release("go")
     }
 }
