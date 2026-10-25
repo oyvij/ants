@@ -36,9 +36,10 @@ data class Check(val element: String?, val message: String, val warning: Boolean
  * Process, written with `operaton:` only, and gives its Checks; a new kind is one more function in [kinds].
  */
 @Component
-class Checks(private val catalogue: Catalogue, private val repository: RepositoryService) {
+class Checks(private val catalogue: Catalogue, private val scripts: Scripts, private val repository: RepositoryService) {
     private val kinds: List<(BpmnModelInstance) -> List<Check>> = listOf(::refusedElements, ::refusedUses, ::oneStartEvent, ::startFormNames, ::emptyInputs, ::defaultPaths, ::timerTimes, ::timerStarts, ::reviewSendBacks,
-        { agentTasks(catalogue, it) }, { references(it) }, // these two in AgentTaskChecks.kt
+        { agentTasks(catalogue, scripts, it) }, { references(it) }, // these two in AgentTaskChecks.kt
+        { scriptTasks(scripts, catalogue, it) },
         { calls(repository, it) }) // in CallActivityChecks.kt
 
     /** What the input pickers of the Task [element] in [bpmn] offer, as `${…}` references; see [offered]. */
@@ -77,6 +78,7 @@ internal val elementKinds = mapOf(
     "agent" to ("Agent Task" to "An Agent runs one of its Skills and hands back a Result, which later Tasks read under this Task's id."),
     "user" to ("User Task" to "The Run waits here, on the Notification list, until you act. Other branches keep going."),
     "built-in" to ("Built-in Task" to "Ants does this itself. No Agent, no tokens, no slot."),
+    "script" to ("Script Task" to "Runs one of your Scripts in the Run workspace, its inputs as \${…} parameters. No Agent, no tokens, no slot. Later Tasks read its Result, {exitCode, output, payload}, under this Task's id, and a non-zero exit fails it."),
     "task" to ("Plain Task" to "Ants would pass straight through this, doing nothing. What should it be?"),
     "subprocess" to ("Sub-process" to "Groups part of the flow into one box, such as a question loop, which can run as a multi-instance. Collapse it from the wrench menu to tidy the diagram."),
     "call" to ("Call a Process" to "Runs another Process as one step, inside this Run; its Result is every Task Result of the called Process."),
@@ -118,6 +120,7 @@ val drawnKinds: Map<String, Map<String, Any>> = linkedMapOf(
     "agent" to mapOf("type" to "bpmn:ServiceTask", "attrs" to mapOf("camunda:type" to "external", "camunda:topic" to AgentLauncher.TOPIC)),
     "user" to mapOf("type" to "bpmn:UserTask", "attrs" to emptyMap<String, String>()),
     "built-in" to mapOf("type" to "bpmn:ServiceTask", "attrs" to mapOf("camunda:type" to "external", "camunda:topic" to builtIns.keys.first())),
+    "script" to mapOf("type" to "bpmn:ServiceTask", "attrs" to mapOf("camunda:type" to "external", "camunda:topic" to ScriptTask.TOPIC)),
     "call" to mapOf("type" to "bpmn:CallActivity"),
     "subprocess" to mapOf("type" to "bpmn:SubProcess", "isExpanded" to true),
     "annotation" to mapOf("type" to "bpmn:TextAnnotation"),
@@ -216,8 +219,8 @@ private fun refusedUses(model: BpmnModelInstance) = model.getModelElementsByType
         element is BoundaryEvent && element.attachedTo !is UserTask -> "is a timer boundary event on something other than a User Task"
         element is IntermediateCatchEvent && definitions.isEmpty() -> "is an intermediate catch event without a timer"
         element is SubProcess && element.domElement.localName == "subProcess" && element.triggeredByEvent() -> "is an event sub-process"
-        element is ServiceTask && element.operatonType != "external" -> "is a service task that isn't an Agent or Built-in Task"
-        element is ServiceTask && element.operatonTopic != AgentLauncher.TOPIC && element.operatonTopic !in builtIns ->
+        element is ServiceTask && element.operatonType != "external" -> "is a service task that isn't an Agent, Script or Built-in Task"
+        element is ServiceTask && element.operatonTopic != AgentLauncher.TOPIC && element.operatonTopic != ScriptTask.TOPIC && element.operatonTopic !in builtIns ->
             return@mapNotNull Check(element.id, "${element.label} is on topic ${element.operatonTopic}, which no Built-in Task has.")
         loop == null -> null
         loop.completionCondition != null -> "has a multi-instance completion condition"

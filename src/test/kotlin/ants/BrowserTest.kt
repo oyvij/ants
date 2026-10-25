@@ -628,6 +628,134 @@ class BrowserTest : AntsTest() {
         assertThat(page.locator("#explain button", Page.LocatorOptions().setHasText("Edit")).first()).isDisabled()
     }
 
+    /** Opens the modeler on a blank Process and appends a Script Task to its start event; the Task's id. */
+    private fun appendScriptTask(): String {
+        page.navigate(url("/processes/new?name=Drawn+here&from="))
+        assertThat(page.locator(".djs-palette [data-action='create.script-task']")).hasAttribute("aria-label", Pattern.compile("^Script Task: Runs one of your Scripts"))
+        shape("start").click()
+        pad.locator("[data-action='append.script-task']").click()
+        assertThat(heading).hasText("Script Task")
+        return page.locator("#canvas .djs-shape.selected").getAttribute("data-element-id")!!
+    }
+
+    @Test
+    fun `the palette's Script Task drops on the canvas and opens its panel`() = browse {
+        page.navigate(url("/processes/new?name=From+the+palette&from="))
+        page.locator(".djs-palette [data-action='create.script-task']").click()
+        page.locator("#canvas").click(Locator.ClickOptions().setPosition(500.0, 300.0))
+        assertThat(heading).hasText("Script Task")
+        assertThat(label("Script")).isVisible()
+    }
+
+    @Test
+    fun `New Script's modal saves a Script to the library and picks it on the Script Task, with a field for each input`() = browse {
+        val task = appendScriptTask()
+        val modeler = page.url()
+        button("New Script").click()
+        assertThat(page.locator("dialog.modal")).containsText("New Script")
+        val form = page.frameLocator("dialog iframe")
+        assertThat(form.locator("#script-helper")).hasAttribute("data-token", Pattern.compile(".+")) // its helper runs in the modal too
+        form.locator("input[name=name]").fill("post-to-chat")
+        form.locator("input[name=description]").fill("Posts to the chat.")
+        form.locator("input[name=inputs]").fill("channel, text")
+        page.locator("dialog .mh button", Page.LocatorOptions().setHasText("Create and use")).click()
+
+        assertThat(page.locator("dialog")).hasCount(0)
+        assertEquals(modeler, page.url())
+        assertThat(shape(task)).hasClass(selected)
+        assertThat(label("Script")).hasValue("post-to-chat")
+        label("channel").fill("general")
+        label("text").fill("\${prompt}")
+        assertTrue(home.resolve("scripts").toFile().listFiles()!!.any { it.resolve("script.yaml").readText().contains("name: post-to-chat") })
+    }
+
+    @Test
+    fun `Edit's modal renames the Task's Script, and the panel shows the new name`() = browse {
+        http.get("/scripts/new")
+        http.post("/scripts/new", listOf("name" to "tidy-up", "description" to "Tidies up.", "code" to "console.log('tidy')\n", "inputs" to "", "vars" to ""))
+        appendScriptTask()
+        label("Script").selectOption("tidy-up")
+        button("Edit").click()
+        assertThat(page.locator("dialog.modal")).containsText("Edit Script")
+        page.frameLocator("dialog iframe").locator("input[name=name]").fill("clean-up")
+        page.locator("dialog .mh button", Page.LocatorOptions().setHasText("Save")).click()
+
+        assertThat(page.locator("dialog")).hasCount(0)
+        assertThat(label("Script")).hasValue("clean-up")
+    }
+
+    @Test
+    fun `the Process Builder's add_element draws a Script Task naming a Script, which Save and deploy keeps as its id`() = browse {
+        http.get("/scripts/new")
+        http.post("/scripts/new", listOf("name" to "tidy-up", "description" to "Tidies up.", "code" to "console.log('tidy')\n", "inputs" to "folder", "vars" to ""))
+        agentTask(null)
+        http.import("agent-task.bpmn")
+        page.navigate(url("/processes/agent-task/edit"))
+        val tool = builder()
+
+        tool("add_element", mapOf("kind" to "script", "id" to "tidy", "name" to "Tidy", "script" to "tidy-up", "inputs" to mapOf("folder" to "\${prompt}")))
+        assertThat(shape("tidy")).isVisible()
+        val drawn = tool("diagram", emptyMap())["elements"].single { it["id"].asString() == "tidy" }
+        assertEquals("script", drawn["kind"].asString())
+        assertEquals("tidy-up", drawn["properties"]["ants.script"].asString())
+        assertEquals("\${prompt}", drawn["inputs"]["folder"].asString())
+        assertEquals("out", tool("set_built_in", mapOf("id" to "tidy", "inputs" to mapOf("folder" to "out")))["inputs"]["folder"].asString())
+        assertTrue(tool("checks", emptyMap()).none { "tidy" in it["message"].asString().lowercase() && "script" in it["message"].asString().lowercase() })
+        undo()
+        assertEquals("\${prompt}", tool("diagram", emptyMap())["elements"].single { it["id"].asString() == "tidy" }["inputs"]["folder"].asString())
+    }
+
+    @Test
+    fun `a new Script's editor shows its placeholder, and a Test run shows the exit code as a badge and the payload as coloured JSON`() = browse {
+        home.resolve("settings.yaml").writeText("node: {path: ${ScriptsTest.NODE}}\n")
+        page.navigate(url("/scripts/new"))
+        val editor = page.locator(".code-editor .cm-content")
+        assertThat(page.locator(".code-editor .cm-placeholder")).containsText("process.env.ANTS_OUTPUT")
+        assertThat(page.locator(".code-editor .cm-placeholder")).containsText("process.stdin")
+        editor.click()
+        page.keyboard().insertText("import {readFileSync, writeFileSync} from 'node:fs'\nconst {text} = JSON.parse(readFileSync(0, 'utf8'))\nconsole.log('posting')\nwriteFileSync(process.env.ANTS_OUTPUT, JSON.stringify({posted: text, count: 2}))\n")
+        page.getByLabel("Sample inputs, as JSON").fill("""{"text": "hello"}""")
+        page.locator(".code-editor button", Page.LocatorOptions().setHasText("Test run")).click()
+
+        val result = page.locator(".test-run")
+        assertThat(result.locator(".pill.p-done")).hasText("Succeeded · exit 0")
+        assertThat(result.locator("pre.output")).hasText("posting\n")
+        assertThat(result.locator("pre.payload")).hasText("{\n  \"posted\": \"hello\",\n  \"count\": 2\n}")
+        assertThat(result.locator("pre.payload .j-key")).hasCount(2)
+        assertThat(result.locator("pre.payload .j-str")).hasText("\"hello\"")
+        assertThat(result.locator("pre.payload .j-num")).hasText("2")
+        page.screenshot("script-test-run")
+
+        editor.click()
+        page.keyboard().press("Control+End")
+        page.keyboard().insertText("process.exit(3)\n")
+        page.locator(".code-editor button", Page.LocatorOptions().setHasText("Test run")).click()
+        assertThat(result.locator(".pill.p-failed")).hasText("Failed · exit 3")
+    }
+
+    @Test
+    fun `the Script editor's helper reads the unsaved code and replaces it in the editor, unsaved, and Ctrl-Z takes it back`() = browse {
+        page.navigate(url("/scripts/new"))
+        val editor = page.locator(".code-editor .cm-content")
+        editor.click()
+        page.keyboard().insertText("console.log('mine')")
+        val helper = page.getByRole(AriaRole.COMPLEMENTARY, Page.GetByRoleOptions().setName("Script helper"))
+        assertThat(helper).hasAttribute("data-token", Pattern.compile(".+"))
+        val token = helper.getAttribute("data-token")!!
+
+        eventually { mcpCall(port, token, "buffer").let { (text, failed) -> assertFalse(failed, text); assertEquals("console.log('mine')", text) } }
+        val (text, failed) = mcpCall(port, token, "replace_buffer", mapOf("code" to "console.log('helped')\n"))
+        assertFalse(failed, text)
+        assertThat(editor).hasText("console.log('helped')")
+        assertEquals("console.log('helped')\n", page.locator("textarea#code").inputValue())
+        assertTrue(page.url().endsWith("/scripts/new"))
+        assertFalse(home.resolve("scripts").toFile().walk().any { it.name == "script.mjs" && "helped" in it.readText() })
+
+        editor.click()
+        page.keyboard().press("ControlOrMeta+z")
+        assertThat(editor).hasText("console.log('mine')")
+    }
+
     @Test
     fun `picking an Agent picks its first Skill and says what later Tasks can read, and the Checks turn Ready to deploy`() = browse {
         agentTask(null, mapOf("draft" to null, "polish" to null))
@@ -706,6 +834,24 @@ class BrowserTest : AntsTest() {
         assertThat(panel).containsText("Dropped draft: editor doesn't have it.")
         assertThat(page.locator("#explain .skillpick label")).hasText(arrayOf("polish"))
         assertThat(label("polish")).isChecked()
+    }
+
+    @Test
+    fun `the Agent Task panel shows the current names of what the Task links by id, writes ids with the names beside them, and shows no id`() = browse {
+        agentTask(null, mapOf("draft" to null, "polish" to null), agent = "id: a-writer\n")
+        home.resolve("skills/draft/ants.yaml").writeText("id: k-draft\n")
+        home.resolve("skills/polish/ants.yaml").writeText("id: k-polish\n")
+        http.import("agent-task.bpmn")
+        home.resolve("agents/writer.md").writeText("---\nid: a-writer\nname: author\nskills: draft, polish\n---\nWrite plainly.\n")
+        page.navigate(url("/processes/agent-task/edit"))
+        shape("draft").click()
+        assertThat(label("Agent")).hasValue("author")
+        assertThat(label("draft")).isChecked()
+        val sent = checked({ "name=\"ants.skills\" value=\"k-draft, k-polish\"" in it }) { label("polish").check() }
+        assertContains(sent, """name="ants.agent" value="a-writer"""")
+        assertContains(sent, """name="ants.name.a-writer" value="author"""")
+        assertContains(sent, """name="ants.name.k-polish" value="polish"""")
+        assertFalse(Regex("a-writer|k-draft|k-polish").containsMatchIn(page.locator("body").innerText()))
     }
 
     @Test
@@ -1217,7 +1363,7 @@ class BrowserTest : AntsTest() {
         onPhone()
         for ((path, parts) in pages) {
             page.navigate(url(path))
-            assertStacked(path, *parts)
+            eventually { assertStacked(path, *parts) } // a markdown editor replaces its taller textarea once its module loads
             assertNoSidewaysScroll()
             page.screenshot("phone${path.replace(Regex("[^a-z0-9]+"), "-")}")
         }
@@ -2654,7 +2800,7 @@ class BrowserTest : AntsTest() {
     fun `the Agent page's chips, Limit rules, added tools and CLI switch save what the page shows`() = browse {
         home.resolve("skills/chip-skill").createDirectories().resolve("SKILL.md").writeText("---\nname: chip-skill\ndescription: Chips.\n---\nChip.\n")
         val file = home.resolve("agents").createDirectories().resolve("chipper.md")
-        file.writeText("---\nname: chipper\ncli: claude\nskills: gone, kept\ntools: Read\n---\nChip.\n")
+        file.writeText("---\nid: a-chip01\nname: chipper\ncli: claude\nskills: gone, kept\ntools: Read\n---\nChip.\n")
         page.navigate(url("/agents/chipper"))
 
         page.locator(".chipsel .c", Page.LocatorOptions().setHasText("gone")).locator("button").click()
@@ -2681,7 +2827,7 @@ class BrowserTest : AntsTest() {
 
         page.click("button[form=agent]")
         eventually {
-            assertEquals("---\nname: chipper\ncli: claude\nskills: kept, chip-skill\ntools: AskUserQuestion, Bash(git log *), Bash(git diff *), Read, mcp__github__get_issue\n---\nChip.\n", file.readText())
+            assertEquals("---\nid: a-chip01\nname: chipper\ncli: claude\nskills: kept, chip-skill\ntools: AskUserQuestion, Bash(git log *), Bash(git diff *), Read, mcp__github__get_issue\n---\nChip.\n", file.readText())
         }
 
         page.navigate(url("/agents/chipper"))

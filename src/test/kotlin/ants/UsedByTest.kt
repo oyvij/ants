@@ -22,16 +22,16 @@ class UsedByTest : AntsTest() {
     }
 
     /** The Agent [name] in the user's folder. */
-    private fun agent(name: String) = home.resolve("agents").createDirectories().resolve("$name.md").also { it.writeText("---\nname: $name\n---\nKeep it.\n") }
+    private fun agent(name: String) = home.resolve("agents").createDirectories().resolve("$name.md").also { it.writeText("---\nid: a-$name\nname: $name\n---\nKeep it.\n") }
 
     /** The Skill [name] in the user's folder. */
-    private fun skill(name: String) = home.resolve("skills/$name").createDirectories().resolve("SKILL.md").also {
+    private fun skill(name: String) = home.resolve("skills/$name").createDirectories().also { it.resolve("ants.yaml").writeText("id: k-$name\n") }.resolve("SKILL.md").also {
         it.writeText("---\nname: $name\ndescription: Keeps notes.\n---\nKeep notes.\n")
     }
 
     /** Deploys the Process used-by, "Keep notes", whose one Agent Task runs [agent] with [skill]; the Agent lists the Skill, and both exist. */
     private fun deploy(agent: String, skill: String) {
-        home.resolve("agents").resolve("$agent.md").writeText("---\nname: $agent\nskills: $skill\n---\nKeep it.\n")
+        home.resolve("agents").resolve("$agent.md").writeText("---\nid: a-$agent\nname: $agent\nskills: k-$skill\n---\nKeep it.\n")
         if (!home.resolve("skills/$skill").exists()) skill(skill)
         browser.get("/processes")
         val bpmn = javaClass.getResource("/used-by.bpmn")!!.readText().replace("keeper", agent).replace("keep-notes", skill)
@@ -75,20 +75,16 @@ class UsedByTest : AntsTest() {
     }
 
     @Test
-    fun `renaming an Agent asks for confirmation, lists what would break and leaves deployed Processes unchanged`() {
+    fun `renaming an Agent saves at once with no confirm, leaves deployed Processes unchanged, and they still use it`() {
         val file = agent("renamed-agent")
         deploy("renamed-agent", "renamed-agent-skill")
         val diagram = browser.get("/processes/used-by/diagram.bpmn").body
-        val form = mapOf("name" to "renamed-agent-2", "cli" to "claude", "instructions" to "Keep it.")
+        val form = mapOf("name" to "renamed-agent-2", "cli" to "claude", "skills" to "renamed-agent-skill", "instructions" to "Keep it.")
 
-        val asked = post("/agents/renamed-agent", form)
-        assertContains(asked.body, "Rename the Agent renamed-agent to renamed-agent-2?")
-        assertContains(asked.body, keepNotes)
-        assertTrue(file.exists())
-
-        assertEquals("/agents/renamed-agent-2", browser.post("/agents/renamed-agent", form + ("confirm" to "on")).path)
+        assertEquals("/agents/renamed-agent-2", post("/agents/renamed-agent", form).path)
         assertFalse(file.exists())
         assertEquals(diagram, browser.get("/processes/used-by/diagram.bpmn").body)
+        assertContains(get("/agents/renamed-agent-2"), keepNotes)
     }
 
     @Test
@@ -105,21 +101,17 @@ class UsedByTest : AntsTest() {
     }
 
     @Test
-    fun `renaming a Skill asks for confirmation, lists what would break and leaves deployed Processes unchanged`() {
+    fun `renaming a Skill saves at once with no confirm, leaves deployed Processes unchanged, and they still use it`() {
         val file = skill("renamed-skill")
         deploy("renamed-skill-agent", "renamed-skill")
         val diagram = browser.get("/processes/used-by/diagram.bpmn").body
         val form = mapOf("skill" to file.readText().replace("name: renamed-skill", "name: renamed-skill-2"))
 
-        val asked = post("/skills/renamed-skill", form)
-        assertContains(asked.body, "Rename the Skill renamed-skill to renamed-skill-2?")
-        assertContains(asked.body, keepNotes)
-        assertTrue(file.exists())
-
-        assertEquals("/skills/renamed-skill-2", browser.post("/skills/renamed-skill", form + ("confirm" to "on")).path)
+        assertEquals("/skills/renamed-skill-2", post("/skills/renamed-skill", form).path)
         assertFalse(file.parent.exists())
         assertContains(home.resolve("skills/renamed-skill-2/SKILL.md").readText(), "name: renamed-skill-2\n")
         assertEquals(diagram, browser.get("/processes/used-by/diagram.bpmn").body)
+        assertContains(get("/skills/renamed-skill-2"), keepNotes)
     }
 
     @Test

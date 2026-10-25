@@ -4,7 +4,7 @@
 // and explanation (the Agent Task's Agent and Skill, a decision's paths) is a function in `panels`. What it writes as
 // text, with no page, is in modeler-text.js.
 
-import {camel, operators, readCondition, resultFields, toCamunda, unary} from "/modeler-text.js"
+import {camel, linkedChanges, linkedProperties, listedSkills, operators, readCondition, resultFields, toCamunda, unary} from "/modeler-text.js"
 
 // From the server (modelerFacts in Checks.kt): what Ants calls each element it runs and what it does there (the
 // palette's tooltip and the panel's explanation), the Built-in Tasks by topic with their name and what each does, the start-form field types by the
@@ -18,6 +18,7 @@ const tasks = {
     agent: {...drawn.agent, icon: "bpmn-icon-service-task ants-pal-agent", marker: "ants-agent"},
     user: {...drawn.user, icon: "bpmn-icon-user-task ants-pal-user", marker: "ants-user"},
     "built-in": {...drawn["built-in"], icon: "bpmn-icon-screw-wrench ants-pal-builtin", marker: "ants-builtin"},
+    script: {...drawn.script, icon: "bpmn-icon-script-task ants-pal-script", marker: "ants-script"},
 }
 
 function kindOf(element) {
@@ -32,7 +33,7 @@ function kindOf(element) {
         case "bpmn:BoundaryEvent": return timer ? "timer-boundary" : null
         case "bpmn:ExclusiveGateway": return "exclusive"
         case "bpmn:ParallelGateway": return "parallel"
-        case "bpmn:ServiceTask": return bo.get("camunda:type") !== "external" ? null : bo.get("camunda:topic") === "agent" ? "agent" : "built-in"
+        case "bpmn:ServiceTask": return bo.get("camunda:type") !== "external" ? null : {agent: "agent", script: "script"}[bo.get("camunda:topic")] || "built-in"
         case "bpmn:UserTask": return "user"
         case "bpmn:Task": return "task"
         case "bpmn:SubProcess": return bo.triggeredByEvent ? null : "subprocess"
@@ -350,7 +351,7 @@ async function offeredAt(element) {
 // the Task it is from, and their run counts, Ants' own variables and a multi-instance's item.
 async function fieldsBefore(element) {
     const registry = modeler.get("elementRegistry")
-    const results = registry.filter(e => !e.labelTarget && ["agent", "user", "built-in", "call", "subprocess"].includes(kindOf(e)))
+    const results = registry.filter(e => !e.labelTarget && ["agent", "user", "built-in", "script", "call", "subprocess"].includes(kindOf(e)))
     const startFields = registry.filter(e => e.type === "bpmn:StartEvent").flatMap(e => readForm(e.businessObject).map(field => field.id))
     return resultFields(await offeredAt(element), Object.fromEntries(results.map(e => [e.id, nameOf(e)])), new Set(results.filter(e => tasks[kindOf(e)]).map(e => e.id)),
         startFields, runVariables)
@@ -520,7 +521,7 @@ function writeAgentTask(element, changes, inputs, redraw = false) {
 
 function formModal(kind, src, use, who = "") {
     const editing = !src.startsWith(`/${kind}/new`)
-    const title = (editing ? "Edit " : "New ") + (kind === "agents" ? "Agent" : "Skill")
+    const title = (editing ? "Edit " : "New ") + {agents: "Agent", skills: "Skill", scripts: "Script"}[kind]
     const frame = el("iframe", {src, title, className: "mb"})
     const primary = el("button", {type: "button", className: "primary", textContent: editing ? "Save" : "Create and use",
         onclick: () => frame.contentDocument.querySelector("input[name=use]")?.form.requestSubmit()})
@@ -542,7 +543,7 @@ function formModal(kind, src, use, who = "") {
         primary.hidden = !form
         if (!form) return page.querySelector("nav.side")?.remove()
         page.querySelector(".ph")?.replaceWith(page.querySelector(".ph .sub") || "")
-        form.querySelectorAll("button.primary").forEach(button => button.hidden = true)
+        form.querySelectorAll("button.primary:not([type=button])").forEach(button => button.hidden = true)
     }
     document.body.append(dialog)
     dialog.showModal()
@@ -554,17 +555,60 @@ panels.agent = element => {
     return box
 }
 
-// What later Tasks read of each Task's Result, by id, as the Checks read it (a Task that asks Rounds promises
-// `questions` too): an Agent Task's promised fields, else its summary, and a User Task's kind's fields.
+panels.script = element => {
+    const box = el("div", {}, el("p", {textContent: "Loading the Scripts…"}))
+    scriptPanel(element, box)
+    return box
+}
+
+async function scriptPanel(element, box) {
+    const [catalogue, offered, read] = await Promise.all([fetch("/catalogue.json").then(response => response.json()), offeredAt(element), laterRead()])
+    const bo = element.businessObject
+    const name = linkedProperties(agentProperties(bo), catalogue)["ants.script"]
+    const script = catalogue.scripts.find(s => s.name === name)
+    const write = (changes, inputs) => writeAgentTask(element, linkedChanges(agentProperties(element.businessObject), changes, catalogue), inputs, true)
+    const given = Object.fromEntries(agentInputs(bo))
+    const pick = picked => {
+        const declared = catalogue.scripts.find(s => s.name === picked)?.inputs || []
+        write({"ants.script": picked || undefined}, declared.map(input => [input, given[input] || ""]))
+    }
+    const options = [el("option", {value: "", textContent: "Choose…", selected: !name}),
+        ...(name && !script ? [el("option", {value: name, textContent: `${name} (not found)`, selected: true})] : []),
+        ...catalogue.scripts.map(s => el("option", {value: s.name, textContent: [s.name, s.description].filter(Boolean).join(" · "), selected: s.name === name}))]
+    const select = el("select", {onchange: () => pick(select.value)}, ...options)
+    const edit = script ? el("button", {type: "button", className: "ghost small", textContent: "Edit", onclick: () =>
+        formModal("scripts", "/scripts/" + encodeURIComponent(script.name) + "?use", () => scriptPanel(element, box).then(check))}) : ""
+    const create = el("button", {type: "button", className: "ghost small", textContent: "＋ New Script", onclick: () =>
+        formModal("scripts", "/scripts/new?use", async picked => {
+            Object.assign(catalogue, await (await fetch("/catalogue.json")).json())
+            pick(picked)
+        })})
+    const references = el("datalist", {id: "ants-script-references"}, ...offered.map(value => el("option", {value})))
+    const names = [...(script?.inputs || []), ...Object.keys(given).filter(input => !script?.inputs.includes(input))]
+    const rows = names.map(input => {
+        const field = el("input", {id: "ants-script-input-" + input, className: "mono grow", value: given[input] ?? "", placeholder: "e.g. ${prompt}", oninput: () => {
+            const all = agentInputs(element.businessObject).filter(([n]) => n !== input)
+            writeAgentTask(element, agentProperties(element.businessObject), [...all, [input, field.value]])
+        }})
+        field.setAttribute("list", references.id)
+        const undeclared = !script?.inputs.includes(input)
+        const remove = undeclared ? el("button", {type: "button", className: "ghost small", textContent: "×", title: `Remove ${input}`,
+            onclick: () => write({}, agentInputs(element.businessObject).filter(([n]) => n !== input))}) : ""
+        return el("div", {className: "row"}, el("label", {htmlFor: field.id}, el("code", {textContent: input})), field,
+            undeclared ? el("span", {className: "muted small", textContent: "not declared by the Script"}) : "", remove)
+    })
+    box.replaceChildren(
+        field("Script", "What it runs, from your Scripts.", select, edit, create),
+        el("div", {className: "fld"}, el("label", {className: "f", textContent: "Inputs"}),
+            note("help", "What the Script reads on stdin, each from start-form fields, Run variables or Results of Tasks before it, as ${…}."), references,
+            ...(rows.length ? rows : [note("muted small", script ? "The Script declares no inputs." : "Pick a Script to see its inputs.")])),
+        el("div", {className: "help"}, "Later Tasks can read: ", ...(read[element.id] || []).flatMap(reference => [el("code", {textContent: reference}), " "])),
+    )
+}
+
 async function laterRead() {
     const {xml} = await modeler.get("moddle").toXML(modeler.getDefinitions())
     return (await fetch("/processes/outputs", {method: "POST", body: new URLSearchParams({_csrf: csrf, bpmn: xml})})).json()
-}
-
-// The Skills an Agent Task lists itself (ADR 0024): its ants.skills, an empty one none; null when it lists none and
-// gets its Agent's.
-function listedSkills(props) {
-    return props["ants.skills"] === undefined ? null : props["ants.skills"].split(/[\s,]+/).filter(Boolean)
 }
 
 // The Skill a Task starts with as its job: its one listed Skill, when it has no Assignment.
@@ -589,7 +633,8 @@ async function agentPanel(element, box) {
     const [catalogue, offered, read] = await Promise.all([fetch("/catalogue.json").then(response => response.json()), offeredAt(element), laterRead()])
     const refresh = async () => Object.assign(catalogue, await (await fetch("/catalogue.json")).json())
     const bo = element.businessObject
-    const props = agentProperties(bo)
+    const props = linkedProperties(agentProperties(bo), catalogue)
+    const write = (changes, inputs, redraw) => writeAgentTask(element, linkedChanges(agentProperties(element.businessObject), changes, catalogue), inputs, redraw)
     const agent = catalogue.agents.find(a => a.name === props["ants.agent"])
     const listed = listedSkills(props)
     const start = startingSkill(props, catalogue.skills)
@@ -600,19 +645,20 @@ async function agentPanel(element, box) {
         ...names.map(name => el("option", {value: name, textContent: text(name), selected: name === current}))]
     // The Task's own list of Skills: null for the Agent's, [] for none.
     const skillChanges = names => ({"ants.skills": names?.join(", ")})
-    const pickSkills = names => writeAgentTask(element, skillChanges(names), undefined, true)
+    const pickSkills = names => write(skillChanges(names), undefined, true)
     const pickAgent = name => {
         const [names, dropped] = newAgentSkills(listed, props["ants.assignment"], catalogue.agents.find(a => a.name === name))
         if (dropped.length) agentNotes[element.id] = `Dropped ${dropped.join(", ")}: ${name} doesn't have ${dropped.length > 1 ? "them" : "it"}.`
-        writeAgentTask(element, {"ants.agent": name || undefined, ...(names === listed ? {} : skillChanges(names))}, undefined, true)
+        write({"ants.agent": name || undefined, ...(names === listed ? {} : skillChanges(names))}, undefined, true)
     }
     const described = name => [name, catalogue.agents.find(a => a.name === name)?.description].filter(Boolean).join(" · ")
     const agentSelect = el("select", {onchange: () => pickAgent(agentSelect.value)},
         ...options(catalogue.agents.map(a => a.name), props["ants.agent"], "not found", described))
     const readOnly = ({name, folder}) => `${name} is in ${folder} and read-only: Copy it on its page to edit.`
     const editAgent = agent ? el("button", {type: "button", className: "ghost small", textContent: "Edit", disabled: !agent.own, title: agent.own ? "" : readOnly(agent), onclick: () =>
-        formModal("agents", "/agents/" + encodeURIComponent(agent.name) + "?use", name => {
-            if (name !== agent.name) return writeAgentTask(element, {"ants.agent": name}, undefined, true)
+        formModal("agents", "/agents/" + encodeURIComponent(agent.name) + "?use", async name => {
+            await refresh()
+            if (name !== agent.name) return write({}, undefined, true)
             agentPanel(element, box)
             check()
         })}) : ""
@@ -633,7 +679,7 @@ async function agentPanel(element, box) {
     const editSkill = skill => el("button", {type: "button", className: "ghost small", textContent: "Edit", disabled: !skill.own, title: skill.own ? "" : readOnly(skill), onclick: () =>
         formModal("skills", "/skills/" + encodeURIComponent(skill.name) + "?use=", async name => {
             await refresh()
-            if (name !== skill.name && listed?.includes(skill.name)) return pickSkills(listed.map(n => n === skill.name ? name : n))
+            if (name !== skill.name && listed?.includes(skill.name)) return write({}, undefined, true)
             agentPanel(element, box)
             check()
         })})
@@ -653,32 +699,32 @@ async function agentPanel(element, box) {
     })
     const assignment = el("textarea", {id: "ants-assignment", rows: 4, value: props["ants.assignment"] || "",
         placeholder: "e.g. Write the release notes for the merged PRs, one line each.",
-        oninput: () => writeAgentTask(element, {"ants.assignment": assignment.value.trim() ? assignment.value : undefined})})
+        oninput: () => write({"ants.assignment": assignment.value.trim() ? assignment.value : undefined})})
     assignment.dataset.markdown = ""
     const references = el("datalist", {id: "ants-references"}, ...offered.map(value => el("option", {value})))
     const inputs = agentInputs(bo).map(([name, value], i) => {
         const input = el("input", {className: "mono grow", value, placeholder: `e.g. \${${name}}`, oninput: () => {
             const all = agentInputs(bo)
             all[i][1] = input.value
-            writeAgentTask(element, {}, all)
+            write({}, all)
         }})
         input.setAttribute("list", "ants-references")
         const remove = el("button", {type: "button", className: "ghost small", textContent: "×", title: `Remove ${name}`,
-            onclick: () => writeAgentTask(element, {}, agentInputs(bo).filter((_, j) => j !== i), true)})
+            onclick: () => write({}, agentInputs(bo).filter((_, j) => j !== i), true)})
         return el("label", {className: "row"}, el("code", {textContent: name}), input, remove)
     })
     const newInput = el("input", {id: "ants-new-input", className: "mono grow", placeholder: "Input name, e.g. ticket"})
     const addInput = el("button", {type: "button", className: "ghost small", textContent: "＋ Add input", onclick: () => {
         const name = newInput.value.trim()
-        if (name && !agentInputs(bo).some(([n]) => n === name)) writeAgentTask(element, {}, [...agentInputs(bo), [name, ""]], true)
+        if (name && !agentInputs(bo).some(([n]) => n === name)) write({}, [...agentInputs(bo), [name, ""]], true)
     }})
     const tick = (label, checked, onchange) => el("label", {}, el("input", {type: "checkbox", checked, onchange}), " " + label)
     const toggle = (name, label) => tick(label, props[name] === "true",
-        event => writeAgentTask(element, {[name]: String(event.target.checked)}))
+        event => write({[name]: String(event.target.checked)}))
     const override = el("textarea", {
         rows: 4, value: props["ants.result-schema"] || "",
         placeholder: "No Result schema: the Task hands back done or stuck and a summary. Give one here to read its Result's fields.",
-        oninput: () => writeAgentTask(element, {"ants.result-schema": override.value.trim() || undefined}),
+        oninput: () => write({"ants.result-schema": override.value.trim() || undefined}),
     })
     box.replaceChildren(
         field("Agent", "Who does it.", agentSelect, editAgent, newAgent),
@@ -694,7 +740,7 @@ async function agentPanel(element, box) {
             ...(inputs.length ? inputs : [note("muted small", "No inputs yet.")]), el("div", {className: "row"}, el("label", {htmlFor: newInput.id, textContent: "New input"}), newInput, addInput)),
         el("div", {className: "fld"}, el("label", {className: "f", textContent: "When the flow comes back"}),
             tick("Resume the session (Round answers, Send back)", props["ants.resume"] === "true",
-                event => writeAgentTask(element, {"ants.resume": event.target.checked ? "true" : undefined}))),
+                event => write({"ants.resume": event.target.checked ? "true" : undefined}))),
         el("div", {className: "fld"}, el("label", {className: "f", textContent: "Knowledge"}),
             toggle("ants.vault", "Vault and Source map"), toggle("ants.answer-history", "Answer History")),
         field("Result schema", "The fields of its Result, as a JSON Schema, for later Tasks to read.", override),
@@ -996,11 +1042,15 @@ function path(id) {
 const startEvent = () => modeler.get("elementRegistry").find(e => e.type === "bpmn:StartEvent" && e.parent.businessObject?.$type === "bpmn:Process")
 
 function addElement(args) {
-    const {kind, id, name, topic} = args
+    const {kind, id, name, topic, properties = {}} = args
     if (!drawn[kind]) throw new Error(`No kind ${kind}: the kinds are ${Object.keys(drawn).join(", ")}.`)
     if (topic !== undefined && kind !== "built-in") throw new Error("Only a Built-in Task takes a topic.")
     if (topic !== undefined && !builtIns[topic]) throw new Error(`No Built-in Task ${topic}: the topics are ${Object.keys(builtIns).join(", ")}.`)
     checkIdValidAndFree(id)
+    const inputs = Object.entries(args.inputs || {}).map(([input, value]) => {
+        checkJuelName(input, "an input name")
+        return [input, String(value ?? "")]
+    })
     const registry = modeler.get("elementRegistry")
     let parent = registry.find(e => !e.parent && e.type === "bpmn:Process")
     if (args.in !== undefined) {
@@ -1016,6 +1066,7 @@ function addElement(args) {
     return {id: edit(() => {
         const created = modeler.get("modeling").createShape(shape, centre, parent)
         if (name) modeler.get("modeling").updateLabel(created, name)
+        if (Object.keys(properties).length || inputs.length) writeAgentTask(created, properties, inputs, true)
         return created.id
     })}
 }
@@ -1034,7 +1085,7 @@ function nextTo(parent, shape) {
 async function setAgentTask({id, agent, assignment, skills, inputs, resultSchema, resume, vault, answerHistory}) {
     const element = foundAs(id, "agent", "an Agent Task")
     const catalogue = await (await fetch("/catalogue.json")).json()
-    const current = agentProperties(element.businessObject)
+    const current = linkedProperties(agentProperties(element.businessObject), catalogue)
     const agentName = agent ?? current["ants.agent"]
     const picked = catalogue.agents.find(a => a.name === agentName)
     if (agent !== undefined && !picked) throw new Error(`No Agent ${agent}: the Agents are ${catalogue.agents.map(a => a.name).join(", ")}.`)
@@ -1061,9 +1112,9 @@ async function setAgentTask({id, agent, assignment, skills, inputs, resultSchema
     if (resume !== undefined) changes["ants.resume"] = yes(resume, "resume") ? "true" : undefined
     if (vault !== undefined) changes["ants.vault"] = String(yes(vault, "vault"))
     if (answerHistory !== undefined) changes["ants.answer-history"] = String(yes(answerHistory, "answerHistory"))
-    edit(() => writeAgentTask(element, changes, written, true))
+    edit(() => writeAgentTask(element, linkedChanges(agentProperties(element.businessObject), changes, catalogue), written, true))
     return {id, agent: agentName || null, assignment: text || null, skills: listed, ...(dropped.length ? {dropped} : {}), inputs: Object.fromEntries(written),
-        properties: agentProperties(element.businessObject)}
+        properties: linkedProperties(agentProperties(element.businessObject), catalogue)}
 }
 
 // The start form's fields, all of them in order, as the panel writes them.
@@ -1149,9 +1200,10 @@ async function setCall({id, process, inputs}) {
     return {id, process: key || null, inputs: Object.fromEntries(written)}
 }
 
-// The Built-in Task's topic, as the panel's picker writes it, and its inputs, written as an Agent Task's are.
 function setBuiltIn({id, topic, inputs, asker}) {
-    const element = foundAs(id, "built-in", "a Built-in Task")
+    const script = kindOf(found(id)) === "script"
+    const element = script ? found(id) : foundAs(id, "built-in", "a Built-in Task or a Script Task")
+    if (script && (topic !== undefined || asker !== undefined)) throw new Error(`${id} is a Script Task: set only its inputs.`)
     const bo = element.businessObject
     if (topic !== undefined && !builtIns[topic]) throw new Error(`No Built-in Task ${topic}: the topics are ${Object.keys(builtIns).join(", ")}.`)
     const now = topic ?? bo.get("camunda:topic")
@@ -1202,10 +1254,10 @@ function setMultiInstance({id, mode, collection, elementVariable, itemsAreTicket
 // The diagram as the Process Builder reads it: its elements, its connections and the start form.
 async function diagram() {
     const all = modeler.get("elementRegistry").filter(e => e.parent && !e.labelTarget) // a root, the Process or a sub-process's plane, has no parent
-    const read = await laterRead()
+    const [read, catalogue] = await Promise.all([laterRead(), fetch("/catalogue.json").then(response => response.json())])
     const element = e => {
         const bo = e.businessObject, kind = kindOf(e) || e.type.replace("bpmn:", "")
-        const properties = agentProperties(bo)
+        const properties = kind === "agent" || kind === "script" ? linkedProperties(agentProperties(bo), catalogue) : agentProperties(bo)
         if (kind === "built-in") properties.topic = bo.get("camunda:topic")
         if (kind === "call") properties.calls = bo.calledElement
         const timer = bo.eventDefinitions?.[0]

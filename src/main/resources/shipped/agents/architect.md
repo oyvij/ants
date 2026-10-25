@@ -1,4 +1,5 @@
 ---
+id: a-architect
 name: architect
 description: Reads a Run's clones and proposes how to build what the prompt asks, writing only in proposal/.
 tools: Read, Grep, Glob, Write(proposal/**), Edit(proposal/**)

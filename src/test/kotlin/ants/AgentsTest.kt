@@ -1,6 +1,8 @@
 package ants
 
 import org.junit.jupiter.api.Test
+import org.springframework.beans.factory.annotation.Autowired
+import org.yaml.snakeyaml.Yaml
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
@@ -15,6 +17,9 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class AgentsTest : AntsTest() {
+    @Autowired
+    lateinit var catalogue: Catalogue
+
     private val browser by lazy { browser().also { it.login() } }
     private val agents = home.resolve("agents").createDirectories()
 
@@ -45,7 +50,7 @@ class AgentsTest : AntsTest() {
         name: reviewer
         description: Reviews changes.
         cli: claude
-        skills: code-review, tdd
+        skills: k-code-review, k-tdd
         tools: Bash(git log *), Bash(git diff *), Grep, Read, mcp__github__get_issue
         model: claude-sonnet-5-5
         ---
@@ -58,7 +63,7 @@ class AgentsTest : AntsTest() {
         agents.resolve("reviewer.md").deleteIfExists()
         val created = post("/agents/new", reviewer)
         assertEquals("/agents/reviewer", created.path)
-        assertEquals(reviewerFile, agents.resolve("reviewer.md").readText())
+        assertEquals(reviewerFile, withoutId(agents.resolve("reviewer.md")))
 
         val page = get("/agents/reviewer")
         assertContains(page, """name="description" value="Reviews changes."""")
@@ -72,7 +77,7 @@ class AgentsTest : AntsTest() {
         assertContains(page, ">Review carefully.</textarea>")
 
         post("/agents/reviewer", reviewer)
-        assertEquals(reviewerFile, agents.resolve("reviewer.md").readText())
+        assertEquals(reviewerFile, withoutId(agents.resolve("reviewer.md")))
 
         // As the page posts it: a field per rule, chip and ticked tool, the empty ones left blank.
         browser.post("/agents/reviewer", reviewer.toList().filter { it.first !in setOf("skills", "limit.Bash", "other-tools") } + listOf(
@@ -80,7 +85,7 @@ class AgentsTest : AntsTest() {
             "limit.Bash" to "git log *", "limit.Bash" to "", "limit.Bash" to "git diff *",
             "other-tools" to "mcp__github__get_issue", "other-tools" to "",
         ))
-        assertEquals(reviewerFile, agents.resolve("reviewer.md").readText())
+        assertEquals(reviewerFile, withoutId(agents.resolve("reviewer.md")))
 
         post("/agents/reviewer", reviewer + ("model" to "other") + ("model-other" to "claude-opus-5-5[1m]") + ("instructions" to "Review harder."))
         val edited = agents.resolve("reviewer.md").readText()
@@ -97,7 +102,7 @@ class AgentsTest : AntsTest() {
         assertContains(page, """name="limit.Agent" value="knowledge-searcher"""")
         assertContains(page, """name="limit.Agent" value="worker"""")
         post("/agents/seeker", mapOf("name" to "seeker", "cli" to "claude", "tool.Read" to "on", "instructions" to "Scout."))
-        assertEquals("---\nname: seeker\ncli: claude\ntools: Read\ncolor: blue\n---\nScout.\n", agents.resolve("seeker.md").readText())
+        assertEquals("---\nname: seeker\ncli: claude\ntools: Read\ncolor: blue\n---\nScout.\n", withoutId(agents.resolve("seeker.md")))
     }
 
     @Test
@@ -126,7 +131,7 @@ class AgentsTest : AntsTest() {
     @Test
     fun `shipped Agents and Agents from extra folders are read-only, and Copy makes an editable one`() {
         val extra = Files.createTempDirectory("extra-agents")
-        extra.resolve("outsider.md").writeText("---\nname: outsider\ndescription: From Varde.\ncolor: red\n---\nLook around.\n")
+        extra.resolve("outsider.md").writeText("---\nname: outsider\ndescription: From Varde.\nskills: tdd\ncolor: red\n---\nLook around.\n")
         agents.resolve("outsider-copy.md").deleteIfExists()
         agents.resolve("shipped-writer-copy.md").deleteIfExists()
         withExtraFolder(extra) {
@@ -140,14 +145,63 @@ class AgentsTest : AntsTest() {
                 assertEquals(403, post("/agents/$name", mapOf("name" to name, "instructions" to "Changed.")).status)
             }
             assertEquals("/agents/outsider-copy", post("/agents/outsider/copy", emptyMap()).path)
-            assertEquals("---\nname: outsider-copy\ndescription: From Varde.\ncli: claude\ntools: ${AgentLauncher.DEFAULT_TOOLS.joinToString(", ")}\ncolor: red\n---\nLook around.\n",
-                agents.resolve("outsider-copy.md").readText())
+            assertEquals("---\nname: outsider-copy\ndescription: From Varde.\ncli: claude\nskills: k-tdd\ntools: ${AgentLauncher.DEFAULT_TOOLS.joinToString(", ")}\ncolor: red\n---\nLook around.\n",
+                withoutId(agents.resolve("outsider-copy.md")))
             assertFalse("<fieldset disabled>" in get("/agents/outsider-copy"))
             post("/agents/outsider-copy", mapOf("name" to "outsider-copy", "cli" to "claude", "instructions" to "Look closer."))
             assertContains(agents.resolve("outsider-copy.md").readText(), "Look closer.")
             assertEquals("Look around.\n", extra.resolve("outsider.md").readText().substringAfterLast("---\n"))
             assertEquals("/agents/shipped-writer-copy", post("/agents/shipped-writer/copy", emptyMap()).path)
         }
+    }
+
+    private fun idOf(file: Path) = Regex("(?m)^id: (a-[a-z0-9]{6})$").find(file.readText())?.groupValues?.get(1)
+
+    private fun withoutId(file: Path) = file.readText().also { assertNotNull(idOf(file), it) }.replaceFirst(Regex("(?m)^id: a-[a-z0-9]{6}\n"), "")
+
+    private fun assertNoPageShows(id: String, vararg paths: String) {
+        for (path in paths) assertFalse(id in get(path), "$path shows the id $id")
+    }
+
+    @Test
+    fun `creating, importing or copying an Agent gives it a new id in its file, which no page shows and the Catalogue finds it by`() {
+        agents.resolve("reviewer.md").deleteIfExists()
+        post("/agents/new", reviewer)
+        val created = assertNotNull(idOf(agents.resolve("reviewer.md")))
+        post("/agents/reviewer", reviewer + ("description" to "Reviews more."))
+        assertEquals(created, idOf(agents.resolve("reviewer.md")))
+        assertEquals("reviewer", catalogue.agentWithId(created).name)
+        assertNoPageShows(created, "/agents", "/agents/reviewer")
+
+        assertFalse("a-theirs" in import("theirs.md", "---\nname: theirs\nid: a-theirs\n---\nTheirs.\n"))
+        post("/agents/new", mapOf("name" to "theirs", "cli" to "claude", "instructions" to "Theirs."))
+        val imported = assertNotNull(idOf(agents.resolve("theirs.md")))
+        assertTrue(imported != created)
+
+        agents.resolve("shipped-writer-copy.md").deleteIfExists()
+        post("/agents/shipped-writer/copy", emptyMap())
+        val copied = assertNotNull(idOf(agents.resolve("shipped-writer-copy.md")))
+        assertTrue(copied !in setOf(created, imported, "a-shipped-writer"))
+        assertEquals("shipped-writer", catalogue.agentWithId("a-shipped-writer").name)
+    }
+
+    @Test
+    fun `an Agent from an extra folder gets its id in agent-ids yaml, and its folder is untouched`() {
+        val extra = Files.createTempDirectory("extra-agents")
+        val text = "---\nname: outsider\ndescription: From Varde.\n---\nLook around.\n"
+        extra.resolve("outsider.md").writeText(text)
+        withExtraFolder(extra) {
+            get("/agents")
+            val ids = Yaml().load<Map<String, String>>(home.resolve("agent-ids.yaml").readText())
+            val id = ids.entries.single { it.value == extra.resolve("outsider.md").toString() }.key
+            assertTrue(Regex("a-[a-z0-9]{6}").matches(id), id)
+            assertEquals("outsider", catalogue.agentWithId(id).name)
+            get("/agents")
+            assertEquals(ids, Yaml().load<Map<String, String>>(home.resolve("agent-ids.yaml").readText()))
+            assertNoPageShows(id, "/agents", "/agents/outsider")
+        }
+        assertEquals(listOf("outsider.md"), extra.toFile().list()!!.toList())
+        assertEquals(text, extra.resolve("outsider.md").readText())
     }
 
     @Test
@@ -174,12 +228,59 @@ class AgentsTest : AntsTest() {
     }
 
     @Test
-    fun `renaming an Agent moves its file`() {
-        agents.resolve("old-name.md").writeText("---\nname: old-name\n---\nHi.\n")
+    fun `renaming an Agent saves at once with no confirm, moves its file and keeps its id`() {
+        agents.resolve("old-name.md").writeText("---\nid: a-oldname\nname: old-name\n---\nHi.\n")
         agents.resolve("new-name.md").deleteIfExists()
-        assertEquals("/agents/new-name", post("/agents/old-name", mapOf("name" to "new-name", "cli" to "claude", "instructions" to "Hi.", "confirm" to "on")).path)
+        assertEquals("/agents/new-name", post("/agents/old-name", mapOf("name" to "new-name", "cli" to "claude", "instructions" to "Hi.")).path)
         assertFalse(agents.resolve("old-name.md").exists())
-        assertContains(agents.resolve("new-name.md").readText(), "name: new-name\n")
+        assertContains(agents.resolve("new-name.md").readText(), "id: a-oldname\nname: new-name\n")
+        assertEquals("new-name", catalogue.agentWithId("a-oldname").name)
+    }
+
+    @Test
+    fun `an Agent saved with Skill names holds their ids, and the Agents and Skills pages show their names`() {
+        agents.resolve("linker.md").deleteIfExists()
+        post("/agents/new", mapOf("name" to "linker", "cli" to "claude", "skills" to "shipped-draft, code-review"))
+        assertContains(agents.resolve("linker.md").readText(), "skills: k-shipped-draft, k-code-review\n")
+
+        val page = get("/agents/linker")
+        assertContains(page, """<input type="hidden" name="skills" value="shipped-draft">""")
+        assertContains(page, """<input type="hidden" name="skills" value="code-review">""")
+        val list = get("/agents")
+        assertContains(list, """<a href="/skills/shipped-draft">shipped-draft</a> <a href="/skills/code-review">code-review</a>""")
+        val skills = get("/skills")
+        assertContains(skills, """<a href="/agents/linker">linker</a>""")
+        val skill = get("/skills/shipped-draft")
+        assertContains(skill, """<a href="/agents/linker">linker</a>""")
+        for (shown in listOf(page, list, skills, skill)) assertFalse(Regex("k-shipped-draft|k-code-review").containsMatchIn(shown))
+
+        post("/agents/linker", mapOf("name" to "linker", "cli" to "claude", "skills" to "shipped-draft, code-review"))
+        assertContains(agents.resolve("linker.md").readText(), "skills: k-shipped-draft, k-code-review\n")
+        agents.resolve("linker.md").deleteIfExists()
+    }
+
+    @Autowired
+    lateinit var scripts: Scripts
+
+    @Test
+    fun `an Agent saved with Script names holds their ids, and its page shows their names`() {
+        scripts.save(Script("s-post01", "post-message", "Posts a message."), "", emptyMap())
+        scripts.save(Script("s-tidy01", "tidy", "Tidies."), "", emptyMap())
+        scripts.save(Script("s-other1", "other", "Does other."), "", emptyMap())
+        browser.get("/agents/new")
+        browser.post("/agents/new", listOf("name" to "caller", "cli" to "claude", "scripts" to "post-message", "scripts" to "tidy"))
+        assertContains(agents.resolve("caller.md").readText(), "scripts: s-post01, s-tidy01\n")
+
+        val page = get("/agents/caller")
+        assertContains(page, """name="scripts" value="post-message" checked""")
+        assertContains(page, """name="scripts" value="tidy" checked""")
+        assertContains(page, """name="scripts" value="other">""")
+        assertFalse(Regex("s-post01|s-tidy01|s-other1").containsMatchIn(page))
+
+        agents.resolve("by-hand.md").writeText("---\nname: by-hand\nscripts: [tidy]\n---\nDo it.\n")
+        assertContains(get("/agents/by-hand"), """name="scripts" value="tidy" checked""")
+        browser.post("/agents/by-hand", listOf("name" to "by-hand", "cli" to "claude", "scripts" to "tidy"))
+        assertContains(agents.resolve("by-hand.md").readText(), "scripts: s-tidy01\n")
     }
 
     private fun import(name: String, text: String): String {
@@ -207,7 +308,7 @@ class AgentsTest : AntsTest() {
         agents.resolve("coder.md").deleteIfExists()
         assertContains(get("/agents/new"), """name="sandbox"""")
         post("/agents/new", mapOf("name" to "coder", "cli" to "codex", "sandbox" to "read-only", "tool.Read" to "on", "instructions" to "Code."))
-        assertEquals("---\nname: coder\ncli: codex\nsandbox: read-only\n---\nCode.\n", agents.resolve("coder.md").readText())
+        assertEquals("---\nname: coder\ncli: codex\nsandbox: read-only\n---\nCode.\n", withoutId(agents.resolve("coder.md")))
         val coder = get("/agents/coder")
         assertContains(coder, """value="read-only" selected""")
         assertContains(coder, """<fieldset data-cli="claude" disabled>""") // Claude's tools and models, off for a codex Agent
@@ -364,11 +465,7 @@ class AgentsTest : AntsTest() {
         assertEquals("/agents/editor" to "saved", saved.path to saved.query)
         assertContains(agents.resolve("editor.md").readText(), "Edits warmly.")
 
-        val rename = browser.post("/agents/editor", mapOf("name" to "renamed-editor", "cli" to "claude", "use" to ""))
-        assertContains(rename.body, "Rename the Agent editor to renamed-editor?")
-        assertContains(rename.body, """<input type="hidden" name="use" value="">""")
-        assertContains(rename.body, """<a href="/agents/editor?use">Cancel</a>""")
-        val renamed = browser.post("/agents/editor", mapOf("name" to "renamed-editor", "cli" to "claude", "use" to "", "confirm" to "on"))
+        val renamed = browser.post("/agents/editor", mapOf("name" to "renamed-editor", "cli" to "claude", "use" to ""))
         assertEquals("/agents/renamed-editor" to "saved", renamed.path to renamed.query)
 
         val page = post("/agents/renamed-editor", mapOf("name" to "renamed-editor", "cli" to "claude", "description" to "Edits on its page."))

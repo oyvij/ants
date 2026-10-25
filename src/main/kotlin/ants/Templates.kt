@@ -31,7 +31,7 @@ data class TemplateRow(val name: String, val title: String, val shipped: Boolean
  * read-only). The page lists, creates, edits and copies them; the modeler's palette drops one into a Process.
  */
 @Controller
-class Templates(@Value("\${ants.home}") home: Path) {
+class Templates(@Value("\${ants.home}") home: Path, private val catalogue: Catalogue, private val scripts: Scripts) {
     private val yours = home.resolve("templates")
     private val shipped = home.resolve("shipped/templates")
 
@@ -90,7 +90,7 @@ class Templates(@Value("\${ants.home}") home: Path) {
     fun save(@PathVariable name: String, @RequestParam bpmn: String): ResponseEntity<String> {
         val file = file(name).takeIf { it.startsWith(yours) }
             ?: throw ResponseStatusException(HttpStatus.FORBIDDEN, "The Template $name is read-only; Copy it to make your own.")
-        file.writeAtomically(serialize(read(bpmn.toByteArray())))
+        file.writeAtomically(serialize(read(bpmn.toByteArray()).also { catalogue.linkById(it, scripts); scripts.linkById(it) }))
         return ResponseEntity.status(HttpStatus.SEE_OTHER).location(URI("/templates/$name")).build()
     }
 

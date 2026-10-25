@@ -29,14 +29,14 @@ import kotlin.io.path.exists
  * those from extra folders are read-only, with Copy. Nothing is cached, so an edit reaches the next launch.
  */
 @Controller
-class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, private val models: Models, private val settings: Settings, @Value("\${ants.home}") home: Path) {
+class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, private val models: Models, private val settings: Settings, private val scripts: Scripts, @Value("\${ants.home}") home: Path) {
     private val folder = home.resolve("agents")
 
     @GetMapping("/agents")
     fun list(model: Model) = list(model, null)
 
     private fun list(model: Model, error: String?): String {
-        model.addAttribute("agents", catalogue.agents().sortedBy { it.name }.map { AgentRow(it, catalogue.where(it.file.parent)) })
+        model.addAttribute("agents", catalogue.agents().sortedBy { it.name }.map { AgentRow(it, catalogue.where(it.file.parent), catalogue.skillNames(it.skills)) })
         model.addAttribute("error", error)
         return "agents"
     }
@@ -65,7 +65,7 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
         Agent.sandboxError(agent.cli, agent.sandbox)?.let { return list(model, "$filename: $it") }
         val form = AgentForm.of(agent)
         val notice = form.kept.keys.takeIf { it.isNotEmpty() }?.let { "Dropped the keys Ants doesn't use: ${it.joinToString(", ")}." }
-        return show(model, form.copy(kept = emptyMap<String, Any?>()), null, notice = notice)
+        return show(model, form.copy(kept = emptyMap<String, Any?>(), id = null), null, notice = notice)
     }
 
     /**
@@ -78,12 +78,14 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
     fun catalogue() = mapOf(
         "agents" to catalogue.agents().map {
             val skills = catalogue.allowedNames(it)
-            mapOf("name" to it.name, "description" to it.description, "skills" to skills, "own" to (it.file.parent == folder), "folder" to it.file.parent.toString())
+            mapOf("id" to it.id, "name" to it.name, "description" to it.description, "skills" to skills, "own" to (it.file.parent == folder), "folder" to it.file.parent.toString())
         },
         "skills" to catalogue.skills().map { skill ->
-            mapOf("name" to skill.name, "description" to skill.description, "own" to skill.file.startsWith(catalogue.yourSkills), "folder" to skill.folder.parent.toString())
+            mapOf("id" to skill.id, "name" to skill.name, "description" to skill.description, "own" to skill.file.startsWith(catalogue.yourSkills), "folder" to skill.folder.parent.toString())
         },
+        "scripts" to scripts.all().map { mapOf("id" to it.id, "name" to it.name, "description" to it.description, "inputs" to it.inputs) },
         "profiles" to settings.profiles().keys,
+        "nameBeside" to LINKED_NAME,
     )
 
     @GetMapping("/agents/{name}")
@@ -93,7 +95,7 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
     fun edit(@PathVariable name: String, @RequestParam params: MultiValueMap<String, String>, model: Model): String {
         val agent = editable(find(name))
         val fields = joined(params)
-        return save(model.addAttribute("use", "use" in fields), AgentForm.of(fields).copy(kept = AgentForm.of(agent).kept), agent, fields)
+        return save(model.addAttribute("use", "use" in fields), AgentForm.of(fields).copy(kept = AgentForm.of(agent).kept), agent)
     }
 
     /** The form's fields, which repeat for a rule per Limit…, a chip per Skill and a tick per added tool: the filled ones, comma-separated. */
@@ -132,7 +134,7 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
         val agent = find(name)
         val taken = catalogue.agents().map { it.name }.toSet()
         val copy = copyName(agent.name) { it in taken || folder.resolve("$it.md").exists() }
-        folder.resolve("$copy.md").writeAtomically(AgentForm.of(agent, copy).text())
+        folder.resolve("$copy.md").writeAtomically(AgentForm.of(agent, copy).copy(id = catalogue.unusedId(AGENT_ID), skills = catalogue.skillIds(agent.skills).joinToString(", "), scripts = scripts.ids(agent.scripts).joinToString(", ")).text())
         return "redirect:/agents/$copy"
     }
 
@@ -147,10 +149,10 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
         } catch (e: YAMLException) {
             throw Refused("The agent file has broken YAML: ${e.message}")
         }
-        return redirected("error") { save(it, AgentForm.of(parsed, name = parsed.meta["name"]?.toString().orEmpty()), agent, mapOf("confirm" to "")) }
+        return redirected("error") { save(it, AgentForm.of(parsed, name = parsed.meta["name"]?.toString().orEmpty()), agent) }
     }
 
-    private fun save(model: Model, form: AgentForm, agent: Agent?, params: Map<String, String> = emptyMap()): String {
+    private fun save(model: Model, form: AgentForm, agent: Agent?): String {
         val modal = if (model.getAttribute("use") == true) "?use" else ""
         val target = if (agent != null && form.name == agent.name) agent.file else folder.resolve("${form.name}.md")
         val error = form.error() ?: when {
@@ -159,16 +161,15 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
             else -> null
         }
         if (error != null) return show(model, form, agent, error)
-        if (agent != null && form.name != agent.name && "confirm" !in params) {
-            return confirm(model, "Rename the Agent ${agent.name} to ${form.name}?", usedBy.agent(agent.name), "/agents/${agent.name}", params, "/agents/${agent.name}$modal")
-        }
-        target.writeAtomically(form.text())
+        target.writeAtomically(form.copy(id = agent?.id ?: catalogue.unusedId(AGENT_ID), skills = catalogue.skillIds(words(form.skills)).joinToString(", "), scripts = scripts.ids(form.scriptList).joinToString(", ")).text())
         if (agent != null && target != agent.file) agent.file.deleteIfExists()
         return "redirect:/agents/${form.name}" + if (modal.isEmpty()) "" else "?saved"
     }
 
     private fun show(model: Model, form: AgentForm, agent: Agent?, error: String? = null, notice: String? = null): String {
-        model.addAttribute("form", form)
+        val shownScripts = scripts.names(form.scriptList)
+        model.addAttribute("form", form.copy(skills = catalogue.skillNames(words(form.skills)).joinToString(", "), scripts = shownScripts.joinToString(", ")))
+        model.addAttribute("scripts", (scripts.all().map { it.name } + shownScripts).distinct())
         model.addAttribute("action", agent?.let { "/agents/${it.name}" } ?: "/agents/new")
         model.addAttribute("file", agent?.file?.toString())
         model.addAttribute("readOnly", agent != null && agent.file.parent != folder)
@@ -188,7 +189,7 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
 }
 
 /** An Agent on the list, and the folder it comes from. */
-class AgentRow(val agent: Agent, val where: String)
+class AgentRow(val agent: Agent, val where: String, val skills: List<String>)
 
 /**
  * A Claude Code tool as the Agent page offers it: what it [does], and for one with **Limit…**, what its rules narrow
@@ -213,7 +214,11 @@ data class AgentForm(
     val subagent: Boolean,
     val instructions: String,
     val kept: Map<*, *> = emptyMap<String, Any?>(),
+    val id: String? = null,
+    val scripts: String = "",
 ) {
+    val scriptList get() = rules(scripts)
+
     /** Each rule of [tool]'s **Limit…**, as the page lists them. */
     fun limits(tool: String) = rules(tools[tool].orEmpty())
 
@@ -229,10 +234,13 @@ data class AgentForm(
 
     /** The agent file: Claude Code's format, with `cli`, `skills` and `ants-subagent` for Ants. */
     fun text(): String {
-        val meta = linkedMapOf<Any?, Any?>("name" to name)
+        val meta = linkedMapOf<Any?, Any?>()
+        if (id != null) meta["id"] = id
+        meta["name"] = name
         if (description.isNotEmpty()) meta["description"] = description
         meta["cli"] = cli
         if (skills.isNotBlank()) meta["skills"] = words(skills).joinToString(", ")
+        if (scriptList.isNotEmpty()) meta["scripts"] = scriptList.joinToString(", ")
         if (cli == "codex") meta["sandbox"] = sandbox
         else {
             val limited = TOOLS.filter { it in tools }.flatMap { tool -> rules(tools.getValue(tool)).map { "$tool($it)" }.ifEmpty { listOf(tool) } }
@@ -318,7 +326,7 @@ data class AgentForm(
         const val MCP_NOTE = "An MCP tool. Ants starts Agents with MCP off, so it needs an MCP server Ants doesn't configure yet."
         const val UNKNOWN_NOTE = "Not a tool Ants knows. Passed to Claude Code as written."
 
-        private val KEYS = setOf("name", "description", "cli", "skills", "tools", "sandbox", "model", "ants-subagent")
+        private val KEYS = setOf("id", "name", "description", "cli", "skills", "scripts", "tools", "sandbox", "model", "ants-subagent")
 
         fun of(agent: Agent, name: String = agent.name): AgentForm {
             val rules = agent.tools ?: AgentLauncher.DEFAULT_TOOLS
@@ -336,6 +344,8 @@ data class AgentForm(
                 subagent = agent.subagent,
                 instructions = agent.instructions,
                 kept = agent.meta.filterKeys { it !in KEYS },
+                id = agent.id,
+                scripts = agent.scripts.joinToString(", "),
             )
         }
 
@@ -352,6 +362,7 @@ data class AgentForm(
                 model = param("model").let { if (it == "other") param("model-other") else it },
                 subagent = "subagent" in params,
                 instructions = params["instructions"].orEmpty(),
+                scripts = param("scripts"),
             )
         }
     }

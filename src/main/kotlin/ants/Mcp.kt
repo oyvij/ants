@@ -85,6 +85,8 @@ class Mcp(private val server: WebServerApplicationContext, @Value("\${server.add
     }
 
     companion object {
+        const val CLAUDE_PREFIX = "mcp__ants__"
+
         private val json = JsonMapper.shared()
 
         private fun error(id: Any?, message: String, code: Int = -32001) = mapOf("jsonrpc" to "2.0", "id" to id, "error" to mapOf("code" to code, "message" to message))

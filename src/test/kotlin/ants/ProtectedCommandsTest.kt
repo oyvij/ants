@@ -82,6 +82,8 @@ class ProtectedCommandsTest : AntsTest() {
             assertContains(denied, "Read(/$home/$file)")
             assertContains(denied, "Edit(/$home/$file)")
         }
+        assertContains(denied, "Read(/$home/scripts/**)")
+        assertContains(denied, "Edit(/$home/scripts/**)")
         assertFalse(launch.env.values.any { "s3cret" in it })
         assertFalse(launch.env.keys.any { it in listOf("YARN_NPM_AUTH_TOKEN", "NPM_TOKEN", "MAVEN_TOKEN") })
         claude.release("go")

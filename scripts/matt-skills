@@ -9,7 +9,8 @@ https://github.com/mattpocock/skills, or by default the newest version Claude Co
 
 Each Skill in SKILLS is copied whole into src/main/resources/shipped/skills/<his name>/, replacing what was there:
 his SKILL.md with a licence comment under its frontmatter, his other files (`tests.md`, `CREDITS.md`, …), and his
-LICENSE; not his `agents/` (Codex display names). It pins each file's SHA-256 in src/test/resources/matt-skills.sha256,
+LICENSE; not his `agents/` (Codex display names). The Skill keeps its `ants.yaml`, its fixed id in Ants, and a new one
+gets `id: k-<his name>`. It pins each file's SHA-256 in src/test/resources/matt-skills.sha256,
 which MattSkillsTest checks, since CI has no copy of his release.
 
 Then it prints what changed. What ties a Skill to a Run lives in the Assignments of the shipped Tasks that use it, so
@@ -25,6 +26,7 @@ ROOT = Path(__file__).resolve().parent.parent
 SHIPPED = ROOT / "src/main/resources/shipped/skills"
 PINNED = ROOT / "src/test/resources/matt-skills.sha256"
 CACHE = Path.home() / ".claude/plugins/cache/mattpocock/mattpocock-skills"
+ANTS_YAML = "ants.yaml"
 
 # His Skills Ants ships, under his skills/. Each ships under his name.
 SKILLS = [
@@ -74,6 +76,7 @@ def main(args):
         shipped.add(name)
         target = SHIPPED / name
         old = {f.relative_to(target): f.read_bytes() for f in target.rglob("*") if f.is_file()} if target.exists() else None
+        ids = old.pop(Path(ANTS_YAML), None) if old is not None else None
         shutil.rmtree(target, ignore_errors=True)
         notes = []
         for file in sorted(source.rglob("*")):
@@ -92,6 +95,7 @@ def main(args):
             elif old is not None and old[relative] != data and relative.name != "SKILL.md":
                 notes.append(f"{relative} changed")
         shutil.copyfile(plugin / "LICENSE", target / "LICENSE")
+        (target / ANTS_YAML).write_bytes(ids or f"id: k-{name}\n".encode())
         if old is None:
             notes.append("new: list it on the shipped Agents and Tasks that should use it")
         else:

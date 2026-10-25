@@ -12,8 +12,6 @@ import java.io.File
 import java.net.InetAddress
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.StandardCopyOption
-import java.nio.file.attribute.PosixFilePermissions
 import java.time.Duration
 import java.util.concurrent.TimeUnit.SECONDS
 import java.util.concurrent.atomic.AtomicReference
@@ -121,8 +119,7 @@ class Settings(
     /** How deep claude's Subagents may nest: 1 lets a Task start Subagents, and them none of their own. */
     fun subagentDepth(): Int = (read()["subagent-depth"] as? Int) ?: 1
 
-    /** The Process Builder's CLI and model, `process-builder: {cli, model}`: claude on its default model unless set. */
-    fun processBuilder(): Pair<String, String?> = (read()["process-builder"] as? Map<*, *>).let { (it?.get("cli")?.toString() ?: "claude") to it?.get("model")?.toString() }
+    fun chat(name: String): Pair<String, String?> = (read()[name] as? Map<*, *>).let { (it?.get("cli")?.toString() ?: "claude") to it?.get("model")?.toString() }
 
     /** Where [cli] lives, as Detect found it or the user set it. */
     fun path(cli: String): String? = cli(cli)["path"]?.toString()
@@ -220,10 +217,7 @@ class Settings(
     /** Rewrites [secretsFile] with [values], the file mode 0600 before a value is in it. */
     @Synchronized
     fun saveSecretValues(values: Map<String, String>) {
-        val owner = PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------"))
-        val next = Files.createTempFile(secretsFile.parent.createDirectories(), ".secrets.yaml", ".tmp", owner)
-        next.writeText(if (values.isEmpty()) "" else yaml.dump(values))
-        Files.move(next, secretsFile, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+        secretsFile.writePrivately(if (values.isEmpty()) "" else yaml.dump(values))
     }
 
     /** The pages' `color-scheme`: the system's until the user picks light or dark. */

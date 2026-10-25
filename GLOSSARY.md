@@ -40,6 +40,11 @@ _Avoid_: human task, manual step
 A Task Ants carries out itself, with no Agent and no user, such as cloning repos.
 _Avoid_: system task, service task, Ants task
 
+**Script Task**:
+A Task that runs one Script from the library in the Run workspace, with no Agent, and hands its exit code, output
+and payload to the Tasks after it; a Script that fails fails the Task like a failed Built-in Task.
+_Avoid_: code task, script step
+
 **Check**:
 One thing **Save and deploy** refuses in a Process, such as an element Ants doesn't run, naming the
 element; a warning is a Check that doesn't refuse.
@@ -54,6 +59,12 @@ _Avoid_: worker, bot, ant
 A `SKILL.md` saying how to do one kind of job, which an Agent picks up on its own when its Task calls
 for it; it knows nothing of Runs or Tasks.
 _Avoid_: prompt, task instructions, Assignment
+
+**Script**:
+A piece of JavaScript the user writes once and keeps in a library, with its inputs, vars and Secrets, that a Script
+Task or an Agent runs the same way every time; an Agent that calls it gets its output, never its source or its
+Secrets.
+_Avoid_: Protected Command, Skill, snippet, macro
 
 **Template**:
 A named piece of a Process, kept in a library, that is copied into another Process and changed there;
@@ -120,8 +131,8 @@ never content. Each Profile has a default; a Run keeps its own.
 _Avoid_: tone, style, detail level
 
 **Secret**:
-A value the user gives Ants, such as a registry token, under one or more variable names, that Protected Commands use
-and Agents never see.
+A value the user gives Ants, such as a registry token, under one or more variable names, that Protected Commands
+and Scripts use and Agents never see.
 _Avoid_: credential, env var, key
 
 **Protected Command**:

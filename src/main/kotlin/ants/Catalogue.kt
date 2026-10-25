@@ -9,6 +9,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption.ATOMIC_MOVE
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
+import java.nio.file.attribute.PosixFilePermissions
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.isRegularFile
@@ -25,7 +26,7 @@ import kotlin.io.path.writeText
  * Who does a Task, read from its agent file: the CLI it runs, its tools, its model and its standing instructions. A
  * file without frontmatter is an Agent with defaults, named after the file. [meta] is the whole frontmatter.
  */
-class Agent(val file: Path, text: String = file.readText()) {
+class Agent(val file: Path, text: String = file.readText(), outsideId: String? = null) {
     val meta: Map<*, *>
     val instructions: String
 
@@ -35,16 +36,20 @@ class Agent(val file: Path, text: String = file.readText()) {
         instructions = body.trim()
     }
 
+    val id = outsideId ?: meta["id"]?.toString()?.takeIf(String::isNotBlank)
+
     val name = meta["name"]?.toString() ?: file.nameWithoutExtension
     val description = meta["description"]?.toString().orEmpty()
     val cli = meta["cli"]?.toString() ?: "claude"
     val skills = list(meta["skills"]).orEmpty()
+    val scripts = list(meta["scripts"]).orEmpty()
 
     /** Whether it may use every Skill, `skills: "*"`. */
     val allSkills get() = "*" in skills
 
-    /** Whether it may use the Skill [name]. */
-    fun allows(name: String) = allSkills || name in skills
+    fun allows(skill: Skill) = allSkills || skill.id in skills || skill.name in skills
+
+    fun allows(script: Script) = script.id in scripts || script.name in scripts
 
     /** The tools as permission rules, such as `Bash(git log *)`; null for the default tools. */
     val tools = list(meta["tools"])
@@ -78,6 +83,7 @@ class Skill(
     val name: String, val description: String, val file: Path,
     /** Whether only a user can invoke it (`disable-model-invocation: true`): claude doesn't show it to the model. */
     val userOnly: Boolean = false,
+    val id: String? = null,
 ) {
     val folder: Path get() = file.parent
 }
@@ -111,10 +117,20 @@ class Catalogue(@Value("\${ants.home}") private val home: Path, private val sett
         }
     }
 
-    fun agents(withHidden: Boolean = false): List<Agent> = agentFolders(withHidden).filter { it.exists() }.flatMap { it.listDirectoryEntries("*.md").sorted() }.map(::Agent)
+    private val agentIds = IdFile(home.resolve("agent-ids.yaml"), AGENT_ID)
+    private val skillIds = IdFile(home.resolve("skill-ids.yaml"), SKILL_ID)
+
+    fun agents(withHidden: Boolean = false): List<Agent> {
+        val outside = settings.agentFolders().toSet()
+        return agentFolders(withHidden).filter { it.exists() }.flatMap { folder ->
+            folder.listDirectoryEntries("*.md").sorted().map { file -> if (folder in outside) Agent(file, outsideId = agentIds.of(file)) else Agent(file) }
+        }
+    }
 
     /** The Agent [name]. */
-    fun agent(name: String): Agent = named("Agent", name, agents(withHidden = true).filter { it.name == name }, ::shipped)
+    fun agent(name: String): Agent = one(agents(withHidden = true).filter { it.name == name }, ::shipped, "No Agent named $name", "More than one Agent is named $name")
+
+    fun agentWithId(id: String): Agent = one(agents(withHidden = true).filter { it.id == id }, ::shipped, "No Agent has the id $id", "More than one Agent has the id $id")
 
     /** The user's own Skills, the one Skill folder the Skills page writes to. */
     val yourSkills: Path = home.resolve("skills")
@@ -122,12 +138,28 @@ class Catalogue(@Value("\${ants.home}") private val home: Path, private val sett
     /** The user's own Agents, the one Agent folder Ants writes to. */
     val yourAgents: Path = home.resolve("agents")
 
-    fun skills(withHidden: Boolean = false): List<Skill> = skillFolders(withHidden).filter { it.exists() }.flatMap { folder ->
-        folder.walk().filter { it.fileName.toString() == "SKILL.md" }.sorted().map { file ->
-            val meta = frontmatter(file.readText()).first
-            Skill(meta["name"]?.toString() ?: "", meta["description"]?.toString() ?: "", file, userOnly = meta["disable-model-invocation"] == true)
+    fun skills(withHidden: Boolean = false): List<Skill> {
+        val outside = settings.skillFolders().toSet()
+        return skillFolders(withHidden).filter { it.exists() }.flatMap { folder ->
+            folder.walk().filter { it.fileName.toString() == "SKILL.md" }.sorted().map { file ->
+                val meta = frontmatter(file.readText()).first
+                val id = if (folder in outside) skillIds.of(file.parent) else skillIdIn(file.parent)
+                Skill(meta["name"]?.toString() ?: "", meta["description"]?.toString() ?: "", file, userOnly = meta["disable-model-invocation"] == true, id = id)
+            }
         }
     }
+
+    private fun skillIdIn(folder: Path) = folder.resolve(SKILL_ID_FILE).takeIf { it.exists() }
+        ?.let { runCatching { (Yaml().load<Any?>(it.readText()) as? Map<*, *>)?.get("id")?.toString()?.takeIf(String::isNotBlank) }.getOrNull() }
+
+    fun giveSkillId(folder: Path) = folder.resolve(SKILL_ID_FILE).writeAtomically(yaml.dump(mapOf("id" to unusedId(SKILL_ID))))
+
+    fun unusedId(prefix: Char): String {
+        val taken = identified().map { it.id }.toSet()
+        return newId(prefix) { it in taken }
+    }
+
+    fun identified(): List<Identified> = agents(withHidden = true).mapNotNull { it.identified } + skills(withHidden = true).mapNotNull { it.identified }
 
     fun shipped(skill: Skill) = skill.file.startsWith(shipped)
 
@@ -142,17 +174,26 @@ class Catalogue(@Value("\${ants.home}") private val home: Path, private val sett
         return if (folder.startsWith(user)) "~/${user.relativize(folder)}" else folder.toString()
     }
 
-    fun skill(name: String): Skill = named("Skill", name, skills(withHidden = true).filter { it.name == name }, ::shipped)
+    fun skill(name: String): Skill = one(skills(withHidden = true).filter { it.name == name }, ::shipped, "No Skill named $name", "More than one Skill is named $name")
 
-    private fun <T> named(kind: String, name: String, items: List<T>, shipped: (T) -> Boolean): T =
-        items.singleOrNull() ?: items.filter { shipped(it) != settings.hideShipped() }.singleOrNull()
-            ?: error(if (items.isEmpty()) "No $kind named $name" else "More than one $kind is named $name")
+    fun skillWithId(id: String): Skill = one(skills(withHidden = true).filter { it.id == id }, ::shipped, "No Skill has the id $id", "More than one Skill has the id $id")
+
+    private fun <T> one(items: List<T>, shipped: (T) -> Boolean, none: String, many: String): T =
+        items.singleOrNull() ?: items.filter { shipped(it) != settings.hideShipped() }.singleOrNull() ?: error(if (items.isEmpty()) none else many)
 
     /** The names of the Skills [agent] may use: every one in the catalogue with `skills: "*"`. */
-    fun allowedNames(agent: Agent): List<String> = if (agent.allSkills) skills().map { it.name }.distinct() else agent.skills
+    fun allowedNames(agent: Agent): List<String> = if (agent.allSkills) skills().map { it.name }.distinct() else skillNames(agent.skills)
 
     /** The Skills [agent] may use ([allowedNames]). */
-    fun allowed(agent: Agent): List<Skill> = allowedNames(agent).map(::skill)
+    fun allowed(agent: Agent): List<Skill> = if (agent.allSkills) allowedNames(agent).map(::skill) else agent.skills.map { linkedSkill(it, null) }
+
+    fun listedSkill(value: String): Skill? = runCatching { linkedSkill(value, null) }.getOrNull()
+
+    fun skillNames(listed: List<String>): List<String> = listed.map { value -> eachListed(value) { it.name } }
+
+    fun skillIds(listed: List<String>): List<String> = listed.map { value -> eachListed(value) { it.id } }.distinct()
+
+    private fun eachListed(value: String, shown: (Skill) -> String?) = if (value == "*") value else listedSkill(value)?.let(shown) ?: value
 }
 
 /**
@@ -180,6 +221,13 @@ fun freeName(name: String, taken: (String) -> Boolean): String {
  */
 fun Path.writeAtomically(text: String) {
     val next = Files.createTempFile(parent.createDirectories(), ".$fileName", ".tmp")
+    next.writeText(text)
+    Files.move(next, this, ATOMIC_MOVE, REPLACE_EXISTING)
+}
+
+fun Path.writePrivately(text: String) {
+    val owner = PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------"))
+    val next = Files.createTempFile(parent.createDirectories(), ".$fileName", ".tmp", owner)
     next.writeText(text)
     Files.move(next, this, ATOMIC_MOVE, REPLACE_EXISTING)
 }

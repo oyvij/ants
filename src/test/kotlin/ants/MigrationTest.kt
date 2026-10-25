@@ -4,7 +4,9 @@ import org.junit.jupiter.api.Test
 import org.operaton.bpm.engine.RepositoryService
 import org.operaton.bpm.engine.RuntimeService
 import org.springframework.beans.factory.annotation.Autowired
+import org.yaml.snakeyaml.Yaml
 import tools.jackson.databind.json.JsonMapper
+import java.nio.file.Files
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.isRegularFile
@@ -34,6 +36,9 @@ class MigrationTest : AntsTest() {
 
     @Autowired
     lateinit var runtime: RuntimeService
+
+    @Autowired
+    lateinit var catalogue: Catalogue
 
     private val done = """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":{"outcome":"done","summary":"Drafted.","output":{"text":"Hi"}}}"""
     private val textSchema = """{"type":"object","properties":{"text":{"type":"string"}},"required":["text"]}"""
@@ -115,7 +120,7 @@ class MigrationTest : AntsTest() {
         assertFalse(home.resolve("skills/brief/result.schema.json").exists())
         assertEquals(textSchema, home.resolve("skills/brief/result.schema.json.old").readText())
         assertEquals(before.getValue("agents/writer.md"), home.resolve("agents/writer.md.old").readText())
-        assertContains(home.resolve("agents/writer.md").readText(), "helper")
+        assertContains(home.resolve("agents/writer.md").readText(), "skills: ${catalogue.skill("brief").id}, ${catalogue.skill("helper").id}\n")
 
         // A second start changes nothing.
         val after = files()
@@ -123,6 +128,104 @@ class MigrationTest : AntsTest() {
         migration.migrate()
         assertEquals(after, files())
         assertEquals(versions, repository.createProcessDefinitionQuery().count())
+    }
+
+    @Test
+    fun `every Agent and Skill without an id gets one, an outside one in ANTS_HOME, and a second start changes nothing`() {
+        val outsideAgents = Files.createTempDirectory("outside-agents")
+        outsideAgents.resolve("outsider.md").writeText("---\nname: outsider\n---\nLook around.\n")
+        val outsideSkills = Files.createTempDirectory("outside-skills")
+        outsideSkills.resolve("far").createDirectories().resolve("SKILL.md").writeText("---\nname: far\ndescription: Far away.\n---\nGo.\n")
+        settings(claude, "agent-folders: [$outsideAgents]\nskill-folders: [$outsideSkills]\n")
+        home.resolve("agents/writer.md").writeText("---\nname: writer\nskills: brief\n---\nWrite plainly.\n")
+        home.resolve("agents/plain.md").writeText("Just do it.\n")
+        home.resolve("agents/kept.md").writeText("---\nid: a-kept01\nname: kept\n---\nKeep it.\n")
+        home.resolve("skills/brief").createDirectories().resolve("SKILL.md").writeText("---\nname: brief\ndescription: Writes a brief.\n---\nWrite the brief.\n")
+        val before = files()
+        val outside = listOf(outsideAgents, outsideSkills).flatMap { folder -> folder.walk().map { it.toString() to it.readText() } }
+
+        migration.migrate()
+
+        val idLine = Regex("(?m)^id: (a-[a-z0-9]{6})$")
+        val writer = home.resolve("agents/writer.md").readText()
+        assertEquals("---\nid: ${idLine.find(writer)!!.groupValues[1]}\nname: writer\nskills: ${catalogue.skill("brief").id}\n---\nWrite plainly.\n", writer)
+        assertEquals(before.getValue("agents/writer.md"), home.resolve("agents/writer.md.old").readText())
+        val plain = home.resolve("agents/plain.md").readText()
+        assertEquals("---\nid: ${idLine.find(plain)!!.groupValues[1]}\n---\nJust do it.\n", plain)
+        assertEquals("plain", Agent(home.resolve("agents/plain.md")).name)
+        assertEquals(before.getValue("agents/plain.md"), home.resolve("agents/plain.md.old").readText())
+        assertEquals(before.getValue("agents/kept.md"), home.resolve("agents/kept.md").readText())
+        assertFalse(home.resolve("agents/kept.md.old").exists())
+        assertTrue(Regex("id: k-[a-z0-9]{6}\n").matches(home.resolve("skills/brief/ants.yaml").readText()))
+        assertEquals(before.getValue("skills/brief/SKILL.md"), home.resolve("skills/brief/SKILL.md").readText())
+
+        assertEquals(outside, listOf(outsideAgents, outsideSkills).flatMap { folder -> folder.walk().map { it.toString() to it.readText() } })
+        assertEquals(listOf(outsideAgents.resolve("outsider.md").toString()), Yaml().load<Map<String, String>>(home.resolve("agent-ids.yaml").readText()).values.toList())
+        assertEquals(listOf(outsideSkills.resolve("far").toString()), Yaml().load<Map<String, String>>(home.resolve("skill-ids.yaml").readText()).values.toList())
+
+        val after = files() + listOf("agent-ids.yaml", "skill-ids.yaml").associateWith { home.resolve(it).readText() }
+        migration.migrate()
+        assertEquals(after, files() + listOf("agent-ids.yaml", "skill-ids.yaml").associateWith { home.resolve(it).readText() })
+    }
+
+    @Test
+    fun `the names in the latest Processes and Templates become ids once, each name kept beside its id and the old versions kept`() {
+        settings(claude, "agent-tasks: 3\n")
+        home.resolve("agents/writer.md").writeText("---\nname: writer\nskills: draft\n---\nWrite plainly.\n")
+        home.resolve("skills/draft").createDirectories().resolve("SKILL.md").writeText("---\nname: draft\ndescription: Drafts.\n---\nDraft it.\n")
+        val named = agentTask.replace("\"agent-task\"", "\"by-name\"")
+        deployedByOlderAnts("by-name", named)
+        val template = home.resolve("templates/by-name.bpmn").apply { writeText(named) }
+
+        migration.migrate()
+
+        val agent = catalogue.agent("writer").id!!
+        val skill = catalogue.skill("draft").id!!
+        val latest = repository.createProcessDefinitionQuery().processDefinitionKey("by-name").latestVersion().singleResult()
+        val diagram = repository.getProcessModel(latest.id).readAllBytes().decodeToString()
+        for (linked in listOf(diagram, template.readText())) {
+            assertContains(linked, """name="ants.agent" value="$agent"""")
+            assertContains(linked, """name="ants.name.$agent" value="writer"""")
+            assertContains(linked, """name="ants.skills" value="$skill"""")
+            assertContains(linked, """name="ants.name.$skill" value="draft"""")
+        }
+        assertEquals(named, home.resolve("templates/by-name.bpmn.old").readText())
+        assertEquals(2, repository.createProcessDefinitionQuery().processDefinitionKey("by-name").count())
+
+        val after = files()
+        val versions = repository.createProcessDefinitionQuery().count()
+        migration.migrate()
+        assertEquals(after, files())
+        assertEquals(versions, repository.createProcessDefinitionQuery().count())
+    }
+
+    @Test
+    fun `the names in the user's Agents' skills become ids once, the old file kept, and outside Agents are untouched`() {
+        val outsideAgents = Files.createTempDirectory("outside-agents")
+        outsideAgents.resolve("outsider.md").writeText("---\nname: outsider\nskills: brief\n---\nLook around.\n")
+        settings(claude, "agent-folders: [$outsideAgents]\n")
+        home.resolve("skills/brief").createDirectories().resolve("SKILL.md").writeText("---\nname: brief\ndescription: Writes a brief.\n---\nWrite the brief.\n")
+        home.resolve("skills/brief/ants.yaml").writeText("id: k-brief01\n")
+        home.resolve("agents/writer.md").writeText("---\nid: a-writer1\nname: writer\nskills: brief, k-brief01, tdd, missing\n---\nWrite plainly.\n")
+        home.resolve("agents/linked.md").writeText("---\nid: a-linked1\nname: linked\nskills: k-brief01\n---\nLinked.\n")
+        home.resolve("agents/all.md").writeText("---\nid: a-every1\nname: all\nskills: '*'\n---\nEverything.\n")
+        val before = files()
+        val outside = outsideAgents.resolve("outsider.md").readText()
+
+        migration.migrate()
+
+        assertEquals("---\nid: a-writer1\nname: writer\nskills: k-brief01, k-tdd, missing\n---\nWrite plainly.\n", home.resolve("agents/writer.md").readText())
+        assertEquals(before.getValue("agents/writer.md"), home.resolve("agents/writer.md.old").readText())
+        for (unchanged in listOf("agents/linked.md", "agents/all.md")) {
+            assertEquals(before.getValue(unchanged), home.resolve(unchanged).readText())
+            assertFalse(home.resolve("$unchanged.old").exists())
+        }
+        assertEquals(outside, outsideAgents.resolve("outsider.md").readText())
+        assertEquals(listOf("outsider.md"), outsideAgents.toFile().list()!!.toList())
+
+        val after = files()
+        migration.migrate()
+        assertEquals(after, files())
     }
 
     @Test
@@ -188,6 +291,7 @@ class MigrationTest : AntsTest() {
     fun `a Process the Checks refuse after migration leaves its Agents as they were, and its Runs fail saying what to fix`() {
         oldSkills()
         settings(claude, "agent-tasks: 0\n") // held until the migration
+        home.resolve("agents/writer.md").writeText("---\nid: a-writer\nskills: brief\n---\nWrite plainly.\n")
         val agent = home.resolve("agents/writer.md").readText()
         // An old Ants deployed it without today's Checks, which refuse its result schema.
         deployedByOlderAnts("refused", oldShape("refused", extra = property("ants.result-schema", "[1]")))
@@ -195,8 +299,8 @@ class MigrationTest : AntsTest() {
 
         migration.migrate()
 
-        assertEquals(agent, home.resolve("agents/writer.md").readText())
-        assertFalse(home.resolve("agents/writer.md.old").exists())
+        assertEquals(agent.replace("skills: brief", "skills: ${catalogue.skill("brief").id}"), home.resolve("agents/writer.md").readText())
+        assertEquals(agent, home.resolve("agents/writer.md.old").readText())
         settings(claude, "agent-tasks: 3\n")
         eventually { assertContains(browser.get("/runs/$run").body, "[failed] The Process refused was not migrated to Assignments and Skills when Ants started") }
         assertContains(browser.get("/runs/$run").body, "Its result schema is invalid")
