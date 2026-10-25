@@ -98,6 +98,7 @@ class Migration(
         val keptOld = agents.keepOld()
         skills(failed)
         ids(keptOld)
+        links(changedTemplates.map { it.first }.toSet())
     }
 
     private class Changed(val process: ProcessDefinition, val document: Document, val named: Set<String>, val needs: Needs)
@@ -143,16 +144,16 @@ class Migration(
     /** Each shipped Task that named an old shipped Skill, by that Skill's name: its element id and its job's properties. */
     private fun shippedJobs(): Map<String, List<Pair<String, Map<String, String>>>> =
         listOf("processes", "templates").map { home.resolve("shipped/$it") }.filter { it.exists() }.flatMap { it.listDirectoryEntries("*.bpmn").sorted() }
-            .flatMap { file -> agentTasks(parse(file.readBytes())).filter { it.getAttribute("id") in SHIPPED_TASKS } }
-            .map { task -> SHIPPED_TASKS.getValue(task.getAttribute("id")) to (task.getAttribute("id") to properties(task).filterKeys { it in JOB }.mapValues { it.value.getAttribute("value") }) }
+            .flatMap { file -> agentTaskElements(parse(file.readBytes())).filter { it.getAttribute("id") in SHIPPED_TASKS } }
+            .map { task -> SHIPPED_TASKS.getValue(task.getAttribute("id")) to (task.getAttribute("id") to propertyElements(task).filterKeys { it in JOB }.mapValues { it.value.getAttribute("value") }) }
             .groupBy({ it.first }, { it.second })
 
     /** Migrates each old-shape Agent Task in [document]; gives the Skills the changed Tasks named, empty when none changed, and the Skills each Agent now needs for them. */
     private fun migrate(document: Document, shipped: Map<String, List<Pair<String, Map<String, String>>>>): Pair<Set<String>, Needs> {
         val named = mutableSetOf<String>()
         val needs = mutableMapOf<String, MutableSet<String>>()
-        for (task in agentTasks(document)) {
-            val properties = properties(task)
+        for (task in agentTaskElements(document)) {
+            val properties = propertyElements(task)
             val old = properties[OLD_SKILL] ?: continue
             val name = old.getAttribute("value").trim()
             named += name
@@ -181,8 +182,9 @@ class Migration(
                     skill?.inputs?.forEach { input(task, it) }
                 }
             }
-            Job { properties(task)[it]?.getAttribute("value") }.listed?.let { listed ->
-                properties[AGENT]?.getAttribute("value")?.let { needs.getOrPut(it) { mutableSetOf() } += listed }
+            Job { propertyElements(task)[it]?.getAttribute("value") }.listed?.let { listed ->
+                val names = listed.map { runCatching { catalogue.linkedSkill(it, null).name }.getOrDefault(it) }
+                properties[AGENT]?.getAttribute("value")?.let { needs.getOrPut(it) { mutableSetOf() } += names }
             }
             old.parentNode.removeChild(old)
         }
@@ -229,6 +231,24 @@ class Migration(
         }
     }
 
+    private fun links(keptOld: Set<Path>) {
+        for (file in home.resolve("templates").takeIf { it.exists() }?.listDirectoryEntries("*.bpmn").orEmpty()) {
+            val document = runCatching { parse(file.readBytes()) }.getOrNull() ?: continue
+            if (!catalogue.link(document)) continue
+            if (file !in keptOld) file.resolveSibling("${file.fileName}.old").writeBytes(file.readBytes())
+            file.writeAtomically(serialize(document))
+        }
+        for (process in repository.createProcessDefinitionQuery().latestVersion().list().filter { !it.resourceName.startsWith("shipped/") }) {
+            val bpmn = repository.getProcessModel(process.id).readAllBytes()
+            if (!catalogue.link(parse(bpmn))) continue
+            try {
+                processes.deploy(bpmn, process.resourceName)
+            } catch (e: Refused) {
+                log.warn("The Process ${process.key} can't be linked by id, so it stays as it was: ${e.message}")
+            }
+        }
+    }
+
     private fun withId(text: String, id: String): String = when {
         "id" in frontmatter(text).first -> Regex("(?m)^id:.*$").replaceFirst(text, "id: $id")
         Regex("""\A---\R.*?\R---""", RegexOption.DOT_MATCHES_ALL).containsMatchIn(text) -> text.replaceFirst(Regex("""\A---\R"""), "---\nid: $id\n")
@@ -267,14 +287,6 @@ private typealias Needs = Map<String, Set<String>>
 
 /** These needs and [more]. */
 private fun Needs.and(more: Needs): Needs = (keys + more.keys).associateWith { this[it].orEmpty() + more[it].orEmpty() }
-
-/** The Agent Tasks in [document]. */
-private fun agentTasks(document: Document) = document.getElementsByTagNameNS(BPMN, "serviceTask").elements()
-    .filter { task -> List(task.attributes.length) { task.attributes.item(it) }.any { it.localName == "topic" && it.nodeValue == AgentLauncher.TOPIC } }
-
-/** An Agent Task's extension properties, by name. */
-private fun properties(task: Element) = task.getElementsByTagNameNS("*", "property").elements()
-    .filter { it.parentNode.localName == "properties" && it.parentNode.parentNode.localName == "extensionElements" }.associateBy { it.getAttribute("name") }
 
 /**
  * [task] as the latest version of its Process has it, when its own version is from before the migration (it names an

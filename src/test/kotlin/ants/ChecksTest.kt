@@ -385,7 +385,7 @@ class ChecksTest : AntsTest() {
         assertTrue(shipped.isNotEmpty() && shipped.none { it["own"] == true })
         val skills = (catalogue["skills"] as List<*>).associateBy { (it as Map<*, *>)["name"] }
         val draft = skills["draft"] as Map<*, *>
-        assertEquals(setOf("name", "description", "own", "folder"), draft.keys)
+        assertEquals(setOf("id", "name", "description", "own", "folder"), draft.keys)
         assertEquals(listOf(true, false), listOf(draft["own"], (skills["tdd"] as Map<*, *>)["own"]))
         assertEquals(home.resolve("skills").toString(), draft["folder"])
     }

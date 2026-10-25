@@ -70,10 +70,10 @@ internal fun agentTasks(catalogue: Catalogue, model: BpmnModelInstance): List<Ch
 
 private fun agentTask(task: ServiceTask, catalogue: Catalogue, identified: () -> List<Identified>): List<Check> {
     fun check(message: String) = Check(task.id, "${task.label}: $message")
-    val agentName = task.property(AGENT)?.takeIf(String::isNotBlank)
-    val agent = agentName?.let { runCatching { catalogue.agent(it) } }
+    val links = Links(task)
+    val agent = if (links.hasAgent) runCatching { links.agent(catalogue) } else null
     val job = Job(task)
-    val listed = job.listed.orEmpty().map { runCatching { catalogue.skill(it) } }
+    val listed = links.skills(catalogue).orEmpty()
     val schema = ResultContract.schemaErrors(task.property(RESULT_SCHEMA).orEmpty())
     val lacking = agent?.getOrNull()?.let { a -> listed.mapNotNull { it.getOrNull() }.filter { !a.allows(it.name) }.map { check("The Agent ${a.name} doesn't list the Skill ${it.name}.") } }
     fun twins(item: Identified) = identified().filter { it.id == item.id && it.where != item.where }
@@ -81,7 +81,7 @@ private fun agentTask(task: ServiceTask, catalogue: Catalogue, identified: () ->
     val sharing = agent?.getOrNull()?.identified?.let(::twins).orEmpty() +
         listed.mapNotNull { it.getOrNull()?.identified }.flatMap(::twins)
     return listOfNotNull(
-        if (agentName == null) Check(task.id, "${task.label} has no Agent.") else agent!!.exceptionOrNull()?.let { check("${it.message}.") },
+        if (agent == null) Check(task.id, "${task.label} has no Agent.") else agent.exceptionOrNull()?.let { check("${it.message}.") },
         Check(task.id, "${task.label} has no Assignment and doesn't list exactly one Skill.").takeIf { !job.valid },
     ) + listed.mapNotNull { it.exceptionOrNull()?.let { e -> check("${e.message}.") } } + lacking.orEmpty() +
         listOfNotNull(schema.takeIf { it.isNotEmpty() }?.let { check("Its result schema is invalid: ${it.joinToString("; ")}") }) + sharing

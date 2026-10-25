@@ -760,6 +760,24 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `the Agent Task panel shows the current names of what the Task links by id, writes ids with the names beside them, and shows no id`() = browse {
+        agentTask(null, mapOf("draft" to null, "polish" to null), agent = "id: a-writer\n")
+        home.resolve("skills/draft/ants.yaml").writeText("id: k-draft\n")
+        home.resolve("skills/polish/ants.yaml").writeText("id: k-polish\n")
+        http.import("agent-task.bpmn")
+        home.resolve("agents/writer.md").writeText("---\nid: a-writer\nname: author\nskills: draft, polish\n---\nWrite plainly.\n")
+        page.navigate(url("/processes/agent-task/edit"))
+        shape("draft").click()
+        assertThat(label("Agent")).hasValue("author")
+        assertThat(label("draft")).isChecked()
+        val sent = checked({ "name=\"ants.skills\" value=\"k-draft, k-polish\"" in it }) { label("polish").check() }
+        assertContains(sent, """name="ants.agent" value="a-writer"""")
+        assertContains(sent, """name="ants.name.a-writer" value="author"""")
+        assertContains(sent, """name="ants.name.k-polish" value="polish"""")
+        assertFalse(Regex("a-writer|k-draft|k-polish").containsMatchIn(page.locator("body").innerText()))
+    }
+
+    @Test
     fun `New Skill says the Task has no Agent yet, and New Agent comes with the Task's Skill`() = browse {
         agentTask(null)
         appendAgentTask()

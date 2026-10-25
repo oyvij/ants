@@ -1,7 +1,7 @@
 // What the modeler writes as text and reads back, checked with no browser: `node --test`, run by ./gradlew test.
 import {test} from "node:test"
 import assert from "node:assert/strict"
-import {camel, cronOf, operators, readCondition, readSchedule, resultFields, toCamunda, unary} from "../../main/resources/static/modeler-text.js"
+import {camel, cronOf, linkedChanges, linkedProperties, operators, readCondition, readSchedule, resultFields, toCamunda, unary} from "../../main/resources/static/modeler-text.js"
 
 test("every operator's JUEL reads back as the field, operator and value it was written from", () => {
     for (const op of Object.keys(operators)) {
@@ -74,4 +74,30 @@ test("a decision's condition reads the start form, the Results of the Tasks befo
 test("the diagram opens in camunda's namespace, which Ants' deploy path turns back", () => {
     assert.equal(toCamunda('<bpmn:definitions xmlns:operaton="http://operaton.org/schema/1.0/bpmn" operaton:topic="agent">'),
         '<bpmn:definitions xmlns:operaton="http://camunda.org/schema/1.0/bpmn" operaton:topic="agent">')
+})
+
+const catalogue = {
+    agents: [{id: "a-writer", name: "author"}, {id: null, name: "plain"}],
+    skills: [{id: "k-draft", name: "drafting"}, {id: "k-tdd", name: "tdd"}],
+}
+
+test("an Agent Task's Agent and Skills read as their current names, found by id, else by the name kept beside the id, and no id shows", () => {
+    const props = {"ants.agent": "a-writer", "ants.name.a-writer": "writer", "ants.skills": "k-draft, k-zz0001", "ants.name.k-draft": "draft",
+        "ants.name.k-zz0001": "tdd", "ants.assignment": "Do it."}
+    assert.deepEqual(linkedProperties(props, catalogue), {"ants.agent": "author", "ants.skills": "drafting, tdd", "ants.assignment": "Do it."})
+    assert.deepEqual(linkedProperties({"ants.agent": "a-zz0002", "ants.name.a-zz0002": "gone"}, catalogue), {"ants.agent": "gone"})
+    assert.deepEqual(linkedProperties({"ants.agent": "plain"}, catalogue), {"ants.agent": "plain"})
+})
+
+test("an Agent and Skills picked by name are written as ids, each current name beside its id, and the old names go", () => {
+    const props = {"ants.agent": "a-old", "ants.name.a-old": "old", "ants.skills": "k-old", "ants.name.k-old": "old-skill"}
+    assert.deepEqual(linkedChanges(props, {"ants.agent": "author", "ants.skills": "drafting, tdd"}, catalogue), {
+        "ants.agent": "a-writer", "ants.skills": "k-draft, k-tdd", "ants.name.a-old": undefined, "ants.name.k-old": undefined,
+        "ants.name.a-writer": "author", "ants.name.k-draft": "drafting", "ants.name.k-tdd": "tdd",
+    })
+    assert.deepEqual(linkedChanges({"ants.agent": "a-writer", "ants.name.a-writer": "writer"}, {"ants.assignment": "Go."}, catalogue),
+        {"ants.assignment": "Go.", "ants.agent": "a-writer", "ants.name.a-writer": "author"})
+    assert.deepEqual(linkedChanges({"ants.agent": "a-writer", "ants.skills": "k-draft", "ants.name.k-draft": "drafting"}, {"ants.skills": undefined}, catalogue),
+        {"ants.skills": undefined, "ants.name.k-draft": undefined, "ants.agent": "a-writer", "ants.name.a-writer": "author"})
+    assert.deepEqual(linkedChanges({}, {"ants.agent": "plain"}, catalogue), {"ants.agent": "plain"})
 })

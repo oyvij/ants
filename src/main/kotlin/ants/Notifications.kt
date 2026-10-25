@@ -77,6 +77,7 @@ class Notifications(
     private val tickets: Tickets,
     private val cloneRepos: CloneRepos,
     private val names: RunNames,
+    private val catalogue: Catalogue,
     @Value("\${ants.home}") private val home: Path,
 ) {
     /** Everything waiting on the user, oldest first. */
@@ -165,7 +166,7 @@ class Notifications(
         val transcript = Transcript.read(Transcript.file(names.runWorkspace(entry.run), entry.taskId)).first.takeIf { it.isNotEmpty() }
             ?.let { lines -> Transcript().apply { lines.forEach(::add) } }
         val (state, label) = TaskView.state(entry)
-        return TaskView(entry.taskId, element, state, label, entry, null, transcript, transcript?.context.orEmpty(), "/notifications/${entry.id}")
+        return TaskView(entry.taskId, element, state, label, entry, null, transcript, transcript?.context.orEmpty(), "/notifications/${entry.id}", catalogue = catalogue)
     }
 
     /** What [entry]'s page shows beyond its summary, such as what a stuck Agent needs. */

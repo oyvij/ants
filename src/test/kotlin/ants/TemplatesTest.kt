@@ -65,7 +65,7 @@ class TemplatesTest : AntsTest() {
         val (reviews, _) = drop("review-and-push", drop("review-and-push", blank("Reviewed twice")).first)
         assertContains(reviews, """<operaton:property name="ants.walkthrough" value="walkthrough_2"/>""")
         assertContains(reviews, """<operaton:property name="ants.send-back" value="fix_2"/>""")
-        assertContains(reviews, """<operaton:property name="ants.agent" value="storyteller"/>""")
+        assertContains(reviews, """<operaton:property name="ants.agent" value="a-storyteller"/>""")
     }
 
     @Test

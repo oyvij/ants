@@ -235,7 +235,7 @@ class AgentLauncher(
             val workspace = names.runWorkspace(run)
             if (ticketed(task, run, workspace)) return
             migration.unmigrated(task)?.let { throw Failed(it) }
-            val agent = catalogue.agent(task.extensionProperties[AGENT] ?: error("${task.activityId} names no $AGENT"))
+            val agent = Links(task.extensionProperties::get).agent(catalogue)
             if (hold(task, agent.cli)) return // keeping its choice for the launch after the reset
             runtime.removeVariablesLocal(task.executionId, listOf(ACTION, INSTRUCTION, SESSION)) // the choice is used once
             val (skill, used) = skills(task.extensionProperties, agent, task.activityId)
@@ -390,7 +390,7 @@ class AgentLauncher(
      */
     private fun fix(held: LockedExternalTask, run: String, workspace: Path, fix: Fix, message: String) {
         val key = fix.key
-        val agent = catalogue.agent(held.extensionProperties[AGENT] ?: error("${held.activityId} names no $AGENT"))
+        val agent = Links(held.extensionProperties::get).agent(catalogue)
         val (skill, used) = skills(held.extensionProperties, agent, held.activityId)
         if (agent.cli == "claude") refuseBareByDefault(agent.cli, workspace)
         val last = Transcript.file(workspace, key).resolveSibling("session")
@@ -467,7 +467,7 @@ class AgentLauncher(
      */
     private fun skills(properties: Map<String, String>, agent: Agent, id: String): Pair<Skill?, List<Skill>> {
         val job = Job(properties::get)
-        val allowed = job.listed?.map(catalogue::skill) ?: catalogue.allowed(agent)
+        val allowed = Links(properties::get).skills(catalogue)?.map { it.getOrThrow() } ?: catalogue.allowed(agent)
         if (job.assignment != null) return null to allowed
         if (!job.valid) error("$id has no Assignment and doesn't list exactly one Skill")
         return allowed.single() to emptyList()

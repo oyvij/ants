@@ -37,6 +37,9 @@ class MigrationTest : AntsTest() {
     @Autowired
     lateinit var runtime: RuntimeService
 
+    @Autowired
+    lateinit var catalogue: Catalogue
+
     private val done = """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":{"outcome":"done","summary":"Drafted.","output":{"text":"Hi"}}}"""
     private val textSchema = """{"type":"object","properties":{"text":{"type":"string"}},"required":["text"]}"""
     private val agentTask = javaClass.getResource("/agent-task.bpmn")!!.readText()
@@ -163,6 +166,37 @@ class MigrationTest : AntsTest() {
         val after = files() + listOf("agent-ids.yaml", "skill-ids.yaml").associateWith { home.resolve(it).readText() }
         migration.migrate()
         assertEquals(after, files() + listOf("agent-ids.yaml", "skill-ids.yaml").associateWith { home.resolve(it).readText() })
+    }
+
+    @Test
+    fun `the names in the latest Processes and Templates become ids once, each name kept beside its id and the old versions kept`() {
+        settings(claude, "agent-tasks: 3\n")
+        home.resolve("agents/writer.md").writeText("---\nname: writer\nskills: draft\n---\nWrite plainly.\n")
+        home.resolve("skills/draft").createDirectories().resolve("SKILL.md").writeText("---\nname: draft\ndescription: Drafts.\n---\nDraft it.\n")
+        val named = agentTask.replace("\"agent-task\"", "\"by-name\"")
+        deployedByOlderAnts("by-name", named)
+        val template = home.resolve("templates/by-name.bpmn").apply { writeText(named) }
+
+        migration.migrate()
+
+        val agent = catalogue.agent("writer").id!!
+        val skill = catalogue.skill("draft").id!!
+        val latest = repository.createProcessDefinitionQuery().processDefinitionKey("by-name").latestVersion().singleResult()
+        val diagram = repository.getProcessModel(latest.id).readAllBytes().decodeToString()
+        for (linked in listOf(diagram, template.readText())) {
+            assertContains(linked, """name="ants.agent" value="$agent"""")
+            assertContains(linked, """name="ants.name.$agent" value="writer"""")
+            assertContains(linked, """name="ants.skills" value="$skill"""")
+            assertContains(linked, """name="ants.name.$skill" value="draft"""")
+        }
+        assertEquals(named, home.resolve("templates/by-name.bpmn.old").readText())
+        assertEquals(2, repository.createProcessDefinitionQuery().processDefinitionKey("by-name").count())
+
+        val after = files()
+        val versions = repository.createProcessDefinitionQuery().count()
+        migration.migrate()
+        assertEquals(after, files())
+        assertEquals(versions, repository.createProcessDefinitionQuery().count())
     }
 
     @Test

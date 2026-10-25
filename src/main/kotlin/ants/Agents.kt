@@ -78,10 +78,10 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
     fun catalogue() = mapOf(
         "agents" to catalogue.agents().map {
             val skills = catalogue.allowedNames(it)
-            mapOf("name" to it.name, "description" to it.description, "skills" to skills, "own" to (it.file.parent == folder), "folder" to it.file.parent.toString())
+            mapOf("id" to it.id, "name" to it.name, "description" to it.description, "skills" to skills, "own" to (it.file.parent == folder), "folder" to it.file.parent.toString())
         },
         "skills" to catalogue.skills().map { skill ->
-            mapOf("name" to skill.name, "description" to skill.description, "own" to skill.file.startsWith(catalogue.yourSkills), "folder" to skill.folder.parent.toString())
+            mapOf("id" to skill.id, "name" to skill.name, "description" to skill.description, "own" to skill.file.startsWith(catalogue.yourSkills), "folder" to skill.folder.parent.toString())
         },
         "profiles" to settings.profiles().keys,
     )
