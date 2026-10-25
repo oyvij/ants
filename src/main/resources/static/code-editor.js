@@ -58,10 +58,10 @@ function mount(textarea, cm) {
             run.disabled = false;
         }
     });
-    if (textarea.dataset.helper) openHelper(textarea, editor);
+    if (textarea.dataset.helper) openHelper(textarea, editor, cm);
 }
 
-async function openHelper(textarea, editor) {
+async function openHelper(textarea, editor, cm) {
     if (document.readyState === 'loading') await new Promise(loaded => addEventListener('DOMContentLoaded', loaded, {once: true}));
     const panel = document.getElementById(textarea.dataset.helper);
     const csrf = new FormData(textarea.form).get('_csrf');
@@ -73,7 +73,7 @@ async function openHelper(textarea, editor) {
     const relayed = {
         buffer: () => editor.state.doc.toString(),
         replace_buffer: ({code}) => {
-            editor.dispatch({changes: {from: 0, to: editor.state.doc.length, insert: code}});
+            editor.dispatch({changes: {from: 0, to: editor.state.doc.length, insert: code}, annotations: cm.isolateHistory.of('full')}); // its own undo step, never joined to the user's typing
             return null;
         },
         form: () => [...new FormData(textarea.form)].filter(([name]) => name !== '_csrf'),
