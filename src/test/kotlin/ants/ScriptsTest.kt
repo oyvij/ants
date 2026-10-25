@@ -395,6 +395,16 @@ class ScriptsTest : AntsTest() {
     }
 
     @Test
+    fun `without JavaScript the Script page shows both schemas' rows, so an output schema can be seen and edited`() {
+        create(form("posts", inputs = "text") + listOf("output[0].name" to "ts", "output[0].type" to "string", "output[0].description" to ""))
+        val page = browser.get("/scripts/posts").body
+        val panels = Regex("""<div role="tabpanel" id="(input|output)-schema"[^>]*>""").findAll(page).map { it.value }.toList()
+        assertEquals(2, panels.size, page)
+        assertTrue(panels.none { " hidden" in it }, panels.toString())
+        assertContains(page, """name="output[0].name" value="ts"""")
+    }
+
+    @Test
     fun `saving a Script writes its output rows as output in script yaml, opening it shows them, and with none the tab says any payload is accepted`() {
         create(form("no-output"))
         assertFalse("output" in definition(folder("no-output")))

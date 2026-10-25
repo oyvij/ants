@@ -68,7 +68,7 @@
             <div class="help">The inputs a caller passes, as <code>ants.inputs</code>. Ants refuses inputs that don't fit before the Script runs. Clear a name and its description to remove the row.</div>
             @template.schemarows(rows = form.inputs, prefix = "inputs")
         </div>
-        <div role="tabpanel" id="output-schema" aria-labelledby="output-schema-tab" hidden>
+        <div role="tabpanel" id="output-schema" aria-labelledby="output-schema-tab">
             <div class="help">The payload the Script hands back with <code>ants.output</code>, for later Tasks and Agents to read. Ants fails a run whose payload doesn't fit. Optional: with no rows, there is none.</div>
             <p class="muted small" data-no-output hidden="${form.output.isNotEmpty()}">No output schema: any JSON payload is accepted.</p>
             @template.schemarows(rows = form.output, prefix = "output", field = "field")

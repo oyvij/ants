@@ -40,14 +40,15 @@ function mount(card) {
         card.dispatchEvent(new Event('change', {bubbles: true}));
     };
     card.addEventListener('schema-replaced', changed);
-    card.querySelectorAll('[role=tab]').forEach(tab => tab.addEventListener('click', () => {
-        card.querySelectorAll('[role=tab]').forEach(other => {
-            const on = other === tab;
-            other.setAttribute('aria-selected', on);
-            other.classList.toggle('on', on);
-            document.getElementById(other.getAttribute('aria-controls')).hidden = !on;
-        });
-    }));
+    const tabs = [...card.querySelectorAll('[role=tab]')];
+    const select = tab => tabs.forEach(other => { // without JS both panels show, so their rows can still be edited
+        const on = other === tab;
+        other.setAttribute('aria-selected', on);
+        other.classList.toggle('on', on);
+        document.getElementById(other.getAttribute('aria-controls')).hidden = !on;
+    });
+    tabs.forEach(tab => tab.addEventListener('click', () => select(tab)));
+    select(tabs.find(tab => tab.getAttribute('aria-selected') === 'true'));
     card.addEventListener('click', event => {
         const add = event.target.closest('[data-add-row]'), remove = event.target.closest('[data-remove-row]');
         if (add) {
