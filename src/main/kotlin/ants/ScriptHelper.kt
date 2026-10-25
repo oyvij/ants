@@ -66,8 +66,8 @@ class ScriptHelper(private val chats: PageChats, private val scripts: ScriptsPag
             Mcp.tool("replace_buffer", "Replaces the code in the Script editor with yours, unsaved: the user saves it, and Ctrl-Z takes it back.",
                 mapOf("code" to "The whole new code, a JavaScript ES module.")),
             Mcp.tool("test_run", "Test runs the code in the Script editor as it is now, unsaved, with the Script's vars and Secrets, in a scratch folder: " +
-                "gives the exit code, the output with every Secret masked as ••••, and the payload the code wrote to ANTS_OUTPUT.",
-                mapOf("inputs" to mapOf("type" to "object", "description" to "The sample inputs, as the Script gets them on stdin, such as {\"text\": \"hello\"}.")),
+                "gives the exit code, the output with every Secret masked as ••••, and the payload the code handed back with ants.output.",
+                mapOf("inputs" to mapOf("type" to "object", "description" to "The sample inputs, as the Script gets them in ants.inputs, such as {\"text\": \"hello\"}.")),
                 optional = setOf("inputs")),
         )
     }

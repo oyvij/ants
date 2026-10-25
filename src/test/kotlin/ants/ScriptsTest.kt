@@ -185,26 +185,28 @@ class ScriptsTest : AntsTest() {
     }
 
     @Test
-    fun `a new Script's editor shows a placeholder reading inputs, vars and Secrets, and writing the payload`() {
+    fun `a new Script's editor shows a placeholder reading ants inputs, vars and Secrets, and handing back with ants output`() {
         val page = browser.get("/scripts/new").body.replace("&#34;", "\"").replace("&#39;", "'")
         assertContains(page, "data-code-editor")
-        assertContains(page, "process.stdin")
+        assertContains(page, "ants.inputs")
         assertContains(page, "process.env.")
-        assertContains(page, "process.env.ANTS_OUTPUT")
+        assertContains(page, "ants.output(")
+        assertFalse("process.stdin" in page)
+        assertFalse("ANTS_OUTPUT" in page)
     }
 
     @Test
-    fun `a Test run gets its inputs on stdin and its vars, Secrets and ANTS_ variables in the environment, masks every Secret, and leaves no scratch folder`() {
+    fun `a Test run gets its inputs as ants inputs and its vars, Secrets and ANTS_ variables in the environment, masks every Secret, and leaves no scratch folder`() {
         create(form("post-message", own = listOf("SLACK_TOKEN" to "xoxb-s3cret")))
         val code = """
-            import {readFileSync, writeFileSync} from 'node:fs'
-            const inputs = JSON.parse(readFileSync(0, 'utf8'))
+            const inputs = ants.inputs
             const e = process.env
+            await new Promise(resolve => setTimeout(resolve, 10))
             console.log(JSON.stringify({inputs, channel: e.CHANNEL, slack: e.SLACK_TOKEN, npm: e.NPM_TOKEN, maven: e.MAVEN_TOKEN ?? null,
                 workspace: e.ANTS_RUN_WORKSPACE, run: e.ANTS_RUN_ID, cwd: process.cwd(), path: e.PATH === undefined ? null : 'set',
-                key: e.ANTHROPIC_API_KEY ?? null}))
+                key: e.ANTHROPIC_API_KEY ?? null, output: e.ANTS_OUTPUT ?? null}))
             console.error('on stderr')
-            writeFileSync(e.ANTS_OUTPUT, JSON.stringify({posted: inputs.text, token: e.SLACK_TOKEN}))
+            ants.output({posted: inputs.text, token: e.SLACK_TOKEN})
         """.trimIndent()
         val result = testRun(
             form("post-message", code = code, inputs = "text", vars = "CHANNEL=general", own = listOf("SLACK_TOKEN" to ""), linked = listOf("npm")),
@@ -220,6 +222,7 @@ class ScriptsTest : AntsTest() {
         assertEquals("••••", printed["npm"])
         assertNull(printed["maven"])
         assertNull(printed["key"])
+        assertNull(printed["output"])
         assertEquals("set", printed["path"])
         assertEquals("test-run", printed["run"])
         assertEquals(printed["cwd"], printed["workspace"])
@@ -232,16 +235,24 @@ class ScriptsTest : AntsTest() {
     }
 
     @Test
-    fun `a Test run's payload is empty when the Script wrote none, and a payload that isn't JSON fails the run`() {
+    fun `a Test run's payload is empty when the Script hands back none, the last ants output wins, and a value JSON can't hold fails the run`() {
         val none = testRun(form("quiet", code = "console.log('done')\n"))
         assertEquals(0, none["exitCode"])
         assertEquals("done\n", none["output"])
         assertNull(none["payload"])
 
-        val broken = testRun(form("broken", code = "import {writeFileSync} from 'node:fs'\nwriteFileSync(process.env.ANTS_OUTPUT, 'not json')\n"))
-        assertTrue(broken["exitCode"] != 0)
-        assertContains(broken["output"].toString(), "ANTS_OUTPUT holds no JSON")
-        assertNull(broken["payload"])
+        val twice = testRun(form("twice", code = "ants.output({first: true})\nconsole.log('{\"logged\": true}')\nants.output({second: true})\n"))
+        assertEquals(0, twice["exitCode"])
+        assertEquals("{\"logged\": true}\n", twice["output"])
+        assertEquals(mapOf("second" to true), twice["payload"])
+
+        for ((name, value) in listOf("big" to "10n", "circular" to "(() => { const a = {}; a.self = a; return a })()", "function" to "() => 1")) {
+            val broken = testRun(form(name, code = "console.log('before')\nants.output($value)\n"))
+            assertTrue(broken["exitCode"] != 0, name)
+            assertContains(broken["output"].toString(), "before\n")
+            assertContains(broken["output"].toString(), "ants.output got a value JSON can't hold, so the run failed")
+            assertNull(broken["payload"])
+        }
     }
 
     @Test

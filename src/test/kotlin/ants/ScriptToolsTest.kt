@@ -107,10 +107,9 @@ class ScriptToolsTest : AntsTest() {
     @Test
     fun `calling a Script tool runs the Script in the Run workspace and answers with its exit code, masked output and payload, an error when it exits non-zero`() {
         val code = """
-            |import {readFileSync, writeFileSync} from 'node:fs'
-            |const inputs = JSON.parse(readFileSync(process.stdin.fd, 'utf8'))
+            |const inputs = ants.inputs
             |console.log(`to ${'$'}{inputs.channel} in ${'$'}{process.cwd()} with ${'$'}{process.env.SLACK_TOKEN}`)
-            |writeFileSync(process.env.ANTS_OUTPUT, JSON.stringify({posted: inputs.text, run: process.env.ANTS_RUN_ID}))
+            |ants.output({posted: inputs.text, run: process.env.ANTS_RUN_ID})
             |process.exit(inputs.fail ? 4 : 0)
         """.trimMargin()
         Script("s-post01", "post-message", "Posts a message.", listOf("channel", "text", "fail"), secrets = listOf("SLACK_TOKEN"))
@@ -130,7 +129,7 @@ class ScriptToolsTest : AntsTest() {
 
         claude.release("go")
         eventually { assertContains(browser.get("/runs/$run").body, """id="state">Completed<""") }
-        assertFalse(Files.walk(workspace).filter { it.isRegularFile() }.anyMatch { "s3cret" in it.readText() || "ANTS_OUTPUT" in it.readText() })
+        assertFalse(Files.walk(workspace).filter { it.isRegularFile() }.anyMatch { "s3cret" in it.readText() || "ants.output" in it.readText() })
     }
 
     @Test
