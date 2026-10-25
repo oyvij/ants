@@ -259,6 +259,30 @@ class AgentsTest : AntsTest() {
         agents.resolve("linker.md").deleteIfExists()
     }
 
+    @Autowired
+    lateinit var scripts: Scripts
+
+    @Test
+    fun `an Agent saved with Script names holds their ids, and its page shows their names`() {
+        scripts.save(Script("s-post01", "post-message", "Posts a message."), "", emptyMap())
+        scripts.save(Script("s-tidy01", "tidy", "Tidies."), "", emptyMap())
+        scripts.save(Script("s-other1", "other", "Does other."), "", emptyMap())
+        browser.get("/agents/new")
+        browser.post("/agents/new", listOf("name" to "caller", "cli" to "claude", "scripts" to "post-message", "scripts" to "tidy"))
+        assertContains(agents.resolve("caller.md").readText(), "scripts: s-post01, s-tidy01\n")
+
+        val page = get("/agents/caller")
+        assertContains(page, """name="scripts" value="post-message" checked""")
+        assertContains(page, """name="scripts" value="tidy" checked""")
+        assertContains(page, """name="scripts" value="other">""")
+        assertFalse(Regex("s-post01|s-tidy01|s-other1").containsMatchIn(page))
+
+        agents.resolve("by-hand.md").writeText("---\nname: by-hand\nscripts: [tidy]\n---\nDo it.\n")
+        assertContains(get("/agents/by-hand"), """name="scripts" value="tidy" checked""")
+        browser.post("/agents/by-hand", listOf("name" to "by-hand", "cli" to "claude", "scripts" to "tidy"))
+        assertContains(agents.resolve("by-hand.md").readText(), "scripts: s-tidy01\n")
+    }
+
     private fun import(name: String, text: String): String {
         browser.get("/agents")
         return browser.upload("/agents/import", "file", name, text.toByteArray()).body.replace("&#34;", "\"")

@@ -29,7 +29,7 @@ import kotlin.io.path.exists
  * those from extra folders are read-only, with Copy. Nothing is cached, so an edit reaches the next launch.
  */
 @Controller
-class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, private val models: Models, private val settings: Settings, @Value("\${ants.home}") home: Path) {
+class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, private val models: Models, private val settings: Settings, private val scripts: Scripts, @Value("\${ants.home}") home: Path) {
     private val folder = home.resolve("agents")
 
     @GetMapping("/agents")
@@ -133,7 +133,7 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
         val agent = find(name)
         val taken = catalogue.agents().map { it.name }.toSet()
         val copy = copyName(agent.name) { it in taken || folder.resolve("$it.md").exists() }
-        folder.resolve("$copy.md").writeAtomically(AgentForm.of(agent, copy).copy(id = catalogue.unusedId(AGENT_ID), skills = catalogue.skillIds(agent.skills).joinToString(", ")).text())
+        folder.resolve("$copy.md").writeAtomically(AgentForm.of(agent, copy).copy(id = catalogue.unusedId(AGENT_ID), skills = catalogue.skillIds(agent.skills).joinToString(", "), scripts = scripts.ids(agent.scripts).joinToString(", ")).text())
         return "redirect:/agents/$copy"
     }
 
@@ -160,13 +160,15 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
             else -> null
         }
         if (error != null) return show(model, form, agent, error)
-        target.writeAtomically(form.copy(id = agent?.id ?: catalogue.unusedId(AGENT_ID), skills = catalogue.skillIds(words(form.skills)).joinToString(", ")).text())
+        target.writeAtomically(form.copy(id = agent?.id ?: catalogue.unusedId(AGENT_ID), skills = catalogue.skillIds(words(form.skills)).joinToString(", "), scripts = scripts.ids(form.scriptList).joinToString(", ")).text())
         if (agent != null && target != agent.file) agent.file.deleteIfExists()
         return "redirect:/agents/${form.name}" + if (modal.isEmpty()) "" else "?saved"
     }
 
     private fun show(model: Model, form: AgentForm, agent: Agent?, error: String? = null, notice: String? = null): String {
-        model.addAttribute("form", form.copy(skills = catalogue.skillNames(words(form.skills)).joinToString(", ")))
+        val shownScripts = scripts.names(form.scriptList)
+        model.addAttribute("form", form.copy(skills = catalogue.skillNames(words(form.skills)).joinToString(", "), scripts = shownScripts.joinToString(", ")))
+        model.addAttribute("scripts", (scripts.all().map { it.name } + shownScripts).distinct())
         model.addAttribute("action", agent?.let { "/agents/${it.name}" } ?: "/agents/new")
         model.addAttribute("file", agent?.file?.toString())
         model.addAttribute("readOnly", agent != null && agent.file.parent != folder)
@@ -212,7 +214,10 @@ data class AgentForm(
     val instructions: String,
     val kept: Map<*, *> = emptyMap<String, Any?>(),
     val id: String? = null,
+    val scripts: String = "",
 ) {
+    val scriptList get() = rules(scripts)
+
     /** Each rule of [tool]'s **Limit…**, as the page lists them. */
     fun limits(tool: String) = rules(tools[tool].orEmpty())
 
@@ -234,6 +239,7 @@ data class AgentForm(
         if (description.isNotEmpty()) meta["description"] = description
         meta["cli"] = cli
         if (skills.isNotBlank()) meta["skills"] = words(skills).joinToString(", ")
+        if (scriptList.isNotEmpty()) meta["scripts"] = scriptList.joinToString(", ")
         if (cli == "codex") meta["sandbox"] = sandbox
         else {
             val limited = TOOLS.filter { it in tools }.flatMap { tool -> rules(tools.getValue(tool)).map { "$tool($it)" }.ifEmpty { listOf(tool) } }
@@ -319,7 +325,7 @@ data class AgentForm(
         const val MCP_NOTE = "An MCP tool. Ants starts Agents with MCP off, so it needs an MCP server Ants doesn't configure yet."
         const val UNKNOWN_NOTE = "Not a tool Ants knows. Passed to Claude Code as written."
 
-        private val KEYS = setOf("id", "name", "description", "cli", "skills", "tools", "sandbox", "model", "ants-subagent")
+        private val KEYS = setOf("id", "name", "description", "cli", "skills", "scripts", "tools", "sandbox", "model", "ants-subagent")
 
         fun of(agent: Agent, name: String = agent.name): AgentForm {
             val rules = agent.tools ?: AgentLauncher.DEFAULT_TOOLS
@@ -338,6 +344,7 @@ data class AgentForm(
                 instructions = agent.instructions,
                 kept = agent.meta.filterKeys { it !in KEYS },
                 id = agent.id,
+                scripts = agent.scripts.joinToString(", "),
             )
         }
 
@@ -354,6 +361,7 @@ data class AgentForm(
                 model = param("model").let { if (it == "other") param("model-other") else it },
                 subagent = "subagent" in params,
                 instructions = params["instructions"].orEmpty(),
+                scripts = param("scripts"),
             )
         }
     }

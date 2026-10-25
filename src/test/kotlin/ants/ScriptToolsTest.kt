@@ -16,6 +16,7 @@ import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class ScriptToolsTest : AntsTest() {
     private val browser by lazy { browser().also { it.login() } }
@@ -141,6 +142,21 @@ class ScriptToolsTest : AntsTest() {
 
         assertEquals(listOf("mcp__ants__script_tidy"), scriptTools(launch))
         assertEquals(setOf("run", "script_tidy"), tools(launch).map { it["name"] }.toSet())
+        claude.release("go")
+    }
+    @Test
+    fun `a Script name a tool name can't hold is sanitised and cut to fit, and each tool name is unique within the launch`() {
+        script("s-slack01", "post to slack!")
+        script("s-slack02", "post to slack?")
+        script("s-long01", "a".repeat(60))
+        agentWithScripts("s-slack01", "s-slack02", "s-long01")
+        start()
+        val launch = launch()
+
+        val names = scriptTools(launch)
+        assertEquals(listOf("mcp__ants__script_" + "a".repeat(46), "mcp__ants__script_post_to_slack_", "mcp__ants__script_post_to_slack__2"), names.sorted())
+        assertTrue(names.all { Regex("[A-Za-z0-9_-]{1,64}").matches(it) })
+        assertEquals(names.map { it.removePrefix("mcp__ants__") }.toSet() + "run", tools(launch).map { it["name"] }.toSet())
         claude.release("go")
     }
 }

@@ -6,6 +6,7 @@
 @param readOnly: Boolean
 @param where: String? = null
 @param skills: List<ants.Skill> = emptyList()
+@param scripts: List<String> = emptyList()
 @param dependents: ants.Dependents?
 @param error: String? = null
 @param notice: String? = null
@@ -121,6 +122,14 @@
         <fieldset data-cli="claude" disabled="${!claude}">
             <div class="fld"><label class="f">Offer as a Subagent</label><div class="help">Other Agents may start it as a Subagent, through their Agent tool. claude Agents only.</div>
                 <label class="tick"><input type="checkbox" name="subagent" checked="${form.subagent}"> Offer it as a Subagent</label></div>
+            <div class="fld"><label class="f">Scripts it may call</label><div class="help">Each ticked Script is a tool the Agent calls with inputs, getting back the exit code, the masked output and the payload. It never sees the code or a Secret. A Task can narrow them. claude Agents only.</div>
+@if(scripts.isEmpty())
+                <div class="help">No Scripts yet. <a href="/scripts/new">New Script</a></div>
+@endif
+@for(script in scripts)
+                <label class="tick"><input type="checkbox" name="scripts" value="${script}" checked="${script in form.scriptList}"> ${script}</label>
+@endfor
+            </div>
         </fieldset>
     </div>
     <div class="card"><h3>What it may do</h3>

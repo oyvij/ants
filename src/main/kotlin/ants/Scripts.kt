@@ -48,6 +48,10 @@ class Scripts(@Value("\${ants.home}") home: Path, private val settings: Settings
 
     fun linked(value: String, kept: String? = null): Script = withId(value) ?: named(kept ?: value) ?: error("No Script named ${kept ?: value}")
 
+    fun ids(listed: List<String>): List<String> = listed.map { runCatching { linked(it).id }.getOrDefault(it) }.distinct()
+
+    fun names(listed: List<String>): List<String> = listed.map { runCatching { linked(it).name }.getOrDefault(it) }
+
     fun file(script: Script): Path = folder(script).resolve("script.mjs")
 
     fun code(script: Script): String = file(script).takeIf { it.exists() }?.readText().orEmpty()
