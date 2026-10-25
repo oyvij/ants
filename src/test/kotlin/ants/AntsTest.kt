@@ -252,6 +252,8 @@ class Browser(private val base: String, private val diagram: (String) -> String 
 
     fun get(path: String) = send(HttpRequest.newBuilder(URI("$base$path")).GET())
 
+    fun close() = client.shutdownNow()
+
     /**
      * The Report of [run], once Ants has written it. It writes it just after the Run's end commits, so a test that has
      * seen the Run end may still be early.

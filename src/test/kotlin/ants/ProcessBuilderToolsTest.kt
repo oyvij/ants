@@ -42,7 +42,7 @@ class ProcessBuilderToolsTest : AntsTest() {
 
     private fun call(token: String, name: String, arguments: Map<String, Any?> = emptyMap()) = mcpCall(port, token, name, arguments)
 
-    private fun page(token: String, answer: (String, Map<*, *>) -> Any?) = browser.actAsPage(token, builder, answer)
+    private fun page(token: String, answer: (String, Map<*, *>) -> Any?) = browser.actAsPage(token, builder, answer = answer)
 
     @Test
     fun `after a reload only the page's newest stream takes the relayed calls`() {
@@ -327,13 +327,13 @@ fun mcpCall(port: Int, token: String, name: String, arguments: Map<String, Any?>
 }
 
 /** Acts as the modeler page holding [token]: follows its SSE and answers each call relayed to it with what [answer] gives for its tool. */
-fun Browser.actAsPage(token: String, builder: PageChats, answer: (String, Map<*, *>) -> Any?) {
+fun Browser.actAsPage(token: String, builder: PageChats, at: String = "/process-builder/answer", answer: (String, Map<*, *>) -> Any?) {
     val json = JsonMapper.shared()
     val events = events("builder=$token", "builder")
     Thread.ofVirtual().start {
         while (true) {
             val relayed = json.readValue(events.take(), Map::class.java)
-            post("/process-builder/answer", mapOf("token" to token, "call" to relayed["id"].toString(),
+            post(at, mapOf("token" to token, "call" to relayed["id"].toString(),
                 "answer" to json.writeValueAsString(answer(relayed["tool"].toString(), relayed["arguments"] as Map<*, *>))))
         }
     }

@@ -58,6 +58,62 @@ function mount(textarea, cm) {
             run.disabled = false;
         }
     });
+    if (textarea.dataset.helper) openHelper(textarea, editor);
+}
+
+async function openHelper(textarea, editor) {
+    if (document.readyState === 'loading') await new Promise(loaded => addEventListener('DOMContentLoaded', loaded, {once: true}));
+    const panel = document.getElementById(textarea.dataset.helper);
+    const csrf = new FormData(textarea.form).get('_csrf');
+    const kept = 'ants.helper.' + location.pathname;
+    let token = sessionStorage.getItem(kept) ?? '';
+    const post = (path, fields) => fetch(path, {method: 'POST', body: new URLSearchParams({_csrf: csrf, token, ...fields})});
+    ({token} = await (await post('/script-helper', {})).json());
+    sessionStorage.setItem(kept, token);
+    const relayed = {
+        buffer: () => editor.state.doc.toString(),
+        replace_buffer: ({code}) => {
+            editor.dispatch({changes: {from: 0, to: editor.state.doc.length, insert: code}});
+            return null;
+        },
+        form: () => [...new FormData(textarea.form)].filter(([name]) => name !== '_csrf'),
+    };
+    stream.on('builder', async data => {
+        const {id, tool, arguments: args} = JSON.parse(data);
+        const fields = {call: id};
+        try {
+            fields.answer = JSON.stringify(await relayed[tool](args));
+        } catch (error) {
+            fields.error = error.message;
+        }
+        post('/script-helper/answer', fields);
+    });
+    const form = panel.querySelector('form'), message = panel.querySelector('textarea'), error = panel.querySelector('[role=alert]');
+    const stop = panel.querySelector('.stop'), send = panel.querySelector('.send'), live = panel.querySelector('.live'), dialog = panel.querySelector('.dialog');
+    stream.on('dialog', html => {
+        const bottom = dialog.scrollHeight - dialog.scrollTop - dialog.clientHeight < 40;
+        stream.patch(live, html);
+        const busy = live.querySelector('#sh-state')?.dataset.busy === 'true';
+        stop.hidden = !busy;
+        send.hidden = busy;
+        if (bottom) dialog.scrollTop = dialog.scrollHeight;
+    });
+    form.addEventListener('submit', async event => {
+        event.preventDefault();
+        if (send.hidden || !message.value.trim()) return;
+        const text = message.value;
+        message.value = '';
+        message.dispatchEvent(new Event('change'));
+        const answer = await (await post('/script-helper/send', {message: text})).json();
+        error.textContent = answer.error || '';
+        if (answer.error) {
+            message.value = text;
+            message.dispatchEvent(new Event('change'));
+        }
+    });
+    stop.addEventListener('click', () => post('/script-helper/stop', {}));
+    stream.follow('builder=' + token);
+    panel.dataset.token = token;
 }
 
 function show(result, {exitCode, output, payload}) {

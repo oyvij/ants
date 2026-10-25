@@ -657,6 +657,29 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `the Script editor's helper reads the unsaved code and replaces it in the editor, unsaved, and Ctrl-Z takes it back`() = browse {
+        page.navigate(url("/scripts/new"))
+        val editor = page.locator(".code-editor .cm-content")
+        editor.click()
+        page.keyboard().insertText("console.log('mine')")
+        val helper = page.getByRole(AriaRole.COMPLEMENTARY, Page.GetByRoleOptions().setName("Script helper"))
+        assertThat(helper).hasAttribute("data-token", Pattern.compile(".+"))
+        val token = helper.getAttribute("data-token")!!
+
+        eventually { mcpCall(port, token, "buffer").let { (text, failed) -> assertFalse(failed, text); assertEquals("console.log('mine')", text) } }
+        val (text, failed) = mcpCall(port, token, "replace_buffer", mapOf("code" to "console.log('helped')\n"))
+        assertFalse(failed, text)
+        assertThat(editor).hasText("console.log('helped')")
+        assertEquals("console.log('helped')\n", page.locator("textarea#code").inputValue())
+        assertTrue(page.url().endsWith("/scripts/new"))
+        assertFalse(home.resolve("scripts").toFile().walk().any { it.name == "script.mjs" && "helped" in it.readText() })
+
+        editor.click()
+        page.keyboard().press("ControlOrMeta+z")
+        assertThat(editor).hasText("console.log('mine')")
+    }
+
+    @Test
     fun `picking an Agent picks its first Skill and says what later Tasks can read, and the Checks turn Ready to deploy`() = browse {
         agentTask(null, mapOf("draft" to null, "polish" to null))
         val task = appendAgentTask()

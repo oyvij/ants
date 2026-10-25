@@ -30,6 +30,7 @@
 @if(dependents != null)    <div class="sub">@template.usedby(dependents = dependents, none = "no Process")</div>@endif
 </div>
 @if(message != null)<p role="alert">${message}</p>@endif
+<div class="scriptWrap">
 <form id="script" method="post" action="/scripts/${saved ?: "new"}" class="script">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
 @if(saved != null)
@@ -44,7 +45,7 @@
         </div>
     </div>
     <div class="card"><h3>Code</h3><div class="help">A JavaScript ES module, run as <code>node script.mjs</code> with Node's built-ins only. Its inputs arrive as one JSON object on stdin, its vars and Secrets as <code>process.env.NAME</code>, and the JSON it writes to the file <code>process.env.ANTS_OUTPUT</code> names is its payload.</div>
-        <textarea id="code" name="code" rows="20" data-code-editor="/scripts/test-run" placeholder="${placeholder}">${form.code}</textarea>
+        <textarea id="code" name="code" rows="20" data-code-editor="/scripts/test-run" data-helper="script-helper" placeholder="${placeholder}">${form.code}</textarea>
     </div>
     <div class="grid2">
     <div class="card"><h3>Inputs and vars</h3>
@@ -74,6 +75,16 @@
     </div>
     </div>
 </form>
+<aside class="helper" id="script-helper" aria-label="Script helper">
+    <h3>Helper</h3>
+    <div class="tr dialog"><p class="muted">Ask it to write or fix this Script, or paste the Process Builder's hand-off. It reads and replaces the code here, unsaved, and Test runs it with sample inputs. It sees only masked output, never a Secret.</p><div class="live"></div></div>
+    <form>
+        <label class="f" for="sh-message">Message to the helper</label>
+        <textarea id="sh-message" name="message" data-markdown data-enter-sends required placeholder="e.g. Post the text input to the Slack channel in CHANNEL. (Enter sends, Shift+Enter adds a line)"></textarea>
+        <div class="row"><span class="grow muted small" role="alert"></span><button type="button" class="stop" hidden>Stop</button><button class="primary send">Send</button></div>
+    </form>
+</aside>
+</div>
 </main>
 </body>
 </html>

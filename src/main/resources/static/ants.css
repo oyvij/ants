@@ -703,3 +703,9 @@ details.example pre { background: var(--line2); border: 0; padding: 10px; border
 .test-run { margin-top: 10px; } .test-run h4 { margin: 12px 0 4px; font-size: 12.5px; }
 .test-run pre { margin: 0; padding: 8px 10px; font-family: var(--mono); font-size: 12.5px; max-height: 320px; }
 .test-run .j-key { color: var(--acc); } .test-run .j-str { color: var(--ok); } .test-run .j-num { color: var(--invC); } .test-run .j-lit { color: var(--bad); }
+.scriptWrap { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: start; }
+@media (min-width: 1200px) { .scriptWrap { grid-template-columns: minmax(0, 1fr) 360px; } }
+.helper { display: flex; flex-direction: column; gap: 8px; height: calc(100vh - 128px); min-width: 0; position: sticky; top: 14px; }
+.helper h3 { margin: 0; } .helper .dialog { flex: 1; overflow: auto; margin: 0; } .helper .dialog .text p { margin: 4px 0; }
+.helper form { display: flex; flex-direction: column; gap: 6px; } .helper form label.f { margin: 0; }
+.helper form .ed .cm-editor { height: 8em; min-height: 4em; max-height: calc(50vh - 100px); resize: vertical; } .helper form .ed .cm-content { min-height: 0; }
