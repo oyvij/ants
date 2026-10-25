@@ -654,6 +654,7 @@ class BrowserTest : AntsTest() {
         button("New Script").click()
         assertThat(page.locator("dialog.modal")).containsText("New Script")
         val form = page.frameLocator("dialog iframe")
+        assertThat(form.locator("#script-helper")).hasAttribute("data-token", Pattern.compile(".+")) // its helper runs in the modal too
         form.locator("input[name=name]").fill("post-to-chat")
         form.locator("input[name=description]").fill("Posts to the chat.")
         form.locator("input[name=inputs]").fill("channel, text")
@@ -662,7 +663,7 @@ class BrowserTest : AntsTest() {
         assertThat(page.locator("dialog")).hasCount(0)
         assertEquals(modeler, page.url())
         assertThat(shape(task)).hasClass(selected)
-        assertThat(label("Script").locator("option:checked")).hasText("post-to-chat")
+        assertThat(label("Script")).hasValue("post-to-chat")
         label("channel").fill("general")
         label("text").fill("\${prompt}")
         assertTrue(home.resolve("scripts").toFile().listFiles()!!.any { it.resolve("script.yaml").readText().contains("name: post-to-chat") })
@@ -680,7 +681,7 @@ class BrowserTest : AntsTest() {
         page.locator("dialog .mh button", Page.LocatorOptions().setHasText("Save")).click()
 
         assertThat(page.locator("dialog")).hasCount(0)
-        assertThat(label("Script").locator("option:checked")).hasText("clean-up")
+        assertThat(label("Script")).hasValue("clean-up")
     }
 
     @Test

@@ -20,6 +20,8 @@
 <body>
 @if(!use)
 @template.nav(shell = shell)
+@else
+<script src="/shell.js" defer></script>
 @endif
 <main>
 @if(!use)<div class="crumbs"><a href="/scripts">Scripts</a> / ${saved ?: "New"}</div>@endif

@@ -107,8 +107,10 @@ function liven() {
 setInterval(liven, 120);
 addEventListener('DOMContentLoaded', liven);
 
+// The sidebar's events, on a page with the sidebar: a modal's page, without one, may still follow its own (the Script helper).
+const menu = document.getElementById('menu');
 const title = document.title.replace(/^\(\d+\) /, '');
-stream.on('count', data => {
+if (menu) stream.on('count', data => {
     const count = data === '0' ? '' : data;
     for (const waiting of [document.getElementById('waiting'), document.getElementById('topbar-waiting')]) {
         if (waiting.textContent === count) continue;
@@ -118,12 +120,12 @@ stream.on('count', data => {
     document.title = (count && `(${count}) `) + title;
     navigator.setAppBadge?.(Number(data)).catch(() => {}); // Safari refuses without notification permission
 });
-stream.on('runs', html => stream.patch(document.getElementById('runs'), html));
-stream.on('pauses', html => document.getElementById('paused').innerHTML = html);
-stream.on('update', html => document.getElementById('update').innerHTML = html);
+if (menu) stream.on('runs', html => stream.patch(document.getElementById('runs'), html));
+if (menu) stream.on('pauses', html => document.getElementById('paused').innerHTML = html);
+if (menu) stream.on('update', html => document.getElementById('update').innerHTML = html);
 const toast = element => setTimeout(() => element.remove(), 12000);
 // Each is numbered, so one a reconnected stream sends again shows once.
-stream.on('toast', html => {
+if (menu) stream.on('toast', html => {
     const seq = Number(/data-seq="(\d+)"/.exec(html)?.[1]);
     if (seq <= toasted) return;
     toasted = seq;
@@ -143,9 +145,8 @@ for (const link of document.querySelectorAll('nav.side > a')) {
     if (link.pathname === '/' ? location.pathname === '/' : location.pathname.startsWith(link.pathname)) link.classList.add('on');
 }
 
-const menu = document.getElementById('menu');
 document.addEventListener('click', event => {
-    if (!menu.checked || event.target.closest('label[for=menu], #menu')) return;
+    if (!menu?.checked || event.target.closest('label[for=menu], #menu')) return;
     if (event.target.closest('nav.side')) {
         if (event.target.closest('a')) menu.checked = false;
         return;
@@ -154,7 +155,7 @@ document.addEventListener('click', event => {
     event.stopPropagation();
     menu.checked = false;
 }, true);
-addEventListener('keydown', event => { if (event.key === 'Escape') menu.checked = false; });
+addEventListener('keydown', event => { if (event.key === 'Escape' && menu) menu.checked = false; });
 
 // A clickable row (tr.click) opens its data-href, unless the click was on a link, button or form of its own.
 document.addEventListener('click', event => {
