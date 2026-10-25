@@ -18,7 +18,8 @@ close the terminal and comes back after you log in. `ants start` starts it again
 also has `restart`, `status`, `logs`, `run` (in the foreground), `rollback` and `password`.
 
 When a newer version is out, the nav offers **Update**. It downloads the new version beside the one running, which
-keeps going with its Runs; `ants restart` then runs the new one, and `ants rollback` goes back to the one before.
+keeps going with its Runs; `ants restart` then runs the new one, and `ants rollback` goes back to the one before. Only
+those two stay in `~/.ants/versions`; the installer deletes older ones.
 
 You also need `claude` (and `codex`, if you use it), `git` and `gh` on your login shell's `PATH`.
 
