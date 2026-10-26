@@ -260,7 +260,7 @@ class AgentLauncher(
             val again = last.takeIf { resume == null && task.variables[ACTION] == null && (task.extensionProperties[RESUME] == "true" || comment != null) && it.exists() }?.readText()
             // codex names a new session itself, once it starts ([started]).
             session = session ?: again ?: UUID.randomUUID().toString().takeIf { agent.cli == "claude" }
-            transcript = Transcript.Writer(Transcript.file(workspace, instance)).apply { ants("launch") }
+            transcript = Transcript.Writer(Transcript.file(workspace, instance)).apply { ants("launch", chip = chip(task, agent, launchLevel)) }
             session?.let(last::writeText)
             val started = { id: String -> session = id; last.writeText(id) }
             val resumed = resume != null || again != null // claude knows the session already
@@ -407,7 +407,7 @@ class AgentLauncher(
         val inputs = last.resolveSibling(INPUTS).takeIf { it.exists() }?.let { json.readValue(it.readText(), Map::class.java) }.orEmpty()
             .mapKeys { it.key.toString() }
         val cwd = landing.folder(workspace, key, fresh = true)
-        val transcript = Transcript.Writer(Transcript.file(workspace, key)).apply { ants("launch") }
+        val transcript = Transcript.Writer(Transcript.file(workspace, key)).apply { ants("launch", chip = chip(held, agent, agent.launchLevel(Level.of(held.extensionProperties[LEVEL])))) }
         session?.let(last::writeText)
         val started = { id: String -> session = id; last.writeText(id) }
         try {
@@ -458,6 +458,9 @@ class AgentLauncher(
             ?.inputs().orEmpty().map { it.operatonName }
         return task.variables.filterKeys { it in names }.toSortedMap()
     }
+
+    private fun chip(task: LockedExternalTask, agent: Agent, level: Level): ModelChip =
+        ModelChip(agent.cli, level.model, level.effort, task.variables[RETRIES] as? Int ?: 0, settings.retries())
 
     private fun retry(task: LockedExternalTask, session: String?, level: Int, reason: String, details: String?): Boolean = runCatching {
         val retries = task.variables[RETRIES] as? Int ?: 0

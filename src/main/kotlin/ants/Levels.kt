@@ -29,7 +29,7 @@ data class Level(val model: String, val effort: String?) {
             Level(CODEX_MAIN, "xhigh"),
         )
 
-        private val FAMILIES: List<String> = listOf("haiku", "sonnet", "opus")
+        val FAMILIES: List<String> = listOf("haiku", "sonnet", "opus")
 
         fun of(text: String?): Int? = text?.toIntOrNull()?.takeIf { it in RANGE }
 

@@ -309,4 +309,36 @@ class RunPageTest : AntsTest() {
         assertContains(page, """id="state">Running</span>""")
         assertContains(page, "The Report appears here when the Run ends.")
     }
+
+    /** The model chip in the Run page's row of the Task named [name]. */
+    private fun chip(page: String, name: String) = assertNotNull(
+        Regex("""<span class="model"(?:(?!</span></span>).)*</span></span>""", RegexOption.DOT_MATCHES_ALL).find(row(page, name)), "no model chip for $name",
+    ).value
+
+    @Test
+    fun `each Agent Task on the Run page shows a chip with its CLI's icon, model name and effort bars, its detail on hover`() {
+        agentTask(claude, agent = "level: 4\n", retries = 3)
+        claude.session("draft", done)
+        val run = start("agent-task")
+        eventually { assertContains(browser.get("/runs/$run").body, """id="state">Completed<""") }
+        val chip = chip(browser.get("/runs/$run").body, "Draft")
+        assertContains(chip, """title="opus · high effort · 0 of 3 retries"""")
+        assertContains(chip, """class="i cli-claude"""")
+        assertContains(chip, "opus")
+        assertContains(chip, """<span class="bars e3" aria-label="high effort">""")
+        assertFalse("↻" in chip)
+    }
+
+    @Test
+    fun `a Task that retried shows how many of its retries it took on its chip`() {
+        agentTask(claude, agent = "level: 4\n", retries = 3)
+        claude.session("draft", 1, """{"type":"result","subtype":"error_max_turns","is_error":true,"session_id":"${'$'}SESSION"}""")
+        claude.session("draft", done)
+        val run = start("agent-task")
+        eventually { assertContains(browser.get("/runs/$run").body, """id="state">Completed<""") }
+        val chip = chip(browser.get("/runs/$run").body, "Draft")
+        assertContains(chip, """title="opus · max effort · 1 of 3 retries"""")
+        assertContains(chip, """<span class="bars e5" aria-label="max effort">""")
+        assertContains(chip, """<span class="retried">↻ 1/3</span>""")
+    }
 }

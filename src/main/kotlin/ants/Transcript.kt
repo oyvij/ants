@@ -58,6 +58,10 @@ class Transcript(private val toolLine: (name: String, input: Map<*, *>) -> Strin
     var soFar: String? = null
         private set
 
+    /** The model, effort and retries of the latest launch that names them. */
+    var chip: ModelChip? = null
+        private set
+
     /** The latest Result, the last `result` line's `structured_output`, if one has come. */
     var result: Map<*, *>? = null
         private set
@@ -193,6 +197,7 @@ class Transcript(private val toolLine: (name: String, input: Map<*, *>) -> Strin
             "launch" -> {
                 val launch = Launch(entries.size, launches.size + 1, at)
                 launches += launch
+                chip = ModelChip.of(event) ?: chip
                 append { divider(launch) }
                 verb = null
                 live.clear()
@@ -416,9 +421,9 @@ class Transcript(private val toolLine: (name: String, input: Map<*, *>) -> Strin
         }
 
         /** One of Ants' own lines: `launch`, `end` with how the launch ended, or `so-far` with the paragraph and its [tokens]. */
-        fun ants(subtype: String, text: String? = null, tokens: Long? = null) = line(
+        fun ants(subtype: String, text: String? = null, tokens: Long? = null, chip: ModelChip? = null) = line(
             json.writeValueAsString(
-                listOfNotNull("type" to "ants", "subtype" to subtype, "at" to Instant.now().toString(), text?.let { "text" to it }, tokens?.let { "tokens" to it }).toMap(),
+                listOfNotNull("type" to "ants", "subtype" to subtype, "at" to Instant.now().toString(), text?.let { "text" to it }, tokens?.let { "tokens" to it }).toMap() + chip?.fields.orEmpty(),
             ),
         )
     }

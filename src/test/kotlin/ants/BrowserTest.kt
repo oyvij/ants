@@ -1311,6 +1311,26 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `on the Run page an Agent Task that retried shows its model chip with its badge, and its detail on hover`() = browse {
+        val claude = FakeClaude()
+        agentTask(claude, agent = "level: 3\n", retries = 2)
+        claude.session("draft", 1, """{"type":"result","subtype":"error_max_turns","is_error":true,"session_id":"${'$'}SESSION"}""")
+        claude.session("draft", """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":{"outcome":"done","summary":"Drafted.","output":{"text":"Hello"}}}""")
+        http.import("agent-task.bpmn")
+        val run = http.post("/processes/agent-task/runs", mapOf("prompt" to "Say hello")).path
+
+        page.navigate(url(run))
+        val chip = page.locator("#tasks tr:has-text('Draft') .model")
+        assertThat(chip).containsText("↻ 1/2")
+        assertThat(chip).containsText("opus")
+        assertThat(chip.locator("svg.cli-claude")).isVisible()
+        assertThat(chip.locator(".bars i")).hasCount(5)
+        chip.hover()
+        assertThat(chip).hasAttribute("title", "opus · high effort · 1 of 2 retries")
+        page.screenshot("run-model-chip")
+    }
+
+    @Test
     fun `ticking a checkbox on a Ticket's page saves it, and the page follows the file as an Agent changes it`() = browse {
         settings(null)
         val (process, plane) = row("tracked", """<bpmn:startEvent id="start" />""", """<bpmn:userTask id="wait" name="Wait" />""", """<bpmn:endEvent id="end" />""")
