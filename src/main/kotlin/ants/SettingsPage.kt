@@ -194,6 +194,7 @@ data class SettingsForm(
     val vardeConfig: String,
     val agentTasks: String,
     val subagentDepth: String,
+    val retries: String,
     val vaults: Named,
     val sourceMaps: Named,
     val profiles: List<ProfileRow>,
@@ -211,6 +212,7 @@ data class SettingsForm(
     fun error() = when {
         agentTasks.isNotEmpty() && (agentTasks.toIntOrNull() ?: 0) < 1 -> "Agent Tasks at once must be a whole number, 1 or more."
         subagentDepth.isNotEmpty() && (subagentDepth.toIntOrNull() ?: 0) < 1 -> "Subagent depth must be a whole number, 1 or more."
+        retries.isNotEmpty() && (retries.toIntOrNull() ?: -1) < 0 -> "Retries must be a whole number, 0 or more."
         else -> vaults.error("Vault") ?: sourceMaps.error("Source map") ?: profileError() ?: secretError() ?: protectedCommandError()
     }
 
@@ -286,6 +288,7 @@ data class SettingsForm(
         values.keep("varde-config", vardeConfig)
         values.keep("agent-tasks", agentTasks.toIntOrNull())
         values.keep("subagent-depth", subagentDepth.toIntOrNull())
+        values.keep("retries", retries.toIntOrNull())
         values.keep("vaults", vaults.rows.toMap())
         values.keep("default-vault", vaults.rows.getOrNull(vaults.default)?.first)
         values.keep("source-maps", sourceMaps.rows.toMap())
@@ -318,6 +321,7 @@ data class SettingsForm(
                 vardeConfig = values["varde-config"]?.toString().orEmpty(),
                 agentTasks = values["agent-tasks"]?.toString().orEmpty(),
                 subagentDepth = values["subagent-depth"]?.toString().orEmpty(),
+                retries = values["retries"]?.toString().orEmpty(),
                 vaults = named(settings.vaults(), settings.defaultVault()),
                 sourceMaps = named(settings.sourceMaps(), settings.defaultSourceMap()),
                 profiles = settings.profiles().map { (name, profile) -> ProfileRow(name, profile.vault.orEmpty(), profile.sourceMap.orEmpty(), was = name, verbosity = profile.verbosity) },
@@ -362,6 +366,7 @@ data class SettingsForm(
                 vardeConfig = param("varde-config"),
                 agentTasks = param("agent-tasks"),
                 subagentDepth = param("subagent-depth"),
+                retries = param("retries"),
                 vaults = named("vaults", "default-vault"),
                 sourceMaps = named("source-maps", "default-source-map"),
                 profiles = profiles,

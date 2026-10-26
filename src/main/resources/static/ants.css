@@ -118,6 +118,11 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--hover); }
 .t-vault, .t-ISSUE, .t-NOTE, .t-SUGGESTION, .t-COMMENT { background: var(--accSoft); color: var(--accText); border-color: color-mix(in srgb, var(--acc) 30%, transparent); }
 .ent { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; vertical-align: middle; } .ent svg.i { width: 15px; height: 15px; }
 .ent-agent svg.i { color: var(--acc); } .ent-skill svg.i { color: var(--citeC); } .ent-script svg.i { color: var(--invC); } .ent a { color: inherit; } .ent a:hover { color: var(--acc); }
+.model { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; vertical-align: middle; margin-left: 8px; color: var(--muted); } .model svg.i { width: 14px; height: 14px; }
+.bars { display: inline-flex; align-items: flex-end; gap: 1px; height: 10px; } .bars i { width: 3px; background: var(--line); border-radius: 1px; }
+.bars i:nth-child(1) { height: 4px; } .bars i:nth-child(2) { height: 5.5px; } .bars i:nth-child(3) { height: 7px; } .bars i:nth-child(4) { height: 8.5px; } .bars i:nth-child(5) { height: 10px; }
+.bars.e1 i:nth-child(-n+1), .bars.e2 i:nth-child(-n+2), .bars.e3 i:nth-child(-n+3), .bars.e4 i:nth-child(-n+4), .bars.e5 i { background: currentColor; }
+.model .retried { color: var(--warnText); font-weight: 600; }
 h1 .ent svg.i { width: 22px; height: 22px; } .ph h1 .ent { gap: 9px; }
 .live { display: inline-flex; align-items: center; gap: 7px; } .live i { width: 8px; height: 8px; border-radius: 50%; background: var(--run); animation: pulse 1.4s infinite; }
 

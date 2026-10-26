@@ -2,6 +2,7 @@
 id: a-storyteller
 name: storyteller
 description: Writes a Story set for the Run's changes, reading the clones and their history, writing only in walkthrough/.
+level: 2
 skills: k-walkthrough
 tools: Read, Grep, Glob, Write(walkthrough/**), Edit(walkthrough/**), Bash(git log *), Bash(git diff *), Bash(git show *), Bash(git merge-base *)
 ---

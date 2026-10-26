@@ -2,6 +2,7 @@
 id: a-scout
 name: scout
 description: Reads a Run's prompt, the Vault and the Source map, never code, and names the repos the Run works in.
+level: 2
 skills: k-search-knowledge
 tools: Read, Grep, Glob, Write(scout/**), Agent(knowledge-searcher)
 ---

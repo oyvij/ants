@@ -95,6 +95,34 @@ class AgentsTest : AntsTest() {
     }
 
     @Test
+    fun `an Agent's level is read and written, and its pinned model kept beside it`() {
+        agents.resolve("leveled.md").writeText("---\nname: leveled\nlevel: 4\nmodel: claude-opus-5-5\n---\nThink hard.\n")
+        val leveled = get("/agents/leveled")
+        assertContains(leveled, """<option value="4" selected>""")
+        assertContains(leveled, """value="claude-opus-5-5" selected""")
+        post("/agents/leveled", mapOf("name" to "leveled", "cli" to "claude", "tool.Read" to "on", "level" to "4", "model" to "claude-opus-5-5", "instructions" to "Think hard."))
+        assertEquals("---\nname: leveled\ncli: claude\ntools: Read\nmodel: claude-opus-5-5\nlevel: 4\n---\nThink hard.\n", withoutId(agents.resolve("leveled.md")))
+        post("/agents/leveled", mapOf("name" to "leveled", "cli" to "claude", "tool.Read" to "on", "level" to "1", "instructions" to "Think hard."))
+        assertEquals("---\nname: leveled\ncli: claude\ntools: Read\nlevel: 1\n---\nThink hard.\n", withoutId(agents.resolve("leveled.md")))
+        assertContains(post("/agents/leveled", mapOf("name" to "leveled", "cli" to "claude", "tool.Read" to "on", "level" to "6", "instructions" to "Think hard.")).body, "A level is 1 to 5, not 6.")
+
+        val imported = import("deep.md", "---\nname: deep\nlevel: 3\nmodel: claude-sonnet-5-5\n---\nGo deep.\n")
+        assertContains(imported, """<option value="3" selected>""")
+        assertContains(imported, """value="claude-sonnet-5-5" selected""")
+        assertFalse("Dropped the keys" in imported)
+    }
+
+    @Test
+    fun `the form picks a level from 1 to 5, and can still pin a model ID beside it`() {
+        val blank = get("/agents/new")
+        assertContains(blank, """<select id="level" name="level">""")
+        assertContains(blank, """<select id="codex-level" name="level">""")
+        assertContains(blank, """<option value="" selected>default · level 2, or the pinned model's</option>""")
+        for (label in listOf("1 · haiku", "2 · sonnet medium", "3 · opus medium", "4 · opus high", "5 · opus max")) assertContains(blank, ">$label</option>")
+        assertContains(blank, """<option value="" selected>none · runs on its level</option>""")
+    }
+
+    @Test
     fun `a hand-written agent file shows on the form, its limits under Limit and its other keys kept`() {
         agents.resolve("seeker.md").writeText("---\nname: seeker\ncolor: blue\ntools: Agent(knowledge-searcher, worker), Read\n---\nScout.\n")
         val page = get("/agents/seeker")
@@ -313,6 +341,7 @@ class AgentsTest : AntsTest() {
         assertContains(coder, """value="read-only" selected""")
         assertContains(coder, """<fieldset data-cli="claude" disabled>""") // Claude's tools and models, off for a codex Agent
         assertContains(coder, """<fieldset data-cli="codex">""")
+        assertContains(coder, """<option value="1">1</option>""")
 
         // codex's model is free text.
         post("/agents/coder", mapOf("name" to "coder", "cli" to "codex", "sandbox" to "read-only", "model" to "gpt-5-codex", "instructions" to "Code."))

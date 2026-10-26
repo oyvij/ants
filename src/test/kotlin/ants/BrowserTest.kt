@@ -1137,6 +1137,21 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `the Level picker sets the Task's own level and clears it back to the Agent's`() = browse {
+        agentTask(null, mapOf("draft" to null))
+        http.import("agent-task.bpmn")
+        page.navigate(url("/processes/agent-task/edit"))
+        shape("draft").click()
+        assertThat(label("Level")).hasValue("")
+        checked({ "name=\"ants.level\" value=\"5\"" in it }) { label("Level").selectOption("5") }
+        checked({ "ants.level" !in it }) { label("Level").selectOption("") }
+        checked({ "name=\"ants.level\" value=\"1\"" in it }) { label("Level").selectOption("1") }
+        shape("end").click()
+        shape("draft").click()
+        assertThat(label("Level")).hasValue("1")
+    }
+
+    @Test
     fun `changing the Agent drops the listed Skills the new Agent doesn't have, and says so`() = browse {
         agentTask(null, mapOf("draft" to null, "polish" to null))
         home.resolve("agents/editor.md").writeText("---\nskills: polish\n---\nEdit.\n")
@@ -1293,6 +1308,26 @@ class BrowserTest : AntsTest() {
         assertThat(shape("build")).isVisible()
         assertThat(shape("review")).hasCount(0)
         assertThat(page.locator("#trail")).isHidden()
+    }
+
+    @Test
+    fun `on the Run page an Agent Task that retried shows its model chip with its badge, and its detail on hover`() = browse {
+        val claude = FakeClaude()
+        agentTask(claude, agent = "level: 3\n", retries = 2)
+        claude.session("draft", 1, """{"type":"result","subtype":"error_max_turns","is_error":true,"session_id":"${'$'}SESSION"}""")
+        claude.session("draft", """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":{"outcome":"done","summary":"Drafted.","output":{"text":"Hello"}}}""")
+        http.import("agent-task.bpmn")
+        val run = http.post("/processes/agent-task/runs", mapOf("prompt" to "Say hello")).path
+
+        page.navigate(url(run))
+        val chip = page.locator("#tasks tr:has-text('Draft') .model")
+        assertThat(chip).containsText("↻ 1/2")
+        assertThat(chip).containsText("opus")
+        assertThat(chip.locator("svg.cli-claude")).isVisible()
+        assertThat(chip.locator(".bars i")).hasCount(5)
+        chip.hover()
+        assertThat(chip).hasAttribute("title", "opus · high effort · 1 of 2 retries")
+        page.screenshot("run-model-chip")
     }
 
     @Test

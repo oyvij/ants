@@ -220,6 +220,7 @@ data class AgentForm(
     val kept: Map<*, *> = emptyMap<String, Any?>(),
     val id: String? = null,
     val scripts: String = "",
+    val level: String = "",
 ) {
     val scriptList get() = rules(scripts)
 
@@ -232,6 +233,7 @@ data class AgentForm(
     fun error() = nameError("An Agent", name) ?: when {
         cli !in CLIS -> "Ants runs only ${CLIS.joinToString(" or ")}, not $cli."
         subagent && cli != "claude" -> "Only a claude Agent can be offered as a Subagent."
+        level.isNotEmpty() && level.toIntOrNull() !in Level.RANGE -> "A level is ${Level.RANGE.first} to ${Level.RANGE.last}, not $level."
         else -> Agent.sandboxError(cli, sandbox)
     }
 
@@ -251,6 +253,7 @@ data class AgentForm(
             meta["tools"] = (limited + rules(otherTools)).joinToString(", ")
         }
         if (model.isNotEmpty()) meta["model"] = model
+        level.toIntOrNull()?.let { meta["level"] = it }
         if (subagent) meta["ants-subagent"] = true
         meta.putAll(kept)
         return "---\n" + yaml.dump(meta) + "---\n" + instructions.trim() + "\n"
@@ -330,7 +333,7 @@ data class AgentForm(
         const val MCP_NOTE = "An MCP tool. Ants starts Agents with MCP off, so it needs an MCP server Ants doesn't configure yet."
         const val UNKNOWN_NOTE = "Not a tool Ants knows. Passed to Claude Code as written."
 
-        private val KEYS = setOf("id", "name", "description", "cli", "skills", "scripts", "tools", "sandbox", "model", "ants-subagent")
+        private val KEYS = setOf("id", "name", "description", "cli", "skills", "scripts", "tools", "sandbox", "model", "level", "ants-subagent")
 
         fun of(agent: Agent, name: String = agent.name): AgentForm {
             val rules = agent.tools ?: AgentLauncher.DEFAULT_TOOLS
@@ -350,6 +353,7 @@ data class AgentForm(
                 kept = agent.meta.filterKeys { it !in KEYS },
                 id = agent.id,
                 scripts = agent.scripts.joinToString(", "),
+                level = agent.meta["level"]?.toString().orEmpty(),
             )
         }
 
@@ -367,6 +371,7 @@ data class AgentForm(
                 subagent = "subagent" in params,
                 instructions = params["instructions"].orEmpty(),
                 scripts = param("scripts"),
+                level = param("level"),
             )
         }
     }
