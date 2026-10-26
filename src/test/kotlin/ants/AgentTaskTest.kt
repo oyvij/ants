@@ -213,6 +213,84 @@ class AgentTaskTest : AntsTest() {
         assertEquals("opus" to "high", modelAndEffort("level: 4\nmodel: claude-sonnet-5-5\n"))
     }
 
+    private val failed = """{"type":"result","subtype":"error_max_turns","is_error":true,"session_id":"${'$'}SESSION"}"""
+
+    private fun FakeClaude.Launch.level() = flag("--model") to flag("--effort")
+
+    private fun failedOnce(agent: String): List<FakeClaude.Launch> {
+        agentTask(agent = agent, extra = "retries: 3\n")
+        claude.session("draft", 1, failed)
+        claude.session("draft", done)
+        val run = start()
+        eventually { assertContains(page(run), """id="state">Completed<""") }
+        return claude.launches("draft")
+    }
+
+    private fun entry(run: String): String {
+        var path = ""
+        eventually {
+            val row = assertNotNull(Regex("""<tr[^>]*>((?:(?!</tr>).)*?/runs/$run"(?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL).find(browser.get("/notifications").body))
+            path = Regex("""href="(/notifications/[^"]+)"""").find(row.groupValues[1])!!.groupValues[1]
+        }
+        return path
+    }
+
+    @Test
+    fun `a failed Task resumes its session one level up, told that the last attempt failed and why`() {
+        val (first, retry) = failedOnce("level: 2\n")
+        assertEquals("sonnet" to "medium", first.level())
+        assertEquals("opus" to "medium", retry.level())
+        assertEquals(first.flag("--session-id"), retry.flag("--resume"))
+        assertEquals(null, retry.flag("--session-id"))
+        assertContains(retry.stdin, "Your last attempt failed: claude ended without a Result: error_max_turns")
+        assertFalse("From the user" in retry.stdin)
+    }
+
+    @Test
+    fun `a failed Task on level 5 retries on level 5`() {
+        val (first, retry) = failedOnce("level: 5\n")
+        assertEquals("opus" to "max", first.level())
+        assertEquals("opus" to "max", retry.level())
+    }
+
+    @Test
+    fun `a failed Task with a pinned model retries one level above its family's`() {
+        val (first, retry) = failedOnce("model: claude-sonnet-5-5\n")
+        assertEquals("claude-sonnet-5-5" to "medium", first.level())
+        assertEquals("opus" to "medium", retry.level())
+    }
+
+    @Test
+    fun `a Task still failing after the cap's retries becomes an incident`() {
+        agentTask(agent = "level: 3\n", extra = "retries: 2\n")
+        claude.session("draft", failed)
+        val run = start()
+        eventually { assertContains(page(run), "<dt>draft</dt><dd>[failed] claude ended without a Result: error_max_turns</dd>") }
+        assertEquals(listOf("opus" to "medium", "opus" to "high", "opus" to "max"), claude.launches("draft").map { it.level() })
+    }
+
+    @Test
+    fun `a stuck Task doesn't retry`() {
+        agentTask(extra = "retries: 3\n")
+        claude.session("draft", done.replace(""""outcome":"done","summary":"Drafted.","output":{"text":"Hello"}""", """"outcome":"stuck","summary":"No tone.","needs":"A tone.""""))
+        val run = start()
+        eventually { assertContains(page(run), "<dt>draft</dt><dd>[stuck] No tone. A tone.</dd>") }
+        Thread.sleep(500)
+        assertEquals(1, claude.launches("draft").size)
+    }
+
+    @Test
+    fun `Continue and Start fresh on an incident launch on the last level the retries reached`() {
+        agentTask(agent = "level: 1\n", extra = "retries: 1\n")
+        claude.session("draft", failed)
+        val run = start()
+        browser.post(entry(run), mapOf("action" to "continue", "instruction" to "Try again."))
+        eventually { assertEquals(3, claude.launches("draft").size) }
+        browser.post(entry(run), mapOf("action" to "fresh", "instruction" to ""))
+        eventually { assertEquals(4, claude.launches("draft").size) }
+        assertEquals(listOf("haiku" to null, "sonnet" to "medium", "sonnet" to "medium", "sonnet" to "medium"), claude.launches("draft").map { it.level() })
+    }
+
     @Test
     fun `a Task's own level goes before its Agent's level and pinned model`() {
         agentTask()
@@ -489,7 +567,7 @@ class AgentTaskTest : AntsTest() {
 
     @Test
     fun `a rejection pauses the Task until resetsAt plus one minute, then resumes the same session with the reset message`() {
-        agentTask()
+        agentTask(extra = "retries: 3\n")
         val resetsAt = clock.instant().plus(Duration.ofHours(1))
         claude.session("draft", 1, rejected(resetsAt), "wait never") // claude carries on; Ants kills it
         claude.session("draft", done)

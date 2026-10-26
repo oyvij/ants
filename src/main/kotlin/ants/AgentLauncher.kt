@@ -232,12 +232,17 @@ class AgentLauncher(
         val resume = (task.variables[SESSION] as? String)?.takeIf { task.variables[ACTION] == CONTINUE }
         var session = resume // a new one only once claude starts, so Continue never resumes a session claude never saw
         var transcript: Transcript.Writer? = null
+        var level: Int? = null
         try {
             val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult().rootProcessInstanceId
             val workspace = names.runWorkspace(run)
             if (ticketed(task, run, workspace)) return
             migration.unmigrated(task)?.let { throw Failed(it) }
             val agent = Links(task.extensionProperties::get).agent(catalogue)
+            val taskLevel = Level.of(task.extensionProperties[LEVEL])
+            val onLevel = task.variables[REACHED_LEVEL] as? Int ?: agent.firstLevel(taskLevel)
+            level = onLevel
+            val at = agent.launchLevel(taskLevel, onLevel)
             if (hold(task, agent.cli)) return // keeping its choice for the launch after the reset
             runtime.removeVariablesLocal(task.executionId, listOf(ACTION, INSTRUCTION, SESSION)) // the choice is used once
             val (skill, used) = skills(task.extensionProperties, agent, task.activityId)
@@ -262,9 +267,9 @@ class AgentLauncher(
             // The user's Continue, or a Send back to a session claude has: their words alone, no hand-off again.
             val continued = resume != null || (comment != null && again != null)
             val result = try {
-                val result = session(task, instance, agent, skill, used, run, workspace, cwd, transcript, session, started, resumed, task.variables[INSTRUCTION] as? String ?: comment, handedOff = !continued)
+                val result = session(task, instance, agent, skill, used, run, workspace, cwd, transcript, session, started, resumed, task.variables[INSTRUCTION] as? String ?: comment, handedOff = !continued, level = at)
                 if (!parallel) result
-                else land(workspace, instance, result) { session(task, instance, agent, skill, used, run, workspace, cwd, transcript, session, started, true, it, handedOff = false) }
+                else land(workspace, instance, result) { session(task, instance, agent, skill, used, run, workspace, cwd, transcript, session, started, true, it, handedOff = false, level = at) }
             } catch (limit: UsageLimit) {
                 val until = limit.resetsAt + Duration.ofMinutes(1)
                 transcript.ants("end", "Paused by the ${agent.cli} usage limit until ${clock.local(until)}.")
@@ -300,6 +305,7 @@ class AgentLauncher(
             runCatching { transcript?.ants("end", reason) }
             if (stopping || cancelled) return
             if (e !is Stopped) log.warn("Agent Task ${task.activityId} failed", e)
+            if (e !is Stopped && level != null && retry(task, session, level, reason)) return
             incident(task, session, reason, (e as? Failed)?.details)
         }
     }
@@ -453,6 +459,14 @@ class AgentLauncher(
         return task.variables.filterKeys { it in names }.toSortedMap()
     }
 
+    private fun retry(task: LockedExternalTask, session: String?, level: Int, reason: String): Boolean = runCatching {
+        val retries = task.variables[RETRIES] as? Int ?: 0
+        if (retries >= settings.retries()) return false
+        val resume = session?.let { mapOf(ACTION to CONTINUE, INSTRUCTION to "Your last attempt failed: ${reason.removePrefix("[failed] ")}\n\n$RETRY", SESSION to it) }.orEmpty()
+        runtime.setVariablesLocal(task.executionId, mapOf(REACHED_LEVEL to Level.above(level), RETRIES to retries + 1) + resume)
+        externalTasks.handleFailure(task.id, WORKER, reason, null, 1, 0)
+    }.onFailure { log.warn("Agent Task ${task.activityId} couldn't be retried", it) }.isSuccess
+
     /**
      * Puts [task] on hold as an incident, its tag and reason in [message] and anything longer in [details], keeping
      * its [session], if claude ever started one, for Continue.
@@ -488,6 +502,7 @@ class AgentLauncher(
     private fun session(
         task: LockedExternalTask, instance: String, agent: Agent, skill: Skill?, used: List<Skill>, run: String, workspace: Path, cwd: Path, transcript: Transcript.Writer,
         session: String?, started: (String) -> Unit, resume: Boolean, instruction: String?, handedOff: Boolean = !resume, inputs: Map<String, Any?> = inputs(task),
+        level: Level = agent.launchLevel(Level.of(task.extensionProperties[LEVEL])),
     ): Map<*, *> {
         // Kept for a Send back that finds no session to resume ([fix]).
         if (handedOff) Transcript.file(workspace, instance).resolveSibling(INPUTS).writeText(json.writeValueAsString(inputs))
@@ -510,7 +525,7 @@ class AgentLauncher(
         // A knowledge Task, one with an `approval` input, may write the Vault only once it holds the user's approval
         // (ADR 0007): until then the Vault is read-only to it, but for Bash. codex can read it without an --add-dir.
         val gated = vault?.takeIf { "approval" in inputs && (inputs["approval"] as? Map<*, *>)?.get("approved") != true }
-        if (agent.cli == "codex") return codex(task, instance, agent, run, workspace, cwd, vault.takeIf { gated == null }, transcript, session, started, prompt, ResultContract.strict(output), judge)
+        if (agent.cli == "codex") return codex(task, instance, agent, run, workspace, cwd, vault.takeIf { gated == null }, transcript, session, started, prompt, ResultContract.strict(output), judge, level)
         val shared = if (cwd == workspace) emptyList() else listOf("--add-dir", "$workspace") // what an instance's links lead to
         val places = vault?.let { listOf("--add-dir", "$it") }.orEmpty() // the Vault's path goes nowhere else (ADR 0002)
             .plus(answerHistory(task)?.let { listOf("--add-dir", "${it.createDirectories()}") }.orEmpty()) // so a Read reaches it (ADR 0010)
@@ -519,7 +534,7 @@ class AgentLauncher(
         val (token, mcp) = protectedCommands.open(workspace, tools) // its Protected Commands run in the Run workspace
         val process = runCatching {
             val skills = listOfNotNull(skill) + used
-            cli(agent.cli, cwd, flags(agent, agent.launchLevel(Level.of(task.extensionProperties[LEVEL])), cwd, schema, skills, skillsFolder(workspace, instance, skills), session!!, resume, mcp, tools.tools.map { Mcp.CLAUDE_PREFIX + it["name"] }, workspace, gated?.let { listOf("Write(/$it/**)", "Edit(/$it/**)") }.orEmpty()) + shared + places)
+            cli(agent.cli, cwd, flags(agent, level, cwd, schema, skills, skillsFolder(workspace, instance, skills), session!!, resume, mcp, tools.tools.map { Mcp.CLAUDE_PREFIX + it["name"] }, workspace, gated?.let { listOf("Write(/$it/**)", "Edit(/$it/**)") }.orEmpty()) + shared + places)
                 .apply { environment()["ANTS_TASK"] = task.activityId } // names the Task to its session; the fake claude keys on it
                 .start()
         }.onFailure { protectedCommands.close(token) }.getOrThrow()
@@ -912,6 +927,10 @@ class AgentLauncher(
 
         /** The session id of a held Task's last launch. */
         private const val SESSION = "ants.session"
+
+        private const val REACHED_LEVEL = "ants.reached-level"
+        private const val RETRIES = "ants.retries"
+        private const val RETRY = "Carry on where you stopped, and answer again with your Result."
 
         /** The inputs a Task's last session was handed off, beside its Transcript. */
         private const val INPUTS = "inputs.json"

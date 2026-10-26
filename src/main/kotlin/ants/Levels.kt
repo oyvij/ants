@@ -37,6 +37,8 @@ data class Level(val model: String, val effort: String?) {
 
         fun codex(level: Int): Level = CODEX[level - 1]
 
+        fun above(level: Int): Int = minOf(level + 1, RANGE.last)
+
         fun family(model: String): Int? = FAMILIES.indexOfFirst { it in model }.takeIf { it >= 0 }?.plus(1)
     }
 }

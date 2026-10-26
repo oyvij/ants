@@ -151,7 +151,8 @@ abstract class AntsTest {
 
     /** `settings.yaml`: a Vault, which the pre-Run check needs, [claude]'s command and [env] allow-list when given, and [extra]. */
     fun settings(claude: FakeClaude?, extra: String = "", env: List<String>? = null) = home.resolve("settings.yaml").writeAtomically(
-        (if (claude == null) "" else "claude:\n  command: [${claude.command}]\n" + (env?.let { "  env: [${it.joinToString(", ")}]\n" } ?: "")) + vault + extra,
+        (if (claude == null) "" else "claude:\n  command: [${claude.command}]\n" + (env?.let { "  env: [${it.joinToString(", ")}]\n" } ?: "")) + vault +
+            (if (Regex("(?m)^retries:").containsMatchIn(extra)) "" else "retries: 0\n") + extra,
     )
 
     companion object {

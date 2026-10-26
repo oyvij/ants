@@ -116,6 +116,8 @@ class Settings(
     private val log = LoggerFactory.getLogger(javaClass)
     private val badSoFar = AtomicReference<String>()
 
+    fun retries(): Int = (read()["retries"] as? Int) ?: 3
+
     /** How deep claude's Subagents may nest: 1 lets a Task start Subagents, and them none of their own. */
     fun subagentDepth(): Int = (read()["subagent-depth"] as? Int) ?: 1
 

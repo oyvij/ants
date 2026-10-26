@@ -77,6 +77,7 @@ class SendAndStopTest : AntsTest() {
 
     @Test
     fun `Stop leaves the Task stopped, not failed, and Continue resumes the same session`() {
+        agentTask(claude, extra = "retries: 3\n")
         claude.session(
             "draft", 1, init, "read",
             """{"type":"control_response","response":{"subtype":"success","request_id":"r1","response":{"still_queued":[]}}}""",
@@ -135,7 +136,7 @@ class SendAndStopTest : AntsTest() {
 
     @Test
     fun `Cancel the Run kills its CLIs and their children, even ones that ignore SIGTERM, and frees their slots`() {
-        agentTask(claude, mapOf("draft" to null, "check" to null))
+        agentTask(claude, mapOf("draft" to null, "check" to null), extra = "retries: 3\n")
         claude.session("check", init, """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":{"outcome":"stuck","summary":"Lost.","needs":"A hint."}}""")
         // Children that ignore SIGTERM, which claude waits on, so claude never gets to its own TERM trap.
         claude.session("draft", 1, init, """sh trap '' TERM; sleep 600 & echo ${'$'}${'$'} ${'$'}! > "${'$'}launch/pids"; wait""")
@@ -152,7 +153,7 @@ class SendAndStopTest : AntsTest() {
                 .find(browser.get("/notifications").body)).groupValues[1]
         }
         // One slot now, which the hanging draft holds, so the next Run's Task waits for it.
-        agentTask(claude, mapOf("draft" to null, "check" to null), extra = "agent-tasks: 1\n")
+        agentTask(claude, mapOf("draft" to null, "check" to null), extra = "agent-tasks: 1\nretries: 3\n")
         val next = start()
         Thread.sleep(500)
         assertEquals(1, claude.launches("draft").size)
