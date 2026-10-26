@@ -132,6 +132,13 @@ class ShippedBpmnTest {
         assertEquals(emptyList(), Job(task).listed)
     }
 
+    @Test
+    fun `the scout's Assignment says the grilling names the repos it leaves to clone, since no griller Agent is left`() {
+        val scout = read(files("processes").single { it.name == "build-and-ship.bpmn" }).agentTasks.single { it.id == "scout" }.property(ASSIGNMENT)!!
+        assert("cloned only if the grilling names it" in scout) { scout }
+        assert("griller" !in scout) { scout }
+    }
+
     /** The elements of a Template, less what a copy renames: its events' ids, its flows' ids, its inputs' values. */
     private fun shape(elements: Collection<FlowElement>): List<String> {
         fun ref(node: FlowNode) = when (node) {

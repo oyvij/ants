@@ -483,12 +483,15 @@ class AgentLauncher(
 
     /**
      * The Skill a Task with [properties] starts with, `/<skill>`, and the other Skills it may use (ADR 0024). With an
-     * [ASSIGNMENT] it starts with none, and may use them all. Its own [SKILLS] list them, an empty one none; else the
-     * [agent]'s. Without an Assignment the Task lists exactly one.
+     * [ASSIGNMENT] it starts with none, and may use them all. Its own [SKILLS] list them, an empty one none, less any its
+     * [agent] no longer allows, such as one taken out of Your Skills since the Process deployed; else the [agent]'s.
+     * Without an Assignment the Task lists exactly one.
      */
     private fun skills(properties: Map<String, String>, agent: Agent, id: String): Pair<Skill?, List<Skill>> {
         val job = Job(properties::get)
-        val allowed = Links(properties::get).skills(catalogue)?.map { it.getOrThrow() } ?: catalogue.allowed(agent)
+        val allowed = Links(properties::get).skills(catalogue)?.map { it.getOrThrow() }?.filter { skill ->
+            catalogue.allows(agent, skill).also { if (!it) log.warn("$id lists the Skill ${skill.name}, which its Agent ${agent.name} no longer allows, so it is left out") }
+        } ?: catalogue.allowed(agent)
         if (job.assignment != null) return null to allowed
         if (!job.valid) error("$id has no Assignment and doesn't list exactly one Skill")
         return allowed.single() to emptyList()

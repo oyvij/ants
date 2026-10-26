@@ -385,6 +385,23 @@ class AgentTaskTest : AntsTest() {
     }
 
     @Test
+    fun `a Task listing a Skill its shipped Agent no longer allows, removed from Your Skills since deploy, launches without it`() {
+        agentTask()
+        claude.session("draft", done)
+        assertEquals("/agents/shipped-writer", browser.post("/agents/shipped-writer/your-skills", mapOf("skills" to "draft")).path)
+        val listed = property("ants.assignment", "Write it.") + property("ants.skills", "draft")
+        assertFalse("role=\"alert\"" in deployOn("your-skills-removed", "a-shipped-writer", listed).body)
+        settings(agentTasks = 0) // the Run waits to launch until the Skill is gone from Your Skills
+        browser.get("/processes/your-skills-removed")
+        val run = browser.post("/processes/your-skills-removed/runs", mapOf("prompt" to "Say hello")).path.removePrefix("/runs/")
+
+        assertEquals("/agents/shipped-writer", browser.post("/agents/shipped-writer/your-skills", emptyMap()).path)
+        settings()
+        eventually { assertContains(page(run), """id="state">Completed<""") }
+        assertEquals(emptyMap(), claude.launches("draft").single().skills)
+    }
+
+    @Test
     fun `--json-schema holds the envelope around the Skill's promised output`() {
         agentTask(textSchema)
         claude.session("draft", done)

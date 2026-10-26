@@ -844,4 +844,22 @@ class AgentsTest : AntsTest() {
             post("/agents/shipped-coder/your-skills", emptyMap())
         }
     }
+
+    @Test
+    fun `Copy on a shipped Agent carries the Draft of its Your Skills when it has one, as its page shows them`() {
+        userSkill("imported")
+        userSkill("drafted")
+        try {
+            post("/agents/shipped-coder/your-skills", mapOf("skills" to "imported"))
+            browser.autosave("/agents/shipped-coder/your-skills", mapOf("skills" to "drafted"), draftVersion(get("/agents/shipped-coder")))
+            val copy = post("/agents/shipped-coder/copy", emptyMap())
+            assertContains(copy.body, """<input type="hidden" name="skills" value="tdd">""")
+            assertContains(copy.body, """<input type="hidden" name="skills" value="drafted">""")
+            assertFalse("""name="skills" value="imported"""" in copy.body)
+            deleteDraft(copy.path)
+        } finally {
+            browser.post("/agents/shipped-coder/your-skills/discard", mapOf("confirm" to "on"))
+            post("/agents/shipped-coder/your-skills", emptyMap())
+        }
+    }
 }

@@ -364,12 +364,37 @@ class MigrationTest : AntsTest() {
         home.resolve("templates/on-copy.bpmn").writeText(onAgent("on_copy", "a-copy01", "implementer-copy", assignment))
         home.resolve("templates/on-mine.bpmn").writeText(onAgent("on_mine", "a-mine01", "scout", assignment))
         deployedByOlderAnts("on-mine", onAgent("on-mine", "a-mine01", "scout", assignment))
+        // The user's own Agent whose id is an old shipped Agent's.
+        home.resolve("agents/my-griller.md").writeText("---\nid: a-griller\nname: my-griller\nskills: k-tdd\n---\nGrill it.\n")
+        home.resolve("templates/on-my-griller.bpmn").writeText(onAgent("on_my_griller", "a-griller", "my-griller", assignment))
         val before = files()
 
         migration.migrate()
 
         assertEquals(before, files())
         assertEquals(1, repository.createProcessDefinitionQuery().processDefinitionKey("on-mine").count())
+    }
+
+    @Test
+    fun `a Process Draft naming an old shipped Agent moves to the new one once, the old Draft kept`() {
+        val drafts = Drafts(home)
+        drafts.save(DraftKind.PROCESS, DraftPage("drafted-griller", "Drafted griller", onAgent("drafted-griller", "a-griller", "griller", property("ants.assignment", "Grill."))), DraftFrom.NEW)
+        val file = home.resolve("drafts/processes/drafted-griller.yaml")
+        val before = file.readText()
+
+        migration.migrate()
+
+        val draft = drafts.get(DraftKind.PROCESS, "drafted-griller")!!
+        assertEquals("Drafted griller", draft.name)
+        assertEquals(
+            listOf("ants.agent" to "a-lead", "ants.name.a-lead" to "lead", "ants.assignment" to "Grill.", "ants.skills" to "k-grilling", "ants.name.k-grilling" to "grilling"),
+            properties(draft.content),
+        )
+        assertEquals(before, home.resolve("drafts/processes/drafted-griller.yaml.old").readText())
+
+        val after = file.readText()
+        migration.migrate()
+        assertEquals(after, file.readText())
     }
 
     @Test

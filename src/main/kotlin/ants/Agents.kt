@@ -306,9 +306,14 @@ class Agents(
         return draftOnly(copied(agent, copyName(agent.name) { taken(it, null) }))
     }
 
-    /** The form of a copy of [agent] named [name]: a shipped Agent's copy lists its shipped Skills and its Your Skills. */
-    private fun copied(agent: Agent, name: String) =
-        AgentForm.of(agent, name).copy(skills = catalogue.skillIds(agent.skills + catalogue.yourSkills(agent)).joinToString(", "), scripts = scripts.ids(agent.scripts).joinToString(", "))
+    /**
+     * The form of a copy of [agent] named [name]: a shipped Agent's copy lists its shipped Skills and its Your Skills as
+     * its page shows them, their Draft's when they have one.
+     */
+    private fun copied(agent: Agent, name: String): AgentForm {
+        val yours = agent.takeIf { catalogue.shipped(it) && it.id != null }?.let { a -> drafts.get(DraftKind.YOUR_SKILLS, a.id!!)?.let { words(it.content) } ?: catalogue.yourSkills(a) }.orEmpty()
+        return AgentForm.of(agent, name).copy(skills = catalogue.skillIds(agent.skills + yours).joinToString(", "), scripts = scripts.ids(agent.scripts).joinToString(", "))
+    }
 
     /** The Process Builder's copy (ADR 0019): an editable copy of a read-only Agent, published at once into Ants' own folder, under the first free `<name>-copy`. */
     fun copy(name: String): String {

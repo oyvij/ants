@@ -96,7 +96,8 @@ sealed interface DraftSave {
 class Drafts(@Value("\${ants.home}") home: Path) {
     private val root = home.resolve("drafts")
 
-    private fun file(kind: DraftKind, id: String) = root.resolve(kind.folder).resolve("$id.yaml")
+    /** The file that keeps the Draft of [kind] under [id]. */
+    fun file(kind: DraftKind, id: String): Path = root.resolve(kind.folder).resolve("$id.yaml")
 
     fun get(kind: DraftKind, id: String): Draft? = file(kind, id).takeIf { it.exists() }?.let(::read)
 

@@ -73,7 +73,8 @@ private class Move(val agent: String, val dropped: String, val beside: Pair<Stri
  */
 private fun Catalogue.move(properties: Map<String, String>): Move? {
     val value = properties[AGENT]?.trim()?.takeIf(String::isNotEmpty) ?: return null
-    val name = if (value.startsWith("a-")) value.removePrefix("a-") else value.takeIf { runCatching { agent(it) }.isFailure } ?: return null
+    fun gone(find: () -> Agent) = runCatching(find).isFailure
+    val name = (if (value.startsWith("a-")) value.removePrefix("a-").takeIf { gone { agentWithId(value) } } else value.takeIf { gone { agent(it) } }) ?: return null
     val old = OLD_AGENTS[name] ?: return null
     val id = "a-${old.now}"
     val added = buildList {
@@ -124,7 +125,7 @@ private fun Catalogue.onNewAgents(document: Document): Boolean {
  */
 @Component
 class Migration(
-    private val repository: RepositoryService, private val processes: Processes, private val catalogue: Catalogue, private val scripts: Scripts, @Value("\${ants.home}") private val home: Path,
+    private val repository: RepositoryService, private val processes: Processes, private val catalogue: Catalogue, private val scripts: Scripts, private val drafts: Drafts, @Value("\${ants.home}") private val home: Path,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -171,6 +172,18 @@ class Migration(
         skills(failed)
         linkSkillsById(keptOld + giveIds(keptOld))
         links(changedTemplates.map { it.first }.toSet())
+        processDrafts()
+    }
+
+    /** Moves each Process Draft's Agent Tasks off the old shipped Agents they name ([move]), keeping the old Draft beside it. */
+    private fun processDrafts() {
+        for (draft in drafts.all(DraftKind.PROCESS)) {
+            val document = runCatching { parse(draft.content.toByteArray()) }.getOrNull() ?: continue
+            if (!catalogue.onNewAgents(document)) continue
+            val file = drafts.file(DraftKind.PROCESS, draft.id)
+            file.resolveSibling("${file.fileName}.old").writeBytes(file.readBytes())
+            drafts.save(DraftKind.PROCESS, DraftPage(draft.id, draft.key, draft.name, serialize(document)), DraftFrom(draft.version))
+        }
     }
 
     private class Changed(val process: ProcessDefinition, val document: Document, val named: Set<String>, val needs: Needs)
