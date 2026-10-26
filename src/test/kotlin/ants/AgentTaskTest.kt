@@ -214,6 +214,17 @@ class AgentTaskTest : AntsTest() {
     }
 
     @Test
+    fun `a Task's own level goes before its Agent's level and pinned model`() {
+        agentTask()
+        claude.session("draft", done)
+        home.resolve("agents/writer.md").writeText("---\nlevel: 1\nmodel: claude-haiku-4-5-20251001\nskills: draft\n---\nWrite plainly.\n")
+        val run = startWith("task-level", property("ants.level", "5"))
+        eventually { assertContains(page(run), """id="state">Completed<""") }
+        val launch = claude.launches("draft").single()
+        assertEquals("opus" to "max", launch.flag("--model") to launch.flag("--effort"))
+    }
+
+    @Test
     fun `--json-schema holds the envelope around the Skill's promised output`() {
         agentTask(textSchema)
         claude.session("draft", done)

@@ -60,10 +60,14 @@ class Agent(val file: Path, text: String = file.readText(), outsideId: String? =
 
     val launchLevel: Level
         get() {
-            val ladder = if (cli == "codex") Level.codex(startLevel) else Level.claude(startLevel)
+            val ladder = ladder(startLevel)
             if (level != null || model == null) return ladder
             return ladder.copy(model = model)
         }
+
+    fun launchLevel(taskLevel: String?): Level = taskLevel?.toIntOrNull()?.takeIf { it in Level.RANGE }?.let(::ladder) ?: launchLevel
+
+    private fun ladder(level: Int): Level = if (cli == "codex") Level.codex(level) else Level.claude(level)
 
     /** What a codex Agent may do instead of tools: its `--sandbox`, one of [SANDBOXES]. */
     val sandbox = meta["sandbox"]?.toString() ?: "workspace-write"
