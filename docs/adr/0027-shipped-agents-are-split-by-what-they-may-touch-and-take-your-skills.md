@@ -40,5 +40,7 @@ Agents, split by what they may touch and whose voice they speak in, and the user
 ## Consequences
 
 - The user's Processes, Templates and Runs in flight that name an old shipped Agent are moved to its new one at
-  startup, with the Skills the old one had, beside the ADR 0024 migration; the user's own Agents are left alone.
+  startup, with the Skills the old one had, and its level where it differs from the new one's, beside the ADR 0024
+  migration; the user's own Agents are left alone. A Run in flight on an older version moves its Task the same way as
+  it launches. The old nine are no longer shipped.
 - A Task of the user's that lists no Skills gets its Agent's, Your Skills included, as before (ADR 0024).

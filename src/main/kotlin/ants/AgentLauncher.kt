@@ -170,7 +170,7 @@ class AgentLauncher(
             fetched.forEach { task ->
                 Thread.ofVirtual().start {
                     try {
-                        launch(migrated(task, repository))
+                        launch(migrated(task, repository, catalogue))
                     } finally {
                         live.decrementAndGet()
                     }
