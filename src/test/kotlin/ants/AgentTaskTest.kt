@@ -181,42 +181,36 @@ class AgentTaskTest : AntsTest() {
         assertContains(page(run), """<dt>draft</dt><dd><code>{"outcome":"done","summary":"Drafted.","output":{"text":"Hello"}}</code></dd>""")
     }
 
+    private fun modelAndEffort(agent: String): Pair<String?, String?> {
+        home.resolve("agents/writer.md").writeText("---\n${agent}skills: draft\n---\nWrite plainly.\n")
+        val run = start()
+        eventually { assertContains(page(run), """id="state">Completed<""") }
+        val launch = claude.launches("draft").last()
+        return launch.flag("--model") to launch.flag("--effort")
+    }
+
     @Test
     fun `a claude Agent Task launches on its Agent's level's model and effort`() {
         agentTask()
         claude.session("draft", done)
         val ladder = mapOf(1 to ("haiku" to null), 2 to ("sonnet" to "medium"), 3 to ("opus" to "medium"), 4 to ("opus" to "high"), 5 to ("opus" to "max"))
-        for ((level, expected) in ladder) {
-            home.resolve("agents/writer.md").writeText("---\nlevel: $level\nskills: draft\n---\nWrite plainly.\n")
-            val run = start()
-            eventually { assertContains(page(run), """id="state">Completed<""") }
-            val launch = claude.launches("draft").last()
-            assertEquals(expected, launch.flag("--model") to launch.flag("--effort"))
-        }
+        for ((level, expected) in ladder) assertEquals(expected, modelAndEffort("level: $level\n"))
     }
 
     @Test
     fun `an Agent with neither level nor model launches on level 2`() {
         agentTask()
         claude.session("draft", done)
-        val run = start()
-        eventually { assertContains(page(run), """id="state">Completed<""") }
-        val launch = claude.launches("draft").single()
-        assertEquals("sonnet" to "medium", launch.flag("--model") to launch.flag("--effort"))
+        assertEquals("sonnet" to "medium", modelAndEffort(""))
     }
 
     @Test
-    fun `a pinned model launches on its model ID with the effort of its family's level`() {
+    fun `a pinned model launches on its model ID with the effort of its family's level, and a level goes before it`() {
         agentTask()
         claude.session("draft", done)
         val pinned = mapOf("claude-haiku-4-5-20251001" to null, "claude-sonnet-5-5" to "medium", "claude-opus-5-5[1m]" to "medium")
-        for ((model, effort) in pinned) {
-            home.resolve("agents/writer.md").writeText("---\nmodel: $model\nskills: draft\n---\nWrite plainly.\n")
-            val run = start()
-            eventually { assertContains(page(run), """id="state">Completed<""") }
-            val launch = claude.launches("draft").last()
-            assertEquals(model to effort, launch.flag("--model") to launch.flag("--effort"))
-        }
+        for ((model, effort) in pinned) assertEquals(model to effort, modelAndEffort("model: $model\n"))
+        assertEquals("opus" to "high", modelAndEffort("level: 4\nmodel: claude-sonnet-5-5\n"))
     }
 
     @Test

@@ -88,7 +88,7 @@ class PreRun(
                 val apiKey = login["apiKeySource"]?.toString()?.takeIf { it != "none" }
                 if (login["loggedIn"] != true) add("${AgentLauncher.LOST_LOGIN}.")
                 else if (apiKey != null) add("An API key is in use (apiKeySource: $apiKey).")
-                else for (agent in agents) agent.model?.takeIf { agent.cli == "claude" && custom(it) }
+                else for (agent in agents) agent.claudeLevel.model.takeIf { agent.cli == "claude" && custom(it) }
                     ?.let { model -> tryModel(model)?.let { add("The Agent ${agent.name}'s model $model doesn't work: $it") } }
             }
             val gh = "gh" !in missing && ghLoggedIn(command("gh"))

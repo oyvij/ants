@@ -54,11 +54,16 @@ class Agent(val file: Path, text: String = file.readText(), outsideId: String? =
     /** The tools as permission rules, such as `Bash(git log *)`; null for the default tools. */
     val tools = list(meta["tools"])
     val model = meta["model"]?.toString()
-    val level = (meta["level"] as? Int)?.takeIf { it in Level.RANGE }
+    val level: Int? = meta["level"]?.toString()?.toIntOrNull()?.takeIf { it in Level.RANGE }
 
-    val startLevel: Int get() = level ?: model?.let(Level::family) ?: Level.START
+    private val startLevel: Int get() = level ?: model?.let(Level::family) ?: Level.START
 
-    val claudeLevel: Level get() = Level.claude(startLevel).let { if (level == null && model != null) it.copy(model = model) else it }
+    val claudeLevel: Level
+        get() {
+            val ladder = Level.claude(startLevel)
+            if (level != null || model == null) return ladder
+            return ladder.copy(model = model)
+        }
 
     /** What a codex Agent may do instead of tools: its `--sandbox`, one of [SANDBOXES]. */
     val sandbox = meta["sandbox"]?.toString() ?: "workspace-write"

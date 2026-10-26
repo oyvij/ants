@@ -4,10 +4,10 @@ data class Level(val model: String, val effort: String?) {
     val flags: List<String> get() = listOf("--model", model) + (effort?.let { listOf("--effort", it) } ?: emptyList())
 
     companion object {
-        val RANGE = 1..5
+        val RANGE: IntRange = 1..5
         const val START = 2
 
-        private val CLAUDE = listOf(
+        private val CLAUDE: List<Level> = listOf(
             Level("haiku", null),
             Level("sonnet", "medium"),
             Level("opus", "medium"),
@@ -15,7 +15,7 @@ data class Level(val model: String, val effort: String?) {
             Level("opus", "max"),
         )
 
-        private val FAMILIES = listOf("haiku", "sonnet", "opus")
+        private val FAMILIES: List<String> = listOf("haiku", "sonnet", "opus")
 
         fun claude(level: Int): Level = CLAUDE[level - 1]
 

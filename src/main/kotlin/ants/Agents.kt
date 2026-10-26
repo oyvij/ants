@@ -233,7 +233,7 @@ data class AgentForm(
     fun error() = nameError("An Agent", name) ?: when {
         cli !in CLIS -> "Ants runs only ${CLIS.joinToString(" or ")}, not $cli."
         subagent && cli != "claude" -> "Only a claude Agent can be offered as a Subagent."
-        level.isNotEmpty() && level.toIntOrNull() !in Level.RANGE -> "A level is 1 to 5, not $level."
+        level.isNotEmpty() && level.toIntOrNull() !in Level.RANGE -> "A level is ${Level.RANGE.first} to ${Level.RANGE.last}, not $level."
         else -> Agent.sandboxError(cli, sandbox)
     }
 
