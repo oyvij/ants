@@ -1,4 +1,4 @@
-@param scripts: List<ants.Script>
+@param scripts: List<ants.ScriptRow>
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
 @param shell: ants.Shell
@@ -14,13 +14,13 @@
 @template.nav(shell = shell)
 <main>
 <div class="ph"><h1>Scripts</h1>
-    <div class="acts"><a class="btn primary" href="/scripts/new">New Script</a></div>
+    <div class="acts"><form method="post" action="/scripts/new/draft"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button class="primary">New Script</button></form></div>
     <div class="sub">JavaScript you write once, run with Node's built-ins, its inputs on stdin and its vars and Secrets in <code>process.env</code>. Kept in <code>~/.ants/scripts</code>.</div></div>
 <table class="library">
     <thead><tr><th>Name</th><th>Description</th></tr></thead>
     <tbody>
 @for(script in scripts)
-    <tr class="click" data-href="/scripts/${script.name}"><td><b><a href="/scripts/${script.name}">${script.name}</a></b></td><td class="small">${script.description}</td></tr>
+    <tr class="click" data-href="/scripts/${script.page}"><td><b><a href="/scripts/${script.page}">${script.name}</a></b>@template.draftmark(state = script.state, list = true)</td><td class="small">${script.description}</td></tr>
 @endfor
 @if(scripts.isEmpty())
     <tr><td colspan="2" class="muted small">No Script yet.</td></tr>

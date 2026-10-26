@@ -44,6 +44,11 @@ class ScriptsTest : AntsTest() {
         secrets.writeText("npm: s3cret-npm\nmaven: s3cret-mvn\n")
     }
 
+    @BeforeEach
+    fun noDrafts() {
+        home.resolve("drafts/scripts").toFile().deleteRecursively() // ANTS_HOME's scripts folder starts empty for each test, so its Drafts do too
+    }
+
     @AfterEach
     fun noSecrets() {
         secrets.deleteIfExists()
@@ -558,22 +563,147 @@ class ScriptsTest : AntsTest() {
         assertEquals(emptyList(), check(form("spreads", code = spread, inputs = "text") + output))
     }
 
+    /** The markers a page shows: Draft, Published, or Draft · changes not published. */
+    private fun markers(page: String) = Regex("""class="pill draft-mark[^"]*">([^<]+)<""").findAll(page).map { it.groupValues[1] }.toList()
+
+    private fun unescaped(page: String) = page.replace("&#34;", "\"").replace("&#39;", "'")
+
     @Test
-    fun `Save refuses a Script with an error, listing each one, and saves one with only warnings`() {
-        val refused = create(form("broken", code = "console.log(ants.inputs.txt)\nconst x = ;\n", inputs = "text, text"))
-        assertContains(refused.body, "The Script has 2 errors, so it wasn't saved:")
+    fun `an edit is autosaved to the Draft, which the page reopens after a reload and a restart, and the published Script stays as it was`() {
+        create(form("drafter", code = "console.log(ants.inputs.text)\n", inputs = "text", own = listOf("SLACK_TOKEN" to "xoxb-s3cret")))
+        val folder = folder("drafter")
+        val page = browser.get("/scripts/drafter").body
+        assertEquals(listOf("Published"), markers(page))
+        assertEquals("0", draftVersion(page))
+
+        val half = form("drafter", code = "console.log(ants.inputs.txt)\nconst x = ;\n", description = "Half done.", inputs = "text, count:number", own = listOf("SLACK_TOKEN" to "xoxb-n3w"))
+        val saved = browser.autosave("/scripts/drafter", half, draftVersion(page))
+        assertEquals(200, saved.status, saved.body)
+        val answer = answer(saved)
+        assertTrue(Regex("""Draft saved \d\d:\d\d""").matches(answer["saved"].toString()), answer.toString())
+        assertEquals("Draft · changes not published", answer["label"])
+        assertEquals("/scripts/drafter", answer["path"])
+        assertEquals("console.log(ants.inputs.text)\n", folder.resolve("script.mjs").readText())
+        assertEquals("Posts a message.", definition(folder)["description"])
+
+        val again = unescaped(browser().also { it.login() }.get("/scripts/drafter").body)
+        assertContains(again, """name="description" value="Half done."""")
+        assertContains(again, "console.log(ants.inputs.txt)\nconst x = ;")
+        assertContains(again, """name="inputs[1].name" value="count"""")
+        assertEquals(listOf("Draft · changes not published"), markers(again))
+        assertContains(again, answer["saved"].toString())
+        assertEquals(answer["version"].toString(), draftVersion(again))
+        val id = folder.fileName.toString()
+        val draft = Drafts(home).get(DraftKind.SCRIPT, id)!!.content // as a restarted Ants reads it
+        assertContains(draft, "Half done.")
+        assertFalse("xoxb" in draft) // a Secret's value is never in the Draft
+        assertEquals(mapOf("SLACK_TOKEN" to "xoxb-s3cret"), Yaml().load<Map<*, *>>(folder.resolve("secrets.yaml").readText()))
+        assertContains(browser.get("/scripts").body, """<a href="/scripts/drafter">drafter</a></b><span class="pill draft-mark p-changed">Draft · changes not published</span>""")
+    }
+
+    @Test
+    fun `Publish refuses a Draft with a validator error, listing each one, and keeps the Draft, and one with only warnings publishes and removes it`() {
+        create(form("warned", code = "console.log('hi')\n", inputs = "text"))
+        val broken = form("warned", code = "console.log(ants.inputs.txt)\nconst x = ;\n", inputs = "text, text")
+        assertEquals(200, browser.autosave("/scripts/warned", broken, "0").status) // a Draft with errors is kept
+
+        val refused = browser.post("/scripts/warned", broken)
+        assertContains(refused.body, "The Script has 2 errors, so it wasn't published:")
         assertContains(refused.body, "<li>Line 2: SyntaxError: Unexpected token ';'</li>")
         assertContains(refused.body, "<li>Another input is named text too.</li>")
-        assertFalse(scripts.exists() && scripts.listDirectoryEntries().isNotEmpty())
-
-        val warned = create(form("warned", code = "console.log('hi')\n", inputs = "text"))
-        assertFalse("wasn't saved" in warned.body)
-        assertEquals("warned", definition(folder("warned"))["name"])
-
-        val edited = browser.post("/scripts/warned", form("warned", code = "console.log(ants.inputs.txt)\n", inputs = "text"))
-        assertContains(edited.body, "The Script has an error, so it wasn't saved:")
-        assertContains(edited.body, "<li>Line 1: ants.inputs.txt reads an input the input schema doesn't declare.</li>")
+        assertEquals(listOf("Draft · changes not published"), markers(refused.body))
         assertEquals("console.log('hi')\n", folder("warned").resolve("script.mjs").readText())
+        assertContains(unescaped(browser.get("/scripts/warned").body), "const x = ;")
+
+        val published = browser.post("/scripts/warned", form("warned", code = "console.log('warned')\n", inputs = "text"))
+        assertEquals("/scripts/warned", published.path)
+        assertFalse("wasn't published" in published.body)
+        assertEquals("console.log('warned')\n", folder("warned").resolve("script.mjs").readText())
+        assertEquals(listOf("Published"), markers(published.body))
+        assertEquals("0", draftVersion(published.body))
+    }
+
+    @Test
+    fun `a save from a tab with an older version gets a conflict, and Publish refuses a name another Script has`() {
+        create(form("tabbed"))
+        create(form("tabbed-taken"))
+        val loaded = draftVersion(browser.get("/scripts/tabbed").body)
+        val first = answer(browser.autosave("/scripts/tabbed", form("tabbed", description = "First tab."), loaded))
+        val second = browser.autosave("/scripts/tabbed", form("tabbed", description = "Second tab."), loaded)
+        assertEquals(409, second.status)
+        assertEquals("This Script's Draft was changed in another tab or window.", answer(second)["conflict"])
+        assertEquals(200, browser.autosave("/scripts/tabbed", form("tabbed", description = "First tab, again."), first["version"].toString()).status)
+        assertContains(browser.get("/scripts/tabbed").body, """value="First tab, again."""")
+
+        val taken = browser.post("/scripts/tabbed", form("tabbed-taken", description = "Renamed."))
+        assertContains(taken.body, "A Script named tabbed-taken already exists.")
+        assertContains(browser.get("/scripts/tabbed").body, """value="Renamed."""")
+        assertEquals("Posts a message.", definition(folder("tabbed"))["description"])
+    }
+
+    @Test
+    fun `New and Copy make a Draft-only Script with a placeholder name, which a rename moves and Publish puts to use`() {
+        val first = browser.post("/scripts/new/draft", emptyMap())
+        val name = first.path.removePrefix("/scripts/")
+        assertEquals("new-script", name)
+        assertEquals(listOf("Draft"), markers(first.body))
+        assertContains(first.body, """name="name" value="new-script"""")
+        assertFalse(scripts.listDirectoryEntries().isNotEmpty())
+        assertContains(browser.get("/scripts").body, """<a href="/scripts/new-script">new-script</a></b><span class="pill draft-mark p-draft">Draft</span>""")
+        assertEquals("/scripts/new-script-2", browser.post("/scripts/new/draft", emptyMap()).path)
+
+        create(form("poster", code = "console.log(ants.inputs.text)\n", inputs = "text", own = listOf("SLACK_TOKEN" to "xoxb-s3cret")))
+        val copy = browser.post("/scripts/poster/copy", emptyMap())
+        assertEquals("/scripts/poster-copy", copy.path)
+        assertEquals(listOf("Draft"), markers(copy.body))
+        assertContains(copy.body, """name="inputs[0].name" value="text"""")
+        assertContains(copy.body, """name="secrets[0].name" value="SLACK_TOKEN"""")
+        assertFalse("••••" in copy.body) // the copy names its own Secret, but has no value for it
+        assertEquals(1, scripts.listDirectoryEntries().size)
+
+        val renamed = answer(browser.autosave("/scripts/new-script", form("drafted-first", code = "ants.output({})\n"), draftVersion(first.body)))
+        assertEquals("/scripts/drafted-first", renamed["path"]) // a Draft-only Script's page follows its name
+        assertEquals("Draft", renamed["label"])
+        assertEquals(404, browser.get("/scripts/new-script").status)
+        assertEquals("/scripts/drafted-first", browser.post("/scripts/drafted-first", form("drafted-first", code = "ants.output({})\n")).path)
+        assertEquals("ants.output({})\n", folder("drafted-first").resolve("script.mjs").readText())
+        assertEquals(listOf("Published"), markers(browser.get("/scripts/drafted-first").body))
+    }
+
+    @Test
+    fun `Discard Draft confirms and reopens the published Script, and Delete on a Draft-only Script confirms and leaves the list`() {
+        create(form("discarder"))
+        browser.autosave("/scripts/discarder", form("discarder", description = "Unwanted."), "0")
+        assertContains(browser.get("/scripts/discarder").body, """<form method="post" action="/scripts/discarder/discard"""")
+        assertContains(browser.post("/scripts/discarder/discard", emptyMap()).body, "Discard the Draft of discarder?")
+        assertContains(browser.get("/scripts/discarder").body, """value="Unwanted."""")
+        val discarded = browser.post("/scripts/discarder/discard", mapOf("confirm" to "on"))
+        assertEquals("/scripts/discarder", discarded.path)
+        assertContains(discarded.body, """value="Posts a message."""")
+        assertEquals(listOf("Published"), markers(discarded.body))
+
+        val draft = browser.post("/scripts/new/draft", emptyMap()).path
+        assertFalse("/discard" in browser.get(draft).body)
+        assertContains(browser.post("$draft/delete", emptyMap()).body, "Delete the Draft ${draft.removePrefix("/scripts/")}?")
+        assertEquals("/scripts", browser.post("$draft/delete", mapOf("confirm" to "on")).path)
+        assertEquals(404, browser.get(draft).status)
+        assertFalse("href=\"$draft\"" in browser.get("/scripts").body)
+
+        browser.autosave("/scripts/discarder", form("discarder", description = "Again."), "0")
+        browser.post("/scripts/discarder/delete", mapOf("confirm" to "on"))
+        assertEquals(404, browser.get("/scripts/discarder").status) // its Draft went with it
+    }
+
+    @Test
+    fun `Test runs the page as it is, which is the Draft's code and schemas`() {
+        create(form("tested", code = "ants.output({said: 'published'})\n"))
+        val draft = form("tested", code = "ants.output({said: ants.inputs.text})\n", inputs = "text") + listOf("output[0].name" to "said", "output[0].type" to "string", "output[0].description" to "")
+        browser.autosave("/scripts/tested", draft, "0")
+        val run = testRun(draft, sample = """{"text": "drafted"}""", script = "tested")
+        assertEquals(mapOf("said" to "drafted"), run["payload"])
+        assertEquals("ants.output({said: 'published'})\n", folder("tested").resolve("script.mjs").readText())
+        val refused = testRun(draft, sample = """{"text": 1}""", script = "tested")
+        assertContains(refused["output"].toString(), "The inputs break the Script's input schema") // the Draft's schema, which the published Script hasn't
     }
 
     companion object {

@@ -41,7 +41,7 @@ data class Script(
 }
 
 @Component
-class Scripts(@Value("\${ants.home}") home: Path, private val settings: Settings) {
+class Scripts(@Value("\${ants.home}") home: Path, private val settings: Settings, private val drafts: Drafts) {
     val folder: Path = home.resolve("scripts")
 
     fun all(): List<Script> = inFolders().map { it.second }.sortedBy { it.name }
@@ -72,7 +72,8 @@ class Scripts(@Value("\${ants.home}") home: Path, private val settings: Settings
     fun ownSecrets(script: Script): Map<String, String> = folder(script).resolve("secrets.yaml").takeIf { it.exists() }
         ?.let { Yaml().load<Map<*, *>>(it.readText()) }.orEmpty().entries.associate { (name, value) -> "$name" to "$value" }
 
-    fun newId(): String = newId('s') { all().any { script -> script.id == it } || folder.resolve(it).exists() }
+    /** A new Script's id: none a Script or any Draft holds. */
+    fun newId(): String = newId('s') { all().any { script -> script.id == it } || folder.resolve(it).exists() || it in drafts.ids() }
 
     fun save(script: Script, code: String, own: Map<String, String>) {
         val dir = folder(script).createDirectories()

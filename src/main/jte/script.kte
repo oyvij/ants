@@ -5,6 +5,7 @@
 @param message: String? = null
 @param errors: List<String> = emptyList()
 @param dependents: ants.Dependents?
+@param draft: ants.DraftHead? = null
 @param use: Boolean = false
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
@@ -29,17 +30,24 @@
 <main>
 @if(!use)<div class="crumbs"><a href="/scripts">Scripts</a> / ${saved ?: "New"}</div>@endif
 <div class="ph"><h1><span class="ent ent-script"><svg class="i" viewBox="0 0 24 24"><path d="m8 7-5 5 5 5M16 7l5 5-5 5M14 4l-4 16"/></svg>${saved ?: "New Script"}</span></h1>
+@if(draft != null)
+    @template.drafthead(draft = draft)
+@endif
     <div class="acts">
 @if(saved != null)
-        <form method="post" action="/scripts/${saved}/delete"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button class="danger">Delete</button></form>
+        <form method="post" action="/scripts/${saved}/copy"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>Copy</button></form>
+@if(draft?.state == ants.DraftState.CHANGED)
+        <form method="post" action="/scripts/${saved}/discard" data-leaves-draft><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>Discard Draft</button></form>
 @endif
-        <button class="primary" form="script">Save</button>
+        <form method="post" action="/scripts/${saved}/delete" data-leaves-draft><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button class="danger">Delete</button></form>
+@endif
+        <button class="primary" form="script">${if (saved == null) "Save" else "Publish"}</button>
     </div>
 @if(dependents != null)    <div class="sub">@template.usedby(dependents = dependents, none = "no Agent or Process")</div>@endif
 </div>
 @if(message != null && errors.isEmpty())<p role="alert">${message}</p>@elseif(message != null)<div role="alert">${message}<ul class="findings">@for(error in errors)<li>${error}</li>@endfor</ul></div>@endif
 <div class="scriptWrap">
-<form id="script" method="post" action="/scripts/${saved ?: "new"}" class="script">
+<form id="script" method="post" action="/scripts/${saved ?: "new"}" class="script" data-autosave="${draft?.endpoint}" data-version="${draft?.version?.toString()}" data-leaves-draft>
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
 @if(saved != null)
     <input type="hidden" name="script" value="${saved}">
@@ -112,6 +120,7 @@
     </form>
 </aside>
 </div>
+@if(draft != null)<script type="module" src="/draft.js"></script>@endif
 </main>
 </body>
 </html>

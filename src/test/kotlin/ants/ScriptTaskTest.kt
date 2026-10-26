@@ -61,10 +61,17 @@ class ScriptTaskTest : AntsTest() {
     """.trimIndent()
 
     private fun deploy(key: String, vararg tasks: String): String {
+        val deployed = browser.post("/processes/deploy", mapOf("bpmn" to deployable(key, *tasks)))
+        assertEquals("/processes/$key", deployed.path, deployed.body)
+        return key
+    }
+
+    /** A Process [key] running [tasks] one after another, then waiting. */
+    private fun deployable(key: String, vararg tasks: String): String {
         val ids = tasks.map { Regex("""id="([^"]+)"""").find(it)!!.groupValues[1] }
         val steps = listOf("start") + ids + "wait"
         val flows = steps.zipWithNext().withIndex().joinToString("\n") { (i, pair) -> """<bpmn:sequenceFlow id="f$i" sourceRef="${pair.first}" targetRef="${pair.second}" />""" }
-        val bpmn = """
+        return """
             <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:operaton="http://operaton.org/schema/1.0/bpmn" id="d" targetNamespace="http://bpmn.io/schema/bpmn">
               <bpmn:process id="$key" name="$key" isExecutable="true" operaton:historyTimeToLive="180">
                 <bpmn:startEvent id="start">
@@ -78,9 +85,6 @@ class ScriptTaskTest : AntsTest() {
               </bpmn:process>
             </bpmn:definitions>
         """.trimIndent()
-        val deployed = browser.post("/processes/deploy", mapOf("bpmn" to bpmn))
-        assertEquals("/processes/$key", deployed.path, deployed.body)
-        return key
     }
 
     private fun start(key: String, text: String = "hello"): String {
@@ -175,6 +179,33 @@ class ScriptTaskTest : AntsTest() {
         assertContains(page, "The inputs break the Script's input schema, so it didn't run:\n- /count: string found, number expected")
         assertContains(page, "count")
         assertFalse("node ran" in page)
+    }
+
+    @Test
+    fun `a Script Task runs the published Script while the Script has a Draft, and Retry runs it as it is published then`() {
+        saveScript("drafted", code = "console.log('published')\nprocess.exit(3)\n")
+        val fixed = listOf("name" to "drafted", "description" to "Does drafted.", "code" to "ants.output({ran: 'draft'})\n", "vars" to "")
+        assertEquals(200, browser.autosave("/scripts/drafted", fixed, "0").status)
+        deploy("drafting", scriptTask("drafted", "drafted"))
+        val run = start("drafting")
+        eventually { assertNotNull(incident(run)) }
+        val entry = "/notifications/" + incident(run).id
+        assertContains(browser.get(entry).body, "published")
+
+        assertEquals("/scripts/drafted", browser.post("/scripts/drafted", listOf("name" to "drafted", "description" to "Does drafted.", "code" to "ants.output({ran: 'published'})\n", "vars" to "")).path)
+        browser.post(entry, mapOf("action" to "retry", "instruction" to ""))
+        eventually { assertNotNull(runtime.getVariable(run, "drafted")) }
+        assertEquals(mapOf("ran" to "published"), (runtime.getVariable(run, "drafted") as Map<*, *>)["payload"])
+    }
+
+    @Test
+    fun `a Process can't name a Draft-only Script, so it never runs`() {
+        val draft = browser.post("/scripts/new/draft", emptyMap()).path
+        val named = browser.autosave(draft, listOf("name" to "unpublished", "description" to "Never published.", "code" to "ants.output({})\n", "vars" to ""), draftVersion(browser.get(draft).body))
+        assertEquals("/scripts/unpublished", answer(named)["path"])
+        val refused = browser.post("/processes/deploy", mapOf("bpmn" to deployable("unpublishing", scriptTask("never", "unpublished"))))
+        assertContains(refused.body, "No Script named unpublished.")
+        browser.post("/scripts/unpublished/delete", mapOf("confirm" to "on"))
     }
 
     @Test
