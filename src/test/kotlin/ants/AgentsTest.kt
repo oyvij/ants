@@ -61,7 +61,7 @@ class AgentsTest : AntsTest() {
     @Test
     fun `creating and editing an Agent writes the agent file, and the form round-trips it`() {
         agents.resolve("reviewer.md").deleteIfExists()
-        val created = post("/agents/new", reviewer)
+        val created = browser.publishNew("/agents", reviewer)
         assertEquals("/agents/reviewer", created.path)
         assertEquals(reviewerFile, withoutId(agents.resolve("reviewer.md")))
 
@@ -169,7 +169,7 @@ class AgentsTest : AntsTest() {
     @Test
     fun `creating, importing or copying an Agent gives it a new id in its file, which no page shows and the Catalogue finds it by`() {
         agents.resolve("reviewer.md").deleteIfExists()
-        post("/agents/new", reviewer)
+        browser.publishNew("/agents", reviewer)
         val created = assertNotNull(idOf(agents.resolve("reviewer.md")))
         post("/agents/reviewer", reviewer + ("description" to "Reviews more."))
         assertEquals(created, idOf(agents.resolve("reviewer.md")))
@@ -216,17 +216,17 @@ class AgentsTest : AntsTest() {
         agents.resolve("other.md").deleteIfExists()
         withExtraFolder(extra) {
             for (taken in listOf("shipped-writer", "outsider", "mine")) {
-                val refused = post("/agents/new", mapOf("name" to taken, "cli" to "claude"))
+                val refused = browser.publishNew("/agents", mapOf("name" to taken, "cli" to "claude"))
                 assertContains(refused.body, "An Agent named $taken already exists.")
             }
-            post("/agents/new", mapOf("name" to "other", "cli" to "claude"))
+            browser.publishNew("/agents", mapOf("name" to "other", "cli" to "claude"))
             assertContains(post("/agents/other", mapOf("name" to "mine", "cli" to "claude")).body, "An Agent named mine already exists.")
             assertTrue(agents.resolve("other.md").exists())
         }
-        assertContains(post("/agents/new", mapOf("name" to "../escape", "cli" to "claude")).body, "An Agent's name is up to 64 lowercase letters, digits and hyphens.")
-        assertContains(post("/agents/new", mapOf("name" to "a".repeat(65), "cli" to "claude")).body, "up to 64 lowercase letters")
+        assertContains(browser.publishNew("/agents", mapOf("name" to "../escape", "cli" to "claude")).body, "An Agent's name is up to 64 lowercase letters, digits and hyphens.")
+        assertContains(browser.publishNew("/agents", mapOf("name" to "a".repeat(65), "cli" to "claude")).body, "up to 64 lowercase letters")
         for (route in listOf("new", "import")) {
-            assertContains(post("/agents/new", mapOf("name" to route, "cli" to "claude")).body, "The Agents page keeps the name $route for itself.")
+            assertContains(browser.publishNew("/agents", mapOf("name" to route, "cli" to "claude")).body, "The Agents page keeps the name $route for itself.")
             assertFalse(agents.resolve("$route.md").exists())
         }
     }
@@ -244,7 +244,7 @@ class AgentsTest : AntsTest() {
     @Test
     fun `an Agent saved with Skill names holds their ids, and the Agents and Skills pages show their names`() {
         agents.resolve("linker.md").deleteIfExists()
-        post("/agents/new", mapOf("name" to "linker", "cli" to "claude", "skills" to "shipped-draft, code-review"))
+        browser.publishNew("/agents", mapOf("name" to "linker", "cli" to "claude", "skills" to "shipped-draft, code-review"))
         assertContains(agents.resolve("linker.md").readText(), "skills: k-shipped-draft, k-code-review\n")
 
         val page = get("/agents/linker")
@@ -271,8 +271,7 @@ class AgentsTest : AntsTest() {
         scripts.save(Script("s-post01", "post-message", "Posts a message."), "", emptyMap())
         scripts.save(Script("s-tidy01", "tidy", "Tidies."), "", emptyMap())
         scripts.save(Script("s-other1", "other", "Does other."), "", emptyMap())
-        browser.get("/agents/new")
-        browser.post("/agents/new", listOf("name" to "caller", "cli" to "claude", "scripts" to "post-message", "scripts" to "tidy"))
+        browser.publishNew("/agents", listOf("name" to "caller", "cli" to "claude", "scripts" to "post-message", "scripts" to "tidy"))
         assertContains(agents.resolve("caller.md").readText(), "scripts: s-post01, s-tidy01\n")
 
         val page = get("/agents/caller")
@@ -311,8 +310,8 @@ class AgentsTest : AntsTest() {
     @Test
     fun `a codex Agent has a Sandbox select in place of the tools, kept on import, and an unknown sandbox is refused`() {
         agents.resolve("coder.md").deleteIfExists()
-        assertContains(get("/agents/new"), """name="sandbox"""")
-        post("/agents/new", mapOf("name" to "coder", "cli" to "codex", "sandbox" to "read-only", "tool.Read" to "on", "instructions" to "Code."))
+        assertContains(get(browser.newDraft("/agents")), """name="sandbox"""")
+        browser.publishNew("/agents", mapOf("name" to "coder", "cli" to "codex", "sandbox" to "read-only", "tool.Read" to "on", "instructions" to "Code."))
         assertEquals("---\nname: coder\ncli: codex\nsandbox: read-only\n---\nCode.\n", withoutId(agents.resolve("coder.md")))
         val coder = get("/agents/coder")
         assertContains(coder, """value="read-only" selected""")
@@ -324,7 +323,7 @@ class AgentsTest : AntsTest() {
         assertContains(agents.resolve("coder.md").readText(), "model: gpt-5-codex\n")
         assertContains(get("/agents/coder"), """<input class="mono" id="codex-model" name="model" value="gpt-5-codex"""")
 
-        val refused = post("/agents/new", mapOf("name" to "yolo", "cli" to "codex", "sandbox" to "yolo"))
+        val refused = browser.publishNew("/agents", mapOf("name" to "yolo", "cli" to "codex", "sandbox" to "yolo"))
         assertContains(refused.body, "codex takes the sandbox read-only, workspace-write or danger-full-access, not yolo.")
         assertFalse(agents.resolve("yolo.md").exists())
 
@@ -337,17 +336,17 @@ class AgentsTest : AntsTest() {
     @Test
     fun `ticking Offer as a Subagent on a codex Agent is refused`() {
         agents.resolve("searcher.md").deleteIfExists()
-        val refused = post("/agents/new", mapOf("name" to "searcher", "cli" to "codex", "subagent" to "on"))
+        val refused = browser.publishNew("/agents", mapOf("name" to "searcher", "cli" to "codex", "subagent" to "on"))
         assertContains(refused.body, "Only a claude Agent can be offered as a Subagent.")
         assertFalse(agents.resolve("searcher.md").exists())
-        post("/agents/new", mapOf("name" to "searcher", "cli" to "claude", "subagent" to "on"))
+        browser.publishNew("/agents", mapOf("name" to "searcher", "cli" to "claude", "subagent" to "on"))
         assertContains(agents.resolve("searcher.md").readText(), "ants-subagent: true\n")
         assertContains(get("/agents/searcher"), """name="subagent" checked""")
     }
 
     @Test
     fun `the model dropdown lists current models and aliases, and a deprecated model warns`() {
-        val page = get("/agents/new")
+        val page = get(browser.newDraft("/agents"))
         assertContains(page, """<optgroup label="Always the newest">""")
         assertContains(page, ">opus · newest Opus, now Opus 5.5</option>")
         assertContains(page, ">sonnet · newest Sonnet, now Sonnet 5.5</option>")
@@ -384,7 +383,7 @@ class AgentsTest : AntsTest() {
 
     @Test
     fun `the tools come in groups, each saying what it does, and the others say why they are usually off`() {
-        val page = get("/agents/new")
+        val page = get(browser.newDraft("/agents"))
         for (group in listOf("Read the code", "Change files", "Run commands", "Web", "Helpers")) assertContains(page, """<div class="tgroup">$group</div>""")
         assertContains(page, """<b class="mono">Read</b></label>""")
         assertContains(page, "Open a file.")
@@ -414,7 +413,7 @@ class AgentsTest : AntsTest() {
         settings.writeText("claude:\n  command: [${claude.command}]\n$vault")
         try {
             agents.resolve("writer.md").deleteIfExists()
-            post("/agents/new", mapOf("name" to "writer", "cli" to "claude", "skills" to "draft", "tool.Read" to "on", "model" to "sonnet", "instructions" to "Write plainly."))
+            browser.publishNew("/agents", mapOf("name" to "writer", "cli" to "claude", "skills" to "draft", "tool.Read" to "on", "model" to "sonnet", "instructions" to "Write plainly."))
             val skill = home.resolve("skills/draft").createDirectories()
             skill.resolve("SKILL.md").writeText("---\nname: draft\ndescription: Drafts a text.\n---\nDraft the text.\n")
             skill.resolve("result.schema.json").deleteIfExists()
@@ -441,7 +440,7 @@ class AgentsTest : AntsTest() {
     @Test
     fun `Edit from the modeler opens the Agent's page in its modal, and Publish lands on it published`() {
         listOf("editor", "renamed-editor").forEach { agents.resolve("$it.md").deleteIfExists() }
-        post("/agents/new", mapOf("name" to "editor", "cli" to "claude", "description" to "Edits."))
+        browser.publishNew("/agents", mapOf("name" to "editor", "cli" to "claude", "description" to "Edits."))
         val form = browser.get("/agents/editor?use").body
         assertContains(form, """<button class="primary" form="agent">Publish</button>""")
         assertContains(form, """<input type="hidden" name="use">""")
@@ -473,7 +472,7 @@ class AgentsTest : AntsTest() {
     @Test
     fun `an edit is autosaved to the Draft, which the page reopens after a new login and a restart, and the published Agent stays as it was`() {
         agents.resolve("drafter.md").deleteIfExists()
-        post("/agents/new", drafter("drafter"))
+        browser.publishNew("/agents", drafter("drafter"))
         val published = agents.resolve("drafter.md").readText()
         val page = get("/agents/drafter")
         assertEquals(listOf("Published"), markers(page))
@@ -501,7 +500,7 @@ class AgentsTest : AntsTest() {
     @Test
     fun `a save from a tab with an older version gets a conflict, and one with the newest is kept`() {
         agents.resolve("tabbed.md").deleteIfExists()
-        post("/agents/new", drafter("tabbed"))
+        browser.publishNew("/agents", drafter("tabbed"))
         val loaded = draftVersion(get("/agents/tabbed"))
         val first = answer(browser.autosave("/agents/tabbed", drafter("tabbed") + ("description" to "First tab."), loaded))
         val second = browser.autosave("/agents/tabbed", drafter("tabbed") + ("description" to "Second tab."), loaded)
@@ -516,10 +515,25 @@ class AgentsTest : AntsTest() {
     }
 
     @Test
+    fun `a tab's save sent before its last one was answered is kept, one arriving after a later one changes nothing, and another tab's still conflicts`() {
+        agents.resolve("same-tab.md").writeText("---\nid: a-same01\nname: same-tab\ncli: claude\n---\nTab.\n")
+        fun save(description: String, tab: String, seq: Int) =
+            browser.autosave("/agents/same-tab", drafter("same-tab") + mapOf("description" to description, "tab" to tab, "seq" to "$seq"), "0")
+        assertEquals(200, save("First.", "t1", 1).status)
+        assertEquals(200, save("Second.", "t1", 2).status) // both loaded no Draft: the page left before the first was answered
+        assertContains(get("/agents/same-tab"), """value="Second."""")
+        assertEquals(200, save("First, late.", "t1", 1).status)
+        assertContains(get("/agents/same-tab"), """value="Second."""")
+        assertEquals(409, save("Other tab.", "t2", 1).status)
+        assertContains(get("/agents/same-tab"), """value="Second."""")
+        browser.post("/agents/same-tab/discard", mapOf("confirm" to "on"))
+    }
+
+    @Test
     fun `Publish publishes the page and removes the Draft, and a refused Publish keeps the Draft and says why`() {
         listOf("publisher", "publisher-taken").forEach { agents.resolve("$it.md").deleteIfExists() }
-        post("/agents/new", drafter("publisher"))
-        post("/agents/new", drafter("publisher-taken"))
+        browser.publishNew("/agents", drafter("publisher"))
+        browser.publishNew("/agents", drafter("publisher-taken"))
         browser.autosave("/agents/publisher", drafter("publisher") + ("description" to "Changed."), draftVersion(get("/agents/publisher")))
 
         val refused = post("/agents/publisher", drafter("publisher-taken") + ("description" to "Renamed."))
@@ -570,7 +584,7 @@ class AgentsTest : AntsTest() {
     @Test
     fun `Discard Draft confirms and reopens the published Agent, and Delete on a Draft-only Agent confirms and leaves the list`() {
         agents.resolve("discarder.md").deleteIfExists()
-        post("/agents/new", drafter("discarder"))
+        browser.publishNew("/agents", drafter("discarder"))
         browser.autosave("/agents/discarder", drafter("discarder") + ("description" to "Unwanted."), draftVersion(get("/agents/discarder")))
         assertContains(get("/agents/discarder"), """<form method="post" action="/agents/discarder/discard"""")
         val asked = post("/agents/discarder/discard", emptyMap())
@@ -647,7 +661,7 @@ class AgentsTest : AntsTest() {
         try {
             browser.autosave("/skills/listed", mapOf("skill" to "---\nname: listed\ndescription: Half done.\n---\n"), draftVersion(get("/skills/listed")))
             browser.autosave("/scripts/listed-script", mapOf("name" to "listed-script", "description" to "Half done."), draftVersion(get("/scripts/listed-script")))
-            val published = post("/agents/new", drafter("lister-ok") + ("skills" to "listed") + ("scripts" to "listed-script"))
+            val published = browser.publishNew("/agents", drafter("lister-ok") + ("skills" to "listed") + ("scripts" to "listed-script"))
             assertEquals("/agents/lister-ok", published.path, published.body)
         } finally {
             post("/skills/listed/delete", mapOf("confirm" to "on"))

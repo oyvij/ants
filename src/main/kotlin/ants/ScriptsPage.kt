@@ -1,6 +1,5 @@
 package ants
 
-import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.http.MediaType.APPLICATION_JSON_VALUE
 import org.springframework.stereotype.Controller
@@ -11,7 +10,6 @@ import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.ResponseBody
-import org.springframework.web.server.ResponseStatusException
 import org.yaml.snakeyaml.Yaml
 import tools.jackson.core.JacksonException
 import tools.jackson.databind.json.JsonMapper
@@ -124,61 +122,37 @@ data class ScriptForm(
 @Controller
 class ScriptsPage(
     private val scripts: Scripts, private val runner: ScriptRunner, private val settings: Settings, private val usedBy: UsedBy, private val validator: ScriptCheck,
-    private val drafts: Drafts,
+    drafted: DraftedItems,
 ) {
     private val json = JsonMapper.shared()
+    private val items = drafted.scripts
 
-    /** A Script as its page shows it: the [published] Script, its [draft], or both. While it is a Draft only, its page is at the Draft's key. */
-    private inner class Item(val published: Script?, val draft: Draft?) {
-        val id get() = draft?.id ?: published!!.id
-        val state get() = DraftState.of(published != null, draft != null)
-        val name get() = published?.name ?: draft!!.key
-        val path get() = "/scripts/$name"
+    /** The id a Script's Draft is kept under, which is its own. */
+    private val ScriptItem.id get() = draft?.id ?: published!!.id
 
-        /** The page's fields: the Draft's when there is one. */
-        val fields: Map<String, List<String>>
-            get() = draft?.let(::drafted) ?: ScriptForm.of(published!!, scripts.code(published), scripts.ownSecrets(published.id).keys).fields()
-    }
+    /** A Script page's fields: the Draft's when there is one. */
+    private val ScriptItem.fields: Map<String, List<String>>
+        get() = draft?.let(::scriptFields) ?: published!!.let { ScriptForm.of(it, scripts.code(it), scripts.ownSecrets(it.id).keys).fields() }
 
     /** The Script whose page is /scripts/[name]: a published one by its name, else a Draft-only one by its key. */
-    private fun item(name: String): Item {
-        scripts.named(name)?.let { return Item(it, drafts.get(DraftKind.SCRIPT, it.id)) }
-        return draftsOnly().firstOrNull { it.key == name }?.let { Item(null, it) } ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No Script named $name")
-    }
+    private fun item(name: String): ScriptItem = items.item(name)
 
-    /** The Drafts of Scripts never published. */
-    private fun draftsOnly(): List<Draft> {
-        val published = scripts.all().map { it.id }.toSet()
-        return drafts.all(DraftKind.SCRIPT).filter { it.id !in published }
-    }
-
-    /** Whether another Script than the one with [id] has [name]: a published one, or a Draft-only one by its name or the page it is at. */
-    private fun taken(name: String, id: String?) =
-        scripts.all().any { it.name == name && it.id != id } || draftsOnly().any { it.id != id && (it.name == name || it.key == name) }
+    private fun taken(name: String, id: String?) = items.taken(name, id)
 
     /** Whether a Draft-only Script's page may move to [name]: a valid name no other Script has, and no page of the Scripts pages' own. */
     private fun free(name: String, id: String?) = nameError("A Script", name) == null && name !in OWN_PAGES && !taken(name, id)
 
     @GetMapping("/scripts")
     fun list(model: Model): String {
-        val published = scripts.all().map { ScriptRow(it.name, it.description, it.name, DraftState.of(true, drafts.get(DraftKind.SCRIPT, it.id) != null)) }
-        val draftOnly = draftsOnly().map { ScriptRow(it.name, ScriptForm.of(drafted(it)).description, it.key, DraftState.DRAFT_ONLY) }
+        val published = scripts.all().map { ScriptRow(it.name, it.description, it.name, DraftState.of(true, items.draftOf(it) != null)) }
+        val draftOnly = items.draftOnlyItems().map { (draft, script) -> ScriptRow(draft.name, script.description, draft.key, DraftState.DRAFT_ONLY) }
         model.addAttribute("scripts", (published + draftOnly).sortedBy { it.name })
         return "scripts"
     }
 
-    /** The create form, as the modeler's New Script modal shows it, whose Save publishes at once. */
-    @GetMapping("/scripts/new")
-    fun new(@RequestParam use: String?, model: Model) = show(model.addAttribute("use", use != null), ScriptForm("", "", "", emptyList(), "", emptyList(), emptyList()), null)
-
-    @PostMapping("/scripts/new")
-    fun create(@RequestParam params: MultiValueMap<String, String>, model: Model): String {
-        return save(params, null, model)
-    }
-
     /** **New Script**: a Draft-only Script at once, with a fixed id and the first free name of `new-script`, `new-script-2`, …, and its page; with `use`, as the modeler's New Script modal opens it. */
     @PostMapping("/scripts/new/draft")
-    fun newDraft(@RequestParam use: String?) = draftOnly(mapOf("name" to listOf(freeName("new-script") { !free(it, null) }))) + if (use != null) "?use" else ""
+    fun newDraft(@RequestParam use: String?) = draftOnly(mapOf("name" to listOf(freeName("new-script") { !free(it, null) })), use)
 
     /** **Copy**: a Draft-only copy of the Script as its page shows it, under the first free `<name>-copy`, its own Secrets named but with no value. */
     @PostMapping("/scripts/{name}/copy")
@@ -188,11 +162,7 @@ class ScriptsPage(
         return draftOnly(fields.mapValues { (field, values) -> if (WAS.matches(field)) listOf("") else values } + ("name" to listOf(copied)))
     }
 
-    private fun draftOnly(fields: Map<String, List<String>>): String {
-        val name = fields.getValue("name").single()
-        drafts.save(DraftKind.SCRIPT, scripts.newId(), name, name, yaml.dump(fields), 0)
-        return "redirect:/scripts/$name"
-    }
+    private fun draftOnly(fields: Map<String, List<String>>, use: String? = null) = items.create(scripts.newId(), fields.getValue("name").single(), yaml.dump(fields), use)
 
     /** The Script's page: its Draft when it has one, else the published Script. */
     @GetMapping("/scripts/{name}")
@@ -224,7 +194,7 @@ class ScriptsPage(
     }
 
     /** Saves [form]'s rows as [item]'s own Secrets, or says why not. */
-    private fun keepSecrets(item: Item, form: ScriptForm): String? {
+    private fun keepSecrets(item: ScriptItem, form: ScriptForm): String? {
         val own = ownValues(form, scripts.ownSecrets(item.id))
         val error = ScriptForm.envError(form.own.map { it.name }) ?: form.own.firstOrNull { it.name !in own }?.let { "The Secret ${it.name} needs a value." }
         if (error == null) scripts.saveSecrets(item.id, own)
@@ -237,34 +207,21 @@ class ScriptsPage(
      */
     @PostMapping("/scripts/{name}/draft")
     @ResponseBody
-    fun autosave(@PathVariable name: String, @RequestParam params: MultiValueMap<String, String>, @RequestParam version: Long): ResponseEntity<Map<String, Any>> {
+    fun autosave(@PathVariable name: String, @RequestParam params: MultiValueMap<String, String>, @RequestParam version: Long, @RequestParam tab: String?, @RequestParam(defaultValue = "0") seq: Long): ResponseEntity<Map<String, Any>> {
         val item = item(name)
-        val form = ScriptForm.of(params)
-        val key = item.published?.name ?: form.name.takeIf { it == item.draft!!.key || free(it, item.id) } ?: item.draft!!.key
-        val save = drafts.save(DraftKind.SCRIPT, item.id, key, form.name, drafting(params), version)
-        return Drafts.answer(DraftKind.SCRIPT, save, DraftState.of(item.published != null, true), "/scripts/$key")
+        return items.autosave(item, item.id, ScriptForm.of(params).name, drafting(params), DraftFrom(version, tab, seq)) { free(it, item.id) }
     }
 
     /** **Publish**: keeps the page as the Draft, then saves it as Save did; if that passes, the Draft is the Script and is removed. */
     @PostMapping("/scripts/{name}")
     fun publish(@PathVariable name: String, @RequestParam params: MultiValueMap<String, String>, model: Model): String {
         val item = item(name)
-        drafts.save(DraftKind.SCRIPT, item.id, item.draft?.key ?: item.name, ScriptForm.of(params).name, drafting(params), drafts.get(DraftKind.SCRIPT, item.id)?.version ?: 0)
-        val view = save(params, item(name), model)
-        if (view.startsWith("redirect:")) drafts.remove(DraftKind.SCRIPT, item.id)
-        return view
+        return items.publish(item, item.id, ScriptForm.of(params).name, drafting(params)) { save(params, item(name), model) }.view
     }
 
     /** **Discard Draft**: once confirmed, removes the Draft and reopens the published Script. */
     @PostMapping("/scripts/{name}/discard")
-    fun discard(@PathVariable name: String, @RequestParam confirm: String?, model: Model): String {
-        val item = item(name)
-        val draft = item.draft ?: return "redirect:${item.path}"
-        if (item.published == null) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "$name was never published: Delete it instead.")
-        if (confirm == null) return confirm(model, "Discard the Draft of $name?", Dependents(emptyList()), "${item.path}/discard", emptyMap(), item.path)
-        drafts.remove(DraftKind.SCRIPT, draft.id)
-        return "redirect:${item.path}"
-    }
+    fun discard(@PathVariable name: String, @RequestParam confirm: String?, model: Model) = items.discard(item(name), confirm != null, model)
 
     /** Deletes a Script, once the user has confirmed it, seeing what uses it, and its Draft with it; a Draft-only Script, which nothing can use, is its Draft. */
     @PostMapping("/scripts/{name}/delete")
@@ -276,7 +233,7 @@ class ScriptsPage(
             else confirm(model, "Delete the Script $name?", usedBy.script(script), "${item.path}/delete", emptyMap(), item.path)
         }
         scripts.delete(item.id)
-        drafts.remove(DraftKind.SCRIPT, item.id)
+        items.removeDraft(item)
         return "redirect:/scripts"
     }
 
@@ -314,42 +271,41 @@ class ScriptsPage(
     private fun ownValues(form: ScriptForm, savedSecrets: Map<String, String>) =
         form.own.mapNotNull { row -> row.value.ifEmpty { savedSecrets[row.was.ifEmpty { row.name }] }?.let { row.name to it } }.toMap()
 
-    /** Publishes the page's [params] as [item], or as a new Script for none, or shows the page with why not. */
-    private fun save(params: MultiValueMap<String, String>, item: Item?, model: Model): String {
+    /**
+     * Publishes the page's [params] as [item], with the own Secrets its Secrets card saved, or shows the page with why
+     * not.
+     */
+    private fun save(params: MultiValueMap<String, String>, item: ScriptItem, model: Model): PublishOutcome {
         val form = ScriptForm.of(params)
         val modal = "use" in params
-        val edited = item?.published
-        val kept = item?.let { scripts.ownSecrets(it.id) }
-        val own = kept ?: ownValues(form, emptyMap())
+        val edited = item.published
+        val kept = scripts.ownSecrets(item.id)
         val error = form.error(scripts.all(), edited?.name)
-            ?: "A Script named ${form.name} already exists.".takeIf { taken(form.name, item?.id) }
-            ?: form.own.firstOrNull { it.name !in own }?.let { "The Secret ${it.name} needs a value" + if (kept != null) ": save it on the Secrets card." else "." }
-        if (error != null) return show(model.addAttribute("use", modal), form, item, error)
+            ?: "A Script named ${form.name} already exists.".takeIf { taken(form.name, item.id) }
+            ?: form.own.firstOrNull { it.name !in kept }?.let { "The Secret ${it.name} needs a value: save it on the Secrets card." }
+        if (error != null) return PublishOutcome.Refused(show(model.addAttribute("use", modal), form, item, error))
         val errors = validator.findings(params).filter { it.error }
         if (errors.isNotEmpty()) {
             model.addAttribute("errors", errors.map { it.sentence })
-            return show(model.addAttribute("use", modal), form, item, "The Script has ${if (errors.size == 1) "an error" else "${errors.size} errors"}, so it wasn't published:")
+            return PublishOutcome.Refused(show(model.addAttribute("use", modal), form, item, "The Script has ${if (errors.size == 1) "an error" else "${errors.size} errors"}, so it wasn't published:"))
         }
-        val script = form.script(item?.id ?: scripts.newId(), edited).let { if (kept == null) it else it.copy(secrets = (kept.keys + form.linked).distinct()) }
-        scripts.save(script, form.code, own.takeIf { kept == null })
-        return "redirect:/scripts/${script.name}" + if (modal) "?saved" else ""
+        val script = form.script(item.id, edited).copy(secrets = (kept.keys + form.linked).distinct())
+        scripts.save(script, form.code, null)
+        return PublishOutcome.Published("/scripts/${script.name}" + if (modal) "?saved" else "")
     }
 
     /** The page's [params] as a Draft keeps them: the fields alone, and no Secret's value. */
     private fun drafting(params: MultiValueMap<String, String>): String =
         yaml.dump(params.filterKeys { it !in NOT_DRAFTED && !SECRET_VALUE.matches(it) }.mapValues { (_, values) -> values.toList() })
 
-    private fun drafted(draft: Draft): Map<String, List<String>> =
-        Yaml().load<Map<*, *>>(draft.content).orEmpty().entries.associate { (field, values) -> "$field" to (values as? List<*>).orEmpty().map { "$it" } }
-
-    private fun show(model: Model, form: ScriptForm, item: Item?, message: String? = null): String {
-        model.addAttribute("form", item?.let { form.keeping(scripts.ownSecrets(it.id).keys) } ?: form)
-        model.addAttribute("saved", item?.name)
-        model.addAttribute("draft", item?.let { DraftHead(it.state, it.draft?.version ?: 0, it.draft?.savedLine, "${it.path}/draft") })
+    private fun show(model: Model, form: ScriptForm, item: ScriptItem, message: String? = null): String {
+        model.addAttribute("form", form.keeping(scripts.ownSecrets(item.id).keys))
+        model.addAttribute("saved", item.name)
+        model.addAttribute("draft", item.head)
         model.addAttribute("labels", (settings.secrets().keys + form.linked).distinct())
         model.addAttribute("placeholder", ScriptForm.PLACEHOLDER)
         model.addAttribute("message", message)
-        model.addAttribute("dependents", item?.published?.let { usedBy.script(it) })
+        model.addAttribute("dependents", item.published?.let { usedBy.script(it) })
         return "script"
     }
 
@@ -357,12 +313,19 @@ class ScriptsPage(
         /** The pages of the Scripts pages' own, which no Script's page may take. */
         private val OWN_PAGES = setOf(TEST_RUN, "new")
 
-        /** What a page posts that isn't the Script: the CSRF token, the Draft's version, the modal's flag, the saved name and a Test run's sample. */
-        private val NOT_DRAFTED = setOf("_csrf", "version", "use", "script", "sample")
+        /** What a page posts that isn't the Script: the CSRF token, the Draft's version, the autosave's tab and number, the modal's flag, the saved name and a Test run's sample. */
+        private val NOT_DRAFTED = setOf("_csrf", "version", "tab", "seq", "use", "script", "sample")
         private val SECRET_VALUE = Regex("""secrets\[\d+]\.value""")
         private val WAS = Regex("""secrets\[\d+]\.was""")
     }
 }
+
+/** A Script as its page shows it: the published Script, its Draft, or both. */
+private typealias ScriptItem = DraftedItem<Script>
+
+/** The page's fields a Script's [draft] keeps. */
+internal fun scriptFields(draft: Draft): Map<String, List<String>> =
+    Yaml().load<Map<*, *>>(draft.content).orEmpty().entries.associate { (field, values) -> "$field" to (values as? List<*>).orEmpty().map { "$it" } }
 
 /** A Script on the list, the [page] it is at and its [state]. */
 class ScriptRow(val name: String, val description: String, val page: String, val state: DraftState)

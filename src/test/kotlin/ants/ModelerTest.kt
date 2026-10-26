@@ -230,6 +230,21 @@ class ModelerTest : AntsTest() {
     }
 
     @Test
+    fun `Publish of a diagram whose Process id was changed removes the Draft the modeler was opened on`() {
+        newProcess("Rekeyed draft")
+        val published = browser.post("/processes/rekeyed-draft/publish", mapOf("bpmn" to waiting("rekeyed-elsewhere", "Rekeyed draft", "only")))
+        assertEquals("/processes/rekeyed-elsewhere", published.path)
+        assertEquals(404, browser.get("/processes/rekeyed-draft/edit").status)
+        assertFalse("rekeyed-draft" in browser.get("/processes").body)
+
+        browser.post("/processes/deploy", mapOf("bpmn" to waiting("rekeyed", "Rekeyed", "first")))
+        browser.autosave("/processes/rekeyed", listOf("bpmn" to waiting("rekeyed", "Rekeyed", "second")), "0")
+        assertEquals("/processes/rekeyed-too", browser.post("/processes/rekeyed/publish", mapOf("bpmn" to waiting("rekeyed-too", "Rekeyed too", "third"))).path)
+        assertEquals("0", draftVersion(browser.get("/processes/rekeyed/edit").body))
+        assertFalse("draft-mark" in row("Rekeyed"))
+    }
+
+    @Test
     fun `Discard Draft confirms and reopens the deployed version, and Delete of a Draft-only Process confirms`() {
         browser.get("/processes")
         browser.post("/processes/deploy", mapOf("bpmn" to waiting("discarded", "Discarded", "kept")))

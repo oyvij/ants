@@ -1,5 +1,5 @@
 @param form: ants.ScriptForm
-@param saved: String?
+@param saved: String
 @param labels: List<String>
 @param placeholder: String
 @param message: String? = null
@@ -16,7 +16,7 @@
     <meta charset="utf-8">
     @template.app()
     <meta name="color-scheme" content="${colorScheme}">
-    <title>${saved ?: "New Script"} · Scripts · Ants</title>
+    <title>${saved} · Scripts · Ants</title>
     <script type="module" src="/code-editor.js"></script>
     <script src="/script.js" defer></script>
     <script type="module" src="/schema-card.js"></script>
@@ -28,30 +28,26 @@
 <script src="/shell.js" defer></script>
 @endif
 <main>
-@if(!use)<div class="crumbs"><a href="/scripts">Scripts</a> / ${saved ?: "New"}</div>@endif
-<div class="ph"><h1><span class="ent ent-script"><svg class="i" viewBox="0 0 24 24"><path d="m8 7-5 5 5 5M16 7l5 5-5 5M14 4l-4 16"/></svg>${saved ?: "New Script"}</span></h1>
+@if(!use)<div class="crumbs"><a href="/scripts">Scripts</a> / ${saved}</div>@endif
+<div class="ph"><h1><span class="ent ent-script"><svg class="i" viewBox="0 0 24 24"><path d="m8 7-5 5 5 5M16 7l5 5-5 5M14 4l-4 16"/></svg>${saved}</span></h1>
 @if(draft != null)
     @template.drafthead(draft = draft)
 @endif
     <div class="acts">
-@if(saved != null)
         <form method="post" action="/scripts/${saved}/copy"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>Copy</button></form>
 @if(draft?.state == ants.DraftState.CHANGED)
         <form method="post" action="/scripts/${saved}/discard" data-leaves-draft><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>Discard Draft</button></form>
 @endif
         <form method="post" action="/scripts/${saved}/delete" data-leaves-draft><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button class="danger">Delete</button></form>
-@endif
-        <button class="primary" form="script">${if (saved == null) "Save" else "Publish"}</button>
+        <button class="primary" form="script">Publish</button>
     </div>
 @if(dependents != null)    <div class="sub">@template.usedby(dependents = dependents, none = "no Agent or Process")</div>@endif
 </div>
 @if(message != null && errors.isEmpty())<p role="alert">${message}</p>@elseif(message != null)<div role="alert">${message}<ul class="findings">@for(error in errors)<li>${error}</li>@endfor</ul></div>@endif
 <div class="scriptWrap">
-<form id="script" method="post" action="/scripts/${saved ?: "new"}" class="script" data-autosave="${draft?.endpoint}" data-version="${draft?.version?.toString()}" data-leaves-draft>
+<form id="script" method="post" action="/scripts/${saved}" class="script" data-autosave="${draft?.endpoint}" data-version="${draft?.version?.toString()}" data-leaves-draft>
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
-@if(saved != null)
     <input type="hidden" name="script" value="${saved}">
-@endif
 @if(use)
     <input type="hidden" name="use" value="">
 @endif
@@ -98,9 +94,7 @@
             </div>
 @endfor
         </div>
-@if(saved != null)
         <div class="row save-secrets"><button formaction="/scripts/${saved}/secrets" data-save-secrets>Save Secrets</button><span class="muted small" role="status" data-secrets-state></span></div>
-@endif
         <div class="fld"><label class="f">From Settings</label><div class="help">Secrets kept in <a href="/settings">Settings</a>, each under its variable names.</div>
 @for(label in labels)
             <label class="nowrap"><input type="checkbox" name="linked" value="${label}" checked="${label in form.linked}"> ${label}</label>

@@ -4,6 +4,8 @@ import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.stereotype.Component
+import org.springframework.ui.Model
+import org.springframework.web.server.ResponseStatusException
 import org.yaml.snakeyaml.Yaml
 import java.nio.file.Path
 import java.time.Instant
@@ -42,11 +44,36 @@ enum class DraftState(val label: String, val css: String) {
 }
 
 /**
- * One item's Draft: its editor's whole page as [content], in the kind's own format (an Agent's is its agent file).
- * [name] is the name the page has now, [key] the name the item's page is at while it is a Draft only, and [version]
- * what a save from a page that loaded this Draft carries.
+ * An item's editor page as its Draft keeps it: the whole page as [content], in the kind's own format (an Agent's is its
+ * agent file), the [name] the page has now, and the [key], the name the item's page is at while it is a Draft only.
  */
-class Draft(val id: String, val key: String, val name: String, val content: String, val version: Long, val saved: Instant) {
+class DraftPage(val id: String, val key: String, val name: String, val content: String) {
+    /** A new item's page, which is at its name. */
+    constructor(id: String, name: String, content: String) : this(id, name, name, content)
+}
+
+/**
+ * Where a save to the Drafts store comes from: a page that last loaded or saved the Draft [version], 0 for none. An
+ * autosave also says which open page, the [tab], sent it, and the save's number there, [seq]: a page may send its next
+ * save before the one on its way is answered, as it does when it is left.
+ */
+class DraftFrom(val version: Long, val tab: String? = null, val seq: Long = 0) {
+    companion object {
+        /** A new item, which has no Draft yet. */
+        val NEW = DraftFrom(0)
+    }
+}
+
+/**
+ * One item's Draft: its [page], the [version] a save from a page that loaded this Draft carries, and the [tab] that
+ * saved it with its save's number there, [seq].
+ */
+class Draft(val page: DraftPage, val version: Long, val saved: Instant, val tab: String? = null, val seq: Long = 0) {
+    val id get() = page.id
+    val key get() = page.key
+    val name get() = page.name
+    val content get() = page.content
+
     /** What the editor's header says of it: "Draft saved 14:02", with the day when it isn't today. */
     val savedLine get() = "Draft saved " + shortTime(saved)
 }
@@ -76,18 +103,36 @@ class Drafts(@Value("\${ants.home}") home: Path) {
     fun ids(): Set<String> = DraftKind.entries.flatMap { all(it) }.map { it.id }.toSet()
 
     /**
-     * Keeps [content] as the Draft of [id], unless a Draft newer than [loaded], the version the page last loaded or
-     * saved, is there: then the page didn't see it, and the save is a [DraftSave.Conflict]. With no Draft there is
-     * nothing to overwrite, so any save is kept.
+     * Keeps [page] as its item's Draft, unless a Draft other than the one [from] last loaded or saved is there: then the
+     * page didn't see it, and the save is a [DraftSave.Conflict]. A Draft the same tab saved is one it saw, so its
+     * later save is kept and an earlier one, arriving late, changes nothing. With no Draft there is nothing to
+     * overwrite, so any save is kept.
      */
     @Synchronized
-    fun save(kind: DraftKind, id: String, key: String, name: String, content: String, loaded: Long): DraftSave {
-        val before = get(kind, id)
-        if (before != null && before.version != loaded) return DraftSave.Conflict(before)
+    fun save(kind: DraftKind, page: DraftPage, from: DraftFrom): DraftSave {
+        val before = get(kind, page.id)
+        val sameTab = from.tab != null && before?.tab == from.tab
+        if (before != null && sameTab && from.seq <= before.seq) return DraftSave.Kept(before)
+        if (before != null && !sameTab && before.version != from.version) return DraftSave.Conflict(before)
         val now = Instant.now()
-        val draft = Draft(id, key, name, content, maxOf(now.toEpochMilli(), (before?.version ?: 0) + 1), now)
-        file(kind, id).writeAtomically(yaml.dump(linkedMapOf("key" to key, "name" to name, "version" to draft.version, "saved" to now.toString(), "content" to content)))
+        val draft = Draft(page, maxOf(now.toEpochMilli(), (before?.version ?: 0) + 1), now, from.tab, from.seq)
+        val kept = linkedMapOf<String, Any?>("key" to page.key, "name" to page.name, "version" to draft.version, "saved" to now.toString())
+        if (from.tab != null) kept += mapOf("tab" to from.tab, "seq" to from.seq)
+        file(kind, page.id).writeAtomically(yaml.dump(kept + ("content" to page.content)))
         return DraftSave.Kept(draft)
+    }
+
+    /**
+     * **Discard Draft** of an item: asks first, at [page]`/discard`, then removes its [draft] and goes [back] to the
+     * published item, [published] (its name as the question says it). [name]d by its page, an item never published
+     * has its Delete instead.
+     */
+    fun discard(kind: DraftKind, draft: Draft?, published: String?, name: String, page: String, back: String, confirmed: Boolean, model: Model): String {
+        draft ?: return "redirect:$back"
+        if (published == null) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "$name was never published: Delete it instead.")
+        if (!confirmed) return confirm(model, "Discard the Draft of $published?", Dependents(emptyList()), "$page/discard", emptyMap(), back)
+        remove(kind, draft.id)
+        return "redirect:$back"
     }
 
     /** The folder of the files a Draft keeps beside its content, such as those beside a copied Skill's `SKILL.md`. */
@@ -101,7 +146,8 @@ class Drafts(@Value("\${ants.home}") home: Path) {
 
     private fun read(file: Path): Draft? = runCatching {
         val map = Yaml().load<Map<*, *>>(file.readText())
-        Draft(file.nameWithoutExtension, map["key"].toString(), map["name"].toString(), map["content"].toString(), map["version"].toString().toLong(), Instant.parse(map["saved"].toString()))
+        val page = DraftPage(file.nameWithoutExtension, map["key"].toString(), map["name"].toString(), map["content"].toString())
+        Draft(page, map["version"].toString().toLong(), Instant.parse(map["saved"].toString()), map["tab"]?.toString(), map["seq"]?.toString()?.toLong() ?: 0)
     }.getOrNull()
 
     companion object {

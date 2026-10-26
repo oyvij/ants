@@ -190,7 +190,7 @@ class Processes(
         val title = name?.takeIf(String::isNotBlank) ?: source?.let { "${it.name ?: it.key} copy" } ?: "New Process"
         val bpmn = newDiagram(title, source?.key)
         val key = process(parse(bpmn.toByteArray())).getAttribute("id")
-        drafts.save(DraftKind.PROCESS, key, key, title, bpmn, 0)
+        drafts.save(DraftKind.PROCESS, DraftPage(key, key, title, bpmn), DraftFrom.NEW)
         return "redirect:/processes/$key/edit"
     }
 
@@ -235,11 +235,11 @@ class Processes(
      */
     @PostMapping("/processes/{key}/draft")
     @ResponseBody
-    fun autosave(@PathVariable key: String, @RequestParam bpmn: String, @RequestParam version: Long): ResponseEntity<Map<String, Any>> {
+    fun autosave(@PathVariable key: String, @RequestParam bpmn: String, @RequestParam version: Long, @RequestParam tab: String?, @RequestParam(defaultValue = "0") seq: Long): ResponseEntity<Map<String, Any>> {
         val published = latestOrNull(key) != null
         val draft = drafts.get(DraftKind.PROCESS, key)
         if (!published && draft == null) throw ResponseStatusException(HttpStatus.NOT_FOUND, "No Process $key")
-        val save = drafts.save(DraftKind.PROCESS, key, key, nameOf(bpmn) ?: draft?.name ?: key, bpmn, version)
+        val save = drafts.save(DraftKind.PROCESS, DraftPage(key, key, nameOf(bpmn) ?: draft?.name ?: key, bpmn), DraftFrom(version, tab, seq))
         return Drafts.answer(DraftKind.PROCESS, save, DraftState.of(published, true), "/processes/$key")
     }
 
@@ -252,7 +252,7 @@ class Processes(
         val draft = drafts.get(DraftKind.PROCESS, key)
         if (latestOrNull(key) == null && draft == null) throw ResponseStatusException(HttpStatus.NOT_FOUND, "No Process $key")
         // The page autosaves what it shows just before; saving the same again would leave the page's version behind.
-        if (draft?.content != bpmn) drafts.save(DraftKind.PROCESS, key, key, nameOf(bpmn) ?: draft?.name ?: key, bpmn, draft?.version ?: 0)
+        if (draft?.content != bpmn) drafts.save(DraftKind.PROCESS, DraftPage(key, key, nameOf(bpmn) ?: draft?.name ?: key, bpmn), DraftFrom(draft?.version ?: 0))
         return try {
             val deployed = deploy(bpmn.toByteArray())
             drafts.remove(DraftKind.PROCESS, key)
@@ -265,11 +265,9 @@ class Processes(
     /** **Discard Draft**: once confirmed, removes the Draft and reopens the modeler on the latest version. */
     @PostMapping("/processes/{key}/discard")
     fun discard(@PathVariable key: String, @RequestParam params: Map<String, String>, model: Model): String {
-        val draft = drafts.get(DraftKind.PROCESS, key) ?: return "redirect:/processes/$key/edit"
-        val process = latestOrNull(key) ?: throw ResponseStatusException(HttpStatus.BAD_REQUEST, "${draft.name} was never published: Delete it instead.")
-        if ("confirm" !in params) return confirm(model, "Discard the Draft of ${process.name ?: key}?", Dependents(emptyList()), "/processes/$key/discard", emptyMap(), "/processes/$key/edit")
-        drafts.remove(DraftKind.PROCESS, key)
-        return "redirect:/processes/$key/edit"
+        val draft = drafts.get(DraftKind.PROCESS, key)
+        val published = latestOrNull(key)?.let { it.name ?: key }
+        return drafts.discard(DraftKind.PROCESS, draft, published, draft?.name ?: key, "/processes/$key", "/processes/$key/edit", "confirm" in params, model)
     }
 
     /** The modeler's Process Builder column: on, or why it is off. Only a Process has it, never a Template. */
@@ -425,13 +423,12 @@ class ProcessRow(val process: ProcessDefinition, val shipped: Boolean, val profi
 class Refused(message: String?) : Exception(message)
 
 /**
- * A page's save run for the Process Builder (ADR 0019), with no page to show: the path [save] redirects to, else a
+ * A page's save run for the Process Builder (ADR 0019), with no page to show: the path [save] published to, else a
  * [Refused] with the error it put on the model as [error].
  */
-fun redirected(error: String, save: (Model) -> String): String {
+fun redirected(error: String, save: (Model) -> PublishOutcome): String {
     val model = ExtendedModelMap()
-    val view = save(model)
-    return view.removePrefix("redirect:").takeIf { it != view } ?: throw Refused(model[error]?.toString())
+    return (save(model) as? PublishOutcome.Published)?.path ?: throw Refused(model[error]?.toString())
 }
 
 internal fun parse(bpmn: ByteArray): Document = DocumentBuilderFactory.newInstance().apply {

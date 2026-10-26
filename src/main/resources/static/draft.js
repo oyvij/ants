@@ -15,7 +15,10 @@ const retryAfter = [2000, 4000, 8000, 15000, 30000];
  */
 export function autosave({endpoint, version, fields, csrf, head = document.querySelector('.draft-head'), delay = 2000}) {
     const state = head?.querySelector('[data-save-state]'), marker = head?.querySelector('.draft-mark'), loadNewer = head?.querySelector('[data-load-newer]');
-    let timer, saving = null, last = null, failures = 0, stopped = false, leaving = false;
+    // Which page this is, and each save's number, so Ants tells this page's later save from another tab's (Drafts.kt).
+    const tab = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+    const away = new Set(); // the leaving saves on their way
+    let timer, saving = null, last = null, failures = 0, stopped = false, leaving = false, sent = 0, answered = 0;
     const say = text => {
         if (!state) return;
         state.textContent = text;
@@ -48,7 +51,10 @@ export function autosave({endpoint, version, fields, csrf, head = document.query
         const params = await body();
         const text = params.toString();
         if (text === last) return;
+        const seq = ++sent;
         params.set('version', version);
+        params.set('tab', tab);
+        params.set('seq', seq);
         params.set('_csrf', csrf);
         say('Saving…');
         try {
@@ -57,13 +63,15 @@ export function autosave({endpoint, version, fields, csrf, head = document.query
             const signedOut = response.status === 403 || response.redirected && new URL(response.url).pathname === '/login';
             if (signedOut) return retry("you're logged out. Log in again in another tab; this page keeps trying.", true);
             if (!response.ok) return retry(`Ants answered ${response.status}${response.statusText ? ' ' + response.statusText : ''}.`);
-            saved(await response.json(), text);
+            saved(await response.json(), text, seq);
         } catch (e) {
             retry("Ants can't be reached.");
         }
     }
 
-    function saved(answer, text) {
+    function saved(answer, text, seq) {
+        if (seq < answered) return; // a later save of this page was answered first
+        answered = seq;
         failures = 0;
         last = text;
         version = answer.version;
@@ -107,18 +115,28 @@ export function autosave({endpoint, version, fields, csrf, head = document.query
         timer = setTimeout(save, delay);
     }
 
+    // A page being left can't wait for a save still on its way, so this one goes at once beside it, and Ants keeps the
+    // later of the two, both being this page's.
+    function leave() {
+        if (leaving || stopped) return;
+        clearTimeout(timer);
+        const going = send({keepalive: true}).finally(() => away.delete(going));
+        away.add(going);
+    }
+
     loadNewer?.addEventListener('click', () => location.reload());
-    addEventListener('pagehide', () => { if (!leaving) save({keepalive: true}); });
-    addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && !leaving) save({keepalive: true}); });
+    addEventListener('pagehide', leave);
+    addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') leave(); });
     // A save still on its way would land after Publish or Discard and bring the Draft back: the form waits for it.
     document.addEventListener('submit', event => {
         const form = event.target;
         if (event.defaultPrevented || !form.closest('[data-leaves-draft]')) return;
         leaving = true;
         clearTimeout(timer);
-        if (!saving) return;
+        const pending = [saving, ...away].filter(Boolean);
+        if (!pending.length) return;
         event.preventDefault();
-        saving.finally(() => form.submit());
+        Promise.allSettled(pending).then(() => form.submit());
     });
     // What the page loaded is what the Draft (or the published item) already holds.
     body().then(params => { last ??= params.toString(); });

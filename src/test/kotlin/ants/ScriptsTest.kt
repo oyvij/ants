@@ -67,17 +67,14 @@ class ScriptsTest : AntsTest() {
         own.withIndex().flatMap { (i, secret) -> listOf("secrets[$i].name" to secret.first, "secrets[$i].value" to secret.second, "secrets[$i].was" to "") } +
         linked.map { "linked" to it }
 
-    private fun create(form: List<Pair<String, String>>): Browser.Page {
-        browser.get("/scripts/new")
-        return browser.post("/scripts/new", form)
-    }
+    private fun create(form: List<Pair<String, String>>) = browser.publishNew("/scripts", form)
 
     private fun folder(name: String): Path = scripts.listDirectoryEntries().single { definition(it)["name"] == name }
 
     private fun definition(folder: Path): Map<*, *> = Yaml().load(folder.resolve("script.yaml").readText())
 
     private fun testRun(form: List<Pair<String, String>>, sample: String = "{}", script: String? = null): Map<*, *> {
-        browser.get("/scripts/new")
+        browser.get("/scripts")
         val page = browser.post("/scripts/test-run", form + listOf("sample" to sample) + listOfNotNull(script?.let { "script" to it }))
         assertEquals(200, page.status, page.body)
         return json.readValue(page.body, Map::class.java)
@@ -140,7 +137,7 @@ class ScriptsTest : AntsTest() {
         assertContains(create(form("post-message")).body, "A Script named post-message already exists.")
         assertContains(create(form("Not A Name")).body, "A Script's name is up to 64 lowercase letters, digits and hyphens.")
         assertContains(create(form("bad-var", vars = "lower=1")).body, "A var or Secret's name is upper case letters, digits and underscores")
-        assertContains(create(form("no-value", own = listOf("SLACK_TOKEN" to ""))).body, "The Secret SLACK_TOKEN needs a value.")
+        assertContains(create(form("no-value", own = listOf("SLACK_TOKEN" to ""))).body, "The Secret SLACK_TOKEN needs a value: save it on the Secrets card.")
         assertEquals(1, scripts.listDirectoryEntries().size)
     }
 
@@ -181,18 +178,19 @@ class ScriptsTest : AntsTest() {
     }
 
     @Test
-    fun `the Script page in the modeler's modal has no nav, and saving there opens the saved Script`() {
-        val modal = browser.get("/scripts/new?use").body
-        assertContains(modal, """<input type="hidden" name="use" value="">""")
-        assertFalse("""<a href="/scripts">""" in modal)
-        val created = browser.post("/scripts/new", form("in-modal") + ("use" to ""))
+    fun `the Script page in the modeler's modal has no nav, and Publish there opens the published Script`() {
+        browser.get("/scripts")
+        val modal = browser.post("/scripts/new/draft", mapOf("use" to ""))
+        assertContains(modal.body, """<input type="hidden" name="use" value="">""")
+        assertFalse("""<a href="/scripts">""" in modal.body)
+        assertContains(browser.post(modal.path, form("Bad Name") + ("use" to "")).body, """<input type="hidden" name="use" value="">""")
+        val created = browser.post(modal.path, form("in-modal") + ("use" to ""))
         assertEquals("/scripts/in-modal", created.path)
         assertEquals("saved", created.query)
         val renamed = browser.post("/scripts/in-modal", form("renamed-in-modal") + ("use" to ""))
         assertEquals("/scripts/renamed-in-modal", renamed.path)
         assertEquals("saved", renamed.query)
         assertEquals(null, browser.post("/scripts/renamed-in-modal", form("renamed-in-modal")).query)
-        assertContains(browser.post("/scripts/new", form("Bad Name") + ("use" to "")).body, """<input type="hidden" name="use" value="">""")
     }
 
     @Test
@@ -207,7 +205,7 @@ class ScriptsTest : AntsTest() {
 
     @Test
     fun `a new Script's editor shows a placeholder reading ants inputs, vars and Secrets, and handing back with ants output`() {
-        val page = browser.get("/scripts/new").body.replace("&#34;", "\"").replace("&#39;", "'")
+        val page = browser.get(browser.newDraft("/scripts")).body.replace("&#34;", "\"").replace("&#39;", "'")
         assertContains(page, "data-code-editor")
         assertContains(page, "ants.inputs")
         assertContains(page, "process.env.")
@@ -488,7 +486,7 @@ class ScriptsTest : AntsTest() {
 
     /** What the validator finds in the page's unsaved [form], each as `severity line-or-row: message`. */
     private fun check(form: List<Pair<String, String>>): List<String> {
-        browser.get("/scripts/new")
+        browser.get("/scripts")
         val page = browser.post("/script-check", form)
         assertEquals(200, page.status, page.body)
         return (json.readValue(page.body, Map::class.java)["findings"] as List<*>).map {

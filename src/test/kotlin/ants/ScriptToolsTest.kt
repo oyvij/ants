@@ -190,6 +190,21 @@ class ScriptToolsTest : AntsTest() {
     }
 
     @Test
+    fun `an Agent whose file lists a Draft-only Script is never launched with it as a tool, and the Draft never runs`() {
+        script("s-post01", "post-message")
+        val page = browser.newDraft("/scripts")
+        val drafted = listOf("name" to "drafted-only", "description" to "Only drafted.", "code" to "import {writeFileSync} from 'node:fs'\nwriteFileSync('ran.txt', 'ran')\n", "vars" to "")
+        assertEquals(200, browser.autosave(page, drafted, draftVersion(browser.get(page).body)).status)
+        val id = Drafts(home).all(DraftKind.SCRIPT).single().id
+        agentWithScripts("s-post01", id) // written by hand: the Agents page's Publish refuses an Agent listing a Draft-only Script
+        val run = start()
+
+        eventually { assertContains(browser.get("/runs/$run").body, "No Script named $id") }
+        assertEquals(0, claude.launches("draft").size)
+        assertFalse(workspace(run).resolve("ran.txt").isRegularFile())
+    }
+
+    @Test
     fun `a Script tool call whose arguments break the input schema answers an error with the reason, and the Script doesn't run`() {
         val inputs = mapOf("type" to "object", "properties" to mapOf("count" to mapOf("type" to "number"), "text" to mapOf("type" to "string")), "required" to listOf("text"))
         scripts.save(Script("s-count01", "count", "Counts.", inputs), "import {writeFileSync} from 'node:fs'\nwriteFileSync('ran.txt', 'ran')\nants.output({ok: true})\n", emptyMap())

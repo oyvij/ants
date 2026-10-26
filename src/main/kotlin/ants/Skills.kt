@@ -12,7 +12,6 @@ import org.springframework.web.bind.annotation.ResponseBody
 import org.springframework.web.multipart.MultipartFile
 import org.springframework.web.server.ResponseStatusException
 import org.yaml.snakeyaml.error.YAMLException
-import java.net.URLEncoder
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.copyTo
@@ -22,6 +21,9 @@ import kotlin.io.path.readText
 import kotlin.io.path.relativeTo
 import kotlin.io.path.walk
 import kotlin.io.path.writeBytes
+
+/** A Skill as its page shows it: the published Skill, its Draft, or both. */
+private typealias SkillItem = DraftedItem<Skill>
 
 /** A Skill's `SKILL.md` as the Skills page shows it; [name] is null on the create form. */
 data class SkillForm(val name: String?, val skill: String, val readOnly: Boolean = false, val where: String = "")
@@ -41,45 +43,22 @@ data class SkillRow(
  * reads the files at every launch, so a Publish reaches live Runs at their next one.
  */
 @Controller
-class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy, private val drafts: Drafts) {
-    /**
-     * A Skill as its page shows it: the [published] Skill, its [draft], or both. A read-only Skill has no Draft. While
-     * it is a Draft only, its page is at the Draft's key.
-     */
-    private inner class Item(val published: Skill?, val draft: Draft?) {
-        val own get() = published == null || own(published)
-        val state get() = DraftState.of(published != null, draft != null)
-        val name get() = published?.name ?: draft!!.key
-        val path get() = "/skills/$name"
+class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy, private val drafts: Drafts, drafted: DraftedItems) {
+    private val items = drafted.skills
 
-        /** The `SKILL.md` the page shows: the Draft's when there is one. */
-        val shown get() = draft?.content ?: published!!.file.readText()
+    /** The `SKILL.md` a Skill's page shows: the Draft's when there is one. */
+    private val SkillItem.shown get() = draft?.content ?: published!!.file.readText()
 
-        /** The folder of the files beside its `SKILL.md`: a Draft-only copy keeps them with its Draft. */
-        val beside get() = published?.folder ?: drafts.files(DraftKind.SKILL, draft!!.id)
-    }
+    /** The folder of the files beside a Skill's `SKILL.md`: a Draft-only copy keeps them with its Draft. */
+    private val SkillItem.beside get() = published?.folder ?: drafts.files(DraftKind.SKILL, draft!!.id)
 
     private fun own(skill: Skill) = skill.file.startsWith(catalogue.yourSkills)
 
     /** The Skill whose page is /skills/[name]: a published one by its name, else a Draft-only one by its key. */
-    private fun item(name: String): Item {
-        val found = runCatching { find(name) }
-        found.getOrNull()?.let { skill -> return Item(skill, skill.id?.takeIf { own(skill) }?.let { drafts.get(DraftKind.SKILL, it) }) }
-        return draftsOnly().firstOrNull { it.key == name }?.let { Item(null, it) } ?: throw found.exceptionOrNull()!!
-    }
+    private fun item(name: String): SkillItem = items.item(name, ::find)
 
-    /** The Drafts of Skills never published. */
-    private fun draftsOnly(): List<Draft> {
-        val published = catalogue.skills(withHidden = true).mapNotNull { it.id }.toSet()
-        return drafts.all(DraftKind.SKILL).filter { it.id !in published }
-    }
-
-    /** Whether another Skill than the one with [id] has [name]: a published one, or a Draft-only one by its name or the page it is at. */
-    private fun taken(name: String, id: String?) = catalogue.skills().any { it.name == name && it.id != id } ||
-        draftsOnly().any { it.id != id && (it.name == name || it.key == name) }
-
-    /** Whether the Skill with [id], or a new one, can't take [name]: it is [taken], or a folder of the user's Skills holds it. */
-    private fun inUse(name: String, id: String? = null) = taken(name, id) || catalogue.yourSkills.resolve(name).exists()
+    /** Whether the Skill with [id], or a new one, can't take [name]: another Skill has it, or a folder of the user's Skills holds it. */
+    private fun inUse(name: String, id: String? = null) = items.taken(name, id) || catalogue.yourSkills.resolve(name).exists()
 
     @GetMapping("/skills")
     fun list(model: Model) = list(model, null)
@@ -88,15 +67,12 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
         val skills = catalogue.skills()
         val shipped = skills.filter(catalogue::shipped).map { it.name }.toSet()
         val agents = catalogue.agents()
-        val drafted = drafts.all(DraftKind.SKILL).map { it.id }.toSet()
         val published = skills.map { skill ->
             val hidden = !catalogue.shipped(skill) && skill.name in shipped
             val runBy = agents.filter { it.allows(skill) }.map { it.name }.sorted()
-            SkillRow(skill, catalogue.where(skill.folder), hidden, runBy, state = DraftState.of(true, own(skill) && skill.id in drafted))
+            SkillRow(skill, catalogue.where(skill.folder), hidden, runBy, state = DraftState.of(true, items.draftOf(skill) != null))
         }
-        val draftOnly = draftsOnly().map { draft ->
-            val description = runCatching { frontmatter(draft.content).first["description"]?.toString() }.getOrNull().orEmpty()
-            val skill = Skill(draft.key, description, catalogue.yourSkills.resolve(draft.key).resolve("SKILL.md"), id = draft.id)
+        val draftOnly = items.draftOnlyItems().map { (draft, skill) ->
             SkillRow(skill, catalogue.where(catalogue.yourSkills), false, page = draft.key, state = DraftState.DRAFT_ONLY)
         }
         model.addAttribute("skills", published + draftOnly.sortedBy { it.page })
@@ -131,13 +107,6 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
         return "redirect:/skills/$name"
     }
 
-    /** The create form, which publishes at once. */
-    @GetMapping("/skills/new")
-    fun new(model: Model) = show(model, SkillForm(null, "---\nname: \ndescription: \n---\n"), null)
-
-    @PostMapping("/skills/new")
-    fun create(@RequestParam skill: String, model: Model) = save(SkillForm(null, skill), model, null)
-
     /**
      * **New Skill**: a Draft-only Skill at once, with a fixed id and the first free name of `new-skill`, `new-skill-2`,
      * …, and its page; with `use=<agent>`, as the modeler's New Skill modal opens it for a Task run by that Agent.
@@ -145,12 +114,7 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
     @PostMapping("/skills/new/draft")
     fun newDraft(@RequestParam use: String?): String {
         val name = freeName("new-skill") { inUse(it) }
-        return draftOnly(name, "---\nname: $name\ndescription: \n---\n", catalogue.unusedId(SKILL_ID)) + use?.let { "?use=" + URLEncoder.encode(it, Charsets.UTF_8) }.orEmpty()
-    }
-
-    private fun draftOnly(name: String, skill: String, id: String): String {
-        drafts.save(DraftKind.SKILL, id, name, name, skill, 0)
-        return "redirect:/skills/$name"
+        return items.create(catalogue.unusedId(SKILL_ID), name, "---\nname: $name\ndescription: \n---\n", use)
     }
 
     /** The Skill's page: its Draft when it has one, else the published Skill. */
@@ -167,14 +131,12 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
      */
     @PostMapping("/skills/{name}/draft")
     @ResponseBody
-    fun autosave(@PathVariable name: String, @RequestParam("skill") posted: String, @RequestParam version: Long): ResponseEntity<Map<String, Any>> {
+    fun autosave(@PathVariable name: String, @RequestParam("skill") posted: String, @RequestParam version: Long, @RequestParam tab: String?, @RequestParam(defaultValue = "0") seq: Long): ResponseEntity<Map<String, Any>> {
         val skill = unixLines(posted)
         val item = editable(item(name))
         val id = idOf(item)
         val named = runCatching { named(skill) }.getOrNull()
-        val key = item.published?.name ?: named?.takeIf { it == item.draft!!.key || nameError("A Skill", it) == null && !inUse(it, id) } ?: item.draft!!.key
-        val save = drafts.save(DraftKind.SKILL, id, key, named ?: key, skill, version)
-        return Drafts.answer(DraftKind.SKILL, save, DraftState.of(item.published != null, true), "/skills/$key")
+        return items.autosave(item, id, named, skill, DraftFrom(version, tab, seq)) { nameError("A Skill", it) == null && !inUse(it, id) }
     }
 
     /** **Publish**: keeps the page as the Draft, then saves it as Save did; if that passes, the Draft is the Skill's `SKILL.md` and is removed. */
@@ -185,17 +147,14 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
         val item = editable(item(name))
         val id = idOf(item)
         val named = runCatching { named(skill) }.getOrNull()
-        drafts.save(DraftKind.SKILL, id, item.draft?.key ?: item.name, named ?: item.name, skill, drafts.get(DraftKind.SKILL, id)?.version ?: 0)
-        val view = save(SkillForm(item.name, skill), model, item(name), id)
-        if (view.startsWith("redirect:")) drafts.remove(DraftKind.SKILL, id)
-        return view
+        return items.publish(item, id, named ?: item.name, skill) { save(SkillForm(item.name, skill), model, item(name), id) }.view
     }
 
     /** [skill] as the page posted it, with `\n` line ends: a form's submit sends a textarea's as `\r\n`, an autosave as `\n`. */
     private fun unixLines(skill: String) = skill.replace("\r\n", "\n")
 
     /** The id the Skill's Draft is kept under: a hand-written Skill without one gets one first, as the startup migration gives it. */
-    private fun idOf(item: Item): String {
+    private fun idOf(item: SkillItem): String {
         item.draft?.let { return it.id }
         val skill = item.published!!
         return skill.id ?: catalogue.giveSkillId(skill.folder)
@@ -203,14 +162,7 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
 
     /** **Discard Draft**: once confirmed, removes the Draft and reopens the published Skill. */
     @PostMapping("/skills/{name}/discard")
-    fun discard(@PathVariable name: String, @RequestParam confirm: String?, model: Model): String {
-        val item = editable(item(name))
-        val draft = item.draft ?: return "redirect:${item.path}"
-        if (item.published == null) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "$name was never published: Delete it instead.")
-        if (confirm == null) return confirm(model, "Discard the Draft of $name?", Dependents(emptyList()), "${item.path}/discard", emptyMap(), item.path)
-        drafts.remove(DraftKind.SKILL, draft.id)
-        return "redirect:${item.path}"
-    }
+    fun discard(@PathVariable name: String, @RequestParam confirm: String?, model: Model) = items.discard(editable(item(name)), confirm != null, model)
 
     /** **Copy**: a Draft-only copy of a Skill, with the files beside its `SKILL.md`, under the first free `<name>-copy`, and its page. */
     @PostMapping("/skills/{name}/copy")
@@ -219,7 +171,7 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
         val copy = copyName(source.name) { inUse(it) }
         val id = catalogue.unusedId(SKILL_ID)
         copyBeside(source.beside, drafts.files(DraftKind.SKILL, id))
-        return draftOnly(copy, renamed(source.shown, copy), id)
+        return items.create(id, copy, renamed(source.shown, copy))
     }
 
     /** The Process Builder's copy (ADR 0019): an editable copy of a Skill, published at once into the user's own Skills, under the first free `<name>-copy`. */
@@ -267,7 +219,7 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
             holdingOthers(skill)?.let { throw Refused(it) }
             skill.folder.toFile().deleteRecursively()
         }
-        (item.draft?.id ?: item.published?.id)?.let { drafts.remove(DraftKind.SKILL, it) }
+        items.removeDraft(item)
         return "/skills/$name"
     }
 
@@ -278,21 +230,21 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
      * The Process Builder's save (ADR 0019): a `SKILL.md` through the page's own save, as a new Skill or over the user's
      * own Skill [name], renaming it without asking. Gives the saved Skill's page, or throws with the page's error.
      */
-    fun write(skill: String, name: String?): String = redirected("message") { save(SkillForm(name, skill), it, name?.let { Item(yours(it), null) }) }
+    fun write(skill: String, name: String?): String = redirected("message") { save(SkillForm(name, skill), it, name?.let { items.publishedOnly(yours(it)) }) }
 
     /**
      * Publishes the posted `SKILL.md` as [item]'s, or as a new Skill for none, under [id] (a new one for none), and
      * opens it; else shows the page again with why not. A Draft-only Skill's folder is
      * made then, with the files its Draft keeps beside it.
      */
-    private fun save(posted: SkillForm, model: Model, item: Item?, id: String? = null): String {
+    private fun save(posted: SkillForm, model: Model, item: SkillItem?, id: String? = null): PublishOutcome {
         val modal = model.getAttribute("use")?.let { "?use=$it" }.orEmpty()
         val edited = item?.published
         val form = posted.copy(where = edited?.folder?.toString().orEmpty())
         val name = try {
             named(form.skill)
         } catch (e: IllegalArgumentException) {
-            return show(model, form, item, e.message)
+            return PublishOutcome.Refused(show(model, form, item, e.message))
         }
         // A renamed Skill's folder follows the name when it was named after the Skill.
         val folder = when {
@@ -300,14 +252,14 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
             edited.folder.fileName.toString() == edited.name -> edited.folder.resolveSibling(name)
             else -> edited.folder
         }
-        nameProblem(name, edited?.name, folder, edited?.folder, id ?: edited?.id)?.let { return show(model, form, item, it) }
+        nameProblem(name, edited?.name, folder, edited?.folder, id ?: edited?.id)?.let { return PublishOutcome.Refused(show(model, form, item, it)) }
         if (edited != null && folder != edited.folder) Files.move(edited.folder, folder)
         if (edited == null) {
             item?.beside?.takeIf { it.exists() }?.toFile()?.copyRecursively(folder.toFile())
             if (id == null) catalogue.giveSkillId(folder) else catalogue.giveSkillId(folder, id)
         }
         folder.resolve("SKILL.md").writeAtomically(form.skill) // last, so a launch finds a new Skill only once it is whole
-        return "redirect:/skills/$name" + if (modal.isEmpty()) "" else "?saved"
+        return PublishOutcome.Published("/skills/$name" + if (modal.isEmpty()) "" else "?saved")
     }
 
     /**
@@ -317,7 +269,7 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
      */
     private fun nameProblem(name: String, was: String?, folder: Path, current: Path?, id: String?): String? = nameError("A Skill", name)
         ?: catalogue.skills().firstOrNull { name != was && it.name == name }?.let { "A Skill named $name already exists, in ${it.folder}." }
-        ?: "A Skill named $name already exists, as a Draft.".takeIf { draftsOnly().any { it.id != id && (it.name == name || it.key == name) } }
+        ?: "A Skill named $name already exists, as a Draft.".takeIf { items.draftOnlyNamed(name, id) }
         ?: "$folder already exists.".takeIf { folder != current && folder.exists() }
 
     private fun find(name: String) = runCatching { catalogue.skill(name) }
@@ -327,7 +279,7 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
     /** The Skill [name], if it's the user's own; shipped and outside Skills are read-only. */
     private fun yours(name: String) = find(name).takeIf(::own) ?: throw readOnly(name)
 
-    private fun editable(item: Item) = item.takeIf { it.own } ?: throw readOnly(item.name)
+    private fun editable(item: SkillItem) = item.takeIf { it.own } ?: throw readOnly(item.name)
 
     private fun readOnly(name: String) = ResponseStatusException(HttpStatus.FORBIDDEN, "The Skill $name is read-only; Copy it to make your own.")
 
@@ -344,10 +296,10 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
     }
 
     /** The page of [item], or the create form for none. */
-    private fun show(model: Model, form: SkillForm, item: Item?, message: String? = null): String {
+    private fun show(model: Model, form: SkillForm, item: SkillItem?, message: String? = null): String {
         model.addAttribute("form", form)
         model.addAttribute("message", message)
-        model.addAttribute("draft", item?.takeIf { it.own }?.let { DraftHead(it.state, it.draft?.version ?: 0, it.draft?.savedLine, "${it.path}/draft") })
+        model.addAttribute("draft", item?.head)
         model.addAttribute("dependents", item?.published?.let { usedBy.skill(it.name) })
         model.addAttribute("runBy", item?.published?.let { skill -> catalogue.agents().filter { agent -> agent.allows(skill) }.sortedBy { it.name } }.orEmpty())
         return "skill"

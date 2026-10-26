@@ -46,8 +46,7 @@ class ScriptTaskTest : AntsTest() {
         val form = listOf("name" to name, "description" to "Does $name.", "code" to code, "vars" to vars) + ScriptsTest.inputRows(inputs) + output +
             own.withIndex().flatMap { (i, secret) -> listOf("secrets[$i].name" to secret.first, "secrets[$i].value" to secret.second, "secrets[$i].was" to if (was == null) "" else secret.first) } +
             linked.map { "linked" to it }
-        browser.get("/scripts/${was ?: "new"}")
-        val page = browser.post("/scripts/${was ?: "new"}", form)
+        val page = if (was == null) browser.publishNew("/scripts", form) else browser.get("/scripts/$was").let { browser.post("/scripts/$was", form) }
         assertEquals("/scripts/$name", page.path, page.body)
     }
 

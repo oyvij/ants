@@ -36,10 +36,10 @@ data class Check(val element: String?, val message: String, val warning: Boolean
  * Process, written with `operaton:` only, and gives its Checks; a new kind is one more function in [kinds].
  */
 @Component
-class Checks(private val catalogue: Catalogue, private val scripts: Scripts, private val draftOnly: DraftOnly, private val repository: RepositoryService) {
+class Checks(private val catalogue: Catalogue, private val scripts: Scripts, private val drafted: DraftedItems, private val repository: RepositoryService) {
     private val kinds: List<(BpmnModelInstance) -> List<Check>> = listOf(::refusedElements, ::refusedUses, ::oneStartEvent, ::startFormNames, ::emptyInputs, ::defaultPaths, ::timerTimes, ::timerStarts, ::reviewSendBacks,
-        { agentTasks(catalogue, scripts, draftOnly, it) }, { references(it, scripts) }, // these two in AgentTaskChecks.kt
-        { scriptTasks(scripts, catalogue, draftOnly, it) },
+        { agentTasks(catalogue, scripts, drafted, it) }, { references(it, scripts) }, // these two in AgentTaskChecks.kt
+        { scriptTasks(scripts, catalogue, drafted, it) },
         { calls(repository, it) }) // in CallActivityChecks.kt
 
     /** What the input pickers of the Task [element] in [bpmn] offer, as `${…}` references; see [offered]. */

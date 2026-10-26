@@ -199,7 +199,7 @@ class Catalogue(@Value("\${ants.home}") private val home: Path, private val sett
 
 /**
  * Why [name] can't name an Agent or a Skill ([kind], "An Agent" or "A Skill"), or null: a name is up to 64 lowercase letters, digits and hyphens,
- * and none the pages keep for their own routes, such as `/agents/new`.
+ * and none the pages keep for their own routes, such as `/agents/new/draft`.
  */
 fun nameError(kind: String, name: String) = when {
     !Regex("[a-z0-9][a-z0-9-]{0,63}").matches(name) -> "$kind's name is up to 64 lowercase letters, digits and hyphens."

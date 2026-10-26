@@ -31,11 +31,11 @@ class SkillsTest : AntsTest() {
     /** A `SKILL.md` named [name]. */
     private fun skillMd(name: String, body: String = "Write the summary.") = "---\nname: $name\ndescription: Summarises a text.\n---\n$body\n"
 
-    /** Saves the create form, or the edit form of the Skill [name], with this `SKILL.md`. */
+    /** Publishes a new Skill, or the Skill [name], with this `SKILL.md`. */
     private fun save(skill: String, name: String? = null): Browser.Page {
-        val path = if (name == null) "/skills/new" else "/skills/$name"
-        browser.get(path)
-        return browser.post(path, mapOf("skill" to skill))
+        if (name == null) return browser.publishNew("/skills", mapOf("skill" to skill))
+        browser.get("/skills/$name")
+        return browser.post("/skills/$name", mapOf("skill" to skill))
     }
 
     private fun page(path: String) = browser.get(path).body.replace("&#34;", "\"")
@@ -80,7 +80,7 @@ class SkillsTest : AntsTest() {
 
     @Test
     fun `the editors' scripts are all served`() {
-        val page = browser.get("/skills/new").body
+        val page = browser.get(browser.newDraft("/skills")).body
         val scripts = Regex(""""(/vendor/codemirror/[^"]+)"""").findAll(page).map { it.groupValues[1] }.toList() + "/markdown.js"
         assertEquals(44, scripts.size)
         for (script in scripts) assertEquals(200, browser.get(script).status, script)
@@ -97,7 +97,7 @@ class SkillsTest : AntsTest() {
 
     @Test
     fun `the Skill page edits only SKILL md, and says the job, inputs and Result belong on the Task`() {
-        val page = page("/skills/new")
+        val page = page(browser.newDraft("/skills"))
         assertContains(page, "What a Task must do, its inputs and its Result belong on the Task.")
         assertFalse("result.schema.json" in page)
         assertFalse("ants-" in page)
