@@ -31,6 +31,8 @@ data class Level(val model: String, val effort: String?) {
 
         private val FAMILIES: List<String> = listOf("haiku", "sonnet", "opus")
 
+        fun of(text: String?): Int? = text?.toIntOrNull()?.takeIf { it in RANGE }
+
         fun claude(level: Int): Level = CLAUDE[level - 1]
 
         fun codex(level: Int): Level = CODEX[level - 1]

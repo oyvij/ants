@@ -54,7 +54,7 @@ class Agent(val file: Path, text: String = file.readText(), outsideId: String? =
     /** The tools as permission rules, such as `Bash(git log *)`; null for the default tools. */
     val tools = list(meta["tools"])
     val model = meta["model"]?.toString()
-    val level: Int? = meta["level"]?.toString()?.toIntOrNull()?.takeIf { it in Level.RANGE }
+    val level: Int? = Level.of(meta["level"]?.toString())
 
     private val startLevel: Int get() = level ?: model?.let(Level::family) ?: Level.START
 
@@ -65,7 +65,7 @@ class Agent(val file: Path, text: String = file.readText(), outsideId: String? =
             return ladder.copy(model = model)
         }
 
-    fun launchLevel(taskLevel: String?): Level = taskLevel?.toIntOrNull()?.takeIf { it in Level.RANGE }?.let(::ladder) ?: launchLevel
+    fun launchLevel(taskLevel: Int?): Level = taskLevel?.let(::ladder) ?: launchLevel
 
     private fun ladder(level: Int): Level = if (cli == "codex") Level.codex(level) else Level.claude(level)
 
