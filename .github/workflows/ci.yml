@@ -4,6 +4,9 @@ name: ci
 # tests: a GitHub prerelease holding the macOS arm64 tarball, its SHA256SUMS and install.sh, which only an Ants with
 # prereleases on in settings offers, and its image, tagged with the version and beta. release.yml makes the newest beta
 # the stable release.
+# A push to main skips the tests when a green run already tested the same tree: what a PR merges once it's up to date
+# with main (main's protection asks for that), so the beta goes out without running them twice. An admin merge of a
+# branch behind main, or one never green, makes a tree no run tested, and the tests run.
 # The full suite gates a merge and a release, not each push: a branch's work is checked locally with
 # scripts/affected-tests, and an agent that can't run the browser shard locally runs it here by hand:
 # gh workflow run ci.yml --ref <branch> -f shards='["browser","look"]'
@@ -19,7 +22,37 @@ on:
         default: '["look","browser","rest"]'
 
 jobs:
+  # On a push to main, the id of a green run whose head has this commit's tree and whose every shard passed, else empty.
+  tested:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      run: ${{ steps.find.outputs.run }}
+    steps:
+      - id: find
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tree() { gh api "repos/$GITHUB_REPOSITORY/git/commits/$1" --jq .tree.sha; }
+          want=$(tree "$GITHUB_SHA")
+          gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --status success --limit 40 --json databaseId,headSha \
+            --jq '.[] | "\(.databaseId) \(.headSha)"' | while read -r run sha; do
+            [ "$sha" != "$GITHUB_SHA" ] && [ "$(tree "$sha")" = "$want" ] || continue
+            passed=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run/jobs?per_page=100" \
+              --jq '[.jobs[] | select(.conclusion == "success") | .name | select(test("^test / test \\((look|browser|rest)\\)$"))] | unique | length')
+            if [ "$passed" = 3 ]; then
+              echo "Run $run tested this tree at $sha: the tests are skipped."
+              echo "run=$run" >> "$GITHUB_OUTPUT"
+              break
+            fi
+          done
+
   test:
+    needs: tested
+    if: ${{ !cancelled() && needs.tested.outputs.run == '' }}
     uses: ./.github/workflows/test.yml
     with:
       shards: ${{ inputs.shards || '["look","browser","rest"]' }}
@@ -40,7 +73,8 @@ jobs:
           echo "version=$major.$((minor + 1)).0-beta.$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
 
   prerelease:
-    needs: [version, test]
+    needs: [version, tested, test]
+    if: ${{ !cancelled() && needs.version.result == 'success' && (needs.test.result == 'success' || (needs.test.result == 'skipped' && needs.tested.outputs.run != '')) }}
     # Apple silicon: the tarball's Java runtime is the build machine's.
     runs-on: macos-15
     permissions:
@@ -62,6 +96,7 @@ jobs:
 
   image:
     needs: [version, prerelease]
+    if: ${{ !cancelled() && needs.prerelease.result == 'success' }}
     permissions:
       contents: read
       packages: write
