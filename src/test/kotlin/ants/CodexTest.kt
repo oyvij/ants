@@ -96,42 +96,37 @@ class CodexTest : AntsTest() {
         assertContains(transcript, "1.2k tokens")
     }
 
-    private fun modelAndEffort(agent: String): Pair<String?, String?> {
-        home.resolve("agents/writer.md").writeText("---\ncli: codex\n${agent}skills: draft\n---\nWrite plainly.\n")
+    private fun modelAndEffort(frontmatter: String): Pair<String?, String?> {
+        codexTask(frontmatter)
+        codex.session("draft", started, turn, answer(), completed)
         val run = start()
         eventually { assertContains(page(run), """id="state">Completed<""") }
         val launch = codex.launches("draft").last()
-        val effort = launch.argv.zipWithNext().singleOrNull { it.first == "-c" && it.second.startsWith("model_reasoning_effort=") }
-        return launch.flag("-m") to effort?.second?.removePrefix("model_reasoning_effort=")
+        val effort: String? = launch.argv.zipWithNext().singleOrNull { it.first == "-c" && it.second.startsWith("model_reasoning_effort=") }?.second
+        return launch.flag("-m") to effort?.removePrefix("model_reasoning_effort=")?.removeSurrounding("\"")
     }
 
     @Test
     fun `a codex Agent Task launches on its Agent's level's model and effort`() {
-        codexTask()
-        codex.session("draft", started, turn, answer(), completed)
         val ladder = mapOf(
-            1 to ("gpt-5.1-codex-mini" to "\"low\""),
-            2 to ("gpt-5.2-codex" to "\"low\""),
-            3 to ("gpt-5.2-codex" to "\"medium\""),
-            4 to ("gpt-5.2-codex" to "\"high\""),
-            5 to ("gpt-5.2-codex" to "\"xhigh\""),
+            1 to ("gpt-5.1-codex-mini" to "low"),
+            2 to ("gpt-5.2-codex" to "low"),
+            3 to ("gpt-5.2-codex" to "medium"),
+            4 to ("gpt-5.2-codex" to "high"),
+            5 to ("gpt-5.2-codex" to "xhigh"),
         )
         for ((level, expected) in ladder) assertEquals(expected, modelAndEffort("level: $level\n"))
     }
 
     @Test
     fun `a codex Agent with neither level nor model launches on level 2`() {
-        codexTask()
-        codex.session("draft", started, turn, answer(), completed)
-        assertEquals("gpt-5.2-codex" to "\"low\"", modelAndEffort(""))
+        assertEquals("gpt-5.2-codex" to "low", modelAndEffort(""))
     }
 
     @Test
     fun `a pinned model on a codex Agent launches on its model ID with level 2's effort, and a level goes before it`() {
-        codexTask()
-        codex.session("draft", started, turn, answer(), completed)
-        assertEquals("gpt-5-codex" to "\"low\"", modelAndEffort("model: gpt-5-codex\n"))
-        assertEquals("gpt-5.2-codex" to "\"high\"", modelAndEffort("level: 4\nmodel: gpt-5-codex\n"))
+        assertEquals("gpt-5-codex" to "low", modelAndEffort("model: gpt-5-codex\n"))
+        assertEquals("gpt-5.2-codex" to "high", modelAndEffort("level: 4\nmodel: gpt-5-codex\n"))
     }
 
     @Test
