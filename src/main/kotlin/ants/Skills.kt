@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.ResponseBody
 import org.springframework.web.multipart.MultipartFile
 import org.springframework.web.server.ResponseStatusException
 import org.yaml.snakeyaml.error.YAMLException
+import java.net.URLEncoder
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.copyTo
@@ -130,27 +131,21 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
         return "redirect:/skills/$name"
     }
 
-    /**
-     * The create form; with `use=<agent>`, as the modeler's New Skill modal shows it, for a Task run by that Agent.
-     * Its Create and use also adds the Skill to the Agent's Skills, when the Agent is the user's own.
-     */
+    /** The create form, which publishes at once. */
     @GetMapping("/skills/new")
-    fun new(@RequestParam use: String?, model: Model) = show(model.addAttribute("use", use), SkillForm(null, "---\nname: \ndescription: \n---\n"), null)
+    fun new(model: Model) = show(model, SkillForm(null, "---\nname: \ndescription: \n---\n"), null)
 
-    /** The create form's Create and use, in the modeler's modal: it publishes at once. */
     @PostMapping("/skills/new")
-    fun create(@RequestParam skill: String, @RequestParam use: String?, model: Model): String {
-        val agent = catalogue.agents().firstOrNull { it.name == use && it.file.parent == catalogue.yourAgents }
-        return save(SkillForm(null, skill), model.addAttribute("use", use), null) { name ->
-            if (agent != null) agent.file.writeAtomically(AgentForm.of(agent).copy(skills = catalogue.skillIds(agent.skills + name).joinToString(", ")).text())
-        }
-    }
+    fun create(@RequestParam skill: String, model: Model) = save(SkillForm(null, skill), model, null)
 
-    /** **New Skill**: a Draft-only Skill at once, with a fixed id and the first free name of `new-skill`, `new-skill-2`, …, and its page. */
+    /**
+     * **New Skill**: a Draft-only Skill at once, with a fixed id and the first free name of `new-skill`, `new-skill-2`,
+     * …, and its page; with `use=<agent>`, as the modeler's New Skill modal opens it for a Task run by that Agent.
+     */
     @PostMapping("/skills/new/draft")
-    fun newDraft(): String {
+    fun newDraft(@RequestParam use: String?): String {
         val name = freeName("new-skill") { inUse(it) }
-        return draftOnly(name, "---\nname: $name\ndescription: \n---\n", catalogue.unusedId(SKILL_ID))
+        return draftOnly(name, "---\nname: $name\ndescription: \n---\n", catalogue.unusedId(SKILL_ID)) + use?.let { "?use=" + URLEncoder.encode(it, Charsets.UTF_8) }.orEmpty()
     }
 
     private fun draftOnly(name: String, skill: String, id: String): String {
@@ -287,10 +282,10 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
 
     /**
      * Publishes the posted `SKILL.md` as [item]'s, or as a new Skill for none, under [id] (a new one for none), and
-     * opens it, calling [saved] with its name; else shows the page again with why not. A Draft-only Skill's folder is
+     * opens it; else shows the page again with why not. A Draft-only Skill's folder is
      * made then, with the files its Draft keeps beside it.
      */
-    private fun save(posted: SkillForm, model: Model, item: Item?, id: String? = null, saved: (String) -> Unit = {}): String {
+    private fun save(posted: SkillForm, model: Model, item: Item?, id: String? = null): String {
         val modal = model.getAttribute("use")?.let { "?use=$it" }.orEmpty()
         val edited = item?.published
         val form = posted.copy(where = edited?.folder?.toString().orEmpty())
@@ -312,7 +307,6 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
             if (id == null) catalogue.giveSkillId(folder) else catalogue.giveSkillId(folder, id)
         }
         folder.resolve("SKILL.md").writeAtomically(form.skill) // last, so a launch finds a new Skill only once it is whole
-        saved(name)
         return "redirect:/skills/$name" + if (modal.isEmpty()) "" else "?saved"
     }
 

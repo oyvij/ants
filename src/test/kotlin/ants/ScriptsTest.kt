@@ -194,6 +194,16 @@ class ScriptsTest : AntsTest() {
     }
 
     @Test
+    fun `New Script in the modeler's modal makes a Draft-only Script and opens its page in the modal`() {
+        val made = browser.post("/scripts/new/draft", mapOf("use" to ""))
+        assertTrue(Regex("/scripts/new-script(-\\d+)?").matches(made.path), made.path)
+        assertEquals("use", made.query)
+        assertContains(made.body, """<input type="hidden" name="use" value="">""")
+        assertEquals(listOf("Draft"), markers(made.body))
+        browser.post("${made.path}/delete", mapOf("confirm" to "on"))
+    }
+
+    @Test
     fun `a new Script's editor shows a placeholder reading ants inputs, vars and Secrets, and handing back with ants output`() {
         val page = browser.get("/scripts/new").body.replace("&#34;", "\"").replace("&#39;", "'")
         assertContains(page, "data-code-editor")

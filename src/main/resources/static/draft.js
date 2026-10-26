@@ -127,6 +127,7 @@ export function autosave({endpoint, version, fields, csrf, head = document.query
 
 for (const form of document.querySelectorAll('form[data-autosave]')) {
     const draft = autosave({endpoint: form.dataset.autosave, version: form.dataset.version, fields: () => new FormData(form), csrf: new FormData(form).get('_csrf')});
+    form.draft = draft; // so the modeler's modal can save the page before it picks the item
     form.addEventListener('input', draft.changed);
     form.addEventListener('change', draft.changed);
     // A Skill chip's ×, a Limit… rule or an added tool changes the form with no input event.

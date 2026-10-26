@@ -48,7 +48,7 @@
 @if(item != null)
         <form method="post" action="${action}/delete" data-leaves-draft><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button class="danger">Delete</button></form>
 @endif
-        <button class="primary" form="agent">${if (use && item == null) "Create and use" else "Publish"}</button>
+        <button class="primary" form="agent">Publish</button>
 @endif
     </div>
 @if(dependents != null)    <div class="sub">@template.usedby(dependents = dependents, none = "no Process")</div>@endif

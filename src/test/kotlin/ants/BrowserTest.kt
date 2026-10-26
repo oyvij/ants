@@ -97,6 +97,9 @@ class BrowserTest : AntsTest() {
     private fun label(text: String) = page.getByLabel(text, Page.GetByLabelOptions().setExact(true))
     private val selected = Pattern.compile("\\bselected\\b")
 
+    /** The Draft marker beside the panel's picker [label], as the lists show it. */
+    private fun mark(text: String) = label(text).locator("xpath=following-sibling::span[contains(@class, 'draft-mark')]")
+
     /** **New Process** from the list's modal: the modeler on a Draft-only Process named [name]. */
     private fun newProcess(name: String) {
         page.navigate(url("/processes"))
@@ -587,19 +590,23 @@ class BrowserTest : AntsTest() {
         ?.let { java.net.URLDecoder.decode(it.removePrefix("bpmn="), Charsets.UTF_8) }.orEmpty()
 
     @Test
-    fun `New Agent's modal keeps the unsaved diagram and picks the new Agent on the Task`() = browse {
+    fun `New Agent's modal makes a Draft-only Agent, keeps the unsaved diagram and picks the Agent on the Task, marked`() = browse {
+        home.resolve("agents/helper.md").toFile().delete()
         val task = appendAgentTask()
         val modeler = page.url()
         page.locator("#explain button", Page.LocatorOptions().setHasText("New Agent")).click()
         val form = page.frameLocator("dialog iframe")
         form.locator("input[name=name]").fill("helper")
-        page.locator("dialog .mh button", Page.LocatorOptions().setHasText("Create and use")).click()
+        page.locator("dialog .mh button", Page.LocatorOptions().setHasText("Use")).click()
 
         assertThat(page.locator("dialog")).hasCount(0)
-        assertThat(page.locator("#explain select").first()).hasValue("helper")
+        assertThat(label("Agent")).hasValue("helper")
+        assertThat(label("Agent").locator("option:checked")).hasText("helper (Draft)")
+        assertThat(mark("Agent")).hasText("Draft")
         assertEquals(modeler, page.url())
         assertThat(shape(task)).hasClass(selected) // the Task drawn, never saved, is still there
-        assertTrue(home.resolve("agents/helper.md").toFile().exists())
+        assertFalse(home.resolve("agents/helper.md").toFile().exists()) // a Draft only, which Publish puts to use
+        http.post("/agents/helper/delete", mapOf("confirm" to "on"))
     }
 
     @Test
@@ -611,7 +618,7 @@ class BrowserTest : AntsTest() {
         page.locator("#explain button", Page.LocatorOptions().setHasText("Edit")).first().click()
         assertThat(page.locator("dialog.modal")).containsText("Edit Agent")
         page.frameLocator("dialog iframe").locator("input[name=description]").fill("Writes warmly.")
-        page.locator("dialog .mh button", Page.LocatorOptions().setHasText("Save")).click()
+        page.locator("dialog .mh button", Page.LocatorOptions().setHasText("Publish")).click()
 
         assertThat(page.locator("dialog")).hasCount(0)
         assertEquals(modeler, page.url())
@@ -630,10 +637,31 @@ class BrowserTest : AntsTest() {
         assertThat(page.locator("dialog.modal")).containsText("Edit Skill")
         page.frameLocator("dialog iframe").locator("#skill-md + .ed .cm-content")
             .fill("---\nname: draft\ndescription: Drafts it better.\n---\nDo it.\n")
-        page.locator("dialog .mh button", Page.LocatorOptions().setHasText("Save")).click()
+        page.locator("dialog .mh button", Page.LocatorOptions().setHasText("Publish")).click()
 
         assertThat(page.locator("dialog")).hasCount(0)
         assertThat(panel.locator(".skillpick")).containsText("Drafts it better.")
+    }
+
+    @Test
+    fun `the Agent Task panel's pickers mark a Draft-only Agent and a Skill published with a Draft`() = browse {
+        agentTask(null)
+        val draftOnly = http.post("/agents/new/draft", mapOf()).path
+        val name = draftOnly.removePrefix("/agents/")
+        http.autosave("/skills/draft", mapOf("skill" to "---\nname: draft\ndescription: Half done.\n---\n"), draftVersion(http.get("/skills/draft").body))
+        try {
+            appendAgentTask()
+            assertThat(label("Agent").locator("option[value='$name']")).hasText("$name (Draft)")
+            assertThat(label("Agent").locator("option[value='writer']")).not().containsText("Draft")
+            label("Agent").selectOption("writer")
+            assertThat(mark("Agent")).hasCount(0)
+            assertThat(panel.locator(".skillpick .draft-mark.p-changed")).hasText("Draft · changes not published")
+            label("Agent").selectOption(name)
+            assertThat(mark("Agent")).hasText("Draft")
+        } finally {
+            http.post("$draftOnly/delete", mapOf("confirm" to "on"))
+            http.post("/skills/draft/discard", mapOf("confirm" to "on"))
+        }
     }
 
     @Test
@@ -664,7 +692,7 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
-    fun `New Script's modal saves a Script to the library and picks it on the Script Task, with a field for each input`() = browse {
+    fun `New Script's modal makes a Draft-only Script and picks it on the Script Task, marked, with a field for each input`() = browse {
         val task = appendScriptTask()
         val modeler = page.url()
         button("New Script").click()
@@ -677,15 +705,18 @@ class BrowserTest : AntsTest() {
             form.locator("#input-schema > .schema-level > [data-add-row]").click()
             form.locator("input[name='inputs[$i].name']").fill(input)
         }
-        page.locator("dialog .mh button", Page.LocatorOptions().setHasText("Create and use")).click()
+        page.locator("dialog .mh button", Page.LocatorOptions().setHasText("Use")).click()
 
         assertThat(page.locator("dialog")).hasCount(0)
         assertEquals(modeler, page.url())
         assertThat(shape(task)).hasClass(selected)
         assertThat(label("Script")).hasValue("post-to-chat")
+        assertThat(label("Script").locator("option:checked")).hasText("post-to-chat · Posts to the chat. (Draft)")
+        assertThat(mark("Script")).hasText("Draft")
         label("channel").fill("general")
         label("text").fill("\${prompt}")
-        assertTrue(home.resolve("scripts").toFile().listFiles()!!.any { it.resolve("script.yaml").readText().contains("name: post-to-chat") })
+        assertFalse(home.resolve("scripts").toFile().listFiles().orEmpty().any { it.resolve("script.yaml").readText().contains("name: post-to-chat") })
+        http.post("/scripts/post-to-chat/delete", mapOf("confirm" to "on"))
     }
 
     @Test
@@ -744,7 +775,7 @@ class BrowserTest : AntsTest() {
         button("Edit").click()
         assertThat(page.locator("dialog.modal")).containsText("Edit Script")
         page.frameLocator("dialog iframe").locator("input[name=name]").fill("clean-up")
-        page.locator("dialog .mh button", Page.LocatorOptions().setHasText("Save")).click()
+        page.locator("dialog .mh button", Page.LocatorOptions().setHasText("Publish")).click()
 
         assertThat(page.locator("dialog")).hasCount(0)
         assertThat(label("Script")).hasValue("clean-up")
@@ -1194,7 +1225,7 @@ class BrowserTest : AntsTest() {
         label("Agent").selectOption("writer")
         assertThat(label("draft")).isChecked()
         button("New Skill").click()
-        assertThat(page.locator("dialog.modal")).containsText("Added to writer's Skills, and picked on this Task.")
+        assertThat(page.locator("dialog.modal")).containsText("Added to writer's Skills in its Draft, and picked on this Task.")
         page.waitForTimeout(1000.0) // the form loads in its frame
         page.screenshot("modeler-new-skill")
         page.keyboard().press("Escape")

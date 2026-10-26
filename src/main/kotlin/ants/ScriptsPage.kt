@@ -168,9 +168,9 @@ class ScriptsPage(
         return save(params, null, model)
     }
 
-    /** **New Script**: a Draft-only Script at once, with a fixed id and the first free name of `new-script`, `new-script-2`, …, and its page. */
+    /** **New Script**: a Draft-only Script at once, with a fixed id and the first free name of `new-script`, `new-script-2`, …, and its page; with `use`, as the modeler's New Script modal opens it. */
     @PostMapping("/scripts/new/draft")
-    fun newDraft() = draftOnly(mapOf("name" to listOf(freeName("new-script") { !free(it, null) })))
+    fun newDraft(@RequestParam use: String?) = draftOnly(mapOf("name" to listOf(freeName("new-script") { !free(it, null) }))) + if (use != null) "?use" else ""
 
     /** **Copy**: a Draft-only copy of the Script as its page shows it, under the first free `<name>-copy`, its own Secrets named but with no value. */
     @PostMapping("/scripts/{name}/copy")

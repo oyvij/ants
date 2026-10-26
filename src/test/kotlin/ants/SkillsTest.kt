@@ -8,6 +8,7 @@ import tools.jackson.databind.json.JsonMapper
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
+import kotlin.io.path.deleteIfExists
 import kotlin.io.path.exists
 import kotlin.io.path.readText
 import kotlin.io.path.writeText
@@ -240,24 +241,15 @@ class SkillsTest : AntsTest() {
     }
 
     @Test
-    fun `New Skill from the modeler opens the create form in its modal, and Create and use adds it to the Task's Agent`() {
-        val agent = home.resolve("agents").createDirectories().resolve("picker.md")
-        agent.writeText("---\nname: picker\ndescription: Picks.\ncli: claude\nskills: tdd\n---\nPick.\n")
-        home.resolve("skills/chosen").toFile().deleteRecursively()
-        val form = browser.get("/skills/new?use=picker").body
-        assertContains(form, """<button class="primary" form="skill">Create and use</button>""")
-        assertFalse("""<nav class="side">""" in form) // the modeler's own page is behind the modal
-
-        val refused = browser.post("/skills/new", mapOf("skill" to "no frontmatter", "use" to "picker"))
-        assertContains(refused.body, """<button class="primary" form="skill">Create and use</button>""") // a refusal stays in the modal
-        assertEquals("/skills/chosen", browser.post("/skills/new", mapOf("skill" to skillMd("chosen"), "use" to "picker")).path)
-        assertEquals(listOf("k-tdd", catalogue.skill("chosen").id), Agent(agent).skills)
-
-        // A read-only Agent is left as it is: the Task's Checks say it doesn't list the Skill.
-        home.resolve("skills/also-chosen").toFile().deleteRecursively()
-        val shipped = Agent(home.resolve("shipped/agents/shipped-writer.md")).skills
-        assertEquals("/skills/also-chosen", browser.post("/skills/new", mapOf("skill" to skillMd("also-chosen"), "use" to "shipped-writer")).path)
-        assertEquals(shipped, Agent(home.resolve("shipped/agents/shipped-writer.md")).skills)
+    fun `New Skill in the modeler's modal makes a Draft-only Skill and opens its page in the modal, for the Task's Agent`() {
+        val made = browser.post("/skills/new/draft", mapOf("use" to "writer"))
+        val name = made.path.removePrefix("/skills/")
+        assertTrue(Regex("new-skill(-\\d+)?").matches(name), name)
+        assertEquals("use=writer", made.query)
+        assertContains(made.body, """<input type="hidden" name="use" value="writer">""")
+        assertContains(made.body, """class="pill draft-mark p-draft">Draft<""")
+        assertFalse("""<nav class="side">""" in made.body)
+        browser.post(made.path + "/delete", mapOf("confirm" to "on"))
     }
 
     @Test

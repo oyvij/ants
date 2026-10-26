@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.ResponseBody
 import org.springframework.web.multipart.MultipartFile
 import org.springframework.web.server.ResponseStatusException
+import org.yaml.snakeyaml.Yaml
 import org.yaml.snakeyaml.error.YAMLException
 import jakarta.servlet.http.HttpServletRequest
 import java.net.URI
@@ -32,7 +33,7 @@ import kotlin.io.path.readText
 @Controller
 class Agents(
     private val catalogue: Catalogue, private val usedBy: UsedBy, private val models: Models, private val settings: Settings, private val scripts: Scripts,
-    private val drafts: Drafts, @Value("\${ants.home}") home: Path,
+    private val drafts: Drafts, private val unpublishedItems: DraftOnly, @Value("\${ants.home}") home: Path,
 ) {
     private val folder = home.resolve("agents")
 
@@ -83,26 +84,41 @@ class Agents(
         return "agents"
     }
 
-    /**
-     * The create form; with `use`, as the modeler's New Agent modal shows it, whose Create and use picks it on the Task,
-     * and with [skills], the Task's Skill, filled in.
-     */
+    /** The create form, which publishes at once. */
     @GetMapping("/agents/new")
-    fun new(@RequestParam use: String?, @RequestParam skills: String?, model: Model) =
-        show(model.addAttribute("use", use != null), AgentForm.of(Agent(folder.resolve("new.md"), ""), name = "").copy(skills = skills.orEmpty()), null)
+    fun new(model: Model) = show(model, AgentForm.of(Agent(folder.resolve("new.md"), ""), name = ""), null)
 
-    /** The create form's Create and use, in the modeler's modal: it publishes at once. */
     @PostMapping("/agents/new")
-    fun create(@RequestParam params: MultiValueMap<String, String>, model: Model) = joined(params).let { save(model.addAttribute("use", "use" in it), AgentForm.of(it), null) }
+    fun create(@RequestParam params: MultiValueMap<String, String>, model: Model) = save(model, AgentForm.of(joined(params)), null)
 
-    /** **New Agent**: a Draft-only Agent at once, with a fixed id and the first free name of `new-agent`, `new-agent-2`, …, and its page. */
+    /**
+     * **New Agent**: a Draft-only Agent at once, with a fixed id and the first free name of `new-agent`, `new-agent-2`,
+     * …, and its page; with `use`, as the modeler's New Agent modal opens it, with [skills], the Task's, filled in.
+     */
     @PostMapping("/agents/new/draft")
-    fun newDraft() = draftOnly(AgentForm.of(Agent(folder.resolve("new.md"), ""), name = freeName("new-agent") { taken(it, null) }))
+    fun newDraft(@RequestParam use: String?, @RequestParam skills: String?) =
+        draftOnly(AgentForm.of(Agent(folder.resolve("new.md"), ""), name = freeName("new-agent") { taken(it, null) }).copy(skills = skills.orEmpty())) +
+            if (use != null) "?use" else ""
 
     private fun draftOnly(form: AgentForm): String {
         val id = catalogue.unusedId(AGENT_ID)
-        drafts.save(DraftKind.AGENT, id, form.name, form.name, form.copy(id = id).text(), 0)
+        drafts.save(DraftKind.AGENT, id, form.name, form.name, published(form, id).text(), 0)
         return "redirect:/agents/${form.name}"
+    }
+
+    /**
+     * The modeler's New Skill modal's Use: lists [skill] in the Draft of the user's own Agent [name], making the Draft
+     * from the published Agent when it has none, so the published Agent is as it was until Publish.
+     */
+    @PostMapping("/agents/{name}/draft/skills")
+    @ResponseBody
+    fun listInDraft(@PathVariable name: String, @RequestParam skill: String): ResponseEntity<Unit> {
+        val item = editable(item(name))
+        val form = AgentForm.of(item.shown)
+        val id = idOf(item)
+        val listed = form.copy(skills = (words(form.skills) + skill).distinct().joinToString(", "))
+        drafts.save(DraftKind.AGENT, id, item.draft?.key ?: item.name, form.name, published(listed, id).text(), item.draft?.version ?: 0)
+        return ResponseEntity.noContent().build()
     }
 
     /** Publishes one agent file at once, dropping the keys Ants doesn't use and saying so, or refuses it with a reason. */
@@ -127,25 +143,43 @@ class Agents(
      * The Agents and Skills as the modeler's Agent Task panel picks them, read afresh each time so a new one shows up:
      * each Agent's description, Skills (every one by name for `skills: "*"`) and folder, and whether it is the user's own (New Skill adds itself only to those, Edit opens only those), and each Skill's description, whether it is the user's own (Edit opens only those) and its folder;
      * each Script's input names, and the type, description and required mark of each as `about`;
+     * each one's `draft` marker, null for one published with no Draft: a published one is as published, and a Draft-only
+     * one, listed after them under the name its page is at, as its Draft;
      * and the Profiles a Process can name.
      */
     @GetMapping("/catalogue.json")
     @ResponseBody
-    fun catalogue() = mapOf(
-        "agents" to catalogue.agents().map {
-            val skills = catalogue.allowedNames(it)
-            mapOf("id" to it.id, "name" to it.name, "description" to it.description, "skills" to skills, "own" to (it.file.parent == folder), "folder" to it.file.parent.toString())
-        },
-        "skills" to catalogue.skills().map { skill ->
-            mapOf("id" to skill.id, "name" to skill.name, "description" to skill.description, "own" to skill.file.startsWith(catalogue.yourSkills), "folder" to skill.folder.parent.toString())
-        },
-        "scripts" to scripts.all().map { script ->
+    fun catalogue(): Map<String, Any> {
+        fun marker(published: Boolean, draft: Boolean) = DraftState.of(published, draft).takeIf { it != DraftState.PUBLISHED }?.let { mapOf("css" to it.css, "label" to it.label) }
+        fun agent(agent: Agent, name: String, draft: Map<String, String>?) =
+            mapOf("id" to agent.id, "name" to name, "description" to agent.description, "skills" to catalogue.allowedNames(agent), "own" to (agent.file.parent == folder),
+                "folder" to agent.file.parent.toString(), "draft" to draft)
+        fun skill(skill: Skill, name: String, own: Boolean, draft: Map<String, String>?) =
+            mapOf("id" to skill.id, "name" to name, "description" to skill.description, "own" to own, "folder" to skill.folder.parent.toString(), "draft" to draft)
+        fun script(script: Script, name: String, draft: Map<String, String>?): Map<String, Any?> {
             val about = ScriptSchema.rows(script.inputs).associate { it.name to mapOf("type" to ScriptSchema.TYPES[it.type], "description" to it.description, "required" to it.required) }
-            mapOf("id" to script.id, "name" to script.name, "description" to script.description, "inputs" to script.inputNames, "about" to about)
-        },
-        "profiles" to settings.profiles().keys,
-        "nameBeside" to LINKED_NAME,
-    )
+            return mapOf("id" to script.id, "name" to name, "description" to script.description, "inputs" to script.inputNames, "about" to about, "draft" to draft)
+        }
+        val drafted = DraftKind.entries.associateWith { kind -> drafts.all(kind).map { it.id }.toSet() }
+        return mapOf(
+            "agents" to catalogue.agents().map { agent(it, it.name, marker(true, it.file.parent == folder && it.id in drafted.getValue(DraftKind.AGENT))) } +
+                unpublishedItems.all(DraftKind.AGENT).mapNotNull { runCatching { agent(Agent(folder.resolve("${it.key}.md"), it.content), it.key, marker(false, true)) }.getOrNull() },
+            "skills" to catalogue.skills().map {
+                val own = it.file.startsWith(catalogue.yourSkills)
+                skill(it, it.name, own, marker(true, own && it.id in drafted.getValue(DraftKind.SKILL)))
+            } + unpublishedItems.all(DraftKind.SKILL).map { draft ->
+                val description = runCatching { frontmatter(draft.content).first["description"]?.toString() }.getOrNull().orEmpty()
+                skill(Skill(draft.key, description, catalogue.yourSkills.resolve(draft.key).resolve("SKILL.md"), id = draft.id), draft.key, true, marker(false, true))
+            },
+            "scripts" to scripts.all().map { script(it, it.name, marker(true, it.id in drafted.getValue(DraftKind.SCRIPT))) } +
+                unpublishedItems.all(DraftKind.SCRIPT).map { draft ->
+                    val fields = Yaml().load<Map<*, *>>(draft.content).orEmpty().entries.associate { (field, values) -> "$field" to (values as? List<*>).orEmpty().map { "$it" } }
+                    script(ScriptForm.of(fields).script(draft.id), draft.key, marker(false, true))
+                },
+            "profiles" to settings.profiles().keys,
+            "nameBeside" to LINKED_NAME,
+        )
+    }
 
     /** The Agent's page: its Draft when it has one, else the published Agent. */
     @GetMapping("/agents/{name}")
@@ -285,13 +319,17 @@ class Agents(
         val error = form.error() ?: when {
             taken(form.name, id ?: agent?.id) || catalogue.agents().any { it.name == form.name && it.file != agent?.file } -> "An Agent named ${form.name} already exists."
             target != agent?.file && target.exists() -> "$target already holds another Agent."
-            else -> null
+            else -> unpublished(form)
         }
         if (error != null) return show(model, form, item, error)
         target.writeAtomically(published(form, id ?: agent?.id ?: catalogue.unusedId(AGENT_ID)).text())
         if (agent != null && target != agent.file) agent.file.deleteIfExists()
         return "redirect:/agents/${form.name}" + if (modal.isEmpty()) "" else "?saved"
     }
+
+    /** Why [form] can't be published yet: each Skill and Script it lists that is a Draft only; null for none. */
+    private fun unpublished(form: AgentForm) = (words(form.skills).mapNotNull { unpublishedItems.refusal(DraftKind.SKILL, it) } +
+        form.scriptList.mapNotNull { unpublishedItems.refusal(DraftKind.SCRIPT, it) }).takeIf { it.isNotEmpty() }?.joinToString(" ")
 
     /** The page of [item], or the create form for none. */
     private fun show(model: Model, form: AgentForm, item: Item?, error: String? = null): String {

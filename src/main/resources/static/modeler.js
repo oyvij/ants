@@ -521,21 +521,29 @@ function writeAgentTask(element, changes, inputs, redraw = false) {
     }
 }
 
+// The page of an Agent, Skill or Script in a modal over the modeler. Edit opens [src], the item's page, and its Publish
+// picks it on the Task once published. New posts [src], the kind's `new/draft`, which makes a Draft-only item as the
+// pages' New does, and opens its page; its Use saves the page to the Draft and picks the item on the Task as it is.
 function formModal(kind, src, use, who = "") {
-    const editing = !src.startsWith(`/${kind}/new`)
+    const editing = !src.startsWith(`/${kind}/new/draft`)
     const title = (editing ? "Edit " : "New ") + {agents: "Agent", skills: "Skill", scripts: "Script"}[kind]
-    const frame = el("iframe", {src, title, className: "mb"})
-    const primary = el("button", {type: "button", className: "primary", textContent: editing ? "Save" : "Create and use",
-        onclick: () => frame.contentDocument.querySelector("input[name=use]")?.form.requestSubmit()})
+    const frame = el("iframe", {title, className: "mb"})
+    const named = () => frame.contentWindow.location.pathname.match(new RegExp(`^/${kind}/([^/]+)$`))?.[1]
+    const primary = el("button", {type: "button", className: "primary", hidden: true, textContent: editing ? "Publish" : "Use", onclick: async () => {
+        const form = frame.contentDocument.querySelector("input[name=use]")?.form
+        if (editing) return form?.requestSubmit()
+        await form?.draft?.save()
+        dialog.close()
+        use(decodeURIComponent(named()))
+    }})
     const header = el("form", {method: "dialog", className: "mh"}, el("b", {className: `ent ent-${kind.slice(0, -1)}`, textContent: title}),
         el("span", {className: "muted small", textContent: "Esc to close"}), el("span", {className: "sp"}),
         el("button", {className: "ghost", title: "Close", textContent: "Cancel"}), primary)
     const dialog = el("dialog", {className: "modal create"}, header, who, frame)
     dialog.onclose = () => dialog.remove()
     frame.onload = () => {
-        const {pathname, search} = frame.contentWindow.location
-        const name = pathname.match(new RegExp(`^/${kind}/([^/]+)$`))?.[1]
-        if (name && (editing ? new URLSearchParams(search).has("saved") : name !== "new")) {
+        const name = named()
+        if (name && new URLSearchParams(frame.contentWindow.location.search).has("saved")) {
             dialog.close()
             return use(decodeURIComponent(name))
         }
@@ -549,7 +557,16 @@ function formModal(kind, src, use, who = "") {
     }
     document.body.append(dialog)
     dialog.showModal()
+    if (editing) return frame.src = src
+    const [path, query] = src.split("?")
+    fetch(path, {method: "POST", body: new URLSearchParams([...new URLSearchParams(query), ["_csrf", csrf]])}).then(response => frame.src = response.url)
 }
+
+// The marker of a Draft-only Agent, Skill or Script, or of one published with a Draft, as the lists show it (draftmark.kte).
+const draftMark = item => item?.draft ? el("span", {className: `pill draft-mark ${item.draft.css}`, textContent: item.draft.label}) : ""
+
+// [text] for a picker's option of [item], with its marker's words when it has one.
+const marked = (text, item) => item?.draft ? `${text} (${item.draft.label})` : text
 
 panels.agent = element => {
     const box = el("div", {}, el("p", {textContent: "Loading the Agents and Skills…"}))
@@ -576,12 +593,12 @@ async function scriptPanel(element, box) {
     }
     const options = [el("option", {value: "", textContent: "Choose…", selected: !name}),
         ...(name && !script ? [el("option", {value: name, textContent: `${name} (not found)`, selected: true})] : []),
-        ...catalogue.scripts.map(s => el("option", {value: s.name, textContent: [s.name, s.description].filter(Boolean).join(" · "), selected: s.name === name}))]
+        ...catalogue.scripts.map(s => el("option", {value: s.name, textContent: marked([s.name, s.description].filter(Boolean).join(" · "), s), selected: s.name === name}))]
     const select = el("select", {onchange: () => pick(select.value)}, ...options)
     const edit = script ? el("button", {type: "button", className: "ghost small", textContent: "Edit", onclick: () =>
         formModal("scripts", "/scripts/" + encodeURIComponent(script.name) + "?use", () => scriptPanel(element, box).then(check))}) : ""
     const create = el("button", {type: "button", className: "ghost small", textContent: "＋ New Script", onclick: () =>
-        formModal("scripts", "/scripts/new?use", async picked => {
+        formModal("scripts", "/scripts/new/draft?use", async picked => {
             Object.assign(catalogue, await (await fetch("/catalogue.json")).json())
             pick(picked)
         })})
@@ -605,7 +622,7 @@ async function scriptPanel(element, box) {
         return entry
     })
     box.replaceChildren(
-        field("Script", "What it runs, from your Scripts.", select, edit, create),
+        field("Script", "What it runs, from your Scripts.", select, draftMark(script), edit, create),
         el("div", {className: "fld"}, el("label", {className: "f", textContent: "Inputs"}),
             note("help", "What the Script reads as ants.inputs, each from start-form fields, Run variables or Results of Tasks before it, as ${…}."), references,
             ...(rows.length ? rows : [note("muted small", script ? "The Script declares no inputs." : "Pick a Script to see its inputs.")])),
@@ -658,7 +675,10 @@ async function agentPanel(element, box) {
         if (dropped.length) agentNotes[element.id] = `Dropped ${dropped.join(", ")}: ${name} doesn't have ${dropped.length > 1 ? "them" : "it"}.`
         write({"ants.agent": name || undefined, ...(names === listed ? {} : skillChanges(names))}, undefined, true)
     }
-    const described = name => [name, catalogue.agents.find(a => a.name === name)?.description].filter(Boolean).join(" · ")
+    const described = name => {
+        const agent = catalogue.agents.find(a => a.name === name)
+        return marked([name, agent?.description].filter(Boolean).join(" · "), agent)
+    }
     const agentSelect = el("select", {onchange: () => pickAgent(agentSelect.value)},
         ...options(catalogue.agents.map(a => a.name), props["ants.agent"], "not found", described))
     const readOnly = ({name, folder}) => `${name} is in ${folder} and read-only: Copy it on its page to edit.`
@@ -670,16 +690,17 @@ async function agentPanel(element, box) {
             check()
         })}) : ""
     const newAgent = el("button", {type: "button", className: "ghost small", textContent: "＋ New Agent", onclick: () =>
-        formModal("agents", "/agents/new?use" + (listed?.length ? "&skills=" + encodeURIComponent(listed.join(", ")) : ""), async name => {
+        formModal("agents", "/agents/new/draft?use" + (listed?.length ? "&skills=" + encodeURIComponent(listed.join(", ")) : ""), async name => {
             await refresh()
             pickAgent(name)
         })})
     // The Skill's page adds it to the Task's Agent when that Agent is the user's own.
     const who = el("div", {className: "who"}, !agent ? note("warn", "This Task has no Agent yet. The Skill is created, and you add it to an Agent's Skills it runs.")
-        : agent.own ? note("okbox", `Added to ${agent.name}'s Skills, and picked on this Task.`)
+        : agent.own ? note("okbox", `Added to ${agent.name}'s Skills in its Draft, and picked on this Task.`)
             : note("warn", `${agent.name} is in ${agent.folder} and read-only, so the Skill can't be added to it. Copy the Agent, or pick one of your own, then choose this Skill.`))
     const newSkill = el("button", {type: "button", className: "ghost small", textContent: "＋ New Skill", onclick: () =>
-        formModal("skills", "/skills/new?use=" + encodeURIComponent(props["ants.agent"] || ""), async name => {
+        formModal("skills", "/skills/new/draft?use=" + encodeURIComponent(props["ants.agent"] || ""), async name => {
+            if (agent?.own) await fetch(`/agents/${encodeURIComponent(agent.name)}/draft/skills`, {method: "POST", body: new URLSearchParams({_csrf: csrf, skill: name})})
             await refresh()
             pickSkills(listed === null && props["ants.assignment"]?.trim() ? null : [...(listed || []), name])
         }, who)})
@@ -702,7 +723,7 @@ async function agentPanel(element, box) {
             onchange: () => pickSkills([...offeredSkills, ...listed].filter((n, i, all) => all.indexOf(n) === i && (n === name ? box.checked : listed.includes(n))))})
         const missing = !skill ? "not found" : offeredSkills.includes(name) ? "" : "not listed by this Agent"
         return el("div", {className: "row"}, box, el("label", {htmlFor: box.id, textContent: name}),
-            el("span", {className: "muted small grow", textContent: missing || skill.description || ""}), skill ? editSkill(skill) : "")
+            draftMark(skill), el("span", {className: "muted small grow", textContent: missing || skill.description || ""}), skill ? editSkill(skill) : "")
     })
     const assignment = el("textarea", {id: "ants-assignment", rows: 4, value: props["ants.assignment"] || "",
         placeholder: "e.g. Write the release notes for the merged PRs, one line each.",
@@ -734,7 +755,7 @@ async function agentPanel(element, box) {
         oninput: () => write({"ants.result-schema": override.value.trim() || undefined}),
     })
     box.replaceChildren(
-        field("Agent", "Who does it.", agentSelect, editAgent, newAgent),
+        field("Agent", "Who does it.", agentSelect, draftMark(agent), editAgent, newAgent),
         props["ants.agent"] && !agent ? note("warn", `No Agent folder holds "${props["ants.agent"]}".`) : "",
         field("Assignment", "The job, in a few lines. Leave it out when the Task lists one Skill: that Skill is then the job.", assignment),
         field("Skills", "What the Agent may use for it: all of its Skills, none, or only the ones ticked.", modeSelect,

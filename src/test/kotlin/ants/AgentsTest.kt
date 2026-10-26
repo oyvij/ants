@@ -439,21 +439,6 @@ class AgentsTest : AntsTest() {
     }
 
     @Test
-    fun `New Agent from the modeler opens the create form in its modal, and Create and use lands on the new Agent`() {
-        agents.resolve("helper.md").deleteIfExists()
-        val form = browser.get("/agents/new?use")
-        assertEquals("SAMEORIGIN", form.headers?.firstValue("X-Frame-Options")?.orElse(null)) // the modeler frames it
-        assertContains(form.body, """<button class="primary" form="agent">Create and use</button>""")
-        assertFalse("""<nav class="side">""" in form.body) // the modeler's own page is behind the modal
-        assertContains(browser.get("/agents/new?use&skills=draft").body, Regex("""name="skills" value="draft"""")) // the Task's Skill
-
-        val refused = browser.post("/agents/new", mapOf("name" to "Helper!", "cli" to "claude", "use" to ""))
-        assertContains(refused.body, """<button class="primary" form="agent">Create and use</button>""") // a refusal stays in the modal
-        assertEquals("/agents/helper", browser.post("/agents/new", mapOf("name" to "helper", "cli" to "claude", "use" to "")).path)
-        assertTrue(agents.resolve("helper.md").exists())
-    }
-
-    @Test
     fun `Edit from the modeler opens the Agent's page in its modal, and Publish lands on it published`() {
         listOf("editor", "renamed-editor").forEach { agents.resolve("$it.md").deleteIfExists() }
         post("/agents/new", mapOf("name" to "editor", "cli" to "claude", "description" to "Edits."))
@@ -602,6 +587,73 @@ class AgentsTest : AntsTest() {
         assertEquals("/agents", browser.post("$draft/delete", mapOf("confirm" to "on")).path)
         assertEquals(404, browser.get(draft).status)
         assertFalse("href=\"$draft\"" in get("/agents"))
+    }
+
+    @Test
+    fun `New Agent in the modeler's modal makes a Draft-only Agent with the Task's Skills and opens its page in the modal`() {
+        val made = post("/agents/new/draft", mapOf("use" to "", "skills" to "tdd"))
+        val name = made.path.removePrefix("/agents/")
+        assertTrue(Regex("new-agent(-\\d+)?").matches(name), name)
+        assertEquals("use", made.query)
+        assertEquals(listOf("Draft"), markers(made.body))
+        assertContains(made.body, """<input type="hidden" name="use">""")
+        assertContains(made.body, """<input type="hidden" name="skills" value="tdd">""")
+        assertFalse("""<nav class="side">""" in made.body)
+        assertFalse(agents.resolve("$name.md").exists())
+        deleteDraft(made.path)
+    }
+
+    @Test
+    fun `New Skill's Use in the modeler lists the Skill in the Draft of the Task's Agent, and the published Agent stays as it was`() {
+        agents.resolve("drafted-picker.md").writeText("---\nid: a-dpick01\nname: drafted-picker\ndescription: Picks.\ncli: claude\nskills: tdd\n---\nPick.\n")
+        val published = agents.resolve("drafted-picker.md").readText()
+        get("/agents/drafted-picker")
+        assertEquals(204, browser.post("/agents/drafted-picker/draft/skills", mapOf("skill" to "new-skill-x")).status)
+        assertEquals(published, agents.resolve("drafted-picker.md").readText())
+        val draft = get("/agents/drafted-picker")
+        assertContains(draft, """<input type="hidden" name="skills" value="tdd">""")
+        assertContains(draft, """<input type="hidden" name="skills" value="new-skill-x">""")
+        assertEquals(listOf("Draft · changes not published"), markers(draft))
+        assertEquals(403, browser.post("/agents/shipped-writer/draft/skills", mapOf("skill" to "new-skill-x")).status)
+        browser.post("/agents/drafted-picker/delete", mapOf("confirm" to "on"))
+    }
+
+    @Test
+    fun `Publish refuses an Agent listing a Draft-only Skill or Script, naming each, and keeps its Draft`() {
+        agents.resolve("lister.md").deleteIfExists()
+        val skill = post("/skills/new/draft", emptyMap()).path
+        val script = post("/scripts/new/draft", emptyMap()).path
+        val skillName = skill.removePrefix("/skills/")
+        val scriptName = script.removePrefix("/scripts/")
+        try {
+            val page = post("/agents/new/draft", emptyMap()).path
+            val refused = post(page, drafter("lister") + ("skills" to "tdd, $skillName") + ("scripts" to scriptName))
+            assertContains(refused.body, "The Skill $skillName is a Draft: publish it first.")
+            assertContains(refused.body, "The Script $scriptName is a Draft: publish it first.")
+            assertFalse(agents.resolve("lister.md").exists())
+            assertContains(get(page), """value="$skillName"""") // the Draft is the page as Publish was pressed
+            deleteDraft(page)
+        } finally {
+            post("$skill/delete", mapOf("confirm" to "on"))
+            post("$script/delete", mapOf("confirm" to "on"))
+        }
+    }
+
+    @Test
+    fun `Publish passes an Agent listing a Skill and a Script that are published and have a Draft`() {
+        listOf("lister-ok.md").forEach { agents.resolve(it).deleteIfExists() }
+        home.resolve("skills/listed").createDirectories().resolve("SKILL.md").writeText("---\nname: listed\ndescription: Listed.\n---\nDo it.\n")
+        scripts.save(Script("s-listed1", "listed-script", "Listed."), "", emptyMap())
+        try {
+            browser.autosave("/skills/listed", mapOf("skill" to "---\nname: listed\ndescription: Half done.\n---\n"), draftVersion(get("/skills/listed")))
+            browser.autosave("/scripts/listed-script", mapOf("name" to "listed-script", "description" to "Half done."), draftVersion(get("/scripts/listed-script")))
+            val published = post("/agents/new", drafter("lister-ok") + ("skills" to "listed") + ("scripts" to "listed-script"))
+            assertEquals("/agents/lister-ok", published.path, published.body)
+        } finally {
+            post("/skills/listed/delete", mapOf("confirm" to "on"))
+            post("/scripts/listed-script/delete", mapOf("confirm" to "on"))
+            agents.resolve("lister-ok.md").deleteIfExists()
+        }
     }
 
     @Test
