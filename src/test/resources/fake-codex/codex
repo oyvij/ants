@@ -17,13 +17,15 @@ for arg; do
 done
 prompt=$(cat)
 skill=$(basename "$(printf '%s' "$prompt" | sed -n 's|.*Follow the Skill in \(.*\)/SKILL.md for.*|\1|p')")
-mkdir -p "$dir/launches" "$dir/skills"
+mkdir -p "$dir/launches" "$dir/skills" "$dir/claims"
 [ -n "$thread" ] || thread=thread-$$-$RANDOM
 if [ -n "$skill" ]; then printf '%s' "$skill" > "$dir/skills/$thread"
 else skill=$(cat "$dir/skills/$thread"); fi
 n=1
-while ! mkdir "$dir/launches/$skill.$n" 2>/dev/null; do n=$((n + 1)); done
+# Claimed with noclobber, as the fake claude does: uutils' mkdir can succeed for two launches at once.
+while ! (set -C; : > "$dir/claims/$skill.$n") 2>/dev/null; do n=$((n + 1)); done
 launch=$dir/launches/$skill.$n
+mkdir "$launch"
 printf '%s\n' "$@" > "$launch/argv"
 env > "$launch/env"
 pwd > "$launch/cwd"
