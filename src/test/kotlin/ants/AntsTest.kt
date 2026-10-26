@@ -357,3 +357,14 @@ class Browser(private val base: String, private val diagram: (String) -> String 
 
     private fun enc(s: String) = URLEncoder.encode(s, Charsets.UTF_8)
 }
+
+/** The version of the Draft a page loaded, which its autosave carries: `0` when the page shows no Draft. */
+fun draftVersion(page: String): String = Regex("""data-version="(\d+)"""").find(page)?.groupValues?.get(1) ?: error("The page has no autosave")
+
+/** A page's autosave, as `draft.js` posts it: [form] as the Draft of the item at [page], against the [version] it loaded. */
+fun Browser.autosave(page: String, form: List<Pair<String, String>>, version: String): Browser.Page = post("$page/draft", form + ("version" to version))
+
+fun Browser.autosave(page: String, form: Map<String, String>, version: String) = autosave(page, form.toList(), version)
+
+/** An autosave's answer: `version`, `saved` (what the header says), `path`, `marker` and `label`; or `conflict` with a 409. */
+fun answer(page: Browser.Page): Map<*, *> = tools.jackson.databind.json.JsonMapper.shared().readValue(page.body, Map::class.java)

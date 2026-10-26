@@ -66,6 +66,17 @@ Task or an Agent runs the same way every time; an Agent that calls it gets its o
 Secrets.
 _Avoid_: Protected Command, Skill, snippet, macro
 
+**Draft**:
+The version of a Process, Agent, Skill or Script the user is still working on, which its editor keeps on the server
+as they type, whatever state it is in. A Draft is never used: Runs, launches and Script Tasks use the published
+version, and an item that is a Draft only can't be used at all.
+_Avoid_: unsaved changes, work in progress, autosave
+
+**Publish**:
+Checking a Draft as Save and deploy and Save did and, when it passes, making it the published version, the one Ants
+uses, and removing the Draft. A refused Publish keeps the Draft.
+_Avoid_: save, deploy, release
+
 **Template**:
 A named piece of a Process, kept in a library, that is copied into another Process and changed there;
 editing a Template never changes the Processes it was copied into.

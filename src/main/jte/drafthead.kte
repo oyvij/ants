@@ -1,0 +1,2 @@
+@param draft: ants.DraftHead
+<span class="draft-head">@template.draftmark(state = draft.state)<span class="save-state" role="status" data-save-state>${draft.saved}</span><button type="button" class="small" data-load-newer hidden>Load the newer Draft</button></span>

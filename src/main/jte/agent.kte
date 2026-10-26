@@ -2,14 +2,14 @@
 @param form: AgentForm
 @param models: ants.Models
 @param action: String
-@param file: String?
+@param item: String?
+@param draft: ants.DraftHead? = null
 @param readOnly: Boolean
 @param where: String? = null
 @param skills: List<ants.Skill> = emptyList()
 @param scripts: List<String> = emptyList()
 @param dependents: ants.Dependents?
 @param error: String? = null
-@param notice: String? = null
 @param use: Boolean = false
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
@@ -25,7 +25,7 @@
     <meta charset="utf-8">
     @template.app()
     <meta name="color-scheme" content="${colorScheme}">
-    <title>${if (file == null) "New Agent" else form.name} · Agents · Ants</title>
+    <title>${if (item == null) "New Agent" else form.name} · Agents · Ants</title>
 </head>
 <body>
 @if(!use)
@@ -33,23 +33,28 @@
 @endif
 <main>
 @if(!use)<div class="crumbs"><a href="/agents">Agents</a> / ${form.name.ifEmpty { "New" }}</div>@endif
-<div class="ph"><h1><span class="ent ent-agent"><svg class="i" viewBox="0 0 24 24"><rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 8V4M9 13v1M15 13v1"/></svg>${if (file == null) "New Agent" else form.name}</span></h1>
+<div class="ph"><h1><span class="ent ent-agent"><svg class="i" viewBox="0 0 24 24"><rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 8V4M9 13v1M15 13v1"/></svg>${if (item == null) "New Agent" else form.name}</span></h1>
+@if(draft != null)
+    @template.drafthead(draft = draft)
+@endif
     <div class="acts">
 @if(readOnly)
         <span class="muted small">Read-only (${where})</span>
         <form method="post" action="${action}/copy"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>Copy</button></form>
 @else
-@if(file != null)
-        <form method="post" action="${action}/delete"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button class="danger">Delete</button></form>
+@if(draft?.state == ants.DraftState.CHANGED)
+        <form method="post" action="${action}/discard" data-leaves-draft><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>Discard Draft</button></form>
 @endif
-        <button class="primary" form="agent">${if (use && file == null) "Create and use" else "Save"}</button>
+@if(item != null)
+        <form method="post" action="${action}/delete" data-leaves-draft><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button class="danger">Delete</button></form>
+@endif
+        <button class="primary" form="agent">${if (use && item == null) "Create and use" else "Publish"}</button>
 @endif
     </div>
 @if(dependents != null)    <div class="sub">@template.usedby(dependents = dependents, none = "no Process")</div>@endif
 </div>
 @if(error != null)<p role="alert">${error}</p>@endif
-@if(notice != null)<p role="status">${notice}</p>@endif
-<form id="agent" class="agent" method="post" action="${action}">
+<form id="agent" class="agent" method="post" action="${action}" data-autosave="${draft?.endpoint}" data-version="${draft?.version?.toString()}" data-leaves-draft>
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
 @if(use)
     <input type="hidden" name="use">
@@ -171,6 +176,7 @@
 </form>
 <form id="models-check" method="post" action="/models/check"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"></form>
 <script src="/agent.js" defer></script>
+@if(draft != null)<script type="module" src="/draft.js"></script>@endif
 </main>
 </body>
 </html>

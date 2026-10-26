@@ -80,6 +80,21 @@ class AgentTaskTest : AntsTest() {
     }
 
     @Test
+    fun `an Agent Task launches the published Agent while the Agent has a Draft`() {
+        agentTask()
+        claude.session("draft", done)
+        val draft = browser.autosave("/agents/writer", mapOf("name" to "writer", "cli" to "claude", "skills" to "draft", "model" to "opus", "instructions" to "Write a Draft."),
+            draftVersion(browser.get("/agents/writer").body))
+        assertEquals(200, draft.status, draft.body)
+        val run = start()
+        eventually { assertContains(page(run), """id="state">Completed<""") }
+        val launch = claude.launches("draft").single()
+        assertEquals("Write plainly.", launch.flag("--append-system-prompt"))
+        assertEquals(null, launch.flag("--model"))
+        browser.post("/agents/writer/discard", mapOf("confirm" to "on")) // the next test's writer.md, with no id, would leave this Draft as a Draft-only writer
+    }
+
+    @Test
     fun `a result-schema override replaces the Skill's schema in --json-schema`() {
         agentTask(textSchema)
         claude.session("draft", done("""{"verdict":"ship"}"""))

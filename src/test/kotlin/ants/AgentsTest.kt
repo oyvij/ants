@@ -141,17 +141,20 @@ class AgentsTest : AntsTest() {
             for (name in listOf("shipped-writer", "outsider")) {
                 val page = get("/agents/$name")
                 assertContains(page, "<fieldset disabled>")
-                assertFalse("""<button class="primary" form="agent">Save</button>""" in page)
+                assertFalse("""<button class="primary" form="agent">Publish</button>""" in page)
                 assertEquals(403, post("/agents/$name", mapOf("name" to name, "instructions" to "Changed.")).status)
             }
-            assertEquals("/agents/outsider-copy", post("/agents/outsider/copy", emptyMap()).path)
-            assertEquals("---\nname: outsider-copy\ndescription: From Varde.\ncli: claude\nskills: k-tdd\ntools: ${AgentLauncher.DEFAULT_TOOLS.joinToString(", ")}\ncolor: red\n---\nLook around.\n",
-                withoutId(agents.resolve("outsider-copy.md")))
-            assertFalse("<fieldset disabled>" in get("/agents/outsider-copy"))
-            post("/agents/outsider-copy", mapOf("name" to "outsider-copy", "cli" to "claude", "instructions" to "Look closer."))
-            assertContains(agents.resolve("outsider-copy.md").readText(), "Look closer.")
+            val copy = post("/agents/outsider/copy", emptyMap())
+            assertEquals("/agents/outsider-copy", copy.path)
+            for (shown in listOf("""name="description" value="From Varde."""", """<input type="hidden" name="skills" value="tdd">""", ">Look around.</textarea>"))
+                assertContains(copy.body.replace("&#34;", "\""), shown)
+            assertFalse("<fieldset disabled>" in copy.body)
+            post("/agents/outsider-copy", mapOf("name" to "outsider-copy", "cli" to "claude", "description" to "From Varde.", "skills" to "tdd", "instructions" to "Look closer."))
+            assertEquals("---\nname: outsider-copy\ndescription: From Varde.\ncli: claude\nskills: k-tdd\ntools: ''\ncolor: red\n---\nLook closer.\n", withoutId(agents.resolve("outsider-copy.md")))
             assertEquals("Look around.\n", extra.resolve("outsider.md").readText().substringAfterLast("---\n"))
-            assertEquals("/agents/shipped-writer-copy", post("/agents/shipped-writer/copy", emptyMap()).path)
+            val shipped = post("/agents/shipped-writer/copy", emptyMap()).path
+            assertTrue(shipped.startsWith("/agents/shipped-writer-copy"), shipped)
+            deleteDraft(shipped)
         }
     }
 
@@ -173,14 +176,15 @@ class AgentsTest : AntsTest() {
         assertEquals("reviewer", catalogue.agentWithId(created).name)
         assertNoPageShows(created, "/agents", "/agents/reviewer")
 
+        agents.resolve("theirs.md").deleteIfExists()
         assertFalse("a-theirs" in import("theirs.md", "---\nname: theirs\nid: a-theirs\n---\nTheirs.\n"))
-        post("/agents/new", mapOf("name" to "theirs", "cli" to "claude", "instructions" to "Theirs."))
         val imported = assertNotNull(idOf(agents.resolve("theirs.md")))
-        assertTrue(imported != created)
+        assertTrue(imported !in setOf(created, "a-theirs"))
 
-        agents.resolve("shipped-writer-copy.md").deleteIfExists()
-        post("/agents/shipped-writer/copy", emptyMap())
-        val copied = assertNotNull(idOf(agents.resolve("shipped-writer-copy.md")))
+        val copy = post("/agents/shipped-writer/copy", emptyMap()).path.removePrefix("/agents/")
+        agents.resolve("$copy.md").deleteIfExists()
+        post("/agents/$copy", mapOf("name" to copy, "cli" to "claude"))
+        val copied = assertNotNull(idOf(agents.resolve("$copy.md")))
         assertTrue(copied !in setOf(created, imported, "a-shipped-writer"))
         assertEquals("shipped-writer", catalogue.agentWithId("a-shipped-writer").name)
     }
@@ -289,15 +293,16 @@ class AgentsTest : AntsTest() {
     }
 
     @Test
-    fun `Import fills the create form and drops unknown keys with a notice, or refuses with a reason`() {
-        val filled = import("helper.md", "---\nname: helper\ndescription: Helps.\ncolor: green\nmemory: user\ntools: Read, Grep\nmodel: haiku\n---\nHelp out.\n")
-        assertContains(filled, "New Agent</span></h1>")
-        assertContains(filled, """action="/agents/new"""")
-        assertContains(filled, """name="name" value="helper"""")
-        assertContains(filled, """name="tool.Grep" checked""")
-        assertContains(filled, """value="haiku" selected""")
-        assertContains(filled, ">Help out.</textarea>")
-        assertContains(filled, "Dropped the keys Ants doesn't use: color, memory.")
+    fun `Import publishes the Agent and drops unknown keys with a notice, or refuses with a reason`() {
+        agents.resolve("helper.md").deleteIfExists()
+        val imported = import("helper.md", "---\nname: helper\ndescription: Helps.\ncolor: green\nmemory: user\ntools: Read, Grep\nmodel: haiku\n---\nHelp out.\n")
+        assertContains(imported, """action="/agents/helper"""")
+        assertContains(imported, """name="tool.Grep" checked""")
+        assertContains(imported, """value="haiku" selected""")
+        assertContains(imported, ">Help out.</textarea>")
+        assertContains(imported, "Dropped the keys Ants doesn't use: color, memory.")
+        assertEquals("---\nname: helper\ndescription: Helps.\ncli: claude\ntools: Grep, Read\nmodel: haiku\n---\nHelp out.\n", withoutId(agents.resolve("helper.md")))
+        assertContains(import("again.md", "---\nname: helper\n---\nAgain.\n"), "An Agent named helper already exists.")
 
         assertContains(import("broken.md", "---\nname: [broken\n---\nBody.\n"), "broken.md has broken YAML")
         assertContains(import("gemini.md", "---\nname: gemini\ncli: gemini\n---\nBody.\n"), "gemini.md runs cli gemini, and Ants runs only claude or codex.")
@@ -449,16 +454,16 @@ class AgentsTest : AntsTest() {
     }
 
     @Test
-    fun `Edit from the modeler opens the Agent's page in its modal, and Save lands on it saved`() {
+    fun `Edit from the modeler opens the Agent's page in its modal, and Publish lands on it published`() {
         listOf("editor", "renamed-editor").forEach { agents.resolve("$it.md").deleteIfExists() }
         post("/agents/new", mapOf("name" to "editor", "cli" to "claude", "description" to "Edits."))
         val form = browser.get("/agents/editor?use").body
-        assertContains(form, """<button class="primary" form="agent">Save</button>""")
+        assertContains(form, """<button class="primary" form="agent">Publish</button>""")
         assertContains(form, """<input type="hidden" name="use">""")
         assertFalse("""<nav class="side">""" in form)
 
         val refused = browser.post("/agents/editor", mapOf("name" to "Editor!", "cli" to "claude", "use" to ""))
-        assertContains(refused.body, """<button class="primary" form="agent">Save</button>""")
+        assertContains(refused.body, """<button class="primary" form="agent">Publish</button>""")
         assertFalse("""<nav class="side">""" in refused.body)
 
         val saved = browser.post("/agents/editor", mapOf("name" to "editor", "cli" to "claude", "description" to "Edits warmly.", "use" to ""))
@@ -470,5 +475,140 @@ class AgentsTest : AntsTest() {
 
         val page = post("/agents/renamed-editor", mapOf("name" to "renamed-editor", "cli" to "claude", "description" to "Edits on its page."))
         assertEquals("/agents/renamed-editor" to null, page.path to page.query)
+    }
+
+    /** The markers a page shows: Draft, Published, or Draft · changes not published. */
+    private fun markers(page: String) = Regex("""class="pill draft-mark[^"]*">([^<]+)<""").findAll(page).map { it.groupValues[1] }.toList()
+
+    /** Deletes the Draft-only Agent at [page], as its Delete does once confirmed, so the next test's New or Copy gets the same name. */
+    private fun deleteDraft(page: String) = assertEquals("/agents", post("$page/delete", mapOf("confirm" to "on")).path)
+
+    private fun drafter(name: String) = mapOf("name" to name, "cli" to "claude", "description" to "Published.", "tool.Read" to "on", "instructions" to "Publish me.")
+
+    @Test
+    fun `an edit is autosaved to the Draft, which the page reopens after a new login and a restart, and the published Agent stays as it was`() {
+        agents.resolve("drafter.md").deleteIfExists()
+        post("/agents/new", drafter("drafter"))
+        val published = agents.resolve("drafter.md").readText()
+        val page = get("/agents/drafter")
+        assertEquals(listOf("Published"), markers(page))
+        assertEquals("0", draftVersion(page))
+
+        val saved = browser.autosave("/agents/drafter", drafter("drafter") + ("description" to "Half done."), draftVersion(page))
+        assertEquals(200, saved.status, saved.body)
+        val answer = answer(saved)
+        assertTrue(Regex("""Draft saved \d\d:\d\d""").matches(answer["saved"].toString()), answer.toString())
+        assertEquals("Draft · changes not published", answer["label"])
+        assertEquals("/agents/drafter", answer["path"])
+        assertEquals(published, agents.resolve("drafter.md").readText())
+        assertEquals("Published.", catalogue.agent("drafter").description)
+
+        val again = browser().also { it.login() }.get("/agents/drafter").body.replace("&#34;", "\"")
+        assertContains(again, """name="description" value="Half done."""")
+        assertEquals(listOf("Draft · changes not published"), markers(again))
+        assertContains(again, answer["saved"].toString())
+        assertEquals(answer["version"].toString(), draftVersion(again))
+        assertContains(Drafts(home).get(DraftKind.AGENT, catalogue.agent("drafter").id!!)!!.content, "description: Half done.") // as a restarted Ants reads it
+        assertContains(get("/agents"), """href="/agents/drafter">drafter</a></b><span class="pill draft-mark p-changed">Draft · changes not published</span>""")
+        browser.post("/agents/drafter/discard", mapOf("confirm" to "on"))
+    }
+
+    @Test
+    fun `a save from a tab with an older version gets a conflict, and one with the newest is kept`() {
+        agents.resolve("tabbed.md").deleteIfExists()
+        post("/agents/new", drafter("tabbed"))
+        val loaded = draftVersion(get("/agents/tabbed"))
+        val first = answer(browser.autosave("/agents/tabbed", drafter("tabbed") + ("description" to "First tab."), loaded))
+        val second = browser.autosave("/agents/tabbed", drafter("tabbed") + ("description" to "Second tab."), loaded)
+        assertEquals(409, second.status)
+        assertEquals("This Agent's Draft was changed in another tab or window.", answer(second)["conflict"])
+        assertContains(get("/agents/tabbed"), """value="First tab."""")
+
+        val next = browser.autosave("/agents/tabbed", drafter("tabbed") + ("description" to "First tab, again."), first["version"].toString())
+        assertEquals(200, next.status)
+        assertContains(get("/agents/tabbed"), """value="First tab, again."""")
+        browser.post("/agents/tabbed/discard", mapOf("confirm" to "on"))
+    }
+
+    @Test
+    fun `Publish publishes the page and removes the Draft, and a refused Publish keeps the Draft and says why`() {
+        listOf("publisher", "publisher-taken").forEach { agents.resolve("$it.md").deleteIfExists() }
+        post("/agents/new", drafter("publisher"))
+        post("/agents/new", drafter("publisher-taken"))
+        browser.autosave("/agents/publisher", drafter("publisher") + ("description" to "Changed."), draftVersion(get("/agents/publisher")))
+
+        val refused = post("/agents/publisher", drafter("publisher-taken") + ("description" to "Renamed."))
+        assertContains(refused.body, "An Agent named publisher-taken already exists.")
+        assertContains(get("/agents/publisher"), """value="Renamed."""") // the Draft is the page as Publish was pressed
+        assertContains(agents.resolve("publisher.md").readText(), "description: Published.")
+
+        assertEquals("/agents/publisher", post("/agents/publisher", drafter("publisher") + ("description" to "Changed.")).path)
+        assertContains(agents.resolve("publisher.md").readText(), "description: Changed.")
+        val page = get("/agents/publisher")
+        assertEquals(listOf("Published"), markers(page))
+        assertEquals("0", draftVersion(page))
+        assertFalse("Draft saved" in page)
+    }
+
+    @Test
+    fun `New and Copy make a Draft-only Agent with a placeholder name, used by nothing, which Publish puts to use`() {
+        val first = post("/agents/new/draft", emptyMap())
+        val name = first.path.removePrefix("/agents/")
+        assertTrue(Regex("new-agent(-\\d+)?").matches(name), name)
+        assertEquals(listOf("Draft"), markers(first.body))
+        assertContains(first.body, """name="name" value="$name"""")
+        assertFalse(agents.resolve("$name.md").exists())
+        assertTrue(catalogue.agents().none { it.name == name })
+        assertContains(get("/agents"), """href="/agents/$name">$name</a></b><span class="pill draft-mark p-draft">Draft</span>""")
+        val second = post("/agents/new/draft", emptyMap()).path.removePrefix("/agents/")
+        assertTrue(second != name && second.startsWith("new-agent-"), second)
+
+        val copy = post("/agents/shipped-writer/copy", emptyMap())
+        val copied = copy.path.removePrefix("/agents/")
+        assertTrue(copied.startsWith("shipped-writer-copy"), copied)
+        assertEquals(listOf("Draft"), markers(copy.body))
+        assertContains(copy.body, """name="name" value="$copied"""")
+        assertFalse(agents.resolve("$copied.md").exists())
+        for (draft in listOf(second, copied)) deleteDraft("/agents/$draft")
+
+        agents.resolve("drafted-first.md").deleteIfExists()
+        val renamed = answer(browser.autosave("/agents/$name", drafter("drafted-first"), draftVersion(first.body)))
+        assertEquals("/agents/drafted-first", renamed["path"]) // a Draft-only Agent's page follows its name
+        assertEquals("Draft", renamed["label"])
+        assertEquals(listOf("Draft"), markers(get("/agents/drafted-first")))
+        assertEquals("/agents/drafted-first", post("/agents/drafted-first", drafter("drafted-first")).path)
+        assertEquals("Publish me.", catalogue.agent("drafted-first").instructions)
+        assertNotNull(catalogue.agent("drafted-first").id)
+        assertEquals(listOf("Published"), markers(get("/agents/drafted-first")))
+    }
+
+    @Test
+    fun `Discard Draft confirms and reopens the published Agent, and Delete on a Draft-only Agent confirms and leaves the list`() {
+        agents.resolve("discarder.md").deleteIfExists()
+        post("/agents/new", drafter("discarder"))
+        browser.autosave("/agents/discarder", drafter("discarder") + ("description" to "Unwanted."), draftVersion(get("/agents/discarder")))
+        assertContains(get("/agents/discarder"), """<form method="post" action="/agents/discarder/discard"""")
+        val asked = post("/agents/discarder/discard", emptyMap())
+        assertContains(asked.body, "Discard the Draft of discarder?")
+        assertContains(get("/agents/discarder"), """value="Unwanted."""")
+        val discarded = browser.post("/agents/discarder/discard", mapOf("confirm" to "on"))
+        assertEquals("/agents/discarder", discarded.path)
+        assertContains(discarded.body, """value="Published."""")
+        assertEquals(listOf("Published"), markers(discarded.body))
+
+        val draft = post("/agents/new/draft", emptyMap()).path
+        assertFalse("/discard" in get(draft))
+        assertContains(post("$draft/delete", emptyMap()).body, "Delete the Draft ${draft.removePrefix("/agents/")}?")
+        assertEquals("/agents", browser.post("$draft/delete", mapOf("confirm" to "on")).path)
+        assertEquals(404, browser.get(draft).status)
+        assertFalse("href=\"$draft\"" in get("/agents"))
+    }
+
+    @Test
+    fun `shipped Agents have no Draft and no autosave`() {
+        val page = get("/agents/shipped-writer")
+        assertFalse("data-autosave" in page)
+        assertTrue(markers(page).isEmpty())
+        assertEquals(403, browser.autosave("/agents/shipped-writer", mapOf("name" to "shipped-writer", "cli" to "claude"), "0").status)
     }
 }

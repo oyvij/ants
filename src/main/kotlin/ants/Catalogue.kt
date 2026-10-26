@@ -93,7 +93,7 @@ class Skill(
  * `shipped/`, each time they're asked for, so an edit reaches the next launch. `shipped/` is Ants' own, replaced whole on start when any file differs.
  */
 @Component
-class Catalogue(@Value("\${ants.home}") private val home: Path, private val settings: Settings) {
+class Catalogue(@Value("\${ants.home}") private val home: Path, private val settings: Settings, private val drafts: Drafts) {
     private val shipped = home.resolve("shipped")
 
     /** The shipped file that defines the Verbosity levels. */
@@ -155,7 +155,7 @@ class Catalogue(@Value("\${ants.home}") private val home: Path, private val sett
     fun giveSkillId(folder: Path) = folder.resolve(SKILL_ID_FILE).writeAtomically(yaml.dump(mapOf("id" to unusedId(SKILL_ID))))
 
     fun unusedId(prefix: Char): String {
-        val taken = identified().map { it.id }.toSet()
+        val taken = identified().map { it.id }.toSet() + drafts.ids()
         return newId(prefix) { it in taken }
     }
 

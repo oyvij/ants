@@ -286,6 +286,12 @@ class LookTest : AntsTest() {
         http.post("/scripts/new", mapOf("name" to "post-message", "description" to "Posts a message to a Slack channel.", "code" to "console.log('posting')\n",
             "inputs" to "channel, text", "vars" to "CHANNEL=general", "secrets[0].name" to "SLACK_TOKEN", "secrets[0].value" to "xoxb-1234", "secrets[0].was" to ""))
 
+        // The Agents list with both Draft markers: a Draft-only Agent, and a published one with a Draft.
+        http.get("/agents")
+        http.post("/agents/new/draft", emptyMap())
+        home.resolve("agents/reviewer.md").writeText("---\nid: a-review1\nname: reviewer\ndescription: Reviews a change.\ncli: claude\n---\nReview it.\n")
+        http.autosave("/agents/reviewer", mapOf("name" to "reviewer", "cli" to "claude", "description" to "Reviews a change, strictly.", "instructions" to "Review it."), "0")
+
         // A Round of questions.
         claude.session("quiz", 1, result("""{"outcome":"done","summary":"Round 1 on the invoice CSV export.","output":{"questions":[""" + listOf(
             """{"id":"who","title":"Who exports","ask":"Who gets the export button: everyone who can see invoices, or only admins?","context":"Settles who sees the button.","recommendation":"Everyone who can see the invoice list.","why":"The export holds exactly what they can already see."}""",

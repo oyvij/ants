@@ -263,12 +263,6 @@ class Migration(
         }
     }
 
-    private fun withId(text: String, id: String): String = when {
-        "id" in frontmatter(text).first -> Regex("(?m)^id:.*$").replaceFirst(text, "id: $id")
-        Regex("""\A---\R.*?\R---""", RegexOption.DOT_MATCHES_ALL).containsMatchIn(text) -> text.replaceFirst(Regex("""\A---\R"""), "---\nid: $id\n")
-        else -> "---\nid: $id\n---\n$text"
-    }
-
     /** A Skill as it was before ADR 0024: its Ants metadata and `result.schema.json`. */
     private class OldSkill(val name: String, metadata: Map<*, *>, folder: Path) {
         val inputs = Settings.strings(metadata["ants-inputs"]).orEmpty()

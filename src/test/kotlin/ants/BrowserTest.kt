@@ -8,6 +8,7 @@ import com.microsoft.playwright.options.ColorScheme
 import com.microsoft.playwright.options.KeyboardModifier
 import com.microsoft.playwright.Page
 import com.microsoft.playwright.Playwright
+import com.microsoft.playwright.assertions.LocatorAssertions
 import com.microsoft.playwright.assertions.PlaywrightAssertions.assertThat
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assumptions.abort
@@ -49,13 +50,19 @@ class BrowserTest : AntsTest() {
     fun launch(info: TestInfo) {
         test = info.testMethod.get().name
         playwright = Playwright.create()
-        page = launchChromium(playwright).newPage().also(::watch)
+        page = launchChromium(playwright).newPage().also(::watch).also(::logIn)
+    }
+
+    private fun logIn(page: Page) {
         page.navigate(url("/login"))
         page.fill("input[name=username]", "admin")
         page.fill("input[name=password]", "admin")
         page.click("button[type=submit]")
         page.waitForURL { !it.contains("/login") }
     }
+
+    /** A second tab, logged in of its own. */
+    private fun otherTab(): Page = page.context().browser().newPage().also(::watch).also(::logIn)
 
     @AfterEach
     fun close() {
@@ -3113,6 +3120,83 @@ class BrowserTest : AntsTest() {
         page.getByLabel("Name").fill("From the list")
         page.click("#new-process button.primary")
         page.waitForURL { it.contains("/processes/new?name=From+the+list") }
+    }
+
+    private val saveState get() = page.locator(".draft-head [data-save-state]")
+    private val marker get() = page.locator(".draft-head .draft-mark")
+    private val draftSaved = Pattern.compile("^Draft saved \\d\\d:\\d\\d$")
+
+    @Test
+    fun `an edit on the Agent page is autosaved to its Draft with no Publish, the header says so, and it survives a reload`() = browse {
+        val file = home.resolve("agents").createDirectories().resolve("autosaved.md")
+        file.writeText("---\nid: a-auto01\nname: autosaved\ncli: claude\n---\nPublished.\n")
+        page.navigate(url("/agents/autosaved"))
+        assertThat(marker).hasText("Published")
+        assertThat(saveState).isEmpty()
+
+        page.fill("#description", "Kept as a Draft.")
+        assertThat(saveState).hasText(draftSaved)
+        assertThat(marker).hasText("Draft · changes not published")
+        assertEquals("---\nid: a-auto01\nname: autosaved\ncli: claude\n---\nPublished.\n", file.readText())
+
+        page.reload()
+        assertThat(page.locator("#description")).hasValue("Kept as a Draft.")
+        assertThat(saveState).hasText(draftSaved)
+        assertThat(marker).hasText("Draft · changes not published")
+
+        page.fill("#description", "Kept on leaving.")
+        page.navigate(url("/agents")) // before the 2 s are up
+        eventually { assertContains(http.get("/agents/autosaved").body, """value="Kept on leaving."""") }
+        assertThat(page.locator("tr", Page.LocatorOptions().setHasText("autosaved")).locator(".draft-mark")).hasText("Draft · changes not published")
+
+        page.navigate(url("/agents/autosaved"))
+        page.click("button[form=agent]")
+        page.waitForURL(url("/agents/autosaved"))
+        assertThat(marker).hasText("Published")
+        assertContains(file.readText(), "description: Kept on leaving.")
+    }
+
+    @Test
+    fun `a failed autosave says why and is retried until it succeeds`() = browse {
+        home.resolve("agents").createDirectories().resolve("retried.md").writeText("---\nid: a-retry1\nname: retried\ncli: claude\n---\nRetry.\n")
+        page.navigate(url("/agents/retried"))
+        page.route("**/agents/retried/draft") { it.abort() }
+        page.fill("#description", "Kept once Ants answers.")
+        assertThat(saveState).hasText("Not saved: Ants can't be reached.")
+        page.unroute("**/agents/retried/draft")
+        assertThat(saveState).hasText(draftSaved, LocatorAssertions.HasTextOptions().setTimeout(15_000.0))
+        assertContains(http.get("/agents/retried").body, """value="Kept once Ants answers."""")
+    }
+
+    @Test
+    fun `a tab whose Draft changed in another tab says so and offers to load the newer Draft`() = browse {
+        home.resolve("agents").createDirectories().resolve("two-tabs.md").writeText("---\nid: a-2tabs1\nname: two-tabs\ncli: claude\n---\nTabs.\n")
+        page.navigate(url("/agents/two-tabs"))
+        val other = otherTab()
+        other.navigate(url("/agents/two-tabs"))
+        other.fill("#description", "From the other tab.")
+        assertThat(other.locator(".draft-head [data-save-state]")).hasText(draftSaved)
+
+        page.fill("#description", "From this tab.")
+        assertThat(saveState).hasText("Not saved: This Agent's Draft was changed in another tab or window.")
+        page.locator(".draft-head [data-load-newer]").click()
+        assertThat(page.locator("#description")).hasValue("From the other tab.")
+        assertThat(saveState).hasText(draftSaved)
+    }
+
+    @Test
+    fun `New Agent opens a Draft-only Agent with a placeholder name, and Delete confirms and leaves it`() = browse {
+        page.navigate(url("/agents"))
+        page.locator(".ph button", Page.LocatorOptions().setHasText("New Agent")).click()
+        page.waitForURL(Pattern.compile("/agents/new-agent(-\\d+)?$"))
+        assertThat(marker).hasText("Draft")
+        val name = page.url().substringAfterLast('/')
+        assertThat(page.locator("#name")).hasValue(name)
+        page.locator(".ph button.danger", Page.LocatorOptions().setHasText("Delete")).click()
+        assertThat(page.locator("h1")).hasText("Delete the Draft $name?")
+        page.locator("main button.danger").click()
+        page.waitForURL(url("/agents"))
+        assertThat(page.locator("a[href='/agents/$name']")).hasCount(0)
     }
 
     @Test
