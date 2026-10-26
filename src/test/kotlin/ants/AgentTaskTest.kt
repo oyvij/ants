@@ -348,6 +348,42 @@ class AgentTaskTest : AntsTest() {
         assertEquals("opus" to "max", launch.flag("--model") to launch.flag("--effort"))
     }
 
+    /** Deploys agent-task.bpmn as [key], its Task on [agent] with [properties] in place of its Skill, and the page the upload answers with. */
+    private fun deployOn(key: String, agent: String, properties: String): Browser.Page {
+        val bpmn = javaClass.getResource("/agent-task.bpmn")!!.readText().replace("\"agent-task\"", "\"$key\"")
+            .replace("""name="ants.agent" value="writer"""", """name="ants.agent" value="$agent"""")
+            .replace("""<operaton:property name="ants.skills" value="draft" />""", properties)
+        browser.get("/processes")
+        return browser.upload("/processes", "file", "$key.bpmn", bpmn.toByteArray())
+    }
+
+    private fun runOf(key: String): String {
+        browser.get("/processes/$key")
+        val run = browser.post("/processes/$key/runs", mapOf("prompt" to "Say hello")).path.removePrefix("/runs/")
+        eventually { assertContains(page(run), """id="state">Completed<""") }
+        return run
+    }
+
+    @Test
+    fun `a Task on a shipped Agent gets a Skill from its published Your Skills, and never one only in their Draft`() {
+        agentTask()
+        claude.session("draft", done)
+        val assigned = property("ants.assignment", "Write it.") // no Skills of its own: it gets its Agent's
+        browser.autosave("/agents/shipped-writer/your-skills", mapOf("skills" to "draft"), draftVersion(browser.get("/agents/shipped-writer").body))
+
+        assertContains(deployOn("your-skills-listed", "a-shipped-writer", property("ants.skills", "draft")).body.replace("&#39;", "'"), "The Agent shipped-writer doesn't list the Skill draft.")
+        assertFalse("role=\"alert\"" in deployOn("your-skills-assigned", "a-shipped-writer", assigned).body)
+        runOf("your-skills-assigned")
+        assertEquals(emptyMap(), claude.launches("draft").single().skills)
+
+        assertEquals("/agents/shipped-writer", browser.post("/agents/shipped-writer/your-skills", mapOf("skills" to "draft")).path)
+        runOf("your-skills-assigned")
+        assertEquals(mapOf("draft" to home.resolve("skills/draft")), claude.launches("draft").last().skills)
+        assertFalse("role=\"alert\"" in deployOn("your-skills-listed", "a-shipped-writer", property("ants.skills", "draft")).body)
+        runOf("your-skills-listed")
+        assertEquals(mapOf("draft" to home.resolve("skills/draft")), claude.launches("draft").last().skills)
+    }
+
     @Test
     fun `--json-schema holds the envelope around the Skill's promised output`() {
         agentTask(textSchema)

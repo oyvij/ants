@@ -200,11 +200,36 @@ class Catalogue(@Value("\${ants.home}") private val home: Path, private val sett
     private fun <T> one(items: List<T>, shipped: (T) -> Boolean, none: String, many: String): T =
         items.singleOrNull() ?: items.filter { shipped(it) != settings.hideShipped() }.singleOrNull() ?: error(if (items.isEmpty()) none else many)
 
-    /** The names of the Skills [agent] may use: every one in the catalogue with `skills: "*"`. */
-    fun allowedNames(agent: Agent): List<String> = if (agent.allSkills) skills().map { it.name }.distinct() else skillNames(agent.skills)
+    /**
+     * Your Skills: the Skills the user added to each shipped Agent, by id, one file per Agent by its fixed id, apart
+     * from the shipped agent file and every folder Ants runs from, so an update replacing the Agent keeps them.
+     */
+    private val yourSkillsStore = home.resolve("your-skills")
 
-    /** The Skills [agent] may use ([allowedNames]). */
-    fun allowed(agent: Agent): List<Skill> = if (agent.allSkills) allowedNames(agent).map(::skill) else agent.skills.map { linkedSkill(it, null) }
+    private fun yourSkillsFile(agent: Agent) = agent.id?.takeIf { shipped(agent) }?.let { yourSkillsStore.resolve("$it.yaml") }
+
+    /** The published Your Skills on [agent], each as it is listed (an id); empty for an Agent that isn't shipped. */
+    fun yourSkills(agent: Agent): List<String> = yourSkillsFile(agent)?.takeIf { it.exists() }
+        ?.let { runCatching { ((Yaml().load<Any?>(it.readText()) as? Map<*, *>)?.get("skills") as? List<*>)?.map(Any?::toString) }.getOrNull() }.orEmpty()
+
+    /** Publishes [skills], each listed by id, as Your Skills on the shipped [agent]. */
+    fun publishYourSkills(agent: Agent, skills: List<String>) =
+        (yourSkillsFile(agent) ?: error("Only a shipped Agent has Your Skills")).writeAtomically(yaml.dump(mapOf("skills" to skills)))
+
+    /** The names of the Skills [agent] may use ([allowed]): every one in the catalogue with `skills: "*"`. */
+    fun allowedNames(agent: Agent): List<String> = if (agent.allSkills) skills().map { it.name }.distinct()
+        else (skillNames(agent.skills) + yourSkills(agent).mapNotNull { listedSkill(it)?.name }).distinct()
+
+    /**
+     * The Skills [agent] may use: those it lists, and on a shipped Agent its published Your Skills, each counted once.
+     * The launch, the modeler and the Checks ask only this, so none of them learns about Your Skills separately. One of
+     * Your Skills deleted since is left out, rather than failing every launch on the Agent.
+     */
+    fun allowed(agent: Agent): List<Skill> = if (agent.allSkills) allowedNames(agent).map(::skill)
+        else (agent.skills.map { linkedSkill(it, null) } + yourSkills(agent).mapNotNull(::listedSkill)).distinctBy { it.file }
+
+    /** Whether [agent] may use [skill] ([allowed]). */
+    fun allows(agent: Agent, skill: Skill) = agent.allows(skill) || yourSkills(agent).let { skill.id in it || skill.name in it }
 
     fun listedSkill(value: String): Skill? = runCatching { linkedSkill(value, null) }.getOrNull()
 

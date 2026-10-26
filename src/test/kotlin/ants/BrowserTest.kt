@@ -3462,6 +3462,36 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `Your Skills on a shipped Agent's page adds and removes a Skill, autosaved to a Draft, and Publish puts it to use`() = browse {
+        home.resolve("skills/imported").createDirectories().resolve("SKILL.md").writeText("---\nname: imported\ndescription: Imported.\n---\nDo it.\n")
+        page.navigate(url("/agents/shipped-coder"))
+        assertThat(marker).hasText("Published")
+        assertThat(page.locator("#agent .chipsel .c")).hasText(arrayOf("tdd")) // the shipped Skills, apart and read-only
+        assertThat(page.locator("#agent .chipsel button")).hasCount(0)
+        val yours = page.locator("#your-skills .c", Page.LocatorOptions().setHasText("imported"))
+
+        page.fill("#add-skill", "imported")
+        page.locator("#add-skill").dispatchEvent("change")
+        assertThat(yours).hasCount(1)
+        assertThat(saveState).hasText(draftSaved)
+        assertThat(marker).hasText("Draft · changes not published")
+        page.click("button[form=your-skills]")
+        page.waitForURL(url("/agents/shipped-coder"))
+        assertThat(marker).hasText("Published")
+        assertThat(yours).hasCount(1)
+        eventually { assertContains(http.get("/catalogue.json").body, """"name":"shipped-coder","description":"Stands in for a shipped codex Agent with Skills of its own.","skills":["tdd","imported"]""") }
+
+        yours.locator("button[title=Remove]").click()
+        assertThat(yours).hasCount(0)
+        assertThat(saveState).hasText(draftSaved)
+        page.click("button[form=your-skills]")
+        page.waitForURL(url("/agents/shipped-coder"))
+        assertThat(marker).hasText("Published")
+        assertThat(yours).hasCount(0)
+        assertContains(http.get("/catalogue.json").body, """"skills":["tdd"]""")
+    }
+
+    @Test
     fun `the Agent page's chips, Limit rules, added tools and CLI switch save what the page shows`() = browse {
         home.resolve("skills/chip-skill").createDirectories().resolve("SKILL.md").writeText("---\nname: chip-skill\ndescription: Chips.\n---\nChip.\n")
         val file = home.resolve("agents").createDirectories().resolve("chipper.md")
