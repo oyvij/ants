@@ -261,6 +261,16 @@ class AgentTaskTest : AntsTest() {
     }
 
     @Test
+    fun `a failed Task with its own level retries one level above it`() {
+        agentTask(agent = "level: 1\n", retries = 3)
+        claude.session("draft", 1, failed)
+        claude.session("draft", done)
+        val run = startWith("task-level-retry", property("ants.level", "3"))
+        eventually { assertContains(page(run), """id="state">Completed<""") }
+        assertEquals(listOf("opus" to "medium", "opus" to "high"), claude.launches("draft").map { it.level() })
+    }
+
+    @Test
     fun `a Task still failing after the cap's retries becomes an incident`() {
         agentTask(agent = "level: 3\n", retries = 2)
         claude.session("draft", failed)

@@ -32,11 +32,11 @@ class CodexTest : AntsTest() {
     private val env = listOf("PATH", "HOME", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "CODEX_API_KEY")
 
     /** The Agent `writer` on codex, with [agent] lines in its frontmatter, listing the Skill `draft`. */
-    private fun codexTask(agent: String = "", claude: FakeClaude? = null, metadata: String = "", profiles: String = "") {
+    private fun codexTask(agent: String = "", claude: FakeClaude? = null, metadata: String = "", profiles: String = "", retries: Int = 0) {
         agentTask(claude, agent = "cli: codex\n$agent", metadata = metadata)
         home.resolve("settings.yaml").writeAtomically(
             "codex:\n  command: [${codex.command}]\n  env: [${env.joinToString(", ")}]\n" +
-                (if (claude == null) "" else "claude:\n  command: [${claude.command}]\n") + vault + profiles,
+                (if (claude == null) "" else "claude:\n  command: [${claude.command}]\n") + vault + "retries: $retries\n" + profiles,
         )
     }
 
@@ -132,6 +132,20 @@ class CodexTest : AntsTest() {
     @Test
     fun `a codex Task's own level goes before its Agent's level and pinned model`() {
         assertEquals("gpt-5.2-codex" to "xhigh", modelAndEffort("level: 1\nmodel: gpt-5-codex\n", """<operaton:property name="ants.level" value="5" />"""))
+    }
+
+    @Test
+    fun `a failed codex Task resumes its thread one level up, told why`() {
+        codexTask("level: 2\n", retries = 3)
+        codex.session("draft", 1, started, turn, "exit 3")
+        codex.session("draft", started, turn, answer(), completed)
+        val run = start()
+        eventually { assertContains(page(run), """id="state">Completed<""") }
+        val (first, retry) = codex.launches("draft")
+        assertEquals(listOf("resume", first.thread, "-"), retry.argv.takeLast(3))
+        assertEquals("gpt-5.2-codex", retry.flag("-m"))
+        assertContains(retry.argv, "model_reasoning_effort=\"medium\"")
+        assertContains(retry.stdin, "Your last attempt failed: codex exited with code 3")
     }
 
     @Test
