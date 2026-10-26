@@ -46,7 +46,7 @@ and payload to the Tasks after it; a Script that fails fails the Task like a fai
 _Avoid_: code task, script step
 
 **Check**:
-One thing **Save and deploy** refuses in a Process, such as an element Ants doesn't run, naming the
+One thing **Publish** refuses in a Process, such as an element Ants doesn't run, naming the
 element; a warning is a Check that doesn't refuse.
 _Avoid_: lint, validation error, rule
 

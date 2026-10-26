@@ -28,11 +28,11 @@ import org.springframework.stereotype.Component
 import org.operaton.bpm.engine.RepositoryService
 import tools.jackson.databind.json.JsonMapper
 
-/** One thing wrong with a Process, on the element it names (a BPMN id, or null for the whole file). A warning doesn't stop Save and deploy. */
+/** One thing wrong with a Process, on the element it names (a BPMN id, or null for the whole file). A warning doesn't stop Publish. */
 data class Check(val element: String?, val message: String, val warning: Boolean = false)
 
 /**
- * The Checks: what **Save and deploy** refuses, shown live in the modeler and on import. Each kind of Check reads the
+ * The Checks: what **Publish** refuses, shown live in the modeler and on import. Each kind of Check reads the
  * Process, written with `operaton:` only, and gives its Checks; a new kind is one more function in [kinds].
  */
 @Component

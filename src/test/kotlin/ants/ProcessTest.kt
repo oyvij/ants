@@ -93,6 +93,24 @@ class ProcessTest : AntsTest() {
     }
 
     @Test
+    fun `a Run and a Schedule of a Process with a Draft start its deployed version`() {
+        home.resolve("settings.yaml").writeAtomically(vault)
+        waits()
+        val drafted = browser.get("/processes/waits/diagram.bpmn").body.replace("""name="Wait"""", """name="Drafted wait"""")
+        assertEquals(200, browser.autosave("/processes/waits", listOf("bpmn" to drafted), "0").status)
+
+        val run = browser.post("/processes/waits/runs", mapOf(NAME to "Deployed only")).path.removePrefix("/runs/")
+        val waiting = browser.get("/runs/$run").body
+        assertContains(waiting, "Wait")
+        assertFalse("Drafted wait" in waiting)
+        val id = Regex("""/processes/waits/schedules/([^/]+)/start""").find(browser.post("/processes/waits/schedule", mapOf("cron" to "0 0 0 * * *")).body)!!.groupValues[1]
+        val scheduled = browser.post("/processes/waits/schedules/$id/start", emptyMap()).body
+        assertFalse("Drafted wait" in scheduled)
+        browser.post("/processes/waits/schedules/$id/remove", emptyMap())
+        browser.post("/processes/waits/discard", mapOf("confirm" to "on"))
+    }
+
+    @Test
     fun `camunda attributes are deployed as operaton`() {
         browser.import("start-end.bpmn")
         val diagram = browser.get("/processes/start-end/diagram.bpmn").body

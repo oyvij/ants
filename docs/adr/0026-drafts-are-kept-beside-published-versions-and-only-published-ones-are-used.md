@@ -49,3 +49,7 @@ and a **published** version, the one Ants uses; **Publish** turns the one into t
 - The Process Builder's `create_agent`, `change_agent` and `copy` still publish the Agent at once, as Save did, and
   leave any Draft of it as it was. Its edits to the open diagram reach the Process's Draft through the modeler's
   autosave (ADR 0019).
+- A Process's Draft is kept under its key, the Process id New Process makes from the name it is given, and its page
+  stays at that key: renaming the Process in the modeler changes its name, not its key, as it did before Drafts. A
+  shipped Process has a Draft like the user's own ones, since Publish makes it the user's (the shipped version stays
+  deployed until then).

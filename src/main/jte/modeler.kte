@@ -1,13 +1,14 @@
 @import ants.modelerFacts
 @param name: String
 @param src: String
-@param action: String = "/processes/deploy"
-@param saveLabel: String = "Save and deploy"
+@param action: String
+@param saveLabel: String = "Publish"
 @param copy: String? = null
 @param list: String = "Processes"
 @param page: String? = null
 @param note: String? = null
 @param builder: String? = null
+@param draft: ants.DraftHead? = null
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
 @param shell: ants.Shell
@@ -25,6 +26,9 @@
 <main class="full">
 <div class="crumbs"><a href="/${list.lowercase()}">${list}</a> / @if(page != null)<a href="${page}">${name}</a>@else${name}@endif / Diagram</div>
 <div class="ph"><h1>${name}</h1>
+@if(draft != null)
+    @template.drafthead(draft = draft)
+@endif
     <div class="acts">
 @if(note != null)
         <span class="muted small">${note}</span>
@@ -35,6 +39,11 @@
             <span class="muted small">Ants' own, read-only.</span> <button>Copy</button> <span class="muted small">makes your own.</span>
         </form>
 @endif
+@if(draft?.state == ants.DraftState.CHANGED)
+        <form method="post" action="${draft.endpoint.removeSuffix("/draft")}/discard" data-leaves-draft><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>Discard Draft</button></form>
+@elseif(draft?.state == ants.DraftState.DRAFT_ONLY)
+        <form method="post" action="${draft.endpoint.removeSuffix("/draft")}/delete" data-leaves-draft><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button class="danger">Delete</button></form>
+@endif
 @if(builder != null)
         <button type="button" id="builder-toggle" aria-controls="builder" aria-pressed="true">Process Builder</button>
 @endif
@@ -44,7 +53,7 @@
 <p id="refusal" role="alert"></p>
 <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
 <div class="modelerWrap">
-    <div id="canvas" data-src="${src}" data-facts="${modelerFacts}" class="dia modeler"></div>
+    <div id="canvas" data-src="${src}" data-autosave="${draft?.endpoint}" data-version="${draft?.version?.toString()}" data-facts="${modelerFacts}" class="dia modeler"></div>
     <div class="props">
         <div id="explain"></div>
         <div class="checks">
