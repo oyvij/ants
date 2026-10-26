@@ -70,7 +70,7 @@ tasks.bootJar {
 // Node runs only in the build: pnpm fetches the front-end libraries, whose dist/ goes into the static resources.
 node {
     download = true
-    version = "24.21.0"
+    version = "24.22.1"
     pnpmVersion = "10.34.6"
 }
 
