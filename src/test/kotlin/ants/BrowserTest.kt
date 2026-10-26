@@ -1110,11 +1110,55 @@ class BrowserTest : AntsTest() {
         assertEquals(listOf("OLD_TOKEN"), listed())
         page.screenshot("script-secrets")
 
-        page.locator(".ph button.primary").click()
-        eventually {
-            assertEquals(mapOf("A_TOKEN" to "a-1", "B_TOKEN" to "b-2"), ownSecrets())
-            assertEquals(listOf("A_TOKEN", "B_TOKEN"), listed())
-        }
+        page.locator(".code-editor .cm-content").click()
+        page.keyboard().press("ControlOrMeta+End")
+        page.keyboard().insertText("console.log('unpublished')") // the Draft's code, which Save Secrets leaves alone
+        assertThat(saveState).hasText(draftSaved)
+        card.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Save Secrets")).click()
+        assertThat(card.locator("[data-secrets-state]")).hasText(Pattern.compile("^Secrets saved \\d\\d:\\d\\d$"))
+        assertEquals(mapOf("A_TOKEN" to "a-1", "B_TOKEN" to "b-2"), ownSecrets())
+        assertEquals(listOf("A_TOKEN", "B_TOKEN"), listed())
+        assertEquals("console.log('hi')\n", folder.resolve("script.mjs").readText())
+        assertThat(page).hasURL(url("/scripts/post"))
+        assertThat(rows.nth(1).getByLabel("Value")).hasAttribute("placeholder", "••••")
+        assertThat(rows.nth(1).getByLabel("Value")).hasValue("")
+    }
+
+    @Test
+    fun `a Secret saved on a Draft-only Script's card survives a reload and is there after Publish, and a refused Save says why`() = browse {
+        http.get("/scripts")
+        page.navigate(url(http.post("/scripts/new/draft", emptyMap()).path))
+        assertThat(marker).hasText("Draft")
+        page.fill("#name", "kept-token")
+        page.waitForURL(url("/scripts/kept-token"))
+        val card = page.locator(card("Secrets"))
+        val rows = card.locator(".listed > .row")
+        val save = card.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Save Secrets"))
+        val state = card.locator("[data-secrets-state]")
+
+        rows.first().getByLabel("Name").fill("TOKEN")
+        save.click()
+        assertThat(state).hasText("Not saved: The Secret TOKEN needs a value.")
+        rows.first().getByLabel("Value").fill("t0ps3cret")
+        save.click()
+        assertThat(state).hasText(Pattern.compile("^Secrets saved \\d\\d:\\d\\d$"))
+        assertThat(saveState).hasText(draftSaved) // the name typed reached the Draft too, with no value
+
+        page.reload()
+        assertThat(marker).hasText("Draft")
+        assertThat(rows.first().getByLabel("Name")).hasValue("TOKEN")
+        assertThat(rows.first().getByLabel("Value")).hasAttribute("placeholder", "••••")
+        assertFalse("t0ps3cret" in home.resolve("drafts/scripts").toFile().walk().filter { it.isFile }.joinToString { it.readText() })
+
+        page.fill("#description", "Keeps its token.")
+        page.locator(".code-editor .cm-content").click()
+        page.keyboard().insertText("ants.output({})")
+        assertThat(saveState).hasText(draftSaved)
+        page.click("button[form=script]")
+        page.waitForURL(url("/scripts/kept-token"))
+        assertThat(marker).hasText("Published")
+        val folder = home.resolve("scripts").toFile().listFiles()!!.single { it.resolve("script.yaml").exists() && "Keeps its token." in it.resolve("script.yaml").readText() }
+        assertEquals("TOKEN: t0ps3cret\n", folder.resolve("secrets.yaml").readText())
     }
 
     @Test

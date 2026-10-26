@@ -16,6 +16,7 @@ import org.yaml.snakeyaml.Yaml
 import tools.jackson.core.JacksonException
 import tools.jackson.databind.json.JsonMapper
 import java.nio.file.Files
+import java.time.Instant
 import kotlin.io.path.createDirectories
 import kotlin.io.path.writeText
 
@@ -51,8 +52,12 @@ data class ScriptForm(
         ?: "A Script needs a description.".takeIf { description.isBlank() }
         ?: ScriptSchema.names(output).firstOrNull { !FIELD_NAME.matches(it) }?.let { "A payload field's name is letters, digits, hyphens and underscores, not $it." }
         ?: ScriptSchema.names(inputs).firstOrNull { !FIELD_NAME.matches(it) }?.let { "An input's name is letters, digits, hyphens and underscores, not $it." }
-        ?: (varsMap.keys + own.map { it.name }).firstOrNull { !Regex("[A-Z_][A-Z0-9_]*").matches(it) }
-            ?.let { "A var or Secret's name is upper case letters, digits and underscores, such as SLACK_TOKEN, not $it." }
+        ?: envError(varsMap.keys + own.map { it.name })
+
+    /** The card's rows as the Script with the [kept] own Secrets has them: a row naming a kept one is set, and a kept one no row names gets a row. */
+    fun keeping(kept: Set<String>) = copy(
+        own = own.map { OwnSecretRow(it.name, was = it.name.takeIf(kept::contains).orEmpty()) } + kept.filter { name -> own.none { it.name == name } }.map { OwnSecretRow(it, was = it) },
+    )
 
     /** The form's fields as its page posts them, which [of] reads back. */
     fun fields(): Map<String, List<String>> {
@@ -78,6 +83,9 @@ data class ScriptForm(
     }
 
     companion object {
+        fun envError(names: Collection<String>) = names.firstOrNull { !Regex("[A-Z_][A-Z0-9_]*").matches(it) }
+            ?.let { "A var or Secret's name is upper case letters, digits and underscores, such as SLACK_TOKEN, not $it." }
+
         private val FIELD_NAME = Regex("[A-Za-z_][A-Za-z0-9_-]*")
 
         fun of(params: Map<String, List<String>>): ScriptForm {
@@ -129,7 +137,7 @@ class ScriptsPage(
 
         /** The page's fields: the Draft's when there is one. */
         val fields: Map<String, List<String>>
-            get() = draft?.let(::drafted) ?: ScriptForm.of(published!!, scripts.code(published), scripts.ownSecrets(published).keys).fields()
+            get() = draft?.let(::drafted) ?: ScriptForm.of(published!!, scripts.code(published), scripts.ownSecrets(published.id).keys).fields()
     }
 
     /** The Script whose page is /scripts/[name]: a published one by its name, else a Draft-only one by its key. */
@@ -194,6 +202,36 @@ class ScriptsPage(
     }
 
     /**
+     * The Secrets card's Save: the card's rows as the Script's own Secrets, at once, a row left blank keeping the value
+     * saved under its old name. It neither publishes the Script nor touches its Draft. The page's script asks for JSON.
+     */
+    @PostMapping("/scripts/{name}/secrets", produces = [APPLICATION_JSON_VALUE])
+    @ResponseBody
+    fun saveSecrets(@PathVariable name: String, @RequestParam params: MultiValueMap<String, String>): ResponseEntity<Map<String, Any>> {
+        val item = item(name)
+        val error = keepSecrets(item, ScriptForm.of(params))
+            ?: return ResponseEntity.ok(mapOf("secrets" to scripts.ownSecrets(item.id).keys.toList(), "saved" to "Secrets saved ${shortTime(Instant.now())}"))
+        return ResponseEntity.badRequest().body(mapOf("error" to error))
+    }
+
+    /** The Secrets card's Save without the page's script: the page as it was posted, with the card's Secrets saved, or why not. */
+    @PostMapping("/scripts/{name}/secrets")
+    fun saveSecretsPage(@PathVariable name: String, @RequestParam params: MultiValueMap<String, String>, model: Model): String {
+        val item = item(name)
+        val form = ScriptForm.of(params)
+        val error = keepSecrets(item, form)
+        return show(model.addAttribute("use", "use" in params), if (error == null) form.copy(own = emptyList()) else form, item, error ?: "Secrets saved.")
+    }
+
+    /** Saves [form]'s rows as [item]'s own Secrets, or says why not. */
+    private fun keepSecrets(item: Item, form: ScriptForm): String? {
+        val own = ownValues(form, scripts.ownSecrets(item.id))
+        val error = ScriptForm.envError(form.own.map { it.name }) ?: form.own.firstOrNull { it.name !in own }?.let { "The Secret ${it.name} needs a value." }
+        if (error == null) scripts.saveSecrets(item.id, own)
+        return error
+    }
+
+    /**
      * The page's autosave: the page as the Script's Draft, whatever state it is in, unless the Draft changed since the
      * page loaded [version]. A Draft-only Script's page follows its name, while no other Script has it.
      */
@@ -237,7 +275,7 @@ class ScriptsPage(
             return if (script == null) confirm(model, "Delete the Draft $name?", Dependents(emptyList()), "${item.path}/delete", emptyMap(), item.path)
             else confirm(model, "Delete the Script $name?", usedBy.script(script), "${item.path}/delete", emptyMap(), item.path)
         }
-        script?.let(scripts::delete)
+        scripts.delete(item.id)
         drafts.remove(DraftKind.SCRIPT, item.id)
         return "redirect:/scripts"
     }
@@ -251,8 +289,9 @@ class ScriptsPage(
     @ResponseBody
     fun testRun(@RequestParam params: MultiValueMap<String, String>): Map<String, Any?> {
         val form = ScriptForm.of(params)
-        val saved = params["script"]?.firstOrNull()?.let(scripts::named)
-        val savedSecrets = saved?.let(scripts::ownSecrets).orEmpty()
+        val page = params["script"]?.firstOrNull()?.let { runCatching { item(it) }.getOrNull() }
+        val saved = page?.published
+        val savedSecrets = page?.let { scripts.ownSecrets(it.id) }.orEmpty()
         val inputs = try {
             json.readValue(params["sample"]?.firstOrNull()?.ifBlank { null } ?: "{}", Map::class.java)
         } catch (e: JacksonException) {
@@ -280,18 +319,19 @@ class ScriptsPage(
         val form = ScriptForm.of(params)
         val modal = "use" in params
         val edited = item?.published
-        val own = ownValues(form, edited?.let(scripts::ownSecrets).orEmpty())
+        val kept = item?.let { scripts.ownSecrets(it.id) }
+        val own = kept ?: ownValues(form, emptyMap())
         val error = form.error(scripts.all(), edited?.name)
             ?: "A Script named ${form.name} already exists.".takeIf { taken(form.name, item?.id) }
-            ?: form.own.firstOrNull { it.name !in own }?.let { "The Secret ${it.name} needs a value." }
+            ?: form.own.firstOrNull { it.name !in own }?.let { "The Secret ${it.name} needs a value" + if (kept != null) ": save it on the Secrets card." else "." }
         if (error != null) return show(model.addAttribute("use", modal), form, item, error)
         val errors = validator.findings(params).filter { it.error }
         if (errors.isNotEmpty()) {
             model.addAttribute("errors", errors.map { it.sentence })
             return show(model.addAttribute("use", modal), form, item, "The Script has ${if (errors.size == 1) "an error" else "${errors.size} errors"}, so it wasn't published:")
         }
-        val script = form.script(item?.id ?: scripts.newId(), edited)
-        scripts.save(script, form.code, own)
+        val script = form.script(item?.id ?: scripts.newId(), edited).let { if (kept == null) it else it.copy(secrets = (kept.keys + form.linked).distinct()) }
+        scripts.save(script, form.code, own.takeIf { kept == null })
         return "redirect:/scripts/${script.name}" + if (modal) "?saved" else ""
     }
 
@@ -303,7 +343,7 @@ class ScriptsPage(
         Yaml().load<Map<*, *>>(draft.content).orEmpty().entries.associate { (field, values) -> "$field" to (values as? List<*>).orEmpty().map { "$it" } }
 
     private fun show(model: Model, form: ScriptForm, item: Item?, message: String? = null): String {
-        model.addAttribute("form", form)
+        model.addAttribute("form", item?.let { form.keeping(scripts.ownSecrets(it.id).keys) } ?: form)
         model.addAttribute("saved", item?.name)
         model.addAttribute("draft", item?.let { DraftHead(it.state, it.draft?.version ?: 0, it.draft?.savedLine, "${it.path}/draft") })
         model.addAttribute("labels", (settings.secrets().keys + form.linked).distinct())

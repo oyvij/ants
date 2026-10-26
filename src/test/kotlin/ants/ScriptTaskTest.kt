@@ -182,6 +182,25 @@ class ScriptTaskTest : AntsTest() {
     }
 
     @Test
+    fun `a Secret added, changed or removed with the Secrets card's Save is used by the next Script Task, with the published code`() {
+        val code = "ants.output({ran: 'published', token: process.env.TOKEN === 'tw0' ? 'new' : process.env.TOKEN === 'on3' ? 'old' : 'none', key: process.env.API_KEY === 'k3y'})\n"
+        saveScript("keyed", own = listOf("TOKEN" to "on3"), code = code)
+        assertEquals(200, browser.autosave("/scripts/keyed", listOf("name" to "keyed", "description" to "Does keyed.", "code" to "ants.output({ran: 'draft'})\n", "vars" to ""), "0").status)
+        deploy("keying", scriptTask("keyed", "keyed"))
+
+        val rows = listOf("secrets[0].name" to "TOKEN", "secrets[0].value" to "tw0", "secrets[0].was" to "TOKEN", "secrets[1].name" to "API_KEY", "secrets[1].value" to "k3y", "secrets[1].was" to "")
+        assertEquals(200, browser.post("/scripts/keyed/secrets", rows).status)
+        val changed = start("keying")
+        eventually { assertNotNull(runtime.getVariable(changed, "keyed")) }
+        assertEquals(mapOf("ran" to "published", "token" to "new", "key" to true), (runtime.getVariable(changed, "keyed") as Map<*, *>)["payload"])
+
+        assertEquals(200, browser.post("/scripts/keyed/secrets", listOf("secrets[0].name" to "API_KEY", "secrets[0].value" to "", "secrets[0].was" to "API_KEY")).status)
+        val removed = start("keying")
+        eventually { assertNotNull(runtime.getVariable(removed, "keyed")) }
+        assertEquals(mapOf("ran" to "published", "token" to "none", "key" to true), (runtime.getVariable(removed, "keyed") as Map<*, *>)["payload"])
+    }
+
+    @Test
     fun `a Script Task runs the published Script while the Script has a Draft, and Retry runs it as it is published then`() {
         saveScript("drafted", code = "console.log('published')\nprocess.exit(3)\n")
         val fixed = listOf("name" to "drafted", "description" to "Does drafted.", "code" to "ants.output({ran: 'draft'})\n", "vars" to "")
