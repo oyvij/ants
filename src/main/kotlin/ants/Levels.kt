@@ -29,7 +29,7 @@ data class Level(val model: String, val effort: String?) {
             Level(CODEX_MAIN, "xhigh"),
         )
 
-        val FAMILIES: List<String> = listOf("haiku", "sonnet", "opus")
+        private val FAMILIES: List<String> = listOf("haiku", "sonnet", "opus")
 
         fun of(text: String?): Int? = text?.toIntOrNull()?.takeIf { it in RANGE }
 
@@ -38,6 +38,8 @@ data class Level(val model: String, val effort: String?) {
         fun codex(level: Int): Level = CODEX[level - 1]
 
         fun above(level: Int): Int = minOf(level + 1, RANGE.last)
+
+        fun familyName(model: String): String = FAMILIES.firstOrNull { it in model } ?: model
 
         fun family(model: String): Int? = FAMILIES.indexOfFirst { it in model }.takeIf { it >= 0 }?.plus(1)
     }

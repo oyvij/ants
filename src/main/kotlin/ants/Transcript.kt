@@ -58,7 +58,6 @@ class Transcript(private val toolLine: (name: String, input: Map<*, *>) -> Strin
     var soFar: String? = null
         private set
 
-    /** The model, effort and retries of the latest launch that names them. */
     var chip: ModelChip? = null
         private set
 

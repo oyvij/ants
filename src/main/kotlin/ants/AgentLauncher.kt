@@ -460,10 +460,12 @@ class AgentLauncher(
     }
 
     private fun chip(task: LockedExternalTask, agent: Agent, level: Level): ModelChip =
-        ModelChip(agent.cli, level.model, level.effort, task.variables[RETRIES] as? Int ?: 0, settings.retries())
+        ModelChip(agent.cli, level, retries(task), settings.retries())
+
+    private fun retries(task: LockedExternalTask): Int = task.variables[RETRIES] as? Int ?: 0
 
     private fun retry(task: LockedExternalTask, session: String?, level: Int, reason: String, details: String?): Boolean = runCatching {
-        val retries = task.variables[RETRIES] as? Int ?: 0
+        val retries = retries(task)
         if (retries >= settings.retries()) return false
         val resume = session?.let { mapOf(ACTION to CONTINUE, INSTRUCTION to "Your last attempt failed: ${reason.removePrefix("[failed] ")}${details?.let { "\n\n$it" }.orEmpty()}\n\n$RETRY", SESSION to it) }.orEmpty()
         runtime.setVariablesLocal(task.executionId, mapOf(REACHED_LEVEL to Level.above(level), RETRIES to retries + 1) + resume)

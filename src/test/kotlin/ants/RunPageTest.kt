@@ -310,8 +310,7 @@ class RunPageTest : AntsTest() {
         assertContains(page, "The Report appears here when the Run ends.")
     }
 
-    /** The model chip in the Run page's row of the Task named [name]. */
-    private fun chip(page: String, name: String) = assertNotNull(
+    private fun chip(page: String, name: String): String = assertNotNull(
         Regex("""<span class="model"(?:(?!</span></span>).)*</span></span>""", RegexOption.DOT_MATCHES_ALL).find(row(page, name)), "no model chip for $name",
     ).value
 
