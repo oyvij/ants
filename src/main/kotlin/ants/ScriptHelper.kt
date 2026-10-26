@@ -10,7 +10,8 @@ import tools.jackson.databind.json.JsonMapper
 
 @RestController
 class ScriptHelper(
-    private val chats: PageChats, private val scripts: ScriptsPage, private val saved: Scripts, private val templates: TemplateEngine, private val json: JsonMapper,
+    private val chats: PageChats, private val scripts: ScriptsPage, private val saved: Scripts, private val settings: Settings, private val templates: TemplateEngine,
+    private val json: JsonMapper,
 ) {
     private inner class Page : PageChat(chats) {
         override val name = "script-helper"
@@ -31,6 +32,13 @@ class ScriptHelper(
                     json.writeValueAsString(mapOf("inputs" to script.inputs, "output" to script.output))
                 }
                 "replace_schemas" -> replaceSchemas(arguments)
+                "env" -> ScriptForm.of(form()).let { page ->
+                    json.writeValueAsString(mapOf(
+                        "vars" to page.varsMap.keys.toList(), "secrets" to page.own.map { it.name }.filter(String::isNotBlank),
+                        "settingsSecrets" to settings.secrets().map { (label, variables) -> mapOf("label" to label, "variables" to variables, "linked" to (label in page.linked)) },
+                    ))
+                }
+                "add_settings_secret" -> addSettingsSecret(arguments["label"]?.toString()?.trim().orEmpty(), (arguments["variables"] as? List<*>).orEmpty().map { "$it".trim() })
                 "check" -> json.writeValueAsString(scripts.check(form()))
                 "test_run" -> return testRun(arguments["inputs"] ?: emptyMap<String, Any>())
                 else -> throw Refused("No tool $name here.")
@@ -64,6 +72,22 @@ class ScriptHelper(
                 json.writeValueAsString(now)
         }
 
+        /** Adds [label] to Settings' Secrets under [variables], with no value for the user to fill in there, unless it is there already; links it on the page either way. */
+        private fun addSettingsSecret(label: String, variables: List<String>): String {
+            val existing = settings.secrets()[label]
+            if (existing == null) {
+                if (label.isEmpty()) throw Refused("add_settings_secret needs a label.")
+                if (variables.isEmpty()) throw Refused("add_settings_secret needs a variable name, such as SLACK_TOKEN.")
+                variables.firstOrNull { !VARIABLE.matches(it) }?.let { throw Refused("A variable name is capitals, digits and underscores, such as SLACK_TOKEN, not $it.") }
+                settings.save { it["secrets"] = settings.secrets() + (label to variables) }
+            }
+            ask("link_secret", mapOf("label" to label))
+            val under = (existing ?: variables).joinToString(" or ") { "process.env.$it" }
+            return if (existing == null) "Settings now has the Secret $label, with no value: tell the user to fill in its value in Settings. It is linked on the page, unsaved, " +
+                "and the Script reads it as $under."
+            else "Settings already has the Secret $label, so it is unchanged: it is linked on the page, unsaved, and the Script reads it as $under."
+        }
+
         private fun testRun(inputs: Any): Pair<String, Boolean> {
             val params = form()
             params["sample"] = listOf(json.writeValueAsString(inputs))
@@ -88,6 +112,8 @@ class ScriptHelper(
     companion object {
         private val INSTRUCTIONS = ScriptHelper::class.java.getResource("/script-helper.md")!!.readText()
 
+        private val VARIABLE = Regex("[A-Z_][A-Z0-9_]*")
+
         /** Each schema's form prefix, to what the helper's answers call it and what its Add button adds. */
         private val SCHEMAS = mapOf("inputs" to ("input schema" to "input"), "output" to ("output schema" to "field"))
 
@@ -96,6 +122,8 @@ class ScriptHelper(
             "replace_buffer" to { _ -> "replaced the code" },
             "schemas" to { _ -> "read the schemas" },
             "replace_schemas" to { arguments -> "replaced the " + SCHEMAS.filterKeys { arguments[it] != null }.values.joinToString(" and ") { it.first }.ifEmpty { "schemas" } },
+            "env" to { _ -> "read the vars and Secrets" },
+            "add_settings_secret" to { arguments -> "added the Secret ${arguments["label"]} to Settings" },
             "check" to { _ -> "checked the Script" },
             "test_run" to { _ -> "test ran the code" },
         )
@@ -114,6 +142,13 @@ class ScriptHelper(
                         "{\"type\": \"object\", \"properties\": {\"text\": {\"type\": \"string\", \"description\": \"What to post\"}}, \"required\": [\"text\"]}."),
                     "output" to mapOf("type" to "object", "description" to "The output schema, what the Script hands back with ants.output, in the same form."),
                 ), optional = SCHEMAS.keys),
+            Mcp.tool("env", "The names the Script can read from process.env, never a value, as the page has them now with the user's unsaved edits: " +
+                "its vars, its own Secrets, each read under its name, and every Secret kept in Settings, each read under its variables once linked to the Script " +
+                "(linked: true) on the page's From Settings."),
+            Mcp.tool("add_settings_secret", "Adds a Secret to Settings with no value, under its label and variable names, and links it to this Script on the page, unsaved: " +
+                "the user fills in its value in Settings. A label Settings has already is only linked, under its own variables. Add one only when no Secret `env` lists fits.",
+                mapOf("label" to "The Secret's label in Settings, such as slack.", "variables" to mapOf("type" to "array", "items" to mapOf("type" to "string"),
+                    "description" to "The variable names the Script reads it under, such as [\"SLACK_TOKEN\"]: capitals, digits and underscores."))),
             Mcp.tool("check", "The validator's findings for the page as it is now, unsaved, the same the editor marks: the code's syntax, the code against both schemas " +
                 "(ants.inputs.<name> read, ants.output({...}) written) and the schema rows, each with a severity, a sentence, and a line or a row. " +
                 "Save refuses any error; warnings never block."),

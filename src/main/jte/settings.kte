@@ -106,7 +106,7 @@
             <div class="row" hidden="${row.label.isEmpty()}">
                 <input type="hidden" name="secrets[${i}].was" value="${row.was}">
                 <label class="cap name">Label<input name="secrets[${i}].label" value="${row.label}" placeholder="e.g. npm"></label>
-                <label class="cap name">Value<input type="password" name="secrets[${i}].value" placeholder="${if (row.set) "••••" else "e.g. npm_a1b2c3"}" autocomplete="new-password"></label>
+                <label class="cap name">Value<input type="password" name="secrets[${i}].value" placeholder="${if (row.set) "••••" else if (row.was.isNotEmpty()) "Not set yet" else "e.g. npm_a1b2c3"}" autocomplete="new-password"></label>
                 <label class="cap grow">Variable names<input class="mono" name="secrets[${i}].names" value="${row.names}" placeholder="e.g. NPM_TOKEN"></label>
                 <button type="button" class="ghost" data-remove>Remove</button>
             </div>
