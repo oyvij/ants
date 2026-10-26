@@ -4,6 +4,8 @@ data class Level(val model: String, val effort: String?) {
     val flags: List<String> get() = listOf("--model", model) + (effort?.let { listOf("--effort", it) } ?: emptyList())
     val codexFlags: List<String> get() = listOf("-m", model) + (effort?.let { listOf("-c", "model_reasoning_effort=\"$it\"") } ?: emptyList())
 
+    val label: String get() = listOfNotNull(model, effort).joinToString(" ")
+
     companion object {
         val RANGE: IntRange = 1..5
         const val START = 2
