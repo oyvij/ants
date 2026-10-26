@@ -182,7 +182,7 @@ class LookTest : AntsTest() {
         Shot("process", "$prototype#/processes/spec-you", "/processes/build_and_ship"),
         Shot("modeler", "$prototype#/processes/spec-you/edit", "/processes/build_and_ship/edit"),
         Shot("agents", "$prototype#/agents", "/agents"),
-        Shot("agent", "$prototype#/agents/griller", "/agents/griller"), // the prototype has no planner
+        Shot("agent", "$prototype#/agents/griller", "/agents/lead"), // the prototype has no lead
         Shot("skills", "$prototype#/skills", "/skills"),
         Shot("skill", "$prototype#/skills/scout", "/skills/walkthrough"), // Ants ships no scout Skill: the scout Task has an Assignment
         Shot("settings", "$prototype#/settings", "/settings"),
