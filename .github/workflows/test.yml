@@ -25,8 +25,6 @@ jobs:
         shard: ${{ fromJSON(inputs.shards) }}
     steps:
       - uses: actions/checkout@v5
-      # LookTest screenshots each page beside the prototype it must equal, read from these branches with git show.
-      - run: git fetch --depth=1 origin prototype/web-ui:refs/remotes/origin/prototype/web-ui prototype/answer-screen:refs/remotes/origin/prototype/answer-screen
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -49,7 +47,7 @@ jobs:
       - if: inputs.load
         run: for i in $(seq "$(nproc)"); do nohup yes > /dev/null 2>&1 & done
       - run: ./gradlew test -Pshard=${{ matrix.shard }}
-      # On every run, not only a failed one, so LookTest's screenshot pairs can be read after a green run.
+      # On every run, not only a failed one, so LookTest's screenshots can be read after a green run.
       - if: always()
         uses: actions/upload-artifact@v4
         with:
