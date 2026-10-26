@@ -739,6 +739,7 @@ class AgentsTest : AntsTest() {
         assertEquals("/agents/shipped-writer", post("/agents/shipped-writer/your-skills", mapOf("skills" to "imported")).path)
         assertEquals(listOf("imported"), yourSkills("shipped-writer"))
         assertEquals(listOf("Published"), markers(get("/agents/shipped-writer")))
+        assertContains(get("/agents"), """<a href="/skills/imported">imported</a>""") // the list shows the Skills it may use
 
         browser.autosave("/agents/shipped-writer/your-skills", mapOf("skills" to ""), draftVersion(get("/agents/shipped-writer")))
         assertContains(post("/agents/shipped-writer/your-skills/discard", emptyMap()).body, "Discard the Draft of Your Skills on shipped-writer?")
@@ -860,6 +861,20 @@ class AgentsTest : AntsTest() {
         } finally {
             browser.post("/agents/shipped-coder/your-skills/discard", mapOf("confirm" to "on"))
             post("/agents/shipped-coder/your-skills", emptyMap())
+        }
+    }
+
+    @Test
+    fun `a save of Your Skills from a tab with an older version gets a conflict about Your Skills`() {
+        userSkill("imported")
+        try {
+            val loaded = draftVersion(get("/agents/shipped-writer"))
+            assertEquals(200, browser.autosave("/agents/shipped-writer/your-skills", mapOf("skills" to "imported"), loaded).status)
+            val second = browser.autosave("/agents/shipped-writer/your-skills", mapOf("skills" to ""), loaded)
+            assertEquals(409, second.status)
+            assertEquals("The Draft of Your Skills was changed in another tab or window.", answer(second)["conflict"])
+        } finally {
+            browser.post("/agents/shipped-writer/your-skills/discard", mapOf("confirm" to "on"))
         }
     }
 }

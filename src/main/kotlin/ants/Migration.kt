@@ -4,7 +4,6 @@ import org.operaton.bpm.engine.RepositoryService
 import org.operaton.bpm.engine.externaltask.LockedExternalTask
 import org.operaton.bpm.engine.repository.ProcessDefinition
 import org.operaton.bpm.model.bpmn.instance.BaseElement
-import org.operaton.bpm.model.bpmn.instance.operaton.OperatonProperties
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.context.event.ApplicationReadyEvent
@@ -44,10 +43,12 @@ private val SHIPPED_TASKS = linkedMapOf(
 private val GONE_SKILLS = mapOf("grill" to "grilling", "scout" to null, "answer-round" to null, "propose-solution" to null, "fix-review" to null)
 
 /**
- * A shipped Agent from before ADR 0027: the one that took its jobs ([now]), the Skills it gave a Task that listed none
- * (none for the architect's), and the level it started on.
+ * A shipped Agent from before ADR 0027: the name of the one that took its jobs ([newName]), the Skills it gave a Task
+ * that listed none (none for the architect's), and the level it started on.
  */
-private class OldAgent(val now: String, val skills: List<String>, val level: Int)
+private class OldAgent(val newName: String, val skills: List<String>, val level: Int) {
+    val newId get() = "a-$newName"
+}
 
 /** The shipped Agents from before ADR 0027, by name. */
 private val OLD_AGENTS = mapOf(
@@ -62,12 +63,18 @@ private val OLD_AGENTS = mapOf(
     "knowledge" to OldAgent("librarian", listOf("update-knowledge", "init-vault", "search-knowledge"), 2),
 )
 
-/** What moving a Task off an old shipped Agent changes in its properties: the value [AGENT] gets, and the properties it drops and adds. */
-private class Move(val agent: String, val dropped: String, val beside: Pair<String, String>, val added: List<Pair<String, String>>)
+/**
+ * What moving a Task off an old shipped Agent changes in its properties: [AGENT] names [agent]'s new id with its new
+ * name kept beside it, the name kept beside the old one ([oldNameKey]) goes, and the properties in [added], in order,
+ * follow.
+ */
+private class Move(val agent: OldAgent, val oldNameKey: String, val added: Map<String, String>) {
+    val newNameKey get() = nameBeside(agent.newId)
+}
 
 /**
- * How a Task with [properties] moves off the old shipped Agent it names (ADR 0027), by its id, or by its name when no
- * Agent has that name now: onto the old Agent's new one, listing the old Agent's Skills if it lists none, and on the old
+ * How a Task with [properties] moves off the old shipped Agent it names (ADR 0027), by its id or its name, when no
+ * Agent has that id or name now: onto the old Agent's new one, listing the old Agent's Skills if it lists none, and on the old
  * Agent's level if it sets none and the new Agent starts on another. Null when it names no old shipped Agent, such as a
  * copy of one, or the user's own Agent of an old one's name.
  */
@@ -76,21 +83,20 @@ private fun Catalogue.move(properties: Map<String, String>): Move? {
     fun gone(find: () -> Agent) = runCatching(find).isFailure
     val name = (if (value.startsWith("a-")) value.removePrefix("a-").takeIf { gone { agentWithId(value) } } else value.takeIf { gone { agent(it) } }) ?: return null
     val old = OLD_AGENTS[name] ?: return null
-    val id = "a-${old.now}"
-    val added = buildList {
+    val added = buildMap {
         if (SKILLS !in properties) {
-            add(SKILLS to old.skills.joinToString(", ") { "k-$it" })
-            old.skills.forEach { add(nameBeside("k-$it") to it) }
+            put(SKILLS, old.skills.joinToString(", ") { "k-$it" })
+            old.skills.forEach { put(nameBeside("k-$it"), it) }
         }
-        val level = runCatching { agentWithId(id).startLevel }.getOrNull()
-        if (LEVEL !in properties && level != old.level) add(LEVEL to old.level.toString())
+        val level = runCatching { agentWithId(old.newId).startLevel }.getOrNull()
+        if (LEVEL !in properties && level != old.level) put(LEVEL, old.level.toString())
     }
-    return Move(id, nameBeside(value), nameBeside(id) to old.now, added)
+    return Move(old, nameBeside(value), added)
 }
 
 /** [properties], a Task's, as they are once it has moved off the old shipped Agent it names ([move]); null when it names none. */
 internal fun Catalogue.onNewAgent(properties: Map<String, String>): Map<String, String>? = move(properties)?.let { move ->
-    properties - move.dropped + (AGENT to move.agent) + move.beside + move.added
+    properties - move.oldNameKey + (AGENT to move.agent.newId) + (move.newNameKey to move.agent.newName) + move.added
 }
 
 /** Moves each Agent Task in [document] off the old shipped Agent it names ([move]); whether any moved. */
@@ -102,9 +108,9 @@ private fun Catalogue.onNewAgents(document: Document): Boolean {
         moved = true
         val agent = elements.getValue(AGENT)
         fun property(name: String, value: String) = (agent.cloneNode(false) as Element).apply { setAttribute("name", name); setAttribute("value", value) }
-        elements[move.dropped]?.let { it.parentNode.removeChild(it) }
-        agent.setAttribute("value", move.agent)
-        agent.parentNode.insertBefore(property(move.beside.first, move.beside.second), agent.nextSibling)
+        elements[move.oldNameKey]?.let { it.parentNode.removeChild(it) }
+        agent.setAttribute("value", move.agent.newId)
+        agent.parentNode.insertBefore(property(move.newNameKey, move.agent.newName), agent.nextSibling)
         var last = propertyElements(task).values.last()
         for ((name, value) in move.added) last = last.parentNode.insertBefore(property(name, value), last.nextSibling) as Element
     }
@@ -401,5 +407,5 @@ private fun latest(task: LockedExternalTask, repository: RepositoryService): Map
     if (OLD_SKILL !in properties || SKILLS in properties || ASSIGNMENT in properties) return properties
     val latest = repository.createProcessDefinitionQuery().processDefinitionKey(task.processDefinitionKey).latestVersion().singleResult() ?: return properties
     val element = repository.getBpmnModelInstance(latest.id).getModelElementById<BaseElement>(task.activityId) ?: return properties
-    return element.extensions<OperatonProperties>().flatMap { it.operatonProperties }.associate { it.operatonName to it.operatonValue }
+    return element.properties()
 }

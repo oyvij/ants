@@ -41,8 +41,11 @@ const val RESULT_SCHEMA = "ants.result-schema"
  * The value of an element's extension property [name], such as an Agent Task's [AGENT]; "" for one set to nothing,
  * which `operatonValue` gives as null, as an empty [SKILLS] means no Skills, not the Agent's.
  */
-fun BaseElement.property(name: String): String? =
-    extensions<OperatonProperties>().flatMap { it.operatonProperties }.firstOrNull { it.operatonName == name }?.let { it.operatonValue ?: "" }
+fun BaseElement.property(name: String): String? = properties()[name]
+
+/** Every extension property of the element by name, the first of each name, each value as [property] reads it. */
+fun BaseElement.properties(): Map<String, String> =
+    extensions<OperatonProperties>().flatMap { it.operatonProperties }.distinctBy { it.operatonName }.associate { it.operatonName to (it.operatonValue ?: "") }
 
 internal val BpmnModelInstance.agentTasks get() = getModelElementsByType(ServiceTask::class.java).filter { it.operatonTopic == AgentLauncher.TOPIC }
 
