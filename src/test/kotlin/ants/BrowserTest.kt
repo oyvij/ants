@@ -3228,6 +3228,41 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `an edit on the Script page, typed or by the Script helper, is autosaved to its Draft with no Publish, and survives a reload`() = browse {
+        http.get("/scripts/new")
+        http.post("/scripts/new", listOf("name" to "autosaved-script", "description" to "Published.", "code" to "console.log('published')\n", "vars" to ""))
+        val code = home.resolve("scripts").toFile().walk().single { it.name == "script.mjs" }
+        page.navigate(url("/scripts/autosaved-script"))
+        assertThat(marker).hasText("Published")
+        assertThat(saveState).isEmpty()
+
+        val editor = page.locator(".code-editor .cm-content")
+        editor.click()
+        page.keyboard().press("ControlOrMeta+End")
+        page.keyboard().insertText("console.log('typed')")
+        assertThat(saveState).hasText(draftSaved)
+        assertThat(marker).hasText("Draft · changes not published")
+        assertEquals("console.log('published')\n", code.readText())
+
+        page.reload()
+        assertThat(editor).containsText("console.log('typed')")
+        assertThat(marker).hasText("Draft · changes not published")
+
+        val helper = page.getByRole(AriaRole.COMPLEMENTARY, Page.GetByRoleOptions().setName("Script helper"))
+        assertThat(helper).hasAttribute("data-token", Pattern.compile(".+"))
+        val (text, failed) = mcpCall(port, helper.getAttribute("data-token")!!, "replace_buffer", mapOf("code" to "console.log('helped')\n"))
+        assertFalse(failed, text)
+        eventually { assertContains(http.get("/scripts/autosaved-script").body, "helped") }
+        page.reload()
+        assertThat(editor).hasText("console.log('helped')")
+
+        page.click("button[form=script]")
+        page.waitForURL(url("/scripts/autosaved-script"))
+        assertThat(marker).hasText("Published")
+        assertEquals("console.log('helped')", code.readText().trim()) // a posted textarea's lines end in CRLF
+    }
+
+    @Test
     fun `the Agent page's chips, Limit rules, added tools and CLI switch save what the page shows`() = browse {
         home.resolve("skills/chip-skill").createDirectories().resolve("SKILL.md").writeText("---\nname: chip-skill\ndescription: Chips.\n---\nChip.\n")
         val file = home.resolve("agents").createDirectories().resolve("chipper.md")
