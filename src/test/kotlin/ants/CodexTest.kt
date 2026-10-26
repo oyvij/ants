@@ -96,10 +96,10 @@ class CodexTest : AntsTest() {
         assertContains(transcript, "1.2k tokens")
     }
 
-    private fun modelAndEffort(frontmatter: String): Pair<String?, String?> {
+    private fun modelAndEffort(frontmatter: String, properties: String = ""): Pair<String?, String?> {
         codexTask(frontmatter)
         codex.session("draft", started, turn, answer(), completed)
-        val run = start()
+        val run = start(properties = properties)
         eventually { assertContains(page(run), """id="state">Completed<""") }
         val launch = codex.launches("draft").last()
         val effort: String? = launch.argv.zipWithNext().singleOrNull { it.first == "-c" && it.second.startsWith("model_reasoning_effort=") }?.second
@@ -127,6 +127,11 @@ class CodexTest : AntsTest() {
     fun `a pinned model on a codex Agent launches on its model ID with level 2's effort, and a level goes before it`() {
         assertEquals("gpt-5-codex" to "low", modelAndEffort("model: gpt-5-codex\n"))
         assertEquals("gpt-5.2-codex" to "high", modelAndEffort("level: 4\nmodel: gpt-5-codex\n"))
+    }
+
+    @Test
+    fun `a codex Task's own level goes before its Agent's level and pinned model`() {
+        assertEquals("gpt-5.2-codex" to "xhigh", modelAndEffort("level: 1\nmodel: gpt-5-codex\n", """<operaton:property name="ants.level" value="5" />"""))
     }
 
     @Test
