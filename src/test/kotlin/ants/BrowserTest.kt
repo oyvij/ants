@@ -1798,7 +1798,7 @@ class BrowserTest : AntsTest() {
             http.newDraft("/skills") to arrayOf(".card:has(#skill)", card("Run by")),
             "/agents/stacked" to arrayOf("#name", "#description", "#cli", "#model"),
             http.newDraft("/agents") to arrayOf("#name", "#description", "#cli", "#model"),
-            "/agents/implementer" to arrayOf("#name", "#description", "#cli", "#model"),
+            "/agents/engineer" to arrayOf("#name", "#description", "#cli", "#model"),
             "/settings" to arrayOf(card("Claude login"), card("Commands"), card("Vaults"), card("Agent folders"), card("So far"), card("Theme"), card("Server"), card("Updates")),
         )
         onPhone()

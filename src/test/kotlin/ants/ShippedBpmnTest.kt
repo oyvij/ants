@@ -17,9 +17,11 @@ import org.operaton.bpm.model.bpmn.instance.SubProcess
 import org.operaton.bpm.model.bpmn.instance.operaton.OperatonProperties
 import org.yaml.snakeyaml.Yaml
 import java.nio.file.Path
+import kotlin.io.path.isRegularFile
 import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.name
 import kotlin.io.path.readText
+import kotlin.io.path.walk
 import kotlin.test.assertEquals
 
 /** A drift guard over the shipped `.bpmn` files: no dangling flow refs, and each Template a Process embeds still matches the Template. */
@@ -109,6 +111,19 @@ class ShippedBpmnTest {
             }
         }
         assert(tasks > 20) { "only $tasks Agent Tasks found" }
+    }
+
+    @Test
+    fun `Ants ships lead, engineer, proxy, librarian and knowledge-searcher, and no file it ships names an old Agent's id`() {
+        val shipped = Path.of("src/main/resources/shipped")
+        assertEquals(
+            setOf("a-lead", "a-engineer", "a-proxy", "a-librarian", "a-knowledge-searcher"),
+            shipped.resolve("agents").listDirectoryEntries("*.md").map { Agent(it).id }.toSet(),
+        )
+        val old = Regex("""\ba-(scout|griller|planner|architect|storyteller|implementer|pr|answerer|knowledge)\b(?!-)""")
+        for (file in shipped.walk().filter { it.isRegularFile() }) {
+            assert(old.find(file.readText()) == null) { "$file names ${old.find(file.readText())?.value}" }
+        }
     }
 
     @Test
