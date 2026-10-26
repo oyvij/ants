@@ -61,3 +61,13 @@ class ShippedIdsTest {
         assertEquals((agents.values + skills.values).size, (agents.values + skills.values).toSet().size)
     }
 }
+
+class ShippedLevelsTest {
+    private val agents = Path.of("src/main/resources/shipped/agents").listDirectoryEntries("*.md")
+
+    @Test
+    fun `every shipped Agent starts on a level from 1 to 4, leaving 5 for escalation`() {
+        val levels = agents.associate { file -> file.nameWithoutExtension to frontmatter(file.readText()).first["level"] }
+        assertEquals(emptyMap(), levels.filterValues { it !in 1..4 })
+    }
+}

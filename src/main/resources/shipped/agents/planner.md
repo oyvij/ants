@@ -2,6 +2,7 @@
 id: a-planner
 name: planner
 description: Writes the Run's Spec and cuts it into Tickets, as files in tickets/, reading the clones.
+level: 3
 skills: k-to-spec, k-to-tickets
 tools: Read, Grep, Glob, Write(tickets/**), Edit(tickets/**)
 ---

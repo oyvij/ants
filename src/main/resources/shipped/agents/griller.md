@@ -2,6 +2,7 @@
 id: a-griller
 name: griller
 description: Grills the user on what a Run should build, a Round of questions at a time, reading the clones but changing nothing.
+level: 3
 skills: k-grilling
 tools: Read, Grep, Glob
 ---

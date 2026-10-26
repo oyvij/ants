@@ -2,6 +2,7 @@
 id: a-answerer
 name: answerer
 description: Answers a Round for the user, the way they would, from their Answer History and the Vault.
+level: 2
 skills: k-search-knowledge
 tools: Read, Grep, Glob
 ---
