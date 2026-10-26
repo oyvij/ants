@@ -4,6 +4,7 @@
 @param action: String
 @param item: String?
 @param draft: ants.DraftHead? = null
+@param yourSkills: ants.YourSkillsField? = null
 @param readOnly: Boolean
 @param where: String? = null
 @param skills: List<ants.Skill> = emptyList()
@@ -37,11 +38,19 @@
 <div class="ph"><h1><span class="ent ent-agent"><svg class="i" viewBox="0 0 24 24"><rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 8V4M9 13v1M15 13v1"/></svg>${if (item == null) "New Agent" else form.name}</span></h1>
 @if(draft != null)
     @template.drafthead(draft = draft)
+@elseif(yourSkills != null)
+    @template.drafthead(draft = yourSkills.head)
 @endif
     <div class="acts">
 @if(readOnly)
         <span class="muted small">Read-only (${where})</span>
         <form method="post" action="${action}/copy"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>Copy</button></form>
+@if(yourSkills?.head?.state == ants.DraftState.CHANGED)
+        <form method="post" action="${action}/your-skills/discard" data-leaves-draft><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>Discard Draft</button></form>
+@endif
+@if(yourSkills != null)
+        <button class="primary" form="your-skills">Publish</button>
+@endif
 @else
 @if(draft?.state == ants.DraftState.CHANGED)
         <form method="post" action="${action}/discard" data-leaves-draft><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>Discard Draft</button></form>
@@ -55,6 +64,19 @@
 @if(dependents != null)    <div class="sub">@template.usedby(dependents = dependents, none = "no Process")</div>@endif
 </div>
 @if(error != null)<p role="alert">${error}</p>@endif
+@if(yourSkills != null)
+<form id="your-skills" class="card your-skills" method="post" action="${action}/your-skills" data-autosave="${yourSkills.head.endpoint}" data-version="${yourSkills.head.version.toString()}" data-leaves-draft>
+    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+    <h3><label for="add-skill">Your Skills</label></h3>
+    <div class="help">Skills you add to this shipped Agent, beside the ones it ships with. An update to Ants keeps them. A Skill brings no tools: one whose scripts need a tool the Agent lacks still can't run them. &nbsp;e.g. <span class="eg">diagnosing-bugs</span></div>
+    <div class="chipsel">
+@for(skill in yourSkills.skills)
+        <span class="c">$unsafe{skillIcon}${skill}<input type="hidden" name="skills" value="${skill}"><button type="button" title="Remove">×</button></span>
+@endfor
+        <input id="add-skill" name="skills" list="skill-list" placeholder="Add a Skill, e.g. diagnosing-bugs" autocomplete="off">
+    </div>
+</form>
+@endif
 <form id="agent" class="agent" method="post" action="${action}" data-autosave="${draft?.endpoint}" data-version="${draft?.version?.toString()}" data-leaves-draft>
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
 @if(use)
@@ -123,7 +145,12 @@
                     <div class="help checked">codex's model ID, as <code>codex -m</code> takes it; empty to run on its level.</div>
                 </fieldset></div>
         </div>
-        <div class="fld"><label class="f" for="add-skill">Skills it may use</label><div class="help">The Skills this Agent may use, or <code>*</code> for every Skill. A Task lists the ones it allows, or allows them all; the modeler only offers these. &nbsp;e.g. <span class="eg">implement, tdd</span></div>
+        <div class="fld">
+@if(yourSkills != null)
+            <label class="f">Shipped Skills</label><div class="help">The Skills Ants ships this Agent with. Its Tasks may also use Your Skills.</div>
+@else
+            <label class="f" for="${if (readOnly) null else "add-skill"}">Skills it may use</label><div class="help">The Skills this Agent may use, or <code>*</code> for every Skill. A Task lists the ones it allows, or allows them all; the modeler only offers these. &nbsp;e.g. <span class="eg">implement, tdd</span></div>
+@endif
             <div class="chipsel">
 @for(skill in ants.words(form.skills))
                 <span class="c">$unsafe{skillIcon}${if (skill == "*") "every Skill" else skill}<input type="hidden" name="skills" value="${skill}">@if(!readOnly)<button type="button" title="Remove">×</button>@endif</span>
@@ -192,7 +219,7 @@
 <form id="new-script" method="post" action="/scripts/new/draft"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"></form>
 <form id="models-check" method="post" action="/models/check"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"></form>
 <script src="/agent.js" defer></script>
-@if(draft != null)<script type="module" src="/draft.js"></script>@endif
+@if(draft != null || yourSkills != null)<script type="module" src="/draft.js"></script>@endif
 </main>
 </body>
 </html>

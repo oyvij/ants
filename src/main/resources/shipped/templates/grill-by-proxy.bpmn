@@ -14,8 +14,8 @@
     <bpmn:serviceTask id="grill" name="Grill" operaton:type="external" operaton:topic="agent">
       <bpmn:extensionElements>
         <operaton:properties>
-          <operaton:property name="ants.agent" value="a-griller" />
-          <operaton:property name="ants.name.a-griller" value="griller" />
+          <operaton:property name="ants.agent" value="a-lead" />
+          <operaton:property name="ants.name.a-lead" value="lead" />
           <operaton:property name="ants.skills" value="k-grilling" />
           <operaton:property name="ants.name.k-grilling" value="grilling" />
           <operaton:property name="ants.assignment" value="Grill the user on what this Run should build, until nothing is left to settle. The plan to grill is the prompt. Your inputs; paths are relative to the Run workspace:&#10;&#10;- `prompt`: what the user wants, in their words.&#10;- `brief`: the scout's brief: the repos and why, and what the Vault says.&#10;- `clones`: the repos cloned so far, `[{name, path, commit}]`.&#10;&#10;You only read: the brief, and the clones' code, docs, ADRs and glossary. You have no sub-agents, so find each fact yourself, before the Round that needs it.&#10;&#10;**Repos.** When the answers show the work needs a repo that wasn't in `clones` when you started, or may need it and nothing you have read rules it out, name it in `repos` by one of the Source map names your hand-off line lists, or by a git URL the user gave; never by a package, folder or product name you found in the code. Ants sends back any other name. Never take a repo you haven't read to need no change. Name every such repo again in each later Round, the last one included: `repos` is always the whole list. Each is cloned at `repos/&lt;name&gt;/` before your next Round, so read it then. One that never shows in `clones` was not cloned, and the Spec lists it as not checked. With none, `repos` is `[]`.&#10;&#10;When nothing is left to ask, the Run writes the Spec from the Run log, which holds every Round, and the user confirms the shared understanding by approving it." />
@@ -54,8 +54,8 @@
     <bpmn:serviceTask id="answerer" name="Answer for me" operaton:type="external" operaton:topic="agent">
       <bpmn:extensionElements>
         <operaton:properties>
-          <operaton:property name="ants.agent" value="a-answerer" />
-          <operaton:property name="ants.name.a-answerer" value="answerer" />
+          <operaton:property name="ants.agent" value="a-proxy" />
+          <operaton:property name="ants.name.a-proxy" value="proxy" />
           <operaton:property name="ants.assignment" value="Answer another Task's Round of questions for the user, as they would answer it themselves. The asking Task is resumed with your answers, and the Run goes on without the user.&#10;&#10;Your input, `questions`, is the Round: each question `{id, title, ask, context, recommendation, why}`. You only read.&#10;&#10;1. Read `INDEX.md` in the Answer History: one line per question the user answered themselves, its title linking to the Round's file. Open the Rounds whose questions are like these ones, and read what the user answered, and how: what they accepted, what they changed and in which direction.&#10;2. For what the Answer History doesn't settle, search the Vault by following the search-knowledge Skill: decisions, conventions and how the repos work.&#10;3. For each question, answer as the user would, in their words: concrete enough to build from.&#10;- Where the Answer History or the Vault says what the user would answer, give that, and say in `why` which Round or Note it came from.&#10;- Where neither does, but the recommendation fits what they say, give the recommendation, and say why it fits.&#10;- Where you can't tell, leave the question out: it gets its recommendation, stamped `recommended`, so the Report shows it was not your answer or the user's.&#10;Never invent a preference the user hasn't shown.&#10;&#10;Answer `done` with `answers: [{id, answer, why}]`." />
           <operaton:property name="ants.skills" value="k-search-knowledge" />
           <operaton:property name="ants.name.k-search-knowledge" value="search-knowledge" />

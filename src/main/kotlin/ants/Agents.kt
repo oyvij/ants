@@ -29,16 +29,18 @@ private typealias AgentItem = DraftedItem<Agent>
 
 /**
  * The Agents page: a form over one agent file. Only Agents in ANTS_HOME's `agents/` are edited; shipped Agents and
- * those from extra folders are read-only, with Copy. The page autosaves to the Agent's Draft, and Publish makes the
- * Draft the agent file, which is all a launch reads; nothing is cached, so a Publish reaches the next launch.
+ * those from extra folders are read-only, with Copy; a shipped one has Your Skills, a Draft and Publish of their own.
+ * The page autosaves to the Agent's Draft, and Publish makes the Draft the agent file, which is all a launch reads;
+ * nothing is cached, so a Publish reaches the next launch.
  */
 @Controller
 class Agents(
     private val catalogue: Catalogue, private val usedBy: UsedBy, private val models: Models, private val settings: Settings, private val scripts: Scripts,
-    private val drafted: DraftedItems, @Value("\${ants.home}") home: Path,
+    private val drafted: DraftedItems, private val drafts: Drafts, @Value("\${ants.home}") home: Path,
 ) {
     private val folder = home.resolve("agents")
     private val items = drafted.agents
+    private val yourSkills = catalogue.yourSkillsStore
 
     /** The agent file an Agent's page shows: the Draft's when there is one. */
     private val AgentItem.shown get() = draft?.let { Agent(folder.resolve("$name.md"), it.content) } ?: published!!
@@ -53,7 +55,7 @@ class Agents(
 
     private fun list(model: Model, error: String?): String {
         val published = catalogue.agents().map { agent ->
-            AgentRow(agent, catalogue.where(agent.file.parent), catalogue.skillNames(agent.skills), agent.name, DraftState.of(true, items.draftOf(agent) != null))
+            AgentRow(agent, catalogue.where(agent.file.parent), catalogue.listedNames(agent), agent.name,DraftState.of(true, items.draftOf(agent) != null))
         }
         val draftOnly = items.draftOnlyItems().map { (draft, agent) ->
             AgentRow(agent, catalogue.where(folder), catalogue.skillNames(agent.skills), draft.key, DraftState.DRAFT_ONLY)
@@ -78,11 +80,16 @@ class Agents(
 
     /**
      * The modeler's New Skill modal's Use: lists [skill] in the Draft of the user's own Agent [name], making the Draft
-     * from the published Agent when it has none, so the published Agent is as it was until Publish.
+     * from the published Agent when it has none, so the published Agent is as it was until Publish; on a shipped
+     * Agent, in the Draft of its Your Skills, made from the published ones.
      */
     @PostMapping("/agents/{name}/draft/skills")
     @ResponseBody
     fun listInDraft(@PathVariable name: String, @RequestParam skill: String): ResponseEntity<Unit> {
+        item(name).published?.takeIf(yourSkills::has)?.let { agent ->
+            yourSkills.saveDraft(agent, catalogue.skillIds(yourSkills.shown(agent) + skill), DraftFrom(yourSkills.draft(agent)?.version ?: 0))
+            return ResponseEntity.noContent().build()
+        }
         val item = editable(item(name))
         val form = AgentForm.of(item.shown)
         val id = idOf(item)
@@ -111,8 +118,11 @@ class Agents(
 
     /**
      * The Agents and Skills as the modeler's Agent Task panel picks them, read afresh each time so a new one shows up:
-     * each Agent's description, Skills (every one by name for `skills: "*"`) and folder, and whether it is the user's own (New Skill adds itself only to those, Edit opens only those), and each Skill's description, whether it is the user's own (Edit opens only those) and its folder;
-     * each Script's input names, and the type, description and required mark of each as `about`;
+     * each Agent's description, Skills (every one by name for `skills: "*"`, and a shipped one's Your Skills) and
+     * folder, whether it is the user's own (Edit opens only those) and whether it is shipped (New Skill adds itself to
+     * those two kinds, to a shipped one's Your Skills), and each Skill's description, whether it is the user's own (Edit
+     * opens only those) and its folder; each Script's input names, and the type, description and required mark of each
+     * as `about`;
      * each one's `draft` marker, null for one published with no Draft: a published one is as published, and a Draft-only
      * one, listed after them under the name its page is at, as its Draft;
      * and the Profiles a Process can name.
@@ -122,7 +132,7 @@ class Agents(
     fun catalogue(): Map<String, Any> {
         fun marker(published: Boolean, draft: Boolean) = DraftState.of(published, draft).takeIf { it != DraftState.PUBLISHED }?.let { mapOf("css" to it.css, "label" to it.label) }
         fun agent(agent: Agent, name: String, draft: Map<String, String>?) =
-            mapOf("id" to agent.id, "name" to name, "description" to agent.description, "skills" to catalogue.allowedNames(agent), "own" to (agent.file.parent == folder),
+            mapOf("id" to agent.id, "name" to name, "description" to agent.description, "skills" to catalogue.allowedNames(agent), "own" to (agent.file.parent == folder), "shipped" to catalogue.shipped(agent),
                 "folder" to agent.file.parent.toString(), "draft" to draft)
         fun skill(skill: Skill, name: String, own: Boolean, draft: Map<String, String>?) =
             mapOf("id" to skill.id, "name" to name, "description" to skill.description, "own" to own, "folder" to skill.folder.parent.toString(), "draft" to draft)
@@ -190,6 +200,67 @@ class Agents(
     @PostMapping("/agents/{name}/discard")
     fun discard(@PathVariable name: String, @RequestParam params: Map<String, String>, model: Model) = items.discard(editable(item(name)), "confirm" in params, model)
 
+    /** The shipped Agent whose page is /agents/[name], the only kind with Your Skills. */
+    private fun shippedAgent(name: String): Agent = item(name).published?.takeIf(yourSkills::has)
+        ?: throw ResponseStatusException(HttpStatus.FORBIDDEN, "Only a shipped Agent has Your Skills.")
+
+    /** Your Skills as the page shows them, and their Draft's header. */
+    private fun yourSkillsField(agent: Agent): YourSkillsField {
+        val draft = yourSkills.draft(agent)
+        val head = DraftHead(DraftState.of(true, draft != null), draft?.version ?: 0, draft?.savedLine, "/agents/${agent.name}/your-skills/draft")
+        return YourSkillsField(catalogue.skillNames(yourSkills.shown(agent)), head)
+    }
+
+    /** Your Skills as the page posts them, each Skill by its id where one has it, as their Draft keeps them. */
+    private fun postedYourSkills(params: MultiValueMap<String, String>) = catalogue.skillIds(words(joined(params)["skills"]))
+
+    /** Your Skills' autosave: the page's Skills as their Draft, unless the Draft changed since the page loaded [version]. Only Skills: any other field is ignored. */
+    @PostMapping("/agents/{name}/your-skills/draft")
+    @ResponseBody
+    fun autosaveYourSkills(@PathVariable name: String, @RequestParam params: MultiValueMap<String, String>, @RequestParam version: Long, @RequestParam tab: String?, @RequestParam(defaultValue = "0") seq: Long): ResponseEntity<Map<String, Any>> {
+        val agent = shippedAgent(name)
+        val save = yourSkills.saveDraft(agent, postedYourSkills(params), DraftFrom(version, tab, seq))
+        return Drafts.answer(DraftKind.YOUR_SKILLS, save, DraftState.CHANGED, "/agents/${agent.name}/your-skills")
+    }
+
+    /**
+     * **Publish** of Your Skills: keeps them as their Draft, then, unless one is a Draft only or names no Skill, makes
+     * them the ones the Agent's Tasks may use and removes the Draft.
+     */
+    @PostMapping("/agents/{name}/your-skills")
+    fun publishYourSkills(@PathVariable name: String, @RequestParam params: MultiValueMap<String, String>, model: Model): String {
+        val agent = shippedAgent(name)
+        val listed = postedYourSkills(params)
+        yourSkills.saveDraft(agent, listed, DraftFrom(yourSkills.draft(agent)?.version ?: 0))
+        yourSkillsRefusal(listed)?.let { return show(model, AgentForm.of(agent), item(name), it) }
+        yourSkills.publish(agent, listed)
+        yourSkills.removeDraft(agent)
+        return "redirect:/agents/${agent.name}"
+    }
+
+    /** Why [listed] can't be published as Your Skills, naming each Skill that is a Draft only or missing; null when they can. */
+    private fun yourSkillsRefusal(listed: List<String>) =
+        listed.mapNotNull { drafted.skills.refusal(it) ?: if (catalogue.listedSkill(it) == null) "No Skill named $it." else null }.takeIf { it.isNotEmpty() }?.joinToString(" ")
+
+    /**
+     * The Process Builder's set_your_skills (ADR 0019): publishes [skills] at once as Your Skills on the shipped Agent
+     * [name], leaving any Draft of them as it is, or throws why not. Gives the Agent's page.
+     */
+    fun setYourSkills(name: String, skills: List<String>): String {
+        val agent = shippedAgent(name)
+        yourSkillsRefusal(skills)?.let { throw Refused(it) }
+        yourSkills.publish(agent, catalogue.skillIds(skills))
+        return "/agents/${agent.name}"
+    }
+
+    /** **Discard Draft** of Your Skills: once confirmed, removes their Draft and reopens the Agent with the published ones. */
+    @PostMapping("/agents/{name}/your-skills/discard")
+    fun discardYourSkills(@PathVariable name: String, @RequestParam params: Map<String, String>, model: Model): String {
+        val agent = shippedAgent(name)
+        val page = "/agents/${agent.name}"
+        return drafts.discard(DraftKind.YOUR_SKILLS, yourSkills.draft(agent),"Your Skills on ${agent.name}", agent.name, "$page/your-skills", page, "confirm" in params, model)
+    }
+
     /** The form's fields, which repeat for a rule per Limit…, a chip per Skill and a tick per added tool: the filled ones, comma-separated. */
     private fun joined(params: MultiValueMap<String, String>) = params.mapValues { (_, values) -> values.filter(String::isNotBlank).joinToString(", ") }
 
@@ -235,7 +306,14 @@ class Agents(
         return draftOnly(copied(agent, copyName(agent.name) { taken(it, null) }))
     }
 
-    private fun copied(agent: Agent, name: String) = AgentForm.of(agent, name).copy(skills = catalogue.skillIds(agent.skills).joinToString(", "), scripts = scripts.ids(agent.scripts).joinToString(", "))
+    /**
+     * The form of a copy of [agent] named [name]: a shipped Agent's copy lists its shipped Skills and its Your Skills as
+     * its page shows them, their Draft's when they have one.
+     */
+    private fun copied(agent: Agent, name: String): AgentForm {
+        val yours = agent.takeIf(yourSkills::has)?.let(yourSkills::shown).orEmpty()
+        return AgentForm.of(agent, name).copy(skills = catalogue.skillIds(agent.skills + yours).joinToString(", "), scripts = scripts.ids(agent.scripts).joinToString(", "))
+    }
 
     /** The Process Builder's copy (ADR 0019): an editable copy of a read-only Agent, published at once into Ants' own folder, under the first free `<name>-copy`. */
     fun copy(name: String): String {
@@ -292,6 +370,7 @@ class Agents(
         model.addAttribute("item", item?.name)
         model.addAttribute("readOnly", item?.own == false)
         model.addAttribute("draft", item?.head)
+        model.addAttribute("yourSkills", agent?.takeIf(yourSkills::has)?.let(::yourSkillsField))
         model.addAttribute("where", agent?.let { catalogue.where(it.file.parent) })
         model.addAttribute("skills", catalogue.skills().distinctBy { it.name })
         model.addAttribute("dependents", agent?.let { usedBy.agent(it.name) })
@@ -307,6 +386,9 @@ class Agents(
 
     private fun editable(item: AgentItem) = item.takeIf { it.own } ?: throw ResponseStatusException(HttpStatus.FORBIDDEN, "${item.name} is read-only. Copy it to make one you can edit.")
 }
+
+/** Your Skills on a shipped Agent as its page shows them: the [skills] by name, and the [head] of their Draft. */
+class YourSkillsField(val skills: List<String>, val head: DraftHead)
 
 /** An Agent on the list, the folder it comes from, the [page] it is at and its [state]. */
 class AgentRow(val agent: Agent, val where: String, val skills: List<String>, val page: String = agent.name, val state: DraftState = DraftState.PUBLISHED)

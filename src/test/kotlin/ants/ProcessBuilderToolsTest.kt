@@ -66,7 +66,7 @@ class ProcessBuilderToolsTest : AntsTest() {
         try {
             assertEquals(listOf("diagram", "agents", "skills", "skill", "scripts", "processes", "process", "built_in_tasks", "templates", "references", "checks",
                 "create_agent", "create_skill", "change_agent", "change_skill", "delete_agent", "delete_skill", "build_log", "copy",
-                "add_element", "remove", "rename", "move", "connect", "set_condition", "set_default", "set_agent_task", "set_start_form",
+                "set_your_skills", "add_element", "remove", "rename", "move", "connect", "set_condition", "set_default", "set_agent_task", "set_start_form",
                 "set_user_task", "set_call", "set_built_in", "set_multi_instance", "drop_template"), tools(page))
             assertEquals(listOf("run"), tools(task))
             assertTrue(call(task, "diagram").second)
@@ -414,6 +414,30 @@ class ProcessBuilderToolsTest : AntsTest() {
 
         assertEquals("$outer holds other Skills (inner); move or delete them first." to true, call(token, "delete_skill", mapOf("name" to "outer")))
         assertTrue(outer.resolve("inner/SKILL.md").exists())
+    }
+
+    @Test
+    fun `set_your_skills publishes Your Skills on a shipped Agent at once, refuses a missing Skill or another Agent, and never changes the agent file`() {
+        val token = open()
+        assertEquals(false, call(token, "create_skill", mapOf("skill" to "---\nname: imported\ndescription: Imported.\n---\nDo it.\n")).second)
+        val agentFile = home.resolve("shipped/agents/shipped-writer.md").toFile().readText()
+        fun skillsOf(name: String) = json.readTree(browser.get("/catalogue.json").body)["agents"].single { it["name"].asString() == name }["skills"].toString()
+        try {
+            val set = call(token, "set_your_skills", mapOf("name" to "shipped-writer", "skills" to listOf("imported")))
+            assertEquals(mapOf("name" to "shipped-writer", "page" to "/agents/shipped-writer"), json.readValue(set.first, Map::class.java))
+            assertEquals("""["imported"]""", skillsOf("shipped-writer")) // published, so the next launch has it
+            assertEquals(agentFile, home.resolve("shipped/agents/shipped-writer.md").toFile().readText())
+
+            assertEquals("No Skill named no-such-skill." to true, call(token, "set_your_skills", mapOf("name" to "shipped-writer", "skills" to listOf("imported", "no-such-skill"))))
+            assertEquals("""["imported"]""", skillsOf("shipped-writer"))
+            assertEquals(false, call(token, "create_agent", mapOf("file" to "---\nname: mine\ndescription: Mine.\n---\nMine.\n")).second)
+            assertEquals("Only a shipped Agent has Your Skills." to true, call(token, "set_your_skills", mapOf("name" to "mine", "skills" to listOf("imported"))))
+
+            assertEquals(false, call(token, "set_your_skills", mapOf("name" to "shipped-writer", "skills" to emptyList<String>())).second)
+            assertEquals("[]", skillsOf("shipped-writer"))
+        } finally {
+            call(token, "set_your_skills", mapOf("name" to "shipped-writer", "skills" to emptyList<String>()))
+        }
     }
 }
 

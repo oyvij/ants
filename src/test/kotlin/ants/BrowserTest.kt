@@ -1289,6 +1289,23 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `on a shipped Agent the Skill picker offers Your Skills, and New Skill adds itself to them`() = browse {
+        agentTask(null)
+        home.resolve("skills/imported").createDirectories().resolve("SKILL.md").writeText("---\nname: imported\ndescription: Imported.\n---\nDo it.\n")
+        http.get("/agents/shipped-writer")
+        http.post("/agents/shipped-writer/your-skills", mapOf("skills" to "imported"))
+        try {
+            appendAgentTask()
+            label("Agent").selectOption("shipped-writer")
+            assertThat(page.locator("#explain .skillpick label")).hasText(arrayOf("imported"))
+            button("New Skill").click()
+            assertThat(page.locator("dialog.modal")).containsText("Added to Your Skills on shipped-writer in their Draft, and picked on this Task.")
+        } finally {
+            http.post("/agents/shipped-writer/your-skills", emptyMap())
+        }
+    }
+
+    @Test
     fun `a User Task asks for its kind's fields and says what later Tasks can read`() = browse {
         newProcess("Gated")
         shape("start").click()
@@ -1798,7 +1815,7 @@ class BrowserTest : AntsTest() {
             http.newDraft("/skills") to arrayOf(".card:has(#skill)", card("Run by")),
             "/agents/stacked" to arrayOf("#name", "#description", "#cli", "#model"),
             http.newDraft("/agents") to arrayOf("#name", "#description", "#cli", "#model"),
-            "/agents/implementer" to arrayOf("#name", "#description", "#cli", "#model"),
+            "/agents/engineer" to arrayOf("#name", "#description", "#cli", "#model"),
             "/settings" to arrayOf(card("Claude login"), card("Commands"), card("Vaults"), card("Agent folders"), card("So far"), card("Theme"), card("Server"), card("Updates")),
         )
         onPhone()
@@ -3459,6 +3476,36 @@ class BrowserTest : AntsTest() {
         page.waitForURL(url("/scripts/autosaved-script"))
         assertThat(marker).hasText("Published")
         assertEquals("console.log('helped')", code.readText().trim()) // a posted textarea's lines end in CRLF
+    }
+
+    @Test
+    fun `Your Skills on a shipped Agent's page adds and removes a Skill, autosaved to a Draft, and Publish puts it to use`() = browse {
+        home.resolve("skills/imported").createDirectories().resolve("SKILL.md").writeText("---\nname: imported\ndescription: Imported.\n---\nDo it.\n")
+        page.navigate(url("/agents/shipped-coder"))
+        assertThat(marker).hasText("Published")
+        assertThat(page.locator("#agent .chipsel .c")).hasText(arrayOf("tdd")) // the shipped Skills, apart and read-only
+        assertThat(page.locator("#agent .chipsel button")).hasCount(0)
+        val yours = page.locator("#your-skills .c", Page.LocatorOptions().setHasText("imported"))
+
+        page.fill("#add-skill", "imported")
+        page.locator("#add-skill").dispatchEvent("change")
+        assertThat(yours).hasCount(1)
+        assertThat(saveState).hasText(draftSaved)
+        assertThat(marker).hasText("Draft · changes not published")
+        page.click("button[form=your-skills]")
+        page.waitForURL(url("/agents/shipped-coder"))
+        assertThat(marker).hasText("Published")
+        assertThat(yours).hasCount(1)
+        eventually { assertContains(http.get("/catalogue.json").body, """"name":"shipped-coder","description":"Stands in for a shipped codex Agent with Skills of its own.","skills":["tdd","imported"]""") }
+
+        yours.locator("button[title=Remove]").click()
+        assertThat(yours).hasCount(0)
+        assertThat(saveState).hasText(draftSaved)
+        page.click("button[form=your-skills]")
+        page.waitForURL(url("/agents/shipped-coder"))
+        assertThat(marker).hasText("Published")
+        assertThat(yours).hasCount(0)
+        assertContains(http.get("/catalogue.json").body, """"skills":["tdd"]""")
     }
 
     @Test

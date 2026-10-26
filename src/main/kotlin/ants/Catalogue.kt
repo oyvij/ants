@@ -47,8 +47,6 @@ class Agent(val file: Path, text: String = file.readText(), outsideId: String? =
     /** Whether it may use every Skill, `skills: "*"`. */
     val allSkills get() = "*" in skills
 
-    fun allows(skill: Skill) = allSkills || skill.id in skills || skill.name in skills
-
     fun allows(script: Script) = script.id in scripts || script.name in scripts
 
     /** The tools as permission rules, such as `Bash(git log *)`; null for the default tools. */
@@ -200,13 +198,35 @@ class Catalogue(@Value("\${ants.home}") private val home: Path, private val sett
     private fun <T> one(items: List<T>, shipped: (T) -> Boolean, none: String, many: String): T =
         items.singleOrNull() ?: items.filter { shipped(it) != settings.hideShipped() }.singleOrNull() ?: error(if (items.isEmpty()) none else many)
 
-    /** The names of the Skills [agent] may use: every one in the catalogue with `skills: "*"`. */
-    fun allowedNames(agent: Agent): List<String> = if (agent.allSkills) skills().map { it.name }.distinct() else skillNames(agent.skills)
+    /** Your Skills on each shipped Agent, and their Drafts. */
+    val yourSkillsStore = YourSkills(home.resolve("your-skills"), drafts, ::shipped)
 
-    /** The Skills [agent] may use ([allowedNames]). */
-    fun allowed(agent: Agent): List<Skill> = if (agent.allSkills) allowedNames(agent).map(::skill) else agent.skills.map { linkedSkill(it, null) }
+    /**
+     * The Skills [agent] may use, each as listed (an id, or a name; `*` for every Skill): those it lists, then on a
+     * shipped Agent its published Your Skills, less any of those deleted since, so a launch never fails on one.
+     * [allowed], [allowedNames] and [allows] all read it, so the launch, the modeler, the Checks and Used by never learn
+     * about Your Skills separately.
+     */
+    private fun listed(agent: Agent): List<String> = agent.skills + yourSkillsStore.published(agent).filter { listedSkill(it) != null }
 
+    /** The names of the Skills [agent] may use, as the Agents list shows them: `*` for every Skill. */
+    fun listedNames(agent: Agent): List<String> = skillNames(listed(agent)).distinct()
+
+    /** The names of the Skills [agent] may use ([allowed]): every one in the catalogue with `skills: "*"`. */
+    fun allowedNames(agent: Agent): List<String> = if (agent.allSkills) skills().map { it.name }.distinct() else listedNames(agent)
+
+    /** The Skills [agent] may use, each counted once; one it lists itself that is gone fails, saying so. */
+    fun allowed(agent: Agent): List<Skill> =
+        if (agent.allSkills) allowedNames(agent).map(::skill) else listed(agent).map { linkedSkill(it, null) }.distinctBy { it.file }
+
+    /** Whether [agent] may use [skill] ([allowed]). */
+    fun allows(agent: Agent, skill: Skill) = agent.allSkills || listed(agent).any { names(it, skill) }
+
+    /** The Skill a listed [value] names: the one with that id, else the one with that name; null for none. */
     fun listedSkill(value: String): Skill? = runCatching { linkedSkill(value, null) }.getOrNull()
+
+    /** Whether the listed [value] names [skill], as [listedSkill] finds one: by its id, else by its name. */
+    private fun names(value: String, skill: Skill) = value == skill.id || value == skill.name
 
     fun skillNames(listed: List<String>): List<String> = listed.map { value -> eachListed(value) { it.name } }
 

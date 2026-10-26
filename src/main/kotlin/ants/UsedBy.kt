@@ -22,11 +22,14 @@ class UsedBy(private val repository: RepositoryService, private val runtime: Run
         })
     }
 
+    /** What uses the Skill [name]: the Processes whose Tasks list it, and the Agents that list it, in their own Skills or in Your Skills (not those with every Skill, `*`). */
     fun skill(name: String): Dependents {
         val skill = runCatching { catalogue.skill(name) }.getOrNull()
-        return dependents(processes { _, model ->
+        val agents = skill?.let { catalogue.agents().filter { agent -> !agent.allSkills && catalogue.allows(agent, it) }.map { it.name } }.orEmpty()
+        val processes = dependents(processes { _, model ->
             model.agentTasks.any { task -> name in Job(task).listed.orEmpty() || skill != null && Links(task).skills(catalogue).orEmpty().any { it.getOrNull()?.file == skill.file } }
         })
+        return Dependents(processes.processes, processes.older, agents)
     }
 
     fun script(script: Script): Dependents {

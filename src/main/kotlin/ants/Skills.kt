@@ -69,7 +69,7 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
         val agents = catalogue.agents()
         val published = skills.map { skill ->
             val hidden = !catalogue.shipped(skill) && skill.name in shipped
-            val runBy = agents.filter { it.allows(skill) }.map { it.name }.sorted()
+            val runBy = agents.filter { catalogue.allows(it, skill) }.map { it.name }.sorted()
             SkillRow(skill, catalogue.where(skill.folder), hidden, runBy, state = DraftState.of(true, items.draftOf(skill) != null))
         }
         val draftOnly = items.draftOnlyItems().map { (draft, skill) ->
@@ -301,7 +301,7 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
         model.addAttribute("message", message)
         model.addAttribute("draft", item?.head)
         model.addAttribute("dependents", item?.published?.let { usedBy.skill(it.name) })
-        model.addAttribute("runBy", item?.published?.let { skill -> catalogue.agents().filter { agent -> agent.allows(skill) }.sortedBy { it.name } }.orEmpty())
+        model.addAttribute("runBy", item?.published?.let { skill -> catalogue.agents().filter { agent -> catalogue.allows(agent, skill) }.sortedBy { it.name } }.orEmpty())
         return "skill"
     }
 }

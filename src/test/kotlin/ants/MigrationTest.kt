@@ -287,6 +287,116 @@ class MigrationTest : AntsTest() {
         assertEquals(JsonMapper.shared().readValue(textSchema, Map::class.java), (schema["properties"] as Map<*, *>)["output"])
     }
 
+    /** agent-task.bpmn under [key], its Task on the Agent [agent] with the name [kept] beside it, and the properties [rest] in place of its Skills. */
+    private fun onAgent(key: String, agent: String, kept: String, rest: String) = agentTask.replace("\"agent-task\"", "\"$key\"")
+        .replace("""<operaton:property name="ants.agent" value="writer" />""", property("ants.agent", agent) + property("ants.name.$agent", kept))
+        .replace("""<operaton:property name="ants.skills" value="draft" />""", rest)
+
+    /** The Task's properties in [bpmn], in order. */
+    private fun properties(bpmn: String) = Regex("""<operaton:property name="(ants\.[^"]+)" value="([^"]*)"""").findAll(bpmn).map { it.groupValues[1] to it.groupValues[2] }.toList()
+
+    @Test
+    fun `a saved Process and Templates naming old shipped Agents move to the new ones with the old Skills and level pinned, the old files kept`() {
+        val assignment = property("ants.assignment", "Do it.")
+        // The architect gave its Task no Skills and ran on level 4; lead has six Skills and starts on 3.
+        deployedByOlderAnts("old-architect", onAgent("old-architect", "a-architect", "architect", assignment))
+        // A Task listing its own Skills keeps them; pr ran on level 2, engineer starts on 3.
+        val pr = home.resolve("templates/old-pr.bpmn").apply { writeText(onAgent("old_pr", "a-pr", "pr", assignment + property("ants.skills", "k-pr") + property("ants.name.k-pr", "pr"))) }
+        // The implementer ran on engineer's level, so none is pinned.
+        val implementer = home.resolve("templates/old-implementer.bpmn").apply { writeText(onAgent("old_implementer", "a-implementer", "implementer", assignment)) }
+        val before = files()
+
+        migration.migrate()
+
+        val versions = repository.createProcessDefinitionQuery().processDefinitionKey("old-architect").orderByProcessDefinitionVersion().asc().list()
+        assertEquals(2, versions.size) // the old version kept
+        fun deployed(index: Int) = properties(repository.getProcessModel(versions[index].id).readAllBytes().decodeToString())
+        assertEquals(listOf("ants.agent" to "a-architect", "ants.name.a-architect" to "architect", "ants.assignment" to "Do it."), deployed(0))
+        assertEquals(listOf("ants.agent" to "a-lead", "ants.name.a-lead" to "lead", "ants.assignment" to "Do it.", "ants.skills" to "", "ants.level" to "4"), deployed(1))
+        assertEquals(
+            listOf("ants.agent" to "a-engineer", "ants.name.a-engineer" to "engineer", "ants.assignment" to "Do it.", "ants.skills" to "k-pr", "ants.name.k-pr" to "pr", "ants.level" to "2"),
+            properties(pr.readText()),
+        )
+        val skills = listOf("implement", "tdd", "code-review", "codebase-design")
+        assertEquals(
+            listOf("ants.agent" to "a-engineer", "ants.name.a-engineer" to "engineer", "ants.assignment" to "Do it.", "ants.skills" to skills.joinToString(", ") { "k-$it" }) +
+                skills.map { "ants.name.k-$it" to it },
+            properties(implementer.readText()),
+        )
+        for (template in listOf("templates/old-pr.bpmn", "templates/old-implementer.bpmn")) assertEquals(before.getValue(template), home.resolve("$template.old").readText())
+
+        // A second start changes nothing.
+        val after = files()
+        val count = repository.createProcessDefinitionQuery().count()
+        migration.migrate()
+        assertEquals(after, files())
+        assertEquals(count, repository.createProcessDefinitionQuery().count())
+    }
+
+    @Test
+    fun `a Task from a Run in flight on an old shipped Agent launches on the new one with the Skills and level it had`() {
+        settings(claude, "agent-tasks: 0\n") // held until the migration
+        claude.session("draft", done)
+        val assignment = property("ants.assignment", "Tell the story.")
+        deployedByOlderAnts("in-flight-agent", onAgent("in-flight-agent", "a-storyteller", "storyteller", assignment))
+        val run = runtime.startProcessInstanceByKey("in-flight-agent", mapOf("prompt" to "Say hello")).id
+        migration.migrate()
+        // The same Task drawn on lead, with the storyteller's Skill and level.
+        browser.get("/processes")
+        val drawn = onAgent("on-lead", "a-lead", "lead", assignment + property("ants.skills", "k-walkthrough") + property("ants.name.k-walkthrough", "walkthrough") + property("ants.level", "2"))
+        val deployed = browser.upload("/processes", "file", "on-lead.bpmn", drawn.toByteArray()).body
+        assertFalse("role=\"alert\"" in deployed, deployed)
+        settings(claude, "agent-tasks: 3\n")
+
+        completed(run)
+        val reference = start("on-lead")
+        completed(reference)
+        val (old, new) = claude.launches("draft")
+        assertEquals(comparable(new, reference), comparable(old, run))
+        assertEquals(setOf("walkthrough"), old.skills.keys)
+    }
+
+    @Test
+    fun `a copy of a shipped Agent, a user's Agent named like an old one, and the Tasks naming them are left alone`() {
+        home.resolve("agents/implementer-copy.md").writeText("---\nid: a-copy01\nname: implementer-copy\nskills: k-tdd\n---\nImplement it.\n")
+        home.resolve("agents/scout.md").writeText("---\nid: a-mine01\nname: scout\nskills: k-tdd\n---\nScout it.\n")
+        val assignment = property("ants.assignment", "Do it.")
+        home.resolve("templates/on-copy.bpmn").writeText(onAgent("on_copy", "a-copy01", "implementer-copy", assignment))
+        home.resolve("templates/on-mine.bpmn").writeText(onAgent("on_mine", "a-mine01", "scout", assignment))
+        deployedByOlderAnts("on-mine", onAgent("on-mine", "a-mine01", "scout", assignment))
+        // The user's own Agent whose id is an old shipped Agent's.
+        home.resolve("agents/my-griller.md").writeText("---\nid: a-griller\nname: my-griller\nskills: k-tdd\n---\nGrill it.\n")
+        home.resolve("templates/on-my-griller.bpmn").writeText(onAgent("on_my_griller", "a-griller", "my-griller", assignment))
+        val before = files()
+
+        migration.migrate()
+
+        assertEquals(before, files())
+        assertEquals(1, repository.createProcessDefinitionQuery().processDefinitionKey("on-mine").count())
+    }
+
+    @Test
+    fun `a Process Draft naming an old shipped Agent moves to the new one once, the old Draft kept`() {
+        val drafts = Drafts(home)
+        drafts.save(DraftKind.PROCESS, DraftPage("drafted-griller", "Drafted griller", onAgent("drafted-griller", "a-griller", "griller", property("ants.assignment", "Grill."))), DraftFrom.NEW)
+        val file = home.resolve("drafts/processes/drafted-griller.yaml")
+        val before = file.readText()
+
+        migration.migrate()
+
+        val draft = drafts.get(DraftKind.PROCESS, "drafted-griller")!!
+        assertEquals("Drafted griller", draft.name)
+        assertEquals(
+            listOf("ants.agent" to "a-lead", "ants.name.a-lead" to "lead", "ants.assignment" to "Grill.", "ants.skills" to "k-grilling", "ants.name.k-grilling" to "grilling"),
+            properties(draft.content),
+        )
+        assertEquals(before, home.resolve("drafts/processes/drafted-griller.yaml.old").readText())
+
+        val after = file.readText()
+        migration.migrate()
+        assertEquals(after, file.readText())
+    }
+
     @Test
     fun `a Process the Checks refuse after migration leaves its Agents as they were, and its Runs fail saying what to fix`() {
         oldSkills()
