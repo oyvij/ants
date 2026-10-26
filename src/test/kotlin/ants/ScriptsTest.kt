@@ -128,7 +128,9 @@ class ScriptsTest : AntsTest() {
 
         browser.post("/scripts/post-message", form("post-message", inputs = "channel", own = listOf("SLACK_TOKEN" to "")))
         assertEquals(mapOf("SLACK_TOKEN" to "xoxb-s3cret"), Yaml().load<Map<*, *>>(folder.resolve("secrets.yaml").readText()))
-        browser.post("/scripts/post-message", form("post-message"))
+        browser.post("/scripts/post-message", form("post-message", own = listOf("SLACK_TOKEN" to "xoxb-typed"))) // Publish leaves the Secrets as the card saved them
+        assertEquals(mapOf("SLACK_TOKEN" to "xoxb-s3cret"), Yaml().load<Map<*, *>>(folder.resolve("secrets.yaml").readText()))
+        browser.post("/scripts/post-message/secrets", emptyList())
         assertFalse(folder.resolve("secrets.yaml").exists())
     }
 
@@ -704,6 +706,74 @@ class ScriptsTest : AntsTest() {
         assertEquals("ants.output({said: 'published'})\n", folder("tested").resolve("script.mjs").readText())
         val refused = testRun(draft, sample = """{"text": 1}""", script = "tested")
         assertContains(refused["output"].toString(), "The inputs break the Script's input schema") // the Draft's schema, which the published Script hasn't
+    }
+
+    /** The Secrets card's rows as its Save posts them: each Secret's name, the value typed, and the name it was saved under. */
+    private fun secretRows(vararg rows: Triple<String, String, String>) = rows.withIndex().flatMap { (i, row) ->
+        listOf("secrets[$i].name" to row.first, "secrets[$i].value" to row.second, "secrets[$i].was" to row.third)
+    }
+
+    private fun savedSecrets(name: String): Map<*, *>? = folder(name).resolve("secrets.yaml").takeIf { it.exists() }?.let { Yaml().load<Map<*, *>>(it.readText()) }
+
+    @Test
+    fun `the Secrets card's Save writes its Secrets at once, and neither publishes the Script nor touches its Draft`() {
+        create(form("keeper", code = "console.log(process.env.SLACK_TOKEN)\n", own = listOf("SLACK_TOKEN" to "xoxb-s3cret")))
+        val folder = folder("keeper")
+        val id = folder.fileName.toString()
+        assertEquals(200, browser.autosave("/scripts/keeper", form("keeper", code = "half done (\n", description = "Half done."), "0").status)
+        fun draft() = Drafts(home).get(DraftKind.SCRIPT, id)!!.let { listOf(it.version, it.content) }
+        val draft = draft()
+
+        val saved = browser.post("/scripts/keeper/secrets", secretRows(Triple("SLACK_TOKEN", "xoxb-n3w", "SLACK_TOKEN"), Triple("API_KEY", "k3y", "")))
+        assertEquals(200, saved.status, saved.body)
+        assertEquals(mapOf("SLACK_TOKEN" to "xoxb-n3w", "API_KEY" to "k3y"), savedSecrets("keeper"))
+        assertEquals(listOf("SLACK_TOKEN", "API_KEY"), definition(folder)["secrets"])
+        assertEquals("console.log(process.env.SLACK_TOKEN)\n", folder.resolve("script.mjs").readText())
+        assertEquals("Posts a message.", definition(folder)["description"])
+        assertEquals(draft, draft())
+        assertFalse("k3y" in saved.body)
+
+        val page = browser.get("/scripts/keeper").body
+        assertContains(page, """value="Half done."""") // still the Draft
+        assertContains(page, """name="secrets[1].name" value="API_KEY"""")
+        assertContains(page, """name="secrets[1].was" value="API_KEY"""")
+
+        assertContains(browser.post("/scripts/keeper/secrets", secretRows(Triple("API_KEY", "", "API_KEY"), Triple("NEW_ONE", "", ""))).body, "The Secret NEW_ONE needs a value.")
+        assertContains(browser.post("/scripts/keeper/secrets", secretRows(Triple("lower", "x", ""))).body, "A var or Secret's name is upper case letters")
+        assertEquals(mapOf("SLACK_TOKEN" to "xoxb-n3w", "API_KEY" to "k3y"), savedSecrets("keeper"))
+
+        browser.post("/scripts/keeper/secrets", secretRows(Triple("API_KEY", "", "API_KEY")))
+        assertEquals(mapOf("API_KEY" to "k3y"), savedSecrets("keeper"))
+        assertEquals(listOf("API_KEY"), definition(folder)["secrets"])
+        browser.post("/scripts/keeper/secrets", emptyList())
+        assertNull(savedSecrets("keeper"))
+        assertEquals(draft, draft())
+    }
+
+    @Test
+    fun `a Draft-only Script's Secrets are kept apart from its Draft and are there after Publish, and a Copy names them with no value`() {
+        val page = browser.post("/scripts/new/draft", emptyMap()).path
+        assertEquals(200, browser.post("$page/secrets", secretRows(Triple("TOKEN", "t0ps3cret", ""))).status)
+        val shown = browser.get(page).body
+        assertContains(shown, """name="secrets[0].name" value="TOKEN"""")
+        assertContains(shown, "••••")
+        val typed = form("kept-secret", code = "console.log(process.env.TOKEN)\n", own = listOf("TOKEN" to "typed-not-saved"))
+        val answer = answer(browser.autosave(page, typed, draftVersion(shown)))
+        val draft = Drafts(home).all(DraftKind.SCRIPT).single().content
+        assertFalse("t0ps3cret" in draft || "typed-not-saved" in draft) // a Secret's value never lands in the Draft
+        assertEquals(emptyList(), scripts.listDirectoryEntries().filter { it.resolve("script.yaml").exists() })
+
+        val published = browser.post(answer["path"].toString(), form("kept-secret", code = "console.log(process.env.TOKEN)\n") + secretRows(Triple("TOKEN", "", "TOKEN")))
+        assertEquals("/scripts/kept-secret", published.path, published.body)
+        assertEquals(mapOf("TOKEN" to "t0ps3cret"), savedSecrets("kept-secret"))
+        assertEquals(listOf("TOKEN"), definition(folder("kept-secret"))["secrets"])
+
+        val copy = browser.post("/scripts/kept-secret/copy", emptyMap())
+        assertContains(copy.body, """name="secrets[0].name" value="TOKEN"""")
+        assertFalse("••••" in copy.body)
+        val refused = browser.post(copy.path, form("kept-secret-copy") + secretRows(Triple("TOKEN", "", "")))
+        assertContains(refused.body, "The Secret TOKEN needs a value: save it on the Secrets card.")
+        browser.post("${copy.path}/delete", mapOf("confirm" to "on"))
     }
 
     companion object {

@@ -1,7 +1,41 @@
 // The Script page's Secrets card: "Add Secret" adds an empty row, and a row's ✕ removes it once Ants' own modal
-// confirms, naming the Secret. Nothing is saved until the page is: Save posts the rows left, numbered from 0, and a
-// Secret no row names leaves secrets.yaml. Without this script the card shows its saved Secrets and one empty row.
+// confirms, naming the Secret. Nothing is saved until Save Secrets, which posts the card's rows alone, numbered from 0,
+// apart from the Draft; a Secret no row names leaves secrets.yaml. Without this script the card shows its saved
+// Secrets and one empty row, and Save Secrets posts the whole page.
 const list = document.querySelector('[data-secrets]');
+const saveSecrets = document.querySelector('[data-save-secrets]');
+if (list && saveSecrets) {
+    const state = document.querySelector('[data-secrets-state]');
+    saveSecrets.addEventListener('click', async event => {
+        event.preventDefault();
+        const form = saveSecrets.form;
+        const fields = new URLSearchParams();
+        fields.set('_csrf', form.querySelector('[name=_csrf]').value);
+        list.querySelectorAll('[name^="secrets["]').forEach(field => fields.append(field.name, field.value));
+        state.textContent = 'Saving…';
+        let answer;
+        try {
+            const response = await fetch(`${form.getAttribute('action')}/secrets`, {method: 'POST', body: fields, headers: {Accept: 'application/json'}});
+            answer = response.headers.get('content-type')?.includes('json') ? await response.json()
+                : {error: response.status === 403 || response.redirected ? "you're logged out: log in again in another tab, then save again." : `Ants answered ${response.status}.`};
+        } catch {
+            answer = {error: "Ants can't be reached."};
+        }
+        if (answer.error) {
+            state.textContent = `Not saved: ${answer.error}`;
+            return;
+        }
+        list.querySelectorAll(':scope > .row').forEach(row => {
+            const name = row.querySelector('input[name$=".name"]').value.trim();
+            if (!answer.secrets.includes(name)) return;
+            row.querySelector('input[name$=".was"]').value = name;
+            const value = row.querySelector('input[name$=".value"]');
+            value.value = '';
+            value.placeholder = '••••';
+        });
+        state.textContent = answer.saved;
+    });
+}
 if (list) {
     const blank = list.lastElementChild.cloneNode(true);
     const renumber = () => list.querySelectorAll(':scope > .row').forEach((row, i) =>
