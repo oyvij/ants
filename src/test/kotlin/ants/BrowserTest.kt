@@ -3167,6 +3167,34 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `an edit on the Skill page is autosaved to its Draft with no Publish, and it survives a reload`() = browse {
+        val folder = home.resolve("skills/autosaved-skill").createDirectories()
+        folder.resolve("ants.yaml").writeText("id: k-auto01\n")
+        val published = "---\nname: autosaved-skill\ndescription: Published.\n---\nPublished.\n"
+        folder.resolve("SKILL.md").writeText(published)
+        page.navigate(url("/skills/autosaved-skill"))
+        assertThat(marker).hasText("Published")
+
+        val drafted = "---\nname: autosaved-skill\ndescription: Kept as a Draft.\n---\nKept as a Draft.\n"
+        page.locator("#skill-md + .ed .cm-content").fill(drafted)
+        assertThat(saveState).hasText(draftSaved)
+        assertThat(marker).hasText("Draft · changes not published")
+        assertEquals(published, folder.resolve("SKILL.md").readText())
+
+        page.reload()
+        assertThat(page.locator("#skill-md + .ed .cm-content")).containsText("Kept as a Draft.")
+        assertThat(marker).hasText("Draft · changes not published")
+        page.navigate(url("/skills"))
+        assertThat(page.locator("tr", Page.LocatorOptions().setHasText("autosaved-skill")).locator(".draft-mark")).hasText("Draft · changes not published")
+
+        page.navigate(url("/skills/autosaved-skill"))
+        page.click("button[form=skill]")
+        page.waitForURL(url("/skills/autosaved-skill"))
+        assertThat(marker).hasText("Published")
+        assertEquals(drafted, folder.resolve("SKILL.md").readText())
+    }
+
+    @Test
     fun `a failed autosave says why and is retried until it succeeds`() = browse {
         home.resolve("agents").createDirectories().resolve("retried.md").writeText("---\nid: a-retry1\nname: retried\ncli: claude\n---\nRetry.\n")
         page.navigate(url("/agents/retried"))
@@ -3236,6 +3264,41 @@ class BrowserTest : AntsTest() {
         page.locator("main button.danger").click()
         page.waitForURL(url("/agents"))
         assertThat(page.locator("a[href='/agents/$name']")).hasCount(0)
+    }
+
+    @Test
+    fun `an edit on the Script page, typed or by the Script helper, is autosaved to its Draft with no Publish, and survives a reload`() = browse {
+        http.get("/scripts/new")
+        http.post("/scripts/new", listOf("name" to "autosaved-script", "description" to "Published.", "code" to "console.log('published')\n", "vars" to ""))
+        val code = home.resolve("scripts").toFile().walk().single { it.name == "script.mjs" }
+        page.navigate(url("/scripts/autosaved-script"))
+        assertThat(marker).hasText("Published")
+        assertThat(saveState).isEmpty()
+
+        val editor = page.locator(".code-editor .cm-content")
+        editor.click()
+        page.keyboard().press("ControlOrMeta+End")
+        page.keyboard().insertText("console.log('typed')")
+        assertThat(saveState).hasText(draftSaved)
+        assertThat(marker).hasText("Draft · changes not published")
+        assertEquals("console.log('published')\n", code.readText())
+
+        page.reload()
+        assertThat(editor).containsText("console.log('typed')")
+        assertThat(marker).hasText("Draft · changes not published")
+
+        val helper = page.getByRole(AriaRole.COMPLEMENTARY, Page.GetByRoleOptions().setName("Script helper"))
+        assertThat(helper).hasAttribute("data-token", Pattern.compile(".+"))
+        val (text, failed) = mcpCall(port, helper.getAttribute("data-token")!!, "replace_buffer", mapOf("code" to "console.log('helped')\n"))
+        assertFalse(failed, text)
+        eventually { assertContains(http.get("/scripts/autosaved-script").body, "helped") }
+        page.reload()
+        assertThat(editor).hasText("console.log('helped')")
+
+        page.click("button[form=script]")
+        page.waitForURL(url("/scripts/autosaved-script"))
+        assertThat(marker).hasText("Published")
+        assertEquals("console.log('helped')", code.readText().trim()) // a posted textarea's lines end in CRLF
     }
 
     @Test
