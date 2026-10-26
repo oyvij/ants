@@ -731,9 +731,13 @@ async function agentPanel(element, box) {
         placeholder: "No Result schema: the Task hands back done or stuck and a summary. Give one here to read its Result's fields.",
         oninput: () => write({"ants.result-schema": override.value.trim() || undefined}),
     })
+    const levelSelect = el("select", {onchange: () => write({"ants.level": levelSelect.value || undefined})},
+        ...[["", "The Agent's level"], ...["1", "2", "3", "4", "5"].map(level => [level, level])].map(([value, textContent]) =>
+            el("option", {value, textContent, selected: value === (props["ants.level"] || "")})))
     box.replaceChildren(
         field("Agent", "Who does it.", agentSelect, editAgent, newAgent),
         props["ants.agent"] && !agent ? note("warn", `No Agent folder holds "${props["ants.agent"]}".`) : "",
+        field("Level", "The model and effort it runs on, 1 to 5, before its Agent's.", levelSelect),
         field("Assignment", "The job, in a few lines. Leave it out when the Task lists one Skill: that Skill is then the job.", assignment),
         field("Skills", "What the Agent may use for it: all of its Skills, none, or only the ones ticked.", modeSelect,
             el("div", {className: "skillpick"}, ...(skillRows.length ? skillRows : [note("muted small", agent ? "The Agent has no Skills." : "Pick an Agent to see its Skills.")])),

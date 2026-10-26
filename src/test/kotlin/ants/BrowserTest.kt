@@ -1137,6 +1137,21 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `the Level picker sets the Task's own level and clears it back to the Agent's`() = browse {
+        agentTask(null, mapOf("draft" to null))
+        http.import("agent-task.bpmn")
+        page.navigate(url("/processes/agent-task/edit"))
+        shape("draft").click()
+        assertThat(label("Level")).hasValue("")
+        checked({ "name=\"ants.level\" value=\"5\"" in it }) { label("Level").selectOption("5") }
+        checked({ "ants.level" !in it }) { label("Level").selectOption("") }
+        checked({ "name=\"ants.level\" value=\"1\"" in it }) { label("Level").selectOption("1") }
+        shape("end").click()
+        shape("draft").click()
+        assertThat(label("Level")).hasValue("1")
+    }
+
+    @Test
     fun `changing the Agent drops the listed Skills the new Agent doesn't have, and says so`() = browse {
         agentTask(null, mapOf("draft" to null, "polish" to null))
         home.resolve("agents/editor.md").writeText("---\nskills: polish\n---\nEdit.\n")
