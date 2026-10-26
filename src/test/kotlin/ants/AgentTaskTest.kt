@@ -182,6 +182,44 @@ class AgentTaskTest : AntsTest() {
     }
 
     @Test
+    fun `a claude Agent Task launches on its Agent's level's model and effort`() {
+        agentTask()
+        claude.session("draft", done)
+        val ladder = mapOf(1 to ("haiku" to null), 2 to ("sonnet" to "medium"), 3 to ("opus" to "medium"), 4 to ("opus" to "high"), 5 to ("opus" to "max"))
+        for ((level, expected) in ladder) {
+            home.resolve("agents/writer.md").writeText("---\nlevel: $level\nskills: draft\n---\nWrite plainly.\n")
+            val run = start()
+            eventually { assertContains(page(run), """id="state">Completed<""") }
+            val launch = claude.launches("draft").last()
+            assertEquals(expected, launch.flag("--model") to launch.flag("--effort"))
+        }
+    }
+
+    @Test
+    fun `an Agent with neither level nor model launches on level 2`() {
+        agentTask()
+        claude.session("draft", done)
+        val run = start()
+        eventually { assertContains(page(run), """id="state">Completed<""") }
+        val launch = claude.launches("draft").single()
+        assertEquals("sonnet" to "medium", launch.flag("--model") to launch.flag("--effort"))
+    }
+
+    @Test
+    fun `a pinned model launches on its model ID with the effort of its family's level`() {
+        agentTask()
+        claude.session("draft", done)
+        val pinned = mapOf("claude-haiku-4-5-20251001" to null, "claude-sonnet-5-5" to "medium", "claude-opus-5-5[1m]" to "medium")
+        for ((model, effort) in pinned) {
+            home.resolve("agents/writer.md").writeText("---\nmodel: $model\nskills: draft\n---\nWrite plainly.\n")
+            val run = start()
+            eventually { assertContains(page(run), """id="state">Completed<""") }
+            val launch = claude.launches("draft").last()
+            assertEquals(model to effort, launch.flag("--model") to launch.flag("--effort"))
+        }
+    }
+
+    @Test
     fun `--json-schema holds the envelope around the Skill's promised output`() {
         agentTask(textSchema)
         claude.session("draft", done)
@@ -422,7 +460,7 @@ class AgentTaskTest : AntsTest() {
         val argv = claude.launches("draft").single().argv.joinToString(" ")
         assertContains(argv, "--append-system-prompt Write plainly.")
         assertContains(argv, "--tools Bash,Edit,Glob,Grep,NotebookEdit,Read,TaskCreate,TaskGet,TaskList,TaskUpdate,WebFetch,WebSearch,Write")
-        assertFalse("--model" in argv)
+        assertContains(argv, "--model sonnet --effort medium")
         assertEquals(emptyMap<String, Any>(), (claude.launches("draft").single().schema()["properties"] as Map<*, *>)["output"])
     }
 

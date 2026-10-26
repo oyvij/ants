@@ -95,6 +95,21 @@ class AgentsTest : AntsTest() {
     }
 
     @Test
+    fun `an Agent's level is read and written, and its pinned model kept beside it`() {
+        agents.resolve("leveled.md").writeText("---\nname: leveled\nlevel: 4\nmodel: claude-opus-5-5\n---\nThink hard.\n")
+        assertContains(get("/agents/leveled"), """name="level" value="4"""")
+        post("/agents/leveled", mapOf("name" to "leveled", "cli" to "claude", "tool.Read" to "on", "level" to "4", "model" to "claude-opus-5-5", "instructions" to "Think hard."))
+        assertEquals("---\nname: leveled\ncli: claude\ntools: Read\nmodel: claude-opus-5-5\nlevel: 4\n---\nThink hard.\n", withoutId(agents.resolve("leveled.md")))
+        post("/agents/leveled", mapOf("name" to "leveled", "cli" to "claude", "tool.Read" to "on", "level" to "1", "instructions" to "Think hard."))
+        assertEquals("---\nname: leveled\ncli: claude\ntools: Read\nlevel: 1\n---\nThink hard.\n", withoutId(agents.resolve("leveled.md")))
+        assertContains(post("/agents/leveled", mapOf("name" to "leveled", "cli" to "claude", "tool.Read" to "on", "level" to "6", "instructions" to "Think hard.")).body, "A level is 1 to 5, not 6.")
+
+        val imported = import("deep.md", "---\nname: deep\nlevel: 3\n---\nGo deep.\n")
+        assertContains(imported, """name="level" value="3"""")
+        assertFalse("Dropped the keys" in imported)
+    }
+
+    @Test
     fun `a hand-written agent file shows on the form, its limits under Limit and its other keys kept`() {
         agents.resolve("seeker.md").writeText("---\nname: seeker\ncolor: blue\ntools: Agent(knowledge-searcher, worker), Read\n---\nScout.\n")
         val page = get("/agents/seeker")

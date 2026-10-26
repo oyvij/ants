@@ -54,6 +54,7 @@
 @if(use)
     <input type="hidden" name="use">
 @endif
+    <input type="hidden" name="level" value="${form.level}">
     <fieldset disabled="${readOnly}">
     <div class="card"><h3>Who it is</h3>
         <div class="grid2">

@@ -801,7 +801,7 @@ class AgentLauncher(
             "--allowedTools", (tools + tools.filter { it.startsWith("Write(") }.map { "Edit(" + it.removePrefix("Write(") } + skill.orEmpty() + RUN_TOOL + scriptTools).distinct().joinToString(","),
         ) + subagents + (if (disallowed.isEmpty()) emptyList() else listOf("--disallowedTools", disallowed.joinToString(","))) + (skillsFolder?.let { listOf("--add-dir", "$it") } ?: emptyList()) +
             // A symlinked Skill's files can be read only with its real folder added too.
-            skills.flatMap { listOf("--add-dir", it.folder.toString()) } + (if (agent.model != null) listOf("--model", agent.model) else emptyList()) +
+            skills.flatMap { listOf("--add-dir", it.folder.toString()) } + agent.claudeLevel.flags +
             (if (agent.instructions.isNotEmpty()) listOf("--append-system-prompt", agent.instructions) else emptyList())
     }
 
