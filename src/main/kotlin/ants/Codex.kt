@@ -166,7 +166,7 @@ internal class Turns(override val task: String) : AgentLauncher.Live {
 internal fun codexFlags(agent: Agent, schema: Path, writable: List<Path>, images: List<Path>): List<String> =
     listOf("exec", "--json", "--skip-git-repo-check") + images.flatMap { listOf("-i", "$it") } +
         listOf("--output-schema", "$schema", "--sandbox", agent.sandbox) +
-        (if (agent.model != null) listOf("-m", agent.model) else emptyList()) +
+        agent.launchLevel.codexFlags +
         (if (agent.instructions.isNotEmpty()) listOf("-c", "developer_instructions=" + json.writeValueAsString(agent.instructions)) else emptyList()) +
         writable.flatMap { listOf("--add-dir", "$it") }
 

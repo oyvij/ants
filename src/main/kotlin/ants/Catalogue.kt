@@ -58,9 +58,9 @@ class Agent(val file: Path, text: String = file.readText(), outsideId: String? =
 
     private val startLevel: Int get() = level ?: model?.let(Level::family) ?: Level.START
 
-    val claudeLevel: Level
+    val launchLevel: Level
         get() {
-            val ladder = Level.claude(startLevel)
+            val ladder = if (cli == "codex") Level.codex(startLevel) else Level.claude(startLevel)
             if (level != null || model == null) return ladder
             return ladder.copy(model = model)
         }
