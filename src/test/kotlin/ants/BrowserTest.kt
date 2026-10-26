@@ -97,9 +97,18 @@ class BrowserTest : AntsTest() {
     private fun label(text: String) = page.getByLabel(text, Page.GetByLabelOptions().setExact(true))
     private val selected = Pattern.compile("\\bselected\\b")
 
+    /** **New Process** from the list's modal: the modeler on a Draft-only Process named [name]. */
+    private fun newProcess(name: String) {
+        page.navigate(url("/processes"))
+        page.click(".ph button.primary")
+        page.getByLabel("Name").fill(name)
+        page.click("#new-process button.primary")
+        page.waitForURL(Pattern.compile(".*/processes/[^/]+/edit$"))
+    }
+
     /** Opens the modeler on a blank Process and appends an Agent Task to its start event; the Task's id. */
     private fun appendAgentTask(): String {
-        page.navigate(url("/processes/new?name=Drawn+here&from="))
+        newProcess("Drawn here")
         shape("start").click()
         pad.locator("[data-action='append.agent-task']").click()
         assertThat(heading).hasText("Agent Task")
@@ -108,7 +117,7 @@ class BrowserTest : AntsTest() {
 
     @Test
     fun `the hover menu appends an Agent, User or Built-in Task and offers nothing Ants doesn't run`() = browse {
-        page.navigate(url("/processes/new?name=Hover+menu&from="))
+        newProcess("Hover menu")
         for ((action, name) in listOf("append.agent-task" to "Agent Task", "append.user-task" to "User Task", "append.built-in-task" to "Built-in Task")) {
             shape("start").click()
             assertThat(heading).hasText("Start event")
@@ -122,7 +131,7 @@ class BrowserTest : AntsTest() {
 
     @Test
     fun `the modeler knows no Schedule, so a start event's panel has no Schedule nor its hint, and the wrench menu offers no timer start`() = browse {
-        page.navigate(url("/processes/new?name=No+schedule&from="))
+        newProcess("No schedule")
         shape("start").click()
         assertThat(heading).hasText("Start event")
         button("＋ Add field").click()
@@ -332,7 +341,7 @@ class BrowserTest : AntsTest() {
             """mcp connect {"from":"start","to":"pick","id":"toPick"}""",
             """mcp connect {"from":"pick","to":"done","id":"toDone"}""",
             says("Built: Pick, then done."), builderResult)
-        page.navigate(url("/processes/new?name=Built+here&from="))
+        newProcess("Built here")
         val dialog = page.locator("#pb-dialog")
         ask("Every morning, pick a small issue and get it to a PR.")
         assertThat(dialog).containsText("Who answers the questions it asks?")
@@ -364,7 +373,7 @@ class BrowserTest : AntsTest() {
         assertThat(page.locator("#builder, #builder-toggle")).hasCount(0) // a Template has no Process Builder
         assertFalse(page.locator("#canvas").getAttribute("data-builder").orEmpty().isNotEmpty())
 
-        page.navigate(url("/processes/new?name=Talked+through&from="))
+        newProcess("Talked through")
         page.click("#builder-toggle")
         assertThat(page.locator("#builder")).isHidden()
         page.reload()
@@ -637,7 +646,7 @@ class BrowserTest : AntsTest() {
 
     /** Opens the modeler on a blank Process and appends a Script Task to its start event; the Task's id. */
     private fun appendScriptTask(): String {
-        page.navigate(url("/processes/new?name=Drawn+here&from="))
+        newProcess("Drawn here")
         assertThat(page.locator(".djs-palette [data-action='create.script-task']")).hasAttribute("aria-label", Pattern.compile("^Script Task: Runs one of your Scripts"))
         shape("start").click()
         pad.locator("[data-action='append.script-task']").click()
@@ -647,7 +656,7 @@ class BrowserTest : AntsTest() {
 
     @Test
     fun `the palette's Script Task drops on the canvas and opens its panel`() = browse {
-        page.navigate(url("/processes/new?name=From+the+palette&from="))
+        newProcess("From the palette")
         page.locator(".djs-palette [data-action='create.script-task']").click()
         page.locator("#canvas").click(Locator.ClickOptions().setPosition(500.0, 300.0))
         assertThat(heading).hasText("Script Task")
@@ -1195,7 +1204,7 @@ class BrowserTest : AntsTest() {
 
     @Test
     fun `a User Task asks for its kind's fields and says what later Tasks can read`() = browse {
-        page.navigate(url("/processes/new?name=Gated&from="))
+        newProcess("Gated")
         shape("start").click()
         pad.locator("[data-action='append.user-task']").click()
         val task = page.locator("#canvas .djs-shape.selected").getAttribute("data-element-id")!!
@@ -1649,7 +1658,7 @@ class BrowserTest : AntsTest() {
     @Test
     fun `on a phone a tap on a shape in the modeler opens its hover menu, which appends a Task on a tap`() = browse {
         onPhone()
-        page.navigate(url("/processes/new?name=Tapped&from="))
+        newProcess("Tapped")
         shape("start").tap()
         assertThat(pad.locator("[data-action='append.agent-task']")).isVisible()
         pad.locator("[data-action='append.agent-task']").tap()
@@ -3110,7 +3119,7 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
-    fun `New Process on the Processes list opens a modal that starts the modeler on a name, and a row opens its Process`() = browse {
+    fun `New Process on the Processes list opens a modal that starts the modeler on a Draft-only Process, and a row opens its Process`() = browse {
         http.import("start-end.bpmn")
         page.navigate(url("/processes"))
         page.click("tr.click >> text=you") // anywhere on the row
@@ -3119,7 +3128,8 @@ class BrowserTest : AntsTest() {
         page.click(".ph button.primary")
         page.getByLabel("Name").fill("From the list")
         page.click("#new-process button.primary")
-        page.waitForURL { it.contains("/processes/new?name=From+the+list") }
+        page.waitForURL(Pattern.compile(".*/processes/from-the-list(-\\d+)?/edit$"))
+        assertThat(page.locator(".draft-head .draft-mark")).hasText("Draft")
     }
 
     private val saveState get() = page.locator(".draft-head [data-save-state]")
@@ -3182,6 +3192,35 @@ class BrowserTest : AntsTest() {
         page.locator(".draft-head [data-load-newer]").click()
         assertThat(page.locator("#description")).hasValue("From the other tab.")
         assertThat(saveState).hasText(draftSaved)
+    }
+
+    @Test
+    fun `an edit in the modeler is autosaved to the Process's Draft and survives a reload, and Publish deploys it and leaves no Draft`() = browse {
+        newProcess("Autosaved diagram")
+        val key = page.url().removeSuffix("/edit").substringAfterLast('/')
+        assertThat(marker).hasText("Draft")
+        assertThat(saveState).hasText(draftSaved) // New made the Draft
+        shape("start").click()
+        pad.locator("[data-action='append.user-task']").click()
+        val task = page.locator("#canvas .djs-shape.selected").getAttribute("data-element-id")!!
+        label("Title").fill("Kept?")
+        label("Title").press("Tab")
+        assertThat(saveState).hasText(draftSaved)
+        assertThat(marker).hasText("Draft")
+
+        page.reload()
+        assertThat(shape(task)).isVisible()
+        assertThat(saveState).hasText(draftSaved)
+        shape(task).click()
+        assertThat(label("Title")).hasValue("Kept?")
+
+        page.locator("#save").click()
+        page.waitForURL(url("/processes/$key"))
+        assertContains(http.get("/processes/$key/diagram.bpmn").body, "Kept?")
+        page.navigate(url("/processes/$key/edit"))
+        assertThat(marker).hasText("Published")
+        assertThat(saveState).isEmpty()
+        assertEquals("0", draftVersion(http.get("/processes/$key/edit").body)) // no leaving save brought the Draft back
     }
 
     @Test

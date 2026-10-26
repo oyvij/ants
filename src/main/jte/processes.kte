@@ -1,5 +1,6 @@
 @param processes: List<org.operaton.bpm.engine.repository.ProcessDefinition>
 @param rows: List<ants.ProcessRow>
+@param drafts: List<ants.Draft> = emptyList()
 @param error: String? = null
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
@@ -22,7 +23,7 @@
 @for(row in rows)
     !{val key = row.process.key}
     <tr class="click" data-href="/processes/${key}">
-        <td><a href="/processes/${key}"><b>${row.process.name ?: key}</b></a></td>
+        <td><a href="/processes/${key}"><b>${row.process.name ?: key}</b></a>@template.draftmark(state = row.state, list = true)</td>
         <td class="muted small">${if (row.shipped) "shipped" else "you"}</td>
         <td class="muted small">${row.profile?.vault ?: "—"} · ${row.profile?.sourceMap ?: "—"}</td>
         <td class="small">@if(row.scheduleCount > 0)⏰ ${row.scheduleCount}@endif</td>
@@ -31,12 +32,20 @@
         <td><a href="/processes/${key}/edit">Edit diagram</a></td>
     </tr>
 @endfor
+@for(draft in drafts)
+    <tr class="click" data-href="/processes/${draft.id}/edit">
+        <td><a href="/processes/${draft.id}/edit"><b>${draft.name}</b></a>@template.draftmark(state = ants.DraftState.DRAFT_ONLY, list = true)</td>
+        <td class="muted small">you</td><td></td><td></td><td></td><td></td>
+        <td><a href="/processes/${draft.id}/edit">Edit diagram</a></td>
+    </tr>
+@endfor
 </table>
 <dialog class="modal" id="new-process">
     <form method="dialog" class="mh"><b>New Process</b><span class="sp"></span><span class="muted small">Esc to close</span><button class="ghost" title="Close" aria-label="Close">✕</button></form>
     <div class="mb">
-        <form method="get" action="/processes/new">
-            <div class="fld"><label class="f" for="new-name">Name</label><div class="help">The Process's name; the modeler opens on it, unsaved.</div><input id="new-name" name="name" placeholder="e.g. Nightly knowledge sweep"></div>
+        <form method="post" action="/processes/new">
+            <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+            <div class="fld"><label class="f" for="new-name">Name</label><div class="help">The Process's name; the modeler opens on it, a Draft until you publish it.</div><input id="new-name" name="name" placeholder="e.g. Nightly knowledge sweep"></div>
             <div class="fld"><label class="f" for="new-from">Start from</label><div class="help">A blank diagram, or a copy of a Process.</div><select id="new-from" name="from">
                 <option value="">Blank</option>
 @for(process in processes)
@@ -47,7 +56,7 @@
         </form>
         <form method="post" action="/processes" enctype="multipart/form-data" class="subsec">
             <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
-            <div class="fld"><label class="f" for="new-file">Import a BPMN file</label><div class="help">Deployed through the Checks, like Save and deploy.</div><input type="file" id="new-file" name="file" accept=".bpmn" required></div>
+            <div class="fld"><label class="f" for="new-file">Import a BPMN file</label><div class="help">Deployed through the Checks, like Publish.</div><input type="file" id="new-file" name="file" accept=".bpmn" required></div>
             <div class="go"><button>Import</button></div>
         </form>
     </div>

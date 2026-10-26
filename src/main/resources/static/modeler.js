@@ -1,9 +1,11 @@
 // The modeler page: camunda-bpmn-js with the palette trimmed to what Ants runs, "append Agent / User / Built-in Task"
-// on the context pad, a panel that explains the selected element and edits it, the live Checks under it, and Save and
-// deploy through Ants' deploy path. Each kind of element is one entry in `kinds`; what its panel asks beyond its name
+// on the context pad, a panel that explains the selected element and edits it, the live Checks under it, and Publish
+// through Ants' deploy path. A Process's modeler autosaves the diagram to its Draft (draft.js), whoever changed it, the
+// user or the Process Builder; a Template's has Save alone. Each kind of element is one entry in `kinds`; what its panel asks beyond its name
 // and explanation (the Agent Task's Agent and Skill, a decision's paths) is a function in `panels`. What it writes as
 // text, with no page, is in modeler-text.js.
 
+import {autosave} from "/draft.js"
 import {camel, linkedChanges, linkedProperties, listedSkills, operators, readCondition, resultFields, toCamunda, unary} from "/modeler-text.js"
 
 // From the server (modelerFacts in Checks.kt): what Ants calls each element it runs and what it does there (the
@@ -477,7 +479,7 @@ panels.process = element => {
         <li>Add work from the bottom of the palette, or click a shape and pick the next step from its menu: <b>Agent</b>, <b>User</b> or <b>Built-in Task</b>.</li>
         <li>Choose between paths with a <b>decision</b> (◇ ×). Loop by drawing a path back to an earlier Task.</li>
         <li>Run branches side by side with two <b>parallel gateways</b> (◇ +): one splits, one joins.</li>
-        <li>Fix everything under <b>Checks</b>, then <b>Save and deploy</b>.</li></ol>`))
+        <li>Fix everything under <b>Checks</b>, then <b>Publish</b>.</li></ol>`))
     fetch("/catalogue.json").then(response => response.json()).then(({profiles}) => {
         const current = agentProperties(element.businessObject)[profile.property] || ""
         if (profiles.length < 2 && !current) return
@@ -871,7 +873,7 @@ function explain(element) {
         : /Gateway$/.test(type) ? [gateway(kinds.exclusive.name, "bpmn:ExclusiveGateway"), " ", gateway(kinds.parallel.name, "bpmn:ParallelGateway")] : []
     panel.replaceChildren(
         ...(kind ? head(target, kinds.task.name) : [el("div", {className: "kind", textContent: type + (event ? " · " + event : "")}), el("h3", {textContent: nameOf(target)})]),
-        note("warn", kind ? kinds.task.explain : "Ants doesn't run this element, so Save and deploy will refuse it."),
+        note("warn", kind ? kinds.task.explain : "Ants doesn't run this element, so Publish will refuse it."),
         ...(kind || !options.length ? [] : [note("small change", "Change it to:")]), ...options)
 }
 
@@ -892,23 +894,32 @@ modeler.on("element.changed", ({element}) => {
     if (selection.length === 1 && selection[0] === element) explain(element)
 })
 
+// The Draft's autosave starts once the diagram is in, so what it loaded is what it compares each change with. A
+// Template dropped in replaces the diagram by importing, which the command stack doesn't see.
+let draft
 fetch(canvas.dataset.src)
     .then(response => response.text())
     .then(xml => modeler.importXML(toCamunda(xml)))
     .then(() => {
         modeler.get("canvas").zoom("fit-viewport", "auto")
         explain(modeler.get("canvas").getRootElement())
+        if (!canvas.dataset.autosave) return
+        draft = autosave({endpoint: canvas.dataset.autosave, version: canvas.dataset.version, csrf, fields: async () => ({bpmn: (await modeler.saveXML({format: true})).xml})})
+        modeler.on("commandStack.changed", draft.changed)
+        modeler.on("import.done", draft.changed)
     })
 
+// Publish (or a Template's Save). The Draft is saved first, so leaving for the Process page has nothing left to save.
 document.getElementById("save").onclick = async () => {
+    await draft?.save()
     const {xml} = await modeler.saveXML({format: true})
     const response = await fetch(document.getElementById("save").dataset.action, {method: "POST", body: new URLSearchParams({_csrf: csrf, bpmn: xml})})
     if (response.ok) location = response.url
     else document.getElementById("refusal").textContent = await response.text()
 }
 
-// The live Checks: everything Save and deploy would refuse, from the Checks it runs, and the warnings, under a summary
-// of how many to fix. Save and deploy is disabled while any Check fails; clicking a Check selects its element, inside
+// The live Checks: everything Publish would refuse, from the Checks it runs, and the warnings, under a summary
+// of how many to fix. Publish is disabled while any Check fails; clicking a Check selects its element, inside
 // a collapsed sub-process too.
 const save = document.getElementById("save")
 const checks = document.getElementById("checks")

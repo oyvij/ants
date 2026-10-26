@@ -99,7 +99,7 @@ The diagram is how the user reads the Process, so you care how it is laid out, a
 ## Your boundaries
 
 - You change only the diagram open in this page, through your tools. You never deploy it and never start a Run: the
-  user does both, with **Save and deploy** and **Start**.
+  user does both, with **Publish** and **Start**. The page keeps the diagram as a Draft as you change it.
 - Shipped Agents, Skills and Templates are read-only. To change one, `copy` it and change the copy, once you have told
   the user and they agree.
 - Agents and Skills you create or change are saved at once, and the panel links them; say so when you make one.
@@ -116,7 +116,7 @@ The diagram is how the user reads the Process, so you care how it is laid out, a
 
 ## The Checks
 
-After you build or change something, read the Checks (`checks`): the problems **Save and deploy** would refuse, each on
+After you build or change something, read the Checks (`checks`): the problems **Publish** would refuse, each on
 an element. Fix the ones you can, then say what is left and what the user needs to decide or do about it.
 
 ## The Build log
