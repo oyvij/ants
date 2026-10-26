@@ -242,7 +242,7 @@ class AgentLauncher(
             val taskLevel = Level.of(task.extensionProperties[LEVEL])
             val onLevel = task.variables[REACHED_LEVEL] as? Int ?: agent.firstLevel(taskLevel)
             level = onLevel
-            val at = agent.launchLevel(taskLevel, onLevel)
+            val launchLevel = agent.launchLevel(taskLevel, onLevel)
             if (hold(task, agent.cli)) return // keeping its choice for the launch after the reset
             runtime.removeVariablesLocal(task.executionId, listOf(ACTION, INSTRUCTION, SESSION)) // the choice is used once
             val (skill, used) = skills(task.extensionProperties, agent, task.activityId)
@@ -267,9 +267,9 @@ class AgentLauncher(
             // The user's Continue, or a Send back to a session claude has: their words alone, no hand-off again.
             val continued = resume != null || (comment != null && again != null)
             val result = try {
-                val result = session(task, instance, agent, skill, used, run, workspace, cwd, transcript, session, started, resumed, task.variables[INSTRUCTION] as? String ?: comment, handedOff = !continued, level = at)
+                val result = session(task, instance, agent, skill, used, run, workspace, cwd, transcript, session, started, resumed, task.variables[INSTRUCTION] as? String ?: comment, handedOff = !continued, level = launchLevel)
                 if (!parallel) result
-                else land(workspace, instance, result) { session(task, instance, agent, skill, used, run, workspace, cwd, transcript, session, started, true, it, handedOff = false, level = at) }
+                else land(workspace, instance, result) { session(task, instance, agent, skill, used, run, workspace, cwd, transcript, session, started, true, it, handedOff = false, level = launchLevel) }
             } catch (limit: UsageLimit) {
                 val until = limit.resetsAt + Duration.ofMinutes(1)
                 transcript.ants("end", "Paused by the ${agent.cli} usage limit until ${clock.local(until)}.")
@@ -305,7 +305,7 @@ class AgentLauncher(
             runCatching { transcript?.ants("end", reason) }
             if (stopping || cancelled) return
             if (e !is Stopped) log.warn("Agent Task ${task.activityId} failed", e)
-            if (e !is Stopped && level != null && retry(task, session, level, reason)) return
+            if (e !is Stopped && level != null && retry(task, session, level, reason, (e as? Failed)?.details)) return
             incident(task, session, reason, (e as? Failed)?.details)
         }
     }
@@ -459,10 +459,10 @@ class AgentLauncher(
         return task.variables.filterKeys { it in names }.toSortedMap()
     }
 
-    private fun retry(task: LockedExternalTask, session: String?, level: Int, reason: String): Boolean = runCatching {
+    private fun retry(task: LockedExternalTask, session: String?, level: Int, reason: String, details: String?): Boolean = runCatching {
         val retries = task.variables[RETRIES] as? Int ?: 0
         if (retries >= settings.retries()) return false
-        val resume = session?.let { mapOf(ACTION to CONTINUE, INSTRUCTION to "Your last attempt failed: ${reason.removePrefix("[failed] ")}\n\n$RETRY", SESSION to it) }.orEmpty()
+        val resume = session?.let { mapOf(ACTION to CONTINUE, INSTRUCTION to "Your last attempt failed: ${reason.removePrefix("[failed] ")}${details?.let { "\n\n$it" }.orEmpty()}\n\n$RETRY", SESSION to it) }.orEmpty()
         runtime.setVariablesLocal(task.executionId, mapOf(REACHED_LEVEL to Level.above(level), RETRIES to retries + 1) + resume)
         externalTasks.handleFailure(task.id, WORKER, reason, null, 1, 0)
     }.onFailure { log.warn("Agent Task ${task.activityId} couldn't be retried", it) }.isSuccess

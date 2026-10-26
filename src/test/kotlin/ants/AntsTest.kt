@@ -136,10 +136,11 @@ abstract class AntsTest {
         metadata: String = "",
         extra: String = "",
         env: List<String>? = null,
+        retries: Int = 0,
     ) {
         val shipped = catalogue.skills(withHidden = true).filter(catalogue::shipped).map { it.name }
         for (name in skills.keys) require(name !in shipped) { "$name is hidden by the shipped Skill of that name; give the test's Skill another name." }
-        settings(claude, extra, env)
+        settings(claude, extra, env, retries)
         promises.clear()
         skills.forEach { (name, schema) -> if (schema != null) promises[name] = schema }
         home.resolve("agents/writer.md").writeText("---\n${agent}skills: ${skills.keys.joinToString(", ")}\n---\nWrite plainly.\n")
@@ -150,9 +151,8 @@ abstract class AntsTest {
     }
 
     /** `settings.yaml`: a Vault, which the pre-Run check needs, [claude]'s command and [env] allow-list when given, and [extra]. */
-    fun settings(claude: FakeClaude?, extra: String = "", env: List<String>? = null) = home.resolve("settings.yaml").writeAtomically(
-        (if (claude == null) "" else "claude:\n  command: [${claude.command}]\n" + (env?.let { "  env: [${it.joinToString(", ")}]\n" } ?: "")) + vault +
-            (if (Regex("(?m)^retries:").containsMatchIn(extra)) "" else "retries: 0\n") + extra,
+    fun settings(claude: FakeClaude?, extra: String = "", env: List<String>? = null, retries: Int = 0) = home.resolve("settings.yaml").writeAtomically(
+        (if (claude == null) "" else "claude:\n  command: [${claude.command}]\n" + (env?.let { "  env: [${it.joinToString(", ")}]\n" } ?: "")) + vault + "retries: $retries\n" + extra,
     )
 
     companion object {

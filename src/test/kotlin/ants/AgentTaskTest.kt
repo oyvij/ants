@@ -37,8 +37,8 @@ class AgentTaskTest : AntsTest() {
     private fun settings(agentTasks: Int = 3, extra: String = "") = settings(claude, "agent-tasks: $agentTasks\n$extra", env)
 
     /** The Agent Task's recipe for the Skill `draft` promising [schema]; [agent] and [metadata] go in the Agent's and the Skill's frontmatter. */
-    private fun agentTask(schema: String? = null, agent: String = "", metadata: String = "", agentTasks: Int = 3, extra: String = "") =
-        agentTask(claude, mapOf("draft" to schema), agent, metadata, "agent-tasks: $agentTasks\n$extra", env)
+    private fun agentTask(schema: String? = null, agent: String = "", metadata: String = "", agentTasks: Int = 3, extra: String = "", retries: Int = 0) =
+        agentTask(claude, mapOf("draft" to schema), agent, metadata, "agent-tasks: $agentTasks\n$extra", env, retries)
 
     /** The launch's skills folder: the one --add-dir in the Run workspace's `.skills`. */
     private fun skillsFolder(launch: FakeClaude.Launch): Path =
@@ -218,7 +218,7 @@ class AgentTaskTest : AntsTest() {
     private fun FakeClaude.Launch.level() = flag("--model") to flag("--effort")
 
     private fun failedOnce(agent: String): List<FakeClaude.Launch> {
-        agentTask(agent = agent, extra = "retries: 3\n")
+        agentTask(agent = agent, retries = 3)
         claude.session("draft", 1, failed)
         claude.session("draft", done)
         val run = start()
@@ -262,7 +262,7 @@ class AgentTaskTest : AntsTest() {
 
     @Test
     fun `a Task still failing after the cap's retries becomes an incident`() {
-        agentTask(agent = "level: 3\n", extra = "retries: 2\n")
+        agentTask(agent = "level: 3\n", retries = 2)
         claude.session("draft", failed)
         val run = start()
         eventually { assertContains(page(run), "<dt>draft</dt><dd>[failed] claude ended without a Result: error_max_turns</dd>") }
@@ -271,7 +271,7 @@ class AgentTaskTest : AntsTest() {
 
     @Test
     fun `a stuck Task doesn't retry`() {
-        agentTask(extra = "retries: 3\n")
+        agentTask(retries = 3)
         claude.session("draft", done.replace(""""outcome":"done","summary":"Drafted.","output":{"text":"Hello"}""", """"outcome":"stuck","summary":"No tone.","needs":"A tone.""""))
         val run = start()
         eventually { assertContains(page(run), "<dt>draft</dt><dd>[stuck] No tone. A tone.</dd>") }
@@ -281,7 +281,7 @@ class AgentTaskTest : AntsTest() {
 
     @Test
     fun `Continue and Start fresh on an incident launch on the last level the retries reached`() {
-        agentTask(agent = "level: 1\n", extra = "retries: 1\n")
+        agentTask(agent = "level: 1\n", retries = 1)
         claude.session("draft", failed)
         val run = start()
         browser.post(entry(run), mapOf("action" to "continue", "instruction" to "Try again."))
@@ -567,7 +567,7 @@ class AgentTaskTest : AntsTest() {
 
     @Test
     fun `a rejection pauses the Task until resetsAt plus one minute, then resumes the same session with the reset message`() {
-        agentTask(extra = "retries: 3\n")
+        agentTask(retries = 3)
         val resetsAt = clock.instant().plus(Duration.ofHours(1))
         claude.session("draft", 1, rejected(resetsAt), "wait never") // claude carries on; Ants kills it
         claude.session("draft", done)
