@@ -133,7 +133,8 @@ val multiInstanceModes = listOf("parallel", "sequential", "none")
 /**
  * What the modeler page knows of Ants from the server, as JSON on its canvas's `data-facts`: each element kind's name and
  * explanation, the Built-in Tasks, the start-form field types, Items are Tickets' property and what it does, and the Process's Profile property, what it
- * does and how its empty choice reads, Ants' own Run variables, and each User Task kind's fields and Result.
+ * does and how its empty choice reads, Ants' own Run variables, each User Task kind's fields and Result, and the
+ * panel's own wording: how to draw a Process, why an element Ants doesn't run is refused, and what New Skill's Use did.
  */
 val modelerFacts: String = JsonMapper.shared().writeValueAsString(mapOf(
     "kinds" to elementKinds,
@@ -153,6 +154,16 @@ val modelerFacts: String = JsonMapper.shared().writeValueAsString(mapOf(
     ),
     "runVariables" to RUN_VARIABLES,
     "userTasks" to userTaskFields.map { (kind, fields) -> mapOf("value" to kind.value.orEmpty(), "key" to kind.key, "name" to kind.title, "result" to kind.result, "fields" to fields) },
+    "wording" to mapOf(
+        "drawing" to "<b>Drawing a Process</b><ol>" +
+            "<li>A Run begins at the <b>start event</b> (its start form) and finishes at an <b>end event</b>.</li>" +
+            "<li>Add work from the bottom of the palette, or click a shape and pick the next step from its menu: <b>Agent</b>, <b>User</b> or <b>Built-in Task</b>.</li>" +
+            "<li>Choose between paths with a <b>decision</b> (◇ ×). Loop by drawing a path back to an earlier Task.</li>" +
+            "<li>Run branches side by side with two <b>parallel gateways</b> (◇ +): one splits, one joins.</li>" +
+            "<li>Fix everything under <b>Checks</b>, then <b>Publish</b>.</li></ol>",
+        "notRun" to "Ants doesn't run this element, so Publish will refuse it.",
+        "skillListed" to "Added to {agent}'s Skills in its Draft, and picked on this Task.",
+    ),
 ))
 
 /** The BPMN elements Ants runs, by their XML name; [refusedUses] refuses some uses of them. Anything else is refused. */

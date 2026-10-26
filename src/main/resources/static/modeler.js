@@ -12,8 +12,8 @@ import {camel, linkedChanges, linkedProperties, listedSkills, operators, readCon
 // palette's tooltip and the panel's explanation), the Built-in Tasks by topic with their name and what each does, the start-form field types by the
 // `ants.type` property each field carries (the engine only knows `string`), Items are Tickets' property and help, the
 // Process's Profile property, help and empty choice, Ants' own Run variables, each User Task kind with its fields
-// and Result, what the palette and add_element draw for each kind, and the multi-instance modes.
-const {kinds, builtIns, fieldTypes, itemsAreTickets, profile, runVariables, userTasks, drawn, multiInstanceModes} = JSON.parse(document.getElementById("canvas").dataset.facts)
+// and Result, what the palette and add_element draw for each kind, the multi-instance modes, and the panel's own wording.
+const {kinds, builtIns, fieldTypes, itemsAreTickets, profile, runVariables, userTasks, drawn, multiInstanceModes, wording} = JSON.parse(document.getElementById("canvas").dataset.facts)
 
 // The three Tasks Ants runs, as the BPMN each one is, and their colour on the diagram and in the palette.
 const tasks = {
@@ -474,12 +474,7 @@ panels["timer-boundary"] = timerPanel
 // Profile property. Offered once the settings have more than one Profile, or when the Process names one.
 // Above it, how to draw a Process.
 panels.process = element => {
-    const box = el("div", {}, explainHtml(`<b>Drawing a Process</b><ol>
-        <li>A Run begins at the <b>start event</b> (its start form) and finishes at an <b>end event</b>.</li>
-        <li>Add work from the bottom of the palette, or click a shape and pick the next step from its menu: <b>Agent</b>, <b>User</b> or <b>Built-in Task</b>.</li>
-        <li>Choose between paths with a <b>decision</b> (◇ ×). Loop by drawing a path back to an earlier Task.</li>
-        <li>Run branches side by side with two <b>parallel gateways</b> (◇ +): one splits, one joins.</li>
-        <li>Fix everything under <b>Checks</b>, then <b>Publish</b>.</li></ol>`))
+    const box = el("div", {}, explainHtml(wording.drawing))
     fetch("/catalogue.json").then(response => response.json()).then(({profiles}) => {
         const current = agentProperties(element.businessObject)[profile.property] || ""
         if (profiles.length < 2 && !current) return
@@ -696,7 +691,7 @@ async function agentPanel(element, box) {
         })})
     // New Skill's Use lists it in the Draft of the Task's Agent when that Agent is the user's own.
     const who = el("div", {className: "who"}, !agent ? note("warn", "This Task has no Agent yet. The Skill is created, and you add it to an Agent's Skills it runs.")
-        : agent.own ? note("okbox", `Added to ${agent.name}'s Skills in its Draft, and picked on this Task.`)
+        : agent.own ? note("okbox", wording.skillListed.replace("{agent}", agent.name))
             : note("warn", `${agent.name} is in ${agent.folder} and read-only, so the Skill can't be added to it. Copy the Agent, or pick one of your own, then choose this Skill.`))
     const newSkill = el("button", {type: "button", className: "ghost small", textContent: "＋ New Skill", onclick: () =>
         formModal("skills", "/skills/new/draft?use=" + encodeURIComponent(props["ants.agent"] || ""), async name => {
@@ -894,7 +889,7 @@ function explain(element) {
         : /Gateway$/.test(type) ? [gateway(kinds.exclusive.name, "bpmn:ExclusiveGateway"), " ", gateway(kinds.parallel.name, "bpmn:ParallelGateway")] : []
     panel.replaceChildren(
         ...(kind ? head(target, kinds.task.name) : [el("div", {className: "kind", textContent: type + (event ? " · " + event : "")}), el("h3", {textContent: nameOf(target)})]),
-        note("warn", kind ? kinds.task.explain : "Ants doesn't run this element, so Publish will refuse it."),
+        note("warn", kind ? kinds.task.explain : wording.notRun),
         ...(kind || !options.length ? [] : [note("small change", "Change it to:")]), ...options)
 }
 
