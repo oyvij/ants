@@ -3157,6 +3157,34 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `an edit on the Skill page is autosaved to its Draft with no Publish, and it survives a reload`() = browse {
+        val folder = home.resolve("skills/autosaved-skill").createDirectories()
+        folder.resolve("ants.yaml").writeText("id: k-auto01\n")
+        val published = "---\nname: autosaved-skill\ndescription: Published.\n---\nPublished.\n"
+        folder.resolve("SKILL.md").writeText(published)
+        page.navigate(url("/skills/autosaved-skill"))
+        assertThat(marker).hasText("Published")
+
+        val drafted = "---\nname: autosaved-skill\ndescription: Kept as a Draft.\n---\nKept as a Draft.\n"
+        page.locator("#skill-md + .ed .cm-content").fill(drafted)
+        assertThat(saveState).hasText(draftSaved)
+        assertThat(marker).hasText("Draft · changes not published")
+        assertEquals(published, folder.resolve("SKILL.md").readText())
+
+        page.reload()
+        assertThat(page.locator("#skill-md + .ed .cm-content")).containsText("Kept as a Draft.")
+        assertThat(marker).hasText("Draft · changes not published")
+        page.navigate(url("/skills"))
+        assertThat(page.locator("tr", Page.LocatorOptions().setHasText("autosaved-skill")).locator(".draft-mark")).hasText("Draft · changes not published")
+
+        page.navigate(url("/skills/autosaved-skill"))
+        page.click("button[form=skill]")
+        page.waitForURL(url("/skills/autosaved-skill"))
+        assertThat(marker).hasText("Published")
+        assertEquals(drafted, folder.resolve("SKILL.md").readText())
+    }
+
+    @Test
     fun `a failed autosave says why and is retried until it succeeds`() = browse {
         home.resolve("agents").createDirectories().resolve("retried.md").writeText("---\nid: a-retry1\nname: retried\ncli: claude\n---\nRetry.\n")
         page.navigate(url("/agents/retried"))

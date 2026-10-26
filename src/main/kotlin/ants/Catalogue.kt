@@ -152,7 +152,8 @@ class Catalogue(@Value("\${ants.home}") private val home: Path, private val sett
     private fun skillIdIn(folder: Path) = folder.resolve(SKILL_ID_FILE).takeIf { it.exists() }
         ?.let { runCatching { (Yaml().load<Any?>(it.readText()) as? Map<*, *>)?.get("id")?.toString()?.takeIf(String::isNotBlank) }.getOrNull() }
 
-    fun giveSkillId(folder: Path) = folder.resolve(SKILL_ID_FILE).writeAtomically(yaml.dump(mapOf("id" to unusedId(SKILL_ID))))
+    /** Gives the Skill in [folder] its [id], a new one unless it has one already (its Draft's), and returns it. */
+    fun giveSkillId(folder: Path, id: String = unusedId(SKILL_ID)) = id.also { folder.resolve(SKILL_ID_FILE).writeAtomically(yaml.dump(mapOf("id" to it))) }
 
     fun unusedId(prefix: Char): String {
         val taken = identified().map { it.id }.toSet() + drafts.ids()

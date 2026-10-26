@@ -1,5 +1,6 @@
 @param form: ants.SkillForm
 @param message: String? = null
+@param draft: ants.DraftHead? = null
 @param dependents: ants.Dependents?
 @param runBy: List<ants.Agent> = emptyList()
 @param use: String? = null
@@ -21,15 +22,21 @@
 <main>
 @if(use == null)<div class="crumbs"><a href="/skills">Skills</a> / ${form.name ?: "New"}</div>@endif
 <div class="ph"><h1><span class="ent ent-skill"><svg class="i" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>${form.name ?: "New Skill"}</span></h1>
+@if(draft != null)
+    @template.drafthead(draft = draft)
+@endif
     <div class="acts">
 @if(form.readOnly)
         <span class="muted small">Read-only (${form.where})</span>
         <form method="post" action="/skills/${form.name}/copy"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>Copy</button></form>
 @else
-@if(form.name != null)
-        <form method="post" action="/skills/${form.name}/delete"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button class="danger">Delete</button></form>
+@if(draft?.state == ants.DraftState.CHANGED)
+        <form method="post" action="/skills/${form.name}/discard" data-leaves-draft><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>Discard Draft</button></form>
 @endif
-        <button class="primary" form="skill">${if (use != null && form.name == null) "Create and use" else "Save"}</button>
+@if(form.name != null)
+        <form method="post" action="/skills/${form.name}/delete" data-leaves-draft><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button class="danger">Delete</button></form>
+@endif
+        <button class="primary" form="skill">${if (use != null && form.name == null) "Create and use" else "Publish"}</button>
 @endif
     </div>
 @if(dependents != null)    <div class="sub">@template.usedby(dependents = dependents, none = "no Process")</div>@endif
@@ -37,7 +44,7 @@
 @if(message != null)<p role="alert">${message}</p>@endif
 <div class="grid2 skill-page">
 <div class="card">
-<form id="skill" method="post" action="/skills/${form.name ?: "new"}" class="skill">
+<form id="skill" method="post" action="/skills/${form.name ?: "new"}" class="skill" data-autosave="${draft?.endpoint}" data-version="${draft?.version?.toString()}" data-leaves-draft>
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
 @if(use != null)
     <input type="hidden" name="use" value="${use}">
@@ -55,6 +62,7 @@
 @endif
 </div>
 </div>
+@if(draft != null)<script type="module" src="/draft.js"></script>@endif
 </main>
 </body>
 </html>

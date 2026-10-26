@@ -118,19 +118,23 @@ class SkillsTest : AntsTest() {
     }
 
     @Test
-    fun `a shipped Skill is read-only, and Copy makes an editable one in ants skills`() {
+    fun `a shipped Skill is read-only, and Copy makes an editable Draft of it, which Publish puts in ants skills`() {
         val copy = home.resolve("skills/shipped-draft-copy")
         copy.toFile().deleteRecursively()
         val shipped = page("/skills/shipped-draft")
         assertContains(shipped, """name="skill" rows="20" placeholder="e.g. ---&#10;name: release-notes&#10;description: Writes the release notes for a version.&#10;---&#10;Read the commits since the last tag and sum them up for users." data-markdown readonly""")
-        assertFalse("""<button class="primary" form="skill">Save</button>""" in shipped)
+        assertFalse("""<button class="primary" form="skill">Publish</button>""" in shipped)
         assertContains(shipped, "No Agent runs this Skill yet, so no Task can use it.") // shipped-writer lists no Skills
         assertEquals(403, save(skillMd("shipped-draft"), name = "shipped-draft").status)
 
         val page = browser.post("/skills/shipped-draft/copy", emptyMap())
         assertEquals("/skills/shipped-draft-copy", page.path)
-        assertContains(page.body, """<button class="primary" form="skill">Save</button>""")
-        assertEquals("---\nname: shipped-draft-copy\ndescription: Stands in for the Skills Ants ships.\n---\nDraft the text.\n", copy.resolve("SKILL.md").readText())
+        assertContains(page.body, """<button class="primary" form="skill">Publish</button>""")
+        val text = "---\nname: shipped-draft-copy\ndescription: Stands in for the Skills Ants ships.\n---\nDraft the text.\n"
+        assertContains(page.body, text)
+        assertFalse(copy.exists())
+        assertEquals("/skills/shipped-draft-copy", browser.post("/skills/shipped-draft-copy", mapOf("skill" to text)).path)
+        assertEquals(text, copy.resolve("SKILL.md").readText())
     }
 
     @Test
@@ -171,7 +175,9 @@ class SkillsTest : AntsTest() {
         val imported = assertNotNull(idOf(skills.resolve("theirs")))
         assertTrue(imported != created)
 
-        browser.post("/skills/shipped-draft/copy", emptyMap())
+        skills.resolve("shipped-draft-copy").toFile().deleteRecursively()
+        val copy = browser.post("/skills/shipped-draft/copy", emptyMap()).path
+        browser.post(copy, mapOf("skill" to "---\nname: shipped-draft-copy\ndescription: Stands in for the Skills Ants ships.\n---\nDraft the text.\n"))
         val copied = assertNotNull(idOf(skills.resolve("shipped-draft-copy")))
         assertTrue(copied !in setOf(created, imported, "k-shipped-draft"))
         assertEquals("shipped-draft", catalogue.skillWithId("k-shipped-draft").name)
@@ -270,16 +276,16 @@ class SkillsTest : AntsTest() {
     }
 
     @Test
-    fun `Edit from the modeler opens the Skill's page in its modal, and Save lands on it saved`() {
+    fun `Edit from the modeler opens the Skill's page in its modal, and Publish lands on it published`() {
         listOf("tidy", "tidier").forEach { home.resolve("skills/$it").toFile().deleteRecursively() }
         save(skillMd("tidy"))
         val form = browser.get("/skills/tidy?use=").body
-        assertContains(form, """<button class="primary" form="skill">Save</button>""")
+        assertContains(form, """<button class="primary" form="skill">Publish</button>""")
         assertContains(form, """<input type="hidden" name="use" value="">""")
         assertFalse("""<nav class="side">""" in form)
 
         val refused = browser.post("/skills/tidy", mapOf("skill" to "no frontmatter", "use" to ""))
-        assertContains(refused.body, """<button class="primary" form="skill">Save</button>""")
+        assertContains(refused.body, """<button class="primary" form="skill">Publish</button>""")
         assertFalse("""<nav class="side">""" in refused.body)
 
         val saved = browser.post("/skills/tidy", mapOf("skill" to skillMd("tidy", "Tidy up."), "use" to ""))
@@ -291,5 +297,160 @@ class SkillsTest : AntsTest() {
 
         val page = save(skillMd("tidier", "Tidy it on its page."), name = "tidier")
         assertEquals("/skills/tidier" to null, page.path to page.query)
+    }
+
+    /** The markers a page shows: Draft, Published, or Draft · changes not published. */
+    private fun markers(page: String) = Regex("""class="pill draft-mark[^"]*">([^<]+)<""").findAll(page).map { it.groupValues[1] }.toList()
+
+    /** A Skill of the user's own, published at once as the modeler's modal does, with no Draft. */
+    private fun published(name: String): Path {
+        val folder = home.resolve("skills/$name")
+        folder.toFile().deleteRecursively()
+        assertEquals("/skills/$name", save(skillMd(name, "Published.")).path)
+        return folder
+    }
+
+    @Test
+    fun `an edit is autosaved to the Draft, which the page reopens after a new login and a restart, and the published Skill stays as it was`() {
+        val folder = published("drafted")
+        val page = page("/skills/drafted")
+        assertEquals(listOf("Published"), markers(page))
+        assertEquals("0", draftVersion(page))
+
+        val saved = browser.autosave("/skills/drafted", mapOf("skill" to skillMd("drafted", "Half done.")), draftVersion(page))
+        assertEquals(200, saved.status, saved.body)
+        val answer = answer(saved)
+        assertTrue(Regex("""Draft saved \d\d:\d\d""").matches(answer["saved"].toString()), answer.toString())
+        assertEquals("Draft · changes not published", answer["label"])
+        assertEquals("/skills/drafted", answer["path"])
+        assertEquals(skillMd("drafted", "Published."), folder.resolve("SKILL.md").readText())
+
+        val again = browser().also { it.login() }.get("/skills/drafted").body
+        assertContains(again, "Half done.")
+        assertEquals(listOf("Draft · changes not published"), markers(again))
+        assertEquals(answer["version"].toString(), draftVersion(again))
+        assertContains(Drafts(home).get(DraftKind.SKILL, catalogue.skill("drafted").id!!)!!.content, "Half done.") // as a restarted Ants reads it
+        assertContains(page("/skills"), """<a href="/skills/drafted">drafted</a></b><span class="pill draft-mark p-changed">Draft · changes not published</span>""")
+        browser.post("/skills/drafted/discard", mapOf("confirm" to "on"))
+    }
+
+    @Test
+    fun `a save from a tab with an older version gets a conflict, and one with the newest is kept`() {
+        published("tabbed")
+        val loaded = draftVersion(page("/skills/tabbed"))
+        val first = answer(browser.autosave("/skills/tabbed", mapOf("skill" to skillMd("tabbed", "First tab.")), loaded))
+        val second = browser.autosave("/skills/tabbed", mapOf("skill" to skillMd("tabbed", "Second tab.")), loaded)
+        assertEquals(409, second.status)
+        assertEquals("This Skill's Draft was changed in another tab or window.", answer(second)["conflict"])
+        assertContains(page("/skills/tabbed"), "First tab.")
+
+        assertEquals(200, browser.autosave("/skills/tabbed", mapOf("skill" to skillMd("tabbed", "First tab, again.")), first["version"].toString()).status)
+        assertContains(page("/skills/tabbed"), "First tab, again.")
+        browser.post("/skills/tabbed/discard", mapOf("confirm" to "on"))
+    }
+
+    @Test
+    fun `Publish publishes the page and removes the Draft, and a refused Publish keeps the Draft and says why`() {
+        val folder = published("publisher")
+        published("publisher-taken")
+        browser.autosave("/skills/publisher", mapOf("skill" to skillMd("publisher", "Changed.")), draftVersion(page("/skills/publisher")))
+
+        val refused = browser.post("/skills/publisher", mapOf("skill" to skillMd("publisher-taken", "Renamed.")))
+        assertContains(refused.body, "A Skill named publisher-taken already exists")
+        assertContains(page("/skills/publisher"), "Renamed.") // the Draft is the page as Publish was pressed
+        assertEquals(skillMd("publisher", "Published."), folder.resolve("SKILL.md").readText())
+
+        assertEquals("/skills/publisher", browser.post("/skills/publisher", mapOf("skill" to skillMd("publisher", "Changed."))).path)
+        assertEquals(skillMd("publisher", "Changed."), folder.resolve("SKILL.md").readText())
+        val page = page("/skills/publisher")
+        assertEquals(listOf("Published"), markers(page))
+        assertEquals("0", draftVersion(page))
+        assertFalse("Draft saved" in page)
+    }
+
+    /** Deletes the Draft-only Skill at [page], as its Delete does once confirmed, so the next test's New or Copy gets the same name. */
+    private fun deleteDraft(page: String) = assertEquals("/skills", browser.post("$page/delete", mapOf("confirm" to "on")).path)
+
+    @Test
+    fun `New and Copy make a Draft-only Skill with a placeholder name, used by nothing, which Publish puts to use`() {
+        val first = browser.post("/skills/new/draft", emptyMap())
+        val name = first.path.removePrefix("/skills/")
+        assertTrue(Regex("new-skill(-\\d+)?").matches(name), name)
+        assertEquals(listOf("Draft"), markers(first.body))
+        assertContains(first.body, "name: $name\n")
+        assertFalse(home.resolve("skills/$name").exists())
+        assertTrue(catalogue.skills().none { it.name == name })
+        assertContains(page("/skills"), """<a href="/skills/$name">$name</a></b><span class="pill draft-mark p-draft">Draft</span>""")
+        val second = browser.post("/skills/new/draft", emptyMap()).path.removePrefix("/skills/")
+        assertTrue(second != name && second.startsWith("new-skill-"), second)
+        deleteDraft("/skills/$second")
+
+        home.resolve("skills/drafted-first").toFile().deleteRecursively()
+        val renamed = answer(browser.autosave("/skills/$name", mapOf("skill" to skillMd("drafted-first")), draftVersion(first.body)))
+        assertEquals("/skills/drafted-first", renamed["path"]) // a Draft-only Skill's page follows its name
+        assertEquals("Draft", renamed["label"])
+        assertEquals(listOf("Draft"), markers(page("/skills/drafted-first")))
+        assertEquals("/skills/drafted-first", browser.post("/skills/drafted-first", mapOf("skill" to skillMd("drafted-first"))).path)
+        assertEquals(skillMd("drafted-first"), home.resolve("skills/drafted-first/SKILL.md").readText())
+        assertEquals(idOf(home.resolve("skills/drafted-first")), catalogue.skill("drafted-first").id)
+        assertEquals(listOf("Published"), markers(page("/skills/drafted-first")))
+    }
+
+    @Test
+    fun `Copy keeps the files beside SKILL md with the Draft, and Publish puts them in the copy's folder`() {
+        val source = published("beside")
+        source.resolve("reference.md").writeText("The reference.")
+        val copy = browser.post("/skills/beside/copy", emptyMap())
+        assertEquals("/skills/beside-copy", copy.path)
+        assertEquals(listOf("Draft"), markers(copy.body))
+        assertContains(copy.body, "name: beside-copy\n")
+        val folder = home.resolve("skills/beside-copy")
+        assertFalse(folder.exists())
+
+        assertEquals("/skills/beside-copy", browser.post("/skills/beside-copy", mapOf("skill" to skillMd("beside-copy"))).path)
+        assertEquals("The reference.", folder.resolve("reference.md").readText())
+        assertTrue(assertNotNull(idOf(folder)) != idOf(source))
+        browser.post("/skills/beside-copy/delete", mapOf("confirm" to "on"))
+    }
+
+    @Test
+    fun `Discard Draft confirms and reopens the published Skill, and Delete on a Draft-only Skill confirms and leaves the list`() {
+        published("discarder")
+        browser.autosave("/skills/discarder", mapOf("skill" to skillMd("discarder", "Unwanted.")), draftVersion(page("/skills/discarder")))
+        assertContains(page("/skills/discarder"), """<form method="post" action="/skills/discarder/discard"""")
+        assertContains(browser.post("/skills/discarder/discard", emptyMap()).body, "Discard the Draft of discarder?")
+        assertContains(page("/skills/discarder"), "Unwanted.")
+        val discarded = browser.post("/skills/discarder/discard", mapOf("confirm" to "on"))
+        assertEquals("/skills/discarder", discarded.path)
+        assertContains(discarded.body, "Published.")
+        assertEquals(listOf("Published"), markers(discarded.body))
+
+        val draft = browser.post("/skills/new/draft", emptyMap()).path
+        assertFalse("/discard" in page(draft))
+        assertContains(browser.post("$draft/delete", emptyMap()).body, "Delete the Draft ${draft.removePrefix("/skills/")}?")
+        assertEquals("/skills", browser.post("$draft/delete", mapOf("confirm" to "on")).path)
+        assertEquals(404, browser.get(draft).status)
+        assertFalse("href=\"$draft\"" in page("/skills"))
+    }
+
+    @Test
+    fun `shipped and extra-folder Skills have no Draft and no autosave`() {
+        val shipped = page("/skills/shipped-draft")
+        assertFalse("data-autosave" in shipped)
+        assertTrue(markers(shipped).isEmpty())
+        assertEquals(403, browser.autosave("/skills/shipped-draft", mapOf("skill" to skillMd("shipped-draft")), "0").status)
+
+        val extra = Files.createTempDirectory("extra").resolve("outside-draft").createDirectories()
+        extra.resolve("SKILL.md").writeText(skillMd("outside-draft"))
+        val settings = home.resolve("settings.yaml")
+        val before = settings.readText()
+        try {
+            settings.writeText("skill-folders: [${extra.parent}]\n")
+            assertFalse("data-autosave" in page("/skills/outside-draft"))
+            assertEquals(403, browser.autosave("/skills/outside-draft", mapOf("skill" to skillMd("outside-draft", "Changed.")), "0").status)
+            assertEquals(skillMd("outside-draft"), extra.resolve("SKILL.md").readText())
+        } finally {
+            settings.writeText(before)
+        }
     }
 }

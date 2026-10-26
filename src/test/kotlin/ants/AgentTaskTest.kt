@@ -95,6 +95,27 @@ class AgentTaskTest : AntsTest() {
     }
 
     @Test
+    fun `an Agent Task gets the published Skill while the Skill has a Draft, and never a Draft-only one`() {
+        agentTask()
+        home.resolve("agents/writer.md").writeText("---\nskills: \"*\"\n---\nWrite plainly.\n") // so it would get a Draft-only Skill, were it given one
+        claude.session("draft", done)
+        val draft = browser.autosave("/skills/draft", mapOf("skill" to "---\nname: draft\ndescription: Does it worse.\n---\nDo it badly.\n"), draftVersion(browser.get("/skills/draft").body))
+        assertEquals(200, draft.status, draft.body)
+        val only = browser.post("/skills/new/draft", emptyMap()).path
+        try {
+            val run = start()
+            eventually { assertContains(page(run), """id="state">Completed<""") }
+            val launch = claude.launches("draft").single()
+            assertEquals(home.resolve("skills/draft"), launch.skills["draft"])
+            assertFalse(only.removePrefix("/skills/") in launch.skills)
+            assertEquals("---\nname: draft\ndescription: Does draft.\n---\nDo it.\n", home.resolve("skills/draft/SKILL.md").readText())
+        } finally {
+            browser.post("$only/delete", mapOf("confirm" to "on"))
+            browser.post("/skills/draft/discard", mapOf("confirm" to "on"))
+        }
+    }
+
+    @Test
     fun `a result-schema override replaces the Skill's schema in --json-schema`() {
         agentTask(textSchema)
         claude.session("draft", done("""{"verdict":"ship"}"""))

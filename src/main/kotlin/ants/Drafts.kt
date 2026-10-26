@@ -90,9 +90,13 @@ class Drafts(@Value("\${ants.home}") home: Path) {
         return DraftSave.Kept(draft)
     }
 
+    /** The folder of the files a Draft keeps beside its content, such as those beside a copied Skill's `SKILL.md`. */
+    fun files(kind: DraftKind, id: String): Path = root.resolve(kind.folder).resolve(id)
+
     @Synchronized
     fun remove(kind: DraftKind, id: String) {
         file(kind, id).deleteIfExists()
+        files(kind, id).toFile().deleteRecursively()
     }
 
     private fun read(file: Path): Draft? = runCatching {
