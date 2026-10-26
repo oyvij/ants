@@ -204,7 +204,7 @@ class ScriptTaskTest : AntsTest() {
         val named = browser.autosave(draft, listOf("name" to "unpublished", "description" to "Never published.", "code" to "ants.output({})\n", "vars" to ""), draftVersion(browser.get(draft).body))
         assertEquals("/scripts/unpublished", answer(named)["path"])
         val refused = browser.post("/processes/deploy", mapOf("bpmn" to deployable("unpublishing", scriptTask("never", "unpublished"))))
-        assertContains(refused.body, "No Script named unpublished.")
+        assertContains(refused.body, "The Script unpublished is a Draft: publish it first.")
         browser.post("/scripts/unpublished/delete", mapOf("confirm" to "on"))
     }
 
@@ -245,7 +245,7 @@ class ScriptTaskTest : AntsTest() {
         assertContains(browser.get("/scripts/say-hello").body, """<a href="/processes/greeting">greeting</a>""")
         val catalogue = json.readValue(browser.get("/catalogue.json").body, Map::class.java)
         assertEquals(mapOf("id" to id, "name" to "say-hello", "description" to "Does say-hello.", "inputs" to listOf("text"),
-            "about" to mapOf("text" to mapOf("type" to "text", "description" to "", "required" to false))), (catalogue["scripts"] as List<*>).single { (it as Map<*, *>)["id"] == id })
+            "about" to mapOf("text" to mapOf("type" to "text", "description" to "", "required" to false)), "draft" to null), (catalogue["scripts"] as List<*>).single { (it as Map<*, *>)["id"] == id })
 
         val run = start("greeting")
         eventually { assertNotNull(runtime.getVariable(run, "greet")) }

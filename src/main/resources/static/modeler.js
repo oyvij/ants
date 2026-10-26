@@ -694,7 +694,7 @@ async function agentPanel(element, box) {
             await refresh()
             pickAgent(name)
         })})
-    // The Skill's page adds it to the Task's Agent when that Agent is the user's own.
+    // New Skill's Use lists it in the Draft of the Task's Agent when that Agent is the user's own.
     const who = el("div", {className: "who"}, !agent ? note("warn", "This Task has no Agent yet. The Skill is created, and you add it to an Agent's Skills it runs.")
         : agent.own ? note("okbox", `Added to ${agent.name}'s Skills in its Draft, and picked on this Task.`)
             : note("warn", `${agent.name} is in ${agent.folder} and read-only, so the Skill can't be added to it. Copy the Agent, or pick one of your own, then choose this Skill.`))
