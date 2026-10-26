@@ -95,12 +95,12 @@
 @endfor
         </div>
         <div class="row save-secrets"><button formaction="/scripts/${saved}/secrets" data-save-secrets>Save Secrets</button><span class="muted small" role="status" data-secrets-state></span></div>
-        <div class="fld"><label class="f">From Settings</label><div class="help">Secrets kept in <a href="/settings">Settings</a>, each under its variable names.</div>
+        <div class="fld" data-linked><label class="f">From Settings</label><div class="help">Secrets kept in <a href="/settings">Settings</a>, each under its variable names.</div>
 @for(label in labels)
             <label class="nowrap"><input type="checkbox" name="linked" value="${label}" checked="${label in form.linked}"> ${label}</label>
 @endfor
 @if(labels.isEmpty())
-            <span class="muted small">No Secret in Settings yet.</span>
+            <span class="muted small" data-no-linked>No Secret in Settings yet.</span>
 @endif
         </div>
     </div>

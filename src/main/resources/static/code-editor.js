@@ -158,6 +158,20 @@ async function openHelper(textarea, editor, cm, swap, edits) {
             editor.dispatch({effects, annotations: cm.isolateHistory.of('full')});
             return null;
         },
+        link_secret: ({label}) => { // ticks a Secret from Settings, adding its box when Settings got it after the page loaded
+            const linked = textarea.form.querySelector('[data-linked]');
+            let box = [...linked.querySelectorAll('input[name=linked]')].find(input => input.value === label);
+            if (!box) {
+                box = Object.assign(document.createElement('input'), {type: 'checkbox', name: 'linked', value: label});
+                linked.querySelector('[data-no-linked]')?.remove();
+                const row = element('label', 'nowrap', ' ' + label);
+                row.prepend(box);
+                linked.append(row);
+            }
+            box.checked = true;
+            box.dispatchEvent(new Event('change', {bubbles: true}));
+            return null;
+        },
         form:() => [...new FormData(textarea.form)].filter(([name]) => name !== '_csrf'),
     };
     stream.on('builder', async data => {
