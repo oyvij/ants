@@ -18,6 +18,7 @@
 !{val claude = form.cli == "claude"}
 !{val deprecated = models.deprecated(form.model)}
 !{val other = claude && form.model.isNotEmpty() && models.unlisted(form.model)}
+!{val levelDefault = "default · level ${ants.Level.START}, or the pinned model's"}
 !{val othersOn = AgentForm.OTHER_TOOLS.keys.count { it in form.tools }}
 <!doctype html>
 <html lang="en">
@@ -74,9 +75,16 @@
                 </select></div>
             <div class="fld">
                 <fieldset data-cli="claude" disabled="${!claude}">
-                    <label class="f" for="model">Model</label><div class="help">An alias always runs the newest of its family; a fixed version stays put until it retires.</div>
+                    <label class="f" for="level">Level</label><div class="help">The model and effort its Tasks start on, 1 to 5.</div>
+                    <select id="level" name="level">
+                        <option value="" selected="${form.level.isEmpty()}">${levelDefault}</option>
+@for(level in ants.Level.RANGE)
+                        <option value="${level}" selected="${form.level == level.toString()}">${level} · ${ants.Level.claude(level).label}</option>
+@endfor
+                    </select>
+                    <label class="f" for="model">Pinned model</label><div class="help">Runs this model ID instead of the level's, escalating from its family's level. An alias always runs the newest of its family; a fixed version stays put until it retires.</div>
                     <select id="model" name="model">
-                        <option value="" selected="${form.model.isEmpty()}">default · whatever the CLI picks</option>
+                        <option value="" selected="${form.model.isEmpty()}">none · runs on its level</option>
                         <optgroup label="Always the newest">
 @for(alias in models.aliases)
                             <option value="${alias.key}" selected="${claude && form.model == alias.key}">${alias.key} · newest ${alias.key.replaceFirstChar(Char::uppercase)}${alias.value?.let { ", now " + models.label(it) }.orEmpty()}</option>
@@ -103,9 +111,16 @@
                     <div class="help checked">From Anthropic's public model list, refreshed with Ants' update check (last ${models.lastChecked ?: "never: the list Ants shipped with"}). <button class="ghost small" form="models-check">Check now</button></div>
                 </fieldset>
                 <fieldset data-cli="codex" disabled="${claude}">
-                    <label class="f" for="codex-model">Model</label>
+                    <label class="f" for="codex-level">Level</label><div class="help">The model and effort its Tasks start on, 1 to 5.</div>
+                    <select id="codex-level" name="level">
+                        <option value="" selected="${form.level.isEmpty()}">${levelDefault}</option>
+@for(level in ants.Level.RANGE)
+                        <option value="${level}" selected="${form.level == level.toString()}">${level}</option>
+@endfor
+                    </select>
+                    <label class="f" for="codex-model">Pinned model</label>
                     <input class="mono" id="codex-model" name="model" value="${if (claude) "" else form.model}" placeholder="e.g. gpt-5-codex">
-                    <div class="help checked">codex's model ID, as <code>codex -m</code> takes it; empty for codex's default.</div>
+                    <div class="help checked">codex's model ID, as <code>codex -m</code> takes it; empty to run on its level.</div>
                 </fieldset></div>
         </div>
         <div class="fld"><label class="f" for="add-skill">Skills it may use</label><div class="help">The Skills this Agent may use, or <code>*</code> for every Skill. A Task lists the ones it allows, or allows them all; the modeler only offers these. &nbsp;e.g. <span class="eg">implement, tdd</span></div>

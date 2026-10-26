@@ -47,7 +47,9 @@
         <div class="subsec"><label class="small" for="agent-tasks">Agent Tasks at once</label><div class="help">Live CLI processes across all Runs. More wait as <b>Queued</b>.</div>
             <input type="number" min="1" id="agent-tasks" name="agent-tasks" value="${form.agentTasks}" placeholder="e.g. 3" class="num"></div>
         <div class="subsec"><label class="small" for="subagent-depth">Subagent depth</label><div class="help">How deep claude's Subagents may nest. At 1 a Task's Subagents start none of their own.</div>
-            <input type="number" min="1" id="subagent-depth" name="subagent-depth" value="${form.subagentDepth}" placeholder="e.g. 1" class="num"></div></div>
+            <input type="number" min="1" id="subagent-depth" name="subagent-depth" value="${form.subagentDepth}" placeholder="e.g. 1" class="num"></div>
+        <div class="subsec"><label class="small" for="retries">Retries</label><div class="help">How often a <b>[failed]</b> Agent Task retries one level up before it waits on you. 3 when empty.</div>
+            <input type="number" min="0" id="retries" name="retries" value="${form.retries}" placeholder="e.g. 3" class="num"></div></div>
     <div class="card"><h3>Commands</h3>
 @for(cli in Settings.CLIS)
         <div class="fld"><label class="f" for="${cli}.path">${cli}</label><input class="mono" id="${cli}.path" name="${cli}.path" value="${form.paths[cli]}" placeholder="e.g. /opt/homebrew/bin/${cli}"></div>

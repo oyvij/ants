@@ -2,6 +2,7 @@
 id: a-knowledge
 name: knowledge
 description: Keeps the user's knowledge Vault, in Varde's format, proposing every change before it writes it.
+level: 2
 skills: k-update-knowledge, k-init-vault, k-search-knowledge
 tools: Read, Grep, Glob, Write, Edit, Bash
 ---

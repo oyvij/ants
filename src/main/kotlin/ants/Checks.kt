@@ -152,6 +152,12 @@ val modelerFacts: String = JsonMapper.shared().writeValueAsString(mapOf(
         "help" to "The Vault and Source map its Runs use, unless the start form picks another Profile.",
         "none" to "The default",
     ),
+    "level" to mapOf(
+        "property" to LEVEL,
+        "levels" to Level.RANGE.map(Int::toString),
+        "help" to "The model and effort it runs on, ${Level.RANGE.first} to ${Level.RANGE.last}, before its Agent's.",
+        "none" to "The Agent's level",
+    ),
     "runVariables" to RUN_VARIABLES,
     "userTasks" to userTaskFields.map { (kind, fields) -> mapOf("value" to kind.value.orEmpty(), "key" to kind.key, "name" to kind.title, "result" to kind.result, "fields" to fields) },
     "wording" to mapOf(

@@ -35,7 +35,7 @@ else (event["message"] ?: (event["error"] as? Map<*, *>)?.get("message"))?.toStr
  */
 internal fun AgentLauncher.codex(
     task: LockedExternalTask, instance: String, agent: Agent, run: String, workspace: Path, cwd: Path, vault: Path?, transcript: Transcript.Writer,
-    session: String?, started: (String) -> Unit, prompt: String, schema: Map<*, *>, judge: AgentLauncher.Judge,
+    session: String?, started: (String) -> Unit, prompt: String, schema: Map<*, *>, judge: AgentLauncher.Judge, level: Level,
 ): Map<*, *> {
     Agent.sandboxError(agent.cli, agent.sandbox)?.let { throw AgentLauncher.Failed(it) } // never passed on to --sandbox
     val schemaFile = Transcript.file(workspace, instance).resolveSibling("result.schema.json").apply { writeText(json.writeValueAsString(schema)) }
@@ -48,7 +48,7 @@ internal fun AgentLauncher.codex(
             val resume = thread?.let { listOf("resume", it) }.orEmpty()
             // codex doesn't print what it was told, so Ants writes it the way claude replays it.
             transcript.line(json.writeValueAsString(mapOf("type" to "user", "message" to mapOf("role" to "user", "content" to message))))
-            val process = cli(agent.cli, cwd, codexFlags(agent, schemaFile, listOfNotNull(workspace.takeIf { cwd != workspace }, vault), referencedImages(message, home)) + resume + "-").start()
+            val process = cli(agent.cli, cwd, codexFlags(agent, level, schemaFile, listOfNotNull(workspace.takeIf { cwd != workspace }, vault), referencedImages(message, home)) + resume + "-").start()
             clis[process] = run
             val stderr = drain(process)
             val fixes = mutableListOf<String>()
@@ -163,10 +163,10 @@ internal class Turns(override val task: String) : AgentLauncher.Live {
  * The [images] the prompt references go with it as `-i`, which on `exec` takes several values, so another flag follows
  * them; `exec resume` adds them to the resumed turn's prompt too (`ExecCommand::Resume` in codex-rs/exec/src/lib.rs, 0.162).
  */
-internal fun codexFlags(agent: Agent, schema: Path, writable: List<Path>, images: List<Path>): List<String> =
+internal fun codexFlags(agent: Agent, level: Level, schema: Path, writable: List<Path>, images: List<Path>): List<String> =
     listOf("exec", "--json", "--skip-git-repo-check") + images.flatMap { listOf("-i", "$it") } +
         listOf("--output-schema", "$schema", "--sandbox", agent.sandbox) +
-        (if (agent.model != null) listOf("-m", agent.model) else emptyList()) +
+        level.codexFlags +
         (if (agent.instructions.isNotEmpty()) listOf("-c", "developer_instructions=" + json.writeValueAsString(agent.instructions)) else emptyList()) +
         writable.flatMap { listOf("--add-dir", "$it") }
 

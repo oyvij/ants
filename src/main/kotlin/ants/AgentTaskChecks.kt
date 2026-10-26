@@ -22,6 +22,7 @@ import org.operaton.bpm.model.xml.instance.ModelElementInstance
 
 // An Agent Task's extension properties.
 const val AGENT = "ants.agent"
+const val LEVEL = "ants.level"
 /** The Skills a Task may use, comma or space separated, an empty list none; without it, its Agent's (ADR 0024). */
 const val SKILLS = "ants.skills"
 const val SCRIPTS = "ants.scripts"

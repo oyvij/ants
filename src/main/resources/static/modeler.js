@@ -13,7 +13,7 @@ import {camel, linkedChanges, linkedProperties, listedSkills, operators, readCon
 // `ants.type` property each field carries (the engine only knows `string`), Items are Tickets' property and help, the
 // Process's Profile property, help and empty choice, Ants' own Run variables, each User Task kind with its fields
 // and Result, what the palette and add_element draw for each kind, the multi-instance modes, and the panel's own wording.
-const {kinds, builtIns, fieldTypes, itemsAreTickets, profile, runVariables, userTasks, drawn, multiInstanceModes, wording} = JSON.parse(document.getElementById("canvas").dataset.facts)
+const {kinds, builtIns, fieldTypes, itemsAreTickets, profile, level, runVariables, userTasks, drawn, multiInstanceModes, wording} = JSON.parse(document.getElementById("canvas").dataset.facts)
 
 // The three Tasks Ants runs, as the BPMN each one is, and their colour on the diagram and in the palette.
 const tasks = {
@@ -749,9 +749,13 @@ async function agentPanel(element, box) {
         placeholder: "No Result schema: the Task hands back done or stuck and a summary. Give one here to read its Result's fields.",
         oninput: () => write({"ants.result-schema": override.value.trim() || undefined}),
     })
+    const levelSelect = el("select", {onchange: () => write({[level.property]: levelSelect.value || undefined})},
+        el("option", {value: "", textContent: level.none, selected: !props[level.property]}),
+        ...level.levels.map(value => el("option", {value, textContent: value, selected: value === props[level.property]})))
     box.replaceChildren(
         field("Agent", "Who does it.", agentSelect, draftMark(agent), editAgent, newAgent),
         props["ants.agent"] && !agent ? note("warn", `No Agent folder holds "${props["ants.agent"]}".`) : "",
+        field("Level", level.help, levelSelect),
         field("Assignment", "The job, in a few lines. Leave it out when the Task lists one Skill: that Skill is then the job.", assignment),
         field("Skills", "What the Agent may use for it: all of its Skills, none, or only the ones ticked.", modeSelect,
             el("div", {className: "skillpick"}, ...(skillRows.length ? skillRows : [note("muted small", agent ? "The Agent has no Skills." : "Pick an Agent to see its Skills.")])),

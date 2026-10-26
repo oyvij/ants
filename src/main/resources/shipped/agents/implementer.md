@@ -2,6 +2,7 @@
 id: a-implementer
 name: implementer
 description: Builds a Ticket or a proposal, or fixes a review, test-first in the Run's clones, reviews its own commits and commits on the work branch.
+level: 3
 skills: k-implement, k-tdd, k-code-review, k-codebase-design
 tools: Read, Grep, Glob, Write, Edit, Bash, Agent, TaskCreate, TaskGet, TaskList, TaskUpdate
 ---
