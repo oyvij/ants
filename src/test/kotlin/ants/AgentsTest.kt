@@ -186,7 +186,21 @@ class AgentsTest : AntsTest() {
         }
     }
 
-    private fun idOf(file: Path) = Regex("(?m)^id: (a-[a-z0-9]{6})$").find(file.readText())?.groupValues?.get(1)
+    @Test
+    fun `the Agents page lists lead, engineer, proxy and librarian, each saying what it may touch`() {
+        val list = get("/agents").replace("&#39;", "'")
+        for ((name, description) in listOf(
+            "lead" to "Reads the prompt, the Vault and the clones, and writes documents in the Run workspace, only in scout/, tickets/, proposal/ and walkthrough/. Changes nothing in the repos, and runs only git log, diff, show and merge-base.",
+            "engineer" to "Changes the clones with any tool, commits on their work branches, and opens pull requests. Works only in the Run workspace, and never pushes.",
+            "proxy" to "Answers a Round as the user would, from their Answer History and the Vault. Only reads.",
+            "librarian" to "Keeps the user's knowledge Vault, in Varde's format, reading and writing it with any tool, and proposing every change before it writes it.",
+        )) {
+            val row = list.substringAfter("""<a href="/agents/$name">$name</a>""", "").substringBefore("</tr>")
+            assertContains(row, """<td class="small">$description</td>""", message = name)
+        }
+    }
+
+    private fun idOf(file: Path) =Regex("(?m)^id: (a-[a-z0-9]{6})$").find(file.readText())?.groupValues?.get(1)
 
     private fun withoutId(file: Path) = file.readText().also { assertNotNull(idOf(file), it) }.replaceFirst(Regex("(?m)^id: a-[a-z0-9]{6}\n"), "")
 

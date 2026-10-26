@@ -96,6 +96,27 @@ class ShippedBpmnTest {
         assert(tasks > 20) { "only $tasks Agent Tasks found" }
     }
 
+    @Test
+    fun `every shipped Agent Task runs on lead, engineer, proxy or librarian, and none names an old Agent`() {
+        val four = setOf("a-lead", "a-engineer", "a-proxy", "a-librarian")
+        var tasks = 0
+        for (file in files("processes") + files("templates")) for (task in read(file).agentTasks) {
+            tasks++
+            assert(task.property(AGENT) in four) { "${file.name}: ${task.id} runs on ${task.property(AGENT)}" }
+            val old = Regex("""a-(scout|griller|planner|architect|storyteller|implementer|pr|answerer|knowledge)\b(?!-)""")
+            for (name in task.extensions<OperatonProperties>().flatMap { it.operatonProperties }.map { it.operatonName }) {
+                assert(old.find(name) == null) { "${file.name}: ${task.id} still has $name" }
+            }
+        }
+        assert(tasks > 20) { "only $tasks Agent Tasks found" }
+    }
+
+    @Test
+    fun `the proposal Task's empty Skills list reads as no Skills, not as lead's`() {
+        val task = read(files("processes").single { it.name == "build-and-ship.bpmn" }).agentTasks.single { it.id == "proposesolution" }
+        assertEquals(emptyList(), Job(task).listed)
+    }
+
     /** The elements of a Template, less what a copy renames: its events' ids, its flows' ids, its inputs' values. */
     private fun shape(elements: Collection<FlowElement>): List<String> {
         fun ref(node: FlowNode) = when (node) {
