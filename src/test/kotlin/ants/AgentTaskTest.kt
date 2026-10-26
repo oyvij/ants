@@ -90,7 +90,7 @@ class AgentTaskTest : AntsTest() {
         eventually { assertContains(page(run), """id="state">Completed<""") }
         val launch = claude.launches("draft").single()
         assertEquals("Write plainly.", launch.flag("--append-system-prompt"))
-        assertEquals(null, launch.flag("--model"))
+        assertEquals("sonnet" to "medium", launch.flag("--model") to launch.flag("--effort")) // the published writer's default level, not the Draft's opus
         browser.post("/agents/writer/discard", mapOf("confirm" to "on")) // the next test's writer.md, with no id, would leave this Draft as a Draft-only writer
     }
 

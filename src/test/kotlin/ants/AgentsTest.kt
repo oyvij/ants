@@ -114,7 +114,7 @@ class AgentsTest : AntsTest() {
 
     @Test
     fun `the form picks a level from 1 to 5, and can still pin a model ID beside it`() {
-        val blank = get("/agents/new")
+        val blank = get(browser.newDraft("/agents"))
         assertContains(blank, """<select id="level" name="level">""")
         assertContains(blank, """<select id="codex-level" name="level">""")
         assertContains(blank, """<option value="" selected>default · level 2, or the pinned model's</option>""")
