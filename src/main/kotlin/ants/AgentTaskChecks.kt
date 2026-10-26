@@ -93,14 +93,17 @@ private fun promised(task: ServiceTask) = promised(task.property(RESULT_SCHEMA),
 /** The fields of the `output` an Agent Task promises, `questions` too when it asks Rounds. */
 private fun fields(task: ServiceTask) = (promised(task)?.get("properties") as? Map<*, *>).orEmpty().keys.map { it.toString() }
 
-internal fun laterRead(model: BpmnModelInstance): Map<String, List<String>> = model.getModelElementsByType(Activity::class.java).mapNotNull { task ->
+internal fun laterRead(model: BpmnModelInstance, scripts: Scripts): Map<String, List<String>> = model.getModelElementsByType(Activity::class.java).mapNotNull { task ->
     when {
         task is UserTask -> UserTaskKind.of(task.property(USER_TASK)).result.map { "\${${task.id}.$it}" }
         task is ServiceTask && task.operatonTopic == AgentLauncher.TOPIC -> fields(task).map { "\${${task.id}.output.$it}" }.ifEmpty { listOf("\${${task.id}.summary}") }
-        task is ServiceTask && task.operatonTopic == ScriptTask.TOPIC -> ScriptTask.RESULT.map { "\${${task.id}.$it}" }
+        task is ServiceTask && task.operatonTopic == ScriptTask.TOPIC -> scriptResult(task, scripts).map { "\${${task.id}.$it}" }
         else -> null
     }?.let { task.id to it }
 }.toMap()
+
+/** What a Script Task's Result holds: [ScriptTask.RESULT], and each field its Script's output schema declares, as `payload.<field…>`. */
+private fun scriptResult(task: ServiceTask, scripts: Scripts) = ScriptTask.RESULT + task.linkedScript(scripts)?.output?.let(::fieldPaths).orEmpty().map { "payload.$it" }
 
 /** The names an expression anywhere may start with besides start-form fields and Task ids: Ants' Run variables and the engine's own. */
 private val runVariables = RUN_VARIABLES + "execution"
@@ -128,15 +131,16 @@ internal fun reads(expression: String): List<List<String>> =
 
 /**
  * Each `${…}` reference, in an input, a condition, a multi-instance collection or a call activity's input, naming a
- * Task, start-form field or Run variable that doesn't exist, or a field an Agent Task's Result doesn't have: its
- * `outcome`, its `summary` and the `output` its schema promises. More complex JUEL fails at runtime, as an incident.
+ * Task, start-form field or Run variable that doesn't exist, a field an Agent Task's Result doesn't have (its `outcome`,
+ * its `summary` and the `output` its schema promises), or a Script Task's `payload` field its Script's output schema
+ * doesn't declare. More complex JUEL fails at runtime, as an incident.
  */
-internal fun references(model: BpmnModelInstance): List<Check> {
+internal fun references(model: BpmnModelInstance, scripts: Scripts): List<Check> {
     val activities = model.getModelElementsByType(Activity::class.java).associateBy { it.id }
     val names = model.getModelElementsByType(OperatonFormField::class.java).map { it.operatonId }.toSet() + activities.keys + runVariables
     return expressions(model).flatMap { (owner, text) ->
         val inScope = names + loops(owner).flatMap { listOf(it.element) + loopVariables }
-        reads(text).mapNotNull { path -> problem(path, inScope, activities)?.let { owner to it } }
+        reads(text).mapNotNull { path -> problem(path, inScope, activities, scripts)?.let { owner to it } }
     }
         .distinct().map { (owner, problem) -> Check(owner.id, "${owner.label} reads $problem") }
 }
@@ -151,29 +155,40 @@ internal fun expressions(model: BpmnModelInstance): List<Pair<FlowElement, Strin
 }
 
 /** What's wrong with reading [path], or null when it names something that exists. */
-private fun problem(path: List<String>, names: Set<String>, activities: Map<String, Activity>): String? {
+private fun problem(path: List<String>, names: Set<String>, activities: Map<String, Activity>, scripts: Scripts): String? {
     val (root, field) = path[0] to path.getOrNull(1)
     val task = activities[root] as? ServiceTask
     return when {
         root !in names -> "$root, which is no Task, start-form field or Run variable."
         root == "runs" && field != null && field !in activities -> "runs.$field, which is no Task."
-        task?.operatonTopic == ScriptTask.TOPIC -> if (field == null || field in ScriptTask.RESULT) null else "$root.$field, which $root's Result doesn't have."
+        task?.operatonTopic == ScriptTask.TOPIC -> when {
+            field == null -> null
+            field !in ScriptTask.RESULT -> "$root.$field, which $root's Result doesn't have."
+            field != "payload" || path.size < 3 -> null
+            else -> undeclared(path, task.linkedScript(scripts)?.output ?: return null)
+        }
         task?.operatonTopic != AgentLauncher.TOPIC || field == null -> null
         field !in setOf("outcome", "summary", "output") -> "$root.$field, which $root's Result doesn't have."
         path.size < 3 -> null
         else -> {
-            var schema = promised(task) ?: return null
+            val schema = promised(task) ?: return null
             if (schema.isEmpty()) return "${path.joinToString(".")}, but $root promises no result schema."
-            for ((i, name) in path.drop(2).withIndex()) {
-                val properties = schema["properties"] as? Map<*, *> ?: return null
-                schema = properties[name] as? Map<*, *> ?: return "${path.take(3 + i).joinToString(".")}, which $root's output schema doesn't have."
-            }
-            null
+            undeclared(path, schema)
         }
     }
 }
 
-internal fun offered(model: BpmnModelInstance, id: String, called: (String) -> BpmnModelInstance?): List<String> {
+/** What's wrong with reading [path], `<task>.<field>.<name…>`, whose names after the field the object schema [schema] declares; null when it does. */
+private fun undeclared(path: List<String>, schema: Map<*, *>): String? {
+    var at = schema
+    for ((i, name) in path.drop(2).withIndex()) {
+        val properties = at["properties"] as? Map<*, *> ?: return null
+        at = properties[name] as? Map<*, *> ?: return "${path.take(3 + i).joinToString(".")}, which ${path[0]}'s output schema doesn't have."
+    }
+    return null
+}
+
+internal fun offered(model: BpmnModelInstance, id: String, scripts: Scripts, called: (String) -> BpmnModelInstance?): List<String> {
     val target = model.getModelElementById<FlowNode>(id) ?: return emptyList()
     val before = mutableSetOf<String>() // ids: the model hands out a new object for an element each time
     // From the sequence flows, since a file need not list a node's `incoming`.
@@ -187,7 +202,7 @@ internal fun offered(model: BpmnModelInstance, id: String, called: (String) -> B
     val fields = model.getModelElementsByType(OperatonFormField::class.java).map { it.operatonId }
     fun results(task: Activity, key: String): List<String> = when {
         task is UserTask -> listOf(key) + UserTaskKind.of(task.property(USER_TASK)).result.map { "$key.$it" }
-        task is ServiceTask && task.operatonTopic == ScriptTask.TOPIC -> listOf(key) + ScriptTask.RESULT.map { "$key.$it" }
+        task is ServiceTask && task.operatonTopic == ScriptTask.TOPIC -> listOf(key) + scriptResult(task, scripts).map { "$key.$it" }
         task !is ServiceTask || task.operatonTopic != AgentLauncher.TOPIC -> listOf(key)
         else -> listOf("$key.summary", "$key.output") + fields(task).map { "$key.output.$it" }
     }

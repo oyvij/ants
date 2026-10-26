@@ -490,7 +490,7 @@ class ChecksTest : AntsTest() {
     }
 
     private fun script(id: String, name: String, inputs: List<String> = emptyList()) = home.resolve("scripts/$id").createDirectories().run {
-        resolve("script.yaml").writeText("id: $id\nname: $name\ndescription: Does $name.\ninputs: [${inputs.joinToString(", ")}]\nvars: {}\nsecrets: []\n")
+        resolve("script.yaml").writeText("id: $id\nname: $name\ndescription: Does $name.\ninputs: {type: object, properties: {${inputs.joinToString(", ") { "$it: {}" }}}}\nvars: {}\nsecrets: []\n")
         resolve("script.mjs").writeText("console.log('hi')\n")
     }
 
@@ -532,6 +532,35 @@ class ChecksTest : AntsTest() {
     }
 
     @Test
+    fun `a Script Task's literal input that isn't its input schema's type is refused, naming the input and the type, and an expression is left to the run`() = withoutScripts {
+        home.resolve("scripts/s-count1").createDirectories().run {
+            resolve("script.yaml").writeText(
+                "id: s-count1\nname: count-up\ndescription: Counts.\n" +
+                    "inputs: {type: object, properties: {count: {type: number}, flag: {type: boolean}, tags: {type: array, items: {type: string}}, label: {type: string}}}\nvars: {}\nsecrets: []\n")
+            resolve("script.mjs").writeText("console.log('hi')\n")
+        }
+        refuses(diagram(scriptTask("post", "s-count1", mapOf("count" to "five"))), "post", "Post (post): The input count is a number, which five isn't.")
+        refuses(diagram(scriptTask("post", "s-count1", mapOf("flag" to "yes"))), "post", "Post (post): The input flag is a yes/no, which yes isn't.")
+        refuses(diagram(scriptTask("post", "s-count1", mapOf("tags" to "a, b"))), "post", "Post (post): The input tags is a list of text, which a, b isn't.")
+        val fine = mapOf("count" to "5", "flag" to "false", "tags" to """["a"]""", "label" to "anything")
+        assertEquals(emptyList(), checks(diagram(scriptTask("post", "s-count1", fine))).filter { it["warning"] == false })
+        assertEquals(emptyList(), checks(diagram(scriptTask("post", "s-count1", mapOf("count" to "\${count}")))).filter { "The input count" in it["message"].toString() })
+    }
+
+    @Test
+    fun `a Script Task leaving out a required input is refused, naming the input, and one leaving out an optional input is not`() = withoutScripts {
+        home.resolve("scripts/s-post01").createDirectories().run {
+            resolve("script.yaml").writeText(
+                "id: s-post01\nname: post-message\ndescription: Posts.\n" +
+                    "inputs: {type: object, properties: {text: {type: string}, channel: {type: string}}, required: [text]}\nvars: {}\nsecrets: []\n")
+            resolve("script.mjs").writeText("console.log('hi')\n")
+        }
+        refuses(diagram(scriptTask("post", "s-post01", mapOf("channel" to "general"))), "post",
+            "Post (post): The Script post-message needs the input text.")
+        assertEquals(emptyList(), checks(diagram(scriptTask("post", "s-post01", mapOf("text" to "hi")))).filter { it["warning"] == false })
+    }
+
+    @Test
     fun `a Script sharing its id with another Script, an Agent or a Skill is refused`() = withoutScripts {
         script("s-twin01", "post-message")
         home.resolve("scripts/copied").createDirectories().resolve("script.yaml").writeText("id: s-twin01\nname: copied\ndescription: Copied by hand.\n")
@@ -560,6 +589,28 @@ class ChecksTest : AntsTest() {
         assertTrue(offered.containsAll(listOf("${'$'}{post.exitCode}", "${'$'}{post.output}", "${'$'}{post.payload}")), offered.toString())
         refuses(bpmn, "draft", "Draft (draft) reads post.nothing, which post's Result doesn't have.")
         assertEquals(emptyList(), checks(bpmn.replace("post.nothing", "post.payload.posted")).filter { it["warning"] == false })
+    }
+
+    @Test
+    fun `reads of a Script Task's payload are checked against its Script's output schema, nested fields included, and offered`() = withoutScripts {
+        home.resolve("scripts/s-post01").createDirectories().run {
+            resolve("script.yaml").writeText(
+                "id: s-post01\nname: post-message\ndescription: Posts.\ninputs: {type: object, properties: {}}\n" +
+                    "output: {type: object, properties: {ts: {type: string}, meta: {type: object, properties: {channel: {type: string}}}, tags: {type: array, items: {type: string}}}}\n" +
+                    "vars: {}\nsecrets: []\n")
+            resolve("script.mjs").writeText("ants.output({ts: '1'})\n")
+        }
+        fun reading(read: String) = diagram(scriptTask("post", "s-post01") + agentTask("draft", inputs = """<operaton:inputParameter name="code">${'$'}{$read}</operaton:inputParameter>""") +
+            """<bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="post" /><bpmn:sequenceFlow id="f2" sourceRef="post" targetRef="draft" />""")
+        refuses(reading("post.payload.tss"), "draft", "Draft (draft) reads post.payload.tss, which post's output schema doesn't have.")
+        refuses(reading("post.payload.meta.chanel"), "draft", "Draft (draft) reads post.payload.meta.chanel, which post's output schema doesn't have.")
+        for (fine in listOf("post.payload", "post.payload.ts", "post.payload.meta.channel", "post.payload.tags")) {
+            assertEquals(emptyList(), checks(reading(fine)).filter { it["warning"] == false }, fine)
+        }
+        val payload = listOf("post.payload.ts", "post.payload.meta", "post.payload.meta.channel", "post.payload.tags").map { "${'$'}{$it}" }
+        assertTrue(offered(reading("post.payload"), "draft").containsAll(listOf("${'$'}{post.exitCode}", "${'$'}{post.output}") + payload))
+        val read = JsonMapper.shared().readValue(browser.post("/processes/outputs", mapOf("bpmn" to reading("post.payload"))).body, Map::class.java)
+        assertEquals(listOf("${'$'}{post.exitCode}", "${'$'}{post.output}", "${'$'}{post.payload}") + payload, read["post"])
     }
     @Test
     fun `a file that isn't BPMN is one Check on the whole file`() {

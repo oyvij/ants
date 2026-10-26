@@ -657,7 +657,10 @@ class BrowserTest : AntsTest() {
         assertThat(form.locator("#script-helper")).hasAttribute("data-token", Pattern.compile(".+")) // its helper runs in the modal too
         form.locator("input[name=name]").fill("post-to-chat")
         form.locator("input[name=description]").fill("Posts to the chat.")
-        form.locator("input[name=inputs]").fill("channel, text")
+        for ((i, input) in listOf("channel", "text").withIndex()) {
+            form.locator("#input-schema > .schema-level > [data-add-row]").click()
+            form.locator("input[name='inputs[$i].name']").fill(input)
+        }
         page.locator("dialog .mh button", Page.LocatorOptions().setHasText("Create and use")).click()
 
         assertThat(page.locator("dialog")).hasCount(0)
@@ -670,9 +673,56 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `a Script Task's panel shows each input's type, description and whether it is required`() = browse {
+        http.get("/scripts/new")
+        http.post("/scripts/new", listOf("name" to "post-it", "description" to "Posts it.", "code" to "console.log('hi')\n", "vars" to "",
+            "inputs[0].name" to "channel", "inputs[0].type" to "string", "inputs[0].description" to "Where to post.", "inputs[0].required" to "on",
+            "inputs[1].name" to "count", "inputs[1].type" to "number"))
+        appendScriptTask()
+        label("Script").selectOption("post-it")
+
+        val channel = page.locator("#explain [data-input=channel]")
+        assertThat(channel).containsText("text")
+        assertThat(channel).containsText("required")
+        assertThat(channel).containsText("Where to post.")
+        val count = page.locator("#explain [data-input=count]")
+        assertThat(count).containsText("number")
+        assertThat(count).not().containsText("required")
+        label("channel").fill("general")
+    }
+
+    @Test
+    fun `the input pickers and the condition builder offer a Script Task's payload fields from its output schema, nested ones too`() = browse {
+        agentTask(null)
+        http.get("/scripts/new")
+        http.post("/scripts/new", listOf("name" to "post-ts", "description" to "Posts.", "code" to "ants.output({ts: '1'})\n", "vars" to "",
+            "output[0].name" to "ts", "output[0].type" to "string",
+            "output[1].name" to "meta", "output[1].type" to "object", "output[1].rows[0].name" to "channel", "output[1].rows[0].type" to "string"))
+        val post = """<bpmn:serviceTask id="post" name="Post" operaton:type="external" operaton:topic="script"><bpmn:extensionElements><operaton:properties>""" +
+            """<operaton:property name="ants.script" value="post-ts" /></operaton:properties></bpmn:extensionElements></bpmn:serviceTask>"""
+        val (process, plane) = row("posted", """<bpmn:startEvent id="start" />""", post, agentTaskXml("draft", "Draft"),
+            """<bpmn:exclusiveGateway id="ok" name="Ok?" default="ok-end" />""", """<bpmn:endEvent id="end" />""")
+        val back = """<bpmn:sequenceFlow id="ok-draft" sourceRef="ok" targetRef="draft"><bpmn:conditionExpression>${'$'}{post.exitCode == 0}</bpmn:conditionExpression></bpmn:sequenceFlow>"""
+        val edge = """<bpmndi:BPMNEdge id="ok-draft_di" bpmnElement="ok-draft"><di:waypoint x="600" y="80" /><di:waypoint x="600" y="40" />""" +
+            """<di:waypoint x="450" y="40" /><di:waypoint x="450" y="80" /></bpmndi:BPMNEdge>"""
+        deploy(definitions("posted", "Posted", process + back, plane.replace("</bpmndi:BPMNPlane>", "$edge</bpmndi:BPMNPlane>")))
+
+        page.navigate(url("/processes/posted/edit"))
+        shape("draft").click()
+        for (offered in listOf("post.exitCode", "post.output", "post.payload.ts", "post.payload.meta", "post.payload.meta.channel")) {
+            assertThat(page.locator("#ants-references option[value='${'$'}{$offered}']")).hasCount(1)
+        }
+        shape("ok").click()
+        val field = page.locator("#explain .card", Page.LocatorOptions().setHasText("→ Draft")).locator("select").first()
+        assertThat(field.locator("option[value='post.payload.ts']")).hasText("post.payload.ts (from Post)")
+        assertThat(field.locator("option[value='post.payload.meta.channel']")).hasText("post.payload.meta.channel (from Post)")
+        assertThat(field.locator("option[value='post.exitCode']")).hasText("post.exitCode (from Post)")
+    }
+
+    @Test
     fun `Edit's modal renames the Task's Script, and the panel shows the new name`() = browse {
         http.get("/scripts/new")
-        http.post("/scripts/new", listOf("name" to "tidy-up", "description" to "Tidies up.", "code" to "console.log('tidy')\n", "inputs" to "", "vars" to ""))
+        http.post("/scripts/new", listOf("name" to "tidy-up", "description" to "Tidies up.", "code" to "console.log('tidy')\n", "vars" to ""))
         appendScriptTask()
         label("Script").selectOption("tidy-up")
         button("Edit").click()
@@ -687,7 +737,7 @@ class BrowserTest : AntsTest() {
     @Test
     fun `the Process Builder's add_element draws a Script Task naming a Script, which Save and deploy keeps as its id`() = browse {
         http.get("/scripts/new")
-        http.post("/scripts/new", listOf("name" to "tidy-up", "description" to "Tidies up.", "code" to "console.log('tidy')\n", "inputs" to "folder", "vars" to ""))
+        http.post("/scripts/new", listOf("name" to "tidy-up", "description" to "Tidies up.", "code" to "console.log('tidy')\n", "inputs[0].name" to "folder", "inputs[0].type" to "string", "vars" to ""))
         agentTask(null)
         http.import("agent-task.bpmn")
         page.navigate(url("/processes/agent-task/edit"))
@@ -710,10 +760,10 @@ class BrowserTest : AntsTest() {
         home.resolve("settings.yaml").writeText("node: {path: ${ScriptsTest.NODE}}\n")
         page.navigate(url("/scripts/new"))
         val editor = page.locator(".code-editor .cm-content")
-        assertThat(page.locator(".code-editor .cm-placeholder")).containsText("process.env.ANTS_OUTPUT")
-        assertThat(page.locator(".code-editor .cm-placeholder")).containsText("process.stdin")
+        assertThat(page.locator(".code-editor .cm-placeholder")).containsText("ants.inputs")
+        assertThat(page.locator(".code-editor .cm-placeholder")).containsText("ants.output(")
         editor.click()
-        page.keyboard().insertText("import {readFileSync, writeFileSync} from 'node:fs'\nconst {text} = JSON.parse(readFileSync(0, 'utf8'))\nconsole.log('posting')\nwriteFileSync(process.env.ANTS_OUTPUT, JSON.stringify({posted: text, count: 2}))\n")
+        page.keyboard().insertText("const {text} = ants.inputs\nconsole.log('posting')\nants.output({posted: text, count: 2})\n")
         page.getByLabel("Sample inputs, as JSON").fill("""{"text": "hello"}""")
         page.locator(".code-editor button", Page.LocatorOptions().setHasText("Test run")).click()
 
@@ -731,6 +781,156 @@ class BrowserTest : AntsTest() {
         page.keyboard().insertText("process.exit(3)\n")
         page.locator(".code-editor button", Page.LocatorOptions().setHasText("Test run")).click()
         assertThat(result.locator(".pill.p-failed")).hasText("Failed · exit 3")
+    }
+
+    @Test
+    fun `the Script page's schema card shows Input schema first, nests an object's fields, fills the Test run's sample from the rows, and saves them`() = browse {
+        page.navigate(url("/scripts/new"))
+        fun tab(name: String) = page.locator("#schema").getByRole(AriaRole.TAB, Locator.GetByRoleOptions().setName(name))
+        assertThat(tab("Input schema")).hasAttribute("aria-selected", "true")
+        assertThat(page.locator("#input-schema")).isVisible()
+        assertThat(page.locator("#output-schema")).isHidden()
+        tab("Output schema").click()
+        assertThat(tab("Output schema")).hasAttribute("aria-selected", "true")
+        assertThat(page.locator("#output-schema")).containsText("any JSON payload is accepted")
+        assertThat(page.locator("#input-schema")).isHidden()
+        tab("Input schema").click()
+
+        val inputs = page.locator("#input-schema > .schema-level")
+        inputs.locator(":scope > [data-add-row]").click()
+        page.locator("input[name='inputs[0].name']").fill("text")
+        page.locator("input[name='inputs[0].required']").check()
+        inputs.locator(":scope > [data-add-row]").click()
+        page.locator("input[name='inputs[1].name']").fill("ticket")
+        val ticket = inputs.locator(":scope > ol > li").nth(1)
+        assertThat(ticket.locator(".schema-fields")).isHidden()
+        page.locator("select[name='inputs[1].type']").selectOption("object")
+        assertThat(ticket.locator(".schema-fields")).isVisible()
+        ticket.locator(".schema-fields [data-add-row]").click()
+        page.locator("input[name='inputs[1].rows[0].name']").fill("labels")
+        page.locator("select[name='inputs[1].rows[0].type']").selectOption("array:string")
+        val sample = page.getByLabel("Sample inputs, as JSON")
+        assertThat(sample).hasValue("""{"text":"","ticket":{"labels":[]}}""")
+
+        page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("Remove text").setExact(true)).click()
+        assertThat(page.locator("input[name='inputs[0].rows[0].name']")).hasValue("labels")
+        assertThat(sample).hasValue("""{"ticket":{"labels":[]}}""")
+        page.screenshot("script-schema-card")
+
+        page.locator("#name").fill("file-ticket")
+        page.locator("#description").fill("Files a ticket.")
+        page.locator(".ph button.primary").click()
+        assertThat(page).hasURL(Pattern.compile(".*/scripts/file-ticket$"))
+        assertThat(page.locator("input[name='inputs[0].rows[0].name']")).hasValue("labels")
+        val saved = home.resolve("scripts").toFile().listFiles()!!.map { it.resolve("script.yaml").readText() }.single { "name: file-ticket" in it }
+        assertEquals(
+            mapOf("type" to "object", "properties" to mapOf("ticket" to mapOf("type" to "object", "properties" to mapOf("labels" to mapOf("type" to "array", "items" to mapOf("type" to "string")))))),
+            org.yaml.snakeyaml.Yaml().load<Map<*, *>>(saved)["inputs"],
+        )
+    }
+
+    @Test
+    fun `the Script page's schema rows move up and down, nested ones and payload rows too, renumbered for Save`() = browse {
+        page.navigate(url("/scripts/new"))
+        val inputs = page.locator("#input-schema > .schema-level")
+        for ((i, name) in listOf("text", "channel", "ticket").withIndex()) {
+            inputs.locator(":scope > [data-add-row]").click()
+            page.locator("input[name='inputs[$i].name']").fill(name)
+        }
+        page.locator("select[name='inputs[2].type']").selectOption("object")
+        val ticket = inputs.locator(":scope > ol > li").nth(2)
+        for ((i, name) in listOf("id", "title").withIndex()) {
+            ticket.locator(":scope > .schema-fields > .schema-level > [data-add-row]").click()
+            page.locator("input[name='inputs[2].rows[$i].name']").fill(name)
+        }
+        fun button(name: String) = page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName(name).setExact(true))
+
+        button("Move ticket up").click()
+        button("Move text down").click()
+        assertThat(page.locator("input[name='inputs[0].name']")).hasValue("ticket")
+        assertThat(page.locator("input[name='inputs[1].name']")).hasValue("text")
+        assertThat(page.locator("input[name='inputs[2].name']")).hasValue("channel")
+        button("Move title up").click()
+        assertThat(page.locator("input[name='inputs[0].rows[0].name']")).hasValue("title")
+        assertThat(page.locator("input[name='inputs[0].rows[1].name']")).hasValue("id")
+        button("Move ticket up").click() // the first row stays first
+        assertThat(page.locator("input[name='inputs[0].name']")).hasValue("ticket")
+        assertThat(page.getByLabel("Sample inputs, as JSON")).hasValue("""{"ticket":{"title":"","id":""},"text":"","channel":""}""")
+
+        page.locator("#schema").getByRole(AriaRole.TAB, Locator.GetByRoleOptions().setName("Output schema")).click()
+        val output = page.locator("#output-schema > .schema-level")
+        for ((i, name) in listOf("ts", "user").withIndex()) {
+            output.locator(":scope > [data-add-row]").click()
+            page.locator("input[name='output[$i].name']").fill(name)
+        }
+        button("Move user up").click()
+        assertThat(page.locator("input[name='output[0].name']")).hasValue("user")
+
+        page.locator("#name").fill("ordered")
+        page.locator("#description").fill("Keeps its order.")
+        page.locator(".ph button.primary").click()
+        assertThat(page).hasURL(Pattern.compile(".*/scripts/ordered$"))
+        val saved = org.yaml.snakeyaml.Yaml().load<Map<*, *>>(home.resolve("scripts").toFile().listFiles()!!.map { it.resolve("script.yaml").readText() }.single { "name: ordered" in it })
+        val properties = (saved["inputs"] as Map<*, *>)["properties"] as Map<*, *>
+        assertEquals(listOf("ticket", "text", "channel"), properties.keys.toList())
+        assertEquals(listOf("title", "id"), ((properties["ticket"] as Map<*, *>)["properties"] as Map<*, *>).keys.toList())
+        assertEquals(listOf("user", "ts"), ((saved["output"] as Map<*, *>)["properties"] as Map<*, *>).keys.toList())
+    }
+
+    @Test
+    fun `the Script page's Output schema tab adds payload rows, a Test run shows each mismatch beside the result, and the rows save as output`() = browse {
+        home.resolve("settings.yaml").writeText("node: {path: ${ScriptsTest.NODE}}\n")
+        page.navigate(url("/scripts/new"))
+        page.locator("#schema").getByRole(AriaRole.TAB, Locator.GetByRoleOptions().setName("Output schema")).click()
+        val none = page.locator("#output-schema [data-no-output]")
+        assertThat(none).hasText("No output schema: any JSON payload is accepted.")
+        val output = page.locator("#output-schema > .schema-level")
+        output.locator(":scope > [data-add-row]").click()
+        assertThat(none).isHidden()
+        page.locator("input[name='output[0].name']").fill("ts")
+        page.locator("input[name='output[0].required']").check()
+        assertThat(page.getByLabel("Sample inputs, as JSON")).hasValue("{}")
+
+        page.locator(".code-editor .cm-content").click()
+        page.keyboard().insertText("ants.output({ts: 12})\n")
+        page.locator(".code-editor button", Page.LocatorOptions().setHasText("Test run")).click()
+        val result = page.locator(".test-run")
+        assertThat(result.locator(".pill.p-failed")).hasText("Failed · exit 0, the payload breaks the output schema")
+        assertThat(result.getByRole(AriaRole.LIST, Locator.GetByRoleOptions().setName("How the payload breaks the output schema"))).hasText("/ts: integer found, string expected")
+
+        page.locator("#name").fill("post-ts")
+        page.locator("#description").fill("Posts.")
+        page.locator(".ph button.primary").click()
+        assertThat(page).hasURL(Pattern.compile(".*/scripts/post-ts$"))
+        assertThat(page.locator("input[name='output[0].name']")).hasValue("ts")
+        val saved = home.resolve("scripts").toFile().listFiles()!!.map { it.resolve("script.yaml").readText() }.single { "name: post-ts" in it }
+        assertEquals(mapOf("type" to "object", "properties" to mapOf("ts" to mapOf("type" to "string")), "required" to listOf("ts")), org.yaml.snakeyaml.Yaml().load<Map<*, *>>(saved)["output"])
+
+        page.locator("#schema").getByRole(AriaRole.TAB, Locator.GetByRoleOptions().setName("Output schema")).click()
+        page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("Remove ts").setExact(true)).click()
+        assertThat(none).isVisible()
+    }
+
+    @Test
+    fun `the Script editor marks the validator's findings on the code's lines and the schema rows as the user types`() = browse {
+        home.resolve("settings.yaml").writeText("node: {path: ${ScriptsTest.NODE}}\n")
+        page.navigate(url("/scripts/new"))
+        page.locator("#input-schema > .schema-level > [data-add-row]").click()
+        page.locator("input[name='inputs[0].name']").fill("text")
+        val row = page.locator("#input-schema .schema-row").first()
+        assertThat(row.locator(".finding.f-warning")).hasText("The input text is never read.")
+
+        page.locator(".code-editor .cm-content").click()
+        page.keyboard().insertText("console.log(ants.inputs.txt)")
+        val marked = page.locator(".code-editor .cm-lintRange-error")
+        assertThat(marked).hasCount(1)
+        assertThat(page.locator(".code-editor .cm-lint-marker-error")).hasCount(1)
+        assertThat(row.locator(".finding")).hasCount(1)
+
+        repeat(3) { page.keyboard().press("Backspace") }
+        page.keyboard().insertText("ext)")
+        assertThat(marked).hasCount(0)
+        assertThat(row.locator(".finding")).hasCount(0)
     }
 
     @Test
@@ -754,6 +954,120 @@ class BrowserTest : AntsTest() {
         editor.click()
         page.keyboard().press("ControlOrMeta+z")
         assertThat(editor).hasText("console.log('mine')")
+    }
+
+    @Test
+    fun `the Script editor's helper replaces both schemas with rows on the page, unsaved, and one Ctrl-Z takes the replace back`() = browse {
+        page.navigate(url("/scripts/new"))
+        val editor = page.locator(".code-editor .cm-content")
+        editor.click()
+        page.keyboard().insertText("console.log(ants.inputs.text)")
+        page.locator("#input-schema > .schema-level > [data-add-row]").click()
+        page.locator("input[name='inputs[0].name']").fill("mine")
+        val helper = page.getByRole(AriaRole.COMPLEMENTARY, Page.GetByRoleOptions().setName("Script helper"))
+        assertThat(helper).hasAttribute("data-token", Pattern.compile(".+"))
+        val token = helper.getAttribute("data-token")!!
+        val inputs = mapOf("type" to "object", "properties" to mapOf(
+            "text" to mapOf("type" to "string", "description" to "What to post"),
+            "ticket" to mapOf("type" to "object", "properties" to mapOf("title" to mapOf("type" to "string"))),
+        ), "required" to listOf("text"))
+        val output = mapOf("type" to "object", "properties" to mapOf("ts" to mapOf("type" to "string")), "required" to listOf("ts"))
+
+        val (text, failed) = mcpCall(port, token, "replace_schemas", mapOf("inputs" to inputs, "output" to output))
+        assertFalse(failed, text)
+        assertThat(page.locator("input[name='inputs[0].name']")).hasValue("text")
+        assertThat(page.locator("input[name='inputs[0].required']")).isChecked()
+        assertThat(page.locator("input[name='inputs[1].rows[0].name']")).isVisible()
+        assertThat(page.locator("input[name='inputs[1].rows[0].name']")).hasValue("title")
+        assertThat(page.getByLabel("Sample inputs, as JSON")).hasValue("""{"text":"","ticket":{"title":""}}""")
+        assertThat(page.locator("input[name='output[0].name']")).hasValue("ts")
+        assertEquals(true, page.locator("[data-no-output]").evaluate("note => note.hidden"))
+        val (read, _) = mcpCall(port, token, "schemas")
+        assertEquals(mapOf("inputs" to inputs, "output" to output), tools.jackson.databind.json.JsonMapper.shared().readValue(read, Map::class.java))
+        assertFalse(home.resolve("scripts").toFile().walk().any { it.name == "script.yaml" })
+
+        editor.click()
+        page.keyboard().press("ControlOrMeta+z")
+        assertThat(page.locator("input[name='inputs[0].name']")).hasValue("mine")
+        assertThat(page.locator("#input-schema .schema-row")).hasCount(1)
+        assertThat(page.locator("#output-schema .schema-row")).hasCount(0)
+        assertEquals(false, page.locator("[data-no-output]").evaluate("note => note.hidden"))
+        assertThat(editor).hasText("console.log(ants.inputs.text)")
+        assertThat(page.getByLabel("Sample inputs, as JSON")).hasValue("""{"mine":""}""")
+
+        page.keyboard().press("ControlOrMeta+y")
+        assertThat(page.locator("input[name='inputs[1].rows[0].name']")).hasValue("title")
+    }
+
+    @Test
+    fun `once the user edits the schema rows after the Script helper's replace, Ctrl-Z no longer swaps the old rows back over the edits`() = browse {
+        page.navigate(url("/scripts/new"))
+        val editor = page.locator(".code-editor .cm-content")
+        editor.click()
+        page.keyboard().insertText("console.log(ants.inputs.text)")
+        val helper = page.getByRole(AriaRole.COMPLEMENTARY, Page.GetByRoleOptions().setName("Script helper"))
+        assertThat(helper).hasAttribute("data-token", Pattern.compile(".+"))
+        val inputs = mapOf("type" to "object", "properties" to mapOf("text" to mapOf("type" to "string")))
+        val (text, failed) = mcpCall(port, helper.getAttribute("data-token")!!, "replace_schemas", mapOf("inputs" to inputs))
+        assertFalse(failed, text)
+        assertThat(page.locator("input[name='inputs[0].name']")).hasValue("text")
+        page.locator("#input-schema > .schema-level > [data-add-row]").click()
+        page.locator("input[name='inputs[1].name']").fill("channel")
+
+        editor.click()
+        page.keyboard().press("ControlOrMeta+z")
+        page.keyboard().press("ControlOrMeta+z")
+        assertThat(page.locator("textarea#code")).hasValue("")
+        assertThat(page.locator("input[name='inputs[0].name']")).hasValue("text")
+        assertThat(page.locator("input[name='inputs[1].name']")).hasValue("channel")
+        page.keyboard().press("ControlOrMeta+y")
+        page.keyboard().press("ControlOrMeta+y")
+        assertThat(editor).hasText("console.log(ants.inputs.text)")
+        assertThat(page.locator("input[name='inputs[1].name']")).hasValue("channel")
+    }
+
+    @Test
+    fun `the Secrets card adds two Secrets for one Save, and its ✕ asks first, so Cancel keeps a Secret and Delete removes it once saved`() = browse {
+        http.get("/scripts/new")
+        http.post("/scripts/new", listOf("name" to "post", "description" to "Posts.", "code" to "console.log('hi')\n", "inputs" to "", "vars" to "",
+            "secrets[0].name" to "OLD_TOKEN", "secrets[0].value" to "tok-old", "secrets[0].was" to ""))
+        val folder = home.resolve("scripts").toFile().listFiles()!!.single { "name: post" in it.resolve("script.yaml").readText() }.toPath()
+        fun ownSecrets() = org.yaml.snakeyaml.Yaml().load<Map<*, *>?>(folder.resolve("secrets.yaml").toFile().takeIf { it.exists() }?.readText() ?: "").orEmpty()
+        fun listed() = org.yaml.snakeyaml.Yaml().load<Map<*, *>>(folder.resolve("script.yaml").readText())["secrets"]
+        page.navigate(url("/scripts/post"))
+        val card = page.locator(card("Secrets"))
+        val rows = card.locator(".listed > .row")
+        assertThat(rows).hasCount(2)
+
+        card.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Add Secret")).click()
+        card.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Add Secret")).click()
+        assertThat(rows).hasCount(4)
+        rows.nth(2).getByLabel("Name").fill("A_TOKEN")
+        rows.nth(2).getByLabel("Value").fill("a-1")
+        rows.nth(3).getByLabel("Name").fill("B_TOKEN")
+        rows.nth(3).getByLabel("Value").fill("b-2")
+
+        val confirm = page.locator("dialog.modal.confirm")
+        rows.first().locator("button.x").click()
+        assertThat(confirm).containsText("Delete the Secret OLD_TOKEN? Its value can't be shown again.")
+        confirm.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Cancel")).click()
+        assertThat(confirm).hasCount(0)
+        assertThat(rows).hasCount(4)
+        assertThat(rows.first().getByLabel("Name")).hasValue("OLD_TOKEN")
+
+        rows.first().locator("button.x").click()
+        confirm.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Delete")).click()
+        assertThat(rows).hasCount(3)
+        assertThat(card.getByLabel("Name").first()).hasValue("")
+        assertEquals(mapOf("OLD_TOKEN" to "tok-old"), ownSecrets())
+        assertEquals(listOf("OLD_TOKEN"), listed())
+        page.screenshot("script-secrets")
+
+        page.locator(".ph button.primary").click()
+        eventually {
+            assertEquals(mapOf("A_TOKEN" to "a-1", "B_TOKEN" to "b-2"), ownSecrets())
+            assertEquals(listOf("A_TOKEN", "B_TOKEN"), listed())
+        }
     }
 
     @Test

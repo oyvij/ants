@@ -1,5 +1,6 @@
 package ants
 
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.yaml.snakeyaml.Yaml
@@ -21,6 +22,10 @@ class SkillsTest : AntsTest() {
     lateinit var catalogue: Catalogue
 
     private val browser by lazy { browser().also { it.login() } }
+
+    /** Its own settings, so a hide-shipped left by an earlier test (SubagentTest's) doesn't hide the shipped Skills. */
+    @BeforeEach
+    fun ownSettings() = settings(null)
 
     /** A `SKILL.md` named [name]. */
     private fun skillMd(name: String, body: String = "Write the summary.") = "---\nname: $name\ndescription: Summarises a text.\n---\n$body\n"

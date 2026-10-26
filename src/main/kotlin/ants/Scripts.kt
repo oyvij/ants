@@ -15,18 +15,25 @@ data class Script(
     val id: String,
     val name: String,
     val description: String,
-    val inputs: List<String> = emptyList(),
+    /** The input schema: an object JSON Schema, each property an input (ADR 0025). */
+    val inputs: Map<*, *> = ScriptSchema.EMPTY,
+    /** The output schema: the payload's object JSON Schema, or null when any JSON payload is accepted. */
+    val output: Map<*, *>? = null,
     val vars: Map<String, String> = emptyMap(),
     val secrets: List<String> = emptyList(),
 ) {
-    fun definition(): Map<String, Any> = linkedMapOf("id" to id, "name" to name, "description" to description, "inputs" to inputs, "vars" to vars, "secrets" to secrets)
+    val inputNames: List<String> get() = (inputs["properties"] as? Map<*, *>).orEmpty().keys.map { "$it" }
+
+    fun definition(): Map<String, Any> = linkedMapOf<String, Any>("id" to id, "name" to name, "description" to description, "inputs" to inputs)
+        .apply { output?.let { put("output", it) } } + mapOf("vars" to vars, "secrets" to secrets)
 
     companion object {
         fun of(definition: Map<*, *>) = Script(
             id = definition["id"].toString(),
             name = definition["name"]?.toString().orEmpty(),
             description = definition["description"]?.toString().orEmpty(),
-            inputs = Settings.strings(definition["inputs"]).orEmpty(),
+            inputs = definition["inputs"] as? Map<*, *> ?: ScriptSchema.EMPTY,
+            output = definition["output"] as? Map<*, *>,
             vars = (definition["vars"] as? Map<*, *>).orEmpty().entries.associate { (name, value) -> "$name" to "$value" },
             secrets = Settings.strings(definition["secrets"]).orEmpty(),
         )
@@ -80,7 +87,8 @@ class Scripts(@Value("\${ants.home}") home: Path, private val settings: Settings
         folder(script).toFile().deleteRecursively()
     }
 
-    fun secretEnvironment(script: Script, own: Map<String, String>): Map<String, String> {
+    /** The environment holding [script]'s Secrets' values, [own] being its own ones. */
+    fun secretEnvironment(script: Script, own: Map<String, String> = ownSecrets(script)): Map<String, String> {
         val names = settings.secrets()
         val values = settings.secretValues()
         return script.secrets.flatMap { secret ->

@@ -59,7 +59,7 @@ class ProcessBuilderTools(
                 }
                 "add_element" -> ask(name, arguments - "properties" + ("properties" to scriptProperties(arguments)))
                 in RELAYED -> ask(name, arguments)
-                "scripts" -> json.writeValueAsString(scripts.all().map { mapOf("name" to it.name, "description" to it.description, "inputs" to it.inputs) })
+                "scripts" -> json.writeValueAsString(scripts.all().map { mapOf("name" to it.name, "description" to it.description, "inputs" to it.inputs, "output" to it.output) })
                 "agents", "skills" -> json.writeValueAsString((agents.catalogue()[name] as List<*>).map { (it as Map<*, *>) - "id" })
                 "skill" -> catalogue.skill(argument("name")).let { skill ->
                     if (catalogue.hides(skill.file)) throw Refused("No Skill named ${skill.name}")
@@ -174,7 +174,12 @@ class ProcessBuilderTools(
             "does" to "runs one of your Scripts (see `scripts`) in the Run workspace: draw it with add_element's script kind, not as a Built-in Task."))
 
         private const val MISSING_SCRIPT = "You can't write or change a Script. When a Task needs one that doesn't exist, tell the user so plainly and " +
-            "hand them a text to paste into the Script editor's helper, saying what the Script must take, do and return. Make the gap prominent in your reply, so the user doesn't forget it before deploying."
+            "hand them a text to paste into the Script editor's helper, saying what the Script must do, its inputs as a JSON Schema (types, descriptions, " +
+            "which are required) and its payload as a JSON Schema. Make the gap prominent in your reply, so the user doesn't forget it before deploying."
+
+        /** How a Script Task is wired from its Script's schemas (see `scripts`). */
+        private const val WIRED = "A Script Task sets every input its input schema marks required, with a value or `\${…}` that fits its type; " +
+            "later Tasks read only the payload fields its output schema declares, as \${<task id>.payload.<field>} (any field, when it has no output schema)."
 
         private val KINDS = mapOf("agents" to "Agent", "skills" to "Skill", "templates" to "Template")
 
@@ -202,7 +207,7 @@ class ProcessBuilderTools(
                 "in" to "The id of the sub-process to add it in; left out, the Process itself.",
                 "topic" to "A Built-in Task's topic (see `built_in_tasks`); left out, clone-repos.",
                 "script" to "A Script Task's Script, by its name (see `scripts`); Ants links it by its id. $MISSING_SCRIPT",
-                "inputs" to strings("A Script Task's inputs, by the Script's input names, each text or a `\${…}` reference (see `references`)."),
+                "inputs" to strings("A Script Task's inputs, by the Script's input names, each text or a `\${…}` reference (see `references`). $WIRED"),
             ), optional = setOf("id", "name", "x", "y", "in", "topic", "script", "inputs")),
             Mcp.tool("remove", "Removes an element, with its connections, or a connection.", mapOf("id" to "The element's or connection's id.")),
             Mcp.tool("rename", "Names an element or connection, as the diagram shows it.", mapOf("id" to "The element's or connection's id.", "name" to "Its new name; empty clears it.")),
@@ -261,7 +266,7 @@ class ProcessBuilderTools(
                 "inputs" to strings("Values by start-form field name, each text or a `\${…}` reference (see `references`)."),
             ), optional = setOf("process", "inputs")),
             Mcp.tool("set_built_in", "Sets a Built-in Task's topic and inputs. clone-repos reads the inputs repos (Source map names or git URLs, such as " +
-                "`\${scout.output.repos}`) and branch; accept-recommendations names its asker. It sets a Script Task's inputs too, by its Script's input names (see `scripts`).", mapOf(
+                "`\${scout.output.repos}`) and branch; accept-recommendations names its asker. It sets a Script Task's inputs too, by its Script's input names (see `scripts`). $WIRED", mapOf(
                 "id" to "The Built-in Task's or Script Task's id.", "topic" to "Its topic (see `built_in_tasks`).",
                 "inputs" to strings("Values by input name, each text or a `\${…}` reference; empty removes one."),
                 "asker" to builtIns.filterValues { "asker" in it }.map { (topic, it) -> "$topic only: ${it["asker"]}" }.joinToString(" ") + " Empty clears it.",
@@ -342,7 +347,9 @@ class ProcessBuilderTools(
             Mcp.tool("agents", "The Agents a Task can pick: each one's name, description, the Skills it runs, and whether it is the user's own (else read-only)."),
             Mcp.tool("skills", "The Skills: each one's name, description, and whether it is the user's own (else read-only)."),
             Mcp.tool("skill", "One Skill in full: its instructions and the files beside its SKILL.md.", mapOf("name" to "The Skill's name.")),
-            Mcp.tool("scripts", "The user's Scripts, which a Script Task runs: each one's name, description and inputs, never its code. $MISSING_SCRIPT"),
+            Mcp.tool("scripts", "The user's Scripts, which a Script Task runs: each one's name, description, input schema (`inputs`, a JSON Schema " +
+                "whose properties are its inputs) and output schema (`output`, the payload's JSON Schema, or null when any payload goes), never its code. " +
+                "$WIRED $MISSING_SCRIPT"),
             Mcp.tool("processes", "The deployed Processes, the shipped ones included, which a call activity can call: each one's key, name and start-form fields (its inputs)."),
             Mcp.tool("process", "A deployed Process's BPMN XML, to read as an example.", mapOf("key" to "The Process's key.")),
             Mcp.tool("built_in_tasks", "The Built-in Tasks, by topic: what each one is called and what Ants does in it."),

@@ -77,7 +77,12 @@ class LookTest : AntsTest() {
         logIn(page)
         for (pair in pairs) shoot(page, "http://127.0.0.1:$port${pair.app}", "${pair.name}/app-$theme", folder) { pair.appScript?.let { page.evaluate(it) } }
         shoot(page, "http://127.0.0.1:$port/runs/$running", "drawer/app-$theme", folder) { openDrawer() }
+        // The prototype has no Scripts: the Secrets card with a Secret added, and the modal its ✕ opens.
+        shoot(page, "http://127.0.0.1:$port/scripts/post-message", "script-secrets/app-$theme", folder) { addSecret() }
+        shoot(page, "http://127.0.0.1:$port/scripts/post-message", "script-secret-delete/app-$theme", folder) { locator("[data-secrets] button.x").first().click() }
     }
+
+    private fun Page.addSecret() = locator("button.add-secret").click()
 
     private fun Page.openDrawer() {
         locator("#diagram .djs-element[data-element-id='draft']").click()
@@ -116,6 +121,7 @@ class LookTest : AntsTest() {
         for (run in listOf("running", "stuck")) visit("/runs/${app.getValue(run)}", "the drawer on the $run Run") { openDrawer() }
         visit("/runs/${app.getValue("running")}", "the Run page's Rename") { click("button[popovertarget=rename]") }
         visit("/processes", "New Process") { click(".ph button.primary") }
+        visit("/scripts/post-message", "a Script with a Secret added") { addSecret() }
         visit("/settings", "Settings with a row added to every list") { locator("[data-add]").all().forEach { it.click() } }
         visit("/settings", "a Source map's editor") { locator("[data-edit]").first().click() }
         visit(entry(app.getValue("review")) + "#s1-1", "a story step's comment") { locator(".step:not([hidden]) [data-comment]").click() }
@@ -274,6 +280,11 @@ class LookTest : AntsTest() {
         for (repo in listOf("api", "web")) commitFile(workspace(runs.getValue("push")).resolve("repos/$repo"), "retry.txt", "three times\n", "Retry a failed card payment")
         http.post(work, mapOf("action" to "approve", "comment" to ""))
         eventually(30) { check(entry(runs.getValue("push")) != work) }
+
+        // A Script with a Secret of its own, for the Secrets card.
+        http.get("/scripts/new")
+        http.post("/scripts/new", mapOf("name" to "post-message", "description" to "Posts a message to a Slack channel.", "code" to "console.log('posting')\n",
+            "inputs" to "channel, text", "vars" to "CHANNEL=general", "secrets[0].name" to "SLACK_TOKEN", "secrets[0].value" to "xoxb-1234", "secrets[0].was" to ""))
 
         // A Round of questions.
         claude.session("quiz", 1, result("""{"outcome":"done","summary":"Round 1 on the invoice CSV export.","output":{"questions":[""" + listOf(

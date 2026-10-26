@@ -42,8 +42,8 @@ class ScriptTaskTest : AntsTest() {
         secrets.deleteIfExists()
     }
 
-    private fun saveScript(name: String, code: String, inputs: String = "", vars: String = "", own: List<Pair<String, String>> = emptyList(), linked: List<String> = emptyList(), was: String? = null) {
-        val form = listOf("name" to name, "description" to "Does $name.", "code" to code, "inputs" to inputs, "vars" to vars) +
+    private fun saveScript(name: String, code: String, inputs: String = "", vars: String = "", own: List<Pair<String, String>> = emptyList(), linked: List<String> = emptyList(), was: String? = null, output: List<Pair<String, String>> = emptyList()) {
+        val form = listOf("name" to name, "description" to "Does $name.", "code" to code, "vars" to vars) + ScriptsTest.inputRows(inputs) + output +
             own.withIndex().flatMap { (i, secret) -> listOf("secrets[$i].name" to secret.first, "secrets[$i].value" to secret.second, "secrets[$i].was" to if (was == null) "" else secret.first) } +
             linked.map { "linked" to it }
         browser.get("/scripts/${was ?: "new"}")
@@ -95,19 +95,19 @@ class ScriptTaskTest : AntsTest() {
     private fun incident(run: String) = runtime.createIncidentQuery().processInstanceId(run).singleResult()
 
     @Test
-    fun `a Script Task runs its Script in the Run workspace, with its inputs on stdin and its vars, Secrets and ANTS_ variables in the environment, and a later Task reads its Result`() {
+    fun `a Script Task runs its Script in the Run workspace, with its inputs as ants inputs and its vars, Secrets and ANTS_ variables in the environment, and a later Task reads what it handed back with ants output`() {
         saveScript(
             "post-message", inputs = "text", vars = "CHANNEL=general", own = listOf("SLACK_TOKEN" to "xoxb-s3cret"), linked = listOf("npm"),
             code = """
-                import {readFileSync, writeFileSync} from 'node:fs'
-                const inputs = JSON.parse(readFileSync(0, 'utf8'))
+                const inputs = ants.inputs
                 const e = process.env
                 console.log('posting', inputs.text, 'with', e.SLACK_TOKEN)
-                writeFileSync(e.ANTS_OUTPUT, JSON.stringify({inputs, channel: e.CHANNEL, slack: e.SLACK_TOKEN, npm: e.NPM_TOKEN,
-                    workspace: e.ANTS_RUN_WORKSPACE, run: e.ANTS_RUN_ID, cwd: process.cwd()}))
+                ants.output({draft: true})
+                ants.output({inputs, channel: e.CHANNEL, slack: e.SLACK_TOKEN, npm: e.NPM_TOKEN,
+                    workspace: e.ANTS_RUN_WORKSPACE, run: e.ANTS_RUN_ID, cwd: process.cwd()})
             """.trimIndent(),
         )
-        saveScript("echo", inputs = "posted, code", code = "import {readFileSync, writeFileSync} from 'node:fs'\nwriteFileSync(process.env.ANTS_OUTPUT, readFileSync(0, 'utf8'))\n")
+        saveScript("echo", inputs = "posted, code:number", code = "ants.output(await Promise.resolve(ants.inputs))\n")
         deploy("posting", scriptTask("post", "post-message", mapOf("text" to "\${text}")), scriptTask("echo", "echo", mapOf("posted" to "\${post.payload.inputs.text}", "code" to "\${post.exitCode}")))
 
         val run = start("posting")
@@ -140,10 +140,50 @@ class ScriptTaskTest : AntsTest() {
         assertContains(page, """value="retry">Retry</button>""")
         assertContains(page, """value="cancel">Cancel the Run</button>""")
 
-        saveScript("flaky", own = listOf("TOKEN" to ""), was = "flaky", code = "import {writeFileSync} from 'node:fs'\nwriteFileSync(process.env.ANTS_OUTPUT, JSON.stringify({fixed: true}))\n")
+        saveScript("flaky", own = listOf("TOKEN" to ""), was = "flaky", code = "ants.output({fixed: true})\n")
         browser.post(entry, mapOf("action" to "retry", "instruction" to ""))
         eventually { assertNotNull(runtime.getVariable(run, "flaky")) }
         assertEquals(mapOf("exitCode" to 0, "output" to "", "payload" to mapOf("fixed" to true)), runtime.getVariable(run, "flaky"))
+    }
+
+    @Test
+    fun `a Script Task whose payload breaks the Script's output schema fails with the mismatch in its output, and Retry after fixing the Script completes it`() {
+        val output = listOf("output[0].name" to "ts", "output[0].type" to "string", "output[0].required" to "on")
+        saveScript("post-ts", output = output, code = "console.log('posted')\nants.output({ts: 12})\n")
+        deploy("posting-ts", scriptTask("post", "post-ts"))
+        val run = start("posting-ts")
+        eventually { assertNotNull(incident(run)) }
+
+        val entry = "/notifications/" + incident(run).id
+        val page = browser.get(entry).body
+        assertContains(page, "The payload of the Script post-ts breaks its output schema")
+        assertContains(page, "posted\nThe payload breaks the Script's output schema:\n- /ts: integer found, string expected")
+
+        saveScript("post-ts", output = output, was = "post-ts", code = "ants.output({ts: '12'})\n")
+        browser.post(entry, mapOf("action" to "retry", "instruction" to ""))
+        eventually { assertNotNull(runtime.getVariable(run, "post")) }
+        assertEquals(mapOf("exitCode" to 0, "output" to "", "payload" to mapOf("ts" to "12")), runtime.getVariable(run, "post"))
+    }
+
+    @Test
+    fun `a Script Task whose inputs break the Script's input schema fails before the Script runs, with the reason`() {
+        saveScript("count-up", inputs = "count:number", code = "console.log('node ran')\nants.output({next: ants.inputs.count + 1})\n")
+        deploy("counting", scriptTask("count", "count-up", mapOf("count" to "\${text}")))
+        val run = start("counting", text = "three")
+        eventually { assertNotNull(incident(run)) }
+        val page = browser.get("/notifications/" + incident(run).id).body
+        assertContains(page, "The inputs break the Script's input schema, so it didn't run:\n- /count: string found, number expected")
+        assertContains(page, "count")
+        assertFalse("node ran" in page)
+    }
+
+    @Test
+    fun `a literal typed into a Script Task's input reaches the Script as the input schema's type, and a text input keeps it as text`() {
+        saveScript("echo-typed", inputs = "count:number, flag:boolean, tags:array:string, label", code = "ants.output(ants.inputs)\n")
+        deploy("typed", scriptTask("echo", "echo-typed", mapOf("count" to "5", "flag" to "true", "tags" to """["a", "b"]""", "label" to "7")))
+        val run = start("typed")
+        eventually { assertNotNull(runtime.getVariable(run, "echo"), browser.get("/runs/$run").body) }
+        assertEquals(mapOf("count" to 5, "flag" to true, "tags" to listOf("a", "b"), "label" to "7"), (runtime.getVariable(run, "echo") as Map<*, *>)["payload"])
     }
 
     @Test
@@ -165,15 +205,16 @@ class ScriptTaskTest : AntsTest() {
 
     @Test
     fun `renaming the Script leaves the Process working, its page shows the Process using it, and the catalogue gives its new name`() {
-        saveScript("greet", inputs = "text", code = "import {writeFileSync} from 'node:fs'\nwriteFileSync(process.env.ANTS_OUTPUT, JSON.stringify({greeted: true}))\n")
+        saveScript("greet", inputs = "text", code = "ants.output({greeted: true})\n")
         deploy("greeting", scriptTask("greet", "greet", mapOf("text" to "\${text}")))
         val id = Regex("""name="ants.script" value="(s-[a-z0-9]{6})"""").find(deployed("greeting"))!!.groupValues[1]
         assertContains(deployed("greeting"), """name="ants.name.$id" value="greet"""")
 
-        saveScript("say-hello", inputs = "text", was = "greet", code = "import {writeFileSync} from 'node:fs'\nwriteFileSync(process.env.ANTS_OUTPUT, JSON.stringify({greeted: true}))\n")
+        saveScript("say-hello", inputs = "text", was = "greet", code = "ants.output({greeted: true})\n")
         assertContains(browser.get("/scripts/say-hello").body, """<a href="/processes/greeting">greeting</a>""")
         val catalogue = json.readValue(browser.get("/catalogue.json").body, Map::class.java)
-        assertEquals(mapOf("id" to id, "name" to "say-hello", "description" to "Does say-hello.", "inputs" to listOf("text")), (catalogue["scripts"] as List<*>).single { (it as Map<*, *>)["id"] == id })
+        assertEquals(mapOf("id" to id, "name" to "say-hello", "description" to "Does say-hello.", "inputs" to listOf("text"),
+            "about" to mapOf("text" to mapOf("type" to "text", "description" to "", "required" to false))), (catalogue["scripts"] as List<*>).single { (it as Map<*, *>)["id"] == id })
 
         val run = start("greeting")
         eventually { assertNotNull(runtime.getVariable(run, "greet")) }
