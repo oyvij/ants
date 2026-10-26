@@ -22,12 +22,13 @@ internal fun fieldPaths(schema: Map<*, *>): List<String> = (schema["properties"]
     listOf("$name") + (value as? Map<*, *>)?.takeIf { it["type"] == "object" }?.let(::fieldPaths).orEmpty().map { "$name.$it" }
 }
 
-internal fun scriptTasks(scripts: Scripts, catalogue: Catalogue, model: BpmnModelInstance): List<Check> {
+internal fun scriptTasks(scripts: Scripts, catalogue: Catalogue, drafted: DraftedItems, model: BpmnModelInstance): List<Check> {
     val identified by lazy { catalogue.identified() + scripts.identified() }
     return model.scriptTasks.flatMap { task ->
         fun check(message: String) = Check(task.id, "${task.label}: $message")
         val value = task.property(SCRIPT)?.trim()?.takeIf(String::isNotEmpty) ?: return@flatMap listOf(Check(task.id, "${task.label} has no Script."))
-        val script = task.linkedScript(scripts) ?: return@flatMap listOf(check("No Script named ${task.property(nameBeside(value)) ?: value}."))
+        val kept = task.property(nameBeside(value))
+        val script = task.linkedScript(scripts) ?: return@flatMap listOf(check(drafted.scripts.refusal(value, kept) ?: "No Script named ${kept ?: value}."))
         val passed = task.inputs().map { it.operatonName }
         val undeclared = passed.filter { it !in script.inputNames }
             .map { check("The Script ${script.name} doesn't declare the input $it.") }

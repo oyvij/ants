@@ -26,7 +26,7 @@ const val SCHEMA_IGNORED = "The schema wasn't written: a Skill has no Result sch
  * of its own on `/mcp`, which opens only the modeler tools. A tool about the diagram is relayed to the page that holds
  * the token, as an event `builder` on its SSE (`/live?builder=<token>`); the page answers from bpmn-js with a POST to
  * `/process-builder/answer`. The catalogue tools are answered by Ants, from what the modeler's own endpoints serve, and
- * the Checks by the Checks Save and deploy runs, on the page's diagram. Creating, changing and copying Agents, Skills
+ * the Checks by the Checks Publish runs, on the page's diagram. Creating, changing and copying Agents, Skills
  * and Templates go through their pages' own save and Copy, and answer the item's page.
  */
 @RestController
@@ -133,7 +133,7 @@ class ProcessBuilderTools(
             """<li><a href="${HtmlUtils.htmlEscape(page)}" target="_blank">$kind ${HtmlUtils.htmlEscape(page.substringAfterLast('/'))}</a></li>"""
         } + "</ul>"
 
-        /** The page's diagram as BPMN XML, as Save and deploy would send it. */
+        /** The page's diagram as BPMN XML, as Publish would send it. */
         fun xml(): String = json.readValue(ask("xml", emptyMap<String, Any>()), String::class.java)
 
         /** The process id of the page's diagram, which keys its Build log. */
@@ -223,7 +223,7 @@ class ProcessBuilderTools(
             Mcp.tool("set_agent_task", "Sets an Agent Task's Agent, Assignment, Skills, inputs, Result schema and toggles, as the properties panel does. " +
                 "A Task needs an Assignment, or no Assignment and exactly one listed Skill, which is then its job (as typing /<skill>). Its listed Skills " +
                 "must be its Agent's (see `agents`); a new Agent drops the listed Skills it lacks, and picks its first Skill for a Task with neither. " +
-                "Don't name a Skill to use in the Assignment: the list decides it. Answers what was written, and the Checks Save and deploy " +
+                "Don't name a Skill to use in the Assignment: the list decides it. Answers what was written, and the Checks Publish " +
                 "refuses on this Task: fix each before you're done.", mapOf(
                 "id" to "The Agent Task's id.", "agent" to "The Agent's name (see `agents`).",
                 "assignment" to "The job, in a few lines: what this step must do and hand back. Empty removes it.",
@@ -356,7 +356,7 @@ class ProcessBuilderTools(
             Mcp.tool("templates", "The Templates, small diagrams to drop in as a collapsed sub-process: each one's name, title and whether it is shipped."),
             Mcp.tool("references", "The `\${…}` references an element of the open diagram can read: start-form fields, Ants' Run variables and the Results of the Tasks before it.",
                 mapOf("element" to "The element's id.")),
-            Mcp.tool("checks", "The Checks on the open diagram, as Save and deploy runs them: each problem's message, the element it is on, and whether it is only a warning."),
+            Mcp.tool("checks", "The Checks on the open diagram, as Publish runs them: each problem's message, the element it is on, and whether it is only a warning."),
             Mcp.tool("create_agent", "Creates one of the user's own Agents from its agent file, Claude Code's format: frontmatter (name, description, " +
                 "cli claude or codex, skills, tools as permission rules such as `Read, Bash(git log *)`, model; a codex Agent has a sandbox instead of tools) " +
                 "and its standing instructions below. Saved at once, so a Task can pick it; answers its name and page, or what is wrong with it.",

@@ -1,17 +1,19 @@
 // The modeler page: camunda-bpmn-js with the palette trimmed to what Ants runs, "append Agent / User / Built-in Task"
-// on the context pad, a panel that explains the selected element and edits it, the live Checks under it, and Save and
-// deploy through Ants' deploy path. Each kind of element is one entry in `kinds`; what its panel asks beyond its name
+// on the context pad, a panel that explains the selected element and edits it, the live Checks under it, and Publish
+// through Ants' deploy path. A Process's modeler autosaves the diagram to its Draft (draft.js), whoever changed it, the
+// user or the Process Builder; a Template's has Save alone. Each kind of element is one entry in `kinds`; what its panel asks beyond its name
 // and explanation (the Agent Task's Agent and Skill, a decision's paths) is a function in `panels`. What it writes as
 // text, with no page, is in modeler-text.js.
 
+import {autosave} from "/draft.js"
 import {camel, linkedChanges, linkedProperties, listedSkills, operators, readCondition, resultFields, toCamunda, unary} from "/modeler-text.js"
 
 // From the server (modelerFacts in Checks.kt): what Ants calls each element it runs and what it does there (the
 // palette's tooltip and the panel's explanation), the Built-in Tasks by topic with their name and what each does, the start-form field types by the
 // `ants.type` property each field carries (the engine only knows `string`), Items are Tickets' property and help, the
 // Process's Profile property, help and empty choice, Ants' own Run variables, each User Task kind with its fields
-// and Result, what the palette and add_element draw for each kind, and the multi-instance modes.
-const {kinds, builtIns, fieldTypes, itemsAreTickets, profile, level, runVariables, userTasks, drawn, multiInstanceModes} = JSON.parse(document.getElementById("canvas").dataset.facts)
+// and Result, what the palette and add_element draw for each kind, the multi-instance modes, and the panel's own wording.
+const {kinds, builtIns, fieldTypes, itemsAreTickets, profile, level, runVariables, userTasks, drawn, multiInstanceModes, wording} = JSON.parse(document.getElementById("canvas").dataset.facts)
 
 // The three Tasks Ants runs, as the BPMN each one is, and their colour on the diagram and in the palette.
 const tasks = {
@@ -472,12 +474,7 @@ panels["timer-boundary"] = timerPanel
 // Profile property. Offered once the settings have more than one Profile, or when the Process names one.
 // Above it, how to draw a Process.
 panels.process = element => {
-    const box = el("div", {}, explainHtml(`<b>Drawing a Process</b><ol>
-        <li>A Run begins at the <b>start event</b> (its start form) and finishes at an <b>end event</b>.</li>
-        <li>Add work from the bottom of the palette, or click a shape and pick the next step from its menu: <b>Agent</b>, <b>User</b> or <b>Built-in Task</b>.</li>
-        <li>Choose between paths with a <b>decision</b> (◇ ×). Loop by drawing a path back to an earlier Task.</li>
-        <li>Run branches side by side with two <b>parallel gateways</b> (◇ +): one splits, one joins.</li>
-        <li>Fix everything under <b>Checks</b>, then <b>Save and deploy</b>.</li></ol>`))
+    const box = el("div", {}, explainHtml(wording.drawing))
     fetch("/catalogue.json").then(response => response.json()).then(({profiles}) => {
         const current = agentProperties(element.businessObject)[profile.property] || ""
         if (profiles.length < 2 && !current) return
@@ -519,21 +516,29 @@ function writeAgentTask(element, changes, inputs, redraw = false) {
     }
 }
 
+// The page of an Agent, Skill or Script in a modal over the modeler. Edit opens [src], the item's page, and its Publish
+// picks it on the Task once published. New posts [src], the kind's `new/draft`, which makes a Draft-only item as the
+// pages' New does, and opens its page; its Use saves the page to the Draft and picks the item on the Task as it is.
 function formModal(kind, src, use, who = "") {
-    const editing = !src.startsWith(`/${kind}/new`)
+    const editing = !src.startsWith(`/${kind}/new/draft`)
     const title = (editing ? "Edit " : "New ") + {agents: "Agent", skills: "Skill", scripts: "Script"}[kind]
-    const frame = el("iframe", {src, title, className: "mb"})
-    const primary = el("button", {type: "button", className: "primary", textContent: editing ? "Save" : "Create and use",
-        onclick: () => frame.contentDocument.querySelector("input[name=use]")?.form.requestSubmit()})
+    const frame = el("iframe", {title, className: "mb"})
+    const named = () => frame.contentWindow.location.pathname.match(new RegExp(`^/${kind}/([^/]+)$`))?.[1]
+    const primary = el("button", {type: "button", className: "primary", hidden: true, textContent: editing ? "Publish" : "Use", onclick: async () => {
+        const form = frame.contentDocument.querySelector("input[name=use]")?.form
+        if (editing) return form?.requestSubmit()
+        await form?.draft?.save()
+        dialog.close()
+        use(decodeURIComponent(named()))
+    }})
     const header = el("form", {method: "dialog", className: "mh"}, el("b", {className: `ent ent-${kind.slice(0, -1)}`, textContent: title}),
         el("span", {className: "muted small", textContent: "Esc to close"}), el("span", {className: "sp"}),
         el("button", {className: "ghost", title: "Close", textContent: "Cancel"}), primary)
     const dialog = el("dialog", {className: "modal create"}, header, who, frame)
     dialog.onclose = () => dialog.remove()
     frame.onload = () => {
-        const {pathname, search} = frame.contentWindow.location
-        const name = pathname.match(new RegExp(`^/${kind}/([^/]+)$`))?.[1]
-        if (name && (editing ? new URLSearchParams(search).has("saved") : name !== "new")) {
+        const name = named()
+        if (name && new URLSearchParams(frame.contentWindow.location.search).has("saved")) {
             dialog.close()
             return use(decodeURIComponent(name))
         }
@@ -547,7 +552,16 @@ function formModal(kind, src, use, who = "") {
     }
     document.body.append(dialog)
     dialog.showModal()
+    if (editing) return frame.src = src
+    const [path, query] = src.split("?")
+    fetch(path, {method: "POST", body: new URLSearchParams([...new URLSearchParams(query), ["_csrf", csrf]])}).then(response => frame.src = response.url)
 }
+
+// The marker of a Draft-only Agent, Skill or Script, or of one published with a Draft, as the lists show it (draftmark.kte).
+const draftMark = item => item?.draft ? el("span", {className: `pill draft-mark ${item.draft.css}`, textContent: item.draft.label}) : ""
+
+// [text] for a picker's option of [item], with its marker's words when it has one.
+const marked = (text, item) => item?.draft ? `${text} (${item.draft.label})` : text
 
 panels.agent = element => {
     const box = el("div", {}, el("p", {textContent: "Loading the Agents and Skills…"}))
@@ -574,12 +588,12 @@ async function scriptPanel(element, box) {
     }
     const options = [el("option", {value: "", textContent: "Choose…", selected: !name}),
         ...(name && !script ? [el("option", {value: name, textContent: `${name} (not found)`, selected: true})] : []),
-        ...catalogue.scripts.map(s => el("option", {value: s.name, textContent: [s.name, s.description].filter(Boolean).join(" · "), selected: s.name === name}))]
+        ...catalogue.scripts.map(s => el("option", {value: s.name, textContent: marked([s.name, s.description].filter(Boolean).join(" · "), s), selected: s.name === name}))]
     const select = el("select", {onchange: () => pick(select.value)}, ...options)
     const edit = script ? el("button", {type: "button", className: "ghost small", textContent: "Edit", onclick: () =>
         formModal("scripts", "/scripts/" + encodeURIComponent(script.name) + "?use", () => scriptPanel(element, box).then(check))}) : ""
     const create = el("button", {type: "button", className: "ghost small", textContent: "＋ New Script", onclick: () =>
-        formModal("scripts", "/scripts/new?use", async picked => {
+        formModal("scripts", "/scripts/new/draft?use", async picked => {
             Object.assign(catalogue, await (await fetch("/catalogue.json")).json())
             pick(picked)
         })})
@@ -603,7 +617,7 @@ async function scriptPanel(element, box) {
         return entry
     })
     box.replaceChildren(
-        field("Script", "What it runs, from your Scripts.", select, edit, create),
+        field("Script", "What it runs, from your Scripts.", select, draftMark(script), edit, create),
         el("div", {className: "fld"}, el("label", {className: "f", textContent: "Inputs"}),
             note("help", "What the Script reads as ants.inputs, each from start-form fields, Run variables or Results of Tasks before it, as ${…}."), references,
             ...(rows.length ? rows : [note("muted small", script ? "The Script declares no inputs." : "Pick a Script to see its inputs.")])),
@@ -656,7 +670,10 @@ async function agentPanel(element, box) {
         if (dropped.length) agentNotes[element.id] = `Dropped ${dropped.join(", ")}: ${name} doesn't have ${dropped.length > 1 ? "them" : "it"}.`
         write({"ants.agent": name || undefined, ...(names === listed ? {} : skillChanges(names))}, undefined, true)
     }
-    const described = name => [name, catalogue.agents.find(a => a.name === name)?.description].filter(Boolean).join(" · ")
+    const described = name => {
+        const agent = catalogue.agents.find(a => a.name === name)
+        return marked([name, agent?.description].filter(Boolean).join(" · "), agent)
+    }
     const agentSelect = el("select", {onchange: () => pickAgent(agentSelect.value)},
         ...options(catalogue.agents.map(a => a.name), props["ants.agent"], "not found", described))
     const readOnly = ({name, folder}) => `${name} is in ${folder} and read-only: Copy it on its page to edit.`
@@ -668,16 +685,17 @@ async function agentPanel(element, box) {
             check()
         })}) : ""
     const newAgent = el("button", {type: "button", className: "ghost small", textContent: "＋ New Agent", onclick: () =>
-        formModal("agents", "/agents/new?use" + (listed?.length ? "&skills=" + encodeURIComponent(listed.join(", ")) : ""), async name => {
+        formModal("agents", "/agents/new/draft?use" + (listed?.length ? "&skills=" + encodeURIComponent(listed.join(", ")) : ""), async name => {
             await refresh()
             pickAgent(name)
         })})
-    // The Skill's page adds it to the Task's Agent when that Agent is the user's own.
+    // New Skill's Use lists it in the Draft of the Task's Agent when that Agent is the user's own.
     const who = el("div", {className: "who"}, !agent ? note("warn", "This Task has no Agent yet. The Skill is created, and you add it to an Agent's Skills it runs.")
-        : agent.own ? note("okbox", `Added to ${agent.name}'s Skills, and picked on this Task.`)
+        : agent.own ? note("okbox", wording.skillListed.replace("{agent}", agent.name))
             : note("warn", `${agent.name} is in ${agent.folder} and read-only, so the Skill can't be added to it. Copy the Agent, or pick one of your own, then choose this Skill.`))
     const newSkill = el("button", {type: "button", className: "ghost small", textContent: "＋ New Skill", onclick: () =>
-        formModal("skills", "/skills/new?use=" + encodeURIComponent(props["ants.agent"] || ""), async name => {
+        formModal("skills", "/skills/new/draft?use=" + encodeURIComponent(props["ants.agent"] || ""), async name => {
+            if (agent?.own) await fetch(`/agents/${encodeURIComponent(agent.name)}/draft/skills`, {method: "POST", body: new URLSearchParams({_csrf: csrf, skill: name})})
             await refresh()
             pickSkills(listed === null && props["ants.assignment"]?.trim() ? null : [...(listed || []), name])
         }, who)})
@@ -700,7 +718,7 @@ async function agentPanel(element, box) {
             onchange: () => pickSkills([...offeredSkills, ...listed].filter((n, i, all) => all.indexOf(n) === i && (n === name ? box.checked : listed.includes(n))))})
         const missing = !skill ? "not found" : offeredSkills.includes(name) ? "" : "not listed by this Agent"
         return el("div", {className: "row"}, box, el("label", {htmlFor: box.id, textContent: name}),
-            el("span", {className: "muted small grow", textContent: missing || skill.description || ""}), skill ? editSkill(skill) : "")
+            draftMark(skill), el("span", {className: "muted small grow", textContent: missing || skill.description || ""}), skill ? editSkill(skill) : "")
     })
     const assignment = el("textarea", {id: "ants-assignment", rows: 4, value: props["ants.assignment"] || "",
         placeholder: "e.g. Write the release notes for the merged PRs, one line each.",
@@ -735,7 +753,7 @@ async function agentPanel(element, box) {
         el("option", {value: "", textContent: level.none, selected: !props[level.property]}),
         ...level.levels.map(value => el("option", {value, textContent: value, selected: value === props[level.property]})))
     box.replaceChildren(
-        field("Agent", "Who does it.", agentSelect, editAgent, newAgent),
+        field("Agent", "Who does it.", agentSelect, draftMark(agent), editAgent, newAgent),
         props["ants.agent"] && !agent ? note("warn", `No Agent folder holds "${props["ants.agent"]}".`) : "",
         field("Level", level.help, levelSelect),
         field("Assignment", "The job, in a few lines. Leave it out when the Task lists one Skill: that Skill is then the job.", assignment),
@@ -875,7 +893,7 @@ function explain(element) {
         : /Gateway$/.test(type) ? [gateway(kinds.exclusive.name, "bpmn:ExclusiveGateway"), " ", gateway(kinds.parallel.name, "bpmn:ParallelGateway")] : []
     panel.replaceChildren(
         ...(kind ? head(target, kinds.task.name) : [el("div", {className: "kind", textContent: type + (event ? " · " + event : "")}), el("h3", {textContent: nameOf(target)})]),
-        note("warn", kind ? kinds.task.explain : "Ants doesn't run this element, so Save and deploy will refuse it."),
+        note("warn", kind ? kinds.task.explain : wording.notRun),
         ...(kind || !options.length ? [] : [note("small change", "Change it to:")]), ...options)
 }
 
@@ -896,23 +914,32 @@ modeler.on("element.changed", ({element}) => {
     if (selection.length === 1 && selection[0] === element) explain(element)
 })
 
+// The Draft's autosave starts once the diagram is in, so what it loaded is what it compares each change with. A
+// Template dropped in replaces the diagram by importing, which the command stack doesn't see.
+let draft
 fetch(canvas.dataset.src)
     .then(response => response.text())
     .then(xml => modeler.importXML(toCamunda(xml)))
     .then(() => {
         modeler.get("canvas").zoom("fit-viewport", "auto")
         explain(modeler.get("canvas").getRootElement())
+        if (!canvas.dataset.autosave) return
+        draft = autosave({endpoint: canvas.dataset.autosave, version: canvas.dataset.version, csrf, fields: async () => ({bpmn: (await modeler.saveXML({format: true})).xml})})
+        modeler.on("commandStack.changed", draft.changed)
+        modeler.on("import.done", draft.changed)
     })
 
+// Publish (or a Template's Save). The Draft is saved first, so leaving for the Process page has nothing left to save.
 document.getElementById("save").onclick = async () => {
+    await draft?.save()
     const {xml} = await modeler.saveXML({format: true})
     const response = await fetch(document.getElementById("save").dataset.action, {method: "POST", body: new URLSearchParams({_csrf: csrf, bpmn: xml})})
     if (response.ok) location = response.url
     else document.getElementById("refusal").textContent = await response.text()
 }
 
-// The live Checks: everything Save and deploy would refuse, from the Checks it runs, and the warnings, under a summary
-// of how many to fix. Save and deploy is disabled while any Check fails; clicking a Check selects its element, inside
+// The live Checks: everything Publish would refuse, from the Checks it runs, and the warnings, under a summary
+// of how many to fix. Publish is disabled while any Check fails; clicking a Check selects its element, inside
 // a collapsed sub-process too.
 const save = document.getElementById("save")
 const checks = document.getElementById("checks")

@@ -126,10 +126,10 @@ class LookTest : AntsTest() {
         visit("/settings", "a Source map's editor") { locator("[data-edit]").first().click() }
         visit(entry(app.getValue("review")) + "#s1-1", "a story step's comment") { locator(".step:not([hidden]) [data-comment]").click() }
         visit(entry(app.getValue("review")) + "?tab=repo", "a line comment") { locator("table.diff tr[data-line] td").nth(1).click() }
-        for (path in listOf("/agents/new", "/skills/new")) visit(path, "the modeler's modal $path")
-        visit("/agents/new", "a new codex Agent") { selectOption("select[name=cli]", "codex") }
-        visit("/agents/new", "a new Agent on another model") { selectOption("select[name=model]", "other") }
-        visit("/agents/new", "a new Agent's tool limited") { locator("input[name='tool.Bash']").check(); locator(".trow:has(input[name='tool.Bash']) [data-limit]").click() }
+        for (list in listOf("/agents", "/skills")) visit(http.newDraft(list), "the modeler's modal's New on $list")
+        visit(http.newDraft("/agents"), "a new codex Agent") { selectOption("select[name=cli]", "codex") }
+        visit(http.newDraft("/agents"), "a new Agent on another model") { selectOption("select[name=model]", "other") }
+        visit(http.newDraft("/agents"), "a new Agent's tool limited") { locator("input[name='tool.Bash']").check(); locator(".trow:has(input[name='tool.Bash']) [data-limit]").click() }
         page.navigate("http://127.0.0.1:$port/processes/build_and_ship/edit")
         page.waitForTimeout(1500.0)
         val shapes = page.evaluate("[...document.querySelectorAll('#canvas .djs-shape')].map(shape => shape.dataset.elementId)") as List<*>
@@ -282,9 +282,14 @@ class LookTest : AntsTest() {
         eventually(30) { check(entry(runs.getValue("push")) != work) }
 
         // A Script with a Secret of its own, for the Secrets card.
-        http.get("/scripts/new")
-        http.post("/scripts/new", mapOf("name" to "post-message", "description" to "Posts a message to a Slack channel.", "code" to "console.log('posting')\n",
+        http.publishNew("/scripts", mapOf("name" to "post-message", "description" to "Posts a message to a Slack channel.", "code" to "console.log('posting')\n",
             "inputs" to "channel, text", "vars" to "CHANNEL=general", "secrets[0].name" to "SLACK_TOKEN", "secrets[0].value" to "xoxb-1234", "secrets[0].was" to ""))
+
+        // The Agents list with both Draft markers: a Draft-only Agent, and a published one with a Draft.
+        http.get("/agents")
+        http.post("/agents/new/draft", emptyMap())
+        home.resolve("agents/reviewer.md").writeText("---\nid: a-review1\nname: reviewer\ndescription: Reviews a change.\ncli: claude\n---\nReview it.\n")
+        http.autosave("/agents/reviewer", mapOf("name" to "reviewer", "cli" to "claude", "description" to "Reviews a change, strictly.", "instructions" to "Review it."), "0")
 
         // A Round of questions.
         claude.session("quiz", 1, result("""{"outcome":"done","summary":"Round 1 on the invoice CSV export.","output":{"questions":[""" + listOf(

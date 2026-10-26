@@ -14,7 +14,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class ScriptHelperTest : AntsTest() {
-    private val browser by lazy { browser().also { it.login(); it.get("/scripts/new") } }
+    private val browser by lazy { browser().also { it.login(); it.get("/scripts") } }
     private val json = JsonMapper.shared()
     private val secrets = home.resolve("secrets.yaml")
 
@@ -148,8 +148,7 @@ class ScriptHelperTest : AntsTest() {
         home.resolve("settings.yaml").writeText("node: {path: ${ScriptsTest.NODE}}\nclaude: {env: [PATH, HOME]}\nsecrets:\n  npm: [NPM_TOKEN]\n")
         secrets.writeText("npm: s3cret-npm\n")
         try {
-            browser.get("/scripts/new")
-            browser.post("/scripts/new", listOf("name" to "post-message", "description" to "Posts a message.", "code" to "console.log('saved')\n",
+            browser.publishNew("/scripts", listOf("name" to "post-message", "description" to "Posts a message.", "code" to "console.log('saved')\n",
                 "inputs[0].name" to "text", "inputs[0].type" to "string", "vars" to "", "secrets[0].name" to "SLACK_TOKEN", "secrets[0].value" to "xoxb-s3cret", "secrets[0].was" to ""))
             val unsaved = """
                 const inputs = ants.inputs

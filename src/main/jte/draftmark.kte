@@ -1,0 +1,3 @@
+@param state: ants.DraftState
+@param list: Boolean = false
+@if(!list || state != ants.DraftState.PUBLISHED)<span class="pill draft-mark ${state.css}">${state.label}</span>@endif

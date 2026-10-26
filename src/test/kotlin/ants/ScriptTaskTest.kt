@@ -46,8 +46,7 @@ class ScriptTaskTest : AntsTest() {
         val form = listOf("name" to name, "description" to "Does $name.", "code" to code, "vars" to vars) + ScriptsTest.inputRows(inputs) + output +
             own.withIndex().flatMap { (i, secret) -> listOf("secrets[$i].name" to secret.first, "secrets[$i].value" to secret.second, "secrets[$i].was" to if (was == null) "" else secret.first) } +
             linked.map { "linked" to it }
-        browser.get("/scripts/${was ?: "new"}")
-        val page = browser.post("/scripts/${was ?: "new"}", form)
+        val page = if (was == null) browser.publishNew("/scripts", form) else browser.get("/scripts/$was").let { browser.post("/scripts/$was", form) }
         assertEquals("/scripts/$name", page.path, page.body)
     }
 
@@ -61,10 +60,17 @@ class ScriptTaskTest : AntsTest() {
     """.trimIndent()
 
     private fun deploy(key: String, vararg tasks: String): String {
+        val deployed = browser.post("/processes/deploy", mapOf("bpmn" to deployable(key, *tasks)))
+        assertEquals("/processes/$key", deployed.path, deployed.body)
+        return key
+    }
+
+    /** A Process [key] running [tasks] one after another, then waiting. */
+    private fun deployable(key: String, vararg tasks: String): String {
         val ids = tasks.map { Regex("""id="([^"]+)"""").find(it)!!.groupValues[1] }
         val steps = listOf("start") + ids + "wait"
         val flows = steps.zipWithNext().withIndex().joinToString("\n") { (i, pair) -> """<bpmn:sequenceFlow id="f$i" sourceRef="${pair.first}" targetRef="${pair.second}" />""" }
-        val bpmn = """
+        return """
             <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:operaton="http://operaton.org/schema/1.0/bpmn" id="d" targetNamespace="http://bpmn.io/schema/bpmn">
               <bpmn:process id="$key" name="$key" isExecutable="true" operaton:historyTimeToLive="180">
                 <bpmn:startEvent id="start">
@@ -78,9 +84,6 @@ class ScriptTaskTest : AntsTest() {
               </bpmn:process>
             </bpmn:definitions>
         """.trimIndent()
-        val deployed = browser.post("/processes/deploy", mapOf("bpmn" to bpmn))
-        assertEquals("/processes/$key", deployed.path, deployed.body)
-        return key
     }
 
     private fun start(key: String, text: String = "hello"): String {
@@ -178,6 +181,52 @@ class ScriptTaskTest : AntsTest() {
     }
 
     @Test
+    fun `a Secret added, changed or removed with the Secrets card's Save is used by the next Script Task, with the published code`() {
+        val code = "ants.output({ran: 'published', token: process.env.TOKEN === 'tw0' ? 'new' : process.env.TOKEN === 'on3' ? 'old' : 'none', key: process.env.API_KEY === 'k3y'})\n"
+        saveScript("keyed", own = listOf("TOKEN" to "on3"), code = code)
+        assertEquals(200, browser.autosave("/scripts/keyed", listOf("name" to "keyed", "description" to "Does keyed.", "code" to "ants.output({ran: 'draft'})\n", "vars" to ""), "0").status)
+        deploy("keying", scriptTask("keyed", "keyed"))
+
+        val rows = listOf("secrets[0].name" to "TOKEN", "secrets[0].value" to "tw0", "secrets[0].was" to "TOKEN", "secrets[1].name" to "API_KEY", "secrets[1].value" to "k3y", "secrets[1].was" to "")
+        assertEquals(200, browser.post("/scripts/keyed/secrets", rows).status)
+        val changed = start("keying")
+        eventually { assertNotNull(runtime.getVariable(changed, "keyed")) }
+        assertEquals(mapOf("ran" to "published", "token" to "new", "key" to true), (runtime.getVariable(changed, "keyed") as Map<*, *>)["payload"])
+
+        assertEquals(200, browser.post("/scripts/keyed/secrets", listOf("secrets[0].name" to "API_KEY", "secrets[0].value" to "", "secrets[0].was" to "API_KEY")).status)
+        val removed = start("keying")
+        eventually { assertNotNull(runtime.getVariable(removed, "keyed")) }
+        assertEquals(mapOf("ran" to "published", "token" to "none", "key" to true), (runtime.getVariable(removed, "keyed") as Map<*, *>)["payload"])
+    }
+
+    @Test
+    fun `a Script Task runs the published Script while the Script has a Draft, and Retry runs it as it is published then`() {
+        saveScript("drafted", code = "console.log('published')\nprocess.exit(3)\n")
+        val fixed = listOf("name" to "drafted", "description" to "Does drafted.", "code" to "ants.output({ran: 'draft'})\n", "vars" to "")
+        assertEquals(200, browser.autosave("/scripts/drafted", fixed, "0").status)
+        deploy("drafting", scriptTask("drafted", "drafted"))
+        val run = start("drafting")
+        eventually { assertNotNull(incident(run)) }
+        val entry = "/notifications/" + incident(run).id
+        assertContains(browser.get(entry).body, "published")
+
+        assertEquals("/scripts/drafted", browser.post("/scripts/drafted", listOf("name" to "drafted", "description" to "Does drafted.", "code" to "ants.output({ran: 'published'})\n", "vars" to "")).path)
+        browser.post(entry, mapOf("action" to "retry", "instruction" to ""))
+        eventually { assertNotNull(runtime.getVariable(run, "drafted")) }
+        assertEquals(mapOf("ran" to "published"), (runtime.getVariable(run, "drafted") as Map<*, *>)["payload"])
+    }
+
+    @Test
+    fun `a Process can't name a Draft-only Script, so it never runs`() {
+        val draft = browser.post("/scripts/new/draft", emptyMap()).path
+        val named = browser.autosave(draft, listOf("name" to "unpublished", "description" to "Never published.", "code" to "ants.output({})\n", "vars" to ""), draftVersion(browser.get(draft).body))
+        assertEquals("/scripts/unpublished", answer(named)["path"])
+        val refused = browser.post("/processes/deploy", mapOf("bpmn" to deployable("unpublishing", scriptTask("never", "unpublished"))))
+        assertContains(refused.body, "The Script unpublished is a Draft: publish it first.")
+        browser.post("/scripts/unpublished/delete", mapOf("confirm" to "on"))
+    }
+
+    @Test
     fun `a literal typed into a Script Task's input reaches the Script as the input schema's type, and a text input keeps it as text`() {
         saveScript("echo-typed", inputs = "count:number, flag:boolean, tags:array:string, label", code = "ants.output(ants.inputs)\n")
         deploy("typed", scriptTask("echo", "echo-typed", mapOf("count" to "5", "flag" to "true", "tags" to """["a", "b"]""", "label" to "7")))
@@ -214,7 +263,7 @@ class ScriptTaskTest : AntsTest() {
         assertContains(browser.get("/scripts/say-hello").body, """<a href="/processes/greeting">greeting</a>""")
         val catalogue = json.readValue(browser.get("/catalogue.json").body, Map::class.java)
         assertEquals(mapOf("id" to id, "name" to "say-hello", "description" to "Does say-hello.", "inputs" to listOf("text"),
-            "about" to mapOf("text" to mapOf("type" to "text", "description" to "", "required" to false))), (catalogue["scripts"] as List<*>).single { (it as Map<*, *>)["id"] == id })
+            "about" to mapOf("text" to mapOf("type" to "text", "description" to "", "required" to false)), "draft" to null), (catalogue["scripts"] as List<*>).single { (it as Map<*, *>)["id"] == id })
 
         val run = start("greeting")
         eventually { assertNotNull(runtime.getVariable(run, "greet")) }

@@ -80,7 +80,7 @@ abstract class AntsTest {
 
     /**
      * Every test starts on a clean Ants, whatever ran before it in this JVM: no Processes, Runs or Schedules, no live
-     * CLI holding a launch slot, no Agents, Skills or Templates of the user's, the clock where it belongs and every CLI's
+     * CLI holding a launch slot, no Agents, Skills, Templates or Drafts of the user's, the clock where it belongs and every CLI's
      * gate open. A test writes its own `settings.yaml`.
      */
     @BeforeEach
@@ -106,7 +106,7 @@ abstract class AntsTest {
             Thread.sleep(50)
         }
         Settings.AI_CLIS.forEach { launcher.tryNow(it) }
-        for (folder in listOf("agents", "skills", "templates", "scripts")) home.resolve(folder).toFile().run { deleteRecursively(); mkdirs() }
+        for (folder in listOf("agents", "skills", "templates", "scripts", "drafts")) home.resolve(folder).toFile().run { deleteRecursively(); mkdirs() }
         home.resolve("profiles").toFile().deleteRecursively()
         listOf("agent-ids.yaml", "skill-ids.yaml").forEach { home.resolve(it).deleteIfExists() }
         // Under the Schedule loop's lock: a Run it was starting for the last test, at that test's clock, writes its state
@@ -358,3 +358,38 @@ class Browser(private val base: String, private val diagram: (String) -> String 
 
     private fun enc(s: String) = URLEncoder.encode(s, Charsets.UTF_8)
 }
+
+/** The version of the Draft a page loaded, which its autosave carries: `0` when the page shows no Draft. */
+fun draftVersion(page: String): String = Regex("""data-version="(\d+)"""").find(page)?.groupValues?.get(1) ?: error("The page has no autosave")
+
+/** A page's autosave, as `draft.js` posts it: [form] as the Draft of the item at [page], against the [version] it loaded. */
+fun Browser.autosave(page: String, form: List<Pair<String, String>>, version: String): Browser.Page = post("$page/draft", form + ("version" to version))
+
+fun Browser.autosave(page: String, form: Map<String, String>, version: String) = autosave(page, form.toList(), version)
+
+/**
+ * **New** on the list at [list] (`/agents`, `/skills` or `/scripts`): a Draft-only item, and the path of its page,
+ * which [Browser.publishNew] publishes.
+ */
+fun Browser.newDraft(list: String): String {
+    get(list)
+    return post("$list/new/draft", emptyMap()).path
+}
+
+/**
+ * A new Agent, Skill or Script published as its pages make one: **New** on the list at [list], then the page's
+ * **Publish** of [form]; a Script's own Secret values in it are saved on its Secrets card first, as the page has them
+ * saved. The page Publish answers with. A refused Publish deletes the Draft-only item again.
+ */
+fun Browser.publishNew(list: String, form: List<Pair<String, String>>): Browser.Page {
+    val page = newDraft(list)
+    if (form.any { (field, value) -> field.matches(Regex("""secrets\[\d+]\.value""")) && value.isNotEmpty() }) post("$page/secrets", form)
+    val published = post(page, form)
+    if ("draft-mark p-draft" in published.body) post("$page/delete", mapOf("confirm" to "on"))
+    return published
+}
+
+fun Browser.publishNew(list: String, form: Map<String, String>) = publishNew(list, form.toList())
+
+/** An autosave's answer: `version`, `saved` (what the header says), `path`, `marker` and `label`; or `conflict` with a 409. */
+fun answer(page: Browser.Page): Map<*, *> = tools.jackson.databind.json.JsonMapper.shared().readValue(page.body, Map::class.java)

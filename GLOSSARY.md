@@ -46,7 +46,7 @@ and payload to the Tasks after it; a Script that fails fails the Task like a fai
 _Avoid_: code task, script step
 
 **Check**:
-One thing **Save and deploy** refuses in a Process, such as an element Ants doesn't run, naming the
+One thing **Publish** refuses in a Process, such as an element Ants doesn't run, naming the
 element; a warning is a Check that doesn't refuse.
 _Avoid_: lint, validation error, rule
 
@@ -65,6 +65,17 @@ A piece of JavaScript the user writes once and keeps in a library, with its inpu
 Task or an Agent runs the same way every time; an Agent that calls it gets its output, never its source or its
 Secrets.
 _Avoid_: Protected Command, Skill, snippet, macro
+
+**Draft**:
+The version of a Process, Agent, Skill or Script the user is still working on, which its editor keeps on the server
+as they type, whatever state it is in. A Draft is never used: Runs, launches and Script Tasks use the published
+version, and an item that is a Draft only can't be used at all.
+_Avoid_: unsaved changes, work in progress, autosave
+
+**Publish**:
+Checking a Draft as Save and deploy and Save did and, when it passes, making it the published version, the one Ants
+uses, and removing the Draft. A refused Publish keeps the Draft.
+_Avoid_: save, deploy, release
 
 **Template**:
 A named piece of a Process, kept in a library, that is copied into another Process and changed there;

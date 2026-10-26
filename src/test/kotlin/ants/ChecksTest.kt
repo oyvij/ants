@@ -339,6 +339,78 @@ class ChecksTest : AntsTest() {
             assertEquals(emptyList(), checks(diagram(fine)).filter { it["warning"] == false })
     }
 
+    /** A new Draft-only item of [kind] (agents, skills, scripts), by its name; deleted again once [test] is done. */
+    private fun withDraftOnly(kind: String, test: (String) -> Unit) {
+        val page = browser.post("/$kind/new/draft", emptyMap()).path
+        try {
+            test(page.removePrefix("/$kind/"))
+        } finally {
+            browser.post("$page/delete", mapOf("confirm" to "on"))
+        }
+    }
+
+    @Test
+    fun `Publish refuses a Process naming a Draft-only Agent, Skill or Script, naming each`() = withoutScripts {
+        writerAndDraft()
+        withDraftOnly("agents") { agent ->
+            refuses(diagram(withAgent(agent)), "draft", "Draft (draft): The Agent $agent is a Draft: publish it first.")
+        }
+        withDraftOnly("skills") { skill ->
+            refuses(diagram(job("ants.assignment" to "Draft it.", "ants.skills" to "draft, $skill")), "draft", "Draft (draft): The Skill $skill is a Draft: publish it first.")
+        }
+        withDraftOnly("scripts") { script ->
+            refuses(diagram(job("ants.skills" to "draft", "ants.scripts" to script)), "draft", "Draft (draft): The Script $script is a Draft: publish it first.")
+            refuses(diagram(scriptTask("post", script)), "post", "Post (post): The Script $script is a Draft: publish it first.")
+        }
+    }
+
+    @Test
+    fun `a Process naming an Agent, a Skill and a Script that are published and have a Draft passes, since their published versions run`() = withoutScripts {
+        script("s-post01", "post-message")
+        home.resolve("agents").createDirectories().resolve("writer.md").writeText("---\nskills: draft\nscripts: [s-post01]\n---\nWrite plainly.\n")
+        skill("draft")
+        fun drafted(page: String, form: Map<String, String>) = assertEquals(200, browser.autosave(page, form, draftVersion(browser.get(page).body)).status)
+        drafted("/agents/writer", mapOf("name" to "writer", "cli" to "claude", "description" to "Half done."))
+        drafted("/skills/draft", mapOf("skill" to "---\nname: draft\ndescription: Half done.\n---\nDo it.\n"))
+        drafted("/scripts/post-message", mapOf("name" to "post-message", "description" to "Half done."))
+        try {
+            val bpmn = diagram(job("ants.skills" to "draft", "ants.scripts" to "post-message") + scriptTask("post", "post-message"))
+            assertEquals(emptyList(), checks(bpmn).filter { it["warning"] == false })
+        } finally {
+            for (page in listOf("/agents/writer", "/skills/draft", "/scripts/post-message")) browser.post("$page/discard", mapOf("confirm" to "on"))
+        }
+    }
+
+    @Test
+    fun `the catalogue offers Draft-only Agents, Skills and Scripts with their marker, and marks one that is published and has a Draft`() = withoutScripts {
+        writerAndDraft()
+        script("s-post01", "post-message", listOf("text"))
+        browser.autosave("/skills/draft", mapOf("skill" to "---\nname: draft\ndescription: Half done.\n---\n"), draftVersion(browser.get("/skills/draft").body))
+        try {
+            withDraftOnly("agents") { agent ->
+                withDraftOnly("skills") { skill ->
+                    withDraftOnly("scripts") { script ->
+                        val catalogue = JsonMapper.shared().readValue(browser.get("/catalogue.json").body, Map::class.java)
+                        fun item(kind: String, name: String) = (catalogue[kind] as List<*>).map { it as Map<*, *> }.single { it["name"] == name }
+                        val draftOnly = mapOf("css" to "p-draft", "label" to "Draft")
+                        for ((kind, name) in listOf("agents" to agent, "skills" to skill, "scripts" to script)) {
+                            assertEquals(draftOnly, item(kind, name)["draft"], kind)
+                            assertTrue(item(kind, name)["id"].toString().isNotEmpty(), kind)
+                        }
+                        assertEquals(true, item("agents", agent)["own"])
+                        assertEquals(mapOf("css" to "p-changed", "label" to "Draft · changes not published"), item("skills", "draft")["draft"])
+                        assertEquals("A Skill.", item("skills", "draft")["description"]) // what runs, the published Skill
+                        assertEquals(null, item("agents", "writer")["draft"])
+                        assertEquals(null, item("scripts", "post-message")["draft"])
+                        assertEquals(listOf("text"), item("scripts", "post-message")["inputs"])
+                    }
+                }
+            }
+        } finally {
+            browser.post("/skills/draft/discard", mapOf("confirm" to "on"))
+        }
+    }
+
     @Test
     fun `a Skill the Agent doesn't list is refused`() {
         writerAndDraft(skills = "other")
@@ -396,11 +468,11 @@ class ChecksTest : AntsTest() {
         val writer = (catalogue["agents"] as List<*>).single { (it as Map<*, *>)["name"] == "writer" }
         assertEquals(listOf("draft", "other"), (writer as Map<*, *>)["skills"])
         assertEquals(true, writer["own"]) // so New Skill can say it adds the Skill to this Agent
-        val shipped = (catalogue["agents"] as List<*>).map { it as Map<*, *> }.filter { it["name"] != "writer" }
+        val shipped = (catalogue["agents"] as List<*>).map { it as Map<*, *> }.filter { it["name"] != "writer" && it["draft"] == null }
         assertTrue(shipped.isNotEmpty() && shipped.none { it["own"] == true })
         val skills = (catalogue["skills"] as List<*>).associateBy { (it as Map<*, *>)["name"] }
         val draft = skills["draft"] as Map<*, *>
-        assertEquals(setOf("id", "name", "description", "own", "folder"), draft.keys)
+        assertEquals(setOf("id", "name", "description", "own", "folder", "draft"), draft.keys)
         assertEquals(listOf(true, false), listOf(draft["own"], (skills["tdd"] as Map<*, *>)["own"]))
         assertEquals(home.resolve("skills").toString(), draft["folder"])
     }

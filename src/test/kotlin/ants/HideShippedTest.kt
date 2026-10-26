@@ -53,11 +53,11 @@ class HideShippedTest : AntsTest() {
     fun `the modeler's choices and the Agent form's Skill picker leave hidden shipped items out`() {
         assertFalse("shipped-writer" in browser.get("/catalogue.json").body)
         assertFalse("shipped-draft" in browser.get("/catalogue.json").body)
-        assertFalse("shipped-draft" in browser.get("/agents/new").body)
+        assertFalse("shipped-draft" in browser.get(browser.newDraft("/agents")).body)
 
         show()
         assertContains(browser.get("/catalogue.json").body, "shipped-writer")
-        assertContains(browser.get("/agents/new").body, "shipped-draft")
+        assertContains(browser.get(browser.newDraft("/agents")).body, "shipped-draft")
     }
 
     @Test
@@ -90,10 +90,8 @@ class HideShippedTest : AntsTest() {
 
     @Test
     fun `while hidden the user's own Skill and Agent win a shipped name, and with the toggle off the shipped ones win it again`() {
-        browser.get("/skills/new")
-        assertEquals("/skills/shipped-draft", browser.post("/skills/new", mapOf("skill" to "---\nname: shipped-draft\ndescription: Mine.\n---\nMine.\n", "schema" to "")).path)
-        browser.get("/agents/new")
-        assertEquals("/agents/shipped-writer", browser.post("/agents/new", mapOf("name" to "shipped-writer", "description" to "Mine.")).path)
+        assertEquals("/skills/shipped-draft", browser.publishNew("/skills", mapOf("skill" to "---\nname: shipped-draft\ndescription: Mine.\n---\nMine.\n", "schema" to "")).path)
+        assertEquals("/agents/shipped-writer", browser.publishNew("/agents", mapOf("name" to "shipped-writer", "description" to "Mine.")).path)
         assertEquals(home.resolve("skills/shipped-draft/SKILL.md"), catalogue.skill("shipped-draft").file)
         assertEquals(home.resolve("agents/shipped-writer.md"), catalogue.agent("shipped-writer").file)
 

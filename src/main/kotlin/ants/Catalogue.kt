@@ -111,7 +111,7 @@ class Skill(
  * `shipped/`, each time they're asked for, so an edit reaches the next launch. `shipped/` is Ants' own, replaced whole on start when any file differs.
  */
 @Component
-class Catalogue(@Value("\${ants.home}") private val home: Path, private val settings: Settings) {
+class Catalogue(@Value("\${ants.home}") private val home: Path, private val settings: Settings, private val drafts: Drafts) {
     private val shipped = home.resolve("shipped")
 
     /** The shipped file that defines the Verbosity levels. */
@@ -170,10 +170,11 @@ class Catalogue(@Value("\${ants.home}") private val home: Path, private val sett
     private fun skillIdIn(folder: Path) = folder.resolve(SKILL_ID_FILE).takeIf { it.exists() }
         ?.let { runCatching { (Yaml().load<Any?>(it.readText()) as? Map<*, *>)?.get("id")?.toString()?.takeIf(String::isNotBlank) }.getOrNull() }
 
-    fun giveSkillId(folder: Path) = folder.resolve(SKILL_ID_FILE).writeAtomically(yaml.dump(mapOf("id" to unusedId(SKILL_ID))))
+    /** Gives the Skill in [folder] its [id], a new one unless it has one already (its Draft's), and returns it. */
+    fun giveSkillId(folder: Path, id: String = unusedId(SKILL_ID)) = id.also { folder.resolve(SKILL_ID_FILE).writeAtomically(yaml.dump(mapOf("id" to it))) }
 
     fun unusedId(prefix: Char): String {
-        val taken = identified().map { it.id }.toSet()
+        val taken = identified().map { it.id }.toSet() + drafts.ids()
         return newId(prefix) { it in taken }
     }
 
@@ -216,7 +217,7 @@ class Catalogue(@Value("\${ants.home}") private val home: Path, private val sett
 
 /**
  * Why [name] can't name an Agent or a Skill ([kind], "An Agent" or "A Skill"), or null: a name is up to 64 lowercase letters, digits and hyphens,
- * and none the pages keep for their own routes, such as `/agents/new`.
+ * and none the pages keep for their own routes, such as `/agents/new/draft`.
  */
 fun nameError(kind: String, name: String) = when {
     !Regex("[a-z0-9][a-z0-9-]{0,63}").matches(name) -> "$kind's name is up to 64 lowercase letters, digits and hyphens."

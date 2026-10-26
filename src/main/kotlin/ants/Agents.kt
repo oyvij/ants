@@ -2,6 +2,7 @@ package ants
 
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpStatus
+import org.springframework.http.ResponseEntity
 import org.springframework.stereotype.Component
 import org.springframework.stereotype.Controller
 import org.springframework.ui.Model
@@ -19,42 +20,80 @@ import jakarta.servlet.http.HttpServletRequest
 import java.net.URI
 import java.nio.file.Path
 import java.time.Instant
-import java.time.LocalDate
-import java.time.ZoneId
 import kotlin.io.path.deleteIfExists
 import kotlin.io.path.exists
+import kotlin.io.path.readText
+
+/** An Agent as its page shows it: the published agent file, its Draft, or both. */
+private typealias AgentItem = DraftedItem<Agent>
 
 /**
  * The Agents page: a form over one agent file. Only Agents in ANTS_HOME's `agents/` are edited; shipped Agents and
- * those from extra folders are read-only, with Copy. Nothing is cached, so an edit reaches the next launch.
+ * those from extra folders are read-only, with Copy. The page autosaves to the Agent's Draft, and Publish makes the
+ * Draft the agent file, which is all a launch reads; nothing is cached, so a Publish reaches the next launch.
  */
 @Controller
-class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, private val models: Models, private val settings: Settings, private val scripts: Scripts, @Value("\${ants.home}") home: Path) {
+class Agents(
+    private val catalogue: Catalogue, private val usedBy: UsedBy, private val models: Models, private val settings: Settings, private val scripts: Scripts,
+    private val drafted: DraftedItems, @Value("\${ants.home}") home: Path,
+) {
     private val folder = home.resolve("agents")
+    private val items = drafted.agents
+
+    /** The agent file an Agent's page shows: the Draft's when there is one. */
+    private val AgentItem.shown get() = draft?.let { Agent(folder.resolve("$name.md"), it.content) } ?: published!!
+
+    /** The Agent whose page is /agents/[name]: a published one by its name, else a Draft-only one by its key. */
+    private fun item(name: String): AgentItem = items.item(name)
+
+    private fun taken(name: String, id: String?) = items.taken(name, id)
 
     @GetMapping("/agents")
     fun list(model: Model) = list(model, null)
 
     private fun list(model: Model, error: String?): String {
-        model.addAttribute("agents", catalogue.agents().sortedBy { it.name }.map { AgentRow(it, catalogue.where(it.file.parent), catalogue.skillNames(it.skills)) })
+        val published = catalogue.agents().map { agent ->
+            AgentRow(agent, catalogue.where(agent.file.parent), catalogue.skillNames(agent.skills), agent.name, DraftState.of(true, items.draftOf(agent) != null))
+        }
+        val draftOnly = items.draftOnlyItems().map { (draft, agent) ->
+            AgentRow(agent, catalogue.where(folder), catalogue.skillNames(agent.skills), draft.key, DraftState.DRAFT_ONLY)
+        }
+        model.addAttribute("agents", (published + draftOnly).sortedBy { it.agent.name })
         model.addAttribute("error", error)
         return "agents"
     }
 
     /**
-     * The create form; with `use`, as the modeler's New Agent modal shows it, whose Create and use picks it on the Task,
-     * and with [skills], the Task's Skill, filled in.
+     * **New Agent**: a Draft-only Agent at once, with a fixed id and the first free name of `new-agent`, `new-agent-2`,
+     * …, and its page; with `use`, as the modeler's New Agent modal opens it, with [skills], the Task's, filled in.
      */
-    @GetMapping("/agents/new")
-    fun new(@RequestParam use: String?, @RequestParam skills: String?, model: Model) =
-        show(model.addAttribute("use", use != null), AgentForm.of(Agent(folder.resolve("new.md"), ""), name = "").copy(skills = skills.orEmpty()), null)
+    @PostMapping("/agents/new/draft")
+    fun newDraft(@RequestParam use: String?, @RequestParam skills: String?) =
+        draftOnly(AgentForm.of(Agent(folder.resolve("new.md"), ""), name = freeName("new-agent") { taken(it, null) }).copy(skills = skills.orEmpty()), use)
 
-    @PostMapping("/agents/new")
-    fun create(@RequestParam params: MultiValueMap<String, String>, model: Model) = joined(params).let { save(model.addAttribute("use", "use" in it), AgentForm.of(it), null) }
+    private fun draftOnly(form: AgentForm, use: String? = null): String {
+        val id = catalogue.unusedId(AGENT_ID)
+        return items.create(id, form.name, published(form, id).text(), use)
+    }
 
-    /** Fills the create form from one agent file, dropping the keys Ants doesn't use, or refuses it with a reason. */
+    /**
+     * The modeler's New Skill modal's Use: lists [skill] in the Draft of the user's own Agent [name], making the Draft
+     * from the published Agent when it has none, so the published Agent is as it was until Publish.
+     */
+    @PostMapping("/agents/{name}/draft/skills")
+    @ResponseBody
+    fun listInDraft(@PathVariable name: String, @RequestParam skill: String): ResponseEntity<Unit> {
+        val item = editable(item(name))
+        val form = AgentForm.of(item.shown)
+        val id = idOf(item)
+        val listed = form.copy(skills = (words(form.skills) + skill).distinct().joinToString(", "))
+        items.edit(item, id, form.name, published(listed, id).text())
+        return ResponseEntity.noContent().build()
+    }
+
+    /** Publishes one agent file at once, dropping the keys Ants doesn't use and saying so, or refuses it with a reason. */
     @PostMapping("/agents/import")
-    fun import(@RequestParam file: MultipartFile, model: Model): String {
+    fun import(@RequestParam file: MultipartFile, model: Model, request: HttpServletRequest): String {
         val filename = file.originalFilename?.substringAfterLast('/')?.ifEmpty { null } ?: "agent.md"
         val agent = try {
             Agent(Path.of(filename), file.bytes.decodeToString())
@@ -64,43 +103,92 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
         if (agent.cli !in AgentForm.CLIS) return list(model, "$filename runs cli ${agent.cli}, and Ants runs only ${AgentForm.CLIS.joinToString(" or ")}.")
         Agent.sandboxError(agent.cli, agent.sandbox)?.let { return list(model, "$filename: $it") }
         val form = AgentForm.of(agent)
-        val notice = form.kept.keys.takeIf { it.isNotEmpty() }?.let { "Dropped the keys Ants doesn't use: ${it.joinToString(", ")}." }
-        return show(model, form.copy(kept = emptyMap<String, Any?>(), id = null), null, notice = notice)
+        val published = save(model, form.copy(kept = emptyMap<String, Any?>(), id = null), null)
+        if (published !is PublishOutcome.Published) return list(model, "$filename: ${model.getAttribute("error")}")
+        form.kept.keys.takeIf { it.isNotEmpty() }?.let { Shell.toast(request, Toast("Imported ${form.name}", "Dropped the keys Ants doesn't use: ${it.joinToString(", ")}.", Toast.Kind.INFO)) }
+        return published.view
     }
 
     /**
      * The Agents and Skills as the modeler's Agent Task panel picks them, read afresh each time so a new one shows up:
      * each Agent's description, Skills (every one by name for `skills: "*"`) and folder, and whether it is the user's own (New Skill adds itself only to those, Edit opens only those), and each Skill's description, whether it is the user's own (Edit opens only those) and its folder;
      * each Script's input names, and the type, description and required mark of each as `about`;
+     * each one's `draft` marker, null for one published with no Draft: a published one is as published, and a Draft-only
+     * one, listed after them under the name its page is at, as its Draft;
      * and the Profiles a Process can name.
      */
     @GetMapping("/catalogue.json")
     @ResponseBody
-    fun catalogue() = mapOf(
-        "agents" to catalogue.agents().map {
-            val skills = catalogue.allowedNames(it)
-            mapOf("id" to it.id, "name" to it.name, "description" to it.description, "skills" to skills, "own" to (it.file.parent == folder), "folder" to it.file.parent.toString())
-        },
-        "skills" to catalogue.skills().map { skill ->
-            mapOf("id" to skill.id, "name" to skill.name, "description" to skill.description, "own" to skill.file.startsWith(catalogue.yourSkills), "folder" to skill.folder.parent.toString())
-        },
-        "scripts" to scripts.all().map { script ->
+    fun catalogue(): Map<String, Any> {
+        fun marker(published: Boolean, draft: Boolean) = DraftState.of(published, draft).takeIf { it != DraftState.PUBLISHED }?.let { mapOf("css" to it.css, "label" to it.label) }
+        fun agent(agent: Agent, name: String, draft: Map<String, String>?) =
+            mapOf("id" to agent.id, "name" to name, "description" to agent.description, "skills" to catalogue.allowedNames(agent), "own" to (agent.file.parent == folder),
+                "folder" to agent.file.parent.toString(), "draft" to draft)
+        fun skill(skill: Skill, name: String, own: Boolean, draft: Map<String, String>?) =
+            mapOf("id" to skill.id, "name" to name, "description" to skill.description, "own" to own, "folder" to skill.folder.parent.toString(), "draft" to draft)
+        fun script(script: Script, name: String, draft: Map<String, String>?): Map<String, Any?> {
             val about = ScriptSchema.rows(script.inputs).associate { it.name to mapOf("type" to ScriptSchema.TYPES[it.type], "description" to it.description, "required" to it.required) }
-            mapOf("id" to script.id, "name" to script.name, "description" to script.description, "inputs" to script.inputNames, "about" to about)
-        },
-        "profiles" to settings.profiles().keys,
-        "nameBeside" to LINKED_NAME,
-    )
-
-    @GetMapping("/agents/{name}")
-    fun agent(@PathVariable name: String, @RequestParam use: String?, model: Model) = find(name).let { show(model.addAttribute("use", use != null), AgentForm.of(it), it) }
-
-    @PostMapping("/agents/{name}")
-    fun edit(@PathVariable name: String, @RequestParam params: MultiValueMap<String, String>, model: Model): String {
-        val agent = editable(find(name))
-        val fields = joined(params)
-        return save(model.addAttribute("use", "use" in fields), AgentForm.of(fields).copy(kept = AgentForm.of(agent).kept), agent)
+            return mapOf("id" to script.id, "name" to name, "description" to script.description, "inputs" to script.inputNames, "about" to about, "draft" to draft)
+        }
+        return mapOf(
+            "agents" to catalogue.agents().map { agent(it, it.name, marker(true, items.draftOf(it) != null)) } +
+                items.draftsOnly().mapNotNull { draft -> runCatching { agent(items.asItem(draft), draft.key, marker(false, true)) }.getOrNull() },
+            "skills" to catalogue.skills().map {
+                val own = it.file.startsWith(catalogue.yourSkills)
+                skill(it, it.name, own, marker(true, drafted.skills.draftOf(it) != null))
+            } + drafted.skills.draftOnlyItems().map { (draft, item) -> skill(item, draft.key, true, marker(false, true)) },
+            "scripts" to scripts.all().map { script(it, it.name, marker(true, drafted.scripts.draftOf(it) != null)) } +
+                drafted.scripts.draftOnlyItems().map { (draft, item) -> script(item, draft.key, marker(false, true)) },
+            "profiles" to settings.profiles().keys,
+            "nameBeside" to LINKED_NAME,
+        )
     }
+
+    /** The Agent's page: its Draft when it has one, else the published Agent. */
+    @GetMapping("/agents/{name}")
+    fun agent(@PathVariable name: String, @RequestParam use: String?, model: Model) = item(name).let { show(model.addAttribute("use", use != null), AgentForm.of(it.shown), it) }
+
+    /**
+     * The page's autosave: the page as the Agent's Draft, whatever state it is in, unless the Draft changed since the
+     * page loaded [version]. A Draft-only Agent's page follows its name, while no other Agent has it.
+     */
+    @PostMapping("/agents/{name}/draft")
+    @ResponseBody
+    fun autosave(@PathVariable name: String, @RequestParam params: MultiValueMap<String, String>, @RequestParam version: Long, @RequestParam tab: String?, @RequestParam(defaultValue = "0") seq: Long): ResponseEntity<Map<String, Any>> {
+        val item = editable(item(name))
+        val form = pageForm(item, joined(params))
+        val id = idOf(item)
+        return items.autosave(item, id, form.name, published(form, id).text(), DraftFrom(version, tab, seq)) { nameError("An Agent", it) == null && !taken(it, id) }
+    }
+
+    /** **Publish**: keeps the page as the Draft, then saves it as Save did; if that passes, the Draft is the agent file and is removed. */
+    @PostMapping("/agents/{name}")
+    fun publish(@PathVariable name: String, @RequestParam params: MultiValueMap<String, String>, model: Model): String {
+        val item = editable(item(name))
+        val fields = joined(params)
+        val form = pageForm(item, fields)
+        val id = idOf(item)
+        return items.publish(item, id, form.name, published(form, id).text()) { save(model.addAttribute("use", "use" in fields), form, item(name), id) }.view
+    }
+
+    /** The page's fields as the agent file's form, keeping the frontmatter keys the form doesn't own from what the page showed. */
+    private fun pageForm(item: AgentItem, fields: Map<String, String>) = AgentForm.of(fields).copy(kept = AgentForm.of(item.shown).kept)
+
+    /** The form as its agent file holds it: with [id], and the Skills and Scripts it lists by their ids. */
+    private fun published(form: AgentForm, id: String) =
+        form.copy(id = id, skills = catalogue.skillIds(words(form.skills)).joinToString(", "), scripts = scripts.ids(form.scriptList).joinToString(", "))
+
+    /** The id the Agent's Draft is kept under: a hand-written agent file without one gets one first, as the startup migration gives it. */
+    private fun idOf(item: AgentItem): String {
+        item.draft?.let { return it.id }
+        val agent = item.published!!
+        agent.id?.let { return it }
+        return catalogue.unusedId(AGENT_ID).also { agent.file.writeAtomically(withId(agent.file.readText(), it)) }
+    }
+
+    /** **Discard Draft**: once confirmed, removes the Draft and reopens the published Agent. */
+    @PostMapping("/agents/{name}/discard")
+    fun discard(@PathVariable name: String, @RequestParam params: Map<String, String>, model: Model) = items.discard(editable(item(name)), "confirm" in params, model)
 
     /** The form's fields, which repeat for a rule per Limit…, a chip per Skill and a tick per added tool: the filled ones, comma-separated. */
     private fun joined(params: MultiValueMap<String, String>) = params.mapValues { (_, values) -> values.filter(String::isNotBlank).joinToString(", ") }
@@ -118,27 +206,42 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
         return back(from ?: "/agents")
     }
 
-    /** Deletes one of the user's Agents, once the user has confirmed it, seeing what uses it. */
+    /**
+     * Deletes one of the user's Agents, once the user has confirmed it, seeing what uses it, and its Draft with it; a
+     * Draft-only Agent, which nothing can use, is its Draft.
+     */
     @PostMapping("/agents/{name}/delete")
     fun delete(@PathVariable name: String, @RequestParam params: Map<String, String>, model: Model): String {
-        editable(find(name))
-        if ("confirm" !in params) return confirm(model, "Delete the Agent $name?", usedBy.agent(name), "/agents/$name/delete", emptyMap(), "/agents/$name")
+        val item = editable(item(name))
+        if ("confirm" !in params) {
+            val question = if (item.published == null) "Delete the Draft $name?" else "Delete the Agent $name?"
+            return confirm(model, question, if (item.published == null) Dependents(emptyList()) else usedBy.agent(name), "${item.path}/delete", emptyMap(), item.path)
+        }
         delete(name)
         return "redirect:/agents"
     }
 
     fun delete(name: String): String {
-        editable(find(name)).file.deleteIfExists()
+        val item = editable(item(name))
+        item.published?.file?.deleteIfExists()
+        items.removeDraft(item)
         return "/agents/$name"
     }
 
-    /** Writes an editable copy of a read-only Agent into Ants' own folder, under the first free `<name>-copy`. */
+    /** **Copy**: a Draft-only copy of an Agent, under the first free `<name>-copy`, and its page. */
     @PostMapping("/agents/{name}/copy")
-    fun copy(@PathVariable name: String): String {
+    fun copyToDraft(@PathVariable name: String): String {
+        val agent = item(name).shown
+        return draftOnly(copied(agent, copyName(agent.name) { taken(it, null) }))
+    }
+
+    private fun copied(agent: Agent, name: String) = AgentForm.of(agent, name).copy(skills = catalogue.skillIds(agent.skills).joinToString(", "), scripts = scripts.ids(agent.scripts).joinToString(", "))
+
+    /** The Process Builder's copy (ADR 0019): an editable copy of a read-only Agent, published at once into Ants' own folder, under the first free `<name>-copy`. */
+    fun copy(name: String): String {
         val agent = find(name)
-        val taken = catalogue.agents().map { it.name }.toSet()
-        val copy = copyName(agent.name) { it in taken || folder.resolve("$it.md").exists() }
-        folder.resolve("$copy.md").writeAtomically(AgentForm.of(agent, copy).copy(id = catalogue.unusedId(AGENT_ID), skills = catalogue.skillIds(agent.skills).joinToString(", "), scripts = scripts.ids(agent.scripts).joinToString(", ")).text())
+        val copy = copyName(agent.name) { taken(it, null) || folder.resolve("$it.md").exists() }
+        folder.resolve("$copy.md").writeAtomically(copied(agent, copy).copy(id = catalogue.unusedId(AGENT_ID)).text())
         return "redirect:/agents/$copy"
     }
 
@@ -153,35 +256,46 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
         } catch (e: YAMLException) {
             throw Refused("The agent file has broken YAML: ${e.message}")
         }
-        return redirected("error") { save(it, AgentForm.of(parsed, name = parsed.meta["name"]?.toString().orEmpty()), agent) }
+        return redirected("error") { save(it, AgentForm.of(parsed, name = parsed.meta["name"]?.toString().orEmpty()), agent?.let(items::publishedOnly)) }
     }
 
-    private fun save(model: Model, form: AgentForm, agent: Agent?): String {
+    /**
+     * Publishes [form] as the agent file of [item], or as a new Agent for none, under [id] (a new one for none), or
+     * shows the page with why not. A rename moves the file.
+     */
+    private fun save(model: Model, form: AgentForm, item: AgentItem?, id: String? = null): PublishOutcome {
+        val agent = item?.published
         val modal = if (model.getAttribute("use") == true) "?use" else ""
         val target = if (agent != null && form.name == agent.name) agent.file else folder.resolve("${form.name}.md")
         val error = form.error() ?: when {
-            catalogue.agents().any { it.name == form.name && it.file != agent?.file } -> "An Agent named ${form.name} already exists."
+            taken(form.name, id ?: agent?.id) || catalogue.agents().any { it.name == form.name && it.file != agent?.file } -> "An Agent named ${form.name} already exists."
             target != agent?.file && target.exists() -> "$target already holds another Agent."
-            else -> null
+            else -> unpublished(form)
         }
-        if (error != null) return show(model, form, agent, error)
-        target.writeAtomically(form.copy(id = agent?.id ?: catalogue.unusedId(AGENT_ID), skills = catalogue.skillIds(words(form.skills)).joinToString(", "), scripts = scripts.ids(form.scriptList).joinToString(", ")).text())
+        if (error != null) return PublishOutcome.Refused(show(model, form, item, error))
+        target.writeAtomically(published(form, id ?: agent?.id ?: catalogue.unusedId(AGENT_ID)).text())
         if (agent != null && target != agent.file) agent.file.deleteIfExists()
-        return "redirect:/agents/${form.name}" + if (modal.isEmpty()) "" else "?saved"
+        return PublishOutcome.Published("/agents/${form.name}" + if (modal.isEmpty()) "" else "?saved")
     }
 
-    private fun show(model: Model, form: AgentForm, agent: Agent?, error: String? = null, notice: String? = null): String {
+    /** Why [form] can't be published yet: each Skill and Script it lists that is a Draft only; null for none. */
+    private fun unpublished(form: AgentForm) = (words(form.skills).mapNotNull { drafted.skills.refusal(it) } +
+        form.scriptList.mapNotNull { drafted.scripts.refusal(it) }).takeIf { it.isNotEmpty() }?.joinToString(" ")
+
+    /** The page of [item], or the create form for none. */
+    private fun show(model: Model, form: AgentForm, item: AgentItem?, error: String? = null): String {
         val shownScripts = scripts.names(form.scriptList)
+        val agent = item?.published
         model.addAttribute("form", form.copy(skills = catalogue.skillNames(words(form.skills)).joinToString(", "), scripts = shownScripts.joinToString(", ")))
         model.addAttribute("scripts", (scripts.all().map { it.name } + shownScripts).distinct())
-        model.addAttribute("action", agent?.let { "/agents/${it.name}" } ?: "/agents/new")
-        model.addAttribute("file", agent?.file?.toString())
-        model.addAttribute("readOnly", agent != null && agent.file.parent != folder)
+        model.addAttribute("action", item?.path ?: "/agents")
+        model.addAttribute("item", item?.name)
+        model.addAttribute("readOnly", item?.own == false)
+        model.addAttribute("draft", item?.head)
         model.addAttribute("where", agent?.let { catalogue.where(it.file.parent) })
         model.addAttribute("skills", catalogue.skills().distinctBy { it.name })
         model.addAttribute("dependents", agent?.let { usedBy.agent(it.name) })
         model.addAttribute("error", error)
-        model.addAttribute("notice", notice)
         model.addAttribute("models", models)
         return "agent"
     }
@@ -190,10 +304,12 @@ class Agents(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
 
     private fun editable(agent: Agent) = agent.takeIf { it.file.parent == folder }
         ?: throw ResponseStatusException(HttpStatus.FORBIDDEN, "${agent.name} is read-only. Copy it to make one you can edit.")
+
+    private fun editable(item: AgentItem) = item.takeIf { it.own } ?: throw ResponseStatusException(HttpStatus.FORBIDDEN, "${item.name} is read-only. Copy it to make one you can edit.")
 }
 
-/** An Agent on the list, and the folder it comes from. */
-class AgentRow(val agent: Agent, val where: String, val skills: List<String>)
+/** An Agent on the list, the folder it comes from, the [page] it is at and its [state]. */
+class AgentRow(val agent: Agent, val where: String, val skills: List<String>, val page: String = agent.name, val state: DraftState = DraftState.PUBLISHED)
 
 /**
  * A Claude Code tool as the Agent page offers it: what it [does], and for one with **Limit…**, what its rules narrow
@@ -412,7 +528,7 @@ class Models(@Value("\${ants.models:https://docs.claude.com/en/docs/about-claude
 
     /** When the list was last checked, as the Agent page says it: the time, with the day when it isn't today. */
     val lastChecked: String?
-        get() = checked?.atZone(ZoneId.systemDefault())?.let { if (it.toLocalDate() == LocalDate.now()) "%tR".format(it) else "%1\$te %1\$tb %1\$tR".format(it) }
+        get() = checked?.let(::shortTime)
 
     /** The name the dropdown gives [id]. */
     fun label(id: String) = all.firstOrNull { it.id == id }?.label ?: id

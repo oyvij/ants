@@ -8,6 +8,7 @@ import com.microsoft.playwright.options.ColorScheme
 import com.microsoft.playwright.options.KeyboardModifier
 import com.microsoft.playwright.Page
 import com.microsoft.playwright.Playwright
+import com.microsoft.playwright.assertions.LocatorAssertions
 import com.microsoft.playwright.assertions.PlaywrightAssertions.assertThat
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assumptions.abort
@@ -49,13 +50,19 @@ class BrowserTest : AntsTest() {
     fun launch(info: TestInfo) {
         test = info.testMethod.get().name
         playwright = Playwright.create()
-        page = launchChromium(playwright).newPage().also(::watch)
+        page = launchChromium(playwright).newPage().also(::watch).also(::logIn)
+    }
+
+    private fun logIn(page: Page) {
         page.navigate(url("/login"))
         page.fill("input[name=username]", "admin")
         page.fill("input[name=password]", "admin")
         page.click("button[type=submit]")
         page.waitForURL { !it.contains("/login") }
     }
+
+    /** A second tab, logged in of its own. */
+    private fun otherTab(): Page = page.context().browser().newPage().also(::watch).also(::logIn)
 
     @AfterEach
     fun close() {
@@ -90,9 +97,21 @@ class BrowserTest : AntsTest() {
     private fun label(text: String) = page.getByLabel(text, Page.GetByLabelOptions().setExact(true))
     private val selected = Pattern.compile("\\bselected\\b")
 
+    /** The Draft marker beside the panel's picker [label], as the lists show it. */
+    private fun mark(text: String) = label(text).locator("xpath=following-sibling::span[contains(@class, 'draft-mark')]")
+
+    /** **New Process** from the list's modal: the modeler on a Draft-only Process named [name]. */
+    private fun newProcess(name: String) {
+        page.navigate(url("/processes"))
+        page.click(".ph button.primary")
+        page.getByLabel("Name").fill(name)
+        page.click("#new-process button.primary")
+        page.waitForURL(Pattern.compile(".*/processes/[^/]+/edit$"))
+    }
+
     /** Opens the modeler on a blank Process and appends an Agent Task to its start event; the Task's id. */
     private fun appendAgentTask(): String {
-        page.navigate(url("/processes/new?name=Drawn+here&from="))
+        newProcess("Drawn here")
         shape("start").click()
         pad.locator("[data-action='append.agent-task']").click()
         assertThat(heading).hasText("Agent Task")
@@ -101,7 +120,7 @@ class BrowserTest : AntsTest() {
 
     @Test
     fun `the hover menu appends an Agent, User or Built-in Task and offers nothing Ants doesn't run`() = browse {
-        page.navigate(url("/processes/new?name=Hover+menu&from="))
+        newProcess("Hover menu")
         for ((action, name) in listOf("append.agent-task" to "Agent Task", "append.user-task" to "User Task", "append.built-in-task" to "Built-in Task")) {
             shape("start").click()
             assertThat(heading).hasText("Start event")
@@ -115,7 +134,7 @@ class BrowserTest : AntsTest() {
 
     @Test
     fun `the modeler knows no Schedule, so a start event's panel has no Schedule nor its hint, and the wrench menu offers no timer start`() = browse {
-        page.navigate(url("/processes/new?name=No+schedule&from="))
+        newProcess("No schedule")
         shape("start").click()
         assertThat(heading).hasText("Start event")
         button("＋ Add field").click()
@@ -325,7 +344,7 @@ class BrowserTest : AntsTest() {
             """mcp connect {"from":"start","to":"pick","id":"toPick"}""",
             """mcp connect {"from":"pick","to":"done","id":"toDone"}""",
             says("Built: Pick, then done."), builderResult)
-        page.navigate(url("/processes/new?name=Built+here&from="))
+        newProcess("Built here")
         val dialog = page.locator("#pb-dialog")
         ask("Every morning, pick a small issue and get it to a PR.")
         assertThat(dialog).containsText("Who answers the questions it asks?")
@@ -357,7 +376,7 @@ class BrowserTest : AntsTest() {
         assertThat(page.locator("#builder, #builder-toggle")).hasCount(0) // a Template has no Process Builder
         assertFalse(page.locator("#canvas").getAttribute("data-builder").orEmpty().isNotEmpty())
 
-        page.navigate(url("/processes/new?name=Talked+through&from="))
+        newProcess("Talked through")
         page.click("#builder-toggle")
         assertThat(page.locator("#builder")).isHidden()
         page.reload()
@@ -571,19 +590,23 @@ class BrowserTest : AntsTest() {
         ?.let { java.net.URLDecoder.decode(it.removePrefix("bpmn="), Charsets.UTF_8) }.orEmpty()
 
     @Test
-    fun `New Agent's modal keeps the unsaved diagram and picks the new Agent on the Task`() = browse {
+    fun `New Agent's modal makes a Draft-only Agent, keeps the unsaved diagram and picks the Agent on the Task, marked`() = browse {
+        home.resolve("agents/helper.md").toFile().delete()
         val task = appendAgentTask()
         val modeler = page.url()
         page.locator("#explain button", Page.LocatorOptions().setHasText("New Agent")).click()
         val form = page.frameLocator("dialog iframe")
         form.locator("input[name=name]").fill("helper")
-        page.locator("dialog .mh button", Page.LocatorOptions().setHasText("Create and use")).click()
+        page.locator("dialog .mh button", Page.LocatorOptions().setHasText("Use")).click()
 
         assertThat(page.locator("dialog")).hasCount(0)
-        assertThat(page.locator("#explain select").first()).hasValue("helper")
+        assertThat(label("Agent")).hasValue("helper")
+        assertThat(label("Agent").locator("option:checked")).hasText("helper (Draft)")
+        assertThat(mark("Agent")).hasText("Draft")
         assertEquals(modeler, page.url())
         assertThat(shape(task)).hasClass(selected) // the Task drawn, never saved, is still there
-        assertTrue(home.resolve("agents/helper.md").toFile().exists())
+        assertFalse(home.resolve("agents/helper.md").toFile().exists()) // a Draft only, which Publish puts to use
+        http.post("/agents/helper/delete", mapOf("confirm" to "on"))
     }
 
     @Test
@@ -595,7 +618,7 @@ class BrowserTest : AntsTest() {
         page.locator("#explain button", Page.LocatorOptions().setHasText("Edit")).first().click()
         assertThat(page.locator("dialog.modal")).containsText("Edit Agent")
         page.frameLocator("dialog iframe").locator("input[name=description]").fill("Writes warmly.")
-        page.locator("dialog .mh button", Page.LocatorOptions().setHasText("Save")).click()
+        page.locator("dialog .mh button", Page.LocatorOptions().setHasText("Publish")).click()
 
         assertThat(page.locator("dialog")).hasCount(0)
         assertEquals(modeler, page.url())
@@ -614,10 +637,31 @@ class BrowserTest : AntsTest() {
         assertThat(page.locator("dialog.modal")).containsText("Edit Skill")
         page.frameLocator("dialog iframe").locator("#skill-md + .ed .cm-content")
             .fill("---\nname: draft\ndescription: Drafts it better.\n---\nDo it.\n")
-        page.locator("dialog .mh button", Page.LocatorOptions().setHasText("Save")).click()
+        page.locator("dialog .mh button", Page.LocatorOptions().setHasText("Publish")).click()
 
         assertThat(page.locator("dialog")).hasCount(0)
         assertThat(panel.locator(".skillpick")).containsText("Drafts it better.")
+    }
+
+    @Test
+    fun `the Agent Task panel's pickers mark a Draft-only Agent and a Skill published with a Draft`() = browse {
+        agentTask(null)
+        val draftOnly = http.post("/agents/new/draft", mapOf()).path
+        val name = draftOnly.removePrefix("/agents/")
+        http.autosave("/skills/draft", mapOf("skill" to "---\nname: draft\ndescription: Half done.\n---\n"), draftVersion(http.get("/skills/draft").body))
+        try {
+            appendAgentTask()
+            assertThat(label("Agent").locator("option[value='$name']")).hasText("$name (Draft)")
+            assertThat(label("Agent").locator("option[value='writer']")).not().containsText("Draft")
+            label("Agent").selectOption("writer")
+            assertThat(mark("Agent")).hasCount(0)
+            assertThat(panel.locator(".skillpick .draft-mark.p-changed")).hasText("Draft · changes not published")
+            label("Agent").selectOption(name)
+            assertThat(mark("Agent")).hasText("Draft")
+        } finally {
+            http.post("$draftOnly/delete", mapOf("confirm" to "on"))
+            http.post("/skills/draft/discard", mapOf("confirm" to "on"))
+        }
     }
 
     @Test
@@ -630,7 +674,7 @@ class BrowserTest : AntsTest() {
 
     /** Opens the modeler on a blank Process and appends a Script Task to its start event; the Task's id. */
     private fun appendScriptTask(): String {
-        page.navigate(url("/processes/new?name=Drawn+here&from="))
+        newProcess("Drawn here")
         assertThat(page.locator(".djs-palette [data-action='create.script-task']")).hasAttribute("aria-label", Pattern.compile("^Script Task: Runs one of your Scripts"))
         shape("start").click()
         pad.locator("[data-action='append.script-task']").click()
@@ -640,7 +684,7 @@ class BrowserTest : AntsTest() {
 
     @Test
     fun `the palette's Script Task drops on the canvas and opens its panel`() = browse {
-        page.navigate(url("/processes/new?name=From+the+palette&from="))
+        newProcess("From the palette")
         page.locator(".djs-palette [data-action='create.script-task']").click()
         page.locator("#canvas").click(Locator.ClickOptions().setPosition(500.0, 300.0))
         assertThat(heading).hasText("Script Task")
@@ -648,7 +692,7 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
-    fun `New Script's modal saves a Script to the library and picks it on the Script Task, with a field for each input`() = browse {
+    fun `New Script's modal makes a Draft-only Script and picks it on the Script Task, marked, with a field for each input`() = browse {
         val task = appendScriptTask()
         val modeler = page.url()
         button("New Script").click()
@@ -661,21 +705,23 @@ class BrowserTest : AntsTest() {
             form.locator("#input-schema > .schema-level > [data-add-row]").click()
             form.locator("input[name='inputs[$i].name']").fill(input)
         }
-        page.locator("dialog .mh button", Page.LocatorOptions().setHasText("Create and use")).click()
+        page.locator("dialog .mh button", Page.LocatorOptions().setHasText("Use")).click()
 
         assertThat(page.locator("dialog")).hasCount(0)
         assertEquals(modeler, page.url())
         assertThat(shape(task)).hasClass(selected)
         assertThat(label("Script")).hasValue("post-to-chat")
+        assertThat(label("Script").locator("option:checked")).hasText("post-to-chat · Posts to the chat. (Draft)")
+        assertThat(mark("Script")).hasText("Draft")
         label("channel").fill("general")
         label("text").fill("\${prompt}")
-        assertTrue(home.resolve("scripts").toFile().listFiles()!!.any { it.resolve("script.yaml").readText().contains("name: post-to-chat") })
+        assertFalse(home.resolve("scripts").toFile().listFiles().orEmpty().any { it.resolve("script.yaml").readText().contains("name: post-to-chat") })
+        http.post("/scripts/post-to-chat/delete", mapOf("confirm" to "on"))
     }
 
     @Test
     fun `a Script Task's panel shows each input's type, description and whether it is required`() = browse {
-        http.get("/scripts/new")
-        http.post("/scripts/new", listOf("name" to "post-it", "description" to "Posts it.", "code" to "console.log('hi')\n", "vars" to "",
+        http.publishNew("/scripts", listOf("name" to "post-it", "description" to "Posts it.", "code" to "console.log('hi')\n", "vars" to "",
             "inputs[0].name" to "channel", "inputs[0].type" to "string", "inputs[0].description" to "Where to post.", "inputs[0].required" to "on",
             "inputs[1].name" to "count", "inputs[1].type" to "number"))
         appendScriptTask()
@@ -694,8 +740,7 @@ class BrowserTest : AntsTest() {
     @Test
     fun `the input pickers and the condition builder offer a Script Task's payload fields from its output schema, nested ones too`() = browse {
         agentTask(null)
-        http.get("/scripts/new")
-        http.post("/scripts/new", listOf("name" to "post-ts", "description" to "Posts.", "code" to "ants.output({ts: '1'})\n", "vars" to "",
+        http.publishNew("/scripts", listOf("name" to "post-ts", "description" to "Posts.", "code" to "ants.output({ts: '1'})\n", "vars" to "",
             "output[0].name" to "ts", "output[0].type" to "string",
             "output[1].name" to "meta", "output[1].type" to "object", "output[1].rows[0].name" to "channel", "output[1].rows[0].type" to "string"))
         val post = """<bpmn:serviceTask id="post" name="Post" operaton:type="external" operaton:topic="script"><bpmn:extensionElements><operaton:properties>""" +
@@ -721,14 +766,13 @@ class BrowserTest : AntsTest() {
 
     @Test
     fun `Edit's modal renames the Task's Script, and the panel shows the new name`() = browse {
-        http.get("/scripts/new")
-        http.post("/scripts/new", listOf("name" to "tidy-up", "description" to "Tidies up.", "code" to "console.log('tidy')\n", "vars" to ""))
+        http.publishNew("/scripts", listOf("name" to "tidy-up", "description" to "Tidies up.", "code" to "console.log('tidy')\n", "vars" to ""))
         appendScriptTask()
         label("Script").selectOption("tidy-up")
         button("Edit").click()
         assertThat(page.locator("dialog.modal")).containsText("Edit Script")
         page.frameLocator("dialog iframe").locator("input[name=name]").fill("clean-up")
-        page.locator("dialog .mh button", Page.LocatorOptions().setHasText("Save")).click()
+        page.locator("dialog .mh button", Page.LocatorOptions().setHasText("Publish")).click()
 
         assertThat(page.locator("dialog")).hasCount(0)
         assertThat(label("Script")).hasValue("clean-up")
@@ -736,8 +780,7 @@ class BrowserTest : AntsTest() {
 
     @Test
     fun `the Process Builder's add_element draws a Script Task naming a Script, which Save and deploy keeps as its id`() = browse {
-        http.get("/scripts/new")
-        http.post("/scripts/new", listOf("name" to "tidy-up", "description" to "Tidies up.", "code" to "console.log('tidy')\n", "inputs[0].name" to "folder", "inputs[0].type" to "string", "vars" to ""))
+        http.publishNew("/scripts", listOf("name" to "tidy-up", "description" to "Tidies up.", "code" to "console.log('tidy')\n", "inputs[0].name" to "folder", "inputs[0].type" to "string", "vars" to ""))
         agentTask(null)
         http.import("agent-task.bpmn")
         page.navigate(url("/processes/agent-task/edit"))
@@ -758,7 +801,7 @@ class BrowserTest : AntsTest() {
     @Test
     fun `a new Script's editor shows its placeholder, and a Test run shows the exit code as a badge and the payload as coloured JSON`() = browse {
         home.resolve("settings.yaml").writeText("node: {path: ${ScriptsTest.NODE}}\n")
-        page.navigate(url("/scripts/new"))
+        page.navigate(url(http.newDraft("/scripts")))
         val editor = page.locator(".code-editor .cm-content")
         assertThat(page.locator(".code-editor .cm-placeholder")).containsText("ants.inputs")
         assertThat(page.locator(".code-editor .cm-placeholder")).containsText("ants.output(")
@@ -785,7 +828,7 @@ class BrowserTest : AntsTest() {
 
     @Test
     fun `the Script page's schema card shows Input schema first, nests an object's fields, fills the Test run's sample from the rows, and saves them`() = browse {
-        page.navigate(url("/scripts/new"))
+        page.navigate(url(http.newDraft("/scripts")))
         fun tab(name: String) = page.locator("#schema").getByRole(AriaRole.TAB, Locator.GetByRoleOptions().setName(name))
         assertThat(tab("Input schema")).hasAttribute("aria-selected", "true")
         assertThat(page.locator("#input-schema")).isVisible()
@@ -831,7 +874,7 @@ class BrowserTest : AntsTest() {
 
     @Test
     fun `the Script page's schema rows move up and down, nested ones and payload rows too, renumbered for Save`() = browse {
-        page.navigate(url("/scripts/new"))
+        page.navigate(url(http.newDraft("/scripts")))
         val inputs = page.locator("#input-schema > .schema-level")
         for ((i, name) in listOf("text", "channel", "ticket").withIndex()) {
             inputs.locator(":scope > [data-add-row]").click()
@@ -880,7 +923,7 @@ class BrowserTest : AntsTest() {
     @Test
     fun `the Script page's Output schema tab adds payload rows, a Test run shows each mismatch beside the result, and the rows save as output`() = browse {
         home.resolve("settings.yaml").writeText("node: {path: ${ScriptsTest.NODE}}\n")
-        page.navigate(url("/scripts/new"))
+        page.navigate(url(http.newDraft("/scripts")))
         page.locator("#schema").getByRole(AriaRole.TAB, Locator.GetByRoleOptions().setName("Output schema")).click()
         val none = page.locator("#output-schema [data-no-output]")
         assertThat(none).hasText("No output schema: any JSON payload is accepted.")
@@ -914,7 +957,7 @@ class BrowserTest : AntsTest() {
     @Test
     fun `the Script editor marks the validator's findings on the code's lines and the schema rows as the user types`() = browse {
         home.resolve("settings.yaml").writeText("node: {path: ${ScriptsTest.NODE}}\n")
-        page.navigate(url("/scripts/new"))
+        page.navigate(url(http.newDraft("/scripts")))
         page.locator("#input-schema > .schema-level > [data-add-row]").click()
         page.locator("input[name='inputs[0].name']").fill("text")
         val row = page.locator("#input-schema .schema-row").first()
@@ -935,7 +978,8 @@ class BrowserTest : AntsTest() {
 
     @Test
     fun `the Script editor's helper reads the unsaved code and replaces it in the editor, unsaved, and Ctrl-Z takes it back`() = browse {
-        page.navigate(url("/scripts/new"))
+        val draft = http.newDraft("/scripts")
+        page.navigate(url(draft))
         val editor = page.locator(".code-editor .cm-content")
         editor.click()
         page.keyboard().insertText("console.log('mine')")
@@ -948,7 +992,7 @@ class BrowserTest : AntsTest() {
         assertFalse(failed, text)
         assertThat(editor).hasText("console.log('helped')")
         assertEquals("console.log('helped')\n", page.locator("textarea#code").inputValue())
-        assertTrue(page.url().endsWith("/scripts/new"))
+        assertTrue(page.url().endsWith(draft))
         assertFalse(home.resolve("scripts").toFile().walk().any { it.name == "script.mjs" && "helped" in it.readText() })
 
         editor.click()
@@ -958,7 +1002,7 @@ class BrowserTest : AntsTest() {
 
     @Test
     fun `the Script editor's helper replaces both schemas with rows on the page, unsaved, and one Ctrl-Z takes the replace back`() = browse {
-        page.navigate(url("/scripts/new"))
+        page.navigate(url(http.newDraft("/scripts")))
         val editor = page.locator(".code-editor .cm-content")
         editor.click()
         page.keyboard().insertText("console.log(ants.inputs.text)")
@@ -1001,7 +1045,7 @@ class BrowserTest : AntsTest() {
 
     @Test
     fun `once the user edits the schema rows after the Script helper's replace, Ctrl-Z no longer swaps the old rows back over the edits`() = browse {
-        page.navigate(url("/scripts/new"))
+        page.navigate(url(http.newDraft("/scripts")))
         val editor = page.locator(".code-editor .cm-content")
         editor.click()
         page.keyboard().insertText("console.log(ants.inputs.text)")
@@ -1028,8 +1072,7 @@ class BrowserTest : AntsTest() {
 
     @Test
     fun `the Secrets card adds two Secrets for one Save, and its ✕ asks first, so Cancel keeps a Secret and Delete removes it once saved`() = browse {
-        http.get("/scripts/new")
-        http.post("/scripts/new", listOf("name" to "post", "description" to "Posts.", "code" to "console.log('hi')\n", "inputs" to "", "vars" to "",
+        http.publishNew("/scripts", listOf("name" to "post", "description" to "Posts.", "code" to "console.log('hi')\n", "inputs" to "", "vars" to "",
             "secrets[0].name" to "OLD_TOKEN", "secrets[0].value" to "tok-old", "secrets[0].was" to ""))
         val folder = home.resolve("scripts").toFile().listFiles()!!.single { "name: post" in it.resolve("script.yaml").readText() }.toPath()
         fun ownSecrets() = org.yaml.snakeyaml.Yaml().load<Map<*, *>?>(folder.resolve("secrets.yaml").toFile().takeIf { it.exists() }?.readText() ?: "").orEmpty()
@@ -1063,11 +1106,55 @@ class BrowserTest : AntsTest() {
         assertEquals(listOf("OLD_TOKEN"), listed())
         page.screenshot("script-secrets")
 
-        page.locator(".ph button.primary").click()
-        eventually {
-            assertEquals(mapOf("A_TOKEN" to "a-1", "B_TOKEN" to "b-2"), ownSecrets())
-            assertEquals(listOf("A_TOKEN", "B_TOKEN"), listed())
-        }
+        page.locator(".code-editor .cm-content").click()
+        page.keyboard().press("ControlOrMeta+End")
+        page.keyboard().insertText("console.log('unpublished')") // the Draft's code, which Save Secrets leaves alone
+        assertThat(saveState).hasText(draftSaved)
+        card.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Save Secrets")).click()
+        assertThat(card.locator("[data-secrets-state]")).hasText(Pattern.compile("^Secrets saved \\d\\d:\\d\\d$"))
+        assertEquals(mapOf("A_TOKEN" to "a-1", "B_TOKEN" to "b-2"), ownSecrets())
+        assertEquals(listOf("A_TOKEN", "B_TOKEN"), listed())
+        assertEquals("console.log('hi')\n", folder.resolve("script.mjs").readText())
+        assertThat(page).hasURL(url("/scripts/post"))
+        assertThat(rows.nth(1).getByLabel("Value")).hasAttribute("placeholder", "••••")
+        assertThat(rows.nth(1).getByLabel("Value")).hasValue("")
+    }
+
+    @Test
+    fun `a Secret saved on a Draft-only Script's card survives a reload and is there after Publish, and a refused Save says why`() = browse {
+        http.get("/scripts")
+        page.navigate(url(http.post("/scripts/new/draft", emptyMap()).path))
+        assertThat(marker).hasText("Draft")
+        page.fill("#name", "kept-token")
+        page.waitForURL(url("/scripts/kept-token"))
+        val card = page.locator(card("Secrets"))
+        val rows = card.locator(".listed > .row")
+        val save = card.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Save Secrets"))
+        val state = card.locator("[data-secrets-state]")
+
+        rows.first().getByLabel("Name").fill("TOKEN")
+        save.click()
+        assertThat(state).hasText("Not saved: The Secret TOKEN needs a value.")
+        rows.first().getByLabel("Value").fill("t0ps3cret")
+        save.click()
+        assertThat(state).hasText(Pattern.compile("^Secrets saved \\d\\d:\\d\\d$"))
+        assertThat(saveState).hasText(draftSaved) // the name typed reached the Draft too, with no value
+
+        page.reload()
+        assertThat(marker).hasText("Draft")
+        assertThat(rows.first().getByLabel("Name")).hasValue("TOKEN")
+        assertThat(rows.first().getByLabel("Value")).hasAttribute("placeholder", "••••")
+        assertFalse("t0ps3cret" in home.resolve("drafts/scripts").toFile().walk().filter { it.isFile }.joinToString { it.readText() })
+
+        page.fill("#description", "Keeps its token.")
+        page.locator(".code-editor .cm-content").click()
+        page.keyboard().insertText("ants.output({})")
+        assertThat(saveState).hasText(draftSaved)
+        page.click("button[form=script]")
+        page.waitForURL(url("/scripts/kept-token"))
+        assertThat(marker).hasText("Published")
+        val folder = home.resolve("scripts").toFile().listFiles()!!.single { it.resolve("script.yaml").exists() && "Keeps its token." in it.resolve("script.yaml").readText() }
+        assertEquals("TOKEN: t0ps3cret\n", folder.resolve("secrets.yaml").readText())
     }
 
     @Test
@@ -1193,7 +1280,7 @@ class BrowserTest : AntsTest() {
         label("Agent").selectOption("writer")
         assertThat(label("draft")).isChecked()
         button("New Skill").click()
-        assertThat(page.locator("dialog.modal")).containsText("Added to writer's Skills, and picked on this Task.")
+        assertThat(page.locator("dialog.modal")).containsText("Added to writer's Skills in its Draft, and picked on this Task.")
         page.waitForTimeout(1000.0) // the form loads in its frame
         page.screenshot("modeler-new-skill")
         page.keyboard().press("Escape")
@@ -1203,7 +1290,7 @@ class BrowserTest : AntsTest() {
 
     @Test
     fun `a User Task asks for its kind's fields and says what later Tasks can read`() = browse {
-        page.navigate(url("/processes/new?name=Gated&from="))
+        newProcess("Gated")
         shape("start").click()
         pad.locator("[data-action='append.user-task']").click()
         val task = page.locator("#canvas .djs-shape.selected").getAttribute("data-element-id")!!
@@ -1387,7 +1474,7 @@ class BrowserTest : AntsTest() {
         deploy(definitions("themed", "Themed", process, plane))
         val run = http.post("/processes/themed/runs", mapOf()).path
         val diagrams = listOf("/processes/themed", "/processes/themed/edit", run)
-        val pages = listOf("/", "/notifications", "/runs", "/processes", "/agents", "/agents/new", "/skills", "/skills/new", "/templates", "/tickets", "/settings") + diagrams
+        val pages = listOf("/", "/notifications", "/runs", "/processes", "/agents", http.newDraft("/agents"), "/skills", http.newDraft("/skills"), "/templates", "/tickets", "/settings") + diagrams
         val light = "rgb(244, 245, 247)"
         val dark = "rgb(11, 13, 18)"
         for ((theme, system, expected) in listOf(
@@ -1626,7 +1713,7 @@ class BrowserTest : AntsTest() {
         val run = waitingRun("tapped")
         chipper()
         onPhone()
-        for (path in listOf("/", "/notifications", run, "/processes/tapped", entry, "/agents/chipper", "/agents/new", "/skills/new", "/settings")) {
+        for (path in listOf("/", "/notifications", run, "/processes/tapped", entry, "/agents/chipper", http.newDraft("/agents"), http.newDraft("/skills"), "/settings")) {
             page.navigate(url(path))
             assertTapSized()
         }
@@ -1658,7 +1745,7 @@ class BrowserTest : AntsTest() {
     fun `on a phone inputs, selects, textareas and the Markdown editors have 16px text, so iOS doesn't zoom in on them, and above 768px they keep theirs`() = browse {
         val (_, entry) = answering(FakeClaude(), "who" to "Title who")
         chipper()
-        val pages = listOf(entry, "/agents/chipper", "/agents/new", "/skills/new", "/settings")
+        val pages = listOf(entry, "/agents/chipper", http.newDraft("/agents"), http.newDraft("/skills"), "/settings")
         onPhone()
         for (path in pages) {
             page.navigate(url(path))
@@ -1668,7 +1755,7 @@ class BrowserTest : AntsTest() {
         assertFieldText("16px")
 
         page.setViewportSize(769, 900)
-        page.navigate(url("/agents/new"))
+        page.navigate(url(http.newDraft("/agents")))
         assertEquals("14px", page.locator("input[name=name]").evaluate("e => getComputedStyle(e).fontSize"))
         assertEquals("14px", page.locator("textarea[name=instructions] + .ed .cm-content").evaluate("e => getComputedStyle(e).fontSize"))
         assertTrue(page.locator("textarea[name=instructions] + .ed .bar button").first().boundingBox().height < 44, "the editor's toolbar keeps its desktop size")
@@ -1677,7 +1764,7 @@ class BrowserTest : AntsTest() {
     @Test
     fun `on a phone a tap on a shape in the modeler opens its hover menu, which appends a Task on a tap`() = browse {
         onPhone()
-        page.navigate(url("/processes/new?name=Tapped&from="))
+        newProcess("Tapped")
         shape("start").tap()
         assertThat(pad.locator("[data-action='append.agent-task']")).isVisible()
         pad.locator("[data-action='append.agent-task']").tap()
@@ -1708,9 +1795,9 @@ class BrowserTest : AntsTest() {
             "/templates/review-and-push" to arrayOf("#canvas", ".props"),
             "/templates" to arrayOf("main form", "main ul"),
             "/skills/stacked" to arrayOf(".card:has(#skill)", card("Run by")),
-            "/skills/new" to arrayOf(".card:has(#skill)", card("Run by")),
+            http.newDraft("/skills") to arrayOf(".card:has(#skill)", card("Run by")),
             "/agents/stacked" to arrayOf("#name", "#description", "#cli", "#model"),
-            "/agents/new" to arrayOf("#name", "#description", "#cli", "#model"),
+            http.newDraft("/agents") to arrayOf("#name", "#description", "#cli", "#model"),
             "/agents/implementer" to arrayOf("#name", "#description", "#cli", "#model"),
             "/settings" to arrayOf(card("Claude login"), card("Commands"), card("Vaults"), card("Agent folders"), card("So far"), card("Theme"), card("Server"), card("Updates")),
         )
@@ -1736,7 +1823,7 @@ class BrowserTest : AntsTest() {
             assertTrue(leftBox.x + leftBox.width < rightBox.x, "$right sits beside $left on $path")
         }
         assertBeside("/processes/start-end/edit", "#canvas", ".props")
-        assertBeside("/skills/new", ".card:has(#skill)", card("Run by"))
+        assertBeside(http.newDraft("/skills"), ".card:has(#skill)", card("Run by"))
         assertBeside("/agents/beside", "#name", "#description")
         assertBeside("/settings", card("Claude login"), card("Commands"))
     }
@@ -1835,7 +1922,7 @@ class BrowserTest : AntsTest() {
     @Test
     fun `on a phone a modal spans the screen with its editor and preview stacked, and a toast spans the screen at the top`() = browse {
         onPhone()
-        page.navigate(url("/agents/new"))
+        page.navigate(url(http.newDraft("/agents")))
         page.locator("textarea[name=instructions] + .ed").locator("button", Locator.LocatorOptions().setHasText("Expand")).tap()
         val modal = page.locator("dialog.modal")
         assertThat(modal.locator(".split .cm-content")).isVisible()
@@ -2065,7 +2152,7 @@ class BrowserTest : AntsTest() {
 
     @Test
     fun `a markdown field is an editor with the toolbar, ⌘B, Preview and Expand, over the textarea that carries its text`() = browse {
-        page.navigate(url("/agents/new"))
+        page.navigate(url(http.newDraft("/agents")))
         val field = page.locator("textarea[name=instructions]")
         val editor = page.locator("textarea[name=instructions] + .ed")
         assertThat(field).isHidden()
@@ -3138,7 +3225,7 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
-    fun `New Process on the Processes list opens a modal that starts the modeler on a name, and a row opens its Process`() = browse {
+    fun `New Process on the Processes list opens a modal that starts the modeler on a Draft-only Process, and a row opens its Process`() = browse {
         http.import("start-end.bpmn")
         page.navigate(url("/processes"))
         page.click("tr.click >> text=you") // anywhere on the row
@@ -3147,7 +3234,231 @@ class BrowserTest : AntsTest() {
         page.click(".ph button.primary")
         page.getByLabel("Name").fill("From the list")
         page.click("#new-process button.primary")
-        page.waitForURL { it.contains("/processes/new?name=From+the+list") }
+        page.waitForURL(Pattern.compile(".*/processes/from-the-list(-\\d+)?/edit$"))
+        assertThat(page.locator(".draft-head .draft-mark")).hasText("Draft")
+    }
+
+    private val saveState get() = page.locator(".draft-head [data-save-state]")
+    private val marker get() = page.locator(".draft-head .draft-mark")
+    private val draftSaved = Pattern.compile("^Draft saved \\d\\d:\\d\\d$")
+
+    @Test
+    fun `an edit on the Agent page is autosaved to its Draft with no Publish, the header says so, and it survives a reload`() = browse {
+        val file = home.resolve("agents").createDirectories().resolve("autosaved.md")
+        file.writeText("---\nid: a-auto01\nname: autosaved\ncli: claude\n---\nPublished.\n")
+        page.navigate(url("/agents/autosaved"))
+        assertThat(marker).hasText("Published")
+        assertThat(saveState).isEmpty()
+
+        page.fill("#description", "Kept as a Draft.")
+        assertThat(saveState).hasText(draftSaved)
+        assertThat(marker).hasText("Draft · changes not published")
+        assertEquals("---\nid: a-auto01\nname: autosaved\ncli: claude\n---\nPublished.\n", file.readText())
+
+        page.reload()
+        assertThat(page.locator("#description")).hasValue("Kept as a Draft.")
+        assertThat(saveState).hasText(draftSaved)
+        assertThat(marker).hasText("Draft · changes not published")
+
+        page.fill("#description", "Kept on leaving.")
+        page.navigate(url("/agents")) // before the 2 s are up
+        eventually { assertContains(http.get("/agents/autosaved").body, """value="Kept on leaving."""") }
+        assertThat(page.locator("tr", Page.LocatorOptions().setHasText("autosaved")).locator(".draft-mark")).hasText("Draft · changes not published")
+
+        page.navigate(url("/agents/autosaved"))
+        page.click("button[form=agent]")
+        page.waitForURL(url("/agents/autosaved"))
+        assertThat(marker).hasText("Published")
+        assertContains(file.readText(), "description: Kept on leaving.")
+    }
+
+    @Test
+    fun `an edit on the Skill page is autosaved to its Draft with no Publish, and it survives a reload`() = browse {
+        val folder = home.resolve("skills/autosaved-skill").createDirectories()
+        folder.resolve("ants.yaml").writeText("id: k-auto01\n")
+        val published = "---\nname: autosaved-skill\ndescription: Published.\n---\nPublished.\n"
+        folder.resolve("SKILL.md").writeText(published)
+        page.navigate(url("/skills/autosaved-skill"))
+        assertThat(marker).hasText("Published")
+
+        val drafted = "---\nname: autosaved-skill\ndescription: Kept as a Draft.\n---\nKept as a Draft.\n"
+        page.locator("#skill-md + .ed .cm-content").fill(drafted)
+        assertThat(saveState).hasText(draftSaved)
+        assertThat(marker).hasText("Draft · changes not published")
+        assertEquals(published, folder.resolve("SKILL.md").readText())
+
+        page.reload()
+        assertThat(page.locator("#skill-md + .ed .cm-content")).containsText("Kept as a Draft.")
+        assertThat(marker).hasText("Draft · changes not published")
+        page.navigate(url("/skills"))
+        assertThat(page.locator("tr", Page.LocatorOptions().setHasText("autosaved-skill")).locator(".draft-mark")).hasText("Draft · changes not published")
+
+        page.navigate(url("/skills/autosaved-skill"))
+        page.click("button[form=skill]")
+        page.waitForURL(url("/skills/autosaved-skill"))
+        assertThat(marker).hasText("Published")
+        assertEquals(drafted, folder.resolve("SKILL.md").readText())
+    }
+
+    @Test
+    fun `an edit made while a save is on its way is kept when the page is left at once`() = browse {
+        home.resolve("agents").createDirectories().resolve("in-flight.md").writeText("---\nid: a-flight1\nname: in-flight\ncli: claude\n---\nFlight.\n")
+        // The first autosave reaches Ants, but its answer is slow to come back.
+        page.addInitScript("""
+            const fetched = window.fetch
+            let slowed = false
+            window.fetch = async (url, options) => {
+                const response = await fetched(url, options)
+                if (!slowed && String(url).endsWith('/draft')) { slowed = true; await new Promise(done => setTimeout(done, 4000)) }
+                return response
+            }
+        """.trimIndent())
+        page.navigate(url("/agents/in-flight"))
+        page.fill("#description", "First.")
+        assertThat(saveState).hasText("Saving…")
+        page.fill("#description", "Second.")
+        page.navigate(url("/agents"))
+        eventually { assertContains(http.get("/agents/in-flight").body, """value="Second."""") }
+    }
+
+    @Test
+    fun `a failed autosave says why and is retried until it succeeds`() = browse {
+        home.resolve("agents").createDirectories().resolve("retried.md").writeText("---\nid: a-retry1\nname: retried\ncli: claude\n---\nRetry.\n")
+        page.navigate(url("/agents/retried"))
+        page.route("**/agents/retried/draft") { it.abort() }
+        page.fill("#description", "Kept once Ants answers.")
+        assertThat(saveState).hasText("Not saved: Ants can't be reached.")
+        page.unroute("**/agents/retried/draft")
+        assertThat(saveState).hasText(draftSaved, LocatorAssertions.HasTextOptions().setTimeout(15_000.0))
+        assertContains(http.get("/agents/retried").body, """value="Kept once Ants answers."""")
+    }
+
+    @Test
+    fun `a tab whose Draft changed in another tab says so and offers to load the newer Draft`() = browse {
+        home.resolve("agents").createDirectories().resolve("two-tabs.md").writeText("---\nid: a-2tabs1\nname: two-tabs\ncli: claude\n---\nTabs.\n")
+        page.navigate(url("/agents/two-tabs"))
+        val other = otherTab()
+        other.navigate(url("/agents/two-tabs"))
+        other.fill("#description", "From the other tab.")
+        assertThat(other.locator(".draft-head [data-save-state]")).hasText(draftSaved)
+
+        page.fill("#description", "From this tab.")
+        assertThat(saveState).hasText("Not saved: This Agent's Draft was changed in another tab or window.")
+        page.locator(".draft-head [data-load-newer]").click()
+        assertThat(page.locator("#description")).hasValue("From the other tab.")
+        assertThat(saveState).hasText(draftSaved)
+    }
+
+    @Test
+    fun `an edit in the modeler is autosaved to the Process's Draft and survives a reload, and Publish deploys it and leaves no Draft`() = browse {
+        newProcess("Autosaved diagram")
+        val key = page.url().removeSuffix("/edit").substringAfterLast('/')
+        assertThat(marker).hasText("Draft")
+        assertThat(saveState).hasText(draftSaved) // New made the Draft
+        shape("start").click()
+        pad.locator("[data-action='append.user-task']").click()
+        val task = page.locator("#canvas .djs-shape.selected").getAttribute("data-element-id")!!
+        label("Title").fill("Kept?")
+        label("Title").press("Tab")
+        assertThat(saveState).hasText(draftSaved)
+        assertThat(marker).hasText("Draft")
+
+        page.reload()
+        assertThat(shape(task)).isVisible()
+        assertThat(saveState).hasText(draftSaved)
+        shape(task).click()
+        assertThat(label("Title")).hasValue("Kept?")
+
+        page.locator("#save").click()
+        page.waitForURL(url("/processes/$key"))
+        assertContains(http.get("/processes/$key/diagram.bpmn").body, "Kept?")
+        page.navigate(url("/processes/$key/edit"))
+        assertThat(marker).hasText("Published")
+        assertThat(saveState).isEmpty()
+        assertEquals("0", draftVersion(http.get("/processes/$key/edit").body)) // no leaving save brought the Draft back
+    }
+
+    @Test
+    fun `a Process Builder edit to the open diagram reaches the Process's Draft, and the deployed version stays as it was`() = browse {
+        agentTask(null)
+        http.import("agent-task.bpmn")
+        page.navigate(url("/processes/agent-task/edit"))
+        assertThat(marker).hasText("Published")
+        val tool = builder()
+        tool("add_element", mapOf("kind" to "agent", "id" to "grill", "name" to "Grill", "x" to 450, "y" to 250))
+        assertThat(shape("grill")).isVisible()
+        assertThat(saveState).hasText(draftSaved)
+        assertThat(marker).hasText("Draft · changes not published")
+        assertContains(http.get("/processes/agent-task/edit.bpmn").body, """id="grill"""")
+        assertFalse("grill" in http.get("/processes/agent-task/diagram.bpmn").body)
+    }
+
+    @Test
+    fun `Discard Draft on the Agent page asks first, then reopens the published Agent, and no leaving save brings the Draft back`() = browse {
+        val file = home.resolve("agents").createDirectories().resolve("discarded.md")
+        file.writeText("---\nid: a-disc01\nname: discarded\ndescription: Published.\ncli: claude\n---\nKeep.\n")
+        page.navigate(url("/agents/discarded"))
+        page.fill("#description", "Unwanted.")
+        assertThat(saveState).hasText(draftSaved)
+        page.reload()
+        page.locator(".ph button", Page.LocatorOptions().setHasText("Discard Draft")).click()
+        assertThat(page.locator("h1")).hasText("Discard the Draft of discarded?")
+        page.locator("main form button", Page.LocatorOptions().setHasText("Discard")).click()
+        page.waitForURL(url("/agents/discarded"))
+        assertThat(page.locator("#description")).hasValue("Published.")
+        assertThat(marker).hasText("Published")
+        assertThat(page.locator(".ph button", Page.LocatorOptions().setHasText("Discard Draft"))).hasCount(0)
+        assertEquals("0", draftVersion(http.get("/agents/discarded").body))
+        assertContains(file.readText(), "description: Published.")
+    }
+
+    @Test
+    fun `New Agent opens a Draft-only Agent with a placeholder name, and Delete confirms and leaves it`() = browse {
+        page.navigate(url("/agents"))
+        page.locator(".ph button", Page.LocatorOptions().setHasText("New Agent")).click()
+        page.waitForURL(Pattern.compile("/agents/new-agent(-\\d+)?$"))
+        assertThat(marker).hasText("Draft")
+        val name = page.url().substringAfterLast('/')
+        assertThat(page.locator("#name")).hasValue(name)
+        page.locator(".ph button.danger", Page.LocatorOptions().setHasText("Delete")).click()
+        assertThat(page.locator("h1")).hasText("Delete the Draft $name?")
+        page.locator("main button.danger").click()
+        page.waitForURL(url("/agents"))
+        assertThat(page.locator("a[href='/agents/$name']")).hasCount(0)
+    }
+
+    @Test
+    fun `an edit on the Script page, typed or by the Script helper, is autosaved to its Draft with no Publish, and survives a reload`() = browse {
+        http.publishNew("/scripts", listOf("name" to "autosaved-script", "description" to "Published.", "code" to "console.log('published')\n", "vars" to ""))
+        val code = home.resolve("scripts").toFile().walk().single { it.name == "script.mjs" }
+        page.navigate(url("/scripts/autosaved-script"))
+        assertThat(marker).hasText("Published")
+        assertThat(saveState).isEmpty()
+
+        val editor = page.locator(".code-editor .cm-content")
+        editor.click()
+        page.keyboard().press("ControlOrMeta+End")
+        page.keyboard().insertText("console.log('typed')")
+        assertThat(saveState).hasText(draftSaved)
+        assertThat(marker).hasText("Draft · changes not published")
+        assertEquals("console.log('published')\n", code.readText())
+
+        page.reload()
+        assertThat(editor).containsText("console.log('typed')")
+        assertThat(marker).hasText("Draft · changes not published")
+
+        val helper = page.getByRole(AriaRole.COMPLEMENTARY, Page.GetByRoleOptions().setName("Script helper"))
+        assertThat(helper).hasAttribute("data-token", Pattern.compile(".+"))
+        val (text, failed) = mcpCall(port, helper.getAttribute("data-token")!!, "replace_buffer", mapOf("code" to "console.log('helped')\n"))
+        assertFalse(failed, text)
+        eventually { assertContains(http.get("/scripts/autosaved-script").body, "helped") }
+        page.reload()
+        assertThat(editor).hasText("console.log('helped')")
+
+        page.click("button[form=script]")
+        page.waitForURL(url("/scripts/autosaved-script"))
+        assertThat(marker).hasText("Published")
+        assertEquals("console.log('helped')", code.readText().trim()) // a posted textarea's lines end in CRLF
     }
 
     @Test
@@ -3226,7 +3537,7 @@ class BrowserTest : AntsTest() {
         home.resolve("skills/lined-up").createDirectories().resolve("SKILL.md").writeText("---\nname: lined-up\ndescription: Lined up.\n---\nLined up.\n")
         for (width in listOf(1440, 1920)) {
             page.setViewportSize(width, 900)
-            for (path in listOf("/agents/lined-up", "/agents/new", "/skills/lined-up")) {
+            for (path in listOf("/agents/lined-up", http.newDraft("/agents"), "/skills/lined-up")) {
                 page.navigate(url(path))
                 assertThat(page.locator(".ed").first()).isVisible()
                 assertEquals(emptyList(), misalignedFields(), "$path at ${width}px")
@@ -3253,7 +3564,7 @@ class BrowserTest : AntsTest() {
     @Test
     fun `the Skill page gives its side column 360px and the editors the rest`() = browse {
         page.setViewportSize(1920, 1080)
-        page.navigate(url("/skills/new"))
+        page.navigate(url(http.newDraft("/skills")))
         val (left, right) = contentEdges("main")
         val editors = page.locator(".card:has(#skill)").boundingBox()
         val side = page.locator(".card:has(h3:text-is('Run by'))").boundingBox()
@@ -3296,7 +3607,7 @@ class BrowserTest : AntsTest() {
 
     @Test
     fun `the Skill page edits only SKILL md, with no Result schema editor`() = browse {
-        page.navigate(url("/skills/new"))
+        page.navigate(url(http.newDraft("/skills")))
         assertThat(page.locator("#skill .ed")).hasCount(1)
         assertThat(page.locator(".ed.json")).hasCount(0)
         assertThat(page.locator("button[form=skill]")).isEnabled()
