@@ -24,7 +24,7 @@ session= previous= config=
 for arg; do case $previous in --session-id|--resume) session=$arg ;; --mcp-config) config=$arg ;; esac; previous=$arg; done
 IFS= read -r prompt
 skill=$(printf '%s' "$prompt" | sed -nE 's#.*"(content|text)":"/([A-Za-z0-9_.:-]+).*#\2#p')
-mkdir -p "$dir/launches" "$dir/skills"
+mkdir -p "$dir/launches" "$dir/skills" "$dir/claims"
 case " $* " in *" mcp__ants__* "*) skill=process-builder; case " $* " in *"# You are the Script editor's helper"*) skill=script-helper ;; esac ;; esac
 if [ "$skill" = process-builder ] || [ "$skill" = script-helper ]; then :
 elif [ -n "$skill" ]; then printf '%s' "$skill" > "$dir/skills/$session"
@@ -32,8 +32,11 @@ elif [ -n "$session" ] && [ -e "$dir/skills/$session" ]; then skill=$(cat "$dir/
 elif [ -n "$ANTS_TASK" ]; then skill=$ANTS_TASK; [ -n "$session" ] && printf '%s' "$skill" > "$dir/skills/$session"
 else skill=so-far; fi
 calls=0 n=1
-while ! mkdir "$dir/launches/$skill.$n" 2>/dev/null; do n=$((n + 1)); done
+# Launches at once claim their numbers by creating a file with noclobber, which bash opens O_EXCL. Not with mkdir:
+# uutils' mkdir (Ubuntu 25.10 and later) can succeed for two at once, which then share and overwrite one record.
+while ! (set -C; : > "$dir/claims/$skill.$n") 2>/dev/null; do n=$((n + 1)); done
 launch=$dir/launches/$skill.$n
+mkdir "$launch"
 printf '%s\n' "$@" > "$launch/argv"
 env > "$launch/env"
 pwd > "$launch/cwd"
