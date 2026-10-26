@@ -85,6 +85,17 @@ class ShippedBpmnTest {
         assert(links > 50) { "only $links links found" }
     }
 
+    @Test
+    fun `every shipped Agent Task names the Skills it uses, so what it gets never depends on how broad its Agent is`() {
+        var tasks = 0
+        for (file in files("processes") + files("templates")) for (task in read(file).agentTasks) {
+            tasks++
+            val names = task.extensions<OperatonProperties>().flatMap { it.operatonProperties }.map { it.operatonName }
+            assert(SKILLS in names) { "${file.name}: ${task.id} names no ants.skills, so it gets whatever its Agent has" }
+        }
+        assert(tasks > 20) { "only $tasks Agent Tasks found" }
+    }
+
     /** The elements of a Template, less what a copy renames: its events' ids, its flows' ids, its inputs' values. */
     private fun shape(elements: Collection<FlowElement>): List<String> {
         fun ref(node: FlowNode) = when (node) {
