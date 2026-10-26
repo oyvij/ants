@@ -3,6 +3,7 @@ package ants
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.yaml.snakeyaml.Yaml
+import tools.jackson.databind.json.JsonMapper
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
@@ -674,7 +675,6 @@ class AgentsTest : AntsTest() {
         assertContains(draft, """<input type="hidden" name="skills" value="tdd">""")
         assertContains(draft, """<input type="hidden" name="skills" value="new-skill-x">""")
         assertEquals(listOf("Draft · changes not published"), markers(draft))
-        assertEquals(403, browser.post("/agents/shipped-writer/draft/skills", mapOf("skill" to "new-skill-x")).status)
         browser.post("/agents/drafted-picker/delete", mapOf("confirm" to "on"))
     }
 
@@ -796,5 +796,52 @@ class AgentsTest : AntsTest() {
         post("/agents/shipped-coder/your-skills", mapOf("skills" to "tdd"))
         assertEquals(listOf("tdd"), yourSkills("shipped-coder"))
         assertEquals(listOf("tdd"), catalogue.allowed(catalogue.agent("shipped-coder")).map { it.name })
+    }
+
+    @Test
+    fun `the catalogue the modeler reads lists Your Skills under a shipped Agent, and says it is shipped`() {
+        userSkill("imported")
+        try {
+            post("/agents/shipped-coder/your-skills", mapOf("skills" to "imported"))
+            val agents = JsonMapper.shared().readTree(get("/catalogue.json"))["agents"]
+            val coder = agents.single { it["name"].asString() == "shipped-coder" }
+            assertEquals("""["tdd","imported"]""", coder["skills"].toString())
+            assertEquals(true, coder["shipped"].asBoolean())
+            assertEquals(false, coder["own"].asBoolean())
+        } finally {
+            post("/agents/shipped-coder/your-skills", emptyMap())
+        }
+    }
+
+    @Test
+    fun `New Skill's Use on a Task whose Agent is shipped lists the Skill in the Draft of its Your Skills, and the published ones stay as they were`() {
+        userSkill("made-in-modeler")
+        val published = yourSkills("shipped-writer")
+        try {
+            get("/agents/shipped-writer")
+            assertEquals(204, browser.post("/agents/shipped-writer/draft/skills", mapOf("skill" to "made-in-modeler")).status)
+            assertEquals(published, yourSkills("shipped-writer"))
+            val page = get("/agents/shipped-writer")
+            assertContains(page, """<input type="hidden" name="skills" value="made-in-modeler">""")
+            assertEquals(listOf("Draft · changes not published"), markers(page))
+            assertEquals(null, catalogue.agent("shipped-writer").tools) // the agent file is untouched
+        } finally {
+            browser.post("/agents/shipped-writer/your-skills/discard", mapOf("confirm" to "on"))
+        }
+    }
+
+    @Test
+    fun `Copy on a shipped Agent writes its shipped Skills and Your Skills into the copy`() {
+        userSkill("imported")
+        try {
+            post("/agents/shipped-coder/your-skills", mapOf("skills" to "imported, tdd"))
+            val copy = post("/agents/shipped-coder/copy", emptyMap())
+            assertContains(copy.body, """<input type="hidden" name="skills" value="tdd">""")
+            assertContains(copy.body, """<input type="hidden" name="skills" value="imported">""")
+            assertEquals(1, Regex("""name="skills" value="tdd"""").findAll(copy.body).count())
+            deleteDraft(copy.path)
+        } finally {
+            post("/agents/shipped-coder/your-skills", emptyMap())
+        }
     }
 }

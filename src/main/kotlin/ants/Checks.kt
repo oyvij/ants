@@ -169,6 +169,7 @@ val modelerFacts: String = JsonMapper.shared().writeValueAsString(mapOf(
             "<li>Fix everything under <b>Checks</b>, then <b>Publish</b>.</li></ol>",
         "notRun" to "Ants doesn't run this element, so Publish will refuse it.",
         "skillListed" to "Added to {agent}'s Skills in its Draft, and picked on this Task.",
+        "skillInYourSkills" to "Added to Your Skills on {agent} in their Draft, and picked on this Task.",
     ),
 ))
 

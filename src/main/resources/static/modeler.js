@@ -689,13 +689,15 @@ async function agentPanel(element, box) {
             await refresh()
             pickAgent(name)
         })})
-    // New Skill's Use lists it in the Draft of the Task's Agent when that Agent is the user's own.
+    // New Skill's Use lists it in the Draft of the Task's Agent when that Agent is the user's own, and in the Draft of
+    // its Your Skills when it is shipped.
     const who = el("div", {className: "who"}, !agent ? note("warn", "This Task has no Agent yet. The Skill is created, and you add it to an Agent's Skills it runs.")
         : agent.own ? note("okbox", wording.skillListed.replace("{agent}", agent.name))
+            : agent.shipped ? note("okbox", wording.skillInYourSkills.replace("{agent}", agent.name))
             : note("warn", `${agent.name} is in ${agent.folder} and read-only, so the Skill can't be added to it. Copy the Agent, or pick one of your own, then choose this Skill.`))
     const newSkill = el("button", {type: "button", className: "ghost small", textContent: "＋ New Skill", onclick: () =>
         formModal("skills", "/skills/new/draft?use=" + encodeURIComponent(props["ants.agent"] || ""), async name => {
-            if (agent?.own) await fetch(`/agents/${encodeURIComponent(agent.name)}/draft/skills`, {method: "POST", body: new URLSearchParams({_csrf: csrf, skill: name})})
+            if (agent?.own || agent?.shipped) await fetch(`/agents/${encodeURIComponent(agent.name)}/draft/skills`, {method: "POST", body: new URLSearchParams({_csrf: csrf, skill: name})})
             await refresh()
             pickSkills(listed === null && props["ants.assignment"]?.trim() ? null : [...(listed || []), name])
         }, who)})
