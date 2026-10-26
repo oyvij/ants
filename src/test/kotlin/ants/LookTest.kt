@@ -291,8 +291,8 @@ class LookTest : AntsTest() {
         home.resolve("agents/reviewer.md").writeText("---\nid: a-review1\nname: reviewer\ndescription: Reviews a change.\ncli: claude\n---\nReview it.\n")
         http.autosave("/agents/reviewer", mapOf("name" to "reviewer", "cli" to "claude", "description" to "Reviews a change, strictly.", "instructions" to "Review it."), "0")
         // The shipped Agent's page with Your Skills beside the Skills it ships with.
-        http.get("/agents/griller")
-        http.post("/agents/griller/your-skills", mapOf("skills" to "polish"))
+        http.get("/agents/lead")
+        http.post("/agents/lead/your-skills", mapOf("skills" to "polish"))
 
         // A Round of questions.
         claude.session("quiz", 1, result("""{"outcome":"done","summary":"Round 1 on the invoice CSV export.","output":{"questions":[""" + listOf(
