@@ -162,6 +162,7 @@ tasks.test {
     systemProperty("ants.jar", bootJar.get().asFile.path)
     inputs.files(tarball)
     systemProperty("ants.tarball", tarballFile.get().asFile.path)
+    systemProperty("ants.node.version", node.version.get())
     // Only the system folders and a fake gh, so a CLI run by its bare name, such as claude or nono, is never the real one.
     environment("PATH", "${projectDir}/src/test/resources/fake-gh:/usr/bin:/bin")
     // Ants must strip these from every Agent's environment, even when the allow-list names them.

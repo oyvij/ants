@@ -791,6 +791,6 @@ class ScriptsTest : AntsTest() {
         }
 
         /** The `node` the build fetched (`node { download = true }`), as the tests' PATH holds no other. */
-        val NODE: Path = Path.of(".gradle/nodejs").listDirectoryEntries().single().resolve("bin/node").toAbsolutePath()
+        val NODE: Path = Path.of(".gradle/nodejs").listDirectoryEntries("node-v${System.getProperty("ants.node.version")}-*").single().resolve("bin/node").toAbsolutePath()
     }
 }
