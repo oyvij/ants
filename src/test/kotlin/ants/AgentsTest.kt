@@ -1,5 +1,6 @@
 package ants
 
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.yaml.snakeyaml.Yaml
@@ -22,6 +23,9 @@ class AgentsTest : AntsTest() {
 
     private val browser by lazy { browser().also { it.login() } }
     private val agents = home.resolve("agents").createDirectories()
+
+    @BeforeEach
+    fun ownSettings() = settings(null)
 
     /** The page, with JTE's escaped quotes read back. */
     private fun get(path: String) = browser.get(path).body.replace("&#34;", "\"")
