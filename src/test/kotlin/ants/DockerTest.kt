@@ -2,6 +2,8 @@ package ants
 
 import org.junit.jupiter.api.Assumptions.abort
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Timeout
+import java.util.concurrent.TimeUnit
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -18,6 +20,8 @@ class DockerTest {
         run("docker", *args).also { check(it.exit == 0) { "docker ${args.joinToString(" ")}: ${it.output}" } }.output
 
     @Test
+    // The build fetches the CLIs from npm and apt, and its waits alone add up to more than the default 2 minutes.
+    @Timeout(8, unit = TimeUnit.MINUTES)
     fun `the image refuses to start without a password, and runs Ants on Postgres with its data on one volume`() {
         if (runCatching { run("docker", "info").exit }.getOrNull() != 0) {
             val help = "Docker isn't running, so the image test is skipped. CI always runs it."
