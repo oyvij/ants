@@ -37,7 +37,7 @@ dependencies {
     implementation("gg.jte:jte-spring-boot-starter-4:$jte")
     implementation("gg.jte:jte-kotlin:$jte")
     implementation("org.jetbrains.kotlin:kotlin-reflect")
-    implementation("com.networknt:json-schema-validator:2.0.4")
+    implementation("com.networknt:json-schema-validator:3.0.8")
     implementation("tools.jackson.dataformat:jackson-dataformat-toml") // reads Varde's config.toml
     implementation("org.commonmark:commonmark:0.31.0")
     implementation("org.commonmark:commonmark-ext-task-list-items:0.31.0") // a Ticket's ticking checkboxes
