@@ -3528,6 +3528,11 @@ class BrowserTest : AntsTest() {
         bash.locator("[data-add]").click()
         bash.locator("input[name='limit.Bash']").nth(1).fill("git diff *")
         assertThat(bash.locator("input[name='limit.Bash']").first()).hasAttribute("placeholder", "e.g. pnpm test")
+        val protected = page.locator(".trow", Page.LocatorOptions().setHasText("Run a Protected Command"))
+        protected.locator("input[name='tool.ProtectedCommand']").check()
+        protected.locator("[data-limit]").click()
+        protected.locator("input[name='limit.ProtectedCommand']").fill("yarn install")
+        assertThat(protected.locator("input[name='limit.ProtectedCommand']")).hasAttribute("placeholder", "e.g. yarn install")
 
         page.fill(".add-tool input", "mcp__github__get_issue")
         page.click(".add-tool button")
@@ -3539,7 +3544,7 @@ class BrowserTest : AntsTest() {
 
         page.click("button[form=agent]")
         eventually {
-            assertEquals("---\nid: a-chip01\nname: chipper\ncli: claude\nskills: kept, chip-skill\ntools: AskUserQuestion, Bash(git log *), Bash(git diff *), Read, mcp__github__get_issue\n---\nChip.\n", file.readText())
+            assertEquals("---\nid: a-chip01\nname: chipper\ncli: claude\nskills: kept, chip-skill\ntools: AskUserQuestion, Bash(git log *), Bash(git diff *), ProtectedCommand(yarn install), Read, mcp__github__get_issue\n---\nChip.\n", file.readText())
         }
 
         page.navigate(url("/agents/chipper"))

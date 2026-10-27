@@ -12,12 +12,20 @@ model.
   names (`[A-Z_][A-Z0-9_]*`). `settings.yaml` holds the labels, names and Protected Commands (prefix to Secret labels);
   the values live in `secrets.yaml` in ANTS_HOME, written mode 0600 before a value is in it, never in `settings.yaml`.
   The page never sends a value back; a value left blank keeps the saved one. Ants reads both on every request.
-- **One MCP tool, `run(command, folder)`.** Every claude Agent Task gets Ants' MCP server over HTTP on localhost
-  through `--mcp-config` (under `--strict-mcp-config`, kept) with a bearer token of its own in `headers`, and
-  `mcp__ants__run` in `--allowedTools`. The endpoint (`/mcp`, JSON-RPC: `initialize`, `tools/list`, `tools/call`) is a
+- **One MCP tool, `run(args, folder)`, for the `ProtectedCommand` tool.** Every claude Agent Task gets Ants' MCP server
+  over HTTP on localhost through `--mcp-config` (under `--strict-mcp-config`, kept) with a bearer token of its own in
+  `headers`. Only an Agent whose tools list `ProtectedCommand` gets `run`: `mcp__ants__run` in `--allowedTools`, and
+  `run` in the server's tool list for its token. `ProtectedCommand` lets it run every Protected Command;
+  `ProtectedCommand(yarn install)` only that one, as a Bash Limit does. claude can't limit an MCP tool by its arguments,
+  so `run` enforces the Limits from the token, and refuses a Protected Command outside them, telling the Agent to end
+  stuck saying it needs `ProtectedCommand(<prefix>)`. `ProtectedCommand` is among the default tools of an Agent with
+  no `tools:` line. With no Protected Command in Settings, no Agent gets `run`: it could only refuse. The tool's
+  description lists the Protected Commands the Agent may run. The endpoint (`/mcp`, JSON-RPC: `initialize`, `tools/list`, `tools/call`) is a
   handful of handlers, no new dependency. It refuses any request without the token of a live Task, outside the login.
-- **Running:** the command is split into words and run with no shell, so `yarn install; env` is arguments to yarn. The
-  Protected Command whose prefix words start it, the longest, gives its Secrets. The folder is relative to the Task's
+- **Running:** `args` is a list of strings, each passed to the process as one argument, with no shell: Ants parses
+  nothing, so `["yarn", "install;", "env"]` is arguments to yarn and an argument holding spaces or quotes arrives whole.
+  The Protected Command whose prefix words are the list's first items, the longest, gives its Secrets. Refusals and the
+  Transcript show the list joined with spaces. The folder is relative to the Task's
   Run workspace, symlinks followed, and refused outside it. The environment is claude's allow-list plus each linked
   Secret's value under each of its names. After 10 minutes Ants kills the process tree. The Agent gets the exit code and
   the output, stdout and stderr together, with every Secret's value, linked or not, as `••••`. Ants routes each

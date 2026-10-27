@@ -204,6 +204,69 @@ class AgentsTest : AntsTest() {
         }
     }
 
+    @Test
+    fun `the Agent page ticks ProtectedCommand with its Limits, and saves them`() {
+        agents.resolve("builder.md").deleteIfExists()
+        val builder = mapOf("name" to "builder", "cli" to "claude", "tool.Bash" to "on", "tool.ProtectedCommand" to "on", "limit.ProtectedCommand" to "yarn install, mvn deploy")
+        browser.publishNew("/agents", builder)
+        assertContains(agents.resolve("builder.md").readText(), "tools: Bash, ProtectedCommand(yarn install), ProtectedCommand(mvn deploy)\n")
+
+        val page = get("/agents/builder")
+        assertContains(page, """name="tool.ProtectedCommand" checked""")
+        assertContains(page, """name="limit.ProtectedCommand" value="yarn install"""")
+        assertContains(page, """name="limit.ProtectedCommand" value="mvn deploy"""")
+        assertContains(page, """data-tool="ProtectedCommand" data-example="yarn install"""")
+        assertContains(get(browser.newDraft("/agents")), """name="tool.ProtectedCommand" checked""")
+
+        post("/agents/builder", builder - "limit.ProtectedCommand")
+        assertContains(agents.resolve("builder.md").readText(), "tools: Bash, ProtectedCommand\n")
+        agents.resolve("builder.md").deleteIfExists()
+    }
+
+    @Autowired
+    lateinit var migration: Migration
+
+    @Test
+    fun `as Ants starts, each of the user's own Agents with bare Bash gets ProtectedCommand once, and no other Agent does`() {
+        home.resolve("migrated/protected-command").deleteIfExists()
+        val files = mapOf(
+            "bare" to "---\nid: a-bare01\nname: bare\ntools: Read, Bash\n---\nBuild.\n",
+            "listed" to "---\nid: a-list01\nname: listed\ntools:\n- Bash\n- ProtectedCommand(yarn install)\n---\n",
+            "scoped" to "---\nid: a-scop01\nname: scoped\ntools: Read, Bash(git log *)\n---\n",
+            "unbashed" to "---\nid: a-none01\nname: unbashed\ntools: Read\n---\n",
+            "defaulted" to "---\nid: a-dflt01\nname: defaulted\n---\n",
+            "helper" to "---\nid: a-help01\nname: helper\ntools: Bash\nants-subagent: true\n---\n",
+        ).mapKeys { (name) -> agents.resolve("$name.md") }
+        val shipped = catalogue.agents(withHidden = true).filter(catalogue::shipped).associate { it.file to it.file.readText() }
+        try {
+            files.forEach { (file, text) -> file.writeText(text) }
+            migration.migrate()
+
+            val bare = agents.resolve("bare.md")
+            assertEquals(listOf("Read", "Bash", "ProtectedCommand"), Agent(bare).tools)
+            assertEquals("Build.", Agent(bare).instructions)
+            assertEquals(files[bare], bare.resolveSibling("bare.md.old").readText())
+            for ((file, text) in files.filterKeys { it != bare }) assertEquals(text, file.readText(), "$file")
+            for ((file, text) in shipped) assertEquals(text, file.readText(), "$file")
+
+            bare.writeText(files.getValue(bare))
+            migration.migrate()
+            assertEquals(files[bare], bare.readText())
+        } finally {
+            files.keys.forEach { it.deleteIfExists(); it.resolveSibling("${it.fileName}.old").deleteIfExists() }
+        }
+    }
+
+    @Test
+    fun `of the shipped Agents only engineer has ProtectedCommand, and its instructions leave run's routing to the tool`() {
+        val withRun = catalogue.agents(withHidden = true).filter(catalogue::shipped)
+            .filter { agent -> agent.tools.orEmpty().any { it.substringBefore('(') == ProtectedCommands.AGENT_TOOL } }.map { it.name }
+        assertEquals(listOf("engineer"), withRun)
+        val engineer = catalogue.agent("engineer").instructions
+        assertFalse("`run`" in engineer, engineer)
+        assertFalse("Protected Command" in engineer, engineer)
+    }
+
     private fun idOf(file: Path) =Regex("(?m)^id: (a-[a-z0-9]{6})$").find(file.readText())?.groupValues?.get(1)
 
     private fun withoutId(file: Path) = file.readText().also { assertNotNull(idOf(file), it) }.replaceFirst(Regex("(?m)^id: a-[a-z0-9]{6}\n"), "")

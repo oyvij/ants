@@ -15,6 +15,7 @@ import org.w3c.dom.Document
 import org.w3c.dom.Element
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.io.path.createParentDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.moveTo
@@ -179,6 +180,21 @@ class Migration(
         linkSkillsById(keptOld + giveIds(keptOld))
         links(changedTemplates.map { it.first }.toSet())
         processDrafts()
+        protectedCommand()
+    }
+
+    private fun protectedCommand() {
+        val done = home.resolve("migrated/protected-command")
+        if (done.exists()) return
+        for (agent in catalogue.agents(withHidden = true).filter { it.file.parent == catalogue.yourAgents && !it.subagent }) {
+            val tools = agent.tools ?: continue
+            if ("Bash" !in tools.map(String::trim) || tools.any { it.substringBefore('(').trim() == ProtectedCommands.AGENT_TOOL }) continue
+            val text = agent.file.readText()
+            agent.file.resolveSibling("${agent.file.fileName}.old").writeText(text)
+            val (meta, body) = frontmatter(text)
+            agent.file.writeAtomically("---\n" + yaml.dump(LinkedHashMap(meta).apply { put("tools", (tools + ProtectedCommands.AGENT_TOOL).joinToString(", ")) }) + "---\n" + body)
+        }
+        done.createParentDirectories().writeText("")
     }
 
     /** Moves each Process Draft's Agent Tasks off the old shipped Agents they name ([move]), keeping the old Draft beside it. */

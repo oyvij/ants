@@ -154,8 +154,9 @@ and Scripts use and Agents never see.
 _Avoid_: credential, env var, key
 
 **Protected Command**:
-A command prefix, such as `yarn` or `mvn deploy`, that Agents may ask Ants to run with any arguments, in their Run
-workspace, with the Secrets linked to it; the Agent gets its output, never the Secrets.
+A command prefix, such as `yarn` or `mvn deploy`, that an Agent whose tools list `ProtectedCommand` may ask Ants to
+run with any arguments, in its Run workspace, with the Secrets linked to it; the Agent gets its output, never the
+Secrets. `ProtectedCommand(yarn)` limits it to that one.
 _Avoid_: build, command, script
 
 **Process Builder**:
