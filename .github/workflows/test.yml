@@ -40,7 +40,7 @@ jobs:
       # BrowserTest's Chromium, cached by Playwright version; its system libraries come from apt every run.
       - id: playwright
         run: echo "version=$(grep -o 'com.microsoft.playwright:playwright:[0-9.]*' build.gradle.kts | cut -d ':' -f 3)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
