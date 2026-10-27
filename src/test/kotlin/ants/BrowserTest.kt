@@ -62,7 +62,7 @@ class BrowserTest : AntsTest() {
     }
 
     /** A second tab, logged in of its own. */
-    private fun otherTab(): Page = page.context().browser().newPage().also(::watch).also(::logIn)
+    private fun otherTab(): Page = page.context().browser()!!.newPage().also(::watch).also(::logIn)
 
     @AfterEach
     fun close() {
@@ -1546,7 +1546,7 @@ class BrowserTest : AntsTest() {
 
     private fun assertNoSidewaysScroll() {
         val (scroll, client) = (page.evaluate("[document.documentElement.scrollWidth, document.documentElement.clientWidth]") as List<*>).map { (it as Number).toInt() }
-        assertEquals(page.viewportSize().width, client, "${page.url()} renders at the screen's width")
+        assertEquals(page.viewportSize()!!.width, client, "${page.url()} renders at the screen's width")
         assertTrue(scroll <= client, "${page.url()} is ${scroll}px wide on a ${client}px screen")
     }
 
@@ -1589,17 +1589,17 @@ class BrowserTest : AntsTest() {
         onPhone()
         page.navigate(url("/runs"))
         assertThat(topBar).containsText("Ants")
-        assertEquals(0.0, topBar.boundingBox().y, 0.5)
-        assertEquals(390.0, topBar.boundingBox().width, 0.5)
+        assertEquals(0.0, topBar.boundingBox()!!.y, 0.5)
+        assertEquals(390.0, topBar.boundingBox()!!.width, 0.5)
         val count = page.locator("#topbar-waiting")
         assertThat(count).hasText(Pattern.compile("\\d+"))
-        val before = count.textContent().toInt()
+        val before = count.textContent()!!.toInt()
 
         http.post("/processes/counted/runs", mapOf())
 
         assertThat(count).hasText("${before + 1}")
         assertThat(sidebar).isHidden()
-        val main = page.locator("main").boundingBox()
+        val main = page.locator("main").boundingBox()!!
         assertEquals(0.0, main.x, 0.5)
         assertEquals(390.0, main.width, 0.5)
     }
@@ -1610,7 +1610,7 @@ class BrowserTest : AntsTest() {
         page.navigate(url("/runs"))
         menu.tap()
         assertThat(sidebar).isVisible()
-        eventually { assertEquals(0.0, sidebar.boundingBox().x, 0.5) }
+        eventually { assertEquals(0.0, sidebar.boundingBox()!!.x, 0.5) }
         fun link(name: String) = sidebar.getByRole(AriaRole.LINK, Locator.GetByRoleOptions().setName(name))
         for (name in listOf("Home", "Notification list", "Runs", "Processes", "Tickets", "Agents", "Skills", "Templates", "Settings")) assertThat(link(name)).isVisible()
         assertThat(sidebar.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Log out"))).hasText(Pattern.compile("Log out v\\S+"))
@@ -1673,8 +1673,8 @@ class BrowserTest : AntsTest() {
         page.navigate(url("/runs"))
         assertThat(topBar).isHidden()
         assertThat(sidebar).isVisible()
-        assertEquals(232.0, sidebar.boundingBox().width, 0.5)
-        assertEquals(232.0, page.locator("main").boundingBox().x, 0.5)
+        assertEquals(232.0, sidebar.boundingBox()!!.width, 0.5)
+        assertEquals(232.0, page.locator("main").boundingBox()!!.x, 0.5)
         page.setViewportSize(768, 900)
         assertThat(topBar).isVisible()
         assertThat(sidebar).isHidden()
@@ -1758,7 +1758,7 @@ class BrowserTest : AntsTest() {
         page.navigate(url(http.newDraft("/agents")))
         assertEquals("14px", page.locator("input[name=name]").evaluate("e => getComputedStyle(e).fontSize"))
         assertEquals("14px", page.locator("textarea[name=instructions] + .ed .cm-content").evaluate("e => getComputedStyle(e).fontSize"))
-        assertTrue(page.locator("textarea[name=instructions] + .ed .bar button").first().boundingBox().height < 44, "the editor's toolbar keeps its desktop size")
+        assertTrue(page.locator("textarea[name=instructions] + .ed .bar button").first().boundingBox()!!.height < 44, "the editor's toolbar keeps its desktop size")
     }
 
     @Test
@@ -1771,7 +1771,7 @@ class BrowserTest : AntsTest() {
         assertThat(heading).hasText("Agent Task")
     }
 
-    private fun visibleBox(selector: String) = page.locator(selector).first().also { assertThat(it).isVisible() }.boundingBox()
+    private fun visibleBox(selector: String) = page.locator(selector).first().also { assertThat(it).isVisible() }.boundingBox()!!
 
     private fun card(title: String) = ".card:has(> h3:text-is('$title'))"
 
@@ -1829,7 +1829,7 @@ class BrowserTest : AntsTest() {
     }
 
     private fun assertWithinScreen(part: Locator, what: String) {
-        val box = part.boundingBox()
+        val box = part.boundingBox()!!
         assertTrue(box.x >= 0 && box.x + box.width <= 390, "$what spans ${box.x} to ${box.x + box.width} on a 390px screen")
     }
 
@@ -1856,11 +1856,11 @@ class BrowserTest : AntsTest() {
         assertThat(shape("wait")).isVisible()
         assertNoSidewaysScroll()
         // On a phone the zoom buttons cover the Task's top right, so the tap goes to its bottom left.
-        eventually { shape("wait").run { tap(Locator.TapOptions().setPosition(boundingBox().width * 0.15, boundingBox().height * 0.85)) } }
+        eventually { shape("wait").run { tap(Locator.TapOptions().setPosition(boundingBox()!!.width * 0.15, boundingBox()!!.height * 0.85)) } }
         val drawer = page.locator("#drawer")
         assertThat(page.locator("#drawer-head")).isVisible()
-        eventually { assertEquals(0.0, drawer.boundingBox().x, 0.5) }
-        assertEquals(390.0, drawer.boundingBox().width, 0.5)
+        eventually { assertEquals(0.0, drawer.boundingBox()!!.x, 0.5) }
+        assertEquals(390.0, drawer.boundingBox()!!.width, 0.5)
         assertNoSidewaysScroll()
         page.screenshot("phone/run-drawer")
 
@@ -1873,7 +1873,7 @@ class BrowserTest : AntsTest() {
         page.navigate(url(run))
         eventually { shape("wait").click() }
         assertThat(page.locator("#drawer-head")).isVisible()
-        eventually { assertEquals(460.0, drawer.boundingBox().width, 0.5) }
+        eventually { assertEquals(460.0, drawer.boundingBox()!!.width, 0.5) }
     }
 
     @Test
@@ -1927,9 +1927,9 @@ class BrowserTest : AntsTest() {
         val modal = page.locator("dialog.modal")
         assertThat(modal.locator(".split .cm-content")).isVisible()
         settled(modal)
-        assertEquals(0.0, modal.boundingBox().x, 0.5)
-        assertEquals(390.0, modal.boundingBox().width, 0.5)
-        val (editor, preview) = modal.locator(".split > *").all().map { it.boundingBox() }
+        assertEquals(0.0, modal.boundingBox()!!.x, 0.5)
+        assertEquals(390.0, modal.boundingBox()!!.width, 0.5)
+        val (editor, preview) = modal.locator(".split > *").all().map { it.boundingBox()!! }
         assertEquals(390.0, editor.width, 0.5, "the editor spans the modal")
         assertEquals(390.0, preview.width, 0.5, "the preview spans the modal")
         assertTrue(preview.y >= editor.y + editor.height - 0.5, "the preview sits under the editor")
@@ -1943,7 +1943,7 @@ class BrowserTest : AntsTest() {
         val toast = page.locator(".toast")
         assertThat(toast).containsText("Up to date")
         settled(toast)
-        val spot = toast.boundingBox()
+        val spot = toast.boundingBox()!!
         assertEquals(0.0, spot.x, 0.5)
         assertEquals(390.0, spot.width, 0.5)
         assertEquals(0.0, spot.y, 0.5)
@@ -1951,7 +1951,7 @@ class BrowserTest : AntsTest() {
         page.screenshot("phone/toast")
 
         page.setViewportSize(769, 900)
-        assertEquals(380.0, toast.boundingBox().width, 0.5)
+        assertEquals(380.0, toast.boundingBox()!!.width, 0.5)
         toast.locator("button[aria-label=Close]").tap()
         assertThat(toast).hasCount(0)
     }
@@ -2034,11 +2034,11 @@ class BrowserTest : AntsTest() {
         scope.press("Delete")
         assertThat(page.locator("#answer-scope")).hasValue("")
         assertThat(tabs.nth(1)).hasText("2 Title scope ✎")
-        val buttons = page.locator("footer").boundingBox()
+        val buttons = page.locator("footer").boundingBox()!!
         page.click("#next")
         assertThat(page.locator("#next")).hasText("Send the Round")
         assertThat(tabs.last()).hasAttribute("aria-selected", "true")
-        assertEquals(buttons.y, page.locator("footer").boundingBox().y) // the buttons never move
+        assertEquals(buttons.y, page.locator("footer").boundingBox()!!.y) // the buttons never move
         page.click("#next")
         assertThat(page.locator("#answer-scope + .ed.invalid")).isVisible() // required still stops an empty answer
         assertEquals(url(entry), page.url())
@@ -2064,11 +2064,11 @@ class BrowserTest : AntsTest() {
         assertNoSidewaysScroll()
         page.screenshot("phone/answer")
 
-        val box = strip.boundingBox()
+        val box = strip.boundingBox()!!
         assertTrue(box.x >= 0 && box.x + box.width <= 390, "the strip spans ${box.x} to ${box.x + box.width}")
         val question = page.locator("section.question:visible")
-        assertTrue(box.y + box.height <= question.boundingBox().y, "the strip sits above the question")
-        assertTrue(tabs.nth(1).boundingBox().y < tabs.nth(0).boundingBox().y + tabs.nth(0).boundingBox().height, "the chips run side by side")
+        assertTrue(box.y + box.height <= question.boundingBox()!!.y, "the strip sits above the question")
+        assertTrue(tabs.nth(1).boundingBox()!!.y < tabs.nth(0).boundingBox()!!.y + tabs.nth(0).boundingBox()!!.height, "the chips run side by side")
         assertEquals(true, strip.evaluate("e => e.scrollWidth > e.clientWidth"), "the chips overflow the strip")
 
         tabs.nth(4).tap()
@@ -2083,8 +2083,8 @@ class BrowserTest : AntsTest() {
         assertThat(tabs.nth(4)).containsText("✓")
         assertThat(tabs.nth(5)).hasAttribute("aria-selected", "true")
         eventually {
-            val chip = tabs.nth(5).boundingBox()
-            val shown = strip.boundingBox()
+            val chip = tabs.nth(5).boundingBox()!!
+            val shown = strip.boundingBox()!!
             assertTrue(chip.x >= shown.x - 0.5 && chip.x + chip.width <= shown.x + shown.width + 0.5, "Next brings the chip it selects into the strip's view")
         }
         page.locator("#answer-q6 + .ed .cm-content").fill("Only admins.")
@@ -2104,8 +2104,8 @@ class BrowserTest : AntsTest() {
         page.locator("#next").tap()
         val footer = page.locator("#round > footer")
         assertThat(page.locator("#back")).isVisible()
-        assertTrue(page.locator("#next").boundingBox().y > page.locator("#back").boundingBox().y, "Next wraps under Back and Reset")
-        val box = footer.boundingBox()
+        assertTrue(page.locator("#next").boundingBox()!!.y > page.locator("#back").boundingBox()!!.y, "Next wraps under Back and Reset")
+        val box = footer.boundingBox()!!
         assertEquals(0.0, box.x, 0.5)
         assertEquals(390.0, box.width, 0.5)
         assertEquals(844.0, box.y + box.height, 0.5)
@@ -2113,7 +2113,7 @@ class BrowserTest : AntsTest() {
         assertEquals(16.0, left, 0.5, "the footer's buttons start 16px in")
         assertEquals(374.0, right, 0.5, "the footer's buttons end 16px in")
         for (button in listOf("#back", "#reset", "#next")) {
-            val b = page.locator(button).boundingBox()
+            val b = page.locator(button).boundingBox()!!
             assertTrue(b.x >= 0 && b.x + b.width <= 390, "$button spans ${b.x} to ${b.x + b.width}")
         }
         assertNoSidewaysScroll()
@@ -2121,13 +2121,13 @@ class BrowserTest : AntsTest() {
 
         fun clear(bar: String) = eventually {
             page.evaluate("scrollTo(0, document.documentElement.scrollHeight)")
-            val top = footer.boundingBox().y
-            val end = page.locator("section.question:visible .ed").boundingBox()
+            val top = footer.boundingBox()!!.y
+            val end = page.locator("section.question:visible .ed").boundingBox()!!
             assertTrue(end.y + end.height <= top, "the answer ends at ${end.y + end.height}px, under the $bar footer at ${top}px")
         }
         clear("wrapped")
         footer.evaluate("bar => bar.insertAdjacentHTML('beforeend', '<p style=\"flex-basis: 100%; height: 240px; margin: 0\"></p>')")
-        assertTrue(footer.boundingBox().height > 240)
+        assertTrue(footer.boundingBox()!!.height > 240)
         clear("grown")
     }
 
@@ -2143,11 +2143,11 @@ class BrowserTest : AntsTest() {
         assertThat(tabs).hasText((titles.mapIndexed { i, (_, title) -> "${i + 1} $title" } + "Review and send").toTypedArray())
         page.screenshot("answer-long")
         for (i in titles.indices) {
-            val box = tabs.nth(i).boundingBox()
+            val box = tabs.nth(i).boundingBox()!!
             assertTrue(box.x >= 0 && box.x + box.width <= 1440, "row ${i + 1} spans ${box.x} to ${box.x + box.width}")
             assertEquals(true, tabs.nth(i).evaluate("e => e.scrollWidth <= e.clientWidth && e.scrollHeight <= e.clientHeight"), "row ${i + 1} is clipped")
         }
-        assertTrue(tabs.nth(0).boundingBox().let { it.x + it.width } <= page.locator("#round").boundingBox().x, "the list sits left of the question")
+        assertTrue(tabs.nth(0).boundingBox()!!.let { it.x + it.width } <= page.locator("#round").boundingBox()!!.x, "the list sits left of the question")
     }
 
     @Test
@@ -2273,7 +2273,7 @@ class BrowserTest : AntsTest() {
         prompt.fill("Add dark mode")
         press(page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("Start").setExact(true)))
         page.waitForURL(Pattern.compile("/runs/[^/]+$"))
-        return page.locator("dt:text-is('repos') + dd").textContent()
+        return page.locator("dt:text-is('repos') + dd").textContent()!!
     }
 
     @Test
@@ -2363,7 +2363,7 @@ class BrowserTest : AntsTest() {
     private fun assertWithinCard(part: Locator, card: Locator, what: String) {
         assertThat(part).isVisible()
         assertWithinScreen(part, what)
-        val (box, cardBox) = part.boundingBox() to card.boundingBox()
+        val (box, cardBox) = part.boundingBox()!! to card.boundingBox()!!
         assertTrue(box.x >= cardBox.x && box.x + box.width <= cardBox.x + cardBox.width, "$what spans ${box.x} to ${box.x + box.width} in a card from ${cardBox.x} to ${cardBox.x + cardBox.width}")
     }
 
@@ -2397,7 +2397,7 @@ class BrowserTest : AntsTest() {
             assertWithinCard(row, card, "a Schedule's block")
             for (cell in row.locator("td").all()) assertWithinCard(cell, card, "a line of a Schedule's block")
             for (label in labels) assertWithinCard(row.getByText(label, Locator.GetByTextOptions().setExact(true)), card, "the label $label")
-            val lines = row.locator("td").all().map { it.boundingBox() }
+            val lines = row.locator("td").all().map { it.boundingBox()!! }
             for ((above, below) in lines.zipWithNext()) assertTrue(below.y >= above.y + above.height - 0.5, "a Schedule's lines sit one under another")
             assertThat(row.locator("td").first()).hasText(Pattern.compile("^(Profiled|Unprofiled) sweep\$"))
             for (name in listOf("Start now", "Pause", "Remove")) assertWithinCard(button(row, name), card, name)
@@ -2410,7 +2410,7 @@ class BrowserTest : AntsTest() {
         assertWithinCard(profiled.locator("code"), card, "the Cron line")
         assertWithinCard(profiled.getByRole(AriaRole.ALERT), card, "the failed note")
         assertWithinCard(button(profiled, "Dismiss"), card, "Dismiss")
-        val (first, second) = page.locator("#schedules tr[id]").all().map { it.boundingBox() }
+        val (first, second) = page.locator("#schedules tr[id]").all().map { it.boundingBox()!! }
         assertTrue(second.y >= first.y + first.height, "the second Schedule's block sits under the first")
         assertTapSized()
         page.screenshot("phone/schedules")
@@ -2428,18 +2428,18 @@ class BrowserTest : AntsTest() {
             for (control in controls) {
                 val what = "the When part ${control.getAttribute("id")}"
                 assertWithinCard(line(control), fieldset, what)
-                val (box, lineBox) = control.boundingBox() to line(control).boundingBox()
+                val (box, lineBox) = control.boundingBox()!! to line(control).boundingBox()!!
                 assertTrue(box.x > lineBox.x + 8, "$what has its text before its control")
                 assertEquals(lineBox.x + lineBox.width, box.x + box.width, 1.0, "$what has its control fill the rest of its line")
             }
-            val lines = controls.map { line(it).boundingBox() }
+            val lines = controls.map { line(it).boundingBox()!! }
             for ((above, below) in lines.zipWithNext()) assertTrue(below.y >= above.y + above.height - 0.5, "with Every $choice each When part sits on its own line")
         }
         page.getByText("Advanced", Page.GetByTextOptions().setExact(true)).click()
         assertWithinCard(part("cron"), fieldset, "the Advanced cron field")
         assertWithinCard(page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("Save schedule")), fieldset, "Save schedule")
         val inside = (fieldset.evaluate("f => { const s = getComputedStyle(f); return f.clientWidth - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight) }") as Number).toDouble()
-        assertEquals(inside, line(every).boundingBox().width, 1.0, "Every's line spans the When fieldset")
+        assertEquals(inside, line(every).boundingBox()!!.width, 1.0, "Every's line spans the When fieldset")
         page.screenshot("phone/when")
 
         page.setViewportSize(1280, 900)
@@ -2447,11 +2447,11 @@ class BrowserTest : AntsTest() {
         for (header in headers) assertThat(header).isVisible()
         for (label in labels) assertThat(profiled.getByText(label, Locator.GetByTextOptions().setExact(true))).isHidden()
         assertThat(profiled.getByRole(AriaRole.CELL).nth(1)).hasAccessibleName("work")
-        val buttons = listOf("Start now", "Pause", "Remove").map { button(profiled, it).boundingBox() }
+        val buttons = listOf("Start now", "Pause", "Remove").map { button(profiled, it).boundingBox()!! }
         for ((left, right) in buttons.zipWithNext()) assertEquals(left.y, right.y, 0.5, "on desktop a Schedule's buttons sit in one row")
         openSchedule()
         every.selectOption("week")
-        val parts = listOf("every", "at", "on").map { line(part(it)).boundingBox() }
+        val parts = listOf("every", "at", "on").map { line(part(it)).boundingBox()!! }
         for ((left, right) in parts.zipWithNext()) assertEquals(left.y + left.height / 2, right.y + right.height / 2, 0.5, "on desktop the When parts sit in one row")
     }
 
@@ -2467,12 +2467,12 @@ class BrowserTest : AntsTest() {
             assertThat(part).isVisible()
             assertWithinScreen(part, what)
         }
-        assertTrue(add.boundingBox().y >= text.boundingBox().y + text.boundingBox().height, "＋ Add a schedule sits below the No schedule text")
+        assertTrue(add.boundingBox()!!.y >= text.boundingBox()!!.y + text.boundingBox()!!.height, "＋ Add a schedule sits below the No schedule text")
         page.screenshot("phone/no-schedule")
 
         page.setViewportSize(1280, 900)
         page.reload()
-        assertTrue(add.boundingBox().y < text.boundingBox().y + text.boundingBox().height, "on desktop ＋ Add a schedule sits beside the No schedule text")
+        assertTrue(add.boundingBox()!!.y < text.boundingBox()!!.y + text.boundingBox()!!.height, "on desktop ＋ Add a schedule sits beside the No schedule text")
     }
 
     @Test
@@ -2498,7 +2498,7 @@ class BrowserTest : AntsTest() {
     }
 
     private fun assertStartFormInOneColumn() {
-        val fields = page.locator("#start .fld").all().map { it.boundingBox() }
+        val fields = page.locator("#start .fld").all().map { it.boundingBox()!! }
         for ((above, below) in fields.zipWithNext()) {
             assertEquals(above.x, below.x, 0.5, "the start form's fields start at one edge")
             assertTrue(below.y >= above.y + above.height, "the start form's fields sit one under another")
@@ -2524,7 +2524,7 @@ class BrowserTest : AntsTest() {
         assertWithinScreen(page.getByRole(AriaRole.LISTBOX), "the Source map repos")
         for (option in repoOptions.all()) {
             assertShownWhole(option, "the option ${option.textContent()}")
-            val height = option.boundingBox().height
+            val height = option.boundingBox()!!.height
             assertTrue(height >= 44, "the option ${option.textContent()} is ${height}px tall")
         }
         assertNoSidewaysScroll()
@@ -2549,7 +2549,7 @@ class BrowserTest : AntsTest() {
         assertThat(boxes).hasCount(phoneSourceMap.size)
         assertNoSidewaysScroll()
         assertStartFormInOneColumn()
-        for (box in boxes.all()) assertShownWhole(box, "the checkbox ${box.textContent().trim()}")
+        for (box in boxes.all()) assertShownWhole(box, "the checkbox ${box.textContent()!!.trim()}")
         page.screenshot("phone/start-no-js")
 
         page.getByLabel(longRepo, Page.GetByLabelOptions().setExact(true)).tap()
@@ -2598,12 +2598,12 @@ class BrowserTest : AntsTest() {
         val main = page.locator("main")
         page.setViewportSize(1920, 1080)
         page.navigate(url("/processes"))
-        val wide = main.boundingBox().width
+        val wide = main.boundingBox()!!.width
         assertTrue(wide > 1160, "main is ${wide}px wide at 1920px")
         page.setViewportSize(3840, 1080)
-        assertEquals(2200.0, main.boundingBox().width, 0.5)
+        assertEquals(2200.0, main.boundingBox()!!.width, 0.5)
         page.navigate(url("/processes/start-end/edit"))
-        assertEquals(3840.0 - page.locator("nav.side").boundingBox().width, main.boundingBox().width, 0.5)
+        assertEquals(3840.0 - page.locator("nav.side").boundingBox()!!.width, main.boundingBox()!!.width, 0.5)
     }
 
     private fun contentEdges(selector: String) = (page.locator(selector).evaluate("e => { const r = e.getBoundingClientRect(), s = getComputedStyle(e); " +
@@ -2626,14 +2626,14 @@ class BrowserTest : AntsTest() {
         val review = newEntry()
         http.post("/processes/round/runs", mapOf())
         val answer = newEntry(setOf(review))
-        fun right(selector: String) = page.locator(selector).boundingBox().let { it.x + it.width }
+        fun right(selector: String) = page.locator(selector).boundingBox()!!.let { it.x + it.width }
 
         for (width in listOf(1440, 1920)) {
             page.setViewportSize(width, 900)
             page.navigate(url(review))
             for ((main, bar) in contentEdges("main").zip(contentEdges(".composer > div"))) assertEquals(main, bar, 1.0, "the composer's content edges at ${width}px")
             page.navigate(url(answer))
-            assertEquals(page.locator("#round").boundingBox().x, contentEdges("#round > footer")[0], 1.0, "the footer's buttons start where the question column starts at ${width}px")
+            assertEquals(page.locator("#round").boundingBox()!!.x, contentEdges("#round > footer")[0], 1.0, "the footer's buttons start where the question column starts at ${width}px")
             assertEquals(right("#round"), right("#next"), 1.0, "the footer's buttons end where the question column ends at ${width}px")
         }
     }
@@ -2642,15 +2642,15 @@ class BrowserTest : AntsTest() {
         val composer = page.locator(".composer")
         fun clear(bar: String) = eventually {
             page.evaluate("scrollTo(0, document.documentElement.scrollHeight)")
-            val top = composer.boundingBox().y
+            val top = composer.boundingBox()!!.y
             for (selector in ends) {
-                val box = page.locator(selector).boundingBox()
+                val box = page.locator(selector).boundingBox()!!
                 assertTrue(box.y + box.height <= top, "$selector ends at ${box.y + box.height}px, under the $bar composer at ${top}px")
             }
         }
         clear("one-line")
         page.locator(".composer > div").evaluate("bar => { bar.style.flexWrap = 'wrap'; bar.insertAdjacentHTML('beforeend', '<p style=\"flex-basis: 100%; height: 240px; margin: 0\"></p>') }")
-        assertTrue(composer.boundingBox().height > 240)
+        assertTrue(composer.boundingBox()!!.height > 240)
         clear("grown")
     }
 
@@ -2679,7 +2679,7 @@ class BrowserTest : AntsTest() {
         workspace(run).resolve("tickets/issues").createDirectories().resolve("01-wide.md").writeText("# Wide\n\nStatus: ready-for-agent\n\n" + "A long line of prose. ".repeat(60) + "\n")
         page.setViewportSize(1920, 1080)
         page.navigate(url("/runs/$run/tickets/01-wide"))
-        // Measured in one step: the live update swaps #ticket for a new one, and boundingBox() reads null mid-swap
+        // Measured in one step: the live update swaps #ticket for a new one, and boundingBox()!! reads null mid-swap
         val ticket = (page.locator("#ticket").evaluate("e => e.getBoundingClientRect().width") as Number).toDouble()
         assertTrue(ticket <= 860, "the Ticket is ${ticket}px wide")
     }
@@ -2693,7 +2693,7 @@ class BrowserTest : AntsTest() {
             "e => { const t = e.querySelector('table'), i = e.querySelector('img'); t.scrollLeft = 100; " +
                 "return [e.getBoundingClientRect().right, t.getBoundingClientRect().right, t.scrollLeft, i.getBoundingClientRect().right, i.complete ? i.getBoundingClientRect().width : 0] }",
         ) as List<*>).map { (it as Number).toDouble() }
-        assertTrue(right <= page.viewportSize().width, "$selector ends at ${right}px on a ${page.viewportSize().width}px screen")
+        assertTrue(right <= page.viewportSize()!!.width, "$selector ends at ${right}px on a ${page.viewportSize()!!.width}px screen")
         assertTrue(tableRight <= right, "the table ends at ${tableRight}px, past $selector's ${right}px")
         assertTrue(scrolled > 0, "the wide table scrolls sideways inside its own box")
         assertTrue(imageWidth in 1.0..<512.0, "the 512px image shrinks to fit, at ${imageWidth}px")
@@ -2712,7 +2712,7 @@ class BrowserTest : AntsTest() {
         val cells = page.locator("tr:has(a[href='/runs/$run/tickets/spec']) td")
         assertThat(cells).hasCount(4)
         assertNoSidewaysScroll()
-        val boxes = cells.all().map { it.boundingBox() }
+        val boxes = cells.all().map { it.boundingBox()!! }
         for ((above, below) in boxes.zipWithNext()) {
             assertEquals(above.x, below.x, 0.5, "the Spec's row stacks its cells in one column")
             assertTrue(below.y >= above.y + above.height, "the Spec's row stacks its cells one under the other")
@@ -2730,7 +2730,7 @@ class BrowserTest : AntsTest() {
         assertWideTableScrollsInsideItsBoxAndTheImageFits("#ticket")
         page.screenshot("phone/ticket")
         val box = page.locator("#ticket input[type=checkbox]")
-        val size = box.boundingBox()
+        val size = box.boundingBox()!!
         assertTrue(size.width >= 24 && size.height >= 24, "the checkbox is ${size.width}×${size.height}px, too small to tap")
         box.tap()
         eventually { assertContains(file.readText(), "- [x] Retries three times") }
@@ -2770,15 +2770,15 @@ class BrowserTest : AntsTest() {
         page.screenshot("phone/approve")
         val (left, right) = contentEdges("main")
         val comment = page.locator("#comment + .ed")
-        val specBox = spec.boundingBox()
-        val commentBox = comment.boundingBox()
+        val specBox = spec.boundingBox()!!
+        val commentBox = comment.boundingBox()!!
         assertEquals(left, specBox.x, 0.5, "the Spec starts at the page's content edge")
         assertEquals(right, specBox.x + specBox.width, 0.5, "the Spec ends at the page's content edge")
         assertEquals(left, commentBox.x, 0.5, "the comment starts at the page's content edge")
         assertTrue(commentBox.y >= specBox.y + specBox.height, "the comment sits under the Spec")
         for (name in listOf("Send back", "Approve")) {
-            val box = buttonNamed(name).boundingBox()
-            assertTrue(box.x >= 0 && box.x + box.width <= page.viewportSize().width && box.y + box.height <= page.viewportSize().height, "$name is on the screen at $box")
+            val box = buttonNamed(name).boundingBox()!!
+            assertTrue(box.x >= 0 && box.x + box.width <= page.viewportSize()!!.width && box.y + box.height <= page.viewportSize()!!.height, "$name is on the screen at $box")
         }
 
         comment.locator(".cm-content").tap()
@@ -2811,14 +2811,14 @@ class BrowserTest : AntsTest() {
         assertNoSidewaysScroll()
         page.screenshot("phone/push")
         val (left, right) = contentEdges("main")
-        val boxes = cards.all().map { it.boundingBox() }
+        val boxes = cards.all().map { it.boundingBox()!! }
         for (box in boxes) {
             assertEquals(left, box.x, 0.5, "a repo's card starts at the page's content edge")
             assertEquals(right, box.x + box.width, 0.5, "a repo's card ends at the page's content edge")
         }
         assertTrue(boxes[1].y >= boxes[0].y + boxes[0].height, "web's card sits under api's")
         for (name in listOf("Cancel the Run", "Push 2 branches")) {
-            val box = buttonNamed(name).boundingBox()
+            val box = buttonNamed(name).boundingBox()!!
             assertTrue(box.x >= left - 0.5 && box.x + box.width <= right + 0.5, "$name is within the page at $box")
         }
 
@@ -2876,14 +2876,14 @@ class BrowserTest : AntsTest() {
         box.evaluate("e => e.scrollIntoView({block: 'start'})")
         val (across, down) = (box.evaluate("e => [e.scrollWidth - e.clientWidth, e.scrollHeight - e.clientHeight]") as List<*>).map { (it as Number).toInt() }
         assertTrue(across > 0 && down > 0, "the box scrolls ${across}px sideways and ${down}px down inside it")
-        val (b, bar) = box.boundingBox() to page.locator(".composer > div").boundingBox()
+        val (b, bar) = box.boundingBox()!! to page.locator(".composer > div").boundingBox()!!
         assertTrue(b.y + b.height <= bar.y, "the box ends, horizontal scrollbar and all, at ${b.y + b.height}, under the composer at ${bar.y}")
-        val before = numbers.all().map { it.boundingBox().x }
+        val before = numbers.all().map { it.boundingBox()!!.x }
         page.mouse().move(b.x + b.width / 2, b.y + b.height / 2)
         page.mouse().wheel(300.0, 0.0)
         eventually { assertTrue((box.evaluate("e => e.scrollLeft") as Number).toInt() > 0, "the box scrolled sideways under the pointer") }
         assertEquals(0.0, (page.evaluate("scrollX") as Number).toDouble())
-        for ((x, number) in before.zip(numbers.all())) assertEquals(x, number.boundingBox().x, 0.5, "the line number stays put")
+        for ((x, number) in before.zip(numbers.all())) assertEquals(x, number.boundingBox()!!.x, 0.5, "the line number stays put")
     }
 
     @Test
@@ -3029,12 +3029,12 @@ class BrowserTest : AntsTest() {
         assertTrue(height > 720, "the page is ${height}px tall")
         for (y in 0..height step 40) {
             page.evaluate("y => scrollTo(0, y)", y)
-            val (s, c) = spine.boundingBox() to code.boundingBox()
+            val (s, c) = spine.boundingBox()!! to code.boundingBox()!!
             assertTrue(s.x + s.width <= c.x, "scrolled to $y, the story column (${s.x}, ${s.width}) reaches over the code (${c.x})")
             if (c.y + c.height > 0) assertTrue(s.y + s.height > 0, "scrolled to $y, the code is on screen but the story column has left it (${s.y})")
         }
-        val side = page.locator("nav.side").boundingBox()
-        assertTrue(spine.boundingBox().x - (side.x + side.width) <= 32, "the story column sits against the sidebar")
+        val side = page.locator("nav.side").boundingBox()!!
+        assertTrue(spine.boundingBox()!!.x - (side.x + side.width) <= 32, "the story column sits against the sidebar")
     }
 
     @Test
@@ -3047,8 +3047,8 @@ class BrowserTest : AntsTest() {
         val nav = page.locator(".walk nav")
         val link = nav.locator("a", Locator.LocatorOptions().setHasText(long))
         assertThat(link).hasText(long)
-        assertEquals(200.0, nav.boundingBox().width, 0.5)
-        val (n, l) = nav.boundingBox() to link.boundingBox()
+        assertEquals(200.0, nav.boundingBox()!!.width, 0.5)
+        val (n, l) = nav.boundingBox()!! to link.boundingBox()!!
         assertTrue(l.x >= n.x && l.x + l.width <= n.x + n.width + 0.5, "the link (${l.x}, ${l.width}) stays inside the nav (${n.x}, ${n.width})")
         assertTrue(l.height > 30, "the long name wraps onto more lines, ${l.height}px tall")
         assertEquals(link.evaluate("e => e.clientWidth"), link.evaluate("e => e.scrollWidth"))
@@ -3057,21 +3057,21 @@ class BrowserTest : AntsTest() {
     private fun disclosure(name: String) = page.locator("details", Page.LocatorOptions().setHas(page.getByText(name, Page.GetByTextOptions().setExact(true))))
 
     private fun assertAtTheTopAcrossTheContent(disclosure: Locator, content: Locator) {
-        val (d, c) = disclosure.boundingBox() to content.boundingBox()
+        val (d, c) = disclosure.boundingBox()!! to content.boundingBox()!!
         assertEquals(16.0, d.x, 0.5, "the disclosure starts at the content's edge")
         assertEquals(358.0, d.width, 0.5, "the disclosure spans the content")
         assertTrue(d.y + d.height <= c.y, "the disclosure (${d.y}, ${d.height}) sits above the content (${c.y})")
     }
 
     private fun assertOnePerRow(vararg fields: Locator) {
-        for ((above, below) in fields.map { it.boundingBox() }.zipWithNext()) {
+        for ((above, below) in fields.map { it.boundingBox()!! }.zipWithNext()) {
             assertTrue(below.y >= above.y + above.height, "a field at ${below.y} sits under the one ending at ${above.y + above.height}")
             assertEquals(above.x, below.x, 0.5, "the fields start at one edge")
         }
     }
 
     private fun assertTheComposerSpansThePhoneAndNeverCoversTheEnd(vararg ends: String) {
-        val composer = page.locator(".composer").boundingBox()
+        val composer = page.locator(".composer").boundingBox()!!
         assertEquals(0.0, composer.x, 0.5)
         assertEquals(390.0, composer.width, 0.5)
         assertTheComposerNeverCoversTheEnd(*ends)
@@ -3079,9 +3079,9 @@ class BrowserTest : AntsTest() {
 
     private fun assertScrollsAwayWithThePage(disclosure: Locator) {
         page.evaluate("scrollTo(0, 0)")
-        val before = disclosure.boundingBox().y
+        val before = disclosure.boundingBox()!!.y
         page.evaluate("scrollBy(0, 200)")
-        eventually { assertEquals(before - 200, disclosure.boundingBox().y, 0.5, "the disclosure scrolls away with the page") }
+        eventually { assertEquals(before - 200, disclosure.boundingBox()!!.y, 0.5, "the disclosure scrolls away with the page") }
         page.evaluate("scrollTo(0, 0)")
     }
 
@@ -3147,7 +3147,7 @@ class BrowserTest : AntsTest() {
         wide.tap()
         page.waitForURL { it.endsWith("#f-api-1") }
         eventually {
-            val y = page.locator("#f-api-1").boundingBox().y
+            val y = page.locator("#f-api-1").boundingBox()!!.y
             assertTrue((page.evaluate("scrollY") as Number).toDouble() > 0 && y >= -0.5 && y < 844, "the file is on screen at $y")
         }
         page.screenshot("phone/review-by-repo")
@@ -3553,9 +3553,9 @@ class BrowserTest : AntsTest() {
         val (left, right) = contentEdges("main")
         val cards = page.locator("form.agent .card")
         assertEquals(3, cards.count())
-        for (i in 0 until 3) assertEquals(right - left, cards.nth(i).boundingBox().width, 1.0, "card ${i + 1} is full width")
-        assertTrue(cards.nth(0).boundingBox().let { it.y + it.height } <= cards.nth(1).boundingBox().y, "the cards are stacked")
-        val (name, description, cli) = listOf("#name", "#description", "#cli").map { page.locator(it).boundingBox() }
+        for (i in 0 until 3) assertEquals(right - left, cards.nth(i).boundingBox()!!.width, 1.0, "card ${i + 1} is full width")
+        assertTrue(cards.nth(0).boundingBox()!!.let { it.y + it.height } <= cards.nth(1).boundingBox()!!.y, "the cards are stacked")
+        val (name, description, cli) = listOf("#name", "#description", "#cli").map { page.locator(it).boundingBox()!! }
         assertEquals(name.y, description.y, 1.0)
         assertEquals(name.y, cli.y, 1.0)
         assertTrue(name.x + name.width < description.x && description.x + description.width < cli.x, "Name, Description and CLI sit side by side")
@@ -3566,8 +3566,8 @@ class BrowserTest : AntsTest() {
         page.setViewportSize(1920, 1080)
         page.navigate(url(http.newDraft("/skills")))
         val (left, right) = contentEdges("main")
-        val editors = page.locator(".card:has(#skill)").boundingBox()
-        val side = page.locator(".card:has(h3:text-is('Run by'))").boundingBox()
+        val editors = page.locator(".card:has(#skill)").boundingBox()!!
+        val side = page.locator(".card:has(h3:text-is('Run by'))").boundingBox()!!
         assertEquals(360.0, side.width, 1.0)
         assertEquals(right, side.x + side.width, 1.0)
         assertEquals(left, editors.x, 1.0)
@@ -3598,8 +3598,8 @@ class BrowserTest : AntsTest() {
         for (width in listOf(1440, 1920)) {
             page.setViewportSize(width, 900)
             for ((name, path, area) in workAreas) {
-                val used = open(path, area).boundingBox().width
-                val beside = windowWidth() - page.locator("nav.side").boundingBox().width
+                val used = open(path, area).boundingBox()!!.width
+                val beside = windowWidth() - page.locator("nav.side").boundingBox()!!.width
                 assertTrue(used > beside / 2, "$name's work area is ${used}px of the ${beside}px beside the sidebar at ${width}px")
             }
         }
@@ -3664,7 +3664,7 @@ class BrowserTest : AntsTest() {
             val modal = page.locator("dialog#$id")
             assertThat(modal.locator(field)).isVisible()
             settled(modal)
-            val (box, save) = modal.boundingBox() to modal.locator(".go").boundingBox()
+            val (box, save) = modal.boundingBox()!! to modal.locator(".go").boundingBox()!!
             assertTrue(box.y + box.height - (save.y + save.height) < 60, "$id ends ${box.y + box.height - (save.y + save.height)}px under its Save")
             modal.locator("button[title=Close]").click()
         }
@@ -3769,7 +3769,7 @@ class BrowserTest : AntsTest() {
         page.navigate(url("$run/tasks/draft/transcript"))
         val clock = page.locator("#status [data-since]")
         assertThat(clock).hasText(Pattern.compile("\\d+s"))
-        val first = clock.textContent()
+        val first = clock.textContent()!!
         assertThat(clock).not().hasText(first) // a second later
         assertThat(page.locator("#status .shimmer")).hasText(Pattern.compile("\\w+…"))
 
@@ -3804,7 +3804,7 @@ class BrowserTest : AntsTest() {
         page.navigate(url("$run/tasks/draft/transcript"))
         val clock = page.locator("#status [data-since]")
         assertThat(clock).hasText(Pattern.compile("\\d+s"))
-        val first = clock.textContent()
+        val first = clock.textContent()!!
         val spin = page.locator("#status .spin")
         val glyph = spin.textContent()
         assertThat(clock).not().hasText(first) // the clock still ticks
@@ -3864,7 +3864,7 @@ class BrowserTest : AntsTest() {
  * Where it can't launch the test is skipped, or fails in CI, saying how to let it launch.
  */
 internal fun launchChromium(playwright: Playwright, executable: Path? = null) = try {
-    playwright.chromium().launch(BrowserType.LaunchOptions().setChromiumSandbox(false).setArgs(listOf("--disable-gpu")).setExecutablePath(executable))
+    playwright.chromium().launch(BrowserType.LaunchOptions().setChromiumSandbox(false).setArgs(listOf("--disable-gpu")).apply { executable?.let { setExecutablePath(it) } })
 } catch (e: RuntimeException) {
     val reason = e.message.orEmpty().let { it.substringAfter("message='", it).lineSequence().first() }
     val help = """

@@ -47,8 +47,8 @@ dependencies {
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation(kotlin("test"))
-    // BrowserTest. 1.60.0 drives Chromium build 1223, which a local ~/Library/Caches/ms-playwright already holds.
-    testImplementation("com.microsoft.playwright:playwright:1.60.0")
+    // BrowserTest.
+    testImplementation("com.microsoft.playwright:playwright:1.64.0")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
