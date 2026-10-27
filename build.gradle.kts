@@ -71,7 +71,7 @@ tasks.bootJar {
 node {
     download = true
     version = "24.22.1"
-    pnpmVersion = "10.34.6"
+    pnpmVersion = "12.15.0"
 }
 
 tasks.processResources {
