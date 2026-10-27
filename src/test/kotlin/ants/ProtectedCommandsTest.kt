@@ -86,9 +86,24 @@ class ProtectedCommandsTest : AntsTest() {
         assertContains(denied, "Edit(/$home/scripts/**)")
         assertContains(denied, "Read(/$home/drafts/scripts/**)") // a Script's Draft is as private as the Script
         assertContains(denied, "Edit(/$home/drafts/scripts/**)")
+        for (prefix in listOf("./yarn", "mvn deploy")) {
+            assertContains(denied, "Bash($prefix)")
+            assertContains(denied, "Bash($prefix *)")
+        }
         assertFalse(launch.env.values.any { "s3cret" in it })
         assertFalse(launch.env.keys.any { it in listOf("YARN_NPM_AUTH_TOKEN", "NPM_TOKEN", "MAVEN_TOKEN") })
         claude.release("go")
+    }
+
+    @Test
+    fun `with no Protected Command, a claude Agent Task's Bash is denied no prefix`() {
+        agentTask(claude, env = listOf("PATH", "HOME"))
+        claude.session("draft", done)
+        start()
+        eventually { assertEquals(1, claude.launches("draft").size) }
+
+        val denied = claude.launches("draft").single().flag("--disallowedTools")!!.split(",")
+        assertEquals(emptyList(), denied.filter { it.startsWith("Bash(") })
     }
 
     @Test
@@ -153,7 +168,7 @@ class ProtectedCommandsTest : AntsTest() {
         }
 
         assertEquals(
-            "`touch ran` is no Protected Command, so Ants ran nothing. End stuck, with `touch ran` in needs: the user adds it in Settings, then continues your session, and you ask again.",
+            "`touch ran` is no Protected Command: it gets no Secrets, so Ants ran nothing. Run it with Bash. If Bash refuses it, your Agent isn't allowed to run it: end stuck, saying which Bash rule your Agent needs, such as `Bash(touch *)`.",
             text(call(url, authorization, "touch ran")),
         )
         assertFalse(workspace(run).resolve("ran").exists())

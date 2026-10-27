@@ -20,9 +20,12 @@ model.
   Protected Command whose prefix words start it, the longest, gives its Secrets. The folder is relative to the Task's
   Run workspace, symlinks followed, and refused outside it. The environment is claude's allow-list plus each linked
   Secret's value under each of its names. After 10 minutes Ants kills the process tree. The Agent gets the exit code and
-  the output, stdout and stderr together, with every Secret's value, linked or not, as `••••`. A command no Protected
-  Command starts is refused with an error that tells the Agent to end stuck with it in `needs`; the user adds the row
-  and presses **Continue the session**.
+  the output, stdout and stderr together, with every Secret's value, linked or not, as `••••`. Ants routes each
+  command to one tool, from its prefix: every claude Agent Task has `Bash(<prefix>)` and `Bash(<prefix> *)` in
+  `--disallowedTools` for each Protected Command, so Bash never runs one (probed on claude 2.1.311: only `bash -c "…"`
+  gets past, and runs without the Secret), and `run` refuses a command no Protected Command starts: it gets no
+  Secrets, so the Agent runs it with Bash, and if Bash refuses it, the Agent isn't allowed to, so it ends stuck saying
+  which Bash rule it needs. The refusal never asks the user to add a Protected Command. codex Agents get neither.
 - **Hygiene:** no Secret is ever in an Agent's own environment. Every claude Agent is denied Read and Edit of Ants'
   `secrets.yaml` and `settings.yaml`, not of all of ANTS_HOME as the ticket first said: the Run workspaces, the Skills
   and the Answer History live there, and a deny rule beats every allow, the working directory's included. The deny keeps the Read tool away;

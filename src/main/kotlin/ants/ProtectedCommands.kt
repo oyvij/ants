@@ -47,7 +47,7 @@ class ProtectedCommands(private val settings: Settings, private val mcp: Mcp) {
         val labels = prefixes.filterKeys { it.isNotEmpty() && words.take(it.size) == it }.maxByOrNull { it.key.size }?.value
             ?: throw Refused(
                 if (words.take(2) == listOf("git", "clone")) "`$command` is no Protected Command, so Ants ran nothing. Ants clones the Run's repos itself, on the work branch: name the repo where your Skill says to name repos, else end stuck with the repo in needs. Never ask for `git clone` as a Protected Command."
-                else "`$command` is no Protected Command, so Ants ran nothing. End stuck, with `$command` in needs: the user adds it in Settings, then continues your session, and you ask again.",
+                else "`$command` is no Protected Command: it gets no Secrets, so Ants ran nothing. Run it with Bash. If Bash refuses it, your Agent isn't allowed to run it: end stuck, saying which Bash rule your Agent needs, such as `Bash(${words.firstOrNull().orEmpty()} *)`.",
             )
         val root = workspace.toRealPath()
         val dir = runCatching { root.resolve(folder).toRealPath() }.getOrNull()?.takeIf { it.startsWith(root) && it.isDirectory() }
@@ -95,7 +95,7 @@ class ProtectedCommands(private val settings: Settings, private val mcp: Mcp) {
             "run",
             "Runs a Protected Command, such as `yarn install`, in a folder of the Run workspace, with the Secrets the user " +
                 "linked to it, which you never see. No shell: the command is split into words. Returns the exit code and the output, " +
-                "every Secret masked as $MASK. A command that is no Protected Command is refused: then end stuck with it in needs.",
+                "every Secret masked as $MASK. A command no Protected Command starts is refused: run it with Bash.",
             mapOf(
                 "command" to "The command and its arguments, such as `yarn install --immutable`.",
                 "folder" to "The folder to run it in, relative to the Run workspace; by default the workspace.",
