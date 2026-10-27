@@ -198,7 +198,7 @@ class Processes(
     @GetMapping("/processes/new.bpmn", produces = ["application/xml"])
     @ResponseBody
     fun newDiagram(@RequestParam name: String, @RequestParam(required = false) from: String?): String {
-        val document = parse(from?.let { repository.getProcessModel(latest(it).id).readAllBytes() } ?: blank())
+        val document = parse(from?.let { repository.getProcessModel(latest(it).id)!!.readAllBytes() } ?: blank())
         // `new` is the route to New Process, so no Process may take it as its key.
         val key = freeName(name) { it == "new" || deployed(it) || drafts.get(DraftKind.PROCESS, it) != null }
         rename(document, key, name)
@@ -381,7 +381,7 @@ class Processes(
         }
         val process = latest(key)
         if (shipped(key)) throw ResponseStatusException(HttpStatus.FORBIDDEN, "$key is shipped with Ants, so it can't be deleted")
-        val live = history.createHistoricProcessInstanceQuery().processDefinitionKey(key).unfinished().list().map { it.rootProcessInstanceId }.distinct()
+        val live = history.createHistoricProcessInstanceQuery().processDefinitionKey(key).unfinished().list().map { it.rootProcessInstanceId!! }.distinct()
         if (live.isNotEmpty()) {
             response.status = HttpStatus.CONFLICT.value()
             model.addAttribute("liveRuns", live.associateWith(names::name))
@@ -399,7 +399,7 @@ class Processes(
 
     @GetMapping("/processes/{key}/diagram.bpmn", produces = ["application/xml"])
     @ResponseBody
-    fun diagram(@PathVariable key: String): ByteArray = repository.getProcessModel(latest(key).id).readAllBytes()
+    fun diagram(@PathVariable key: String): ByteArray = repository.getProcessModel(latest(key).id)!!.readAllBytes()
 
     private fun shipped(key: String) = repository.createProcessDefinitionQuery().processDefinitionKey(key).list().any { it.shipped }
 

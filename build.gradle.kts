@@ -18,7 +18,7 @@ kotlin {
     jvmToolchain(25)
 }
 
-val operaton = "2.1.5"
+val operaton = "2.2.0"
 val jte = "3.2.4"
 
 repositories {
@@ -28,7 +28,6 @@ repositories {
 dependencies {
     implementation(platform(SpringBootPlugin.BOM_COORDINATES))
     implementation(platform("org.operaton.bpm:operaton-bom:$operaton"))
-    implementation(enforcedPlatform("com.fasterxml.jackson:jackson-bom:2.21.7"))
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-security")
     implementation("org.operaton.bpm.springboot:operaton-bpm-spring-boot-starter-rest:$operaton")

@@ -181,8 +181,8 @@ class MigrationTest : AntsTest() {
 
         val agent = catalogue.agent("writer").id!!
         val skill = catalogue.skill("draft").id!!
-        val latest = repository.createProcessDefinitionQuery().processDefinitionKey("by-name").latestVersion().singleResult()
-        val diagram = repository.getProcessModel(latest.id).readAllBytes().decodeToString()
+        val latest = repository.createProcessDefinitionQuery().processDefinitionKey("by-name").latestVersion().singleResult()!!
+        val diagram = repository.getProcessModel(latest.id)!!.readAllBytes().decodeToString()
         for (linked in listOf(diagram, template.readText())) {
             assertContains(linked, """name="ants.agent" value="$agent"""")
             assertContains(linked, """name="ants.name.$agent" value="writer"""")

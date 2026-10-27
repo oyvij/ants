@@ -52,7 +52,7 @@ class PushTest : AntsTest() {
     private fun completed(run: String) = eventually { assertContains(browser.get("/runs/$run").body, """id="state">Completed<""") }
 
     /** The Push Result of the ended Run [run]. */
-    private fun result(run: String) = history.createHistoricVariableInstanceQuery().processInstanceId(run).variableName("push").singleResult().value as List<*>
+    private fun result(run: String) = history.createHistoricVariableInstanceQuery().processInstanceId(run).variableName("push").singleResult()!!.value as List<*>
 
     private fun refs(repo: Remote) = git(repo.remote, "for-each-ref", "--format=%(refname) %(objectname)").lines().toSet()
 

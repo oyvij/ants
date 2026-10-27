@@ -234,7 +234,7 @@ class AgentLauncher(
         var transcript: Transcript.Writer? = null
         var level: Int? = null
         try {
-            val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult().rootProcessInstanceId
+            val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult()!!.rootProcessInstanceId
             val workspace = names.runWorkspace(run)
             if (ticketed(task, run, workspace)) return
             migration.unmigrated(task)?.let { throw Failed(it) }
@@ -273,7 +273,9 @@ class AgentLauncher(
             } catch (limit: UsageLimit) {
                 val until = limit.resetsAt + Duration.ofMinutes(1)
                 transcript.ants("end", "Paused by the ${agent.cli} usage limit until ${clock.local(until)}.")
-                runtime.setVariablesLocal(task.executionId, mapOf(ACTION to CONTINUE, INSTRUCTION to RESET, SESSION to session))
+                @Suppress("UNCHECKED_CAST")
+                val paused = mapOf(ACTION to CONTINUE, INSTRUCTION to RESET, SESSION to session) as Map<String, Any>
+                runtime.setVariablesLocal(task.executionId, paused)
                 hold(task, agent.cli, until)
                 return
             }
@@ -517,7 +519,7 @@ class AgentLauncher(
         // At normal, a Run's hand-off line and flags stay as they were.
         val verbosity = source.verbosity.takeIf { it != Verbosity.NORMAL }
         // The Task's result schema; Checks refuse one that isn't valid.
-        val asks = asksRounds(repository.getBpmnModelInstance(task.processDefinitionId).getModelElementById(task.activityId))
+        val asks = asksRounds(repository.getBpmnModelInstance(task.processDefinitionId).getModelElementById<FlowElement>(task.activityId)!!)
         val output = promised(task.extensionProperties[RESULT_SCHEMA], asks) ?: error("${task.activityId}'s result schema isn't a JSON object")
         val schema = ResultContract.schema(output)
         // A Run with repos picked clones exactly them, so the repos a Result names there go unchecked.

@@ -215,7 +215,7 @@ private fun BpmnModelInstance.elements(): List<DomElement> {
 private fun refusedElements(model: BpmnModelInstance) = model.elements().filter { it.localName !in allowed }.map { element ->
     val name = element.localName
     // An event definition and a loop are written inside the element drawn, so the Check names that one.
-    val shown = if (name.endsWith("EventDefinition") || name.endsWith("LoopCharacteristics")) element.parentElement else element
+    val shown = if (name.endsWith("EventDefinition") || name.endsWith("LoopCharacteristics")) element.parentElement!! else element
     val what = when {
         name.endsWith("EventDefinition") -> "is " + article(words(name.removeSuffix("EventDefinition")) + " " + words(shown.localName)) + ", which Ants doesn't run."
         name == "task" -> "is a plain Task, which Ants doesn't run: make it an Agent, User or Built-in Task."

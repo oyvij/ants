@@ -26,7 +26,7 @@ class LongText : AbstractProcessEnginePlugin() {
 
         override fun canWriteValue(value: TypedValue?) = super.canWriteValue(value) && "${value?.value ?: ""}".length > MAX
 
-        override fun writeValue(value: StringValue, fields: ValueFields) = fields.setByteArrayValue(value.value.toByteArray())
+        override fun writeValue(value: StringValue, fields: ValueFields) = fields.setByteArrayValue(value.value!!.toByteArray())
 
         override fun readValue(fields: ValueFields, asTransientValue: Boolean): StringValue =
             Variables.stringValue(fields.byteArrayValue?.toString(Charsets.UTF_8), asTransientValue)

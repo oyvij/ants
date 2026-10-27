@@ -146,12 +146,12 @@ class Schedules(
         val cron = timer.timeCycle?.textContent?.trim()?.ifEmpty { null }
         val before = states()
         val perKey = before[definition.key] ?: State()
-        val deployed = repository.createDeploymentQuery().deploymentId(definition.deploymentId).singleResult().deploymentTime.toInstant()
+        val deployed = repository.createDeploymentQuery().deploymentId(definition.deploymentId).singleResult()!!.deploymentTime.toInstant()
         val values = stored(definition) + listOfNotNull(startForm.diagramProfile(definition)?.let { PROFILE to listOf(it) })
         val migrated = cron?.let { State(perKey.paused, perKey.last ?: deployed, process = definition.key, cron = it, values = values) }
         if (migrated == null) log.warn("The timer start of ${definition.key} has no cron, so it becomes no Schedule")
         write(before - definition.key + listOfNotNull(migrated?.let { UUID.randomUUID().toString() to it }))
-        timer.parentElement.removeChildElement(timer)
+        timer.parentElement!!.removeChildElement(timer)
         try {
             repository.createDeployment().name(definition.resourceName).addString(definition.resourceName, Bpmn.convertToString(model)).deploy()
         } catch (e: Exception) {
