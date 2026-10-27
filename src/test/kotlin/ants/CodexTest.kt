@@ -61,6 +61,23 @@ class CodexTest : AntsTest() {
     private fun page(run: String) = browser.get("/runs/$run").body.replace("&#34;", "\"")
 
     @Test
+    fun `a codex Task on a shipped Agent follows a Skill from its published Your Skills, and none only in their Draft`() {
+        codexTask()
+        codex.session("draft", started, turn, answer(), completed)
+        browser.autosave("/agents/shipped-coder/your-skills", mapOf("skills" to "draft"), draftVersion(browser.get("/agents/shipped-coder").body))
+        val bpmn = javaClass.getResource("/agent-task.bpmn")!!.readText().replace("\"agent-task\"", "\"coder-drafted\"")
+            .replace("""name="ants.agent" value="writer"""", """name="ants.agent" value="a-shipped-coder"""")
+        browser.get("/processes")
+        val refused = browser.upload("/processes", "file", "coder-drafted.bpmn", bpmn.toByteArray()).body.replace("&#39;", "'")
+        assertContains(refused, "The Agent shipped-coder doesn't list the Skill draft.")
+
+        assertEquals("/agents/shipped-coder", browser.post("/agents/shipped-coder/your-skills", mapOf("skills" to "draft")).path)
+        val run = start("coder-published", agent = "a-shipped-coder")
+        eventually { assertContains(page(run), """id="state">Completed<""") }
+        assertContains(codex.launches("draft").single().stdin, "Follow the Skill in ${home.resolve("skills/draft/SKILL.md")} for the workspace at ${workspace(run)}.")
+    }
+
+    @Test
     fun `a codex Agent Task runs codex exec on Ants' own codex home, with a sandbox instead of tools, and completes`() {
         codexTask("sandbox: read-only\nmodel: gpt-5-codex\n")
         codex.session(

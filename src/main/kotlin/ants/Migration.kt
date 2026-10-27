@@ -4,7 +4,6 @@ import org.operaton.bpm.engine.RepositoryService
 import org.operaton.bpm.engine.externaltask.LockedExternalTask
 import org.operaton.bpm.engine.repository.ProcessDefinition
 import org.operaton.bpm.model.bpmn.instance.BaseElement
-import org.operaton.bpm.model.bpmn.instance.operaton.OperatonProperties
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.context.event.ApplicationReadyEvent
@@ -44,6 +43,81 @@ private val SHIPPED_TASKS = linkedMapOf(
 private val GONE_SKILLS = mapOf("grill" to "grilling", "scout" to null, "answer-round" to null, "propose-solution" to null, "fix-review" to null)
 
 /**
+ * A shipped Agent from before ADR 0027: the name of the one that took its jobs ([newName]), the Skills it gave a Task
+ * that listed none (none for the architect's), and the level it started on.
+ */
+private class OldAgent(val newName: String, val skills: List<String>, val level: Int) {
+    val newId get() = "a-$newName"
+}
+
+/** The shipped Agents from before ADR 0027, by name. */
+private val OLD_AGENTS = mapOf(
+    "scout" to OldAgent("lead", listOf("search-knowledge"), 2),
+    "griller" to OldAgent("lead", listOf("grilling"), 3),
+    "planner" to OldAgent("lead", listOf("to-spec", "to-tickets"), 3),
+    "architect" to OldAgent("lead", emptyList(), 4),
+    "storyteller" to OldAgent("lead", listOf("walkthrough"), 2),
+    "implementer" to OldAgent("engineer", listOf("implement", "tdd", "code-review", "codebase-design"), 3),
+    "pr" to OldAgent("engineer", listOf("pr"), 2),
+    "answerer" to OldAgent("proxy", listOf("search-knowledge"), 2),
+    "knowledge" to OldAgent("librarian", listOf("update-knowledge", "init-vault", "search-knowledge"), 2),
+)
+
+/**
+ * What moving a Task off an old shipped Agent changes in its properties: [AGENT] names [agent]'s new id with its new
+ * name kept beside it, the name kept beside the old one ([oldNameKey]) goes, and the properties in [added], in order,
+ * follow.
+ */
+private class Move(val agent: OldAgent, val oldNameKey: String, val added: Map<String, String>) {
+    val newNameKey get() = nameBeside(agent.newId)
+}
+
+/**
+ * How a Task with [properties] moves off the old shipped Agent it names (ADR 0027), by its id or its name, when no
+ * Agent has that id or name now: onto the old Agent's new one, listing the old Agent's Skills if it lists none, and on the old
+ * Agent's level if it sets none and the new Agent starts on another. Null when it names no old shipped Agent, such as a
+ * copy of one, or the user's own Agent of an old one's name.
+ */
+private fun Catalogue.move(properties: Map<String, String>): Move? {
+    val value = properties[AGENT]?.trim()?.takeIf(String::isNotEmpty) ?: return null
+    fun gone(find: () -> Agent) = runCatching(find).isFailure
+    val name = (if (value.startsWith("a-")) value.removePrefix("a-").takeIf { gone { agentWithId(value) } } else value.takeIf { gone { agent(it) } }) ?: return null
+    val old = OLD_AGENTS[name] ?: return null
+    val added = buildMap {
+        if (SKILLS !in properties) {
+            put(SKILLS, old.skills.joinToString(", ") { "k-$it" })
+            old.skills.forEach { put(nameBeside("k-$it"), it) }
+        }
+        val level = runCatching { agentWithId(old.newId).startLevel }.getOrNull()
+        if (LEVEL !in properties && level != old.level) put(LEVEL, old.level.toString())
+    }
+    return Move(old, nameBeside(value), added)
+}
+
+/** [properties], a Task's, as they are once it has moved off the old shipped Agent it names ([move]); null when it names none. */
+internal fun Catalogue.onNewAgent(properties: Map<String, String>): Map<String, String>? = move(properties)?.let { move ->
+    properties - move.oldNameKey + (AGENT to move.agent.newId) + (move.newNameKey to move.agent.newName) + move.added
+}
+
+/** Moves each Agent Task in [document] off the old shipped Agent it names ([move]); whether any moved. */
+private fun Catalogue.onNewAgents(document: Document): Boolean {
+    var moved = false
+    for (task in agentTaskElements(document)) {
+        val elements = propertyElements(task)
+        val move = move(elements.mapValues { it.value.getAttribute("value") }) ?: continue
+        moved = true
+        val agent = elements.getValue(AGENT)
+        fun property(name: String, value: String) = (agent.cloneNode(false) as Element).apply { setAttribute("name", name); setAttribute("value", value) }
+        elements[move.oldNameKey]?.let { it.parentNode.removeChild(it) }
+        agent.setAttribute("value", move.agent.newId)
+        agent.parentNode.insertBefore(property(move.newNameKey, move.agent.newName), agent.nextSibling)
+        var last = propertyElements(task).values.last()
+        for ((name, value) in move.added) last = last.parentNode.insertBefore(property(name, value), last.nextSibling) as Element
+    }
+    return moved
+}
+
+/**
  * Brings the user's own files to ADR 0024's shape once, as Ants starts, before anything deploys or launches: each Agent
  * Task of the latest user Processes and of the user's Templates that names one Skill (`ants.skill=X`) lists it in
  * [SKILLS] instead, taking over what X gave it unless the Task sets it itself: its result schema, its declared inputs,
@@ -52,12 +126,12 @@ private val GONE_SKILLS = mapOf("grill" to "grilling", "scout" to null, "answer-
  * Task's Assignment, Skills, schema and toggles. The user's Agents list what the Tasks of the migrated Templates and of
  * the Processes that deploy now do, and the user's Skills drop their Ants metadata and `result.schema.json`. A Process
  * the Checks refuse stays as it was, and so do its Agents' lists and its Skills; its Runs fail saying why ([unmigrated]).
- * Each changed file keeps its old version beside it as `<file>.old`; a Process keeps its older version. What is already
- * in the new shape is left as it is.
+ * A Task naming an old shipped Agent runs on its new one ([move], ADR 0027). Each changed file keeps its old version
+ * beside it as `<file>.old`; a Process keeps its older version. What is already in the new shape is left as it is.
  */
 @Component
 class Migration(
-    private val repository: RepositoryService, private val processes: Processes, private val catalogue: Catalogue, private val scripts: Scripts, @Value("\${ants.home}") private val home: Path,
+    private val repository: RepositoryService, private val processes: Processes, private val catalogue: Catalogue, private val scripts: Scripts, private val drafts: Drafts, @Value("\${ants.home}") private val home: Path,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -74,9 +148,14 @@ class Migration(
         // the Checks of its deploy read the Agents, and out again if they refuse it, so it keeps its old shape coherently.
         val agents = Agents()
         var needs: Needs = emptyMap()
-        val changedTemplates = templates.filter { (_, document) -> migrate(document, shipped).let { (named, own) -> needs = needs.and(own); named.isNotEmpty() } }
+        val changedTemplates = templates.filter { (_, document) ->
+            val (named, own) = migrate(document, shipped)
+            needs = needs.and(own)
+            catalogue.onNewAgents(document) || named.isNotEmpty()
+        }
         val changedProcesses = saved.mapNotNull { (process, document) ->
-            migrate(document, shipped).takeIf { it.first.isNotEmpty() }?.let { (named, own) -> Changed(process, document, named, own) }
+            val (named, own) = migrate(document, shipped)
+            if (catalogue.onNewAgents(document) || named.isNotEmpty()) Changed(process, document, named, own) else null
         }
         agents.list(needs)
         for ((file, document) in changedTemplates) {
@@ -99,6 +178,18 @@ class Migration(
         skills(failed)
         linkSkillsById(keptOld + giveIds(keptOld))
         links(changedTemplates.map { it.first }.toSet())
+        processDrafts()
+    }
+
+    /** Moves each Process Draft's Agent Tasks off the old shipped Agents they name ([move]), keeping the old Draft beside it. */
+    private fun processDrafts() {
+        for (draft in drafts.all(DraftKind.PROCESS)) {
+            val document = runCatching { parse(draft.content.toByteArray()) }.getOrNull() ?: continue
+            if (!catalogue.onNewAgents(document)) continue
+            val file = drafts.file(DraftKind.PROCESS, draft.id)
+            file.resolveSibling("${file.fileName}.old").writeBytes(file.readBytes())
+            drafts.save(DraftKind.PROCESS, DraftPage(draft.id, draft.key, draft.name, serialize(document)), DraftFrom(draft.version))
+        }
     }
 
     private class Changed(val process: ProcessDefinition, val document: Document, val named: Set<String>, val needs: Needs)
@@ -297,16 +388,24 @@ private typealias Needs = Map<String, Set<String>>
 private fun Needs.and(more: Needs): Needs = (keys + more.keys).associateWith { this[it].orEmpty() + more[it].orEmpty() }
 
 /**
- * [task] as the latest version of its Process has it, when its own version is from before the migration (it names an
- * old `ants.skill`): a Run in flight on an old version runs its Task migrated. Else [task] itself.
+ * [task] as the migrations have it, for a Run in flight on a version of its Process from before them: as the latest
+ * version has it when its own names an old `ants.skill` (ADR 0024), and moved off the old shipped Agent it names
+ * (ADR 0027). Else [task] itself.
  */
-internal fun migrated(task: LockedExternalTask, repository: RepositoryService): LockedExternalTask {
-    val properties = task.extensionProperties
-    if (OLD_SKILL !in properties || SKILLS in properties || ASSIGNMENT in properties) return task
-    val latest = repository.createProcessDefinitionQuery().processDefinitionKey(task.processDefinitionKey).latestVersion().singleResult() ?: return task
-    val element = repository.getBpmnModelInstance(latest.id).getModelElementById<BaseElement>(task.activityId) ?: return task
-    val now = element.extensions<OperatonProperties>().flatMap { it.operatonProperties }.associate { it.operatonName to it.operatonValue }
+internal fun migrated(task: LockedExternalTask, repository: RepositoryService, catalogue: Catalogue): LockedExternalTask {
+    val properties = latest(task, repository)
+    val now = catalogue.onNewAgent(properties) ?: properties
+    if (now === task.extensionProperties) return task
     return object : LockedExternalTask by task {
         override fun getExtensionProperties() = now
     }
+}
+
+/** [task]'s properties as the latest version of its Process has them when its own names an old `ants.skill`, else its own. */
+private fun latest(task: LockedExternalTask, repository: RepositoryService): Map<String, String> {
+    val properties = task.extensionProperties
+    if (OLD_SKILL !in properties || SKILLS in properties || ASSIGNMENT in properties) return properties
+    val latest = repository.createProcessDefinitionQuery().processDefinitionKey(task.processDefinitionKey).latestVersion().singleResult() ?: return properties
+    val element = repository.getBpmnModelInstance(latest.id).getModelElementById<BaseElement>(task.activityId) ?: return properties
+    return element.properties()
 }

@@ -52,13 +52,20 @@ _Avoid_: lint, validation error, rule
 
 **Agent**:
 A reusable definition of who does a Task: which AI CLI it runs, which tools and Skills it may use and
-its standing instructions.
+its standing instructions. Ants ships four, split by what they may touch and whose voice they speak in, never by
+job, which is the Task's: lead, engineer, proxy and librarian. A shipped Agent's Skills are its shipped ones plus
+**Your Skills**; its tools stay Ants'.
 _Avoid_: worker, bot, ant
 
 **Skill**:
 A `SKILL.md` saying how to do one kind of job, which an Agent picks up on its own when its Task calls
 for it; it knows nothing of Runs or Tasks.
 _Avoid_: prompt, task instructions, Assignment
+
+**Your Skills**:
+The Skills the user adds to a shipped Agent, kept apart from its shipped agent file so an update to Ants keeps
+them; Skills only, never tools, published like any Agent.
+_Avoid_: custom Skills, extra Skills, Agent overrides
 
 **Script**:
 A piece of JavaScript the user writes once and keeps in a library, with its inputs, vars and Secrets, that a Script

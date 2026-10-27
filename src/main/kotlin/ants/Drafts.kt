@@ -18,11 +18,14 @@ import kotlin.io.path.nameWithoutExtension
 import kotlin.io.path.readText
 
 /** What keeps Drafts, each kind in its own folder of the Drafts store. */
-enum class DraftKind(val folder: String, val noun: String) {
-    AGENT("agents", "Agent"), SKILL("skills", "Skill"), PROCESS("processes", "Process"), SCRIPT("scripts", "Script");
+enum class DraftKind(val folder: String, val noun: String, whose: String = "This $noun's Draft") {
+    AGENT("agents", "Agent"), SKILL("skills", "Skill"), PROCESS("processes", "Process"), SCRIPT("scripts", "Script"),
+
+    /** Your Skills on a shipped Agent, kept under the Agent's id. */
+    YOUR_SKILLS("your-skills", "Agent", "The Draft of Your Skills");
 
     /** What a save against a newer Draft is answered with. */
-    val conflict get() = "This $noun's Draft was changed in another tab or window."
+    val conflict = "$whose was changed in another tab or window."
 }
 
 /**
@@ -93,7 +96,8 @@ sealed interface DraftSave {
 class Drafts(@Value("\${ants.home}") home: Path) {
     private val root = home.resolve("drafts")
 
-    private fun file(kind: DraftKind, id: String) = root.resolve(kind.folder).resolve("$id.yaml")
+    /** The file that keeps the Draft of [kind] under [id]. */
+    fun file(kind: DraftKind, id: String): Path = root.resolve(kind.folder).resolve("$id.yaml")
 
     fun get(kind: DraftKind, id: String): Draft? = file(kind, id).takeIf { it.exists() }?.let(::read)
 

@@ -128,20 +128,20 @@ class HumanInTheLoopTest : AntsTest() {
     }
 
     @Test
-    fun `the griller, planner and storyteller get the tool allow-lists the spec gives them, and the implementer fixes the review`() {
+    fun `the grilling, the Spec, the Tickets and the Story set run on lead, each on its old level, and engineer builds and fixes the review`() {
         val ws = workspace(humanInTheLoop())
         fun tools(skill: String) = claude.launches(skill).first().let { it.flag("--tools")?.removeSuffix(",Skill") to it.flag("--allowedTools")?.removeSuffix(",Skill,mcp__ants__run") } // every claude Task has Skill and the run tool
+        fun level(task: String) = claude.launches(task).first().let { "${it.flag("--model")} ${it.flag("--effort")}" }
 
-        assertEquals("Read,Grep,Glob" to "Read,Grep,Glob", tools("grill"))
-        assertEquals("Read,Grep,Glob,Write,Edit" to "Read,Grep,Glob,Write(/$ws/tickets/**),Edit(/$ws/tickets/**)", tools("tospec"))
-        assertEquals(tools("tospec"), tools("totickets"))
-        assertEquals(
-            "Read,Grep,Glob,Write,Edit,Bash" to
-                "Read,Grep,Glob,Write(/$ws/walkthrough/**),Edit(/$ws/walkthrough/**),Bash(git log *),Bash(git diff *),Bash(git show *),Bash(git merge-base *)",
-            tools("walkthrough"),
-        )
+        val lead = "Read,Grep,Glob,Write,Edit,Bash,Agent" to listOf("scout", "tickets", "proposal", "walkthrough").joinToString(",") { "Write(/$ws/$it/**),Edit(/$ws/$it/**)" }
+            .let { "Read,Grep,Glob,$it,Bash(git log *),Bash(git diff *),Bash(git show *),Bash(git merge-base *),Agent(knowledge-searcher)" }
+        for (task in listOf("grill", "tospec", "totickets", "walkthrough")) assertEquals(lead, tools(task), task)
+        assertEquals(listOf("opus medium", "opus medium", "opus medium", "sonnet medium"), listOf("grill", "tospec", "totickets", "walkthrough").map(::level))
+        assertEquals(setOf("grilling"), claude.launches("grill").first().skills.keys) // lead's other Skills stay off a Task that doesn't list them
         assertContains(claude.launches("walkthrough").first().flag("--disallowedTools")!!.split(","), "Bash(git *--output*)") // --output makes git log, diff and show write a file
         assertEquals(tools("implement"), tools("fix"))
+        assertEquals(tools("implement"), tools("pr"))
+        assertEquals(listOf("opus medium", "opus medium", "sonnet medium"), listOf("implement", "fix", "pr").map(::level))
         // Every implementer builds with tdd and reviews with code-review.
         assertEquals(setOf("implement", "tdd", "code-review", "codebase-design"), claude.launches("implement").first().skills.keys)
         assertEquals(setOf("tdd", "code-review", "codebase-design"), claude.launches("fix").first().skills.keys) // its Assignment is the job

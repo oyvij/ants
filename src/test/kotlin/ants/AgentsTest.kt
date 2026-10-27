@@ -4,6 +4,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.yaml.snakeyaml.Yaml
+import tools.jackson.databind.json.JsonMapper
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
@@ -20,6 +21,9 @@ import kotlin.test.assertTrue
 class AgentsTest : AntsTest() {
     @Autowired
     lateinit var catalogue: Catalogue
+
+    @Autowired
+    lateinit var antsSettings: Settings
 
     private val browser by lazy { browser().also { it.login() } }
     private val agents = home.resolve("agents").createDirectories()
@@ -190,7 +194,21 @@ class AgentsTest : AntsTest() {
         }
     }
 
-    private fun idOf(file: Path) = Regex("(?m)^id: (a-[a-z0-9]{6})$").find(file.readText())?.groupValues?.get(1)
+    @Test
+    fun `the Agents page lists lead, engineer, proxy and librarian, each saying what it may touch`() {
+        val list = get("/agents").replace("&#39;", "'")
+        for ((name, description) in listOf(
+            "lead" to "Reads the prompt, the Vault and the clones, and writes documents in the Run workspace, only in scout/, tickets/, proposal/ and walkthrough/. Changes nothing in the repos, and runs only git log, diff, show and merge-base.",
+            "engineer" to "Changes the clones with any tool, commits on their work branches, and opens pull requests. Works only in the Run workspace, and never pushes.",
+            "proxy" to "Answers a Round as the user would, from their Answer History and the Vault. Only reads.",
+            "librarian" to "Keeps the user's knowledge Vault, in Varde's format, reading and writing it with any tool, and proposing every change before it writes it.",
+        )) {
+            val row = list.substringAfter("""<a href="/agents/$name">$name</a>""", "").substringBefore("</tr>")
+            assertContains(row, """<td class="small">$description</td>""", message = name)
+        }
+    }
+
+    private fun idOf(file: Path) =Regex("(?m)^id: (a-[a-z0-9]{6})$").find(file.readText())?.groupValues?.get(1)
 
     private fun withoutId(file: Path) = file.readText().also { assertNotNull(idOf(file), it) }.replaceFirst(Regex("(?m)^id: a-[a-z0-9]{6}\n"), "")
 
@@ -661,7 +679,6 @@ class AgentsTest : AntsTest() {
         assertContains(draft, """<input type="hidden" name="skills" value="tdd">""")
         assertContains(draft, """<input type="hidden" name="skills" value="new-skill-x">""")
         assertEquals(listOf("Draft · changes not published"), markers(draft))
-        assertEquals(403, browser.post("/agents/shipped-writer/draft/skills", mapOf("skill" to "new-skill-x")).status)
         browser.post("/agents/drafted-picker/delete", mapOf("confirm" to "on"))
     }
 
@@ -703,11 +720,165 @@ class AgentsTest : AntsTest() {
         }
     }
 
+    private fun yourSkills(agent: String) = catalogue.allowedNames(catalogue.agent(agent))
+
+    private fun userSkill(name: String) = home.resolve("skills/$name").createDirectories().resolve("SKILL.md").writeText("---\nname: $name\ndescription: Imported.\n---\nDo it.\n")
+
     @Test
-    fun `shipped Agents have no Draft and no autosave`() {
+    fun `Your Skills on a shipped Agent autosaves to its Draft, Publish puts it to use, and Discard Draft drops a change`() {
+        userSkill("imported")
         val page = get("/agents/shipped-writer")
-        assertFalse("data-autosave" in page)
-        assertTrue(markers(page).isEmpty())
+        assertContains(page, "<fieldset disabled>") // the rest stays read-only
+        assertContains(page, """data-autosave="/agents/shipped-writer/your-skills/draft"""")
+        assertEquals(listOf("Published"), markers(page))
+
+        val saved = browser.autosave("/agents/shipped-writer/your-skills", mapOf("skills" to "imported"), draftVersion(page))
+        assertEquals(200, saved.status, saved.body)
+        assertEquals("Draft · changes not published", answer(saved)["label"])
+        assertEquals(emptyList(), yourSkills("shipped-writer")) // a Draft is used by nothing
+        val drafted = get("/agents/shipped-writer")
+        assertContains(drafted, """<input type="hidden" name="skills" value="imported">""")
+        assertEquals(listOf("Draft · changes not published"), markers(drafted))
+
+        assertEquals("/agents/shipped-writer", post("/agents/shipped-writer/your-skills", mapOf("skills" to "imported")).path)
+        assertEquals(listOf("imported"), yourSkills("shipped-writer"))
+        assertEquals(listOf("Published"), markers(get("/agents/shipped-writer")))
+        assertContains(get("/agents"), """<a href="/skills/imported">imported</a>""") // the list shows the Skills it may use
+
+        browser.autosave("/agents/shipped-writer/your-skills", mapOf("skills" to ""), draftVersion(get("/agents/shipped-writer")))
+        assertContains(post("/agents/shipped-writer/your-skills/discard", emptyMap()).body, "Discard the Draft of Your Skills on shipped-writer?")
+        assertEquals("/agents/shipped-writer", browser.post("/agents/shipped-writer/your-skills/discard", mapOf("confirm" to "on")).path)
+        assertContains(get("/agents/shipped-writer"), """<input type="hidden" name="skills" value="imported">""")
+        assertEquals(listOf("imported"), yourSkills("shipped-writer"))
+
+        assertEquals("/agents/shipped-writer", post("/agents/shipped-writer/your-skills", emptyMap()).path) // removing the last one
+        assertEquals(emptyList(), yourSkills("shipped-writer"))
+    }
+
+    @Test
+    fun `Publish refuses Your Skills naming a missing or Draft-only Skill, naming each, and keeps the Draft`() {
+        val draftOnly = post("/skills/new/draft", emptyMap()).path
+        val name = draftOnly.removePrefix("/skills/")
+        try {
+            val refused = post("/agents/shipped-writer/your-skills", mapOf("skills" to "no-such-skill, $name"))
+            assertContains(refused.body, "No Skill named no-such-skill.")
+            assertContains(refused.body, "The Skill $name is a Draft: publish it first.")
+            assertEquals(emptyList(), yourSkills("shipped-writer"))
+            assertContains(get("/agents/shipped-writer"), """<input type="hidden" name="skills" value="no-such-skill">""")
+            browser.post("/agents/shipped-writer/your-skills/discard", mapOf("confirm" to "on"))
+        } finally {
+            post("$draftOnly/delete", mapOf("confirm" to "on"))
+        }
+    }
+
+    @Test
+    fun `only a shipped Agent has Your Skills, and its own form takes nothing but Skills`() {
+        agents.resolve("own-agent.md").writeText("---\nid: a-own0001\nname: own-agent\ncli: claude\n---\nMine.\n")
+        assertFalse("your-skills" in get("/agents/own-agent"))
+        assertEquals(403, post("/agents/own-agent/your-skills", mapOf("skills" to "tdd")).status)
+        assertEquals(403, browser.autosave("/agents/own-agent/your-skills", mapOf("skills" to "tdd"), "0").status)
+        userSkill("imported")
+        post("/agents/shipped-writer/your-skills", mapOf("skills" to "imported", "tool.Bash" to "on", "instructions" to "Changed."))
+        val agent = catalogue.agent("shipped-writer")
+        assertEquals(null, agent.tools)
+        assertEquals("Write plainly.", agent.instructions)
         assertEquals(403, browser.autosave("/agents/shipped-writer", mapOf("name" to "shipped-writer", "cli" to "claude"), "0").status)
+    }
+
+    @Test
+    fun `Your Skills survives replacing the shipped agent file, as an update does`() {
+        userSkill("imported")
+        post("/agents/shipped-writer/your-skills", mapOf("skills" to "imported"))
+        val file = home.resolve("shipped/agents/shipped-writer.md")
+        file.writeText(file.readText().replace("Write plainly.", "Written by an older Ants."))
+        val updated = Catalogue(home, antsSettings, Drafts(home)) // replaces shipped/ whole, as a start after an update does
+        assertEquals("Write plainly.", updated.agent("shipped-writer").instructions)
+        assertEquals(listOf("imported"), updated.allowedNames(updated.agent("shipped-writer")))
+    }
+
+    @Test
+    fun `a Skill both shipped on the Agent and in Your Skills is counted once`() {
+        post("/agents/shipped-coder/your-skills", mapOf("skills" to "tdd"))
+        assertEquals(listOf("tdd"), yourSkills("shipped-coder"))
+        assertEquals(listOf("tdd"), catalogue.allowed(catalogue.agent("shipped-coder")).map { it.name })
+    }
+
+    @Test
+    fun `the catalogue the modeler reads lists Your Skills under a shipped Agent, and says it is shipped`() {
+        userSkill("imported")
+        try {
+            post("/agents/shipped-coder/your-skills", mapOf("skills" to "imported"))
+            val agents = JsonMapper.shared().readTree(get("/catalogue.json"))["agents"]
+            val coder = agents.single { it["name"].asString() == "shipped-coder" }
+            assertEquals("""["tdd","imported"]""", coder["skills"].toString())
+            assertEquals(true, coder["shipped"].asBoolean())
+            assertEquals(false, coder["own"].asBoolean())
+        } finally {
+            post("/agents/shipped-coder/your-skills", emptyMap())
+        }
+    }
+
+    @Test
+    fun `New Skill's Use on a Task whose Agent is shipped lists the Skill in the Draft of its Your Skills, and the published ones stay as they were`() {
+        userSkill("made-in-modeler")
+        val published = yourSkills("shipped-writer")
+        try {
+            get("/agents/shipped-writer")
+            assertEquals(204, browser.post("/agents/shipped-writer/draft/skills", mapOf("skill" to "made-in-modeler")).status)
+            assertEquals(published, yourSkills("shipped-writer"))
+            val page = get("/agents/shipped-writer")
+            assertContains(page, """<input type="hidden" name="skills" value="made-in-modeler">""")
+            assertEquals(listOf("Draft · changes not published"), markers(page))
+            assertEquals(null, catalogue.agent("shipped-writer").tools) // the agent file is untouched
+        } finally {
+            browser.post("/agents/shipped-writer/your-skills/discard", mapOf("confirm" to "on"))
+        }
+    }
+
+    @Test
+    fun `Copy on a shipped Agent writes its shipped Skills and Your Skills into the copy`() {
+        userSkill("imported")
+        try {
+            post("/agents/shipped-coder/your-skills", mapOf("skills" to "imported, tdd"))
+            val copy = post("/agents/shipped-coder/copy", emptyMap())
+            assertContains(copy.body, """<input type="hidden" name="skills" value="tdd">""")
+            assertContains(copy.body, """<input type="hidden" name="skills" value="imported">""")
+            assertEquals(1, Regex("""name="skills" value="tdd"""").findAll(copy.body).count())
+            deleteDraft(copy.path)
+        } finally {
+            post("/agents/shipped-coder/your-skills", emptyMap())
+        }
+    }
+
+    @Test
+    fun `Copy on a shipped Agent carries the Draft of its Your Skills when it has one, as its page shows them`() {
+        userSkill("imported")
+        userSkill("drafted")
+        try {
+            post("/agents/shipped-coder/your-skills", mapOf("skills" to "imported"))
+            browser.autosave("/agents/shipped-coder/your-skills", mapOf("skills" to "drafted"), draftVersion(get("/agents/shipped-coder")))
+            val copy = post("/agents/shipped-coder/copy", emptyMap())
+            assertContains(copy.body, """<input type="hidden" name="skills" value="tdd">""")
+            assertContains(copy.body, """<input type="hidden" name="skills" value="drafted">""")
+            assertFalse("""name="skills" value="imported"""" in copy.body)
+            deleteDraft(copy.path)
+        } finally {
+            browser.post("/agents/shipped-coder/your-skills/discard", mapOf("confirm" to "on"))
+            post("/agents/shipped-coder/your-skills", emptyMap())
+        }
+    }
+
+    @Test
+    fun `a save of Your Skills from a tab with an older version gets a conflict about Your Skills`() {
+        userSkill("imported")
+        try {
+            val loaded = draftVersion(get("/agents/shipped-writer"))
+            assertEquals(200, browser.autosave("/agents/shipped-writer/your-skills", mapOf("skills" to "imported"), loaded).status)
+            val second = browser.autosave("/agents/shipped-writer/your-skills", mapOf("skills" to ""), loaded)
+            assertEquals(409, second.status)
+            assertEquals("The Draft of Your Skills was changed in another tab or window.", answer(second)["conflict"])
+        } finally {
+            browser.post("/agents/shipped-writer/your-skills/discard", mapOf("confirm" to "on"))
+        }
     }
 }

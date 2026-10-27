@@ -37,8 +37,15 @@ const val ANSWER_HISTORY = "ants.answer-history"
 /** JSON text: the JSON Schema of the `output` the Task's Result promises; without it, any output. */
 const val RESULT_SCHEMA = "ants.result-schema"
 
-/** The value of an element's extension property [name], such as an Agent Task's [AGENT]. */
-fun BaseElement.property(name: String): String? = extensions<OperatonProperties>().flatMap { it.operatonProperties }.firstOrNull { it.operatonName == name }?.operatonValue
+/**
+ * The value of an element's extension property [name], such as an Agent Task's [AGENT]; "" for one set to nothing,
+ * which `operatonValue` gives as null, as an empty [SKILLS] means no Skills, not the Agent's.
+ */
+fun BaseElement.property(name: String): String? = properties()[name]
+
+/** Every extension property of the element by name, the first of each name, each value as [property] reads it. */
+fun BaseElement.properties(): Map<String, String> =
+    extensions<OperatonProperties>().flatMap { it.operatonProperties }.distinctBy { it.operatonName }.associate { it.operatonName to (it.operatonValue ?: "") }
 
 internal val BpmnModelInstance.agentTasks get() = getModelElementsByType(ServiceTask::class.java).filter { it.operatonTopic == AgentLauncher.TOPIC }
 
@@ -75,7 +82,7 @@ private fun agentTask(task: ServiceTask, catalogue: Catalogue, scripts: Scripts,
     val job = Job(task)
     val listed = links.skills(catalogue).orEmpty()
     val schema = ResultContract.schemaErrors(task.property(RESULT_SCHEMA).orEmpty())
-    val lacking = agent?.getOrNull()?.let { a -> listed.mapNotNull { it.getOrNull() }.filter { !a.allows(it) }.map { check("The Agent ${a.name} doesn't list the Skill ${it.name}.") } }
+    val lacking = agent?.getOrNull()?.let { a -> listed.mapNotNull { it.getOrNull() }.filter { !catalogue.allows(a, it) }.map { check("The Agent ${a.name} doesn't list the Skill ${it.name}.") } }
     val listedScripts = links.scripts(scripts).orEmpty()
     val lackingScripts = agent?.getOrNull()?.let { a -> listedScripts.mapNotNull { it.getOrNull() }.filter { !a.allows(it) }.map { check("The Agent ${a.name} doesn't list the Script ${it.name}.") } }
     fun twins(item: Identified) = identified().filter { it.id == item.id && it.where != item.where }

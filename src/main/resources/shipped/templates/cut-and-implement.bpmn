@@ -13,8 +13,8 @@
     <bpmn:serviceTask id="totickets" name="Cut the Tickets" operaton:type="external" operaton:topic="agent">
       <bpmn:extensionElements>
         <operaton:properties>
-          <operaton:property name="ants.agent" value="a-planner" />
-          <operaton:property name="ants.name.a-planner" value="planner" />
+          <operaton:property name="ants.agent" value="a-lead" />
+          <operaton:property name="ants.name.a-lead" value="lead" />
           <operaton:property name="ants.skills" value="k-to-tickets" />
           <operaton:property name="ants.name.k-to-tickets" value="to-tickets" />
           <operaton:property name="ants.assignment" value="Cut the Run's Spec into Tickets, as files in `tickets/issues/`, by following the to-tickets Skill. Your inputs; paths are relative to the Run workspace:&#10;&#10;- `spec`: the approved Spec, `tickets/spec.md`. It is the plan to break up.&#10;- `clones`: the repos cloned for the Run, `[{name, path, commit}]`. They are the codebase.&#10;&#10;You read the clones; you write only in `tickets/`.&#10;&#10;- **Quiz the user:** there is no one to ask before you publish. Put the three questions to yourself, fix the breakdown until each answer is yes, then publish. If you are resumed with a comment, that is the user's answer: revise the Tickets from it, and answer again.&#10;- **The tracker** is local files, laid out as `docs/agents/issue-tracker.md` in the Run workspace says. Where it differs from the local-ticket-template, the tracker doc wins: Tickets go in `tickets/issues/NN-&lt;slug&gt;.md`, never `.scratch/`; `Status:` and `Blocked by:` are plain lines, not bold, since Ants reads them; `Blocked by:` names Tickets by number only, such as `Blocked by: 01, 03`, or `Blocked by: none`; and each Ticket ends with `## Comments`.&#10;- **Blocking edges decide parallelism.** Every unblocked Ticket is built at once, each in its own worktree, and lands on the work branch when done. Block only where it is true, and know that two Tickets editing the same lines conflict when the second lands.&#10;- **ready-for-human:** a slice only the user can do, such as a decision, a credential or a manual check, is `ready-for-human`; its dependents wait until the user marks it done.&#10;&#10;Answer `done` with `tickets`: every Ticket's path, in number order." />
@@ -31,8 +31,8 @@
     <bpmn:serviceTask id="implement" name="Implement" operaton:type="external" operaton:topic="agent">
       <bpmn:extensionElements>
         <operaton:properties>
-          <operaton:property name="ants.agent" value="a-implementer" />
-          <operaton:property name="ants.name.a-implementer" value="implementer" />
+          <operaton:property name="ants.agent" value="a-engineer" />
+          <operaton:property name="ants.name.a-engineer" value="engineer" />
           <operaton:property name="ants.skills" value="k-implement, k-tdd, k-code-review, k-codebase-design" />
           <operaton:property name="ants.name.k-implement" value="implement" />
           <operaton:property name="ants.name.k-tdd" value="tdd" />

@@ -170,7 +170,7 @@ class AgentLauncher(
             fetched.forEach { task ->
                 Thread.ofVirtual().start {
                     try {
-                        launch(migrated(task, repository))
+                        launch(migrated(task, repository, catalogue))
                     } finally {
                         live.decrementAndGet()
                     }
@@ -486,11 +486,16 @@ class AgentLauncher(
     /**
      * The Skill a Task with [properties] starts with, `/<skill>`, and the other Skills it may use (ADR 0024). With an
      * [ASSIGNMENT] it starts with none, and may use them all. Its own [SKILLS] list them, an empty one none; else the
-     * [agent]'s. Without an Assignment the Task lists exactly one.
+     * [agent]'s. On a shipped Agent, whose Skills change only through Your Skills, a listed one it no longer allows, taken
+     * out of Your Skills since the Process deployed, is left out; on the user's own Agent the Task keeps what it lists.
+     * Without an Assignment the Task lists exactly one.
      */
     private fun skills(properties: Map<String, String>, agent: Agent, id: String): Pair<Skill?, List<Skill>> {
         val job = Job(properties::get)
-        val allowed = Links(properties::get).skills(catalogue)?.map { it.getOrThrow() } ?: catalogue.allowed(agent)
+        val revocable = catalogue.yourSkillsStore.has(agent)
+        val allowed = Links(properties::get).skills(catalogue)?.map { it.getOrThrow() }?.filter { skill ->
+            !revocable || catalogue.allows(agent, skill).also { if (!it) log.warn("$id lists the Skill ${skill.name}, which its Agent ${agent.name} no longer allows, so it is left out") }
+        } ?: catalogue.allowed(agent)
         if (job.assignment != null) return null to allowed
         if (!job.valid) error("$id has no Assignment and doesn't list exactly one Skill")
         return allowed.single() to emptyList()

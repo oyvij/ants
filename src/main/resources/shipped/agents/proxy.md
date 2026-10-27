@@ -1,7 +1,7 @@
 ---
-id: a-answerer
-name: answerer
-description: Answers a Round for the user, the way they would, from their Answer History and the Vault.
+id: a-proxy
+name: proxy
+description: Answers a Round as the user would, from their Answer History and the Vault. Only reads.
 level: 2
 skills: k-search-knowledge
 tools: Read, Grep, Glob

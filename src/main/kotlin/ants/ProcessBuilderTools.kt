@@ -81,6 +81,7 @@ class ProcessBuilderTools(
                 "change_agent" -> saved(agents.write(argument("file"), argument("name")))
                 "create_skill" -> saved(skills.write(argument("skill"), null), arguments)
                 "change_skill" -> saved(skills.write(argument("skill"), argument("name")), arguments)
+                "set_your_skills" -> saved(agents.setYourSkills(argument("name"), (arguments["skills"] as? List<*> ?: throw Refused("$name needs skills.")).map(Any?::toString)))
                 "delete_agent" -> deleted(agents.delete(argument("name")))
                 "delete_skill" -> deleted(skills.delete(argument("name")))
                 "build_log" -> argument("markdown").let { markdown ->
@@ -310,6 +311,10 @@ class ProcessBuilderTools(
             "change_agent" to { it -> "changed the Agent ${named(it["name"])}" },
             "create_skill" to { it -> "created the Skill ${named(nameIn(it["skill"]))}" },
             "change_skill" to { it -> "changed the Skill ${named(it["name"])}" },
+            "set_your_skills" to { it ->
+                val skills = (it["skills"] as? List<*>).orEmpty()
+                "set Your Skills on ${named(it["name"])} to " + if (skills.isEmpty()) "none" else skills.joinToString { name -> named(name) }
+            },
             "delete_agent" to { it -> "deleted the Agent ${named(it["name"])}" },
             "delete_skill" to { it -> "deleted the Skill ${named(it["name"])}" },
             "build_log" to { _ -> "rewrote the Build log" },
@@ -378,6 +383,10 @@ class ProcessBuilderTools(
                 mapOf("markdown" to "The whole new Build log.")),
             Mcp.tool("copy", "Copies an Agent, Skill or Template, such as a shipped one, into the user's own as `<name>-copy`, which can then be changed. Answers the copy's name and page.",
                 mapOf("kind" to "agent, skill or template.", "name" to "The name of the one to copy.")),
+            Mcp.tool("set_your_skills", "Sets Your Skills on a shipped Agent: the Skills the user adds to it beside the ones Ants ships with it, which an update to " +
+                "Ants keeps. Use it to give a shipped Agent a Skill instead of copying the Agent. Only Skills: its tools and instructions stay Ants'. " +
+                "Published at once, so a Task on the Agent can list them; the whole list each time, an empty one removing them all. Answers the Agent's name and page.",
+                mapOf("name" to "The shipped Agent's name.", "skills" to mapOf("type" to "array", "items" to mapOf("type" to "string"), "description" to "The Skills' names."))),
         ) + WRITE
     }
 }

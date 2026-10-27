@@ -1,6 +1,6 @@
 // The Agent page: the CLI picks which fieldsets the form posts (Claude's model, tools and Subagent tick, or codex's
 // model and sandbox); a Skill chip's × and "Add a Skill…"; each tool's Limit… with a field per rule, ＋ Add and ×; and
-// ＋ Add tool. The fields carry what is posted; the words the page shows come from the server.
+// ＋ Add tool; and the chips of Your Skills on a shipped Agent. The fields carry what is posted; the words the page shows come from the server.
 const form = document.getElementById("agent")
 const cli = form.elements.cli
 cli.addEventListener("change", () => form.querySelectorAll("fieldset[data-cli]").forEach(set => set.disabled = set.dataset.cli !== cli.value))
@@ -9,7 +9,7 @@ const addSkill = document.getElementById("add-skill")
 addSkill?.addEventListener("change", () => {
     const name = addSkill.value.trim()
     if (![...document.querySelectorAll("#skill-list option")].some(option => option.value === name)) return
-    if (![...form.querySelectorAll(".chipsel .c input")].some(input => input.value === name)) {
+    if (![...addSkill.parentElement.querySelectorAll(".c input")].some(input => input.value === name)) {
         const chip = document.getElementById("skill-chip").content.firstElementChild.cloneNode(true)
         chip.querySelector("input").value = name
         chip.querySelector("svg").after(name)
@@ -67,4 +67,10 @@ form.addEventListener("click", event => {
         addRule(limits)
     } else if (button.hasAttribute("data-add")) addRule(button.parentElement)
     else if (button.parentElement === adder) addTool()
+})
+
+// Your Skills on a shipped Agent, a form of its own beside the read-only one: a chip's ×.
+document.getElementById("your-skills")?.addEventListener("click", event => {
+    const button = event.target.closest("button[title=Remove]")
+    if (button) button.parentElement.remove()
 })
