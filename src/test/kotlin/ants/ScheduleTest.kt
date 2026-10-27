@@ -115,7 +115,7 @@ class ScheduleTest : AntsTest() {
         eventually { assertEquals(1, runs()) }
         settle()
         assertEquals(1, runs())
-        val run = history.createHistoricProcessInstanceQuery().processDefinitionKey(key).singleResult()
+        val run = history.createHistoricProcessInstanceQuery().processDefinitionKey(key).singleResult()!!
         assertEquals(2, repository.getProcessDefinition(run.processDefinitionId).version)
         val page = browser.get("/runs/${run.id}").body
         assertContains(page, "<dt>prompt</dt><dd><code>Sweep</code></dd>")
@@ -266,7 +266,7 @@ class ScheduleTest : AntsTest() {
         eventually { assertEquals(1, runs()) }
         settle()
         assertEquals(1, runs())
-        val run = history.createHistoricProcessInstanceQuery().processDefinitionKey(key).singleResult()
+        val run = history.createHistoricProcessInstanceQuery().processDefinitionKey(key).singleResult()!!
         assertEquals(2, repository.getProcessDefinition(run.processDefinitionId).version)
         assertContains(browser.get("/runs/${run.id}").body, "<dt>prompt</dt><dd><code>Tidy up</code></dd>")
     }
@@ -335,7 +335,7 @@ class ScheduleTest : AntsTest() {
         scheduleHourly("Sweep A", "Tidy A")
         scheduleHourly("Sweep B", "Tidy B")
         val run = act("Sweep B", "start")
-        val started = history.createHistoricProcessInstanceQuery().processDefinitionKey(key).singleResult()
+        val started = history.createHistoricProcessInstanceQuery().processDefinitionKey(key).singleResult()!!
         assertEquals("/runs/${started.id}", run.path)
         assertContains(run.body, "<dt>prompt</dt><dd><code>Tidy B</code></dd>")
         assertContains(run.body, Regex("<span id=\"name\">Sweep B, \\d{1,2} [A-Z][a-z]{2} \\d\\d:\\d\\d</span>"))
@@ -352,7 +352,7 @@ class ScheduleTest : AntsTest() {
         clock.offset = Duration.ofHours(1)
         eventually { assertEquals(1, runsWith("Sweep A")) }
         eventually { assertEquals(1, runsWith("Sweep B")) }
-        tasks.complete(tasks.createTaskQuery().processDefinitionKey(key).processVariableValueEquals("prompt", "Sweep B").singleResult().id)
+        tasks.complete(tasks.createTaskQuery().processDefinitionKey(key).processVariableValueEquals("prompt", "Sweep B").singleResult()!!.id)
 
         clock.offset = Duration.ofHours(3)
         eventually { assertContains(row("Sweep A")!!, "the last Run from this Schedule was still going") }
@@ -362,7 +362,7 @@ class ScheduleTest : AntsTest() {
         assertFalse("Skipped" in row("Sweep B")!!)
         assertEquals(1, runsWith("Sweep A"))
 
-        tasks.complete(tasks.createTaskQuery().processDefinitionKey(key).processVariableValueEquals("prompt", "Sweep A").singleResult().id)
+        tasks.complete(tasks.createTaskQuery().processDefinitionKey(key).processVariableValueEquals("prompt", "Sweep A").singleResult()!!.id)
         clock.offset = Duration.ofHours(4)
         eventually { assertEquals(2, runsWith("Sweep A")) }
         eventually { assertFalse("Skipped" in row("Sweep A")!!) }

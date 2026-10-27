@@ -25,7 +25,7 @@ class ScriptTask(
         val linked = task.extensionProperties[SCRIPT] ?: error("${task.activityId} names no Script")
         val kept = task.extensionProperties[nameBeside(linked)]
         val script = scripts.linked(linked, kept)
-        val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult().rootProcessInstanceId
+        val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult()!!.rootProcessInstanceId
         val inputNames = element?.inputs().orEmpty().map { it.operatonName }.toSet()
         val literals = element?.literalInputs().orEmpty().keys
         val properties = (script.inputs["properties"] as? Map<*, *>).orEmpty()

@@ -334,7 +334,7 @@ class Runs(
     @GetMapping("/runs/{id}/diagram.bpmn", produces = ["application/xml"])
     @ResponseBody
     fun diagram(@PathVariable id: String): ByteArray = try {
-        repository.getProcessModel(run(id).processDefinitionId).readAllBytes()
+        repository.getProcessModel(run(id).processDefinitionId)!!.readAllBytes()
     } catch (_: NotFoundException) {
         throw ResponseStatusException(HttpStatus.NOT_FOUND, "The Process of Run $id is deleted")
     }
@@ -372,7 +372,7 @@ class Runs(
         val model = model(instance)
         val element = model?.getModelElementById<FlowElement>(task)
         if (model != null && element == null) throw ResponseStatusException(HttpStatus.NOT_FOUND, "No Task $task")
-        val top = instance.rootProcessInstanceId
+        val top = instance.rootProcessInstanceId!!
         val key = (history.variable(id, CALLED) as? String).orEmpty() + task
         val file = Transcript.file(names.runWorkspace(top), key)
         val transcript = Transcript()
@@ -400,7 +400,7 @@ class Runs(
      * from [transcripts], every Transcript in the Run by default.
      */
     fun tasks(id: String, transcripts: (top: String) -> Map<String, Transcript> = { Transcript.all(names.runWorkspace(it)) }): List<TaskView> =
-        tasks(id, transcripts(run(id).rootProcessInstanceId))
+        tasks(id, transcripts(run(id).rootProcessInstanceId!!))
 
     private fun tasks(id: String, transcripts: Map<String, Transcript>): List<TaskView> {
         val instance = run(id)
@@ -587,7 +587,7 @@ class RunLifecycle(@Value("\${ants.home}") private val home: Path, private val s
             trackerDoc(workspace)
             Files.writeString(workspace.resolve("run-log.md"), "# $name\n\n$process\n\n")
             profileInstructions(workspace, settings.instructionsText(run.getVariable(PROFILE) as? String))
-        } else run.setVariable(CALLED, called(run.superExecution))
+        } else run.setVariable(CALLED, called(run.superExecution!!))
         for (id in results) run.setVariable(id, null)
         run.setVariable("runs", tasks.associateWith { 0 })
         run.setVariable("clones", ArrayList<Any>()) // Clone repos adds to it
@@ -632,7 +632,7 @@ class RunLifecycle(@Value("\${ants.home}") private val home: Path, private val s
      */
     private fun collect(body: ActivityImpl) {
         val loop = body.activityBehavior as MultiInstanceActivityBehavior
-        if (loop.collectionElementVariable == null) loop.collectionElementVariable = "item"
+        if (loop.collectionElementVariable == null) loop.setCollectionElementVariable("item")
         val inner = body.activities.single()
         val subProcess = inner.getProperty("type") == "subProcess"
         val ids = if (subProcess) inner.results() else listOf(inner.id)
@@ -653,7 +653,7 @@ class RunLifecycle(@Value("\${ants.home}") private val home: Path, private val s
                 .apply { put("${instance.getVariable("loopCounter")}", result) }
             val count = bodyExecution.getVariableLocal("nrOfInstances") as Int
             if (results.size < count) bodyExecution.setVariableLocal(RESULTS, results)
-            else bodyExecution.parent.setVariable(inner.id, (0 until count).map { results["$it"] })
+            else bodyExecution.parent!!.setVariable(inner.id!!, (0 until count).map { results["$it"] })
             // With Items are Tickets, the instance's Ticket goes in review once it ends, after its last landing.
             if (body.getProperty(ITEMS_ARE_TICKETS) == true) {
                 val item = instance.getVariable(loop.collectionElementVariable)
@@ -680,12 +680,12 @@ class RunLifecycle(@Value("\${ants.home}") private val home: Path, private val s
                     tasks.forEach { it.addBuiltInListener(ExecutionListener.EVENTNAME_START, counted) }
                     process.multiInstanceBodies().forEach(::collect)
                     val results = process.results()
-                    process.addBuiltInListener(ExecutionListener.EVENTNAME_START, started(tasks.map { it.id }, results))
+                    process.addBuiltInListener(ExecutionListener.EVENTNAME_START, started(tasks.map { it.id!! }, results))
                     process.addBuiltInListener(ExecutionListener.EVENTNAME_END, ended(results))
                 }
 
                 override fun parseMultiInstanceLoopCharacteristics(activity: Element, loop: Element, body: ActivityImpl) {
-                    if (BpmnParseUtil.parseOperatonExtensionProperties(activity)?.get(ITEMS_ARE_TICKETS) == "true") body.setProperty(ITEMS_ARE_TICKETS, true)
+                    if (BpmnParseUtil.parseOperatonExtensionProperties(activity)[ITEMS_ARE_TICKETS] == "true") body.setProperty(ITEMS_ARE_TICKETS, true)
                 }
             }
     }
@@ -709,7 +709,7 @@ private fun ScopeImpl.tasks(): List<ActivityImpl> = activities.flatMap { activit
 }
 
 /** The ids of the Results this scope gives, each `null` until given: its Tasks', call activities' and multi-instances'. */
-private fun ScopeImpl.results() = (tasks() + calls() + multiInstanceBodies().map { it.activities.single() }).map { it.id }.distinct()
+private fun ScopeImpl.results() = (tasks() + calls() + multiInstanceBodies().map { it.activities.single() }).map { it.id!! }.distinct()
 
 /** Every call activity in this scope and the scopes inside it. */
 private fun ScopeImpl.calls(): List<ActivityImpl> =
@@ -722,7 +722,7 @@ private fun ScopeImpl.calls(): List<ActivityImpl> =
 const val CALLED = "ants.called"
 
 /** The key prefix of the Process [call] calls: its caller's own, then the call's key. */
-private fun called(call: DelegateExecution) = key(call as ExecutionEntity, call.currentActivityId) + "."
+private fun called(call: DelegateExecution) = key(call as ExecutionEntity, call.currentActivityId!!) + "."
 
 /**
  * The key of [activity] on [execution] in its Run: its id, then `-<n>` for each multi-instance it is the nth instance
@@ -757,7 +757,7 @@ fun RuntimeService.inParallel(execution: String, activity: String): Boolean = (t
 fun RuntimeService.ticketItem(execution: String, activity: String): Any? = (this as ServiceImpl).commandExecutor.execute { context ->
     context.scopes(execution, activity).firstNotNullOfOrNull { (level, scope) ->
         (scope as? ActivityImpl)?.takeIf { it.getProperty(ITEMS_ARE_TICKETS) == true }
-            ?.let { body -> level.getVariable((body.activityBehavior as MultiInstanceActivityBehavior).collectionElementVariable) }
+            ?.let { body -> level.getVariable((body.activityBehavior as MultiInstanceActivityBehavior).collectionElementVariable!!) }
     }
 }
 
@@ -769,9 +769,9 @@ fun RuntimeService.ticketItem(execution: String, activity: String): Any? = (this
 fun RuntimeService.ticketSibling(execution: String, activity: String, picks: (Any?) -> Boolean): Pair<Int, String>? = (this as ServiceImpl).commandExecutor.execute { context ->
     val (task, repeated, body) = context.ticketLoop(execution, activity) ?: return@execute null
     val loop = repeated.activityBehavior as MultiInstanceActivityBehavior
-    val items = (loop.collectionExpression?.getValue(body) ?: body.getVariable(loop.collectionVariable)) as Collection<*>
+    val items = (loop.collectionExpression?.getValue(body) ?: body.getVariable(loop.collectionVariable!!)) as Collection<*>
     val index = items.indexOfFirst(picks).takeIf { it >= 0 } ?: return@execute null
-    val instance = generateSequence(task) { it.parent }.first { it.hasVariableLocal(loop.collectionElementVariable) }
+    val instance = generateSequence(task) { it.parent }.first { it.hasVariableLocal(loop.collectionElementVariable!!) }
     index to key(task, activity, instance to index)
 }
 
@@ -807,7 +807,7 @@ private fun CommandContext.ticketLoop(execution: String, activity: String): Trip
  */
 private fun CommandContext.scopes(execution: String, activity: String): Sequence<Pair<ExecutionEntity, ScopeImpl>> {
     val task = checkNotNull(executionManager.findExecutionById(execution)) { "No execution $execution" }
-    return generateSequence(task to activity) { (it, _) -> it.processInstance.superExecution?.let { call -> call to call.currentActivityId } }.flatMap { (level, id) ->
+    return generateSequence(task to activity) { (it, _) -> it.processInstance.superExecution?.let { call -> call to call.currentActivityId!! } }.flatMap { (level, id) ->
         generateSequence(level.processDefinition.findActivity(id) as ScopeImpl?) { (it as? ActivityImpl)?.flowScope }.map { level to it }
     }
 }

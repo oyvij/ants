@@ -144,7 +144,7 @@ class Migration(
             runCatching { parse(file.readBytes()) }.onFailure { log.warn("The Template $file can't be read to migrate it: ${it.message}") }.getOrNull()?.let { file to it }
         }
         val saved = repository.createProcessDefinitionQuery().latestVersion().list().filter { !it.resourceName.startsWith("shipped/") }
-            .map { it to parse(repository.getProcessModel(it.id).readAllBytes()) }
+            .map { it to parse(repository.getProcessModel(it.id)!!.readAllBytes()) }
         // The Agents list what the migrated Templates and the Processes that deploy need: a Process's needs go in before
         // the Checks of its deploy read the Agents, and out again if they refuse it, so it keeps its old shape coherently.
         val agents = Agents()
@@ -372,7 +372,7 @@ class Migration(
             file.writeAtomically(serialize(document))
         }
         for (process in repository.createProcessDefinitionQuery().latestVersion().list().filter { !it.resourceName.startsWith("shipped/") }) {
-            val bpmn = repository.getProcessModel(process.id).readAllBytes()
+            val bpmn = repository.getProcessModel(process.id)!!.readAllBytes()
             if (!catalogue.linkById(parse(bpmn), scripts)) continue
             try {
                 processes.deploy(bpmn, process.resourceName)

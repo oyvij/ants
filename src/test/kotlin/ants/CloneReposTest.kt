@@ -78,7 +78,7 @@ class CloneReposTest : AntsTest() {
         eventually { assertNotNull(failed()) }
         assertEquals(listOf("api"), clones(workspace(run)).map { it.fileName.toString() })
         Files.move(moved, web.remote)
-        externalTasks.setRetries(failed().id, 1)
+        externalTasks.setRetries(failed()!!.id, 1)
         eventually { assertNotNull(runtime.getVariable(run, "again")) }
         val clones = listOf(api, web).map { mapOf("name" to it.name, "path" to "repos/${it.name}", "commit" to git(it.remote, "rev-parse", "main")) }
         assertEquals(clones.drop(1), runtime.getVariable(run, "clone")) // this attempt's Result: only web
@@ -93,7 +93,7 @@ class CloneReposTest : AntsTest() {
         browser.import("clone-repos.bpmn")
         val run = runtime.startProcessInstanceByKey("clone-repos", mapOf("repos" to listOf("api", "web"), "branch" to "feature-x")).id
         eventually { assertNotNull(runtime.createIncidentQuery().processInstanceId(run).singleResult()) }
-        val entry = "/notifications/" + runtime.createIncidentQuery().processInstanceId(run).singleResult().id
+        val entry = "/notifications/" + runtime.createIncidentQuery().processInstanceId(run).singleResult()!!.id
         val page = browser.get(entry).body
         assertContains(page, "The Source map work has no repo web")
         assertContains(page, """value="retry">Retry</button>""")

@@ -184,7 +184,7 @@ class AcceptRecommendations(
 ) : BuiltInWorker(externalTasks, "Accept recommendations", "accept-recommendations", Duration.ofMinutes(1), { it.includeExtensionProperties() }) {
     override fun handle(task: LockedExternalTask) {
         val asker = task.extensionProperties[ASKER] ?: error("${task.activityId} names no asker ($ASKER)")
-        val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult().rootProcessInstanceId
+        val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult()!!.rootProcessInstanceId
         val name = repository.getBpmnModelInstance(task.processDefinitionId).getModelElementById<FlowElement>(task.activityId)?.name ?: task.activityId
         runtime.answerFor(names.runWorkspace(run), task.executionId, name, asker, emptyMap()) { answers ->
             onClash { externalTasks.complete(task.id, WORKER, mapOf(task.activityId to answers)) }

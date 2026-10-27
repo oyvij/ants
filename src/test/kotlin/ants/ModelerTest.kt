@@ -222,7 +222,7 @@ class ModelerTest : AntsTest() {
         val published = browser.post("/processes/drafted/publish", mapOf("bpmn" to waiting("drafted", "Drafted again", "second")))
         assertEquals("/processes/drafted", published.path)
         assertContains(browser.get("/processes/drafted/diagram.bpmn").body, """id="second"""")
-        assertEquals(2, repository.createProcessDefinitionQuery().processDefinitionKey("drafted").latestVersion().singleResult().version)
+        assertEquals(2, repository.createProcessDefinitionQuery().processDefinitionKey("drafted").latestVersion().singleResult()!!.version)
         val after = browser.get("/processes/drafted/edit").body
         assertEquals("0", draftVersion(after))
         assertFalse("Draft saved" in after)
