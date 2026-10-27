@@ -27,7 +27,7 @@ jobs:
       - uses: actions/checkout@v7
       # LookTest screenshots each page beside the prototype it must equal, read from these branches with git show.
       - run: git fetch --depth=1 origin prototype/web-ui:refs/remotes/origin/prototype/web-ui prototype/answer-screen:refs/remotes/origin/prototype/answer-screen
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 25
