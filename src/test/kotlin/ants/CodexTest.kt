@@ -273,6 +273,20 @@ class CodexTest : AntsTest() {
     }
 
     @Test
+    fun `a codex usage limit before codex names its session pauses the Task, and after the reset it starts a new session`() {
+        codexTask()
+        codex.session("draft", 1, *limit("You’ve hit your usage limit. Try again later."))
+        codex.session("draft", started, turn, answer(), completed)
+        val run = start()
+        eventually { assertContains(page(run), "<dt>draft</dt><dd>Paused until ") }
+        clock.offset = Duration.ofMinutes(32)
+        eventually { assertContains(page(run), """id="state">Completed<""") }
+        val launches = codex.launches("draft")
+        assertEquals(2, launches.size)
+        assertTrue(launches.none { "resume" in it.argv })
+    }
+
+    @Test
     fun `a codex usage limit resetting later today gives the time alone`() {
         assumeTrue(LocalTime.now(clock).isBefore(LocalTime.of(22, 0)))
         codexTask()
