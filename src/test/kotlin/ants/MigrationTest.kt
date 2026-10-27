@@ -181,8 +181,8 @@ class MigrationTest : AntsTest() {
 
         val agent = catalogue.agent("writer").id!!
         val skill = catalogue.skill("draft").id!!
-        val latest = repository.createProcessDefinitionQuery().processDefinitionKey("by-name").latestVersion().singleResult()
-        val diagram = repository.getProcessModel(latest.id).readAllBytes().decodeToString()
+        val latest = repository.createProcessDefinitionQuery().processDefinitionKey("by-name").latestVersion().singleResult()!!
+        val diagram = repository.getProcessModel(latest.id)!!.readAllBytes().decodeToString()
         for (linked in listOf(diagram, template.readText())) {
             assertContains(linked, """name="ants.agent" value="$agent"""")
             assertContains(linked, """name="ants.name.$agent" value="writer"""")
@@ -310,7 +310,7 @@ class MigrationTest : AntsTest() {
 
         val versions = repository.createProcessDefinitionQuery().processDefinitionKey("old-architect").orderByProcessDefinitionVersion().asc().list()
         assertEquals(2, versions.size) // the old version kept
-        fun deployed(index: Int) = properties(repository.getProcessModel(versions[index].id).readAllBytes().decodeToString())
+        fun deployed(index: Int) = properties(repository.getProcessModel(versions[index].id)!!.readAllBytes().decodeToString())
         assertEquals(listOf("ants.agent" to "a-architect", "ants.name.a-architect" to "architect", "ants.assignment" to "Do it."), deployed(0))
         assertEquals(listOf("ants.agent" to "a-lead", "ants.name.a-lead" to "lead", "ants.assignment" to "Do it.", "ants.skills" to "", "ants.level" to "4"), deployed(1))
         assertEquals(

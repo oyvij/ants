@@ -62,7 +62,7 @@ class PreRun(
         // Names, schemas and references: the deploy's Checks again, since files change after a deploy.
         val failed = processes.flatMap { process ->
             val prefix = if (process.id == definition.id) "" else "${process.name ?: process.key}: "
-            checks.of(repository.getProcessModel(process.id).readAllBytes().decodeToString()).filterNot { it.warning }.map { prefix + it.message }
+            checks.of(repository.getProcessModel(process.id)!!.readAllBytes().decodeToString()).filterNot { it.warning }.map { prefix + it.message }
         }
         val agents = processes.flatMap { repository.getBpmnModelInstance(it.id).getModelElementsByType(ServiceTask::class.java) }
             .filter { it.operatonTopic == AgentLauncher.TOPIC }

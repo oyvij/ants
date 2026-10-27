@@ -93,7 +93,7 @@ class ScriptTaskTest : AntsTest() {
         return started.path.removePrefix("/runs/")
     }
 
-    private fun deployed(key: String): String = repository.getProcessModel(repository.createProcessDefinitionQuery().processDefinitionKey(key).latestVersion().singleResult().id).readAllBytes().decodeToString()
+    private fun deployed(key: String): String = repository.getProcessModel(repository.createProcessDefinitionQuery().processDefinitionKey(key).latestVersion().singleResult()!!.id)!!.readAllBytes().decodeToString()
 
     private fun incident(run: String) = runtime.createIncidentQuery().processInstanceId(run).singleResult()
 
@@ -135,7 +135,7 @@ class ScriptTaskTest : AntsTest() {
         val run = start("flaky-run")
         eventually { assertNotNull(incident(run)) }
 
-        val entry = "/notifications/" + incident(run).id
+        val entry = "/notifications/" + incident(run)!!.id
         val page = browser.get(entry).body
         assertContains(page, "[failed]")
         assertContains(page, "broke with ••••")
@@ -157,7 +157,7 @@ class ScriptTaskTest : AntsTest() {
         val run = start("posting-ts")
         eventually { assertNotNull(incident(run)) }
 
-        val entry = "/notifications/" + incident(run).id
+        val entry = "/notifications/" + incident(run)!!.id
         val page = browser.get(entry).body
         assertContains(page, "The payload of the Script post-ts breaks its output schema")
         assertContains(page, "posted\nThe payload breaks the Script's output schema:\n- /ts: integer found, string expected")
@@ -174,7 +174,7 @@ class ScriptTaskTest : AntsTest() {
         deploy("counting", scriptTask("count", "count-up", mapOf("count" to "\${text}")))
         val run = start("counting", text = "three")
         eventually { assertNotNull(incident(run)) }
-        val page = browser.get("/notifications/" + incident(run).id).body
+        val page = browser.get("/notifications/" + incident(run)!!.id).body
         assertContains(page, "The inputs break the Script's input schema, so it didn't run:\n- /count: string found, number expected")
         assertContains(page, "count")
         assertFalse("node ran" in page)
@@ -207,7 +207,7 @@ class ScriptTaskTest : AntsTest() {
         deploy("drafting", scriptTask("drafted", "drafted"))
         val run = start("drafting")
         eventually { assertNotNull(incident(run)) }
-        val entry = "/notifications/" + incident(run).id
+        val entry = "/notifications/" + incident(run)!!.id
         assertContains(browser.get(entry).body, "published")
 
         assertEquals("/scripts/drafted", browser.post("/scripts/drafted", listOf("name" to "drafted", "description" to "Does drafted.", "code" to "ants.output({ran: 'published'})\n", "vars" to "")).path)
@@ -243,7 +243,7 @@ class ScriptTaskTest : AntsTest() {
             deploy("slow-run", scriptTask("slow", "slow"))
             val run = start("slow-run")
             eventually { assertNotNull(incident(run)) }
-            val page = browser.get("/notifications/" + incident(run).id).body
+            val page = browser.get("/notifications/" + incident(run)!!.id).body
             assertContains(page, "started")
             assertContains(page, "ran past its time limit of 1s, so Ants killed it.")
             assertTrue("finished" !in page)

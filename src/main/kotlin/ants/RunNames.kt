@@ -62,7 +62,7 @@ class RunNames(
         // An ended Run's variables are history only, which the engine's API never changes, so its row is set directly.
         (history as ServiceImpl).commandExecutor.execute { context ->
             val id = history.createHistoricVariableInstanceQuery().processInstanceId(run).variableName(NAME).singleResult()?.id
-            id?.let { context.dbEntityManager.selectById(HistoricVariableInstanceEntity::class.java, it).textValue = given }
+            id?.let { context.dbEntityManager.selectById(HistoricVariableInstanceEntity::class.java, it)!!.textValue = given }
         }
     }
 

@@ -188,7 +188,7 @@ class PickedReposTest : AntsTest() {
         settings()
         browser.import("wait-then-clone.bpmn")
         val run = runtime.startProcessInstanceByKey("wait-then-clone", mapOf("repos" to arrayListOf<String>(), SCOPE to arrayListOf("${api.remote}"))).id
-        tasks.complete(tasks.createTaskQuery().processInstanceId(run).singleResult().id)
+        tasks.complete(tasks.createTaskQuery().processInstanceId(run).singleResult()!!.id)
         eventually(20) { assertContains(browser.get("/runs/$run").body, """id="state">Completed<""") }
         val page = browser.get("/runs/$run").body.replace("&#34;", "\"")
         assertContains(page, """<dt>clones</dt><dd><code>[{"name":"api",""")

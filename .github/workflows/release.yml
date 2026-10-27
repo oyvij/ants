@@ -36,14 +36,14 @@ jobs:
           echo "Releasing $beta as $version"
           echo "beta=$beta" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: ${{ steps.beta.outputs.beta }}
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 25
-      - uses: gradle/actions/setup-gradle@v5
+      - uses: gradle/actions/setup-gradle@v6
       - run: ./gradlew tarball -Prelease=$VERSION
         env:
           VERSION: ${{ steps.beta.outputs.version }}

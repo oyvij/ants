@@ -137,7 +137,7 @@ class Notifications(
                     "review"
                 }
                 UserTaskKind.APPROVE -> {
-                    val show = runtime.getVariableLocal(task.executionId, SHOW)
+                    val show = runtime.getVariableLocal(task.executionId!!, SHOW)
                     val workspace = names.runWorkspace(entry.run)
                     model.addAttribute("shown", shown(workspace, show))
                     model.addAttribute("file", (show as? String)?.takeIf { inWorkspace(workspace, it) != null })
@@ -161,7 +161,7 @@ class Notifications(
 
     /** [entry]'s Task as its page heads it, with its Transcript, if it has one. */
     private fun view(entry: TaskEntry): TaskView {
-        val instance = runtime.createProcessInstanceQuery().processInstanceId(entry.instance).singleResult()
+        val instance = runtime.createProcessInstanceQuery().processInstanceId(entry.instance).singleResult()!!
         val element = repository.getBpmnModelInstance(instance.processDefinitionId).getModelElementById<FlowElement>(entry.activity)
         val transcript = Transcript.read(Transcript.file(names.runWorkspace(entry.run), entry.taskId)).first.takeIf { it.isNotEmpty() }
             ?.let { lines -> Transcript().apply { lines.forEach(::add) } }
@@ -311,10 +311,10 @@ class Notifications(
      */
     private fun complete(task: Task, workspace: Path, result: Map<String, Any>, resumes: String?, message: String) {
         // Before completing: the named Task can launch the moment the completion commits.
-        val sent = resumes?.let { AgentLauncher.sentBack(workspace, runtime.taskKey(task.executionId, it)) }
+        val sent = resumes?.let { AgentLauncher.sentBack(workspace, runtime.taskKey(task.executionId!!, it)) }
             ?.also { it.parent.createDirectories(); it.writeText(message) }
         try {
-            onClash { userTasks.complete(task.id, mapOf(task.taskDefinitionKey to result)) }
+            onClash { userTasks.complete(task.id, mapOf(task.taskDefinitionKey!! to result)) }
         } catch (e: Exception) {
             sent?.deleteIfExists()
             throw e
@@ -329,16 +329,16 @@ class Notifications(
     }
 
     private fun property(task: Task, name: String) =
-        repository.getBpmnModelInstance(task.processDefinitionId).getModelElementById<BaseElement>(task.taskDefinitionKey).property(name)
+        repository.getBpmnModelInstance(task.processDefinitionId!!).getModelElementById<BaseElement>(task.taskDefinitionKey)!!.property(name)
 
     /** A User Task's kind, by its [USER_TASK]: an Approve without one. */
     private fun kind(task: Task) = UserTaskKind.of(property(task, USER_TASK))
 
     /** The Result of the Agent Task an Answer a Round names as its asker, holding the Round's questions. */
-    private fun asked(task: Task) = property(task, ASKER)?.let { runtime.getVariable(task.executionId, it) }
+    private fun asked(task: Task) = property(task, ASKER)?.let { runtime.getVariable(task.executionId!!, it) }
 
     /** Which Round [task] answers: its asker's, whoever answered the earlier ones. */
-    private fun round(task: Task) = runtime.round(task.executionId, property(task, ASKER) ?: task.taskDefinitionKey)
+    private fun round(task: Task) = runtime.round(task.executionId!!, property(task, ASKER) ?: task.taskDefinitionKey!!)
 
     /** Next up: the Run's next entry, if one turns up within a few seconds; else the Notification list. */
     // ponytail: holds the request, polling, for up to 5 s; push it over SSE if the wait ever needs to be longer.
@@ -388,14 +388,14 @@ class Notifications(
         val summary = when (kind) {
             UserTaskKind.ANSWER_ROUND -> (asked(task) as? Map<*, *>)?.get("summary")
             UserTaskKind.REVIEW_CHANGES -> "Review the changes on the work branch."
-            UserTaskKind.APPROVE -> runtime.getVariableLocal(task.executionId, TITLE)
+            UserTaskKind.APPROVE -> runtime.getVariableLocal(task.executionId!!, TITLE)
         }
-        return entry(task.id, kind.tag, summary?.toString().orEmpty(), task.createTime, task.processInstanceId, task.processDefinitionId, task.executionId, task.taskDefinitionKey)
+        return entry(task.id, kind.tag, summary?.toString().orEmpty(), task.createTime, task.processInstanceId!!, task.processDefinitionId!!, task.executionId!!, task.taskDefinitionKey!!)
     }
 
     private fun entry(id: String, tag: String, summary: String, since: Date, instance: String, definition: String, execution: String, activity: String): TaskEntry {
-        val run = runtime.createProcessInstanceQuery().processInstanceId(instance).singleResult().rootProcessInstanceId
-        val top = history.createHistoricProcessInstanceQuery().processInstanceId(run).singleResult()
+        val run = runtime.createProcessInstanceQuery().processInstanceId(instance).singleResult()!!.rootProcessInstanceId
+        val top = history.createHistoricProcessInstanceQuery().processInstanceId(run).singleResult()!!
         val task = repository.getBpmnModelInstance(definition).getModelElementById<FlowElement>(activity)
         return TaskEntry(
             id = id,
