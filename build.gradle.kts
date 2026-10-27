@@ -39,9 +39,9 @@ dependencies {
     implementation("org.jetbrains.kotlin:kotlin-reflect")
     implementation("com.networknt:json-schema-validator:2.0.4")
     implementation("tools.jackson.dataformat:jackson-dataformat-toml") // reads Varde's config.toml
-    implementation("org.commonmark:commonmark:0.30.1")
-    implementation("org.commonmark:commonmark-ext-task-list-items:0.30.1") // a Ticket's ticking checkboxes
-    implementation("org.commonmark:commonmark-ext-gfm-tables:0.30.1")
+    implementation("org.commonmark:commonmark:0.31.0")
+    implementation("org.commonmark:commonmark-ext-task-list-items:0.31.0") // a Ticket's ticking checkboxes
+    implementation("org.commonmark:commonmark-ext-gfm-tables:0.31.0")
     runtimeOnly("com.h2database:h2")
     runtimeOnly("org.postgresql:postgresql") // engine state on a server, such as in the Docker image
 
