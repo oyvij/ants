@@ -2679,7 +2679,7 @@ class BrowserTest : AntsTest() {
         workspace(run).resolve("tickets/issues").createDirectories().resolve("01-wide.md").writeText("# Wide\n\nStatus: ready-for-agent\n\n" + "A long line of prose. ".repeat(60) + "\n")
         page.setViewportSize(1920, 1080)
         page.navigate(url("/runs/$run/tickets/01-wide"))
-        // Measured in one step: the live update swaps #ticket for a new one, and boundingBox()!! reads null mid-swap
+        // Measured in one step: the live update swaps #ticket for a new one, and boundingBox() reads null mid-swap
         val ticket = (page.locator("#ticket").evaluate("e => e.getBoundingClientRect().width") as Number).toDouble()
         assertTrue(ticket <= 860, "the Ticket is ${ticket}px wide")
     }
