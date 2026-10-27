@@ -36,7 +36,7 @@ jobs:
           echo "Releasing $beta as $version"
           echo "beta=$beta" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: ${{ steps.beta.outputs.beta }}
       - uses: actions/setup-java@v5
