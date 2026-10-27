@@ -425,7 +425,6 @@ class AgentTaskTest : AntsTest() {
 
     private val init = """{"type":"system","subtype":"init","session_id":"${'$'}SESSION","apiKeySource":"none"}"""
 
-    /** A session in which claude refuses [tool] called with [input] for [reason], and stops at Ants' interrupt. */
     private fun refused(tool: String, input: String, reason: String = "mode") = arrayOf(
         init,
         """{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_1","name":"$tool","input":$input}]},"session_id":"${'$'}SESSION"}""",
@@ -438,7 +437,6 @@ class AgentTaskTest : AntsTest() {
 
     private val cargo = """{"command":"cargo outdated","description":"List outdated crates"}"""
 
-    /** Starts a Run whose writer, allowed only `Bash(git log *)`, is refused `cargo outdated`, and returns its entry once it waits. */
     private fun refusedCargo(): Pair<String, String> {
         agentTask(agent = "tools: Bash(git log *), Read\n")
         claude.session("draft", 1, *refused("Bash", cargo))
@@ -542,6 +540,16 @@ class AgentTaskTest : AntsTest() {
         assertEquals(400, browser.post("$entry/permission", mapOf("choice" to "task", "limit" to "Bash(cargo *)")).status)
         browser.post("$entry/permission", mapOf("choice" to "deny", "limit" to ""))
         eventually { assertContains(page(run), """id="state">Completed<""") }
+    }
+
+    @Test
+    fun `a Protected Command's words inside another command leave the refusal allowable, and the Limit names the command after a cd and its variables`() {
+        agentTask(agent = "tools: Bash(git log *)\n", extra = "protected-commands:\n  cargo publish: []\n")
+        claude.session("draft", 1, *refused("Bash", """{"command":"cd crates && FOO=1 cargo outdated | grep \"cargo publish\""}"""))
+        val run = start()
+        val page = browser.get(entry(run)).body
+        assertContains(page, """value="Bash(cargo *)"""")
+        assertContains(page, """value="task"""")
     }
 
     @Test

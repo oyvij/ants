@@ -28,6 +28,7 @@ class PermissionRequest(val agent: String, val tool: String, val target: String?
 
     companion object {
         private const val SHOWN = 120
+        private val ASSIGNMENT = Regex("""[A-Za-z_]\w*=.*""")
         private val RULE = Regex("""([\w-]+)(?:\((.*\S.*)\))?""")
         private val json = JsonMapper.shared()
 
@@ -35,12 +36,21 @@ class PermissionRequest(val agent: String, val tool: String, val target: String?
             PermissionRequest(it["agent"].toString(), it["tool"].toString(), it["target"] as? String, it["limit"].toString(), it["why"] as? String)
         }
 
+        fun granted(text: Any?): List<String> = (text as? String)
+            ?.let { runCatching { json.readValue(it, List::class.java).map(Any?::toString) }.getOrNull() }.orEmpty()
+
+        fun grantedJson(rules: List<String>): String = json.writeValueAsString(rules.distinct())
+
+        fun commands(command: String): List<List<String>> = command.split(Regex("""&&|\|\||[;|&()\n]"""))
+            .map { part -> part.trim().split(Regex("\\s+")).filter(String::isNotEmpty).dropWhile { it.substringAfterLast('/') == "env" || ASSIGNMENT.matches(it) } }
+            .filter { it.isNotEmpty() }
+
         fun target(input: Map<*, *>?): String? = listOf("command", "file_path", "notebook_path", "url", "subagent_type", "pattern")
             .firstNotNullOfOrNull { input?.get(it) as? String }?.takeIf(String::isNotBlank)
 
         fun limit(tool: String, target: String?, cwd: Path): String = when {
             target == null -> tool
-            tool == "Bash" -> target.trim().split(Regex("\\s+")).first().let { "Bash($it *)" }
+            tool == "Bash" -> commands(target).let { all -> all.firstOrNull { it.first() != "cd" } ?: all.firstOrNull() }?.let { "Bash(${it.first()} *)" } ?: tool
             tool == "Write" || tool == "Edit" -> {
                 val folder = Path.of(target).let { if (it.isAbsolute) it else cwd.resolve(it) }.normalize().parent
                 val inside = cwd.toAbsolutePath().normalize()

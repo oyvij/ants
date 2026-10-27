@@ -260,7 +260,7 @@ class Agents(
 
     fun allowAlways(name: String, rule: String): String? {
         alwaysRefusal(name)?.let { return it }
-        val agent = catalogue.agents().first { it.name == name }
+        val agent = find(name)
         if (yours.has(agent)) yours.publishTools(agent, (yours.tools(agent) + rule).distinct())
         else {
             val tools = AgentForm.ofTools(((agent.tools ?: AgentLauncher.DEFAULT_TOOLS) + rule).distinct())

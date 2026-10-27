@@ -572,7 +572,7 @@ class AgentLauncher(
                 if (event["type"] == "assistant") ((event["message"] as? Map<*, *>)?.get("content") as? List<*>).orEmpty().mapNotNull { it as? Map<*, *> }
                     .filter { it["type"] == "tool_use" }.forEach { calls[it["id"]] = it["input"] as? Map<*, *> ?: emptyMap<Any, Any>() }
                 if (request == null && event["type"] == "system" && event["subtype"] == "permission_denied") {
-                    request = request(agent, agentTools, cwd, event, calls[event["tool_use_id"]])
+                    request = permissionRequest(agent, agentTools, cwd, event, calls[event["tool_use_id"]])
                     stdin.interrupt()
                     return@forEachLine
                 }
@@ -614,19 +614,18 @@ class AgentLauncher(
         }
     }
 
-    private fun granted(task: LockedExternalTask): List<String> = (task.variables[GRANTED] as? String)
-        ?.let { runCatching { json.readValue(it, List::class.java).map(Any?::toString) }.getOrNull() }.orEmpty()
+    private fun granted(task: LockedExternalTask): List<String> = PermissionRequest.granted(task.variables[GRANTED])
 
-    private fun request(agent: Agent, tools: List<String>, cwd: Path, event: Map<*, *>, input: Map<*, *>?): PermissionRequest {
+    private fun permissionRequest(agent: Agent, tools: List<String>, cwd: Path, event: Map<*, *>, input: Map<*, *>?): PermissionRequest {
         val tool = event["tool_name"].toString()
         val target = PermissionRequest.target(input)
-        return PermissionRequest(agent.name, tool, target, PermissionRequest.limit(tool, target, cwd), denied(tool, target, event["decision_reason_type"] == "rule", tools))
+        return PermissionRequest(agent.name, tool, target, PermissionRequest.limit(tool, target, cwd), whyNoAllow(tool, target, event["decision_reason_type"] == "rule", tools))
     }
 
-    private fun denied(tool: String, target: String?, rule: Boolean, tools: List<String>): String? {
-        val words = target?.split(Regex("""[\s;&|()]+"""))?.filter(String::isNotEmpty).orEmpty()
+    private fun whyNoAllow(tool: String, target: String?, rule: Boolean, tools: List<String>): String? {
+        val commands = if (tool == "Bash") PermissionRequest.commands(target.orEmpty()) else emptyList()
         val protected = settings.protectedCommands().keys.map { Settings.strings(it).orEmpty() }.filter { it.isNotEmpty() }
-            .firstOrNull { prefix -> tool == "Bash" && words.windowed(prefix.size).any { it == prefix } }?.joinToString(" ")
+            .firstOrNull { prefix -> commands.any { it.take(prefix.size) == prefix } }?.joinToString(" ")
         val own = (listOf(settings.secretsFile, settings.file).map { it.toAbsolutePath().toString() } + listOf("scripts", "drafts/scripts").map { "${home.resolve(it).toAbsolutePath()}/" })
         return when {
             protected != null -> if (protected in protectedCommands.allowed(tools)) "a Protected Command: run it with Ants' `run` tool, never Bash"

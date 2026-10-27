@@ -254,9 +254,8 @@ class Notifications(
         }
         runLog(names.runWorkspace(entry.run), entry.task, name, "${request.summary}" + if (choice == DENY) "" else ": `$rule`")
         if (choice == FOR_TASK) {
-            val granted = (runtime.getVariableLocal(incident.executionId, AgentLauncher.GRANTED) as? String)
-                ?.let { runCatching { JsonMapper.shared().readValue(it, List::class.java).map(Any?::toString) }.getOrNull() }.orEmpty()
-            runtime.setVariableLocal(incident.executionId, AgentLauncher.GRANTED, JsonMapper.shared().writeValueAsString((granted + rule).distinct()))
+            val granted = PermissionRequest.granted(runtime.getVariableLocal(incident.executionId, AgentLauncher.GRANTED))
+            runtime.setVariableLocal(incident.executionId, AgentLauncher.GRANTED, PermissionRequest.grantedJson(granted + rule))
         }
         val again = if (choice == DENY) "" else " Try it again, then carry on."
         runtime.setVariablesLocal(incident.executionId, mapOf(AgentLauncher.ACTION to AgentLauncher.CONTINUE, AgentLauncher.INSTRUCTION to "$message$again Answer with your Result once you are done."))
