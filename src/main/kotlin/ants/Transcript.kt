@@ -175,13 +175,13 @@ class Transcript(private val toolLine: (name: String, input: Map<*, *>) -> Strin
     private fun shimmer() = verb?.let { """<span class="shimmer">${esc(it)}…</span>""" } ?: """<span class="shimmer" data-rotate>Pondering…</span>"""
 
     /** What a call of the tool [name] on [argument] does, as the live line says it: "Reading Header.tsx", "Running pnpm test". */
-    private fun argument(name: String, input: Map<*, *>) =
-        (input["args"] as? List<*>)?.takeIf { name == AgentLauncher.RUN_TOOL }?.joinToString(" ") ?: input.values.firstOrNull { it is String }?.toString().orEmpty()
-
     private fun doing(name: String, argument: String): String {
         val what = argument.lines().first().let { if (name in FILE_TOOLS) it.substringAfterLast('/') else it }.take(40)
         return listOf(VERBS[name] ?: "Working", what).filter { it.isNotEmpty() }.joinToString(" ")
     }
+
+    private fun argument(name: String, input: Map<*, *>) =
+        (input["args"] as? List<*>)?.takeIf { name == AgentLauncher.RUN_TOOL }?.joinToString(" ") ?: input.values.firstOrNull { it is String }?.toString().orEmpty()
 
     private fun summary(block: Subagent) = """<summary id="e${block.entry}s">⑂ <b>${esc(block.type)}</b> ${esc(block.description)}""" +
         (if (block.end != null || running) " · ${time(block)}" else "") + (if (block.status in OK) "" else " · ${esc(block.status)}") + "</summary>"

@@ -226,8 +226,11 @@ class AgentsTest : AntsTest() {
     @Autowired
     lateinit var migration: Migration
 
+    @Autowired
+    lateinit var drafts: Drafts
+
     @Test
-    fun `as Ants starts, each of the user's own Agents with bare Bash gets ProtectedCommand once, and no other Agent does`() {
+    fun `as Ants starts, each of the user's own Agents with bare Bash gets ProtectedCommand once, its Draft too, and no other Agent does`() {
         home.resolve("migrated/protected-command").deleteIfExists()
         val files = mapOf(
             "bare" to "---\nid: a-bare01\nname: bare\ntools: Read, Bash\n---\nBuild.\n",
@@ -240,6 +243,7 @@ class AgentsTest : AntsTest() {
         val shipped = catalogue.agents(withHidden = true).filter(catalogue::shipped).associate { it.file to it.file.readText() }
         try {
             files.forEach { (file, text) -> file.writeText(text) }
+            drafts.save(DraftKind.AGENT, DraftPage("a-drft01", "drafted", "---\nid: a-drft01\nname: drafted\ntools: Bash\n---\nDraft.\n"), DraftFrom.NEW)
             migration.migrate()
 
             val bare = agents.resolve("bare.md")
@@ -248,12 +252,15 @@ class AgentsTest : AntsTest() {
             assertEquals(files[bare], bare.resolveSibling("bare.md.old").readText())
             for ((file, text) in files.filterKeys { it != bare }) assertEquals(text, file.readText(), "$file")
             for ((file, text) in shipped) assertEquals(text, file.readText(), "$file")
+            assertEquals(listOf("Bash", "ProtectedCommand"), Agent(agents.resolve("drafted.md"), drafts.get(DraftKind.AGENT, "a-drft01")!!.content).tools)
 
             bare.writeText(files.getValue(bare))
             migration.migrate()
             assertEquals(files[bare], bare.readText())
         } finally {
             files.keys.forEach { it.deleteIfExists(); it.resolveSibling("${it.fileName}.old").deleteIfExists() }
+            drafts.remove(DraftKind.AGENT, "a-drft01")
+            drafts.file(DraftKind.AGENT, "a-drft01").resolveSibling("a-drft01.yaml.old").deleteIfExists()
         }
     }
 
