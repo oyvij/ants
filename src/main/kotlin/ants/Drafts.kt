@@ -22,7 +22,7 @@ enum class DraftKind(val folder: String, val noun: String, whose: String = "This
     AGENT("agents", "Agent"), SKILL("skills", "Skill"), PROCESS("processes", "Process"), SCRIPT("scripts", "Script"),
 
     /** Your Skills on a shipped Agent, kept under the Agent's id. */
-    YOUR_SKILLS("your-skills", "Agent", "The Draft of Your Skills");
+    YOUR_SKILLS("your-skills", "Agent", "The Draft of Your Skills and Your tools");
 
     /** What a save against a newer Draft is answered with. */
     val conflict = "$whose was changed in another tab or window."

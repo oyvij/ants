@@ -384,7 +384,7 @@ class ProcessBuilderTools(
             Mcp.tool("copy", "Copies an Agent, Skill or Template, such as a shipped one, into the user's own as `<name>-copy`, which can then be changed. Answers the copy's name and page.",
                 mapOf("kind" to "agent, skill or template.", "name" to "The name of the one to copy.")),
             Mcp.tool("set_your_skills", "Sets Your Skills on a shipped Agent: the Skills the user adds to it beside the ones Ants ships with it, which an update to " +
-                "Ants keeps. Use it to give a shipped Agent a Skill instead of copying the Agent. Only Skills: its tools and instructions stay Ants'. " +
+                "Ants keeps. Use it to give a shipped Agent a Skill instead of copying the Agent. Only Skills: the user adds Your tools on the Agent's page, and its instructions stay Ants'. " +
                 "Published at once, so a Task on the Agent can list them; the whole list each time, an empty one removing them all. Answers the Agent's name and page.",
                 mapOf("name" to "The shipped Agent's name.", "skills" to mapOf("type" to "array", "items" to mapOf("type" to "string"), "description" to "The Skills' names."))),
         ) + WRITE

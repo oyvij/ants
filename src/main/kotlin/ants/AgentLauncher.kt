@@ -490,7 +490,7 @@ class AgentLauncher(
      */
     private fun skills(properties: Map<String, String>, agent: Agent, id: String): Pair<Skill?, List<Skill>> {
         val job = Job(properties::get)
-        val revocable = catalogue.yourSkillsStore.has(agent)
+        val revocable = catalogue.yours.has(agent)
         val allowed = Links(properties::get).skills(catalogue)?.map { it.getOrThrow() }?.filter { skill ->
             !revocable || catalogue.allows(agent, skill).also { if (!it) log.warn("$id lists the Skill ${skill.name}, which its Agent ${agent.name} no longer allows, so it is left out") }
         } ?: catalogue.allowed(agent)
@@ -541,7 +541,7 @@ class AgentLauncher(
             .plus(answerHistory(task)?.let { listOf("--add-dir", "${it.createDirectories()}") }.orEmpty()) // so a Read reaches it (ADR 0010)
             .plus(if (verbosity == null) emptyList() else listOf("--add-dir", "${catalogue.verbosityFile.parent}"))
         val tools = scriptTools.of(allowedScripts(task.extensionProperties, agent), workspace, run)
-        val allowed = protectedCommands.allowed(agent.tools ?: DEFAULT_TOOLS)
+        val allowed = protectedCommands.allowed(catalogue.tools(agent))
         val (token, mcp) = protectedCommands.open(workspace, tools, allowed) // its Protected Commands run in the Run workspace
         val process = runCatching {
             val skills = listOfNotNull(skill) + used
@@ -805,7 +805,7 @@ class AgentLauncher(
     }
 
     private fun flags(agent: Agent, level: Level, cwd: Path, schema: Map<*, *>, skills: List<Skill>, skillsFolder: Path?, session: String, resume: Boolean, mcp: String, antsTools: List<String>, workspace: Path, denied: List<String>): List<String> {
-        val tools = (agent.tools ?: DEFAULT_TOOLS).filter { it.substringBefore('(') !in OWN_TOOLS }.map { anchored(it, cwd) }
+        val tools = catalogue.tools(agent).filter { it.substringBefore('(') !in OWN_TOOLS }.map { anchored(it, cwd) }
         val skill = listOf("Skill").takeIf { skillsFolder != null } // with no Skills allowed, no Skill tool
         val (subagents, types) = subagents(tools)
         // Probed on claude 2.1.299: a rule such as `Bash(git diff *)` lets `git diff --output=<any path>` write a file, and
@@ -862,7 +862,7 @@ class AgentLauncher(
             agent.name to listOfNotNull(
                 "description" to agent.description,
                 "prompt" to agent.instructions,
-                agent.tools?.let { rules -> "tools" to rules.filter { it.substringBefore('(') !in OWN_TOOLS } },
+                catalogue.subagentTools(agent)?.let { rules -> "tools" to rules.filter { it.substringBefore('(') !in OWN_TOOLS } },
                 agent.model?.let { "model" to it },
             ).toMap()
         }

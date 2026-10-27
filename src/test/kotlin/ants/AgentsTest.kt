@@ -812,7 +812,7 @@ class AgentsTest : AntsTest() {
         assertContains(get("/agents"), """<a href="/skills/imported">imported</a>""") // the list shows the Skills it may use
 
         browser.autosave("/agents/shipped-writer/your-skills", mapOf("skills" to ""), draftVersion(get("/agents/shipped-writer")))
-        assertContains(post("/agents/shipped-writer/your-skills/discard", emptyMap()).body, "Discard the Draft of Your Skills on shipped-writer?")
+        assertContains(post("/agents/shipped-writer/your-skills/discard", emptyMap()).body, "Discard the Draft of Your Skills and Your tools on shipped-writer?")
         assertEquals("/agents/shipped-writer", browser.post("/agents/shipped-writer/your-skills/discard", mapOf("confirm" to "on")).path)
         assertContains(get("/agents/shipped-writer"), """<input type="hidden" name="skills" value="imported">""")
         assertEquals(listOf("imported"), yourSkills("shipped-writer"))
@@ -838,7 +838,7 @@ class AgentsTest : AntsTest() {
     }
 
     @Test
-    fun `only a shipped Agent has Your Skills, and its own form takes nothing but Skills`() {
+    fun `only a shipped Agent has Your Skills, and their form leaves the shipped agent file as it is`() {
         agents.resolve("own-agent.md").writeText("---\nid: a-own0001\nname: own-agent\ncli: claude\n---\nMine.\n")
         assertFalse("your-skills" in get("/agents/own-agent"))
         assertEquals(403, post("/agents/own-agent/your-skills", mapOf("skills" to "tdd")).status)
@@ -934,15 +934,72 @@ class AgentsTest : AntsTest() {
         }
     }
 
+    private fun tools(agent: String) = catalogue.tools(catalogue.agent(agent))
+
     @Test
-    fun `a save of Your Skills from a tab with an older version gets a conflict about Your Skills`() {
+    fun `Your tools on a shipped Agent autosave to their Draft, and Publish adds them to its shipped tools, each counted once`() {
+        val shipped = catalogue.agent("lead").tools!!
+        val saved = browser.autosave("/agents/lead/your-skills", mapOf("tool.Bash" to "on", "limit.Bash" to "cargo *"), draftVersion(get("/agents/lead")))
+        assertEquals(200, saved.status, saved.body)
+        assertEquals(shipped, tools("lead")) // a Draft is used by nothing
+        val drafted = get("/agents/lead")
+        assertContains(drafted, """name="limit.Bash" value="cargo *"""")
+        assertEquals(listOf("Draft · changes not published"), markers(drafted))
+
+        val posted = mapOf("tool.Bash" to "on", "limit.Bash" to "cargo *", "tool.Read" to "on", "tool.ProtectedCommand" to "on")
+        assertEquals("/agents/lead", post("/agents/lead/your-skills", posted).path)
+        assertEquals(shipped + listOf("Bash(cargo *)", "ProtectedCommand"), tools("lead"))
+        assertEquals(shipped, catalogue.agent("lead").tools) // the shipped agent file is untouched
+        assertEquals(listOf("Published"), markers(get("/agents/lead")))
+
+        assertEquals("/agents/lead", post("/agents/lead/your-skills", emptyMap()).path)
+        assertEquals(shipped, tools("lead"))
+    }
+
+    @Test
+    fun `Your tools survive replacing the shipped agent file, as an update does`() {
+        try {
+            post("/agents/lead/your-skills", mapOf("tool.Bash" to "on", "limit.Bash" to "cargo *"))
+            val updated = Catalogue(home, antsSettings, Drafts(home)) // replaces shipped/ whole, as a start after an update does
+            assertContains(updated.tools(updated.agent("lead")), "Bash(cargo *)")
+            assertContains(updated.tools(updated.agent("lead")), "Bash(git log *)")
+        } finally {
+            post("/agents/lead/your-skills", emptyMap())
+        }
+    }
+
+    @Test
+    fun `an Agent widened by Your tools says so wherever it is picked, and one with none says nothing`() {
+        val description = catalogue.agent("lead").description
+        try {
+            post("/agents/lead/your-skills", mapOf("tool.Bash" to "on", "limit.Bash" to "cargo *"))
+            val widened = "$description Plus your tools: Bash(cargo *)."
+            val agents = JsonMapper.shared().readTree(get("/catalogue.json"))["agents"]
+            assertEquals(widened, agents.single { it["name"].asString() == "lead" }["description"].asString())
+            assertEquals("Answers a Round as the user would, from their Answer History and the Vault. Only reads.", agents.single { it["name"].asString() == "proxy" }["description"].asString())
+            assertContains(get("/agents"), widened)
+        } finally {
+            post("/agents/lead/your-skills", emptyMap())
+        }
+    }
+
+    @Test
+    fun `the Agent page shows a shipped Agent's tools read-only, apart from Your tools, which a codex Agent hasn't`() {
+        val page = get("/agents/lead")
+        assertContains(page, "Shipped tools")
+        assertContains(page, """<h3>Your tools</h3>""")
+        assertFalse("Your tools</h3>" in get("/agents/shipped-coder"))
+    }
+
+    @Test
+    fun `a save of Your Skills from a tab with an older version gets a conflict about Your Skills and Your tools`() {
         userSkill("imported")
         try {
             val loaded = draftVersion(get("/agents/shipped-writer"))
             assertEquals(200, browser.autosave("/agents/shipped-writer/your-skills", mapOf("skills" to "imported"), loaded).status)
             val second = browser.autosave("/agents/shipped-writer/your-skills", mapOf("skills" to ""), loaded)
             assertEquals(409, second.status)
-            assertEquals("The Draft of Your Skills was changed in another tab or window.", answer(second)["conflict"])
+            assertEquals("The Draft of Your Skills and Your tools was changed in another tab or window.", answer(second)["conflict"])
         } finally {
             browser.post("/agents/shipped-writer/your-skills/discard", mapOf("confirm" to "on"))
         }

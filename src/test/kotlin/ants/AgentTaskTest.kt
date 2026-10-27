@@ -402,6 +402,28 @@ class AgentTaskTest : AntsTest() {
     }
 
     @Test
+    fun `a Task on a shipped Agent launches with its shipped tools plus its published Your tools, and Ants' deny rules still win`() {
+        agentTask(extra = "protected-commands:\n  cargo publish: []\n")
+        claude.session("draft", done)
+        val assigned = property("ants.assignment", "Write it.") + property("ants.skills", "")
+        assertFalse("role=\"alert\"" in deployOn("your-tools", "a-lead", assigned).body)
+        assertEquals("/agents/lead", browser.post("/agents/lead/your-skills", mapOf("tool.Bash" to "on", "limit.Bash" to "cargo *", "tool.ProtectedCommand" to "on")).path)
+        browser.autosave("/agents/lead/your-skills", mapOf("tool.WebSearch" to "on"), draftVersion(browser.get("/agents/lead").body))
+        try {
+            runOf("your-tools")
+            val launch = claude.launches("draft").single()
+            val allowed = launch.flag("--allowedTools")!!.split(",")
+            assertContains(allowed, "Bash(git log *)")
+            assertContains(allowed, "Bash(cargo *)")
+            assertContains(allowed, "mcp__ants__run")
+            assertFalse("WebSearch" in allowed) // only in their Draft
+            assertContains(launch.flag("--disallowedTools")!!.split(","), "Bash(cargo publish *)")
+        } finally {
+            browser.post("/agents/lead/your-skills", emptyMap())
+        }
+    }
+
+    @Test
     fun `--json-schema holds the envelope around the Skill's promised output`() {
         agentTask(textSchema)
         claude.session("draft", done)

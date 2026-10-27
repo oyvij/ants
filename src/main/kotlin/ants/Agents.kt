@@ -40,7 +40,7 @@ class Agents(
 ) {
     private val folder = home.resolve("agents")
     private val items = drafted.agents
-    private val yourSkills = catalogue.yourSkillsStore
+    private val yours = catalogue.yours
 
     /** The agent file an Agent's page shows: the Draft's when there is one. */
     private val AgentItem.shown get() = draft?.let { Agent(folder.resolve("$name.md"), it.content) } ?: published!!
@@ -55,7 +55,7 @@ class Agents(
 
     private fun list(model: Model, error: String?): String {
         val published = catalogue.agents().map { agent ->
-            AgentRow(agent, catalogue.where(agent.file.parent), catalogue.listedNames(agent), agent.name,DraftState.of(true, items.draftOf(agent) != null))
+            AgentRow(agent, catalogue.where(agent.file.parent), catalogue.listedNames(agent), agent.name, DraftState.of(true, items.draftOf(agent) != null), catalogue.description(agent))
         }
         val draftOnly = items.draftOnlyItems().map { (draft, agent) ->
             AgentRow(agent, catalogue.where(folder), catalogue.skillNames(agent.skills), draft.key, DraftState.DRAFT_ONLY)
@@ -86,8 +86,9 @@ class Agents(
     @PostMapping("/agents/{name}/draft/skills")
     @ResponseBody
     fun listInDraft(@PathVariable name: String, @RequestParam skill: String): ResponseEntity<Unit> {
-        item(name).published?.takeIf(yourSkills::has)?.let { agent ->
-            yourSkills.saveDraft(agent, catalogue.skillIds(yourSkills.shown(agent) + skill), DraftFrom(yourSkills.draft(agent)?.version ?: 0))
+        item(name).published?.takeIf(yours::has)?.let { agent ->
+            val shown = yours.shown(agent)
+            yours.saveDraft(agent, Yours.Lists(catalogue.skillIds(shown.skills + skill), shown.tools), DraftFrom(yours.draft(agent)?.version ?: 0))
             return ResponseEntity.noContent().build()
         }
         val item = editable(item(name))
@@ -132,7 +133,7 @@ class Agents(
     fun catalogue(): Map<String, Any> {
         fun marker(published: Boolean, draft: Boolean) = DraftState.of(published, draft).takeIf { it != DraftState.PUBLISHED }?.let { mapOf("css" to it.css, "label" to it.label) }
         fun agent(agent: Agent, name: String, draft: Map<String, String>?) =
-            mapOf("id" to agent.id, "name" to name, "description" to agent.description, "skills" to catalogue.allowedNames(agent), "own" to (agent.file.parent == folder), "shipped" to catalogue.shipped(agent),
+            mapOf("id" to agent.id, "name" to name, "description" to catalogue.description(agent), "skills" to catalogue.allowedNames(agent), "own" to (agent.file.parent == folder), "shipped" to catalogue.shipped(agent),
                 "folder" to agent.file.parent.toString(), "draft" to draft)
         fun skill(skill: Skill, name: String, own: Boolean, draft: Map<String, String>?) =
             mapOf("id" to skill.id, "name" to name, "description" to skill.description, "own" to own, "folder" to skill.folder.parent.toString(), "draft" to draft)
@@ -201,40 +202,39 @@ class Agents(
     fun discard(@PathVariable name: String, @RequestParam params: Map<String, String>, model: Model) = items.discard(editable(item(name)), "confirm" in params, model)
 
     /** The shipped Agent whose page is /agents/[name], the only kind with Your Skills. */
-    private fun shippedAgent(name: String): Agent = item(name).published?.takeIf(yourSkills::has)
-        ?: throw ResponseStatusException(HttpStatus.FORBIDDEN, "Only a shipped Agent has Your Skills.")
+    private fun shippedAgent(name: String): Agent = item(name).published?.takeIf(yours::has)
+        ?: throw ResponseStatusException(HttpStatus.FORBIDDEN, "Only a shipped Agent has Your Skills and Your tools.")
 
-    /** Your Skills as the page shows them, and their Draft's header. */
-    private fun yourSkillsField(agent: Agent): YourSkillsField {
-        val draft = yourSkills.draft(agent)
+    private fun yoursField(agent: Agent): YoursField {
+        val draft = yours.draft(agent)
         val head = DraftHead(DraftState.of(true, draft != null), draft?.version ?: 0, draft?.savedLine, "/agents/${agent.name}/your-skills/draft")
-        return YourSkillsField(catalogue.skillNames(yourSkills.shown(agent)), head)
+        val shown = yours.shown(agent)
+        return YoursField(catalogue.skillNames(shown.skills), AgentForm.ofTools(shown.tools), head, agent.cli == "claude")
     }
 
-    /** Your Skills as the page posts them, each Skill by its id where one has it, as their Draft keeps them. */
-    private fun postedYourSkills(params: MultiValueMap<String, String>) = catalogue.skillIds(words(joined(params)["skills"]))
+    private fun postedYours(agent: Agent, params: MultiValueMap<String, String>): Yours.Lists {
+        val fields = joined(params)
+        val tools = if (agent.cli == "claude") AgentForm.of(fields).toolRules else emptyList()
+        return Yours.Lists(catalogue.skillIds(words(fields["skills"])), tools)
+    }
 
-    /** Your Skills' autosave: the page's Skills as their Draft, unless the Draft changed since the page loaded [version]. Only Skills: any other field is ignored. */
     @PostMapping("/agents/{name}/your-skills/draft")
     @ResponseBody
     fun autosaveYourSkills(@PathVariable name: String, @RequestParam params: MultiValueMap<String, String>, @RequestParam version: Long, @RequestParam tab: String?, @RequestParam(defaultValue = "0") seq: Long): ResponseEntity<Map<String, Any>> {
         val agent = shippedAgent(name)
-        val save = yourSkills.saveDraft(agent, postedYourSkills(params), DraftFrom(version, tab, seq))
+        val save = yours.saveDraft(agent, postedYours(agent, params), DraftFrom(version, tab, seq))
         return Drafts.answer(DraftKind.YOUR_SKILLS, save, DraftState.CHANGED, "/agents/${agent.name}/your-skills")
     }
 
-    /**
-     * **Publish** of Your Skills: keeps them as their Draft, then, unless one is a Draft only or names no Skill, makes
-     * them the ones the Agent's Tasks may use and removes the Draft.
-     */
     @PostMapping("/agents/{name}/your-skills")
     fun publishYourSkills(@PathVariable name: String, @RequestParam params: MultiValueMap<String, String>, model: Model): String {
         val agent = shippedAgent(name)
-        val listed = postedYourSkills(params)
-        yourSkills.saveDraft(agent, listed, DraftFrom(yourSkills.draft(agent)?.version ?: 0))
-        yourSkillsRefusal(listed)?.let { return show(model, AgentForm.of(agent), item(name), it) }
-        yourSkills.publish(agent, listed)
-        yourSkills.removeDraft(agent)
+        val listed = postedYours(agent, params)
+        yours.saveDraft(agent, listed, DraftFrom(yours.draft(agent)?.version ?: 0))
+        yourSkillsRefusal(listed.skills)?.let { return show(model, AgentForm.of(agent), item(name), it) }
+        yours.publishSkills(agent, listed.skills)
+        yours.publishTools(agent, listed.tools)
+        yours.removeDraft(agent)
         return "redirect:/agents/${agent.name}"
     }
 
@@ -249,16 +249,15 @@ class Agents(
     fun setYourSkills(name: String, skills: List<String>): String {
         val agent = shippedAgent(name)
         yourSkillsRefusal(skills)?.let { throw Refused(it) }
-        yourSkills.publish(agent, catalogue.skillIds(skills))
+        yours.publishSkills(agent, catalogue.skillIds(skills))
         return "/agents/${agent.name}"
     }
 
-    /** **Discard Draft** of Your Skills: once confirmed, removes their Draft and reopens the Agent with the published ones. */
     @PostMapping("/agents/{name}/your-skills/discard")
     fun discardYourSkills(@PathVariable name: String, @RequestParam params: Map<String, String>, model: Model): String {
         val agent = shippedAgent(name)
         val page = "/agents/${agent.name}"
-        return drafts.discard(DraftKind.YOUR_SKILLS, yourSkills.draft(agent),"Your Skills on ${agent.name}", agent.name, "$page/your-skills", page, "confirm" in params, model)
+        return drafts.discard(DraftKind.YOUR_SKILLS, yours.draft(agent), "Your Skills and Your tools on ${agent.name}", agent.name, "$page/your-skills", page, "confirm" in params, model)
     }
 
     /** The form's fields, which repeat for a rule per Limit…, a chip per Skill and a tick per added tool: the filled ones, comma-separated. */
@@ -307,12 +306,13 @@ class Agents(
     }
 
     /**
-     * The form of a copy of [agent] named [name]: a shipped Agent's copy lists its shipped Skills and its Your Skills as
-     * its page shows them, their Draft's when they have one.
+     * The form of a copy of [agent] named [name]: a shipped Agent's copy lists its shipped Skills and tools and its Your Skills and Your
+     * tools as its page shows them, their Draft's when they have one.
      */
     private fun copied(agent: Agent, name: String): AgentForm {
-        val yours = agent.takeIf(yourSkills::has)?.let(yourSkills::shown).orEmpty()
-        return AgentForm.of(agent, name).copy(skills = catalogue.skillIds(agent.skills + yours).joinToString(", "), scripts = scripts.ids(agent.scripts).joinToString(", "))
+        val shown = agent.takeIf(yours::has)?.let(yours::shown)
+        val tools = AgentForm.ofTools(((agent.tools ?: AgentLauncher.DEFAULT_TOOLS) + shown?.tools.orEmpty()).distinct())
+        return AgentForm.of(agent, name).copy(tools = tools.tools, otherTools = tools.otherTools, skills = catalogue.skillIds(agent.skills + shown?.skills.orEmpty()).joinToString(", "), scripts = scripts.ids(agent.scripts).joinToString(", "))
     }
 
     /** The Process Builder's copy (ADR 0019): an editable copy of a read-only Agent, published at once into Ants' own folder, under the first free `<name>-copy`. */
@@ -370,7 +370,7 @@ class Agents(
         model.addAttribute("item", item?.name)
         model.addAttribute("readOnly", item?.own == false)
         model.addAttribute("draft", item?.head)
-        model.addAttribute("yourSkills", agent?.takeIf(yourSkills::has)?.let(::yourSkillsField))
+        model.addAttribute("yours", agent?.takeIf(yours::has)?.let(::yoursField))
         model.addAttribute("where", agent?.let { catalogue.where(it.file.parent) })
         model.addAttribute("skills", catalogue.skills().distinctBy { it.name })
         model.addAttribute("dependents", agent?.let { usedBy.agent(it.name) })
@@ -387,11 +387,10 @@ class Agents(
     private fun editable(item: AgentItem) = item.takeIf { it.own } ?: throw ResponseStatusException(HttpStatus.FORBIDDEN, "${item.name} is read-only. Copy it to make one you can edit.")
 }
 
-/** Your Skills on a shipped Agent as its page shows them: the [skills] by name, and the [head] of their Draft. */
-class YourSkillsField(val skills: List<String>, val head: DraftHead)
+class YoursField(val skills: List<String>, val tools: AgentForm, val head: DraftHead, val claude: Boolean)
 
 /** An Agent on the list, the folder it comes from, the [page] it is at and its [state]. */
-class AgentRow(val agent: Agent, val where: String, val skills: List<String>, val page: String = agent.name, val state: DraftState = DraftState.PUBLISHED)
+class AgentRow(val agent: Agent, val where: String, val skills: List<String>, val page: String = agent.name, val state: DraftState = DraftState.PUBLISHED, val description: String = agent.description)
 
 /**
  * A Claude Code tool as the Agent page offers it: what it [does], and for one with **Limit…**, what its rules narrow
@@ -428,6 +427,8 @@ data class AgentForm(
     /** The tools Ants doesn't list, such as an MCP tool, each ticked on the page under "Added by you". */
     val custom get() = rules(otherTools)
 
+    val toolRules get() = TOOLS.filter { it in tools }.flatMap { tool -> rules(tools.getValue(tool)).map { "$tool($it)" }.ifEmpty { listOf(tool) } } + rules(otherTools)
+
     fun error() = nameError("An Agent", name) ?: when {
         cli !in CLIS -> "Ants runs only ${CLIS.joinToString(" or ")}, not $cli."
         subagent && cli != "claude" -> "Only a claude Agent can be offered as a Subagent."
@@ -447,8 +448,7 @@ data class AgentForm(
         if (scriptList.isNotEmpty()) meta["scripts"] = scriptList.joinToString(", ")
         if (cli == "codex") meta["sandbox"] = sandbox
         else {
-            val limited = TOOLS.filter { it in tools }.flatMap { tool -> rules(tools.getValue(tool)).map { "$tool($it)" }.ifEmpty { listOf(tool) } }
-            meta["tools"] = (limited + rules(otherTools)).joinToString(", ")
+            meta["tools"] = toolRules.joinToString(", ")
         }
         if (model.isNotEmpty()) meta["model"] = model
         level.toIntOrNull()?.let { meta["level"] = it }
@@ -536,17 +536,23 @@ data class AgentForm(
 
         private val KEYS = setOf("id", "name", "description", "cli", "skills", "scripts", "tools", "sandbox", "model", "level", "ants-subagent")
 
-        fun of(agent: Agent, name: String = agent.name): AgentForm {
-            val rules = agent.tools ?: AgentLauncher.DEFAULT_TOOLS
+        fun ofTools(rules: List<String>): AgentForm {
             fun tool(rule: String) = rule.substringBefore('(').trim()
             return AgentForm(
+                name = "", description = "", cli = "claude", skills = "",
+                tools = rules.filter { tool(it) in TOOLS }.groupBy(::tool) { it.substringAfter('(', "").removeSuffix(")") }
+                    .mapValues { (_, limits) -> limits.filter(String::isNotEmpty).joinToString(", ") },
+                otherTools = rules.filter { tool(it) !in TOOLS }.joinToString(", "),
+                sandbox = "", model = "", subagent = false, instructions = "",
+            )
+        }
+
+        fun of(agent: Agent, name: String = agent.name): AgentForm {
+            return ofTools(agent.tools ?: AgentLauncher.DEFAULT_TOOLS).copy(
                 name = name,
                 description = agent.description,
                 cli = agent.cli,
                 skills = agent.skills.joinToString(", "),
-                tools = rules.filter { tool(it) in TOOLS }.groupBy(::tool) { it.substringAfter('(', "").removeSuffix(")") }
-                    .mapValues { (_, limits) -> limits.filter(String::isNotEmpty).joinToString(", ") },
-                otherTools = rules.filter { tool(it) !in TOOLS }.joinToString(", "),
                 sandbox = agent.sandbox,
                 model = agent.model.orEmpty(),
                 subagent = agent.subagent,

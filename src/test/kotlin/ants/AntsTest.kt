@@ -106,7 +106,7 @@ abstract class AntsTest {
             Thread.sleep(50)
         }
         Settings.AI_CLIS.forEach { launcher.tryNow(it) }
-        for (folder in listOf("agents", "skills", "templates", "scripts", "drafts", "your-skills")) home.resolve(folder).toFile().run { deleteRecursively(); mkdirs() }
+        for (folder in listOf("agents", "skills", "templates", "scripts", "drafts", "your-skills", "your-tools"))home.resolve(folder).toFile().run { deleteRecursively(); mkdirs() }
         home.resolve("profiles").toFile().deleteRecursively()
         listOf("agent-ids.yaml", "skill-ids.yaml").forEach { home.resolve(it).deleteIfExists() }
         // Under the Schedule loop's lock: a Run it was starting for the last test, at that test's clock, writes its state
