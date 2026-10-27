@@ -1,21 +1,32 @@
 version: 2
 updates:
-  - package-ecosystem: cargo
+  - package-ecosystem: gradle
     directory: /
     schedule:
       interval: weekly
     groups:
-      cargo:
+      gradle:
         patterns: ["*"]
         update-types: [minor, patch]
-      cargo-major:
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      npm:
         patterns: ["*"]
-        update-types: [major]  
+        update-types: [minor, patch]
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
-    groupds:
+    groups:
       actions:
         patterns: ["*"]
