@@ -107,6 +107,17 @@ class ProtectedCommandsTest : AntsTest() {
     }
 
     @Test
+    fun `a Protected Command written by hand with extra spaces is denied to Bash as run matches it, and an empty one not at all`() {
+        agentTask(claude, extra = "protected-commands:\n  \" mvn   deploy \": []\n  \"\": []\n", env = listOf("PATH", "HOME"))
+        claude.session("draft", done)
+        start()
+        eventually { assertEquals(1, claude.launches("draft").size) }
+
+        val denied = claude.launches("draft").single().flag("--disallowedTools")!!.split(",")
+        assertEquals(listOf("Bash(mvn deploy)", "Bash(mvn deploy *)"), denied.filter { it.startsWith("Bash(") })
+    }
+
+    @Test
     fun `a GET on the MCP endpoint is a plain 405, not a redirect to the login, so claude stops asking for a stream`() {
         val request = HttpRequest.newBuilder(URI("http://127.0.0.1:$port/mcp")).GET().build()
         val response = HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.discarding())
