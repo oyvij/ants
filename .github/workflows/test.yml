@@ -31,7 +31,7 @@ jobs:
         with:
           distribution: temurin
           java-version: 25
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
       # One file per node --check: it checks only the first and passes the rest to it as arguments.
