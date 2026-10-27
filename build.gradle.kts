@@ -5,7 +5,7 @@ import java.util.HexFormat
 plugins {
     kotlin("jvm") version "2.4.21"
     kotlin("plugin.spring") version "2.4.21"
-    id("org.springframework.boot") version "4.0.8"
+    id("org.springframework.boot") version "4.1.2"
     id("gg.jte.gradle") version "3.2.4"
     id("com.github.node-gradle.node") version "7.1.0"
 }
@@ -28,6 +28,7 @@ repositories {
 dependencies {
     implementation(platform(SpringBootPlugin.BOM_COORDINATES))
     implementation(platform("org.operaton.bpm:operaton-bom:$operaton"))
+    implementation(enforcedPlatform("com.fasterxml.jackson:jackson-bom:2.21.7"))
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-security")
     implementation("org.operaton.bpm.springboot:operaton-bpm-spring-boot-starter-rest:$operaton")
