@@ -860,7 +860,7 @@ class AgentLauncher(
         val resolved = catalogue.agents(withHidden = true).map { it.name }.distinct().mapNotNull { runCatching { catalogue.agent(it) }.getOrNull() }
         val offered = resolved.filter { it.subagent && it.cli == "claude" }.associate { agent ->
             agent.name to listOfNotNull(
-                "description" to agent.description,
+                "description" to catalogue.description(agent),
                 "prompt" to agent.instructions,
                 catalogue.subagentTools(agent)?.let { rules -> "tools" to rules.filter { it.substringBefore('(') !in OWN_TOOLS } },
                 agent.model?.let { "model" to it },

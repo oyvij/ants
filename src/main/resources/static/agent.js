@@ -1,6 +1,6 @@
 // The Agent page: the CLI picks which fieldsets the form posts (Claude's model, tools and Subagent tick, or codex's
 // model and sandbox); a Skill chip's × and "Add a Skill…"; each tool's Limit… with a field per rule, ＋ Add and ×; and
-// ＋ Add tool; and the same on the form of Your Skills and Your tools on a shipped Agent. The fields carry what is posted; the words the page shows come from the server.
+// ＋ Add tool; and the chips of Your Skills on a shipped Agent. The fields carry what is posted; the words the page shows come from the server.
 const form = document.getElementById("agent")
 const cli = form.elements.cli
 cli.addEventListener("change", () => form.querySelectorAll("fieldset[data-cli]").forEach(set => set.disabled = set.dataset.cli !== cli.value))

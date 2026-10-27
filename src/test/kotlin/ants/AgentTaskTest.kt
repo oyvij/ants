@@ -416,7 +416,7 @@ class AgentTaskTest : AntsTest() {
             assertContains(allowed, "Bash(git log *)")
             assertContains(allowed, "Bash(cargo *)")
             assertContains(allowed, "mcp__ants__run")
-            assertFalse("WebSearch" in allowed) // only in their Draft
+            assertFalse("WebSearch" in allowed)
             assertContains(launch.flag("--disallowedTools")!!.split(","), "Bash(cargo publish *)")
         } finally {
             browser.post("/agents/lead/your-skills", emptyMap())

@@ -306,8 +306,8 @@ class Agents(
     }
 
     /**
-     * The form of a copy of [agent] named [name]: a shipped Agent's copy lists its shipped Skills and tools and its Your Skills and Your
-     * tools as its page shows them, their Draft's when they have one.
+     * The form of a copy of [agent] named [name]: a shipped Agent's copy lists its shipped Skills and its Your Skills as
+     * its page shows them, their Draft's when they have one.
      */
     private fun copied(agent: Agent, name: String): AgentForm {
         val shown = agent.takeIf(yours::has)?.let(yours::shown)

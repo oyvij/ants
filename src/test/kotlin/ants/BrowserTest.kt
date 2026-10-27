@@ -3512,7 +3512,7 @@ class BrowserTest : AntsTest() {
     fun `Your tools on a shipped Agent's page tick a tool with a Limit apart from its read-only shipped tools, and Publish widens its description`() = browse {
         try {
             page.navigate(url("/agents/lead"))
-            assertThat(page.locator("#agent input[name='tool.Read']")).isDisabled() // the shipped tools, apart and read-only
+            assertThat(page.locator("#agent input[name='tool.Read']")).isDisabled()
             assertThat(page.locator("#agent input[name='tool.Read']")).isChecked()
             val bash = page.locator("#your-skills .trow").filter(Locator.FilterOptions().setHas(page.locator("input[name='tool.Bash']")))
 

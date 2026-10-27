@@ -941,7 +941,7 @@ class AgentsTest : AntsTest() {
         val shipped = catalogue.agent("lead").tools!!
         val saved = browser.autosave("/agents/lead/your-skills", mapOf("tool.Bash" to "on", "limit.Bash" to "cargo *"), draftVersion(get("/agents/lead")))
         assertEquals(200, saved.status, saved.body)
-        assertEquals(shipped, tools("lead")) // a Draft is used by nothing
+        assertEquals(shipped, tools("lead"))
         val drafted = get("/agents/lead")
         assertContains(drafted, """name="limit.Bash" value="cargo *"""")
         assertEquals(listOf("Draft · changes not published"), markers(drafted))
@@ -949,7 +949,7 @@ class AgentsTest : AntsTest() {
         val posted = mapOf("tool.Bash" to "on", "limit.Bash" to "cargo *", "tool.Read" to "on", "tool.ProtectedCommand" to "on")
         assertEquals("/agents/lead", post("/agents/lead/your-skills", posted).path)
         assertEquals(shipped + listOf("Bash(cargo *)", "ProtectedCommand"), tools("lead"))
-        assertEquals(shipped, catalogue.agent("lead").tools) // the shipped agent file is untouched
+        assertEquals(shipped, catalogue.agent("lead").tools)
         assertEquals(listOf("Published"), markers(get("/agents/lead")))
 
         assertEquals("/agents/lead", post("/agents/lead/your-skills", emptyMap()).path)
@@ -960,7 +960,7 @@ class AgentsTest : AntsTest() {
     fun `Your tools survive replacing the shipped agent file, as an update does`() {
         try {
             post("/agents/lead/your-skills", mapOf("tool.Bash" to "on", "limit.Bash" to "cargo *"))
-            val updated = Catalogue(home, antsSettings, Drafts(home)) // replaces shipped/ whole, as a start after an update does
+            val updated = Catalogue(home, antsSettings, Drafts(home))
             assertContains(updated.tools(updated.agent("lead")), "Bash(cargo *)")
             assertContains(updated.tools(updated.agent("lead")), "Bash(git log *)")
         } finally {
