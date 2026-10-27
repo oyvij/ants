@@ -551,7 +551,7 @@ class AgentTaskTest : AntsTest() {
         )) assertContains(argv, flags)
         assertFalse("--disable-slash-commands" in launch.argv)
         assertEquals("Read,Grep,Bash,Skill", launch.flag("--tools")) // the Agent's own Skill rule goes, Ants' Skill comes
-        assertEquals("Read,Grep,Bash(git log:*),Skill,mcp__ants__run", launch.flag("--allowedTools"))
+        assertEquals("Read,Grep,Bash(git log:*),Skill", launch.flag("--allowedTools"))
         assertContains(argv, Regex("--session-id [0-9a-f-]{36}"))
         assertEquals(workspace(run).toRealPath().toString(), launch.cwd)
 
@@ -579,7 +579,7 @@ class AgentTaskTest : AntsTest() {
         val argv = claude.launches("draft").single().argv
         val ws = workspace(run)
         assertEquals(
-            "Read,Write(/$ws/out/**),Edit(/$ws/notes/**),Write(//tmp/x/**),Write,Bash(git log *),Edit(/$ws/out/**),Edit(//tmp/x/**),Skill,mcp__ants__run",
+            "Read,Write(/$ws/out/**),Edit(/$ws/notes/**),Write(//tmp/x/**),Write,Bash(git log *),Edit(/$ws/out/**),Edit(//tmp/x/**),Skill",
             argv[argv.indexOf("--allowedTools") + 1],
         )
         assertEquals("Read,Write,Edit,Bash,Skill", argv[argv.indexOf("--tools") + 1])

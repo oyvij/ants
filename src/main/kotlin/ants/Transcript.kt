@@ -175,6 +175,9 @@ class Transcript(private val toolLine: (name: String, input: Map<*, *>) -> Strin
     private fun shimmer() = verb?.let { """<span class="shimmer">${esc(it)}…</span>""" } ?: """<span class="shimmer" data-rotate>Pondering…</span>"""
 
     /** What a call of the tool [name] on [argument] does, as the live line says it: "Reading Header.tsx", "Running pnpm test". */
+    private fun argument(name: String, input: Map<*, *>) =
+        (input["args"] as? List<*>)?.takeIf { name == AgentLauncher.RUN_TOOL }?.joinToString(" ") ?: input.values.firstOrNull { it is String }?.toString().orEmpty()
+
     private fun doing(name: String, argument: String): String {
         val what = argument.lines().first().let { if (name in FILE_TOOLS) it.substringAfterLast('/') else it }.take(40)
         return listOf(VERBS[name] ?: "Working", what).filter { it.isNotEmpty() }.joinToString(" ")
@@ -274,13 +277,13 @@ class Transcript(private val toolLine: (name: String, input: Map<*, *>) -> Strin
                 if (name in AgentLauncher.SUBAGENT_TOOLS) {
                     spawn(block["id"], input["subagent_type"]?.toString() ?: "general-purpose", input["description"]?.toString().orEmpty(), parent)
                 } else {
-                    val argument = input.values.firstOrNull { it is String }?.toString().orEmpty()
+                    val argument = argument(name, input)
                     val shown = toolLine(name, input)
                         ?: input["skill"]?.takeIf { name == "Skill" }?.let { """Used the Skill <b>${esc(it)}</b>""" } // which Skill did the job (ADR 0024)
                         ?: """<b>${esc(name)}</b> <code>${esc(argument.lines().first().take(120))}</code>"""
                     tools[block["id"]] = append(parent) { """<div class="tool" id="$it">$shown</div>""" }
                 }
-                if (parent == null) verb = doing(name, input.values.firstOrNull { it is String }?.toString().orEmpty())
+                if (parent == null) verb = doing(name, argument(name, input))
                 if (name == "TaskUpdate") todo(input)
             }
         }

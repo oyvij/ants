@@ -11,22 +11,25 @@ import java.util.concurrent.TimeUnit.SECONDS
 import java.util.concurrent.TimeoutException
 import kotlin.io.path.isDirectory
 
-/**
- * Protected Commands (ADR 0015): every claude Agent Task gets one MCP tool, `run(command, folder)`, served on Ants'
- * MCP server ([Mcp]) with a bearer token of its own. Ants runs a command a Protected Command's prefix starts, with no shell, in a
- * folder of the Task's Run workspace, on the CLI's environment allow-list plus the Secrets linked to it, and hands back
- * its exit code and output with every Secret's value masked. The Agent never sees a Secret.
- */
 @Component
 class ProtectedCommands(private val settings: Settings, private val mcp: Mcp) {
     /** How long a Protected Command may run before Ants kills it. */
     internal var timeLimit: Duration = Duration.ofMinutes(10)
 
-    fun open(workspace: Path, scripts: McpTools = NO_TOOLS): Pair<String, String> = mcp.open(object : McpTools {
-        override val tools = listOf(TOOL) + scripts.tools
+    fun allowed(tools: List<String>): List<String> {
+        val rules = tools.filter { it.substringBefore('(').trim() == AGENT_TOOL }
+        val all = prefixes().keys.map { it.joinToString(" ") }
+        if (rules.any { '(' !in it }) return all
+        val limits = rules.flatMap { it.substringAfter('(').removeSuffix(")").split(',') }.map { Settings.strings(it).orEmpty().joinToString(" ") }
+        return all.filter { it in limits }
+    }
 
-        override fun call(name: String, arguments: Map<*, *>) = if (name != TOOL["name"]) scripts.call(name, arguments) else try {
-            run(workspace, arguments["command"]?.toString().orEmpty(), arguments["folder"]?.toString() ?: ".").let { (exit, output) -> "Exit code $exit\n\n$output" to (exit != 0) }
+    fun open(workspace: Path, scripts: McpTools = NO_TOOLS, allowed: List<String> = emptyList()): Pair<String, String> = mcp.open(object : McpTools {
+        override val tools = (if (allowed.isEmpty()) emptyList() else listOf(tool(allowed))) + scripts.tools
+
+        override fun call(name: String, arguments: Map<*, *>) = if (name != TOOL) scripts.call(name, arguments) else try {
+            val args = (arguments["args"] as? List<*>)?.map(Any?::toString).orEmpty()
+            run(workspace, args, arguments["folder"]?.toString() ?: ".", allowed).let { (exit, output) -> "Exit code $exit\n\n$output" to (exit != 0) }
         } catch (refused: Refused) {
             refused.message to true
         }
@@ -35,20 +38,17 @@ class ProtectedCommands(private val settings: Settings, private val mcp: Mcp) {
     /** Ends [token], once its Task's session has ended. */
     fun close(token: String) = mcp.close(token)
 
-    /**
-     * Runs [command] in [folder] of [workspace] and returns its exit code and its output, stdout and stderr together,
-     * with every Secret's value as [MASK]. Refuses a command no Protected Command starts, a folder outside the
-     * workspace, and one that runs past [timeLimit], which Ants kills with every process under it.
-     */
-    internal fun run(workspace: Path, command: String, folder: String): Pair<Int, String> {
-        // ponytail: quotes group words, but a word half quoted, as in a"b c", splits; a shell's rules if it matters
-        val words = WORD.findAll(command).map { match -> match.groups.drop(1).firstNotNullOf { it?.value } }.toList()
-        val prefixes = settings.protectedCommands().mapKeys { (prefix) -> Settings.strings(prefix).orEmpty() }
-        val labels = prefixes.filterKeys { it.isNotEmpty() && words.take(it.size) == it }.maxByOrNull { it.key.size }?.value
+    private fun prefixes() = settings.protectedCommands().mapKeys { (prefix) -> Settings.strings(prefix).orEmpty() }.filterKeys { it.isNotEmpty() }
+
+    internal fun run(workspace: Path, args: List<String>, folder: String, allowed: List<String>): Pair<Int, String> {
+        val command = args.joinToString(" ")
+        val (prefix, labels) = prefixes().filterKeys { args.take(it.size) == it }.maxByOrNull { it.key.size }
             ?: throw Refused(
-                if (words.take(2) == listOf("git", "clone")) "`$command` is no Protected Command, so Ants ran nothing. Ants clones the Run's repos itself, on the work branch: name the repo where your Skill says to name repos, else end stuck with the repo in needs. Never ask for `git clone` as a Protected Command."
-                else "`$command` is no Protected Command: it gets no Secrets, so Ants ran nothing. Run it with Bash. If Bash refuses it, your Agent isn't allowed to run it: end stuck, saying which Bash rule your Agent needs, such as `Bash(${words.firstOrNull().orEmpty()} *)`.",
+                if (args.take(2) == listOf("git", "clone")) "`$command` is no Protected Command, so Ants ran nothing. Ants clones the Run's repos itself, on the work branch: name the repo where your Skill says to name repos, else end stuck with the repo in needs. Never ask for `git clone` as a Protected Command."
+                else "`$command` is no Protected Command: it gets no Secrets, so Ants ran nothing. Run it with Bash. If Bash refuses it, your Agent isn't allowed to run it: end stuck, saying which Bash rule your Agent needs, such as `Bash(${args.firstOrNull().orEmpty()} *)`.",
             )
+        val name = prefix.joinToString(" ")
+        if (name !in allowed) throw Refused("`$command` is a Protected Command your Agent may not run, so Ants ran nothing: end stuck, saying your Agent needs `$AGENT_TOOL($name)`.")
         val root = workspace.toRealPath()
         val dir = runCatching { root.resolve(folder).toRealPath() }.getOrNull()?.takeIf { it.startsWith(root) && it.isDirectory() }
             ?: throw Refused("$folder is no folder in the Run workspace, so Ants ran nothing.")
@@ -59,7 +59,7 @@ class ProtectedCommands(private val settings: Settings, private val mcp: Mcp) {
             names[label].orEmpty().map { it to value }
         }
         val process = try {
-            ProcessBuilder(words).directory(dir.toFile()).redirectErrorStream(true).redirectInput(File("/dev/null"))
+            ProcessBuilder(args).directory(dir.toFile()).redirectErrorStream(true).redirectInput(File("/dev/null"))
                 .onAllowList(settings, secrets.toMap()).start()
         } catch (e: IOException) {
             throw Refused("Ants can't run `$command`: ${e.message}")
@@ -88,16 +88,22 @@ class ProtectedCommands(private val settings: Settings, private val mcp: Mcp) {
         fun mask(text: String, secrets: Collection<String>) =
             secrets.filter(String::isNotEmpty).sortedByDescending { it.length }.fold(text) { masked, secret -> masked.replace(secret, MASK) }
 
-        /** A word: double-quoted, single-quoted, or bare. */
-        private val WORD = Regex(""""([^"]*)"|'([^']*)'|(\S+)""")
+        const val AGENT_TOOL = "ProtectedCommand"
 
-        private val TOOL = Mcp.tool(
-            "run",
-            "Runs a Protected Command, such as `yarn install`, in a folder of the Run workspace, with the Secrets the user " +
-                "linked to it, which you never see. No shell: the command is split into words. Returns the exit code and the output, " +
+        private const val TOOL = "run"
+
+        private fun tool(allowed: List<String>) = Mcp.tool(
+            TOOL,
+            "Runs a Protected Command in a folder of the Run workspace, with the Secrets the user linked to it, which you never see. " +
+                "The Protected Commands you may run: ${allowed.joinToString(", ") { "`$it`" }}. " +
+                "No shell: run the Protected Command alone, then work with its output using your other tools. Returns the exit code and the output, " +
                 "every Secret masked as $MASK. A command no Protected Command starts is refused: run it with Bash.",
             mapOf(
-                "command" to "The command and its arguments, such as `yarn install --immutable`.",
+                "args" to mapOf(
+                    "type" to "array",
+                    "items" to mapOf("type" to "string"),
+                    "description" to "The command and its arguments, one item each, passed as they are, such as [\"yarn\", \"install\", \"--immutable\"].",
+                ),
                 "folder" to "The folder to run it in, relative to the Run workspace; by default the workspace.",
             ),
             optional = setOf("folder"),

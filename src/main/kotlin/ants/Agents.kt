@@ -477,7 +477,10 @@ data class AgentForm(
                 Tool("Write", "Create or overwrite a file.", "paths", "src/**"),
                 Tool("NotebookEdit", "Edit Jupyter notebooks (.ipynb). Only matters if your repos have them."),
             ),
-            "Run commands" to listOf(Tool("Bash", "Shell commands: builds, tests, git.", "commands", "pnpm test", "* matches the rest, as in git *.")),
+            "Run commands" to listOf(
+                Tool("Bash", "Shell commands: builds, tests, git.", "commands", "pnpm test", "* matches the rest, as in git *."),
+                Tool(ProtectedCommands.AGENT_TOOL, "Run a Protected Command with its Secrets, through Ants' run tool.", "Protected Commands", "yarn install", "Each a Protected Command's prefix, as in Settings."),
+            ),
             "Web" to listOf(
                 Tool("WebFetch", "Read the page at a URL.", "domains", "domain:docs.spring.io"),
                 Tool("WebSearch", "Search the web."),

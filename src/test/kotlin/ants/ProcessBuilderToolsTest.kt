@@ -62,7 +62,7 @@ class ProcessBuilderToolsTest : AntsTest() {
     @Test
     fun `a page's token lists the modeler's read tools and not run, and a Task's token lists run and no modeler tool`() {
         val page = open()
-        val task = protectedCommands.open(Files.createTempDirectory("workspace")).first
+        val task = protectedCommands.open(Files.createTempDirectory("workspace"), allowed = listOf("yarn")).first
         try {
             assertEquals(listOf("diagram", "agents", "skills", "skill", "scripts", "processes", "process", "built_in_tasks", "templates", "references", "checks",
                 "create_agent", "create_skill", "change_agent", "change_skill", "delete_agent", "delete_skill", "build_log", "copy",
@@ -70,7 +70,7 @@ class ProcessBuilderToolsTest : AntsTest() {
                 "set_user_task", "set_call", "set_built_in", "set_multi_instance", "drop_template"), tools(page))
             assertEquals(listOf("run"), tools(task))
             assertTrue(call(task, "diagram").second)
-            assertTrue(call(page, "run", mapOf("command" to "ls")).second)
+            assertTrue(call(page, "run", mapOf("args" to listOf("ls"))).second)
         } finally {
             protectedCommands.close(task)
         }

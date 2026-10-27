@@ -97,7 +97,7 @@ class FeelingLuckyTest : AntsTest() {
     @Test
     fun `the scout and the proposal run on lead and the build and the pull request on engineer, each Task on its old level`() {
         val ws = workspace(feelingLucky())
-        fun tools(task: String) = claude.launches(task).first().let { it.flag("--tools")?.removeSuffix(",Skill") to it.flag("--allowedTools")?.removeSuffix(",mcp__ants__run")?.removeSuffix(",Skill") } // every claude Task has the run tool, and Skill when it has Skills
+        fun tools(task: String) = claude.launches(task).first().let { it.flag("--tools")?.removeSuffix(",Skill") to it.flag("--allowedTools")?.removeSuffix(",Skill") }
         fun level(task: String) = claude.launches(task).first().let { "${it.flag("--model")} ${it.flag("--effort")}" }
 
         // claude checks a Write against Edit rules and ignores a Write(path) rule, so a Write limit goes out as both

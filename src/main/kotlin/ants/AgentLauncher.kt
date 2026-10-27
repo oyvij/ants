@@ -541,10 +541,11 @@ class AgentLauncher(
             .plus(answerHistory(task)?.let { listOf("--add-dir", "${it.createDirectories()}") }.orEmpty()) // so a Read reaches it (ADR 0010)
             .plus(if (verbosity == null) emptyList() else listOf("--add-dir", "${catalogue.verbosityFile.parent}"))
         val tools = scriptTools.of(allowedScripts(task.extensionProperties, agent), workspace, run)
-        val (token, mcp) = protectedCommands.open(workspace, tools) // its Protected Commands run in the Run workspace
+        val allowed = protectedCommands.allowed(agent.tools ?: DEFAULT_TOOLS)
+        val (token, mcp) = protectedCommands.open(workspace, tools, allowed) // its Protected Commands run in the Run workspace
         val process = runCatching {
             val skills = listOfNotNull(skill) + used
-            cli(agent.cli, cwd, flags(agent, level, cwd, schema, skills, skillsFolder(workspace, instance, skills), session!!, resume, mcp, tools.tools.map { Mcp.CLAUDE_PREFIX + it["name"] }, workspace, gated?.let { listOf("Write(/$it/**)", "Edit(/$it/**)") }.orEmpty()) + shared + places)
+            cli(agent.cli, cwd, flags(agent, level, cwd, schema, skills, skillsFolder(workspace, instance, skills), session!!, resume, mcp, listOfNotNull(RUN_TOOL.takeIf { allowed.isNotEmpty() }) + tools.tools.map { Mcp.CLAUDE_PREFIX + it["name"] }, workspace, gated?.let { listOf("Write(/$it/**)", "Edit(/$it/**)") }.orEmpty()) + shared + places)
                 .apply { environment()["ANTS_TASK"] = task.activityId } // names the Task to its session; the fake claude keys on it
                 .start()
         }.onFailure { protectedCommands.close(token) }.getOrThrow()
@@ -803,8 +804,8 @@ class AgentLauncher(
         }
     }
 
-    private fun flags(agent: Agent, level: Level, cwd: Path, schema: Map<*, *>, skills: List<Skill>, skillsFolder: Path?, session: String, resume: Boolean, mcp: String, scriptTools: List<String>, workspace: Path, denied: List<String>): List<String> {
-        val tools = (agent.tools ?: DEFAULT_TOOLS).filter { it.substringBefore('(') != "Skill" }.map { anchored(it, cwd) }
+    private fun flags(agent: Agent, level: Level, cwd: Path, schema: Map<*, *>, skills: List<Skill>, skillsFolder: Path?, session: String, resume: Boolean, mcp: String, antsTools: List<String>, workspace: Path, denied: List<String>): List<String> {
+        val tools = (agent.tools ?: DEFAULT_TOOLS).filter { it.substringBefore('(') !in OWN_TOOLS }.map { anchored(it, cwd) }
         val skill = listOf("Skill").takeIf { skillsFolder != null } // with no Skills allowed, no Skill tool
         val (subagents, types) = subagents(tools)
         // Probed on claude 2.1.299: a rule such as `Bash(git diff *)` lets `git diff --output=<any path>` write a file, and
@@ -824,7 +825,7 @@ class AgentLauncher(
             // Skill, for the Skills [skillsFolder] loads: which are loaded is what limits them, not a Skill(x) rule.
             "--tools", (tools.map { it.substringBefore('(') } + skill.orEmpty()).distinct().joinToString(","),
             // claude checks a Write against Edit rules and ignores a Write(path) one, so a Write limit also goes out as Edit
-            "--allowedTools", (tools + tools.filter { it.startsWith("Write(") }.map { "Edit(" + it.removePrefix("Write(") } + skill.orEmpty() + RUN_TOOL + scriptTools).distinct().joinToString(","),
+            "--allowedTools", (tools + tools.filter { it.startsWith("Write(") }.map { "Edit(" + it.removePrefix("Write(") } + skill.orEmpty() + antsTools).distinct().joinToString(","),
         ) + subagents + (if (disallowed.isEmpty()) emptyList() else listOf("--disallowedTools", disallowed.joinToString(","))) + (skillsFolder?.let { listOf("--add-dir", "$it") } ?: emptyList()) +
             // A symlinked Skill's files can be read only with its real folder added too.
             skills.flatMap { listOf("--add-dir", it.folder.toString()) } + level.flags +
@@ -861,7 +862,7 @@ class AgentLauncher(
             agent.name to listOfNotNull(
                 "description" to agent.description,
                 "prompt" to agent.instructions,
-                agent.tools?.let { rules -> "tools" to rules.filter { it.substringBefore('(') != "Skill" } },
+                agent.tools?.let { rules -> "tools" to rules.filter { it.substringBefore('(') !in OWN_TOOLS } },
                 agent.model?.let { "model" to it },
             ).toMap()
         }
@@ -967,13 +968,15 @@ class AgentLauncher(
          * Task*. Not `Agent`: an Agent starts Subagents only when its file names the Agent tool, as the implementer's does.
          */
         val DEFAULT_TOOLS = listOf(
-            "Bash", "Edit", "Glob", "Grep", "NotebookEdit", "Read", "TaskCreate", "TaskGet", "TaskList", "TaskUpdate", "WebFetch", "WebSearch", "Write",
+            "Bash", "Edit", "Glob", "Grep", "NotebookEdit", ProtectedCommands.AGENT_TOOL, "Read", "TaskCreate", "TaskGet", "TaskList", "TaskUpdate", "WebFetch", "WebSearch", "Write",
         )
         /** The variables Ants strips from every environment it gives a CLI or a Protected Command, so nothing is paid per token. */
         val PAID = listOf("ANTHROPIC_API_KEY", "CLAUDE_CODE_RETRY_WATCHDOG", "OPENAI_API_KEY", "CODEX_API_KEY")
 
         /** Ants' MCP tool `run`, which runs a Protected Command ([ProtectedCommands]). */
         const val RUN_TOOL = "${Mcp.CLAUDE_PREFIX}run"
+
+        private val OWN_TOOLS = setOf("Skill", ProtectedCommands.AGENT_TOOL)
 
         /** The tool that starts Subagents: `Agent`, formerly `Task`. */
         val SUBAGENT_TOOLS = setOf("Agent", "Task")
