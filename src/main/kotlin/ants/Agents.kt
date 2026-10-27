@@ -203,7 +203,7 @@ class Agents(
 
     /** The shipped Agent whose page is /agents/[name], the only kind with Your Skills. */
     private fun shippedAgent(name: String): Agent = item(name).published?.takeIf(yours::has)
-        ?: throw ResponseStatusException(HttpStatus.FORBIDDEN, "Only a shipped Agent has Your Skills and Your tools.")
+        ?: throw ResponseStatusException(HttpStatus.FORBIDDEN, "Only a shipped Agent has Your Skills.")
 
     private fun yoursField(agent: Agent): YoursField {
         val draft = yours.draft(agent)

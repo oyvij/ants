@@ -267,7 +267,7 @@ class LookTest : AntsTest() {
         http.autosave("/agents/reviewer", mapOf("name" to "reviewer", "cli" to "claude", "description" to "Reviews a change, strictly.", "instructions" to "Review it."), "0")
         // The shipped Agent's page with Your Skills beside the Skills it ships with.
         http.get("/agents/lead")
-        http.post("/agents/lead/your-skills", mapOf("skills" to "polish"))
+        http.post("/agents/lead/your-skills", mapOf("skills" to "polish", "tool.Bash" to "on", "limit.Bash" to "cargo *"))
 
         // A Round of questions.
         claude.session("quiz", 1, result("""{"outcome":"done","summary":"Round 1 on the invoice CSV export.","output":{"questions":[""" + listOf(

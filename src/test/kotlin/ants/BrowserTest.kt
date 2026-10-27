@@ -3509,6 +3509,29 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `Your tools on a shipped Agent's page tick a tool with a Limit apart from its read-only shipped tools, and Publish widens its description`() = browse {
+        try {
+            page.navigate(url("/agents/lead"))
+            assertThat(page.locator("#agent input[name='tool.Read']")).isDisabled() // the shipped tools, apart and read-only
+            assertThat(page.locator("#agent input[name='tool.Read']")).isChecked()
+            val bash = page.locator("#your-skills .trow").filter(Locator.FilterOptions().setHas(page.locator("input[name='tool.Bash']")))
+
+            bash.locator("input[name='tool.Bash']").check()
+            bash.locator("[data-limit]").click()
+            bash.locator("input[name='limit.Bash']").fill("cargo *")
+            assertThat(saveState).hasText(draftSaved)
+            assertThat(marker).hasText("Draft · changes not published")
+            page.click("button[form=your-skills]")
+            page.waitForURL(url("/agents/lead"))
+            assertThat(marker).hasText("Published")
+            assertThat(page.locator("#your-skills input[name='limit.Bash']")).hasValue("cargo *")
+            assertContains(http.get("/catalogue.json").body, "Plus your tools: Bash(cargo *).")
+        } finally {
+            http.post("/agents/lead/your-skills", emptyMap())
+        }
+    }
+
+    @Test
     fun `the Agent page's chips, Limit rules, added tools and CLI switch save what the page shows`() = browse {
         home.resolve("skills/chip-skill").createDirectories().resolve("SKILL.md").writeText("---\nname: chip-skill\ndescription: Chips.\n---\nChip.\n")
         val file = home.resolve("agents").createDirectories().resolve("chipper.md")

@@ -1,5 +1,7 @@
 # Shipped Agents are split by what they may touch, and take Your Skills
 
+Superseded in part by ADR 0028: the user adds tools to a shipped Agent too, as Your tools.
+
 Ants shipped ten Agents, each cut to one job: answerer, architect, griller, implementer, knowledge,
 knowledge-searcher, planner, pr, scout and storyteller. Since ADR 0024 the Task says *what* to do, so most of the ten
 differed only in the job, which is the Task's. A user building a Process couldn't tell which one to pick, and a Skill
