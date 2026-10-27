@@ -203,6 +203,12 @@ One set of questions a Task asks at once, answered together by the user, an Agen
 recommendations, after which the Task resumes its session with the answers.
 _Avoid_: batch, questionnaire, YOLO
 
+**Permission request**:
+A tool call claude refused an Agent, waiting for the user: Always allow adds a Limit to the Agent's
+tools (to Your tools on a shipped Agent), Allow for this Task to that Task's launches only, and Don't allow
+refuses it; the session resumes with the choice. A refusal by a deny rule Ants adds can only be refused.
+_Avoid_: approval, prompt, permission prompt
+
 **Answer History**:
 Every question the user answered themselves, with their answer, kept across Runs and Processes so an
 Agent can answer a Round the way the user would.
@@ -228,6 +234,6 @@ What a Run leaves behind once its Run workspace is gone: what was done and which
 _Avoid_: summary, log
 
 **Notification list**:
-The one list of everything waiting on the user: a Task of any Run, or a scheduled Run that couldn't
-start; each entry leads to it.
+The one list of everything waiting on the user: a Task of any Run, such as a Round or a **Permission
+request**, or a scheduled Run that couldn't start; each entry leads to it.
 _Avoid_: inbox, alerts

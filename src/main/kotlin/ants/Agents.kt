@@ -253,6 +253,22 @@ class Agents(
         return "/agents/${agent.name}"
     }
 
+    fun alwaysRefusal(name: String): String? {
+        val agent = catalogue.agents().firstOrNull { it.name == name } ?: return "There is no Agent named $name any more."
+        return if (yours.has(agent) || agent.file.parent == folder) null else "$name is read-only: allow it for this Task, or Copy the Agent."
+    }
+
+    fun allowAlways(name: String, rule: String): String? {
+        alwaysRefusal(name)?.let { return it }
+        val agent = catalogue.agents().first { it.name == name }
+        if (yours.has(agent)) yours.publishTools(agent, (yours.tools(agent) + rule).distinct())
+        else {
+            val tools = AgentForm.ofTools(((agent.tools ?: AgentLauncher.DEFAULT_TOOLS) + rule).distinct())
+            agent.file.writeAtomically(AgentForm.of(agent).copy(tools = tools.tools, otherTools = tools.otherTools).text())
+        }
+        return null
+    }
+
     @PostMapping("/agents/{name}/your-skills/discard")
     fun discardYourSkills(@PathVariable name: String, @RequestParam params: Map<String, String>, model: Model): String {
         val agent = shippedAgent(name)

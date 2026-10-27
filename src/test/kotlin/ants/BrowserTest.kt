@@ -2589,6 +2589,60 @@ class BrowserTest : AntsTest() {
         return entry
     }
 
+    private fun refusedSession(command: String, reason: String) = arrayOf(
+        """{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_1","name":"Bash","input":{"command":"$command"}}]},"session_id":"${'$'}SESSION"}""",
+        """{"type":"system","subtype":"permission_denied","tool_name":"Bash","tool_use_id":"toolu_1","decision_reason_type":"$reason","session_id":"${'$'}SESSION"}""",
+        "read",
+        """{"type":"result","subtype":"error_during_execution","is_error":true,"session_id":"${'$'}SESSION"}""",
+        "exit 1",
+    )
+
+    private fun permissionEntry(): String {
+        http.import("agent-task.bpmn")
+        http.post("/processes/agent-task/runs", mapOf("prompt" to "List the outdated crates."))
+        var entry = ""
+        eventually { entry = assertNotNull(Regex("""href="(/notifications/[^"]+)"""").find(http.get("/notifications").body)).groupValues[1] }
+        return entry
+    }
+
+    @Test
+    fun `a Permission request's dialog shows the Agent, the tool, the command and an editable Limit, and Allow for this Task sends the edited one`() = browse {
+        val claude = FakeClaude()
+        agentTask(claude, agent = "tools: Bash(git log *)\n")
+        claude.session("draft", 1, *refusedSession("cargo outdated", "mode"))
+        claude.session("draft", """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":{"outcome":"done","summary":"Listed.","output":{}}}""")
+        val entry = permissionEntry()
+
+        page.navigate(url(entry))
+        val dialog = page.getByRole(AriaRole.DIALOG, Page.GetByRoleOptions().setName("Permission request"))
+        assertThat(dialog).containsText("writer wants to run cargo outdated")
+        assertThat(dialog.locator(".kv")).containsText("Agent")
+        assertThat(dialog.locator(".kv")).containsText("writer")
+        assertThat(dialog.locator(".kv")).containsText("Bash")
+        assertThat(dialog.locator(".kv")).containsText("cargo outdated")
+        assertThat(dialog.getByLabel("Limit")).hasValue("Bash(cargo *)")
+        assertThat(dialog.getByRole(AriaRole.BUTTON)).hasText(arrayOf("Don't allow", "Allow for this Task", "Always allow"))
+        page.screenshot("permission")
+        dialog.getByLabel("Limit").fill("Bash(cargo outdated)")
+        dialog.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Allow for this Task")).click()
+        eventually { assertEquals(2, claude.launches("draft").size) }
+        assertTrue("Bash(cargo outdated)" in claude.launches("draft")[1].flag("--allowedTools")!!.split(","))
+    }
+
+    @Test
+    fun `a Permission request no allow rule can help says why, and offers Don't allow only`() = browse {
+        val claude = FakeClaude()
+        agentTask(claude, agent = "tools: Bash\n", extra = "protected-commands:\n  yarn install: []\n")
+        claude.session("draft", 1, *refusedSession("yarn install", "rule"))
+        val entry = permissionEntry()
+
+        page.navigate(url(entry))
+        val dialog = page.getByRole(AriaRole.DIALOG, Page.GetByRoleOptions().setName("Permission request"))
+        assertThat(dialog).containsText("No allow rule can help: a Protected Command: give the Agent ProtectedCommand.")
+        assertThat(dialog.getByLabel("Limit")).hasCount(0)
+        assertThat(dialog.getByRole(AriaRole.BUTTON)).hasText(arrayOf("Don't allow"))
+    }
+
     @Test
     fun `Review changes picks diff lines for a comment by clicking their numbers, and files it`() = browse {
         val entry = byRepoReviewEntryOfApiCommitting("hello.txt", "hi\nthere\nworld\n")

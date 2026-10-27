@@ -39,7 +39,7 @@ sealed class Entry(val id: String, val tag: String, val process: String, val tas
     val waited get() = duration(Duration.between(since.toInstant(), Instant.now()), seconds = false)
 
     private companion object {
-        val ICONS = mapOf("[failed]" to "✕", "[stuck]" to "⚠", "[stopped]" to "■", "[questions]" to "?", "[approve]" to "✓", "[review]" to "±", "[push]" to "↑")
+        val ICONS = mapOf("[failed]" to "✕", "[stuck]" to "⚠", "[stopped]" to "■", "[questions]" to "?", "[approve]" to "✓", "[review]" to "±", "[push]" to "↑", "[permission]" to "⊘")
     }
 }
 
@@ -78,6 +78,7 @@ class Notifications(
     private val cloneRepos: CloneRepos,
     private val names: RunNames,
     private val catalogue: Catalogue,
+    private val agents: Agents,
     @Value("\${ants.home}") private val home: Path,
 ) {
     /** Everything waiting on the user, oldest first. */
@@ -156,6 +157,10 @@ class Notifications(
             return "push"
         }
         model.addAttribute("view", view(entry))
+        permission(incident)?.let { request ->
+            model.addAttribute("permission", request)
+            model.addAttribute("always", request.allowable && agents.alwaysRefusal(request.agent) == null)
+        }
         return if (topic == AgentLauncher.TOPIC) "notification" else "builtin"
     }
 
@@ -222,6 +227,44 @@ class Notifications(
         if (action == Push.PUSH) Shell.toast(request, Toast("Pushing", "${entry.summary}. The Run goes on once it is pushed.", Toast.Kind.INFO))
         return back(back, entry.run, "/notifications/next?run=${entry.run}")
     }
+
+    @PostMapping("/notifications/{id}/permission")
+    fun permission(
+        @PathVariable id: String, @RequestParam choice: String, @RequestParam(defaultValue = "") limit: String, @RequestParam(required = false) back: String?,
+        model: Model, response: HttpServletResponse,
+    ): String {
+        val incident = incidents().incidentId(id).singleResult() ?: return gone(model, response)
+        val request = permission(incident) ?: throw ResponseStatusException(HttpStatus.BAD_REQUEST, "This Task asks for no permission")
+        val entry = entry(incident)
+        val rule = limit.trim()
+        if (choice != DENY) {
+            if (choice != ALWAYS && choice != FOR_TASK) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "No choice $choice")
+            if (!request.allowable) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "No allow rule can help: ${request.why}")
+            val refusal = if (!request.fits(rule)) "The Limit is a rule for ${request.tool}, such as ${request.limit}."
+                else if (choice == ALWAYS) agents.allowAlways(request.agent, rule) else null
+            if (refusal != null) {
+                model.addAttribute("error", refusal)
+                return entry(id, model, response)
+            }
+        }
+        val (name, message) = when (choice) {
+            ALWAYS -> "Always allow" to "The user allowed `$rule` for you from now on."
+            FOR_TASK -> "Allow for this Task" to "The user allowed `$rule` for the rest of this Task."
+            else -> "Don't allow" to "The user refused `${request.what}`. Work without it, or end stuck saying what you need it for."
+        }
+        runLog(names.runWorkspace(entry.run), entry.task, name, "${request.summary}" + if (choice == DENY) "" else ": `$rule`")
+        if (choice == FOR_TASK) {
+            val granted = (runtime.getVariableLocal(incident.executionId, AgentLauncher.GRANTED) as? String)
+                ?.let { runCatching { JsonMapper.shared().readValue(it, List::class.java).map(Any?::toString) }.getOrNull() }.orEmpty()
+            runtime.setVariableLocal(incident.executionId, AgentLauncher.GRANTED, JsonMapper.shared().writeValueAsString((granted + rule).distinct()))
+        }
+        val again = if (choice == DENY) "" else " Try it again, then carry on."
+        runtime.setVariablesLocal(incident.executionId, mapOf(AgentLauncher.ACTION to AgentLauncher.CONTINUE, AgentLauncher.INSTRUCTION to "$message$again Answer with your Result once you are done."))
+        externalTasks.setRetries(incident.configuration, 1)
+        return back(back, entry.run, "/notifications/next?run=${entry.run}")
+    }
+
+    private fun permission(incident: Incident) = PermissionRequest.of(runtime.getVariableLocal(incident.executionId, AgentLauncher.PERMISSION))
 
     /**
      * Approve, which completes the Approve with `{approved: true, comment}`, or Send back (comment required), which
@@ -417,6 +460,9 @@ class Notifications(
         const val RETRY = "retry"
         const val APPROVE = "approve"
         const val SEND_BACK_ACTION = "send-back"
+        const val ALWAYS = "always"
+        const val FOR_TASK = "task"
+        const val DENY = "deny"
 
         /** An Approve's fields: its Title and Show are input parameters, so `${…}` in them works and Checks read them. */
         const val TITLE = "title"
