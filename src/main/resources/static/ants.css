@@ -641,6 +641,7 @@ details.example pre { background: var(--line2); border: 0; padding: 10px; border
     #menu:checked ~ nav.side { visibility: visible; transform: none; box-shadow: 0 0 0 100vmax var(--modalBg); }
     main, main.full { padding-inline: 16px; }
     .composer > :is(div, form), main.full .composer > :is(div, form) { padding-inline: 16px; }
+    #permission .composer .grow { display: none; } #permission .composer button { flex: 1 1 0; min-width: 0; padding-inline: 8px; }
     .answering { flex-direction: column; align-items: stretch; gap: 16px; }
     .answering, .answering:has(> #tabs:not([hidden])) { --lead: 0px; }
     nav#tabs[role=tablist] { position: static; flex: none; flex-direction: row; gap: 6px; max-height: none; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; padding-bottom: 4px; }
