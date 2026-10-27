@@ -43,7 +43,7 @@ jobs:
         with:
           distribution: temurin
           java-version: 25
-      - uses: gradle/actions/setup-gradle@v5
+      - uses: gradle/actions/setup-gradle@v6
       - run: ./gradlew tarball -Prelease=$VERSION
         env:
           VERSION: ${{ steps.beta.outputs.version }}
