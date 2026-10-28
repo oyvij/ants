@@ -65,7 +65,7 @@
 </div>
 <div class="card references"><h3>References</h3><div class="help">The Markdown files beside its SKILL.md, which it can point the Agent to. Copy a path to paste it into SKILL.md.</div>
 @for((i, reference) in references.withIndex())
-    <div class="row ref"><a class="grow" href="/skills/${form.name}/references/${reference.path}" data-open="reference-${i}"><code>${reference.path}</code></a><button type="button" class="ghost" data-copy="${reference.path}" title="Copy its path">Copy</button></div>
+    <div class="row ref"><a class="grow" href="/skills/${form.name}/references/${reference.path}" data-open="reference-${i}"><code>${reference.path}</code>@if(reference.changed)<span class="pill p-changed">changed</span>@endif</a><button type="button" class="ghost" data-copy="${reference.path}" title="Copy its path">Copy</button></div>
 @endfor
 @if(references.isEmpty())
     <div class="muted small">No references: no Markdown file is beside its SKILL.md.</div>
@@ -75,8 +75,17 @@
 </div>
 @for((i, reference) in references.withIndex())
 <dialog class="modal reference" id="reference-${i}">
-    <form method="dialog" class="mh"><label for="reference-text-${i}">${reference.path}</label><span class="pill p-quiet" title="Skill">${form.name}</span><span class="muted small">Read-only</span><span class="sp"></span><span class="muted small">Esc to close</span><button class="ghost" title="Close" aria-label="Close">✕</button></form>
+    <form method="dialog" class="mh"><label for="reference-text-${i}">${reference.path}</label><span class="pill p-quiet" title="Skill">${form.name}</span>@if(form.readOnly)<span class="muted small">Read-only</span>@endif<span class="sp"></span><span class="muted small">Esc to close</span><button class="ghost" title="Close" aria-label="Close">✕</button></form>
+@if(form.readOnly)
     <div class="mb"><textarea id="reference-text-${i}" rows="20" placeholder="e.g. # Format&#10;One finding per line." data-markdown readonly data-tall>${reference.text}</textarea></div>
+@else
+    <form method="post" action="/skills/${form.name}/references/${reference.path}" class="mb" data-reference-save>
+        <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+        <p role="alert" hidden></p>
+        <textarea id="reference-text-${i}" name="text" rows="20" placeholder="e.g. # Format&#10;One finding per line." data-markdown data-tall>${reference.text}</textarea>
+        <div class="go"><button class="primary">Save</button></div>
+    </form>
+@endif
 </dialog>
 @endfor
 @if(references.isNotEmpty())<script src="/references.js" defer></script>@endif

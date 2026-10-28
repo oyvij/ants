@@ -1,5 +1,7 @@
 # A Task owns its Assignment, and Skills are plain and model-invoked
 
+Superseded in part by ADR 0030: the Skills page edits `SKILL.md` and the Markdown references beside it, through the Draft.
+
 An Agent Task named one Skill, and that Skill carried the whole job: an `## In Ants` section on top of the actual
 how-to, `ants-inputs`, `ants-uses`, `ants-verbosity` and `ants-answer-history` metadata, a `result.schema.json`, and
 protocol such as how a Round is answered. So every Task needed its own Skill, a Skill from elsewhere had to be

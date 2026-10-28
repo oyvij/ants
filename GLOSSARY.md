@@ -62,6 +62,11 @@ A `SKILL.md` saying how to do one kind of job, which an Agent picks up on its ow
 for it; it knows nothing of Runs or Tasks.
 _Avoid_: prompt, task instructions, Assignment
 
+**Reference**:
+A Markdown file beside a Skill's `SKILL.md`, in its folder or a subfolder, that the Skill points the Agent to; named
+by its path relative to the Skill's folder.
+_Avoid_: reference file, attachment, sub-skill
+
 **Your Skills**:
 The Skills the user adds to a shipped Agent, kept apart from its shipped agent file so an update to Ants keeps
 them; Skills only, never tools, published like any Agent.

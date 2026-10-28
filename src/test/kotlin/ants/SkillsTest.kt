@@ -487,15 +487,121 @@ class SkillsTest : AntsTest() {
             val read = browser.get("/skills/readable/references/references/format.md")
             assertEquals(200, read.status)
             assertContains(read.body, "# The format\n\nOne line each.\n")
-            assertContains(read.body, "data-markdown readonly")
             for (path in listOf("LICENSE", "SKILL.md", "missing.md", "nested/inner.md", "nested/SKILL.md"))
                 assertEquals(404, browser.get("/skills/readable/references/$path").status, path)
             for (path in listOf("../outside.md", "references/../../outside.md", "%2E%2E/outside.md", "references%2F..%2F..%2Foutside.md"))
                 assertFalse("Not the Skill" in browser.get("/skills/readable/references/$path").body, path)
-            assertEquals(200, browser.get("/skills/tdd/references/tests.md").status)
+            assertContains(browser.get("/skills/tdd/references/tests.md").also { assertEquals(200, it.status) }.body, "data-markdown readonly")
         } finally {
             folder.toFile().deleteRecursively()
             home.resolve("skills/outside.md").deleteIfExists()
+        }
+    }
+
+    private fun changed(page: String) = Regex("""<code>([^<]+)</code><span class="pill p-changed">changed</span>""").findAll(page).map { it.groupValues[1] }.toList()
+
+    private fun referring(name: String): Path = published(name).also { folder ->
+        folder.resolve("guide.md").writeText("Published guide.")
+        folder.resolve("references").createDirectories().resolve("format.md").writeText("Published format.")
+        folder.resolve("LICENSE").writeText("MIT")
+        folder.resolve("scripts").createDirectories().resolve("run.sh").writeText("echo hi\n")
+    }
+
+    @Test
+    fun `a saved reference is kept in the Draft, which the page and the reference show, marked, until Publish writes it and leaves other files alone`() {
+        val folder = referring("referee")
+        val saved = browser.post("/skills/referee/references/references/format.md", mapOf("text" to "Draft format.\r\n"))
+        assertEquals(200 to "/skills/referee", saved.status to saved.path)
+        assertEquals("Published format.", folder.resolve("references/format.md").readText())
+        assertEquals(listOf("Draft · changes not published"), markers(saved.body))
+        assertEquals(listOf("references/format.md"), changed(page("/skills/referee")))
+        assertContains(page("/skills/referee"), "Draft format.\n")
+        assertContains(page("/skills/referee/references/references/format.md"), "Draft format.\n")
+        assertContains(page("/skills/referee/references/guide.md"), "Published guide.")
+
+        assertEquals("/skills/referee", browser.post("/skills/referee", mapOf("skill" to skillMd("referee", "Published."))).path)
+        assertEquals("Draft format.\n", folder.resolve("references/format.md").readText())
+        assertEquals("Published guide.", folder.resolve("guide.md").readText())
+        assertEquals("MIT", folder.resolve("LICENSE").readText())
+        assertEquals("echo hi\n", folder.resolve("scripts/run.sh").readText())
+        val page = page("/skills/referee")
+        assertEquals(listOf("Published"), markers(page))
+        assertEquals(emptyList(), changed(page))
+        browser.post("/skills/referee/delete", mapOf("confirm" to "on"))
+    }
+
+    @Test
+    fun `a reference saved beside a SKILL md Draft keeps that Draft, and Discard Draft drops both`() {
+        val folder = referring("discarded-referee")
+        browser.autosave("/skills/discarded-referee", mapOf("skill" to skillMd("discarded-referee", "Drafted.")), draftVersion(page("/skills/discarded-referee")))
+        browser.post("/skills/discarded-referee/references/guide.md", mapOf("text" to "Draft guide."))
+        assertContains(page("/skills/discarded-referee"), "Drafted.")
+        assertEquals(listOf("guide.md"), changed(page("/skills/discarded-referee")))
+
+        browser.post("/skills/discarded-referee/discard", mapOf("confirm" to "on"))
+        val page = page("/skills/discarded-referee")
+        assertEquals(listOf("Published"), markers(page))
+        assertEquals(emptyList(), changed(page))
+        assertContains(page("/skills/discarded-referee/references/guide.md"), "Published guide.")
+        assertEquals("Published guide.", folder.resolve("guide.md").readText())
+        browser.post("/skills/discarded-referee/delete", mapOf("confirm" to "on"))
+    }
+
+    @Test
+    fun `Copy of a Skill whose Draft changed a reference takes the Draft's reference`() {
+        referring("copied-referee")
+        browser.post("/skills/copied-referee/references/guide.md", mapOf("text" to "Draft guide."))
+        assertEquals("/skills/copied-referee-copy", browser.post("/skills/copied-referee/copy", emptyMap()).path)
+        assertContains(page("/skills/copied-referee-copy/references/guide.md"), "Draft guide.")
+        assertContains(page("/skills/copied-referee-copy/references/references/format.md"), "Published format.")
+        browser.post("/skills/copied-referee-copy/delete", mapOf("confirm" to "on"))
+        browser.post("/skills/copied-referee/discard", mapOf("confirm" to "on"))
+        browser.post("/skills/copied-referee/delete", mapOf("confirm" to "on"))
+    }
+
+    @Test
+    fun `the user's own Skill's reference is editable, and a Skill the user doesn't own refuses a save with the reason`() {
+        referring("editable-referee")
+        assertContains(page("/skills/editable-referee"), """action="/skills/editable-referee/references/guide.md"""")
+        assertContains(page("/skills/editable-referee/references/guide.md"), """action="/skills/editable-referee/references/guide.md"""")
+        browser.post("/skills/editable-referee/delete", mapOf("confirm" to "on"))
+
+        val refused = browser.post("/skills/tdd/references/tests.md", mapOf("text" to "Overwritten."))
+        assertEquals(403, refused.status)
+        assertContains(refused.body, "The Skill tdd is read-only; Copy it to make your own.")
+        assertFalse("Overwritten." in page("/skills/tdd/references/tests.md"))
+        assertFalse("""action="/skills/tdd/references/""" in page("/skills/tdd"))
+        assertFalse("""action="/skills/tdd/references/""" in page("/skills/tdd/references/tests.md"))
+
+        val extra = Files.createTempDirectory("extra").resolve("outside-referee").createDirectories()
+        extra.resolve("SKILL.md").writeText(skillMd("outside-referee"))
+        extra.resolve("guide.md").writeText("The guide.")
+        val settings = home.resolve("settings.yaml")
+        val before = settings.readText()
+        try {
+            settings.writeText("skill-folders: [${extra.parent}]\n")
+            assertEquals(403, browser.post("/skills/outside-referee/references/guide.md", mapOf("text" to "Overwritten.")).status)
+            assertEquals("The guide.", extra.resolve("guide.md").readText())
+        } finally {
+            settings.writeText(before)
+        }
+    }
+
+    @Test
+    fun `a save to a path that isn't a reference is not found, and one outside the Skill is refused`() {
+        val folder = referring("strict-referee")
+        home.resolve("skills/outside.md").writeText("Not the Skill's.")
+        try {
+            for (path in listOf("LICENSE", "SKILL.md", "missing.md"))
+                assertEquals(404, browser.post("/skills/strict-referee/references/$path", mapOf("text" to "Overwritten.")).status, path)
+            for (path in listOf("../outside.md", "%2E%2E/outside.md", "references%2F..%2F..%2Foutside.md"))
+                assertTrue(browser.post("/skills/strict-referee/references/$path", mapOf("text" to "Overwritten.")).status in 400..499, path)
+            assertEquals("MIT", folder.resolve("LICENSE").readText())
+            assertEquals("Not the Skill's.", home.resolve("skills/outside.md").readText())
+            assertEquals(listOf("Published"), markers(page("/skills/strict-referee")))
+        } finally {
+            home.resolve("skills/outside.md").deleteIfExists()
+            browser.post("/skills/strict-referee/delete", mapOf("confirm" to "on"))
         }
     }
 

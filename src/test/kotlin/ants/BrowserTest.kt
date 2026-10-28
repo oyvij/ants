@@ -1827,6 +1827,53 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `on the user's own Skill a reference is edited in its modal, whose Save keeps it in the Draft, and Esc or ✕ ask before dropping unsaved changes`() = browse {
+        val folder = home.resolve("skills/edited-refs").createDirectories()
+        folder.resolve("SKILL.md").writeText("---\nname: edited-refs\ndescription: Edits its references.\n---\nRead guide.md.\n")
+        folder.resolve("guide.md").writeText("The published guide.")
+        try {
+            page.navigate(url("/skills/edited-refs"))
+            val row = page.locator(".references .row", Page.LocatorOptions().setHasText("guide.md"))
+            val modal = page.locator("dialog.modal.reference:has(label:text-is('guide.md'))")
+            val editor = modal.locator(".cm-content")
+            row.locator("a").click()
+            assertThat(modal.locator(".ed.readonly")).hasCount(0)
+            editor.click()
+            page.keyboard().press("ControlOrMeta+a")
+            page.keyboard().type("The drafted guide.")
+
+            var asked: String? = null
+            page.onceDialog { asked = it.message(); it.dismiss() }
+            page.keyboard().press("Escape")
+            assertThat(modal).isVisible()
+            assertEquals("Drop your changes to guide.md?", asked)
+            page.onceDialog { it.dismiss() }
+            modal.locator("button[title=Close]").click()
+            assertThat(modal).isVisible()
+
+            modal.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Save")).click()
+            assertThat(modal).isHidden()
+            assertThat(row.locator(".p-changed")).hasText("changed")
+            assertThat(page.locator(".draft-head .draft-mark")).hasText("Draft · changes not published")
+            assertEquals("The published guide.", folder.resolve("guide.md").readText())
+            row.locator("a").click()
+            assertThat(editor).hasText("The drafted guide.")
+
+            editor.click()
+            page.keyboard().type(" More.")
+            page.onceDialog { it.accept() }
+            modal.locator("button[title=Close]").click()
+            assertThat(modal).isHidden()
+            row.locator("a").click()
+            assertThat(editor).hasText("The drafted guide.")
+            page.keyboard().press("Escape")
+            assertThat(modal).isHidden()
+        } finally {
+            http.post("/skills/edited-refs/delete", mapOf("confirm" to "on"))
+        }
+    }
+
+    @Test
     fun `with JavaScript off a reference's row links to a page showing it`() = browse {
         val plain = page.context().browser()!!.newContext(NewContextOptions().setJavaScriptEnabled(false)).apply { addCookies(page.context().cookies()) }.newPage()
         plain.navigate(url("/skills/tdd"))

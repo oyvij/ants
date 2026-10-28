@@ -1,5 +1,6 @@
 package ants
 
+import jakarta.servlet.http.HttpServletResponse
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.stereotype.Controller
@@ -29,7 +30,7 @@ private typealias SkillItem = DraftedItem<Skill>
 /** A Skill's `SKILL.md` as the Skills page shows it; [name] is null on the create form. */
 data class SkillForm(val name: String?, val skill: String, val readOnly: Boolean = false, val where: String = "")
 
-data class SkillReference(val path: String, val text: String)
+data class SkillReference(val path: String, val text: String, val changed: Boolean = false)
 
 /**
  * A Skill on the list: where it comes from, whether a shipped Skill hides it by holding its name, the Agents that may
@@ -41,9 +42,10 @@ data class SkillRow(
 )
 
 /**
- * The Skills page: edits `SKILL.md` alone (ADR 0024), writing only to the user's own Skills folder. The page autosaves
- * to the Skill's Draft, and Publish makes the Draft the Skill's `SKILL.md`, which is all a launch reads; the Catalogue
- * reads the files at every launch, so a Publish reaches live Runs at their next one.
+ * The Skills page: edits `SKILL.md` and the Markdown references beside it (ADR 0030), writing only to the user's own
+ * Skills folder. The page autosaves to the Skill's Draft, and a reference's Save keeps it there too; Publish makes the
+ * Draft the Skill's references and `SKILL.md`, which is all a launch reads; the Catalogue reads the files at every
+ * launch, so a Publish reaches live Runs at their next one.
  */
 @Controller
 class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy, private val drafts: Drafts, drafted: DraftedItems) {
@@ -54,6 +56,11 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
 
     /** The folder of the files beside a Skill's `SKILL.md`: a Draft-only copy keeps them with its Draft. */
     private val SkillItem.beside get() = published?.folder ?: drafts.files(DraftKind.SKILL, draft!!.id)
+
+    /** The folder a published Skill's Draft keeps the full set of its references in, once one of them changed. */
+    private val SkillItem.draftReferences get() = draft?.let { drafts.files(DraftKind.SKILL, it.id) }?.takeIf { published != null && it.exists() }
+
+    private val SkillItem.referenceFolder get() = draftReferences ?: beside
 
     private fun own(skill: Skill) = skill.file.startsWith(catalogue.yourSkills)
 
@@ -173,7 +180,9 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
         val source = item(name)
         val copy = copyName(source.name) { inUse(it) }
         val id = catalogue.unusedId(SKILL_ID)
-        copyBeside(source.beside, drafts.files(DraftKind.SKILL, id))
+        val files = drafts.files(DraftKind.SKILL, id)
+        copyBeside(source.beside, files)
+        source.draftReferences?.let { copyReferences(it, files) }
         return items.create(id, copy, renamed(source.shown, copy))
     }
 
@@ -201,18 +210,58 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
     private fun besideFiles(folder: Path) = folder.takeIf { it.exists() }?.walk().orEmpty()
         .filter { file -> generateSequence(file.parent) { it.parent }.takeWhile { it != folder }.none { it.resolve("SKILL.md").exists() } }
 
-    private val SkillItem.referencePaths get() = besideFiles(beside).map { it.relativeTo(beside).invariantSeparatorsPathString }
+    private fun referencePaths(folder: Path) = besideFiles(folder).map { it.relativeTo(folder).invariantSeparatorsPathString }
         .filter { it.endsWith(".md") && it != "SKILL.md" }.sorted().toList()
 
-    private fun SkillItem.reference(path: String) = SkillReference(path, beside.resolve(path).readText())
+    private val SkillItem.referencePaths get() = referencePaths(referenceFolder)
+
+    /** The reference at [path] as the page shows it: the Draft's when it has one, [changed][SkillReference.changed] when that differs from the published one. */
+    private fun SkillItem.reference(path: String): SkillReference {
+        val text = referenceFolder.resolve(path).readText()
+        val changed = draftReferences != null && published!!.folder.resolve(path).let { !it.exists() || it.readText() != text }
+        return SkillReference(path, text, changed)
+    }
+
+    /** Writes the references in [from] into [to], each one atomically, leaving every other file in [to] as it is. */
+    private fun copyReferences(from: Path, to: Path) {
+        for (path in referencePaths(from)) to.resolve(path).writeAtomically(from.resolve(path).readText())
+    }
+
+    private fun SkillItem.referenceAt(path: String) = path.removePrefix("/").also {
+        if (it !in referencePaths) throw ResponseStatusException(HttpStatus.NOT_FOUND, "$name has no reference $it")
+    }
 
     @GetMapping("/skills/{name}/references/{*path}")
     fun reference(@PathVariable name: String, @PathVariable path: String, model: Model): String {
         val item = item(name)
-        val relative = path.removePrefix("/")
-        if (relative !in item.referencePaths) throw ResponseStatusException(HttpStatus.NOT_FOUND, "${item.name} has no reference $relative")
+        return showReference(model, item, item.reference(item.referenceAt(path)))
+    }
+
+    /**
+     * A reference's Save: keeps [text] as the reference at [path] in the Skill's Draft, which then holds the full set of
+     * its references, and reopens the Skill's page; a Skill the user doesn't own shows the reference again with why not.
+     */
+    @PostMapping("/skills/{name}/references/{*path}")
+    fun saveReference(@PathVariable name: String, @PathVariable path: String, @RequestParam text: String, model: Model, response: HttpServletResponse): String {
+        val item = item(name)
+        val relative = item.referenceAt(path)
+        if (!item.own) {
+            response.status = HttpStatus.FORBIDDEN.value()
+            return showReference(model, item, item.reference(relative), readOnly(item.name).reason)
+        }
+        val id = idOf(item)
+        if (item.draft == null) items.edit(item, id, item.name, item.shown)
+        val files = drafts.files(DraftKind.SKILL, id)
+        if (!files.exists()) item.published?.let { copyReferences(it.folder, files) }
+        files.resolve(relative).writeAtomically(unixLines(text))
+        return "redirect:/skills/${item.name}"
+    }
+
+    private fun showReference(model: Model, item: SkillItem, reference: SkillReference, message: String? = null): String {
         model.addAttribute("skill", item.name)
-        model.addAttribute("reference", item.reference(relative))
+        model.addAttribute("reference", reference)
+        model.addAttribute("editable", item.own)
+        model.addAttribute("message", message)
         return "reference"
     }
 
@@ -273,6 +322,7 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
         }
         nameProblem(name, edited?.name, folder, edited?.folder, id ?: edited?.id)?.let { return PublishOutcome.Refused(show(model, form, item, it)) }
         if (edited != null && folder != edited.folder) Files.move(edited.folder, folder)
+        item?.draftReferences?.let { copyReferences(it, folder) }
         if (edited == null) {
             item?.beside?.takeIf { it.exists() }?.toFile()?.copyRecursively(folder.toFile())
             if (id == null) catalogue.giveSkillId(folder) else catalogue.giveSkillId(folder, id)
