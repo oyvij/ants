@@ -1876,6 +1876,29 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `a reference's not-mentioned mark clears as the user types a mention in SKILL md, and a mention with no file shows as missing`() = browse {
+        val folder = home.resolve("skills/mentioned-refs").createDirectories()
+        folder.resolve("SKILL.md").writeText("---\nname: mentioned-refs\ndescription: Mentions its references.\n---\nRead it.\n")
+        folder.resolve("guide.md").writeText("The guide.")
+        try {
+            page.navigate(url("/skills/mentioned-refs"))
+            val mark = page.locator(".references .row", Page.LocatorOptions().setHasText("guide.md")).locator("[data-unmentioned]")
+            assertThat(mark).isVisible()
+            assertThat(mark).hasText("not mentioned in SKILL.md")
+            page.locator("#skill-md + .ed .cm-content").click()
+            page.keyboard().press("ControlOrMeta+End")
+            page.keyboard().type(" See [the guide](guide.md) and `notes.md`.")
+            assertThat(mark).isHidden()
+            val missing = page.locator(".references .row.missing")
+            assertThat(missing).hasCount(1)
+            assertThat(missing).containsText("notes.md")
+            assertThat(missing).containsText("it may be a file in the repo being worked on")
+        } finally {
+            http.post("/skills/mentioned-refs/delete", mapOf("confirm" to "on"))
+        }
+    }
+
+    @Test
     fun `New reference refuses a taken name with its reason, then opens the new file in the modal, and Import reference adds a file from disk`() = browse {
         val folder = home.resolve("skills/added-refs").createDirectories()
         folder.resolve("SKILL.md").writeText("---\nname: added-refs\ndescription: Adds references.\n---\nRead guide.md.\n")

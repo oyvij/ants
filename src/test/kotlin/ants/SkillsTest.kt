@@ -475,6 +475,63 @@ class SkillsTest : AntsTest() {
         assertEquals(listOf("mocking.md", "tests.md"), references(page("/skills/tdd")))
     }
 
+    private fun unmentioned(page: String) = Regex("""<code>([^<]+)</code>(?:<span class="pill p-\w+">\w+</span>)?<span class="pill p-quiet" data-unmentioned>not mentioned in SKILL.md</span>""").findAll(page).map { it.groupValues[1] }.toList()
+
+    private fun missing(page: String) = Regex("""<div class="row ref missing"><span class="grow"><code>([^<]+)</code><span class="pill p-waiting">missing</span></span><span class="muted small">([^<]+)</span>""").findAll(page).map { it.groupValues[1] }.toList()
+
+    @Test
+    fun `a link and a code span mention a reference, an unmentioned one is marked, and a mention with no file is listed as missing`() {
+        val folder = home.resolve("skills/mentioner")
+        folder.toFile().deleteRecursively()
+        save(skillMd("mentioner", "See [the guide](guide.md), `references/format.md` and [the API](./references/api.md#calls). Fix `typo.md` and [gone](references/gone.md)."))
+        for (path in listOf("guide.md", "references/format.md", "references/api.md", "unread.md", "references/unread.md")) folder.resolve(path).also { it.parent.createDirectories() }.writeText("A reference.")
+        try {
+            val page = page("/skills/mentioner")
+            assertEquals(listOf("references/unread.md", "unread.md"), unmentioned(page))
+            assertEquals(listOf("references/gone.md", "typo.md"), missing(page))
+            assertContains(page, "No such reference here; it may be a file in the repo being worked on, such as GLOSSARY.md.")
+        } finally {
+            folder.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `a URL, an absolute path and a non-Markdown path are no mention`() {
+        val folder = home.resolve("skills/linker")
+        folder.toFile().deleteRecursively()
+        save(skillMd("linker", "See [docs](https://example.com/guide.md), [mail](mailto:a@b.md), `file:guide.md`, [root](/guide.md), `/etc/guide.md`, `~/guide.md`, `C:/guide.md`, [up](../guide.md), `run.sh`, [schema](schema.json) and `guide.txt`."))
+        folder.resolve("guide.md").writeText("A reference.")
+        try {
+            val page = page("/skills/linker")
+            assertEquals(listOf("guide.md"), unmentioned(page))
+            assertEquals(emptyList(), missing(page))
+        } finally {
+            folder.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `shipped tdd and codebase-design mention each of their references, and tdd's GLOSSARY md is a missing mention`() {
+        val tdd = page("/skills/tdd")
+        assertEquals(emptyList(), unmentioned(tdd))
+        assertEquals(listOf("GLOSSARY.md"), missing(tdd))
+        val design = page("/skills/codebase-design")
+        assertEquals(emptyList(), unmentioned(design))
+        assertEquals(emptyList(), missing(design))
+    }
+
+    @Test
+    fun `a Skill publishes with unmentioned references and missing mentions`() {
+        val folder = referring("unmentioning")
+        val published = browser.post("/skills/unmentioning", mapOf("skill" to skillMd("unmentioning", "Read `absent.md`.")))
+        assertEquals("/skills/unmentioning", published.path)
+        assertEquals(skillMd("unmentioning", "Read `absent.md`."), folder.resolve("SKILL.md").readText())
+        val page = page("/skills/unmentioning")
+        assertEquals(listOf("guide.md", "references/format.md"), unmentioned(page))
+        assertEquals(listOf("absent.md"), missing(page))
+        browser.post("/skills/unmentioning/delete", mapOf("confirm" to "on"))
+    }
+
     @Test
     fun `a reference reads over HTTP, and a path outside the Skill or that isn't a reference is not found`() {
         val folder = published("readable")

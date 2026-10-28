@@ -1,0 +1,2 @@
+@param path: String
+<div class="row ref missing"><span class="grow"><code>${path}</code><span class="pill p-waiting">missing</span></span><span class="muted small">No such reference here; it may be a file in the repo being worked on, such as GLOSSARY.md.</span></div>

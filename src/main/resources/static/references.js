@@ -76,3 +76,29 @@ for (const form of document.querySelectorAll('form[data-reference-change]')) {
         form.submit();
     });
 }
+
+const skillText = document.getElementById('skill-md');
+const missingMention = document.getElementById('missing-mention');
+if (skillText && !skillText.readOnly && missingMention) {
+    let latest = 0, pending;
+    const reread = async () => {
+        const asked = ++latest;
+        const body = new URLSearchParams({_csrf: new FormData(skillText.form).get('_csrf'), skill: skillText.value});
+        const response = await fetch(`${location.pathname}/mentions`, {method: 'POST', body}).catch(() => null);
+        if (!response?.ok) return;
+        const {unmentioned, missing} = await response.json();
+        if (asked !== latest) return;
+        for (const mark of document.querySelectorAll('.references [data-unmentioned]'))
+            mark.hidden = !unmentioned.includes(mark.closest('.row').querySelector('[data-copy]').dataset.copy);
+        document.querySelectorAll('.references .row.missing').forEach(row => row.remove());
+        for (const path of missing) {
+            const row = missingMention.content.firstElementChild.cloneNode(true);
+            row.querySelector('code').textContent = path;
+            missingMention.before(row);
+        }
+    };
+    skillText.addEventListener('input', () => {
+        clearTimeout(pending);
+        pending = setTimeout(reread, 150);
+    });
+}

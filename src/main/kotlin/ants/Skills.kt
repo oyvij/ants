@@ -36,6 +36,26 @@ enum class ReferenceChange { ADDED, CHANGED, DELETED }
 
 data class SkillReference(val path: String, val text: String, val change: ReferenceChange? = null)
 
+data class Mentions(val unmentioned: List<String>, val missing: List<String>)
+
+private val linkTarget = Regex("""\]\(\s*<?([^)\s>]+)""")
+
+private val codeSpan = Regex("""`([^`\s]+)`""")
+
+private val scheme = Regex("^[A-Za-z][A-Za-z0-9+.-]*:")
+
+private fun mentionedPaths(skill: String) = (linkTarget.findAll(skill) + codeSpan.findAll(skill))
+    .map { it.groupValues[1].substringBefore("#").substringBefore("?") }
+    .filter { it.endsWith(".md") && it.first() !in "/\\~" && !scheme.containsMatchIn(it) }
+    .map { Path.of(it).normalize().invariantSeparatorsPathString }
+    .filter { !it.startsWith("..") && it != "SKILL.md" }.toSet()
+
+private fun mentions(skill: String, references: List<SkillReference>): Mentions {
+    val mentioned = mentionedPaths(skill)
+    val present = references.filter { it.change != ReferenceChange.DELETED }.map { it.path }
+    return Mentions(present.filter { it !in mentioned }, (mentioned - present.toSet()).sorted())
+}
+
 /**
  * A Skill on the list: where it comes from, whether a shipped Skill hides it by holding its name, the Agents that may
  * use it, the [page] it is at and its [state].
@@ -273,6 +293,10 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
         if (it !in referencePaths) throw ResponseStatusException(HttpStatus.NOT_FOUND, "$name has no reference $it")
     }
 
+    @PostMapping("/skills/{name}/mentions")
+    @ResponseBody
+    fun mentions(@PathVariable name: String, @RequestParam skill: String) = mentions(skill, item(name).references)
+
     @GetMapping("/skills/{name}/references/{*path}")
     fun reference(@PathVariable name: String, @PathVariable path: String, model: Model): String {
         val item = item(name)
@@ -439,7 +463,9 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
         model.addAttribute("draft", item?.head)
         model.addAttribute("dependents", item?.published?.let { usedBy.skill(it.name) })
         model.addAttribute("runBy", item?.published?.let { skill -> catalogue.agents().filter { agent -> catalogue.allows(agent, skill) }.sortedBy { it.name } }.orEmpty())
-        model.addAttribute("references", item?.references.orEmpty())
+        val references = item?.references.orEmpty()
+        model.addAttribute("references", references)
+        model.addAttribute("mentions", mentions(form.skill, references))
         return "skill"
     }
 }
