@@ -48,9 +48,9 @@ private fun mentionedPaths(skill: String) = (linkTarget.findAll(skill) + codeSpa
     .map { it.groupValues[1].substringBefore("#").substringBefore("?") }
     .filter { it.endsWith(".md") && it.first() !in "/\\~" && !scheme.containsMatchIn(it) }
     .map { Path.of(it).normalize().invariantSeparatorsPathString }
-    .filter { !it.startsWith("..") && it != "SKILL.md" }.toSet()
+    .filter { it != "SKILL.md" }.toSet()
 
-private fun mentions(skill: String, references: List<SkillReference>): Mentions {
+private fun mentionsIn(skill: String, references: List<SkillReference>): Mentions {
     val mentioned = mentionedPaths(skill)
     val present = references.filter { it.change != ReferenceChange.DELETED }.map { it.path }
     return Mentions(present.filter { it !in mentioned }, (mentioned - present.toSet()).sorted())
@@ -295,7 +295,7 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
 
     @PostMapping("/skills/{name}/mentions")
     @ResponseBody
-    fun mentions(@PathVariable name: String, @RequestParam skill: String) = mentions(skill, item(name).references)
+    fun mentions(@PathVariable name: String, @RequestParam skill: String) = mentionsIn(skill, item(name).references)
 
     @GetMapping("/skills/{name}/references/{*path}")
     fun reference(@PathVariable name: String, @PathVariable path: String, model: Model): String {
@@ -465,7 +465,7 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
         model.addAttribute("runBy", item?.published?.let { skill -> catalogue.agents().filter { agent -> catalogue.allows(agent, skill) }.sortedBy { it.name } }.orEmpty())
         val references = item?.references.orEmpty()
         model.addAttribute("references", references)
-        model.addAttribute("mentions", mentions(form.skill, references))
+        model.addAttribute("mentions", mentionsIn(form.skill, references))
         return "skill"
     }
 }

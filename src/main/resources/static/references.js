@@ -84,12 +84,12 @@ if (skillText && !skillText.readOnly && missingMention) {
     const reread = async () => {
         const asked = ++latest;
         const body = new URLSearchParams({_csrf: new FormData(skillText.form).get('_csrf'), skill: skillText.value});
-        const response = await fetch(`${location.pathname}/mentions`, {method: 'POST', body}).catch(() => null);
+        const response = await fetch(`${skillText.form.getAttribute('action')}/mentions`, {method: 'POST', body}).catch(() => null);
         if (!response?.ok) return;
         const {unmentioned, missing} = await response.json();
         if (asked !== latest) return;
         for (const mark of document.querySelectorAll('.references [data-unmentioned]'))
-            mark.hidden = !unmentioned.includes(mark.closest('.row').querySelector('[data-copy]').dataset.copy);
+            mark.hidden = !unmentioned.includes(mark.dataset.unmentioned);
         document.querySelectorAll('.references .row.missing').forEach(row => row.remove());
         for (const path of missing) {
             const row = missingMention.content.firstElementChild.cloneNode(true);

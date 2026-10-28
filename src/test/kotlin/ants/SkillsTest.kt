@@ -475,9 +475,9 @@ class SkillsTest : AntsTest() {
         assertEquals(listOf("mocking.md", "tests.md"), references(page("/skills/tdd")))
     }
 
-    private fun unmentioned(page: String) = Regex("""<code>([^<]+)</code>(?:<span class="pill p-\w+">\w+</span>)?<span class="pill p-quiet" data-unmentioned>not mentioned in SKILL.md</span>""").findAll(page).map { it.groupValues[1] }.toList()
+    private fun unmentioned(page: String) = Regex("""<code>([^<]+)</code>(?:<span class="pill p-\w+">\w+</span>)?<span class="pill p-quiet" data-unmentioned="[^"]+">not mentioned in SKILL.md</span>""").findAll(page).map { it.groupValues[1] }.toList()
 
-    private fun missing(page: String) = Regex("""<div class="row ref missing"><span class="grow"><code>([^<]+)</code><span class="pill p-waiting">missing</span></span><span class="muted small">([^<]+)</span>""").findAll(page).map { it.groupValues[1] }.toList()
+    private fun missing(page: String) = Regex("""<div class="row ref missing"><span class="grow"><code>([^<]+)</code><span class="pill p-waiting">missing</span></span><span class="muted small">[^<]+</span>""").findAll(page).map { it.groupValues[1] }.toList()
 
     @Test
     fun `a link and a code span mention a reference, an unmentioned one is marked, and a mention with no file is listed as missing`() {
@@ -496,7 +496,7 @@ class SkillsTest : AntsTest() {
     }
 
     @Test
-    fun `a URL, an absolute path and a non-Markdown path are no mention`() {
+    fun `a URL, an absolute path and a non-Markdown path are no mention, and a path above the Skill is missing`() {
         val folder = home.resolve("skills/linker")
         folder.toFile().deleteRecursively()
         save(skillMd("linker", "See [docs](https://example.com/guide.md), [mail](mailto:a@b.md), `file:guide.md`, [root](/guide.md), `/etc/guide.md`, `~/guide.md`, `C:/guide.md`, [up](../guide.md), `run.sh`, [schema](schema.json) and `guide.txt`."))
@@ -504,7 +504,7 @@ class SkillsTest : AntsTest() {
         try {
             val page = page("/skills/linker")
             assertEquals(listOf("guide.md"), unmentioned(page))
-            assertEquals(emptyList(), missing(page))
+            assertEquals(listOf("../guide.md"), missing(page))
         } finally {
             folder.toFile().deleteRecursively()
         }
