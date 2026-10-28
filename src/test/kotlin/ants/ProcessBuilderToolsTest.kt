@@ -2,6 +2,7 @@ package ants
 
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
+import tools.jackson.databind.JsonNode
 import tools.jackson.databind.json.JsonMapper
 import tools.jackson.databind.node.ObjectNode
 import java.net.URI
@@ -54,7 +55,7 @@ class ProcessBuilderToolsTest : AntsTest() {
         val token = open()
         browser.events("builder=$token", "builder") // the page before the reload, its stream not yet found gone
         eventually { assertTrue(builder.connected(token)) }
-        browser.actAsPage(token, builder) { _, _ -> mapOf("elements" to emptyList<Any>()) }
+        browser.actAsPage(token, builder) { _, _ -> agentTaskXml }
         val (text, failed) = CompletableFuture.supplyAsync { call(token, "diagram") }.get(10, SECONDS)
         assertFalse(failed, text)
     }
@@ -64,9 +65,9 @@ class ProcessBuilderToolsTest : AntsTest() {
         val page = open()
         val task = protectedCommands.open(Files.createTempDirectory("workspace"), allowed = listOf("yarn")).first
         try {
-            assertEquals(listOf("diagram", "agents", "skills", "skill", "scripts", "processes", "process", "built_in_tasks", "templates", "references", "checks",
-                "create_agent", "create_skill", "change_agent", "change_skill", "delete_agent", "delete_skill", "build_log", "copy",
-                "set_your_skills", "add_element", "remove", "rename", "move", "connect", "set_condition", "set_default", "set_agent_task", "set_start_form",
+            assertEquals(listOf("diagram", "element", "agents", "skills", "skill", "scripts", "processes", "process", "built_in_tasks", "templates", "template",
+                "references", "checks", "create_agent", "create_skill", "change_agent", "change_skill", "delete_agent", "delete_skill", "build_log", "copy",
+                "set_your_skills", "add_element", "remove", "insert", "rename", "move", "connect", "set_condition", "set_default", "set_agent_task", "set_start_form",
                 "set_user_task", "set_call", "set_built_in", "set_multi_instance", "drop_template"), tools(page))
             assertEquals(listOf("run"), tools(task))
             assertTrue(call(task, "diagram").second)
@@ -77,13 +78,101 @@ class ProcessBuilderToolsTest : AntsTest() {
     }
 
     @Test
-    fun `the diagram tool is relayed to the page and answered with what it sends back`() {
+    fun `the diagram tool reads the page's diagram, each element with its connections' ids, and each connection with its condition and default`() {
         val token = open()
-        val diagram = mapOf("elements" to listOf(mapOf("id" to "start", "kind" to "start")), "connections" to emptyList<Any>(), "startForm" to emptyList<Any>())
-        page(token) { tool, _ -> diagram.takeIf { tool == "diagram" } }
+        page(token) { tool, _ -> agentTaskXml.takeIf { tool == "xml" } }
         val (text, failed) = call(token, "diagram")
         assertEquals(false, failed, text)
-        assertEquals(diagram, json.readValue(text, Map::class.java))
+        val diagram = json.readTree(text)
+        val draft = diagram["elements"].list().single { it["id"].asString() == "draft" }
+        assertEquals("agent", draft["kind"].asString())
+        assertEquals(listOf("f1"), draft["incoming"].list().map { it.asString() })
+        assertEquals(listOf("f2"), draft["outgoing"].list().map { it.asString() })
+        assertEquals(listOf("f1:start>draft", "f2:draft>end"), diagram["connections"].list().map { "${it["id"].asString()}:${it["from"].asString()}>${it["to"].asString()}" })
+        assertTrue(diagram["connections"].list().all { it.has("condition") && it["default"].isBoolean })
+        assertFalse(diagram.has("next"))
+    }
+
+    /** Every page of [tool]'s answer, following `next`, each one checked to fit in a tool result. */
+    private fun pages(token: String, tool: String, arguments: Map<String, Any?>): List<JsonNode> {
+        val pages = mutableListOf<JsonNode>()
+        var cursor: Int? = 0
+        while (cursor != null) {
+            val (text, failed) = call(token, tool, arguments + ("cursor" to cursor))
+            assertFalse(failed, text)
+            assertTrue(text.length <= Diagrams.PAGE + 2_000, "$tool's page at $cursor is ${text.length} characters")
+            val page = json.readTree(text)
+            pages.add(page)
+            cursor = page["next"]?.asInt()
+        }
+        return pages
+    }
+
+    private val buildAndShip = javaClass.getResource("/shipped/processes/build-and-ship.bpmn")!!.readText()
+
+    private fun deployBuildAndShip() = assertEquals("/processes/build_and_ship", browser.post("/processes/deploy", mapOf("bpmn" to buildAndShip)).path)
+
+    private fun ids(xml: String, tag: String) = Regex("<bpmn:$tag id=\"([^\"]+)\"").findAll(xml).map { it.groupValues[1] }.toList()
+
+    @Test
+    fun `the largest shipped Process reads in pages that fit a tool result, every element and connection once, its long texts cut short`() {
+        deployBuildAndShip()
+        val token = open()
+        page(token) { tool, _ -> buildAndShip.takeIf { tool == "xml" } }
+        for ((tool, arguments) in listOf("diagram" to emptyMap(), "process" to mapOf("key" to "build_and_ship"))) {
+            val pages = pages(token, tool, arguments)
+            val elements = pages.flatMap { it["elements"].list().map { e -> e["id"].asString() } }
+            val connections = pages.flatMap { it["connections"].list().map { c -> c["id"].asString() } }
+            assertEquals(elements.distinct(), elements, tool)
+            assertEquals(ids(buildAndShip, "sequenceFlow").sorted(), connections.sorted(), tool)
+            assertTrue(ids(buildAndShip, "subProcess").all { it in elements } && "tospec" in elements, tool)
+            val tospec = pages.flatMap { it["elements"].list() }.single { it["id"].asString() == "tospec" }
+            assertEquals(true, tospec["properties"]["ants.assignment"]["truncated"].asBoolean(), tool)
+            assertEquals(Diagrams.SHORT, tospec["properties"]["ants.assignment"]["start"].asString().length, tool)
+        }
+    }
+
+    @Test
+    fun `diagram in a sub-process gives what is in it and the connections between, and element gives one in full`() {
+        deployBuildAndShip()
+        val token = open()
+        page(token) { tool, _ -> buildAndShip.takeIf { tool == "xml" } }
+        val inside = json.readTree(call(token, "diagram", mapOf("in" to "to_spec")).first)
+        assertTrue(inside["elements"].list().all { it["in"].asString() == "to_spec" })
+        val tospec = inside["elements"].list().single { it["id"].asString() == "tospec" }
+        val out = inside["connections"].list().filter { it["from"].asString() == "tospec" }
+        assertEquals(tospec["outgoing"].list().map { it.asString() }, out.map { it["id"].asString() })
+        assertTrue(out.all { c -> inside["elements"].list().any { it["id"] == c["to"] } })
+
+        val model = org.operaton.bpm.model.bpmn.Bpmn.readModelFromStream(buildAndShip.byteInputStream())
+        val task = model.getModelElementById<org.operaton.bpm.model.bpmn.instance.ServiceTask>("tospec")!!
+        for (source in listOf(emptyMap(), mapOf("process" to "build_and_ship"))) {
+            val (text, failed) = call(token, "element", mapOf("id" to "tospec") + source)
+            assertFalse(failed, text)
+            val full = json.readTree(text)
+            assertEquals(task.property(ASSIGNMENT), full["properties"][ASSIGNMENT].asString())
+            assertEquals(task.property(RESULT_SCHEMA), full["properties"][RESULT_SCHEMA].asString())
+            assertEquals(tospec["outgoing"].list().map { it.asString() }, full["outgoing"].list().map { it["id"].asString() })
+        }
+        val sub = json.readTree(call(token, "element", mapOf("id" to "to_spec")).first)
+        assertTrue(sub["children"]["elements"].list().any { it["id"].asString() == "tospec" })
+        assertTrue(call(token, "diagram", mapOf("in" to "tospec")).second)
+        assertTrue(call(token, "element", mapOf("id" to "nowhere")).second)
+    }
+
+    @Test
+    fun `template reads every shipped Template, as diagram reads the open one`() {
+        val token = open()
+        val shipped = json.readTree(call(token, "templates").first).list().filter { it["shipped"].asBoolean() }.map { it["name"].asString() }
+        assertTrue(shipped.size >= 9, "$shipped")
+        for (name in shipped) {
+            val xml = javaClass.getResource("/shipped/templates/$name.bpmn")!!.readText()
+            val pages = pages(token, "template", mapOf("name" to name))
+            assertEquals(ids(xml, "sequenceFlow").sorted(), pages.flatMap { it["connections"].list().map { c -> c["id"].asString() } }.sorted(), name)
+            val first = pages.first()["elements"].first()["id"].asString()
+            assertFalse(call(token, "element", mapOf("id" to first, "template" to name)).second, name)
+        }
+        assertTrue(call(token, "template", mapOf("name" to "no-such-template")).second)
     }
 
     @Test
@@ -136,7 +225,7 @@ class ProcessBuilderToolsTest : AntsTest() {
         assertEquals("Do it.", skill["instructions"].asString())
         assertEquals("""["reference.md"]""", skill["files"].toString())
         assertTrue(call(token, "skill", mapOf("name" to "nothing")).second)
-        assertTrue(call(token, "process", mapOf("key" to "agent-task")).first.contains("""<bpmn:serviceTask id="draft""""))
+        assertEquals("agent", tool("process", mapOf("key" to "agent-task"))["elements"].list().single { it["id"].asString() == "draft" }["kind"].asString())
         assertTrue(call(token, "process", mapOf("key" to "nothing")).second)
     }
 
@@ -440,6 +529,8 @@ class ProcessBuilderToolsTest : AntsTest() {
         }
     }
 }
+
+private fun JsonNode.list() = iterator().asSequence().toList()
 
 /** Calls Ants' `/mcp` on [port] with [token]: the HTTP status and the JSON-RPC response. */
 fun mcp(port: Int, token: String, method: String, params: Map<String, Any?> = emptyMap()): Pair<Int, Map<*, *>> {

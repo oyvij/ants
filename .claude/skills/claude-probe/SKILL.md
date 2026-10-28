@@ -33,6 +33,9 @@ test scripts, so it passes whatever you assume. Facts the real CLI has already s
   refuses `yarn install`, `yarn install --immutable`, `yarn  install`, `cd x && yarn install`, `true; yarn install …`,
   `(yarn install)`, `FOO=1 yarn install`, `echo hi | yarn install`, `env yarn install` and `/usr/bin/env yarn install`.
   Only `bash -c "yarn install"` gets past the rule and runs.
+- Under `dontAsk`, claude 2.1.312 with `--tools Read --allowedTools 'Read(//<abs>/projects/*/S1/tool-results/**)'`
+  reads `<abs>/projects/p-x/S1/tool-results/a.txt` and refuses `<abs>/projects/p-x/S2/tool-results/b.txt` and a file
+  outside, so the Process Builder may Read only its own session's saved tool results.
 - claude 2.1.296 under `--strict-mcp-config` uses an `--mcp-config` HTTP server on `127.0.0.1` (`"type": "http"`,
   with an `Authorization` header it sends on every request), inside nono with network allowed. `--tools Read`
   doesn't hide the MCP tool; `--allowedTools mcp__<server>__<tool>` lets it run under `dontAsk`.
