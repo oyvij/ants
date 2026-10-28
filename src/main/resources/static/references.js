@@ -15,11 +15,12 @@ document.addEventListener('click', event => {
 for (const form of document.querySelectorAll('form[data-reference-save]')) {
     const dialog = form.closest('dialog'), text = form.elements.text, alert = form.querySelector('[role=alert]');
     const path = dialog.querySelector('.mh label').textContent;
-    const keeps = () => text.value === text.defaultValue || confirm(`Drop your changes to ${path}?`);
-    dialog.addEventListener('cancel', event => { if (!keeps()) event.preventDefault(); });
-    dialog.querySelector('button[title=Close]').addEventListener('click', event => { if (!keeps()) event.preventDefault(); });
+    const unsaved = () => text.value !== text.defaultValue;
+    const askFirst = event => { if (unsaved() && !confirm(`Drop your changes to ${path}?`)) event.preventDefault(); };
+    dialog.addEventListener('cancel', askFirst);
+    dialog.querySelector('button[title=Close]').addEventListener('click', askFirst);
     dialog.addEventListener('close', () => {
-        if (text.value === text.defaultValue) return;
+        if (!unsaved()) return;
         text.value = text.defaultValue;
         text.dispatchEvent(new Event('change'));
     });

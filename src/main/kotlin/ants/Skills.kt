@@ -41,12 +41,6 @@ data class SkillRow(
     val page: String = skill.name, val state: DraftState = DraftState.PUBLISHED,
 )
 
-/**
- * The Skills page: edits `SKILL.md` and the Markdown references beside it (ADR 0030), writing only to the user's own
- * Skills folder. The page autosaves to the Skill's Draft, and a reference's Save keeps it there too; Publish makes the
- * Draft the Skill's references and `SKILL.md`, which is all a launch reads; the Catalogue reads the files at every
- * launch, so a Publish reaches live Runs at their next one.
- */
 @Controller
 class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy, private val drafts: Drafts, drafted: DraftedItems) {
     private val items = drafted.skills
@@ -57,7 +51,6 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
     /** The folder of the files beside a Skill's `SKILL.md`: a Draft-only copy keeps them with its Draft. */
     private val SkillItem.beside get() = published?.folder ?: drafts.files(DraftKind.SKILL, draft!!.id)
 
-    /** The folder a published Skill's Draft keeps the full set of its references in, once one of them changed. */
     private val SkillItem.draftReferences get() = draft?.let { drafts.files(DraftKind.SKILL, it.id) }?.takeIf { published != null && it.exists() }
 
     private val SkillItem.referenceFolder get() = draftReferences ?: beside
@@ -215,14 +208,12 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
 
     private val SkillItem.referencePaths get() = referencePaths(referenceFolder)
 
-    /** The reference at [path] as the page shows it: the Draft's when it has one, [changed][SkillReference.changed] when that differs from the published one. */
     private fun SkillItem.reference(path: String): SkillReference {
         val text = referenceFolder.resolve(path).readText()
         val changed = draftReferences != null && published!!.folder.resolve(path).let { !it.exists() || it.readText() != text }
         return SkillReference(path, text, changed)
     }
 
-    /** Writes the references in [from] into [to], each one atomically, leaving every other file in [to] as it is. */
     private fun copyReferences(from: Path, to: Path) {
         for (path in referencePaths(from)) to.resolve(path).writeAtomically(from.resolve(path).readText())
     }
@@ -237,10 +228,6 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
         return showReference(model, item, item.reference(item.referenceAt(path)))
     }
 
-    /**
-     * A reference's Save: keeps [text] as the reference at [path] in the Skill's Draft, which then holds the full set of
-     * its references, and reopens the Skill's page; a Skill the user doesn't own shows the reference again with why not.
-     */
     @PostMapping("/skills/{name}/references/{*path}")
     fun saveReference(@PathVariable name: String, @PathVariable path: String, @RequestParam text: String, model: Model, response: HttpServletResponse): String {
         val item = item(name)
