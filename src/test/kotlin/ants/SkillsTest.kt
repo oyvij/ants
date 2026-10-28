@@ -425,6 +425,64 @@ class SkillsTest : AntsTest() {
         assertFalse("href=\"$draft\"" in page("/skills"))
     }
 
+    private fun references(page: String) = Regex("""data-reference="([^"]+)"""").findAll(page).map { it.groupValues[1] }.toList()
+
+    @Test
+    fun `the References card lists the Markdown files beside SKILL md by their relative path, and not a nested Skill's`() {
+        val folder = published("referrer")
+        folder.resolve("reference.md").writeText("The reference.")
+        folder.resolve("references").createDirectories().resolve("format.md").writeText("The format.")
+        folder.resolve("LICENSE").writeText("MIT")
+        folder.resolve("scripts").createDirectories().resolve("run.sh").writeText("echo hi\n")
+        folder.resolve("nested").createDirectories().resolve("SKILL.md").writeText(skillMd("referrer-nested"))
+        folder.resolve("nested/inner.md").writeText("The nested Skill's.")
+        try {
+            assertEquals(listOf("reference.md", "references/format.md"), references(page("/skills/referrer")))
+            assertEquals(listOf("inner.md"), references(page("/skills/referrer-nested")))
+        } finally {
+            folder.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `a Skill with no references says it has none`() {
+        published("unreferenced")
+        val page = page("/skills/unreferenced")
+        assertEquals(emptyList(), references(page))
+        assertContains(page, "No references: no Markdown file is beside its SKILL.md.")
+        browser.post("/skills/unreferenced/delete", mapOf("confirm" to "on"))
+    }
+
+    @Test
+    fun `shipped Skills list their references`() {
+        assertEquals(listOf("DEEPENING.md", "DESIGN-IT-TWICE.md"), references(page("/skills/codebase-design")))
+        assertEquals(listOf("mocking.md", "tests.md"), references(page("/skills/tdd")))
+    }
+
+    @Test
+    fun `a reference reads over HTTP, and a path outside the Skill or that isn't a reference is not found`() {
+        val folder = published("readable")
+        folder.resolve("references").createDirectories().resolve("format.md").writeText("# The format\n\nOne line each.\n")
+        folder.resolve("LICENSE").writeText("MIT")
+        folder.resolve("nested").createDirectories().resolve("SKILL.md").writeText(skillMd("readable-nested"))
+        folder.resolve("nested/inner.md").writeText("The nested Skill's.")
+        home.resolve("skills/outside.md").writeText("Not the Skill's.")
+        try {
+            val read = browser.get("/skills/readable/references/references/format.md")
+            assertEquals(200, read.status)
+            assertContains(read.body, "# The format\n\nOne line each.\n")
+            assertContains(read.body, "data-markdown readonly")
+            for (path in listOf("LICENSE", "SKILL.md", "missing.md", "nested/inner.md", "nested/SKILL.md"))
+                assertEquals(404, browser.get("/skills/readable/references/$path").status, path)
+            for (path in listOf("../outside.md", "references/../../outside.md", "%2E%2E/outside.md", "references%2F..%2F..%2Foutside.md"))
+                assertFalse("Not the Skill" in browser.get("/skills/readable/references/$path").body, path)
+            assertEquals(200, browser.get("/skills/tdd/references/tests.md").status)
+        } finally {
+            folder.toFile().deleteRecursively()
+            home.resolve("skills/outside.md").deleteIfExists()
+        }
+    }
+
     @Test
     fun `shipped and extra-folder Skills have no Draft and no autosave`() {
         val shipped = page("/skills/shipped-draft")

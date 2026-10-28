@@ -17,6 +17,7 @@ import java.nio.file.Path
 import kotlin.io.path.copyTo
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
+import kotlin.io.path.invariantSeparatorsPathString
 import kotlin.io.path.readText
 import kotlin.io.path.relativeTo
 import kotlin.io.path.walk
@@ -27,6 +28,8 @@ private typealias SkillItem = DraftedItem<Skill>
 
 /** A Skill's `SKILL.md` as the Skills page shows it; [name] is null on the create form. */
 data class SkillForm(val name: String?, val skill: String, val readOnly: Boolean = false, val where: String = "")
+
+data class SkillReference(val path: String, val text: String)
 
 /**
  * A Skill on the list: where it comes from, whether a shipped Skill hides it by holding its name, the Agents that may
@@ -189,12 +192,28 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
 
     /** Copies the files beside the `SKILL.md` in [from] into [to]; a Skill folder can hold other Skills' folders, and those stay where they are. */
     private fun copyBeside(from: Path, to: Path) {
-        val files = from.takeIf { it.exists() }?.walk().orEmpty()
-            .filter { file -> generateSequence(file.parent) { it.parent }.takeWhile { it != from }.none { it.resolve("SKILL.md").exists() } }
-        for (file in files) {
+        for (file in besideFiles(from)) {
             val relative = file.relativeTo(from).toString()
             if (relative != "SKILL.md" && relative != SKILL_ID_FILE) file.copyTo(to.resolve(relative).also { it.parent.createDirectories() })
         }
+    }
+
+    private fun besideFiles(folder: Path) = folder.takeIf { it.exists() }?.walk().orEmpty()
+        .filter { file -> generateSequence(file.parent) { it.parent }.takeWhile { it != folder }.none { it.resolve("SKILL.md").exists() } }
+
+    private val SkillItem.references get() = besideFiles(beside).map { it.relativeTo(beside).invariantSeparatorsPathString }
+        .filter { it.endsWith(".md") && it != "SKILL.md" }.sorted().toList()
+
+    private fun SkillItem.reference(path: String) = SkillReference(path, beside.resolve(path).readText())
+
+    @GetMapping("/skills/{name}/references/{*path}")
+    fun reference(@PathVariable name: String, @PathVariable path: String, model: Model): String {
+        val item = item(name)
+        val relative = path.removePrefix("/")
+        if (relative !in item.references) throw ResponseStatusException(HttpStatus.NOT_FOUND, "${item.name} has no reference $relative")
+        model.addAttribute("skill", item.name)
+        model.addAttribute("reference", item.reference(relative))
+        return "reference"
     }
 
     /**
@@ -302,6 +321,7 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
         model.addAttribute("draft", item?.head)
         model.addAttribute("dependents", item?.published?.let { usedBy.skill(it.name) })
         model.addAttribute("runBy", item?.published?.let { skill -> catalogue.agents().filter { agent -> catalogue.allows(agent, skill) }.sortedBy { it.name } }.orEmpty())
+        model.addAttribute("references", item?.run { references.map { reference(it) } }.orEmpty())
         return "skill"
     }
 }

@@ -1802,6 +1802,40 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `on a Skill's References card, Copy puts a reference's path on the clipboard, and its row opens it read-only in a modal that Esc and ✕ close`() = browse {
+        page.context().grantPermissions(listOf("clipboard-read", "clipboard-write"))
+        page.navigate(url("/skills/tdd"))
+        val row = page.locator(".references .row", Page.LocatorOptions().setHasText("tests.md"))
+        row.getByText("Copy").click()
+        assertThat(row.getByText("Copied")).isVisible()
+        assertEquals("tests.md", page.evaluate("navigator.clipboard.readText()"))
+
+        val modal = page.locator("dialog.modal.reference:has(label:text-is('tests.md'))")
+        row.locator("a").click()
+        assertThat(modal).isVisible()
+        assertEquals(url("/skills/tdd"), page.url())
+        assertThat(modal.locator(".cm-content")).containsText("Good and Bad Tests")
+        assertThat(modal.locator(".ed.readonly")).hasCount(1)
+        assertThat(modal.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Save"))).hasCount(0)
+        page.keyboard().press("Escape")
+        assertThat(modal).isHidden()
+
+        row.locator("a").click()
+        assertThat(modal).isVisible()
+        modal.locator("button[title=Close]").click()
+        assertThat(modal).isHidden()
+    }
+
+    @Test
+    fun `with JavaScript off a reference's row links to a page showing it`() = browse {
+        val plain = page.context().browser()!!.newContext(NewContextOptions().setJavaScriptEnabled(false)).apply { addCookies(page.context().cookies()) }.newPage()
+        plain.navigate(url("/skills/tdd"))
+        plain.locator(".references a", Page.LocatorOptions().setHasText("mocking.md")).click()
+        plain.waitForURL(url("/skills/tdd/references/mocking.md"))
+        assertThat(plain.locator("textarea#reference-text")).containsText("When to Mock")
+    }
+
+    @Test
     fun `on a phone the modeler, a Skill, the Agent form, Templates and Settings fit the screen in one column`() = browse {
         http.import("start-end.bpmn")
         settings(null, "vaults:\n  work: /tmp/work\n  side: /tmp/side\ndefault-vault: work\nagent-folders: [/tmp/a]\n")
