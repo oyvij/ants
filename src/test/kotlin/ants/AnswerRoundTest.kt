@@ -70,7 +70,7 @@ class AnswerRoundTest : AntsTest() {
         for (cell in listOf("<i>?</i>[questions]", "Answer the Round", "First round.")) assertContains(row(run)!!, cell)
         val body = browser.get(first).body
         for (text in listOf("Who exports", "Ask who?", "Settles who.", "Because who.", ">Recommend who.</textarea>")) assertContains(body, text)
-        browser.post("$first/answers", mapOf("answer.who" to "Recommend who.", "answer.scope" to "Only admins."))
+        assertContains(browser.post("$first/answers", mapOf("answer.who" to "Recommend who.", "answer.scope" to "Only admins.")).body, "<b>Round 1 sent</b>")
 
         val second = entry(run)
         browser.post("$second/answers", mapOf("answer.format" to "Recommend format."))

@@ -64,6 +64,7 @@ class ApproveTest : AntsTest() {
         val acted = browser.post(entry(run), mapOf("action" to "approve", "comment" to "Ship it."))
         assertEquals(null, row(run))
         assertEquals("/notifications", acted.path)
+        assertContains(acted.body, "<b>Approved</b><span>Check the draft in ")
         eventually { assertContains(page(run), """id="state">Completed<""") }
         assertContains(claude.launches("polish").single().stdin, """{\"verdict\":{\"approved\":true,\"comment\":\"Ship it.\"}}""")
         assertEquals(1, claude.launches("draft").size)

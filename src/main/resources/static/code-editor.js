@@ -186,23 +186,29 @@ async function openHelper(textarea, editor, cm, swap, edits) {
     });
     const form = panel.querySelector('form'), message = panel.querySelector('textarea'), error = panel.querySelector('[role=alert]');
     const stop = panel.querySelector('.stop'), send = panel.querySelector('.send'), live = panel.querySelector('.live'), dialog = panel.querySelector('.dialog');
+    let sent = false; // Send stays disabled until the first dialog after the server took the message
     stream.on('dialog', html => {
         const bottom = dialog.scrollHeight - dialog.scrollTop - dialog.clientHeight < 40;
         stream.patch(live, html);
         const busy = live.querySelector('#sh-state')?.dataset.busy === 'true';
         stop.hidden = !busy;
         send.hidden = busy;
+        if (sent) send.disabled = false;
+        sent = false;
         if (bottom) dialog.scrollTop = dialog.scrollHeight;
     });
     form.addEventListener('submit', async event => {
         event.preventDefault();
-        if (send.hidden || !message.value.trim()) return;
+        if (send.hidden || send.disabled || !message.value.trim()) return;
         const text = message.value;
         message.value = '';
         message.dispatchEvent(new Event('change'));
-        const answer = await (await post('/script-helper/send', {message: text})).json();
+        send.disabled = true;
+        const answer = await post('/script-helper/send', {message: text}).then(response => response.json()).catch(failure => ({error: failure.message}));
         error.textContent = answer.error || '';
-        if (answer.error) {
+        if (!answer.error) sent = true;
+        else {
+            send.disabled = false;
             message.value = text;
             message.dispatchEvent(new Event('change'));
         }

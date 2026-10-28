@@ -29,7 +29,7 @@ class PreRunTest : AntsTest() {
     private fun status(key: String = "agent-task") =
         browser.get("/processes/$key").body.substringAfter("""<section id="pre-run">""").substringBefore("</section>").replace("&#39;", "'").replace("&#34;", "\"")
 
-    private fun startable(key: String = "agent-task") = """<button class="primary" disabled>Start</button>""" !in browser.get("/processes/$key").body
+    private fun startable(key: String = "agent-task") = """<button class="primary" disabled data-pending="Starting…">Start</button>""" !in browser.get("/processes/$key").body
 
     private fun ready() {
         settings()
@@ -42,7 +42,7 @@ class PreRunTest : AntsTest() {
     fun `a Process with everything in place is Ready, and Start is enabled`() {
         ready()
         assertFalse("Can't start" in status())
-        assertContains(browser.get("/processes/agent-task").body, """<button class="primary">Start</button>""")
+        assertContains(browser.get("/processes/agent-task").body, """<button class="primary" data-pending="Starting…">Start</button>""")
     }
 
     @Test

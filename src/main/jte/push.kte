@@ -48,8 +48,8 @@
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
     <input type="hidden" name="instruction" value="">
     <span class="grow"></span>
-    <button class="danger" name="action" value="cancel">Cancel the Run</button>
-    @if(failed)<button class="primary" name="action" value="continue">Continue</button>@else<button class="primary" name="action" value="push">Push ${repos.size} branch${if (repos.size == 1) "" else "es"}</button>@endif
+    <button class="danger" name="action" value="cancel" data-pending="Cancelling…">Cancel the Run</button>
+    @if(failed)<button class="primary" name="action" value="continue" data-pending="Continuing…">Continue</button>@else<button class="primary" name="action" value="push" data-pending="Pushing…">Push ${repos.size} branch${if (repos.size == 1) "" else "es"}</button>@endif
 </form>
 </main>
 </body>
