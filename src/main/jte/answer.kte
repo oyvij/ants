@@ -44,7 +44,7 @@
     <footer>
         <button type="button" id="back" hidden>Back</button>
         <button type="button" id="reset" hidden>Reset to the recommendation</button>
-        <button id="next">Send the Round</button>
+        <button id="next" data-pending="Sending…">Send the Round</button>
     </footer>
 </form>
 </div>

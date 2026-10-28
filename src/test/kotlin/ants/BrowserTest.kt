@@ -2864,6 +2864,32 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `a pressed Approve says Approving with a spinner until the next page, which toasts it, and Send back does nothing meanwhile`() = browse {
+        val claude = FakeClaude()
+        claude.session("draft", """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":{"outcome":"done","summary":"Drafted.","output":{"notes":"notes.md"}}}""")
+        claude.session("polish", """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":{"outcome":"done","summary":"Polished.","output":{}}}""")
+        agentTask(claude, mapOf("draft" to """{"type":"object","properties":{"notes":{"type":"string","format":"path"}}}""", "polish" to null))
+        http.import("approve.bpmn")
+        val run = http.post("/processes/approve/runs", mapOf()).path.removePrefix("/runs/")
+        workspace(run).resolve("notes.md").writeText("# Paying again\n")
+        page.navigate(url(waitingEntry()))
+        // After shell.js has seen it, each submit is counted and kept from leaving the page, as a slow answer would.
+        page.evaluate("() => { window.sent = 0; addEventListener('submit', event => { if (!event.defaultPrevented) sent++; event.preventDefault(); }); }")
+        buttonNamed("Approve").click()
+        val pressed = page.locator("button[aria-busy=true]")
+        assertThat(pressed).hasText(Pattern.compile("Approving…$"))
+        assertThat(pressed.locator(".spin")).isVisible()
+        assertThat(buttonNamed("Send back")).hasAttribute("aria-disabled", "true")
+        buttonNamed("Send back").click(Locator.ClickOptions().setForce(true))
+        assertEquals(1, page.evaluate("sent"), "Send back sent nothing while Approve was pending")
+
+        page.reload()
+        buttonNamed("Approve").click()
+        assertThat(page.locator(".toast")).containsText("Approved")
+        eventually { assertContains(http.get("/runs/$run").body, """id="state">Completed<""") }
+    }
+
+    @Test
     fun `on a phone Push is one column of its repos with Cancel and Push on the screen, and Push pushes on a tap`() = browse {
         val repos = listOf(repo("api"), repo("web"))
         settings(null, sourceMapLines(*repos.toTypedArray()))
@@ -2939,6 +2965,23 @@ class BrowserTest : AntsTest() {
         page.locator("#save").click()
         assertThat(page).hasURL(Pattern.compile(".*/processes/ticketed$"))
         assertContains(http.get("/processes/ticketed/diagram.bpmn").body, """name="ants.items-are-tickets" value="true"""")
+    }
+
+    @Test
+    fun `a Publish that never reaches the server says why and can be pressed again`() = browse {
+        agentTask(null)
+        val (process, plane) = row("flaky", """<bpmn:startEvent id="start" />""", agentTaskXml("plan", "Plan"), """<bpmn:endEvent id="end" />""")
+        deploy(definitions("flaky", "Flaky", process, plane))
+        page.route(url("/processes/flaky/publish")) { route -> if (route.request().method() == "POST") route.abort() else route.resume() }
+
+        page.navigate(url("/processes/flaky/edit"))
+        page.locator("#save").click()
+        assertThat(page.locator("#refusal")).hasText(Pattern.compile(".+"))
+        assertThat(page.locator("#save")).isEnabled()
+
+        page.unrouteAll()
+        page.locator("#save").click()
+        assertThat(page).hasURL(Pattern.compile(".*/processes/flaky$"))
     }
 
     private val wideAndTall = "let greeting = " + "\"hello\" + ".repeat(80) + "\"world\"\n" + (2..40).joinToString("") { "line $it\n" }

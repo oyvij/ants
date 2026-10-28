@@ -63,10 +63,10 @@ $unsafe{line}
         <div class="help">Required to continue the session. Optional when starting fresh.</div>
         <textarea id="instruction" name="instruction" placeholder="e.g. Both providers, Stripe first." data-markdown required></textarea></div>
     <div class="composer"><div>
-        @if(entry.tag == "[failed]")<button class="danger" name="action" value="cancel" formnovalidate>Cancel the Run</button>@endif
+        @if(entry.tag == "[failed]")<button class="danger" name="action" value="cancel" formnovalidate data-pending="Cancelling…">Cancel the Run</button>@endif
         <span class="grow"></span>
-        <button name="action" value="fresh" formnovalidate>Start fresh</button>
-        <button class="primary" name="action" value="continue">Continue the session</button>
+        <button name="action" value="fresh" formnovalidate data-pending="Starting fresh…">Start fresh</button>
+        <button class="primary" name="action" value="continue" data-pending="Continuing…">Continue the session</button>
     </div></div>
 </form>
 @endif

@@ -27,8 +27,8 @@
         <textarea id="comment" name="comment" placeholder="e.g. Ship it, but rename the flag first." data-markdown></textarea></div>
     <div class="composer"><div>
         <span class="grow"></span>
-        <button name="action" value="send-back">Send back</button>
-        <button class="primary" name="action" value="approve">Approve</button>
+        <button name="action" value="send-back" data-pending="Sending back…">Send back</button>
+        <button class="primary" name="action" value="approve" data-pending="Approving…">Approve</button>
     </div></div>
 </form>
 </main>
