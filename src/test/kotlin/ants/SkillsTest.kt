@@ -605,6 +605,190 @@ class SkillsTest : AntsTest() {
         }
     }
 
+    private fun marked(page: String) = Regex("""<code>([^<]+)</code><span class="pill p-(added|changed|deleted)">""").findAll(page).map { it.groupValues[1] to it.groupValues[2] }.toList()
+
+    private fun newReference(skill: String, path: String) = browser.post("/skills/$skill/new-reference", mapOf("path" to path))
+
+    private fun importReference(skill: String, filename: String, text: String): Browser.Page {
+        browser.get("/skills/$skill")
+        return browser.upload("/skills/$skill/import-reference", "file", filename, text.toByteArray())
+    }
+
+    @Test
+    fun `New reference creates an empty file in the Draft and opens it, adding md to a name without an extension, in a subfolder too`() {
+        val folder = referring("adder")
+        val created = newReference("adder", "notes")
+        assertEquals(200 to "/skills/adder/references/notes.md", created.status to created.path)
+        assertContains(created.body, """action="/skills/adder/references/notes.md"""")
+        val nested = newReference("adder", "references/api.md")
+        assertEquals("/skills/adder/references/references/api.md", nested.path)
+        assertFalse(folder.resolve("notes.md").exists())
+        assertFalse(folder.resolve("references/api.md").exists())
+        val page = page("/skills/adder")
+        assertEquals(listOf("guide.md", "notes.md", "references/api.md", "references/format.md"), references(page))
+        assertEquals(listOf("notes.md" to "added", "references/api.md" to "added"), marked(page))
+        assertEquals(listOf("Draft · changes not published"), markers(page))
+
+        browser.post("/skills/adder/references/notes.md", mapOf("text" to "The notes."))
+        assertEquals("/skills/adder", browser.post("/skills/adder", mapOf("skill" to skillMd("adder", "Published."))).path)
+        assertEquals("The notes.", folder.resolve("notes.md").readText())
+        assertEquals("", folder.resolve("references/api.md").readText())
+        assertEquals(emptyList(), marked(page("/skills/adder")))
+        browser.post("/skills/adder/delete", mapOf("confirm" to "on"))
+    }
+
+    @Test
+    fun `each name New reference or Import reference refuses gives its reason and writes nothing`() {
+        val folder = referring("refuser")
+        home.resolve("skills/outside.md").deleteIfExists()
+        val refusals = mapOf(
+            "" to "A reference needs a name.",
+            "  " to "A reference needs a name.",
+            "notes.txt" to "notes.txt isn't Markdown: a reference's name ends in .md.",
+            "/tmp/notes.md" to "/tmp/notes.md is absolute: a reference's name is relative to the Skill's folder.",
+            "../outside.md" to "../outside.md leads outside the Skill's folder: a reference's name has no .. in it.",
+            "references/../../outside.md" to "references/../../outside.md leads outside the Skill's folder: a reference's name has no .. in it.",
+            "SKILL.md" to "SKILL.md is the Skill itself, not a reference.",
+            "SKILL" to "SKILL.md is the Skill itself, not a reference.",
+            "guide.md" to "guide.md already exists.",
+            "references/format" to "references/format.md already exists.",
+        )
+        for ((name, reason) in refusals) {
+            val refused = newReference("refuser", name)
+            assertEquals(400, refused.status, name)
+            assertContains(refused.body, reason, message = name)
+        }
+        for ((name, reason) in listOf("notes.txt" to "notes.txt isn't Markdown: a reference's name ends in .md.", "README" to "README isn't Markdown: a reference's name ends in .md.", "guide.md" to "guide.md already exists.", "SKILL.md" to "SKILL.md is the Skill itself, not a reference.")) {
+            val refused = importReference("refuser", name, "Imported.")
+            assertEquals(400, refused.status, name)
+            assertContains(refused.body, reason, message = name)
+        }
+        assertEquals(listOf("Published"), markers(page("/skills/refuser")))
+        assertEquals(listOf("guide.md", "references/format.md"), references(page("/skills/refuser")))
+        assertEquals("Published guide.", folder.resolve("guide.md").readText())
+        assertFalse(home.resolve("skills/outside.md").exists())
+        browser.post("/skills/refuser/delete", mapOf("confirm" to "on"))
+    }
+
+    @Test
+    fun `Import reference adds a md file to the Draft under its own file name`() {
+        val folder = referring("importer")
+        val imported = importReference("importer", "checklist.md", "The checklist.\r\n")
+        assertEquals(200 to "/skills/importer", imported.status to imported.path)
+        assertEquals(listOf("checklist.md" to "added"), marked(imported.body.replace("&#34;", "\"")))
+        assertContains(page("/skills/importer/references/checklist.md"), "The checklist.\n")
+        assertFalse(folder.resolve("checklist.md").exists())
+        assertEquals("/skills/importer", browser.post("/skills/importer", mapOf("skill" to skillMd("importer", "Published."))).path)
+        assertEquals("The checklist.\n", folder.resolve("checklist.md").readText())
+        browser.post("/skills/importer/delete", mapOf("confirm" to "on"))
+    }
+
+    @Test
+    fun `delete asks first naming the reference, then keeps it struck through and marked until Publish removes it from the folder`() {
+        val folder = referring("deleter")
+        val asked = browser.post("/skills/deleter/delete-reference", mapOf("path" to "references/format.md"))
+        assertContains(asked.body, "Delete the reference references/format.md?")
+        assertEquals(listOf("Published"), markers(page("/skills/deleter")))
+
+        val deleted = browser.post("/skills/deleter/delete-reference", mapOf("path" to "references/format.md", "confirm" to "on"))
+        assertEquals("/skills/deleter", deleted.path)
+        val page = page("/skills/deleter")
+        assertEquals(listOf("references/format.md" to "deleted"), marked(page))
+        assertContains(page, """<span class="grow gone"><code>references/format.md</code>""")
+        assertFalse("""action="/skills/deleter/references/references/format.md"""" in page)
+        assertEquals(404, browser.get("/skills/deleter/references/references/format.md").status)
+        assertEquals("Published format.", folder.resolve("references/format.md").readText())
+        assertEquals(404, browser.post("/skills/deleter/delete-reference", mapOf("path" to "references/format.md", "confirm" to "on")).status)
+        assertEquals(404, browser.post("/skills/deleter/delete-reference", mapOf("path" to "LICENSE", "confirm" to "on")).status)
+
+        assertEquals("/skills/deleter", browser.post("/skills/deleter", mapOf("skill" to skillMd("deleter", "Published."))).path)
+        assertFalse(folder.resolve("references/format.md").exists())
+        assertEquals("Published guide.", folder.resolve("guide.md").readText())
+        assertEquals("MIT", folder.resolve("LICENSE").readText())
+        assertEquals("echo hi\n", folder.resolve("scripts/run.sh").readText())
+        assertEquals(listOf("guide.md"), references(page("/skills/deleter")))
+        assertEquals(emptyList(), marked(page("/skills/deleter")))
+        browser.post("/skills/deleter/delete", mapOf("confirm" to "on"))
+    }
+
+    @Test
+    fun `Discard Draft drops added and deleted references alike`() {
+        val folder = referring("undone")
+        newReference("undone", "notes")
+        importReference("undone", "checklist.md", "The checklist.")
+        browser.post("/skills/undone/delete-reference", mapOf("path" to "guide.md", "confirm" to "on"))
+        assertEquals(listOf("checklist.md" to "added", "guide.md" to "deleted", "notes.md" to "added"), marked(page("/skills/undone")))
+
+        browser.post("/skills/undone/discard", mapOf("confirm" to "on"))
+        val page = page("/skills/undone")
+        assertEquals(listOf("Published"), markers(page))
+        assertEquals(listOf("guide.md", "references/format.md"), references(page))
+        assertEquals(emptyList(), marked(page))
+        assertEquals(listOf("LICENSE", "SKILL.md", "ants.yaml", "guide.md", "references", "scripts"), folder.toFile().list()!!.sorted())
+        browser.post("/skills/undone/delete", mapOf("confirm" to "on"))
+    }
+
+    @Test
+    fun `a Draft-only Skill keeps its references with its Draft, and its first Publish creates its folder with them`() {
+        val draft = browser.post("/skills/new/draft", emptyMap()).path
+        val key = draft.removePrefix("/skills/")
+        assertEquals("$draft/references/references/api.md", newReference(key, "references/api").path)
+        browser.post("$draft/references/references/api.md", mapOf("text" to "The API."))
+        importReference(key, "checklist.md", "The checklist.")
+        newReference(key, "dropped")
+        browser.post("$draft/delete-reference", mapOf("path" to "dropped.md", "confirm" to "on"))
+        val page = page(draft)
+        assertEquals(listOf("checklist.md", "references/api.md"), references(page))
+        assertEquals(emptyList(), marked(page))
+
+        val folder = home.resolve("skills/first-published")
+        folder.toFile().deleteRecursively()
+        assertEquals("/skills/first-published", browser.post(draft, mapOf("skill" to skillMd("first-published"))).path)
+        assertEquals("The API.", folder.resolve("references/api.md").readText())
+        assertEquals("The checklist.", folder.resolve("checklist.md").readText())
+        assertFalse(folder.resolve("dropped.md").exists())
+        browser.post("/skills/first-published/delete", mapOf("confirm" to "on"))
+    }
+
+    @Test
+    fun `Copy and Import folder keep a Skill's references`() {
+        referring("copied-refs")
+        val copy = browser.post("/skills/copied-refs/copy", emptyMap())
+        assertEquals("/skills/copied-refs-copy", copy.path)
+        assertEquals(listOf("guide.md", "references/format.md"), references(copy.body))
+        assertEquals("/skills/copied-refs-copy", browser.post("/skills/copied-refs-copy", mapOf("skill" to skillMd("copied-refs-copy"))).path)
+        assertEquals("Published format.", home.resolve("skills/copied-refs-copy/references/format.md").readText())
+        browser.post("/skills/copied-refs-copy/delete", mapOf("confirm" to "on"))
+        browser.post("/skills/copied-refs/delete", mapOf("confirm" to "on"))
+
+        home.resolve("skills/imported-refs").toFile().deleteRecursively()
+        val imported = import(
+            "imported-refs/SKILL.md" to skillMd("imported-refs"),
+            "imported-refs/guide.md" to "The guide.",
+            "imported-refs/references/format.md" to "The format.",
+        )
+        assertEquals("/skills/imported-refs", imported.path)
+        assertEquals(listOf("guide.md", "references/format.md"), references(imported.body))
+        assertContains(page("/skills/imported-refs/references/references/format.md"), "The format.")
+        browser.post("/skills/imported-refs/delete", mapOf("confirm" to "on"))
+    }
+
+    @Test
+    fun `a read-only Skill has no New reference, Import reference or delete, and its endpoints refuse writes`() {
+        val page = page("/skills/tdd")
+        for (control in listOf("/skills/tdd/new-reference", "/skills/tdd/import-reference", "/skills/tdd/delete-reference")) assertFalse(control in page, control)
+        assertEquals(403, browser.post("/skills/tdd/new-reference", mapOf("path" to "notes")).status)
+        assertEquals(403, importReference("tdd", "checklist.md", "The checklist.").status)
+        assertEquals(403, browser.post("/skills/tdd/delete-reference", mapOf("path" to "tests.md", "confirm" to "on")).status)
+        assertEquals(listOf("mocking.md", "tests.md"), references(page("/skills/tdd")).filter { it in setOf("mocking.md", "tests.md") })
+        assertEquals(emptyList(), marked(page("/skills/tdd")))
+
+        referring("own-refs")
+        val own = page("/skills/own-refs")
+        for (control in listOf("/skills/own-refs/new-reference", "/skills/own-refs/import-reference", "/skills/own-refs/delete-reference")) assertContains(own, control)
+        browser.post("/skills/own-refs/delete", mapOf("confirm" to "on"))
+    }
+
     @Test
     fun `shipped and extra-folder Skills have no Draft and no autosave`() {
         val shipped = page("/skills/shipped-draft")

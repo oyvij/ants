@@ -17,6 +17,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.copyTo
 import kotlin.io.path.createDirectories
+import kotlin.io.path.deleteIfExists
 import kotlin.io.path.exists
 import kotlin.io.path.invariantSeparatorsPathString
 import kotlin.io.path.readText
@@ -30,7 +31,9 @@ private typealias SkillItem = DraftedItem<Skill>
 /** A Skill's `SKILL.md` as the Skills page shows it; [name] is null on the create form. */
 data class SkillForm(val name: String?, val skill: String, val readOnly: Boolean = false, val where: String = "")
 
-data class SkillReference(val path: String, val text: String, val changed: Boolean = false)
+enum class ReferenceChange { ADDED, CHANGED, DELETED }
+
+data class SkillReference(val path: String, val text: String, val change: ReferenceChange? = null)
 
 /**
  * A Skill on the list: where it comes from, whether a shipped Skill hides it by holding its name, the Agents that may
@@ -124,9 +127,11 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
     @GetMapping("/skills/{name}")
     fun skill(@PathVariable name: String, @RequestParam use: String?, model: Model): String {
         model.addAttribute("use", use)
-        val item = item(name)
-        return show(model, SkillForm(item.name, item.shown, !item.own, item.published?.let { catalogue.where(it.folder) }.orEmpty()), item)
+        return showPage(model, item(name))
     }
+
+    private fun showPage(model: Model, item: SkillItem, message: String? = null) =
+        show(model, SkillForm(item.name, item.shown, !item.own, item.published?.let { catalogue.where(it.folder) }.orEmpty()), item, message)
 
     /**
      * The page's autosave: the page's `SKILL.md` as the Skill's Draft, whatever state it is in, unless the Draft changed
@@ -210,12 +215,57 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
 
     private fun SkillItem.reference(path: String): SkillReference {
         val text = referenceFolder.resolve(path).readText()
-        val changed = draftReferences != null && published!!.folder.resolve(path).let { !it.exists() || it.readText() != text }
-        return SkillReference(path, text, changed)
+        val change = draftReferences?.let {
+            val was = published!!.folder.resolve(path)
+            when {
+                !was.exists() -> ReferenceChange.ADDED
+                was.readText() != text -> ReferenceChange.CHANGED
+                else -> null
+            }
+        }
+        return SkillReference(path, text, change)
     }
+
+    private val SkillItem.deletedReferencePaths get() = draftReferences?.let { referencePaths(published!!.folder) - referencePaths(it).toSet() }.orEmpty()
+
+    private val SkillItem.references get() = (referencePaths.map { reference(it) } + deletedReferencePaths.map { SkillReference(it, "", ReferenceChange.DELETED) }).sortedBy { it.path }
 
     private fun copyReferences(from: Path, to: Path) {
         for (path in referencePaths(from)) to.resolve(path).writeAtomically(from.resolve(path).readText())
+    }
+
+    private fun publishReferences(from: Path, to: Path) {
+        copyReferences(from, to)
+        for (path in referencePaths(to) - referencePaths(from).toSet()) to.resolve(path).deleteIfExists()
+    }
+
+    private fun SkillItem.draftReferenceFolder(): Path {
+        val id = idOf(this)
+        if (draft == null) items.edit(this, id, name, shown)
+        val files = drafts.files(DraftKind.SKILL, id)
+        if (!files.exists()) published?.let { copyReferences(it.folder, files.createDirectories()) }
+        return files
+    }
+
+    private fun SkillItem.newReferenceName(given: String): String {
+        val trimmed = given.trim()
+        require(trimmed.isNotEmpty()) { "A reference needs a name." }
+        val name = if ('.' in trimmed.substringAfterLast('/')) trimmed else "$trimmed.md"
+        require(name.endsWith(".md")) { "$name isn't Markdown: a reference's name ends in .md." }
+        require(!name.startsWith("/") && !name.startsWith("\\") && !Regex("^[A-Za-z]:").containsMatchIn(name)) { "$name is absolute: a reference's name is relative to the Skill's folder." }
+        val segments = name.split('/', '\\').filter { it.isNotEmpty() && it != "." }
+        require(".." !in segments) { "$name leads outside the Skill's folder: a reference's name has no .. in it." }
+        require(segments.last() != "SKILL.md") { "SKILL.md is the Skill itself, not a reference." }
+        val path = segments.joinToString("/")
+        val file = referenceFolder.resolve(path)
+        require(path !in referencePaths && !file.exists()) { "$path already exists." }
+        require(generateSequence(file.parent) { it.parent }.takeWhile { it != referenceFolder }.none { it.resolve("SKILL.md").exists() }) { "$path lies in another Skill's folder." }
+        return path
+    }
+
+    private fun refusedReference(model: Model, item: SkillItem, response: HttpServletResponse, reason: String?): String {
+        response.status = HttpStatus.BAD_REQUEST.value()
+        return showPage(model, item, reason)
     }
 
     private fun SkillItem.referenceAt(path: String) = path.removePrefix("/").also {
@@ -236,12 +286,43 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
             response.status = HttpStatus.FORBIDDEN.value()
             return showReference(model, item, item.reference(relative), readOnly(item.name).reason)
         }
-        val id = idOf(item)
-        if (item.draft == null) items.edit(item, id, item.name, item.shown)
-        val files = drafts.files(DraftKind.SKILL, id)
-        if (!files.exists()) item.published?.let { copyReferences(it.folder, files) }
-        files.resolve(relative).writeAtomically(unixLines(text))
+        item.draftReferenceFolder().resolve(relative).writeAtomically(unixLines(text))
         return "redirect:/skills/${item.name}"
+    }
+
+    @PostMapping("/skills/{name}/new-reference")
+    fun newReference(@PathVariable name: String, @RequestParam path: String, model: Model, response: HttpServletResponse): String {
+        val item = editable(item(name))
+        val relative = try {
+            item.newReferenceName(path)
+        } catch (e: IllegalArgumentException) {
+            return refusedReference(model, item, response, e.message)
+        }
+        item.draftReferenceFolder().resolve(relative).writeAtomically("")
+        return "redirect:${item.path}/references/$relative"
+    }
+
+    @PostMapping("/skills/{name}/import-reference")
+    fun importReference(@PathVariable name: String, @RequestParam file: MultipartFile, model: Model, response: HttpServletResponse): String {
+        val item = editable(item(name))
+        val filename = file.originalFilename.orEmpty().replace('\\', '/').substringAfterLast('/')
+        val relative = try {
+            require(filename.endsWith(".md")) { "$filename isn't Markdown: a reference's name ends in .md." }
+            item.newReferenceName(filename)
+        } catch (e: IllegalArgumentException) {
+            return refusedReference(model, item, response, e.message)
+        }
+        item.draftReferenceFolder().resolve(relative).writeAtomically(unixLines(file.bytes.decodeToString()))
+        return "redirect:${item.path}"
+    }
+
+    @PostMapping("/skills/{name}/delete-reference")
+    fun deleteReference(@PathVariable name: String, @RequestParam path: String, @RequestParam confirm: String?, model: Model): String {
+        val item = editable(item(name))
+        val relative = item.referenceAt(path)
+        if (confirm == null) return confirm(model, "Delete the reference $relative?", Dependents(emptyList()), "${item.path}/delete-reference", mapOf("path" to relative), item.path)
+        item.draftReferenceFolder().resolve(relative).deleteIfExists()
+        return "redirect:${item.path}"
     }
 
     private fun showReference(model: Model, item: SkillItem, reference: SkillReference, message: String? = null): String {
@@ -309,7 +390,7 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
         }
         nameProblem(name, edited?.name, folder, edited?.folder, id ?: edited?.id)?.let { return PublishOutcome.Refused(show(model, form, item, it)) }
         if (edited != null && folder != edited.folder) Files.move(edited.folder, folder)
-        item?.draftReferences?.let { copyReferences(it, folder) }
+        item?.draftReferences?.let { publishReferences(it, folder) }
         if (edited == null) {
             item?.beside?.takeIf { it.exists() }?.toFile()?.copyRecursively(folder.toFile())
             if (id == null) catalogue.giveSkillId(folder) else catalogue.giveSkillId(folder, id)
@@ -358,7 +439,7 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
         model.addAttribute("draft", item?.head)
         model.addAttribute("dependents", item?.published?.let { usedBy.skill(it.name) })
         model.addAttribute("runBy", item?.published?.let { skill -> catalogue.agents().filter { agent -> catalogue.allows(agent, skill) }.sortedBy { it.name } }.orEmpty())
-        model.addAttribute("references", item?.run { referencePaths.map { reference(it) } }.orEmpty())
+        model.addAttribute("references", item?.references.orEmpty())
         return "skill"
     }
 }

@@ -5,6 +5,7 @@ import com.microsoft.playwright.BrowserType
 import com.microsoft.playwright.Locator
 import com.microsoft.playwright.options.AriaRole
 import com.microsoft.playwright.options.ColorScheme
+import com.microsoft.playwright.options.FilePayload
 import com.microsoft.playwright.options.KeyboardModifier
 import com.microsoft.playwright.Page
 import com.microsoft.playwright.Playwright
@@ -21,6 +22,7 @@ import java.util.regex.Pattern
 import kotlin.io.path.createDirectories
 import kotlin.io.path.deleteExisting
 import kotlin.io.path.deleteIfExists
+import kotlin.io.path.exists
 import kotlin.io.path.readText
 import kotlin.io.path.writeText
 import kotlin.test.assertContains
@@ -1870,6 +1872,65 @@ class BrowserTest : AntsTest() {
             assertThat(modal).isHidden()
         } finally {
             http.post("/skills/edited-refs/delete", mapOf("confirm" to "on"))
+        }
+    }
+
+    @Test
+    fun `New reference refuses a taken name with its reason, then opens the new file in the modal, and Import reference adds a file from disk`() = browse {
+        val folder = home.resolve("skills/added-refs").createDirectories()
+        folder.resolve("SKILL.md").writeText("---\nname: added-refs\ndescription: Adds references.\n---\nRead guide.md.\n")
+        folder.resolve("guide.md").writeText("The published guide.")
+        try {
+            page.navigate(url("/skills/added-refs"))
+            val prompt = page.locator("dialog#new-reference")
+            page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("New reference")).click()
+            assertThat(prompt).isVisible()
+            page.keyboard().type("guide")
+            prompt.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Create")).click()
+            assertThat(prompt.locator("[role=alert]")).hasText("guide.md already exists.")
+            assertThat(prompt).isVisible()
+
+            prompt.locator("input[name=path]").fill("references/api")
+            prompt.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Create")).click()
+            val modal = page.locator("dialog.modal.reference:has(label:text-is('references/api.md'))")
+            assertThat(modal).isVisible()
+            assertThat(page.locator(".references .row", Page.LocatorOptions().setHasText("references/api.md")).locator(".p-added")).hasText("added")
+            modal.locator(".cm-content").click()
+            page.keyboard().type("The API.")
+            modal.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Save")).click()
+            assertThat(modal).isHidden()
+            assertFalse(folder.resolve("references/api.md").exists())
+
+            page.locator(".references input[type=file]").setInputFiles(FilePayload("checklist.md", "text/markdown", "The checklist.".toByteArray()))
+            assertThat(page.locator(".references .row", Page.LocatorOptions().setHasText("checklist.md")).locator(".p-added")).hasText("added")
+            page.locator(".references input[type=file]").setInputFiles(FilePayload("notes.txt", "text/plain", "Not Markdown.".toByteArray()))
+            assertThat(page.locator("main > [role=alert]")).hasText("notes.txt isn't Markdown: a reference's name ends in .md.")
+            assertFalse(folder.resolve("checklist.md").exists())
+        } finally {
+            http.post("/skills/added-refs/delete", mapOf("confirm" to "on"))
+        }
+    }
+
+    @Test
+    fun `a reference's ✕ asks first, naming the file, then keeps it struck through until Publish`() = browse {
+        val folder = home.resolve("skills/deleted-refs").createDirectories()
+        folder.resolve("SKILL.md").writeText("---\nname: deleted-refs\ndescription: Deletes references.\n---\nRead guide.md.\n")
+        folder.resolve("guide.md").writeText("The published guide.")
+        try {
+            page.navigate(url("/skills/deleted-refs"))
+            page.locator(".references button[title='Delete guide.md']").click()
+            assertThat(page.locator("h1")).hasText("Delete the reference guide.md?")
+            page.locator("main form button", Page.LocatorOptions().setHasText("Delete")).click()
+            page.waitForURL(url("/skills/deleted-refs"))
+            val gone = page.locator(".references .gone", Page.LocatorOptions().setHasText("guide.md"))
+            assertThat(gone.locator(".p-deleted")).hasText("deleted")
+            assertThat(gone.locator("code")).hasCSS("text-decoration-line", "line-through")
+            assertTrue(folder.resolve("guide.md").exists())
+            page.locator(".ph button", Page.LocatorOptions().setHasText("Publish")).click()
+            assertThat(page.locator(".references")).not().containsText("guide.md")
+            assertFalse(folder.resolve("guide.md").exists())
+        } finally {
+            http.post("/skills/deleted-refs/delete", mapOf("confirm" to "on"))
         }
     }
 

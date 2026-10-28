@@ -112,6 +112,7 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--hover); }
 /* The Draft marker (draftmark.kte) and an editor's save state beside it (drafthead.kte). */
 .p-draft { background: var(--waitSoft); color: var(--warnText); } .p-changed { background: var(--vioSoft); color: var(--vio); }
 .p-published { background: var(--okSoft); color: var(--okText); }
+.p-added { background: var(--okSoft); color: var(--okText); } .p-deleted { background: var(--badSoft); color: var(--badText); }
 .draft-head { display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap; } .draft-head .save-state { color: var(--muted); font-size: 12.5px; }
 .draft-head .save-state[data-failed] { color: var(--badText); }
 td .draft-mark { margin-left: 6px; vertical-align: 1px; }
@@ -398,6 +399,8 @@ details.session { margin-bottom: 14px; } details.session > .tr { margin-top: 8px
 /* Processes and the Process page: the list, New Process's modal, the check, the start form, the Schedule card, and its Runs. */
 :is(#processes, #process-runs) td:first-child a { color: inherit; }
 dialog#new-process { width: min(560px, 92vw); height: fit-content; max-height: 86vh; }
+dialog.new-reference { width: min(560px, 92vw); height: fit-content; max-height: 86vh; } .new-reference .mb { padding: 4px 24px 24px; font-size: 14px; } .new-reference form { margin: 0; } .new-reference .go { margin-top: 16px; }
+.references .ref form { margin: 0; } .references .ref .gone code { text-decoration: line-through; color: var(--muted); } .references .ref-acts { margin-top: 10px; } .references .ref-acts form { margin: 0; }
 dialog:is(.source-map, .instructions) { width: min(760px, 92vw); height: fit-content; max-height: 86vh; } :is(.source-map, .instructions) textarea { width: 100%; margin-top: 8px; } :is(.source-map, .instructions) .go { margin-top: 12px; } :is(.source-map, .instructions) .mb { padding: 16px 18px 18px; }
 .instructions .mh label { font-weight: 700; } .instructions .mh .pill::before { content: none; } .instructions .help { margin: 0; } .instructions .ed { margin-top: 12px; }
 .seg { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--fieldLine); border-radius: 8px; background: var(--field); }
