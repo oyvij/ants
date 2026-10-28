@@ -137,8 +137,8 @@ class ScriptTaskTest : AntsTest() {
         assertContains(page, "[failed]")
         assertContains(page, "broke with ••••")
         assertFalse("t0ps3cret" in page)
-        assertContains(page, """value="retry">Retry</button>""")
-        assertContains(page, """value="cancel">Cancel the Run</button>""")
+        assertContains(page, """value="retry" data-pending="Retrying…">Retry</button>""")
+        assertContains(page, """value="cancel" data-pending="Cancelling…">Cancel the Run</button>""")
 
         saveScript("flaky", own = listOf("TOKEN" to ""), was = "flaky", code = "ants.output({fixed: true})\n")
         browser.post(entry, mapOf("action" to "retry", "instruction" to ""))

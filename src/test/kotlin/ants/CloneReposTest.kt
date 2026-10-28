@@ -96,11 +96,11 @@ class CloneReposTest : AntsTest() {
         val entry = "/notifications/" + runtime.createIncidentQuery().processInstanceId(run).singleResult().id
         val page = browser.get(entry).body
         assertContains(page, "The Source map work has no repo web")
-        assertContains(page, """value="retry">Retry</button>""")
-        assertContains(page, """value="cancel">Cancel the Run</button>""")
+        assertContains(page, """value="retry" data-pending="Retrying…">Retry</button>""")
+        assertContains(page, """value="cancel" data-pending="Cancelling…">Cancel the Run</button>""")
         listOf("The session so far", "Your instruction", "Continue the session", "Start fresh").forEach { assertFalse(it in page, it) }
         val drawer = assertNotNull(browser.events("run=$run&drawer=clone", "drawer").poll(10, TimeUnit.SECONDS))
-        assertContains(drawer, """value="retry">Retry</button>""")
+        assertContains(drawer, """value="retry" data-pending="Retrying…">Retry</button>""")
         assertFalse("Your instruction" in drawer)
         listOf("continue", "fresh", "push").forEach { assertEquals(400, browser.post(entry, mapOf("action" to it, "instruction" to "Go on")).status, it) }
 

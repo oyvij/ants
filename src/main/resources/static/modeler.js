@@ -901,10 +901,12 @@ fetch(canvas.dataset.src)
     })
 
 document.getElementById("save").onclick = async () => {
+    save.disabled = true
     const {xml} = await modeler.saveXML({format: true})
-    const response = await fetch(document.getElementById("save").dataset.action, {method: "POST", body: new URLSearchParams({_csrf: csrf, bpmn: xml})})
-    if (response.ok) location = response.url
-    else document.getElementById("refusal").textContent = await response.text()
+    const response = await fetch(save.dataset.action, {method: "POST", body: new URLSearchParams({_csrf: csrf, bpmn: xml})})
+    if (response.ok) return location = response.url
+    save.disabled = false
+    document.getElementById("refusal").textContent = await response.text()
 }
 
 // The live Checks: everything Save and deploy would refuse, from the Checks it runs, and the warnings, under a summary
@@ -1305,23 +1307,29 @@ async function openBuilder() {
     const stop = document.getElementById("pb-stop"), send = document.getElementById("pb-send"), live = document.getElementById("pb-live")
     const dialog = document.getElementById("pb-dialog")
     const post = (path, fields) => fetch(path, {method: "POST", body: new URLSearchParams({_csrf: csrf, token, ...fields})})
+    let sent = false // Send stays disabled until the first dialog after the server took the message
     stream.on("dialog", html => {
         const bottom = dialog.scrollHeight - dialog.scrollTop - dialog.clientHeight < 40
         stream.patch(live, html)
         const busy = live.querySelector("#pb-state")?.dataset.busy === "true"
         stop.hidden = !busy
         send.hidden = busy
+        if (sent) send.disabled = false
+        sent = false
         if (bottom) dialog.scrollTop = dialog.scrollHeight
     })
     form.addEventListener("submit", async event => {
         event.preventDefault()
-        if (send.hidden || !message.value.trim()) return
+        if (send.hidden || send.disabled || !message.value.trim()) return
         const text = message.value
         message.value = ""
         message.dispatchEvent(new Event("change"))
+        send.disabled = true
         const answer = await (await post("/process-builder/send", {message: text})).json()
         error.textContent = answer.error || ""
-        if (answer.error) {
+        if (!answer.error) sent = true
+        else {
+            send.disabled = false
             message.value = text
             message.dispatchEvent(new Event("change"))
         }

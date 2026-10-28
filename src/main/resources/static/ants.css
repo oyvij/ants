@@ -130,7 +130,8 @@ input:not([type=checkbox]):not([type=radio]), select { min-height: 36px; }
 button:hover, .btn:hover { background: var(--hover); }
 button.primary, .btn.primary { background: var(--acc); border-color: var(--acc); color: #fff; } :is(button, .btn).primary:hover { background: var(--accHover); }
 button.danger, .btn.danger { color: var(--bad); } button.ghost { border-color: transparent; box-shadow: none; background: none; color: var(--acc); padding: 4px 6px; }
-button:disabled { opacity: .45; cursor: not-allowed; }
+button:disabled, button[aria-disabled=true] { opacity: .45; cursor: not-allowed; }
+button[aria-busy=true] .spin { color: inherit; }
 
 label.f svg.i { width: 15px; height: 15px; vertical-align: -3px; color: var(--muted); }
 button svg.i { width: 15px; height: 15px; }

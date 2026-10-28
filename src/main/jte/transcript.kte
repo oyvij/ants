@@ -40,8 +40,8 @@ $unsafe{transcript.html("status")}
 <div class="composer"><form method="post" action="/runs/${run}/tasks/${task}/transcript/send">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
     <div class="grow"><label class="f" for="message">Message to the Agent</label><textarea id="message" name="message" data-markdown required placeholder="e.g. Use the existing retry helper. ${sendHint}"></textarea></div>
-    <button formaction="/runs/${run}/tasks/${task}/transcript/stop" formnovalidate>Stop</button>
-    <button class="primary">Send</button>
+    <button formaction="/runs/${run}/tasks/${task}/transcript/stop" formnovalidate data-pending="Stopping…">Stop</button>
+    <button class="primary" data-pending="Sending…">Send</button>
 </form></div>
 @endif
 <script type="module">

@@ -69,7 +69,7 @@ class PushTest : AntsTest() {
         assertContains(page, "based on <code>main</code>")
         assertContains(page, "0 files · <span class=\"plus\">+0</span>") // the commits are empty
         assertContains(page, "Ants pushes these branches only: never with force, and never to <code>main</code>.")
-        assertContains(page, """<button class="primary" name="action" value="push">Push 2 branches</button>""")
+        assertContains(page, """<button class="primary" name="action" value="push" data-pending="Pushing…">Push 2 branches</button>""")
         assertFalse("Skip" in page)
 
         val heads = listOf(api, web).associateWith { git(clone(run, it.name), "rev-parse", "HEAD") }

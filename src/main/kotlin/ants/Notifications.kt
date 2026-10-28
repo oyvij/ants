@@ -214,12 +214,18 @@ class Notifications(
             // A cancelled Run keeps its workspace; externally terminated is what its pages read as Cancelled.
             runtime.deleteProcessInstance(entry.run, "Cancelled by the user", false, true)
             launcher.cancel(entry.run)
+            Shell.toast(request, Toast("Run cancelled", "${entry.runName}.", Toast.Kind.SUCCESS))
             return "redirect:/runs/${entry.run}"
         }
         // The choice first: the worker can fetch the Task again the moment its retries are back.
         runtime.setVariablesLocal(incident.executionId, mapOf(AgentLauncher.ACTION to action, AgentLauncher.INSTRUCTION to instruction))
         externalTasks.setRetries(incident.configuration, 1)
-        if (action == Push.PUSH) Shell.toast(request, Toast("Pushing", "${entry.summary}. The Run goes on once it is pushed.", Toast.Kind.INFO))
+        Shell.toast(request, when (action) {
+            Push.PUSH -> Toast("Pushing", "${entry.summary}. The Run goes on once it is pushed.", Toast.Kind.INFO)
+            AgentLauncher.FRESH -> Toast("Starting fresh", "${entry.task} in ${entry.runName}.", Toast.Kind.INFO)
+            RETRY -> Toast("Retrying", "${entry.task} in ${entry.runName}.", Toast.Kind.INFO)
+            else -> Toast("Continuing", "${entry.task} in ${entry.runName}.", Toast.Kind.INFO)
+        })
         return back(back, entry.run, "/notifications/next?run=${entry.run}")
     }
 
@@ -231,7 +237,10 @@ class Notifications(
      * comment and sends both, and its Approve sets every `in-review` Ticket `done`.
      */
     @PostMapping("/notifications/{id}", params = ["comment"])
-    fun approve(@PathVariable id: String, @RequestParam action: String, @RequestParam comment: String, @RequestParam(required = false) back: String?, model: Model, response: HttpServletResponse): String {
+    fun approve(
+        @PathVariable id: String, @RequestParam action: String, @RequestParam comment: String, @RequestParam(required = false) back: String?, model: Model,
+        response: HttpServletResponse, request: HttpServletRequest,
+    ): String {
         val task = userTask(id, UserTaskKind.APPROVE, UserTaskKind.REVIEW_CHANGES) ?: return gone(model, response)
         val comments = if (kind(task) == UserTaskKind.REVIEW_CHANGES) comments(task) else null
         val entry = entry(task)
@@ -250,6 +259,7 @@ class Notifications(
         val result = mapOf("approved" to approved, "comment" to comment) + (comments?.let { mapOf("comments" to ArrayList(it.map(LineComment::toMap))) } ?: emptyMap())
         complete(task, workspace, result, property(task, SEND_BACK)?.takeIf { !approved }, message)
         if (approved && comments != null) ants.tickets(workspace, entry.run).filter { it.inReview }.forEach { it.status(Tracked.DONE) }
+        Shell.toast(request, Toast(if (approved) "Approved" else "Sent back", "${entry.task} in ${entry.runName}.", Toast.Kind.SUCCESS))
         return back(back, entry.run, "/notifications/next?run=${entry.run}")
     }
 
@@ -287,7 +297,7 @@ class Notifications(
      * fired, says so.
      */
     @PostMapping("/notifications/{id}/answers")
-    fun answer(@PathVariable id: String, @RequestParam form: Map<String, String>, model: Model, response: HttpServletResponse): String {
+    fun answer(@PathVariable id: String, @RequestParam form: Map<String, String>, model: Model, response: HttpServletResponse, request: HttpServletRequest): String {
         val task = userTask(id, UserTaskKind.ANSWER_ROUND) ?: return gone(model, response)
         val entry = entry(task)
         val questions = Question.of(asked(task), form.filterKeys { it.startsWith("answer.") }.mapKeys { it.key.removePrefix("answer.") })
@@ -302,6 +312,7 @@ class Notifications(
         runLog(workspace, entry.task, "Round $round", roundLog(questions, answers))
         answerHistory(home, entry.process, entry.run, entry.task, entry.taskId, round, questions, answers)
         complete(task, workspace, answers, property(task, ASKER), JsonMapper.shared().writeValueAsString(answers))
+        Shell.toast(request, Toast("Round $round sent", "${entry.task} in ${entry.runName}.", Toast.Kind.SUCCESS))
         return "redirect:/notifications/next?run=${entry.run}"
     }
 

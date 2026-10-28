@@ -41,6 +41,41 @@ if (window.top === window) {
     if (left?.path === location.pathname && (reloaded || left.submitted)) addEventListener('load', () => scrollTo(0, left.y), { once: true });
 }
 
+// A button that sends something shows it the moment it is pressed: a spinner and its data-pending verb ("Approving…"),
+// else its label, never narrower than it was, until the next page comes. A second press of any of its form's buttons
+// does nothing meanwhile; they can't be disabled, since a disabled button leaves its name and value out of what the
+// form sends. Back to the page undoes it.
+function pending(button) {
+    const was = [...button.childNodes], width = button.style.minWidth;
+    const spin = document.createElement('span');
+    spin.className = 'spin';
+    spin.textContent = '✻';
+    button.style.minWidth = button.offsetWidth + 'px';
+    button.replaceChildren(spin, button.dataset.pending ?? button.textContent.trim());
+    button.ariaBusy = 'true';
+    return () => {
+        button.replaceChildren(...was);
+        button.style.minWidth = width;
+        button.ariaBusy = null;
+    };
+}
+let sending = null; // undoes the form being sent
+addEventListener('submit', event => { if (event.target.ariaBusy) event.preventDefault(); }, true);
+addEventListener('submit', event => {
+    const form = event.target, button = event.submitter;
+    if (event.defaultPrevented || form.method === 'dialog' || form.target) return;
+    const others = [...form.elements].filter(other => other.type === 'submit' && other !== button);
+    const undo = button ? pending(button) : () => {};
+    others.forEach(other => other.ariaDisabled = 'true');
+    form.ariaBusy = 'true';
+    sending = () => {
+        undo();
+        others.forEach(other => other.ariaDisabled = null);
+        form.ariaBusy = null;
+    };
+});
+addEventListener('pageshow', event => { if (event.persisted) sending?.(); });
+
 // Brings [old] to look like [now] in place: its attributes, its text and its children, which match by id or data-href,
 // else in order. A new child that has either, a new table's rows, and an element whose data-flash changes flash once,
 // as a new Notification list entry, a Task's new state or a new count do. Returns the node now in [old]'s place.

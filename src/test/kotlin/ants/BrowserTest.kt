@@ -8,6 +8,7 @@ import com.microsoft.playwright.options.ColorScheme
 import com.microsoft.playwright.options.KeyboardModifier
 import com.microsoft.playwright.Page
 import com.microsoft.playwright.Playwright
+import com.microsoft.playwright.Route
 import com.microsoft.playwright.assertions.PlaywrightAssertions.assertThat
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assumptions.abort
@@ -2668,6 +2669,36 @@ class BrowserTest : AntsTest() {
         buttonNamed("Approve").tap()
         eventually { assertContains(http.get("/runs/$run").body, """id="state">Completed<""") }
         assertEquals(2, claude.launches("draft").size)
+    }
+
+    @Test
+    fun `a pressed Approve says Approving with a spinner until the next page, which toasts it, and Send back does nothing meanwhile`() = browse {
+        val claude = FakeClaude()
+        claude.session("draft", """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":{"outcome":"done","summary":"Drafted.","output":{"notes":"notes.md"}}}""")
+        claude.session("polish", """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":{"outcome":"done","summary":"Polished.","output":{}}}""")
+        agentTask(claude, mapOf("draft" to """{"type":"object","properties":{"notes":{"type":"string","format":"path"}}}""", "polish" to null))
+        http.import("approve.bpmn")
+        val run = http.post("/processes/approve/runs", mapOf()).path.removePrefix("/runs/")
+        workspace(run).resolve("notes.md").writeText("# Paying again\n")
+        // A 204 keeps the browser on the page, as a slow answer would until it came.
+        var posts = 0
+        page.route("**/notifications/*") { route -> if (route.request().method() == "POST") route.fulfill(Route.FulfillOptions().setStatus(204)).also { posts++ } else route.resume() }
+
+        page.navigate(url(waitingEntry()))
+        buttonNamed("Approve").click()
+        val pressed = page.locator("button[aria-busy=true]")
+        assertThat(pressed).hasText(Pattern.compile("Approving…$"))
+        assertThat(pressed.locator(".spin")).isVisible()
+        assertThat(buttonNamed("Send back")).hasAttribute("aria-disabled", "true")
+        buttonNamed("Send back").click(Locator.ClickOptions().setForce(true))
+        page.waitForTimeout(500.0) // long enough for a second request to show
+        assertEquals(1, posts, "Send back sent nothing while Approve was pending")
+
+        page.unrouteAll()
+        page.reload()
+        buttonNamed("Approve").click()
+        assertThat(page.locator(".toast")).containsText("Approved")
+        eventually { assertContains(http.get("/runs/$run").body, """id="state">Completed<""") }
     }
 
     @Test
