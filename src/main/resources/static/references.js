@@ -17,7 +17,7 @@ document.addEventListener('click', event => {
 
 const saveDraft = () => document.getElementById('skill')?.draft?.save();
 
-async function post(form) {
+async function saveDraftThenPost(form) {
     const alert = form.querySelector('[role=alert]');
     alert.hidden = true;
     await saveDraft();
@@ -46,27 +46,26 @@ for (const form of document.querySelectorAll('form[data-reference-save]')) {
     });
     form.addEventListener('submit', async event => {
         event.preventDefault();
-        if (await post(form)) location.reload();
+        if (await saveDraftThenPost(form)) location.reload();
     });
 }
 
-const opening = new URL(location.href);
-const opened = opening.searchParams.get('reference');
-if (opened !== null) {
-    opening.searchParams.delete('reference');
-    history.replaceState(null, '', opening);
-    const dialog = [...document.querySelectorAll('dialog.reference')].find(it => it.querySelector('.mh label').textContent === opened);
+const here = new URL(location.href);
+const created = here.searchParams.get('reference');
+if (created !== null) {
+    here.searchParams.delete('reference');
+    history.replaceState(null, '', here);
+    const dialog = [...document.querySelectorAll('dialog.reference')].find(it => it.querySelector('.mh label').textContent === created);
     if (dialog) openModal(dialog);
 }
 
 document.querySelector('form[data-new-reference]')?.addEventListener('submit', async event => {
     const form = event.target;
     event.preventDefault();
-    const response = await post(form);
+    const response = await saveDraftThenPost(form);
     if (!response) return;
-    const references = new URL(form.action).pathname.replace(/new-reference$/, 'references/');
     const next = new URL(location.href);
-    next.searchParams.set('reference', decodeURIComponent(new URL(response.url).pathname.slice(references.length)));
+    next.searchParams.set('reference', new URL(response.url).searchParams.get('reference'));
     location.assign(next);
 });
 

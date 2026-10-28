@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.ResponseBody
 import org.springframework.web.multipart.MultipartFile
 import org.springframework.web.server.ResponseStatusException
+import org.springframework.web.util.UriUtils
 import org.yaml.snakeyaml.error.YAMLException
 import java.nio.file.Files
 import java.nio.file.Path
@@ -216,10 +217,10 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
     private fun SkillItem.reference(path: String): SkillReference {
         val text = referenceFolder.resolve(path).readText()
         val change = draftReferences?.let {
-            val was = published!!.folder.resolve(path)
+            val before = published!!.folder.resolve(path)
             when {
-                !was.exists() -> ReferenceChange.ADDED
-                was.readText() != text -> ReferenceChange.CHANGED
+                !before.exists() -> ReferenceChange.ADDED
+                before.readText() != text -> ReferenceChange.CHANGED
                 else -> null
             }
         }
@@ -247,10 +248,10 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
         return files
     }
 
-    private fun SkillItem.newReferenceName(given: String): String {
+    private fun SkillItem.newReferenceName(given: String, addsMd: Boolean = true): String {
         val trimmed = given.trim()
         require(trimmed.isNotEmpty()) { "A reference needs a name." }
-        val name = if ('.' in trimmed.substringAfterLast('/')) trimmed else "$trimmed.md"
+        val name = if (!addsMd || '.' in trimmed.substringAfterLast('/')) trimmed else "$trimmed.md"
         require(name.endsWith(".md")) { "$name isn't Markdown: a reference's name ends in .md." }
         require(!name.startsWith("/") && !name.startsWith("\\") && !Regex("^[A-Za-z]:").containsMatchIn(name)) { "$name is absolute: a reference's name is relative to the Skill's folder." }
         val segments = name.split('/', '\\').filter { it.isNotEmpty() && it != "." }
@@ -299,7 +300,7 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
             return refusedReference(model, item, response, e.message)
         }
         item.draftReferenceFolder().resolve(relative).writeAtomically("")
-        return "redirect:${item.path}/references/$relative"
+        return "redirect:${item.path}?reference=${UriUtils.encodeQueryParam(relative, Charsets.UTF_8)}"
     }
 
     @PostMapping("/skills/{name}/import-reference")
@@ -307,8 +308,7 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
         val item = editable(item(name))
         val filename = file.originalFilename.orEmpty().replace('\\', '/').substringAfterLast('/')
         val relative = try {
-            require(filename.endsWith(".md")) { "$filename isn't Markdown: a reference's name ends in .md." }
-            item.newReferenceName(filename)
+            item.newReferenceName(filename, addsMd = false)
         } catch (e: IllegalArgumentException) {
             return refusedReference(model, item, response, e.message)
         }

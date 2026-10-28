@@ -618,10 +618,10 @@ class SkillsTest : AntsTest() {
     fun `New reference creates an empty file in the Draft and opens it, adding md to a name without an extension, in a subfolder too`() {
         val folder = referring("adder")
         val created = newReference("adder", "notes")
-        assertEquals(200 to "/skills/adder/references/notes.md", created.status to created.path)
-        assertContains(created.body, """action="/skills/adder/references/notes.md"""")
+        assertEquals(Triple(200, "/skills/adder", "reference=notes.md"), Triple(created.status, created.path, created.query))
+        assertContains(created.body.replace("&#34;", "\""), """action="/skills/adder/references/notes.md"""")
         val nested = newReference("adder", "references/api.md")
-        assertEquals("/skills/adder/references/references/api.md", nested.path)
+        assertEquals("/skills/adder" to "reference=references/api.md", nested.path to nested.query)
         assertFalse(folder.resolve("notes.md").exists())
         assertFalse(folder.resolve("references/api.md").exists())
         val page = page("/skills/adder")
@@ -640,6 +640,7 @@ class SkillsTest : AntsTest() {
     @Test
     fun `each name New reference or Import reference refuses gives its reason and writes nothing`() {
         val folder = referring("refuser")
+        folder.resolve("nested").createDirectories().resolve("SKILL.md").writeText(skillMd("refuser-nested"))
         home.resolve("skills/outside.md").deleteIfExists()
         val refusals = mapOf(
             "" to "A reference needs a name.",
@@ -652,6 +653,7 @@ class SkillsTest : AntsTest() {
             "SKILL" to "SKILL.md is the Skill itself, not a reference.",
             "guide.md" to "guide.md already exists.",
             "references/format" to "references/format.md already exists.",
+            "nested/inner" to "nested/inner.md lies in another Skill's folder.",
         )
         for ((name, reason) in refusals) {
             val refused = newReference("refuser", name)
@@ -667,6 +669,8 @@ class SkillsTest : AntsTest() {
         assertEquals(listOf("guide.md", "references/format.md"), references(page("/skills/refuser")))
         assertEquals("Published guide.", folder.resolve("guide.md").readText())
         assertFalse(home.resolve("skills/outside.md").exists())
+        assertFalse(folder.resolve("nested/inner.md").exists())
+        folder.resolve("nested").toFile().deleteRecursively()
         browser.post("/skills/refuser/delete", mapOf("confirm" to "on"))
     }
 
@@ -732,7 +736,7 @@ class SkillsTest : AntsTest() {
     fun `a Draft-only Skill keeps its references with its Draft, and its first Publish creates its folder with them`() {
         val draft = browser.post("/skills/new/draft", emptyMap()).path
         val key = draft.removePrefix("/skills/")
-        assertEquals("$draft/references/references/api.md", newReference(key, "references/api").path)
+        assertEquals(draft to "reference=references/api.md", newReference(key, "references/api").let { it.path to it.query })
         browser.post("$draft/references/references/api.md", mapOf("text" to "The API."))
         importReference(key, "checklist.md", "The checklist.")
         newReference(key, "dropped")
