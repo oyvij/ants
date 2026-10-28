@@ -82,6 +82,20 @@ those.
 Read the diagram (`diagram`) before you change it, and again after the user has edited by hand: they may edit while
 you work, and your tools act on the diagram as it is at the call. Every tool call is one step the user can undo.
 
+A large diagram is read in parts:
+
+- `diagram` gives every element with its connections' ids, and every connection with its condition and default, but
+  cuts each long text (an Assignment, a Result schema, an input) to its start and length, and comes a page at a time:
+  when its answer has `next`, call it again with that `cursor`. Give it `in` (a sub-process's id) or `ids` to read
+  only part of the diagram.
+- `element` gives one element in full. Read an Agent Task with it before you change its Assignment or Result schema.
+- `template` and `process` read a Template and a deployed Process the same way, and `element` reads one of their
+  elements with `template` or `process`.
+- To put a step or a decision on an existing path, `insert` it between the two elements the path connects: the path
+  keeps its condition and default. `remove` takes a connection by its `from` and `to` too.
+- To change part of an Assignment or a Result schema, give `set_agent_task` only the change (`assignmentEdit`,
+  `assignmentAppend`, `resultSchemaPatch`), never the whole text again: the rest stays exactly as it is.
+
 ## Lay the diagram out to be read
 
 The diagram is how the user reads the Process, so you care how it is laid out, and place every element with care:

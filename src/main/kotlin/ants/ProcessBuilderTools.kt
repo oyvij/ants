@@ -23,16 +23,17 @@ const val SCHEMA_IGNORED = "The schema wasn't written: a Skill has no Result sch
 
 /**
  * The Process Builder's MCP session (ADR 0019): a modeler page that can be edited by hand opens one and gets a token
- * of its own on `/mcp`, which opens only the modeler tools. A tool about the diagram is relayed to the page that holds
- * the token, as an event `builder` on its SSE (`/live?builder=<token>`); the page answers from bpmn-js with a POST to
- * `/process-builder/answer`. The catalogue tools are answered by Ants, from what the modeler's own endpoints serve, and
+ * of its own on `/mcp`, which opens only the modeler tools. A tool that changes the diagram is relayed to the page that
+ * holds the token, as an event `builder` on its SSE (`/live?builder=<token>`); the page answers from bpmn-js with a POST
+ * to `/process-builder/answer`. Reading it, Ants asks the page for its XML and reads that as it reads a Template or a
+ * deployed Process ([Diagrams]). The catalogue tools are answered by Ants, from what the modeler's own endpoints serve, and
  * the Checks by the Checks Publish runs, on the page's diagram. Creating, changing and copying Agents, Skills
  * and Templates go through their pages' own save and Copy, and answer the item's page.
  */
 @RestController
 class ProcessBuilderTools(
     private val chats: PageChats, private val agents: Agents, private val templates: Templates, private val processes: Processes, private val catalogue: Catalogue,
-    private val skills: Skills, private val scripts: Scripts, private val json: JsonMapper, private val launcher: AgentLauncher,
+    private val skills: Skills, private val scripts: Scripts, private val json: JsonMapper, private val launcher: AgentLauncher, private val diagrams: Diagrams,
 ) {
     private inner class Page : PageChat(chats) {
         override val name = "process-builder"
@@ -42,6 +43,7 @@ class ProcessBuilderTools(
         override val idPrefix = "pb"
         override val lines = LINES
         override val tools = TOOLS
+        override val readsOwnToolResults = true
 
         /** The pages of the Agents, Skills and Templates this session made or changed, in order. */
         val made: MutableSet<String> = ConcurrentHashMap.newKeySet()
@@ -57,7 +59,7 @@ class ProcessBuilderTools(
                     val refusals = processes.checks(xml()).filter { it.element == arguments["id"] && !it.warning }.map { it.message }
                     json.writeValueAsString(json.readValue(written, Map::class.java) + ("checks" to refusals))
                 }
-                "add_element" -> ask(name, arguments - "properties" + ("properties" to scriptProperties(arguments)))
+                "add_element", "insert" -> ask(name, arguments - "properties" + ("properties" to scriptProperties(arguments)))
                 in RELAYED -> ask(name, arguments)
                 "scripts" -> json.writeValueAsString(scripts.all().map { mapOf("name" to it.name, "description" to it.description, "inputs" to it.inputs, "output" to it.output) })
                 "agents", "skills" -> json.writeValueAsString((agents.catalogue()[name] as List<*>).map { (it as Map<*, *>) - "id" })
@@ -69,10 +71,14 @@ class ProcessBuilderTools(
                     ))
                 }
                 "processes" -> json.writeValueAsString(processes.processes())
-                "process" -> argument("key").let { key ->
-                    if (processes.processes().none { it["key"] == key }) throw Refused("No Process $key is deployed.")
-                    processes.diagram(key).decodeToString()
-                }
+                "diagram" -> summary(diagrams.read(xml().toByteArray()), arguments)
+                "process" -> summary(deployed(argument("key")), arguments)
+                "template" -> summary(diagrams.read(templates.diagram(argument("name"))), arguments)
+                "element" -> json.writeValueAsString(diagrams.element(when {
+                    arguments["process"] != null -> deployed(argument("process"))
+                    arguments["template"] != null -> diagrams.read(templates.diagram(argument("template")))
+                    else -> diagrams.read(xml().toByteArray())
+                }, argument("id")))
                 "built_in_tasks" -> json.writeValueAsString(BUILT_IN_TASKS)
                 "templates" -> json.writeValueAsString(templates.json())
                 "references" -> json.writeValueAsString(processes.inputs(xml(), argument("element")))
@@ -115,6 +121,18 @@ class ProcessBuilderTools(
             if (named == null) return emptyMap()
             val script = scripts.named(named) ?: throw Refused("No Script named $named. $MISSING_SCRIPT")
             return mapOf(SCRIPT to script.id, nameBeside(script.id) to script.name)
+        }
+
+        /** What diagram, process and template answer: the part of [diagram] the [arguments] scope, one page of it. */
+        fun summary(diagram: Diagram, arguments: Map<*, *>): String {
+            val ids = arguments["ids"]?.let { it as? List<*> ?: throw Refused("ids must be a list of element ids.") }?.map(Any?::toString)
+            val cursor = arguments["cursor"]?.toString()?.let { it.toDoubleOrNull()?.toInt() ?: throw Refused("cursor must be a number, not $it.") } ?: 0
+            return json.writeValueAsString(diagrams.summary(diagram, arguments["in"]?.toString()?.takeIf(String::isNotEmpty), ids, cursor))
+        }
+
+        fun deployed(key: String): Diagram {
+            if (processes.processes().none { it["key"] == key }) throw Refused("No Process $key is deployed.")
+            return diagrams.read(processes.diagram(key))
         }
 
         fun deleted(page: String) = "Deleted the ${KINDS[page.split('/')[1]]} ${page.substringAfterLast('/')}.".also { made -= page }
@@ -195,6 +213,17 @@ class ProcessBuilderTools(
         private const val PLAIN = "A Skill is plain and reusable: it must not mention Runs, Tasks or Rounds, nor declare inputs or a Result. What a step must do " +
             "and hand back goes on its Agent Task (set_agent_task's assignment and resultSchema), and the Agent invokes a Skill on its own."
 
+        /** How diagram, process and template answer a large diagram. */
+        private const val SUMMARY = "A text longer than ${Diagrams.SHORT} characters shows its start, its length and truncated: `element` gives it in full. " +
+            "A large diagram comes a page at a time: when the answer has next, call again with that cursor."
+
+        /** What diagram, process and template read of a diagram: part of it, and the page. */
+        private val SCOPE = mapOf(
+            "in" to "A sub-process's id: only what is in it.",
+            "ids" to mapOf("type" to "array", "items" to mapOf("type" to "string"), "description" to "Only these elements, with their connections."),
+            "cursor" to number("Where the page starts: the next of the answer before; left out, the start."),
+        )
+
         private const val AT = "Its top-left corner on the diagram, as `diagram` gives positions."
 
         /** The tools that change the diagram: relayed to the page, which makes each call one undo step (modeler.js). */
@@ -210,7 +239,21 @@ class ProcessBuilderTools(
                 "script" to "A Script Task's Script, by its name (see `scripts`); Ants links it by its id. $MISSING_SCRIPT",
                 "inputs" to strings("A Script Task's inputs, by the Script's input names, each text or a `\${…}` reference (see `references`). $WIRED"),
             ), optional = setOf("id", "name", "x", "y", "in", "topic", "script", "inputs")),
-            Mcp.tool("remove", "Removes an element, with its connections, or a connection.", mapOf("id" to "The element's or connection's id.")),
+            Mcp.tool("remove", "Removes an element, with its connections, or a connection: by its id, or a connection by the elements it connects.", mapOf(
+                "id" to "The element's or connection's id.", "from" to "A connection's source element, with to.", "to" to "A connection's target element, with from.",
+            ), optional = setOf("id", "from", "to")),
+            Mcp.tool("insert", "Puts a new element on the connection from one element to another, as one step: the connection now ends at the new " +
+                "element, keeping its id, name, condition and default, and a new connection goes on from it to where the old one went. Answers the new " +
+                "element's id and both connections' ids. Without x and y it goes between the two; move what is in the way.", mapOf(
+                "from" to "The connection's source element.", "to" to "The connection's target element.",
+                "kind" to mapOf("type" to "string", "enum" to (drawnKinds.keys - setOf("start", "end", "annotation", "group")).toList(), "description" to "What it is, as add_element takes it."),
+                "id" to "Its id, a JUEL name such as `repos_missing`; left out, bpmn-js makes one.",
+                "name" to "Its name on the diagram.", "x" to number(AT), "y" to number(AT),
+                "topic" to "A Built-in Task's topic (see `built_in_tasks`); left out, clone-repos.",
+                "script" to "A Script Task's Script, by its name (see `scripts`). $MISSING_SCRIPT",
+                "inputs" to strings("A Script Task's inputs, by the Script's input names. $WIRED"),
+                "connection" to "The new connection's id, out of the new element; left out, bpmn-js makes one.",
+            ), optional = setOf("id", "name", "x", "y", "topic", "script", "inputs", "connection")),
             Mcp.tool("rename", "Names an element or connection, as the diagram shows it.", mapOf("id" to "The element's or connection's id.", "name" to "Its new name; empty clears it.")),
             Mcp.tool("move", "Moves an element, its connections following.", mapOf("id" to "The element's id.", "x" to number(AT), "y" to number(AT))),
             Mcp.tool("connect", "Connects two elements with a sequence flow (an association, to an annotation), and gives its id.", mapOf(
@@ -227,17 +270,28 @@ class ProcessBuilderTools(
                 "Don't name a Skill to use in the Assignment: the list decides it. Answers what was written, and the Checks Publish " +
                 "refuses on this Task: fix each before you're done.", mapOf(
                 "id" to "The Agent Task's id.", "agent" to "The Agent's name (see `agents`).",
-                "assignment" to "The job, in a few lines: what this step must do and hand back. Empty removes it.",
+                "assignment" to "The job, in a few lines: what this step must do and hand back. Empty removes it. To change part of it, give assignmentEdit or assignmentAppend instead.",
+                "assignmentEdit" to mapOf("type" to "object", "required" to listOf("old", "new"), "properties" to mapOf("old" to mapOf("type" to "string"), "new" to mapOf("type" to "string")),
+                    "description" to "Replaces the text old in the Assignment with new, the rest kept as it is; refused unless old is in it exactly once."),
+                "assignmentAppend" to "Adds this to the end of the Assignment, on a line of its own, after assignmentEdit when both are given.",
                 "skills" to mapOf("type" to listOf("array", "null"), "items" to mapOf("type" to "string"),
                     "description" to "The Agent's Skills this Task may use: [] for none, null for all of the Agent's."),
                 "inputs" to mapOf("type" to "object", "additionalProperties" to mapOf("type" to "string"),
                     "description" to "Values by input name, each text or a `\${…}` reference (see `references`), such as {\"prompt\": \"\${prompt}\"}."),
                 "resultSchema" to "A JSON Schema of the Result the Task hands back, so later Tasks read its fields as \${id.output.<field>}; empty removes it, " +
-                    "and the Task hands back only done or stuck with a summary.",
+"and the Task hands back only done or stuck with a summary. To change part of it, give resultSchemaPatch instead.",
+                "resultSchemaPatch" to mapOf("type" to "object", "description" to "Changes the Result schema in place, keeping the rest as written: " +
+                    "properties adds or replaces fields (each a JSON Schema), remove takes fields out (and out of required), required and optional " +
+                    "add field names to required or take them out of it.", "properties" to mapOf(
+                    "properties" to mapOf("type" to "object", "additionalProperties" to mapOf("type" to "object")),
+                    "remove" to mapOf("type" to "array", "items" to mapOf("type" to "string")),
+                    "required" to mapOf("type" to "array", "items" to mapOf("type" to "string")),
+                    "optional" to mapOf("type" to "array", "items" to mapOf("type" to "string")),
+                )),
                 "resume" to yesNo("Whether the flow coming back (Round answers, Send back) resumes its session."),
                 "vault" to yesNo("Whether it reads the Vault and Source map."),
                 "answerHistory" to yesNo("Whether it reads the Answer History."),
-            ), optional = setOf("agent", "assignment", "skills", "inputs", "resultSchema", "resume", "vault", "answerHistory")),
+            ), optional = setOf("agent", "assignment", "assignmentEdit", "assignmentAppend", "skills", "inputs", "resultSchema", "resultSchemaPatch", "resume", "vault", "answerHistory")),
             Mcp.tool("set_start_form", "Replaces the start form's fields, in order: to add, change, remove or reorder fields, give the whole list, " +
                 "starting from `diagram`'s startForm.", mapOf(
                 "fields" to mapOf("type" to "array", "description" to "The fields. Tasks read each one as \${id}.", "items" to mapOf(
@@ -286,7 +340,7 @@ class ProcessBuilderTools(
             ), optional = setOf("x", "y")),
         )
 
-        private val RELAYED = setOf("diagram") + WRITE.map { it["name"] }
+        private val RELAYED = WRITE.map { it["name"] }.toSet()
 
         /** `<i>value</i>`, escaped: what a tool call's line names. */
         private fun named(value: Any?) = "<i>${HtmlUtils.htmlEscape(value?.toString().orEmpty())}</i>"
@@ -296,7 +350,9 @@ class ProcessBuilderTools(
 
         /** How the dialog shows a call of each tool, as HTML, from its arguments: "added Agent Task <i>Grill</i>". */
         private val LINES: Map<String, (Map<*, *>) -> String> = mapOf(
-            "diagram" to { _ -> "read the diagram" },
+            "diagram" to { it -> "read the diagram" + (it["in"]?.let { inside -> " in ${named(inside)}" } ?: "") },
+            "element" to { it -> "read ${named(it["id"])}" + ((it["process"] ?: it["template"])?.let { from -> " in ${named(from)}" } ?: "") },
+            "template" to { it -> "read the Template ${named(it["name"])}" },
             "agents" to { _ -> "read the Agents" },
             "skills" to { _ -> "read the Skills" },
             "skill" to { it -> "read the Skill ${named(it["name"])}" },
@@ -323,7 +379,11 @@ class ProcessBuilderTools(
                 "added " + (elementKinds[it["kind"]]?.get("name") ?: it["kind"]?.toString().orEmpty()).let(HtmlUtils::htmlEscape) +
                     ((it["name"] ?: it["id"])?.let { name -> " " + named(name) } ?: "")
             },
-            "remove" to { it -> "removed ${named(it["id"])}" },
+            "remove" to { it -> "removed " + (it["id"]?.let(::named) ?: "the connection from ${named(it["from"])} to ${named(it["to"])}") },
+            "insert" to { it ->
+                "inserted " + (elementKinds[it["kind"]]?.get("name") ?: it["kind"]?.toString().orEmpty()).let(HtmlUtils::htmlEscape) +
+                    ((it["name"] ?: it["id"])?.let { name -> " " + named(name) } ?: "") + " between ${named(it["from"])} and ${named(it["to"])}"
+            },
             "rename" to { it -> "renamed ${named(it["id"])} to ${named(it["name"])}" },
             "move" to { it -> "moved ${named(it["id"])}" },
             "connect" to { it -> "connected ${named(it["from"])} to ${named(it["to"])}" },
@@ -346,9 +406,14 @@ class ProcessBuilderTools(
 
         private val TOOLS = listOf(
             Mcp.tool("diagram", "The diagram open in the modeler, as it is now with the user's unsaved edits: its elements (id, kind, name, " +
-                "position and size, the sub-process they are in, their properties (multiInstance among them), their inputs, and the outputs later Tasks read of a " +
-                "Task's Result), its connections (from, to, name, condition, " +
-                "and whether it is its gateway's default) and the start form's fields."),
+                "the sub-process they are in, position and size, their incoming and outgoing connections' ids, their properties (multiInstance among them), " +
+                "their inputs, and the outputs later Tasks read of a Task's Result), their connections (id, from, to, name, condition, and whether it is " +
+                "its decision's default) and the start form's fields. $SUMMARY", SCOPE, optional = SCOPE.keys),
+            Mcp.tool("element", "One element in full: every property untruncated (Assignment, Skills, Agent, Result schema, inputs, toggles, " +
+                "multi-instance, a User Task's fields), its incoming and outgoing connections, and for a sub-process what is in it, as `diagram` gives it. " +
+                "Of the open diagram, or of a deployed Process or a Template.", mapOf(
+                "id" to "The element's id.", "process" to "A deployed Process's key, to read it there.", "template" to "A Template's name, to read it there.",
+            ), optional = setOf("process", "template")),
             Mcp.tool("agents", "The Agents a Task can pick: each one's name, description, the Skills it runs, and whether it is the user's own (else read-only)."),
             Mcp.tool("skills", "The Skills: each one's name, description, and whether it is the user's own (else read-only)."),
             Mcp.tool("skill", "One Skill in full: its instructions and the files beside its SKILL.md.", mapOf("name" to "The Skill's name.")),
@@ -356,9 +421,11 @@ class ProcessBuilderTools(
                 "whose properties are its inputs) and output schema (`output`, the payload's JSON Schema, or null when any payload goes), never its code. " +
                 "$WIRED $MISSING_SCRIPT"),
             Mcp.tool("processes", "The deployed Processes, the shipped ones included, which a call activity can call: each one's key, name and start-form fields (its inputs)."),
-            Mcp.tool("process", "A deployed Process's BPMN XML, to read as an example.", mapOf("key" to "The Process's key.")),
+            Mcp.tool("process", "A deployed Process, to read as an example, as `diagram` reads the open one. $SUMMARY",
+                mapOf("key" to "The Process's key.") + SCOPE, optional = SCOPE.keys),
             Mcp.tool("built_in_tasks", "The Built-in Tasks, by topic: what each one is called and what Ants does in it."),
             Mcp.tool("templates", "The Templates, small diagrams to drop in as a collapsed sub-process: each one's name, title and whether it is shipped."),
+            Mcp.tool("template", "A Template's diagram, as `diagram` reads the open one. $SUMMARY", mapOf("name" to "The Template's name.") + SCOPE, optional = SCOPE.keys),
             Mcp.tool("references", "The `\${…}` references an element of the open diagram can read: start-form fields, Ants' Run variables and the Results of the Tasks before it.",
                 mapOf("element" to "The element's id.")),
             Mcp.tool("checks", "The Checks on the open diagram, as Publish runs them: each problem's message, the element it is on, and whether it is only a warning."),

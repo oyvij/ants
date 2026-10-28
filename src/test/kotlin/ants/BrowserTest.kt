@@ -295,6 +295,52 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `the Process Builder inserts a decision and a loop on a path, removes a connection by its ends, and edits part of an Assignment and a Result schema`() = browse {
+        agentTask(null)
+        http.import("agent-task.bpmn")
+        page.navigate(url("/processes/agent-task/edit"))
+        val tool = builder()
+        val token = page.locator("#canvas").getAttribute("data-builder")!!
+        fun connection(id: String) = tool("diagram", emptyMap())["connections"].firstOrNull { it["id"].asString() == id }
+        fun ends(id: String) = connection(id)?.let { it["from"].asString() + ">" + it["to"].asString() }
+
+        val inserted = tool("insert", mapOf("from" to "draft", "to" to "end", "kind" to "exclusive", "id" to "missing", "name" to "Repos missing?", "connection" to "go_on"))
+        assertEquals(listOf("missing", "f2", "go_on"), listOf("id", "incoming", "outgoing").map { inserted[it].asString() })
+        eventually { assertEquals(listOf("draft>missing", "missing>end"), listOf(ends("f2"), ends("go_on"))) }
+        undo()
+        eventually { assertEquals(listOf("draft>end", null), listOf(ends("f2"), ends("go_on"))) }
+        assertThat(shape("missing")).hasCount(0)
+        tool("insert", mapOf("from" to "draft", "to" to "end", "kind" to "exclusive", "id" to "missing", "connection" to "go_on", "x" to 350, "y" to 95))
+        tool("add_element", mapOf("kind" to "built-in", "id" to "clone", "name" to "Clone repos", "x" to 330, "y" to 220))
+        tool("connect", mapOf("from" to "missing", "to" to "clone", "id" to "yes", "name" to "yes"))
+        tool("connect", mapOf("from" to "clone", "to" to "draft", "id" to "back"))
+        tool("set_condition", mapOf("id" to "yes", "condition" to "\${not empty draft.output.repos}"))
+        tool("set_default", mapOf("id" to "go_on"))
+        val decision = tool("element", mapOf("id" to "missing"))
+        assertEquals(listOf("f2"), decision["incoming"].iterator().asSequence().toList().map { it["id"].asString() })
+        assertEquals(listOf("go_on:true", "yes:false"), decision["outgoing"].iterator().asSequence().toList().map { "${it["id"].asString()}:${it["default"].asBoolean()}" }.sorted())
+        assertTrue(mcpCall(port, token, "insert", mapOf("from" to "draft", "to" to "nowhere", "kind" to "agent")).let { it.second && "No connection from draft to nowhere" in it.first })
+
+        tool("remove", mapOf("from" to "clone", "to" to "draft"))
+        eventually { assertEquals(null, connection("back")) }
+        assertTrue(mcpCall(port, token, "remove", mapOf("from" to "clone", "to" to "draft")).second)
+
+        val assignment = "Draft the change.\nKeep it short."
+        val schema = """{"type": "object", "properties": {"summary": {"type": "string"}}}"""
+        tool("set_agent_task", mapOf("id" to "draft", "agent" to "writer", "assignment" to assignment, "resultSchema" to schema))
+        tool("set_agent_task", mapOf("id" to "draft", "assignmentEdit" to mapOf("old" to "short", "new" to "brief"), "assignmentAppend" to "Hand back the repos you lack in repos.",
+            "resultSchemaPatch" to mapOf("properties" to mapOf("repos" to mapOf("type" to "array", "items" to mapOf("type" to "string"))), "required" to listOf("repos"))))
+        val full = tool("element", mapOf("id" to "draft"))["properties"]
+        assertEquals("Draft the change.\nKeep it brief.\nHand back the repos you lack in repos.", full["ants.assignment"].asString())
+        assertEquals("""{"type": "object", "properties": {"summary": {"type": "string"}, "repos": {"type": "array", "items": {"type": "string"}}}, "required": ["repos"]}""",
+            full["ants.result-schema"].asString())
+        val twice = mcpCall(port, token, "set_agent_task", mapOf("id" to "draft", "assignmentEdit" to mapOf("old" to "e", "new" to "E")))
+        assertTrue(twice.second && "times" in twice.first, twice.first)
+        assertTrue(mcpCall(port, token, "set_agent_task", mapOf("id" to "draft", "assignment" to "x", "assignmentAppend" to "y")).second)
+        assertEquals("Draft the change.\nKeep it brief.\nHand back the repos you lack in repos.", tool("element", mapOf("id" to "draft"))["properties"]["ants.assignment"].asString())
+    }
+
+    @Test
     fun `a Process Builder tool naming a missing element fails naming it, and changes nothing`() = browse {
         agentTask(null)
         http.import("agent-task.bpmn")
