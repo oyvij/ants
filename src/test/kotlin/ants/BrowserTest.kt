@@ -5,6 +5,7 @@ import com.microsoft.playwright.BrowserType
 import com.microsoft.playwright.Locator
 import com.microsoft.playwright.options.AriaRole
 import com.microsoft.playwright.options.ColorScheme
+import com.microsoft.playwright.options.FilePayload
 import com.microsoft.playwright.options.KeyboardModifier
 import com.microsoft.playwright.Page
 import com.microsoft.playwright.Playwright
@@ -21,6 +22,7 @@ import java.util.regex.Pattern
 import kotlin.io.path.createDirectories
 import kotlin.io.path.deleteExisting
 import kotlin.io.path.deleteIfExists
+import kotlin.io.path.exists
 import kotlin.io.path.readText
 import kotlin.io.path.writeText
 import kotlin.test.assertContains
@@ -1845,6 +1847,169 @@ class BrowserTest : AntsTest() {
             assertEquals(above.second.width, below.second.width, 0.5, "${below.first} is as wide as ${above.first} on $path")
             assertTrue(below.second.y >= above.second.y + above.second.height, "${below.first} sits under ${above.first} on $path")
         }
+    }
+
+    @Test
+    fun `on a Skill's References card, Copy puts a reference's path on the clipboard, and its row opens it read-only in a modal that Esc and ✕ close`() = browse {
+        page.context().grantPermissions(listOf("clipboard-read", "clipboard-write"))
+        page.navigate(url("/skills/tdd"))
+        val row = page.locator(".references .row", Page.LocatorOptions().setHasText("tests.md"))
+        row.getByText("Copy").click()
+        assertThat(row.getByText("Copied")).isVisible()
+        assertEquals("tests.md", page.evaluate("navigator.clipboard.readText()"))
+
+        val modal = page.locator("dialog.modal.reference:has(label:text-is('tests.md'))")
+        row.locator("a").click()
+        assertThat(modal).isVisible()
+        assertEquals(url("/skills/tdd"), page.url())
+        assertThat(modal.locator(".cm-content")).containsText("Good and Bad Tests")
+        assertThat(modal.locator(".ed.readonly")).hasCount(1)
+        assertThat(modal.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Save"))).hasCount(0)
+        page.keyboard().press("Escape")
+        assertThat(modal).isHidden()
+
+        row.locator("a").click()
+        assertThat(modal).isVisible()
+        modal.locator("button[title=Close]").click()
+        assertThat(modal).isHidden()
+    }
+
+    @Test
+    fun `on the user's own Skill a reference is edited in its modal, whose Save keeps it in the Draft, and Esc or ✕ ask before dropping unsaved changes`() = browse {
+        val folder = home.resolve("skills/edited-refs").createDirectories()
+        folder.resolve("SKILL.md").writeText("---\nname: edited-refs\ndescription: Edits its references.\n---\nRead guide.md.\n")
+        folder.resolve("guide.md").writeText("The published guide.")
+        try {
+            page.navigate(url("/skills/edited-refs"))
+            val row = page.locator(".references .row", Page.LocatorOptions().setHasText("guide.md"))
+            val modal = page.locator("dialog.modal.reference:has(label:text-is('guide.md'))")
+            val editor = modal.locator(".cm-content")
+            row.locator("a").click()
+            assertThat(modal.locator(".ed.readonly")).hasCount(0)
+            editor.click()
+            page.keyboard().press("ControlOrMeta+a")
+            page.keyboard().type("The drafted guide.")
+
+            var asked: String? = null
+            page.onceDialog { asked = it.message(); it.dismiss() }
+            page.keyboard().press("Escape")
+            assertThat(modal).isVisible()
+            assertEquals("Drop your changes to guide.md?", asked)
+            page.onceDialog { it.dismiss() }
+            modal.locator("button[title=Close]").click()
+            assertThat(modal).isVisible()
+
+            modal.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Save")).click()
+            assertThat(modal).isHidden()
+            assertThat(row.locator(".p-changed")).hasText("changed")
+            assertThat(page.locator(".draft-head .draft-mark")).hasText("Draft · changes not published")
+            assertEquals("The published guide.", folder.resolve("guide.md").readText())
+            row.locator("a").click()
+            assertThat(editor).hasText("The drafted guide.")
+
+            editor.click()
+            page.keyboard().type(" More.")
+            page.onceDialog { it.accept() }
+            modal.locator("button[title=Close]").click()
+            assertThat(modal).isHidden()
+            row.locator("a").click()
+            assertThat(editor).hasText("The drafted guide.")
+            page.keyboard().press("Escape")
+            assertThat(modal).isHidden()
+        } finally {
+            http.post("/skills/edited-refs/delete", mapOf("confirm" to "on"))
+        }
+    }
+
+    @Test
+    fun `a reference's not-mentioned mark clears as the user types a mention in SKILL md, and a mention with no file shows as missing`() = browse {
+        val folder = home.resolve("skills/mentioned-refs").createDirectories()
+        folder.resolve("SKILL.md").writeText("---\nname: mentioned-refs\ndescription: Mentions its references.\n---\nRead it.\n")
+        folder.resolve("guide.md").writeText("The guide.")
+        try {
+            page.navigate(url("/skills/mentioned-refs"))
+            val mark = page.locator(".references .row", Page.LocatorOptions().setHasText("guide.md")).locator("[data-unmentioned]")
+            assertThat(mark).isVisible()
+            assertThat(mark).hasText("not mentioned in SKILL.md")
+            page.locator("#skill-md + .ed .cm-content").click()
+            page.keyboard().press("ControlOrMeta+End")
+            page.keyboard().type(" See [the guide](guide.md) and `notes.md`.")
+            assertThat(mark).isHidden()
+            val missing = page.locator(".references .row.missing")
+            assertThat(missing).hasCount(1)
+            assertThat(missing).containsText("notes.md")
+            assertThat(missing).containsText("it may be a file in the repo being worked on")
+        } finally {
+            http.post("/skills/mentioned-refs/delete", mapOf("confirm" to "on"))
+        }
+    }
+
+    @Test
+    fun `New reference refuses a taken name with its reason, then opens the new file in the modal, and Import reference adds a file from disk`() = browse {
+        val folder = home.resolve("skills/added-refs").createDirectories()
+        folder.resolve("SKILL.md").writeText("---\nname: added-refs\ndescription: Adds references.\n---\nRead guide.md.\n")
+        folder.resolve("guide.md").writeText("The published guide.")
+        try {
+            page.navigate(url("/skills/added-refs"))
+            val prompt = page.locator("dialog#new-reference")
+            page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("New reference")).click()
+            assertThat(prompt).isVisible()
+            page.keyboard().type("guide")
+            prompt.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Create")).click()
+            assertThat(prompt.locator("[role=alert]")).hasText("guide.md already exists.")
+            assertThat(prompt).isVisible()
+
+            prompt.locator("input[name=path]").fill("references/api")
+            prompt.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Create")).click()
+            val modal = page.locator("dialog.modal.reference:has(label:text-is('references/api.md'))")
+            assertThat(modal).isVisible()
+            assertThat(page.locator(".references .row", Page.LocatorOptions().setHasText("references/api.md")).locator(".p-added")).hasText("added")
+            modal.locator(".cm-content").click()
+            page.keyboard().type("The API.")
+            modal.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Save")).click()
+            assertThat(modal).isHidden()
+            assertFalse(folder.resolve("references/api.md").exists())
+
+            page.locator(".references input[type=file]").setInputFiles(FilePayload("checklist.md", "text/markdown", "The checklist.".toByteArray()))
+            assertThat(page.locator(".references .row", Page.LocatorOptions().setHasText("checklist.md")).locator(".p-added")).hasText("added")
+            page.locator(".references input[type=file]").setInputFiles(FilePayload("notes.txt", "text/plain", "Not Markdown.".toByteArray()))
+            assertThat(page.locator("main > [role=alert]")).hasText("notes.txt isn't Markdown: a reference's name ends in .md.")
+            assertFalse(folder.resolve("checklist.md").exists())
+        } finally {
+            http.post("/skills/added-refs/delete", mapOf("confirm" to "on"))
+        }
+    }
+
+    @Test
+    fun `a reference's ✕ asks first, naming the file, then keeps it struck through until Publish`() = browse {
+        val folder = home.resolve("skills/deleted-refs").createDirectories()
+        folder.resolve("SKILL.md").writeText("---\nname: deleted-refs\ndescription: Deletes references.\n---\nRead guide.md.\n")
+        folder.resolve("guide.md").writeText("The published guide.")
+        try {
+            page.navigate(url("/skills/deleted-refs"))
+            page.locator(".references button[title='Delete guide.md']").click()
+            assertThat(page.locator("h1")).hasText("Delete the reference guide.md?")
+            page.locator("main form button", Page.LocatorOptions().setHasText("Delete")).click()
+            page.waitForURL(url("/skills/deleted-refs"))
+            val gone = page.locator(".references .gone", Page.LocatorOptions().setHasText("guide.md"))
+            assertThat(gone.locator(".p-deleted")).hasText("deleted")
+            assertThat(gone.locator("code")).hasCSS("text-decoration-line", "line-through")
+            assertTrue(folder.resolve("guide.md").exists())
+            page.locator(".ph button", Page.LocatorOptions().setHasText("Publish")).click()
+            assertThat(page.locator(".references")).not().containsText("guide.md")
+            assertFalse(folder.resolve("guide.md").exists())
+        } finally {
+            http.post("/skills/deleted-refs/delete", mapOf("confirm" to "on"))
+        }
+    }
+
+    @Test
+    fun `with JavaScript off a reference's row links to a page showing it`() = browse {
+        val plain = page.context().browser()!!.newContext(NewContextOptions().setJavaScriptEnabled(false)).apply { addCookies(page.context().cookies()) }.newPage()
+        plain.navigate(url("/skills/tdd"))
+        plain.locator(".references a", Page.LocatorOptions().setHasText("mocking.md")).click()
+        plain.waitForURL(url("/skills/tdd/references/mocking.md"))
+        assertThat(plain.locator("textarea#reference-text")).containsText("When to Mock")
     }
 
     @Test

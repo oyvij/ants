@@ -169,6 +169,8 @@ class LookTest : AntsTest() {
         Shot("agent", "/agents/lead"),
         Shot("skills", "/skills"),
         Shot("skill", "/skills/walkthrough"),
+        Shot("skill-references", "/skills/tdd"),
+        Shot("skill-reference", "/skills/tdd", "document.querySelector('.references [data-open]').click()"),
         Shot("settings", "/settings"),
         Shot("answer", entry(app.getValue("round"))),
     )

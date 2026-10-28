@@ -3,6 +3,8 @@
 @param draft: ants.DraftHead? = null
 @param dependents: ants.Dependents?
 @param runBy: List<ants.Agent> = emptyList()
+@param references: List<ants.SkillReference> = emptyList()
+@param mentions: ants.Mentions = ants.Mentions(emptyList(), emptyList())
 @param use: String? = null
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
@@ -53,6 +55,7 @@
         <textarea id="skill-md" name="skill" rows="20" placeholder="e.g. ---&#10;name: release-notes&#10;description: Writes the release notes for a version.&#10;---&#10;Read the commits since the last tag and sum them up for users." data-markdown readonly="${form.readOnly}" data-tall>${form.skill}</textarea></div>
 </form>
 </div>
+<div>
 <div class="card"><h3>Run by</h3><div class="help">Agents whose <b>Skills it runs</b> list this Skill. Edit that list on the Agent.</div>
 @for(agent in runBy)
     <div class="row runby"><span class="grow"><a href="/agents/${agent.name}">${agent.name}</a></span><span class="muted small">${agent.cli}</span></div>
@@ -61,7 +64,59 @@
     <div class="warn">No Agent runs this Skill yet, so no Task can use it.</div>
 @endif
 </div>
+<div class="card references"><h3>References</h3><div class="help">The Markdown files beside its SKILL.md, which it can point the Agent to. Copy a path to paste it into SKILL.md.</div>
+@for((i, reference) in references.withIndex())
+!{val mark = reference.change?.name?.lowercase()}
+@if(reference.change == ants.ReferenceChange.DELETED)
+    <div class="row ref"><span class="grow gone"><code>${reference.path}</code><span class="pill p-deleted">deleted</span></span></div>
+@else
+    <div class="row ref"><a class="grow" href="/skills/${form.name}/references/${reference.path}" data-open="reference-${i}"><code>${reference.path}</code>@if(mark != null)<span class="pill p-${mark}">${mark}</span>@endif<span class="pill p-quiet" data-unmentioned="${reference.path}" hidden="${reference.path !in mentions.unmentioned}">not mentioned in SKILL.md</span></a><button type="button" class="ghost" data-copy="${reference.path}" title="Copy its path">Copy</button>@if(!form.readOnly)<form method="post" action="/skills/${form.name}/delete-reference" data-reference-change><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><input type="hidden" name="path" value="${reference.path}"><button class="ghost" title="Delete ${reference.path}" aria-label="Delete ${reference.path}">✕</button></form>@endif</div>
+@endif
+@endfor
+@for(path in mentions.missing)
+    @template.missingmention(path = path)
+@endfor
+<template id="missing-mention">@template.missingmention(path = "")</template>
+@if(references.isEmpty())
+    <div class="muted small">No references: no Markdown file is beside its SKILL.md.</div>
+@endif
+@if(!form.readOnly && form.name != null)
+    <div class="row ref-acts"><button type="button" data-open="new-reference">New reference</button><form method="post" action="/skills/${form.name}/import-reference" enctype="multipart/form-data" data-reference-change><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><label class="btn" title="Add a Markdown file from your disk as a reference">Import reference…<input type="file" name="file" accept=".md" required hidden onchange="this.form.requestSubmit()"></label></form></div>
+@endif
 </div>
+</div>
+</div>
+@for((i, reference) in references.withIndex())
+@if(reference.change != ants.ReferenceChange.DELETED)
+<dialog class="modal reference" id="reference-${i}">
+    <form method="dialog" class="mh"><label for="reference-text-${i}">${reference.path}</label><span class="pill p-quiet" title="Skill">${form.name}</span>@if(form.readOnly)<span class="muted small">Read-only</span>@endif<span class="sp"></span><span class="muted small">Esc to close</span><button class="ghost" title="Close" aria-label="Close">✕</button></form>
+@if(form.readOnly)
+    <div class="mb"><textarea id="reference-text-${i}" rows="20" placeholder="e.g. # Format&#10;One finding per line." data-markdown readonly data-tall>${reference.text}</textarea></div>
+@else
+    <form method="post" action="/skills/${form.name}/references/${reference.path}" class="mb" data-reference-save>
+        <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+        <p role="alert" hidden></p>
+        <textarea id="reference-text-${i}" name="text" rows="20" placeholder="e.g. # Format&#10;One finding per line." data-markdown data-tall>${reference.text}</textarea>
+        <div class="go"><button class="primary">Save</button></div>
+    </form>
+@endif
+</dialog>
+@endif
+@endfor
+@if(!form.readOnly && form.name != null)
+<dialog class="modal new-reference" id="new-reference">
+    <form method="dialog" class="mh"><b>New reference</b><span class="pill p-quiet" title="Skill">${form.name}</span><span class="sp"></span><span class="muted small">Esc to close</span><button class="ghost" title="Close" aria-label="Close">✕</button></form>
+    <div class="mb">
+        <form method="post" action="/skills/${form.name}/new-reference" data-new-reference>
+            <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+            <p role="alert" hidden></p>
+            <div class="fld"><label class="f" for="new-reference-path">Name</label><div class="help">Its path in the Skill's folder, with subfolders if you like; .md is added when it has no extension.</div><input id="new-reference-path" name="path" placeholder="e.g. references/api.md"></div>
+            <div class="go"><button class="primary">Create</button></div>
+        </form>
+    </div>
+</dialog>
+@endif
+@if(references.isNotEmpty() || !form.readOnly)<script src="/references.js" defer></script>@endif
 @if(draft != null)<script type="module" src="/draft.js"></script>@endif
 </main>
 </body>

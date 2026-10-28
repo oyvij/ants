@@ -12,6 +12,7 @@ import java.time.Instant
 import java.util.concurrent.TimeUnit.SECONDS
 import kotlin.io.path.createDirectories
 import kotlin.io.path.createFile
+import kotlin.io.path.deleteIfExists
 import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
 import kotlin.io.path.listDirectoryEntries
@@ -112,6 +113,23 @@ class AgentTaskTest : AntsTest() {
         } finally {
             browser.post("$only/delete", mapOf("confirm" to "on"))
             browser.post("/skills/draft/discard", mapOf("confirm" to "on"))
+        }
+    }
+
+    @Test
+    fun `an Agent Task launched while a reference has a Draft change reads the published reference`() {
+        agentTask()
+        claude.session("draft", done)
+        val guide = home.resolve("skills/draft/guide.md").apply { writeText("The published guide.") }
+        val saved = browser.post("/skills/draft/references/guide.md", mapOf("text" to "The Draft's guide."))
+        assertEquals(200, saved.status, saved.body)
+        try {
+            val run = start()
+            eventually { assertContains(page(run), """id="state">Completed<""") }
+            assertEquals("The published guide.", claude.launches("draft").single().skills.getValue("draft").resolve("guide.md").readText())
+        } finally {
+            browser.post("/skills/draft/discard", mapOf("confirm" to "on"))
+            guide.deleteIfExists()
         }
     }
 

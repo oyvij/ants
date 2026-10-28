@@ -1,0 +1,36 @@
+@param skill: String
+@param reference: ants.SkillReference
+@param editable: Boolean = false
+@param message: String? = null
+@param _csrf: org.springframework.security.web.csrf.CsrfToken
+@param colorScheme: String = "light dark"
+@param shell: ants.Shell
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    @template.app()
+    <meta name="color-scheme" content="${colorScheme}">
+    <title>${reference.path} · ${skill} · Skills · Ants</title>
+</head>
+<body>
+@template.nav(shell = shell)
+<main>
+<div class="crumbs"><a href="/skills">Skills</a> / <a href="/skills/${skill}">${skill}</a> / ${reference.path}</div>
+<div class="ph"><h1><code>${reference.path}</code></h1><div class="acts">@if(editable)<button class="primary" form="reference">Save</button>@else<span class="muted small">Read-only</span>@endif</div></div>
+@if(message != null)<p role="alert">${message}</p>@endif
+<div class="card">
+@if(editable)
+<form id="reference" method="post" action="/skills/${skill}/references/${reference.path}">
+    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+    <div class="fld"><label class="f" for="reference-text">${reference.path}</label>
+        <textarea id="reference-text" name="text" rows="20" placeholder="e.g. # Format&#10;One finding per line." data-markdown data-tall>${reference.text}</textarea></div>
+</form>
+@else
+    <div class="fld"><label class="f" for="reference-text">${reference.path}</label>
+        <textarea id="reference-text" rows="20" placeholder="e.g. # Format&#10;One finding per line." data-markdown readonly data-tall>${reference.text}</textarea></div>
+@endif
+</div>
+</main>
+</body>
+</html>
