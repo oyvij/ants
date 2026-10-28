@@ -201,7 +201,7 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
     private fun besideFiles(folder: Path) = folder.takeIf { it.exists() }?.walk().orEmpty()
         .filter { file -> generateSequence(file.parent) { it.parent }.takeWhile { it != folder }.none { it.resolve("SKILL.md").exists() } }
 
-    private val SkillItem.references get() = besideFiles(beside).map { it.relativeTo(beside).invariantSeparatorsPathString }
+    private val SkillItem.referencePaths get() = besideFiles(beside).map { it.relativeTo(beside).invariantSeparatorsPathString }
         .filter { it.endsWith(".md") && it != "SKILL.md" }.sorted().toList()
 
     private fun SkillItem.reference(path: String) = SkillReference(path, beside.resolve(path).readText())
@@ -210,7 +210,7 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
     fun reference(@PathVariable name: String, @PathVariable path: String, model: Model): String {
         val item = item(name)
         val relative = path.removePrefix("/")
-        if (relative !in item.references) throw ResponseStatusException(HttpStatus.NOT_FOUND, "${item.name} has no reference $relative")
+        if (relative !in item.referencePaths) throw ResponseStatusException(HttpStatus.NOT_FOUND, "${item.name} has no reference $relative")
         model.addAttribute("skill", item.name)
         model.addAttribute("reference", item.reference(relative))
         return "reference"
@@ -321,7 +321,7 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
         model.addAttribute("draft", item?.head)
         model.addAttribute("dependents", item?.published?.let { usedBy.skill(it.name) })
         model.addAttribute("runBy", item?.published?.let { skill -> catalogue.agents().filter { agent -> catalogue.allows(agent, skill) }.sortedBy { it.name } }.orEmpty())
-        model.addAttribute("references", item?.run { references.map { reference(it) } }.orEmpty())
+        model.addAttribute("references", item?.run { referencePaths.map { reference(it) } }.orEmpty())
         return "skill"
     }
 }

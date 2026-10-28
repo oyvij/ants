@@ -155,6 +155,22 @@ class SkillsTest : AntsTest() {
         }
     }
 
+    @Test
+    fun `a Skill from an extra folder lists and reads its references`() {
+        val extra = Files.createTempDirectory("extra").resolve("outside-referrer").createDirectories()
+        extra.resolve("SKILL.md").writeText(skillMd("outside-referrer"))
+        extra.resolve("guide.md").writeText("The guide.")
+        val settings = home.resolve("settings.yaml")
+        val before = settings.readText()
+        try {
+            settings.writeText("skill-folders: [${extra.parent}]\n")
+            assertEquals(listOf("guide.md"), references(page("/skills/outside-referrer")))
+            assertContains(page("/skills/outside-referrer/references/guide.md"), "The guide.")
+        } finally {
+            settings.writeText(before)
+        }
+    }
+
     private fun idOf(folder: Path) = Regex("^id: (k-[a-z0-9]{6})\n$").find(folder.resolve("ants.yaml").readText())?.groupValues?.get(1)
 
     private fun assertNoPageShows(id: String, vararg paths: String) {
@@ -425,7 +441,7 @@ class SkillsTest : AntsTest() {
         assertFalse("href=\"$draft\"" in page("/skills"))
     }
 
-    private fun references(page: String) = Regex("""data-reference="([^"]+)"""").findAll(page).map { it.groupValues[1] }.toList()
+    private fun references(page: String) = Regex("""data-copy="([^"]+)"""").findAll(page).map { it.groupValues[1] }.toList()
 
     @Test
     fun `the References card lists the Markdown files beside SKILL md by their relative path, and not a nested Skill's`() {
