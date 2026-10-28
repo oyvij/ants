@@ -934,12 +934,16 @@ fetch(canvas.dataset.src)
 // Publish (or a Template's Save). The Draft is saved first, so leaving for the Process page has nothing left to save.
 document.getElementById("save").onclick = async () => {
     save.disabled = true
-    await draft?.save()
-    const {xml} = await modeler.saveXML({format: true})
-    const response = await fetch(save.dataset.action, {method: "POST", body: new URLSearchParams({_csrf: csrf, bpmn: xml})})
-    if (response.ok) return location = response.url
+    try {
+        await draft?.save()
+        const {xml} = await modeler.saveXML({format: true})
+        const response = await fetch(save.dataset.action, {method: "POST", body: new URLSearchParams({_csrf: csrf, bpmn: xml})})
+        if (response.ok) return location = response.url
+        document.getElementById("refusal").textContent = await response.text()
+    } catch (failure) {
+        document.getElementById("refusal").textContent = failure.message
+    }
     save.disabled = false
-    document.getElementById("refusal").textContent = await response.text()
 }
 
 // The live Checks: everything Publish would refuse, from the Checks it runs, and the warnings, under a summary
@@ -1358,7 +1362,7 @@ async function openBuilder() {
         message.value = ""
         message.dispatchEvent(new Event("change"))
         send.disabled = true
-        const answer = await (await post("/process-builder/send", {message: text})).json()
+        const answer = await post("/process-builder/send", {message: text}).then(response => response.json()).catch(failure => ({error: failure.message}))
         error.textContent = answer.error || ""
         if (!answer.error) sent = true
         else {

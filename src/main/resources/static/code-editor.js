@@ -204,7 +204,7 @@ async function openHelper(textarea, editor, cm, swap, edits) {
         message.value = '';
         message.dispatchEvent(new Event('change'));
         send.disabled = true;
-        const answer = await (await post('/script-helper/send', {message: text})).json();
+        const answer = await post('/script-helper/send', {message: text}).then(response => response.json()).catch(failure => ({error: failure.message}));
         error.textContent = answer.error || '';
         if (!answer.error) sent = true;
         else {

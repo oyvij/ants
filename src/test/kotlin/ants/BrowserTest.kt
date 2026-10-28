@@ -8,7 +8,6 @@ import com.microsoft.playwright.options.ColorScheme
 import com.microsoft.playwright.options.KeyboardModifier
 import com.microsoft.playwright.Page
 import com.microsoft.playwright.Playwright
-import com.microsoft.playwright.Route
 import com.microsoft.playwright.assertions.LocatorAssertions
 import com.microsoft.playwright.assertions.PlaywrightAssertions.assertThat
 import org.junit.jupiter.api.AfterEach
@@ -2873,21 +2872,17 @@ class BrowserTest : AntsTest() {
         http.import("approve.bpmn")
         val run = http.post("/processes/approve/runs", mapOf()).path.removePrefix("/runs/")
         workspace(run).resolve("notes.md").writeText("# Paying again\n")
-        // A 204 keeps the browser on the page, as a slow answer would until it came.
-        var posts = 0
-        page.route("**/notifications/*") { route -> if (route.request().method() == "POST") route.fulfill(Route.FulfillOptions().setStatus(204)).also { posts++ } else route.resume() }
-
         page.navigate(url(waitingEntry()))
+        // After shell.js has seen it, each submit is counted and kept from leaving the page, as a slow answer would.
+        page.evaluate("() => { window.sent = 0; addEventListener('submit', event => { if (!event.defaultPrevented) sent++; event.preventDefault(); }); }")
         buttonNamed("Approve").click()
         val pressed = page.locator("button[aria-busy=true]")
         assertThat(pressed).hasText(Pattern.compile("Approving…$"))
         assertThat(pressed.locator(".spin")).isVisible()
         assertThat(buttonNamed("Send back")).hasAttribute("aria-disabled", "true")
         buttonNamed("Send back").click(Locator.ClickOptions().setForce(true))
-        page.waitForTimeout(500.0) // long enough for a second request to show
-        assertEquals(1, posts, "Send back sent nothing while Approve was pending")
+        assertEquals(1, page.evaluate("sent"), "Send back sent nothing while Approve was pending")
 
-        page.unrouteAll()
         page.reload()
         buttonNamed("Approve").click()
         assertThat(page.locator(".toast")).containsText("Approved")
@@ -2970,6 +2965,23 @@ class BrowserTest : AntsTest() {
         page.locator("#save").click()
         assertThat(page).hasURL(Pattern.compile(".*/processes/ticketed$"))
         assertContains(http.get("/processes/ticketed/diagram.bpmn").body, """name="ants.items-are-tickets" value="true"""")
+    }
+
+    @Test
+    fun `a Publish that never reaches the server says why and can be pressed again`() = browse {
+        agentTask(null)
+        val (process, plane) = row("flaky", """<bpmn:startEvent id="start" />""", agentTaskXml("plan", "Plan"), """<bpmn:endEvent id="end" />""")
+        deploy(definitions("flaky", "Flaky", process, plane))
+        page.route(url("/processes/flaky/publish")) { route -> if (route.request().method() == "POST") route.abort() else route.resume() }
+
+        page.navigate(url("/processes/flaky/edit"))
+        page.locator("#save").click()
+        assertThat(page.locator("#refusal")).hasText(Pattern.compile(".+"))
+        assertThat(page.locator("#save")).isEnabled()
+
+        page.unrouteAll()
+        page.locator("#save").click()
+        assertThat(page).hasURL(Pattern.compile(".*/processes/flaky$"))
     }
 
     private val wideAndTall = "let greeting = " + "\"hello\" + ".repeat(80) + "\"world\"\n" + (2..40).joinToString("") { "line $it\n" }

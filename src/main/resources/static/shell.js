@@ -50,6 +50,7 @@ function pending(button) {
     const spin = document.createElement('span');
     spin.className = 'spin';
     spin.textContent = '✻';
+    spin.ariaHidden = 'true';
     button.style.minWidth = button.offsetWidth + 'px';
     button.replaceChildren(spin, button.dataset.pending ?? button.textContent.trim());
     button.ariaBusy = 'true';
