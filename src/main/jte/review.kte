@@ -156,8 +156,8 @@
     <div class="fld"><label class="f" for="comment">Overall comment</label>
         <div class="help">Send back needs this or a comment on a step or a line: the Task it sends back to resumes with all of them.</div>
         <textarea id="comment" name="comment" rows="5" placeholder="e.g. Cap the retries before this ships." data-markdown></textarea></div>
-    <div class="composer"><div><span class="grow muted small">Nothing is pushed until you approve.</span><button name="action" value="send-back">Send back</button>
-        <button class="primary" name="action" value="approve">Approve</button></div></div>
+    <div class="composer"><div><span class="grow muted small">Nothing is pushed until you approve.</span><button name="action" value="send-back" data-pending="Sending back…">Send back</button>
+        <button class="primary" name="action" value="approve" data-pending="Approving…">Approve</button></div></div>
 </form>
 </main>
 </body>

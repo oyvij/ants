@@ -364,7 +364,7 @@ class LandingTest : AntsTest() {
 
         fun stop(launches: Int) {
             eventually { assertEquals(launches, claude.launches("build").size) }
-            eventually { assertContains(browser.get(page).body, """<button class="primary">Send</button>""") }
+            eventually { assertContains(browser.get(page).body, """<button class="primary" data-pending="Sending…">Send</button>""") }
             browser.post("$page/stop", emptyMap())
         }
 

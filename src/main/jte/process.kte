@@ -103,11 +103,11 @@
     @endif
     </div>
 @endfor
-    <div class="go row"><button class="primary" disabled="${reasons.isNotEmpty() && !scopable}">Start</button><button type="button" id="schedule-open" disabled="${reasons.isNotEmpty() && !scopable}">⏰ Schedule</button></div>
+    <div class="go row"><button class="primary" disabled="${reasons.isNotEmpty() && !scopable}" data-pending="Starting…">Start</button><button type="button" id="schedule-open" disabled="${reasons.isNotEmpty() && !scopable}">⏰ Schedule</button></div>
     <fieldset id="when" hidden="${cron == null}"><legend>When</legend>
     <p class="row"><label>Every <select id="when-every"></select></label><label data-part="at"> at <input type="time" id="when-at" value="08:00"></label><label data-part="on"> on <select id="when-on"></select></label><label data-part="dom"> on day <input type="number" id="when-dom" min="1" max="31" value="1"></label></p>
     <details id="when-advanced" open="${cron != null}"><summary>Advanced</summary><label class="f" for="when-cron">Cron</label><div class="help">Six fields, seconds first, such as <span class="eg">0 0 8 * * MON-FRI</span>.</div><input name="cron" id="when-cron" value="${cron ?: "0 0 * * * *"}"></details>
-    <div class="go"><button class="primary" formaction="/processes/${key}/schedule">Save schedule</button></div>
+    <div class="go"><button class="primary" formaction="/processes/${key}/schedule" data-pending="Saving…">Save schedule</button></div>
     </fieldset>
 </form></div>
 <div class="card" id="schedule">
@@ -120,7 +120,7 @@
     <tr><th>Schedule</th><th>Profile</th><th>Verbosity</th><th>Values</th><th>Runs</th><th>Cron</th><th>Next Run</th><th></th></tr>
     @for(each in schedules)
     <tr id="schedule-${each.id}"><td><b>${each.label}</b></td><td class="k">Profile</td><td>${each.profile ?: "—"}</td><td class="k">Verbosity</td><td>${each.verbosity.value}</td><td class="k">Values</td><td class="small">@for((label, value) in each.values)<div><span class="muted">${label}</span> ${value}</div>@endfor</td><td class="k">Runs</td><td>${each.words}</td><td class="k">Cron</td><td><code>${each.cron}</code></td><td class="k">Next Run</td><td>@if(each.paused)<span class="muted">paused</span>@else${each.at} · ${each.countdown}@endif@if(each.skipped != null)<div class="warn">${each.skipped}</div>@endif@if(each.failed != null)<div class="failed"><p role="alert">✕ [failed] The scheduled Run didn't start: ${each.failed.why}</p><form method="post" action="${each.actions}/dismiss"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>Dismiss</button></form></div>@endif</td>
-    <td class="row"><form method="post" action="${each.actions}/start"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>Start now</button></form>
+    <td class="row"><form method="post" action="${each.actions}/start"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button data-pending="Starting…">Start now</button></form>
     <form method="post" action="${each.actions}/${if (each.paused) "resume" else "pause"}"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>${if (each.paused) "Resume" else "Pause"}</button></form>
     <form method="post" action="${each.actions}/remove"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button class="danger">Remove</button></form></td></tr>
     @endfor

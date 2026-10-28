@@ -25,9 +25,9 @@
 <form method="post" class="row">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
     <input type="hidden" name="instruction" value="">
-    <button class="danger" name="action" value="cancel">Cancel the Run</button>
+    <button class="danger" name="action" value="cancel" data-pending="Cancelling…">Cancel the Run</button>
     <span class="grow"></span>
-    <button class="primary" name="action" value="retry">Retry</button>
+    <button class="primary" name="action" value="retry" data-pending="Retrying…">Retry</button>
 </form>
 </main>
 </body>

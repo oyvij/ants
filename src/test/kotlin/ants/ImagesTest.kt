@@ -79,7 +79,7 @@ class ImagesTest : AntsTest() {
         claude.session("draft", init, "read", "wait release", done)
         val run = start("Say hello")
         val transcript = "/runs/$run/tasks/draft/transcript"
-        eventually { assertContains(browser.get(transcript).body, """<button class="primary">Send</button>""") }
+        eventually { assertContains(browser.get(transcript).body, """<button class="primary" data-pending="Sending…">Send</button>""") }
         browser.post("$transcript/send", mapOf("message" to "Like this: ![image]($RED_PATH)"))
         eventually { assertContains(browser.get(transcript).body, """› Like this: <img src="$RED_PATH" alt="image"></p>""") }
         assertContains(workspace(run).resolve("run-log.md").readText(), "Like this: ![image]($RED_PATH)\n")
