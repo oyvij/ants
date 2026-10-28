@@ -113,9 +113,10 @@
 @endfor
             <button type="button" data-add>＋ Add</button></div></div>
 
-    <div class="card"><h3>Protected Commands</h3><div class="help">Commands Agents may ask Ants to run, with any arguments, in their Run
-        workspace, with the Secrets picked. The Agent gets the output, every Secret masked. A command is picked by how it starts, such as
-        <span class="eg">yarn</span> or <span class="eg">mvn deploy</span>. A new Secret is offered here once saved.</div>
+    <div class="card"><h3>Protected Commands</h3><div class="help">A Protected Command is a command that needs Secrets. Agents run it only through Ants, never through Bash,
+        so a command that needs no Secret, such as <span class="eg">cargo</span> or <span class="eg">gh</span>, doesn't belong here. Ants runs it, with any
+        arguments, in the Agent's Run workspace, with the Secrets picked, and the Agent gets the output, every Secret masked. A command is
+        picked by how it starts, such as <span class="eg">yarn</span> or <span class="eg">mvn deploy</span>. A new Secret is offered here once saved.</div>
         <div class="listed">
 @for((i, row) in form.shownProtectedCommands.withIndex())
             <div class="row" hidden="${row.prefix.isEmpty()}">

@@ -100,7 +100,7 @@ class ScriptToolsTest : AntsTest() {
 
         assertEquals(listOf("mcp__ants__script_post-message", "mcp__ants__script_tidy"), scriptTools(launch).sorted())
         val listed = tools(launch).associateBy { it["name"] }
-        assertEquals(setOf("run", "script_post-message", "script_tidy"), listed.keys)
+        assertEquals(setOf("script_post-message", "script_tidy"), listed.keys)
         val post = listed.getValue("script_post-message")
         assertEquals("Posts a message to Slack.", post["description"])
         assertEquals(inputs, post["inputSchema"])
@@ -236,7 +236,7 @@ class ScriptToolsTest : AntsTest() {
         val launch = launch()
 
         assertEquals(listOf("mcp__ants__script_tidy"), scriptTools(launch))
-        assertEquals(setOf("run", "script_tidy"), tools(launch).map { it["name"] }.toSet())
+        assertEquals(setOf("script_tidy"), tools(launch).map { it["name"] }.toSet())
         claude.release("go")
     }
 
@@ -252,7 +252,7 @@ class ScriptToolsTest : AntsTest() {
         val names = scriptTools(launch)
         assertEquals(listOf("mcp__ants__script_" + "a".repeat(46), "mcp__ants__script_post_to_slack_", "mcp__ants__script_post_to_slack__2"), names.sorted())
         assertTrue(names.all { Regex("[A-Za-z0-9_-]{1,64}").matches(it) })
-        assertEquals(names.map { it.removePrefix("mcp__ants__") }.toSet() + "run", tools(launch).map { it["name"] }.toSet())
+        assertEquals(names.map { it.removePrefix("mcp__ants__") }.toSet(), tools(launch).map { it["name"] }.toSet())
         claude.release("go")
     }
 

@@ -54,7 +54,7 @@ _Avoid_: lint, validation error, rule
 A reusable definition of who does a Task: which AI CLI it runs, which tools and Skills it may use and
 its standing instructions. Ants ships four, split by what they may touch and whose voice they speak in, never by
 job, which is the Task's: lead, engineer, proxy and librarian. A shipped Agent's Skills are its shipped ones plus
-**Your Skills**; its tools stay Ants'.
+**Your Skills**, and its tools its shipped ones plus **Your tools**.
 _Avoid_: worker, bot, ant
 
 **Skill**:
@@ -66,6 +66,11 @@ _Avoid_: prompt, task instructions, Assignment
 The Skills the user adds to a shipped Agent, kept apart from its shipped agent file so an update to Ants keeps
 them; Skills only, never tools, published like any Agent.
 _Avoid_: custom Skills, extra Skills, Agent overrides
+
+**Your tools**:
+The tools the user adds to a shipped Agent, kept apart from its shipped agent file so an update to Ants keeps them;
+they only add to its shipped tools, never past a deny rule Ants adds, and are published with Your Skills.
+_Avoid_: custom tools, extra permissions, Agent overrides
 
 **Script**:
 A piece of JavaScript the user writes once and keeps in a library, with its inputs, vars and Secrets, that a Script
@@ -154,8 +159,9 @@ and Scripts use and Agents never see.
 _Avoid_: credential, env var, key
 
 **Protected Command**:
-A command prefix, such as `yarn` or `mvn deploy`, that Agents may ask Ants to run with any arguments, in their Run
-workspace, with the Secrets linked to it; the Agent gets its output, never the Secrets.
+A command prefix, such as `yarn` or `mvn deploy`, that an Agent whose tools list `ProtectedCommand` may ask Ants to
+run with any arguments, in its Run workspace, with the Secrets linked to it; the Agent gets its output, never the
+Secrets. `ProtectedCommand(yarn)` limits it to that one.
 _Avoid_: build, command, script
 
 **Process Builder**:
@@ -197,6 +203,12 @@ One set of questions a Task asks at once, answered together by the user, an Agen
 recommendations, after which the Task resumes its session with the answers.
 _Avoid_: batch, questionnaire, YOLO
 
+**Permission request**:
+A tool call claude refused an Agent, waiting for the user: Always allow adds a Limit to the Agent's
+tools (to Your tools on a shipped Agent), Allow for this Task to that Task's launches only, and Don't allow
+refuses it; the session resumes with the choice. A refusal by a deny rule Ants adds can only be refused.
+_Avoid_: approval, prompt, permission prompt
+
 **Answer History**:
 Every question the user answered themselves, with their answer, kept across Runs and Processes so an
 Agent can answer a Round the way the user would.
@@ -222,6 +234,6 @@ What a Run leaves behind once its Run workspace is gone: what was done and which
 _Avoid_: summary, log
 
 **Notification list**:
-The one list of everything waiting on the user: a Task of any Run, or a scheduled Run that couldn't
-start; each entry leads to it.
+The one list of everything waiting on the user: a Task of any Run, such as a Round or a **Permission
+request**, or a scheduled Run that couldn't start; each entry leads to it.
 _Avoid_: inbox, alerts

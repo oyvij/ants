@@ -244,7 +244,7 @@ class AgentLauncher(
             level = onLevel
             val launchLevel = agent.launchLevel(taskLevel, onLevel)
             if (hold(task, agent.cli)) return // keeping its choice for the launch after the reset
-            runtime.removeVariablesLocal(task.executionId, listOf(ACTION, INSTRUCTION, SESSION)) // the choice is used once
+            runtime.removeVariablesLocal(task.executionId, listOf(ACTION, INSTRUCTION, SESSION, PERMISSION)) // the choice is used once
             val (skill, used) = skills(task.extensionProperties, agent, task.activityId)
             if (agent.cli == "claude") refuseBareByDefault(agent.cli, workspace)
             val instance = instance(task)
@@ -302,12 +302,14 @@ class AgentLauncher(
                 stopping -> "Ants stopped."
                 cancelled -> "Cancelled with the Run."
                 e is Stopped -> "[stopped] ${e.message}"
+                e is Refused -> "[permission] ${e.request.summary}"
                 else -> "[failed] ${e.message ?: e}"
             }
             runCatching { transcript?.ants("end", reason) }
             if (stopping || cancelled) return
-            if (e !is Stopped) log.warn("Agent Task ${task.activityId} failed", e)
-            if (e !is Stopped && level != null && retry(task, session, level, reason, (e as? Failed)?.details)) return
+            if (e is Refused) runCatching { runtime.setVariableLocal(task.executionId, PERMISSION, e.request.json()) }
+            if (e !is Stopped && e !is Refused) log.warn("Agent Task ${task.activityId} failed", e)
+            if (e !is Stopped && e !is Refused && level != null && retry(task, session, level, reason, (e as? Failed)?.details)) return
             incident(task, session, reason, (e as? Failed)?.details)
         }
     }
@@ -492,7 +494,7 @@ class AgentLauncher(
      */
     private fun skills(properties: Map<String, String>, agent: Agent, id: String): Pair<Skill?, List<Skill>> {
         val job = Job(properties::get)
-        val revocable = catalogue.yourSkillsStore.has(agent)
+        val revocable = catalogue.yours.has(agent)
         val allowed = Links(properties::get).skills(catalogue)?.map { it.getOrThrow() }?.filter { skill ->
             !revocable || catalogue.allows(agent, skill).also { if (!it) log.warn("$id lists the Skill ${skill.name}, which its Agent ${agent.name} no longer allows, so it is left out") }
         } ?: catalogue.allowed(agent)
@@ -543,10 +545,12 @@ class AgentLauncher(
             .plus(answerHistory(task)?.let { listOf("--add-dir", "${it.createDirectories()}") }.orEmpty()) // so a Read reaches it (ADR 0010)
             .plus(if (verbosity == null) emptyList() else listOf("--add-dir", "${catalogue.verbosityFile.parent}"))
         val tools = scriptTools.of(allowedScripts(task.extensionProperties, agent), workspace, run)
-        val (token, mcp) = protectedCommands.open(workspace, tools) // its Protected Commands run in the Run workspace
+        val agentTools = (catalogue.tools(agent) + granted(task)).distinct()
+        val allowed = protectedCommands.allowed(agentTools)
+        val (token, mcp) = protectedCommands.open(workspace, tools, allowed) // its Protected Commands run in the Run workspace
         val process = runCatching {
             val skills = listOfNotNull(skill) + used
-            cli(agent.cli, cwd, flags(agent, level, cwd, schema, skills, skillsFolder(workspace, instance, skills), session!!, resume, mcp, tools.tools.map { Mcp.CLAUDE_PREFIX + it["name"] }, workspace, gated?.let { listOf("Write(/$it/**)", "Edit(/$it/**)") }.orEmpty()) + shared + places)
+            cli(agent.cli, cwd, flags(agent, agentTools, level, cwd, schema, skills, skillsFolder(workspace, instance, skills), session!!, resume, mcp, listOfNotNull(RUN_TOOL.takeIf { allowed.isNotEmpty() }) + tools.tools.map { Mcp.CLAUDE_PREFIX + it["name"] }, workspace, gated?.let { listOf("Write(/$it/**)", "Edit(/$it/**)") }.orEmpty()) + shared + places)
                 .apply { environment()["ANTS_TASK"] = task.activityId } // names the Task to its session; the fake claude keys on it
                 .start()
         }.onFailure { protectedCommands.close(token) }.getOrThrow()
@@ -559,12 +563,21 @@ class AgentLauncher(
             var stopped = false
             var limit: Instant? = null
             var answered = false // a result line came after the user's Stop
+            var request: PermissionRequest? = null
+            val calls = HashMap<Any?, Map<*, *>>()
             process.inputReader().forEachLine { line ->
                 transcript.line(line)
                 if (judge.failure != null || stopped || limit != null || (judge.valid != null && !stdin.open)) return@forEachLine
                 val event = runCatching { json.readValue(line, Map::class.java) }.getOrNull() ?: return@forEachLine
                 if (event["type"] == "user" && event["isReplay"] == true) stdin.read()
                 if (event["type"] == "rate_limit_event") keepUsage(event)
+                if (event["type"] == "assistant") ((event["message"] as? Map<*, *>)?.get("content") as? List<*>).orEmpty().mapNotNull { it as? Map<*, *> }
+                    .filter { it["type"] == "tool_use" }.forEach { calls[it["id"]] = it["input"] as? Map<*, *> ?: emptyMap<Any, Any>() }
+                if (request == null && event["type"] == "system" && event["subtype"] == "permission_denied") {
+                    request = permissionRequest(agent, agentTools, cwd, event, calls[event["tool_use_id"]])
+                    stdin.interrupt()
+                    return@forEachLine
+                }
                 // ponytail: claude sends system/init only once it has read the prompt, so with an API key the first
                 // request may already be on its way when Ants kills it.
                 val apiKey = (event["apiKeySource"] as? String)?.takeIf { event["subtype"] == "init" && it != "none" }
@@ -589,6 +602,7 @@ class AgentLauncher(
             }
             val exit = process.waitFor()
             limit?.let { throw UsageLimit(it) }
+            request?.takeIf { judge.valid?.get("outcome") != "done" }?.let { throw Refused(it) }
             val tail = stderr()
             if (stopped || (stdin.stopping && !answered && judge.failure == null)) throw Stopped()
             judge.failure?.let { throw Failed(it.message, it.details ?: tail) }
@@ -599,6 +613,30 @@ class AgentLauncher(
             stdins.remove(key(run, instance), stdin)
             clis -= process
             protectedCommands.close(token)
+        }
+    }
+
+    private fun granted(task: LockedExternalTask): List<String> = PermissionRequest.granted(task.variables[GRANTED])
+
+    private fun permissionRequest(agent: Agent, tools: List<String>, cwd: Path, event: Map<*, *>, input: Map<*, *>?): PermissionRequest {
+        val tool = event["tool_name"].toString()
+        val target = PermissionRequest.target(input)
+        return PermissionRequest(agent.name, tool, target, PermissionRequest.limit(tool, target, cwd), whyNoAllow(tool, target, event["decision_reason_type"] == "rule", tools))
+    }
+
+    private fun whyNoAllow(tool: String, target: String?, rule: Boolean, tools: List<String>): String? {
+        val commands = if (tool == "Bash") PermissionRequest.commands(target.orEmpty()) else emptyList()
+        val protected = settings.protectedCommands().keys.map { Settings.strings(it).orEmpty() }.filter { it.isNotEmpty() }
+            .firstOrNull { prefix -> commands.any { it.take(prefix.size) == prefix } }?.joinToString(" ")
+        val own = (listOf(settings.secretsFile, settings.file).map { it.toAbsolutePath().toString() } + listOf("scripts", "drafts/scripts").map { "${home.resolve(it).toAbsolutePath()}/" })
+        return when {
+            protected != null -> if (protected in protectedCommands.allowed(tools)) "a Protected Command: run it with Ants' `run` tool, never Bash"
+                else "a Protected Command: give the Agent `${ProtectedCommands.AGENT_TOOL}`"
+            !rule -> null
+            tool == "Bash" && "--output" in target.orEmpty() -> "git's `--output`, which writes any file"
+            target != null && own.any { target.startsWith(it) } -> "Ants' own settings, Secrets and Scripts"
+            tool in SUBAGENT_TOOLS -> "a Subagent type outside the Agent's `Agent(…)` Limit"
+            else -> "a deny rule Ants adds"
         }
     }
 
@@ -805,14 +843,15 @@ class AgentLauncher(
         }
     }
 
-    private fun flags(agent: Agent, level: Level, cwd: Path, schema: Map<*, *>, skills: List<Skill>, skillsFolder: Path?, session: String, resume: Boolean, mcp: String, scriptTools: List<String>, workspace: Path, denied: List<String>): List<String> {
-        val tools = (agent.tools ?: DEFAULT_TOOLS).filter { it.substringBefore('(') != "Skill" }.map { anchored(it, cwd) }
+    private fun flags(agent: Agent, agentTools: List<String>, level: Level, cwd: Path, schema: Map<*, *>, skills: List<Skill>, skillsFolder: Path?, session: String, resume: Boolean, mcp: String, antsTools: List<String>, workspace: Path, denied: List<String>): List<String> {
+        val tools = agentTools.filter { it.substringBefore('(') !in OWN_TOOLS }.map { anchored(it, cwd) }
         val skill = listOf("Skill").takeIf { skillsFolder != null } // with no Skills allowed, no Skill tool
         val (subagents, types) = subagents(tools)
         // Probed on claude 2.1.299: a rule such as `Bash(git diff *)` lets `git diff --output=<any path>` write a file, and
         // the deny rule `Bash(git *--output*)` refuses it (git takes no abbreviation of `--output`)
         val gitOutput = if (tools.any { it.startsWith("Bash(git ") }) listOf("Bash(git *--output*)") else emptyList()
-        val disallowed = types + gitOutput + denied + (listOf(settings.secretsFile, settings.file).map(Path::toAbsolutePath).map(Path::toString) + listOf("scripts", "drafts/scripts").map { "${home.resolve(it).toAbsolutePath()}/**" }).flatMap { listOf("Read(/$it)", "Edit(/$it)") }
+        val protectedCommandRules = settings.protectedCommands().keys.flatMap { listOf("Bash($it)", "Bash($it *)") }
+        val disallowed = types + gitOutput + protectedCommandRules + denied + (listOf(settings.secretsFile, settings.file).map(Path::toAbsolutePath).map(Path::toString) + listOf("scripts", "drafts/scripts").map { "${home.resolve(it).toAbsolutePath()}/**" }).flatMap { listOf("Read(/$it)", "Edit(/$it)") }
         return STREAM_JSON + listOf(
             "--json-schema", json.writeValueAsString(schema),
             if (resume) "--resume" else "--session-id", session,
@@ -825,7 +864,7 @@ class AgentLauncher(
             // Skill, for the Skills [skillsFolder] loads: which are loaded is what limits them, not a Skill(x) rule.
             "--tools", (tools.map { it.substringBefore('(') } + skill.orEmpty()).distinct().joinToString(","),
             // claude checks a Write against Edit rules and ignores a Write(path) one, so a Write limit also goes out as Edit
-            "--allowedTools", (tools + tools.filter { it.startsWith("Write(") }.map { "Edit(" + it.removePrefix("Write(") } + skill.orEmpty() + RUN_TOOL + scriptTools).distinct().joinToString(","),
+            "--allowedTools", (tools + tools.filter { it.startsWith("Write(") }.map { "Edit(" + it.removePrefix("Write(") } + skill.orEmpty() + antsTools).distinct().joinToString(","),
         ) + subagents + (if (disallowed.isEmpty()) emptyList() else listOf("--disallowedTools", disallowed.joinToString(","))) + (skillsFolder?.let { listOf("--add-dir", "$it") } ?: emptyList()) +
             // A symlinked Skill's files can be read only with its real folder added too.
             skills.flatMap { listOf("--add-dir", it.folder.toString()) } + level.flags +
@@ -860,9 +899,9 @@ class AgentLauncher(
         val resolved = catalogue.agents(withHidden = true).map { it.name }.distinct().mapNotNull { runCatching { catalogue.agent(it) }.getOrNull() }
         val offered = resolved.filter { it.subagent && it.cli == "claude" }.associate { agent ->
             agent.name to listOfNotNull(
-                "description" to agent.description,
+                "description" to catalogue.description(agent),
                 "prompt" to agent.instructions,
-                agent.tools?.let { rules -> "tools" to rules.filter { it.substringBefore('(') != "Skill" } },
+                catalogue.subagentTools(agent)?.let { rules -> "tools" to rules.filter { it.substringBefore('(') !in OWN_TOOLS } },
                 agent.model?.let { "model" to it },
             ).toMap()
         }
@@ -916,6 +955,8 @@ class AgentLauncher(
         check("default" !in bare.lowercase()) { "$cli -p now turns on --bare by default, which never reads Ants' login. Ants needs updating." }
     }
 
+    internal class Refused(val request: PermissionRequest) : Exception(request.summary)
+
     /** The user stopped the session: `[stopped]`, not a failure. */
     internal class Stopped : Exception("Stopped by the user.")
 
@@ -939,6 +980,9 @@ class AgentLauncher(
 
         /** The session id of a held Task's last launch. */
         private const val SESSION = "ants.session"
+
+        const val PERMISSION = "ants.permission"
+        const val GRANTED = "ants.granted"
 
         private const val REACHED_LEVEL = "ants.reached-level"
         private const val RETRIES = "ants.retries"
@@ -968,13 +1012,15 @@ class AgentLauncher(
          * Task*. Not `Agent`: an Agent starts Subagents only when its file names the Agent tool, as the implementer's does.
          */
         val DEFAULT_TOOLS = listOf(
-            "Bash", "Edit", "Glob", "Grep", "NotebookEdit", "Read", "TaskCreate", "TaskGet", "TaskList", "TaskUpdate", "WebFetch", "WebSearch", "Write",
+            "Bash", "Edit", "Glob", "Grep", "NotebookEdit", ProtectedCommands.AGENT_TOOL, "Read", "TaskCreate", "TaskGet", "TaskList", "TaskUpdate", "WebFetch", "WebSearch", "Write",
         )
         /** The variables Ants strips from every environment it gives a CLI or a Protected Command, so nothing is paid per token. */
         val PAID = listOf("ANTHROPIC_API_KEY", "CLAUDE_CODE_RETRY_WATCHDOG", "OPENAI_API_KEY", "CODEX_API_KEY")
 
         /** Ants' MCP tool `run`, which runs a Protected Command ([ProtectedCommands]). */
         const val RUN_TOOL = "${Mcp.CLAUDE_PREFIX}run"
+
+        private val OWN_TOOLS = setOf("Skill", ProtectedCommands.AGENT_TOOL)
 
         /** The tool that starts Subagents: `Agent`, formerly `Task`. */
         val SUBAGENT_TOOLS = setOf("Agent", "Task")

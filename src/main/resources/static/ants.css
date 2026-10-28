@@ -118,7 +118,7 @@ td .draft-mark { margin-left: 6px; vertical-align: 1px; }
 @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(37, 99, 235, .55); } 70% { box-shadow: 0 0 0 7px rgba(37, 99, 235, 0); } 100% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0); } }
 .tag { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 9px 0 7px; border-radius: 6px; font-size: 12px; font-weight: 600; letter-spacing: .01em; white-space: nowrap; border: 1px solid; vertical-align: middle; }
 .tag i { font-style: normal; font-size: 10.5px; font-weight: 800; width: 14px; height: 14px; display: inline-grid; place-items: center; border-radius: 4px; background: currentColor; -webkit-text-fill-color: var(--panel); }
-.t-questions, .t-approve, .t-review, .t-push { background: var(--waitSoft); color: var(--wait); border-color: color-mix(in srgb, var(--wait) 35%, transparent); }
+.t-questions, .t-approve, .t-review, .t-push, .t-permission { background: var(--waitSoft); color: var(--wait); border-color: color-mix(in srgb, var(--wait) 35%, transparent); }
 .t-stuck, .t-stopped { background: var(--vioSoft); color: var(--vio); border-color: color-mix(in srgb, var(--vio) 35%, transparent); }
 .t-failed { background: var(--badSoft); color: var(--bad); border-color: color-mix(in srgb, var(--bad) 35%, transparent); }
 .t-vault, .t-ISSUE, .t-NOTE, .t-SUGGESTION, .t-COMMENT { background: var(--accSoft); color: var(--accText); border-color: color-mix(in srgb, var(--acc) 30%, transparent); }
@@ -641,6 +641,7 @@ details.example pre { background: var(--line2); border: 0; padding: 10px; border
     #menu:checked ~ nav.side { visibility: visible; transform: none; box-shadow: 0 0 0 100vmax var(--modalBg); }
     main, main.full { padding-inline: 16px; }
     .composer > :is(div, form), main.full .composer > :is(div, form) { padding-inline: 16px; }
+    #permission .composer .grow { display: none; } #permission .composer button { flex: 1 1 0; min-width: 0; padding-inline: 8px; }
     .answering { flex-direction: column; align-items: stretch; gap: 16px; }
     .answering, .answering:has(> #tabs:not([hidden])) { --lead: 0px; }
     nav#tabs[role=tablist] { position: static; flex: none; flex-direction: row; gap: 6px; max-height: none; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; padding-bottom: 4px; }

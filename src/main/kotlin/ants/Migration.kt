@@ -15,6 +15,7 @@ import org.w3c.dom.Document
 import org.w3c.dom.Element
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.io.path.createParentDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.moveTo
@@ -179,6 +180,33 @@ class Migration(
         linkSkillsById(keptOld + giveIds(keptOld))
         links(changedTemplates.map { it.first }.toSet())
         processDrafts()
+        giveBareBashProtectedCommand()
+    }
+
+    private fun giveBareBashProtectedCommand() {
+        val done = home.resolve("migrated/protected-command")
+        if (done.exists()) return
+        for (agent in catalogue.agents(withHidden = true).filter { it.file.parent == catalogue.yourAgents }) {
+            val text = agent.file.readText()
+            val given = withProtectedCommand(text) ?: continue
+            agent.file.resolveSibling("${agent.file.fileName}.old").writeText(text)
+            agent.file.writeAtomically(given)
+        }
+        for (draft in drafts.all(DraftKind.AGENT)) {
+            val given = withProtectedCommand(draft.content) ?: continue
+            val file = drafts.file(DraftKind.AGENT, draft.id)
+            file.resolveSibling("${file.fileName}.old").writeBytes(file.readBytes())
+            drafts.save(DraftKind.AGENT, DraftPage(draft.id, draft.key, draft.name, given), DraftFrom(draft.version))
+        }
+        done.createParentDirectories().writeText("")
+    }
+
+    private fun withProtectedCommand(text: String): String? {
+        val agent = runCatching { Agent(catalogue.yourAgents.resolve("agent.md"), text) }.getOrNull() ?: return null
+        val tools = agent.tools ?: return null
+        if (agent.subagent || "Bash" !in tools.map(String::trim) || tools.any { it.substringBefore('(').trim() == ProtectedCommands.AGENT_TOOL }) return null
+        val (meta, body) = frontmatter(text)
+        return "---\n" + yaml.dump(LinkedHashMap(meta).apply { put("tools", (tools + ProtectedCommands.AGENT_TOOL).joinToString(", ")) }) + "---\n" + body
     }
 
     /** Moves each Process Draft's Agent Tasks off the old shipped Agents they name ([move]), keeping the old Draft beside it. */

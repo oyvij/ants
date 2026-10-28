@@ -2589,6 +2589,60 @@ class BrowserTest : AntsTest() {
         return entry
     }
 
+    private fun refusedSession(command: String, reason: String) = arrayOf(
+        """{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_1","name":"Bash","input":{"command":"$command"}}]},"session_id":"${'$'}SESSION"}""",
+        """{"type":"system","subtype":"permission_denied","tool_name":"Bash","tool_use_id":"toolu_1","decision_reason_type":"$reason","session_id":"${'$'}SESSION"}""",
+        "read",
+        """{"type":"result","subtype":"error_during_execution","is_error":true,"session_id":"${'$'}SESSION"}""",
+        "exit 1",
+    )
+
+    private fun permissionEntry(): String {
+        http.import("agent-task.bpmn")
+        http.post("/processes/agent-task/runs", mapOf("prompt" to "List the outdated crates."))
+        var entry = ""
+        eventually { entry = assertNotNull(Regex("""href="(/notifications/[^"]+)"""").find(http.get("/notifications").body)).groupValues[1] }
+        return entry
+    }
+
+    @Test
+    fun `a Permission request's dialog shows the Agent, the tool, the command and an editable Limit, and Allow for this Task sends the edited one`() = browse {
+        val claude = FakeClaude()
+        agentTask(claude, agent = "tools: Bash(git log *)\n")
+        claude.session("draft", 1, *refusedSession("cargo outdated", "mode"))
+        claude.session("draft", """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":{"outcome":"done","summary":"Listed.","output":{}}}""")
+        val entry = permissionEntry()
+
+        page.navigate(url(entry))
+        val dialog = page.getByRole(AriaRole.DIALOG, Page.GetByRoleOptions().setName("Permission request"))
+        assertThat(dialog).containsText("writer wants to run cargo outdated")
+        assertThat(dialog.locator(".kv")).containsText("Agent")
+        assertThat(dialog.locator(".kv")).containsText("writer")
+        assertThat(dialog.locator(".kv")).containsText("Bash")
+        assertThat(dialog.locator(".kv")).containsText("cargo outdated")
+        assertThat(dialog.getByLabel("Limit")).hasValue("Bash(cargo *)")
+        assertThat(dialog.getByRole(AriaRole.BUTTON)).hasText(arrayOf("Don't allow", "Allow for this Task", "Always allow"))
+        page.screenshot("permission")
+        dialog.getByLabel("Limit").fill("Bash(cargo outdated)")
+        dialog.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Allow for this Task")).click()
+        eventually { assertEquals(2, claude.launches("draft").size) }
+        assertTrue("Bash(cargo outdated)" in claude.launches("draft")[1].flag("--allowedTools")!!.split(","))
+    }
+
+    @Test
+    fun `a Permission request no allow rule can help says why, and offers Don't allow only`() = browse {
+        val claude = FakeClaude()
+        agentTask(claude, agent = "tools: Bash\n", extra = "protected-commands:\n  yarn install: []\n")
+        claude.session("draft", 1, *refusedSession("yarn install", "rule"))
+        val entry = permissionEntry()
+
+        page.navigate(url(entry))
+        val dialog = page.getByRole(AriaRole.DIALOG, Page.GetByRoleOptions().setName("Permission request"))
+        assertThat(dialog).containsText("No allow rule can help: a Protected Command: give the Agent ProtectedCommand.")
+        assertThat(dialog.getByLabel("Limit")).hasCount(0)
+        assertThat(dialog.getByRole(AriaRole.BUTTON)).hasText(arrayOf("Don't allow"))
+    }
+
     @Test
     fun `Review changes picks diff lines for a comment by clicking their numbers, and files it`() = browse {
         val entry = byRepoReviewEntryOfApiCommitting("hello.txt", "hi\nthere\nworld\n")
@@ -3509,6 +3563,29 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `Your tools on a shipped Agent's page tick a tool with a Limit apart from its read-only shipped tools, and Publish widens its description`() = browse {
+        try {
+            page.navigate(url("/agents/lead"))
+            assertThat(page.locator("#agent input[name='tool.Read']")).isDisabled()
+            assertThat(page.locator("#agent input[name='tool.Read']")).isChecked()
+            val bash = page.locator("#your-skills .trow").filter(Locator.FilterOptions().setHas(page.locator("input[name='tool.Bash']")))
+
+            bash.locator("input[name='tool.Bash']").check()
+            bash.locator("[data-limit]").click()
+            bash.locator("input[name='limit.Bash']").fill("cargo *")
+            assertThat(saveState).hasText(draftSaved)
+            assertThat(marker).hasText("Draft · changes not published")
+            page.click("button[form=your-skills]")
+            page.waitForURL(url("/agents/lead"))
+            assertThat(marker).hasText("Published")
+            assertThat(page.locator("#your-skills input[name='limit.Bash']")).hasValue("cargo *")
+            assertContains(http.get("/catalogue.json").body, "Plus your tools: Bash(cargo *).")
+        } finally {
+            http.post("/agents/lead/your-skills", emptyMap())
+        }
+    }
+
+    @Test
     fun `the Agent page's chips, Limit rules, added tools and CLI switch save what the page shows`() = browse {
         home.resolve("skills/chip-skill").createDirectories().resolve("SKILL.md").writeText("---\nname: chip-skill\ndescription: Chips.\n---\nChip.\n")
         val file = home.resolve("agents").createDirectories().resolve("chipper.md")
@@ -3528,6 +3605,11 @@ class BrowserTest : AntsTest() {
         bash.locator("[data-add]").click()
         bash.locator("input[name='limit.Bash']").nth(1).fill("git diff *")
         assertThat(bash.locator("input[name='limit.Bash']").first()).hasAttribute("placeholder", "e.g. pnpm test")
+        val protected = page.locator(".trow", Page.LocatorOptions().setHasText("Run a Protected Command"))
+        protected.locator("input[name='tool.ProtectedCommand']").check()
+        protected.locator("[data-limit]").click()
+        protected.locator("input[name='limit.ProtectedCommand']").fill("yarn install")
+        assertThat(protected.locator("input[name='limit.ProtectedCommand']")).hasAttribute("placeholder", "e.g. yarn install")
 
         page.fill(".add-tool input", "mcp__github__get_issue")
         page.click(".add-tool button")
@@ -3539,7 +3621,7 @@ class BrowserTest : AntsTest() {
 
         page.click("button[form=agent]")
         eventually {
-            assertEquals("---\nid: a-chip01\nname: chipper\ncli: claude\nskills: kept, chip-skill\ntools: AskUserQuestion, Bash(git log *), Bash(git diff *), Read, mcp__github__get_issue\n---\nChip.\n", file.readText())
+            assertEquals("---\nid: a-chip01\nname: chipper\ncli: claude\nskills: kept, chip-skill\ntools: AskUserQuestion, Bash(git log *), Bash(git diff *), ProtectedCommand(yarn install), Read, mcp__github__get_issue\n---\nChip.\n", file.readText())
         }
 
         page.navigate(url("/agents/chipper"))

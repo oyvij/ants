@@ -130,7 +130,7 @@ class HumanInTheLoopTest : AntsTest() {
     @Test
     fun `the grilling, the Spec, the Tickets and the Story set run on lead, each on its old level, and engineer builds and fixes the review`() {
         val ws = workspace(humanInTheLoop())
-        fun tools(skill: String) = claude.launches(skill).first().let { it.flag("--tools")?.removeSuffix(",Skill") to it.flag("--allowedTools")?.removeSuffix(",Skill,mcp__ants__run") } // every claude Task has Skill and the run tool
+        fun tools(skill: String) = claude.launches(skill).first().let { it.flag("--tools")?.removeSuffix(",Skill") to it.flag("--allowedTools")?.removeSuffix(",Skill") }
         fun level(task: String) = claude.launches(task).first().let { "${it.flag("--model")} ${it.flag("--effort")}" }
 
         val lead = "Read,Grep,Glob,Write,Edit,Bash,Agent" to listOf("scout", "tickets", "proposal", "walkthrough").joinToString(",") { "Write(/$ws/$it/**),Edit(/$ws/$it/**)" }

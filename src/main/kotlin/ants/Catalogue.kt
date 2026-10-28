@@ -198,8 +198,14 @@ class Catalogue(@Value("\${ants.home}") private val home: Path, private val sett
     private fun <T> one(items: List<T>, shipped: (T) -> Boolean, none: String, many: String): T =
         items.singleOrNull() ?: items.filter { shipped(it) != settings.hideShipped() }.singleOrNull() ?: error(if (items.isEmpty()) none else many)
 
-    /** Your Skills on each shipped Agent, and their Drafts. */
-    val yourSkillsStore = YourSkills(home.resolve("your-skills"), drafts, ::shipped)
+    val yours = Yours(home.resolve("your-skills"), home.resolve("your-tools"), drafts, ::shipped)
+
+    fun tools(agent: Agent): List<String> = ((agent.tools ?: AgentLauncher.DEFAULT_TOOLS) + yours.tools(agent)).distinct()
+
+    fun subagentTools(agent: Agent): List<String>? = if (yours.tools(agent).isEmpty()) agent.tools else tools(agent)
+
+    fun description(agent: Agent): String = yours.tools(agent).filter { it !in (agent.tools ?: AgentLauncher.DEFAULT_TOOLS) }
+        .takeIf { it.isNotEmpty() }?.let { "${agent.description} Plus your tools: ${it.joinToString(", ")}.".trim() } ?: agent.description
 
     /**
      * The Skills [agent] may use, each as listed (an id, or a name; `*` for every Skill): those it lists, then on a
@@ -207,7 +213,7 @@ class Catalogue(@Value("\${ants.home}") private val home: Path, private val sett
      * [allowed], [allowedNames] and [allows] all read it, so the launch, the modeler, the Checks and Used by never learn
      * about Your Skills separately.
      */
-    private fun listed(agent: Agent): List<String> = agent.skills + yourSkillsStore.published(agent).filter { listedSkill(it) != null }
+    private fun listed(agent: Agent): List<String> = agent.skills + yours.skills(agent).filter { listedSkill(it) != null }
 
     /** The names of the Skills [agent] may use, as the Agents list shows them: `*` for every Skill. */
     fun listedNames(agent: Agent): List<String> = skillNames(listed(agent)).distinct()

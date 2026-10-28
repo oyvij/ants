@@ -402,6 +402,157 @@ class AgentTaskTest : AntsTest() {
     }
 
     @Test
+    fun `a Task on a shipped Agent launches with its shipped tools plus its published Your tools, and Ants' deny rules still win`() {
+        agentTask(extra = "protected-commands:\n  cargo publish: []\n")
+        claude.session("draft", done)
+        val assigned = property("ants.assignment", "Write it.") + property("ants.skills", "")
+        assertFalse("role=\"alert\"" in deployOn("your-tools", "a-lead", assigned).body)
+        assertEquals("/agents/lead", browser.post("/agents/lead/your-skills", mapOf("tool.Bash" to "on", "limit.Bash" to "cargo *", "tool.ProtectedCommand" to "on")).path)
+        browser.autosave("/agents/lead/your-skills", mapOf("tool.WebSearch" to "on"), draftVersion(browser.get("/agents/lead").body))
+        try {
+            runOf("your-tools")
+            val launch = claude.launches("draft").single()
+            val allowed = launch.flag("--allowedTools")!!.split(",")
+            assertContains(allowed, "Bash(git log *)")
+            assertContains(allowed, "Bash(cargo *)")
+            assertContains(allowed, "mcp__ants__run")
+            assertFalse("WebSearch" in allowed)
+            assertContains(launch.flag("--disallowedTools")!!.split(","), "Bash(cargo publish *)")
+        } finally {
+            browser.post("/agents/lead/your-skills", emptyMap())
+        }
+    }
+
+    private val init = """{"type":"system","subtype":"init","session_id":"${'$'}SESSION","apiKeySource":"none"}"""
+
+    private fun refused(tool: String, input: String, reason: String = "mode") = arrayOf(
+        init,
+        """{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_1","name":"$tool","input":$input}]},"session_id":"${'$'}SESSION"}""",
+        """{"type":"system","subtype":"permission_denied","tool_name":"$tool","tool_use_id":"toolu_1","decision_reason_type":"$reason","message":"Permission to use $tool has been denied.","session_id":"${'$'}SESSION"}""",
+        "read",
+        """{"type":"control_response","response":{"subtype":"success","request_id":"r1","response":{"still_queued":[]}}}""",
+        """{"type":"result","subtype":"error_during_execution","is_error":true,"session_id":"${'$'}SESSION","terminal_reason":"aborted_tools"}""",
+        "exit 1",
+    )
+
+    private val cargo = """{"command":"cargo outdated","description":"List outdated crates"}"""
+
+    private fun refusedCargo(): Pair<String, String> {
+        agentTask(agent = "tools: Bash(git log *), Read\n")
+        claude.session("draft", 1, *refused("Bash", cargo))
+        claude.session("draft", done)
+        val run = start()
+        return run to entry(run)
+    }
+
+    @Test
+    fun `a refused tool call interrupts the session and the Task waits on the Notification list for the user's choice`() {
+        val (run, entry) = refusedCargo()
+        assertContains(claude.launches("draft").single().stdin, """"request":{"subtype":"interrupt"}}""")
+        val page = browser.get(entry).body
+        assertContains(page, "[permission] Draft")
+        assertContains(page, "writer wants to run <code>cargo outdated</code>")
+        assertContains(browser.get("/runs/$run/tasks/draft/transcript").body, "[permission] writer wants to run `cargo outdated`")
+        Thread.sleep(500)
+        assertEquals(1, claude.launches("draft").size)
+    }
+
+    @Test
+    fun `Allow for this Task resumes the session with the Limit, and leaves the Agent and other Tasks as they were`() {
+        val (run, entry) = refusedCargo()
+        val agent = home.resolve("agents/writer.md").readText()
+        browser.post("$entry/permission", mapOf("choice" to "task", "limit" to "Bash(cargo *)"))
+        eventually { assertContains(page(run), """id="state">Completed<""") }
+        val (first, resumed) = claude.launches("draft")
+        assertEquals(first.flag("--session-id"), resumed.flag("--resume"))
+        assertContains(resumed.flag("--allowedTools")!!.split(","), "Bash(cargo *)")
+        assertContains(resumed.stdin, "The user allowed `Bash(cargo *)` for the rest of this Task.")
+        assertEquals(agent, home.resolve("agents/writer.md").readText())
+
+        start()
+        eventually { assertEquals(3, claude.launches("draft").size) }
+        assertFalse("Bash(cargo *)" in claude.launches("draft")[2].flag("--allowedTools")!!.split(","))
+    }
+
+    @Test
+    fun `Always allow adds the Limit to the user's Agent, keeping its Draft, and the resumed session has it`() {
+        val (run, entry) = refusedCargo()
+        browser.autosave("/agents/writer", mapOf("name" to "writer", "cli" to "claude", "skills" to "draft", "instructions" to "Drafted."), draftVersion(browser.get("/agents/writer").body))
+        try {
+            browser.post("$entry/permission", mapOf("choice" to "always", "limit" to "Bash(cargo *)"))
+            eventually { assertContains(page(run), """id="state">Completed<""") }
+            val resumed = claude.launches("draft")[1]
+            assertContains(resumed.flag("--allowedTools")!!.split(","), "Bash(cargo *)")
+            assertContains(resumed.stdin, "The user allowed `Bash(cargo *)` for you from now on.")
+            assertContains(catalogue.agent("writer").tools!!, "Bash(cargo *)")
+            assertContains(catalogue.agent("writer").tools!!, "Bash(git log *)")
+            assertContains(browser.get("/agents/writer").body, "Drafted.")
+        } finally {
+            browser.post("/agents/writer/discard", mapOf("confirm" to "on"))
+        }
+    }
+
+    @Test
+    fun `Always allow on a shipped Agent adds the Limit to its Your tools and publishes them`() {
+        agentTask()
+        claude.session("draft", 1, *refused("Bash", cargo))
+        claude.session("draft", done)
+        val assigned = property("ants.assignment", "Write it.") + property("ants.skills", "")
+        assertFalse("role=\"alert\"" in deployOn("always-lead", "a-lead", assigned).body)
+        browser.get("/processes/always-lead")
+        val run = browser.post("/processes/always-lead/runs", mapOf("prompt" to "Say hello")).path.removePrefix("/runs/")
+        try {
+            val entry = entry(run)
+            assertContains(browser.get(entry).body, "lead wants to run <code>cargo outdated</code>")
+            browser.post("$entry/permission", mapOf("choice" to "always", "limit" to "Bash(cargo *)"))
+            eventually { assertContains(page(run), """id="state">Completed<""") }
+            assertEquals(listOf("Bash(cargo *)"), catalogue.yours.tools(catalogue.agent("lead")))
+            assertContains(claude.launches("draft")[1].flag("--allowedTools")!!.split(","), "Bash(cargo *)")
+        } finally {
+            browser.post("/agents/lead/your-skills", emptyMap())
+        }
+    }
+
+    @Test
+    fun `Don't allow resumes the session telling the Agent the user refused it`() {
+        val (run, entry) = refusedCargo()
+        claude.session("draft", 2, init, "wait release", done)
+        browser.post("$entry/permission", mapOf("choice" to "deny", "limit" to "Bash(cargo *)", "back" to "run"))
+        assertContains(workspace(run).resolve("run-log.md").readText(), "Draft · Don't allow\n\nwriter wants to run `cargo outdated`\n")
+        claude.release("release")
+        eventually { assertContains(page(run), """id="state">Completed<""") }
+        val resumed = claude.launches("draft")[1]
+        assertFalse("Bash(cargo *)" in resumed.flag("--allowedTools")!!.split(","))
+        assertContains(resumed.stdin, "The user refused `cargo outdated`.")
+    }
+
+    @Test
+    fun `a refusal by Ants' deny rule on a Protected Command offers no allow, and says why`() {
+        agentTask(agent = "tools: Bash, Read\n", extra = "protected-commands:\n  cargo publish: []\n")
+        claude.session("draft", 1, *refused("Bash", """{"command":"cargo publish"}""", reason = "rule"))
+        claude.session("draft", done)
+        val run = start()
+        val entry = entry(run)
+        val page = browser.get(entry).body
+        assertContains(page, "a Protected Command: give the Agent <code>ProtectedCommand</code>")
+        assertFalse("""value="always"""" in page)
+        assertFalse("""value="task"""" in page)
+        assertEquals(400, browser.post("$entry/permission", mapOf("choice" to "task", "limit" to "Bash(cargo *)")).status)
+        browser.post("$entry/permission", mapOf("choice" to "deny", "limit" to ""))
+        eventually { assertContains(page(run), """id="state">Completed<""") }
+    }
+
+    @Test
+    fun `a Protected Command's words inside another command leave the refusal allowable, and the Limit names the command after a cd and its variables`() {
+        agentTask(agent = "tools: Bash(git log *)\n", extra = "protected-commands:\n  cargo publish: []\n")
+        claude.session("draft", 1, *refused("Bash", """{"command":"cd crates && FOO=1 cargo outdated | grep \"cargo publish\""}"""))
+        val run = start()
+        val page = browser.get(entry(run)).body
+        assertContains(page, """value="Bash(cargo *)"""")
+        assertContains(page, """value="task"""")
+    }
+
+    @Test
     fun `--json-schema holds the envelope around the Skill's promised output`() {
         agentTask(textSchema)
         claude.session("draft", done)
@@ -551,7 +702,7 @@ class AgentTaskTest : AntsTest() {
         )) assertContains(argv, flags)
         assertFalse("--disable-slash-commands" in launch.argv)
         assertEquals("Read,Grep,Bash,Skill", launch.flag("--tools")) // the Agent's own Skill rule goes, Ants' Skill comes
-        assertEquals("Read,Grep,Bash(git log:*),Skill,mcp__ants__run", launch.flag("--allowedTools"))
+        assertEquals("Read,Grep,Bash(git log:*),Skill", launch.flag("--allowedTools"))
         assertContains(argv, Regex("--session-id [0-9a-f-]{36}"))
         assertEquals(workspace(run).toRealPath().toString(), launch.cwd)
 
@@ -579,7 +730,7 @@ class AgentTaskTest : AntsTest() {
         val argv = claude.launches("draft").single().argv
         val ws = workspace(run)
         assertEquals(
-            "Read,Write(/$ws/out/**),Edit(/$ws/notes/**),Write(//tmp/x/**),Write,Bash(git log *),Edit(/$ws/out/**),Edit(//tmp/x/**),Skill,mcp__ants__run",
+            "Read,Write(/$ws/out/**),Edit(/$ws/notes/**),Write(//tmp/x/**),Write,Bash(git log *),Edit(/$ws/out/**),Edit(//tmp/x/**),Skill",
             argv[argv.indexOf("--allowedTools") + 1],
         )
         assertEquals("Read,Write,Edit,Bash,Skill", argv[argv.indexOf("--tools") + 1])

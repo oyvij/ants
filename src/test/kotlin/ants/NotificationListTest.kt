@@ -94,6 +94,27 @@ class NotificationListTest : AntsTest() {
     }
 
     @Test
+    fun `a refused tool call appears on the Notification list as a permission request naming the Agent and the command`() {
+        agentTask(claude, agent = "tools: Bash(git log *)\n")
+        claude.session(
+            "draft",
+            """{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_1","name":"Bash","input":{"command":"cargo outdated"}}]},"session_id":"${'$'}SESSION"}""",
+            """{"type":"system","subtype":"permission_denied","tool_name":"Bash","tool_use_id":"toolu_1","decision_reason_type":"mode","session_id":"${'$'}SESSION"}""",
+            "read",
+            """{"type":"result","subtype":"error_during_execution","is_error":true,"session_id":"${'$'}SESSION"}""",
+            "exit 1",
+        )
+        val run = start()
+        val entry = entry(run)
+        val row = row(run)!!
+        for (cell in listOf(
+            """<span class="tag t-permission"><i>⊘</i>[permission]</span>""", """· <a href="$entry">Draft</a>""",
+            """<div class="muted small">Agent Task</div>""", "<td>writer wants to run `cargo outdated`</td>",
+        )) assertContains(row, cell)
+        assertContains(browser.get(entry).body, """<h3 id="permission-head">Permission request</h3>""")
+    }
+
+    @Test
     fun `Continue resumes the same session id with the instruction, and can't be sent empty`() {
         setUp()
         claude.session("draft", stuck)

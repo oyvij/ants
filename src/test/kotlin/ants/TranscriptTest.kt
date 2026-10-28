@@ -93,6 +93,19 @@ class TranscriptTest : AntsTest() {
     }
 
     @Test
+    fun `the Transcript shows a Protected Command's args joined with spaces`() {
+        claude.session(
+            "draft", init,
+            """{"type":"assistant","message":{"id":"m1","content":[{"type":"tool_use","id":"t1","name":"mcp__ants__run","input":{"folder":"repos/web","args":["gh","api","--jq",".files[]"]}}]}}""",
+            """{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"Exit code 0"}]}}""",
+            done,
+        )
+        val run = start("agent-task")
+        eventually { assertContains(page("/runs/$run"), """id="state">Completed<""") }
+        assertContains(page("/runs/$run/tasks/draft/transcript"), """<div class="tool" id="e2"><b>mcp__ants__run</b> <code>gh api --jq .files[]</code></div>""")
+    }
+
+    @Test
     fun `a second launch of a Task appends after a divider, and each launch and Task shows its session's context out of the model's window`() {
         // modelUsage adds up every call of the launch, cache re-reads included; it gives only the window.
         val usage = """{"m":{"inputTokens":1,"outputTokens":2,"cacheReadInputTokens":3000000,"cacheCreationInputTokens":4,"contextWindow":200000}}"""

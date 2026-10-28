@@ -155,6 +155,7 @@ class LookTest : AntsTest() {
         Shot("run-approve", "/runs/${app.getValue("approve")}"),
         Shot("transcript", "/runs/${app.getValue("running")}/tasks/draft/transcript"),
         Shot("stuck", entry(app.getValue("stuck"))),
+        Shot("permission", entry(app.getValue("permission"))),
         Shot("approve", entry(app.getValue("approve"))),
         Shot("review", entry(app.getValue("review"))),
         // A story walked to its third step, with the diff and the details shown.
@@ -239,6 +240,17 @@ class LookTest : AntsTest() {
         runs["running"] = start("agent-task", listOf("prompt" to "Add a dark mode toggle."))
         eventually { assertEquals(3, claude.launches("draft").size) }
 
+        claude.session(
+            "draft", 4,
+            """{"type":"assistant","message":{"id":"m1","content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"cargo outdated --root-deps-only"}}]}}""",
+            """{"type":"system","subtype":"permission_denied","tool_name":"Bash","tool_use_id":"t1","decision_reason_type":"mode","session_id":"${'$'}SESSION"}""",
+            "read",
+            """{"type":"result","subtype":"error_during_execution","is_error":true,"session_id":"${'$'}SESSION"}""",
+            "exit 1",
+        )
+        runs["permission"] = start("agent-task", listOf("prompt" to "List the outdated crates."))
+        entry(runs.getValue("permission"))
+
         // Review changes over two cloned repos, told as a Story set, with a step gone stale and a change no step covers.
         claude.session("narrate", "wait commits", "write walkthrough/stories.json ${BillingRetry.stories}", result("""{"outcome":"done","summary":"Told the change as three stories.","output":{}}"""))
         http.import("story-set.bpmn")
@@ -267,7 +279,7 @@ class LookTest : AntsTest() {
         http.autosave("/agents/reviewer", mapOf("name" to "reviewer", "cli" to "claude", "description" to "Reviews a change, strictly.", "instructions" to "Review it."), "0")
         // The shipped Agent's page with Your Skills beside the Skills it ships with.
         http.get("/agents/lead")
-        http.post("/agents/lead/your-skills", mapOf("skills" to "polish"))
+        http.post("/agents/lead/your-skills", mapOf("skills" to "polish", "tool.Bash" to "on", "limit.Bash" to "cargo *"))
 
         // A Round of questions.
         claude.session("quiz", 1, result("""{"outcome":"done","summary":"Round 1 on the invoice CSV export.","output":{"questions":[""" + listOf(

@@ -371,6 +371,7 @@ class SettingsTest : AntsTest() {
             assertContains(page, """name="secrets[0].label" value="npm"""")
             assertContains(page, """name="secrets[0].names" value="YARN_NPM_AUTH_TOKEN, NPM_TOKEN"""")
             assertContains(page, """name="secrets[0].value" placeholder="••••"""")
+            assertContains(page, "A Protected Command is a command that needs Secrets. Agents run it only through Ants, never through Bash,")
             assertContains(page, """name="protected-commands[1].prefix" value="mvn deploy"""")
             assertContains(page, """<option selected>maven</option>""")
 

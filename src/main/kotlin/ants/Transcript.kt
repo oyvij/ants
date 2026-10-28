@@ -180,6 +180,9 @@ class Transcript(private val toolLine: (name: String, input: Map<*, *>) -> Strin
         return listOf(VERBS[name] ?: "Working", what).filter { it.isNotEmpty() }.joinToString(" ")
     }
 
+    private fun argument(name: String, input: Map<*, *>) =
+        (input["args"] as? List<*>)?.takeIf { name == AgentLauncher.RUN_TOOL }?.joinToString(" ") ?: input.values.firstOrNull { it is String }?.toString().orEmpty()
+
     private fun summary(block: Subagent) = """<summary id="e${block.entry}s">⑂ <b>${esc(block.type)}</b> ${esc(block.description)}""" +
         (if (block.end != null || running) " · ${time(block)}" else "") + (if (block.status in OK) "" else " · ${esc(block.status)}") + "</summary>"
 
@@ -274,13 +277,13 @@ class Transcript(private val toolLine: (name: String, input: Map<*, *>) -> Strin
                 if (name in AgentLauncher.SUBAGENT_TOOLS) {
                     spawn(block["id"], input["subagent_type"]?.toString() ?: "general-purpose", input["description"]?.toString().orEmpty(), parent)
                 } else {
-                    val argument = input.values.firstOrNull { it is String }?.toString().orEmpty()
+                    val argument = argument(name, input)
                     val shown = toolLine(name, input)
                         ?: input["skill"]?.takeIf { name == "Skill" }?.let { """Used the Skill <b>${esc(it)}</b>""" } // which Skill did the job (ADR 0024)
                         ?: """<b>${esc(name)}</b> <code>${esc(argument.lines().first().take(120))}</code>"""
                     tools[block["id"]] = append(parent) { """<div class="tool" id="$it">$shown</div>""" }
                 }
-                if (parent == null) verb = doing(name, input.values.firstOrNull { it is String }?.toString().orEmpty())
+                if (parent == null) verb = doing(name, argument(name, input))
                 if (name == "TaskUpdate") todo(input)
             }
         }

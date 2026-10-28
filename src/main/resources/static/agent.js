@@ -27,19 +27,17 @@ function addRule(limits) {
     rule.focus()
 }
 
-const adder = form.querySelector(".add-tool")
-
-function addTool() {
-    const input = adder.querySelector("input"), name = input.value.trim()
+function addTool(tools) {
+    const adder = tools.querySelector(".add-tool"), input = adder.querySelector("input"), name = input.value.trim()
     input.value = ""
     if (!name) return
-    const listed = form.elements[`tool.${name}`]
+    const listed = tools.elements[`tool.${name}`]
     if (listed) {
         listed.checked = true
         listed.closest("details")?.setAttribute("open", "")
         return
     }
-    const added = form.querySelector(".added")
+    const added = tools.querySelector(".added")
     if ([...added.querySelectorAll("input")].some(box => box.value === name)) return
     const row = Object.assign(document.createElement("div"), {className: "trow"})
     row.innerHTML = '<label><input type="checkbox" name="other-tools" checked> <b class="mono"></b></label><span class="tdesc"><span class="twarn"></span></span><span></span>'
@@ -50,27 +48,23 @@ function addTool() {
     added.hidden = false
 }
 
-adder?.querySelector("input").addEventListener("keydown", event => {
-    if (event.key !== "Enter") return
-    event.preventDefault()
-    addTool()
-})
+for (const tools of [form, document.getElementById("your-skills")].filter(Boolean)) {
+    tools.querySelector(".add-tool input")?.addEventListener("keydown", event => {
+        if (event.key !== "Enter") return
+        event.preventDefault()
+        addTool(tools)
+    })
 
-form.addEventListener("click", event => {
-    const button = event.target.closest("button[type=button]")
-    if (!button) return
-    if (button.title === "Remove") button.parentElement.remove() // a Skill's chip, or a Limit… rule
-    else if (button.hasAttribute("data-limit")) {
-        const limits = button.parentElement.querySelector(".tlim")
-        limits.hidden = false
-        button.replaceWith(document.createElement("span"))
-        addRule(limits)
-    } else if (button.hasAttribute("data-add")) addRule(button.parentElement)
-    else if (button.parentElement === adder) addTool()
-})
-
-// Your Skills on a shipped Agent, a form of its own beside the read-only one: a chip's ×.
-document.getElementById("your-skills")?.addEventListener("click", event => {
-    const button = event.target.closest("button[title=Remove]")
-    if (button) button.parentElement.remove()
-})
+    tools.addEventListener("click", event => {
+        const button = event.target.closest("button[type=button]")
+        if (!button) return
+        if (button.title === "Remove") button.parentElement.remove() // a Skill's chip, or a Limit… rule
+        else if (button.hasAttribute("data-limit")) {
+            const limits = button.parentElement.querySelector(".tlim")
+            limits.hidden = false
+            button.replaceWith(document.createElement("span"))
+            addRule(limits)
+        } else if (button.hasAttribute("data-add")) addRule(button.parentElement)
+        else if (button.parentElement.classList.contains("add-tool")) addTool(tools)
+    })
+}
