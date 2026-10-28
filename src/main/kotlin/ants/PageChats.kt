@@ -32,6 +32,12 @@ abstract class PageChat(protected val chats: PageChats) : McpTools {
 
     protected open fun firstPrompt(message: String): String? = null
 
+    /**
+     * Whether claude may Read the tool results it saved to a file in this session, the only file it may read: an answer
+     * too large for the dialog is then never a dead end.
+     */
+    protected open val readsOwnToolResults = false
+
     protected open fun head(): String = ""
 
     protected open fun foot(): String = ""
@@ -106,8 +112,8 @@ abstract class PageChat(protected val chats: PageChats) : McpTools {
             "--strict-mcp-config",
             "--mcp-config", config,
             "--disable-slash-commands",
-            "--tools", "",
-            "--allowedTools", "mcp__ants__*",
+            "--tools", if (readsOwnToolResults) "Read" else "",
+            "--allowedTools", listOfNotNull("mcp__ants__*", toolResults().takeIf { readsOwnToolResults }).joinToString(","),
             "--append-system-prompt", instructions,
         ) + (model?.let { listOf("--model", it) } ?: emptyList())
         val process = chats.launcher.cli("claude", scratch, flags).start()
@@ -117,6 +123,9 @@ abstract class PageChat(protected val chats: PageChats) : McpTools {
         val stderr = chats.launcher.drain(process)
         Thread.ofVirtual().start { read(process, stdin, stderr) }
     }
+
+    /** The Read rule for where claude saves this session's too-large tool results: `<config>/projects/<cwd>/<session>/tool-results/`. */
+    private fun toolResults() = "Read(/${chats.launcher.home.resolve("claude").toAbsolutePath()}/projects/*/$session/tool-results/**)"
 
     /** Folds claude's lines into the dialog until it ends; a turn ends at its `result` line. */
     private fun read(process: Process, stdin: AgentLauncher.Stdin, stderr: () -> String?) {

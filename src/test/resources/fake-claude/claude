@@ -25,7 +25,7 @@ for arg; do case $previous in --session-id|--resume) session=$arg ;; --mcp-confi
 IFS= read -r prompt
 skill=$(printf '%s' "$prompt" | sed -nE 's#.*"(content|text)":"/([A-Za-z0-9_.:-]+).*#\2#p')
 mkdir -p "$dir/launches" "$dir/skills" "$dir/claims"
-case " $* " in *" mcp__ants__* "*) skill=process-builder; case " $* " in *"# You are the Script editor's helper"*) skill=script-helper ;; esac ;; esac
+case " $* " in *" mcp__ants__*"[,\ ]*) skill=process-builder; case " $* " in *"# You are the Script editor's helper"*) skill=script-helper ;; esac ;; esac
 if [ "$skill" = process-builder ] || [ "$skill" = script-helper ]; then :
 elif [ -n "$skill" ]; then printf '%s' "$skill" > "$dir/skills/$session"
 elif [ -n "$session" ] && [ -e "$dir/skills/$session" ]; then skill=$(cat "$dir/skills/$session")

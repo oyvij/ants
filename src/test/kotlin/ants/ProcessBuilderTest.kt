@@ -52,8 +52,10 @@ class ProcessBuilderTest : AntsTest() {
         assertContains(launch.argv, "--strict-mcp-config")
         val ants = (json.readValue(launch.flag("--mcp-config"), Map::class.java)["mcpServers"] as Map<*, *>)["ants"] as Map<*, *>
         assertEquals(mapOf("Authorization" to "Bearer $token"), ants["headers"])
-        assertEquals("mcp__ants__*", launch.flag("--allowedTools"))
-        assertEquals("", launch.flag("--tools")) // no Bash, Read, Write or any other of claude's own tools
+        val session = launch.flag("--session-id")!!
+        // Read only for the tool results claude saved to a file in this session, never Bash, Write or any other of claude's own tools
+        assertEquals("mcp__ants__*,Read(/${home.resolve("claude").toAbsolutePath()}/projects/*/$session/tool-results/**)", launch.flag("--allowedTools"))
+        assertEquals("Read", launch.flag("--tools"))
         assertEquals("", launch.flag("--setting-sources"))
         assertEquals("""{"disableAllHooks":true}""", launch.flag("--settings"))
         assertEquals("stream-json", launch.flag("--input-format"))

@@ -976,11 +976,11 @@ modeler.on("import.done", check)
 // The Process Builder's session (ADR 0019, ProcessBuilderTools.kt): a page that can be edited by hand opens one, and
 // answers each call Ants relays to it on its stream from bpmn-js, with a POST back. Its token is on the canvas.
 const relayed = {
-    diagram,
     xml: async () => (await modeler.saveXML()).xml,
     add_element: addElement,
-    remove: ({id}) => {
-        const element = found(id)
+    remove: ({id, from, to}) => {
+        if (id !== undefined && (from !== undefined || to !== undefined)) throw new Error("Give remove an id, or from and to, not both.")
+        const element = id === undefined ? between(from, to) : found(id)
         const removed = [element, ...(element.incoming || []), ...(element.outgoing || [])].map(e => e.id)
         edit(() => modeler.get("modeling").removeElements([element]))
         return {removed}
@@ -997,6 +997,7 @@ const relayed = {
         edit(() => modeler.get("modeling").moveShape(element, {x: x - element.x, y: y - element.y}))
         return {id: element.id, x, y}
     },
+    insert,
     connect: ({from, to, id, name}) => {
         const source = found(from), target = found(to)
         const allowed = modeler.get("bpmnRules").canConnect(source, target)
@@ -1080,6 +1081,21 @@ function path(id) {
 const startEvent = () => modeler.get("elementRegistry").find(e => e.type === "bpmn:StartEvent" && e.parent.businessObject?.$type === "bpmn:Process")
 
 function addElement(args) {
+    const registry = modeler.get("elementRegistry")
+    let parent = registry.find(e => !e.parent && e.type === "bpmn:Process")
+    if (args.in !== undefined) {
+        const sub = found(args.in)
+        if (kindOf(sub) !== "subprocess") throw new Error(`${args.in} isn't a sub-process.`)
+        parent = registry.get(sub.id + "_plane") || sub // a collapsed one's inside is a plane of its own
+    }
+    const {shape, draw} = newShape(args)
+    const at = args.x === undefined && args.y === undefined ? undefined : {x: number(args, "x"), y: number(args, "y")}
+    const centre = at ? {x: at.x + shape.width / 2, y: at.y + shape.height / 2} : nextTo(parent, shape)
+    return {id: edit(() => draw(centre, parent).id)}
+}
+
+// An element of [kind] to draw, checked against the diagram as it is: its shape, and [draw], which draws it inside an edit.
+function newShape(args) {
     const {kind, id, name, topic, properties = {}} = args
     if (!drawn[kind]) throw new Error(`No kind ${kind}: the kinds are ${Object.keys(drawn).join(", ")}.`)
     if (topic !== undefined && kind !== "built-in") throw new Error("Only a Built-in Task takes a topic.")
@@ -1089,24 +1105,47 @@ function addElement(args) {
         checkJuelName(input, "an input name")
         return [input, String(value ?? "")]
     })
-    const registry = modeler.get("elementRegistry")
-    let parent = registry.find(e => !e.parent && e.type === "bpmn:Process")
-    if (args.in !== undefined) {
-        const sub = found(args.in)
-        if (kindOf(sub) !== "subprocess") throw new Error(`${args.in} isn't a sub-process.`)
-        parent = registry.get(sub.id + "_plane") || sub // a collapsed one's inside is a plane of its own
-    }
-    const at = args.x === undefined && args.y === undefined ? undefined : {x: number(args, "x"), y: number(args, "y")}
     const {type, attrs = {}, ...rest} = drawn[kind]
     const businessObject = modeler.get("bpmnFactory").create(type, {...attrs, ...(topic ? {"camunda:topic": topic} : {}), ...(id ? {id} : {})})
     const shape = modeler.get("elementFactory").createShape({...rest, type, businessObject})
-    const centre = at ? {x: at.x + shape.width / 2, y: at.y + shape.height / 2} : nextTo(parent, shape)
-    return {id: edit(() => {
+    return {shape, draw: (centre, parent) => {
         const created = modeler.get("modeling").createShape(shape, centre, parent)
         if (name) modeler.get("modeling").updateLabel(created, name)
         if (Object.keys(properties).length || inputs.length) writeAgentTask(created, properties, inputs, true)
-        return created.id
-    })}
+        return created
+    }}
+}
+
+// The one connection from [from] to [to].
+function between(from, to) {
+    if (from === undefined || to === undefined) throw new Error("Name a connection by its id, or by from and to.")
+    const flows = modeler.get("elementRegistry").filter(e => e.waypoints && e.source?.id === String(from) && e.target?.id === String(to))
+    if (!flows.length) throw new Error(`No connection from ${from} to ${to}.`)
+    if (flows.length > 1) throw new Error(`${flows.length} connections go from ${from} to ${to}: ${flows.map(f => f.id).join(", ")}. Give the one you mean by its id.`)
+    return flows[0]
+}
+
+// A new element on the connection from [from] to [to]: the connection now ends at it, keeping its id, name, condition
+// and default, and a new one goes on from it to the old target.
+function insert(args) {
+    const flow = between(args.from, args.to)
+    if (flow.type !== "bpmn:SequenceFlow") throw new Error(`${flow.id} isn't a sequence flow.`)
+    if (["start", "end", "annotation", "group"].includes(args.kind)) throw new Error(`A ${args.kind} can't go on a connection.`)
+    checkIdValidAndFree(args.connection)
+    if (args.connection !== undefined && args.connection === args.id) throw new Error("The new element and its connection need ids of their own.")
+    const {shape, draw} = newShape(args)
+    const {source, target} = flow
+    const at = args.x === undefined && args.y === undefined ? undefined : {x: number(args, "x"), y: number(args, "y")}
+    const centre = at ? {x: at.x + shape.width / 2, y: at.y + shape.height / 2}
+        : {x: (source.x + source.width / 2 + target.x + target.width / 2) / 2, y: source.y + source.height / 2}
+    const modeling = modeler.get("modeling")
+    return edit(() => {
+        const created = draw(centre, flow.parent)
+        modeling.reconnectEnd(flow, created, {x: created.x + created.width / 2, y: created.y + created.height / 2})
+        const businessObject = modeler.get("bpmnFactory").create("bpmn:SequenceFlow", args.connection ? {id: args.connection} : {})
+        const next = modeling.connect(created, target, {type: "bpmn:SequenceFlow", businessObject})
+        return {id: created.id, incoming: flow.id, outgoing: next.id}
+    })
 }
 
 // Where an element goes when no position is given: right of the rightmost element in [parent], level with it.
@@ -1120,15 +1159,17 @@ function nextTo(parent, shape) {
 // The Agent Task's Agent, Assignment, Skills and inputs, written as the panel's pickers and input boxes write them
 // (ADR 0024): skills null gives the Task its Agent's, [] none; a new Agent drops the listed Skills it lacks, and picks
 // its first for a Task with neither an Assignment nor a list.
-async function setAgentTask({id, agent, assignment, skills, inputs, resultSchema, resume, vault, answerHistory}) {
+async function setAgentTask({id, agent, assignment, assignmentEdit, assignmentAppend, skills, inputs, resultSchema, resultSchemaPatch, resume, vault, answerHistory}) {
     const element = foundAs(id, "agent", "an Agent Task")
+    if (assignment !== undefined && (assignmentEdit !== undefined || assignmentAppend !== undefined)) throw new Error("Give the whole assignment, or assignmentEdit and assignmentAppend, not both.")
+    if (resultSchema !== undefined && resultSchemaPatch !== undefined) throw new Error("Give the whole resultSchema, or resultSchemaPatch, not both.")
     const catalogue = await (await fetch("/catalogue.json")).json()
     const current = linkedProperties(agentProperties(element.businessObject), catalogue)
     const agentName = agent ?? current["ants.agent"]
     const picked = catalogue.agents.find(a => a.name === agentName)
     if (agent !== undefined && !picked) throw new Error(`No Agent ${agent}: the Agents are ${catalogue.agents.map(a => a.name).join(", ")}.`)
     if (skills !== undefined && skills !== null && (!Array.isArray(skills) || skills.some(s => typeof s !== "string"))) throw new Error("skills must be a list of Skill names, or null.")
-    const text = assignment === undefined ? current["ants.assignment"] : String(assignment ?? "").trim()
+    const text = assignment === undefined ? editedAssignment(current["ants.assignment"] || "", assignmentEdit, assignmentAppend) : String(assignment ?? "").trim()
     let listed = skills === undefined ? listedSkills(current) : skills && [...new Set(skills)]
     let dropped = []
     if (skills === undefined && agent !== undefined && agent !== current["ants.agent"]) [listed, dropped] = newAgentSkills(listed, text, picked)
@@ -1147,12 +1188,68 @@ async function setAgentTask({id, agent, assignment, skills, inputs, resultSchema
         if (schema && (typeof parsed !== "object" || !parsed)) throw new Error("resultSchema isn't a JSON Schema: give a JSON object such as {\"type\": \"object\", \"properties\": {…}}.")
         changes["ants.result-schema"] = schema || undefined
     }
+    const patched = resultSchemaPatch === undefined ? undefined : patchedSchema(current["ants.result-schema"], resultSchemaPatch)
+    if (patched) changes["ants.result-schema"] = patched.text
     if (resume !== undefined) changes["ants.resume"] = yes(resume, "resume") ? "true" : undefined
     if (vault !== undefined) changes["ants.vault"] = String(yes(vault, "vault"))
     if (answerHistory !== undefined) changes["ants.answer-history"] = String(yes(answerHistory, "answerHistory"))
     edit(() => writeAgentTask(element, linkedChanges(agentProperties(element.businessObject), changes, catalogue), written, true))
     return {id, agent: agentName || null, assignment: text || null, skills: listed, ...(dropped.length ? {dropped} : {}), inputs: Object.fromEntries(written),
+        ...(patched?.reformatted ? {note: "The Result schema was written in a layout of its own, so it is now laid out as compact JSON."} : {}),
         properties: linkedProperties(agentProperties(element.businessObject), catalogue)}
+}
+
+// The Assignment [text] with [edit]'s old replaced by its new, then [append] on a line of its own; the rest as it was.
+function editedAssignment(text, edit, append) {
+    if (edit !== undefined) {
+        const old = String(edit?.old ?? ""), replacement = String(edit?.new ?? "")
+        if (!old) throw new Error("assignmentEdit needs the old text to replace.")
+        const times = text.split(old).length - 1
+        if (times !== 1) throw new Error(`The Assignment has the old text ${times ? times + " times" : "nowhere"}: give a longer piece of it, exactly as it is, that it has once.`)
+        text = text.replace(old, () => replacement)
+    }
+    if (append === undefined || append === "") return text
+    return text && !text.endsWith("\n") ? `${text}\n${append}` : text + append
+}
+
+// Ways a Result schema is laid out: compact, on one line with a space after each colon and comma, or indented.
+const spaced = value => Array.isArray(value) ? `[${value.map(spaced).join(", ")}]`
+    : value && typeof value === "object" ? `{${Object.entries(value).map(([key, v]) => `${JSON.stringify(key)}: ${spaced(v)}`).join(", ")}}` : JSON.stringify(value)
+const layouts = [value => JSON.stringify(value), spaced, ...[2, 4, "\t"].map(indent => value => JSON.stringify(value, null, indent))]
+
+// The Result schema [written] with [patch]'s fields added, replaced or removed and its required list changed, in the
+// layout it was written in; reformatted when that layout is none of [layouts].
+function patchedSchema(written, patch) {
+    const text = String(written ?? "").trim()
+    let schema
+    try {
+        schema = text ? JSON.parse(text) : {type: "object"}
+    } catch {
+        throw new Error("The Task's Result schema isn't JSON: give resultSchema whole instead.")
+    }
+    if (!schema || typeof schema !== "object" || Array.isArray(schema)) throw new Error("The Task's Result schema isn't a JSON object: give resultSchema whole instead.")
+    const layout = text ? layouts.find(l => l(JSON.parse(text)) === text) : layouts[0]
+    const list = (key) => {
+        const value = patch?.[key] ?? []
+        if (!Array.isArray(value) || value.some(v => typeof v !== "string")) throw new Error(`resultSchemaPatch's ${key} must be a list of field names.`)
+        return value
+    }
+    const added = patch?.properties ?? {}
+    if (typeof added !== "object" || Array.isArray(added) || Object.values(added).some(v => !v || typeof v !== "object")) throw new Error("resultSchemaPatch's properties must give each field a JSON Schema object.")
+    const [remove, required, optional] = ["remove", "required", "optional"].map(list)
+    if (Object.keys(added).length) schema.properties = Object.assign(schema.properties || {}, added)
+    for (const field of remove) {
+        if (!schema.properties?.[field]) throw new Error(`The Result schema has no field ${field}.`)
+        delete schema.properties[field]
+    }
+    for (const field of required) if (!schema.properties?.[field]) throw new Error(`The Result schema has no field ${field} to require.`)
+    if (remove.length || required.length || optional.length) {
+        const now = (schema.required || []).filter(f => !remove.includes(f) && !optional.includes(f))
+        now.push(...required.filter(f => !now.includes(f)))
+        if (now.length) schema.required = now
+        else delete schema.required
+    }
+    return {text: (layout || layouts[0])(schema), reformatted: !layout}
 }
 
 // The start form's fields, all of them in order, as the panel writes them.
@@ -1287,34 +1384,6 @@ function setMultiInstance({id, mode, collection, elementVariable, itemsAreTicket
     const loop = element.businessObject.loopCharacteristics
     return {id, mode: loop?.$type === MI ? (loop.isSequential ? "sequential" : "parallel") : "none",
         collection: loop?.get("camunda:collection") || null, elementVariable: loop?.get("camunda:elementVariable") || null}
-}
-
-// The diagram as the Process Builder reads it: its elements, its connections and the start form.
-async function diagram() {
-    const all = modeler.get("elementRegistry").filter(e => e.parent && !e.labelTarget) // a root, the Process or a sub-process's plane, has no parent
-    const [read, catalogue] = await Promise.all([laterRead(), fetch("/catalogue.json").then(response => response.json())])
-    const element = e => {
-        const bo = e.businessObject, kind = kindOf(e) || e.type.replace("bpmn:", "")
-        const properties = kind === "agent" || kind === "script" ? linkedProperties(agentProperties(bo), catalogue) : agentProperties(bo)
-        if (kind === "built-in") properties.topic = bo.get("camunda:topic")
-        if (kind === "call") properties.calls = bo.calledElement
-        const timer = bo.eventDefinitions?.[0]
-        for (const key of Object.keys(times)) if (timer?.[key]) properties[key] = timer[key].body
-        const loop = bo.loopCharacteristics
-        if (loop) properties.multiInstance = {sequential: !!loop.isSequential, collection: loop.get("camunda:collection"), elementVariable: loop.get("camunda:elementVariable")}
-        const inside = e.parent.businessObject?.$type === "bpmn:SubProcess" ? e.parent.businessObject.id : undefined
-        return {id: e.id, kind, name: bo.name || "", x: e.x, y: e.y, width: e.width, height: e.height, in: inside, properties,
-            inputs: Object.fromEntries(kind === "call" ? callInputs(bo) : agentInputs(bo)), outputs: read[e.id]}
-    }
-    const start = startEvent()
-    return {
-        elements: all.filter(e => !e.waypoints).map(element),
-        connections: all.filter(e => e.type === "bpmn:SequenceFlow").map(e => ({
-            id: e.id, from: e.source.id, to: e.target.id, name: e.businessObject.name || "",
-            condition: e.businessObject.conditionExpression?.body, default: e.source.businessObject.default === e.businessObject,
-        })),
-        startForm: start ? readForm(start.businessObject) : [],
-    }
 }
 
 async function openBuilder() {
