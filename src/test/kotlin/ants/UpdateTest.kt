@@ -60,9 +60,10 @@ class UpdateTest : AntsTest() {
     fun noNewerRelease() {
         release("0.0.1")
         models.writeText(javaClass.getResource("/models.md")!!.readText())
+        val form = browser.newDraft("/agents")
         eventually(60) {
             assertEquals("", notice())
-            assertFalse("claude-opus-9" in browser.get("/agents/new").body)
+            assertFalse("claude-opus-9" in browser.get(form).body)
         }
         models.writeText("")
         for (name in listOf("current", "previous")) home.resolve(name).deleteIfExists()
@@ -235,8 +236,9 @@ class UpdateTest : AntsTest() {
             """.trimIndent(),
         )
 
+        val page = browser.newDraft("/agents")
         eventually(60) {
-            val form = browser.get("/agents/new").body
+            val form = browser.get(page).body
             assertContains(form, ">Opus 9 · claude-opus-9</option>")
             assertContains(form, "Sonnet 8 · claude-sonnet-8 · retires June 1, 2029")
             assertContains(form, "opus · newest Opus, now Opus 9")

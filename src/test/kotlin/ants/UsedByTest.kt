@@ -126,4 +126,22 @@ class UsedByTest : AntsTest() {
         assertEquals("/skills", browser.post("/skills/deleted-skill/delete", mapOf("confirm" to "on")).path)
         assertFalse(file.parent.exists())
     }
+
+    @Test
+    fun `a Skill in Your Skills on a shipped Agent names that Agent among its users, and deleting it warns`() {
+        val file = skill("added-skill")
+        browser.get("/agents/shipped-writer")
+        browser.post("/agents/shipped-writer/your-skills", mapOf("skills" to "added-skill"))
+        try {
+            val shippedWriter = """<a href="/agents/shipped-writer">shipped-writer</a>"""
+            assertContains(get("/skills/added-skill"), "Used by: $shippedWriter")
+            val asked = post("/skills/added-skill/delete", emptyMap())
+            assertContains(asked.body, "Delete the Skill added-skill?")
+            assertContains(asked.body, shippedWriter)
+            assertTrue(file.exists())
+        } finally {
+            browser.get("/agents/shipped-writer")
+            browser.post("/agents/shipped-writer/your-skills", emptyMap())
+        }
+    }
 }

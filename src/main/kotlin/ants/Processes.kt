@@ -30,7 +30,6 @@ import org.w3c.dom.NodeList
 import org.xml.sax.SAXException
 import java.io.StringWriter
 import java.net.URI
-import java.net.URLEncoder
 import java.nio.file.Path
 import java.time.Clock
 import java.util.concurrent.Executors
@@ -47,7 +46,7 @@ import javax.xml.transform.stream.StreamResult
 class Processes(
     private val repository: RepositoryService, private val startForm: StartForm, private val settings: Settings, private val checks: Checks, private val preRun: PreRun,
     private val schedules: Schedules, private val usedBy: UsedBy, private val history: HistoryService, private val names: RunNames, private val clock: Clock, private val catalogue: Catalogue,
-    private val scripts: Scripts,
+    private val scripts: Scripts, private val drafts: Drafts,
     @Value("\${ants.home}") private val home: Path,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -85,6 +84,7 @@ class Processes(
         model.addAttribute("rows", Executors.newVirtualThreadPerTaskExecutor().use { threads ->
             processes.map { process -> threads.submit<ProcessRow> { row(process, scheduled[process.key] ?: 0, login) } }.map { it.get() }
         })
+        model.addAttribute("drafts", draftsOnly().sortedBy { it.name })
         return "processes"
     }
 
@@ -94,8 +94,17 @@ class Processes(
             process, process.shipped, settings.profile(profile), scheduleCount,
             reasons(process, startForm.fields(process), profile, login).isEmpty(),
             history.createHistoricProcessInstanceQuery().processDefinitionKey(process.key).rootProcessInstances().active().count(),
+            DraftState.of(true, drafts.get(DraftKind.PROCESS, process.key) != null),
         )
     }
+
+    /** The Drafts of Processes never deployed, each kept under the key the Process will deploy as. */
+    private fun draftsOnly() = drafts.all(DraftKind.PROCESS).filter { !deployed(it.id) }
+
+    private fun deployed(key: String) = repository.createProcessDefinitionQuery().processDefinitionKey(key).count() > 0
+
+    /** The Process's name as [bpmn] has it, when it can be read: a Draft is kept whatever state it is in. */
+    private fun nameOf(bpmn: String) = runCatching { process(parse(bpmn.toByteArray())).getAttribute("name").ifBlank { null } }.getOrNull()
 
     /** The pre-Run check of [process] as its start form opens, with its Repos fields' stored values. */
     private fun reasons(process: ProcessDefinition, fields: List<Field>, profile: String?, login: () -> Map<*, *> = preRun.oneLogin()) =
@@ -121,7 +130,7 @@ class Processes(
         return "redirect:/processes"
     }
 
-    /** **Save and deploy** in the modeler: on to the Process page once deployed, else the reason as plain text. */
+    /** Deploys [bpmn] at once, through the Checks, as Import does: on to the Process page once deployed, else the reason as plain text. */
     @PostMapping("/processes/deploy")
     fun save(@RequestParam bpmn: String): ResponseEntity<String> = try {
         ResponseEntity.status(HttpStatus.SEE_OTHER).location(URI("/processes/" + deploy(bpmn.toByteArray()))).build()
@@ -129,7 +138,7 @@ class Processes(
         ResponseEntity.badRequest().contentType(MediaType.TEXT_PLAIN).body(e.message)
     }
 
-    /** The live Checks: what Save and deploy would refuse in [bpmn], and the warnings. */
+    /** The live Checks: what Publish would refuse in [bpmn], and the warnings. */
     @PostMapping("/processes/checks")
     @ResponseBody
     fun checks(@RequestParam bpmn: String): List<Check> = try {
@@ -172,42 +181,93 @@ class Processes(
     }
 
     /**
-     * **New Process**: the modeler on a blank Process, or on a copy of the Process [from], under a key of its own made
-     * from [name] (by default the copied Process's name and "copy").
+     * **New Process**: a Draft-only Process at once, blank or a copy of the Process [from], under a key of its own made
+     * from [name] (by default the copied Process's name and "copy"), and the modeler on it.
      */
-    @GetMapping("/processes/new")
-    fun new(@RequestParam(required = false) name: String?, @RequestParam(required = false) from: String?, model: Model): String {
+    @PostMapping("/processes/new")
+    fun new(@RequestParam(required = false) name: String?, @RequestParam(required = false) from: String?): String {
         val source = from?.takeIf(String::isNotBlank)?.let(::latest)
         val title = name?.takeIf(String::isNotBlank) ?: source?.let { "${it.name ?: it.key} copy" } ?: "New Process"
-        val query = listOfNotNull("name" to title, source?.let { "from" to it.key })
-        model.addAttribute("name", title)
-        model.addAttribute("src", "/processes/new.bpmn?" + query.joinToString("&") { (k, v) -> "$k=" + URLEncoder.encode(v, Charsets.UTF_8) })
-        model.addAttribute("note", "Draft")
-        model.addAttribute("builder", builder())
-        return "modeler"
+        val bpmn = newDiagram(title, source?.key)
+        val key = process(parse(bpmn.toByteArray())).getAttribute("id")
+        drafts.save(DraftKind.PROCESS, DraftPage(key, key, title, bpmn), DraftFrom.NEW)
+        return "redirect:/processes/$key/edit"
     }
 
-    /** The diagram **New Process** opens: blank, or a copy of [from], renamed to [name] under a free key. */
+    /** A new diagram: blank, or a copy of [from], renamed to [name] under a key no Process or Draft has. */
     @GetMapping("/processes/new.bpmn", produces = ["application/xml"])
     @ResponseBody
     fun newDiagram(@RequestParam name: String, @RequestParam(required = false) from: String?): String {
-        val document = parse(from?.let { repository.getProcessModel(latest(it).id).readAllBytes() } ?: blank())
-        // `new` is the route to this page, so no Process may take it as its key.
-        val key = freeName(name) { it == "new" || repository.createProcessDefinitionQuery().processDefinitionKey(it).count() > 0 }
+        val document = parse(from?.let { repository.getProcessModel(latest(it).id)!!.readAllBytes() } ?: blank())
+        // `new` is the route to New Process, so no Process may take it as its key.
+        val key = freeName(name) { it == "new" || deployed(it) || drafts.get(DraftKind.PROCESS, it) != null }
         rename(document, key, name)
         return serialize(document)
     }
 
-    /** The modeler on the latest version of a deployed Process; **Save and deploy** makes the next version. */
+    /**
+     * The modeler on the Process's Draft when it has one, else on its latest version; it autosaves to the Draft, and
+     * **Publish** deploys the next version.
+     */
     @GetMapping("/processes/{key}/edit")
     fun edit(@PathVariable key: String, model: Model): String {
-        val process = latest(key)
-        model.addAttribute("name", process.name ?: process.key)
-        model.addAttribute("src", "/processes/$key/diagram.bpmn")
-        model.addAttribute("page", "/processes/$key")
-        if (process.shipped) model.addAttribute("note", "Shipped: saving makes it your own")
+        val process = latestOrNull(key)
+        val draft = drafts.get(DraftKind.PROCESS, key)
+        if (process == null && draft == null) throw ResponseStatusException(HttpStatus.NOT_FOUND, "No Process $key")
+        model.addAttribute("name", draft?.name ?: process?.name ?: key)
+        model.addAttribute("src", "/processes/$key/edit.bpmn")
+        model.addAttribute("action", "/processes/$key/publish")
+        model.addAttribute("page", process?.let { "/processes/$key" })
+        if (process?.shipped == true) model.addAttribute("note", "Shipped: publishing makes it your own")
+        model.addAttribute("draft", DraftHead(DraftState.of(process != null, draft != null), draft?.version ?: 0, draft?.savedLine, "/processes/$key/draft"))
         model.addAttribute("builder", builder())
         return "modeler"
+    }
+
+    /** The diagram the modeler opens: the Draft's, else the latest version's. */
+    @GetMapping("/processes/{key}/edit.bpmn", produces = ["application/xml"])
+    @ResponseBody
+    fun editDiagram(@PathVariable key: String): ByteArray = drafts.get(DraftKind.PROCESS, key)?.content?.toByteArray() ?: diagram(key)
+
+    /**
+     * The modeler's autosave: [bpmn] as the Process's Draft, whatever state it is in, unless the Draft changed since
+     * the page loaded [version].
+     */
+    @PostMapping("/processes/{key}/draft")
+    @ResponseBody
+    fun autosave(@PathVariable key: String, @RequestParam bpmn: String, @RequestParam version: Long, @RequestParam tab: String?, @RequestParam(defaultValue = "0") seq: Long): ResponseEntity<Map<String, Any>> {
+        val published = latestOrNull(key) != null
+        val draft = drafts.get(DraftKind.PROCESS, key)
+        if (!published && draft == null) throw ResponseStatusException(HttpStatus.NOT_FOUND, "No Process $key")
+        val save = drafts.save(DraftKind.PROCESS, DraftPage(key, key, nameOf(bpmn) ?: draft?.name ?: key, bpmn), DraftFrom(version, tab, seq))
+        return Drafts.answer(DraftKind.PROCESS, save, DraftState.of(published, true), "/processes/$key")
+    }
+
+    /**
+     * **Publish** in the modeler: keeps [bpmn] as the Draft, then deploys it through the Checks as the next version and
+     * removes the Draft, on to the Process page; a refusal keeps the Draft and answers why, as plain text.
+     */
+    @PostMapping("/processes/{key}/publish")
+    fun publish(@PathVariable key: String, @RequestParam bpmn: String): ResponseEntity<String> {
+        val draft = drafts.get(DraftKind.PROCESS, key)
+        if (latestOrNull(key) == null && draft == null) throw ResponseStatusException(HttpStatus.NOT_FOUND, "No Process $key")
+        // The page autosaves what it shows just before; saving the same again would leave the page's version behind.
+        if (draft?.content != bpmn) drafts.save(DraftKind.PROCESS, DraftPage(key, key, nameOf(bpmn) ?: draft?.name ?: key, bpmn), DraftFrom(draft?.version ?: 0))
+        return try {
+            val deployed = deploy(bpmn.toByteArray())
+            drafts.remove(DraftKind.PROCESS, key)
+            ResponseEntity.status(HttpStatus.SEE_OTHER).location(URI("/processes/$deployed")).build()
+        } catch (e: Refused) {
+            ResponseEntity.badRequest().contentType(MediaType.TEXT_PLAIN).body(e.message)
+        }
+    }
+
+    /** **Discard Draft**: once confirmed, removes the Draft and reopens the modeler on the latest version. */
+    @PostMapping("/processes/{key}/discard")
+    fun discard(@PathVariable key: String, @RequestParam params: Map<String, String>, model: Model): String {
+        val draft = drafts.get(DraftKind.PROCESS, key)
+        val published = latestOrNull(key)?.let { it.name ?: key }
+        return drafts.discard(DraftKind.PROCESS, draft, published, draft?.name ?: key, "/processes/$key", "/processes/$key/edit", "confirm" in params, model)
     }
 
     /** The modeler's Process Builder column: on, or why it is off. Only a Process has it, never a Template. */
@@ -216,8 +276,10 @@ class Processes(
     /** The Process page, its start form for the Profile [profile] picked on it, else the Process's own, else the default. */
     @GetMapping("/processes/{key}")
     fun process(@PathVariable key: String, @RequestParam(PROFILE, required = false) profile: String?, model: Model): String {
+        if (latestOrNull(key) == null && drafts.get(DraftKind.PROCESS, key) != null) return "redirect:/processes/$key/edit" // a Draft only has the modeler
         val process = latest(key)
         model.addAttribute("process", process)
+        model.addAttribute("draftState", DraftState.of(true, drafts.get(DraftKind.PROCESS, key) != null))
         val filled = model.getAttribute("filled") as MultiValueMap<*, *>?
         val fields = startForm.fields(process).map { field ->
             filled?.let { field.copy(stored = it[field.name].orEmpty().joinToString(" ")) } ?: field
@@ -312,9 +374,14 @@ class Processes(
 
     @PostMapping("/processes/{key}/delete")
     fun delete(@PathVariable key: String, @RequestParam params: Map<String, String>, model: Model, response: HttpServletResponse): String {
+        if (latestOrNull(key) == null) drafts.get(DraftKind.PROCESS, key)?.let { draft ->
+            if ("confirm" !in params) return confirm(model, "Delete the Draft ${draft.name}?", Dependents(emptyList()), "/processes/$key/delete", emptyMap(), "/processes/$key/edit")
+            drafts.remove(DraftKind.PROCESS, key)
+            return "redirect:/processes"
+        }
         val process = latest(key)
         if (shipped(key)) throw ResponseStatusException(HttpStatus.FORBIDDEN, "$key is shipped with Ants, so it can't be deleted")
-        val live = history.createHistoricProcessInstanceQuery().processDefinitionKey(key).unfinished().list().map { it.rootProcessInstanceId }.distinct()
+        val live = history.createHistoricProcessInstanceQuery().processDefinitionKey(key).unfinished().list().map { it.rootProcessInstanceId!! }.distinct()
         if (live.isNotEmpty()) {
             response.status = HttpStatus.CONFLICT.value()
             model.addAttribute("liveRuns", live.associateWith(names::name))
@@ -326,17 +393,19 @@ class Processes(
             repository.deleteDeployment(deployment)
         }
         processFolder(home, key)?.toFile()?.deleteRecursively()
+        drafts.remove(DraftKind.PROCESS, key)
         return "redirect:/processes"
     }
 
     @GetMapping("/processes/{key}/diagram.bpmn", produces = ["application/xml"])
     @ResponseBody
-    fun diagram(@PathVariable key: String): ByteArray = repository.getProcessModel(latest(key).id).readAllBytes()
+    fun diagram(@PathVariable key: String): ByteArray = repository.getProcessModel(latest(key).id)!!.readAllBytes()
 
     private fun shipped(key: String) = repository.createProcessDefinitionQuery().processDefinitionKey(key).list().any { it.shipped }
 
-    private fun latest(key: String) = repository.createProcessDefinitionQuery().processDefinitionKey(key).latestVersion().singleResult()?.takeUnless(settings::hides)
-        ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No Process $key")
+    private fun latest(key: String) = latestOrNull(key) ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No Process $key")
+
+    private fun latestOrNull(key: String) = repository.createProcessDefinitionQuery().processDefinitionKey(key).latestVersion().singleResult()?.takeUnless(settings::hides)
 }
 
 private const val CAMUNDA = "http://camunda.org/schema/1.0/bpmn"
@@ -348,19 +417,18 @@ private val ProcessDefinition.shipped get() = resourceName.startsWith("shipped/"
 
 internal fun Settings.hides(process: ProcessDefinition) = hideShipped() && process.shipped
 
-class ProcessRow(val process: ProcessDefinition, val shipped: Boolean, val profile: Profile?, val scheduleCount: Int, val ready: Boolean, val live: Long)
+class ProcessRow(val process: ProcessDefinition, val shipped: Boolean, val profile: Profile?, val scheduleCount: Int, val ready: Boolean, val live: Long, val state: DraftState = DraftState.PUBLISHED)
 
 /** Why a Process can't be deployed, in the XML parser's or the engine's words. */
 class Refused(message: String?) : Exception(message)
 
 /**
- * A page's save run for the Process Builder (ADR 0019), with no page to show: the path [save] redirects to, else a
+ * A page's save run for the Process Builder (ADR 0019), with no page to show: the path [save] published to, else a
  * [Refused] with the error it put on the model as [error].
  */
-fun redirected(error: String, save: (Model) -> String): String {
+fun redirected(error: String, save: (Model) -> PublishOutcome): String {
     val model = ExtendedModelMap()
-    val view = save(model)
-    return view.removePrefix("redirect:").takeIf { it != view } ?: throw Refused(model[error]?.toString())
+    return (save(model) as? PublishOutcome.Published)?.path ?: throw Refused(model[error]?.toString())
 }
 
 internal fun parse(bpmn: ByteArray): Document = DocumentBuilderFactory.newInstance().apply {

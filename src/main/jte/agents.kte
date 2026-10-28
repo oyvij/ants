@@ -16,8 +16,8 @@
 <main>
 <div class="ph"><h1>Agents</h1>
     <div class="acts">
-        <form method="post" action="/agents/import" enctype="multipart/form-data"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><label class="btn" title="Import one agent file into the New Agent form">Import…<input type="file" name="file" accept=".md" required hidden onchange="this.form.submit()"></label></form>
-        <a class="btn primary" href="/agents/new">New Agent</a>
+        <form method="post" action="/agents/import" enctype="multipart/form-data"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><label class="btn" title="Import one agent file as a published Agent">Import…<input type="file" name="file" accept=".md" required hidden onchange="this.form.submit()"></label></form>
+        <form method="post" action="/agents/new/draft"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button class="primary">New Agent</button></form>
     </div>
     <div class="sub">From the folders in <a href="/settings">Settings</a>. Ants writes only into <code>~/.ants/agents</code>; the rest are read-only, with Copy.</div></div>
 @if(error != null)<p role="alert">${error}</p>@endif
@@ -25,7 +25,7 @@
     <thead><tr><th>Name</th><th>CLI · model</th><th>Skills</th><th>Description</th><th>Folder</th></tr></thead>
     <tbody>
 @for(row in agents)
-    <tr class="click" data-href="/agents/${row.agent.name}"><td><b><a href="/agents/${row.agent.name}">${row.agent.name}</a></b></td><td class="small">${row.agent.cli} · ${row.agent.model ?: "default"}</td><td class="small">@for(skill in row.skills)@if(skill == "*")every Skill@else<a href="/skills/${skill}">${skill}</a>@endif@if(skill != row.skills.last()) @endif@endfor</td><td class="small">${row.agent.description}</td><td class="muted small">${row.where}</td></tr>
+    <tr class="click" data-href="/agents/${row.page}"><td><b><a href="/agents/${row.page}">${row.agent.name}</a></b>@template.draftmark(state = row.state, list = true)</td><td class="small">${row.agent.cli} · ${row.agent.model ?: "default"}</td><td class="small">@for(skill in row.skills)@if(skill == "*")every Skill@else<a href="/skills/${skill}">${skill}</a>@endif@if(skill != row.skills.last()) @endif@endfor</td><td class="small">${row.description}</td><td class="muted small">${row.where}</td></tr>
 @endfor
     </tbody>
 </table>

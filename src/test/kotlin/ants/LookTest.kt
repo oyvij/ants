@@ -11,18 +11,15 @@ import org.springframework.beans.factory.annotation.Autowired
 import tools.jackson.databind.json.JsonMapper
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
-import kotlin.io.path.createDirectories
 import kotlin.io.path.writeText
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 
 /**
- * The look test: every page beside the prototype it must equal, in light and in dark, as
- * build/reports/browser/look/<page>/{prototype,app}-{light,dark}.png, for a person or an agent to compare. It asserts
- * nothing about the look itself. The prototype is `prototype/web-ui`'s one HTML file, opened at a hash route, and
- * `prototype/answer-screen`'s Answer page; CI fetches both branches (ci.yml), and they load bpmn-js, CodeMirror and
- * marked from unpkg. The app side is seeded with what the prototype shows: Runs in different states, waiting entries, a
- * Schedule, and the shipped Processes, Agents and Skills. Like [BrowserTest], it is skipped where Chromium can't launch.
+ * The look test: every page in light and in dark, as build/reports/browser/look/<page>/app-{light,dark}.png, and on a
+ * phone in build/reports/browser/look-phone, for a person or an agent to look at. It asserts nothing about the look
+ * itself. The app is seeded with Runs in different states, waiting entries, a Schedule, and the shipped Processes,
+ * Agents and Skills. Like [BrowserTest], it is skipped where Chromium can't launch.
  */
 @Tag("browser")
 class LookTest : AntsTest() {
@@ -37,47 +34,34 @@ class LookTest : AntsTest() {
     private fun desktop() = NewContextOptions().setViewportSize(1440, 900)
     private fun phone() = NewContextOptions().setViewportSize(390, 844).setIsMobile(true).setHasTouch(true)
 
-    /**
-     * A page and its prototype: a hash route in web-ui.html, or another file of the prototype's, each shot after
-     * [script] runs in the prototype and [appScript] in the app, for a state no URL reaches.
-     */
-    private class Shot(val name: String, val prototype: String, val app: String, val script: String? = null, val appScript: String? = null)
+    /** A page, shot after [appScript] runs in it, for a state no URL reaches. */
+    private class Shot(val name: String, val app: String, val appScript: String? = null)
 
     private fun result(json: String) = """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":$json}"""
 
     @Test
     @Timeout(25, unit = TimeUnit.MINUTES)
-    fun `every page beside the prototype, and every app page on a phone, in light and in dark`() {
+    fun `every page, on a desktop and on a phone, in light and in dark`() {
         Playwright.create().use { playwright ->
             val chromium = launchChromium(playwright)
-            val prototype = prototype("prototype/web-ui", "web-ui.html")
-            val answerPage = prototype("prototype/answer-screen", "answer-page.html")
             val app = seed()
-            val pairs = shots(app, prototype, answerPage)
+            val shots = shots(app)
             for ((theme, scheme) in listOf("light" to ColorScheme.LIGHT, "dark" to ColorScheme.DARK)) {
                 settings(claude, extra + "theme: $theme\n")
-                val options = desktop().setColorScheme(scheme)
-                chromium.newContext(options).use { context ->
-                    val page = context.newPage()
-                    page.addInitScript("addEventListener('DOMContentLoaded', () => document.querySelector('details.proto')?.remove())")
-                    for (pair in pairs) shoot(page, pair.prototype, "${pair.name}/prototype-$theme") { pair.script?.let { page.evaluate(it) } }
-                    shoot(page, "$prototype#/login", "login/prototype-$theme")
-                    shoot(page, "$prototype#/runs/dark-mode-toggle", "drawer/prototype-$theme") { evaluate("openDrawer('dark-mode-toggle', 'grill')") }
-                }
-                chromium.newContext(options).use { shootApp(it.newPage(), pairs, app.getValue("running"), theme, look) }
-                chromium.newContext(phone().setColorScheme(scheme)).use { shootApp(it.newPage(), pairs, app.getValue("running"), theme, lookOnPhone) }
+                chromium.newContext(desktop().setColorScheme(scheme)).use { shootApp(it.newPage(), shots, app.getValue("running"), theme, look) }
+                chromium.newContext(phone().setColorScheme(scheme)).use { shootApp(it.newPage(), shots, app.getValue("running"), theme, lookOnPhone) }
             }
         }
     }
 
-    private fun shootApp(page: Page, pairs: List<Shot>, running: String, theme: String, folder: Path) {
+    private fun shootApp(page: Page, shots: List<Shot>, running: String, theme: String, folder: Path) {
         page.onConsoleMessage { if (it.type() == "error") println("LookTest: ${page.url()}: ${it.text()}") }
         page.onPageError { println("LookTest: ${page.url()}: $it") }
         shoot(page, "http://127.0.0.1:$port/login", "login/app-$theme", folder)
         logIn(page)
-        for (pair in pairs) shoot(page, "http://127.0.0.1:$port${pair.app}", "${pair.name}/app-$theme", folder) { pair.appScript?.let { page.evaluate(it) } }
+        for (shot in shots) shoot(page, "http://127.0.0.1:$port${shot.app}", "${shot.name}/app-$theme", folder) { shot.appScript?.let { page.evaluate(it) } }
         shoot(page, "http://127.0.0.1:$port/runs/$running", "drawer/app-$theme", folder) { openDrawer() }
-        // The prototype has no Scripts: the Secrets card with a Secret added, and the modal its ✕ opens.
+        // A Script's Secrets card with a Secret added, and the modal its ✕ opens.
         shoot(page, "http://127.0.0.1:$port/scripts/post-message", "script-secrets/app-$theme", folder) { addSecret() }
         shoot(page, "http://127.0.0.1:$port/scripts/post-message", "script-secret-delete/app-$theme", folder) { locator("[data-secrets] button.x").first().click() }
     }
@@ -117,7 +101,7 @@ class LookTest : AntsTest() {
         visit("/login", "login")
         logIn(page)
         if (menu) visit("/", "the ☰ menu") { click("label[for=menu]") }
-        for (shot in shots(app, prototype = "", answerPage = "")) visit(shot.app, shot.name) { shot.appScript?.let { evaluate(it) } }
+        for (shot in shots(app)) visit(shot.app, shot.name) { shot.appScript?.let { evaluate(it) } }
         for (run in listOf("running", "stuck")) visit("/runs/${app.getValue(run)}", "the drawer on the $run Run") { openDrawer() }
         visit("/runs/${app.getValue("running")}", "the Run page's Rename") { click("button[popovertarget=rename]") }
         visit("/processes", "New Process") { click(".ph button.primary") }
@@ -126,10 +110,10 @@ class LookTest : AntsTest() {
         visit("/settings", "a Source map's editor") { locator("[data-edit]").first().click() }
         visit(entry(app.getValue("review")) + "#s1-1", "a story step's comment") { locator(".step:not([hidden]) [data-comment]").click() }
         visit(entry(app.getValue("review")) + "?tab=repo", "a line comment") { locator("table.diff tr[data-line] td").nth(1).click() }
-        for (path in listOf("/agents/new", "/skills/new")) visit(path, "the modeler's modal $path")
-        visit("/agents/new", "a new codex Agent") { selectOption("select[name=cli]", "codex") }
-        visit("/agents/new", "a new Agent on another model") { selectOption("select[name=model]", "other") }
-        visit("/agents/new", "a new Agent's tool limited") { locator("input[name='tool.Bash']").check(); locator(".trow:has(input[name='tool.Bash']) [data-limit]").click() }
+        for (list in listOf("/agents", "/skills")) visit(http.newDraft(list), "the modeler's modal's New on $list")
+        visit(http.newDraft("/agents"), "a new codex Agent") { selectOption("select[name=cli]", "codex") }
+        visit(http.newDraft("/agents"), "a new Agent on another model") { selectOption("select[name=model]", "other") }
+        visit(http.newDraft("/agents"), "a new Agent's tool limited") { locator("input[name='tool.Bash']").check(); locator(".trow:has(input[name='tool.Bash']) [data-limit]").click() }
         page.navigate("http://127.0.0.1:$port/processes/build_and_ship/edit")
         page.waitForTimeout(1500.0)
         val shapes = page.evaluate("[...document.querySelectorAll('#canvas .djs-shape')].map(shape => shape.dataset.elementId)") as List<*>
@@ -163,30 +147,30 @@ class LookTest : AntsTest() {
         }""") as List<*>).map { it.toString() }
     }
 
-    private fun shots(app: Map<String, String>, prototype: String, answerPage: String) = listOf(
-        Shot("home", "$prototype#/", "/"),
-        Shot("notifications", "$prototype#/notifications", "/notifications"),
-        Shot("runs", "$prototype#/runs", "/runs"),
-        Shot("run-review", "$prototype#/runs/billing-retry-impl", "/runs/${app.getValue("review")}"),
-        Shot("run-approve", "$prototype#/runs/search-reindex", "/runs/${app.getValue("approve")}"),
-        Shot("transcript", "$prototype#/runs/dark-mode-toggle/tasks/grill", "/runs/${app.getValue("running")}/tasks/draft/transcript"),
-        Shot("stuck", "$prototype#/runs/payments-webhook/tasks/grill", entry(app.getValue("stuck"))),
-        Shot("approve", "$prototype#/runs/search-reindex/tasks/approve", entry(app.getValue("approve"))),
-        Shot("review", "$prototype#/runs/billing-retry-impl/tasks/review", entry(app.getValue("review"))),
+    private fun shots(app: Map<String, String>) = listOf(
+        Shot("home", "/"),
+        Shot("notifications", "/notifications"),
+        Shot("runs", "/runs"),
+        Shot("run-review", "/runs/${app.getValue("review")}"),
+        Shot("run-approve", "/runs/${app.getValue("approve")}"),
+        Shot("transcript", "/runs/${app.getValue("running")}/tasks/draft/transcript"),
+        Shot("stuck", entry(app.getValue("stuck"))),
+        Shot("permission", entry(app.getValue("permission"))),
+        Shot("approve", entry(app.getValue("approve"))),
+        Shot("review", entry(app.getValue("review"))),
         // A story walked to its third step, with the diff and the details shown.
-        Shot("review-step", "$prototype#/runs/billing-retry-impl/tasks/review", entry(app.getValue("review")) + "#s1-3", "walk(0, 2); W.diff = true; W.details = true; renderWalk()", "document.querySelector('.step:not([hidden]) .showdiff').click(); document.querySelector('.step:not([hidden]) [data-details]').click()"),
-        Shot("review-by-repo", "$prototype#/runs/billing-retry-impl/tasks/review", entry(app.getValue("review")) + "?tab=repo", "reviewTab('repo')"),
-        // The prototype confirms a Push in a modal over Review changes; Ants waits on Push's own page.
-        Shot("push", "$prototype#/runs/billing-retry-impl/tasks/review", entry(app.getValue("push")), "confirmPush('billing-retry-impl', 'review')"),
-        Shot("processes", "$prototype#/processes", "/processes"),
-        Shot("process", "$prototype#/processes/spec-you", "/processes/build_and_ship"),
-        Shot("modeler", "$prototype#/processes/spec-you/edit", "/processes/build_and_ship/edit"),
-        Shot("agents", "$prototype#/agents", "/agents"),
-        Shot("agent", "$prototype#/agents/griller", "/agents/griller"), // the prototype has no planner
-        Shot("skills", "$prototype#/skills", "/skills"),
-        Shot("skill", "$prototype#/skills/scout", "/skills/walkthrough"), // Ants ships no scout Skill: the scout Task has an Assignment
-        Shot("settings", "$prototype#/settings", "/settings"),
-        Shot("answer", answerPage, entry(app.getValue("round"))),
+        Shot("review-step", entry(app.getValue("review")) + "#s1-3", "document.querySelector('.step:not([hidden]) .showdiff').click(); document.querySelector('.step:not([hidden]) [data-details]').click()"),
+        Shot("review-by-repo", entry(app.getValue("review")) + "?tab=repo"),
+        Shot("push", entry(app.getValue("push"))),
+        Shot("processes", "/processes"),
+        Shot("process", "/processes/build_and_ship"),
+        Shot("modeler", "/processes/build_and_ship/edit"),
+        Shot("agents", "/agents"),
+        Shot("agent", "/agents/lead"),
+        Shot("skills", "/skills"),
+        Shot("skill", "/skills/walkthrough"),
+        Shot("settings", "/settings"),
+        Shot("answer", entry(app.getValue("round"))),
     )
 
     /** Opens [url] in a fresh document, lets its diagrams and editors load, does [then], and saves it as [name]. */
@@ -210,22 +194,14 @@ class LookTest : AntsTest() {
         page.waitForURL { !it.contains("/login") }
     }
 
-    /** The prototype's [file] on [branch], written out and given as a file: URL. */
-    private fun prototype(branch: String, file: String): String {
-        val git = ProcessBuilder("git", "show", "origin/$branch:prototype/$file").redirectErrorStream(true).start()
-        val html = git.inputStream.readAllBytes().decodeToString()
-        assertEquals(0, git.waitFor(), "git show origin/$branch:prototype/$file (CI fetches the prototype branches): $html")
-        return Path.of("build/look").createDirectories().resolve(file).also { it.writeText(html) }.toUri().toString()
-    }
-
     /**
      * settings.yaml's lines beyond the Vault and claude: the Source map of the Review changes Run, no So far, and an extra
-     * Agent and Skill folder, as Settings in the prototype lists Varde's.
+     * Agent and Skill folder, Varde's.
      */
     private val extra by lazy { reviewSourceMap() + "so-far: false\nagent-folders: [~/.varde/ai/agents]\nskill-folders: [~/.varde/ai/skills]\n" }
 
     /**
-     * Seeds what the prototype shows, one Run at a time, each waiting until it has reached the state it is for, since the
+     * Seeds the pages, one Run at a time, each waiting until it has reached the state it is for, since the
      * fake claude plays a Skill's sessions in launch order. The Run ids, by what each is for.
      */
     private fun seed(): Map<String, String> {
@@ -264,7 +240,18 @@ class LookTest : AntsTest() {
         runs["running"] = start("agent-task", listOf("prompt" to "Add a dark mode toggle."))
         eventually { assertEquals(3, claude.launches("draft").size) }
 
-        // Review changes over two cloned repos, told as the prototype's Story set, with a step gone stale and a change no step covers.
+        claude.session(
+            "draft", 4,
+            """{"type":"assistant","message":{"id":"m1","content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"cargo outdated --root-deps-only"}}]}}""",
+            """{"type":"system","subtype":"permission_denied","tool_name":"Bash","tool_use_id":"t1","decision_reason_type":"mode","session_id":"${'$'}SESSION"}""",
+            "read",
+            """{"type":"result","subtype":"error_during_execution","is_error":true,"session_id":"${'$'}SESSION"}""",
+            "exit 1",
+        )
+        runs["permission"] = start("agent-task", listOf("prompt" to "List the outdated crates."))
+        entry(runs.getValue("permission"))
+
+        // Review changes over two cloned repos, told as a Story set, with a step gone stale and a change no step covers.
         claude.session("narrate", "wait commits", "write walkthrough/stories.json ${BillingRetry.stories}", result("""{"outcome":"done","summary":"Told the change as three stories.","output":{}}"""))
         http.import("story-set.bpmn")
         runs["review"] = start("story-set", listOf("repos" to "api", "repos" to "web"))
@@ -282,9 +269,17 @@ class LookTest : AntsTest() {
         eventually(30) { check(entry(runs.getValue("push")) != work) }
 
         // A Script with a Secret of its own, for the Secrets card.
-        http.get("/scripts/new")
-        http.post("/scripts/new", mapOf("name" to "post-message", "description" to "Posts a message to a Slack channel.", "code" to "console.log('posting')\n",
+        http.publishNew("/scripts", mapOf("name" to "post-message", "description" to "Posts a message to a Slack channel.", "code" to "console.log('posting')\n",
             "inputs" to "channel, text", "vars" to "CHANNEL=general", "secrets[0].name" to "SLACK_TOKEN", "secrets[0].value" to "xoxb-1234", "secrets[0].was" to ""))
+
+        // The Agents list with both Draft markers: a Draft-only Agent, and a published one with a Draft.
+        http.get("/agents")
+        http.post("/agents/new/draft", emptyMap())
+        home.resolve("agents/reviewer.md").writeText("---\nid: a-review1\nname: reviewer\ndescription: Reviews a change.\ncli: claude\n---\nReview it.\n")
+        http.autosave("/agents/reviewer", mapOf("name" to "reviewer", "cli" to "claude", "description" to "Reviews a change, strictly.", "instructions" to "Review it."), "0")
+        // The shipped Agent's page with Your Skills beside the Skills it ships with.
+        http.get("/agents/lead")
+        http.post("/agents/lead/your-skills", mapOf("skills" to "polish", "tool.Bash" to "on", "limit.Bash" to "cargo *"))
 
         // A Round of questions.
         claude.session("quiz", 1, result("""{"outcome":"done","summary":"Round 1 on the invoice CSV export.","output":{"questions":[""" + listOf(
@@ -334,7 +329,7 @@ class LookTest : AntsTest() {
 }
 
 /**
- * The prototype's Review changes, `billing-retry-impl`, in two clones, api and web: three commits in api (the handler
+ * A Review changes, `billing-retry-impl`, in two clones, api and web: three commits in api (the handler
  * as it was, the retry, and a later change to a line a step is on, which makes that step stale) and one in web; and
  * the Story set telling it, with a test no step covers.
  */

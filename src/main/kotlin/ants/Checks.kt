@@ -28,18 +28,18 @@ import org.springframework.stereotype.Component
 import org.operaton.bpm.engine.RepositoryService
 import tools.jackson.databind.json.JsonMapper
 
-/** One thing wrong with a Process, on the element it names (a BPMN id, or null for the whole file). A warning doesn't stop Save and deploy. */
+/** One thing wrong with a Process, on the element it names (a BPMN id, or null for the whole file). A warning doesn't stop Publish. */
 data class Check(val element: String?, val message: String, val warning: Boolean = false)
 
 /**
- * The Checks: what **Save and deploy** refuses, shown live in the modeler and on import. Each kind of Check reads the
+ * The Checks: what **Publish** refuses, shown live in the modeler and on import. Each kind of Check reads the
  * Process, written with `operaton:` only, and gives its Checks; a new kind is one more function in [kinds].
  */
 @Component
-class Checks(private val catalogue: Catalogue, private val scripts: Scripts, private val repository: RepositoryService) {
+class Checks(private val catalogue: Catalogue, private val scripts: Scripts, private val drafted: DraftedItems, private val repository: RepositoryService) {
     private val kinds: List<(BpmnModelInstance) -> List<Check>> = listOf(::refusedElements, ::refusedUses, ::oneStartEvent, ::startFormNames, ::emptyInputs, ::defaultPaths, ::timerTimes, ::timerStarts, ::reviewSendBacks,
-        { agentTasks(catalogue, scripts, it) }, { references(it, scripts) }, // these two in AgentTaskChecks.kt
-        { scriptTasks(scripts, catalogue, it) },
+        { agentTasks(catalogue, scripts, drafted, it) }, { references(it, scripts) }, // these two in AgentTaskChecks.kt
+        { scriptTasks(scripts, catalogue, drafted, it) },
         { calls(repository, it) }) // in CallActivityChecks.kt
 
     /** What the input pickers of the Task [element] in [bpmn] offer, as `${…}` references; see [offered]. */
@@ -133,7 +133,8 @@ val multiInstanceModes = listOf("parallel", "sequential", "none")
 /**
  * What the modeler page knows of Ants from the server, as JSON on its canvas's `data-facts`: each element kind's name and
  * explanation, the Built-in Tasks, the start-form field types, Items are Tickets' property and what it does, and the Process's Profile property, what it
- * does and how its empty choice reads, Ants' own Run variables, and each User Task kind's fields and Result.
+ * does and how its empty choice reads, Ants' own Run variables, each User Task kind's fields and Result, and the
+ * panel's own wording: how to draw a Process, why an element Ants doesn't run is refused, and what New Skill's Use did.
  */
 val modelerFacts: String = JsonMapper.shared().writeValueAsString(mapOf(
     "kinds" to elementKinds,
@@ -151,8 +152,25 @@ val modelerFacts: String = JsonMapper.shared().writeValueAsString(mapOf(
         "help" to "The Vault and Source map its Runs use, unless the start form picks another Profile.",
         "none" to "The default",
     ),
+    "level" to mapOf(
+        "property" to LEVEL,
+        "levels" to Level.RANGE.map(Int::toString),
+        "help" to "The model and effort it runs on, ${Level.RANGE.first} to ${Level.RANGE.last}, before its Agent's.",
+        "none" to "The Agent's level",
+    ),
     "runVariables" to RUN_VARIABLES,
     "userTasks" to userTaskFields.map { (kind, fields) -> mapOf("value" to kind.value.orEmpty(), "key" to kind.key, "name" to kind.title, "result" to kind.result, "fields" to fields) },
+    "wording" to mapOf(
+        "drawing" to "<b>Drawing a Process</b><ol>" +
+            "<li>A Run begins at the <b>start event</b> (its start form) and finishes at an <b>end event</b>.</li>" +
+            "<li>Add work from the bottom of the palette, or click a shape and pick the next step from its menu: <b>Agent</b>, <b>User</b> or <b>Built-in Task</b>.</li>" +
+            "<li>Choose between paths with a <b>decision</b> (◇ ×). Loop by drawing a path back to an earlier Task.</li>" +
+            "<li>Run branches side by side with two <b>parallel gateways</b> (◇ +): one splits, one joins.</li>" +
+            "<li>Fix everything under <b>Checks</b>, then <b>Publish</b>.</li></ol>",
+        "notRun" to "Ants doesn't run this element, so Publish will refuse it.",
+        "skillListed" to "Added to {agent}'s Skills in its Draft, and picked on this Task.",
+        "skillInYourSkills" to "Added to Your Skills on {agent} in their Draft, and picked on this Task.",
+    ),
 ))
 
 /** The BPMN elements Ants runs, by their XML name; [refusedUses] refuses some uses of them. Anything else is refused. */
@@ -198,7 +216,7 @@ private fun BpmnModelInstance.elements(): List<DomElement> {
 private fun refusedElements(model: BpmnModelInstance) = model.elements().filter { it.localName !in allowed }.map { element ->
     val name = element.localName
     // An event definition and a loop are written inside the element drawn, so the Check names that one.
-    val shown = if (name.endsWith("EventDefinition") || name.endsWith("LoopCharacteristics")) element.parentElement else element
+    val shown = if (name.endsWith("EventDefinition") || name.endsWith("LoopCharacteristics")) element.parentElement!! else element
     val what = when {
         name.endsWith("EventDefinition") -> "is " + article(words(name.removeSuffix("EventDefinition")) + " " + words(shown.localName)) + ", which Ants doesn't run."
         name == "task" -> "is a plain Task, which Ants doesn't run: make it an Agent, User or Built-in Task."

@@ -29,6 +29,10 @@ test scripts, so it passes whatever you assume. Facts the real CLI has already s
   `git --git-dir=… log`, `git -c … log`, `cd <dir> && git log` and `git log; touch x`, but allows a lone
   `cd <dir>` inside the cwd (not `cd /tmp`), after which the shell stays there and a plain `git log` runs. It also
   allows `git diff --output=<any path>`, which writes the file; `--disallowedTools 'Bash(git *--output*)'` refuses it.
+- Under `dontAsk`, claude 2.1.311 with bare `Bash` allowed and `--disallowedTools 'Bash(yarn install *),Bash(yarn install)'`
+  refuses `yarn install`, `yarn install --immutable`, `yarn  install`, `cd x && yarn install`, `true; yarn install …`,
+  `(yarn install)`, `FOO=1 yarn install`, `echo hi | yarn install`, `env yarn install` and `/usr/bin/env yarn install`.
+  Only `bash -c "yarn install"` gets past the rule and runs.
 - claude 2.1.296 under `--strict-mcp-config` uses an `--mcp-config` HTTP server on `127.0.0.1` (`"type": "http"`,
   with an `Authorization` header it sends on every request), inside nono with network allowed. `--tools Read`
   doesn't hide the MCP tool; `--allowedTools mcp__<server>__<tool>` lets it run under `dontAsk`.

@@ -14,12 +14,15 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class ScriptHelperTest : AntsTest() {
-    private val browser by lazy { browser().also { it.login(); it.get("/scripts/new") } }
+    private val browser by lazy { browser().also { it.login(); it.get("/scripts") } }
     private val json = JsonMapper.shared()
     private val secrets = home.resolve("secrets.yaml")
 
     @Autowired
     private lateinit var chats: PageChats
+
+    @Autowired
+    private lateinit var settings: Settings
 
     private fun open(): String = json.readValue(browser.post("/script-helper", emptyMap()).body, Map::class.java)["token"].toString()
 
@@ -30,7 +33,7 @@ class ScriptHelperTest : AntsTest() {
     @Test
     fun `a Script editor's token opens the helper's tools only, and buffer reads the page's unsaved code`() {
         val token = open()
-        assertEquals(listOf("buffer", "replace_buffer", "schemas", "replace_schemas", "check", "test_run"), tools(token))
+        assertEquals(listOf("buffer", "replace_buffer", "schemas", "replace_schemas", "env", "add_settings_secret", "check", "test_run"), tools(token))
         assertEquals(true, call(token, "diagram").second)
 
         browser.actAsPage(token, chats, "/script-helper/answer") { tool, _ -> "console.log('unsaved')\n".takeIf { tool == "buffer" } }
@@ -84,6 +87,65 @@ class ScriptHelperTest : AntsTest() {
 
         output = emptyList()
         assertEquals(null, json.readValue(call(token, "schemas").first, Map::class.java).let { assertTrue("output" in it); it["output"] })
+    }
+
+    @Test
+    fun `env names the page's unsaved vars and own Secrets and every Secret in Settings with its variables, never a value`() {
+        home.resolve("settings.yaml").writeText("secrets:\n  github: [GH_TOKEN, GITHUB_TOKEN]\n  npm: [NPM_TOKEN]\n")
+        secrets.writeText("github: s3cret-gh\nnpm: s3cret-npm\n")
+        try {
+            val token = open()
+            browser.actAsPage(token, chats, "/script-helper/answer") { tool, _ ->
+                listOf(
+                    listOf("name", "post-message"), listOf("code", ""), listOf("vars", "CHANNEL=gen3ral\nREGION=eu-n0rth\n"),
+                    listOf("secrets[0].name", "SLACK_TOKEN"), listOf("secrets[0].value", "xoxb-s3cret"), listOf("secrets[0].was", ""), listOf("linked", "npm"),
+                ).takeIf { tool == "form" }
+            }
+            val (text, failed) = call(token, "env")
+            assertFalse(failed, text)
+            assertEquals(mapOf(
+                "vars" to listOf("CHANNEL", "REGION"),
+                "secrets" to listOf("SLACK_TOKEN"),
+                "settingsSecrets" to listOf(
+                    mapOf("label" to "github", "variables" to listOf("GH_TOKEN", "GITHUB_TOKEN"), "linked" to false),
+                    mapOf("label" to "npm", "variables" to listOf("NPM_TOKEN"), "linked" to true),
+                ),
+            ), json.readValue(text, Map::class.java))
+            for (value in listOf("s3cret", "gen3ral", "eu-n0rth")) assertFalse(value in text, value)
+        } finally {
+            secrets.deleteIfExists()
+        }
+    }
+
+    @Test
+    fun `add_settings_secret adds a Secret to Settings with no value and links it on the page, and an existing label is only linked`() {
+        home.resolve("settings.yaml").writeText("secrets:\n  npm: [NPM_TOKEN]\n")
+        secrets.writeText("npm: s3cret-npm\n")
+        try {
+            val token = open()
+            val linked = mutableListOf<Any?>()
+            browser.actAsPage(token, chats, "/script-helper/answer") { tool, arguments -> null.also { if (tool == "link_secret") linked += arguments["label"] } }
+
+            val (text, failed) = call(token, "add_settings_secret", mapOf("label" to "slack", "variables" to listOf("SLACK_TOKEN")))
+            assertFalse(failed, text)
+            assertContains(text, "SLACK_TOKEN")
+            assertEquals(mapOf("npm" to listOf("NPM_TOKEN"), "slack" to listOf("SLACK_TOKEN")), settings.secrets())
+            assertEquals("npm: s3cret-npm\n", secrets.readText())
+            assertEquals(listOf<Any?>("slack"), linked)
+
+            val (existing, refused) = call(token, "add_settings_secret", mapOf("label" to "npm", "variables" to listOf("OTHER")))
+            assertFalse(refused, existing)
+            assertContains(existing, "NPM_TOKEN")
+            assertEquals(listOf("NPM_TOKEN"), settings.secrets()["npm"])
+            assertEquals(listOf<Any?>("slack", "npm"), linked)
+
+            for (bad in listOf(mapOf("label" to "", "variables" to listOf("X")), mapOf("label" to "gh", "variables" to listOf("gh-token")), mapOf("label" to "gh", "variables" to emptyList<String>()))) {
+                assertTrue(call(token, "add_settings_secret", bad).second, bad.toString())
+            }
+            assertEquals(setOf("npm", "slack"), settings.secrets().keys)
+        } finally {
+            secrets.deleteIfExists()
+        }
     }
 
     @Test
@@ -148,8 +210,7 @@ class ScriptHelperTest : AntsTest() {
         home.resolve("settings.yaml").writeText("node: {path: ${ScriptsTest.NODE}}\nclaude: {env: [PATH, HOME]}\nsecrets:\n  npm: [NPM_TOKEN]\n")
         secrets.writeText("npm: s3cret-npm\n")
         try {
-            browser.get("/scripts/new")
-            browser.post("/scripts/new", listOf("name" to "post-message", "description" to "Posts a message.", "code" to "console.log('saved')\n",
+            browser.publishNew("/scripts", listOf("name" to "post-message", "description" to "Posts a message.", "code" to "console.log('saved')\n",
                 "inputs[0].name" to "text", "inputs[0].type" to "string", "vars" to "", "secrets[0].name" to "SLACK_TOKEN", "secrets[0].value" to "xoxb-s3cret", "secrets[0].was" to ""))
             val unsaved = """
                 const inputs = ants.inputs

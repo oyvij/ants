@@ -1,7 +1,8 @@
 ---
-id: a-knowledge
-name: knowledge
-description: Keeps the user's knowledge Vault, in Varde's format, proposing every change before it writes it.
+id: a-librarian
+name: librarian
+description: Keeps the user's knowledge Vault, in Varde's format, reading and writing it with any tool, and proposing every change before it writes it.
+level: 2
 skills: k-update-knowledge, k-init-vault, k-search-knowledge
 tools: Read, Grep, Glob, Write, Edit, Bash
 ---

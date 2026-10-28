@@ -24,23 +24,21 @@ jobs:
       matrix:
         shard: ${{ fromJSON(inputs.shards) }}
     steps:
-      - uses: actions/checkout@v5
-      # LookTest screenshots each page beside the prototype it must equal, read from these branches with git show.
-      - run: git fetch --depth=1 origin prototype/web-ui:refs/remotes/origin/prototype/web-ui prototype/answer-screen:refs/remotes/origin/prototype/answer-screen
-      - uses: actions/setup-java@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 25
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
       # One file per node --check: it checks only the first and passes the rest to it as arguments.
       - run: for script in src/main/resources/static/*.js; do node --check "$script"; done
-      - uses: gradle/actions/setup-gradle@v5
+      - uses: gradle/actions/setup-gradle@v6
       # BrowserTest's Chromium, cached by Playwright version; its system libraries come from apt every run.
       - id: playwright
         run: echo "version=$(grep -o 'com.microsoft.playwright:playwright:[0-9.]*' build.gradle.kts | cut -d ':' -f 3)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
@@ -49,9 +47,9 @@ jobs:
       - if: inputs.load
         run: for i in $(seq "$(nproc)"); do nohup yes > /dev/null 2>&1 & done
       - run: ./gradlew test -Pshard=${{ matrix.shard }}
-      # On every run, not only a failed one, so LookTest's screenshot pairs can be read after a green run.
+      # On every run, not only a failed one, so LookTest's screenshots can be read after a green run.
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: reports-${{ matrix.shard }}${{ inputs.run && format('-{0}', inputs.run) || '' }}
           path: build/reports/

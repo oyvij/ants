@@ -39,7 +39,7 @@ sealed class Entry(val id: String, val tag: String, val process: String, val tas
     val waited get() = duration(Duration.between(since.toInstant(), Instant.now()), seconds = false)
 
     private companion object {
-        val ICONS = mapOf("[failed]" to "✕", "[stuck]" to "⚠", "[stopped]" to "■", "[questions]" to "?", "[approve]" to "✓", "[review]" to "±", "[push]" to "↑")
+        val ICONS = mapOf("[failed]" to "✕", "[stuck]" to "⚠", "[stopped]" to "■", "[questions]" to "?", "[approve]" to "✓", "[review]" to "±", "[push]" to "↑", "[permission]" to "⊘")
     }
 }
 
@@ -78,6 +78,7 @@ class Notifications(
     private val cloneRepos: CloneRepos,
     private val names: RunNames,
     private val catalogue: Catalogue,
+    private val agents: Agents,
     @Value("\${ants.home}") private val home: Path,
 ) {
     /** Everything waiting on the user, oldest first. */
@@ -137,7 +138,7 @@ class Notifications(
                     "review"
                 }
                 UserTaskKind.APPROVE -> {
-                    val show = runtime.getVariableLocal(task.executionId, SHOW)
+                    val show = runtime.getVariableLocal(task.executionId!!, SHOW)
                     val workspace = names.runWorkspace(entry.run)
                     model.addAttribute("shown", shown(workspace, show))
                     model.addAttribute("file", (show as? String)?.takeIf { inWorkspace(workspace, it) != null })
@@ -156,12 +157,16 @@ class Notifications(
             return "push"
         }
         model.addAttribute("view", view(entry))
+        permission(incident)?.let { request ->
+            model.addAttribute("permission", request)
+            model.addAttribute("always", request.allowable && agents.alwaysRefusal(request.agent) == null)
+        }
         return if (topic == AgentLauncher.TOPIC) "notification" else "builtin"
     }
 
     /** [entry]'s Task as its page heads it, with its Transcript, if it has one. */
     private fun view(entry: TaskEntry): TaskView {
-        val instance = runtime.createProcessInstanceQuery().processInstanceId(entry.instance).singleResult()
+        val instance = runtime.createProcessInstanceQuery().processInstanceId(entry.instance).singleResult()!!
         val element = repository.getBpmnModelInstance(instance.processDefinitionId).getModelElementById<FlowElement>(entry.activity)
         val transcript = Transcript.read(Transcript.file(names.runWorkspace(entry.run), entry.taskId)).first.takeIf { it.isNotEmpty() }
             ?.let { lines -> Transcript().apply { lines.forEach(::add) } }
@@ -228,6 +233,43 @@ class Notifications(
         })
         return back(back, entry.run, "/notifications/next?run=${entry.run}")
     }
+
+    @PostMapping("/notifications/{id}/permission")
+    fun permission(
+        @PathVariable id: String, @RequestParam choice: String, @RequestParam(defaultValue = "") limit: String, @RequestParam(required = false) back: String?,
+        model: Model, response: HttpServletResponse,
+    ): String {
+        val incident = incidents().incidentId(id).singleResult() ?: return gone(model, response)
+        val request = permission(incident) ?: throw ResponseStatusException(HttpStatus.BAD_REQUEST, "This Task asks for no permission")
+        val entry = entry(incident)
+        val rule = limit.trim()
+        if (choice != DENY) {
+            if (choice != ALWAYS && choice != FOR_TASK) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "No choice $choice")
+            if (!request.allowable) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "No allow rule can help: ${request.why}")
+            val refusal = if (!request.fits(rule)) "The Limit is a rule for ${request.tool}, such as ${request.limit}."
+                else if (choice == ALWAYS) agents.allowAlways(request.agent, rule) else null
+            if (refusal != null) {
+                model.addAttribute("error", refusal)
+                return entry(id, model, response)
+            }
+        }
+        val (name, message) = when (choice) {
+            ALWAYS -> "Always allow" to "The user allowed `$rule` for you from now on."
+            FOR_TASK -> "Allow for this Task" to "The user allowed `$rule` for the rest of this Task."
+            else -> "Don't allow" to "The user refused `${request.what}`. Work without it, or end stuck saying what you need it for."
+        }
+        runLog(names.runWorkspace(entry.run), entry.task, name, "${request.summary}" + if (choice == DENY) "" else ": `$rule`")
+        if (choice == FOR_TASK) {
+            val granted = PermissionRequest.granted(runtime.getVariableLocal(incident.executionId, AgentLauncher.GRANTED))
+            runtime.setVariableLocal(incident.executionId, AgentLauncher.GRANTED, PermissionRequest.grantedJson(granted + rule))
+        }
+        val again = if (choice == DENY) "" else " Try it again, then carry on."
+        runtime.setVariablesLocal(incident.executionId, mapOf(AgentLauncher.ACTION to AgentLauncher.CONTINUE, AgentLauncher.INSTRUCTION to "$message$again Answer with your Result once you are done."))
+        externalTasks.setRetries(incident.configuration, 1)
+        return back(back, entry.run, "/notifications/next?run=${entry.run}")
+    }
+
+    private fun permission(incident: Incident) = PermissionRequest.of(runtime.getVariableLocal(incident.executionId, AgentLauncher.PERMISSION))
 
     /**
      * Approve, which completes the Approve with `{approved: true, comment}`, or Send back (comment required), which
@@ -322,10 +364,10 @@ class Notifications(
      */
     private fun complete(task: Task, workspace: Path, result: Map<String, Any>, resumes: String?, message: String) {
         // Before completing: the named Task can launch the moment the completion commits.
-        val sent = resumes?.let { AgentLauncher.sentBack(workspace, runtime.taskKey(task.executionId, it)) }
+        val sent = resumes?.let { AgentLauncher.sentBack(workspace, runtime.taskKey(task.executionId!!, it)) }
             ?.also { it.parent.createDirectories(); it.writeText(message) }
         try {
-            onClash { userTasks.complete(task.id, mapOf(task.taskDefinitionKey to result)) }
+            onClash { userTasks.complete(task.id, mapOf(task.taskDefinitionKey!! to result)) }
         } catch (e: Exception) {
             sent?.deleteIfExists()
             throw e
@@ -340,16 +382,16 @@ class Notifications(
     }
 
     private fun property(task: Task, name: String) =
-        repository.getBpmnModelInstance(task.processDefinitionId).getModelElementById<BaseElement>(task.taskDefinitionKey).property(name)
+        repository.getBpmnModelInstance(task.processDefinitionId!!).getModelElementById<BaseElement>(task.taskDefinitionKey)!!.property(name)
 
     /** A User Task's kind, by its [USER_TASK]: an Approve without one. */
     private fun kind(task: Task) = UserTaskKind.of(property(task, USER_TASK))
 
     /** The Result of the Agent Task an Answer a Round names as its asker, holding the Round's questions. */
-    private fun asked(task: Task) = property(task, ASKER)?.let { runtime.getVariable(task.executionId, it) }
+    private fun asked(task: Task) = property(task, ASKER)?.let { runtime.getVariable(task.executionId!!, it) }
 
     /** Which Round [task] answers: its asker's, whoever answered the earlier ones. */
-    private fun round(task: Task) = runtime.round(task.executionId, property(task, ASKER) ?: task.taskDefinitionKey)
+    private fun round(task: Task) = runtime.round(task.executionId!!, property(task, ASKER) ?: task.taskDefinitionKey!!)
 
     /** Next up: the Run's next entry, if one turns up within a few seconds; else the Notification list. */
     // ponytail: holds the request, polling, for up to 5 s; push it over SSE if the wait ever needs to be longer.
@@ -399,14 +441,14 @@ class Notifications(
         val summary = when (kind) {
             UserTaskKind.ANSWER_ROUND -> (asked(task) as? Map<*, *>)?.get("summary")
             UserTaskKind.REVIEW_CHANGES -> "Review the changes on the work branch."
-            UserTaskKind.APPROVE -> runtime.getVariableLocal(task.executionId, TITLE)
+            UserTaskKind.APPROVE -> runtime.getVariableLocal(task.executionId!!, TITLE)
         }
-        return entry(task.id, kind.tag, summary?.toString().orEmpty(), task.createTime, task.processInstanceId, task.processDefinitionId, task.executionId, task.taskDefinitionKey)
+        return entry(task.id, kind.tag, summary?.toString().orEmpty(), task.createTime, task.processInstanceId!!, task.processDefinitionId!!, task.executionId!!, task.taskDefinitionKey!!)
     }
 
     private fun entry(id: String, tag: String, summary: String, since: Date, instance: String, definition: String, execution: String, activity: String): TaskEntry {
-        val run = runtime.createProcessInstanceQuery().processInstanceId(instance).singleResult().rootProcessInstanceId
-        val top = history.createHistoricProcessInstanceQuery().processInstanceId(run).singleResult()
+        val run = runtime.createProcessInstanceQuery().processInstanceId(instance).singleResult()!!.rootProcessInstanceId
+        val top = history.createHistoricProcessInstanceQuery().processInstanceId(run).singleResult()!!
         val task = repository.getBpmnModelInstance(definition).getModelElementById<FlowElement>(activity)
         return TaskEntry(
             id = id,
@@ -428,6 +470,9 @@ class Notifications(
         const val RETRY = "retry"
         const val APPROVE = "approve"
         const val SEND_BACK_ACTION = "send-back"
+        const val ALWAYS = "always"
+        const val FOR_TASK = "task"
+        const val DENY = "deny"
 
         /** An Approve's fields: its Title and Show are input parameters, so `${…}` in them works and Checks read them. */
         const val TITLE = "title"

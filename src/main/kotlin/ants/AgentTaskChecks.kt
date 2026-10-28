@@ -22,6 +22,7 @@ import org.operaton.bpm.model.xml.instance.ModelElementInstance
 
 // An Agent Task's extension properties.
 const val AGENT = "ants.agent"
+const val LEVEL = "ants.level"
 /** The Skills a Task may use, comma or space separated, an empty list none; without it, its Agent's (ADR 0024). */
 const val SKILLS = "ants.skills"
 const val SCRIPTS = "ants.scripts"
@@ -36,8 +37,15 @@ const val ANSWER_HISTORY = "ants.answer-history"
 /** JSON text: the JSON Schema of the `output` the Task's Result promises; without it, any output. */
 const val RESULT_SCHEMA = "ants.result-schema"
 
-/** The value of an element's extension property [name], such as an Agent Task's [AGENT]. */
-fun BaseElement.property(name: String): String? = extensions<OperatonProperties>().flatMap { it.operatonProperties }.firstOrNull { it.operatonName == name }?.operatonValue
+/**
+ * The value of an element's extension property [name], such as an Agent Task's [AGENT]; "" for one set to nothing,
+ * which `operatonValue` gives as null, as an empty [SKILLS] means no Skills, not the Agent's.
+ */
+fun BaseElement.property(name: String): String? = properties()[name]
+
+/** Every extension property of the element by name, the first of each name, each value as [property] reads it. */
+fun BaseElement.properties(): Map<String, String> =
+    extensions<OperatonProperties>().flatMap { it.operatonProperties }.distinctBy { it.operatonName }.associate { it.operatonName to (it.operatonValue ?: "") }
 
 internal val BpmnModelInstance.agentTasks get() = getModelElementsByType(ServiceTask::class.java).filter { it.operatonTopic == AgentLauncher.TOPIC }
 
@@ -60,19 +68,21 @@ class Job(property: (String) -> String?) {
     val skill get() = listed?.singleOrNull()?.takeIf { assignment == null }
 }
 
-internal fun agentTasks(catalogue: Catalogue, scripts: Scripts, model: BpmnModelInstance): List<Check> {
+internal fun agentTasks(catalogue: Catalogue, scripts: Scripts, drafted: DraftedItems, model: BpmnModelInstance): List<Check> {
     val identified by lazy { catalogue.identified() + scripts.identified() }
-    return model.agentTasks.flatMap { task -> agentTask(task, catalogue, scripts) { identified } }
+    return model.agentTasks.flatMap { task -> agentTask(task, catalogue, scripts, drafted) { identified } }
 }
 
-private fun agentTask(task: ServiceTask, catalogue: Catalogue, scripts: Scripts, identified: () -> List<Identified>): List<Check> {
+private fun agentTask(task: ServiceTask, catalogue: Catalogue, scripts: Scripts, drafted: DraftedItems, identified: () -> List<Identified>): List<Check> {
     fun check(message: String) = Check(task.id, "${task.label}: $message")
     val links = Links(task)
+    // What a Task names that isn't published: a Draft-only one, to publish first, else nothing by that name.
+    fun missing(items: Drafted<*>, value: String, e: Throwable) = check(items.refusal(value, links.kept(value)) ?: "${e.message}.")
     val agent = if (links.hasAgent) runCatching { links.agent(catalogue) } else null
     val job = Job(task)
     val listed = links.skills(catalogue).orEmpty()
     val schema = ResultContract.schemaErrors(task.property(RESULT_SCHEMA).orEmpty())
-    val lacking = agent?.getOrNull()?.let { a -> listed.mapNotNull { it.getOrNull() }.filter { !a.allows(it) }.map { check("The Agent ${a.name} doesn't list the Skill ${it.name}.") } }
+    val lacking = agent?.getOrNull()?.let { a -> listed.mapNotNull { it.getOrNull() }.filter { !catalogue.allows(a, it) }.map { check("The Agent ${a.name} doesn't list the Skill ${it.name}.") } }
     val listedScripts = links.scripts(scripts).orEmpty()
     val lackingScripts = agent?.getOrNull()?.let { a -> listedScripts.mapNotNull { it.getOrNull() }.filter { !a.allows(it) }.map { check("The Agent ${a.name} doesn't list the Script ${it.name}.") } }
     fun twins(item: Identified) = identified().filter { it.id == item.id && it.where != item.where }
@@ -80,10 +90,10 @@ private fun agentTask(task: ServiceTask, catalogue: Catalogue, scripts: Scripts,
     val sharing = agent?.getOrNull()?.identified?.let(::twins).orEmpty() +
         listed.mapNotNull { it.getOrNull()?.identified }.flatMap(::twins)
     return listOfNotNull(
-        if (agent == null) Check(task.id, "${task.label} has no Agent.") else agent.exceptionOrNull()?.let { check("${it.message}.") },
+        if (agent == null) Check(task.id, "${task.label} has no Agent.") else agent.exceptionOrNull()?.let { missing(drafted.agents, links.agentValue!!, it) },
         Check(task.id, "${task.label} has no Assignment and doesn't list exactly one Skill.").takeIf { !job.valid },
-    ) + listed.mapNotNull { it.exceptionOrNull()?.let { e -> check("${e.message}.") } } + lacking.orEmpty() +
-        listedScripts.mapNotNull { it.exceptionOrNull()?.let { e -> check("${e.message}.") } } + lackingScripts.orEmpty() +
+    ) + listed.zip(job.listed.orEmpty()).mapNotNull { (skill, value) -> skill.exceptionOrNull()?.let { missing(drafted.skills, value, it) } } + lacking.orEmpty() +
+        listedScripts.zip(links.scriptValues.orEmpty()).mapNotNull { (script, value) -> script.exceptionOrNull()?.let { missing(drafted.scripts, value, it) } } + lackingScripts.orEmpty() +
         listOfNotNull(schema.takeIf { it.isNotEmpty() }?.let { check("Its result schema is invalid: ${it.joinToString("; ")}") }) + sharing
 }
 

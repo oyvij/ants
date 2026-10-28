@@ -58,6 +58,9 @@ class Transcript(private val toolLine: (name: String, input: Map<*, *>) -> Strin
     var soFar: String? = null
         private set
 
+    var chip: ModelChip? = null
+        private set
+
     /** The latest Result, the last `result` line's `structured_output`, if one has come. */
     var result: Map<*, *>? = null
         private set
@@ -177,6 +180,9 @@ class Transcript(private val toolLine: (name: String, input: Map<*, *>) -> Strin
         return listOf(VERBS[name] ?: "Working", what).filter { it.isNotEmpty() }.joinToString(" ")
     }
 
+    private fun argument(name: String, input: Map<*, *>) =
+        (input["args"] as? List<*>)?.takeIf { name == AgentLauncher.RUN_TOOL }?.joinToString(" ") ?: input.values.firstOrNull { it is String }?.toString().orEmpty()
+
     private fun summary(block: Subagent) = """<summary id="e${block.entry}s">⑂ <b>${esc(block.type)}</b> ${esc(block.description)}""" +
         (if (block.end != null || running) " · ${time(block)}" else "") + (if (block.status in OK) "" else " · ${esc(block.status)}") + "</summary>"
 
@@ -193,6 +199,7 @@ class Transcript(private val toolLine: (name: String, input: Map<*, *>) -> Strin
             "launch" -> {
                 val launch = Launch(entries.size, launches.size + 1, at)
                 launches += launch
+                chip = ModelChip.of(event) ?: chip
                 append { divider(launch) }
                 verb = null
                 live.clear()
@@ -270,13 +277,13 @@ class Transcript(private val toolLine: (name: String, input: Map<*, *>) -> Strin
                 if (name in AgentLauncher.SUBAGENT_TOOLS) {
                     spawn(block["id"], input["subagent_type"]?.toString() ?: "general-purpose", input["description"]?.toString().orEmpty(), parent)
                 } else {
-                    val argument = input.values.firstOrNull { it is String }?.toString().orEmpty()
+                    val argument = argument(name, input)
                     val shown = toolLine(name, input)
                         ?: input["skill"]?.takeIf { name == "Skill" }?.let { """Used the Skill <b>${esc(it)}</b>""" } // which Skill did the job (ADR 0024)
                         ?: """<b>${esc(name)}</b> <code>${esc(argument.lines().first().take(120))}</code>"""
                     tools[block["id"]] = append(parent) { """<div class="tool" id="$it">$shown</div>""" }
                 }
-                if (parent == null) verb = doing(name, input.values.firstOrNull { it is String }?.toString().orEmpty())
+                if (parent == null) verb = doing(name, argument(name, input))
                 if (name == "TaskUpdate") todo(input)
             }
         }
@@ -416,9 +423,9 @@ class Transcript(private val toolLine: (name: String, input: Map<*, *>) -> Strin
         }
 
         /** One of Ants' own lines: `launch`, `end` with how the launch ended, or `so-far` with the paragraph and its [tokens]. */
-        fun ants(subtype: String, text: String? = null, tokens: Long? = null) = line(
+        fun ants(subtype: String, text: String? = null, tokens: Long? = null, chip: ModelChip? = null) = line(
             json.writeValueAsString(
-                listOfNotNull("type" to "ants", "subtype" to subtype, "at" to Instant.now().toString(), text?.let { "text" to it }, tokens?.let { "tokens" to it }).toMap(),
+                listOfNotNull("type" to "ants", "subtype" to subtype, "at" to Instant.now().toString(), text?.let { "text" to it }, tokens?.let { "tokens" to it }).toMap() + chip?.fields.orEmpty(),
             ),
         )
     }

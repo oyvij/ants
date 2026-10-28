@@ -1,0 +1,23 @@
+@param form: ants.AgentForm
+@param readOnly: Boolean
+!{val othersOn = ants.AgentForm.OTHER_TOOLS.keys.count { it in form.tools }}
+@for(group in ants.AgentForm.GROUPS)
+            <div class="tgroup">${group.key}</div>
+@for(tool in group.value)
+            @template.toolrow(form = form, name = tool.name, tool = tool, readOnly = readOnly)
+@endfor
+@endfor
+            <details class="others" open="${othersOn > 0}"><summary class="small">Claude Code's other ${ants.AgentForm.OTHER_TOOLS.size} tools${if (othersOn > 0) " ($othersOn ticked)" else ""}: usually off for Agents, and why</summary>
+@for(other in ants.AgentForm.OTHER_TOOLS)
+                @template.toolrow(form = form, name = other.key, warn = other.value, readOnly = readOnly)
+@endfor
+            </details>
+            <div class="added" hidden="${form.custom.isEmpty()}"><div class="tgroup">Added by you</div>
+@for(tool in form.custom)
+                @template.toolrow(form = form, name = tool, warn = ants.AgentForm.note(tool), readOnly = readOnly, added = true)
+@endfor
+            </div>
+@if(!readOnly)
+            <label class="f" for="other-tools">Add a tool</label>
+            <div class="row add-tool" data-mcp="${ants.AgentForm.MCP_NOTE}" data-unknown="${ants.AgentForm.UNKNOWN_NOTE}"><input class="mono" id="other-tools" name="other-tools" placeholder="A tool Ants doesn't list yet, by name: e.g. mcp__github__get_issue"><button type="button">＋ Add tool</button></div>
+@endif

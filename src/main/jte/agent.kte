@@ -2,14 +2,15 @@
 @param form: AgentForm
 @param models: ants.Models
 @param action: String
-@param file: String?
+@param item: String?
+@param draft: ants.DraftHead? = null
+@param yours: ants.YoursField? = null
 @param readOnly: Boolean
 @param where: String? = null
 @param skills: List<ants.Skill> = emptyList()
 @param scripts: List<String> = emptyList()
 @param dependents: ants.Dependents?
 @param error: String? = null
-@param notice: String? = null
 @param use: Boolean = false
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
@@ -18,14 +19,14 @@
 !{val claude = form.cli == "claude"}
 !{val deprecated = models.deprecated(form.model)}
 !{val other = claude && form.model.isNotEmpty() && models.unlisted(form.model)}
-!{val othersOn = AgentForm.OTHER_TOOLS.keys.count { it in form.tools }}
+!{val levelDefault = "default · level ${ants.Level.START}, or the pinned model's"}
 <!doctype html>
 <html lang="en">
 <head>
     <meta charset="utf-8">
     @template.app()
     <meta name="color-scheme" content="${colorScheme}">
-    <title>${if (file == null) "New Agent" else form.name} · Agents · Ants</title>
+    <title>${if (item == null) "New Agent" else form.name} · Agents · Ants</title>
 </head>
 <body>
 @if(!use)
@@ -33,23 +34,54 @@
 @endif
 <main>
 @if(!use)<div class="crumbs"><a href="/agents">Agents</a> / ${form.name.ifEmpty { "New" }}</div>@endif
-<div class="ph"><h1><span class="ent ent-agent"><svg class="i" viewBox="0 0 24 24"><rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 8V4M9 13v1M15 13v1"/></svg>${if (file == null) "New Agent" else form.name}</span></h1>
+<div class="ph"><h1><span class="ent ent-agent"><svg class="i" viewBox="0 0 24 24"><rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 8V4M9 13v1M15 13v1"/></svg>${if (item == null) "New Agent" else form.name}</span></h1>
+@if(draft != null)
+    @template.drafthead(draft = draft)
+@elseif(yours != null)
+    @template.drafthead(draft = yours.head)
+@endif
     <div class="acts">
 @if(readOnly)
         <span class="muted small">Read-only (${where})</span>
         <form method="post" action="${action}/copy"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>Copy</button></form>
-@else
-@if(file != null)
-        <form method="post" action="${action}/delete"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button class="danger">Delete</button></form>
+@if(yours?.head?.state == ants.DraftState.CHANGED)
+        <form method="post" action="${action}/your-skills/discard" data-leaves-draft><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>Discard Draft</button></form>
 @endif
-        <button class="primary" form="agent">${if (use && file == null) "Create and use" else "Save"}</button>
+@if(yours != null)
+        <button class="primary" form="your-skills">Publish</button>
+@endif
+@else
+@if(draft?.state == ants.DraftState.CHANGED)
+        <form method="post" action="${action}/discard" data-leaves-draft><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>Discard Draft</button></form>
+@endif
+@if(item != null)
+        <form method="post" action="${action}/delete" data-leaves-draft><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button class="danger">Delete</button></form>
+@endif
+        <button class="primary" form="agent">Publish</button>
 @endif
     </div>
 @if(dependents != null)    <div class="sub">@template.usedby(dependents = dependents, none = "no Process")</div>@endif
 </div>
 @if(error != null)<p role="alert">${error}</p>@endif
-@if(notice != null)<p role="status">${notice}</p>@endif
-<form id="agent" class="agent" method="post" action="${action}">
+@if(yours != null)
+<form id="your-skills" class="card your-skills" method="post" action="${action}/your-skills" data-autosave="${yours.head.endpoint}" data-version="${yours.head.version.toString()}" data-leaves-draft>
+    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+    <h3><label for="add-skill">Your Skills</label></h3>
+    <div class="help">Skills you add to this shipped Agent, beside the ones it ships with. An update to Ants keeps them. A Skill brings no tools: one whose scripts need a tool the Agent lacks can run them only once you add it to Your tools. &nbsp;e.g. <span class="eg">diagnosing-bugs</span></div>
+    <div class="chipsel">
+@for(skill in yours.skills)
+        <span class="c">$unsafe{skillIcon}${skill}<input type="hidden" name="skills" value="${skill}"><button type="button" title="Remove">×</button></span>
+@endfor
+        <input id="add-skill" name="skills" list="skill-list" placeholder="Add a Skill, e.g. diagnosing-bugs" autocomplete="off">
+    </div>
+@if(yours.claude)
+    <h3>Your tools</h3>
+    <div class="help">Tools you add to this shipped Agent, beside the ones it ships with. An update to Ants keeps them. They only add: every rule Ants denies stays denied, and wherever the Agent is picked its description lists them.</div>
+    @template.toolpicker(form = yours.tools, readOnly = false)
+@endif
+</form>
+@endif
+<form id="agent" class="agent" method="post" action="${action}" data-autosave="${draft?.endpoint}" data-version="${draft?.version?.toString()}" data-leaves-draft>
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
 @if(use)
     <input type="hidden" name="use">
@@ -69,9 +101,16 @@
                 </select></div>
             <div class="fld">
                 <fieldset data-cli="claude" disabled="${!claude}">
-                    <label class="f" for="model">Model</label><div class="help">An alias always runs the newest of its family; a fixed version stays put until it retires.</div>
+                    <label class="f" for="level">Level</label><div class="help">The model and effort its Tasks start on, 1 to 5.</div>
+                    <select id="level" name="level">
+                        <option value="" selected="${form.level.isEmpty()}">${levelDefault}</option>
+@for(level in ants.Level.RANGE)
+                        <option value="${level}" selected="${form.level == level.toString()}">${level} · ${ants.Level.claude(level).label}</option>
+@endfor
+                    </select>
+                    <label class="f" for="model">Pinned model</label><div class="help">Runs this model ID instead of the level's, escalating from its family's level. An alias always runs the newest of its family; a fixed version stays put until it retires.</div>
                     <select id="model" name="model">
-                        <option value="" selected="${form.model.isEmpty()}">default · whatever the CLI picks</option>
+                        <option value="" selected="${form.model.isEmpty()}">none · runs on its level</option>
                         <optgroup label="Always the newest">
 @for(alias in models.aliases)
                             <option value="${alias.key}" selected="${claude && form.model == alias.key}">${alias.key} · newest ${alias.key.replaceFirstChar(Char::uppercase)}${alias.value?.let { ", now " + models.label(it) }.orEmpty()}</option>
@@ -98,12 +137,24 @@
                     <div class="help checked">From Anthropic's public model list, refreshed with Ants' update check (last ${models.lastChecked ?: "never: the list Ants shipped with"}). <button class="ghost small" form="models-check">Check now</button></div>
                 </fieldset>
                 <fieldset data-cli="codex" disabled="${claude}">
-                    <label class="f" for="codex-model">Model</label>
+                    <label class="f" for="codex-level">Level</label><div class="help">The model and effort its Tasks start on, 1 to 5.</div>
+                    <select id="codex-level" name="level">
+                        <option value="" selected="${form.level.isEmpty()}">${levelDefault}</option>
+@for(level in ants.Level.RANGE)
+                        <option value="${level}" selected="${form.level == level.toString()}">${level}</option>
+@endfor
+                    </select>
+                    <label class="f" for="codex-model">Pinned model</label>
                     <input class="mono" id="codex-model" name="model" value="${if (claude) "" else form.model}" placeholder="e.g. gpt-5-codex">
-                    <div class="help checked">codex's model ID, as <code>codex -m</code> takes it; empty for codex's default.</div>
+                    <div class="help checked">codex's model ID, as <code>codex -m</code> takes it; empty to run on its level.</div>
                 </fieldset></div>
         </div>
-        <div class="fld"><label class="f" for="add-skill">Skills it may use</label><div class="help">The Skills this Agent may use, or <code>*</code> for every Skill. A Task lists the ones it allows, or allows them all; the modeler only offers these. &nbsp;e.g. <span class="eg">implement, tdd</span></div>
+        <div class="fld">
+@if(yours != null)
+            <label class="f">Shipped Skills</label><div class="help">The Skills Ants ships this Agent with. Its Tasks may also use Your Skills.</div>
+@else
+            <label class="f" for="${if (readOnly) null else "add-skill"}">Skills it may use</label><div class="help">The Skills this Agent may use, or <code>*</code> for every Skill. A Task lists the ones it allows, or allows them all; the modeler only offers these. &nbsp;e.g. <span class="eg">implement, tdd</span></div>
+@endif
             <div class="chipsel">
 @for(skill in ants.words(form.skills))
                 <span class="c">$unsafe{skillIcon}${if (skill == "*") "every Skill" else skill}<input type="hidden" name="skills" value="${skill}">@if(!readOnly)<button type="button" title="Remove">×</button>@endif</span>
@@ -124,7 +175,7 @@
                 <label class="tick"><input type="checkbox" name="subagent" checked="${form.subagent}"> Offer it as a Subagent</label></div>
             <div class="fld"><label class="f">Scripts it may call</label><div class="help">Each ticked Script is a tool the Agent calls with inputs, getting back the exit code, the masked output and the payload. It never sees the code or a Secret. A Task can narrow them. claude Agents only.</div>
 @if(scripts.isEmpty())
-                <div class="help">No Scripts yet. <a href="/scripts/new">New Script</a></div>
+                <div class="help">No Scripts yet. <button class="ghost small" form="new-script">New Script</button></div>
 @endif
 @for(script in scripts)
                 <label class="tick"><input type="checkbox" name="scripts" value="${script}" checked="${script in form.scriptList}"> ${script}</label>
@@ -132,29 +183,14 @@
             </div>
         </fieldset>
     </div>
-    <div class="card"><h3>What it may do</h3>
+    <div class="card"><h3>${if (yours?.claude == true) "Shipped tools" else "What it may do"}</h3>
         <fieldset data-cli="claude" disabled="${!claude}">
+@if(yours?.claude == true)
+            <div class="help">The tools Ants ships this Agent with. Its Tasks may also use Your tools.</div>
+@else
             <div class="help">Tick each tool this Agent may use. Anything unticked is refused: an Agent without <b>Edit</b> and <b>Write</b> can't change code, whatever its Skills say.</div>
-@for(group in AgentForm.GROUPS)
-            <div class="tgroup">${group.key}</div>
-@for(tool in group.value)
-            @template.toolrow(form = form, name = tool.name, tool = tool, readOnly = readOnly)
-@endfor
-@endfor
-            <details class="others" open="${othersOn > 0}"><summary class="small">Claude Code's other ${AgentForm.OTHER_TOOLS.size} tools${if (othersOn > 0) " ($othersOn ticked)" else ""}: usually off for Agents, and why</summary>
-@for(other in AgentForm.OTHER_TOOLS)
-                @template.toolrow(form = form, name = other.key, warn = other.value, readOnly = readOnly)
-@endfor
-            </details>
-            <div class="added" hidden="${form.custom.isEmpty()}"><div class="tgroup">Added by you</div>
-@for(tool in form.custom)
-                @template.toolrow(form = form, name = tool, warn = AgentForm.note(tool), readOnly = readOnly, added = true)
-@endfor
-            </div>
-@if(!readOnly)
-            <label class="f" for="other-tools">Add a tool</label>
-            <div class="row add-tool" data-mcp="${AgentForm.MCP_NOTE}" data-unknown="${AgentForm.UNKNOWN_NOTE}"><input class="mono" id="other-tools" name="other-tools" placeholder="A tool Ants doesn't list yet, by name: e.g. mcp__github__get_issue"><button type="button">＋ Add tool</button></div>
 @endif
+            @template.toolpicker(form = form, readOnly = readOnly)
         </fieldset>
         <fieldset data-cli="codex" disabled="${claude}">
             <label class="f" for="sandbox">Sandbox</label><div class="help">Codex has no tool list; its sandbox decides what it may touch.</div>
@@ -169,8 +205,10 @@
         <textarea id="instructions" name="instructions" rows="14" placeholder="e.g. You implement one Ticket at a time, test first, and commit once the suite passes." data-markdown data-tall>${form.instructions}</textarea></div>
     </fieldset>
 </form>
+<form id="new-script" method="post" action="/scripts/new/draft"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"></form>
 <form id="models-check" method="post" action="/models/check"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"></form>
 <script src="/agent.js" defer></script>
+@if(draft != null || yours != null)<script type="module" src="/draft.js"></script>@endif
 </main>
 </body>
 </html>

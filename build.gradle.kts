@@ -5,20 +5,20 @@ import java.util.HexFormat
 plugins {
     kotlin("jvm") version "2.4.21"
     kotlin("plugin.spring") version "2.4.21"
-    id("org.springframework.boot") version "4.0.8"
+    id("org.springframework.boot") version "4.1.2"
     id("gg.jte.gradle") version "3.2.4"
     id("com.github.node-gradle.node") version "7.1.0"
 }
 
 group = "no.oyvij"
 // A local build's version. CI's releases pass theirs, from the release tags: -Prelease=0.27.0-beta.412.
-version = findProperty("release")?.toString() ?: "0.26.0"
+version = findProperty("release")?.toString() ?: "0.27.0"
 
 kotlin {
     jvmToolchain(25)
 }
 
-val operaton = "2.1.5"
+val operaton = "2.2.0"
 val jte = "3.2.4"
 
 repositories {
@@ -37,18 +37,18 @@ dependencies {
     implementation("gg.jte:jte-spring-boot-starter-4:$jte")
     implementation("gg.jte:jte-kotlin:$jte")
     implementation("org.jetbrains.kotlin:kotlin-reflect")
-    implementation("com.networknt:json-schema-validator:2.0.4")
+    implementation("com.networknt:json-schema-validator:3.0.8")
     implementation("tools.jackson.dataformat:jackson-dataformat-toml") // reads Varde's config.toml
-    implementation("org.commonmark:commonmark:0.30.1")
-    implementation("org.commonmark:commonmark-ext-task-list-items:0.30.1") // a Ticket's ticking checkboxes
-    implementation("org.commonmark:commonmark-ext-gfm-tables:0.30.1")
+    implementation("org.commonmark:commonmark:0.31.0")
+    implementation("org.commonmark:commonmark-ext-task-list-items:0.31.0") // a Ticket's ticking checkboxes
+    implementation("org.commonmark:commonmark-ext-gfm-tables:0.31.0")
     runtimeOnly("com.h2database:h2")
     runtimeOnly("org.postgresql:postgresql") // engine state on a server, such as in the Docker image
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation(kotlin("test"))
-    // BrowserTest. 1.60.0 drives Chromium build 1223, which a local ~/Library/Caches/ms-playwright already holds.
-    testImplementation("com.microsoft.playwright:playwright:1.60.0")
+    // BrowserTest.
+    testImplementation("com.microsoft.playwright:playwright:1.64.0")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
@@ -70,8 +70,8 @@ tasks.bootJar {
 // Node runs only in the build: pnpm fetches the front-end libraries, whose dist/ goes into the static resources.
 node {
     download = true
-    version = "24.21.0"
-    pnpmVersion = "10.34.6"
+    version = "24.22.1"
+    pnpmVersion = "12.15.0"
 }
 
 tasks.processResources {
@@ -162,6 +162,7 @@ tasks.test {
     systemProperty("ants.jar", bootJar.get().asFile.path)
     inputs.files(tarball)
     systemProperty("ants.tarball", tarballFile.get().asFile.path)
+    systemProperty("ants.node.version", node.version.get())
     // Only the system folders and a fake gh, so a CLI run by its bare name, such as claude or nono, is never the real one.
     environment("PATH", "${projectDir}/src/test/resources/fake-gh:/usr/bin:/bin")
     // Ants must strip these from every Agent's environment, even when the allow-list names them.

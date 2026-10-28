@@ -47,7 +47,9 @@
         <div class="subsec"><label class="small" for="agent-tasks">Agent Tasks at once</label><div class="help">Live CLI processes across all Runs. More wait as <b>Queued</b>.</div>
             <input type="number" min="1" id="agent-tasks" name="agent-tasks" value="${form.agentTasks}" placeholder="e.g. 3" class="num"></div>
         <div class="subsec"><label class="small" for="subagent-depth">Subagent depth</label><div class="help">How deep claude's Subagents may nest. At 1 a Task's Subagents start none of their own.</div>
-            <input type="number" min="1" id="subagent-depth" name="subagent-depth" value="${form.subagentDepth}" placeholder="e.g. 1" class="num"></div></div>
+            <input type="number" min="1" id="subagent-depth" name="subagent-depth" value="${form.subagentDepth}" placeholder="e.g. 1" class="num"></div>
+        <div class="subsec"><label class="small" for="retries">Retries</label><div class="help">How often a <b>[failed]</b> Agent Task retries one level up before it waits on you. 3 when empty.</div>
+            <input type="number" min="0" id="retries" name="retries" value="${form.retries}" placeholder="e.g. 3" class="num"></div></div>
     <div class="card"><h3>Commands</h3>
 @for(cli in Settings.CLIS)
         <div class="fld"><label class="f" for="${cli}.path">${cli}</label><input class="mono" id="${cli}.path" name="${cli}.path" value="${form.paths[cli]}" placeholder="e.g. /opt/homebrew/bin/${cli}"></div>
@@ -104,16 +106,17 @@
             <div class="row" hidden="${row.label.isEmpty()}">
                 <input type="hidden" name="secrets[${i}].was" value="${row.was}">
                 <label class="cap name">Label<input name="secrets[${i}].label" value="${row.label}" placeholder="e.g. npm"></label>
-                <label class="cap name">Value<input type="password" name="secrets[${i}].value" placeholder="${if (row.set) "••••" else "e.g. npm_a1b2c3"}" autocomplete="new-password"></label>
+                <label class="cap name">Value<input type="password" name="secrets[${i}].value" placeholder="${if (row.set) "••••" else if (row.was.isNotEmpty()) "Not set yet" else "e.g. npm_a1b2c3"}" autocomplete="new-password"></label>
                 <label class="cap grow">Variable names<input class="mono" name="secrets[${i}].names" value="${row.names}" placeholder="e.g. NPM_TOKEN"></label>
                 <button type="button" class="ghost" data-remove>Remove</button>
             </div>
 @endfor
             <button type="button" data-add>＋ Add</button></div></div>
 
-    <div class="card"><h3>Protected Commands</h3><div class="help">Commands Agents may ask Ants to run, with any arguments, in their Run
-        workspace, with the Secrets picked. The Agent gets the output, every Secret masked. A command is picked by how it starts, such as
-        <span class="eg">yarn</span> or <span class="eg">mvn deploy</span>. A new Secret is offered here once saved.</div>
+    <div class="card"><h3>Protected Commands</h3><div class="help">A Protected Command is a command that needs Secrets. Agents run it only through Ants, never through Bash,
+        so a command that needs no Secret, such as <span class="eg">cargo</span> or <span class="eg">gh</span>, doesn't belong here. Ants runs it, with any
+        arguments, in the Agent's Run workspace, with the Secrets picked, and the Agent gets the output, every Secret masked. A command is
+        picked by how it starts, such as <span class="eg">yarn</span> or <span class="eg">mvn deploy</span>. A new Secret is offered here once saved.</div>
         <div class="listed">
 @for((i, row) in form.shownProtectedCommands.withIndex())
             <div class="row" hidden="${row.prefix.isEmpty()}">

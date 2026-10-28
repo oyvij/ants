@@ -47,13 +47,29 @@ class Agent(val file: Path, text: String = file.readText(), outsideId: String? =
     /** Whether it may use every Skill, `skills: "*"`. */
     val allSkills get() = "*" in skills
 
-    fun allows(skill: Skill) = allSkills || skill.id in skills || skill.name in skills
-
     fun allows(script: Script) = script.id in scripts || script.name in scripts
 
     /** The tools as permission rules, such as `Bash(git log *)`; null for the default tools. */
     val tools = list(meta["tools"])
     val model = meta["model"]?.toString()
+    val level: Int? = Level.of(meta["level"]?.toString())
+
+    val startLevel: Int get() = level ?: model?.let(Level::family) ?: Level.START
+
+    val launchLevel: Level
+        get() {
+            val ladder = ladder(startLevel)
+            if (level != null || model == null) return ladder
+            return ladder.copy(model = model)
+        }
+
+    fun launchLevel(taskLevel: Int?): Level = taskLevel?.let(::ladder) ?: launchLevel
+
+    fun firstLevel(taskLevel: Int?): Int = taskLevel ?: startLevel
+
+    fun launchLevel(taskLevel: Int?, onLevel: Int): Level = if (onLevel == firstLevel(taskLevel)) launchLevel(taskLevel) else ladder(onLevel)
+
+    private fun ladder(level: Int): Level = if (cli == "codex") Level.codex(level) else Level.claude(level)
 
     /** What a codex Agent may do instead of tools: its `--sandbox`, one of [SANDBOXES]. */
     val sandbox = meta["sandbox"]?.toString() ?: "workspace-write"
@@ -93,7 +109,7 @@ class Skill(
  * `shipped/`, each time they're asked for, so an edit reaches the next launch. `shipped/` is Ants' own, replaced whole on start when any file differs.
  */
 @Component
-class Catalogue(@Value("\${ants.home}") private val home: Path, private val settings: Settings) {
+class Catalogue(@Value("\${ants.home}") private val home: Path, private val settings: Settings, private val drafts: Drafts) {
     private val shipped = home.resolve("shipped")
 
     /** The shipped file that defines the Verbosity levels. */
@@ -152,10 +168,11 @@ class Catalogue(@Value("\${ants.home}") private val home: Path, private val sett
     private fun skillIdIn(folder: Path) = folder.resolve(SKILL_ID_FILE).takeIf { it.exists() }
         ?.let { runCatching { (Yaml().load<Any?>(it.readText()) as? Map<*, *>)?.get("id")?.toString()?.takeIf(String::isNotBlank) }.getOrNull() }
 
-    fun giveSkillId(folder: Path) = folder.resolve(SKILL_ID_FILE).writeAtomically(yaml.dump(mapOf("id" to unusedId(SKILL_ID))))
+    /** Gives the Skill in [folder] its [id], a new one unless it has one already (its Draft's), and returns it. */
+    fun giveSkillId(folder: Path, id: String = unusedId(SKILL_ID)) = id.also { folder.resolve(SKILL_ID_FILE).writeAtomically(yaml.dump(mapOf("id" to it))) }
 
     fun unusedId(prefix: Char): String {
-        val taken = identified().map { it.id }.toSet()
+        val taken = identified().map { it.id }.toSet() + drafts.ids()
         return newId(prefix) { it in taken }
     }
 
@@ -181,13 +198,41 @@ class Catalogue(@Value("\${ants.home}") private val home: Path, private val sett
     private fun <T> one(items: List<T>, shipped: (T) -> Boolean, none: String, many: String): T =
         items.singleOrNull() ?: items.filter { shipped(it) != settings.hideShipped() }.singleOrNull() ?: error(if (items.isEmpty()) none else many)
 
-    /** The names of the Skills [agent] may use: every one in the catalogue with `skills: "*"`. */
-    fun allowedNames(agent: Agent): List<String> = if (agent.allSkills) skills().map { it.name }.distinct() else skillNames(agent.skills)
+    val yours = Yours(home.resolve("your-skills"), home.resolve("your-tools"), drafts, ::shipped)
 
-    /** The Skills [agent] may use ([allowedNames]). */
-    fun allowed(agent: Agent): List<Skill> = if (agent.allSkills) allowedNames(agent).map(::skill) else agent.skills.map { linkedSkill(it, null) }
+    fun tools(agent: Agent): List<String> = ((agent.tools ?: AgentLauncher.DEFAULT_TOOLS) + yours.tools(agent)).distinct()
 
+    fun subagentTools(agent: Agent): List<String>? = if (yours.tools(agent).isEmpty()) agent.tools else tools(agent)
+
+    fun description(agent: Agent): String = yours.tools(agent).filter { it !in (agent.tools ?: AgentLauncher.DEFAULT_TOOLS) }
+        .takeIf { it.isNotEmpty() }?.let { "${agent.description} Plus your tools: ${it.joinToString(", ")}.".trim() } ?: agent.description
+
+    /**
+     * The Skills [agent] may use, each as listed (an id, or a name; `*` for every Skill): those it lists, then on a
+     * shipped Agent its published Your Skills, less any of those deleted since, so a launch never fails on one.
+     * [allowed], [allowedNames] and [allows] all read it, so the launch, the modeler, the Checks and Used by never learn
+     * about Your Skills separately.
+     */
+    private fun listed(agent: Agent): List<String> = agent.skills + yours.skills(agent).filter { listedSkill(it) != null }
+
+    /** The names of the Skills [agent] may use, as the Agents list shows them: `*` for every Skill. */
+    fun listedNames(agent: Agent): List<String> = skillNames(listed(agent)).distinct()
+
+    /** The names of the Skills [agent] may use ([allowed]): every one in the catalogue with `skills: "*"`. */
+    fun allowedNames(agent: Agent): List<String> = if (agent.allSkills) skills().map { it.name }.distinct() else listedNames(agent)
+
+    /** The Skills [agent] may use, each counted once; one it lists itself that is gone fails, saying so. */
+    fun allowed(agent: Agent): List<Skill> =
+        if (agent.allSkills) allowedNames(agent).map(::skill) else listed(agent).map { linkedSkill(it, null) }.distinctBy { it.file }
+
+    /** Whether [agent] may use [skill] ([allowed]). */
+    fun allows(agent: Agent, skill: Skill) = agent.allSkills || listed(agent).any { names(it, skill) }
+
+    /** The Skill a listed [value] names: the one with that id, else the one with that name; null for none. */
     fun listedSkill(value: String): Skill? = runCatching { linkedSkill(value, null) }.getOrNull()
+
+    /** Whether the listed [value] names [skill], as [listedSkill] finds one: by its id, else by its name. */
+    private fun names(value: String, skill: Skill) = value == skill.id || value == skill.name
 
     fun skillNames(listed: List<String>): List<String> = listed.map { value -> eachListed(value) { it.name } }
 
@@ -198,7 +243,7 @@ class Catalogue(@Value("\${ants.home}") private val home: Path, private val sett
 
 /**
  * Why [name] can't name an Agent or a Skill ([kind], "An Agent" or "A Skill"), or null: a name is up to 64 lowercase letters, digits and hyphens,
- * and none the pages keep for their own routes, such as `/agents/new`.
+ * and none the pages keep for their own routes, such as `/agents/new/draft`.
  */
 fun nameError(kind: String, name: String) = when {
     !Regex("[a-z0-9][a-z0-9-]{0,63}").matches(name) -> "$kind's name is up to 64 lowercase letters, digits and hyphens."

@@ -47,6 +47,8 @@
     </form>
     @elseif(entry.tag == "[questions]")
     <a class="btn primary" href="/notifications/${entry.id}">Answer the Round</a>
+    @elseif(entry.tag == "[permission]")
+    <a class="btn primary" href="/notifications/${entry.id}">Allow or refuse</a>
     @elseif(entry.tag == "[review]")
     <a class="btn primary" href="/notifications/${entry.id}">Review the changes</a>
     @else

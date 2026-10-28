@@ -18,7 +18,8 @@ private fun <T> linked(value: String, kept: String?, withId: (String) -> T, name
 class Links(private val property: (String) -> String?) {
     constructor(task: BaseElement) : this(task::property)
 
-    private val agentValue = property(AGENT)?.trim()?.takeIf(String::isNotBlank)
+    /** What the Task names its Agent by, its id or its name; null for none. */
+    val agentValue = property(AGENT)?.trim()?.takeIf(String::isNotBlank)
 
     val hasAgent get() = agentValue != null
 
@@ -26,7 +27,10 @@ class Links(private val property: (String) -> String?) {
 
     fun skills(catalogue: Catalogue): List<Result<Skill>>? = Job(property).listed?.map { runCatching { catalogue.linkedSkill(it, kept(it)) } }
 
-    fun scripts(scripts: Scripts): List<Result<Script>>? = property(SCRIPTS)?.let(::words)?.map { runCatching { scripts.linked(it, kept(it)) } }
+    /** What the Task names its Scripts by, each an id or a name; null when it names none. */
+    val scriptValues = property(SCRIPTS)?.let(::words)
+
+    fun scripts(scripts: Scripts): List<Result<Script>>? = scriptValues?.map { runCatching { scripts.linked(it, kept(it)) } }
 
     fun agentName(catalogue: Catalogue): String? = agentValue?.let { shown(it) { agent(catalogue).name } }
 
@@ -34,7 +38,8 @@ class Links(private val property: (String) -> String?) {
 
     private fun shown(value: String, current: () -> String) = runCatching(current).getOrNull() ?: kept(value) ?: value
 
-    private fun kept(value: String) = property(nameBeside(value))
+    /** The name kept beside [value], an id, for when nothing has that id. */
+    fun kept(value: String) = property(nameBeside(value))
 }
 
 private data class Link(val value: String, val name: String?)

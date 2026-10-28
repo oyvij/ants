@@ -95,17 +95,26 @@ class FeelingLuckyTest : AntsTest() {
     }
 
     @Test
-    fun `the shipped Agents get the tool allow-lists the spec gives them`() {
+    fun `the scout and the proposal run on lead and the build and the pull request on engineer, each Task on its old level`() {
         val ws = workspace(feelingLucky())
-        fun tools(skill: String) = claude.launches(skill).first().let { it.flag("--tools")?.removeSuffix(",Skill") to it.flag("--allowedTools")?.removeSuffix(",mcp__ants__run")?.removeSuffix(",Skill") } // every claude Task has the run tool, and Skill when it has Skills
+        fun tools(task: String) = claude.launches(task).first().let { it.flag("--tools")?.removeSuffix(",Skill") to it.flag("--allowedTools")?.removeSuffix(",Skill") }
+        fun level(task: String) = claude.launches(task).first().let { "${it.flag("--model")} ${it.flag("--effort")}" }
 
-        // claude checks a Write against Edit rules and ignores a Write(path) rule, so the scout's limit goes out as both
-        assertEquals("Read,Grep,Glob,Write,Agent" to "Read,Grep,Glob,Write(/$ws/scout/**),Agent(knowledge-searcher),Edit(/$ws/scout/**)", tools("scout"))
-        assertEquals("Read,Grep,Glob,Write,Edit" to "Read,Grep,Glob,Write(/$ws/proposal/**),Edit(/$ws/proposal/**)", tools("proposesolution"))
+        // claude checks a Write against Edit rules and ignores a Write(path) rule, so a Write limit goes out as both
+        val lead = "Read,Grep,Glob,Write,Edit,Bash,Agent" to listOf("scout", "tickets", "proposal", "walkthrough").joinToString(",") { "Write(/$ws/$it/**),Edit(/$ws/$it/**)" }
+            .let { "Read,Grep,Glob,$it,Bash(git log *),Bash(git diff *),Bash(git show *),Bash(git merge-base *),Agent(knowledge-searcher)" }
+        assertEquals(lead, tools("scout"))
+        assertEquals(lead, tools("proposesolution"))
+        assertEquals(emptyMap(), claude.launches("proposesolution").single().skills) // its empty Skills list is none, not lead's
+        assertEquals(lead.first, claude.launches("proposesolution").single().flag("--tools")) // and no Skill tool
+        // A Task on lead writes only in its folders: no Write or Edit rule reaches a clone
+        val writes = tools("scout").second!!.split(Regex(",(?![^(]*\\))")).filter { it.startsWith("Write(") || it.startsWith("Edit(") }
+        fun allows(file: String) = writes.any { file.startsWith(it.substringAfter('(').removeSuffix(")").removeSuffix("**")) }
+        assertEquals(true to false, allows("/$ws/proposal/proposal.md") to allows("/$ws/repos/api/src/Hello.kt"))
         assertContains(tools("implementproposal").first!!.split(","), "Agent")
         assertFalse("Bash(" in tools("implementproposal").second!!) // Bash unlimited
-        // claude refuses `gh pr create --body "…"` with a backtick in the body, so the body goes in a file under pr/
-        assertEquals("Read,Write,Edit,Bash" to "Read,Write(/$ws/pr/**),Edit(/$ws/pr/**),Bash(gh pr create *),Bash(gh pr view *),Bash(gh repo view *),Bash(git log *),Bash(git diff *)", tools("prproposal"))
+        assertEquals(tools("implementproposal"), tools("prproposal")) // engineer opens the pull request too
+        assertEquals(listOf("sonnet medium", "opus high", "opus medium", "sonnet medium"), listOf("scout", "proposesolution", "implementproposal", "prproposal").map(::level))
         val assignment = claude.launches("prproposal").single().stdin // the pr Task's Assignment says how
         assertContains(assignment, "--body-file pr/<repo>.md")
         // and the title, which stays on the command line, so it is written without backticks
@@ -119,7 +128,12 @@ class FeelingLuckyTest : AntsTest() {
         assertEquals(listOf("Read", "Grep", "Glob"), (offered["knowledge-searcher"] as Map<*, *>)["tools"])
         assertFalse("Agent(knowledge-searcher)" in scout.flag("--disallowedTools")!!.split(","))
         assertContains(scout.flag("--disallowedTools")!!.split(","), "Agent(general-purpose)")
-        assertFalse("Bash" in scout.flag("--tools")!!)
+        // search-knowledge has a script, which grants no Bash beyond lead's git commands
+        assertContains(scout.skills.keys, "search-knowledge")
+        assertEquals(
+            listOf("Bash(git log *)", "Bash(git diff *)", "Bash(git show *)", "Bash(git merge-base *)"),
+            scout.flag("--allowedTools")!!.split(",").filter { it.startsWith("Bash") },
+        )
     }
 
     @Test

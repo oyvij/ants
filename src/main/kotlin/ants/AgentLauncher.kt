@@ -170,7 +170,7 @@ class AgentLauncher(
             fetched.forEach { task ->
                 Thread.ofVirtual().start {
                     try {
-                        launch(migrated(task, repository))
+                        launch(migrated(task, repository, catalogue))
                     } finally {
                         live.decrementAndGet()
                     }
@@ -232,14 +232,19 @@ class AgentLauncher(
         val resume = (task.variables[SESSION] as? String)?.takeIf { task.variables[ACTION] == CONTINUE }
         var session = resume // a new one only once claude starts, so Continue never resumes a session claude never saw
         var transcript: Transcript.Writer? = null
+        var level: Int? = null
         try {
-            val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult().rootProcessInstanceId
+            val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult()!!.rootProcessInstanceId
             val workspace = names.runWorkspace(run)
             if (ticketed(task, run, workspace)) return
             migration.unmigrated(task)?.let { throw Failed(it) }
             val agent = Links(task.extensionProperties::get).agent(catalogue)
+            val taskLevel = Level.of(task.extensionProperties[LEVEL])
+            val onLevel = task.variables[REACHED_LEVEL] as? Int ?: agent.firstLevel(taskLevel)
+            level = onLevel
+            val launchLevel = agent.launchLevel(taskLevel, onLevel)
             if (hold(task, agent.cli)) return // keeping its choice for the launch after the reset
-            runtime.removeVariablesLocal(task.executionId, listOf(ACTION, INSTRUCTION, SESSION)) // the choice is used once
+            runtime.removeVariablesLocal(task.executionId, listOf(ACTION, INSTRUCTION, SESSION, PERMISSION)) // the choice is used once
             val (skill, used) = skills(task.extensionProperties, agent, task.activityId)
             if (agent.cli == "claude") refuseBareByDefault(agent.cli, workspace)
             val instance = instance(task)
@@ -255,20 +260,22 @@ class AgentLauncher(
             val again = last.takeIf { resume == null && task.variables[ACTION] == null && (task.extensionProperties[RESUME] == "true" || comment != null) && it.exists() }?.readText()
             // codex names a new session itself, once it starts ([started]).
             session = session ?: again ?: UUID.randomUUID().toString().takeIf { agent.cli == "claude" }
-            transcript = Transcript.Writer(Transcript.file(workspace, instance)).apply { ants("launch") }
+            transcript = Transcript.Writer(Transcript.file(workspace, instance)).apply { ants("launch", chip = chip(task, agent, launchLevel)) }
             session?.let(last::writeText)
             val started = { id: String -> session = id; last.writeText(id) }
             val resumed = resume != null || again != null // claude knows the session already
             // The user's Continue, or a Send back to a session claude has: their words alone, no hand-off again.
             val continued = resume != null || (comment != null && again != null)
             val result = try {
-                val result = session(task, instance, agent, skill, used, run, workspace, cwd, transcript, session, started, resumed, task.variables[INSTRUCTION] as? String ?: comment, handedOff = !continued)
+                val result = session(task, instance, agent, skill, used, run, workspace, cwd, transcript, session, started, resumed, task.variables[INSTRUCTION] as? String ?: comment, handedOff = !continued, level = launchLevel)
                 if (!parallel) result
-                else land(workspace, instance, result) { session(task, instance, agent, skill, used, run, workspace, cwd, transcript, session, started, true, it, handedOff = false) }
+                else land(workspace, instance, result) { session(task, instance, agent, skill, used, run, workspace, cwd, transcript, session, started, true, it, handedOff = false, level = launchLevel) }
             } catch (limit: UsageLimit) {
                 val until = limit.resetsAt + Duration.ofMinutes(1)
                 transcript.ants("end", "Paused by the ${agent.cli} usage limit until ${clock.local(until)}.")
-                runtime.setVariablesLocal(task.executionId, mapOf(ACTION to CONTINUE, INSTRUCTION to RESET, SESSION to session))
+                @Suppress("UNCHECKED_CAST")
+                val paused = mapOf(ACTION to CONTINUE, INSTRUCTION to RESET, SESSION to session) as Map<String, Any>
+                runtime.setVariablesLocal(task.executionId, paused)
                 hold(task, agent.cli, until)
                 return
             }
@@ -295,11 +302,14 @@ class AgentLauncher(
                 stopping -> "Ants stopped."
                 cancelled -> "Cancelled with the Run."
                 e is Stopped -> "[stopped] ${e.message}"
+                e is Refused -> "[permission] ${e.request.summary}"
                 else -> "[failed] ${e.message ?: e}"
             }
             runCatching { transcript?.ants("end", reason) }
             if (stopping || cancelled) return
-            if (e !is Stopped) log.warn("Agent Task ${task.activityId} failed", e)
+            if (e is Refused) runCatching { runtime.setVariableLocal(task.executionId, PERMISSION, e.request.json()) }
+            if (e !is Stopped && e !is Refused) log.warn("Agent Task ${task.activityId} failed", e)
+            if (e !is Stopped && e !is Refused && level != null && retry(task, session, level, reason, (e as? Failed)?.details)) return
             incident(task, session, reason, (e as? Failed)?.details)
         }
     }
@@ -401,7 +411,7 @@ class AgentLauncher(
         val inputs = last.resolveSibling(INPUTS).takeIf { it.exists() }?.let { json.readValue(it.readText(), Map::class.java) }.orEmpty()
             .mapKeys { it.key.toString() }
         val cwd = landing.folder(workspace, key, fresh = true)
-        val transcript = Transcript.Writer(Transcript.file(workspace, key)).apply { ants("launch") }
+        val transcript = Transcript.Writer(Transcript.file(workspace, key)).apply { ants("launch", chip = chip(held, agent, agent.launchLevel(Level.of(held.extensionProperties[LEVEL])))) }
         session?.let(last::writeText)
         val started = { id: String -> session = id; last.writeText(id) }
         try {
@@ -453,6 +463,19 @@ class AgentLauncher(
         return task.variables.filterKeys { it in names }.toSortedMap()
     }
 
+    private fun chip(task: LockedExternalTask, agent: Agent, level: Level): ModelChip =
+        ModelChip(agent.cli, level, retries(task), settings.retries())
+
+    private fun retries(task: LockedExternalTask): Int = task.variables[RETRIES] as? Int ?: 0
+
+    private fun retry(task: LockedExternalTask, session: String?, level: Int, reason: String, details: String?): Boolean = runCatching {
+        val retries = retries(task)
+        if (retries >= settings.retries()) return false
+        val resume = session?.let { mapOf(ACTION to CONTINUE, INSTRUCTION to "Your last attempt failed: ${reason.removePrefix("[failed] ")}${details?.let { "\n\n$it" }.orEmpty()}\n\n$RETRY", SESSION to it) }.orEmpty()
+        runtime.setVariablesLocal(task.executionId, mapOf(REACHED_LEVEL to Level.above(level), RETRIES to retries + 1) + resume)
+        externalTasks.handleFailure(task.id, WORKER, reason, null, 1, 0)
+    }.onFailure { log.warn("Agent Task ${task.activityId} couldn't be retried", it) }.isSuccess
+
     /**
      * Puts [task] on hold as an incident, its tag and reason in [message] and anything longer in [details], keeping
      * its [session], if claude ever started one, for Continue.
@@ -465,11 +488,16 @@ class AgentLauncher(
     /**
      * The Skill a Task with [properties] starts with, `/<skill>`, and the other Skills it may use (ADR 0024). With an
      * [ASSIGNMENT] it starts with none, and may use them all. Its own [SKILLS] list them, an empty one none; else the
-     * [agent]'s. Without an Assignment the Task lists exactly one.
+     * [agent]'s. On a shipped Agent, whose Skills change only through Your Skills, a listed one it no longer allows, taken
+     * out of Your Skills since the Process deployed, is left out; on the user's own Agent the Task keeps what it lists.
+     * Without an Assignment the Task lists exactly one.
      */
     private fun skills(properties: Map<String, String>, agent: Agent, id: String): Pair<Skill?, List<Skill>> {
         val job = Job(properties::get)
-        val allowed = Links(properties::get).skills(catalogue)?.map { it.getOrThrow() } ?: catalogue.allowed(agent)
+        val revocable = catalogue.yours.has(agent)
+        val allowed = Links(properties::get).skills(catalogue)?.map { it.getOrThrow() }?.filter { skill ->
+            !revocable || catalogue.allows(agent, skill).also { if (!it) log.warn("$id lists the Skill ${skill.name}, which its Agent ${agent.name} no longer allows, so it is left out") }
+        } ?: catalogue.allowed(agent)
         if (job.assignment != null) return null to allowed
         if (!job.valid) error("$id has no Assignment and doesn't list exactly one Skill")
         return allowed.single() to emptyList()
@@ -488,6 +516,7 @@ class AgentLauncher(
     private fun session(
         task: LockedExternalTask, instance: String, agent: Agent, skill: Skill?, used: List<Skill>, run: String, workspace: Path, cwd: Path, transcript: Transcript.Writer,
         session: String?, started: (String) -> Unit, resume: Boolean, instruction: String?, handedOff: Boolean = !resume, inputs: Map<String, Any?> = inputs(task),
+        level: Level = agent.launchLevel(Level.of(task.extensionProperties[LEVEL])),
     ): Map<*, *> {
         // Kept for a Send back that finds no session to resume ([fix]).
         if (handedOff) Transcript.file(workspace, instance).resolveSibling(INPUTS).writeText(json.writeValueAsString(inputs))
@@ -497,7 +526,7 @@ class AgentLauncher(
         // At normal, a Run's hand-off line and flags stay as they were.
         val verbosity = source.verbosity.takeIf { it != Verbosity.NORMAL }
         // The Task's result schema; Checks refuse one that isn't valid.
-        val asks = asksRounds(repository.getBpmnModelInstance(task.processDefinitionId).getModelElementById(task.activityId))
+        val asks = asksRounds(repository.getBpmnModelInstance(task.processDefinitionId).getModelElementById<FlowElement>(task.activityId)!!)
         val output = promised(task.extensionProperties[RESULT_SCHEMA], asks) ?: error("${task.activityId}'s result schema isn't a JSON object")
         val schema = ResultContract.schema(output)
         // A Run with repos picked clones exactly them, so the repos a Result names there go unchecked.
@@ -510,16 +539,18 @@ class AgentLauncher(
         // A knowledge Task, one with an `approval` input, may write the Vault only once it holds the user's approval
         // (ADR 0007): until then the Vault is read-only to it, but for Bash. codex can read it without an --add-dir.
         val gated = vault?.takeIf { "approval" in inputs && (inputs["approval"] as? Map<*, *>)?.get("approved") != true }
-        if (agent.cli == "codex") return codex(task, instance, agent, run, workspace, cwd, vault.takeIf { gated == null }, transcript, session, started, prompt, ResultContract.strict(output), judge)
+        if (agent.cli == "codex") return codex(task, instance, agent, run, workspace, cwd, vault.takeIf { gated == null }, transcript, session, started, prompt, ResultContract.strict(output), judge, level)
         val shared = if (cwd == workspace) emptyList() else listOf("--add-dir", "$workspace") // what an instance's links lead to
         val places = vault?.let { listOf("--add-dir", "$it") }.orEmpty() // the Vault's path goes nowhere else (ADR 0002)
             .plus(answerHistory(task)?.let { listOf("--add-dir", "${it.createDirectories()}") }.orEmpty()) // so a Read reaches it (ADR 0010)
             .plus(if (verbosity == null) emptyList() else listOf("--add-dir", "${catalogue.verbosityFile.parent}"))
         val tools = scriptTools.of(allowedScripts(task.extensionProperties, agent), workspace, run)
-        val (token, mcp) = protectedCommands.open(workspace, tools) // its Protected Commands run in the Run workspace
+        val agentTools = (catalogue.tools(agent) + granted(task)).distinct()
+        val allowed = protectedCommands.allowed(agentTools)
+        val (token, mcp) = protectedCommands.open(workspace, tools, allowed) // its Protected Commands run in the Run workspace
         val process = runCatching {
             val skills = listOfNotNull(skill) + used
-            cli(agent.cli, cwd, flags(agent, cwd, schema, skills, skillsFolder(workspace, instance, skills), session!!, resume, mcp, tools.tools.map { Mcp.CLAUDE_PREFIX + it["name"] }, workspace, gated?.let { listOf("Write(/$it/**)", "Edit(/$it/**)") }.orEmpty()) + shared + places)
+            cli(agent.cli, cwd, flags(agent, agentTools, level, cwd, schema, skills, skillsFolder(workspace, instance, skills), session!!, resume, mcp, listOfNotNull(RUN_TOOL.takeIf { allowed.isNotEmpty() }) + tools.tools.map { Mcp.CLAUDE_PREFIX + it["name"] }, workspace, gated?.let { listOf("Write(/$it/**)", "Edit(/$it/**)") }.orEmpty()) + shared + places)
                 .apply { environment()["ANTS_TASK"] = task.activityId } // names the Task to its session; the fake claude keys on it
                 .start()
         }.onFailure { protectedCommands.close(token) }.getOrThrow()
@@ -532,12 +563,21 @@ class AgentLauncher(
             var stopped = false
             var limit: Instant? = null
             var answered = false // a result line came after the user's Stop
+            var request: PermissionRequest? = null
+            val calls = HashMap<Any?, Map<*, *>>()
             process.inputReader().forEachLine { line ->
                 transcript.line(line)
                 if (judge.failure != null || stopped || limit != null || (judge.valid != null && !stdin.open)) return@forEachLine
                 val event = runCatching { json.readValue(line, Map::class.java) }.getOrNull() ?: return@forEachLine
                 if (event["type"] == "user" && event["isReplay"] == true) stdin.read()
                 if (event["type"] == "rate_limit_event") keepUsage(event)
+                if (event["type"] == "assistant") ((event["message"] as? Map<*, *>)?.get("content") as? List<*>).orEmpty().mapNotNull { it as? Map<*, *> }
+                    .filter { it["type"] == "tool_use" }.forEach { calls[it["id"]] = it["input"] as? Map<*, *> ?: emptyMap<Any, Any>() }
+                if (request == null && event["type"] == "system" && event["subtype"] == "permission_denied") {
+                    request = permissionRequest(agent, agentTools, cwd, event, calls[event["tool_use_id"]])
+                    stdin.interrupt()
+                    return@forEachLine
+                }
                 // ponytail: claude sends system/init only once it has read the prompt, so with an API key the first
                 // request may already be on its way when Ants kills it.
                 val apiKey = (event["apiKeySource"] as? String)?.takeIf { event["subtype"] == "init" && it != "none" }
@@ -562,6 +602,7 @@ class AgentLauncher(
             }
             val exit = process.waitFor()
             limit?.let { throw UsageLimit(it) }
+            request?.takeIf { judge.valid?.get("outcome") != "done" }?.let { throw Refused(it) }
             val tail = stderr()
             if (stopped || (stdin.stopping && !answered && judge.failure == null)) throw Stopped()
             judge.failure?.let { throw Failed(it.message, it.details ?: tail) }
@@ -572,6 +613,30 @@ class AgentLauncher(
             stdins.remove(key(run, instance), stdin)
             clis -= process
             protectedCommands.close(token)
+        }
+    }
+
+    private fun granted(task: LockedExternalTask): List<String> = PermissionRequest.granted(task.variables[GRANTED])
+
+    private fun permissionRequest(agent: Agent, tools: List<String>, cwd: Path, event: Map<*, *>, input: Map<*, *>?): PermissionRequest {
+        val tool = event["tool_name"].toString()
+        val target = PermissionRequest.target(input)
+        return PermissionRequest(agent.name, tool, target, PermissionRequest.limit(tool, target, cwd), whyNoAllow(tool, target, event["decision_reason_type"] == "rule", tools))
+    }
+
+    private fun whyNoAllow(tool: String, target: String?, rule: Boolean, tools: List<String>): String? {
+        val commands = if (tool == "Bash") PermissionRequest.commands(target.orEmpty()) else emptyList()
+        val protected = settings.protectedCommands().keys.map { Settings.strings(it).orEmpty() }.filter { it.isNotEmpty() }
+            .firstOrNull { prefix -> commands.any { it.take(prefix.size) == prefix } }?.joinToString(" ")
+        val own = (listOf(settings.secretsFile, settings.file).map { it.toAbsolutePath().toString() } + listOf("scripts", "drafts/scripts").map { "${home.resolve(it).toAbsolutePath()}/" })
+        return when {
+            protected != null -> if (protected in protectedCommands.allowed(tools)) "a Protected Command: run it with Ants' `run` tool, never Bash"
+                else "a Protected Command: give the Agent `${ProtectedCommands.AGENT_TOOL}`"
+            !rule -> null
+            tool == "Bash" && "--output" in target.orEmpty() -> "git's `--output`, which writes any file"
+            target != null && own.any { target.startsWith(it) } -> "Ants' own settings, Secrets and Scripts"
+            tool in SUBAGENT_TOOLS -> "a Subagent type outside the Agent's `Agent(…)` Limit"
+            else -> "a deny rule Ants adds"
         }
     }
 
@@ -778,14 +843,15 @@ class AgentLauncher(
         }
     }
 
-    private fun flags(agent: Agent, cwd: Path, schema: Map<*, *>, skills: List<Skill>, skillsFolder: Path?, session: String, resume: Boolean, mcp: String, scriptTools: List<String>, workspace: Path, denied: List<String>): List<String> {
-        val tools = (agent.tools ?: DEFAULT_TOOLS).filter { it.substringBefore('(') != "Skill" }.map { anchored(it, cwd) }
+    private fun flags(agent: Agent, agentTools: List<String>, level: Level, cwd: Path, schema: Map<*, *>, skills: List<Skill>, skillsFolder: Path?, session: String, resume: Boolean, mcp: String, antsTools: List<String>, workspace: Path, denied: List<String>): List<String> {
+        val tools = agentTools.filter { it.substringBefore('(') !in OWN_TOOLS }.map { anchored(it, cwd) }
         val skill = listOf("Skill").takeIf { skillsFolder != null } // with no Skills allowed, no Skill tool
         val (subagents, types) = subagents(tools)
         // Probed on claude 2.1.299: a rule such as `Bash(git diff *)` lets `git diff --output=<any path>` write a file, and
         // the deny rule `Bash(git *--output*)` refuses it (git takes no abbreviation of `--output`)
         val gitOutput = if (tools.any { it.startsWith("Bash(git ") }) listOf("Bash(git *--output*)") else emptyList()
-        val disallowed = types + gitOutput + denied + (listOf(settings.secretsFile, settings.file).map(Path::toAbsolutePath).map(Path::toString) + "${home.resolve("scripts").toAbsolutePath()}/**").flatMap { listOf("Read(/$it)", "Edit(/$it)") }
+        val protectedCommandRules = settings.protectedCommands().keys.flatMap { listOf("Bash($it)", "Bash($it *)") }
+        val disallowed = types + gitOutput + protectedCommandRules + denied + (listOf(settings.secretsFile, settings.file).map(Path::toAbsolutePath).map(Path::toString) + listOf("scripts", "drafts/scripts").map { "${home.resolve(it).toAbsolutePath()}/**" }).flatMap { listOf("Read(/$it)", "Edit(/$it)") }
         return STREAM_JSON + listOf(
             "--json-schema", json.writeValueAsString(schema),
             if (resume) "--resume" else "--session-id", session,
@@ -798,10 +864,10 @@ class AgentLauncher(
             // Skill, for the Skills [skillsFolder] loads: which are loaded is what limits them, not a Skill(x) rule.
             "--tools", (tools.map { it.substringBefore('(') } + skill.orEmpty()).distinct().joinToString(","),
             // claude checks a Write against Edit rules and ignores a Write(path) one, so a Write limit also goes out as Edit
-            "--allowedTools", (tools + tools.filter { it.startsWith("Write(") }.map { "Edit(" + it.removePrefix("Write(") } + skill.orEmpty() + RUN_TOOL + scriptTools).distinct().joinToString(","),
+            "--allowedTools", (tools + tools.filter { it.startsWith("Write(") }.map { "Edit(" + it.removePrefix("Write(") } + skill.orEmpty() + antsTools).distinct().joinToString(","),
         ) + subagents + (if (disallowed.isEmpty()) emptyList() else listOf("--disallowedTools", disallowed.joinToString(","))) + (skillsFolder?.let { listOf("--add-dir", "$it") } ?: emptyList()) +
             // A symlinked Skill's files can be read only with its real folder added too.
-            skills.flatMap { listOf("--add-dir", it.folder.toString()) } + (if (agent.model != null) listOf("--model", agent.model) else emptyList()) +
+            skills.flatMap { listOf("--add-dir", it.folder.toString()) } + level.flags +
             (if (agent.instructions.isNotEmpty()) listOf("--append-system-prompt", agent.instructions) else emptyList())
     }
 
@@ -833,9 +899,9 @@ class AgentLauncher(
         val resolved = catalogue.agents(withHidden = true).map { it.name }.distinct().mapNotNull { runCatching { catalogue.agent(it) }.getOrNull() }
         val offered = resolved.filter { it.subagent && it.cli == "claude" }.associate { agent ->
             agent.name to listOfNotNull(
-                "description" to agent.description,
+                "description" to catalogue.description(agent),
                 "prompt" to agent.instructions,
-                agent.tools?.let { rules -> "tools" to rules.filter { it.substringBefore('(') != "Skill" } },
+                catalogue.subagentTools(agent)?.let { rules -> "tools" to rules.filter { it.substringBefore('(') !in OWN_TOOLS } },
                 agent.model?.let { "model" to it },
             ).toMap()
         }
@@ -889,6 +955,8 @@ class AgentLauncher(
         check("default" !in bare.lowercase()) { "$cli -p now turns on --bare by default, which never reads Ants' login. Ants needs updating." }
     }
 
+    internal class Refused(val request: PermissionRequest) : Exception(request.summary)
+
     /** The user stopped the session: `[stopped]`, not a failure. */
     internal class Stopped : Exception("Stopped by the user.")
 
@@ -912,6 +980,13 @@ class AgentLauncher(
 
         /** The session id of a held Task's last launch. */
         private const val SESSION = "ants.session"
+
+        const val PERMISSION = "ants.permission"
+        const val GRANTED = "ants.granted"
+
+        private const val REACHED_LEVEL = "ants.reached-level"
+        private const val RETRIES = "ants.retries"
+        private const val RETRY = "Carry on where you stopped, and answer again with your Result."
 
         /** The inputs a Task's last session was handed off, beside its Transcript. */
         private const val INPUTS = "inputs.json"
@@ -937,13 +1012,15 @@ class AgentLauncher(
          * Task*. Not `Agent`: an Agent starts Subagents only when its file names the Agent tool, as the implementer's does.
          */
         val DEFAULT_TOOLS = listOf(
-            "Bash", "Edit", "Glob", "Grep", "NotebookEdit", "Read", "TaskCreate", "TaskGet", "TaskList", "TaskUpdate", "WebFetch", "WebSearch", "Write",
+            "Bash", "Edit", "Glob", "Grep", "NotebookEdit", ProtectedCommands.AGENT_TOOL, "Read", "TaskCreate", "TaskGet", "TaskList", "TaskUpdate", "WebFetch", "WebSearch", "Write",
         )
         /** The variables Ants strips from every environment it gives a CLI or a Protected Command, so nothing is paid per token. */
         val PAID = listOf("ANTHROPIC_API_KEY", "CLAUDE_CODE_RETRY_WATCHDOG", "OPENAI_API_KEY", "CODEX_API_KEY")
 
         /** Ants' MCP tool `run`, which runs a Protected Command ([ProtectedCommands]). */
         const val RUN_TOOL = "${Mcp.CLAUDE_PREFIX}run"
+
+        private val OWN_TOOLS = setOf("Skill", ProtectedCommands.AGENT_TOOL)
 
         /** The tool that starts Subagents: `Agent`, formerly `Task`. */
         val SUBAGENT_TOOLS = setOf("Agent", "Task")

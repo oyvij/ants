@@ -49,16 +49,18 @@ class SettingsTest : AntsTest() {
 
     @Test
     fun `saving the page writes settings yaml, and a hand edit shows on the page`() {
-        press("save", mapOf("agent-tasks" to "5", "subagent-depth" to "2", "claude.command" to "nono run -- claude", "claude.env" to "PATH HOME", "agent-folders" to "/tmp/a\n/tmp/b"))
+        press("save", mapOf("agent-tasks" to "5", "subagent-depth" to "2", "retries" to "4", "claude.command" to "nono run -- claude", "claude.env" to "PATH HOME", "agent-folders" to "/tmp/a\n/tmp/b"))
         assertEquals(5, yaml()["agent-tasks"])
         assertEquals(2, yaml()["subagent-depth"])
+        assertEquals(4, yaml()["retries"])
         assertEquals(mapOf("command" to listOf("nono", "run", "--", "claude"), "env" to listOf("PATH", "HOME")), yaml()["claude"])
         assertEquals(listOf("/tmp/a", "/tmp/b"), yaml()["agent-folders"])
 
-        file.writeText("agent-tasks: 7\nsubagent-depth: 3\nclaude:\n  command: [env, claude]\nskill-folders: [/tmp/skills]\n")
+        file.writeText("agent-tasks: 7\nsubagent-depth: 3\nretries: 1\nclaude:\n  command: [env, claude]\nskill-folders: [/tmp/skills]\n")
         val page = browser.get("/settings").body
         assertContains(page, """name="agent-tasks" value="7"""")
         assertContains(page, """name="subagent-depth" value="3"""")
+        assertContains(page, """name="retries" value="1"""")
         assertContains(page, """name="claude.command" value="env claude"""")
         assertContains(page, """name="skill-folders" value="/tmp/skills"""")
     }
@@ -369,6 +371,7 @@ class SettingsTest : AntsTest() {
             assertContains(page, """name="secrets[0].label" value="npm"""")
             assertContains(page, """name="secrets[0].names" value="YARN_NPM_AUTH_TOKEN, NPM_TOKEN"""")
             assertContains(page, """name="secrets[0].value" placeholder="••••"""")
+            assertContains(page, "A Protected Command is a command that needs Secrets. Agents run it only through Ants, never through Bash,")
             assertContains(page, """name="protected-commands[1].prefix" value="mvn deploy"""")
             assertContains(page, """<option selected>maven</option>""")
 

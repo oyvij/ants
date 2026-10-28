@@ -100,7 +100,7 @@ class ScriptToolsTest : AntsTest() {
 
         assertEquals(listOf("mcp__ants__script_post-message", "mcp__ants__script_tidy"), scriptTools(launch).sorted())
         val listed = tools(launch).associateBy { it["name"] }
-        assertEquals(setOf("run", "script_post-message", "script_tidy"), listed.keys)
+        assertEquals(setOf("script_post-message", "script_tidy"), listed.keys)
         val post = listed.getValue("script_post-message")
         assertEquals("Posts a message to Slack.", post["description"])
         assertEquals(inputs, post["inputSchema"])
@@ -172,6 +172,39 @@ class ScriptToolsTest : AntsTest() {
     }
 
     @Test
+    fun `a Script tool runs the published Script while the Script has a Draft`() {
+        script("s-post01", "post-message", description = "Posts as published.", inputs = listOf("text"), code = "ants.output({said: 'published'})\n")
+        val draft = listOf("name" to "post-message", "description" to "Posts as drafted.", "code" to "ants.output({said: 'drafted'})\n", "vars" to "") + ScriptsTest.inputRows("text, channel")
+        assertEquals(200, browser.autosave("/scripts/post-message", draft, "0").status)
+        agentWithScripts("s-post01")
+        start()
+        val launch = launch()
+
+        assertEquals(listOf("mcp__ants__script_post-message"), scriptTools(launch))
+        val post = tools(launch).single { it["name"] == "script_post-message" }
+        assertEquals("Posts as published.", post["description"])
+        assertEquals(setOf("text"), (post["inputSchema"] as Map<*, *>)["properties"].let { it as Map<*, *> }.keys)
+        assertEquals(mapOf("said" to "published"), call(launch, "script_post-message", mapOf("text" to "hi")).first["payload"])
+        claude.release("go")
+        browser.post("/scripts/post-message/discard", mapOf("confirm" to "on")) // ANTS_HOME's scripts folder starts empty for the next test, which would leave this Draft as a Draft-only post-message
+    }
+
+    @Test
+    fun `an Agent whose file lists a Draft-only Script is never launched with it as a tool, and the Draft never runs`() {
+        script("s-post01", "post-message")
+        val page = browser.newDraft("/scripts")
+        val drafted = listOf("name" to "drafted-only", "description" to "Only drafted.", "code" to "import {writeFileSync} from 'node:fs'\nwriteFileSync('ran.txt', 'ran')\n", "vars" to "")
+        assertEquals(200, browser.autosave(page, drafted, draftVersion(browser.get(page).body)).status)
+        val id = Drafts(home).all(DraftKind.SCRIPT).single().id
+        agentWithScripts("s-post01", id) // written by hand: the Agents page's Publish refuses an Agent listing a Draft-only Script
+        val run = start()
+
+        eventually { assertContains(browser.get("/runs/$run").body, "No Script named $id") }
+        assertEquals(0, claude.launches("draft").size)
+        assertFalse(workspace(run).resolve("ran.txt").isRegularFile())
+    }
+
+    @Test
     fun `a Script tool call whose arguments break the input schema answers an error with the reason, and the Script doesn't run`() {
         val inputs = mapOf("type" to "object", "properties" to mapOf("count" to mapOf("type" to "number"), "text" to mapOf("type" to "string")), "required" to listOf("text"))
         scripts.save(Script("s-count01", "count", "Counts.", inputs), "import {writeFileSync} from 'node:fs'\nwriteFileSync('ran.txt', 'ran')\nants.output({ok: true})\n", emptyMap())
@@ -203,7 +236,7 @@ class ScriptToolsTest : AntsTest() {
         val launch = launch()
 
         assertEquals(listOf("mcp__ants__script_tidy"), scriptTools(launch))
-        assertEquals(setOf("run", "script_tidy"), tools(launch).map { it["name"] }.toSet())
+        assertEquals(setOf("script_tidy"), tools(launch).map { it["name"] }.toSet())
         claude.release("go")
     }
 
@@ -219,7 +252,7 @@ class ScriptToolsTest : AntsTest() {
         val names = scriptTools(launch)
         assertEquals(listOf("mcp__ants__script_" + "a".repeat(46), "mcp__ants__script_post_to_slack_", "mcp__ants__script_post_to_slack__2"), names.sorted())
         assertTrue(names.all { Regex("[A-Za-z0-9_-]{1,64}").matches(it) })
-        assertEquals(names.map { it.removePrefix("mcp__ants__") }.toSet() + "run", tools(launch).map { it["name"] }.toSet())
+        assertEquals(names.map { it.removePrefix("mcp__ants__") }.toSet(), tools(launch).map { it["name"] }.toSet())
         claude.release("go")
     }
 

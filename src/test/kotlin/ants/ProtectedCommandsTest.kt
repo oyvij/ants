@@ -42,9 +42,10 @@ class ProtectedCommandsTest : AntsTest() {
     }
 
     /** A Task whose settings link the Secret `npm` to `./yarn` and keep `maven` for `mvn deploy`. */
-    private fun protected(vararg session: String) {
+    private fun protected(vararg session: String, tools: String? = null) {
         agentTask(
             claude,
+            agent = tools?.let { "tools: $it\n" }.orEmpty(),
             extra = "secrets:\n  npm: [YARN_NPM_AUTH_TOKEN, NPM_TOKEN]\n  maven: [MAVEN_TOKEN]\n" +
                 "protected-commands:\n  ./yarn: [npm]\n  mvn deploy: [maven]\n",
             env = listOf("PATH", "HOME"),
@@ -84,9 +85,90 @@ class ProtectedCommandsTest : AntsTest() {
         }
         assertContains(denied, "Read(/$home/scripts/**)")
         assertContains(denied, "Edit(/$home/scripts/**)")
+        assertContains(denied, "Read(/$home/drafts/scripts/**)") // a Script's Draft is as private as the Script
+        assertContains(denied, "Edit(/$home/drafts/scripts/**)")
+        for (prefix in listOf("./yarn", "mvn deploy")) {
+            assertContains(denied, "Bash($prefix)")
+            assertContains(denied, "Bash($prefix *)")
+        }
         assertFalse(launch.env.values.any { "s3cret" in it })
         assertFalse(launch.env.keys.any { it in listOf("YARN_NPM_AUTH_TOKEN", "NPM_TOKEN", "MAVEN_TOKEN") })
         claude.release("go")
+    }
+
+    @Test
+    fun `an Agent with no tools line has ProtectedCommand, and run's description lists every Protected Command and says to run one alone`() {
+        protected("wait go", done)
+        start()
+        eventually { assertEquals(1, claude.launches("draft").size) }
+        val launch = claude.launches("draft").single()
+
+        assertFalse(launch.flag("--tools")!!.split(",").any { it.startsWith("ProtectedCommand") })
+        assertFalse(launch.flag("--allowedTools")!!.split(",").any { it.startsWith("ProtectedCommand") })
+        val run = listed(launch).single { it["name"] == "run" }
+        val description = run["description"].toString()
+        assertContains(description, "The Protected Commands you may run: `./yarn`, `mvn deploy`.")
+        assertContains(description, "No shell: run the Protected Command alone, then work with its output using your other tools.")
+        val args = ((run["inputSchema"] as Map<*, *>)["properties"] as Map<*, *>)["args"] as Map<*, *>
+        assertEquals("array", args["type"])
+        assertEquals(mapOf("type" to "string"), args["items"])
+        claude.release("go")
+    }
+
+    @Test
+    fun `an Agent whose tools don't list ProtectedCommand gets no run, in its allowed tools or on its token`() {
+        protected("wait go", done, tools = "Read, Bash")
+        start()
+        eventually { assertEquals(1, claude.launches("draft").size) }
+        val launch = claude.launches("draft").single()
+
+        assertFalse("mcp__ants__run" in launch.flag("--allowedTools")!!.split(","))
+        assertEquals(emptyList(), listed(launch).map { it["name"] })
+        claude.release("go")
+    }
+
+    @Test
+    fun `ProtectedCommand limited to one Protected Command runs it and refuses another, naming the Limit the Agent needs`() {
+        val (_, launch) = yarn(tools = "Read, Bash, ProtectedCommand(./yarn)")
+        val (url, authorization) = server(launch)
+        assertContains(launch.flag("--allowedTools")!!.split(","), "mcp__ants__run")
+        assertContains(listed(launch).single { it["name"] == "run" }["description"].toString(), "The Protected Commands you may run: `./yarn`.")
+
+        val ran = call(url, authorization, listOf("./yarn", "install", "--immutable"), folder = "sub").second["result"] as Map<*, *>
+        assertContains(((ran["content"] as List<*>).single() as Map<*, *>)["text"].toString(), "Exit code 3")
+        val refused = call(url, authorization, listOf("mvn", "deploy", "-DskipTests")).second["result"] as Map<*, *>
+        assertEquals(true, refused["isError"])
+        assertEquals(
+            "`mvn deploy -DskipTests` is a Protected Command your Agent may not run, so Ants ran nothing: end stuck, saying your Agent needs `ProtectedCommand(mvn deploy)`.",
+            ((refused["content"] as List<*>).single() as Map<*, *>)["text"],
+        )
+        claude.release("go")
+    }
+
+    @Test
+    fun `with no Protected Command, a claude Agent Task's Bash is denied no prefix, and no Agent gets run`() {
+        agentTask(claude, env = listOf("PATH", "HOME"))
+        claude.session("draft", "wait go", done)
+        start()
+        eventually { assertEquals(1, claude.launches("draft").size) }
+        val launch = claude.launches("draft").single()
+
+        val denied = launch.flag("--disallowedTools")!!.split(",")
+        assertEquals(emptyList(), denied.filter { it.startsWith("Bash(") })
+        assertFalse("mcp__ants__run" in launch.flag("--allowedTools")!!.split(","))
+        assertEquals(emptyList(), listed(launch).map { it["name"] })
+        claude.release("go")
+    }
+
+    @Test
+    fun `a Protected Command written by hand with extra spaces is denied to Bash as run matches it, and an empty one not at all`() {
+        agentTask(claude, extra = "protected-commands:\n  \" mvn   deploy \": []\n  \"\": []\n", env = listOf("PATH", "HOME"))
+        claude.session("draft", done)
+        start()
+        eventually { assertEquals(1, claude.launches("draft").size) }
+
+        val denied = claude.launches("draft").single().flag("--disallowedTools")!!.split(",")
+        assertEquals(listOf("Bash(mvn deploy)", "Bash(mvn deploy *)"), denied.filter { it.startsWith("Bash(") })
     }
 
     @Test
@@ -102,10 +184,10 @@ class ProtectedCommandsTest : AntsTest() {
      * given and a line on stderr, writes its environment to `env.out` and exits 3; given `slow`, it first waits on a
      * `sleep 30` whose pid it writes to `sleep.pid`. The Task waits on `go`. Returns the Run and its launch.
      */
-    private fun yarn(): Pair<String, FakeClaude.Launch> {
+    private fun yarn(tools: String? = null): Pair<String, FakeClaude.Launch> {
         val script = """#!/bin/sh\nif [ "$1" = slow ]; then sleep 30 & echo $! > sleep.pid; wait; fi\npwd\nprintf '[%s]\\n' "$@"\n""" +
             """env > env.out\necho s3cret-mvn\necho on stderr >&2\nexit 3\n"""
-        protected("write sub/yarn $script", "sh chmod +x sub/yarn", "write ready ok", "wait go", done)
+        protected("write sub/yarn $script", "sh chmod +x sub/yarn", "write ready ok", "wait go", done, tools = tools)
         val run = start()
         eventually { assertTrue(workspace(run).resolve("ready").exists()) }
         return run to claude.launches("draft").single()
@@ -116,14 +198,14 @@ class ProtectedCommandsTest : AntsTest() {
         val (run, launch) = yarn()
         val (url, authorization) = server(launch)
 
-        val (status, response) = call(url, authorization, """./yarn install "a b"; env""", folder = "sub")
+        val (status, response) = call(url, authorization, listOf("./yarn", "install", "a b", ";", "env", """.files[] | "=== " + .filename \"x\""""), folder = "sub")
 
         assertEquals(200, status)
         val result = response["result"] as Map<*, *>
         assertEquals(true, result["isError"]) // it exited 3
         val text = ((result["content"] as List<*>).single() as Map<*, *>)["text"].toString()
         val sub = workspace(run).resolve("sub").toRealPath()
-        assertEquals("Exit code 3\n\n$sub\n[install]\n[a b]\n[;]\n[env]\n••••\non stderr\n", text)
+        assertEquals("Exit code 3\n\n$sub\n[install]\n[a b]\n[;]\n[env]\n[.files[] | \"=== \" + .filename \\\"x\\\"]\n••••\non stderr\n", text)
         // The Secrets went to the command, under every name, and only the linked one.
         val env = sub.resolve("env.out").readLines().associate { it.substringBefore('=') to it.substringAfter('=') }
         assertEquals("s3cret-npm", env["YARN_NPM_AUTH_TOKEN"])
@@ -151,24 +233,24 @@ class ProtectedCommandsTest : AntsTest() {
         }
 
         assertEquals(
-            "`touch ran` is no Protected Command, so Ants ran nothing. End stuck, with `touch ran` in needs: the user adds it in Settings, then continues your session, and you ask again.",
-            text(call(url, authorization, "touch ran")),
+            "`touch ran` is no Protected Command: it gets no Secrets, so Ants ran nothing. Run it with Bash. If Bash refuses it, your Agent isn't allowed to run it: end stuck, saying which Bash rule your Agent needs, such as `Bash(touch *)`.",
+            text(call(url, authorization, listOf("touch", "ran"))),
         )
         assertFalse(workspace(run).resolve("ran").exists())
         // A clone made outside Clone repos has no work branch, so the Agent names the repo instead of asking for the command.
         assertEquals(
             "`git clone git@example.com:o/web.git` is no Protected Command, so Ants ran nothing. Ants clones the Run's repos itself, on the work branch: " +
                 "name the repo where your Skill says to name repos, else end stuck with the repo in needs. Never ask for `git clone` as a Protected Command.",
-            text(call(url, authorization, "git clone git@example.com:o/web.git", folder = "sub")),
+            text(call(url, authorization, listOf("git", "clone", "git@example.com:o/web.git"), folder = "sub")),
         )
-        assertEquals("../.. is no folder in the Run workspace, so Ants ran nothing.", text(call(url, authorization, "./yarn", folder = "../..")))
+        assertEquals("../.. is no folder in the Run workspace, so Ants ran nothing.", text(call(url, authorization, listOf("./yarn"), folder = "../..")))
         workspace(run).resolve("out").createSymbolicLinkPointingTo(Files.createTempDirectory("outside"))
-        assertEquals("out is no folder in the Run workspace, so Ants ran nothing.", text(call(url, authorization, "./yarn", folder = "out")))
-        for (wrong in listOf(null, "Bearer nobody's", authorization.dropLast(1))) assertEquals(401, call(url, wrong, "./yarn", folder = "sub").first)
+        assertEquals("out is no folder in the Run workspace, so Ants ran nothing.", text(call(url, authorization, listOf("./yarn"), folder = "out")))
+        for (wrong in listOf(null, "Bearer nobody's", authorization.dropLast(1))) assertEquals(401, call(url, wrong, listOf("./yarn"), folder = "sub").first)
 
         protectedCommands.timeLimit = Duration.ofSeconds(1)
         try {
-            assertEquals("`./yarn slow` ran past its time limit of 1s, so Ants killed it.", text(call(url, authorization, "./yarn slow", folder = "sub")))
+            assertEquals("`./yarn slow` ran past its time limit of 1s, so Ants killed it.", text(call(url, authorization, listOf("./yarn", "slow"), folder = "sub")))
         } finally {
             protectedCommands.timeLimit = Duration.ofMinutes(10)
         }
@@ -177,13 +259,21 @@ class ProtectedCommandsTest : AntsTest() {
 
         claude.release("go")
         eventually { assertContains(browser.get("/runs/$run").body, """id="state">Completed<""") }
-        assertEquals(401, call(url, authorization, "./yarn", folder = "sub").first) // the session has ended
+        assertEquals(401, call(url, authorization, listOf("./yarn"), folder = "sub").first) // the session has ended
     }
 
     /** Calls the tool `run` at [url] with [authorization] and returns the HTTP status and the JSON-RPC response. */
-    private fun call(url: String, authorization: String?, command: String, folder: String = "."): Pair<Int, Map<*, *>> {
-        val body = json.writeValueAsString(mapOf("jsonrpc" to "2.0", "id" to 1, "method" to "tools/call",
-            "params" to mapOf("name" to "run", "arguments" to mapOf("command" to command, "folder" to folder))))
+    private fun call(url: String, authorization: String?, args: List<String>, folder: String = "."): Pair<Int, Map<*, *>> =
+        rpc(url, authorization, "tools/call", mapOf("name" to "run", "arguments" to mapOf("args" to args, "folder" to folder)))
+
+    private fun listed(launch: FakeClaude.Launch): List<Map<*, *>> {
+        val (url, authorization) = server(launch)
+        val result = rpc(url, authorization, "tools/list", emptyMap<String, Any>()).second["result"] as Map<*, *>
+        return (result["tools"] as List<*>).map { it as Map<*, *> }
+    }
+
+    private fun rpc(url: String, authorization: String?, method: String, params: Map<String, Any>): Pair<Int, Map<*, *>> {
+        val body = json.writeValueAsString(mapOf("jsonrpc" to "2.0", "id" to 1, "method" to method, "params" to params))
         val request = HttpRequest.newBuilder(URI(url)).POST(HttpRequest.BodyPublishers.ofString(body))
             .header("Content-Type", "application/json").header("Accept", "application/json, text/event-stream")
             .apply { if (authorization != null) header("Authorization", authorization) }

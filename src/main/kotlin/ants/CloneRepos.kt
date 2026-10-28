@@ -40,7 +40,7 @@ class CloneRepos(
     private val scopes: Scopes,
 ) : BuiltInWorker(externalTasks, "Clone repos", TOPIC, Duration.ofMinutes(30), { it.variables("repos", "branch", "clones").enableCustomObjectDeserialization() }) {
     override fun handle(task: LockedExternalTask) {
-        val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult().rootProcessInstanceId
+        val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult()!!.rootProcessInstanceId
         val repos = names.runWorkspace(run).resolve("repos").createDirectories()
         // A Run with repos picked clones exactly them, whatever the Task names; its new repos are created only now.
         val source = scopes.of(run)

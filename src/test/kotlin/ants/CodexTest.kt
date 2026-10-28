@@ -32,11 +32,11 @@ class CodexTest : AntsTest() {
     private val env = listOf("PATH", "HOME", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "CODEX_API_KEY")
 
     /** The Agent `writer` on codex, with [agent] lines in its frontmatter, listing the Skill `draft`. */
-    private fun codexTask(agent: String = "", claude: FakeClaude? = null, metadata: String = "", profiles: String = "") {
+    private fun codexTask(agent: String = "", claude: FakeClaude? = null, metadata: String = "", profiles: String = "", retries: Int = 0) {
         agentTask(claude, agent = "cli: codex\n$agent", metadata = metadata)
         home.resolve("settings.yaml").writeAtomically(
             "codex:\n  command: [${codex.command}]\n  env: [${env.joinToString(", ")}]\n" +
-                (if (claude == null) "" else "claude:\n  command: [${claude.command}]\n") + vault + profiles,
+                (if (claude == null) "" else "claude:\n  command: [${claude.command}]\n") + vault + "retries: $retries\n" + profiles,
         )
     }
 
@@ -59,6 +59,23 @@ class CodexTest : AntsTest() {
     }
 
     private fun page(run: String) = browser.get("/runs/$run").body.replace("&#34;", "\"")
+
+    @Test
+    fun `a codex Task on a shipped Agent follows a Skill from its published Your Skills, and none only in their Draft`() {
+        codexTask()
+        codex.session("draft", started, turn, answer(), completed)
+        browser.autosave("/agents/shipped-coder/your-skills", mapOf("skills" to "draft"), draftVersion(browser.get("/agents/shipped-coder").body))
+        val bpmn = javaClass.getResource("/agent-task.bpmn")!!.readText().replace("\"agent-task\"", "\"coder-drafted\"")
+            .replace("""name="ants.agent" value="writer"""", """name="ants.agent" value="a-shipped-coder"""")
+        browser.get("/processes")
+        val refused = browser.upload("/processes", "file", "coder-drafted.bpmn", bpmn.toByteArray()).body.replace("&#39;", "'")
+        assertContains(refused, "The Agent shipped-coder doesn't list the Skill draft.")
+
+        assertEquals("/agents/shipped-coder", browser.post("/agents/shipped-coder/your-skills", mapOf("skills" to "draft")).path)
+        val run = start("coder-published", agent = "a-shipped-coder")
+        eventually { assertContains(page(run), """id="state">Completed<""") }
+        assertContains(codex.launches("draft").single().stdin, "Follow the Skill in ${home.resolve("skills/draft/SKILL.md")} for the workspace at ${workspace(run)}.")
+    }
 
     @Test
     fun `a codex Agent Task runs codex exec on Ants' own codex home, with a sandbox instead of tools, and completes`() {
@@ -94,6 +111,58 @@ class CodexTest : AntsTest() {
         assertContains(transcript, "<b>Shell</b> <code>bash -lc ls</code>")
         assertContains(transcript, "<b>Result: done</b> Drafted.")
         assertContains(transcript, "1.2k tokens")
+    }
+
+    private fun modelAndEffort(frontmatter: String, properties: String = ""): Pair<String?, String?> {
+        codexTask(frontmatter)
+        codex.session("draft", started, turn, answer(), completed)
+        val run = start(properties = properties)
+        eventually { assertContains(page(run), """id="state">Completed<""") }
+        val launch = codex.launches("draft").last()
+        val effort: String? = launch.argv.zipWithNext().singleOrNull { it.first == "-c" && it.second.startsWith("model_reasoning_effort=") }?.second
+        return launch.flag("-m") to effort?.removePrefix("model_reasoning_effort=")?.removeSurrounding("\"")
+    }
+
+    @Test
+    fun `a codex Agent Task launches on its Agent's level's model and effort`() {
+        val ladder = mapOf(
+            1 to ("gpt-5.1-codex-mini" to "low"),
+            2 to ("gpt-5.2-codex" to "low"),
+            3 to ("gpt-5.2-codex" to "medium"),
+            4 to ("gpt-5.2-codex" to "high"),
+            5 to ("gpt-5.2-codex" to "xhigh"),
+        )
+        for ((level, expected) in ladder) assertEquals(expected, modelAndEffort("level: $level\n"))
+    }
+
+    @Test
+    fun `a codex Agent with neither level nor model launches on level 2`() {
+        assertEquals("gpt-5.2-codex" to "low", modelAndEffort(""))
+    }
+
+    @Test
+    fun `a pinned model on a codex Agent launches on its model ID with level 2's effort, and a level goes before it`() {
+        assertEquals("gpt-5-codex" to "low", modelAndEffort("model: gpt-5-codex\n"))
+        assertEquals("gpt-5.2-codex" to "high", modelAndEffort("level: 4\nmodel: gpt-5-codex\n"))
+    }
+
+    @Test
+    fun `a codex Task's own level goes before its Agent's level and pinned model`() {
+        assertEquals("gpt-5.2-codex" to "xhigh", modelAndEffort("level: 1\nmodel: gpt-5-codex\n", """<operaton:property name="ants.level" value="5" />"""))
+    }
+
+    @Test
+    fun `a failed codex Task resumes its thread one level up, told why`() {
+        codexTask("level: 2\n", retries = 3)
+        codex.session("draft", 1, started, turn, "exit 3")
+        codex.session("draft", started, turn, answer(), completed)
+        val run = start()
+        eventually { assertContains(page(run), """id="state">Completed<""") }
+        val (first, retry) = codex.launches("draft")
+        assertEquals(listOf("resume", first.thread, "-"), retry.argv.takeLast(3))
+        assertEquals("gpt-5.2-codex", retry.flag("-m"))
+        assertContains(retry.argv, "model_reasoning_effort=\"medium\"")
+        assertContains(retry.stdin, "Your last attempt failed: codex exited with code 3")
     }
 
     @Test
@@ -218,6 +287,20 @@ class CodexTest : AntsTest() {
         assertContains(setOf(clock.local(before.plusSeconds(31 * 60)), clock.local(after.plusSeconds(31 * 60))), page(run).substringAfter("Paused until ").substringBefore("<"))
         clock.offset = Duration.ofMinutes(32)
         eventually { assertContains(page(run), """id="state">Completed<""") }
+    }
+
+    @Test
+    fun `a codex usage limit before codex names its session pauses the Task, and after the reset it starts a new session`() {
+        codexTask()
+        codex.session("draft", 1, *limit("You’ve hit your usage limit. Try again later."))
+        codex.session("draft", started, turn, answer(), completed)
+        val run = start()
+        eventually { assertContains(page(run), "<dt>draft</dt><dd>Paused until ") }
+        clock.offset = Duration.ofMinutes(32)
+        eventually { assertContains(page(run), """id="state">Completed<""") }
+        val launches = codex.launches("draft")
+        assertEquals(2, launches.size)
+        assertTrue(launches.none { "resume" in it.argv })
     }
 
     @Test

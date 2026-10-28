@@ -62,7 +62,7 @@ class PreRun(
         // Names, schemas and references: the deploy's Checks again, since files change after a deploy.
         val failed = processes.flatMap { process ->
             val prefix = if (process.id == definition.id) "" else "${process.name ?: process.key}: "
-            checks.of(repository.getProcessModel(process.id).readAllBytes().decodeToString()).filterNot { it.warning }.map { prefix + it.message }
+            checks.of(repository.getProcessModel(process.id)!!.readAllBytes().decodeToString()).filterNot { it.warning }.map { prefix + it.message }
         }
         val agents = processes.flatMap { repository.getBpmnModelInstance(it.id).getModelElementsByType(ServiceTask::class.java) }
             .filter { it.operatonTopic == AgentLauncher.TOPIC }
@@ -88,7 +88,7 @@ class PreRun(
                 val apiKey = login["apiKeySource"]?.toString()?.takeIf { it != "none" }
                 if (login["loggedIn"] != true) add("${AgentLauncher.LOST_LOGIN}.")
                 else if (apiKey != null) add("An API key is in use (apiKeySource: $apiKey).")
-                else for (agent in agents) agent.model?.takeIf { agent.cli == "claude" && custom(it) }
+                else for (agent in agents) agent.launchLevel.model.takeIf { agent.cli == "claude" && custom(it) }
                     ?.let { model -> tryModel(model)?.let { add("The Agent ${agent.name}'s model $model doesn't work: $it") } }
             }
             val gh = "gh" !in missing && ghLoggedIn(command("gh"))

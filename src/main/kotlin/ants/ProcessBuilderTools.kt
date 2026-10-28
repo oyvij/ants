@@ -26,7 +26,7 @@ const val SCHEMA_IGNORED = "The schema wasn't written: a Skill has no Result sch
  * of its own on `/mcp`, which opens only the modeler tools. A tool about the diagram is relayed to the page that holds
  * the token, as an event `builder` on its SSE (`/live?builder=<token>`); the page answers from bpmn-js with a POST to
  * `/process-builder/answer`. The catalogue tools are answered by Ants, from what the modeler's own endpoints serve, and
- * the Checks by the Checks Save and deploy runs, on the page's diagram. Creating, changing and copying Agents, Skills
+ * the Checks by the Checks Publish runs, on the page's diagram. Creating, changing and copying Agents, Skills
  * and Templates go through their pages' own save and Copy, and answer the item's page.
  */
 @RestController
@@ -81,6 +81,7 @@ class ProcessBuilderTools(
                 "change_agent" -> saved(agents.write(argument("file"), argument("name")))
                 "create_skill" -> saved(skills.write(argument("skill"), null), arguments)
                 "change_skill" -> saved(skills.write(argument("skill"), argument("name")), arguments)
+                "set_your_skills" -> saved(agents.setYourSkills(argument("name"), (arguments["skills"] as? List<*> ?: throw Refused("$name needs skills.")).map(Any?::toString)))
                 "delete_agent" -> deleted(agents.delete(argument("name")))
                 "delete_skill" -> deleted(skills.delete(argument("name")))
                 "build_log" -> argument("markdown").let { markdown ->
@@ -133,7 +134,7 @@ class ProcessBuilderTools(
             """<li><a href="${HtmlUtils.htmlEscape(page)}" target="_blank">$kind ${HtmlUtils.htmlEscape(page.substringAfterLast('/'))}</a></li>"""
         } + "</ul>"
 
-        /** The page's diagram as BPMN XML, as Save and deploy would send it. */
+        /** The page's diagram as BPMN XML, as Publish would send it. */
         fun xml(): String = json.readValue(ask("xml", emptyMap<String, Any>()), String::class.java)
 
         /** The process id of the page's diagram, which keys its Build log. */
@@ -223,7 +224,7 @@ class ProcessBuilderTools(
             Mcp.tool("set_agent_task", "Sets an Agent Task's Agent, Assignment, Skills, inputs, Result schema and toggles, as the properties panel does. " +
                 "A Task needs an Assignment, or no Assignment and exactly one listed Skill, which is then its job (as typing /<skill>). Its listed Skills " +
                 "must be its Agent's (see `agents`); a new Agent drops the listed Skills it lacks, and picks its first Skill for a Task with neither. " +
-                "Don't name a Skill to use in the Assignment: the list decides it. Answers what was written, and the Checks Save and deploy " +
+                "Don't name a Skill to use in the Assignment: the list decides it. Answers what was written, and the Checks Publish " +
                 "refuses on this Task: fix each before you're done.", mapOf(
                 "id" to "The Agent Task's id.", "agent" to "The Agent's name (see `agents`).",
                 "assignment" to "The job, in a few lines: what this step must do and hand back. Empty removes it.",
@@ -310,6 +311,10 @@ class ProcessBuilderTools(
             "change_agent" to { it -> "changed the Agent ${named(it["name"])}" },
             "create_skill" to { it -> "created the Skill ${named(nameIn(it["skill"]))}" },
             "change_skill" to { it -> "changed the Skill ${named(it["name"])}" },
+            "set_your_skills" to { it ->
+                val skills = (it["skills"] as? List<*>).orEmpty()
+                "set Your Skills on ${named(it["name"])} to " + if (skills.isEmpty()) "none" else skills.joinToString { name -> named(name) }
+            },
             "delete_agent" to { it -> "deleted the Agent ${named(it["name"])}" },
             "delete_skill" to { it -> "deleted the Skill ${named(it["name"])}" },
             "build_log" to { _ -> "rewrote the Build log" },
@@ -356,7 +361,7 @@ class ProcessBuilderTools(
             Mcp.tool("templates", "The Templates, small diagrams to drop in as a collapsed sub-process: each one's name, title and whether it is shipped."),
             Mcp.tool("references", "The `\${…}` references an element of the open diagram can read: start-form fields, Ants' Run variables and the Results of the Tasks before it.",
                 mapOf("element" to "The element's id.")),
-            Mcp.tool("checks", "The Checks on the open diagram, as Save and deploy runs them: each problem's message, the element it is on, and whether it is only a warning."),
+            Mcp.tool("checks", "The Checks on the open diagram, as Publish runs them: each problem's message, the element it is on, and whether it is only a warning."),
             Mcp.tool("create_agent", "Creates one of the user's own Agents from its agent file, Claude Code's format: frontmatter (name, description, " +
                 "cli claude or codex, skills, tools as permission rules such as `Read, Bash(git log *)`, model; a codex Agent has a sandbox instead of tools) " +
                 "and its standing instructions below. Saved at once, so a Task can pick it; answers its name and page, or what is wrong with it.",
@@ -378,6 +383,10 @@ class ProcessBuilderTools(
                 mapOf("markdown" to "The whole new Build log.")),
             Mcp.tool("copy", "Copies an Agent, Skill or Template, such as a shipped one, into the user's own as `<name>-copy`, which can then be changed. Answers the copy's name and page.",
                 mapOf("kind" to "agent, skill or template.", "name" to "The name of the one to copy.")),
+            Mcp.tool("set_your_skills", "Sets Your Skills on a shipped Agent: the Skills the user adds to it beside the ones Ants ships with it, which an update to " +
+                "Ants keeps. Use it to give a shipped Agent a Skill instead of copying the Agent. Only Skills: the user adds Your tools on the Agent's page, and its instructions stay Ants'. " +
+                "Published at once, so a Task on the Agent can list them; the whole list each time, an empty one removing them all. Answers the Agent's name and page.",
+                mapOf("name" to "The shipped Agent's name.", "skills" to mapOf("type" to "array", "items" to mapOf("type" to "string"), "description" to "The Skills' names."))),
         ) + WRITE
     }
 }

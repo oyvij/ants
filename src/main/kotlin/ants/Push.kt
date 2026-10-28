@@ -37,7 +37,7 @@ class Push(
 ) : BuiltInWorker(externalTasks, "Push", TOPIC, Duration.ofMinutes(30), { it.variables(AgentLauncher.ACTION) }) {
     /** Waits on the user at first; then pushes, or after a push by hand (Continue) completes with what the remotes hold. */
     override fun handle(task: LockedExternalTask) {
-        val repos = pushing(runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult().rootProcessInstanceId)
+        val repos = pushing(runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult()!!.rootProcessInstanceId)
         if (repos.isEmpty()) return externalTasks.complete(task.id, WORKER, mapOf(task.activityId to ArrayList<Any>())) // nothing changed, nothing to ask
         val action = task.variables[AgentLauncher.ACTION] ?: return wait(task, repos)
         runtime.removeVariablesLocal(task.executionId, listOf(AgentLauncher.ACTION, AgentLauncher.INSTRUCTION)) // the choice is used once

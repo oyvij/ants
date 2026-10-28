@@ -38,3 +38,10 @@ class IdFile(private val file: Path, private val prefix: Char) {
         (Yaml().load<Any?>(file.readText()) as? Map<*, *>).orEmpty().entries.associate { it.key.toString() to it.value.toString() }
     } else emptyMap()
 }
+
+/** An agent file's [text] with [id] as its `id:`, in its frontmatter, which it gets if it has none. */
+fun withId(text: String, id: String): String = when {
+    "id" in frontmatter(text).first -> Regex("(?m)^id:.*$").replaceFirst(text, "id: $id")
+    Regex("""\A---\R.*?\R---""", RegexOption.DOT_MATCHES_ALL).containsMatchIn(text) -> text.replaceFirst(Regex("""\A---\R"""), "---\nid: $id\n")
+    else -> "---\nid: $id\n---\n$text"
+}
