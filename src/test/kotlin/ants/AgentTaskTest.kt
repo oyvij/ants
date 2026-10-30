@@ -545,19 +545,13 @@ class AgentTaskTest : AntsTest() {
     }
 
     @Test
-    fun `a refusal by Ants' deny rule on a Protected Command offers no allow, and says why`() {
-        agentTask(agent = "tools: Bash, Read\n", extra = "protected-commands:\n  cargo publish: []\n")
-        claude.session("draft", 1, *refused("Bash", """{"command":"cargo publish"}""", reason = "rule"))
-        claude.session("draft", done)
-        val run = start()
-        val entry = entry(run)
-        val page = browser.get(entry).body
-        assertContains(page, "a Protected Command: give the Agent <code>ProtectedCommand</code>")
-        assertFalse("""value="always"""" in page)
-        assertFalse("""value="task"""" in page)
-        assertEquals(400, browser.post("$entry/permission", mapOf("choice" to "task", "limit" to "Bash(cargo *)")).status)
-        browser.post("$entry/permission", mapOf("choice" to "deny", "limit" to ""))
-        eventually { assertContains(page(run), """id="state">Completed<""") }
+    fun `a refusal no allow can help leaves the session running, so the Task waits only on a later refusal an allow can help`() {
+        agentTask(agent = "tools: Bash(git log *)\n", extra = "protected-commands:\n  cargo publish: []\n")
+        val publish = refused("Bash", """{"command":"cargo publish"}""", reason = "rule").slice(1..2)
+        claude.session("draft", 1, *(publish + refused("Bash", cargo).drop(1).map { it.replace("toolu_1", "toolu_2") }).toTypedArray())
+        val page = browser.get(entry(start())).body
+        assertContains(page, "writer wants to run <code>cargo outdated</code>")
+        assertContains(page, """value="task"""")
     }
 
     @Test

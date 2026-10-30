@@ -42,17 +42,13 @@ $unsafe{line}
     <h3 id="permission-head">Permission request</h3>
     $unsafe{ants.Transcript.markdown(permission.summary)}
     <div class="kv"><span class="k">Agent</span><span>${permission.agent}</span><span class="k">Tool</span><span>${permission.tool}</span>@if(permission.target != null)<span class="k">@if(permission.tool == "Bash")Command@else On@endif</span><code>${permission.target}</code>@endif</div>
-    @if(permission.allowable)
     <div class="fld"><label class="f" for="limit">Limit</label>
         <div class="help">The rule to allow. Edit it to allow more or less.</div>
         <input id="limit" name="limit" class="mono" value="${permission.limit}" placeholder="e.g. Bash(cargo *)" required></div>
-    @else
-    <p id="permission-why">No allow rule can help: $unsafe{ants.Transcript.markdown(permission.why!!).removePrefix("<p>").removeSuffix("</p>\n")}.</p>
-    @endif
     <div class="composer"><div>
         <span class="grow"></span>
         <button name="choice" value="deny" formnovalidate>Don't allow</button>
-        @if(permission.allowable)<button name="choice" value="task">Allow for this Task</button>@endif
+        <button name="choice" value="task">Allow for this Task</button>
         @if(always)<button class="primary" name="choice" value="always">Always allow</button>@endif
     </div></div>
 </form>

@@ -11,9 +11,10 @@ way, or ends stuck, and the user finds the refusal only in the Transcript.
   bare tool. Always allow adds it to the Agent's tools, or to Your tools on a shipped Agent (ADR 0028); Allow for this
   Task keeps it with the Task (`ants.granted`), for the rest of its launches; Don't allow adds nothing. Each resumes
   the same session (`--resume`), its launch built again, telling the Agent what the user chose.
-- **No allow where none can help.** A call one of Ants' deny rules refuses (a Protected Command, `secrets.yaml`,
-  `settings.yaml`, the Scripts, `git … --output`, a Subagent type outside an `Agent(…)` Limit) offers Don't allow
-  only, and says why.
+- **No Permission request where no allow can help.** A call one of Ants' deny rules refuses (a Protected Command,
+  `secrets.yaml`, `settings.yaml`, the Scripts, `git … --output`, a Subagent type outside an `Agent(…)` Limit, or a
+  path claude can't resolve under one of them) goes on as claude handles it: deny wins over any allow, so the user
+  could only refuse it, and claude already tells the Agent why. The Agent tries another way, or ends stuck.
 - **An Agent with a Draft**: Always allow changes the published Agent, which is what Runs use (ADR 0026), and keeps
   the Draft as it is. Publishing that Draft later drops the Limit, as it drops any change made beside it.
 
