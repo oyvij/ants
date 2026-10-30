@@ -2841,20 +2841,6 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
-    fun `a Permission request no allow rule can help says why, and offers Don't allow only`() = browse {
-        val claude = FakeClaude()
-        agentTask(claude, agent = "tools: Bash\n", extra = "protected-commands:\n  yarn install: []\n")
-        claude.session("draft", 1, *refusedSession("yarn install", "rule"))
-        val entry = permissionEntry()
-
-        page.navigate(url(entry))
-        val dialog = page.getByRole(AriaRole.DIALOG, Page.GetByRoleOptions().setName("Permission request"))
-        assertThat(dialog).containsText("No allow rule can help: a Protected Command: give the Agent ProtectedCommand.")
-        assertThat(dialog.getByLabel("Limit")).hasCount(0)
-        assertThat(dialog.getByRole(AriaRole.BUTTON)).hasText(arrayOf("Don't allow"))
-    }
-
-    @Test
     fun `Review changes picks diff lines for a comment by clicking their numbers, and files it`() = browse {
         val entry = byRepoReviewEntryOfApiCommitting("hello.txt", "hi\nthere\nworld\n")
 

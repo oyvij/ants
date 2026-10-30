@@ -573,8 +573,9 @@ class AgentLauncher(
                 if (event["type"] == "rate_limit_event") keepUsage(event)
                 if (event["type"] == "assistant") ((event["message"] as? Map<*, *>)?.get("content") as? List<*>).orEmpty().mapNotNull { it as? Map<*, *> }
                     .filter { it["type"] == "tool_use" }.forEach { calls[it["id"]] = it["input"] as? Map<*, *> ?: emptyMap<Any, Any>() }
+                // a refusal no allow can help goes on as claude handles it: the Agent hears why, and tries another way
                 if (request == null && event["type"] == "system" && event["subtype"] == "permission_denied") {
-                    request = permissionRequest(agent, agentTools, cwd, event, calls[event["tool_use_id"]])
+                    request = permissionRequest(agent, cwd, event, calls[event["tool_use_id"]]) ?: return@forEachLine
                     stdin.interrupt()
                     return@forEachLine
                 }
@@ -618,26 +619,19 @@ class AgentLauncher(
 
     private fun granted(task: LockedExternalTask): List<String> = PermissionRequest.granted(task.variables[GRANTED])
 
-    private fun permissionRequest(agent: Agent, tools: List<String>, cwd: Path, event: Map<*, *>, input: Map<*, *>?): PermissionRequest {
+    private fun permissionRequest(agent: Agent, cwd: Path, event: Map<*, *>, input: Map<*, *>?): PermissionRequest? {
         val tool = event["tool_name"].toString()
         val target = PermissionRequest.target(input)
-        return PermissionRequest(agent.name, tool, target, PermissionRequest.limit(tool, target, cwd), whyNoAllow(tool, target, event["decision_reason_type"] == "rule", tools))
+        if (!allowable(tool, target, event["decision_reason_type"] == "rule")) return null
+        return PermissionRequest(agent.name, tool, target, PermissionRequest.limit(tool, target, cwd))
     }
 
-    private fun whyNoAllow(tool: String, target: String?, rule: Boolean, tools: List<String>): String? {
+    /** Whether an allow rule can help a refused call: none can where one of Ants' deny rules refuses it, as deny wins. */
+    private fun allowable(tool: String, target: String?, rule: Boolean): Boolean {
+        if (rule) return false
         val commands = if (tool == "Bash") PermissionRequest.commands(target.orEmpty()) else emptyList()
-        val protected = settings.protectedCommands().keys.map { Settings.strings(it).orEmpty() }.filter { it.isNotEmpty() }
-            .firstOrNull { prefix -> commands.any { it.take(prefix.size) == prefix } }?.joinToString(" ")
-        val own = (listOf(settings.secretsFile, settings.file).map { it.toAbsolutePath().toString() } + listOf("scripts", "drafts/scripts").map { "${home.resolve(it).toAbsolutePath()}/" })
-        return when {
-            protected != null -> if (protected in protectedCommands.allowed(tools)) "a Protected Command: run it with Ants' `run` tool, never Bash"
-                else "a Protected Command: give the Agent `${ProtectedCommands.AGENT_TOOL}`"
-            !rule -> null
-            tool == "Bash" && "--output" in target.orEmpty() -> "git's `--output`, which writes any file"
-            target != null && own.any { target.startsWith(it) } -> "Ants' own settings, Secrets and Scripts"
-            tool in SUBAGENT_TOOLS -> "a Subagent type outside the Agent's `Agent(…)` Limit"
-            else -> "a deny rule Ants adds"
-        }
+        return settings.protectedCommands().keys.map { Settings.strings(it).orEmpty() }.filter { it.isNotEmpty() }
+            .none { prefix -> commands.any { it.take(prefix.size) == prefix } }
     }
 
     /** Reads [process]'s stderr as it comes, and returns what gives its last lines once it has ended. */

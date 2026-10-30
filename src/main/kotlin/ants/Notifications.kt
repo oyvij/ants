@@ -159,7 +159,7 @@ class Notifications(
         model.addAttribute("view", view(entry))
         permission(incident)?.let { request ->
             model.addAttribute("permission", request)
-            model.addAttribute("always", request.allowable && agents.alwaysRefusal(request.agent) == null)
+            model.addAttribute("always", agents.alwaysRefusal(request.agent) == null)
         }
         return if (topic == AgentLauncher.TOPIC) "notification" else "builtin"
     }
@@ -245,7 +245,6 @@ class Notifications(
         val rule = limit.trim()
         if (choice != DENY) {
             if (choice != ALWAYS && choice != FOR_TASK) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "No choice $choice")
-            if (!request.allowable) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "No allow rule can help: ${request.why}")
             val refusal = if (!request.fits(rule)) "The Limit is a rule for ${request.tool}, such as ${request.limit}."
                 else if (choice == ALWAYS) agents.allowAlways(request.agent, rule) else null
             if (refusal != null) {

@@ -211,7 +211,8 @@ _Avoid_: batch, questionnaire, YOLO
 **Permission request**:
 A tool call claude refused an Agent, waiting for the user: Always allow adds a Limit to the Agent's
 tools (to Your tools on a shipped Agent), Allow for this Task to that Task's launches only, and Don't allow
-refuses it; the session resumes with the choice. A refusal by a deny rule Ants adds can only be refused.
+refuses it; the session resumes with the choice. A refusal by a deny rule Ants adds is no Permission request:
+no allow can help it, so the Agent goes on.
 _Avoid_: approval, prompt, permission prompt
 
 **Answer History**:

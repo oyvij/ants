@@ -3,9 +3,7 @@ package ants
 import tools.jackson.databind.json.JsonMapper
 import java.nio.file.Path
 
-class PermissionRequest(val agent: String, val tool: String, val target: String?, val limit: String, val why: String?) {
-    val allowable get() = why == null
-
+class PermissionRequest(val agent: String, val tool: String, val target: String?, val limit: String) {
     val summary: String get() {
         val shown = target?.let { "`${if (it.length > SHOWN) it.take(SHOWN) + "…" else it}`" }
         return "$agent wants to " + when {
@@ -24,7 +22,7 @@ class PermissionRequest(val agent: String, val tool: String, val target: String?
 
     fun fits(rule: String) = RULE.matchEntire(rule.trim())?.groupValues?.get(1) == tool
 
-    fun json(): String = json.writeValueAsString(mapOf("agent" to agent, "tool" to tool, "target" to target, "limit" to limit, "why" to why))
+    fun json(): String = json.writeValueAsString(mapOf("agent" to agent, "tool" to tool, "target" to target, "limit" to limit))
 
     companion object {
         private const val SHOWN = 120
@@ -33,7 +31,7 @@ class PermissionRequest(val agent: String, val tool: String, val target: String?
         private val json = JsonMapper.shared()
 
         fun of(text: Any?): PermissionRequest? = (text as? String)?.let { runCatching { json.readValue(it, Map::class.java) }.getOrNull() }?.let {
-            PermissionRequest(it["agent"].toString(), it["tool"].toString(), it["target"] as? String, it["limit"].toString(), it["why"] as? String)
+            PermissionRequest(it["agent"].toString(), it["tool"].toString(), it["target"] as? String, it["limit"].toString())
         }
 
         fun granted(text: Any?): List<String> = (text as? String)
