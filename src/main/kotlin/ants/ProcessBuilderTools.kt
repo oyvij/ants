@@ -21,6 +21,17 @@ import kotlin.io.path.walk
 /** What create_skill and change_skill answer when given a `schema`: a Skill has none (ADR 0024), so it isn't written. */
 const val SCHEMA_IGNORED = "The schema wasn't written: a Skill has no Result schema. Put it on the Agent Task that needs it, as set_agent_task's resultSchema."
 
+data class BuilderColumn(val title: String, val path: String, val intro: String, val placeholder: String) {
+    companion object {
+        val PROCESS = BuilderColumn("Process Builder", "/process-builder",
+            "Say what this Process should get done, loosely is fine: the Process Builder asks about the gaps, proposes a shape and builds it here, each change one undo step.",
+            "e.g. Every morning, pick a small issue and get it to a PR. (Enter sends, Shift+Enter adds a line)")
+        val TEMPLATE = BuilderColumn("Template Builder", "/template-builder",
+            "Say what this Template should do, loosely is fine: the Template Builder asks about the gaps, proposes a shape and builds it here, each change one undo step, unsaved until you Save.",
+            "e.g. A review loop: an Agent reviews, I approve or send it back. (Enter sends, Shift+Enter adds a line)")
+    }
+}
+
 /**
  * The Process Builder's MCP session (ADR 0019): a modeler page that can be edited by hand opens one and gets a token
  * of its own on `/mcp`, which opens only the modeler tools. A tool that changes the diagram is relayed to the page that

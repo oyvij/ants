@@ -31,7 +31,7 @@ data class TemplateRow(val name: String, val title: String, val shipped: Boolean
  * read-only). The page lists, creates, edits and copies them; the modeler's palette drops one into a Process.
  */
 @Controller
-class Templates(@Value("\${ants.home}") home: Path, private val catalogue: Catalogue, private val scripts: Scripts) {
+class Templates(@Value("\${ants.home}") home: Path, private val catalogue: Catalogue, private val scripts: Scripts, private val settings: Settings) {
     private val yours = home.resolve("templates")
     private val shipped = home.resolve("shipped/templates")
 
@@ -78,6 +78,10 @@ class Templates(@Value("\${ants.home}") home: Path, private val catalogue: Catal
         model.addAttribute("saveLabel", "Save")
         model.addAttribute("list", "Templates")
         model.addAttribute("copy", if (file.startsWith(shipped)) "/templates/$name/copy" else null)
+        if (file.startsWith(yours)) {
+            model.addAttribute("builder", if (settings.chat("template-builder").first == "claude") "" else ProcessBuilderTools.TEMPLATE_CLAUDE_ONLY)
+            model.addAttribute("column", BuilderColumn.TEMPLATE)
+        }
         return "modeler"
     }
 

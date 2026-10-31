@@ -1393,9 +1393,10 @@ function setMultiInstance({id, mode, collection, elementVariable, itemsAreTicket
 }
 
 async function openBuilder() {
+    const helper = builderPanel.dataset.path
     // A reload in the tab gives the token it had, so it keeps its session and dialog while Ants does (ProcessBuilderTools).
     const kept = "ants.builder." + location.pathname
-    const {token} = await (await fetch("/process-builder", {method: "POST", body: new URLSearchParams({_csrf: csrf, token: sessionStorage.getItem(kept) ?? ""})})).json()
+    const {token} = await (await fetch(helper, {method: "POST", body: new URLSearchParams({_csrf: csrf, token: sessionStorage.getItem(kept) ?? ""})})).json()
     sessionStorage.setItem(kept, token)
     stream.on("builder", async data => {
         const {id, tool, arguments: args} = JSON.parse(data)
@@ -1405,7 +1406,7 @@ async function openBuilder() {
         } catch (error) {
             body.error = error.message
         }
-        fetch("/process-builder/answer", {method: "POST", body: new URLSearchParams(body)})
+        fetch(helper + "/answer", {method: "POST", body: new URLSearchParams(body)})
     })
     // The dialog: Send posts the message into the page's claude session, Stop interrupts its turn; the server sends
     // the whole dialog whenever it changes, with whether a turn runs.
@@ -1431,7 +1432,7 @@ async function openBuilder() {
         message.value = ""
         message.dispatchEvent(new Event("change"))
         send.disabled = true
-        const answer = await post("/process-builder/send", {message: text}).then(response => response.json()).catch(failure => ({error: failure.message}))
+        const answer = await post(helper + "/send", {message: text}).then(response => response.json()).catch(failure => ({error: failure.message}))
         error.textContent = answer.error || ""
         if (!answer.error) sent = true
         else {
@@ -1440,13 +1441,11 @@ async function openBuilder() {
             message.dispatchEvent(new Event("change"))
         }
     })
-    stop.addEventListener("click", () => post("/process-builder/stop", {}))
+    stop.addEventListener("click", () => post(helper + "/stop", {}))
     stream.follow("builder=" + token)
     canvas.dataset.builder = token
 }
 
-// The Process Builder column, on a Process's modeler only: shown or hidden by its header button, the choice
-// remembered; off, saying why, when the settings run it on a CLI it doesn't run on.
 const builderPanel = document.getElementById("builder")
 if (builderPanel) {
     const toggle = document.getElementById("builder-toggle")
