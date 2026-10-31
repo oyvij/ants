@@ -7,7 +7,7 @@ import kotlin.test.assertFalse
 
 class AnswerLengthTest {
     @ParameterizedTest
-    @ValueSource(strings = ["/process-builder.md", "/script-helper.md"])
+    @ValueSource(strings = ["/process-builder.md", "/script-helper.md", "/template-builder.md"])
     fun `the helper's instructions keep each reply to 2–5 lines, never over 15, with its key reason in one line`(resource: String) {
         val instructions = javaClass.getResource(resource)!!.readText().replace(Regex("\\s+"), " ")
         assertContains(instructions, "Each reply is 2–5 lines, never over 15.")
