@@ -8,6 +8,7 @@
 @param page: String? = null
 @param note: String? = null
 @param builder: String? = null
+@param column: ants.BuilderColumn = ants.BuilderColumn.PROCESS
 @param draft: ants.DraftHead? = null
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
@@ -45,7 +46,7 @@
         <form method="post" action="${draft.endpoint.removeSuffix("/draft")}/delete" data-leaves-draft><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button class="danger">Delete</button></form>
 @endif
 @if(builder != null)
-        <button type="button" id="builder-toggle" aria-controls="builder" aria-pressed="true">Process Builder</button>
+        <button type="button" id="builder-toggle" aria-controls="builder" aria-pressed="true">${column.title}</button>
 @endif
         <button class="primary" id="save" data-action="${action}" hidden="${copy != null}">${saveLabel}</button>
     </div>
@@ -62,11 +63,11 @@
         </div>
     </div>
 @if(builder != null)
-    <aside class="pb" id="builder" aria-label="Process Builder" data-off="${builder.ifEmpty { null }}">
-        <div id="pb-dialog" class="tr"><p class="muted">@if(builder.isNotEmpty())${builder}@elseSay what this Process should get done, loosely is fine: the Process Builder asks about the gaps, proposes a shape and builds it here, each change one undo step.@endif</p><div id="pb-live"></div></div>
+    <aside class="pb" id="builder" aria-label="${column.title}" data-path="${column.path}" data-template="${if (column == ants.BuilderColumn.TEMPLATE) name else null}" data-off="${builder.ifEmpty { null }}">
+        <div id="pb-dialog" class="tr"><p class="muted">@if(builder.isNotEmpty())${builder}@else${column.intro}@endif</p><div id="pb-live"></div></div>
         <form id="pb-form" hidden="${builder.isNotEmpty()}">
-            <label class="f" for="pb-message">Message to the Process Builder</label>
-            <textarea id="pb-message" name="message" data-markdown data-enter-sends required placeholder="e.g. Every morning, pick a small issue and get it to a PR. (Enter sends, Shift+Enter adds a line)"></textarea>
+            <label class="f" for="pb-message">Message to the ${column.title}</label>
+            <textarea id="pb-message" name="message" data-markdown data-enter-sends required placeholder="${column.placeholder}"></textarea>
             <div class="row"><span class="grow muted small" id="pb-error" role="alert"></span><button type="button" id="pb-stop" hidden>Stop</button><button class="primary" id="pb-send">Send</button></div>
         </form>
     </aside>

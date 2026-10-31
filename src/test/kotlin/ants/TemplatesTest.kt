@@ -3,9 +3,12 @@ package ants
 import org.junit.jupiter.api.Test
 import tools.jackson.databind.json.JsonMapper
 import kotlin.io.path.createDirectories
+import kotlin.io.path.exists
+import kotlin.io.path.readText
 import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 
 class TemplatesTest : AntsTest() {
     private val browser by lazy { browser().also { it.login() } }
@@ -105,6 +108,36 @@ class TemplatesTest : AntsTest() {
         assertEquals("/templates/review-loop-copy", copy.path)
         assertContains(copy.body, """<button class="primary" id="save" data-action="/templates/review-loop-copy">Save</button>""")
         assertContains(browser.get("/templates/review-loop-copy/diagram.bpmn").body, """<bpmn:userTask id="approve" name="Approve">""")
+    }
+
+    @Test
+    fun `Copy copies the Template's Build log under the copy's name, and writes none when it has none`() {
+        browser.get("/templates")
+        for (name in listOf("logged-original", "unlogged-original")) {
+            home.resolve("templates/$name.bpmn").toFile().delete()
+            home.resolve("templates/$name-copy.bpmn").toFile().delete()
+            home.resolve("templates/build-logs/$name-copy.md").toFile().delete()
+            browser.post("/templates/new", mapOf("name" to name))
+        }
+        home.resolve("templates/build-logs").createDirectories().resolve("logged-original.md").writeText("# Logged\nFor: a review loop.\n")
+
+        assertEquals("/templates/logged-original-copy", browser.post("/templates/logged-original/copy", emptyMap()).path)
+        assertEquals("# Logged\nFor: a review loop.\n", home.resolve("templates/build-logs/logged-original-copy.md").readText())
+        assertEquals("/templates/unlogged-original-copy", browser.post("/templates/unlogged-original/copy", emptyMap()).path)
+        assertFalse(home.resolve("templates/build-logs/unlogged-original-copy.md").exists())
+    }
+
+    @Test
+    fun `Save writes a Template whose Checks fail, as the Checks are advice on a Template`() {
+        home.resolve("templates/unfinished.bpmn").toFile().delete()
+        browser.get("/templates")
+        browser.post("/templates/new", mapOf("name" to "unfinished"))
+        val failing = browser.get("/templates/unfinished/diagram.bpmn").body.replace("</bpmn:process>", """<bpmn:serviceTask id="loose" name="Loose" operaton:type="external" operaton:topic="agent" /></bpmn:process>""")
+        assertContains(browser.post("/processes/checks", mapOf("bpmn" to failing)).body, "Loose (loose) has no Agent.")
+
+        val saved = browser.post("/templates/unfinished", mapOf("bpmn" to failing))
+        assertEquals("/templates/unfinished", saved.path)
+        assertContains(browser.get("/templates/unfinished/diagram.bpmn").body, """<bpmn:serviceTask id="loose" name="Loose" operaton:topic="agent" operaton:type="external"/>""")
     }
 
     @Test

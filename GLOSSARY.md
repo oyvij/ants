@@ -174,9 +174,14 @@ The AI in the modeler that builds and changes the open Process from what the use
 continuous dialog; it does no Task, so it is not an Agent, and it never deploys or starts a Run.
 _Avoid_: ProcessBuilderAgent, modeler chat, assistant
 
+**Template Builder**:
+The AI in the modeler that builds and changes the user's own open Template from what the user writes to it, with the
+Process Builder's tools; its edits stay unsaved until **Save**, and it never opens on a shipped Template.
+_Avoid_: Process Builder on a Template, template chat
+
 **Build log**:
-What the Process Builder keeps of a Process it has worked on: what the Process is for, the decisions
-taken and what is left, read by the next dialog about that Process to carry on.
+What the Process Builder keeps of a Process, or the Template Builder of a Template, it has worked on: what it is
+for, the decisions taken and what is left, read by the next dialog about that Process or Template to carry on.
 _Avoid_: chat history, session log, Transcript
 
 **Result**:
