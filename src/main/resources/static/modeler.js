@@ -1396,7 +1396,9 @@ async function openBuilder() {
     const endpoint = builderPanel.dataset.path
     // A reload in the tab gives the token it had, so it keeps its session and dialog while Ants does (ProcessBuilderTools).
     const kept = "ants.builder." + location.pathname
-    const {token} = await (await fetch(endpoint, {method: "POST", body: new URLSearchParams({_csrf: csrf, token: sessionStorage.getItem(kept) ?? ""})})).json()
+    const fields = {_csrf: csrf, token: sessionStorage.getItem(kept) ?? ""}
+    if (builderPanel.dataset.template) fields.template = builderPanel.dataset.template
+    const {token} = await (await fetch(endpoint, {method: "POST", body: new URLSearchParams(fields)})).json()
     sessionStorage.setItem(kept, token)
     stream.on("builder", async data => {
         const {id, tool, arguments: args} = JSON.parse(data)

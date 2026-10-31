@@ -17,10 +17,12 @@ import org.w3c.dom.Node
 import org.xml.sax.SAXException
 import java.net.URI
 import java.nio.file.Path
+import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.nameWithoutExtension
 import kotlin.io.path.readBytes
+import kotlin.io.path.readText
 import kotlin.math.roundToInt
 
 /** A Template on the Templates page: its file's name, the name its sub-process gets, and whether it's Ants' own, read-only. */
@@ -103,8 +105,21 @@ class Templates(@Value("\${ants.home}") home: Path, private val catalogue: Catal
     fun copy(@PathVariable name: String): String {
         val copy = copyName(name, ::exists)
         yours.resolve("$copy.bpmn").writeAtomically(file(name).readBytes().decodeToString())
+        buildLog(name).takeIf { it.exists() }?.let { buildLog(copy).also { log -> log.parent.createDirectories() }.writeAtomically(it.readText()) }
         return "redirect:/templates/$copy"
     }
+
+    /** A Template's Build log, to read: the Markdown the Template Builder last wrote for it. */
+    @GetMapping("/templates/{name}/build-log", produces = ["text/plain;charset=UTF-8"])
+    @ResponseBody
+    fun readBuildLog(@PathVariable name: String): String =
+        buildLog(name).takeIf { nameError("A Template", name) == null && it.exists() }?.readText() ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "$name has no Build log.")
+
+    /** Where the Template [name]'s Build log lives: `ANTS_HOME/templates/build-logs/<name>.md`, keyed by its name. */
+    fun buildLog(name: String): Path = yours.resolve("build-logs/$name.md")
+
+    /** Whether [name] is one of the user's own Templates, which the Template Builder opens on. */
+    fun yours(name: String) = runCatching { file(name) }.getOrNull()?.startsWith(yours) == true
 
     /** Drops the Template [name] into the diagram [bpmn] at ([x], [y]): the new diagram, and the sub-process's id to select. */
     @PostMapping("/templates/{name}/drop")

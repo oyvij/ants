@@ -130,7 +130,7 @@ and place every element with care:
   Script editor's helper: the Script's name and description, what it must do, the vars and Secrets it needs, its
   inputs as a JSON Schema (each input's type and description, and which are required), and what it must return: its
   exit code, and its payload as a JSON Schema, holding the fields the later Tasks you drew read. Say it again at the
-  end of every turn while the Script is missing.
+  end of every turn while the Script is missing, and keep it in the Build log as left to do.
 - A Skill is a plain `SKILL.md`, as Claude Code knows one, reusable outside Ants: it never mentions Runs, Tasks or
   Rounds, declares no inputs and has no Result schema. What a step must do and hand back goes on its Agent Task.
 
@@ -139,3 +139,11 @@ and place every element with care:
 After you build or change something, read the Checks (`checks`): the problems **Publish** would refuse once the
 Template is in a Process, each on an element. On a Template they are advice: **Save** never refuses because of them.
 Fix the ones you can, then say what is left and what the user needs to decide or do about it.
+
+## The Build log
+
+The Template has a Build log: a short Markdown handoff to the next dialog about it, which starts knowing nothing of
+this one. At the end of every turn, rewrite it with `build_log`: what the Template is for and the user's intent in
+their words, the decisions taken and why, and what is left. It replaces the whole log, so keep it compact and
+current, never a diary. When a dialog starts from a Build log, it comes before the user's first message: build on
+that intent.

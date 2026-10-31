@@ -61,7 +61,36 @@ class ProcessBuilderTools(
         /** The pages of the Agents, Skills and Templates this session made or changed, in order. */
         val made: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
-        open fun writeBuildLog(markdown: String): String = throw Refused("No tool build_log here.")
+        /** What the page holds, as the Build log names it: Process or Template. */
+        abstract val kind: String
+
+        /** The name of what the page holds, which keys its Build log. */
+        abstract fun logged(): String
+
+        abstract fun buildLog(name: String): Path
+
+        /** Where the Build log of [name] can be read. */
+        abstract fun buildLogPage(name: String): String
+
+        /** The name whose Build log this session started from, which the panel links to. */
+        @Volatile
+        var handoff: String? = null
+
+        fun writeBuildLog(markdown: String): String {
+            val name = logged()
+            buildLog(name).also { it.parent.createDirectories() }.writeAtomically(markdown)
+            return "The Build log of $name is now what you gave."
+        }
+
+        override fun firstPrompt(message: String): String? {
+            val name = runCatching { logged() }.getOrNull()
+            val log = name?.let { runCatching { buildLog(it) }.getOrNull() }?.takeIf { it.exists() } ?: return null
+            handoff = name
+            return "The Build log of this $kind, from earlier dialogs about it:\n\n${log.readText().trim()}\n\nFrom the user:\n$message"
+        }
+
+        override fun head() =
+            handoff?.let { """<p class="ants" id="pb-handoff">Started from this $kind's <a href="${HtmlUtils.htmlEscape(buildLogPage(it))}" target="_blank">Build log</a>.</p>""" } ?: ""
 
         override fun call(name: String, arguments: Map<*, *>): Pair<String, Boolean> = try {
             fun argument(key: String) = arguments[key]?.toString() ?: throw Refused("$name needs $key.")
@@ -156,34 +185,26 @@ class ProcessBuilderTools(
     private inner class ProcessPage : Builder(BuilderColumn.PROCESS) {
         override val instructions = INSTRUCTIONS
         override val tools = TOOLS
-
-        /** The key of the Process whose Build log this session started from, which the panel links to. */
-        @Volatile
-        var handoff: String? = null
-
-        override fun writeBuildLog(markdown: String): String {
-            val key = key()
-            buildLog(key).also { it.parent.createDirectories() }.writeAtomically(markdown)
-            return "The Build log of $key is now what you gave."
-        }
-
-        override fun firstPrompt(message: String): String? {
-            val key = runCatching { key() }.getOrNull()
-            val log = key?.let { runCatching { buildLog(it) }.getOrNull() }?.takeIf { it.exists() } ?: return null
-            handoff = key
-            return "The Build log of this Process, from earlier dialogs about it:\n\n${log.readText().trim()}\n\nFrom the user:\n$message"
-        }
-
-        override fun head() =
-            handoff?.let { """<p class="ants" id="pb-handoff">Started from this Process's <a href="/processes/${HtmlUtils.htmlEscape(it)}/build-log" target="_blank">Build log</a>.</p>""" } ?: ""
+        override val kind = "Process"
 
         /** The process id of the page's diagram, which keys its Build log. */
-        fun key(): String = process(parse(xml().toByteArray())).getAttribute("id")
+        override fun logged(): String = process(parse(xml().toByteArray())).getAttribute("id")
+
+        override fun buildLog(name: String) = this@ProcessBuilderTools.buildLog(name)
+
+        override fun buildLogPage(name: String) = "/processes/$name/build-log"
     }
 
-    private inner class TemplatePage : Builder(BuilderColumn.TEMPLATE) {
+    private inner class TemplatePage(private val template: String) : Builder(BuilderColumn.TEMPLATE) {
         override val instructions = TEMPLATE_INSTRUCTIONS
         override val tools = TEMPLATE_TOOLS
+        override val kind = "Template"
+
+        override fun logged() = template
+
+        override fun buildLog(name: String) = templates.buildLog(name)
+
+        override fun buildLogPage(name: String) = "/templates/$name/build-log"
     }
 
     @PostMapping("/process-builder")
@@ -193,7 +214,10 @@ class ProcessBuilderTools(
     fun send(@RequestParam token: String, @RequestParam message: String): Map<String, String> = chats.send(token, message, BuilderColumn.PROCESS.title)
 
     @PostMapping("/template-builder")
-    fun openTemplate(@RequestParam(required = false) token: String?): Map<String, String> = mapOf("token" to chats.open(token, TemplatePage::class.java) { TemplatePage() })
+    fun openTemplate(@RequestParam(required = false) token: String?, @RequestParam template: String): Map<String, String> {
+        if (!templates.yours(template)) throw ResponseStatusException(HttpStatus.NOT_FOUND, "No Template of your own named $template.")
+        return mapOf("token" to chats.open(token, TemplatePage::class.java) { TemplatePage(template) })
+    }
 
     @PostMapping("/template-builder/send")
     fun sendTemplate(@RequestParam token: String, @RequestParam message: String): Map<String, String> = chats.send(token, message, BuilderColumn.TEMPLATE.title)
@@ -234,6 +258,10 @@ class ProcessBuilderTools(
             "later Tasks read only the payload fields its output schema declares, as \${<task id>.payload.<field>} (any field, when it has no output schema)."
 
         private val KINDS = mapOf("agents" to "Agent", "skills" to "Skill", "templates" to "Template")
+
+        private fun buildLogTool(kind: String) = Mcp.tool("build_log", "Replaces this $kind's Build log, the Markdown handoff the next dialog about it starts from: " +
+            "what the $kind is for and the user's intent, the decisions taken, and what is left. Rewrite it whole at the end of every turn; keep it compact.",
+            mapOf("markdown" to "The whole new Build log."))
 
         private fun number(what: String) = mapOf("type" to "number", "description" to what)
 
@@ -478,9 +506,7 @@ class ProcessBuilderTools(
                 "read-only and can't be deleted. Ask the user first: a Task that runs it fails the Checks.", mapOf("name" to "The Agent's name.")),
             Mcp.tool("delete_skill", "Deletes one of the user's own Skills with its folder, such as one you created that the user doesn't want. Shipped and outside " +
                 "Skills are read-only and can't be deleted. Ask the user first: a Task that runs it fails the Checks.", mapOf("name" to "The Skill's name.")),
-            Mcp.tool("build_log", "Replaces this Process's Build log, the Markdown handoff the next dialog about it starts from: what the Process is for " +
-                "and the user's intent, the decisions taken, and what is left. Rewrite it whole at the end of every turn; keep it compact.",
-                mapOf("markdown" to "The whole new Build log.")),
+            buildLogTool("Process"),
             Mcp.tool("copy", "Copies an Agent, Skill or Template, such as a shipped one, into the user's own as `<name>-copy`, which can then be changed. Answers the copy's name and page.",
                 mapOf("kind" to "agent, skill or template.", "name" to "The name of the one to copy.")),
             Mcp.tool("set_your_skills", "Sets Your Skills on a shipped Agent: the Skills the user adds to it beside the ones Ants ships with it, which an update to " +
@@ -489,6 +515,6 @@ class ProcessBuilderTools(
                 mapOf("name" to "The shipped Agent's name.", "skills" to mapOf("type" to "array", "items" to mapOf("type" to "string"), "description" to "The Skills' names."))),
         ) + WRITE
 
-        private val TEMPLATE_TOOLS = TOOLS.filter { it["name"] != "build_log" }
+        private val TEMPLATE_TOOLS = TOOLS.map { if (it["name"] == "build_log") buildLogTool("Template") else it }
     }
 }

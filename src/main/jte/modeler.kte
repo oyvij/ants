@@ -63,7 +63,7 @@
         </div>
     </div>
 @if(builder != null)
-    <aside class="pb" id="builder" aria-label="${column.title}" data-path="${column.path}" data-off="${builder.ifEmpty { null }}">
+    <aside class="pb" id="builder" aria-label="${column.title}" data-path="${column.path}" data-template="${if (column == ants.BuilderColumn.TEMPLATE) name else null}" data-off="${builder.ifEmpty { null }}">
         <div id="pb-dialog" class="tr"><p class="muted">@if(builder.isNotEmpty())${builder}@else${column.intro}@endif</p><div id="pb-live"></div></div>
         <form id="pb-form" hidden="${builder.isNotEmpty()}">
             <label class="f" for="pb-message">Message to the ${column.title}</label>
