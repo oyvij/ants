@@ -58,6 +58,30 @@ class TemplateBuilderTest : AntsTest() {
     }
 
     @Test
+    fun `the Template Builder's token opens the Process Builder's tools, relays them to the Template page, and answers checks on the page's diagram`() {
+        val processTools = ((mcp(port, json.readValue(browser.post("/process-builder", emptyMap()).body, Map::class.java)["token"].toString(), "tools/list")
+            .second["result"] as Map<*, *>)["tools"] as List<*>).map { (it as Map<*, *>)["name"] }
+        val token = open()
+        val tools = ((mcp(port, token, "tools/list").second["result"] as Map<*, *>)["tools"] as List<*>).map { (it as Map<*, *>)["name"] }
+        assertEquals(processTools - "build_log", tools)
+        assertTrue(mcpCall(port, token, "run", mapOf("args" to listOf("ls"))).second)
+
+        val broken = javaClass.getResource("/agent-task.bpmn")!!.readText().replace("value=\"writer\"", "value=\"nobody\"")
+        val relayed = mutableListOf<String>()
+        browser.actAsPage(token, builder, answerPath = "/template-builder/answer") { tool, arguments ->
+            relayed += tool
+            if (tool == "xml") broken else mapOf("id" to arguments["id"])
+        }
+        eventually { assertTrue(builder.connected(token)) }
+        assertEquals(Pair("""{"id":"grill"}""", false), mcpCall(port, token, "add_element", mapOf("kind" to "agent", "id" to "grill")))
+        val (checks, failed) = mcpCall(port, token, "checks")
+        assertFalse(failed, checks)
+        assertEquals(json.readTree(browser.post("/processes/checks", mapOf("bpmn" to broken)).body), json.readTree(checks))
+        assertContains(checks, "nobody")
+        assertEquals(listOf("add_element", "xml"), relayed)
+    }
+
+    @Test
     fun `once claude has died the next message resumes the session`() {
         settings(claude)
         val done = """{"type":"result","subtype":"success","result":"Done.","session_id":"${'$'}SESSION"}"""
