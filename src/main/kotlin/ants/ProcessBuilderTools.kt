@@ -21,12 +21,16 @@ import kotlin.io.path.walk
 /** What create_skill and change_skill answer when given a `schema`: a Skill has none (ADR 0024), so it isn't written. */
 const val SCHEMA_IGNORED = "The schema wasn't written: a Skill has no Result schema. Put it on the Agent Task that needs it, as set_agent_task's resultSchema."
 
-data class BuilderColumn(val title: String, val path: String, val intro: String, val placeholder: String) {
+data class BuilderColumn(val name: String, val title: String, val intro: String, val placeholder: String) {
+    val path = "/$name"
+
+    fun off(settings: Settings) = if (settings.chat(name).first == "claude") "" else PageChat.claudeOnly(title, name)
+
     companion object {
-        val PROCESS = BuilderColumn("Process Builder", "/process-builder",
+        val PROCESS = BuilderColumn("process-builder", "Process Builder",
             "Say what this Process should get done, loosely is fine: the Process Builder asks about the gaps, proposes a shape and builds it here, each change one undo step.",
             "e.g. Every morning, pick a small issue and get it to a PR. (Enter sends, Shift+Enter adds a line)")
-        val TEMPLATE = BuilderColumn("Template Builder", "/template-builder",
+        val TEMPLATE = BuilderColumn("template-builder", "Template Builder",
             "Say what this Template should do, loosely is fine: the Template Builder asks about the gaps, proposes a shape and builds it here, each change one undo step, unsaved until you Save.",
             "e.g. A review loop: an Agent reviews, I approve or send it back. (Enter sends, Shift+Enter adds a line)")
     }
@@ -46,7 +50,9 @@ class ProcessBuilderTools(
     private val chats: PageChats, private val agents: Agents, private val templates: Templates, private val processes: Processes, private val catalogue: Catalogue,
     private val skills: Skills, private val scripts: Scripts, private val json: JsonMapper, private val launcher: AgentLauncher, private val diagrams: Diagrams,
 ) {
-    private abstract inner class Builder : PageChat(chats) {
+    private abstract inner class Builder(column: BuilderColumn) : PageChat(chats) {
+        override val name = column.name
+        override val title = column.title
         override val pageName = "modeler page"
         override val idPrefix = "pb"
         override val lines = LINES
@@ -147,9 +153,7 @@ class ProcessBuilderTools(
         fun xml(): String = json.readValue(ask("xml", emptyMap<String, Any>()), String::class.java)
     }
 
-    private inner class ProcessPage : Builder() {
-        override val name = "process-builder"
-        override val title = "Process Builder"
+    private inner class ProcessPage : Builder(BuilderColumn.PROCESS) {
         override val instructions = INSTRUCTIONS
         override val tools = TOOLS
 
@@ -177,9 +181,7 @@ class ProcessBuilderTools(
         fun key(): String = process(parse(xml().toByteArray())).getAttribute("id")
     }
 
-    private inner class TemplatePage : Builder() {
-        override val name = "template-builder"
-        override val title = "Template Builder"
+    private inner class TemplatePage : Builder(BuilderColumn.TEMPLATE) {
         override val instructions = TEMPLATE_INSTRUCTIONS
         override val tools = TEMPLATE_TOOLS
     }
@@ -188,13 +190,13 @@ class ProcessBuilderTools(
     fun open(@RequestParam(required = false) token: String?): Map<String, String> = mapOf("token" to chats.open(token, ProcessPage::class.java) { ProcessPage() })
 
     @PostMapping("/process-builder/send")
-    fun send(@RequestParam token: String, @RequestParam message: String): Map<String, String> = chats.send(token, message, "Process Builder")
+    fun send(@RequestParam token: String, @RequestParam message: String): Map<String, String> = chats.send(token, message, BuilderColumn.PROCESS.title)
 
     @PostMapping("/template-builder")
     fun openTemplate(@RequestParam(required = false) token: String?): Map<String, String> = mapOf("token" to chats.open(token, TemplatePage::class.java) { TemplatePage() })
 
     @PostMapping("/template-builder/send")
-    fun sendTemplate(@RequestParam token: String, @RequestParam message: String): Map<String, String> = chats.send(token, message, "Template Builder")
+    fun sendTemplate(@RequestParam token: String, @RequestParam message: String): Map<String, String> = chats.send(token, message, BuilderColumn.TEMPLATE.title)
 
     /** A Process's Build log, to read: the Markdown the Process Builder last wrote for it. */
     @GetMapping("/processes/{key}/build-log", produces = ["text/plain;charset=UTF-8"])
@@ -215,10 +217,6 @@ class ProcessBuilderTools(
         chats.answer(token, call, answer, error)
 
     companion object {
-        val CLAUDE_ONLY = PageChat.claudeOnly("Process Builder", "process-builder")
-
-        val TEMPLATE_CLAUDE_ONLY = PageChat.claudeOnly("Template Builder", "template-builder")
-
         /** The Process Builder's standing instructions, shipped read-only. */
         private val INSTRUCTIONS = ProcessBuilderTools::class.java.getResource("/process-builder.md")!!.readText()
 

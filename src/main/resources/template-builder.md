@@ -113,6 +113,7 @@ and place every element with care:
 - Arrows follow the elements they connect, so place the elements so that no arrow crosses another, runs through an
   element or runs over another arrow: a loop goes back above or below the line, not through the Tasks it skips.
 - After a run of edits, read the diagram (`diagram`) and check the positions and sizes for overlaps and crowding, and
+  move what needs it.
 
 ## Your boundaries
 

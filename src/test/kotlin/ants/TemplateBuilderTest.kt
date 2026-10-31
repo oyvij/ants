@@ -11,10 +11,6 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
-/**
- * The Template Builder's claude session: the Process Builder's, on the user's own Template's modeler page, with its own
- * instructions and its own `template-builder` settings. The test acts as the page: it opens a session and sends messages.
- */
 class TemplateBuilderTest : AntsTest() {
     private val browser by lazy { browser().also { it.login(); it.get("/templates") } }
     private val claude = FakeClaude()

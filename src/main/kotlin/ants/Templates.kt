@@ -79,7 +79,7 @@ class Templates(@Value("\${ants.home}") home: Path, private val catalogue: Catal
         model.addAttribute("list", "Templates")
         model.addAttribute("copy", if (file.startsWith(shipped)) "/templates/$name/copy" else null)
         if (file.startsWith(yours)) {
-            model.addAttribute("builder", if (settings.chat("template-builder").first == "claude") "" else ProcessBuilderTools.TEMPLATE_CLAUDE_ONLY)
+            model.addAttribute("builder", BuilderColumn.TEMPLATE.off(settings))
             model.addAttribute("column", BuilderColumn.TEMPLATE)
         }
         return "modeler"
