@@ -109,17 +109,14 @@ class Templates(@Value("\${ants.home}") home: Path, private val catalogue: Catal
         return "redirect:/templates/$copy"
     }
 
-    /** A Template's Build log, to read: the Markdown the Template Builder last wrote for it. */
     @GetMapping("/templates/{name}/build-log", produces = ["text/plain;charset=UTF-8"])
     @ResponseBody
     fun readBuildLog(@PathVariable name: String): String =
         buildLog(name).takeIf { nameError("A Template", name) == null && it.exists() }?.readText() ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "$name has no Build log.")
 
-    /** Where the Template [name]'s Build log lives: `ANTS_HOME/templates/build-logs/<name>.md`, keyed by its name. */
     fun buildLog(name: String): Path = yours.resolve("build-logs/$name.md")
 
-    /** Whether [name] is one of the user's own Templates, which the Template Builder opens on. */
-    fun yours(name: String) = runCatching { file(name) }.getOrNull()?.startsWith(yours) == true
+    fun isYours(name: String) = runCatching { file(name) }.getOrNull()?.startsWith(yours) == true
 
     /** Drops the Template [name] into the diagram [bpmn] at ([x], [y]): the new diagram, and the sub-process's id to select. */
     @PostMapping("/templates/{name}/drop")

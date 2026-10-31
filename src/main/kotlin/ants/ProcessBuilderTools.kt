@@ -61,29 +61,25 @@ class ProcessBuilderTools(
         /** The pages of the Agents, Skills and Templates this session made or changed, in order. */
         val made: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
-        /** What the page holds, as the Build log names it: Process or Template. */
         abstract val kind: String
 
-        /** The name of what the page holds, which keys its Build log. */
-        abstract fun logged(): String
+        abstract fun buildLogName(): String
 
         abstract fun buildLog(name: String): Path
 
-        /** Where the Build log of [name] can be read. */
         abstract fun buildLogPage(name: String): String
 
-        /** The name whose Build log this session started from, which the panel links to. */
         @Volatile
         var handoff: String? = null
 
         fun writeBuildLog(markdown: String): String {
-            val name = logged()
+            val name = buildLogName()
             buildLog(name).also { it.parent.createDirectories() }.writeAtomically(markdown)
             return "The Build log of $name is now what you gave."
         }
 
         override fun firstPrompt(message: String): String? {
-            val name = runCatching { logged() }.getOrNull()
+            val name = runCatching { buildLogName() }.getOrNull()
             val log = name?.let { runCatching { buildLog(it) }.getOrNull() }?.takeIf { it.exists() } ?: return null
             handoff = name
             return "The Build log of this $kind, from earlier dialogs about it:\n\n${log.readText().trim()}\n\nFrom the user:\n$message"
@@ -188,7 +184,7 @@ class ProcessBuilderTools(
         override val kind = "Process"
 
         /** The process id of the page's diagram, which keys its Build log. */
-        override fun logged(): String = process(parse(xml().toByteArray())).getAttribute("id")
+        override fun buildLogName(): String = process(parse(xml().toByteArray())).getAttribute("id")
 
         override fun buildLog(name: String) = this@ProcessBuilderTools.buildLog(name)
 
@@ -200,7 +196,7 @@ class ProcessBuilderTools(
         override val tools = TEMPLATE_TOOLS
         override val kind = "Template"
 
-        override fun logged() = template
+        override fun buildLogName() = template
 
         override fun buildLog(name: String) = templates.buildLog(name)
 
@@ -215,7 +211,7 @@ class ProcessBuilderTools(
 
     @PostMapping("/template-builder")
     fun openTemplate(@RequestParam(required = false) token: String?, @RequestParam template: String): Map<String, String> {
-        if (!templates.yours(template)) throw ResponseStatusException(HttpStatus.NOT_FOUND, "No Template of your own named $template.")
+        if (!templates.isYours(template)) throw ResponseStatusException(HttpStatus.NOT_FOUND, "No Template of your own named $template.")
         return mapOf("token" to chats.open(token, TemplatePage::class.java) { TemplatePage(template) })
     }
 
