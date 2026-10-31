@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import tools.jackson.databind.json.JsonMapper
 import java.time.Duration
+import kotlin.io.path.deleteIfExists
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -137,6 +138,11 @@ class TemplateBuilderTest : AntsTest() {
     @Test
     fun `on codex the column says the Template Builder runs on claude only`() {
         settings(claude, "template-builder:\n  cli: codex\n")
+        home.resolve("templates/on-codex.bpmn").deleteIfExists()
+        browser.post("/templates/new", mapOf("name" to "on-codex"))
+        val column = browser.get("/templates/on-codex").body
+        assertContains(column, """data-off="The Template Builder runs on claude only for now. Set template-builder&#39;s cli to claude in settings.yaml."""")
+        assertContains(column, """<form id="pb-form" hidden>""")
         val token = open()
         assertContains(send(token, "Build it.").body, "The Template Builder runs on claude only for now. Set template-builder's cli to claude in settings.yaml.")
         assertEquals(0, launches().size)

@@ -108,6 +108,19 @@ class TemplatesTest : AntsTest() {
     }
 
     @Test
+    fun `Save writes a Template whose Checks fail, as the Checks are advice on a Template`() {
+        home.resolve("templates/unfinished.bpmn").toFile().delete()
+        browser.get("/templates")
+        browser.post("/templates/new", mapOf("name" to "unfinished"))
+        val failing = browser.get("/templates/unfinished/diagram.bpmn").body.replace("</bpmn:process>", """<bpmn:serviceTask id="loose" name="Loose" operaton:type="external" operaton:topic="agent" /></bpmn:process>""")
+        assertContains(browser.post("/processes/checks", mapOf("bpmn" to failing)).body, "Loose (loose) has no Agent.")
+
+        val saved = browser.post("/templates/unfinished", mapOf("bpmn" to failing))
+        assertEquals("/templates/unfinished", saved.path)
+        assertContains(browser.get("/templates/unfinished/diagram.bpmn").body, """<bpmn:serviceTask id="loose" name="Loose" operaton:topic="agent" operaton:type="external"/>""")
+    }
+
+    @Test
     fun `editing a Template afterwards doesn't change the Process it was dropped into`() {
         home.resolve("templates/edited.bpmn").toFile().delete()
         browser.get("/templates")
