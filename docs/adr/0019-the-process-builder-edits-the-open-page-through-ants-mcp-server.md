@@ -1,5 +1,7 @@
 # The Process Builder edits the open page through Ants' MCP server
 
+Superseded in part by ADR 0031: the Template Builder opens on the user's own Template's modeler, never a shipped one.
+
 The Process Builder (#156) is a claude session that builds the Process open in the modeler from what the user writes.
 Its MCP tools act on the diagram in the open modeler page, not on a copy on the server: Ants relays each tool call to
 the page, which applies it through bpmn-js' modeling API and answers with the result. The diagram already lives only

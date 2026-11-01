@@ -270,8 +270,7 @@ class Processes(
         return drafts.discard(DraftKind.PROCESS, draft, published, draft?.name ?: key, "/processes/$key", "/processes/$key/edit", "confirm" in params, model)
     }
 
-    /** The modeler's Process Builder column: on, or why it is off. Only a Process has it, never a Template. */
-    private fun builder() = if (settings.chat("process-builder").first == "claude") "" else ProcessBuilderTools.CLAUDE_ONLY
+    private fun builder() = BuilderColumn.PROCESS.off(settings)
 
     /** The Process page, its start form for the Profile [profile] picked on it, else the Process's own, else the default. */
     @GetMapping("/processes/{key}")

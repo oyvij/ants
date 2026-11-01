@@ -17,10 +17,12 @@ import org.w3c.dom.Node
 import org.xml.sax.SAXException
 import java.net.URI
 import java.nio.file.Path
+import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.nameWithoutExtension
 import kotlin.io.path.readBytes
+import kotlin.io.path.readText
 import kotlin.math.roundToInt
 
 /** A Template on the Templates page: its file's name, the name its sub-process gets, and whether it's Ants' own, read-only. */
@@ -31,7 +33,7 @@ data class TemplateRow(val name: String, val title: String, val shipped: Boolean
  * read-only). The page lists, creates, edits and copies them; the modeler's palette drops one into a Process.
  */
 @Controller
-class Templates(@Value("\${ants.home}") home: Path, private val catalogue: Catalogue, private val scripts: Scripts) {
+class Templates(@Value("\${ants.home}") home: Path, private val catalogue: Catalogue, private val scripts: Scripts, private val settings: Settings) {
     private val yours = home.resolve("templates")
     private val shipped = home.resolve("shipped/templates")
 
@@ -78,6 +80,10 @@ class Templates(@Value("\${ants.home}") home: Path, private val catalogue: Catal
         model.addAttribute("saveLabel", "Save")
         model.addAttribute("list", "Templates")
         model.addAttribute("copy", if (file.startsWith(shipped)) "/templates/$name/copy" else null)
+        if (file.startsWith(yours)) {
+            model.addAttribute("builder", BuilderColumn.TEMPLATE.off(settings))
+            model.addAttribute("column", BuilderColumn.TEMPLATE)
+        }
         return "modeler"
     }
 
@@ -99,8 +105,18 @@ class Templates(@Value("\${ants.home}") home: Path, private val catalogue: Catal
     fun copy(@PathVariable name: String): String {
         val copy = copyName(name, ::exists)
         yours.resolve("$copy.bpmn").writeAtomically(file(name).readBytes().decodeToString())
+        buildLog(name).takeIf { it.exists() }?.let { buildLog(copy).also { log -> log.parent.createDirectories() }.writeAtomically(it.readText()) }
         return "redirect:/templates/$copy"
     }
+
+    @GetMapping("/templates/{name}/build-log", produces = ["text/plain;charset=UTF-8"])
+    @ResponseBody
+    fun readBuildLog(@PathVariable name: String): String =
+        buildLog(name).takeIf { nameError("A Template", name) == null && it.exists() }?.readText() ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "$name has no Build log.")
+
+    fun buildLog(name: String): Path = yours.resolve("build-logs/$name.md")
+
+    fun isYours(name: String) = runCatching { file(name) }.getOrNull()?.startsWith(yours) == true
 
     /** Drops the Template [name] into the diagram [bpmn] at ([x], [y]): the new diagram, and the sub-process's id to select. */
     @PostMapping("/templates/{name}/drop")

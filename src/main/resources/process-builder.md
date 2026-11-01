@@ -24,7 +24,9 @@ something big:
 When you are in doubt, about what the user wants, which Agent or Skill fits, or how a Task should behave, ask the user
 before you build on a guess. A short question costs less than undoing a wrong build.
 
-Keep answers short. Say what you are about to do before a long run of edits.
+Each reply is 2–5 lines, never over 15. Give your key reason in one line. Don't recap the tool steps: the dialog
+already shows them. A proposal is a short list of steps, within the limit. The Script hand-off code block and the
+Build log are exempt from the limit. Say what you are about to do before a long run of edits.
 
 ## Reuse before you create
 

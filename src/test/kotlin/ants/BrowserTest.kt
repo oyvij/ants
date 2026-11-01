@@ -456,6 +456,35 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `the Template Builder shows on the user's own Template, not on a shipped one, and its edits land unsaved on the canvas, one undo step each`() = browse {
+        page.navigate(url("/templates/review-and-push"))
+        assertThat(page.locator("#canvas")).isVisible()
+        assertThat(page.locator("#builder, #builder-toggle")).hasCount(0)
+        assertThat(page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("Copy").setExact(true))).isVisible()
+
+        home.resolve("templates/built-by-hand.bpmn").deleteIfExists()
+        http.get("/templates")
+        http.post("/templates/new", mapOf("name" to "built-by-hand"))
+        val saved = home.resolve("templates/built-by-hand.bpmn").readText()
+        page.navigate(url("/templates/built-by-hand"))
+        assertThat(page.locator("#builder-toggle")).hasText("Template Builder")
+        assertThat(page.getByRole(AriaRole.COMPLEMENTARY, Page.GetByRoleOptions().setName("Template Builder"))).isVisible()
+        assertThat(page.getByLabel("Message to the Template Builder")).hasCount(1)
+        assertThat(page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("Copy").setExact(true))).hasCount(0)
+        val tool = builder()
+
+        tool("add_element", mapOf("kind" to "agent", "id" to "review", "name" to "Review", "x" to 300, "y" to 80))
+        tool("rename", mapOf("id" to "review", "name" to "Review it"))
+        assertThat(shape("review")).containsText("Review it")
+        assertEquals(saved, home.resolve("templates/built-by-hand.bpmn").readText())
+        undo()
+        assertThat(shape("review")).not().containsText("Review it")
+        assertThat(shape("review")).isVisible()
+        undo()
+        assertThat(shape("review")).hasCount(0)
+    }
+
+    @Test
     fun `an Agent Task set up by the Process Builder's tools reads in the saved XML as one set up by hand`() = browse {
         agentTask(null)
         val hand = appendAgentTask()
