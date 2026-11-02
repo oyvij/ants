@@ -2247,15 +2247,21 @@ class BrowserTest : AntsTest() {
         page.navigate(url("/processes/build_and_ship"))
         assertThat(page.locator("#start .ed")).isVisible()
         assertThat(shape("start")).isVisible()
+        assertNothingPastTheScreen()
+        page.evaluate("document.querySelector('#when').hidden = false; document.querySelector('#when-advanced').open = true")
+        assertNothingPastTheScreen()
         page.screenshot("phone/build-and-ship")
-        assertEquals(emptyList<Any>(), page.evaluate(overflowing("main")), "parts of the page reaching past a 390px screen")
-        assertNoSidewaysScroll()
     }
 
-    private fun overflowing(root: String) = """[...document.querySelectorAll("$root *")]
-        .filter(e => e.checkVisibility() && !e.closest("#diagram, #canvas"))
-        .filter(e => { const box = e.getBoundingClientRect(); return box.width > 0 && (box.left < 0 || box.right > document.documentElement.clientWidth) })
-        .map(e => e.tagName.toLowerCase() + (e.id ? "#" + e.id : "") + (e.className && typeof e.className === "string" ? "." + e.className.trim().split(/\\s+/).join(".") : "") + " " + Math.round(e.getBoundingClientRect().left) + "-" + Math.round(e.getBoundingClientRect().right))"""
+    private fun assertNothingPastTheScreen() {
+        val past = page.evaluate("""[...document.querySelectorAll("main *")]
+            .filter(e => e.checkVisibility() && !e.closest("#diagram"))
+            .map(e => [e, e.getBoundingClientRect()])
+            .filter(([e, box]) => box.width > 0 && (box.left < 0 || box.right > document.documentElement.clientWidth))
+            .map(([e, box]) => e.outerHTML.slice(0, 100) + " spans " + Math.round(box.left) + " to " + Math.round(box.right))""")
+        assertEquals(emptyList<Any>(), past, "parts of ${page.url()} reaching past a 390px screen")
+        assertNoSidewaysScroll()
+    }
 
     @Test
     fun `on a phone the Run page's and the Process page's diagrams fit the screen, and ＋, －, Fit and ⛶ work on a tap`() = browse {
