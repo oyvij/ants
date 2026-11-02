@@ -1,4 +1,5 @@
 @param specs: List<ants.SpecRow>
+@param more: Int?
 @param colorScheme: String = "light dark"
 @param shell: ants.Shell
 <!doctype html>
@@ -23,6 +24,17 @@
 @endfor
 </table>
 @endif
+@if(more != null)<div class="more"><a class="btn" href="/tickets?specs=${more}" data-more>Load more</a></div>@endif
 </main>
+<script type="module">
+    document.querySelector('main').addEventListener('click', async event => {
+        const more = event.target.closest('[data-more]');
+        if (!more) return;
+        event.preventDefault();
+        const page = new DOMParser().parseFromString(await (await fetch(more.href)).text(), 'text/html');
+        document.querySelector('main').replaceChildren(...page.querySelector('main').childNodes);
+        history.replaceState(null, '', more.href);
+    });
+</script>
 </body>
 </html>

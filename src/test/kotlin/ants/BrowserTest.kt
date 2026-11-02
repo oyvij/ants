@@ -1692,6 +1692,32 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `Load more, centred below the Tickets list, shows 10 more Specs in place and keeps them on a reload`() = browse {
+        settings(null)
+        val (process, plane) = row("specced", """<bpmn:startEvent id="start" />""", """<bpmn:endEvent id="end" />""")
+        deploy(definitions("specced", "Specced", process, plane))
+        repeat(12) { i ->
+            val run = http.post("/processes/specced/runs", mapOf()).path.removePrefix("/runs/")
+            workspace(run).resolve("tickets").createDirectories().resolve("spec.md").writeText("# Spec $i\n\nStatus: open\n")
+        }
+        page.navigate(url("/tickets"))
+        val rows = page.locator("table.specs tr:has(td)")
+        assertThat(rows).hasCount(10)
+        val more = page.getByRole(AriaRole.LINK, Page.GetByRoleOptions().setName("Load more"))
+        val main = page.locator("main").boundingBox()!!
+        val button = more.boundingBox()!!
+        assertEquals(main.x + main.width / 2, button.x + button.width / 2, 1.0)
+        val loaded = page.url()
+        more.click()
+        assertThat(rows).hasCount(12)
+        assertThat(more).hasCount(0)
+        assertEquals(loaded, page.evaluate("performance.getEntriesByType('navigation')[0].name"), "Load more loads in place")
+        assertTrue(page.url().endsWith("/tickets?specs=20"))
+        page.reload()
+        assertThat(rows).hasCount(12)
+    }
+
+    @Test
     fun `Load more, centred below Ended, shows 10 more ended Runs in place and keeps them on a reload`() = browse {
         settings(null)
         val (process, plane) = row("ended", """<bpmn:startEvent id="start" />""", """<bpmn:endEvent id="end" />""")

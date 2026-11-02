@@ -123,6 +123,8 @@ private val COMMENTS = Regex("""^## Comments\s*$""", RegexOption.MULTILINE)
 /** A task list item's checkbox, its mark in group 1. */
 private val CHECKBOX = Regex("""^\s*(?:[-*+]|\d+[.)])\s+\[([ xX])]""")
 
+private const val SPECS_PAGE = 10
+
 /** Where a Run workspace keeps its Tickets, one file each. */
 const val TICKETS = "tickets/issues"
 
@@ -195,12 +197,15 @@ class Tickets(private val history: HistoryService, private val streams: Streams,
         if (launcher.fixing(ticket.run, ticket.name) != null) emptyList() else ants.waitsFor(ticket, tickets)
 
     @GetMapping("/tickets")
-    fun list(model: Model): String {
-        val specs = history.createHistoricProcessInstanceQuery().rootProcessInstances().list().mapNotNull { run ->
+    fun list(@RequestParam specs: Int?, model: Model): String {
+        val rows = history.createHistoricProcessInstanceQuery().rootProcessInstances().list().mapNotNull { run ->
             val spec = spec(run.id) ?: return@mapNotNull null
             SpecRow(run.id, names.name(run.id), run.processDefinitionName ?: run.processDefinitionKey, spec, tickets(run.id))
         }
-        model.addAttribute("specs", specs.sortedWith(compareBy<SpecRow> { !it.open }.thenByDescending { it.spec.file.getLastModifiedTime() }))
+        val shown = specs?.coerceAtLeast(SPECS_PAGE) ?: SPECS_PAGE
+        val sorted = rows.sortedWith(compareBy<SpecRow> { !it.open }.thenByDescending { it.spec.file.getLastModifiedTime() })
+        model.addAttribute("specs", sorted.take(shown))
+        model.addAttribute("more", (shown + SPECS_PAGE).takeIf { sorted.size > shown })
         return "tickets"
     }
 
