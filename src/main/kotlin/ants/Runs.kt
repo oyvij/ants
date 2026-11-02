@@ -153,17 +153,21 @@ class Runs(
 ) {
     /** The Runs list: Coming up, then the live Runs with what each is doing now, then the ended ones. */
     @GetMapping("/runs")
-    fun list(model: Model): String {
-        model.addAllAttributes(listed())
+    fun list(@RequestParam(defaultValue = "$ENDED") ended: Int, model: Model): String {
+        model.addAllAttributes(listed(ended))
         return "runs"
     }
 
     /** The Runs list below its header as HTML, sent on connect and whenever it changes. */
-    fun liveList(csrf: CsrfToken): Part = streams.rendered("runlist", "runlist.kte", csrf) { listed() }
+    fun liveList(csrf: CsrfToken, ended: Int?): Part = streams.rendered("runlist", "runlist.kte", csrf) { listed(ended ?: ENDED) }
 
-    private fun listed(): Map<String, Any> {
+    private fun listed(shown: Int): Map<String, Any?> {
         val now = now().associateBy { it.run }
-        val runs = history.createHistoricProcessInstanceQuery().rootProcessInstances().orderByProcessInstanceStartTime().desc().list().map { run ->
+        val roots = { history.createHistoricProcessInstanceQuery().rootProcessInstances() }
+        val limit = shown.coerceAtLeast(ENDED)
+        val listedRuns = (roots().unfinished().orderByProcessInstanceStartTime().desc().list() +
+            roots().finished().orderByProcessInstanceStartTime().desc().listPage(0, limit + 1)).distinctBy { it.id }
+        val runs = listedRuns.map { run ->
             val ended = run.endTime?.let { clock.local(it.toInstant()) }
             val done = run.state == HistoricProcessInstance.STATE_COMPLETED
             RunRow(
@@ -172,8 +176,9 @@ class Runs(
                 ended != null && keptWorkspace(run) != null, ended != null && Files.exists(names.runWorkspace(run.id).resolve(REPORT)),
             )
         }
+        val ended = runs.filter { it.ended != null }
         return mapOf(
-            "live" to runs.filter { it.ended == null }, "ended" to runs.filter { it.ended != null }, "coming" to schedules.all().filter { it.next != null },
+            "live" to runs.filter { it.ended == null }, "ended" to ended.take(limit), "more" to (limit + ENDED).takeIf { ended.size > limit }, "coming" to schedules.all().filter { it.next != null },
             "running" to launcher.running, "cap" to settings.agentTasks(),
         )
     }
@@ -693,6 +698,8 @@ class RunLifecycle(@Value("\${ants.home}") private val home: Path, private val s
 
 /** What outlives the Run in its workspace: the Transcripts (`tasks/`), the Spec and Tickets (`tickets/`) and the Report. */
 private val KEPT = setOf("tasks", "tickets", REPORT)
+
+private const val ENDED = 10
 
 /** Deletes a Run workspace once its Run is done with it, all but what is [KEPT]. */
 @OptIn(ExperimentalPathApi::class)

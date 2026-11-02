@@ -1,5 +1,6 @@
 @param live: List<ants.RunRow>
 @param ended: List<ants.RunRow>
+@param more: Int?
 @param coming: List<ants.Schedule>
 @param running: Int
 @param cap: Int
@@ -36,3 +37,4 @@
 @endfor
 </table>
 @endif
+@if(more != null)<div class="more"><a class="btn" href="/runs?ended=${more}" data-more="${more}">Load more</a></div>@endif

@@ -150,6 +150,7 @@ button svg.i { width: 15px; height: 15px; }
 label.f { display: block; font-weight: 600; font-size: 13px; margin: 18px 0 4px; }
 label.cap { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; font-weight: 600; } .row:has(> label.cap) { align-items: flex-end; }
 .help { color: var(--muted); font-size: 12.5px; margin-bottom: 8px; line-height: 1.5; } .help .eg { font-family: var(--mono); font-size: 12px; color: var(--text2); background: var(--line2); padding: 1px 6px; border-radius: 5px; }
+.more { display: flex; justify-content: center; margin-top: 16px; }
 input, select, textarea { font: inherit; padding: 7px 10px; border: 1px solid var(--fieldLine); border-radius: 8px; background: var(--field); color: var(--text); max-width: 100%; }
 /* The prototype's fields fill their cell; the pages not on its markup yet keep theirs inline. */
 :where(.card, .fld, .props, .modal, .composer, .drawer, .tlim) :is(input:not([type=checkbox], [type=radio], [type=file]), select, textarea) { width: 100%; }

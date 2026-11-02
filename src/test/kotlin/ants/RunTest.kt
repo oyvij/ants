@@ -95,6 +95,21 @@ class RunTest : AntsTest() {
     }
 
     @Test
+    fun `Ended shows the 10 latest Runs, and Load more 10 more at a time, in the page and its stream`() {
+        browser.import("start-end.bpmn")
+        val ids = List(12) { start("start-end").path.removePrefix("/runs/") }.reversed()
+        fun shown(html: String) = Regex("""data-href="/runs/([^"]+)"""").findAll(html.substringAfter("<h2>Ended</h2>")).map { it.groupValues[1] }.toList()
+        val first = browser.get("/runs").body
+        assertEquals(ids.take(10), shown(first))
+        assertContains(first, """<div class="more"><a class="btn" href="/runs?ended=20" data-more="20">Load more</a></div>""")
+        val more = browser.get("/runs?ended=20").body
+        assertEquals(ids, shown(more))
+        assertFalse("Load more" in more)
+        assertEquals(ids, shown(browser.events("runlist&ended=20", "runlist").take()))
+        assertEquals(ids.take(10), shown(browser.events("runlist", "runlist").take()))
+    }
+
+    @Test
     fun `an ended Run's row offers its Report, and a cancelled one's Dismiss`() {
         browser.import("start-end.bpmn")
         val done = start("start-end").path.removePrefix("/runs/")

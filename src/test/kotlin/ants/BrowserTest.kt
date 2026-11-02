@@ -1688,6 +1688,27 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `Load more, centred below Ended, shows 10 more ended Runs in place and keeps them on a reload`() = browse {
+        http.import("start-end.bpmn")
+        repeat(12) { http.post("/processes/start-end/runs", mapOf()) }
+        page.navigate(url("/runs"))
+        val rows = page.locator("h2:text('Ended') ~ table tr.click")
+        assertThat(rows).hasCount(10)
+        val more = page.getByRole(AriaRole.LINK, Page.GetByRoleOptions().setName("Load more"))
+        val main = page.locator("main").boundingBox()!!
+        val button = more.boundingBox()!!
+        assertEquals(main.x + main.width / 2, button.x + button.width / 2, 1.0)
+        val loaded = page.url()
+        more.click()
+        assertThat(rows).hasCount(12)
+        assertThat(more).hasCount(0)
+        assertEquals(loaded, page.evaluate("performance.getEntriesByType('navigation')[0].name"), "Load more loads in place")
+        assertTrue(page.url().endsWith("/runs?ended=20"))
+        page.reload()
+        assertThat(rows).hasCount(12)
+    }
+
+    @Test
     fun `the Notification list asks for notification permission on a click, since macOS badges an app only with it`() = browse {
         // The browser's answer outlives the page, as a real one's does, so the reload below finds it.
         page.addInitScript(

@@ -118,7 +118,7 @@ class Live(
             updates.notice(csrf),
             runs.toasts(query["toast"]?.toLongOrNull()),
             home.live().takeIf { "home" in query },
-            runs.liveList(csrf).takeIf { "runlist" in query },
+            runs.liveList(csrf, query["ended"]?.toIntOrNull()).takeIf { "runlist" in query },
             notifications.live().takeIf { "notifications" in query },
             query["tasks"]?.let(runs::liveTasks),
             query["run"]?.let(runs::live),
