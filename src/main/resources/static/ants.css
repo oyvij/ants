@@ -676,7 +676,8 @@ details.example pre { background: var(--line2); border: 0; padding: 10px; border
     #when > .row { flex-direction: column; align-items: stretch; }
     #when > .row > label { display: flex; align-items: center; gap: 8px; }
     #when > .row > label > :is(select, input) { flex: 1; min-width: 0; }
-    main:has(> #diagram) .ph .acts { flex-wrap: wrap; }
+    main:has(> #diagram) .ph .acts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; margin-left: 0; }
+    main:has(> #diagram) .ph .acts > .btn, main:has(> #diagram) .ph .acts > form > button { width: 100%; }
     main:has(> #diagram) :is(.ph .sub, .card) { overflow-wrap: anywhere; }
     .dia .legend { right: 12px; flex-wrap: wrap; }
     .drawer { width: 100%; border-left: 0; }

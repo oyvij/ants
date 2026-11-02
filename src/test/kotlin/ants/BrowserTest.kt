@@ -2287,6 +2287,34 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `on a phone the Process page's and the Run page's buttons at the top line up two to a row, each as wide, across the page`() = browse {
+        val run = waitingRun("aligned")
+        onPhone()
+        page.navigate(url("/processes/aligned"))
+        assertButtonsInTwoColumns("Copy", "Add a schedule", "Edit diagram", "Delete")
+        page.screenshot("phone/process-head")
+
+        page.navigate(url(run))
+        assertButtonsInTwoColumns("Rename", "Cancel the Run")
+        page.screenshot("phone/run-head")
+    }
+
+    private fun assertButtonsInTwoColumns(vararg names: String) {
+        val acts = page.locator(".ph .acts")
+        val boxes = names.map { name ->
+            acts.locator(":scope > button, :scope > .btn, :scope > form > button").filter(Locator.FilterOptions().setHasText(name)).also { assertThat(it).isVisible() }.boundingBox()!!
+        }
+        boxes.forEachIndexed { i, box ->
+            val name = names[i]
+            assertEquals((358.0 - 8) / 2, box.width, 0.5, "$name's width")
+            assertEquals(if (i % 2 == 0) 16.0 else 16.0 + (358.0 + 8) / 2, box.x, 0.5, "$name's left edge")
+            assertEquals(boxes[i - i % 2].y, box.y, 0.5, "$name's top")
+            assertEquals(boxes[0].height, box.height, 0.5, "$name's height")
+        }
+        assertNothingPastTheScreen()
+    }
+
+    @Test
     fun `on a phone the shipped Build and ship Process page, with its whole start form, fits the screen`() = browse {
         processes.deployShipped()
         onPhone()
