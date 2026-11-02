@@ -38,7 +38,8 @@ if (window.top === window) {
     const left = JSON.parse(sessionStorage.getItem('scroll'));
     sessionStorage.removeItem('scroll');
     const reloaded = performance.getEntriesByType('navigation')[0]?.type === 'reload';
-    if (left?.path === location.pathname && (reloaded || left.submitted)) addEventListener('load', () => scrollTo(0, left.y), { once: true });
+    window.samePage = left?.path === location.pathname && (reloaded || left.submitted);
+    if (samePage) addEventListener('load', () => scrollTo(0, left.y), { once: true });
 }
 
 // A button that sends something shows it the moment it is pressed: a spinner and its data-pending verb ("Approving…"),

@@ -1147,6 +1147,86 @@ class BrowserTest : AntsTest() {
         assertThat(page.locator("input[name='inputs[1].name']")).hasValue("channel")
     }
 
+    private fun askHelper(text: String) {
+        val helper = page.getByRole(AriaRole.COMPLEMENTARY, Page.GetByRoleOptions().setName("Script helper"))
+        assertThat(helper).hasAttribute("data-token", Pattern.compile(".+"))
+        assertThat(helper.locator(".send")).isVisible()
+        helper.locator(".cm-content").click()
+        page.keyboard().type(text)
+        page.keyboard().press("Enter")
+    }
+
+    @Test
+    fun `the Script helper's text streams in inside its dialog, below what it said before`() = browse {
+        val claude = FakeClaude()
+        settings(claude)
+        claude.session("script-helper", says("Before."), *streaming, "wait done", says("Almost there."), builderResult, "wait never")
+        page.navigate(url(http.newDraft("/scripts")))
+        askHelper("Write it.")
+        val live = page.locator("#script-helper #live.caret")
+        assertThat(live).containsText("Almost there")
+        assertThat(page.locator("#sh-entries")).containsText("Before.")
+        val dialog = page.locator("#script-helper .dialog").boundingBox()!!
+        val entries = page.locator("#sh-entries").boundingBox()!!
+        val text = live.boundingBox()!!
+        assertTrue(text.x >= dialog.x && text.x + text.width <= dialog.x + dialog.width + 1, "the text stays inside the dialog: $text in $dialog")
+        assertTrue(text.y >= entries.y + entries.height - 1, "the text comes below what came before: $text after $entries")
+        claude.release("done")
+        assertThat(page.locator("#sh-entries")).containsText("Almost there")
+        claude.release("never")
+    }
+
+    @Test
+    fun `the Script helper keeps its dialog on a reload, and a Script page left and come back to starts a new one`() = browse {
+        val claude = FakeClaude()
+        settings(claude)
+        claude.session("script-helper", says("Hello from before."), builderResult, "wait never")
+        val path = http.newDraft("/scripts")
+        page.navigate(url(path))
+        askHelper("Hi.")
+        val helper = page.locator("#script-helper")
+        assertThat(helper.locator(".dialog")).containsText("Hello from before.")
+        val token = helper.getAttribute("data-token")!!
+
+        page.reload()
+        assertThat(helper.locator(".dialog")).containsText("Hello from before.")
+        assertThat(helper).hasAttribute("data-token", token)
+
+        page.navigate(url("/scripts"))
+        page.navigate(url(path))
+        assertThat(helper).hasAttribute("data-token", Pattern.compile(".+"))
+        assertThat(helper).not().hasAttribute("data-token", token)
+        assertThat(helper.locator(".dialog")).not().containsText("Hello from before.")
+        claude.release("never")
+    }
+
+    @Test
+    fun `a Process left and come back to opens a new Process Builder dialog, which starts from its Build log`() = browse {
+        val claude = FakeClaude()
+        settings(claude)
+        claude.session("process-builder", 1, says("One."), builderResult, "wait first")
+        claude.session("process-builder", 2, says("Two."), builderResult, "wait second")
+        newProcess("Come back to")
+        val path = page.url()
+        val dialog = page.locator("#pb-dialog")
+        ask("First.")
+        assertThat(dialog).containsText("One.")
+        builder()
+        assertFalse(mcpCall(port, page.locator("#canvas").getAttribute("data-builder")!!, "build_log", mapOf("markdown" to "Keep it small.")).second)
+
+        page.navigate(url("/processes"))
+        page.navigate(path)
+        assertThat(dialog).not().containsText("One.")
+        ask("Second.")
+        assertThat(dialog).containsText("Two.")
+        assertThat(page.locator("#pb-handoff")).isVisible()
+        val (first, second) = claude.launches("process-builder")
+        assertTrue("Keep it small." in second.stdin)
+        assertNotEquals(first.flag("--session-id"), second.flag("--session-id"))
+        claude.release("first")
+        claude.release("second")
+    }
+
     @Test
     fun `the Secrets card adds two Secrets for one Save, and its ✕ asks first, so Cancel keeps a Secret and Delete removes it once saved`() = browse {
         http.publishNew("/scripts", listOf("name" to "post", "description" to "Posts.", "code" to "console.log('hi')\n", "inputs" to "", "vars" to "",

@@ -139,7 +139,7 @@ async function openHelper(textarea, editor, cm, swap, edits) {
     const panel = document.getElementById(textarea.dataset.helper);
     const csrf = new FormData(textarea.form).get('_csrf');
     const kept = 'ants.helper.' + location.pathname;
-    let token = sessionStorage.getItem(kept) ?? '';
+    let token = window.samePage ? sessionStorage.getItem(kept) ?? '' : '';
     const post = (path, fields) => fetch(path, {method: 'POST', body: new URLSearchParams({_csrf: csrf, token, ...fields})});
     ({token} = await (await post('/script-helper', {})).json());
     sessionStorage.setItem(kept, token);
@@ -185,7 +185,7 @@ async function openHelper(textarea, editor, cm, swap, edits) {
         post('/script-helper/answer', fields);
     });
     const form = panel.querySelector('form'), message = panel.querySelector('textarea'), error = panel.querySelector('[role=alert]');
-    const stop = panel.querySelector('.stop'), send = panel.querySelector('.send'), live = panel.querySelector('.live'), dialog = panel.querySelector('.dialog');
+    const stop = panel.querySelector('.stop'), send = panel.querySelector('.send'), live = panel.querySelector('#sh-live'), dialog = panel.querySelector('.dialog');
     let sent = false; // Send stays disabled until the first dialog after the server took the message
     stream.on('dialog', html => {
         const bottom = dialog.scrollHeight - dialog.scrollTop - dialog.clientHeight < 40;
