@@ -1282,6 +1282,26 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `the Secrets card shows Add Secret and Save Secrets on one row, with no status until a Save says something`() = browse {
+        http.publishNew("/scripts", listOf("name" to "post", "description" to "Posts.", "code" to "console.log('hi')\n", "inputs" to "", "vars" to "",
+            "secrets[0].name" to "OLD_TOKEN", "secrets[0].value" to "tok-old", "secrets[0].was" to ""))
+        page.navigate(url("/scripts/post"))
+        val card = page.locator(card("Secrets"))
+        val add = card.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Add Secret"))
+        val save = card.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Save Secrets"))
+        val state = card.locator("[data-secrets-state]")
+        assertThat(add).isVisible()
+        val (a, s) = add.boundingBox()!! to save.boundingBox()!!
+        assertEquals(a.y + a.height / 2, s.y + s.height / 2, 1.0)
+        assertTrue(a.x + a.width <= s.x || s.x + s.width <= a.x)
+        assertThat(state).isHidden()
+
+        save.click()
+        assertThat(state).hasText(Pattern.compile("^Secrets saved \\d\\d:\\d\\d$"))
+        assertThat(state).isVisible()
+    }
+
+    @Test
     fun `a Secret saved on a Draft-only Script's card survives a reload and is there after Publish, and a refused Save says why`() = browse {
         http.get("/scripts")
         page.navigate(url(http.post("/scripts/new/draft", emptyMap()).path))
