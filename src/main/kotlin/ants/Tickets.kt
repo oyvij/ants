@@ -9,6 +9,7 @@ import org.commonmark.parser.Parser
 import org.commonmark.renderer.html.AttributeProvider
 import org.commonmark.renderer.html.HtmlRenderer
 import org.operaton.bpm.engine.HistoryService
+import org.operaton.bpm.engine.history.HistoricProcessInstance
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Controller
 import org.springframework.ui.Model
@@ -109,9 +110,6 @@ class TicketEntry(ticket: Tracked, process: String, val runName: String, sent: A
 /** A Spec on the Tickets page, with its Tickets, of the Run [run], named [name], of the Process [process]. */
 class SpecRow(val run: String, val name: String, val process: String, val spec: Tracked, val tickets: List<Tracked>) {
     val done = tickets.count { it.done }
-
-    /** Open until the Run ends and closes it, or the user does. */
-    val open = !spec.closed
 }
 
 /** A `Status:` line, the first. */
@@ -198,14 +196,13 @@ class Tickets(private val history: HistoryService, private val streams: Streams,
 
     @GetMapping("/tickets")
     fun list(@RequestParam specs: Int?, model: Model): String {
-        val rows = history.createHistoricProcessInstanceQuery().rootProcessInstances().list().mapNotNull { run ->
-            val spec = spec(run.id) ?: return@mapNotNull null
-            SpecRow(run.id, names.name(run.id), run.processDefinitionName ?: run.processDefinitionKey, spec, tickets(run.id))
-        }
+        val specced = history.createHistoricProcessInstanceQuery().rootProcessInstances().list().mapNotNull { run -> spec(run.id)?.let { run to it } }
+            .sortedWith(compareBy<Pair<HistoricProcessInstance, Tracked>> { it.second.closed }.thenByDescending { it.second.file.getLastModifiedTime() })
         val shown = specs?.coerceAtLeast(SPECS_PAGE) ?: SPECS_PAGE
-        val sorted = rows.sortedWith(compareBy<SpecRow> { !it.open }.thenByDescending { it.spec.file.getLastModifiedTime() })
-        model.addAttribute("specs", sorted.take(shown))
-        model.addAttribute("more", (shown + SPECS_PAGE).takeIf { sorted.size > shown })
+        model.addAttribute("specs", specced.take(shown).map { (run, spec) ->
+            SpecRow(run.id, names.name(run.id), run.processDefinitionName ?: run.processDefinitionKey, spec, tickets(run.id))
+        })
+        model.addAttribute("more", (shown + SPECS_PAGE).takeIf { specced.size > shown })
         return "tickets"
     }
 

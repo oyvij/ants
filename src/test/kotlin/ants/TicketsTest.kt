@@ -69,7 +69,7 @@ class TicketsTest : AntsTest() {
 
         val first = browser.get("/tickets").body
         assertEquals(newest.take(10), shown(first))
-        assertContains(first, """<div class="more"><a class="btn" href="/tickets?specs=20" data-more>Load more</a></div>""")
+        assertContains(first, """<div class="more"><a class="btn" href="/tickets?specs=20" data-more="20">Load more</a></div>""")
         val more = browser.get("/tickets?specs=20").body
         assertEquals(newest, shown(more))
         assertFalse("Load more" in more)

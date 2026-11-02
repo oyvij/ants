@@ -24,14 +24,16 @@
 @endfor
 </table>
 @endif
-@if(more != null)<div class="more"><a class="btn" href="/tickets?specs=${more}" data-more>Load more</a></div>@endif
+@if(more != null)<div class="more"><a class="btn" href="/tickets?specs=${more}" data-more="${more}">Load more</a></div>@endif
 </main>
 <script type="module">
     document.querySelector('main').addEventListener('click', async event => {
         const more = event.target.closest('[data-more]');
         if (!more) return;
         event.preventDefault();
-        const page = new DOMParser().parseFromString(await (await fetch(more.href)).text(), 'text/html');
+        const response = await fetch(more.href).catch(() => null);
+        if (!response?.ok || response.redirected) return location.assign(more.href);
+        const page = new DOMParser().parseFromString(await response.text(), 'text/html');
         document.querySelector('main').replaceChildren(...page.querySelector('main').childNodes);
         history.replaceState(null, '', more.href);
     });
