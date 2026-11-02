@@ -1689,8 +1689,10 @@ class BrowserTest : AntsTest() {
 
     @Test
     fun `Load more, centred below Ended, shows 10 more ended Runs in place and keeps them on a reload`() = browse {
-        http.import("start-end.bpmn")
-        repeat(12) { http.post("/processes/start-end/runs", mapOf()) }
+        settings(null)
+        val (process, plane) = row("ended", """<bpmn:startEvent id="start" />""", """<bpmn:endEvent id="end" />""")
+        deploy(definitions("ended", "Ended", process, plane))
+        repeat(12) { assertContains(http.post("/processes/ended/runs", mapOf()).body, "Completed") }
         page.navigate(url("/runs"))
         val rows = page.locator("h2:text('Ended') ~ table tr.click")
         assertThat(rows).hasCount(10)

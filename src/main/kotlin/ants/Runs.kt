@@ -153,21 +153,20 @@ class Runs(
 ) {
     /** The Runs list: Coming up, then the live Runs with what each is doing now, then the ended ones. */
     @GetMapping("/runs")
-    fun list(@RequestParam(defaultValue = "$ENDED") ended: Int, model: Model): String {
+    fun list(@RequestParam ended: Int?, model: Model): String {
         model.addAllAttributes(listed(ended))
         return "runs"
     }
 
     /** The Runs list below its header as HTML, sent on connect and whenever it changes. */
-    fun liveList(csrf: CsrfToken, ended: Int?): Part = streams.rendered("runlist", "runlist.kte", csrf) { listed(ended ?: ENDED) }
+    fun liveList(csrf: CsrfToken, ended: Int?): Part = streams.rendered("runlist", "runlist.kte", csrf) { listed(ended) }
 
-    private fun listed(shown: Int): Map<String, Any?> {
+    private fun listed(ended: Int?): Map<String, Any?> {
         val now = now().associateBy { it.run }
         val roots = { history.createHistoricProcessInstanceQuery().rootProcessInstances() }
-        val limit = shown.coerceAtLeast(ENDED)
-        val listedRuns = (roots().unfinished().orderByProcessInstanceStartTime().desc().list() +
-            roots().finished().orderByProcessInstanceStartTime().desc().listPage(0, limit + 1)).distinctBy { it.id }
-        val runs = listedRuns.map { run ->
+        val shown = ended?.coerceAtLeast(ENDED_PAGE) ?: ENDED_PAGE
+        val runs = (roots().unfinished().orderByProcessInstanceStartTime().desc().list() +
+            roots().finished().orderByProcessInstanceStartTime().desc().listPage(0, shown + 1)).distinctBy { it.id }.map { run ->
             val ended = run.endTime?.let { clock.local(it.toInstant()) }
             val done = run.state == HistoricProcessInstance.STATE_COMPLETED
             RunRow(
@@ -176,9 +175,9 @@ class Runs(
                 ended != null && keptWorkspace(run) != null, ended != null && Files.exists(names.runWorkspace(run.id).resolve(REPORT)),
             )
         }
-        val ended = runs.filter { it.ended != null }
+        val finished = runs.filter { it.ended != null }
         return mapOf(
-            "live" to runs.filter { it.ended == null }, "ended" to ended.take(limit), "more" to (limit + ENDED).takeIf { ended.size > limit }, "coming" to schedules.all().filter { it.next != null },
+            "live" to runs.filter { it.ended == null }, "ended" to finished.take(shown), "more" to (shown + ENDED_PAGE).takeIf { finished.size > shown }, "coming" to schedules.all().filter { it.next != null },
             "running" to launcher.running, "cap" to settings.agentTasks(),
         )
     }
@@ -699,7 +698,7 @@ class RunLifecycle(@Value("\${ants.home}") private val home: Path, private val s
 /** What outlives the Run in its workspace: the Transcripts (`tasks/`), the Spec and Tickets (`tickets/`) and the Report. */
 private val KEPT = setOf("tasks", "tickets", REPORT)
 
-private const val ENDED = 10
+private const val ENDED_PAGE = 10
 
 /** Deletes a Run workspace once its Run is done with it, all but what is [KEPT]. */
 @OptIn(ExperimentalPathApi::class)
