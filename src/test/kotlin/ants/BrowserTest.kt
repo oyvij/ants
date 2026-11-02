@@ -17,6 +17,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInfo
+import org.springframework.beans.factory.annotation.Autowired
 import java.nio.file.Path
 import java.util.regex.Pattern
 import kotlin.io.path.createDirectories
@@ -47,6 +48,9 @@ class BrowserTest : AntsTest() {
     private lateinit var page: Page
     private lateinit var test: String
     private val errors = mutableListOf<String>()
+
+    @Autowired
+    private lateinit var processes: Processes
 
     @BeforeEach
     fun launch(info: TestInfo) {
@@ -2235,6 +2239,23 @@ class BrowserTest : AntsTest() {
         assertThat(page.locator("#drawer-head")).isVisible()
         eventually { assertEquals(460.0, drawer.boundingBox()!!.width, 0.5) }
     }
+
+    @Test
+    fun `on a phone the shipped Build and ship Process page, with its whole start form, fits the screen`() = browse {
+        processes.deployShipped()
+        onPhone()
+        page.navigate(url("/processes/build_and_ship"))
+        assertThat(page.locator("#start .ed")).isVisible()
+        assertThat(shape("start")).isVisible()
+        page.screenshot("phone/build-and-ship")
+        assertEquals(emptyList<Any>(), page.evaluate(overflowing("main")), "parts of the page reaching past a 390px screen")
+        assertNoSidewaysScroll()
+    }
+
+    private fun overflowing(root: String) = """[...document.querySelectorAll("$root *")]
+        .filter(e => e.checkVisibility() && !e.closest("#diagram, #canvas"))
+        .filter(e => { const box = e.getBoundingClientRect(); return box.width > 0 && (box.left < 0 || box.right > document.documentElement.clientWidth) })
+        .map(e => e.tagName.toLowerCase() + (e.id ? "#" + e.id : "") + (e.className && typeof e.className === "string" ? "." + e.className.trim().split(/\\s+/).join(".") : "") + " " + Math.round(e.getBoundingClientRect().left) + "-" + Math.round(e.getBoundingClientRect().right))"""
 
     @Test
     fun `on a phone the Run page's and the Process page's diagrams fit the screen, and ＋, －, Fit and ⛶ work on a tap`() = browse {
