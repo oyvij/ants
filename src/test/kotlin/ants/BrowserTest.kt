@@ -2595,6 +2595,24 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `a Skill's Preview shows its frontmatter as a table, its name and description on rows of their own, above the body`() = browse {
+        page.navigate(url(http.newDraft("/skills")))
+        val editor = page.locator("textarea[name=skill] + .ed")
+        editor.locator(".cm-content").fill("---\nname: release-notes\ndescription: Writes the release notes for a version, from the commits since the last tag.\n---\nRead the commits.")
+
+        editor.locator("button", Locator.LocatorOptions().setHasText("Preview")).click()
+        val table = page.locator("dialog.modal .md table.frontmatter")
+        assertThat(table.locator("th")).hasText(arrayOf("name", "description"))
+        assertThat(table.locator("td")).hasText(arrayOf("release-notes", "Writes the release notes for a version, from the commits since the last tag."))
+        val name = table.locator("tr").nth(0).boundingBox()!!
+        val description = table.locator("tr").nth(1).boundingBox()!!
+        assertTrue(description.y >= name.y + name.height - 1, "description sits below name")
+        assertTrue(page.locator("dialog.modal .md p").boundingBox()!!.y >= description.y + description.height, "the body sits below the frontmatter")
+        assertEquals(0, page.locator("dialog.modal .md hr, dialog.modal .md h2").count())
+        page.screenshot("preview-frontmatter")
+    }
+
+    @Test
     fun `pasting an image into the start form's prompt uploads it and references it at the caret, and anything else is refused`() = browse {
         agentTask(null)
         http.import("agent-task.bpmn")
