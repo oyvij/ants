@@ -478,45 +478,18 @@ class Transcript(private val toolLine: (name: String, input: Map<*, *>) -> Strin
 
         /** [text] as HTML, its own HTML escaped and its URLs sanitized. */
         fun markdown(text: CharSequence): String {
-            val match = frontmatter.find(text) ?: return renderer.render(parser.parse(text.toString()))
-            val fields = frontmatterFields(match.groupValues[1].lines())
-            if (fields.isEmpty()) return renderer.render(parser.parse(text.toString()))
-            val rows = fields.joinToString("") { (key, value) -> "<tr><th>${esc(key)}</th><td>${esc(value)}</td></tr>" }
-            return "<table class=\"frontmatter\"><tbody>$rows</tbody></table>\n" + renderer.render(parser.parse(text.substring(match.range.last + 1)))
+            val (fields, body) = runCatching { frontmatter(text.toString()) }.getOrNull()?.takeIf { it.first.isNotEmpty() } ?: return html(text.toString())
+            val rows = fields.entries.joinToString("") { (key, value) -> "<tr><th>${esc(key)}</th><td>${esc(frontmatterValue(value))}</td></tr>" }
+            return "<table class=\"frontmatter\"><tbody>$rows</tbody></table>\n" + html(body)
         }
 
-        private val frontmatter = Regex("""\A---[ \t]*\r?\n(.*?)\r?\n---[ \t]*(?:\r?\n|\z)""", RegexOption.DOT_MATCHES_ALL)
-        private val field = Regex("""^([A-Za-z_][\w.-]*)[ \t]*:(?:[ \t]+(.*))?$""")
+        private fun html(text: String) = renderer.render(parser.parse(text))
 
-        private fun frontmatterFields(lines: List<String>): List<Pair<String, String>> {
-            if (lines.none { it.isNotBlank() } || lines.any { it.isNotBlank() && !it[0].isWhitespace() && !it.startsWith("#") && !it.startsWith("- ") && !field.matches(it) }) return emptyList()
-            val fields = mutableListOf<Pair<String, MutableList<String>>>()
-            lines.filterNot { it.startsWith("#") }.forEach { line ->
-                val head = field.matchEntire(line)
-                when {
-                    head != null -> fields += head.groupValues[1] to mutableListOf(head.groupValues[2].trim())
-                    fields.isNotEmpty() -> fields.last().second += line
-                }
-            }
-            return fields.map { (key, value) -> key to fieldValue(value) }
-        }
-
-        private fun fieldValue(lines: List<String>): String {
-            val first = lines.firstOrNull().orEmpty()
-            val block = first.matches(Regex("""[|>][+-]?"""))
-            val rest = lines.drop(1).dropLastWhile(String::isBlank)
-            val indent = rest.filter(String::isNotBlank).minOfOrNull { line -> line.takeWhile(Char::isWhitespace).length } ?: 0
-            val body = rest.map { it.drop(indent).trimEnd() }
-            return when {
-                block -> body.joinToString(if (first.startsWith(">")) " " else "\n")
-                body.isEmpty() -> unquote(first)
-                first.isEmpty() -> body.joinToString("\n")
-                else -> (listOf(first) + body.map(String::trim)).joinToString(" ")
-            }
-        }
-
-        private fun unquote(value: String) =
-            if (value.length >= 2 && value.first() == value.last() && value.first() in "\"'") value.substring(1, value.length - 1) else value
+        private fun frontmatterValue(value: Any?) = when (value) {
+            null -> ""
+            is Map<*, *>, is List<*> -> yaml.dump(value)
+            else -> value.toString()
+        }.trimEnd()
 
         private fun esc(value: Any?) = HtmlUtils.htmlEscape(value?.toString().orEmpty())
 

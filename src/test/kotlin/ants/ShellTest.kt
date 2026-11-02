@@ -153,4 +153,12 @@ class ShellTest : AntsTest() {
         assertContains(preview, "<p>Body.</p>")
         assertEquals("<hr />\n<p>Not frontmatter</p>\n", browser.post("/markdown", mapOf("text" to "---\nNot frontmatter")).body)
     }
+
+    @Test
+    fun `the Preview reads the frontmatter as Ants reads it, quotes unescaped, and shows broken frontmatter as it is written`() {
+        val quoted = browser.post("/markdown", mapOf("text" to "---\nname: 'the user''s'\ndescription: \"a \\\"b\\\"\"\n---\n")).body
+
+        assertContains(quoted, "<tr><th>name</th><td>the user&#39;s</td></tr><tr><th>description</th><td>a &quot;b&quot;</td></tr>")
+        assertEquals("<hr />\n<h2>name: [broken</h2>\n", browser.post("/markdown", mapOf("text" to "---\nname: [broken\n---\n")).body)
+    }
 }
