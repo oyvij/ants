@@ -1,8 +1,14 @@
 package ants
 
 import org.junit.jupiter.api.Test
+import java.awt.Color
+import java.awt.image.BufferedImage
+import javax.imageio.ImageIO
+import kotlin.math.abs
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 /** The web UI as an installable app. Installing it and its badge are seen only in a real browser (BrowserTest). */
 class PwaTest : AntsTest() {
@@ -27,5 +33,32 @@ class PwaTest : AntsTest() {
         val manifest = browser().get("/manifest.webmanifest").body
         assertContains(manifest, """"theme_color": "#0e1016"""")
         assertContains(manifest, """"background_color": "#0e1016"""")
+    }
+
+    @Test
+    fun `each icon the manifest lists is as large as its sizes say`() {
+        icons().forEach { (src, size) -> assertEquals(size, icon(src).let { "${it.width}x${it.height}" }, src) }
+    }
+
+    @Test
+    fun `each icon is the purple ant tile, not the green one`() {
+        icons().forEach { (src) ->
+            val icon = icon(src)
+            val pixels = (0 until icon.height).flatMap { y -> (0 until icon.width).map { x -> Color(icon.getRGB(x, y)) } }
+            assertTrue(Color(icon.getRGB(0, 0)).near("#6366f1"), "$src top left")
+            assertTrue(Color(icon.getRGB(icon.width - 1, icon.height - 1)).near("#a855f7"), "$src bottom right")
+            assertTrue(pixels.any { it.near("#31373D") }, "$src has the ant")
+            assertFalse(pixels.any { it.near("#2b6f4f") }, "$src has the old green")
+        }
+    }
+
+    private fun icons() = Regex(""""src": "([^"]+)", "sizes": "([^"]+)"""")
+        .findAll(browser().get("/manifest.webmanifest").body).map { it.groupValues[1] to it.groupValues[2] }.toList()
+        .ifEmpty { error("no icons") }
+
+    private fun icon(src: String): BufferedImage = ImageIO.read(javaClass.getResource("/static$src") ?: error("no $src"))
+
+    private fun Color.near(hex: String) = Color.decode(hex).let {
+        abs(red - it.red) <= 12 && abs(green - it.green) <= 12 && abs(blue - it.blue) <= 12
     }
 }
