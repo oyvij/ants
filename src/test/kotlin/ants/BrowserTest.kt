@@ -2267,6 +2267,31 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `on a phone and a computer the default choice and the buttons of a Vault's, a Source map's and a Profile's row line up, and Updates spaces its parts evenly`() = browse {
+        settings(null, "vaults:\n  work: /tmp/work\ndefault-vault: work\nsource-maps:\n  work: /tmp/work/source-map.md\ndefault-source-map: work\nprofiles:\n  work:\n    vault: work\n    source-map: work\n")
+        onPhone()
+        for ((screen, width) in listOf("phone" to 390, "computer" to 1280)) {
+            page.setViewportSize(width, 900)
+            page.navigate(url("/settings"))
+            for (title in listOf("Vaults", "Source maps", "Profiles")) {
+                val row = page.locator("${card(title)} .listed > .row:not([hidden])").first()
+                val controls = row.locator(":scope > :is(label.row, button)").all()
+                assertTrue(controls.size >= 3, "$title's row has its default choice and buttons")
+                val middles = controls.associate { it.evaluate("e => e.outerHTML.slice(0, 60)") as String to it.boundingBox()!!.let { b -> b.y + b.height / 2 } }
+                val first = middles.values.first()
+                for ((control, middle) in middles) assertEquals(first, middle, 1.0, "on a $screen $title's $control sits on the line of its default choice: $middles")
+            }
+            val updates = page.locator(card("Updates"))
+            val parts = listOf(updates.locator("p.small"), updates.locator("label:has([name=prereleases])"), updates.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Check now"))).map { it.boundingBox()!! }
+            val gaps = parts.zipWithNext { above, below -> below.y - (above.y + above.height) }
+            assertTrue(gaps.all { it >= 8 }, "on a $screen Updates' parts are apart: $gaps")
+            assertEquals(gaps[0], gaps[1], 1.0, "on a $screen Updates' parts are evenly apart: $gaps")
+            assertEquals(parts[1].x, parts[2].x, 1.0, "on a $screen Check now lines up with Follow beta versions")
+            page.screenshot("$screen/settings-rows")
+        }
+    }
+
+    @Test
     fun `just above 768px the modeler, the Skill page, the Agent form and Settings keep their columns side by side`() = browse {
         http.import("start-end.bpmn")
         settings(null)
