@@ -252,64 +252,71 @@ function followFingers(box) {
 const composer = document.querySelector('.composer');
 if (composer) new ResizeObserver(() => document.documentElement.style.setProperty('--composer-height', composer.offsetHeight + 'px')).observe(composer, { box: 'border-box' });
 
-const tip = Object.assign(document.createElement('div'), { className: 'tip', id: 'tip', hidden: true });
-tip.setAttribute('role', 'tooltip');
-let tipFor = null;
-function showTip(clip) {
-    if (!tip.isConnected) document.body.append(tip);
-    tip.textContent = clip.textContent.trim();
-    tip.hidden = false;
-    tipFor = clip;
-    clip.clipInfo?.setAttribute('aria-expanded', 'true');
-    place(clip);
+{
+    const tip = Object.assign(document.createElement('div'), { className: 'tip', id: 'tip', hidden: true });
+    tip.setAttribute('role', 'tooltip');
+    let tipFor = null;
+    const placeTip = clip => {
+        const box = clip.getBoundingClientRect(), own = tip.getBoundingClientRect(), gap = 6;
+        const above = box.top - own.height - gap;
+        tip.style.top = (above >= gap ? above : box.bottom + gap) + 'px';
+        tip.style.left = Math.max(gap + 2, Math.min(box.left, innerWidth - own.width - gap - 2)) + 'px';
+    };
+    const showTip = clip => {
+        if (!tip.isConnected) document.body.append(tip);
+        tip.textContent = clip.textContent.trim();
+        tip.hidden = false;
+        tipFor = clip;
+        clip.clipInfo?.setAttribute('aria-expanded', 'true');
+        placeTip(clip);
+    };
+    const hideTip = () => {
+        if (!tipFor) return;
+        tipFor.clipInfo?.setAttribute('aria-expanded', 'false');
+        tip.hidden = true;
+        tipFor = null;
+    };
+    const infoButton = clip => {
+        const info = Object.assign(document.createElement('button'), { type: 'button', className: 'clip-info' });
+        info.setAttribute('aria-label', 'Show the whole text');
+        info.setAttribute('aria-expanded', 'false');
+        info.onclick = () => tipFor === clip ? hideTip() : showTip(clip);
+        return info;
+    };
+    const fitClip = clip => {
+        const clipped = clip.scrollHeight > clip.clientHeight + 1 || clip.scrollWidth > clip.clientWidth + 1;
+        clip.classList.toggle('clipped', clipped);
+        if (clipped) clip.tabIndex = 0; else clip.removeAttribute('tabindex');
+        if (clipped && !clip.clipInfo?.isConnected) {
+            clip.clipInfo = infoButton(clip);
+            if (/flex|grid/.test(getComputedStyle(clip.parentElement).display)) clip.after(clip.clipInfo); else clip.before(clip.clipInfo);
+        } else if (!clipped && clip.clipInfo) {
+            if (tipFor === clip) hideTip();
+            clip.clipInfo.remove();
+            clip.clipInfo = null;
+        }
+    };
+    const clipObserver = new ResizeObserver(entries => entries.forEach(entry => fitClip(entry.target)));
+    const watchClips = () => document.querySelectorAll('.clip').forEach(clip => {
+        clipObserver.observe(clip);
+        fitClip(clip);
+    });
+    watchClips();
+    new MutationObserver(() => {
+        watchClips();
+        if (tipFor && !tipFor.isConnected) hideTip();
+    }).observe(document.documentElement, { childList: true, subtree: true });
+    const canHover = matchMedia('(hover: hover)');
+    document.addEventListener('mouseover', event => {
+        const clip = event.target.closest?.('.clip.clipped');
+        if (clip && canHover.matches && tipFor !== clip) showTip(clip);
+    });
+    document.addEventListener('mouseout', event => {
+        if (tipFor && canHover.matches && !tipFor.contains(event.relatedTarget) && document.activeElement !== tipFor) hideTip();
+    });
+    document.addEventListener('focusin', event => { if (event.target.matches?.('.clip.clipped')) showTip(event.target); });
+    document.addEventListener('focusout', event => { if (event.target === tipFor) hideTip(); });
+    document.addEventListener('click', event => { if (!event.target.closest('.clip-info')) hideTip(); });
+    addEventListener('keydown', event => { if (event.key === 'Escape') hideTip(); });
+    addEventListener('scroll', () => tipFor && placeTip(tipFor), { capture: true, passive: true });
 }
-function place(clip) {
-    const box = clip.getBoundingClientRect(), own = tip.getBoundingClientRect(), gap = 6;
-    const above = box.top - own.height - gap;
-    tip.style.top = (above >= gap ? above : box.bottom + gap) + 'px';
-    tip.style.left = Math.max(gap + 2, Math.min(box.left, innerWidth - own.width - gap - 2)) + 'px';
-}
-function hideTip() {
-    if (!tipFor) return;
-    tipFor.clipInfo?.setAttribute('aria-expanded', 'false');
-    tip.hidden = true;
-    tipFor = null;
-}
-function infoFor(clip) {
-    const info = Object.assign(document.createElement('button'), { type: 'button', className: 'clip-info' });
-    info.setAttribute('aria-label', 'Show the whole text');
-    info.setAttribute('aria-expanded', 'false');
-    info.onclick = () => tipFor === clip ? hideTip() : showTip(clip);
-    return info;
-}
-function fit(clip) {
-    const clipped = clip.scrollHeight > clip.clientHeight + 1 || clip.scrollWidth > clip.clientWidth + 1;
-    clip.classList.toggle('clipped', clipped);
-    if (clipped && !clip.clipInfo?.isConnected) {
-        clip.clipInfo = infoFor(clip);
-        const flow = getComputedStyle(clip.parentElement).display;
-        if (/flex|grid/.test(flow)) clip.after(clip.clipInfo); else clip.before(clip.clipInfo);
-    } else if (!clipped && clip.clipInfo) {
-        if (tipFor === clip) hideTip();
-        clip.clipInfo.remove();
-        clip.clipInfo = null;
-    }
-}
-const clips = new ResizeObserver(entries => entries.forEach(entry => fit(entry.target)));
-const watchClips = root => (root.matches?.('.clip') ? [root] : []).concat([...root.querySelectorAll?.('.clip') ?? []]).forEach(clip => clips.observe(clip));
-watchClips(document);
-new MutationObserver(changes => {
-    changes.forEach(change => change.addedNodes.forEach(watchClips));
-    if (tipFor && !tipFor.isConnected) hideTip();
-}).observe(document.documentElement, { childList: true, subtree: true });
-const hovers = matchMedia('(hover: hover)');
-document.addEventListener('mouseover', event => {
-    const clip = event.target.closest?.('.clip.clipped');
-    if (clip && hovers.matches && tipFor !== clip) showTip(clip);
-});
-document.addEventListener('mouseout', event => {
-    if (tipFor && hovers.matches && !tipFor.contains(event.relatedTarget)) hideTip();
-});
-document.addEventListener('click', event => { if (!event.target.closest('.clip-info')) hideTip(); });
-addEventListener('keydown', event => { if (event.key === 'Escape') hideTip(); });
-addEventListener('scroll', () => tipFor && place(tipFor), { capture: true, passive: true });

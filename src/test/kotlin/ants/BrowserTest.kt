@@ -2426,18 +2426,20 @@ class BrowserTest : AntsTest() {
         }
     }
 
-    private fun clipOf(path: String, entry: String) = page.locator("tr[data-href='$entry'] .clip")
+    private val longToldLists = listOf("/agents" to "/agents/long-told", "/skills" to "/skills/long-told", "/scripts" to "/scripts/long-told")
+
+    private fun clipOf(entry: String) = page.locator("tr[data-href='$entry'] .clip")
 
     private fun isClipped(clip: Locator) = clip.evaluate("e => e.scrollHeight > e.clientHeight + 1 || e.scrollWidth > e.clientWidth + 1") as Boolean
 
     private val tip get() = page.locator(".tip[role=tooltip]")
 
     @Test
-    fun `a long description on the Agents, Skills and Scripts lists is clamped to two lines with an ellipsis, and a hover shows the whole of it in a tooltip`() = browse {
+    fun `a long description on the Agents, Skills and Scripts lists is clamped to two lines with an ellipsis, and a hover or keyboard focus shows the whole of it in a tooltip`() = browse {
         longDescriptions()
-        for ((path, entry) in listOf("/agents" to "/agents/long-told", "/skills" to "/skills/long-told", "/scripts" to "/scripts/long-told")) {
+        for ((path, entry) in longToldLists) {
             page.navigate(url(path))
-            val clip = clipOf(path, entry)
+            val clip = clipOf(entry)
             assertThat(clip).hasClass(Pattern.compile("\\bclipped\\b"))
             assertTrue(isClipped(clip), "the long description on $path is cut short")
             assertEquals("2", clip.evaluate("e => getComputedStyle(e).webkitLineClamp"), "the long description on $path shows two lines")
@@ -2451,9 +2453,15 @@ class BrowserTest : AntsTest() {
             assertTrue(over.y + over.height <= box.y + 1 || over.y >= box.y + box.height - 1, "the tooltip on $path sits above or below the text, not over it")
             page.mouse().move(0.0, 0.0)
             assertThat(tip).isHidden()
+
+            clip.focus()
+            assertThat(tip).isVisible()
+            assertThat(tip).hasText(longTold)
+            page.keyboard().press("Escape")
+            assertThat(tip).isHidden()
         }
         page.navigate(url("/agents"))
-        val short = clipOf("/agents", "/agents/short-told")
+        val short = clipOf("/agents/short-told")
         assertThat(short).not().hasClass(Pattern.compile("\\bclipped\\b"))
         short.hover()
         assertThat(tip).isHidden()
@@ -2463,7 +2471,7 @@ class BrowserTest : AntsTest() {
     fun `on a phone a cut-short description has a tap-sized (i) beside it that toggles its tooltip, and the tap doesn't open the row`() = browse {
         longDescriptions()
         onPhone()
-        for ((path, entry) in listOf("/agents" to "/agents/long-told", "/skills" to "/skills/long-told", "/scripts" to "/scripts/long-told")) {
+        for ((path, entry) in longToldLists) {
             page.navigate(url(path))
             val info = page.locator("tr[data-href='$entry'] .clip-info")
             assertThat(info).isVisible()
@@ -2471,7 +2479,8 @@ class BrowserTest : AntsTest() {
             assertTrue(info.boundingBox()!!.height >= 44, "the (i) on $path is at least 44px tall")
             assertWithinScreen(info, "the (i) on $path")
             assertNoSidewaysScroll()
-            page.screenshot("phone${path.replace(Regex("[^a-z0-9]+"), "-")}-clip")
+            val shot = "phone${path.replace(Regex("[^a-z0-9]+"), "-")}"
+            page.screenshot("$shot-clip")
 
             info.tap()
             assertThat(tip).isVisible()
@@ -2479,7 +2488,7 @@ class BrowserTest : AntsTest() {
             assertWithinScreen(tip, "the tooltip on $path")
             assertThat(info).hasAttribute("aria-expanded", "true")
             assertTrue(page.url().endsWith(path), "the tap on the (i) stays on $path")
-            page.screenshot("phone${path.replace(Regex("[^a-z0-9]+"), "-")}-tip")
+            page.screenshot("$shot-tip")
 
             info.tap()
             assertThat(tip).isHidden()
