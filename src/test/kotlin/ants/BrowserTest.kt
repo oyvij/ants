@@ -2318,15 +2318,16 @@ class BrowserTest : AntsTest() {
         val card = page.locator(".card:has(#input-schema)").boundingBox()!!
         for (at in listOf("inputs[0]", "inputs[0].rows[0]")) {
             val row = page.locator("[name='$at.name']").locator("xpath=..")
-            for (part in row.locator(":scope > *").all()) {
-                val box = part.boundingBox()!!
-                assertTrue(box.x >= card.x && box.x + box.width <= card.x + card.width, "$at's ${part.evaluate("e => e.outerHTML.slice(0, 60)")} spans ${box.x} to ${box.x + box.width} in a card from ${card.x} to ${card.x + card.width}")
+            val parts = row.locator(":scope > *").all().associateWith { it.boundingBox()!! }
+            for ((part, box) in parts) {
+                assertTrue(box.x >= card.x && box.x + box.width <= card.x + card.width, "$at's ${part.evaluate("e => e.outerHTML.slice(0, 100)")} spans ${box.x} to ${box.x + box.width} in a card from ${card.x} to ${card.x + card.width}")
             }
-            val lines = row.locator(":scope > *").all().map { it.boundingBox()!!.let { b -> Math.round(b.y + b.height / 2) } }.toSet()
+            val lines = parts.values.map { Math.round(it.y + it.height / 2) }.toSet()
             assertEquals(3, lines.size, "$at's row is on the lines $lines")
+            val rowWidth = row.boundingBox()!!.width
             for (field in listOf("name", "description")) {
                 val box = page.locator("[name='$at.$field']").boundingBox()!!
-                assertTrue(box.width >= 200, "$at's $field is ${box.width}px wide")
+                assertEquals(rowWidth, box.width, 1.0, "$at's $field spans its row")
             }
         }
         page.screenshot("phone/script-schema")
