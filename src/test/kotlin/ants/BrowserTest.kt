@@ -3758,14 +3758,21 @@ class BrowserTest : AntsTest() {
         assertTrue(all.all { it.startsWith(url("/")) || it.startsWith("data:") }, "every request goes to Ants: $all")
     }
 
+    private val brokenSource get() = page.locator("#ticket code.language-mermaid")
+    private val mermaidError get() = page.locator("#ticket .mermaid-error")
+
+    private fun resolvedColour(variable: String) = page.evaluate(
+        "v => { const p = document.body.appendChild(document.createElement('i')); p.style.color = `var(\${v})`; const c = getComputedStyle(p).color; p.remove(); return c }",
+        variable,
+    ) as String
+
     private fun assertBrokenDiagramShowsItsSourceAndError() {
-        assertThat(page.locator("#ticket code.language-mermaid")).isVisible()
-        assertThat(page.locator("#ticket code.language-mermaid")).containsText("Spec --> --> ]")
-        assertThat(page.locator("#ticket .mermaid-error")).isVisible()
-        assertThat(page.locator("#ticket .mermaid-error")).containsText("Parse error")
-        assertThat(page.locator("#ticket .mermaid-error")).hasCSS("background-color", page.evaluate(
-            "() => { const p = document.body.appendChild(document.createElement('i')); p.style.color = 'var(--badSoft)'; const c = getComputedStyle(p).color; p.remove(); return c }",
-        ) as String)
+        assertThat(brokenSource).isVisible()
+        assertThat(brokenSource).containsText("Spec --> --> ]")
+        assertThat(mermaidError).isVisible()
+        assertThat(mermaidError).containsText("Parse error")
+        assertThat(mermaidError).hasCSS("background-color", resolvedColour("--badSoft"))
+        assertThat(mermaidError).hasCSS("color", resolvedColour("--badText"))
         assertThat(page.locator("#ticket .mermaid")).hasCount(0)
         assertThat(page.locator("svg[aria-roledescription=error], [id^=dmermaid-]")).hasCount(0)
         assertThat(page.getByText("Syntax error in text")).hasCount(0)
@@ -3785,8 +3792,7 @@ class BrowserTest : AntsTest() {
         assertBrokenDiagramShowsItsSourceAndError()
         assertNoSidewaysScroll()
         page.waitForTimeout(500.0)
-        assertThat(page.locator("#ticket .mermaid-error")).hasCount(1)
-        errors.removeAll { "error" in it.lowercase() }
+        assertThat(mermaidError).hasCount(1)
     }
 
     @Test
