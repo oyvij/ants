@@ -2691,6 +2691,9 @@ class BrowserTest : AntsTest() {
         touch("touchStart", *from.toTypedArray())
         for (step in 1..10) touch("touchMove", *from.zip(to) { (x, y), (u, v) -> x + (u - x) * step / 10 to y + (v - y) * step / 10 }.toTypedArray())
         touch("touchEnd")
+        // This CDP session's touchEnd returns before the page has it, so a tap through Playwright's own session could
+        // land while the drag's touches are still down there, and no click comes of it. Two frames later the page has it.
+        page.evaluate("() => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)))")
     }
 
     private fun viewbox(diagram: Locator) = (diagram.evaluate("e => { const v = e.canvas.viewbox(); return [v.x, v.y, v.scale] }") as List<*>).map { (it as Number).toDouble() }

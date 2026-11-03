@@ -69,3 +69,14 @@ release.yml` makes the newest beta the stable release (`0.27.0`) and its image; 
 
 The tests fake `claude`, `codex` and `gh`, and use real git against local bare repos. `BrowserTest` needs Chromium, so
 it skips locally where Chromium can't launch and runs in CI.
+
+## Credits
+
+The ant in the Ants icon is from [Twemoji](https://github.com/jdecked/twemoji), © Twitter, Inc and other contributors,
+licensed under [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/). Its source is `docs/icon.svg`; render it to
+the icons with the Chromium that `./gradlew playwright --args="install chromium"` installs, for N = 192 and 512 (add
+`--no-sandbox` where its sandbox can't start, such as in a container):
+
+```sh
+chrome --headless --hide-scrollbars --window-size=N,N --screenshot=src/main/resources/static/icon-N.png file://$PWD/docs/icon.svg
+```
