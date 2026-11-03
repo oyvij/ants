@@ -614,6 +614,9 @@ details > summary { cursor: pointer; color: var(--muted); }
 #checks .warning::before { content: "⚠ "; color: var(--wait); }
 dialog.modal.create .who > * { margin: 0; border-radius: 0; padding: 10px 18px; }
 dialog.modal.create iframe { flex: 1; border: 0; display: block; padding: 0; width: 100%; background: var(--bg); }
+@media (min-width: 769px) { dialog.modal.create { width: min(1600px, 96vw); height: 92vh; } }
+body.framed main { max-width: none; padding: 20px 24px; }
+.helper .ed .bar { flex-wrap: wrap; }
 
 /* Agents and Skills: their lists, the Agent page (Who it is, What it may do, Standing instructions) and the Skill page. */
 table.library a, .usedby a { color: inherit; } @media (min-width: 769px) { table.library td a, table.library td:first-child { white-space: nowrap; } } table.library td b a:hover { color: var(--acc); }

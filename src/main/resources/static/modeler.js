@@ -524,16 +524,16 @@ function formModal(kind, src, use, who = "") {
     const title = (editing ? "Edit " : "New ") + {agents: "Agent", skills: "Skill", scripts: "Script"}[kind]
     const frame = el("iframe", {title, className: "mb"})
     const named = () => frame.contentWindow.location.pathname.match(new RegExp(`^/${kind}/([^/]+)$`))?.[1]
-    const primary = el("button", {type: "button", className: "primary", hidden: true, textContent: editing ? "Publish" : "Use", onclick: async () => {
-        const form = frame.contentDocument.querySelector("input[name=use]")?.form
-        if (editing) return form?.requestSubmit()
-        await form?.draft?.save()
+    const pageForm = () => frame.contentDocument.querySelector("input[name=use]")?.form
+    const primary = el("button", {type: "button", className: "primary", hidden: true, textContent: "Publish", onclick: () => pageForm()?.requestSubmit()})
+    const asDraft = el("button", {type: "button", hidden: true, textContent: "Use Draft", onclick: async () => {
+        await pageForm()?.draft?.save()
         dialog.close()
         use(decodeURIComponent(named()))
     }})
     const header = el("form", {method: "dialog", className: "mh"}, el("b", {className: `ent ent-${kind.slice(0, -1)}`, textContent: title}),
         el("span", {className: "muted small", textContent: "Esc to close"}), el("span", {className: "sp"}),
-        el("button", {className: "ghost", title: "Close", textContent: "Cancel"}), primary)
+        el("button", {className: "ghost", title: "Close", textContent: "Cancel"}), ...(editing ? [] : [asDraft]), primary)
     const dialog = el("dialog", {className: "modal create"}, header, who, frame)
     dialog.onclose = () => dialog.remove()
     frame.onload = () => {
@@ -545,7 +545,8 @@ function formModal(kind, src, use, who = "") {
         // The form, or the form refusing a save.
         const page = frame.contentDocument
         const form = page.querySelector("input[name=use]")?.form
-        primary.hidden = !form
+        primary.hidden = asDraft.hidden = !form
+        page.body.classList.add("framed")
         if (!form) return page.querySelector("nav.side")?.remove()
         page.querySelector(".ph")?.replaceWith(page.querySelector(".ph .sub") || "")
         form.querySelectorAll("button.primary:not([type=button])").forEach(button => button.hidden = true)

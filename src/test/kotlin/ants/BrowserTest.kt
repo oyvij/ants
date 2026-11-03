@@ -801,6 +801,42 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `New Script's modal publishes the Script with Publish and picks it on the Script Task, with no Draft mark`() = browse {
+        val task = appendScriptTask()
+        button("New Script").click()
+        val form = page.frameLocator("dialog iframe")
+        form.locator("input[name=name]").fill("published-at-once")
+        form.locator("input[name=description]").fill("Published from the modal.")
+        page.locator("dialog .mh").getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Publish").setExact(true)).click()
+
+        assertThat(page.locator("dialog")).hasCount(0)
+        assertThat(shape(task)).hasClass(selected)
+        assertThat(label("Script")).hasValue("published-at-once")
+        assertThat(mark("Script")).hasCount(0)
+        assertTrue(home.resolve("scripts").toFile().listFiles().orEmpty().any { it.resolve("script.yaml").readText().contains("name: published-at-once") })
+        http.post("/scripts/published-at-once/delete", mapOf("confirm" to "on"))
+    }
+
+    @Test
+    fun `New Script's modal is wide enough for the Script page, its form and helper apart and each helper button within the helper`() = browse {
+        for ((width, height) in listOf(1280 to 720, 1440 to 900, 1920 to 1080)) {
+            page.setViewportSize(width, height)
+            appendScriptTask()
+            button("New Script").click()
+            val frame = page.frameLocator("dialog iframe")
+            assertThat(frame.locator("#script-helper")).hasAttribute("data-token", Pattern.compile(".+"))
+            val script = frame.locator("form#script").boundingBox()!!
+            val helper = frame.locator("#script-helper").boundingBox()!!
+            assertTrue(script.width >= 800, "the Script's form at $width is ${script.width}px wide")
+            assertTrue(helper.x >= script.x + script.width || helper.y >= script.y + script.height, "the helper overlaps the Script's form at $width")
+            assertEquals(true, frame.locator("#script-helper .ed").evaluate("ed => [...ed.querySelectorAll('.bar button')].every(b => b.getBoundingClientRect().right <= ed.getBoundingClientRect().right)"),
+                "a helper button runs past the helper at $width")
+            page.keyboard().press("Escape")
+            assertThat(page.locator("dialog")).hasCount(0)
+        }
+    }
+
+    @Test
     fun `a Script Task's panel shows each input's type, description and whether it is required`() = browse {
         http.publishNew("/scripts", listOf("name" to "post-it", "description" to "Posts it.", "code" to "console.log('hi')\n", "vars" to "",
             "inputs[0].name" to "channel", "inputs[0].type" to "string", "inputs[0].description" to "Where to post.", "inputs[0].required" to "on",
