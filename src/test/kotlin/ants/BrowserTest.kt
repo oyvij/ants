@@ -818,7 +818,7 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
-    fun `New Script's modal is wide enough for the Script page, its form and helper apart and each helper button within the helper`() = browse {
+    fun `the modeler's New Script, New Agent and New Skill modals give their page the modal's width, the Script's form and helper apart and each helper button within the helper`() = browse {
         for ((width, height) in listOf(1280 to 720, 1440 to 900, 1920 to 1080)) {
             page.setViewportSize(width, height)
             appendScriptTask()
@@ -827,12 +827,22 @@ class BrowserTest : AntsTest() {
             assertThat(frame.locator("#script-helper")).hasAttribute("data-token", Pattern.compile(".+"))
             val script = frame.locator("form#script").boundingBox()!!
             val helper = frame.locator("#script-helper").boundingBox()!!
-            assertTrue(script.width >= 800, "the Script's form at $width is ${script.width}px wide")
+            assertTrue(script.width >= 0.6 * width, "the Script's form at $width is ${script.width}px wide")
             assertTrue(helper.x >= script.x + script.width || helper.y >= script.y + script.height, "the helper overlaps the Script's form at $width")
             assertEquals(true, frame.locator("#script-helper .ed").evaluate("ed => [...ed.querySelectorAll('.bar button')].every(b => b.getBoundingClientRect().right <= ed.getBoundingClientRect().right)"),
                 "a helper button runs past the helper at $width")
             page.keyboard().press("Escape")
             assertThat(page.locator("dialog")).hasCount(0)
+            appendAgentTask()
+            for ((opens, selector) in listOf("New Agent" to "form.agent", "New Skill" to ".skill-page")) {
+                button(opens).click()
+                val modal = page.locator("dialog.modal").boundingBox()!!
+                val shown = page.frameLocator("dialog iframe").locator(selector)
+                assertThat(shown).isVisible()
+                assertTrue(shown.boundingBox()!!.width >= modal.width - 60, "$opens's page at $width is ${shown.boundingBox()!!.width}px wide in a ${modal.width}px modal")
+                page.keyboard().press("Escape")
+                assertThat(page.locator("dialog")).hasCount(0)
+            }
         }
     }
 

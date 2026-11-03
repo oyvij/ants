@@ -516,16 +516,13 @@ function writeAgentTask(element, changes, inputs, redraw = false) {
     }
 }
 
-// The page of an Agent, Skill or Script in a modal over the modeler. Edit opens [src], the item's page, and its Publish
-// picks it on the Task once published. New posts [src], the kind's `new/draft`, which makes a Draft-only item as the
-// pages' New does, and opens its page; its Use saves the page to the Draft and picks the item on the Task as it is.
 function formModal(kind, src, use, who = "") {
     const editing = !src.startsWith(`/${kind}/new/draft`)
     const title = (editing ? "Edit " : "New ") + {agents: "Agent", skills: "Skill", scripts: "Script"}[kind]
     const frame = el("iframe", {title, className: "mb"})
     const named = () => frame.contentWindow.location.pathname.match(new RegExp(`^/${kind}/([^/]+)$`))?.[1]
     const pageForm = () => frame.contentDocument.querySelector("input[name=use]")?.form
-    const primary = el("button", {type: "button", className: "primary", hidden: true, textContent: "Publish", onclick: () => pageForm()?.requestSubmit()})
+    const publish = el("button", {type: "button", className: "primary", hidden: true, textContent: "Publish", onclick: () => pageForm()?.requestSubmit()})
     const asDraft = el("button", {type: "button", hidden: true, textContent: "Use Draft", onclick: async () => {
         await pageForm()?.draft?.save()
         dialog.close()
@@ -533,7 +530,7 @@ function formModal(kind, src, use, who = "") {
     }})
     const header = el("form", {method: "dialog", className: "mh"}, el("b", {className: `ent ent-${kind.slice(0, -1)}`, textContent: title}),
         el("span", {className: "muted small", textContent: "Esc to close"}), el("span", {className: "sp"}),
-        el("button", {className: "ghost", title: "Close", textContent: "Cancel"}), ...(editing ? [] : [asDraft]), primary)
+        el("button", {className: "ghost", title: "Close", textContent: "Cancel"}), ...(editing ? [] : [asDraft]), publish)
     const dialog = el("dialog", {className: "modal create"}, header, who, frame)
     dialog.onclose = () => dialog.remove()
     frame.onload = () => {
@@ -544,8 +541,8 @@ function formModal(kind, src, use, who = "") {
         }
         // The form, or the form refusing a save.
         const page = frame.contentDocument
-        const form = page.querySelector("input[name=use]")?.form
-        primary.hidden = asDraft.hidden = !form
+        const form = pageForm()
+        publish.hidden = asDraft.hidden = !form
         page.body.classList.add("framed")
         if (!form) return page.querySelector("nav.side")?.remove()
         page.querySelector(".ph")?.replaceWith(page.querySelector(".ph .sub") || "")
