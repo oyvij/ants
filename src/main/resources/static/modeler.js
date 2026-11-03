@@ -879,7 +879,7 @@ function processHead(process) {
     return [el("div", {className: "kind", textContent: kinds.process.name}), field("Name", "", name)]
 }
 
-const heading = document.querySelector(".ph h1[data-names-process]")
+const heading = document.querySelector(".ph[data-names-process] h1")
 modeler.on("element.changed", ({element}) => {
     if (heading && element === modeler.get("canvas").getRootElement()) heading.textContent = element.businessObject.name || element.id
 })
