@@ -225,10 +225,9 @@ for (const box of document.querySelectorAll('.dia')) {
     followFingers(box);
 }
 
-// On a touch screen one finger drags the diagram and two pinch it, zoomed about the point between them; a tap stays a click.
 function followFingers(box) {
     const fingers = new Map();
-    const spread = () => {
+    const between = () => {
         const [a, b = a] = [...fingers.values()];
         return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, apart: Math.hypot(a.x - b.x, a.y - b.y) };
     };
@@ -238,14 +237,14 @@ function followFingers(box) {
     });
     box.addEventListener('pointermove', event => {
         if (!fingers.has(event.pointerId)) return;
-        const before = spread();
+        const before = between();
         fingers.set(event.pointerId, { x: event.clientX, y: event.clientY });
-        const after = spread(), canvas = box.canvas;
+        const after = between(), canvas = box.canvas;
         canvas.scroll({ dx: after.x - before.x, dy: after.y - before.y });
         if (fingers.size < 2 || !before.apart) return;
-        const corner = canvas.getContainer().getBoundingClientRect();
+        const rect = canvas.getContainer().getBoundingClientRect();
         const scale = Math.min(4, Math.max(0.2, canvas.zoom() * after.apart / before.apart));
-        canvas.zoom(scale, { x: after.x - corner.left, y: after.y - corner.top });
+        canvas.zoom(scale, { x: after.x - rect.left, y: after.y - rect.top });
     });
     for (const type of ['pointerup', 'pointercancel']) box.addEventListener(type, event => fingers.delete(event.pointerId));
 }

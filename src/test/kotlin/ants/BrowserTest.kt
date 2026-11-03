@@ -1,5 +1,7 @@
 package ants
 
+import com.google.gson.JsonArray
+import com.google.gson.JsonObject
 import com.microsoft.playwright.Browser.NewContextOptions
 import com.microsoft.playwright.BrowserType
 import com.microsoft.playwright.Locator
@@ -2559,14 +2561,13 @@ class BrowserTest : AntsTest() {
         }
     }
 
+    private val cdp by lazy { page.context().newCDPSession(page) }
 
     private fun touch(type: String, vararg fingers: Pair<Double, Double>) {
-        val points = com.google.gson.JsonArray()
-        fingers.forEachIndexed { id, (x, y) -> points.add(com.google.gson.JsonObject().apply { addProperty("x", x); addProperty("y", y); addProperty("id", id) }) }
-        cdp.send("Input.dispatchTouchEvent", com.google.gson.JsonObject().apply { addProperty("type", type); add("touchPoints", points) })
+        val points = JsonArray()
+        fingers.forEachIndexed { id, (x, y) -> points.add(JsonObject().apply { addProperty("x", x); addProperty("y", y); addProperty("id", id) }) }
+        cdp.send("Input.dispatchTouchEvent", JsonObject().apply { addProperty("type", type); add("touchPoints", points) })
     }
-
-    private val cdp by lazy { page.context().newCDPSession(page) }
 
     private fun gesture(from: List<Pair<Double, Double>>, to: List<Pair<Double, Double>>) {
         touch("touchStart", *from.toTypedArray())
@@ -2608,11 +2609,10 @@ class BrowserTest : AntsTest() {
         }
 
         page.navigate(url(run))
-        val diagram = page.locator(".dia").first()
-        eventually { assertEquals(true, diagram.evaluate("e => e.canvas != null")) }
+        eventually { assertEquals(true, page.locator(".dia").first().evaluate("e => e.canvas != null")) }
         val box = shape("wait").boundingBox()!!
         gesture(listOf(box.x to box.y + box.height), listOf(box.x - 40 to box.y + box.height - 40))
-        shape("wait").tap(Locator.TapOptions().setPosition(shape("wait").boundingBox()!!.width * 0.15, shape("wait").boundingBox()!!.height * 0.85))
+        shape("wait").run { tap(Locator.TapOptions().setPosition(boundingBox()!!.width * 0.15, boundingBox()!!.height * 0.85)) }
         assertThat(page.locator("#drawer-head")).isVisible()
     }
 
@@ -2633,6 +2633,7 @@ class BrowserTest : AntsTest() {
         page.navigate(url("/processes/start-end/edit"))
         assertEquals(46.0, page.locator(".djs-palette .entry").first().boundingBox()!!.height, 0.5)
     }
+
     @Test
     fun `on a phone a modal spans the screen with its editor and preview stacked, and a toast spans the screen at the top`() = browse {
         onPhone()
