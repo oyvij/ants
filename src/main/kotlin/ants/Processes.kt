@@ -292,7 +292,9 @@ class Processes(
         model.addAttribute("source", settings.profile(picked))
         model.addAttribute("verbosity", startForm.verbosity(filled?.get(VERBOSITY)?.firstOrNull()?.toString(), picked))
         model.addAttribute("repos", RunSource(picked).repos(settings).map(Repo::name)) // the Repos field's choices
-        model.addAttribute("schedules", schedules.of(key))
+        val scheduled = schedules.of(key)
+        model.addAttribute("schedules", scheduled)
+        model.addAttribute("scheduleEdits", scheduled.map { edit(it, startForm.fields(process), model.getAttribute("refusedEdit") as RefusedEdit?) })
         model.addAttribute("deletable", !shipped(key))
         val runs = history.createHistoricProcessInstanceQuery().processDefinitionKey(key).rootProcessInstances().orderByProcessInstanceStartTime().desc().list()
         model.addAttribute("runs", runs)
@@ -366,6 +368,32 @@ class Processes(
         return dismissed(key, back)
     }
 
+    @PostMapping("/processes/{key}/schedules/{id}")
+    fun edit(@PathVariable key: String, @PathVariable id: String, @RequestParam values: MultiValueMap<String, String>, model: Model, response: HttpServletResponse): String {
+        val schedule = scheduleId(key, id)
+        val cron = values.getFirst("cron").orEmpty()
+        val refused = try {
+            schedules.edit(schedule, values, cron)
+            return "redirect:/processes/$key"
+        } catch (e: Unfilled) {
+            RefusedEdit(schedule, values, cron, listOfNotNull(e.message))
+        } catch (e: CantStart) {
+            RefusedEdit(schedule, values, cron, e.reasons)
+        }
+        response.status = HttpStatus.BAD_REQUEST.value()
+        return process(key, null, model.addAttribute("refusedEdit", refused))
+    }
+
+    private fun edit(schedule: Schedule, fields: List<Field>, refused: RefusedEdit?): ScheduleEdit {
+        val mine = refused?.takeIf { it.id == schedule.id }
+        val values = mine?.values ?: schedule.stored
+        val profile = mine?.values?.get(PROFILE)?.firstOrNull()?.ifBlank { null } ?: schedule.profile
+        return ScheduleEdit(
+            schedule, fields.map { it.copy(stored = values[it.name].orEmpty().joinToString(" ")) }, values[NAME]?.firstOrNull().orEmpty(), profile,
+            startForm.verbosity(values[VERBOSITY]?.firstOrNull(), profile), RunSource(profile).repos(settings).map(Repo::name), mine?.cron ?: schedule.cron, mine?.reasons.orEmpty(),
+        )
+    }
+
     private fun scheduleId(key: String, id: String) = schedules.of(latest(key).key).firstOrNull { it.id == id }?.id
         ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No Schedule $id of $key")
 
@@ -415,6 +443,14 @@ internal const val BPMNDI = "http://www.omg.org/spec/BPMN/20100524/DI"
 private val ProcessDefinition.shipped get() = resourceName.startsWith("shipped/")
 
 internal fun Settings.hides(process: ProcessDefinition) = hideShipped() && process.shipped
+
+class RefusedEdit(val id: String, val values: Map<String, List<String>>, val cron: String, val reasons: List<String>)
+
+class ScheduleEdit(
+    val schedule: Schedule, val fields: List<Field>, val runName: String, val profile: String?, val verbosity: Verbosity, val repos: List<String>, val cron: String, val reasons: List<String>,
+) {
+    val prefix get() = "edit-${schedule.id}-"
+}
 
 class ProcessRow(val process: ProcessDefinition, val shipped: Boolean, val profile: Profile?, val scheduleCount: Int, val ready: Boolean, val live: Long, val state: DraftState = DraftState.PUBLISHED)
 

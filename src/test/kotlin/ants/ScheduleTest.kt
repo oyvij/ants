@@ -368,6 +368,86 @@ class ScheduleTest : AntsTest() {
         eventually { assertFalse("Skipped" in row("Sweep A")!!) }
     }
 
+    private fun drawer(id: String, process: String = key, page: String = browser.get("/processes/$process").body) =
+        page.substringAfter("<tr class=\"edit\" id=\"edit-$id\"").substringBefore("</tr>")
+
+    @Test
+    fun `a Schedule's drawer holds its values, Profile, Verbosity and cron, and saving it changes that Schedule in place, so its Runs start with the new values at the new times`() {
+        twoProfiles()
+        browser.import("clone-repos.bpmn")
+        schedule(listOf(NAME to "Ship api", PROFILE to "other", VERBOSITY to "detailed", "repos" to "api", "branch" to "nightly"), "0 30 8 * * MON-FRI")
+        schedule(listOf(NAME to "Ship web", "repos" to "web", "branch" to "w"), "0 0 0 1 1 *")
+        val id = idOf("Ship api", "clone-repos")
+        fun other() = row("Ship web", "clone-repos")!!.replace(Regex("name=\"_csrf\" value=\"[^\"]+\""), "")
+        val before = other()
+
+        val drawer = drawer(id, "clone-repos")
+        assertContains(drawer, """<form method="post" action="/processes/clone-repos/schedules/$id">""")
+        assertContains(drawer, """value="Ship api"""")
+        assertContains(drawer, "<option selected>other</option>")
+        assertContains(drawer, """<option value="detailed" selected>""")
+        assertContains(drawer, """name="repos" value="api" checked""")
+        assertContains(drawer, """value="nightly"""")
+        assertContains(drawer, """value="0 30 8 * * MON-FRI"""")
+
+        val saved = browser.post("/processes/clone-repos/schedules/$id", listOf(
+            NAME to "Ship both", PROFILE to "work", VERBOSITY to "brief", "repos" to "api", "repos" to "web", "branch" to "edited", "cron" to "0 0 * * * *",
+        ))
+        assertEquals("/processes/clone-repos", saved.path, saved.body)
+        assertEquals(null, row("Ship api", "clone-repos"))
+        assertEquals(id, idOf("Ship both", "clone-repos"))
+        val edited = row("Ship both", "clone-repos")!!
+        assertContains(edited, Regex("<td>work</td><td class=\"k\">Verbosity</td><td>brief</td>"))
+        assertContains(edited, "<span class=\"muted\">Branch</span> edited")
+        assertContains(edited, "Every hour")
+        assertEquals(before, other())
+        settle()
+        assertEquals(0, cloneRuns().size)
+
+        clock.offset = Duration.ofHours(1)
+        eventually { assertEquals(1, cloneRuns().size) }
+        val run = cloneRuns().single().id
+        val page = runPage(run)
+        assertContains(page, "<dt>branch</dt><dd><code>edited</code></dd>")
+        assertContains(page, "<dt>$PROFILE</dt><dd><code>work</code></dd>")
+        assertContains(page, """<span id="verbosity">Verbosity brief</span>""")
+        assertContains(page, Regex("<span id=\"name\">Ship both, \\d{1,2} [A-Z][a-z]{2} \\d\\d:\\d\\d</span>"))
+        eventually { assertEquals(listOf("api", "web"), clones(workspace(run)).map { it.fileName.toString() }.sorted()) }
+    }
+
+    @Test
+    fun `a refused edit keeps what was typed in that Schedule's open drawer and leaves the Schedule as it was, and a paused Schedule stays paused once edited`() {
+        home.resolve("settings.yaml").writeAtomically(vault)
+        deploy()
+        scheduleHourly("Sweep A", "Tidy A")
+        scheduleHourly("Sweep B", "Tidy B")
+        val id = idOf("Sweep A")
+        assertContains(browser.get("/processes/$key").body, "<tr class=\"edit\" id=\"edit-$id\" hidden>")
+
+        val unreadable = browser.post("/processes/$key/schedules/$id", listOf(NAME to "Sweep A", "prompt" to "Tidy more", "cron" to "R/PT1H"))
+        assertEquals(400, unreadable.status)
+        assertContains(unreadable.body, "<tr class=\"edit\" id=\"edit-$id\">")
+        val open = drawer(id, page = unreadable.body)
+        assertContains(open, "Ants can't read the cron R/PT1H")
+        assertContains(open, "value=\"Tidy more\"")
+        assertContains(open, "value=\"R/PT1H\"")
+        assertFalse("Ants can't read" in drawer(idOf("Sweep B"), page = unreadable.body))
+        assertContains(unreadable.body, "<fieldset id=\"when\" hidden>")
+
+        val unfilled = browser.post("/processes/$key/schedules/$id", listOf(NAME to "Sweep A", "prompt" to " ", "cron" to "0 0 * * * *"))
+        assertEquals(400, unfilled.status)
+        assertContains(drawer(id, page = unfilled.body), "Prompt is required")
+        assertContains(row("Sweep A")!!, "<span class=\"muted\">Prompt</span> Tidy A")
+
+        act("Sweep A", "pause")
+        val saved = browser.post("/processes/$key/schedules/$id", listOf(NAME to "Sweep A", "prompt" to "Tidy more", "cron" to "0 0 8 * * *"))
+        assertEquals("/processes/$key", saved.path, saved.body)
+        assertContains(row("Sweep A")!!, "<span class=\"muted\">Prompt</span> Tidy more")
+        assertContains(row("Sweep A")!!, "Every day at 08:00")
+        assertContains(row("Sweep A")!!, "<span class=\"muted\">paused</span>")
+        assertEquals(404, browser.post("/processes/$key/schedules/none", listOf("prompt" to "Tidy", "cron" to "0 0 * * * *")).status)
+    }
+
     private fun failedEntries() = Regex("href=\"/notifications/(schedule-[^\"]+)\"").findAll(browser.get("/notifications").body).map { it.groupValues[1] }.distinct().toList()
 
     @Test

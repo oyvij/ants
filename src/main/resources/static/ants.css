@@ -414,21 +414,24 @@ dialog:is(.source-map, .instructions) { width: min(760px, 92vw); height: fit-con
 .instructions .go { display: flex; justify-content: flex-end; margin: 16px -18px -18px; padding: 12px 18px; border-top: 1px solid var(--line); background: var(--band); }
 #new-process .mb { padding: 4px 24px 24px; font-size: 14px; }
 #new-process form { margin: 0; } #new-process .go { margin-top: 16px; }
-#start .picks { flex-wrap: wrap; gap: 6px 14px; margin-bottom: 8px; } #start .picks label { font-weight: 500; margin: 0; }
-#start .combo { position: relative; }
-#start .combo [role=listbox] { position: absolute; z-index: 4; left: 0; right: 0; top: calc(100% + 4px); margin: 0; padding: 4px; list-style: none; background: var(--panel); border: 1px solid var(--fieldLine); border-radius: 8px; box-shadow: 0 10px 30px rgba(15, 23, 42, .12); max-height: 280px; overflow: auto; }
-#start .combo [role=option] { position: relative; padding: 6px 10px 6px 30px; border-radius: 6px; cursor: pointer; font-family: var(--mono); font-size: 13px; }
-#start .combo [role=option].on { background: var(--hover); }
-#start .combo [role=option][aria-selected=true]::before { content: "✓" / ""; /* aria-selected already says it: an empty alt keeps the tick out of the option's name */ position: absolute; left: 10px; color: var(--accText); font-weight: 700; }
-#start .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; } #start .tags:empty { display: none; }
-#start .tags + .help { margin: 8px 0 0; }
-#start form { margin: 0; } #start .go { margin-top: 16px; }
+:is(#start, #schedules .edit) .picks { flex-wrap: wrap; gap: 6px 14px; margin-bottom: 8px; } :is(#start, #schedules .edit) .picks label { font-weight: 500; margin: 0; }
+:is(#start, #schedules .edit) .combo { position: relative; }
+:is(#start, #schedules .edit) .combo [role=listbox] { position: absolute; z-index: 4; left: 0; right: 0; top: calc(100% + 4px); margin: 0; padding: 4px; list-style: none; background: var(--panel); border: 1px solid var(--fieldLine); border-radius: 8px; box-shadow: 0 10px 30px rgba(15, 23, 42, .12); max-height: 280px; overflow: auto; }
+:is(#start, #schedules .edit) .combo [role=option] { position: relative; padding: 6px 10px 6px 30px; border-radius: 6px; cursor: pointer; font-family: var(--mono); font-size: 13px; }
+:is(#start, #schedules .edit) .combo [role=option].on { background: var(--hover); }
+:is(#start, #schedules .edit) .combo [role=option][aria-selected=true]::before { content: "✓" / ""; /* aria-selected already says it: an empty alt keeps the tick out of the option's name */ position: absolute; left: 10px; color: var(--accText); font-weight: 700; }
+:is(#start, #schedules .edit) .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; } :is(#start, #schedules .edit) .tags:empty { display: none; }
+:is(#start, #schedules .edit) .tags + .help { margin: 8px 0 0; }
+:is(#start, #schedules .edit) form { margin: 0; } :is(#start, #schedules .edit) .go { margin-top: 16px; }
 #schedule h3 .grow { flex: 1; }
 #schedule form { margin: 0; }
 #schedule .warn { margin-top: 14px; }
 #schedule .failed { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 14px; } #schedule .failed [role=alert] { width: 100%; margin: 0; }
 #schedule .subsec .help { margin: 0; }
 #schedules td.k { display: none; }
+#schedules td.row { display: grid; grid-template-columns: repeat(2, auto); justify-content: start; } #schedules td.row > form > button { width: 100%; }
+#schedules .edit > td { background: var(--panel2); }
+#schedules .edit h3 { margin-top: 0; }
 
 label > .ed { margin-top: 4px; } .modal .split .cm-scroller { font-family: inherit; line-height: 1.55; }
 .ed.readonly { background: var(--panel2); } .ed.readonly .st { color: var(--muted); }
@@ -673,9 +676,9 @@ details.example pre { background: var(--line2); border: 0; padding: 10px; border
     #schedules td.k { display: block; padding-bottom: 0; font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; }
     #schedules td.row { display: flex; flex-wrap: wrap; }
     #schedule > .row { flex-wrap: wrap; } #schedule > .row > .grow { flex-basis: 100%; }
-    #when > .row { flex-direction: column; align-items: stretch; }
-    #when > .row > label { display: flex; align-items: center; gap: 8px; }
-    #when > .row > label > :is(select, input) { flex: 1; min-width: 0; }
+    :is(#when, #schedules .edit fieldset) > .row { flex-direction: column; align-items: stretch; }
+    :is(#when, #schedules .edit fieldset) > .row > label { display: flex; align-items: center; gap: 8px; }
+    :is(#when, #schedules .edit fieldset) > .row > label > :is(select, input) { flex: 1; min-width: 0; }
     main:has(> #diagram) .ph .acts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; margin-left: 0; }
     main:has(> #diagram) .ph .acts > form > button { width: 100%; }
     main:has(> #diagram) :is(.ph .sub, .card) { overflow-wrap: anywhere; }
@@ -687,8 +690,8 @@ details.example pre { background: var(--line2); border: 0; padding: 10px; border
     .modal .split .cm-content { min-height: 0; }
     .modal .split .md { padding: 16px; border-left: 0; border-top: 1px solid var(--line); }
     .toast { top: 0; left: 0; right: 0; width: auto; border-radius: 0; }
-    #start :is(.tags .mono, .picks .mono, .combo [role=option]) { overflow-wrap: anywhere; }
-    #start .combo [role=option] { display: flex; align-items: center; min-height: 44px; }
+    :is(#start, #schedules .edit) :is(.tags .mono, .picks .mono, .combo [role=option]) { overflow-wrap: anywhere; }
+    :is(#start, #schedules .edit) .combo [role=option] { display: flex; align-items: center; min-height: 44px; }
     :is(button, .btn, .side a, .topbar :is(a, label), .tabs a, .spine .srow, .ssteps a, .walk nav a, .crumbs a, :is(.chipsel, .tags) .c, nav#tabs[role=tablist] > button, .seg label) { min-height: 44px; }
     :is(.tabs, .ssteps, .walk nav) a { display: flex; align-items: center; }
     .crumbs a { display: inline-flex; align-items: center; }

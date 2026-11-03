@@ -1,0 +1,53 @@
+@import ants.FieldType
+@param fields: List<ants.Field>
+@param repos: List<String>
+@param profiles: List<String>
+@param profile: String?
+@param verbosity: ants.Verbosity
+@param runName: String
+@param prefix: String = ""
+@param reload: Boolean = false
+    <div class="fld"><label class="f" for="${prefix}field-name">Name <span class="muted small" style="font-weight: 500">(optional)</span></label><div class="help">Left empty, the Run is named after its Process and start time.</div><input name="${ants.NAME}" id="${prefix}field-name" value="${runName}" placeholder="e.g. Dark mode toggle"></div>
+@if(profiles.size > 1)
+    <div class="fld"><label class="f" for="${prefix}field-profile">Profile</label><div class="help">The Vault and Source map the Run uses.</div>
+    <select name="${ants.PROFILE}" id="${prefix}field-profile" onchange="${if (reload) "location.search = '?ants.profile=' + encodeURIComponent(this.value)" else null}">
+    @for(name in profiles)
+        <option selected="${name == profile}">${name}</option>
+    @endfor
+    </select></div>
+@endif
+    <div class="fld"><label class="f" for="${prefix}field-verbosity">Verbosity</label><div class="help">How much the Run's Agents write for you to read.</div>
+    <select name="${ants.VERBOSITY}" id="${prefix}field-verbosity">
+    @for(level in ants.Verbosity.entries)
+        <option value="${level.value}" selected="${level == verbosity}">${level.label}</option>
+    @endfor
+    </select></div>
+@for(field in fields)
+    <div class="fld" data-filter-placeholder="${if (field.type == FieldType.REPOS) "Filter Source map repos, or type a git URL / owner/name" else null}"><label class="f" for="${prefix}field-${field.name}">${field.label}@if(!field.required) <span class="muted small" style="font-weight: 500">(optional)</span>@endif</label>
+    @if(field.type == FieldType.REPOS)
+    <div class="help">${field.help?.let { "$it " } ?: ""}Pick Source map repos, type git URLs such as <span class="eg">git@github.com:you/api.git</span>, or <span class="eg">you/new-app</span> for a new private repo Ants creates on your gh login. Filled in, the Run clones exactly these repos, and the scout takes them as given.</div>
+    @if(repos.isNotEmpty())
+    <div class="row picks">
+    @for(repo in repos)
+        <label class="row"><input type="checkbox" name="${field.name}" value="${repo}" checked="${repo in field.storedRepos}"> <span class="mono">${repo}</span></label>
+    @endfor
+    </div>
+    @endif
+    <input name="${field.name}" id="${prefix}field-${field.name}" value="${field.storedRepos.filter { it !in repos }.joinToString(" ")}" placeholder="git URLs, or owner/name for a new repo">
+    <div class="help" data-none hidden>None picked, so the scout picks the Run's repos from the whole Source map.</div>
+    @else
+    @if(field.help != null)<div class="help">${field.help}</div>@endif
+    @if(field.choices.isNotEmpty())
+    <select name="${field.name}" id="${prefix}field-${field.name}">
+    @for((id, name) in field.choices)
+        <option value="${id}" selected="${id == field.stored}">${name}</option>
+    @endfor
+    </select>
+    @elseif(field.type == FieldType.MARKDOWN)
+    <textarea name="${field.name}" id="${prefix}field-${field.name}" placeholder="${field.example?.let { "e.g. $it" }}" required="${field.required}" data-markdown data-tall>${field.stored}</textarea>
+    @else
+    <input name="${field.name}" id="${prefix}field-${field.name}" value="${field.stored ?: ""}" placeholder="${field.example?.let { "e.g. $it" }}" required="${field.required}">
+    @endif
+    @endif
+    </div>
+@endfor

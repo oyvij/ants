@@ -2779,17 +2779,18 @@ class BrowserTest : AntsTest() {
     private fun openSchedule() = page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("⏰ Schedule").setExact(true)).click()
 
     private fun schedulePicked(repo: String) {
-        page.locator("textarea[name=prompt] + .ed .cm-content").fill("Add dark mode")
+        val start = page.locator("#start")
+        start.locator("textarea[name=prompt] + .ed .cm-content").fill("Add dark mode")
         repoBox.click()
         repoOption(repo).click()
         repoBox.press("Escape")
         openSchedule()
-        val every = page.getByLabel("Every")
+        val every = start.getByLabel("Every")
         assertThat(every).isFocused()
         every.selectOption("day")
-        assertThat(page.getByLabel("Cron")).hasValue("0 0 8 * * *")
+        assertThat(start.getByLabel("Cron")).hasValue("0 0 8 * * *")
         every.selectOption("hour")
-        assertThat(page.getByLabel("Cron")).hasValue("0 0 * * * *")
+        assertThat(start.getByLabel("Cron")).hasValue("0 0 * * * *")
         page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("Save schedule")).click()
         page.waitForURL(Pattern.compile("/processes/picker$"))
     }
@@ -2800,7 +2801,7 @@ class BrowserTest : AntsTest() {
         assertThat(page.locator("#when")).isHidden()
         schedulePicked("api")
         schedulePicked("web")
-        val rows = page.locator("#schedules tr").filter(Locator.FilterOptions().setHasText("Every hour"))
+        val rows = page.locator("#schedules tr[id^=schedule-]").filter(Locator.FilterOptions().setHasText("Every hour"))
         assertThat(rows).hasCount(2)
         assertThat(rows.nth(0)).containsText("api")
         assertThat(rows.nth(1)).containsText("web")
@@ -2824,7 +2825,7 @@ class BrowserTest : AntsTest() {
         picker()
         schedulePicked("api")
         schedulePicked("web")
-        val rows = page.locator("#schedules tr").filter(Locator.FilterOptions().setHasText("Every hour"))
+        val rows = page.locator("#schedules tr[id^=schedule-]").filter(Locator.FilterOptions().setHasText("Every hour"))
         val api = rows.filter(Locator.FilterOptions().setHasText("api"))
         val web = rows.filter(Locator.FilterOptions().setHasText("web"))
         api.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Pause")).click()
@@ -2843,6 +2844,88 @@ class BrowserTest : AntsTest() {
         page.waitForURL(Pattern.compile("/runs/[^/]+$"))
     }
 
+    @Test
+    fun `Edit on a Schedule's row opens a drawer under it filled with its values and times, Save schedule changes that Schedule alone, and Close shuts the drawer`() = browse {
+        picker()
+        schedulePicked("api")
+        schedulePicked("web")
+        val rows = page.locator("#schedules tr[id^=schedule-]")
+        val api = rows.filter(Locator.FilterOptions().setHasText("api"))
+        val web = rows.filter(Locator.FilterOptions().setHasText("web"))
+        val edit = api.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Edit"))
+        val drawer = page.locator("#" + edit.getAttribute("aria-controls"))
+        assertThat(drawer).isHidden()
+        assertThat(edit).hasAttribute("aria-expanded", "false")
+
+        edit.click()
+        assertThat(drawer).isVisible()
+        assertThat(edit).hasAttribute("aria-expanded", "true")
+        assertThat(drawer.getByLabel("Name")).isFocused()
+        assertThat(drawer.locator("textarea[name=prompt] + .ed .cm-content")).hasText("Add dark mode")
+        assertThat(drawer.getByRole(AriaRole.LIST, Locator.GetByRoleOptions().setName("Picked repos")).getByRole(AriaRole.LISTITEM)).hasText(arrayOf("api×"))
+        assertThat(drawer.getByLabel("Every")).hasValue("hour")
+        assertThat(page.locator("#when")).isHidden()
+
+        drawer.getByLabel("Name").fill("Morning api")
+        drawer.locator("textarea[name=prompt] + .ed .cm-content").fill("Add light mode")
+        drawer.getByLabel("Every").selectOption("day")
+        assertThat(drawer.getByLabel("Cron")).hasValue("0 0 8 * * *")
+        drawer.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Save schedule")).click()
+        page.waitForURL(Pattern.compile("/processes/picker$"))
+
+        val morning = rows.filter(Locator.FilterOptions().setHasText("Morning api"))
+        assertThat(morning).containsText("Add light mode")
+        assertThat(morning).containsText("Every day at 08:00")
+        assertThat(web).containsText("Add dark mode")
+        assertThat(web).containsText("Every hour")
+        assertThat(rows).hasCount(2)
+
+        val again = morning.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Edit"))
+        again.click()
+        assertThat(drawer).isVisible()
+        drawer.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Close")).click()
+        assertThat(drawer).isHidden()
+        assertThat(again).isFocused()
+        assertThat(again).hasAttribute("aria-expanded", "false")
+        again.click()
+        again.click()
+        assertThat(drawer).isHidden()
+    }
+
+    @Test
+    fun `on a phone a Schedule's open drawer fits the card with its fields one under another and tap-sized buttons, and on desktop it spans the table under its row`() = browse {
+        picker()
+        schedulePicked("api")
+        onPhone()
+        page.navigate(url("/processes/picker"))
+        val card = page.locator("#schedule")
+        val row = page.locator("#schedules tr[id^=schedule-]")
+        val edit = row.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Edit"))
+        edit.click()
+        val drawer = page.locator("#" + edit.getAttribute("aria-controls"))
+        assertNoSidewaysScroll()
+        for (name in listOf("Name (optional)", "Verbosity", "Every", "Repos (optional)")) assertWithinCard(drawer.getByLabel(name), card, "the drawer's $name")
+        for (name in listOf("Save schedule", "Close")) assertWithinCard(drawer.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName(name)), card, name)
+        assertTrue(drawer.boundingBox()!!.y >= row.boundingBox()!!.y + row.boundingBox()!!.height - 0.5, "the drawer sits under its Schedule")
+        drawer.getByText("Advanced", Locator.GetByTextOptions().setExact(true)).click()
+        assertWithinCard(drawer.getByLabel("Cron"), card, "the drawer's cron field")
+        assertTapSized()
+        page.screenshot("phone/schedule-edit")
+
+        page.setViewportSize(1280, 900)
+        page.reload()
+        edit.click()
+        val (rowBox, drawerBox) = row.boundingBox()!! to drawer.boundingBox()!!
+        assertTrue(drawerBox.y >= rowBox.y + rowBox.height - 0.5, "on desktop the drawer sits under its Schedule's row")
+        assertEquals(rowBox.width, drawerBox.width, 1.0, "on desktop the drawer spans the table")
+        for (name in listOf("Edit", "Start now", "Pause", "Remove", "Save schedule", "Close")) {
+            val box = page.locator("#schedules").getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName(name).setExact(true)).boundingBox()!!
+            val cardBox = card.boundingBox()!!
+            assertTrue(box.x + box.width <= cardBox.x + cardBox.width, "on desktop $name ends at ${box.x + box.width}, past the card at ${cardBox.x + cardBox.width}")
+        }
+        page.screenshot("schedule-edit")
+    }
+
     private fun assertWithinCard(part: Locator, card: Locator, what: String) {
         assertThat(part).isVisible()
         assertWithinScreen(part, what)
@@ -2851,7 +2934,7 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
-    fun `on a phone each Schedule is a block within the card, its name first, then labelled lines and its buttons at least 44px tall, each When part is a line of its own, and on desktop a Schedule is a table row and the When parts one row`() = browse {
+    fun `on a phone each Schedule is a block within the card, its name first, then labelled lines and its buttons at least 44px tall, each When part is a line of its own, and on desktop a Schedule is a table row with its buttons two to a row and the When parts one row`() = browse {
         val prompt = "Sweep the notes for stale links and rewrite every one of them with a longer explanation than fits on one line"
         picker("", *phoneSourceMap)
         http.get("/processes/picker")
@@ -2868,7 +2951,7 @@ class BrowserTest : AntsTest() {
         page.navigate(url("/processes/picker"))
         val card = page.locator("#schedule")
         val profiled = page.locator("#schedule-$id")
-        val unprofiled = page.locator("#schedules tr").filter(Locator.FilterOptions().setHasText("Unprofiled sweep"))
+        val unprofiled = page.locator("#schedules tr[id^=schedule-]").filter(Locator.FilterOptions().setHasText("Unprofiled sweep"))
         assertThat(profiled.getByRole(AriaRole.ALERT)).containsText("The scheduled Run didn't start: The Profile work isn't in the settings.")
         assertNoSidewaysScroll()
         val labels = listOf("Profile", "Values", "Runs", "Cron", "Next Run")
@@ -2883,7 +2966,7 @@ class BrowserTest : AntsTest() {
             val lines = row.locator("td").all().map { it.boundingBox()!! }
             for ((above, below) in lines.zipWithNext()) assertTrue(below.y >= above.y + above.height - 0.5, "a Schedule's lines sit one under another")
             assertThat(row.locator("td").first()).hasText(Pattern.compile("^(Profiled|Unprofiled) sweep\$"))
-            for (name in listOf("Start now", "Pause", "Remove")) assertWithinCard(button(row, name), card, name)
+            for (name in listOf("Edit", "Start now", "Pause", "Remove")) assertWithinCard(button(row, name), card, name)
         }
         assertThat(profiled).containsText("work")
         assertThat(unprofiled).containsText("—")
@@ -2893,7 +2976,7 @@ class BrowserTest : AntsTest() {
         assertWithinCard(profiled.locator("code"), card, "the Cron line")
         assertWithinCard(profiled.getByRole(AriaRole.ALERT), card, "the failed note")
         assertWithinCard(button(profiled, "Dismiss"), card, "Dismiss")
-        val (first, second) = page.locator("#schedules tr[id]").all().map { it.boundingBox()!! }
+        val (first, second) = page.locator("#schedules tr[id^=schedule-]").all().map { it.boundingBox()!! }
         assertTrue(second.y >= first.y + first.height, "the second Schedule's block sits under the first")
         assertTapSized()
         page.screenshot("phone/schedules")
@@ -2918,7 +3001,7 @@ class BrowserTest : AntsTest() {
             val lines = controls.map { line(it).boundingBox()!! }
             for ((above, below) in lines.zipWithNext()) assertTrue(below.y >= above.y + above.height - 0.5, "with Every $choice each When part sits on its own line")
         }
-        page.getByText("Advanced", Page.GetByTextOptions().setExact(true)).click()
+        fieldset.getByText("Advanced", Locator.GetByTextOptions().setExact(true)).click()
         assertWithinCard(part("cron"), fieldset, "the Advanced cron field")
         assertWithinCard(page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("Save schedule")), fieldset, "Save schedule")
         val inside = (fieldset.evaluate("f => { const s = getComputedStyle(f); return f.clientWidth - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight) }") as Number).toDouble()
@@ -2930,8 +3013,10 @@ class BrowserTest : AntsTest() {
         for (header in headers) assertThat(header).isVisible()
         for (label in labels) assertThat(profiled.getByText(label, Locator.GetByTextOptions().setExact(true))).isHidden()
         assertThat(profiled.getByRole(AriaRole.CELL).nth(1)).hasAccessibleName("work")
-        val buttons = listOf("Start now", "Pause", "Remove").map { button(profiled, it).boundingBox()!! }
-        for ((left, right) in buttons.zipWithNext()) assertEquals(left.y, right.y, 0.5, "on desktop a Schedule's buttons sit in one row")
+        val buttons = listOf("Edit", "Start now", "Pause", "Remove").map { button(profiled, it).boundingBox()!! }
+        for ((left, right) in buttons.chunked(2)) assertEquals(left.y, right.y, 0.5, "on desktop a Schedule's buttons sit two to a row")
+        assertTrue(buttons[2].y >= buttons[0].y + buttons[0].height, "on desktop Pause and Remove sit under Edit and Start now")
+        assertTrue(buttons.all { it.x + it.width <= card.boundingBox()!!.let { box -> box.x + box.width } }, "on desktop a Schedule's buttons stay within the card")
         openSchedule()
         every.selectOption("week")
         val parts = listOf("every", "at", "on").map { line(part(it)).boundingBox()!! }
