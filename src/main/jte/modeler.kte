@@ -26,7 +26,7 @@
 @template.nav(shell = shell)
 <main class="full">
 <div class="crumbs"><a href="/${list.lowercase()}">${list}</a> / @if(page != null)<a href="${page}">${name}</a>@else${name}@endif / Diagram</div>
-<div class="ph"><h1>${name}</h1>
+<div class="ph"><h1 data-names-process="${list == "Processes"}">${name}</h1>
 @if(draft != null)
     @template.drafthead(draft = draft)
 @endif

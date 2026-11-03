@@ -3597,6 +3597,23 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `the Process's panel renames the Process, the page's heading follows, and Publish keeps the new name under the same key`() = browse {
+        val (process, plane) = row("renamed", """<bpmn:startEvent id="start" />""", """<bpmn:endEvent id="end" />""")
+        deploy(definitions("renamed", "Old name", process, plane))
+
+        page.navigate(url("/processes/renamed/edit"))
+        assertThat(heading).hasText("Process")
+        assertThat(label("Name")).hasValue("Old name")
+        label("Name").fill("New name")
+        label("Name").blur()
+        assertThat(page.locator(".ph h1")).hasText("New name")
+        page.locator("#save").click()
+        assertThat(page).hasURL(Pattern.compile(".*/processes/renamed$"))
+        assertThat(page.locator("h1")).hasText("New name")
+        assertContains(http.get("/processes/renamed/diagram.bpmn").body, """name="New name"""")
+    }
+
+    @Test
     fun `switching the Profile on the start form reloads it with Verbosity prefilled from the new Profile`() = browse {
         settings(null, "profiles:\n  work: {vault: notes, verbosity: brief}\n  private: {vault: notes, verbosity: detailed}\n")
         val (process, plane) = row("profiled", """<bpmn:startEvent id="start" />""", """<bpmn:endEvent id="end" />""")
