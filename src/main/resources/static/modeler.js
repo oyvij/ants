@@ -865,24 +865,16 @@ panels.user = element => {
             ...kind.result.flatMap(f => [el("code", {textContent: `\${${element.id}.${f}}`}), " "])))
 }
 
-// The panel's head: what the element is, and its name, which the diagram shows.
 function head(element, kind) {
-    const name = el("input", {className: "name", value: element.businessObject.name || "", placeholder: "e.g. Write the Spec",
-        onchange: () => modeler.get("modeling").updateLabel(element, name.value)})
+    const process = kindOf(element) === "process"
+    const name = el("input", {id: "element-name", className: "name", value: element.businessObject.name || "", placeholder: process ? "e.g. Build and ship" : "e.g. Write the Spec",
+        onchange: () => {
+            if (!process) return modeler.get("modeling").updateLabel(element, name.value)
+            if (name.value.trim()) modeler.get("modeling").updateProperties(element, {name: name.value.trim()})
+            else name.value = element.businessObject.name || ""
+        }})
     return [el("div", {className: "kind", textContent: kind}), field("Name", "", name)]
 }
-
-// The Process's head: its name, which the Processes list and the Process page show; the key stays as it is.
-function processHead(process) {
-    const name = el("input", {id: "process-name", className: "name", value: process.businessObject.name || "", placeholder: "e.g. Build and ship",
-        onchange: () => modeler.get("modeling").updateProperties(process, {name: name.value.trim() || undefined})})
-    return [el("div", {className: "kind", textContent: kinds.process.name}), field("Name", "", name)]
-}
-
-const heading = document.querySelector(".ph[data-names-process] h1")
-modeler.on("element.changed", ({element}) => {
-    if (heading && element === modeler.get("canvas").getRootElement()) heading.textContent = element.businessObject.name || element.id
-})
 
 // The kinds whose panel explains them itself, or warns instead.
 const ownWords = new Set(["process", "agent", "exclusive", "parallel", "flow", "task"])
@@ -893,7 +885,7 @@ function explain(element) {
     // Throwing here would abort the import.
     if (!target.businessObject) return
     const kind = kindOf(target)
-    if (kind === "process") return panel.replaceChildren(...processHead(target), panels.process(target))
+    if (kind === "process") return panel.replaceChildren(...head(target, kinds.process.name), panels.process(target))
     if (kind && kind !== "task") {
         return panel.replaceChildren(...head(target, kinds[kind].name), ownWords.has(kind) ? "" : note("explain", kinds[kind].explain),
             panels[kind]?.(target) || "", multiInstance(target))
@@ -920,10 +912,13 @@ modeler.on("import.done", () => modeler.get("elementRegistry").forEach(mark))
 modeler.on(["shape.added", "element.changed"], ({element}) => element.businessObject && mark(element))
 
 modeler.on("selection.changed", ({newSelection}) => explain(newSelection.length === 1 ? newSelection[0] : modeler.get("canvas").getRootElement()))
+const heading = document.querySelector(".ph[data-names-process] h1")
 modeler.on("element.changed", ({element}) => {
+    const root = element === modeler.get("canvas").getRootElement()
+    if (heading && root && element.businessObject && kindOf(element) === "process") heading.textContent = element.businessObject.name || element.id
     if (quiet) return
     const selection = modeler.get("selection").get()
-    if (selection.length === 1 && selection[0] === element) explain(element)
+    if (selection.length === 1 ? selection[0] === element : root) explain(element)
 })
 
 // The Draft's autosave starts once the diagram is in, so what it loaded is what it compares each change with. A
