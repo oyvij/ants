@@ -2328,6 +2328,11 @@ class BrowserTest : AntsTest() {
         modal.getByLabel("Name", Locator.GetByLabelOptions().setExact(true)).fill("From the phone")
         modal.locator("button.primary").tap()
         page.waitForURL(Pattern.compile(".*/processes/[^/]+/edit$"))
+
+        page.navigate(url("/processes"))
+        assertThat(page.locator("#processes tr.click")).hasCount(2)
+        assertNoSidewaysScroll()
+        assertEquals(0, page.locator("#processes td:visible").all().count { it.innerText().isBlank() }, "blank cells showing in the list's rows")
     }
 
     @Test

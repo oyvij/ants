@@ -674,6 +674,7 @@ details.example pre { background: var(--line2); border: 0; padding: 10px; border
     :is(#runlist, #processes, #tasks, #process-runs, #schedules) tr { padding: 8px 0; border-bottom: 1px solid var(--line2); }
     :is(#runlist, #processes, #tasks, #process-runs, #schedules) tr:last-child { border-bottom: 0; }
     :is(#runlist, #processes, #tasks, #process-runs, #schedules) td { padding: 4px 16px; border: 0; overflow-wrap: anywhere; }
+    #processes td:empty { display: none; }
     #runlist tr:has(> td.when) { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
     #runlist tr:has(> td.when) > td { grid-column: 1 / -1; }
     #runlist tr:has(> td.when) > td:first-child { grid-area: 1 / 1; }
