@@ -2702,6 +2702,11 @@ class BrowserTest : AntsTest() {
         val bar = page.locator(".savebar")
         assertThat(bar).isHidden()
 
+        val add = page.locator("[data-add]").first()
+        add.click()
+        add.click()
+        assertThat(bar).isHidden()
+
         page.locator("input[name=so-far]").click()
         page.locator("button[name=action][value=updates]").scrollIntoViewIfNeeded()
         assertThat(bar).isVisible()

@@ -40,20 +40,22 @@ document.addEventListener('click', event => {
 const settingsForm = document.getElementById('settings');
 if (settingsForm) {
     const bar = settingsForm.querySelector('.savebar');
-    const state = () => new URLSearchParams([...new FormData(settingsForm)].filter(([name]) => name !== '_csrf')).toString();
-    const saved = ('posted' in settingsForm.dataset && sessionStorage.getItem('settings-saved')) || state();
-    sessionStorage.removeItem('settings-saved');
+    const state = () => new URLSearchParams([...new FormData(settingsForm)].filter(([name, value]) => name !== '_csrf' && value !== '')).toString();
+    const baselineKey = 'settings-baseline';
+    const baseline = ('posted' in settingsForm.dataset && sessionStorage.getItem(baselineKey)) || state();
+    sessionStorage.removeItem(baselineKey);
     let submitting = false;
-    const unsaved = () => !submitting && state() !== saved;
+    const unsaved = () => !submitting && state() !== baseline;
     const showBar = () => bar.hidden = !unsaved();
     settingsForm.addEventListener('input', showBar);
     settingsForm.addEventListener('change', showBar);
     document.addEventListener('click', event => {
         if (event.target.closest('[data-add], [data-remove]')) showBar();
     });
-    settingsForm.addEventListener('submit', () => {
+    settingsForm.addEventListener('submit', event => {
+        if (event.submitter?.hasAttribute('formaction')) return;
         submitting = true;
-        sessionStorage.setItem('settings-saved', saved);
+        sessionStorage.setItem(baselineKey, baseline);
     });
     window.addEventListener('pageshow', () => submitting = false);
     window.addEventListener('beforeunload', event => {
