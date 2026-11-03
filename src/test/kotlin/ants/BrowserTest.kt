@@ -3795,6 +3795,71 @@ class BrowserTest : AntsTest() {
         assertThat(mermaidError).hasCount(1)
     }
 
+    private data class DiagramColours(val node: String, val border: String, val label: String, val edge: String)
+
+    private val lightDiagram = DiagramColours("rgb(238, 242, 255)", "rgb(79, 70, 229)", "rgb(15, 23, 42)", "rgb(100, 116, 139)")
+    private val darkDiagram = DiagramColours("rgb(31, 34, 69)", "rgb(129, 140, 248)", "rgb(230, 232, 238)", "rgb(139, 148, 165)")
+
+    private fun drawnColours() = (page.locator("#ticket .mermaid svg").evaluateAll(
+        "svgs => svgs.map(svg => { const style = s => getComputedStyle(svg.querySelector(s)); const node = style('.node rect'); " +
+            "return [node.fill, node.stroke, style('.nodeLabel').color, style('.flowchart-link').stroke] })",
+    ) as List<*>).map { colours -> (colours as List<*>).map { it as String }.let { (node, border, label, edge) -> DiagramColours(node, border, label, edge) } }
+
+    private fun assertDiagramDrawnIn(expected: DiagramColours, theme: String) = eventually {
+        val drawn = drawnColours()
+        assertTrue(drawn.isNotEmpty(), "a diagram is drawn on $theme")
+        assertEquals(List(drawn.size) { expected }, drawn, "every diagram on $theme")
+        assertEquals(DiagramColours(resolvedColour("--accSoft"), resolvedColour("--acc"), resolvedColour("--text"), resolvedColour("--muted")), expected, "Ants' colours on $theme")
+    }
+
+    @Test
+    fun `a diagram is drawn in Ants' light or dark colours, as the theme setting says`() = browse {
+        val ticket = ticketWith("coloured", mermaid("flowchart LR\n  Spec --> Ticket"))
+        for ((theme, system, expected) in listOf(
+            Triple("light", ColorScheme.DARK, lightDiagram), Triple("dark", ColorScheme.LIGHT, darkDiagram),
+            Triple("system", ColorScheme.LIGHT, lightDiagram), Triple("system", ColorScheme.DARK, darkDiagram),
+        )) {
+            settings(null, "theme: $theme\n")
+            page.emulateMedia(Page.EmulateMediaOptions().setColorScheme(system))
+            page.navigate(url(ticket))
+            assertThat(page.locator("#ticket .mermaid svg")).isVisible()
+            assertDiagramDrawnIn(expected, "$theme with the system $system")
+        }
+    }
+
+    @Test
+    fun `on the system theme, every diagram is drawn again in the new colours when the system switches light and dark`() = browse {
+        val ticket = ticketWith("switched", mermaid("flowchart LR\n  Spec --> Ticket") + "\n\n" + mermaid("flowchart LR\n  Ticket --> Report"))
+        settings(null, "theme: system\n")
+        page.emulateMedia(Page.EmulateMediaOptions().setColorScheme(ColorScheme.LIGHT))
+        page.navigate(url(ticket))
+        assertThat(page.locator("#ticket .mermaid svg")).hasCount(2)
+        assertDiagramDrawnIn(lightDiagram, "the light system")
+        page.evaluate("window.antsNotReloaded = true")
+        page.emulateMedia(Page.EmulateMediaOptions().setColorScheme(ColorScheme.DARK))
+        assertDiagramDrawnIn(darkDiagram, "the dark system")
+        page.emulateMedia(Page.EmulateMediaOptions().setColorScheme(ColorScheme.LIGHT))
+        assertDiagramDrawnIn(lightDiagram, "the light system again")
+        assertThat(page.locator("#ticket .mermaid svg")).hasCount(2)
+        assertThat(page.locator("#ticket code.language-mermaid")).hasCount(2)
+        assertThat(page.locator("#ticket code.language-mermaid").first()).isHidden()
+        assertEquals(true, page.evaluate("window.antsNotReloaded ?? false"))
+    }
+
+    @Test
+    fun `an invalid mermaid block's error reads on light and dark`() = browse {
+        val ticket = ticketWith("broken-themed", mermaid("flowchart LR\n  Spec --> --> ]"))
+        for ((theme, background, text) in listOf(
+            Triple("light", "rgb(253, 236, 236)", "rgb(153, 27, 27)"), Triple("dark", "rgb(44, 20, 22)", "rgb(252, 165, 165)"),
+        )) {
+            settings(null, "theme: $theme\n")
+            page.navigate(url(ticket))
+            assertBrokenDiagramShowsItsSourceAndError()
+            assertThat(mermaidError).hasCSS("background-color", background)
+            assertThat(mermaidError).hasCSS("color", text)
+        }
+    }
+
     @Test
     fun `a Ticket without a mermaid block loads no Mermaid`() = browse {
         val requested = requests()
