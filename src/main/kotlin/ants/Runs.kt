@@ -168,12 +168,13 @@ class Runs(
         val shown = ended?.coerceAtLeast(ENDED_PAGE) ?: ENDED_PAGE
         val runs = (roots().unfinished().orderByProcessInstanceStartTime().desc().list() +
             roots().finished().orderByProcessInstanceStartTime().desc().listPage(0, shown + 1)).distinctBy { it.id }.map { run ->
-            val ended = run.endTime?.let { clock.local(it.toInstant()) }
+            val start = run.startTime.toInstant()
+            val end = run.endTime?.toInstant()
+            val ended = end?.let { clock.local(it) }
             val done = run.state == HistoricProcessInstance.STATE_COMPLETED
             RunRow(
-                run.id, names.name(run.id), run.processDefinitionName ?: run.processDefinitionKey, if (ended == null) clock.local(run.startTime.toInstant()) else clock.dated(run.startTime.toInstant()),
-                ended?.let { (if (done) "Done" else run.stateName) + " · " + it },
-                run.endTime?.let { duration(Duration.between(run.startTime.toInstant(), it.toInstant())) }, done, now[run.id],
+                run.id, names.name(run.id), run.processDefinitionName ?: run.processDefinitionKey, if (end == null) clock.local(start) else clock.dated(start),
+                ended?.let { (if (done) "Done" else run.stateName) + " · " + it }, end?.let { duration(Duration.between(start, it)) }, done, now[run.id],
                 ended != null && keptWorkspace(run) != null, ended != null && Files.exists(names.runWorkspace(run.id).resolve(REPORT)),
             )
         }

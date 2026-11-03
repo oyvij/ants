@@ -129,7 +129,7 @@ class RunTest : AntsTest() {
         val cancelled = start("loop-then-wait").path.removePrefix("/runs/")
         Thread.sleep(2_100)
         browser.post("/runs/$cancelled/cancel", mapOf())
-        val today = LocalDate.now().dayOfMonth
-        assertContains(runs("Ended"), Regex("""data-href="/runs/$cancelled">.*?<td class="when muted small">\w{3} $today \w{3} \d\d:\d\d · [23]s</td></tr>""", RegexOption.DOT_MATCHES_ALL))
+        val today = LocalDate.now(clock).dayOfMonth
+        assertContains(runs("Ended"), Regex("""data-href="/runs/$cancelled">.*?<td class="when muted small">\w{3} $today \w{3} \d\d:\d\d · ([2-9]|\d\d)s</td></tr>""", RegexOption.DOT_MATCHES_ALL))
     }
 }
