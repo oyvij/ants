@@ -3095,6 +3095,7 @@ class BrowserTest : AntsTest() {
         val table = page.locator("dialog.modal .md table.frontmatter")
         assertThat(table.locator("th")).hasText(arrayOf("name", "description"))
         assertThat(table.locator("td")).hasText(arrayOf("release-notes", "Writes the release notes for a version, from the commits since the last tag."))
+        settled(page.locator("dialog.modal[open]"))
         val name = table.locator("tr").nth(0).boundingBox()!!
         val description = table.locator("tr").nth(1).boundingBox()!!
         assertTrue(description.y >= name.y + name.height - 1, "description sits below name")
