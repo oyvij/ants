@@ -3732,7 +3732,101 @@ class BrowserTest : AntsTest() {
         assertTrue(ticket <= 860, "the Ticket is ${ticket}px wide")
     }
 
-    private val wideMarkdown = "| Class | Test | Policy | Clock | Ledger | Gateway |\n|---|---|---|---|---|---|\n" +
+    private fun ticketWith(key: String, body: String): String {
+        val run = waitingRun(key).removePrefix("/runs/")
+        workspace(run).resolve("tickets/issues").createDirectories().resolve("01-drawn.md").writeText("# Drawn\n\nStatus: ready-for-agent\n\n$body\n")
+        return "/runs/$run/tickets/01-drawn"
+    }
+
+    private fun requests(): List<String> = mutableListOf<String>().also { seen -> page.onRequest { synchronized(seen) { seen += it.url() } } }
+
+    private fun mermaid(source: String) = "```mermaid\n$source\n```"
+
+    @Test
+    fun `a mermaid block in a Ticket shows as a diagram, with Mermaid served by Ants`() = browse {
+        val requested = requests()
+        page.navigate(url(ticketWith("drawn", mermaid("flowchart LR\n  Spec --> Ticket"))))
+        assertThat(page.locator("#ticket svg", Page.LocatorOptions().setHasText("Ticket"))).isVisible()
+        assertThat(page.locator("#ticket code.language-mermaid")).isHidden()
+        val all = synchronized(requested) { requested.toList() }
+        assertTrue(all.any { it.startsWith(url("/vendor/mermaid/")) }, "Mermaid comes from /vendor/mermaid/: $all")
+        assertTrue(all.all { it.startsWith(url("/")) || it.startsWith("data:") }, "every request goes to Ants: $all")
+    }
+
+    @Test
+    fun `an invalid mermaid block keeps its source and shows Mermaid's error beside it`() = browse {
+        page.navigate(url(ticketWith("broken", mermaid("flowchart LR\n  Spec --> --> ]"))))
+        assertThat(page.locator("#ticket code.language-mermaid")).isVisible()
+        assertThat(page.locator("#ticket code.language-mermaid")).containsText("Spec --> --> ]")
+        assertThat(page.locator("#ticket .mermaid-error")).containsText(Pattern.compile("error", Pattern.CASE_INSENSITIVE))
+        errors.removeAll { "error" in it.lowercase() }
+    }
+
+    @Test
+    fun `a Ticket without a mermaid block loads no Mermaid`() = browse {
+        val requested = requests()
+        page.navigate(url(ticketWith("plain", "```kotlin\nval drawn = false\n```")))
+        page.waitForLoadState(com.microsoft.playwright.options.LoadState.NETWORKIDLE)
+        assertThat(page.locator("#ticket code.language-kotlin")).isVisible()
+        val all = synchronized(requested) { requested.toList() }
+        assertTrue(all.none { "/vendor/mermaid/" in it }, "no Mermaid on a page without a diagram: $all")
+    }
+
+    @Test
+    fun `a mermaid block added after load renders, and one inside live stays code until it moves out`() = browse {
+        page.navigate(url(ticketWith("added", "No diagram yet.")))
+        page.evaluate(
+            """() => {
+                const block = text => { const md = document.createElement('div'); md.className = 'md'; const pre = document.createElement('pre'), code = document.createElement('code');
+                    code.className = 'language-mermaid'; code.textContent = text; pre.append(code); md.append(pre); return md; };
+                const live = document.createElement('div'); live.id = 'live'; live.append(block('flowchart LR\n  Streaming --> Landed'));
+                document.querySelector('#ticket').after(block('flowchart LR\n  Added --> Later'), live);
+            }""",
+        )
+        assertThat(page.locator("svg", Page.LocatorOptions().setHasText("Later"))).isVisible()
+        page.waitForTimeout(500.0)
+        assertThat(page.locator("#live code.language-mermaid")).isVisible()
+        assertThat(page.locator("#live svg")).hasCount(0)
+        page.evaluate("() => document.querySelector('#live').before(document.querySelector('#live .md'))")
+        assertThat(page.locator("svg", Page.LocatorOptions().setHasText("Landed"))).isVisible()
+    }
+
+    @Test
+    fun `mermaid runs at its strict security level, so a diagram's labels inject no HTML`() = browse {
+        page.navigate(url(ticketWith("strict", mermaid("flowchart LR\n  A[\"<img src=x onerror=window.antsInjected=1>\"] --> B\n  click A call alert()"))))
+        assertThat(page.locator("#ticket svg", Page.LocatorOptions().setHasText("B"))).isVisible()
+        assertThat(page.locator("#ticket svg :is([onerror], [onclick], script)")).hasCount(0)
+        assertEquals(null, page.evaluate("window.antsInjected ?? null"))
+    }
+
+    private val wideDiagram = mermaid("flowchart LR\n  " + (1..14).joinToString(" --> ") { "Step$it[A long step named number $it]" })
+
+    private fun assertWideDiagramScrollsInsideItsBox() = eventually {
+        val (body, box, boxRight, scrolled) = (page.locator("#ticket").evaluate(
+            "e => { const b = e.querySelector('.mermaid'); b.scrollLeft = 100; " +
+                "return [e.getBoundingClientRect().width, b.getBoundingClientRect().width, b.getBoundingClientRect().right, b.scrollLeft] }",
+        ) as List<*>).map { (it as Number).toDouble() }
+        assertTrue(body <= 860, "the Ticket is ${body}px wide")
+        assertTrue(box <= body, "the diagram's box is ${box}px, wider than the Ticket's ${body}px")
+        assertTrue(boxRight <= page.viewportSize()!!.width, "the diagram's box ends at ${boxRight}px")
+        assertTrue(scrolled > 0, "the wide diagram scrolls sideways inside its own box")
+    }
+
+    @Test
+    fun `a wide diagram stays within the rendered body's measure and scrolls inside its box, on a wide page and on a phone`() = browse {
+        val ticket = ticketWith("wide", wideDiagram)
+        page.setViewportSize(1920, 1080)
+        page.navigate(url(ticket))
+        assertThat(page.locator("#ticket .mermaid svg")).isVisible()
+        assertWideDiagramScrollsInsideItsBox()
+        onPhone()
+        page.navigate(url(ticket))
+        assertThat(page.locator("#ticket .mermaid svg")).isVisible()
+        assertWideDiagramScrollsInsideItsBox()
+        assertNoSidewaysScroll()
+    }
+
+    private val wideMarkdown ="| Class | Test | Policy | Clock | Ledger | Gateway |\n|---|---|---|---|---|---|\n" +
         "| PaymentRetryPolicy | PaymentRetryPolicyTest | ExponentialBackoffPolicy | FixedClockForRetries | InMemoryPaymentLedger | StripeWebhookGateway |\n\n" +
         "![Ants](/icon-512.png)\n"
 

@@ -18,9 +18,9 @@ class Security {
     @Bean
     fun filterChain(http: HttpSecurity): SecurityFilterChain = http
         // A browser fetches the app's manifest and icons without the login cookie; the login page needs its stylesheet and,
-        // like every page, loads markdown.js (which loads nothing more where no field is markdown).
+        // like every page, loads markdown.js and mermaid.js (which load nothing more where no field is markdown and no block a diagram).
         // Agents reach the MCP endpoint with their Task's bearer token, which it checks itself, never the login.
-        .authorizeHttpRequests { it.requestMatchers("/manifest.webmanifest", "/icon-*.png", "/ants.css", "/markdown.js", "/mcp").permitAll().anyRequest().authenticated() }
+        .authorizeHttpRequests { it.requestMatchers("/manifest.webmanifest", "/icon-*.png", "/ants.css", "/markdown.js", "/mermaid.js", "/mcp").permitAll().anyRequest().authenticated() }
         // Ants' own login page (login.kte); Log out, in the sidebar, lands back on it.
         .formLogin { it.loginPage("/login").failureUrl("/login?error").permitAll() }
         .logout { it.logoutSuccessUrl("/login?logout").permitAll() }
