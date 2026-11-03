@@ -739,6 +739,12 @@ details.example pre { background: var(--line2); border: 0; padding: 10px; border
 .schema-rows { list-style: none; margin: 0; padding: 0; } .schema-row > .row { margin-bottom: 6px; } .schema-row .row > .name { width: 140px; flex: none; }
 .schema-row .row > select { flex: none; } .schema-row .row > [data-move-row] { padding-inline: 6px; } .schema-level > [data-add-row] { margin-bottom: 4px; }
 .schema-fields { margin: 0 0 8px 18px; padding-left: 10px; border-left: 2px solid var(--line2); }
+@media (max-width: 768px) {
+    .schema-row > .row { flex-wrap: wrap; gap: 8px; }
+    .schema-row .row > :is(.name, .grow) { flex: 1 1 100%; width: auto; min-width: 0; }
+    .schema-row .row > .grow { order: 1; } .schema-row .row > select { flex: 1 1 0; min-width: 0; }
+    .schema-fields { margin-left: 6px; }
+}
 .schema-row > .finding { font-size: 12.5px; margin: -2px 0 6px; } .finding.f-error { color: var(--badText); } .finding.f-warning { color: var(--warnText); }
 .test-run { margin-top: 10px; } .test-run h4 { margin: 12px 0 4px; font-size: 12.5px; }
 .test-run pre { margin: 0; padding: 8px 10px; font-family: var(--mono); font-size: 12.5px; max-height: 320px; }

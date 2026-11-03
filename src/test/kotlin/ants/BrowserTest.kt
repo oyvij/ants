@@ -2305,6 +2305,34 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `on a phone a Script's schema row fits its card in three lines, its name and description each a line wide, and nested rows too`() = browse {
+        settings(null)
+        val draft = http.newDraft("/scripts")
+        onPhone()
+        page.navigate(url(draft))
+        val inputs = page.locator("#input-schema > .schema-level")
+        inputs.locator(":scope > [data-add-row]").click()
+        page.locator("select[name='inputs[0].type']").selectOption("object")
+        page.locator("li.schema-row [data-add-row]").first().click()
+        assertNoSidewaysScroll()
+        val card = page.locator(".card:has(#input-schema)").boundingBox()!!
+        for (at in listOf("inputs[0]", "inputs[0].rows[0]")) {
+            val row = page.locator("[name='$at.name']").locator("xpath=..")
+            for (part in row.locator(":scope > *").all()) {
+                val box = part.boundingBox()!!
+                assertTrue(box.x >= card.x && box.x + box.width <= card.x + card.width, "$at's ${part.evaluate("e => e.outerHTML.slice(0, 60)")} spans ${box.x} to ${box.x + box.width} in a card from ${card.x} to ${card.x + card.width}")
+            }
+            val lines = row.locator(":scope > *").all().map { it.boundingBox()!!.let { b -> Math.round(b.y + b.height / 2) } }.toSet()
+            assertEquals(3, lines.size, "$at's row is on the lines $lines")
+            for (field in listOf("name", "description")) {
+                val box = page.locator("[name='$at.$field']").boundingBox()!!
+                assertTrue(box.width >= 200, "$at's $field is ${box.width}px wide")
+            }
+        }
+        page.screenshot("phone/script-schema")
+    }
+
+    @Test
     fun `on a phone the Agents, Skills and Scripts lists fit the screen, each row's cells within it and none blank, and an entry opens on a tap`() = browse {
         settings(null)
         home.resolve("agents").createDirectories().resolve("a-rather-long-agent-name-that-runs-on.md").writeText("---\nname: a-rather-long-agent-name-that-runs-on\ndescription: ${"An Agent described at length. ".repeat(8)}\ncli: claude\nskills: tdd, code-review, codebase-design, implement\n---\nListed.\n")
