@@ -2308,6 +2308,29 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `on a phone New Process opens its modal with Name, Start from and Import within the screen, and makes a Process`() = browse {
+        settings(null)
+        http.import("start-end.bpmn")
+        onPhone()
+        page.navigate(url("/processes"))
+        assertNoSidewaysScroll()
+        page.locator(".ph button.primary").tap()
+        val modal = page.locator("dialog#new-process")
+        assertThat(modal).isVisible()
+        settled(modal)
+        page.screenshot("phone/new-process")
+        for (field in listOf("Name", "Start from", "Import a BPMN file")) {
+            val input = modal.getByLabel(field, Locator.GetByLabelOptions().setExact(true))
+            assertThat(input).isVisible()
+            assertWithinScreen(input, field)
+        }
+        assertWithinScreen(modal, "the modal")
+        modal.getByLabel("Name", Locator.GetByLabelOptions().setExact(true)).fill("From the phone")
+        modal.locator("button.primary").tap()
+        page.waitForURL(Pattern.compile(".*/processes/[^/]+/edit$"))
+    }
+
+    @Test
     fun `on a phone the Process page's and the Run page's buttons at the top line up two to a row, each as wide, across the page`() = browse {
         val run = waitingRun("aligned")
         onPhone()
