@@ -30,7 +30,7 @@ class PwaTest : AntsTest() {
 
     @Test
     fun `the app's status bar and splash take the phone top bar's colour`() {
-        val manifest = browser().get("/manifest.webmanifest").body
+        val manifest = manifest()
         assertContains(manifest, """"theme_color": "#0e1016"""")
         assertContains(manifest, """"background_color": "#0e1016"""")
     }
@@ -53,8 +53,10 @@ class PwaTest : AntsTest() {
     }
 
     private fun icons() = Regex(""""src": "([^"]+)", "sizes": "([^"]+)"""")
-        .findAll(browser().get("/manifest.webmanifest").body).map { it.groupValues[1] to it.groupValues[2] }.toList()
+        .findAll(manifest()).map { it.groupValues[1] to it.groupValues[2] }.toList()
         .ifEmpty { error("no icons") }
+
+    private fun manifest() = browser().get("/manifest.webmanifest").body
 
     private fun icon(src: String): BufferedImage = ImageIO.read(javaClass.getResource("/static$src") ?: error("no $src"))
 
