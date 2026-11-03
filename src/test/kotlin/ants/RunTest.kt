@@ -1,6 +1,7 @@
 package ants
 
 import org.junit.jupiter.api.Test
+import java.time.LocalDate
 import kotlin.io.path.isDirectory
 import kotlin.io.path.writeText
 import kotlin.test.assertContains
@@ -120,5 +121,15 @@ class RunTest : AntsTest() {
         assertContains(ended, Regex("""data-href="/runs/$done">.*?<span class="pill p-done">Done · \d\d:\d\d</span>.*?<a href="/runs/$done/report">Report</a>""", RegexOption.DOT_MATCHES_ALL))
         assertContains(ended, Regex("""data-href="/runs/$cancelled">.*?<span class="pill p-failed">Cancelled · \d\d:\d\d</span>.*?<form method="post" action="/runs/$cancelled/dismiss">""", RegexOption.DOT_MATCHES_ALL))
         assertFalse("/runs/$done\"" in runs("Live"))
+    }
+
+    @Test
+    fun `an ended Run's row ends with the date and time it started and how long it took`() {
+        importLoopThenWait()
+        val cancelled = start("loop-then-wait").path.removePrefix("/runs/")
+        Thread.sleep(2_100)
+        browser.post("/runs/$cancelled/cancel", mapOf())
+        val today = LocalDate.now().dayOfMonth
+        assertContains(runs("Ended"), Regex("""data-href="/runs/$cancelled">.*?<td class="when muted small">\w{3} $today \w{3} \d\d:\d\d · [23]s</td></tr>""", RegexOption.DOT_MATCHES_ALL))
     }
 }

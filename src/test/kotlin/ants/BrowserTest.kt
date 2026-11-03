@@ -2259,6 +2259,27 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `on a phone an ended Run's row shows when it started and how long it took at its top right, beside its name`() = browse {
+        settings(null)
+        val (process, plane) = row("timed", """<bpmn:startEvent id="start" />""", """<bpmn:endEvent id="end" />""")
+        deploy(definitions("timed", "Timed", process, plane))
+        val run = http.post("/processes/timed/runs", mapOf()).path
+        onPhone()
+        page.navigate(url("/runs"))
+        val row = page.locator("tr.click[data-href='$run']")
+        val name = row.locator("td").first().boundingBox()!!
+        val time = row.locator("td.when")
+        assertThat(time).hasText(Pattern.compile("""\w{3} \d{1,2} \w{3} \d\d:\d\d · \d+s"""))
+        val box = time.boundingBox()!!
+        val whole = row.boundingBox()!!
+        assertEquals(name.y, box.y, 0.5)
+        assertEquals(whole.x + whole.width, box.x + box.width, 0.5)
+        assertTrue(name.x + name.width <= box.x, "the name ends before the time begins")
+        assertNoSidewaysScroll()
+        page.screenshot("phone/runs-ended")
+    }
+
+    @Test
     fun `on a phone the Run page's Task drawer spans the screen, and neither the Run page nor the Process page scrolls sideways`() = browse {
         val run = waitingRun("drawn")
         onPhone()

@@ -54,6 +54,7 @@ import java.nio.file.Path
 import java.nio.file.StandardOpenOption.APPEND
 import java.nio.file.StandardOpenOption.CREATE
 import java.time.Clock
+import java.time.Duration
 import java.time.Instant
 import java.time.temporal.ChronoUnit.SECONDS
 import java.util.Date
@@ -69,7 +70,7 @@ class Shown(val state: String, val badge: String?, val round: Int?)
  * A Run as the Runs list shows it: its [ended] pill's words ("Done · 15:10") once it has ended, what it does [now]
  * while it lives, and whether it [kept] its Run workspace and has a [report].
  */
-class RunRow(val id: String, val name: String, val process: String, val started: String, val ended: String?, val done: Boolean, val now: Now?, val kept: Boolean, val report: Boolean)
+class RunRow(val id: String, val name: String, val process: String, val started: String, val ended: String?, val took: String?, val done: Boolean, val now: Now?, val kept: Boolean, val report: Boolean)
 
 /**
  * What the live Run [run], named [name], is doing now: the Notification list entries [waiting] on the user, its
@@ -170,8 +171,9 @@ class Runs(
             val ended = run.endTime?.let { clock.local(it.toInstant()) }
             val done = run.state == HistoricProcessInstance.STATE_COMPLETED
             RunRow(
-                run.id, names.name(run.id), run.processDefinitionName ?: run.processDefinitionKey, clock.local(run.startTime.toInstant()),
-                ended?.let { (if (done) "Done" else run.stateName) + " · " + it }, done, now[run.id],
+                run.id, names.name(run.id), run.processDefinitionName ?: run.processDefinitionKey, if (ended == null) clock.local(run.startTime.toInstant()) else clock.dated(run.startTime.toInstant()),
+                ended?.let { (if (done) "Done" else run.stateName) + " · " + it },
+                run.endTime?.let { duration(Duration.between(run.startTime.toInstant(), it.toInstant())) }, done, now[run.id],
                 ended != null && keptWorkspace(run) != null, ended != null && Files.exists(names.runWorkspace(run.id).resolve(REPORT)),
             )
         }
