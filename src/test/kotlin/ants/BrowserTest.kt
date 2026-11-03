@@ -1983,7 +1983,8 @@ class BrowserTest : AntsTest() {
             assertEquals(pageBackground, page.evaluate("getComputedStyle(document.documentElement).backgroundColor"), "the page in $theme")
             assertEquals(desktop, background(sidebar), "the drawer in $theme")
             assertEquals(desktop, background(topBar), "the top bar in $theme")
-            assertEquals("rgb(255, 255, 255)", topBar.getByText("Ants").evaluate("e => getComputedStyle(e).color"), "Ants in $theme")
+            assertThat(topBar.getByRole(AriaRole.IMG, Locator.GetByRoleOptions().setName("Ants"))).isVisible()
+            assertContains(topBar.locator(".wordmark text").evaluate("e => getComputedStyle(e).fill") as String, "#wm-top", message = "the brown wordmark in $theme")
             page.screenshot("phone/drawer-$theme")
         }
     }
@@ -3800,8 +3801,8 @@ class BrowserTest : AntsTest() {
 
     private data class DiagramColours(val node: String, val border: String, val label: String, val edge: String)
 
-    private val lightDiagram = DiagramColours("rgb(238, 242, 255)", "rgb(79, 70, 229)", "rgb(15, 23, 42)", "rgb(100, 116, 139)")
-    private val darkDiagram = DiagramColours("rgb(31, 34, 69)", "rgb(129, 140, 248)", "rgb(230, 232, 238)", "rgb(139, 148, 165)")
+    private val lightDiagram = DiagramColours("rgb(246, 237, 228)", "rgb(138, 74, 38)", "rgb(15, 23, 42)", "rgb(100, 116, 139)")
+    private val darkDiagram = DiagramColours("rgb(42, 29, 20)", "rgb(212, 163, 115)", "rgb(230, 232, 238)", "rgb(139, 148, 165)")
 
     private fun drawnColours() = (page.locator("#ticket .mermaid svg").evaluateAll(
         "svgs => svgs.map(svg => { const style = s => getComputedStyle(svg.querySelector(s)); const node = style('.node rect'); " +
@@ -5176,9 +5177,9 @@ class BrowserTest : AntsTest() {
         assertThat(clock).hasText(Pattern.compile("\\d+s"))
         val first = clock.textContent()!!
         val spin = page.locator("#status .spin")
-        val glyph = spin.textContent()
+        val ant = spin.screenshot()
         assertThat(clock).not().hasText(first) // the clock still ticks
-        assertEquals(glyph, spin.textContent()) // the spinner stands still
+        assertTrue(ant.contentEquals(spin.screenshot()), "the working ant stands still")
         assertEquals("none", page.evaluate("getComputedStyle(document.querySelector('#status .shimmer')).animationName"))
         claude.release("one")
         assertThat(page.locator("#live.caret")).containsText("Almost there")
