@@ -176,6 +176,8 @@ input[type=checkbox], input[type=radio] { width: auto; accent-color: var(--acc);
 .ed.json .cm-scroller { font-family: var(--mono); font-size: 12.5px; }
 .md { max-width: 860px; } .md h1, .md h2, .md h3 { margin: 12px 0 6px; } .md p { margin: 6px 0; } .md pre { background: #0f172a; color: #e2e8f0; padding: 12px 14px; border-radius: 8px; overflow: auto; font-size: 12.5px; }
 .md pre code { background: none; padding: 0; color: inherit; } .md .add { color: #86efac; } .md .del { color: #fca5a5; } .md .hunk { color: #93c5fd; }
+.mermaid { max-width: 100%; overflow-x: auto; margin: 6px 0; } .mermaid svg { display: block; }
+.mermaid-error { margin: 6px 0; padding: 8px 12px; border-radius: 8px; background: var(--badSoft); color: var(--badText); white-space: pre-wrap; overflow-wrap: anywhere; font: 12.5px/1.5 var(--mono); }
 .md table.frontmatter { margin: 0 0 16px; box-shadow: none; font-size: 13.5px; } .md .frontmatter th, .md .frontmatter td { padding: 8px 14px; vertical-align: baseline; }
 .md .frontmatter th { width: 1%; white-space: nowrap; font-family: var(--mono); font-size: 12.5px; text-transform: none; letter-spacing: 0; } .md .frontmatter td { white-space: pre-wrap; overflow-wrap: anywhere; }
 .cm-selectionBackground { background: light-dark(#d7dcfa, #2b3350) !important; }
