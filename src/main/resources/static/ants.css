@@ -141,7 +141,7 @@ button.small, .ghost.small { min-height: 28px; font-size: 12.5px; }
 input:not([type=checkbox]):not([type=radio]), select { min-height: 36px; }
 .ed .bar button, .tabs button, :is(.chipsel, .fld .tags) .c button, .cmd button, .dia .zoom button, .notice button { min-height: 0; }
 button:hover, .btn:hover { background: var(--hover); }
-button.primary, .btn.primary { background: light-dark(#fbf4ec, #2a1d14); border: 1.5px solid light-dark(#8a4a26, #d4a373); color: light-dark(#6b3a1e, #f0d4b4); } :is(button, .btn).primary:hover { background: light-dark(#f3e3d1, #3a2718); }
+button.primary, .btn.primary { background: light-dark(#fbf4ec, #2a1d14); border: 1.5px solid var(--acc); color: light-dark(#6b3a1e, #f0d4b4); } :is(button, .btn).primary:hover { background: light-dark(#f3e3d1, #3a2718); }
 button.danger, .btn.danger { color: var(--bad); } button.ghost { border-color: transparent; box-shadow: none; background: none; color: var(--acc); padding: 4px 6px; }
 button:disabled, button[aria-disabled=true] { opacity: .45; cursor: not-allowed; }
 
@@ -334,16 +334,12 @@ div.tools label span { color: var(--muted); font-size: 12px; display: block; }
 .walk nav a { color: var(--text); padding: 6px 10px; border-radius: 8px; font-size: 13px; overflow-wrap: anywhere; } .walk nav a:hover { background: var(--panel); text-decoration: none; }
 
 /* Liveness: what a running Agent looks like everywhere it appears */
-/* The spinner is the working ant (its own SVG animates), drawn over the ✻ the markup keeps; caramel on a dark page. */
-.spin { display: inline-block; width: 1.9em; height: 1.2em; vertical-align: -.2em; flex: none; color: transparent; overflow: hidden; user-select: none; background: url(/working-ant.svg) center / contain no-repeat; }
-:root:has(meta[name=color-scheme][content=dark]) .spin, :is(.side, .topbar) .spin { background-image: url(/working-ant-dark.svg); }
-@media (prefers-color-scheme: dark) { :root:has(meta[name=color-scheme][content="light dark"]) .spin { background-image: url(/working-ant-dark.svg); } }
-/* Reduced motion: an SVG drawn as a background image doesn't see the page's prefers-reduced-motion, so it stands still in a copy with no animation. */
-@media (prefers-reduced-motion: reduce) {
-    .spin { background-image: url(/working-ant-still.svg); }
-    :root:has(meta[name=color-scheme][content=dark]) .spin, :is(.side, .topbar) .spin { background-image: url(/working-ant-dark-still.svg); }
-}
-@media (prefers-reduced-motion: reduce) and (prefers-color-scheme: dark) { :root:has(meta[name=color-scheme][content="light dark"]) .spin { background-image: url(/working-ant-dark-still.svg); } }
+/* The spinner is the working ant (its own SVG animates), drawn over the ✻ the markup keeps; caramel on a dark page. An SVG
+   drawn as a background image doesn't see the page's prefers-reduced-motion, so then it is a copy with no animation. */
+.spin { --ant: url(/working-ant.svg); --antStill: url(/working-ant-still.svg); display: inline-block; width: 1.9em; height: 1.2em; vertical-align: -.2em; flex: none; color: transparent; overflow: hidden; user-select: none; background: var(--ant) center / contain no-repeat; }
+:root:has(meta[name=color-scheme][content=dark]) .spin, :is(.side, .topbar) .spin { --ant: url(/working-ant-dark.svg); --antStill: url(/working-ant-dark-still.svg); }
+@media (prefers-color-scheme: dark) { :root:has(meta[name=color-scheme][content="light dark"]) .spin { --ant: url(/working-ant-dark.svg); --antStill: url(/working-ant-dark-still.svg); } }
+@media (prefers-reduced-motion: reduce) { .spin { background-image: var(--antStill); } }
 .shimmer { background: linear-gradient(90deg, var(--run) 0%, var(--run) 35%, #a5c8ff 50%, var(--run) 65%, var(--run) 100%); background-size: 250% 100%;
     -webkit-background-clip: text; background-clip: text; color: transparent; animation: shim 2s linear infinite; font-weight: 600; }
 @keyframes shim { from { background-position: 100% 0; } to { background-position: -150% 0; } }

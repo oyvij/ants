@@ -1,8 +1,8 @@
 @param shell: ants.Shell
 <input type="checkbox" id="menu" autocomplete="off">
-<header class="topbar"><a class="logo" href="/">@template.wordmark(id = "wm-top")</a><a class="notifications" href="/notifications" title="Notification list"><svg class="i" viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg><span id="topbar-waiting" class="n">${if (shell.waiting > 0) shell.waiting.toString() else ""}</span></a><label for="menu" title="Menu">☰</label></header>
+<header class="topbar"><a class="logo" href="/">@template.wordmark(gradientId = "wm-top")</a><a class="notifications" href="/notifications" title="Notification list"><svg class="i" viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg><span id="topbar-waiting" class="n">${if (shell.waiting > 0) shell.waiting.toString() else ""}</span></a><label for="menu" title="Menu">☰</label></header>
 <nav class="side">
-    <div class="logo">@template.wordmark(id = "wm-side")</div>
+    <div class="logo">@template.wordmark(gradientId = "wm-side")</div>
     <span id="history"><button type="button" onclick="history.back()" title="Back" aria-label="Back">←</button><button type="button" onclick="history.forward()" title="Forward" aria-label="Forward">→</button><button type="button" onclick="location.reload()" title="Reload" aria-label="Reload">↻</button></span>
     <a href="/"><svg class="i" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>Home</a>
     <a href="/notifications"><svg class="i" viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>Notification list<span id="waiting" class="n">${if (shell.waiting > 0) shell.waiting.toString() else ""}</span></a>
