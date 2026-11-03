@@ -21,4 +21,11 @@ class PwaTest : AntsTest() {
         val page = browser().also { it.login() }.get("/notifications").body
         assertContains(page, """<link rel="manifest" href="/manifest.webmanifest">""")
     }
+
+    @Test
+    fun `the app's status bar and splash take the phone top bar's colour`() {
+        val manifest = browser().get("/manifest.webmanifest").body
+        assertContains(manifest, """"theme_color": "#0e1016"""")
+        assertContains(manifest, """"background_color": "#0e1016"""")
+    }
 }
