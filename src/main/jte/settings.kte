@@ -62,8 +62,7 @@
             <div class="fld"><label class="f" for="${cli}.env">Environment allow-list</label>
                 <input class="mono" id="${cli}.env" name="${cli}.env" value="${form.envs[cli]}" placeholder="${Settings.DEFAULT_ENV.joinToString(" ")}"></div></div>
 @endfor
-        <div class="subsec"><label class="small" for="varde-config">Varde's config.toml</label><div class="help">Fills a command and allow-list from its <code>[ai]</code>.</div>
-            <div class="row"><input class="grow mono" id="varde-config" name="varde-config" value="${form.vardeConfig}" placeholder="e.g. ~/.varde/config.toml"><button name="action" value="varde">Fill from Varde</button></div></div></div></div>
+    </div></div>
 
     <div class="card"><h3>Vaults</h3><div class="help">Profiles below pair them with Source maps; with no Profile, every Run uses the default.</div>
         @template.named(list = "vaults", default = "default-vault", named = form.vaults, setUp = setUp, nameExample = "work", pathExample = "~/notes/work")</div>

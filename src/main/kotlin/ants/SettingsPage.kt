@@ -14,7 +14,6 @@ import org.springframework.web.bind.annotation.ModelAttribute
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.server.ResponseStatusException
-import tools.jackson.dataformat.toml.TomlMapper
 import java.nio.file.Path
 import java.time.Instant
 import java.time.ZoneId
@@ -25,7 +24,7 @@ import kotlin.io.path.readText
 import kotlin.math.roundToInt
 
 /**
- * The settings page: one form over `settings.yaml`. Detect and Fill from Varde fill the form; Check login and Check now
+ * The settings page: one form over `settings.yaml`. Detect fills the form; Check login and Check now
  * (the update check) ask again and say what they found in a toast, keeping what was typed; only Save writes.
  */
 @Controller
@@ -59,7 +58,6 @@ class SettingsPage(
                 val missing = Settings.CLIS - found.keys
                 show(model, form.copy(paths = form.paths + found), if (missing.isEmpty()) null else "Your login shell doesn't find ${missing.joinToString(", ")}.")
             }
-            "varde" -> runCatching { form.fromVarde() }.fold({ show(model, it) }, { show(model, form, it.message) })
             else -> form.error()?.let { show(model, form, it) } ?: run {
                 val asked = form.removedProfiles(settings).filter(settings::hasInstructions)
                 if (asked.isNotEmpty() && "confirm" !in params) return confirm(model, removalQuestion(asked), Dependents(emptyList()), "/settings", params, "/settings")
@@ -191,7 +189,6 @@ data class SettingsForm(
     val paths: Map<String, String>,
     val commands: Map<String, String>,
     val envs: Map<String, String>,
-    val vardeConfig: String,
     val agentTasks: String,
     val subagentDepth: String,
     val retries: String,
@@ -249,20 +246,6 @@ data class SettingsForm(
             ?: "Two Profiles have the same name.".takeIf { profiles.map { it.name }.toSet().size < profiles.size }
     }
 
-    /** This form with the AI CLI's command and env from Varde's `[ai]`, filled in for the CLI that command runs. */
-    fun fromVarde(): SettingsForm {
-        val file = Settings.expand(vardeConfig).toFile()
-        val ai = runCatching { TomlMapper().readValue(file, Map::class.java)["ai"] as? Map<*, *> }
-            .getOrElse { throw IllegalArgumentException("Can't read $vardeConfig as Varde's config.toml: ${it.message}") }
-            ?: throw IllegalArgumentException("$vardeConfig has no [ai] table.")
-        val command = Settings.strings(ai["command"])
-        val cli = command?.lastOrNull { it.substringAfterLast('/') in Settings.AI_CLIS }?.substringAfterLast('/') ?: "claude"
-        return copy(
-            commands = commands + listOfNotNull(command?.let { cli to it.joinToString(" ") }),
-            envs = envs + listOfNotNull(Settings.strings(ai["env"])?.let { cli to it.joinToString(" ") }),
-        )
-    }
-
     /**
      * Writes the form into `settings.yaml`, with [password] as the new password unless it's empty, and the Secrets'
      * values into `secrets.yaml`, a blank one keeping the value saved under the label it was.
@@ -285,7 +268,7 @@ data class SettingsForm(
             }
             values.keep(cli, entry)
         }
-        values.keep("varde-config", vardeConfig)
+        values.remove("varde-config")
         values.keep("agent-tasks", agentTasks.toIntOrNull())
         values.keep("subagent-depth", subagentDepth.toIntOrNull())
         values.keep("retries", retries.toIntOrNull())
@@ -318,7 +301,6 @@ data class SettingsForm(
                 paths = Settings.CLIS.associateWith { cli(it)["path"]?.toString().orEmpty() },
                 commands = Settings.AI_CLIS.associateWith { words(cli(it)["command"]) },
                 envs = Settings.AI_CLIS.associateWith { words(cli(it)["env"]) },
-                vardeConfig = values["varde-config"]?.toString().orEmpty(),
                 agentTasks = values["agent-tasks"]?.toString().orEmpty(),
                 subagentDepth = values["subagent-depth"]?.toString().orEmpty(),
                 retries = values["retries"]?.toString().orEmpty(),
@@ -363,7 +345,6 @@ data class SettingsForm(
                 paths = Settings.CLIS.associateWith { param("$it.path") },
                 commands = Settings.AI_CLIS.associateWith { param("$it.command") },
                 envs = Settings.AI_CLIS.associateWith { param("$it.env") },
-                vardeConfig = param("varde-config"),
                 agentTasks = param("agent-tasks"),
                 subagentDepth = param("subagent-depth"),
                 retries = param("retries"),
