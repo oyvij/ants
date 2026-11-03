@@ -63,6 +63,7 @@ class Settings(
             val found = detect()
             save { values -> found.forEach { (cli, path) -> values[cli] = mapOf("path" to path) } }
         }
+        if ("varde-config" in read()) save { it.remove("varde-config") }
         anthill()
         check(!docker || passwordFromEnv) { "Ants in Docker needs a password: set ANTS_PASSWORD or ANTS_PASSWORD_FILE." }
         val loopback = address.isNotEmpty() && InetAddress.getByName(address).isLoopbackAddress

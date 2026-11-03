@@ -268,7 +268,6 @@ data class SettingsForm(
             }
             values.keep(cli, entry)
         }
-        values.remove("varde-config")
         values.keep("agent-tasks", agentTasks.toIntOrNull())
         values.keep("subagent-depth", subagentDepth.toIntOrNull())
         values.keep("retries", retries.toIntOrNull())

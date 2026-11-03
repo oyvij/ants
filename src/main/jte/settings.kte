@@ -135,7 +135,7 @@
         <div class="card"><h3>${label}</h3><div class="help">$unsafe{help}</div><div class="listed">
             <div class="row"><label class="cap grow">Folder<input class="mono" placeholder="e.g. ~/.ants/${name.removeSuffix("-folders")}s" value="${home}/${name.removeSuffix("-folders")}s" disabled></label><span class="muted small nowrap">Ants' own, always</span></div>
 @for(folder in (if (name == "agent-folders") form.agentFolders else form.skillFolders).lines().filter(String::isNotBlank) + "")
-            <div class="row" hidden="${folder.isEmpty()}"><label class="cap grow">Folder<input class="mono" name="${name}" value="${folder}" placeholder="e.g. ~/.varde/ai/${name.removeSuffix("-folders")}s"></label><button type="button" class="ghost" data-remove>Remove</button></div>
+            <div class="row" hidden="${folder.isEmpty()}"><label class="cap grow">Folder<input class="mono" name="${name}" value="${folder}" placeholder="e.g. ~/shared/${name.removeSuffix("-folders")}s"></label><button type="button" class="ghost" data-remove>Remove</button></div>
 @endfor
             <button type="button" data-add>＋ Add folder</button></div></div>
 @endfor

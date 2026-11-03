@@ -128,13 +128,18 @@ class SettingsTest : AntsTest() {
     }
 
     @Test
-    fun `the page has no Varde config, and saving drops an old one from settings yaml`() {
-        file.writeText("varde-config: ~/.varde/config.toml\nagent-tasks: 2\n")
-        val page = browser.get("/settings").body
-        assertFalse(Regex("(?i)varde").containsMatchIn(page.replace("~/.varde/ai/", "")))
-        press("save", mapOf("agent-tasks" to "2"))
-        assertFalse("varde-config" in yaml())
-        assertFalse("varde-config" in file.readText())
+    fun `the page has no trace of Varde`() {
+        assertFalse(Regex("(?i)varde").containsMatchIn(browser.get("/settings").body))
+    }
+
+    @Test
+    fun `a start drops an old Varde config from settings yaml and keeps the rest`() {
+        val other = tempHome().createDirectories()
+        other.resolve("settings.yaml").writeText("varde-config: ~/.varde/config.toml\nagent-tasks: 2\n")
+        bootAnother(other)
+        val text = other.resolve("settings.yaml").readText()
+        assertFalse("varde" in text)
+        assertEquals(2, Yaml().load<Map<*, *>>(text)["agent-tasks"])
     }
 
     @Test
