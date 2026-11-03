@@ -1,6 +1,7 @@
 package ants
 
 import org.junit.jupiter.api.BeforeEach
+import org.operaton.bpm.engine.HistoryService
 import org.operaton.bpm.engine.RepositoryService
 import org.operaton.bpm.engine.RuntimeService
 import org.springframework.beans.factory.annotation.Autowired
@@ -64,6 +65,9 @@ abstract class AntsTest {
     private lateinit var runtime: RuntimeService
 
     @Autowired
+    private lateinit var history: HistoryService
+
+    @Autowired
     private lateinit var launcher: AgentLauncher
 
     @Autowired
@@ -99,6 +103,8 @@ abstract class AntsTest {
                 Thread.sleep(50)
             }
         }
+        // Deleting a Process keeps its ended Runs (DeleteProcessTest), which no deployment deletes any more.
+        history.createHistoricProcessInstanceQuery().list().map { it.id }.takeIf { it.isNotEmpty() }?.let(history::deleteHistoricProcessInstancesIfExists)
         // Only once their Runs are gone, so no worker launches the Task again; each slot frees as its CLI ends.
         val deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos()
         while (launcher.running > 0 && System.nanoTime() < deadline) {
