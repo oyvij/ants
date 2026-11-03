@@ -5,7 +5,7 @@
 # Everything else Ants keeps, its home and the CLIs' logins included, is on the one volume, /data.
 
 # claude needs a newer Node than Ubuntu's, so Node and the npm CLIs come from Node's own image.
-FROM node:24-bookworm-slim AS clis
+FROM node:26-bookworm-slim AS clis
 RUN npm install --global @anthropic-ai/claude-code @openai/codex
 
 FROM eclipse-temurin:25-jre-noble
