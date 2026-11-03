@@ -2301,15 +2301,19 @@ class BrowserTest : AntsTest() {
 
     private fun assertButtonsInTwoColumns(vararg names: String) {
         val acts = page.locator(".ph .acts")
-        val boxes = names.map { name ->
+        val (edge, content, gap) = Triple(16.0, 358.0, 8.0)
+        val column = (content - gap) / 2
+        val boxes = names.associateWith { name ->
             acts.locator(":scope > button, :scope > .btn, :scope > form > button").filter(Locator.FilterOptions().setHasText(name)).also { assertThat(it).isVisible() }.boundingBox()!!
         }
-        boxes.forEachIndexed { i, box ->
-            val name = names[i]
-            assertEquals((358.0 - 8) / 2, box.width, 0.5, "$name's width")
-            assertEquals(if (i % 2 == 0) 16.0 else 16.0 + (358.0 + 8) / 2, box.x, 0.5, "$name's left edge")
-            assertEquals(boxes[i - i % 2].y, box.y, 0.5, "$name's top")
-            assertEquals(boxes[0].height, box.height, 0.5, "$name's height")
+        val height = boxes.values.first().height
+        boxes.entries.chunked(2).forEach { row ->
+            row.forEachIndexed { side, (name, box) ->
+                assertEquals(column, box.width, 0.5, "$name's width")
+                assertEquals(edge + side * (column + gap), box.x, 0.5, "$name's left edge")
+                assertEquals(row.first().value.y, box.y, 0.5, "$name's top")
+                assertEquals(height, box.height, 0.5, "$name's height")
+            }
         }
         assertNothingPastTheScreen()
     }
