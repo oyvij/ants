@@ -610,7 +610,7 @@ async function scriptPanel(element, box) {
         const row = el("div", {className: "row"}, el("label", {htmlFor: field.id}, el("code", {textContent: input})), field,
             undeclared ? el("span", {className: "muted small", textContent: "not declared by the Script"}) : "",
             about ? el("span", {className: "muted small nowrap", textContent: [about.type, about.required ? "required" : ""].filter(Boolean).join(" · ")}) : "", remove)
-        const entry = el("div", {}, row, about?.description ? note("help", about.description) : "")
+        const entry = el("div", {}, row, about?.description ? note("help clip", about.description) : "")
         entry.dataset.input = input
         return entry
     })
@@ -718,7 +718,7 @@ async function agentPanel(element, box) {
             onchange: () => pickSkills([...offeredSkills, ...listed].filter((n, i, all) => all.indexOf(n) === i && (n === name ? box.checked : listed.includes(n))))})
         const missing = !skill ? "not found" : offeredSkills.includes(name) ? "" : "not listed by this Agent"
         return el("div", {className: "row"}, box, el("label", {htmlFor: box.id, textContent: name}),
-            draftMark(skill), el("span", {className: "muted small grow", textContent: missing || skill.description || ""}), skill ? editSkill(skill) : "")
+            draftMark(skill), el("span", {className: "muted small grow clip line", textContent: missing || skill.description || ""}), skill ? editSkill(skill) : "")
     })
     const assignment = el("textarea", {id: "ants-assignment", rows: 4, value: props["ants.assignment"] || "",
         placeholder: "e.g. Write the release notes for the merged PRs, one line each.",
@@ -760,7 +760,8 @@ async function agentPanel(element, box) {
         field("Skills", "What the Agent may use for it: all of its Skills, none, or only the ones ticked.", modeSelect,
             el("div", {className: "skillpick"}, ...(skillRows.length ? skillRows : [note("muted small", agent ? "The Agent has no Skills." : "Pick an Agent to see its Skills.")])),
             dropped ? note("warn", dropped) : "", newSkill),
-        el("div", {className: "help"}, start?.description || "", start?.description ? el("br") : "", "Later Tasks can read: ",
+        start?.description ? note("help clip", start.description) : "",
+        el("div", {className: "help"}, "Later Tasks can read: ",
             ...(read[element.id] || []).flatMap(reference => [el("code", {textContent: reference}), " "])),
         el("div", {className: "fld"}, el("label", {className: "f", textContent: "Inputs"}),
             note("help", "What it reads: start-form fields, Run variables and Results of Tasks before it in the diagram."), references,

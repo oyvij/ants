@@ -769,3 +769,11 @@ dialog.modal.confirm { width: min(480px, 92vw); height: fit-content; max-height:
 .helper h3 { margin: 0; } .helper .dialog { flex: 1; overflow: auto; margin: 0; } .helper .dialog .text p { margin: 4px 0; }
 .helper form { display: flex; flex-direction: column; gap: 6px; } .helper form label.f { margin: 0; }
 .helper form .ed .cm-editor { height: 8em; min-height: 4em; max-height: calc(50vh - 100px); resize: vertical; } .helper form .ed .cm-content { min-height: 0; }
+.clip { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
+.clip.line { -webkit-line-clamp: 1; line-clamp: 1; }
+button.clip-info { display: none; float: right; width: 32px; min-height: 44px; height: 44px; margin: -12px -8px -12px 2px; padding: 0; border: 0; background: none; box-shadow: none; color: var(--muted); }
+button.clip-info::before { content: "i"; display: grid; place-items: center; width: 16px; height: 16px; border: 1.5px solid currentColor; border-radius: 50%; font: italic 700 10.5px/1 Georgia, serif; }
+button.clip-info:hover, button.clip-info[aria-expanded=true] { background: none; color: var(--acc); }
+@media (hover: none) { button.clip-info { display: inline-flex; } }
+.tip { position: fixed; z-index: 1000; max-width: min(360px, calc(100vw - 16px)); padding: 8px 11px; border-radius: 8px; background: var(--text); color: var(--panel); font-size: 12.5px; font-weight: 500; line-height: 1.45; white-space: pre-line; overflow-wrap: anywhere; box-shadow: 0 6px 20px rgba(16, 24, 40, .22); pointer-events: none; }
+.tip[hidden] { display: none; }

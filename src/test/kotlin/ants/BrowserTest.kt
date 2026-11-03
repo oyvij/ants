@@ -727,6 +727,31 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `in the Agent Task panel a Skill's long description is cut to one line with an ellipsis, and a hover shows the whole of it in a tooltip`() = browse {
+        val told = "Drafts the release notes from every merged pull request, grouped by area, with a line for each change. ".repeat(3).trim()
+        agentTask(null, mapOf("told" to null))
+        home.resolve("skills/told/SKILL.md").writeText("---\nname: told\ndescription: $told\n---\nDo it.\n")
+        appendAgentTask()
+        label("Agent").selectOption("writer")
+
+        val clip = panel.locator(".skillpick .clip")
+        assertThat(clip).hasText(told)
+        assertThat(clip).hasClass(Pattern.compile("\\bclipped\\b"))
+        assertEquals("1", clip.evaluate("e => getComputedStyle(e).webkitLineClamp"))
+        val about = panel.locator(".help.clip", Locator.LocatorOptions().setHasText(told))
+        assertThat(about).hasClass(Pattern.compile("\\bclipped\\b"))
+        assertEquals("2", about.evaluate("e => getComputedStyle(e).webkitLineClamp"))
+        assertTrue(clip.boundingBox()!!.x + clip.boundingBox()!!.width <= panel.boundingBox()!!.x + panel.boundingBox()!!.width + 1, "the description stays within the panel")
+
+        clip.hover()
+        assertThat(tip).isVisible()
+        assertThat(tip).hasText(told)
+        page.screenshot("modeler-skill-tip")
+        page.mouse().move(0.0, 0.0)
+        assertThat(tip).isHidden()
+    }
+
+    @Test
     fun `the Agent Task panel's pickers mark a Draft-only Agent and a Skill published with a Draft`() = browse {
         agentTask(null)
         val draftOnly = http.post("/agents/new/draft", mapOf()).path
@@ -2384,6 +2409,89 @@ class BrowserTest : AntsTest() {
             row.locator("td").last().tap()
             page.waitForURL { it.endsWith(entry) }
         }
+    }
+
+    private val longTold = "A description that goes on and on about what it does, why it does it and where it does it, ".repeat(4).trim()
+
+    private fun longDescriptions() {
+        settings(null)
+        home.resolve("agents").createDirectories().run {
+            resolve("long-told.md").writeText("---\nname: long-told\ndescription: $longTold\ncli: claude\n---\nListed.\n")
+            resolve("short-told.md").writeText("---\nname: short-told\ndescription: Short.\ncli: claude\n---\nListed.\n")
+        }
+        home.resolve("skills/long-told").createDirectories().resolve("SKILL.md").writeText("---\nname: long-told\ndescription: $longTold\n---\nDo it.\n")
+        home.resolve("scripts/s-long-told").createDirectories().run {
+            resolve("script.yaml").writeText("id: s-long-told\nname: long-told\ndescription: $longTold\ninputs: {type: object, properties: {}}\nvars: {}\nsecrets: []\n")
+            resolve("script.mjs").writeText("console.log('hi')\n")
+        }
+    }
+
+    private fun clipOf(path: String, entry: String) = page.locator("tr[data-href='$entry'] .clip")
+
+    private fun isClipped(clip: Locator) = clip.evaluate("e => e.scrollHeight > e.clientHeight + 1 || e.scrollWidth > e.clientWidth + 1") as Boolean
+
+    private val tip get() = page.locator(".tip[role=tooltip]")
+
+    @Test
+    fun `a long description on the Agents, Skills and Scripts lists is clamped to two lines with an ellipsis, and a hover shows the whole of it in a tooltip`() = browse {
+        longDescriptions()
+        for ((path, entry) in listOf("/agents" to "/agents/long-told", "/skills" to "/skills/long-told", "/scripts" to "/scripts/long-told")) {
+            page.navigate(url(path))
+            val clip = clipOf(path, entry)
+            assertThat(clip).hasClass(Pattern.compile("\\bclipped\\b"))
+            assertTrue(isClipped(clip), "the long description on $path is cut short")
+            assertEquals("2", clip.evaluate("e => getComputedStyle(e).webkitLineClamp"), "the long description on $path shows two lines")
+            assertThat(page.locator("tr[data-href='$entry'] .clip-info")).isHidden()
+
+            clip.hover()
+            assertThat(tip).isVisible()
+            assertThat(tip).hasText(longTold)
+            val (box, over) = clip.boundingBox()!! to tip.boundingBox()!!
+            assertTrue(over.x >= 0 && over.x + over.width <= 1280 && over.y >= 0, "the tooltip on $path is within the window")
+            assertTrue(over.y + over.height <= box.y + 1 || over.y >= box.y + box.height - 1, "the tooltip on $path sits above or below the text, not over it")
+            page.mouse().move(0.0, 0.0)
+            assertThat(tip).isHidden()
+        }
+        page.navigate(url("/agents"))
+        val short = clipOf("/agents", "/agents/short-told")
+        assertThat(short).not().hasClass(Pattern.compile("\\bclipped\\b"))
+        short.hover()
+        assertThat(tip).isHidden()
+    }
+
+    @Test
+    fun `on a phone a cut-short description has a tap-sized (i) beside it that toggles its tooltip, and the tap doesn't open the row`() = browse {
+        longDescriptions()
+        onPhone()
+        for ((path, entry) in listOf("/agents" to "/agents/long-told", "/skills" to "/skills/long-told", "/scripts" to "/scripts/long-told")) {
+            page.navigate(url(path))
+            val info = page.locator("tr[data-href='$entry'] .clip-info")
+            assertThat(info).isVisible()
+            assertThat(info).hasAccessibleName("Show the whole text")
+            assertTrue(info.boundingBox()!!.height >= 44, "the (i) on $path is at least 44px tall")
+            assertWithinScreen(info, "the (i) on $path")
+            assertNoSidewaysScroll()
+            page.screenshot("phone${path.replace(Regex("[^a-z0-9]+"), "-")}-clip")
+
+            info.tap()
+            assertThat(tip).isVisible()
+            assertThat(tip).hasText(longTold)
+            assertWithinScreen(tip, "the tooltip on $path")
+            assertThat(info).hasAttribute("aria-expanded", "true")
+            assertTrue(page.url().endsWith(path), "the tap on the (i) stays on $path")
+            page.screenshot("phone${path.replace(Regex("[^a-z0-9]+"), "-")}-tip")
+
+            info.tap()
+            assertThat(tip).isHidden()
+            assertThat(info).hasAttribute("aria-expanded", "false")
+
+            info.tap()
+            assertThat(tip).isVisible()
+            page.locator("h1").tap()
+            assertThat(tip).isHidden()
+        }
+        page.navigate(url("/agents"))
+        assertThat(page.locator("tr[data-href='/agents/short-told'] .clip-info")).hasCount(0)
     }
 
     @Test
