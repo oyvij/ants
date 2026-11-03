@@ -416,6 +416,31 @@ class ScheduleTest : AntsTest() {
     }
 
     @Test
+    fun `picking another Profile in a Schedule's drawer opens it again with that Profile's repos to pick and its Verbosity, and leaves the main start form on its own Profile`() {
+        home.resolve("settings.yaml").writeAtomically(
+            vault + sourceMapLines(api, web) + sourceMapLines(web).replace("source-maps:\n  work:", "  solo:") +
+                "profiles:\n  work:\n    vault: notes\n    source-map: work\n  solo:\n    vault: notes\n    source-map: solo\n    verbosity: brief\ndefault-profile: work\n",
+        )
+        browser.import("clone-repos.bpmn")
+        schedule(listOf(NAME to "Ship api", "repos" to "api", "branch" to "nightly"))
+        val id = idOf("Ship api", "clone-repos")
+        val closed = drawer(id, "clone-repos")
+        assertContains(closed, "data-reload=\"?edit=$id&amp;edit.profile=\" data-anchor=\"#edit-$id\" onchange=\"location.assign(this.dataset.reload + encodeURIComponent(this.value) + this.dataset.anchor)\"")
+        assertContains(closed, """name="repos" value="api" checked""")
+
+        val page = browser.get("/processes/clone-repos?edit=$id&edit.profile=solo").body
+        assertContains(page, "<tr class=\"edit\" id=\"edit-$id\">")
+        val reopened = drawer(id, page = page)
+        assertContains(reopened, "<option selected>solo</option>")
+        assertContains(reopened, """<option value="brief" selected>""")
+        assertFalse("value=\"api\" checked" in reopened)
+        assertContains(reopened, """name="repos" value="web"""")
+        assertContains(reopened, """value="api" placeholder""")
+        assertContains(reopened, """value="nightly"""")
+        assertContains(page.substringAfter("id=\"start\"").substringBefore("id=\"schedule\""), "<option selected>work</option>")
+    }
+
+    @Test
     fun `a refused edit keeps what was typed in that Schedule's open drawer and leaves the Schedule as it was, and a paused Schedule stays paused once edited`() {
         home.resolve("settings.yaml").writeAtomically(vault)
         deploy()

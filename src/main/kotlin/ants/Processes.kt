@@ -274,7 +274,10 @@ class Processes(
 
     /** The Process page, its start form for the Profile [profile] picked on it, else the Process's own, else the default. */
     @GetMapping("/processes/{key}")
-    fun process(@PathVariable key: String, @RequestParam(PROFILE, required = false) profile: String?, model: Model): String {
+    fun process(
+        @PathVariable key: String, @RequestParam(PROFILE, required = false) profile: String?, model: Model,
+        @RequestParam("edit", required = false) editing: String? = null, @RequestParam("edit.profile", required = false) editingProfile: String? = null,
+    ): String {
         if (latestOrNull(key) == null && drafts.get(DraftKind.PROCESS, key) != null) return "redirect:/processes/$key/edit" // a Draft only has the modeler
         val process = latest(key)
         model.addAttribute("process", process)
@@ -294,7 +297,7 @@ class Processes(
         model.addAttribute("repos", RunSource(picked).repos(settings).map(Repo::name)) // the Repos field's choices
         val scheduled = schedules.of(key)
         model.addAttribute("schedules", scheduled)
-        model.addAttribute("scheduleEdits", scheduled.map { edit(it, startForm.fields(process), model.getAttribute("refusedEdit") as RefusedEdit?) })
+        model.addAttribute("scheduleEdits", scheduled.map { scheduleEdit(it, startForm.fields(process), model.getAttribute("refusedEdit") as RefusedEdit?, editingProfile.takeIf { _ -> it.id == editing }) })
         model.addAttribute("deletable", !shipped(key))
         val runs = history.createHistoricProcessInstanceQuery().processDefinitionKey(key).rootProcessInstances().orderByProcessInstanceStartTime().desc().list()
         model.addAttribute("runs", runs)
@@ -384,13 +387,13 @@ class Processes(
         return process(key, null, model.addAttribute("refusedEdit", refused))
     }
 
-    private fun edit(schedule: Schedule, fields: List<Field>, refused: RefusedEdit?): ScheduleEdit {
-        val mine = refused?.takeIf { it.id == schedule.id }
-        val values = mine?.values ?: schedule.stored
-        val profile = mine?.values?.get(PROFILE)?.firstOrNull()?.ifBlank { null } ?: schedule.profile
+    private fun scheduleEdit(schedule: Schedule, fields: List<Field>, refused: RefusedEdit?, picked: String?): ScheduleEdit {
+        val refusedHere = refused?.takeIf { it.id == schedule.id }
+        val values = refusedHere?.values ?: schedule.stored
+        val profile = picked?.ifBlank { null } ?: refusedHere?.values?.get(PROFILE)?.firstOrNull()?.ifBlank { null } ?: schedule.profile
         return ScheduleEdit(
             schedule, fields.map { it.copy(stored = values[it.name].orEmpty().joinToString(" ")) }, values[NAME]?.firstOrNull().orEmpty(), profile,
-            startForm.verbosity(values[VERBOSITY]?.firstOrNull(), profile), RunSource(profile).repos(settings).map(Repo::name), mine?.cron ?: schedule.cron, mine?.reasons.orEmpty(),
+            startForm.verbosity(values[VERBOSITY]?.firstOrNull(), profile), RunSource(profile).repos(settings).map(Repo::name), refusedHere?.cron ?: schedule.cron, refusedHere?.reasons.orEmpty(), picked != null,
         )
     }
 
@@ -447,8 +450,10 @@ internal fun Settings.hides(process: ProcessDefinition) = hideShipped() && proce
 class RefusedEdit(val id: String, val values: Map<String, List<String>>, val cron: String, val reasons: List<String>)
 
 class ScheduleEdit(
-    val schedule: Schedule, val fields: List<Field>, val runName: String, val profile: String?, val verbosity: Verbosity, val repos: List<String>, val cron: String, val reasons: List<String>,
+    val schedule: Schedule, val fields: List<Field>, val runName: String, val profile: String?, val verbosity: Verbosity, val repos: List<String>, val cron: String, val reasons: List<String>, val picked: Boolean,
 ) {
+    val open get() = picked || reasons.isNotEmpty()
+
     val prefix get() = "edit-${schedule.id}-"
 }
 

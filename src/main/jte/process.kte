@@ -60,7 +60,7 @@
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
 @if(error != null)<p role="alert">${error}</p>@endif
 @if(fields.isEmpty())<div class="help">This Process takes no input: its job is in the diagram.</div>@endif
-@template.startfields(fields = fields, repos = repos, profiles = profiles, profile = profile, verbosity = verbosity, runName = runName, reload = true)
+@template.startfields(fields = fields, repos = repos, profiles = profiles, profile = profile, verbosity = verbosity, runName = runName, reload = "?ants.profile=")
     <div class="go row"><button class="primary" disabled="${reasons.isNotEmpty() && !scopable}" data-pending="Starting…">Start</button><button type="button" id="schedule-open" disabled="${reasons.isNotEmpty() && !scopable}">⏰ Schedule</button></div>
 @template.when(cron = cron, action = "/processes/${key}/schedule", hidden = cron == null)
 </form></div>
@@ -73,7 +73,7 @@
     <table id="schedules">
     <tr><th>Schedule</th><th>Profile</th><th>Verbosity</th><th>Values</th><th>Runs</th><th>Cron</th><th>Next Run</th><th></th></tr>
     @for(edit in scheduleEdits)
-    !{val each = edit.schedule; val open = edit.reasons.isNotEmpty();}
+    !{val each = edit.schedule; val open = edit.open;}
     <tr id="schedule-${each.id}"><td><b>${each.label}</b></td><td class="k">Profile</td><td>${each.profile ?: "—"}</td><td class="k">Verbosity</td><td>${each.verbosity.value}</td><td class="k">Values</td><td class="small">@for((label, value) in each.values)<div><span class="muted">${label}</span> ${value}</div>@endfor</td><td class="k">Runs</td><td>${each.words}</td><td class="k">Cron</td><td><code>${each.cron}</code></td><td class="k">Next Run</td><td>@if(each.paused)<span class="muted">paused</span>@else${each.at} · ${each.countdown}@endif@if(each.skipped != null)<div class="warn">${each.skipped}</div>@endif@if(each.failed != null)<div class="failed"><p role="alert">✕ [failed] The scheduled Run didn't start: ${each.failed.why}</p><form method="post" action="${each.actions}/dismiss"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>Dismiss</button></form></div>@endif</td>
     <td class="row"><button type="button" data-edit aria-expanded="${open.toString()}" aria-controls="edit-${each.id}">Edit</button><form method="post" action="${each.actions}/start"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button data-pending="Starting…">Start now</button></form>
     <form method="post" action="${each.actions}/${if (each.paused) "resume" else "pause"}"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>${if (each.paused) "Resume" else "Pause"}</button></form>
@@ -82,8 +82,8 @@
         <h3>Edit ${each.label}</h3>
         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
     @for(reason in edit.reasons)<p role="alert">${reason}</p>@endfor
-@template.startfields(fields = edit.fields, repos = edit.repos, profiles = profiles, profile = edit.profile, verbosity = edit.verbosity, runName = edit.runName, prefix = edit.prefix)
-@template.when(cron = edit.cron, action = each.actions, prefix = edit.prefix, advanced = open)
+@template.startfields(fields = edit.fields, repos = edit.repos, profiles = profiles, profile = edit.profile, verbosity = edit.verbosity, runName = edit.runName, prefix = edit.prefix, reload = "?edit=${each.id}&edit.profile=", anchor = "#edit-${each.id}")
+@template.when(cron = edit.cron, action = each.actions, prefix = edit.prefix, advanced = edit.reasons.isNotEmpty())
     </form></td></tr>
     @endfor
     </table>

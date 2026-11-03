@@ -32,7 +32,7 @@ import kotlin.io.path.readText
  */
 class Schedule(
     val key: String, val process: String, val cron: String, val paused: Boolean, val next: Instant?, val at: String?, val countdown: String?, val skipped: String?, val failed: FailedStart?,
-    val id: String, val label: String, val profile: String?, val verbosity: Verbosity, val values: Map<String, String>, val stored: Map<String, List<String>> = emptyMap(),
+    val id: String, val label: String, val profile: String?, val verbosity: Verbosity, val values: Map<String, String>, val stored: Map<String, List<String>>,
 ) {
     val words get() = inWords(cron)
 

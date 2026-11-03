@@ -6,11 +6,12 @@
 @param verbosity: ants.Verbosity
 @param runName: String
 @param prefix: String = ""
-@param reload: Boolean = false
+@param reload: String? = null
+@param anchor: String = ""
     <div class="fld"><label class="f" for="${prefix}field-name">Name <span class="muted small" style="font-weight: 500">(optional)</span></label><div class="help">Left empty, the Run is named after its Process and start time.</div><input name="${ants.NAME}" id="${prefix}field-name" value="${runName}" placeholder="e.g. Dark mode toggle"></div>
 @if(profiles.size > 1)
     <div class="fld"><label class="f" for="${prefix}field-profile">Profile</label><div class="help">The Vault and Source map the Run uses.</div>
-    <select name="${ants.PROFILE}" id="${prefix}field-profile" onchange="${if (reload) "location.search = '?ants.profile=' + encodeURIComponent(this.value)" else null}">
+    <select name="${ants.PROFILE}" id="${prefix}field-profile" data-reload="${reload}" data-anchor="${anchor}" onchange="${reload?.let { "location.assign(this.dataset.reload + encodeURIComponent(this.value) + this.dataset.anchor)" }}">
     @for(name in profiles)
         <option selected="${name == profile}">${name}</option>
     @endfor
