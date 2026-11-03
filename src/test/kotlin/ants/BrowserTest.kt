@@ -2559,6 +2559,80 @@ class BrowserTest : AntsTest() {
         }
     }
 
+
+    private fun touch(type: String, vararg fingers: Pair<Double, Double>) {
+        val points = com.google.gson.JsonArray()
+        fingers.forEachIndexed { id, (x, y) -> points.add(com.google.gson.JsonObject().apply { addProperty("x", x); addProperty("y", y); addProperty("id", id) }) }
+        cdp.send("Input.dispatchTouchEvent", com.google.gson.JsonObject().apply { addProperty("type", type); add("touchPoints", points) })
+    }
+
+    private val cdp by lazy { page.context().newCDPSession(page) }
+
+    private fun gesture(from: List<Pair<Double, Double>>, to: List<Pair<Double, Double>>) {
+        touch("touchStart", *from.toTypedArray())
+        for (step in 1..10) touch("touchMove", *from.zip(to) { (x, y), (u, v) -> x + (u - x) * step / 10 to y + (v - y) * step / 10 }.toTypedArray())
+        touch("touchEnd")
+    }
+
+    private fun viewbox(diagram: Locator) = (diagram.evaluate("e => { const v = e.canvas.viewbox(); return [v.x, v.y, v.scale] }") as List<*>).map { (it as Number).toDouble() }
+
+    private fun pointUnder(diagram: Locator, x: Double, y: Double) = (diagram.evaluate(
+        "(e, [x, y]) => { const v = e.canvas.viewbox(), r = e.querySelector('.djs-container').getBoundingClientRect(); return [v.x + (x - r.left) / v.scale, v.y + (y - r.top) / v.scale] }", listOf(x, y),
+    ) as List<*>).map { (it as Number).toDouble() }
+
+    @Test
+    fun `on a phone a drag moves the Run page's, the Process page's and the modeler's diagram, a pinch zooms it about the fingers, and a Task still opens on a tap`() = browse {
+        val run = waitingRun("pinched")
+        onPhone()
+        for (path in listOf(run, "/processes/pinched", "/processes/pinched/edit")) {
+            page.navigate(url(path))
+            assertThat(shape("wait")).isVisible()
+            val diagram = page.locator(".dia").first()
+            eventually { assertEquals(true, diagram.evaluate("e => e.canvas != null"), "the diagram on $path is drawn") }
+            diagram.scrollIntoViewIfNeeded()
+            val box = diagram.boundingBox()!!
+            val (cx, cy) = box.x + box.width / 2 to box.y + box.height * 0.7
+            val scroll = page.evaluate("scrollY")
+            val (x, y, scale) = viewbox(diagram)
+
+            gesture(listOf(cx to cy), listOf(cx - 60 to cy - 40))
+            val (dragX, dragY) = viewbox(diagram)
+            assertEquals(x + 60 / scale, dragX, 1.0, "a drag on $path moves the diagram sideways")
+            assertEquals(y + 40 / scale, dragY, 1.0, "a drag on $path moves the diagram up")
+
+            val under = pointUnder(diagram, cx, cy)
+            gesture(listOf(cx - 40 to cy, cx + 40 to cy), listOf(cx - 80 to cy, cx + 80 to cy))
+            assertEquals(scale * 2, viewbox(diagram)[2], 0.02, "a pinch on $path zooms the diagram twice as big")
+            pointUnder(diagram, cx, cy).zip(under).forEach { (now, before) -> assertEquals(before, now, 1.0, "the pinch on $path zooms about the fingers") }
+            assertEquals(scroll, page.evaluate("scrollY"), "a drag and a pinch on $path move the diagram, not the page")
+        }
+
+        page.navigate(url(run))
+        val diagram = page.locator(".dia").first()
+        eventually { assertEquals(true, diagram.evaluate("e => e.canvas != null")) }
+        val box = shape("wait").boundingBox()!!
+        gesture(listOf(box.x to box.y + box.height), listOf(box.x - 40 to box.y + box.height - 40))
+        shape("wait").tap(Locator.TapOptions().setPosition(shape("wait").boundingBox()!!.width * 0.15, shape("wait").boundingBox()!!.height * 0.85))
+        assertThat(page.locator("#drawer-head")).isVisible()
+    }
+
+    @Test
+    fun `on a phone the modeler's palette is one narrow column within the canvas, and above 768px it keeps its size`() = browse {
+        http.import("start-end.bpmn")
+        onPhone()
+        page.navigate(url("/processes/start-end/edit"))
+        val palette = page.locator(".djs-palette")
+        assertThat(palette).isVisible()
+        val canvas = page.locator("#canvas").boundingBox()!!
+        val box = palette.boundingBox()!!
+        page.screenshot("phone/palette")
+        assertTrue(box.width <= 44, "the palette is ${box.width}px wide on a 390px screen")
+        assertTrue(box.y + box.height <= canvas.y + canvas.height, "the palette reaches ${box.y + box.height}, past the canvas's foot at ${canvas.y + canvas.height}")
+
+        page.setViewportSize(1280, 900)
+        page.navigate(url("/processes/start-end/edit"))
+        assertEquals(46.0, page.locator(".djs-palette .entry").first().boundingBox()!!.height, 0.5)
+    }
     @Test
     fun `on a phone a modal spans the screen with its editor and preview stacked, and a toast spans the screen at the top`() = browse {
         onPhone()

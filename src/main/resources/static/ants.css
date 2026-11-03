@@ -196,7 +196,7 @@ input[type=checkbox], input[type=radio] { width: auto; accent-color: var(--acc);
 .composer .grow { flex: 1; } .composer .ed .cm-editor { min-height: 44px; max-height: 160px; } :is(.composer, .df) label.f { margin-top: 0; }
 
 /* The diagram box: the Run's live diagram, the Process's, and the modeler's canvas, with ＋, －, Fit and ⛶ (shell.js) */
-.dia { position: relative; isolation: isolate; background: var(--panel) radial-gradient(var(--dotgrid) 1px, transparent 1px) 0 0 / 18px 18px; border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sh); height: 440px; overflow: hidden; }
+.dia { touch-action: none; position: relative; isolation: isolate; background: var(--panel) radial-gradient(var(--dotgrid) 1px, transparent 1px) 0 0 / 18px 18px; border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sh); height: 440px; overflow: hidden; }
 .dia.modeler { height: calc(100vh - 128px); }
 .dia .zoom { position: absolute; right: 12px; top: 12px; display: flex; gap: 4px; z-index: 3; }
 .dia .zoom button { padding: 4px 10px; }
@@ -693,6 +693,9 @@ details.example pre { background: var(--line2); border: 0; padding: 10px; border
     main:has(> #diagram) .ph .acts > form > button { width: 100%; }
     main:has(> #diagram) :is(.ph .sub, .card) { overflow-wrap: anywhere; }
     .dia .legend { right: 12px; flex-wrap: wrap; }
+    .dia .djs-palette, .dia .djs-palette.two-column.open { left: 8px; top: 8px; width: 34px; }
+    .dia .djs-palette :is(.entry, .djs-palette-toggle) { width: 32px; height: 32px; line-height: 32px; font-size: 22px; }
+    .dia .djs-palette .separator { margin: 3px; padding-top: 3px; }
     .drawer { width: 100%; border-left: 0; }
     :is(dialog.modal, dialog#new-process) { width: 100%; border-radius: 0; }
     .modal .mb { padding: 16px; }

@@ -222,6 +222,32 @@ for (const box of document.querySelectorAll('.dia')) {
         else box.requestFullscreen();
     };
     box.addEventListener('fullscreenchange', () => setTimeout(() => { box.canvas?.resized(); box.canvas?.zoom('fit-viewport', 'auto'); }, 50));
+    followFingers(box);
+}
+
+// On a touch screen one finger drags the diagram and two pinch it, zoomed about the point between them; a tap stays a click.
+function followFingers(box) {
+    const fingers = new Map();
+    const spread = () => {
+        const [a, b = a] = [...fingers.values()];
+        return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, apart: Math.hypot(a.x - b.x, a.y - b.y) };
+    };
+    box.addEventListener('pointerdown', event => {
+        if (event.pointerType !== 'touch' || !box.canvas || event.target.closest('.zoom, .legend, .djs-palette, .djs-context-pad, .djs-popup, .djs-minimap')) return;
+        fingers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    });
+    box.addEventListener('pointermove', event => {
+        if (!fingers.has(event.pointerId)) return;
+        const before = spread();
+        fingers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        const after = spread(), canvas = box.canvas;
+        canvas.scroll({ dx: after.x - before.x, dy: after.y - before.y });
+        if (fingers.size < 2 || !before.apart) return;
+        const corner = canvas.getContainer().getBoundingClientRect();
+        const scale = Math.min(4, Math.max(0.2, canvas.zoom() * after.apart / before.apart));
+        canvas.zoom(scale, { x: after.x - corner.left, y: after.y - corner.top });
+    });
+    for (const type of ['pointerup', 'pointercancel']) box.addEventListener(type, event => fingers.delete(event.pointerId));
 }
 
 const composer = document.querySelector('.composer');
