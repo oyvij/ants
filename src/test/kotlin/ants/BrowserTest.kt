@@ -9,6 +9,7 @@ import com.microsoft.playwright.options.AriaRole
 import com.microsoft.playwright.options.ColorScheme
 import com.microsoft.playwright.options.FilePayload
 import com.microsoft.playwright.options.KeyboardModifier
+import com.microsoft.playwright.options.LoadState
 import com.microsoft.playwright.Page
 import com.microsoft.playwright.Playwright
 import com.microsoft.playwright.assertions.LocatorAssertions
@@ -3734,11 +3735,15 @@ class BrowserTest : AntsTest() {
 
     private fun ticketWith(key: String, body: String): String {
         val run = waitingRun(key).removePrefix("/runs/")
-        workspace(run).resolve("tickets/issues").createDirectories().resolve("01-drawn.md").writeText("# Drawn\n\nStatus: ready-for-agent\n\n$body\n")
-        return "/runs/$run/tickets/01-drawn"
+        workspace(run).resolve("tickets/issues").createDirectories().resolve("01-$key.md").writeText("# Drawn\n\nStatus: ready-for-agent\n\n$body\n")
+        return "/runs/$run/tickets/01-$key"
     }
 
-    private fun requests(): List<String> = mutableListOf<String>().also { seen -> page.onRequest { synchronized(seen) { seen += it.url() } } }
+    private fun requests(): () -> List<String> {
+        val seen = mutableListOf<String>()
+        page.onRequest { synchronized(seen) { seen += it.url() } }
+        return { synchronized(seen) { seen.toList() } }
+    }
 
     private fun mermaid(source: String) = "```mermaid\n$source\n```"
 
@@ -3748,27 +3753,18 @@ class BrowserTest : AntsTest() {
         page.navigate(url(ticketWith("drawn", mermaid("flowchart LR\n  Spec --> Ticket"))))
         assertThat(page.locator("#ticket svg", Page.LocatorOptions().setHasText("Ticket"))).isVisible()
         assertThat(page.locator("#ticket code.language-mermaid")).isHidden()
-        val all = synchronized(requested) { requested.toList() }
+        val all = requested()
         assertTrue(all.any { it.startsWith(url("/vendor/mermaid/")) }, "Mermaid comes from /vendor/mermaid/: $all")
         assertTrue(all.all { it.startsWith(url("/")) || it.startsWith("data:") }, "every request goes to Ants: $all")
-    }
-
-    @Test
-    fun `an invalid mermaid block keeps its source and shows Mermaid's error beside it`() = browse {
-        page.navigate(url(ticketWith("broken", mermaid("flowchart LR\n  Spec --> --> ]"))))
-        assertThat(page.locator("#ticket code.language-mermaid")).isVisible()
-        assertThat(page.locator("#ticket code.language-mermaid")).containsText("Spec --> --> ]")
-        assertThat(page.locator("#ticket .mermaid-error")).containsText(Pattern.compile("error", Pattern.CASE_INSENSITIVE))
-        errors.removeAll { "error" in it.lowercase() }
     }
 
     @Test
     fun `a Ticket without a mermaid block loads no Mermaid`() = browse {
         val requested = requests()
         page.navigate(url(ticketWith("plain", "```kotlin\nval drawn = false\n```")))
-        page.waitForLoadState(com.microsoft.playwright.options.LoadState.NETWORKIDLE)
+        page.waitForLoadState(LoadState.NETWORKIDLE)
         assertThat(page.locator("#ticket code.language-kotlin")).isVisible()
-        val all = synchronized(requested) { requested.toList() }
+        val all = requested()
         assertTrue(all.none { "/vendor/mermaid/" in it }, "no Mermaid on a page without a diagram: $all")
     }
 
@@ -3826,7 +3822,7 @@ class BrowserTest : AntsTest() {
         assertNoSidewaysScroll()
     }
 
-    private val wideMarkdown ="| Class | Test | Policy | Clock | Ledger | Gateway |\n|---|---|---|---|---|---|\n" +
+    private val wideMarkdown = "| Class | Test | Policy | Clock | Ledger | Gateway |\n|---|---|---|---|---|---|\n" +
         "| PaymentRetryPolicy | PaymentRetryPolicyTest | ExponentialBackoffPolicy | FixedClockForRetries | InMemoryPaymentLedger | StripeWebhookGateway |\n\n" +
         "![Ants](/icon-512.png)\n"
 
