@@ -3758,6 +3758,37 @@ class BrowserTest : AntsTest() {
         assertTrue(all.all { it.startsWith(url("/")) || it.startsWith("data:") }, "every request goes to Ants: $all")
     }
 
+    private fun assertBrokenDiagramShowsItsSourceAndError() {
+        assertThat(page.locator("#ticket code.language-mermaid")).isVisible()
+        assertThat(page.locator("#ticket code.language-mermaid")).containsText("Spec --> --> ]")
+        assertThat(page.locator("#ticket .mermaid-error")).isVisible()
+        assertThat(page.locator("#ticket .mermaid-error")).containsText("Parse error")
+        assertThat(page.locator("#ticket .mermaid-error")).hasCSS("background-color", page.evaluate(
+            "() => { const p = document.body.appendChild(document.createElement('i')); p.style.color = 'var(--badSoft)'; const c = getComputedStyle(p).color; p.remove(); return c }",
+        ) as String)
+        assertThat(page.locator("#ticket .mermaid")).hasCount(0)
+        assertThat(page.locator("svg[aria-roledescription=error], [id^=dmermaid-]")).hasCount(0)
+        assertThat(page.getByText("Syntax error in text")).hasCount(0)
+        val (errorRight, ticketRight) = (page.locator("#ticket").evaluate(
+            "e => [e.querySelector('.mermaid-error').getBoundingClientRect().right, e.getBoundingClientRect().right]",
+        ) as List<*>).map { (it as Number).toDouble() }
+        assertTrue(errorRight <= ticketRight, "the error ends at ${errorRight}px, past the Ticket's ${ticketRight}px")
+    }
+
+    @Test
+    fun `an invalid mermaid block keeps its source and shows Mermaid's error beside it, on desktop and phone`() = browse {
+        val ticket = ticketWith("broken", mermaid("flowchart LR\n  Spec --> --> ]"))
+        page.navigate(url(ticket))
+        assertBrokenDiagramShowsItsSourceAndError()
+        onPhone()
+        page.navigate(url(ticket))
+        assertBrokenDiagramShowsItsSourceAndError()
+        assertNoSidewaysScroll()
+        page.waitForTimeout(500.0)
+        assertThat(page.locator("#ticket .mermaid-error")).hasCount(1)
+        errors.removeAll { "error" in it.lowercase() }
+    }
+
     @Test
     fun `a Ticket without a mermaid block loads no Mermaid`() = browse {
         val requested = requests()

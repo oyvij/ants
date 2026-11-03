@@ -3,7 +3,9 @@
 // region's patch). A block inside #live is still streaming, so it stays code until it moves into the transcript.
 // Mermaid is Ants' own copy under /vendor/mermaid/, imported once, and only by a page that has a block; it runs at its
 // strict security level, so a diagram's source can't inject HTML or script. The code block stays, hidden, as the
-// source to draw from; a block Mermaid can't draw stays code. A wide diagram scrolls inside its box, as a wide table does.
+// source to draw from. A block Mermaid can't parse or draw keeps its code shown, with Mermaid's error beside it, styled
+// as an error: never a blank and never Mermaid's own error graphic. It is marked failed, so it isn't tried again.
+// A wide diagram scrolls inside its box, as a wide table does.
 const selector = 'pre:not([data-mermaid]) > code.language-mermaid';
 let loading, renders = 0;
 
@@ -12,7 +14,7 @@ async function renderAll() {
     if (!blocks.length) return;
     blocks.forEach(pre => pre.dataset.mermaid = 'pending');
     loading ??= import('/vendor/mermaid/mermaid.esm.min.mjs').then(({default: mermaid}) => {
-        mermaid.initialize({startOnLoad: false, securityLevel: 'strict'});
+        mermaid.initialize({startOnLoad: false, securityLevel: 'strict', suppressErrorRendering: true});
         return mermaid;
     });
     const mermaid = await loading;
@@ -27,7 +29,8 @@ async function draw(mermaid, pre) {
         pre.before(box);
         pre.hidden = true;
         pre.dataset.mermaid = 'drawn';
-    } catch {
+    } catch (failure) {
+        pre.after(Object.assign(document.createElement('div'), {className: 'mermaid-error', textContent: failure?.message ?? String(failure)}));
         pre.dataset.mermaid = 'failed';
     }
 }
