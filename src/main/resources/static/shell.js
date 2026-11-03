@@ -122,16 +122,13 @@ function flash(element) {
     element.addEventListener('animationend', () => element.classList.remove('flash'), { once: true });
 }
 
-// Liveness, from what the stream brings, never invented: a spinner cycles Claude Code's glyphs every 120 ms; a clock
+// Liveness, from what the stream brings, never invented: a spinner is the working ant ants.css draws; a clock
 // (data-since, the epoch ms it counts from) ticks every second; a verb waiting for an event to name it (data-rotate)
-// rotates every 4 s. A paused or stopped Task has none of them. prefers-reduced-motion stops the spinners only.
-const GLYPHS = ['·', '✢', '✳', '✶', '✻', '✽', '✻', '✶', '✳', '✢'];
+// rotates every 4 s. A paused or stopped Task has none of them.
 const VERBS = ['Pondering', 'Brewing', 'Crafting', 'Mulling', 'Weaving', 'Sketching', 'Untangling', 'Cogitating'];
-const still = matchMedia('(prefers-reduced-motion: reduce)');
 const set = (element, text) => { if (element.textContent !== text) element.textContent = text; };
 function liven() {
     const now = Date.now();
-    if (!still.matches) for (const spin of document.querySelectorAll('.spin')) set(spin, GLYPHS[Math.floor(now / 120) % GLYPHS.length]);
     for (const since of document.querySelectorAll('[data-since]')) {
         const s = Math.max(0, Math.floor((now - Number(since.dataset.since)) / 1000));
         // Its two largest units, as the server's duration() writes it.

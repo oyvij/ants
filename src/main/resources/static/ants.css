@@ -11,7 +11,7 @@
     --text: light-dark(#0f172a, #e6e8ee); --text2: light-dark(#334155, #c3c8d2); --text3: light-dark(#475569, #9aa3b2);
     --muted: light-dark(#64748b, #8b94a5); --line: light-dark(#e4e7ec, #252a35); --line2: light-dark(#f0f2f5, #1d212a);
     --side: light-dark(#0e1016, #07080b); --side2: light-dark(#171a22, #12141a); --sideText: #9aa3b2;
-    --acc: light-dark(#4f46e5, #818cf8); --accSoft: light-dark(#eef2ff, #1f2245); --accText: light-dark(#3730a3, #c7cdfc); --accHover: light-dark(#4338ca, #6366f1);
+    --acc: light-dark(#8a4a26, #d4a373); --accSoft: light-dark(#f6ede4, #2a1d14); --accText: light-dark(#6b3a1e, #e8c9a8); --accHover: light-dark(#6e3a1d, #b8875a);
     --run: light-dark(#2563eb, #60a5fa); --runSoft: light-dark(#e0ecff, #13233d);
     --wait: light-dark(#d97706, #f59e0b); --waitSoft: light-dark(#fff4e0, #2a1f0c); --warnText: light-dark(#92400e, #fbbf24);
     --ok: light-dark(#16a34a, #4ade80); --okSoft: light-dark(#e7f8ed, #0f2a1a); --okText: light-dark(#166534, #86efac);
@@ -45,8 +45,8 @@ svg.i { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-widt
 
 /* Sidebar */
 .side { position: fixed; inset: 0 auto 0 0; width: var(--side-width); background: var(--side); color: var(--sideText); display: flex; flex-direction: column; padding: 16px 12px; gap: 2px; z-index: 10; overflow: auto; color-scheme: dark; }
-.logo { display: flex; align-items: center; gap: 10px; color: #fff; font-weight: 700; font-size: 16px; padding: 4px 10px 18px; letter-spacing: .01em; }
-.logo b { width: 28px; height: 28px; border-radius: 8px; background: linear-gradient(135deg, #6366f1, #a855f7); display: grid; place-items: center; font-size: 14px; }
+.logo { display: flex; align-items: center; padding: 4px 10px 10px; }
+.logo .wordmark { height: 64px; width: auto; overflow: visible; } .topbar .wordmark { height: 44px; }
 .side a, .side .bottom > form > button { display: flex; align-items: center; gap: 10px; color: var(--sideText); padding: 7px 10px; border-radius: 8px; font-weight: 500; }
 .side a:hover, .side .bottom > form > button:hover { background: var(--side2); color: #e5e7eb; text-decoration: none; }
 .side a.on { background: #232733; color: #fff; }
@@ -141,10 +141,9 @@ button.small, .ghost.small { min-height: 28px; font-size: 12.5px; }
 input:not([type=checkbox]):not([type=radio]), select { min-height: 36px; }
 .ed .bar button, .tabs button, :is(.chipsel, .fld .tags) .c button, .cmd button, .dia .zoom button, .notice button { min-height: 0; }
 button:hover, .btn:hover { background: var(--hover); }
-button.primary, .btn.primary { background: var(--acc); border-color: var(--acc); color: #fff; } :is(button, .btn).primary:hover { background: var(--accHover); }
+button.primary, .btn.primary { background: light-dark(#fbf4ec, #2a1d14); border: 1.5px solid var(--acc); color: light-dark(#6b3a1e, #f0d4b4); } :is(button, .btn).primary:hover { background: light-dark(#f3e3d1, #3a2718); }
 button.danger, .btn.danger { color: var(--bad); } button.ghost { border-color: transparent; box-shadow: none; background: none; color: var(--acc); padding: 4px 6px; }
 button:disabled, button[aria-disabled=true] { opacity: .45; cursor: not-allowed; }
-button[aria-busy=true] .spin { color: inherit; }
 
 label.f svg.i { width: 15px; height: 15px; vertical-align: -3px; color: var(--muted); }
 button svg.i { width: 15px; height: 15px; }
@@ -213,7 +212,7 @@ input[type=checkbox], input[type=radio] { width: auto; accent-color: var(--acc);
 .djs-palette { border-radius: 8px; } .djs-palette .entry { border-radius: 4px; }
 /* bpmn-js's own buttons keep its light look, inverted with it in dark. */
 .djs-minimap button { color: #0f172a; background: #fff; }
-.ants-agent .djs-visual > rect { fill: #eef2ff !important; stroke: #6366f1 !important; }
+.ants-agent .djs-visual > rect { fill: #f6ede4 !important; stroke: #8a4a26 !important; }
 .ants-user .djs-visual > rect { fill: #fff8eb !important; stroke: #d97706 !important; }
 .ants-builtin .djs-visual > rect { fill: #f8fafc !important; stroke: #64748b !important; }
 .ants-script .djs-visual > rect { fill: #f0fdfa !important; stroke: #0d9488 !important; }
@@ -227,7 +226,7 @@ input[type=checkbox], input[type=radio] { width: auto; accent-color: var(--acc);
 .ov.waiting { background: var(--wait); color: #fff; } .ov.failed { background: var(--bad); color: #fff; } .ov.quiet, .ants-badge { background: #475569; color: #fff; }
 .ov.done { background: var(--ok); color: #fff; padding: 2px 6px; }
 .ants-badge { font: 600 11px Inter, system-ui, sans-serif; padding: 2px 8px; border-radius: 20px; white-space: nowrap; box-shadow: var(--sh); }
-.ants-pal-agent { color: #4f46e5 !important; } .ants-pal-user { color: #d97706 !important; } .ants-pal-builtin { color: #475569 !important; } .ants-pal-script { color: #0d9488 !important; }
+.ants-pal-agent { color: #8a4a26 !important; } .ants-pal-user { color: #d97706 !important; } .ants-pal-builtin { color: #475569 !important; } .ants-pal-script { color: #0d9488 !important; }
 
 .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: 460px; background: var(--panel); border-left: 1px solid var(--line); box-shadow: -12px 0 32px rgba(15, 23, 42, .12); z-index: 30; display: flex; flex-direction: column; animation: slidein .2s ease-out; }
 @keyframes slidein { from { transform: translateX(40px); opacity: 0; } }
@@ -335,8 +334,12 @@ div.tools label span { color: var(--muted); font-size: 12px; display: block; }
 .walk nav a { color: var(--text); padding: 6px 10px; border-radius: 8px; font-size: 13px; overflow-wrap: anywhere; } .walk nav a:hover { background: var(--panel); text-decoration: none; }
 
 /* Liveness: what a running Agent looks like everywhere it appears */
-.spin { display: inline-block; width: 1em; text-align: center; color: var(--run); font-weight: 700; }
-.side .spin { color: #93c5fd; }
+/* The spinner is the working ant (its own SVG animates), drawn over the ✻ the markup keeps; caramel on a dark page. An SVG
+   drawn as a background image doesn't see the page's prefers-reduced-motion, so then it is a copy with no animation. */
+.spin { --ant: url(/working-ant.svg); --antStill: url(/working-ant-still.svg); display: inline-block; width: 1.9em; height: 1.2em; vertical-align: -.2em; flex: none; color: transparent; overflow: hidden; user-select: none; background: var(--ant) center / contain no-repeat; }
+:root:has(meta[name=color-scheme][content=dark]) .spin, :is(.side, .topbar) .spin { --ant: url(/working-ant-dark.svg); --antStill: url(/working-ant-dark-still.svg); }
+@media (prefers-color-scheme: dark) { :root:has(meta[name=color-scheme][content="light dark"]) .spin { --ant: url(/working-ant-dark.svg); --antStill: url(/working-ant-dark-still.svg); } }
+@media (prefers-reduced-motion: reduce) { .spin { background-image: var(--antStill); } }
 .shimmer { background: linear-gradient(90deg, var(--run) 0%, var(--run) 35%, #a5c8ff 50%, var(--run) 65%, var(--run) 100%); background-size: 250% 100%;
     -webkit-background-clip: text; background-clip: text; color: transparent; animation: shim 2s linear infinite; font-weight: 600; }
 @keyframes shim { from { background-position: 100% 0; } to { background-position: -150% 0; } }
@@ -346,7 +349,7 @@ div.tools label span { color: var(--muted); font-size: 12px; display: block; }
 .caret > :last-child::after { content: "▍"; color: var(--run); animation: blink 1s steps(2) infinite; } @keyframes blink { 50% { opacity: 0; } }
 .num { font-variant-numeric: tabular-nums; }
 .flash { animation: flash 1.2s ease-out; } @keyframes flash { from { background: var(--waitSoft); } }
-/* Reduced motion: no shimmer, flash, fade, blink, pulse or slide (shell.js stops the spinners); the clocks and counts still change. */
+/* Reduced motion: no shimmer, flash, fade, blink, pulse or slide (the working ant stands still); the clocks and counts still change. */
 @media (prefers-reduced-motion: reduce) {
     .shimmer { animation: none; background: none; color: var(--run); }
     .flash, .new, .caret > :last-child::after, .drawer, .toast, dialog.modal, .p-running::before, .ov.running i { animation: none; }
@@ -358,6 +361,10 @@ div.tools label span { color: var(--muted); font-size: 12px; display: block; }
 .home > #live { display: contents; }
 .home .grid3, #waiting-on-you { grid-column: 1 / -1; } .home .grid3 { margin-bottom: 14px; }
 #working-now { grid-row: span 2; } #start-a-run { align-self: start; }
+/* Home's greeting: the big ant, its antennae twitching, beside the wordmark's brown. */
+.ph h1.hello { display: flex; align-items: center; gap: 20px; font: 800 30px system-ui, sans-serif; letter-spacing: -.02em; }
+.hello span { background: linear-gradient(135deg, #d9a066, #a0582c); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.hello img { width: 200px; height: 154px; flex: none; }
 .card h3 > a.small { margin-left: auto; font-weight: 500; }
 .item { padding: 7px 0; border-bottom: 1px solid var(--line2); } .row.item { padding: 6px 0; }
 .card .notes { box-shadow: none; }
@@ -655,6 +662,7 @@ details.example pre { background: var(--line2); border: 0; padding: 10px; border
 
 @media (max-width: 768px) {
     :root { --side-width: 0px; }
+    .ph h1.hello { gap: 12px; font-size: 26px; } .hello img { width: 130px; height: 100px; }
     .topbar { display: flex; }
     nav.side { width: min(280px, 85vw); visibility: hidden; transform: translateX(-100%); transition: transform .2s, visibility .2s; }
     #menu:checked ~ nav.side { visibility: visible; transform: none; box-shadow: 0 0 0 100vmax var(--modalBg); }

@@ -45,9 +45,9 @@ class PwaTest : AntsTest() {
         icons().forEach { (src) ->
             val icon = icon(src)
             val pixels = (0 until icon.height).flatMap { y -> (0 until icon.width).map { x -> Color(icon.getRGB(x, y)) } }
-            assertTrue(Color(icon.getRGB(0, 0)).near("#6366f1"), "$src top left")
-            assertTrue(Color(icon.getRGB(icon.width - 1, icon.height - 1)).near("#a855f7"), "$src bottom right")
-            assertTrue(pixels.any { it.near("#31373D") }, "$src has the ant")
+            assertTrue(Color(icon.getRGB(0, 0)).near("#f7f1e8"), "$src top left")
+            assertTrue(Color(icon.getRGB(icon.width - 1, icon.height - 1)).near("#e9dcc8"), "$src bottom right")
+            assertTrue(pixels.any { it.red in 40..140 && it.red > it.blue + 30 }, "$src has the brown ant")
             assertFalse(pixels.any { it.near("#2b6f4f") }, "$src has the old green")
         }
     }

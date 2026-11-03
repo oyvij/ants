@@ -62,7 +62,8 @@ class ShellTest : AntsTest() {
     fun `the top bar shows Ants, the Notification list count and the ☰ that opens the sidebar`() {
         waitingRun()
         val bar = Regex("""<header class="topbar">.*?</header>""", RegexOption.DOT_MATCHES_ALL).find(browser.get("/runs").body)!!.value
-        assertContains(bar, """<b>🐜</b>Ants""")
+        assertContains(bar, """<svg class="wordmark" viewBox="0 0 80 54" role="img" aria-label="Ants">""")
+        assertFalse("🐜" in bar)
         assertContains(bar, """<span id="topbar-waiting" class="n">1</span>""")
         assertContains(bar, """<label for="menu" title="Menu">☰</label>""")
     }
@@ -95,7 +96,8 @@ class ShellTest : AntsTest() {
     @Test
     fun `the login page is Ants' own, and Log out ends the session on it`() {
         val login = browser().get("/login")
-        assertContains(login.body, """<div class="logo"><b>🐜</b>Ants</div>""")
+        assertContains(login.body, """<div class="logo"><svg class="wordmark" viewBox="0 0 80 54" role="img" aria-label="Ants">""")
+        assertFalse("🐜" in login.body)
         assertContains(login.body, """<link rel="stylesheet" href="/ants.css">""")
         assertFalse("""<nav class="side">""" in login.body)
         assertEquals(200, browser().get("/ants.css").status) // the login page's look needs no login
