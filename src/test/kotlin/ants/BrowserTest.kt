@@ -2259,6 +2259,29 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `on a phone the Agents, Skills and Scripts lists fit the screen, each row's cells within it and none blank, and an entry opens on a tap`() = browse {
+        settings(null)
+        home.resolve("agents").createDirectories().resolve("a-rather-long-agent-name-that-runs-on.md").writeText("---\nname: a-rather-long-agent-name-that-runs-on\ndescription: ${"An Agent described at length. ".repeat(8)}\ncli: claude\nskills: tdd, code-review, codebase-design, implement\n---\nListed.\n")
+        val script = http.newDraft("/scripts")
+        onPhone()
+        for ((path, entry) in listOf("/agents" to "/agents/a-rather-long-agent-name-that-runs-on", "/skills" to "/skills/tdd", "/scripts" to script)) {
+            page.navigate(url(path))
+            val row = page.locator("table.library tr.click[data-href='$entry']")
+            assertThat(row).isVisible()
+            assertNoSidewaysScroll()
+            for (cell in page.locator("table.library td").all()) {
+                if (!cell.isVisible) continue
+                assertWithinScreen(cell, "a cell of a row on $path")
+                assertTrue(cell.boundingBox()!!.height > 8, "a row on $path shows no blank cell")
+            }
+            page.screenshot("phone${path.replace(Regex("[^a-z0-9]+"), "-")}-list")
+
+            row.locator("td").first().tap()
+            page.waitForURL { it.endsWith(entry) }
+        }
+    }
+
+    @Test
     fun `on a phone an ended Run's row shows when it started and how long it took at its top right, beside its name`() = browse {
         settings(null)
         val (process, plane) = row("timed", """<bpmn:startEvent id="start" />""", """<bpmn:endEvent id="end" />""")

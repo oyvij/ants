@@ -669,12 +669,13 @@ details.example pre { background: var(--line2); border: 0; padding: 10px; border
     :is(.notes, table.specs) tr { padding: 8px 0; border-bottom: 1px solid var(--line2); }
     :is(.notes, table.specs) tr:last-child { border-bottom: 0; }
     :is(.notes, table.specs) :is(td, td:first-child) { width: auto; padding: 4px 16px; border: 0; overflow-wrap: anywhere; }
-    :is(#runlist table, #processes, #tasks, #process-runs, #schedules), :is(#runlist, #processes, #tasks, #process-runs, #schedules) :is(tbody, tr, td) { display: block; }
-    :is(#runlist, #processes, #tasks, #process-runs, #schedules) tr:has(> th) { display: none; }
-    :is(#runlist, #processes, #tasks, #process-runs, #schedules) tr { padding: 8px 0; border-bottom: 1px solid var(--line2); }
-    :is(#runlist, #processes, #tasks, #process-runs, #schedules) tr:last-child { border-bottom: 0; }
-    :is(#runlist, #processes, #tasks, #process-runs, #schedules) td { padding: 4px 16px; border: 0; overflow-wrap: anywhere; }
-    #processes td:empty { display: none; }
+    :is(#runlist table, #processes, #tasks, #process-runs, #schedules, table.library), :is(#runlist, #processes, #tasks, #process-runs, #schedules, table.library) :is(tbody, tr, td) { display: block; }
+    :is(#runlist, #processes, #tasks, #process-runs, #schedules, table.library) tr:has(> th) { display: none; }
+    :is(#runlist, #processes, #tasks, #process-runs, #schedules, table.library) tr { padding: 8px 0; border-bottom: 1px solid var(--line2); }
+    :is(#runlist, #processes, #tasks, #process-runs, #schedules, table.library) tr:last-child { border-bottom: 0; }
+    :is(#runlist, #processes, #tasks, #process-runs, #schedules, table.library) td { padding: 4px 16px; border: 0; overflow-wrap: anywhere; }
+    :is(#processes, table.library) td:empty { display: none; }
+    table.library :is(td a, td:first-child) { white-space: normal; }
     #runlist tr:has(> td.when) { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
     #runlist tr:has(> td.when) > td { grid-column: 1 / -1; }
     #runlist tr:has(> td.when) > td:first-child { grid-area: 1 / 1; }
