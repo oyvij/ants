@@ -2695,6 +2695,73 @@ class BrowserTest : AntsTest() {
         assertEquals(0, scrolled(), "a page opened from the sidebar starts at the top")
     }
 
+    @Test
+    fun `a change on Settings shows a Save bar pinned to the bottom of the window, gone again once undone or saved`() = browse {
+        settings(null, "agent-tasks: 3\n")
+        page.navigate(url("/settings"))
+        val bar = page.locator(".savebar")
+        assertThat(bar).isHidden()
+
+        page.locator("input[name=so-far]").click()
+        page.locator("button[name=action][value=updates]").scrollIntoViewIfNeeded()
+        assertThat(bar).isVisible()
+        assertThat(bar).containsText("Unsaved changes")
+        val spot = bar.boundingBox()!!
+        val height = (page.evaluate("innerHeight") as Number).toDouble()
+        assertEquals(height, spot.y + spot.height, 1.0, "the bar sits on the window's bottom edge")
+        assertTrue(page.locator(".ph button.primary").boundingBox()!!.y < 0, "the header's Save has scrolled out of sight")
+
+        page.locator("input[name=so-far]").click()
+        assertThat(bar).isHidden()
+
+        page.locator("input[name=agent-tasks]").fill("5")
+        assertThat(bar).isVisible()
+        bar.locator("button.primary").click()
+        page.waitForLoadState()
+        assertThat(page.locator("input[name=agent-tasks]")).hasValue("5")
+        assertThat(bar).isHidden()
+    }
+
+    @Test
+    fun `at the end of Settings the Save bar takes its own room under the last card instead of covering it`() = browse {
+        settings(null)
+        page.navigate(url("/settings"))
+        page.locator("input[name=so-far]").click()
+        page.evaluate("scrollTo(0, document.body.scrollHeight)")
+        val bar = page.locator(".savebar")
+        assertThat(bar).isVisible()
+        val last = page.locator("form#settings .card").last().boundingBox()!!
+        assertTrue(bar.boundingBox()!!.y >= last.y + last.height, "the bar sits below the last card")
+    }
+
+    @Test
+    fun `leaving Settings with unsaved changes asks first, and Check now keeps them counted as unsaved`() = browse {
+        settings(null)
+        page.navigate(url("/settings"))
+        val asked = mutableListOf<String>()
+        page.onDialog { asked += it.type(); it.dismiss() }
+
+        page.locator("button[name=action][value=updates]").click()
+        assertThat(page.locator(".toast")).isVisible()
+        assertThat(page.locator(".savebar")).isHidden()
+
+        page.locator("input[name=so-far]").click()
+        page.locator("button[name=action][value=updates]").click()
+        assertThat(page.locator(".toast")).isVisible()
+        assertThat(page.locator(".savebar")).isVisible()
+        assertEquals(emptyList<String>(), asked, "a button of the form itself doesn't ask")
+
+        page.locator("nav.side a[href='/runs']").click()
+        eventually { assertEquals(listOf("beforeunload"), asked) }
+        assertTrue(page.url().endsWith("/settings"), "dismissing stays on Settings")
+
+        page.locator(".savebar button.primary").click()
+        page.waitForLoadState()
+        page.locator("nav.side a[href='/runs']").click()
+        page.waitForURL { it.endsWith("/runs") }
+        assertEquals(listOf("beforeunload"), asked, "once saved, leaving doesn't ask")
+    }
+
     private fun round(vararg questions: Pair<String, String>) = """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":""" +
         """{"outcome":"done","summary":"A Round.","output":{"questions":[""" + questions.joinToString(",") { (id, title) ->
             """{"id":"$id","title":"$title","ask":"Ask $id?","context":"Settles $id.","recommendation":"Recommend $id.","why":"Because $id."}"""

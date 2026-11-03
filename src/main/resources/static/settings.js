@@ -36,3 +36,28 @@ document.addEventListener('click', event => {
     }
     button.previousElementSibling.querySelector('input')?.focus();
 });
+
+const settingsForm = document.getElementById('settings');
+if (settingsForm) {
+    const bar = settingsForm.querySelector('.savebar');
+    const state = () => new URLSearchParams([...new FormData(settingsForm)].filter(([name]) => name !== '_csrf')).toString();
+    const saved = ('posted' in settingsForm.dataset && sessionStorage.getItem('settings-saved')) || state();
+    sessionStorage.removeItem('settings-saved');
+    let submitting = false;
+    const unsaved = () => !submitting && state() !== saved;
+    const showBar = () => bar.hidden = !unsaved();
+    settingsForm.addEventListener('input', showBar);
+    settingsForm.addEventListener('change', showBar);
+    document.addEventListener('click', event => {
+        if (event.target.closest('[data-add], [data-remove]')) showBar();
+    });
+    settingsForm.addEventListener('submit', () => {
+        submitting = true;
+        sessionStorage.setItem('settings-saved', saved);
+    });
+    window.addEventListener('pageshow', () => submitting = false);
+    window.addEventListener('beforeunload', event => {
+        if (unsaved()) event.preventDefault();
+    });
+    showBar();
+}

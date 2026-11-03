@@ -14,6 +14,7 @@
 @param colorScheme: String = "light dark"
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param shell: ants.Shell
+@param posted: Boolean = false
 <!doctype html>
 <html lang="en">
 <head>
@@ -29,7 +30,7 @@
 <div class="ph"><h1>Settings</h1><div class="acts"><button class="primary" form="settings" name="action" value="save">Save</button></div>
     <div class="sub">Written to <code>${file}</code>. A hand edit to it shows here.</div></div>
 @if(message != null)<p role="alert">${message}</p>@endif
-<form method="post" action="/settings" id="settings" class="settings">
+<form method="post" action="/settings" id="settings" class="settings" data-posted="${posted}">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
     <div class="grid2"><div class="card"><h3>Claude login</h3>
         <div class="kv"><span class="k">Status</span><span>@if(login.loggedIn)<span class="pill p-ready">Logged in</span> ${login.method}@else<span class="pill p-failed">Not logged in</span>@endif</span>
@@ -174,6 +175,7 @@
 @endif
         <label class="row"><input type="checkbox" name="prereleases" checked="${form.prereleases}"> Follow beta versions</label>
         <button name="action" value="updates">Check now</button></div></div>
+    <div class="savebar" hidden><span>Unsaved changes</span><button class="primary" name="action" value="save">Save</button></div>
 </form>
 @for((i, map) in maps.entries.withIndex())
 <dialog class="modal source-map" id="source-map-${i}">

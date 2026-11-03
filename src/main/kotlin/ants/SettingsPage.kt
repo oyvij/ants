@@ -48,6 +48,7 @@ class SettingsPage(
         // A list's rows, such as the Agent folders, post one value each, which the form reads one per line.
         val params = all.mapValues { it.value.joinToString("\n") }
         val form = SettingsForm.of(params)
+        model.addAttribute("posted", true)
         return when (params["action"]) {
             "login" -> login().let { login ->
                 Shell.toast(request, if (login.loggedIn) Toast("Logged in", login.method, Toast.Kind.SUCCESS) else Toast("Not logged in", "Run the command under Log in again, then press Check login.", Toast.Kind.ERROR))
