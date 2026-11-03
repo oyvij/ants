@@ -47,7 +47,8 @@ class ProcessTest : AntsTest() {
         assertContains(waits, ">you<")
         assertContains(waits, "notes · —")
         assertContains(waits, """<td class="small">⏰ 1</td>""")
-        assertContains(waits, """<span class="pill p-ready">Ready</span>""")
+        assertContains(waits, """<td><span data-ready="waits"><span class="spin" """) // until the check streams in
+        assertContains(browser.event("ready=list", "ready"), """<span data-ready="waits"><span class="pill p-ready">Ready</span></span>""")
         assertContains(waits, """<td class="muted">1</td>""")
         assertContains(waits, """<a href="/processes/waits/edit">Edit diagram</a>""")
         assertContains(row("Start to end"), """<td class="small"></td>""")
@@ -55,7 +56,7 @@ class ProcessTest : AntsTest() {
         assertContains(row("Set up Vault"), ">shipped<")
 
         home.resolve("settings.yaml").writeAtomically("") // no Vault
-        assertContains(row("Waits"), """<span class="pill p-failed">Can't start</span>""")
+        assertContains(browser.event("ready=list", "ready"), """<span data-ready="waits"><span class="pill p-failed">Can't start</span></span>""")
     }
 
     @Test

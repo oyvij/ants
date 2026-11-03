@@ -30,6 +30,12 @@ window.stream = {
     },
     morph: (element, like) => morph(element, like),
 };
+// The Ready marks (Home's and the Processes list's), each a working ant until the stream's `ready` event brings it.
+stream.on('ready', html => {
+    const marks = document.createElement('template');
+    marks.innerHTML = html;
+    for (const mark of [...marks.content.children]) document.querySelector(`[data-ready="${CSS.escape(mark.dataset.ready)}"]`)?.replaceWith(mark);
+});
 if (window.top === window) {
     addEventListener('DOMContentLoaded', () => source || stream.follow());
     let submitted = false;

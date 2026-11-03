@@ -66,17 +66,18 @@ class HomeTest : AntsTest() {
     }
 
     @Test
-    fun `Start a Run leads to a Process's start form, and a Process that can't start says so`() {
+    fun `Start a Run leads to a Process's start form, and a Process that can't start says so once its check streams in`() {
         setUp()
         browser.import("start-end.bpmn")
-        val ready = section(browser.get("/").body, "start-a-run")
-        val link = assertNotNull(Regex("""href="([^"]*agent-task)"""").find(ready)).groupValues[1]
+        val start = section(browser.get("/").body, "start-a-run")
+        val link = assertNotNull(Regex("""href="([^"]*agent-task)"""").find(start)).groupValues[1]
         assertContains(browser.get(link).body, """<form method="post" action="/processes/agent-task/runs">""")
-        assertFalse("Can't start" in ready)
+        assertContains(start, """<a class="grow" href="/processes/agent-task">Agent Task</a><span data-ready="agent-task"><span class="spin" """)
+        assertFalse("Can't start" in browser.event("ready=home", "ready"))
 
         home.resolve("skills/draft").toFile().deleteRecursively()
-        val home = section(browser.get("/").body, "start-a-run")
-        assertContains(home, """<a class="grow" href="/processes/agent-task">Agent Task</a><span class="pill p-failed">Can't start</span>""")
-        assertContains(home, """<a class="grow" href="/processes/start-end">Start to end</a></div>""")
+        val marks = browser.event("ready=home", "ready")
+        assertContains(marks, """<span data-ready="agent-task"><span class="pill p-failed">Can't start</span></span>""")
+        assertContains(marks, """<span data-ready="start-end"></span>""")
     }
 }

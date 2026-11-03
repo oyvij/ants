@@ -32,7 +32,6 @@ import java.io.StringWriter
 import java.net.URI
 import java.nio.file.Path
 import java.time.Clock
-import java.util.concurrent.Executors
 import kotlin.io.path.exists
 import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.readBytes
@@ -74,25 +73,24 @@ class Processes(
         }
     }
 
-    /** The Processes list: a row each, its pre-Run checks run side by side, since each may ask claude, gh and git. */
+    /**
+     * The Processes list: a row each. Its Check column streams in ([Home.ready]), since each pre-Run check may ask
+     * claude, gh and git.
+     */
     @GetMapping("/processes")
     fun list(model: Model): String {
         val processes = repository.createProcessDefinitionQuery().latestVersion().orderByProcessDefinitionName().asc().list().filterNot(settings::hides)
         model.addAttribute("processes", processes)
-        val login = preRun.oneLogin() // asked once for them all
         val scheduled = schedules.all().groupingBy { it.key }.eachCount()
-        model.addAttribute("rows", Executors.newVirtualThreadPerTaskExecutor().use { threads ->
-            processes.map { process -> threads.submit<ProcessRow> { row(process, scheduled[process.key] ?: 0, login) } }.map { it.get() }
-        })
+        model.addAttribute("rows", processes.map { row(it, scheduled[it.key] ?: 0) })
         model.addAttribute("drafts", draftsOnly().sortedBy { it.name })
         return "processes"
     }
 
-    private fun row(process: ProcessDefinition, scheduleCount: Int, login: () -> Map<*, *>): ProcessRow {
+    private fun row(process: ProcessDefinition, scheduleCount: Int): ProcessRow {
         val profile = startForm.profile(process, null)
         return ProcessRow(
             process, process.shipped, settings.profile(profile), scheduleCount,
-            reasons(process, startForm.fields(process), profile, login).isEmpty(),
             history.createHistoricProcessInstanceQuery().processDefinitionKey(process.key).rootProcessInstances().active().count(),
             DraftState.of(true, drafts.get(DraftKind.PROCESS, process.key) != null),
         )
@@ -457,7 +455,7 @@ class ScheduleEdit(
     val prefix get() = "edit-${schedule.id}-"
 }
 
-class ProcessRow(val process: ProcessDefinition, val shipped: Boolean, val profile: Profile?, val scheduleCount: Int, val ready: Boolean, val live: Long, val state: DraftState = DraftState.PUBLISHED)
+class ProcessRow(val process: ProcessDefinition, val shipped: Boolean, val profile: Profile?, val scheduleCount: Int, val live: Long, val state: DraftState = DraftState.PUBLISHED)
 
 /** Why a Process can't be deployed, in the XML parser's or the engine's words. */
 class Refused(message: String?) : Exception(message)

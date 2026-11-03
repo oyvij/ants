@@ -1,0 +1,3 @@
+@param marks: Map<String, Boolean>
+@param list: Boolean
+@for((key, ready) in marks)@template.readymark(key = key, ready = ready, list = list)@endfor

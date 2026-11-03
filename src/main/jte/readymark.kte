@@ -1,0 +1,4 @@
+@param key: String
+@param ready: Boolean? = null
+@param list: Boolean = false
+<%-- A Process's Ready mark, where the stream's `ready` event puts it: the working ant while its pre-Run check runs (null), then Can't start, or on the Processes list Ready too. --%><span data-ready="${key}">@if(ready == null)<span class="spin" aria-hidden="true" title="Checking whether it can start">✻</span>@elseif(!ready)<span class="pill p-failed">Can't start</span>@elseif(list)<span class="pill p-ready">Ready</span>@endif</span>
