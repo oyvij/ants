@@ -32,7 +32,7 @@ import kotlin.io.path.readText
  */
 class Schedule(
     val key: String, val process: String, val cron: String, val paused: Boolean, val next: Instant?, val at: String?, val countdown: String?, val skipped: String?, val failed: FailedStart?,
-    val id: String, val label: String, val profile: String?, val verbosity: Verbosity, val values: Map<String, String>,
+    val id: String, val label: String, val profile: String?, val verbosity: Verbosity, val values: Map<String, String>, val stored: Map<String, List<String>>,
 ) {
     val words get() = inWords(cron)
 
@@ -100,11 +100,21 @@ class Schedules(
             val next = if (state.paused) null else runCatching { CronExpression.parse(state.cron.orEmpty()).next(clock.instant().atZone(clock.zone))?.toInstant() }.getOrNull()
             val ahead = next?.let { countdown(Duration.between(clock.instant(), it)) }
             val profile = state.values[PROFILE]?.firstOrNull()
-            Schedule(processKey, process, state.cron.orEmpty(), state.paused, next, next?.let(clock::local), ahead, state.skipped, state.failed, id, label, profile, startForm.verbosity(state.values[VERBOSITY]?.firstOrNull(), profile), values)
+            Schedule(processKey, process, state.cron.orEmpty(), state.paused, next, next?.let(clock::local), ahead, state.skipped, state.failed, id, label, profile, startForm.verbosity(state.values[VERBOSITY]?.firstOrNull(), profile), values, state.values)
         }
     }
 
     fun add(processKey: String, values: Map<String, List<String>>, cron: String): String = synchronized(this) {
+        val (times, kept) = checked(processKey, values, cron)
+        UUID.randomUUID().toString().also { id -> update(id) { State(last = clock.instant(), process = processKey, cron = times, values = kept) } }
+    }
+
+    fun edit(id: String, values: Map<String, List<String>>, cron: String) = synchronized(this) {
+        val (times, kept) = checked(states().getValue(id).process.orEmpty(), values, cron)
+        update(id) { it.copy(last = clock.instant(), cron = times, values = kept, skipped = null, failed = null) }
+    }
+
+    private fun checked(processKey: String, values: Map<String, List<String>>, cron: String): Pair<String, Map<String, List<String>>> {
         val times = cron.trim()
         if (times.split(Regex("\\s+")).size != 6 || runCatching { CronExpression.parse(times) }.isFailure) {
             throw Unfilled("Ants can't read the cron $times: it takes six fields, seconds first, such as 0 0 8 * * MON-FRI.")
@@ -113,7 +123,7 @@ class Schedules(
         val kept = values.filterKeys { it in startForm.fields(definition).map(Field::name) + NAME + PROFILE + VERBOSITY }
         startForm.variables(definition, kept)
         val profile = startForm.profile(definition, kept[PROFILE]?.firstOrNull())
-        UUID.randomUUID().toString().also { id -> update(id) { State(last = clock.instant(), process = processKey, cron = times, values = kept + listOfNotNull(profile?.let { PROFILE to listOf(it) })) } }
+        return times to kept + listOfNotNull(profile?.let { PROFILE to listOf(it) })
     }
 
     fun pause(id: String, paused: Boolean) = update(id) { it.copy(paused = paused, last = clock.instant()) }

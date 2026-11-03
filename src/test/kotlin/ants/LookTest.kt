@@ -198,9 +198,9 @@ class LookTest : AntsTest() {
 
     /**
      * settings.yaml's lines beyond the Vault and claude: the Source map of the Review changes Run, no So far, and an extra
-     * Agent and Skill folder, Varde's.
+     * Agent and Skill folder.
      */
-    private val extra by lazy { reviewSourceMap() + "so-far: false\nagent-folders: [~/.varde/ai/agents]\nskill-folders: [~/.varde/ai/skills]\n" }
+    private val extra by lazy { reviewSourceMap() + "so-far: false\nagent-folders: [~/shared/agents]\nskill-folders: [~/shared/skills]\n" }
 
     /**
      * Seeds the pages, one Run at a time, each waiting until it has reached the state it is for, since the

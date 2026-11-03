@@ -128,12 +128,18 @@ class SettingsTest : AntsTest() {
     }
 
     @Test
-    fun `pointing at a Varde config toml fills the command and env from it`() {
-        val config = Files.createTempFile("config", ".toml")
-        config.writeText("[editor]\ntab_width = 2\n\n[ai]\ncommand = \"nono run --profile claude -- claude\"\nenv = [\n  \"HOME\", # mine\n  \"PATH\",\n]\n")
-        val page = press("varde", mapOf("varde-config" to "$config"))
-        assertContains(page, """name="claude.command" value="nono run --profile claude -- claude"""")
-        assertContains(page, """name="claude.env" value="HOME PATH"""")
+    fun `the page has no trace of Varde`() {
+        assertFalse(Regex("(?i)varde").containsMatchIn(browser.get("/settings").body))
+    }
+
+    @Test
+    fun `a start drops an old Varde config from settings yaml and keeps the rest`() {
+        val other = tempHome().createDirectories()
+        other.resolve("settings.yaml").writeText("varde-config: ~/.varde/config.toml\nagent-tasks: 2\n")
+        bootAnother(other)
+        val text = other.resolve("settings.yaml").readText()
+        assertFalse("varde" in text)
+        assertEquals(2, Yaml().load<Map<*, *>>(text)["agent-tasks"])
     }
 
     @Test

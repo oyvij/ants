@@ -121,4 +121,44 @@ class ShellTest : AntsTest() {
         assertContains(preview.body, "<strong>Bold</strong>")
         assertContains(preview.body, "&lt;script&gt;")
     }
+
+    @Test
+    fun `the Preview shows an agent's or a skill's frontmatter as a table, one row a field, above its body`() {
+        val skill = """
+            ---
+            name: release-notes
+            description: "Writes the release notes for a <version>."
+            tools: Read, Grep
+            ---
+            Read the **commits** since the last tag.
+        """.trimIndent()
+
+        val preview = browser.post("/markdown", mapOf("text" to skill)).body
+
+        assertEquals(
+            """<table class="frontmatter"><tbody><tr><th>name</th><td>release-notes</td></tr><tr><th>description</th><td>Writes the release notes for a &lt;version&gt;.</td></tr><tr><th>tools</th><td>Read, Grep</td></tr></tbody></table>""" +
+                "\n<p>Read the <strong>commits</strong> since the last tag.</p>\n",
+            preview,
+        )
+    }
+
+    @Test
+    fun `a frontmatter field written over several lines keeps its lines, and text with no frontmatter renders as before`() {
+        val agent = "---\nname: reviewer\ndescription: |\n  Reviews a branch.\n  Reports findings.\nskills:\n  - code-review\n  - tdd\n---\n\nBody."
+
+        val preview = browser.post("/markdown", mapOf("text" to agent)).body
+
+        assertContains(preview, "<tr><th>description</th><td>Reviews a branch.\nReports findings.</td></tr>")
+        assertContains(preview, "<tr><th>skills</th><td>- code-review\n- tdd</td></tr>")
+        assertContains(preview, "<p>Body.</p>")
+        assertEquals("<hr />\n<p>Not frontmatter</p>\n", browser.post("/markdown", mapOf("text" to "---\nNot frontmatter")).body)
+    }
+
+    @Test
+    fun `the Preview reads the frontmatter as Ants reads it, quotes unescaped, and shows broken frontmatter as it is written`() {
+        val quoted = browser.post("/markdown", mapOf("text" to "---\nname: 'the user''s'\ndescription: \"a \\\"b\\\"\"\n---\n")).body
+
+        assertContains(quoted, "<tr><th>name</th><td>the user&#39;s</td></tr><tr><th>description</th><td>a &quot;b&quot;</td></tr>")
+        assertEquals("<hr />\n<h2>name: [broken</h2>\n", browser.post("/markdown", mapOf("text" to "---\nname: [broken\n---\n")).body)
+    }
 }

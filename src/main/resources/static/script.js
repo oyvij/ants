@@ -50,7 +50,7 @@ if (list) {
     list.querySelectorAll(':scope > .row').forEach(withRemove);
 
     const add = Object.assign(document.createElement('button'), {type: 'button', className: 'add-secret', textContent: '＋ Add Secret'});
-    list.after(add);
+    saveSecrets.before(add);
     add.onclick = () => {
         const row = withRemove(blank.cloneNode(true));
         list.append(row);

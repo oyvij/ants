@@ -116,6 +116,7 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--hover); }
 .draft-head { display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap; } .draft-head .save-state { color: var(--muted); font-size: 12.5px; }
 .draft-head .save-state[data-failed] { color: var(--badText); }
 td .draft-mark { margin-left: 6px; vertical-align: 1px; }
+#runlist .when { text-align: right; white-space: nowrap; }
 @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(37, 99, 235, .55); } 70% { box-shadow: 0 0 0 7px rgba(37, 99, 235, 0); } 100% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0); } }
 .tag { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 9px 0 7px; border-radius: 6px; font-size: 12px; font-weight: 600; letter-spacing: .01em; white-space: nowrap; border: 1px solid; vertical-align: middle; }
 .tag i { font-style: normal; font-size: 10.5px; font-weight: 800; width: 14px; height: 14px; display: inline-grid; place-items: center; border-radius: 4px; background: currentColor; -webkit-text-fill-color: var(--panel); }
@@ -150,6 +151,7 @@ button svg.i { width: 15px; height: 15px; }
 label.f { display: block; font-weight: 600; font-size: 13px; margin: 18px 0 4px; }
 label.cap { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; font-weight: 600; } .row:has(> label.cap) { align-items: flex-end; }
 .help { color: var(--muted); font-size: 12.5px; margin-bottom: 8px; line-height: 1.5; } .help .eg { font-family: var(--mono); font-size: 12px; color: var(--text2); background: var(--line2); padding: 1px 6px; border-radius: 5px; }
+.more { display: flex; justify-content: center; margin-top: 16px; }
 input, select, textarea { font: inherit; padding: 7px 10px; border: 1px solid var(--fieldLine); border-radius: 8px; background: var(--field); color: var(--text); max-width: 100%; }
 /* The prototype's fields fill their cell; the pages not on its markup yet keep theirs inline. */
 :where(.card, .fld, .props, .modal, .composer, .drawer, .tlim) :is(input:not([type=checkbox], [type=radio], [type=file]), select, textarea) { width: 100%; }
@@ -174,6 +176,8 @@ input[type=checkbox], input[type=radio] { width: auto; accent-color: var(--acc);
 .ed.json .cm-scroller { font-family: var(--mono); font-size: 12.5px; }
 .md { max-width: 860px; } .md h1, .md h2, .md h3 { margin: 12px 0 6px; } .md p { margin: 6px 0; } .md pre { background: #0f172a; color: #e2e8f0; padding: 12px 14px; border-radius: 8px; overflow: auto; font-size: 12.5px; }
 .md pre code { background: none; padding: 0; color: inherit; } .md .add { color: #86efac; } .md .del { color: #fca5a5; } .md .hunk { color: #93c5fd; }
+.md table.frontmatter { margin: 0 0 16px; box-shadow: none; font-size: 13.5px; } .md .frontmatter th, .md .frontmatter td { padding: 8px 14px; vertical-align: baseline; }
+.md .frontmatter th { width: 1%; white-space: nowrap; font-family: var(--mono); font-size: 12.5px; text-transform: none; letter-spacing: 0; } .md .frontmatter td { white-space: pre-wrap; overflow-wrap: anywhere; }
 .cm-selectionBackground { background: light-dark(#d7dcfa, #2b3350) !important; }
 
 /* Transcript */
@@ -192,7 +196,7 @@ input[type=checkbox], input[type=radio] { width: auto; accent-color: var(--acc);
 .composer .grow { flex: 1; } .composer .ed .cm-editor { min-height: 44px; max-height: 160px; } :is(.composer, .df) label.f { margin-top: 0; }
 
 /* The diagram box: the Run's live diagram, the Process's, and the modeler's canvas, with ＋, －, Fit and ⛶ (shell.js) */
-.dia { position: relative; isolation: isolate; background: var(--panel) radial-gradient(var(--dotgrid) 1px, transparent 1px) 0 0 / 18px 18px; border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sh); height: 440px; overflow: hidden; }
+.dia { touch-action: none; position: relative; isolation: isolate; background: var(--panel) radial-gradient(var(--dotgrid) 1px, transparent 1px) 0 0 / 18px 18px; border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sh); height: 440px; overflow: hidden; }
 .dia.modeler { height: calc(100vh - 128px); }
 .dia .zoom { position: absolute; right: 12px; top: 12px; display: flex; gap: 4px; z-index: 3; }
 .dia .zoom button { padding: 4px 10px; }
@@ -289,7 +293,7 @@ div.tools label span { color: var(--muted); font-size: 12px; display: block; }
 .chipsel .c svg.i { width: 13px; height: 13px; color: var(--citeC); }
 :is(.chipsel, .fld .tags) .c button { border: 0; background: none; box-shadow: none; padding: 0 4px; color: var(--accText); }
 .chipsel input { border: 0; outline: 0; flex: 1; min-width: 160px; padding: 4px; min-height: 0; background: none; }
-.listed .row { margin-bottom: 6px; }
+.listed > .row { margin-bottom: 6px; }
 
 .storyview { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 20px; align-items: start; }
 .spine { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sh); padding: 16px; position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow-y: auto; overflow-wrap: anywhere; }
@@ -411,21 +415,24 @@ dialog:is(.source-map, .instructions) { width: min(760px, 92vw); height: fit-con
 .instructions .go { display: flex; justify-content: flex-end; margin: 16px -18px -18px; padding: 12px 18px; border-top: 1px solid var(--line); background: var(--band); }
 #new-process .mb { padding: 4px 24px 24px; font-size: 14px; }
 #new-process form { margin: 0; } #new-process .go { margin-top: 16px; }
-#start .picks { flex-wrap: wrap; gap: 6px 14px; margin-bottom: 8px; } #start .picks label { font-weight: 500; margin: 0; }
-#start .combo { position: relative; }
-#start .combo [role=listbox] { position: absolute; z-index: 4; left: 0; right: 0; top: calc(100% + 4px); margin: 0; padding: 4px; list-style: none; background: var(--panel); border: 1px solid var(--fieldLine); border-radius: 8px; box-shadow: 0 10px 30px rgba(15, 23, 42, .12); max-height: 280px; overflow: auto; }
-#start .combo [role=option] { position: relative; padding: 6px 10px 6px 30px; border-radius: 6px; cursor: pointer; font-family: var(--mono); font-size: 13px; }
-#start .combo [role=option].on { background: var(--hover); }
-#start .combo [role=option][aria-selected=true]::before { content: "✓" / ""; /* aria-selected already says it: an empty alt keeps the tick out of the option's name */ position: absolute; left: 10px; color: var(--accText); font-weight: 700; }
-#start .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; } #start .tags:empty { display: none; }
-#start .tags + .help { margin: 8px 0 0; }
-#start form { margin: 0; } #start .go { margin-top: 16px; }
+:is(#start, #schedules .edit) .picks { flex-wrap: wrap; gap: 6px 14px; margin-bottom: 8px; } :is(#start, #schedules .edit) .picks label { font-weight: 500; margin: 0; }
+:is(#start, #schedules .edit) .combo { position: relative; }
+:is(#start, #schedules .edit) .combo [role=listbox] { position: absolute; z-index: 4; left: 0; right: 0; top: calc(100% + 4px); margin: 0; padding: 4px; list-style: none; background: var(--panel); border: 1px solid var(--fieldLine); border-radius: 8px; box-shadow: 0 10px 30px rgba(15, 23, 42, .12); max-height: 280px; overflow: auto; }
+:is(#start, #schedules .edit) .combo [role=option] { position: relative; padding: 6px 10px 6px 30px; border-radius: 6px; cursor: pointer; font-family: var(--mono); font-size: 13px; }
+:is(#start, #schedules .edit) .combo [role=option].on { background: var(--hover); }
+:is(#start, #schedules .edit) .combo [role=option][aria-selected=true]::before { content: "✓" / ""; /* aria-selected already says it: an empty alt keeps the tick out of the option's name */ position: absolute; left: 10px; color: var(--accText); font-weight: 700; }
+:is(#start, #schedules .edit) .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; } :is(#start, #schedules .edit) .tags:empty { display: none; }
+:is(#start, #schedules .edit) .tags + .help { margin: 8px 0 0; }
+:is(#start, #schedules .edit) form { margin: 0; } :is(#start, #schedules .edit) .go { margin-top: 16px; }
 #schedule h3 .grow { flex: 1; }
 #schedule form { margin: 0; }
 #schedule .warn { margin-top: 14px; }
 #schedule .failed { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 14px; } #schedule .failed [role=alert] { width: 100%; margin: 0; }
 #schedule .subsec .help { margin: 0; }
 #schedules td.k { display: none; }
+#schedules td.row { display: grid; grid-template-columns: repeat(2, auto); justify-content: start; } #schedules td.row > form > button { width: 100%; }
+#schedules .edit > td { background: var(--panel2); }
+#schedules .edit h3 { margin-top: 0; }
 
 label > .ed { margin-top: 4px; } .modal .split .cm-scroller { font-family: inherit; line-height: 1.55; }
 .ed.readonly { background: var(--panel2); } .ed.readonly .st { color: var(--muted); }
@@ -504,7 +511,10 @@ main form.row:is(.pushacts, .remove) { display: flex; margin: 16px 0 0; } #comme
 .settings .grid2 > .card { min-width: 0; }
 .settings .kv code { overflow-wrap: anywhere; } .settings .cmd code { min-width: 0; }
 .settings .row > .name { width: 180px; flex: none; }
+.settings .listed > .row > label.row { min-height: 36px; margin-right: 0; }
+.settings .updates > :is(p, label.row) { margin: 0 0 10px; }
 .settings input.num { width: 90px; }
+.settings .savebar { position: sticky; bottom: var(--composer-height, 0px); z-index: 4; display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 16px; padding: 10px 16px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sh); } .settings .savebar[hidden] { display: none; }
 .settings .nowrap, .settings .listed label { white-space: nowrap; font-weight: 500; }
 .settings .subsec > :is(b, label) + .help { margin-top: 2px; }
 .settings .subsec .fld:first-of-type label.f { margin-top: 10px; }
@@ -607,9 +617,12 @@ details > summary { cursor: pointer; color: var(--muted); }
 #checks .warning::before { content: "⚠ "; color: var(--wait); }
 dialog.modal.create .who > * { margin: 0; border-radius: 0; padding: 10px 18px; }
 dialog.modal.create iframe { flex: 1; border: 0; display: block; padding: 0; width: 100%; background: var(--bg); }
+@media (min-width: 769px) { dialog.modal.create { width: min(1600px, 96vw); height: 92vh; } }
+body.framed main { max-width: none; padding: 20px 24px; }
+.helper .ed .bar { flex-wrap: wrap; }
 
 /* Agents and Skills: their lists, the Agent page (Who it is, What it may do, Standing instructions) and the Skill page. */
-table.library a, .usedby a { color: inherit; } table.library td a, table.library td:first-child { white-space: nowrap; } table.library td b a:hover { color: var(--acc); }
+table.library a, .usedby a { color: inherit; } @media (min-width: 769px) { table.library td a, table.library td:first-child { white-space: nowrap; } } table.library td b a:hover { color: var(--acc); }
 tr.hidden td { color: var(--muted); }
 fieldset[data-cli][disabled] { display: none; }
 form.agent :is(input, select, textarea):not([type=checkbox], [type=radio]) { background-color: var(--field); color: var(--text); }
@@ -662,20 +675,28 @@ details.example pre { background: var(--line2); border: 0; padding: 10px; border
     :is(.notes, table.specs) tr { padding: 8px 0; border-bottom: 1px solid var(--line2); }
     :is(.notes, table.specs) tr:last-child { border-bottom: 0; }
     :is(.notes, table.specs) :is(td, td:first-child) { width: auto; padding: 4px 16px; border: 0; overflow-wrap: anywhere; }
-    :is(#runlist table, #tasks, #process-runs, #schedules), :is(#runlist, #tasks, #process-runs, #schedules) :is(tbody, tr, td) { display: block; }
-    :is(#runlist, #tasks, #process-runs, #schedules) tr:has(> th) { display: none; }
-    :is(#runlist, #tasks, #process-runs, #schedules) tr { padding: 8px 0; border-bottom: 1px solid var(--line2); }
-    :is(#runlist, #tasks, #process-runs, #schedules) tr:last-child { border-bottom: 0; }
-    :is(#runlist, #tasks, #process-runs, #schedules) td { padding: 4px 16px; border: 0; overflow-wrap: anywhere; }
+    :is(#runlist table, #processes, #tasks, #process-runs, #schedules, table.library), :is(#runlist, #processes, #tasks, #process-runs, #schedules, table.library) :is(tbody, tr, td) { display: block; }
+    :is(#runlist, #processes, #tasks, #process-runs, #schedules, table.library) tr:has(> th) { display: none; }
+    :is(#runlist, #processes, #tasks, #process-runs, #schedules, table.library) tr { padding: 8px 0; border-bottom: 1px solid var(--line2); }
+    :is(#runlist, #processes, #tasks, #process-runs, #schedules, table.library) tr:last-child { border-bottom: 0; }
+    :is(#runlist, #processes, #tasks, #process-runs, #schedules, table.library) td { padding: 4px 16px; border: 0; overflow-wrap: anywhere; }
+    :is(#processes, table.library) td:empty { display: none; }    #runlist tr:has(> td.when) { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
+    #runlist tr:has(> td.when) > td { grid-column: 1 / -1; }
+    #runlist tr:has(> td.when) > td:first-child { grid-area: 1 / 1; }
+    #runlist tr:has(> td.when) > td.when { grid-area: 1 / 2; padding-left: 0; overflow-wrap: normal; }
     #schedules td.k { display: block; padding-bottom: 0; font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; }
     #schedules td.row { display: flex; flex-wrap: wrap; }
     #schedule > .row { flex-wrap: wrap; } #schedule > .row > .grow { flex-basis: 100%; }
-    #when > .row { flex-direction: column; align-items: stretch; }
-    #when > .row > label { display: flex; align-items: center; gap: 8px; }
-    #when > .row > label > :is(select, input) { flex: 1; min-width: 0; }
-    main:has(> #diagram) .ph .acts { flex-wrap: wrap; }
+    :is(#when, #schedules .edit fieldset) > .row { flex-direction: column; align-items: stretch; }
+    :is(#when, #schedules .edit fieldset) > .row > label { display: flex; align-items: center; gap: 8px; }
+    :is(#when, #schedules .edit fieldset) > .row > label > :is(select, input) { flex: 1; min-width: 0; }
+    main:has(> #diagram) .ph .acts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; margin-left: 0; }
+    main:has(> #diagram) .ph .acts > form > button { width: 100%; }
     main:has(> #diagram) :is(.ph .sub, .card) { overflow-wrap: anywhere; }
     .dia .legend { right: 12px; flex-wrap: wrap; }
+    .dia .djs-palette, .dia .djs-palette.two-column.open { left: 8px; top: 8px; width: 34px; }
+    .dia .djs-palette :is(.entry, .djs-palette-toggle) { width: 32px; height: 32px; line-height: 32px; font-size: 22px; }
+    .dia .djs-palette .separator { margin: 3px; padding-top: 3px; }
     .drawer { width: 100%; border-left: 0; }
     :is(dialog.modal, dialog#new-process) { width: 100%; border-radius: 0; }
     .modal .mb { padding: 16px; }
@@ -683,14 +704,16 @@ details.example pre { background: var(--line2); border: 0; padding: 10px; border
     .modal .split .cm-content { min-height: 0; }
     .modal .split .md { padding: 16px; border-left: 0; border-top: 1px solid var(--line); }
     .toast { top: 0; left: 0; right: 0; width: auto; border-radius: 0; }
-    #start :is(.tags .mono, .picks .mono, .combo [role=option]) { overflow-wrap: anywhere; }
-    #start .combo [role=option] { display: flex; align-items: center; min-height: 44px; }
+    :is(#start, #schedules .edit) :is(.tags .mono, .picks .mono, .combo [role=option]) { overflow-wrap: anywhere; }
+    :is(#start, #schedules .edit) .combo [role=option] { display: flex; align-items: center; min-height: 44px; }
     :is(button, .btn, .side a, .topbar :is(a, label), .tabs a, .spine .srow, .ssteps a, .walk nav a, .crumbs a, :is(.chipsel, .tags) .c, nav#tabs[role=tablist] > button, .seg label) { min-height: 44px; }
     :is(.tabs, .ssteps, .walk nav) a { display: flex; align-items: center; }
     .crumbs a { display: inline-flex; align-items: center; }
     :is(input, select, textarea, .ed .cm-content) { font-size: 16px; }
+    .ed .bar { flex-wrap: wrap; }
     .md { max-width: 100%; overflow-wrap: break-word; }
     .md table { display: block; width: max-content; max-width: 100%; overflow-x: auto; }
+    .md table.frontmatter { display: table; width: 100%; }
     #ticket input[type=checkbox] { width: 24px; height: 24px; vertical-align: middle; }
     .card.push .kv { grid-template-columns: 90px minmax(0, 1fr); }
     .card.push .kv > * { overflow-wrap: anywhere; }
@@ -712,8 +735,9 @@ details.example pre { background: var(--line2); border: 0; padding: 10px; border
     .trow { grid-template-columns: minmax(0, 1fr) auto; }
     .trow > .tdesc { grid-column: 1 / -1; grid-row: 2; }
     :is(form.agent .add-tool, .settings .row) > input { min-width: 0; }
-    .settings .listed > .row { flex-wrap: wrap; }
+    .settings .listed > .row { flex-wrap: wrap; column-gap: 8px; }
     .settings .listed > .row > :is(.name, .grow) { flex: 1 1 100%; width: auto; }
+    .settings .listed > .row > label.row { min-height: 44px; gap: 6px; }
 }
 .code-editor .ed .cm-gutters { background: var(--panel2); border-right: 1px solid var(--line2); color: var(--text3); }
 .code-editor .test-bar { margin-top: 10px; } .code-editor .sample { font-size: 12.5px; }
@@ -722,6 +746,12 @@ details.example pre { background: var(--line2); border: 0; padding: 10px; border
 .schema-rows { list-style: none; margin: 0; padding: 0; } .schema-row > .row { margin-bottom: 6px; } .schema-row .row > .name { width: 140px; flex: none; }
 .schema-row .row > select { flex: none; } .schema-row .row > [data-move-row] { padding-inline: 6px; } .schema-level > [data-add-row] { margin-bottom: 4px; }
 .schema-fields { margin: 0 0 8px 18px; padding-left: 10px; border-left: 2px solid var(--line2); }
+@media (max-width: 768px) {
+    .schema-row > .row { flex-wrap: wrap; gap: 8px; }
+    .schema-row .row > :is(.name, .grow) { flex: 1 1 100%; width: auto; min-width: 0; }
+    .schema-row .row > .grow { order: 1; } .schema-row .row > select { flex: 1 1 0; min-width: 0; }
+    .schema-fields { margin-left: 6px; }
+}
 .schema-row > .finding { font-size: 12.5px; margin: -2px 0 6px; } .finding.f-error { color: var(--badText); } .finding.f-warning { color: var(--warnText); }
 .test-run { margin-top: 10px; } .test-run h4 { margin: 12px 0 4px; font-size: 12.5px; }
 .test-run pre { margin: 0; padding: 8px 10px; font-family: var(--mono); font-size: 12.5px; max-height: 320px; }
@@ -731,7 +761,7 @@ details.example pre { background: var(--line2); border: 0; padding: 10px; border
 @media (min-width: 1200px) { .scriptWrap { grid-template-columns: minmax(0, 1fr) 360px; } }
 /* The Secrets card's rows, each with a red ✕, its Add Secret, and the modal that confirms a ✕. */
 [data-secrets] .row { align-items: end; } [data-secrets] button.x { color: var(--bad); font-size: 15px; padding: 6px 8px; }
-.add-secret { margin-bottom: 4px; }
+.save-secrets { margin-bottom: 4px; } .save-secrets [role=status]:empty { display: none; }
 dialog.modal.confirm { width: min(480px, 92vw); height: fit-content; max-height: 86vh; }
 .modal.confirm .mb { padding: 16px 18px 18px; font-size: 14px; } .modal.confirm .mb p { margin: 0; }
 .modal.confirm .go { display: flex; justify-content: flex-end; gap: 8px; margin: 16px -18px -18px; padding: 12px 18px; border-top: 1px solid var(--line); background: var(--band); }
@@ -739,3 +769,11 @@ dialog.modal.confirm { width: min(480px, 92vw); height: fit-content; max-height:
 .helper h3 { margin: 0; } .helper .dialog { flex: 1; overflow: auto; margin: 0; } .helper .dialog .text p { margin: 4px 0; }
 .helper form { display: flex; flex-direction: column; gap: 6px; } .helper form label.f { margin: 0; }
 .helper form .ed .cm-editor { height: 8em; min-height: 4em; max-height: calc(50vh - 100px); resize: vertical; } .helper form .ed .cm-content { min-height: 0; }
+.clip { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
+.clip.line { -webkit-line-clamp: 1; line-clamp: 1; }
+button.clip-info { display: none; float: right; width: 32px; min-height: 44px; height: 44px; margin: -12px -8px -12px 2px; padding: 0; border: 0; background: none; box-shadow: none; color: var(--muted); }
+button.clip-info::before { content: "i"; display: grid; place-items: center; width: 16px; height: 16px; border: 1.5px solid currentColor; border-radius: 50%; font: italic 700 10.5px/1 Georgia, serif; }
+button.clip-info:hover, button.clip-info[aria-expanded=true] { background: none; color: var(--acc); }
+@media (hover: none) { button.clip-info { display: inline-flex; } }
+.tip { position: fixed; z-index: 1000; max-width: min(360px, calc(100vw - 16px)); padding: 8px 11px; border-radius: 8px; background: var(--text); color: var(--panel); font-size: 12.5px; font-weight: 500; line-height: 1.45; white-space: pre-line; overflow-wrap: anywhere; box-shadow: 0 6px 20px rgba(16, 24, 40, .22); pointer-events: none; }
+.tip[hidden] { display: none; }

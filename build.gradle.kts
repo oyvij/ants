@@ -12,7 +12,7 @@ plugins {
 
 group = "no.oyvij"
 // A local build's version. CI's releases pass theirs, from the release tags: -Prelease=0.27.0-beta.412.
-version = findProperty("release")?.toString() ?: "0.28.0"
+version = findProperty("release")?.toString() ?: "0.29.0"
 
 kotlin {
     jvmToolchain(25)
@@ -38,7 +38,6 @@ dependencies {
     implementation("gg.jte:jte-kotlin:$jte")
     implementation("org.jetbrains.kotlin:kotlin-reflect")
     implementation("com.networknt:json-schema-validator:3.0.8")
-    implementation("tools.jackson.dataformat:jackson-dataformat-toml") // reads Varde's config.toml
     implementation("org.commonmark:commonmark:0.31.0")
     implementation("org.commonmark:commonmark-ext-task-list-items:0.31.0") // a Ticket's ticking checkboxes
     implementation("org.commonmark:commonmark-ext-gfm-tables:0.31.0")

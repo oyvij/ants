@@ -1,0 +1,10 @@
+@param cron: String?
+@param action: String
+@param prefix: String = ""
+@param hidden: Boolean = false
+@param advanced: Boolean = cron != null
+    <fieldset id="${prefix}when" hidden="${hidden}"><legend>When</legend>
+    <p class="row"><label>Every <select id="${prefix}when-every" data-when="every"></select></label><label data-part="at"> at <input type="time" id="${prefix}when-at" data-when="at" value="08:00"></label><label data-part="on"> on <select id="${prefix}when-on" data-when="on"></select></label><label data-part="dom"> on day <input type="number" id="${prefix}when-dom" data-when="dom" min="1" max="31" value="1"></label></p>
+    <details id="${prefix}when-advanced" data-when="advanced" open="${advanced}"><summary>Advanced</summary><label class="f" for="${prefix}when-cron">Cron</label><div class="help">Six fields, seconds first, such as <span class="eg">0 0 8 * * MON-FRI</span>.</div><input name="cron" id="${prefix}when-cron" data-when="cron" value="${cron ?: "0 0 * * * *"}"></details>
+    <div class="go"><button class="primary" formaction="${action}" data-pending="Saving…">Save schedule</button>@if(prefix.isNotEmpty())<button type="button" data-close>Close</button>@endif</div>
+    </fieldset>

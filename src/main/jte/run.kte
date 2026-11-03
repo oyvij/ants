@@ -65,7 +65,7 @@
 </div>
 <nav id="trail" hidden></nav>
 <div id="diagram" class="dia"><div class="legend"><span class="pill p-running">Running</span><span class="pill p-waiting">Waiting on you</span><span class="pill p-done">Done</span><span class="pill p-quiet">Queued / paused</span></div></div>
-<div class="help">Drag to pan, Ctrl/⌘ + scroll to zoom. Click a Task to open it.</div>
+<div class="help">Drag to pan, Ctrl/⌘ + scroll or pinch to zoom. Click a Task to open it.</div>
 <aside id="drawer" class="drawer" hidden><button id="close" class="ghost" title="Close (Esc)" aria-label="Close">✕</button><div id="parts"></div></aside>
 <div id="run-tasks">@template.tasks(tasks = tasks)</div>
 @if(kept != null)

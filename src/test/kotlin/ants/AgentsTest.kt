@@ -204,7 +204,7 @@ class AgentsTest : AntsTest() {
             "librarian" to "Keeps the user's knowledge Vault, in Varde's format, reading and writing it with any tool, and proposing every change before it writes it.",
         )) {
             val row = list.substringAfter("""<a href="/agents/$name">$name</a>""", "").substringBefore("</tr>")
-            assertContains(row, """<td class="small">$description</td>""", message = name)
+            assertContains(row, """<td class="small"><span class="clip">$description</span></td>""", message = name)
         }
     }
 

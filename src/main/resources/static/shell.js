@@ -38,7 +38,8 @@ if (window.top === window) {
     const left = JSON.parse(sessionStorage.getItem('scroll'));
     sessionStorage.removeItem('scroll');
     const reloaded = performance.getEntriesByType('navigation')[0]?.type === 'reload';
-    if (left?.path === location.pathname && (reloaded || left.submitted)) addEventListener('load', () => scrollTo(0, left.y), { once: true });
+    window.samePage = left?.path === location.pathname && (reloaded || left.submitted);
+    if (samePage) addEventListener('load', () => scrollTo(0, left.y), { once: true });
 }
 
 // A button that sends something shows it the moment it is pressed: a spinner and its data-pending verb ("Approving…"),
@@ -221,7 +222,101 @@ for (const box of document.querySelectorAll('.dia')) {
         else box.requestFullscreen();
     };
     box.addEventListener('fullscreenchange', () => setTimeout(() => { box.canvas?.resized(); box.canvas?.zoom('fit-viewport', 'auto'); }, 50));
+    followFingers(box);
+}
+
+function followFingers(box) {
+    const fingers = new Map();
+    const between = () => {
+        const [a, b = a] = [...fingers.values()];
+        return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, apart: Math.hypot(a.x - b.x, a.y - b.y) };
+    };
+    box.addEventListener('pointerdown', event => {
+        if (event.pointerType !== 'touch' || !box.canvas || event.target.closest('.zoom, .legend, .djs-palette, .djs-context-pad, .djs-popup, .djs-minimap')) return;
+        fingers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    });
+    box.addEventListener('pointermove', event => {
+        if (!fingers.has(event.pointerId)) return;
+        const before = between();
+        fingers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        const after = between(), canvas = box.canvas;
+        canvas.scroll({ dx: after.x - before.x, dy: after.y - before.y });
+        if (fingers.size < 2 || !before.apart) return;
+        const rect = canvas.getContainer().getBoundingClientRect();
+        const scale = Math.min(4, Math.max(0.2, canvas.zoom() * after.apart / before.apart));
+        canvas.zoom(scale, { x: after.x - rect.left, y: after.y - rect.top });
+    });
+    for (const type of ['pointerup', 'pointercancel']) box.addEventListener(type, event => fingers.delete(event.pointerId));
 }
 
 const composer = document.querySelector('.composer');
 if (composer) new ResizeObserver(() => document.documentElement.style.setProperty('--composer-height', composer.offsetHeight + 'px')).observe(composer, { box: 'border-box' });
+
+{
+    const tip = Object.assign(document.createElement('div'), { className: 'tip', id: 'tip', hidden: true });
+    tip.setAttribute('role', 'tooltip');
+    let tipFor = null;
+    const placeTip = clip => {
+        const box = clip.getBoundingClientRect(), own = tip.getBoundingClientRect(), gap = 6;
+        const above = box.top - own.height - gap;
+        tip.style.top = (above >= gap ? above : box.bottom + gap) + 'px';
+        tip.style.left = Math.max(gap + 2, Math.min(box.left, innerWidth - own.width - gap - 2)) + 'px';
+    };
+    const showTip = clip => {
+        if (!tip.isConnected) document.body.append(tip);
+        tip.textContent = clip.textContent.trim();
+        tip.hidden = false;
+        tipFor = clip;
+        clip.clipInfo?.setAttribute('aria-expanded', 'true');
+        placeTip(clip);
+    };
+    const hideTip = () => {
+        if (!tipFor) return;
+        tipFor.clipInfo?.setAttribute('aria-expanded', 'false');
+        tip.hidden = true;
+        tipFor = null;
+    };
+    const infoButton = clip => {
+        const info = Object.assign(document.createElement('button'), { type: 'button', className: 'clip-info' });
+        info.setAttribute('aria-label', 'Show the whole text');
+        info.setAttribute('aria-expanded', 'false');
+        info.onclick = () => tipFor === clip ? hideTip() : showTip(clip);
+        return info;
+    };
+    const fitClip = clip => {
+        const clipped = clip.scrollHeight > clip.clientHeight + 1 || clip.scrollWidth > clip.clientWidth + 1;
+        clip.classList.toggle('clipped', clipped);
+        if (clipped) clip.tabIndex = 0; else clip.removeAttribute('tabindex');
+        if (clipped && !clip.clipInfo?.isConnected) {
+            clip.clipInfo = infoButton(clip);
+            if (/flex|grid/.test(getComputedStyle(clip.parentElement).display)) clip.after(clip.clipInfo); else clip.before(clip.clipInfo);
+        } else if (!clipped && clip.clipInfo) {
+            if (tipFor === clip) hideTip();
+            clip.clipInfo.remove();
+            clip.clipInfo = null;
+        }
+    };
+    const clipObserver = new ResizeObserver(entries => entries.forEach(entry => fitClip(entry.target)));
+    const watchClips = () => document.querySelectorAll('.clip').forEach(clip => {
+        clipObserver.observe(clip);
+        fitClip(clip);
+    });
+    watchClips();
+    new MutationObserver(() => {
+        watchClips();
+        if (tipFor && !tipFor.isConnected) hideTip();
+    }).observe(document.documentElement, { childList: true, subtree: true });
+    const canHover = matchMedia('(hover: hover)');
+    document.addEventListener('mouseover', event => {
+        const clip = event.target.closest?.('.clip.clipped');
+        if (clip && canHover.matches && tipFor !== clip) showTip(clip);
+    });
+    document.addEventListener('mouseout', event => {
+        if (tipFor && canHover.matches && !tipFor.contains(event.relatedTarget) && document.activeElement !== tipFor) hideTip();
+    });
+    document.addEventListener('focusin', event => { if (event.target.matches?.('.clip.clipped')) showTip(event.target); });
+    document.addEventListener('focusout', event => { if (event.target === tipFor) hideTip(); });
+    document.addEventListener('click', event => { if (!event.target.closest('.clip-info')) hideTip(); });
+    addEventListener('keydown', event => { if (event.key === 'Escape') hideTip(); });
+    addEventListener('scroll', () => tipFor && placeTip(tipFor), { capture: true, passive: true });
+}

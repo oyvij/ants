@@ -516,24 +516,21 @@ function writeAgentTask(element, changes, inputs, redraw = false) {
     }
 }
 
-// The page of an Agent, Skill or Script in a modal over the modeler. Edit opens [src], the item's page, and its Publish
-// picks it on the Task once published. New posts [src], the kind's `new/draft`, which makes a Draft-only item as the
-// pages' New does, and opens its page; its Use saves the page to the Draft and picks the item on the Task as it is.
 function formModal(kind, src, use, who = "") {
     const editing = !src.startsWith(`/${kind}/new/draft`)
     const title = (editing ? "Edit " : "New ") + {agents: "Agent", skills: "Skill", scripts: "Script"}[kind]
     const frame = el("iframe", {title, className: "mb"})
     const named = () => frame.contentWindow.location.pathname.match(new RegExp(`^/${kind}/([^/]+)$`))?.[1]
-    const primary = el("button", {type: "button", className: "primary", hidden: true, textContent: editing ? "Publish" : "Use", onclick: async () => {
-        const form = frame.contentDocument.querySelector("input[name=use]")?.form
-        if (editing) return form?.requestSubmit()
-        await form?.draft?.save()
+    const pageForm = () => frame.contentDocument.querySelector("input[name=use]")?.form
+    const publish = el("button", {type: "button", className: "primary", hidden: true, textContent: "Publish", onclick: () => pageForm()?.requestSubmit()})
+    const asDraft = el("button", {type: "button", hidden: true, textContent: "Use Draft", onclick: async () => {
+        await pageForm()?.draft?.save()
         dialog.close()
         use(decodeURIComponent(named()))
     }})
     const header = el("form", {method: "dialog", className: "mh"}, el("b", {className: `ent ent-${kind.slice(0, -1)}`, textContent: title}),
         el("span", {className: "muted small", textContent: "Esc to close"}), el("span", {className: "sp"}),
-        el("button", {className: "ghost", title: "Close", textContent: "Cancel"}), primary)
+        el("button", {className: "ghost", title: "Close", textContent: "Cancel"}), ...(editing ? [] : [asDraft]), publish)
     const dialog = el("dialog", {className: "modal create"}, header, who, frame)
     dialog.onclose = () => dialog.remove()
     frame.onload = () => {
@@ -544,8 +541,9 @@ function formModal(kind, src, use, who = "") {
         }
         // The form, or the form refusing a save.
         const page = frame.contentDocument
-        const form = page.querySelector("input[name=use]")?.form
-        primary.hidden = !form
+        const form = pageForm()
+        publish.hidden = asDraft.hidden = !form
+        page.body.classList.add("framed")
         if (!form) return page.querySelector("nav.side")?.remove()
         page.querySelector(".ph")?.replaceWith(page.querySelector(".ph .sub") || "")
         form.querySelectorAll("button.primary:not([type=button])").forEach(button => button.hidden = true)
@@ -612,7 +610,7 @@ async function scriptPanel(element, box) {
         const row = el("div", {className: "row"}, el("label", {htmlFor: field.id}, el("code", {textContent: input})), field,
             undeclared ? el("span", {className: "muted small", textContent: "not declared by the Script"}) : "",
             about ? el("span", {className: "muted small nowrap", textContent: [about.type, about.required ? "required" : ""].filter(Boolean).join(" · ")}) : "", remove)
-        const entry = el("div", {}, row, about?.description ? note("help", about.description) : "")
+        const entry = el("div", {}, row, about?.description ? note("help clip", about.description) : "")
         entry.dataset.input = input
         return entry
     })
@@ -720,7 +718,7 @@ async function agentPanel(element, box) {
             onchange: () => pickSkills([...offeredSkills, ...listed].filter((n, i, all) => all.indexOf(n) === i && (n === name ? box.checked : listed.includes(n))))})
         const missing = !skill ? "not found" : offeredSkills.includes(name) ? "" : "not listed by this Agent"
         return el("div", {className: "row"}, box, el("label", {htmlFor: box.id, textContent: name}),
-            draftMark(skill), el("span", {className: "muted small grow", textContent: missing || skill.description || ""}), skill ? editSkill(skill) : "")
+            draftMark(skill), el("span", {className: "muted small grow clip line", textContent: missing || skill.description || ""}), skill ? editSkill(skill) : "")
     })
     const assignment = el("textarea", {id: "ants-assignment", rows: 4, value: props["ants.assignment"] || "",
         placeholder: "e.g. Write the release notes for the merged PRs, one line each.",
@@ -762,7 +760,8 @@ async function agentPanel(element, box) {
         field("Skills", "What the Agent may use for it: all of its Skills, none, or only the ones ticked.", modeSelect,
             el("div", {className: "skillpick"}, ...(skillRows.length ? skillRows : [note("muted small", agent ? "The Agent has no Skills." : "Pick an Agent to see its Skills.")])),
             dropped ? note("warn", dropped) : "", newSkill),
-        el("div", {className: "help"}, start?.description || "", start?.description ? el("br") : "", "Later Tasks can read: ",
+        start?.description ? note("help clip", start.description) : "",
+        el("div", {className: "help"}, "Later Tasks can read: ",
             ...(read[element.id] || []).flatMap(reference => [el("code", {textContent: reference}), " "])),
         el("div", {className: "fld"}, el("label", {className: "f", textContent: "Inputs"}),
             note("help", "What it reads: start-form fields, Run variables and Results of Tasks before it in the diagram."), references,
@@ -867,10 +866,14 @@ panels.user = element => {
             ...kind.result.flatMap(f => [el("code", {textContent: `\${${element.id}.${f}}`}), " "])))
 }
 
-// The panel's head: what the element is, and its name, which the diagram shows.
 function head(element, kind) {
-    const name = el("input", {className: "name", value: element.businessObject.name || "", placeholder: "e.g. Write the Spec",
-        onchange: () => modeler.get("modeling").updateLabel(element, name.value)})
+    const process = kindOf(element) === "process"
+    const name = el("input", {id: "element-name", className: "name", value: element.businessObject.name || "", placeholder: process ? "e.g. Build and ship" : "e.g. Write the Spec",
+        onchange: () => {
+            if (!process) return modeler.get("modeling").updateLabel(element, name.value)
+            if (name.value.trim()) modeler.get("modeling").updateProperties(element, {name: name.value.trim()})
+            else name.value = element.businessObject.name || ""
+        }})
     return [el("div", {className: "kind", textContent: kind}), field("Name", "", name)]
 }
 
@@ -883,7 +886,7 @@ function explain(element) {
     // Throwing here would abort the import.
     if (!target.businessObject) return
     const kind = kindOf(target)
-    if (kind === "process") return panel.replaceChildren(el("div", {className: "kind", textContent: kinds.process.name}), el("h3", {textContent: nameOf(target)}), panels.process(target))
+    if (kind === "process") return panel.replaceChildren(...head(target, kinds.process.name), panels.process(target))
     if (kind && kind !== "task") {
         return panel.replaceChildren(...head(target, kinds[kind].name), ownWords.has(kind) ? "" : note("explain", kinds[kind].explain),
             panels[kind]?.(target) || "", multiInstance(target))
@@ -910,10 +913,13 @@ modeler.on("import.done", () => modeler.get("elementRegistry").forEach(mark))
 modeler.on(["shape.added", "element.changed"], ({element}) => element.businessObject && mark(element))
 
 modeler.on("selection.changed", ({newSelection}) => explain(newSelection.length === 1 ? newSelection[0] : modeler.get("canvas").getRootElement()))
+const heading = document.querySelector(".ph[data-names-process] h1")
 modeler.on("element.changed", ({element}) => {
+    const root = element === modeler.get("canvas").getRootElement()
+    if (heading && root && element.businessObject && kindOf(element) === "process") heading.textContent = element.businessObject.name || element.id
     if (quiet) return
     const selection = modeler.get("selection").get()
-    if (selection.length === 1 && selection[0] === element) explain(element)
+    if (selection.length === 1 ? selection[0] === element : root) explain(element)
 })
 
 // The Draft's autosave starts once the diagram is in, so what it loaded is what it compares each change with. A
@@ -1396,7 +1402,7 @@ async function openBuilder() {
     const endpoint = builderPanel.dataset.path
     // A reload in the tab gives the token it had, so it keeps its session and dialog while Ants does (ProcessBuilderTools).
     const kept = "ants.builder." + location.pathname
-    const fields = {_csrf: csrf, token: sessionStorage.getItem(kept) ?? ""}
+    const fields = {_csrf: csrf, token: window.samePage ? sessionStorage.getItem(kept) ?? "" : ""}
     if (builderPanel.dataset.template) fields.template = builderPanel.dataset.template
     const {token} = await (await fetch(endpoint, {method: "POST", body: new URLSearchParams(fields)})).json()
     sessionStorage.setItem(kept, token)
