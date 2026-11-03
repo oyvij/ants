@@ -2262,9 +2262,12 @@ class BrowserTest : AntsTest() {
     fun `on a phone the Agents, Skills and Scripts lists fit the screen, each row's cells within it and none blank, and an entry opens on a tap`() = browse {
         settings(null)
         home.resolve("agents").createDirectories().resolve("a-rather-long-agent-name-that-runs-on.md").writeText("---\nname: a-rather-long-agent-name-that-runs-on\ndescription: ${"An Agent described at length. ".repeat(8)}\ncli: claude\nskills: tdd, code-review, codebase-design, implement\n---\nListed.\n")
-        val script = http.newDraft("/scripts")
+        home.resolve("scripts/s-listed1").createDirectories().run {
+            resolve("script.yaml").writeText("id: s-listed1\nname: a-rather-long-script-name-that-runs-on\ndescription: ${"A Script described at length. ".repeat(8)}\ninputs: {type: object, properties: {}}\nvars: {}\nsecrets: []\n")
+            resolve("script.mjs").writeText("console.log('hi')\n")
+        }
         onPhone()
-        for ((path, entry) in listOf("/agents" to "/agents/a-rather-long-agent-name-that-runs-on", "/skills" to "/skills/tdd", "/scripts" to script)) {
+        for ((path, entry) in listOf("/agents" to "/agents/a-rather-long-agent-name-that-runs-on", "/skills" to "/skills/tdd", "/scripts" to "/scripts/a-rather-long-script-name-that-runs-on")) {
             page.navigate(url(path))
             val row = page.locator("table.library tr.click[data-href='$entry']")
             assertThat(row).isVisible()
@@ -2276,7 +2279,7 @@ class BrowserTest : AntsTest() {
             }
             page.screenshot("phone${path.replace(Regex("[^a-z0-9]+"), "-")}-list")
 
-            row.locator("td").first().tap()
+            row.locator("td").last().tap()
             page.waitForURL { it.endsWith(entry) }
         }
     }

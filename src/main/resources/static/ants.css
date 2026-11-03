@@ -616,7 +616,7 @@ dialog.modal.create .who > * { margin: 0; border-radius: 0; padding: 10px 18px; 
 dialog.modal.create iframe { flex: 1; border: 0; display: block; padding: 0; width: 100%; background: var(--bg); }
 
 /* Agents and Skills: their lists, the Agent page (Who it is, What it may do, Standing instructions) and the Skill page. */
-table.library a, .usedby a { color: inherit; } table.library td a, table.library td:first-child { white-space: nowrap; } table.library td b a:hover { color: var(--acc); }
+table.library a, .usedby a { color: inherit; } @media (min-width: 769px) { table.library td a, table.library td:first-child { white-space: nowrap; } } table.library td b a:hover { color: var(--acc); }
 tr.hidden td { color: var(--muted); }
 fieldset[data-cli][disabled] { display: none; }
 form.agent :is(input, select, textarea):not([type=checkbox], [type=radio]) { background-color: var(--field); color: var(--text); }
@@ -674,9 +674,7 @@ details.example pre { background: var(--line2); border: 0; padding: 10px; border
     :is(#runlist, #processes, #tasks, #process-runs, #schedules, table.library) tr { padding: 8px 0; border-bottom: 1px solid var(--line2); }
     :is(#runlist, #processes, #tasks, #process-runs, #schedules, table.library) tr:last-child { border-bottom: 0; }
     :is(#runlist, #processes, #tasks, #process-runs, #schedules, table.library) td { padding: 4px 16px; border: 0; overflow-wrap: anywhere; }
-    :is(#processes, table.library) td:empty { display: none; }
-    table.library :is(td a, td:first-child) { white-space: normal; }
-    #runlist tr:has(> td.when) { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
+    :is(#processes, table.library) td:empty { display: none; }    #runlist tr:has(> td.when) { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
     #runlist tr:has(> td.when) > td { grid-column: 1 / -1; }
     #runlist tr:has(> td.when) > td:first-child { grid-area: 1 / 1; }
     #runlist tr:has(> td.when) > td.when { grid-area: 1 / 2; padding-left: 0; overflow-wrap: normal; }
