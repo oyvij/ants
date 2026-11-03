@@ -79,6 +79,10 @@ tasks.processResources {
         include("*.production.min.js", "assets/**")
         into("static/vendor/camunda-bpmn-js")
     }
+    from("node_modules/mermaid/dist") {
+        include("mermaid.esm.min.mjs", "chunks/mermaid.esm.min/*.mjs")
+        into("static/vendor/mermaid")
+    }
     // CodeMirror 6 as plain ES modules: each file the import map in codemirror.kte names, and only those, copied from
     // the one place pnpm put it: a direct dependency in node_modules, any other package in the hoisted .pnpm root.
     val importMap = file("src/main/jte/codemirror.kte")

@@ -9,6 +9,7 @@ import com.microsoft.playwright.options.AriaRole
 import com.microsoft.playwright.options.ColorScheme
 import com.microsoft.playwright.options.FilePayload
 import com.microsoft.playwright.options.KeyboardModifier
+import com.microsoft.playwright.options.LoadState
 import com.microsoft.playwright.Page
 import com.microsoft.playwright.Playwright
 import com.microsoft.playwright.assertions.LocatorAssertions
@@ -3730,6 +3731,197 @@ class BrowserTest : AntsTest() {
         // Measured in one step: the live update swaps #ticket for a new one, and boundingBox() reads null mid-swap
         val ticket = (page.locator("#ticket").evaluate("e => e.getBoundingClientRect().width") as Number).toDouble()
         assertTrue(ticket <= 860, "the Ticket is ${ticket}px wide")
+    }
+
+    private fun ticketWith(key: String, body: String): String {
+        val run = waitingRun(key).removePrefix("/runs/")
+        workspace(run).resolve("tickets/issues").createDirectories().resolve("01-$key.md").writeText("# Drawn\n\nStatus: ready-for-agent\n\n$body\n")
+        return "/runs/$run/tickets/01-$key"
+    }
+
+    private fun requests(): () -> List<String> {
+        val seen = mutableListOf<String>()
+        page.onRequest { synchronized(seen) { seen += it.url() } }
+        return { synchronized(seen) { seen.toList() } }
+    }
+
+    private fun mermaid(source: String) = "```mermaid\n$source\n```"
+
+    @Test
+    fun `a mermaid block in a Ticket shows as a diagram, with Mermaid served by Ants`() = browse {
+        val requested = requests()
+        page.navigate(url(ticketWith("drawn", mermaid("flowchart LR\n  Spec --> Ticket"))))
+        assertThat(page.locator("#ticket svg", Page.LocatorOptions().setHasText("Ticket"))).isVisible()
+        assertThat(page.locator("#ticket code.language-mermaid")).isHidden()
+        val all = requested()
+        assertTrue(all.any { it.startsWith(url("/vendor/mermaid/")) }, "Mermaid comes from /vendor/mermaid/: $all")
+        assertTrue(all.all { it.startsWith(url("/")) || it.startsWith("data:") }, "every request goes to Ants: $all")
+    }
+
+    private val brokenSource get() = page.locator("#ticket code.language-mermaid")
+    private val mermaidError get() = page.locator("#ticket .mermaid-error")
+
+    private fun resolvedColour(variable: String) = page.evaluate(
+        "v => { const p = document.body.appendChild(document.createElement('i')); p.style.color = `var(\${v})`; const c = getComputedStyle(p).color; p.remove(); return c }",
+        variable,
+    ) as String
+
+    private fun assertBrokenDiagramShowsItsSourceAndError() {
+        assertThat(brokenSource).isVisible()
+        assertThat(brokenSource).containsText("Spec --> --> ]")
+        assertThat(mermaidError).isVisible()
+        assertThat(mermaidError).containsText("Parse error")
+        assertThat(mermaidError).hasCSS("background-color", resolvedColour("--badSoft"))
+        assertThat(mermaidError).hasCSS("color", resolvedColour("--badText"))
+        assertThat(page.locator("#ticket .mermaid")).hasCount(0)
+        assertThat(page.locator("svg[aria-roledescription=error], [id^=dmermaid-]")).hasCount(0)
+        assertThat(page.getByText("Syntax error in text")).hasCount(0)
+        val (errorRight, ticketRight) = (page.locator("#ticket").evaluate(
+            "e => [e.querySelector('.mermaid-error').getBoundingClientRect().right, e.getBoundingClientRect().right]",
+        ) as List<*>).map { (it as Number).toDouble() }
+        assertTrue(errorRight <= ticketRight, "the error ends at ${errorRight}px, past the Ticket's ${ticketRight}px")
+    }
+
+    @Test
+    fun `an invalid mermaid block keeps its source and shows Mermaid's error beside it, on desktop and phone`() = browse {
+        val ticket = ticketWith("broken", mermaid("flowchart LR\n  Spec --> --> ]"))
+        page.navigate(url(ticket))
+        assertBrokenDiagramShowsItsSourceAndError()
+        onPhone()
+        page.navigate(url(ticket))
+        assertBrokenDiagramShowsItsSourceAndError()
+        assertNoSidewaysScroll()
+        page.waitForTimeout(500.0)
+        assertThat(mermaidError).hasCount(1)
+    }
+
+    private data class DiagramColours(val node: String, val border: String, val label: String, val edge: String)
+
+    private val lightDiagram = DiagramColours("rgb(238, 242, 255)", "rgb(79, 70, 229)", "rgb(15, 23, 42)", "rgb(100, 116, 139)")
+    private val darkDiagram = DiagramColours("rgb(31, 34, 69)", "rgb(129, 140, 248)", "rgb(230, 232, 238)", "rgb(139, 148, 165)")
+
+    private fun drawnColours() = (page.locator("#ticket .mermaid svg").evaluateAll(
+        "svgs => svgs.map(svg => { const style = s => getComputedStyle(svg.querySelector(s)); const node = style('.node rect'); " +
+            "return [node.fill, node.stroke, style('.nodeLabel').color, style('.flowchart-link').stroke] })",
+    ) as List<*>).map { colours -> (colours as List<*>).map { it as String }.let { (node, border, label, edge) -> DiagramColours(node, border, label, edge) } }
+
+    private fun assertDiagramDrawnIn(expected: DiagramColours, theme: String) = eventually {
+        val drawn = drawnColours()
+        assertTrue(drawn.isNotEmpty(), "a diagram is drawn on $theme")
+        assertEquals(List(drawn.size) { expected }, drawn, "every diagram on $theme")
+        assertEquals(DiagramColours(resolvedColour("--accSoft"), resolvedColour("--acc"), resolvedColour("--text"), resolvedColour("--muted")), expected, "Ants' colours on $theme")
+    }
+
+    @Test
+    fun `a diagram is drawn in Ants' light or dark colours, as the theme setting says`() = browse {
+        val ticket = ticketWith("coloured", mermaid("flowchart LR\n  Spec --> Ticket"))
+        for ((theme, system, expected) in listOf(
+            Triple("light", ColorScheme.DARK, lightDiagram), Triple("dark", ColorScheme.LIGHT, darkDiagram),
+            Triple("system", ColorScheme.LIGHT, lightDiagram), Triple("system", ColorScheme.DARK, darkDiagram),
+        )) {
+            settings(null, "theme: $theme\n")
+            page.emulateMedia(Page.EmulateMediaOptions().setColorScheme(system))
+            page.navigate(url(ticket))
+            assertThat(page.locator("#ticket .mermaid svg")).isVisible()
+            assertDiagramDrawnIn(expected, "$theme with the system $system")
+        }
+    }
+
+    @Test
+    fun `on the system theme, every diagram is drawn again in the new colours when the system switches light and dark`() = browse {
+        val ticket = ticketWith("switched", mermaid("flowchart LR\n  Spec --> Ticket") + "\n\n" + mermaid("flowchart LR\n  Ticket --> Report"))
+        settings(null, "theme: system\n")
+        page.emulateMedia(Page.EmulateMediaOptions().setColorScheme(ColorScheme.LIGHT))
+        page.navigate(url(ticket))
+        assertThat(page.locator("#ticket .mermaid svg")).hasCount(2)
+        assertDiagramDrawnIn(lightDiagram, "the light system")
+        page.evaluate("window.antsNotReloaded = true")
+        page.emulateMedia(Page.EmulateMediaOptions().setColorScheme(ColorScheme.DARK))
+        assertDiagramDrawnIn(darkDiagram, "the dark system")
+        page.emulateMedia(Page.EmulateMediaOptions().setColorScheme(ColorScheme.LIGHT))
+        assertDiagramDrawnIn(lightDiagram, "the light system again")
+        assertThat(page.locator("#ticket .mermaid svg")).hasCount(2)
+        assertThat(page.locator("#ticket code.language-mermaid")).hasCount(2)
+        assertThat(page.locator("#ticket code.language-mermaid").first()).isHidden()
+        assertEquals(true, page.evaluate("window.antsNotReloaded ?? false"))
+    }
+
+    @Test
+    fun `an invalid mermaid block's error reads on light and dark`() = browse {
+        val ticket = ticketWith("broken-themed", mermaid("flowchart LR\n  Spec --> --> ]"))
+        for ((theme, background, text) in listOf(
+            Triple("light", "rgb(253, 236, 236)", "rgb(153, 27, 27)"), Triple("dark", "rgb(44, 20, 22)", "rgb(252, 165, 165)"),
+        )) {
+            settings(null, "theme: $theme\n")
+            page.navigate(url(ticket))
+            assertBrokenDiagramShowsItsSourceAndError()
+            assertThat(mermaidError).hasCSS("background-color", background)
+            assertThat(mermaidError).hasCSS("color", text)
+        }
+    }
+
+    @Test
+    fun `a Ticket without a mermaid block loads no Mermaid`() = browse {
+        val requested = requests()
+        page.navigate(url(ticketWith("plain", "```kotlin\nval drawn = false\n```")))
+        page.waitForLoadState(LoadState.NETWORKIDLE)
+        assertThat(page.locator("#ticket code.language-kotlin")).isVisible()
+        val all = requested()
+        assertTrue(all.none { "/vendor/mermaid/" in it }, "no Mermaid on a page without a diagram: $all")
+    }
+
+    @Test
+    fun `a mermaid block added after load renders, and one inside live stays code until it moves out`() = browse {
+        page.navigate(url(ticketWith("added", "No diagram yet.")))
+        page.evaluate(
+            """() => {
+                const block = text => { const md = document.createElement('div'); md.className = 'md'; const pre = document.createElement('pre'), code = document.createElement('code');
+                    code.className = 'language-mermaid'; code.textContent = text; pre.append(code); md.append(pre); return md; };
+                const live = document.createElement('div'); live.id = 'live'; live.append(block('flowchart LR\n  Streaming --> Landed'));
+                document.querySelector('#ticket').after(block('flowchart LR\n  Added --> Later'), live);
+            }""",
+        )
+        assertThat(page.locator("svg", Page.LocatorOptions().setHasText("Later"))).isVisible()
+        page.waitForTimeout(500.0)
+        assertThat(page.locator("#live code.language-mermaid")).isVisible()
+        assertThat(page.locator("#live svg")).hasCount(0)
+        page.evaluate("() => document.querySelector('#live').before(document.querySelector('#live .md'))")
+        assertThat(page.locator("svg", Page.LocatorOptions().setHasText("Landed"))).isVisible()
+    }
+
+    @Test
+    fun `mermaid runs at its strict security level, so a diagram's labels inject no HTML`() = browse {
+        page.navigate(url(ticketWith("strict", mermaid("flowchart LR\n  A[\"<img src=x onerror=window.antsInjected=1>\"] --> B\n  click A call alert()"))))
+        assertThat(page.locator("#ticket svg", Page.LocatorOptions().setHasText("B"))).isVisible()
+        assertThat(page.locator("#ticket svg :is([onerror], [onclick], script)")).hasCount(0)
+        assertEquals(null, page.evaluate("window.antsInjected ?? null"))
+    }
+
+    private val wideDiagram = mermaid("flowchart LR\n  " + (1..14).joinToString(" --> ") { "Step$it[A long step named number $it]" })
+
+    private fun assertWideDiagramScrollsInsideItsBox() = eventually {
+        val (body, box, boxRight, scrolled) = (page.locator("#ticket").evaluate(
+            "e => { const b = e.querySelector('.mermaid'); b.scrollLeft = 100; " +
+                "return [e.getBoundingClientRect().width, b.getBoundingClientRect().width, b.getBoundingClientRect().right, b.scrollLeft] }",
+        ) as List<*>).map { (it as Number).toDouble() }
+        assertTrue(body <= 860, "the Ticket is ${body}px wide")
+        assertTrue(box <= body, "the diagram's box is ${box}px, wider than the Ticket's ${body}px")
+        assertTrue(boxRight <= page.viewportSize()!!.width, "the diagram's box ends at ${boxRight}px")
+        assertTrue(scrolled > 0, "the wide diagram scrolls sideways inside its own box")
+    }
+
+    @Test
+    fun `a wide diagram stays within the rendered body's measure and scrolls inside its box, on a wide page and on a phone`() = browse {
+        val ticket = ticketWith("wide", wideDiagram)
+        page.setViewportSize(1920, 1080)
+        page.navigate(url(ticket))
+        assertThat(page.locator("#ticket .mermaid svg")).isVisible()
+        assertWideDiagramScrollsInsideItsBox()
+        onPhone()
+        page.navigate(url(ticket))
+        assertThat(page.locator("#ticket .mermaid svg")).isVisible()
+        assertWideDiagramScrollsInsideItsBox()
+        assertNoSidewaysScroll()
     }
 
     private val wideMarkdown = "| Class | Test | Policy | Clock | Ledger | Gateway |\n|---|---|---|---|---|---|\n" +
