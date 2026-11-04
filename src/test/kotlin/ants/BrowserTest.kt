@@ -2002,6 +2002,65 @@ class BrowserTest : AntsTest() {
         assertThat(sidebar).isHidden()
     }
 
+    private val dashboardsToggle get() = sidebar.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Dashboards"))
+    private val dashboardsList get() = page.locator("#dashboards-list")
+
+    @Test
+    fun `the Dashboards toggle sits right below Home, closed at first, and every page the server draws keeps it as it was left`() = browse {
+        page.navigate(url("/runs"))
+        assertEquals("Home", sidebar.locator("xpath=./*[self::a or self::button]").nth(0).textContent()!!.trim())
+        assertThat(sidebar.locator("xpath=./*[self::a or self::button]").nth(1)).hasId("dashboards-toggle")
+        assertThat(dashboardsToggle).hasAttribute("aria-expanded", "false")
+        assertThat(dashboardsList).isHidden()
+
+        dashboardsToggle.click()
+        assertThat(dashboardsList).isVisible()
+        assertThat(dashboardsList.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("+ Add Dashboard"))).isVisible()
+        page.navigate(url("/processes"))
+        assertThat(dashboardsToggle).hasAttribute("aria-expanded", "true")
+        assertThat(dashboardsList).isVisible()
+        val plain = page.context().browser()!!.newContext(NewContextOptions().setJavaScriptEnabled(false)).apply { addCookies(page.context().cookies()) }.newPage()
+        plain.navigate(url("/tickets"))
+        assertThat(plain.locator("#dashboards-list")).isVisible() // drawn open by the server, before any script runs
+        plain.close()
+
+        dashboardsToggle.click()
+        assertThat(dashboardsList).isHidden()
+        page.navigate(url("/runs"))
+        assertThat(dashboardsList).isHidden()
+    }
+
+    @Test
+    fun `Add Dashboard opens an Untitled dashboard with its title selected, which saves as typed and names it in the menu`() = browse {
+        page.navigate(url("/"))
+        dashboardsToggle.click()
+        dashboardsList.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("+ Add Dashboard")).click()
+        page.waitForURL(Pattern.compile(".*/dashboards/d-[a-z0-9]{6}$"))
+        val title = page.locator("h1#title")
+        assertThat(title).hasText("Untitled dashboard")
+        assertThat(title).isFocused()
+        assertThat(page.locator("#no-widgets")).containsText("No Widgets yet")
+
+        page.keyboard().type("Disk use")
+        assertThat(title).hasText("Disk use")
+        assertThat(page.locator("#saved")).hasText("Saving…")
+        assertThat(page.locator("#saved")).hasText("Saved")
+        val link = dashboardsList.locator("a[href='${page.url().substringAfter(port.toString())}']")
+        assertThat(link).hasText("Disk use")
+        assertThat(link).hasClass(Pattern.compile("\\bon\\b"))
+        page.reload()
+        assertThat(title).hasText("Disk use")
+
+        title.click()
+        page.keyboard().press("ControlOrMeta+A")
+        page.keyboard().press("Backspace")
+        page.keyboard().press("Enter")
+        assertThat(title).hasText("Untitled dashboard")
+        assertThat(link).hasText("Untitled dashboard")
+        page.reload()
+        assertThat(title).hasText("Untitled dashboard")
+    }
+
     private val tapTargets = "button, .btn, .topbar a, .topbar label, nav.side a, .tabs a, .fold > summary, .spine a, .walk nav a, .crumbs a, :is(.chipsel, .tags) .c, [role=tab]"
     private val textFields = "input:not([type=checkbox], [type=radio], [type=hidden], [type=file]), select, textarea, .cm-content"
 

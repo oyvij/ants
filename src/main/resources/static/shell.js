@@ -180,10 +180,20 @@ if (ask && navigator.setAppBadge && window.Notification?.permission === 'default
     ask.hidden = false;
     ask.querySelector('button').onclick = () => Notification.requestPermission().then(() => ask.hidden = true);
 }
-// The sidebar marks the page it is on, or the page a deeper one sits under.
+// The sidebar marks the page it is on, or the page a deeper one sits under: a Dashboard marks its own link.
 for (const link of document.querySelectorAll('nav.side > a')) {
     if (link.pathname === '/' ? location.pathname === '/' : location.pathname.startsWith(link.pathname)) link.classList.add('on');
 }
+for (const link of document.querySelectorAll('#dashboards-list a')) if (link.pathname === location.pathname) link.classList.add('on');
+
+// The menu's Dashboards toggle. Its cookie keeps it open or closed, so the server draws every page's menu that way.
+const dashboards = document.getElementById('dashboards-toggle');
+if (dashboards) dashboards.onclick = () => {
+    const open = dashboards.ariaExpanded !== 'true';
+    dashboards.ariaExpanded = String(open);
+    document.getElementById('dashboards-list').hidden = !open;
+    document.cookie = `dashboards-menu=${open ? 'open' : 'closed'}; path=/; max-age=31536000; samesite=lax`;
+};
 
 document.addEventListener('click', event => {
     if (!menu?.checked || event.target.closest('label[for=menu], #menu')) return;

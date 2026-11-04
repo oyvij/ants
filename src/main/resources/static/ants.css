@@ -69,6 +69,15 @@ svg.i { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-widt
 :root:has(meta[name=color-scheme][content=light]) .to-light, :root:has(meta[name=color-scheme][content=dark]) .to-dark { display: none; }
 @media (prefers-color-scheme: light) { :root:has(meta[name=color-scheme][content="light dark"]) .to-light { display: none; } }
 @media (prefers-color-scheme: dark) { :root:has(meta[name=color-scheme][content="light dark"]) .to-dark { display: none; } }
+/* The Dashboards toggle reads as a link, its chevron turned down while open; its list sits indented under it. */
+.side #dashboards-toggle, .side #dashboards-list button { width: 100%; background: none; border: 0; box-shadow: none; justify-content: flex-start; gap: 10px; padding: 7px 10px; border-radius: 8px; font-size: 14px; font-weight: 500; color: var(--sideText); line-height: 1.5; }
+.side #dashboards-toggle:hover, .side #dashboards-list button:hover { background: var(--side2); color: #e5e7eb; }
+.side #dashboards-toggle .chev { margin-left: auto; width: 14px; height: 14px; transition: transform .15s; } .side #dashboards-toggle[aria-expanded=true] .chev { transform: rotate(90deg); }
+#dashboards-list { display: flex; flex-direction: column; gap: 2px; } #dashboards-list[hidden] { display: none; }
+#dashboards-list a, .side #dashboards-list button { padding: 5px 10px 5px 37px; font-size: 13px; min-width: 0; }
+#dashboards-list a .clip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.side #dashboards-list button.add { color: #d9a877; }
+#dashboards-list form { margin: 0; }
 #menu, .topbar { display: none; }
 .topbar { position: sticky; top: 0; z-index: 9; align-items: center; gap: 4px; padding: 6px 8px 6px 16px; background: var(--side); color: var(--sideText); color-scheme: dark; }
 .topbar .logo { padding: 0; margin-right: auto; }
@@ -90,6 +99,11 @@ main.full .composer > :is(div, form) { max-width: none; padding-inline: 24px; }
 .ph h1 { font-size: 22px; letter-spacing: -.01em; margin: 0; } .ph h1 a { color: inherit; } .ph .sub { width: 100%; color: var(--muted); margin-top: -6px; }
 .ph .acts { margin-left: auto; display: flex; gap: 8px; align-items: center; }
 .ph .acts form { margin: 0; }
+/* A Dashboard's page: its title is edited in place; an empty Dashboard, or none at all, says what to do. */
+.dashboard .ph h1#title { padding: 2px 6px; margin-left: -6px; border-radius: 6px; outline: none; min-width: 2ch; overflow-wrap: anywhere; }
+.dashboard .ph h1#title:hover { background: var(--hover); } .dashboard .ph h1#title:focus { background: var(--panel); box-shadow: 0 0 0 2px var(--acc); }
+.dashboard #saved { min-width: 60px; }
+.dashboard .empty { margin: 80px auto; max-width: 420px; text-align: center; color: var(--muted); } .dashboard .empty > b:first-child { display: block; color: var(--text); font-size: 16px; margin-bottom: 6px; }
 h2 { font-size: 14px; margin: 32px 0 12px; letter-spacing: .01em; }
 .muted { color: var(--muted); } .small { font-size: 12.5px; }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sh); padding: 20px 22px; margin-bottom: 16px; }

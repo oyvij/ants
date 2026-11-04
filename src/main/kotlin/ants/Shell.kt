@@ -17,12 +17,25 @@ import org.springframework.web.bind.annotation.ResponseBody
 
 /**
  * What the sidebar shows on every page, read only when a page renders it: the Notification list count, the Runs line
- * ("✻ 2 working" while Agent Tasks run, else "3 live"), the running version, and a toast left by an action that moved
+ * ("✻ 2 working" while Agent Tasks run, else "3 live"), the Dashboards, the running version, and a toast left by an action that moved
  * on to another page. The page's stream ([Live]) keeps the count and the Runs line live, and brings the pause and
  * update notices.
  */
-class Shell(val csrf: CsrfToken?, val version: String, waiting: () -> Int, working: () -> Int, live: () -> Long, session: HttpSession?) {
+class Shell(
+    val csrf: CsrfToken?,
+    val version: String,
+    waiting: () -> Int,
+    working: () -> Int,
+    live: () -> Long,
+    session: HttpSession?,
+    dashboards: () -> List<Dashboard> = ::emptyList,
+    /** Whether the menu's Dashboards toggle is open, as its cookie keeps it. */
+    val dashboardsOpen: Boolean = false,
+) {
     val waiting by lazy(waiting)
+
+    /** The Dashboards the menu lists under its toggle. */
+    val dashboards by lazy(dashboards)
 
     /** Agent Tasks running now, across all Runs. */
     val working by lazy(working)
@@ -55,6 +68,7 @@ class ShellAdvice(
     private val launcher: AgentLauncher,
     private val history: HistoryService,
     private val build: BuildProperties,
+    private val dashboards: Dashboards,
 ) {
     @ModelAttribute("shell")
     fun shell(request: HttpServletRequest) = Shell(
@@ -64,6 +78,8 @@ class ShellAdvice(
         { launcher.running },
         { history.liveRuns() },
         request.getSession(false),
+        dashboards::all,
+        request.cookies.orEmpty().any { it.name == DashboardsPage.MENU && it.value == "open" },
     )
 }
 

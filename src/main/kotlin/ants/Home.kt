@@ -37,7 +37,7 @@ class Home(
 ) {
     @GetMapping("/")
     fun home(model: Model): String {
-        model.addAllAttributes(dashboard())
+        model.addAllAttributes(glance())
         val hour = LocalTime.now(clock).hour
         model.addAttribute("greeting", if (hour < 12) "Good morning" else if (hour < 18) "Good afternoon" else "Good evening")
         model.addAttribute("processes", listed())
@@ -52,7 +52,7 @@ class Home(
     }
 
     /** The live part of Home as HTML, sent on connect and whenever it changes. */
-    fun live(): Part = streams.rendered("home", "dashboard.kte") { dashboard() }
+    fun live(): Part = streams.rendered("home", "glance.kte") { glance() }
 
     /**
      * The Ready mark of each listed Process as HTML, Home's, or the Processes list's for [list], sent once their pre-Run
@@ -73,7 +73,8 @@ class Home(
     fun pauses(csrf: CsrfToken): Part =
         streams.rendered("pauses", "pill.kte", csrf) { mapOf("pauses" to launcher.pauses().mapValues { clock.local(it.value) }) }
 
-    private fun dashboard(): Map<String, Any> = mapOf(
+    /** Home's glance (`glance.kte`): the stats, Waiting on you, Working now and Coming up. */
+    private fun glance(): Map<String, Any> = mapOf(
         "entries" to notifications.entries(),
         "running" to launcher.running,
         "cap" to settings.agentTasks(),
