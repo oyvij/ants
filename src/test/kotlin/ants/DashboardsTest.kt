@@ -90,6 +90,30 @@ class DashboardsTest : AntsTest() {
         }
     }
 
+    @Test
+    fun `a new Dashboard goes to the bottom of the menu, a rename keeps its place, and the order dragged survives a restart`() {
+        val home = tempHome()
+        fun url(ants: Any) = "http://127.0.0.1:${(ants as WebServerApplicationContext).webServer!!.port}"
+        val (c, b, d) = startAnother(home).use { ants ->
+            val browser = Browser(url(ants)).also { it.login() }
+            val (a, b, c) = List(3) { add(browser) }
+            browser.post("/dashboards/$a/title", mapOf("title" to "Zebra"))
+            assertEquals(listOf(a, b, c), menu(browser.get("/").body).map { it.first })
+
+            assertEquals(200, browser.post("/dashboards/order", mapOf("order" to "$c,$a,$b")).status)
+            assertEquals(listOf(c, a, b), menu(browser.get("/").body).map { it.first })
+            val d = add(browser)
+            assertEquals(listOf(c, a, b, d), menu(browser.get("/").body).map { it.first })
+            browser.post("/dashboards/$a/delete", mapOf("confirm" to "on"))
+            Triple(c, b, d)
+        }
+        startAnother(home).use { ants ->
+            val browser = Browser(url(ants)).also { it.login() }
+            assertEquals(listOf(c, b, d), menu(browser.get("/").body).map { it.first })
+            assertEquals(400, browser.post("/dashboards/order", mapOf("order" to "../x")).status)
+        }
+    }
+
     /** **+ Widget**, number: the new Widget's id. */
     private fun addWidget(dashboard: String, type: String = "number"): String =
         answer(browser.post("/dashboards/$dashboard/widgets", mapOf("type" to type)))["id"].toString()

@@ -76,7 +76,7 @@ data class Placement(val id: String, val x: Int, val y: Int, val w: Int, val h: 
 
 /**
  * The user's Dashboards, each in its own folder in ANTS_HOME, `dashboards/<id>/`: its title and Widgets in
- * `dashboard.yaml`, each Widget's latest Post beside it in `<widget>.json`. Every change is kept as it is made, with no
+ * `dashboard.yaml`, each Widget's latest Post beside it in `<widget>.json`; the user's order of them in `dashboards/order.yaml`. Every change is kept as it is made, with no
  * Draft; nothing goes in the engine's tables. Every Post goes through [post], which alone checks it against its Widget.
  */
 @Component
@@ -84,10 +84,28 @@ class Dashboards(@Value("\${ants.home}") home: Path, private val clock: Clock) {
     private val folder = home.resolve("dashboards")
     private val json = JsonMapper.shared()
 
-    /** Every Dashboard, oldest first. */
-    fun all(): List<Dashboard> =
-        if (!folder.isDirectory()) emptyList()
-        else folder.listDirectoryEntries().filter { ID.matches(it.name) }.mapNotNull { find(it.name) }.sortedBy { it.created }
+    private val order = folder.resolve("order.yaml")
+
+    /** Every Dashboard in the user's order, kept in `dashboards/order.yaml`; any it doesn't list follow, oldest first. */
+    fun all(): List<Dashboard> {
+        if (!folder.isDirectory()) return emptyList()
+        val kept = order().withIndex().associate { (index, id) -> id to index }
+        return folder.listDirectoryEntries().filter { ID.matches(it.name) }.mapNotNull { find(it.name) }
+            .sortedWith(compareBy({ kept[it.id] ?: Int.MAX_VALUE }, { it.created }))
+    }
+
+    /** Puts the Dashboards in the order of [ids]; any Dashboard they leave out keeps its place after them. */
+    @Synchronized
+    fun reorder(ids: List<String>) {
+        ids.firstOrNull { !ID.matches(it) }?.let { throw ResponseStatusException(HttpStatus.BAD_REQUEST, "No Dashboard id: $it") }
+        val all = all().map { it.id }
+        keep(ids.distinct().filter { it in all } + all.filter { it !in ids })
+    }
+
+    private fun order(): List<String> =
+        if (order.exists()) (Yaml().load<Any?>(order.readText()) as? List<*>).orEmpty().map { "$it" } else emptyList()
+
+    private fun keep(ids: List<String>) = order.writeAtomically(yaml.dump(ids))
 
     fun find(id: String): Dashboard? {
         val file = file(id)?.takeIf { it.exists() } ?: return null
@@ -103,11 +121,12 @@ class Dashboards(@Value("\${ants.home}") home: Path, private val clock: Clock) {
         )
     }
 
-    /** A new "Untitled dashboard" with a random id no Dashboard has. */
+    /** A new "Untitled dashboard" with a random id no Dashboard has, at the bottom of the order. */
     @Synchronized
     fun create(): Dashboard {
         val id = newId(DASHBOARD_ID) { folder.resolve(it).exists() }
-        return Dashboard(id, UNTITLED, clock.instant()).also(::write)
+        val below = all().map { it.id }
+        return Dashboard(id, UNTITLED, clock.instant()).also(::write).also { keep(below + id) }
     }
 
     /** Renames [id] to [title], trimmed; an empty title is "Untitled dashboard". The id never changes. */
@@ -118,6 +137,7 @@ class Dashboards(@Value("\${ants.home}") home: Path, private val clock: Clock) {
     fun delete(id: String) {
         get(id)
         folder.resolve(id).toFile().deleteRecursively()
+        keep(order() - id)
     }
 
     fun get(id: String) = find(id) ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No Dashboard $id")
@@ -258,6 +278,14 @@ class DashboardsPage(private val dashboards: Dashboards, private val names: RunN
     /** **+ Add Dashboard**: an "Untitled dashboard", opened with its title selected (`?new`). */
     @PostMapping("/dashboards")
     fun create() = "redirect:/dashboards/${dashboards.create().id}?new"
+
+    /** The menu's Dashboards dragged into a new order, [order] their ids comma-separated, kept. */
+    @PostMapping("/dashboards/order")
+    @ResponseBody
+    fun reorder(@RequestParam order: String): Map<String, List<String>> {
+        dashboards.reorder(order.split(',').map(String::trim).filter(String::isNotEmpty))
+        return mapOf("order" to dashboards.all().map { it.id })
+    }
 
     /** The title as typed, saved; answers the title kept, which an emptied one makes "Untitled dashboard". */
     @PostMapping("/dashboards/{id}/title")
