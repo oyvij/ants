@@ -1,0 +1,275 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Ants · Dashboards</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/gridstack@10.3.1/dist/gridstack.min.css">
+<script src="https://cdn.jsdelivr.net/npm/gridstack@10.3.1/dist/gridstack-all.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/vega@6"></script>
+<script src="https://cdn.jsdelivr.net/npm/vega-lite@6"></script>
+<script src="https://cdn.jsdelivr.net/npm/vega-embed@7"></script>
+<style>
+  :root { --bg:#f6f1ea; --card:#fff; --ink:#2b2118; --mute:#8a7a6b; --line:#e5dccf; --accent:#8b5a2b; --soft:#f1e6d8; --ok:#3f8f4f; --warn:#c98a1a; --fail:#b8412f; --run:#3a6ea5; }
+  [hidden] { display:none !important } * { box-sizing:border-box } body { margin:0; font:14px/1.4 system-ui,sans-serif; background:var(--bg); color:var(--ink); display:flex; height:100vh; overflow:hidden }
+  button, input { font:inherit; padding:6px 10px; border:1px solid #d8ccbb; border-radius:6px; background:#fff; color:var(--ink); cursor:pointer }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent) } button.ghost { border-color:transparent; background:none }
+  /* sidebar, laid out like Ants' menu */
+  nav { width:230px; background:var(--card); border-right:1px solid var(--line); display:flex; flex-direction:column; padding-bottom:10px; overflow:auto }
+  nav .brand { padding:14px 16px; font-weight:700; color:var(--accent); font-size:20px }
+  nav .grp { font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--mute); margin:14px 16px 4px }
+  nav a { display:flex; align-items:center; gap:10px; padding:7px 16px; color:var(--ink); text-decoration:none } nav a:hover { background:#faf6f0 }
+  nav a.on { background:var(--soft); font-weight:600; box-shadow:inset 3px 0 var(--accent) } nav a.off { color:var(--mute) }
+  nav svg { width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; flex:none }
+  nav .sub a { padding:5px 16px 5px 44px; font-size:13px } nav .sub a.on { font-weight:600; background:none; box-shadow:inset 3px 0 var(--accent); color:var(--accent) }
+  nav .sub .n { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap } nav .d { font-size:10px; background:var(--warn); color:#fff; border-radius:8px; padding:0 6px }
+  nav button.item { display:flex; align-items:center; gap:10px; padding:7px 16px; width:100%; border:0; border-radius:0; background:none; text-align:left }
+  nav button.item:hover { background:#faf6f0 } nav button.item.on { font-weight:600; color:var(--accent) }
+  nav .chev { margin-left:auto; transition:transform .15s } nav .open .chev { transform:rotate(90deg) }
+  nav .sub a.add { color:var(--accent) }
+  .saved { font-size:12px; color:var(--mute); min-width:60px }
+  /* main */
+  .main { flex:1; display:flex; flex-direction:column; min-width:0 }
+  header { display:flex; align-items:center; gap:10px; padding:10px 18px; background:var(--card); border-bottom:1px solid var(--line) }
+  header h1 { font-size:18px; margin:0; padding:2px 6px; border-radius:6px; outline:none } header h1:hover { background:#faf6f0 } header h1:focus { background:#fff; box-shadow:0 0 0 2px var(--soft) }
+  .live { font-size:12px; color:var(--mute) } .live::before { content:'●'; color:var(--ok); margin-right:4px } .sp { flex:1 }
+  .body { flex:1; display:flex; min-height:0 } .grid-wrap { flex:1; padding:10px; overflow:auto }
+  .empty { margin:80px auto; max-width:420px; text-align:center; color:var(--mute) } .empty b { display:block; color:var(--ink); font-size:16px; margin-bottom:6px }
+  aside { width:380px; padding:14px; border-left:1px solid var(--line); background:#fbf8f4; font-size:12px; overflow:auto } aside[hidden] { display:none }
+  aside pre { background:#2b2118; color:#f3e9dc; padding:8px; border-radius:6px; white-space:pre-wrap; word-break:break-all }
+  aside h3 { font-size:13px; margin:14px 0 6px } aside .types { display:grid; grid-template-columns:1fr 1fr; gap:6px }
+  /* widgets */
+  .grid-stack-item-content { background:var(--card); border-radius:10px; box-shadow:0 1px 3px #0002; display:flex; flex-direction:column; overflow:hidden }
+  .draft .grid-stack-item-content { border:2px dashed var(--warn); box-shadow:none; background:#fffaf2 }
+  .w-head { display:flex; align-items:center; gap:6px; padding:8px 12px; border-bottom:1px solid #f0e8dd; cursor:move }
+  .w-head .t { font-weight:600; flex:1; overflow:hidden; white-space:nowrap; text-overflow:ellipsis } .w-head code { font-size:11px; color:var(--mute) }
+  .w-head .x { border:0; padding:0 4px; color:var(--mute); background:none }
+  .badge { font-size:11px; background:var(--warn); color:#fff; border-radius:10px; padding:1px 8px; white-space:nowrap }
+  .pub { font-size:11px; padding:1px 8px; border-color:var(--warn); color:var(--warn) }
+  .w-body { flex:1; padding:10px 12px; overflow:auto; transition:background .6s } .w-body.flash { background:#fff4e0 }
+  .none { color:var(--mute); font-style:italic }
+  .num { font-size:40px; font-weight:700 } .num small { font-size:18px; color:var(--mute) } .delta { font-size:13px } .up { color:var(--ok) } .down { color:var(--fail) }
+  .bar { height:14px; background:#efe6da; border-radius:7px; overflow:hidden; margin-top:10px } .bar div { height:100%; background:var(--accent); transition:width .4s }
+  .st { display:flex; align-items:center; gap:8px; padding:3px 0 } .dot { width:10px; height:10px; border-radius:50% }
+  .dot.ok{background:var(--ok)} .dot.warn{background:var(--warn)} .dot.fail{background:var(--fail)} .dot.running{background:var(--run); animation:p 1s infinite alternate} @keyframes p{to{opacity:.3}}
+  .log { font:12px ui-monospace,monospace } .log .warn { color:var(--warn) } .log .error { color:var(--fail) } .log time { color:var(--mute); margin-right:6px }
+  .li { padding:4px 0; border-bottom:1px solid #f3ece2 } .li a { color:var(--accent); text-decoration:none } .li div { color:var(--mute); font-size:12px }
+  /* view mode is the default: text selects, nothing moves */
+  .grid-stack-item-content, .grid-stack-item-content * { user-select:text } body:not(.editing) .w-head { cursor:default }
+  body:not(.editing) .w-head .x { display:none }
+  body.editing .grid-wrap { background-image:radial-gradient(#d8ccbb 1px, transparent 1px); background-size:24px 24px }
+  body.editing .grid-stack-item-content { outline:1px dashed var(--accent); outline-offset:-1px } body.editing .w-head { background:var(--soft); user-select:none }
+  #editBtn.on { background:var(--ink); color:#fff; border-color:var(--ink) }
+  .dd { position:relative } .menu { position:absolute; right:0; top:calc(100% + 4px); z-index:20; background:#fff; border:1px solid var(--line); border-radius:8px; box-shadow:0 6px 20px #0002; padding:4px; width:250px }
+  .menu button { display:block; width:100%; text-align:left; border:0; padding:7px 10px; border-radius:6px; background:none } .menu button:hover, .menu button:focus { background:var(--soft); outline:none }
+  .menu small { display:block; color:var(--mute); font-size:12px }
+  body.editing .w-head .t { cursor:text; border-radius:4px; padding:0 4px; outline:none } body.editing .w-head .t:hover { background:#fff } body.editing .w-head .t:focus { background:#fff; box-shadow:0 0 0 2px var(--accent) }
+  .kind { font-size:11px; padding:1px 4px } body:not(.editing) .kind { display:none }
+  .menu .h { font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--mute); padding:8px 10px 2px; border-top:1px solid var(--line); margin-top:4px }
+  .menu { max-height:70vh; overflow:auto } .w-body.vg { padding:6px; overflow:hidden }
+  .text { white-space:pre-wrap } svg text { font-size:10px; fill:var(--mute) }
+</style></head>
+<body>
+<nav>
+  <div class="brand">ants</div>
+  <a class="off" href="#"><svg viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>Home</a>
+  <div id="dashGroup"><button class="item" id="navDash" aria-expanded="false"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="10" rx="1.5"/><rect x="13" y="3" width="8" height="6" rx="1.5"/><rect x="13" y="11" width="8" height="10" rx="1.5"/><rect x="3" y="15" width="8" height="6" rx="1.5"/></svg>Dashboards<svg class="chev" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></button>
+  <div class="sub" id="dashes" hidden></div></div>
+  <a class="off" href="#"><svg viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>Notification list</a>
+  <div class="grp">Work</div>
+  <a class="off" href="#"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m10 8.5 5 3.5-5 3.5z"/></svg>Runs</a>
+  <a class="off" href="#"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><path d="M6.5 10v3.5A2.5 2.5 0 0 0 9 16h5"/></svg>Processes</a>
+  <a class="off" href="#"><svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="m8 10 2 2 4-4M8 16h8"/></svg>Tickets</a>
+  <div class="grp">Library</div>
+  <a class="off" href="#"><svg viewBox="0 0 24 24"><rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 8V4M9 13v1M15 13v1"/></svg>Agents</a>
+  <a class="off" href="#"><svg viewBox="0 0 24 24"><path d="m8 7-5 5 5 5M16 7l5 5-5 5M14 4l-4 16"/></svg>Scripts</a>
+  <a class="off" href="#"><svg viewBox="0 0 24 24"><rect x="8" y="8" width="13" height="13" rx="2"/><path d="M4 16V5a1 1 0 0 1 1-1h11"/></svg>Templates</a>
+</nav>
+<div class="main" id="boardView" hidden>
+  <header>
+    <h1 id="name" contenteditable spellcheck="false" title="Click to rename"></h1><span class="saved" id="saved"></span>
+    <span class="live" id="live">live</span><span class="sp"></span>
+    <button id="editBtn" title="Move, resize, add and remove widgets">Edit layout</button>
+    <span class="dd"><button id="addBtn" class="primary" aria-haspopup="menu">+ Widget ▾</button>
+      <div class="menu" id="addMenu" role="menu" hidden></div></span>
+    <button id="apiBtn">Posting</button>
+    <button id="delBtn" class="ghost" title="Delete dashboard" aria-label="Delete dashboard"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></button>
+  </header>
+  <div class="body">
+    <div class="grid-wrap"><div class="grid-stack"></div>
+      <div class="empty" id="noDash" hidden><b>No dashboards yet</b>Open <b style="display:inline;font-size:inherit">Dashboards</b> in the menu and choose <b style="display:inline;font-size:inherit">Add Dashboard</b>.</div>
+      <div class="empty" id="empty" hidden><b>No widgets yet</b>Add one with <b style="display:inline;font-size:inherit">+ Widget</b>, or ask the Process Builder, the Template Builder or the script helper to add the widgets its Process will post to.</div>
+    </div>
+    <aside id="apiPanel" hidden>
+      <h3 style="margin-top:0">How a Process posts here</h3>
+      <p>A widget's address is <code>dashboard/widget</code>. A post with the wrong shape is refused with a message the sender can fix.</p>
+      <p>Script (<code>ants.post</code> in Ants, HTTP in the prototype):</p><pre id="curl"></pre>
+      <p>Agent or helper (MCP tools in Ants):</p>
+      <pre>list_widgets()
+create_widget(dashboard, id, type, title)   → draft
+post_to_widget(dashboard, widget, data)</pre>
+      <h3>Widgets on this dashboard</h3><pre id="contracts"></pre>
+    </aside>
+  </div>
+</div>
+<script>
+const COLORS = ['#8b5a2b','#3a6ea5','#3f8f4f','#c98a1a','#b8412f','#6b4c9a','#2a9d8f','#d4a373','#7d8597','#e76f51'];
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const api = (m, p, b) => fetch('/api' + p, { method: m, body: b && JSON.stringify(b) }).then(async r => { const j = await r.json(); if (!r.ok) throw new Error(j.error); return j; });
+const grid = GridStack.init({ cellHeight: 70, margin: 8, handle: '.w-head', float: false, staticGrid: true });
+let KINDS = [], current = null, els = {}, types = {}, loading = false;
+
+const render = {
+  number: d => `<div class="num">${esc(d.value)}<small>${esc(d.unit)}</small></div>` + (d.delta != null ? `<div class="delta ${d.delta>=0?'up':'down'}">${d.delta>=0?'▲':'▼'} ${esc(Math.abs(d.delta))} since last run</div>` : ''),
+  progress: d => { const p = d.total ? Math.round(100*d.done/d.total) : 0; return `<div class="num">${esc(d.done)}<small> / ${esc(d.total)}</small></div><div class="bar"><div style="width:${p}%"></div></div>`; },
+  status: d => d.items.map(i => `<div class="st"><span class="dot ${esc(i.state)}"></span>${esc(i.name)}<span style="margin-left:auto;color:var(--mute)">${esc(i.state)}</span></div>`).join(''),
+  list: d => d.items.map(i => `<div class="li">${i.url ? `<a href="${esc(i.url)}" target="_blank">${esc(i.title)}</a>` : esc(i.title)}${i.note ? `<div>${esc(i.note)}</div>` : ''}</div>`).join(''),
+  text: d => d.text ? `<div class="text">${esc(d.text)}</div>` : '',
+  log: d => d.lines.length ? `<div class="log">${d.lines.map(l => `<div class="${esc(l.level)}"><time>${new Date(l.at).toLocaleTimeString()}</time>${esc(l.line)}</div>`).join('')}</div>` : '',
+  chart: d => d.points.length ? 'vega' : '',
+  vega: d => d.spec ? 'vega' : '',
+};
+
+const THEME = { background: null, font: 'system-ui, sans-serif', view: { stroke: null }, range: { category: COLORS },
+  axis: { labelColor: '#8a7a6b', titleColor: '#8a7a6b', gridColor: '#f0e8dd', domainColor: '#e5dccf', tickColor: '#e5dccf', labelFontSize: 10, title: null },
+  legend: { labelColor: '#8a7a6b', orient: 'top', title: null }, line: { strokeWidth: 2 } };
+function chartSpec(kind, points) {
+  const values = points.map(p => ({ ...p, series: p.series || 'value' })), many = new Set(values.map(v => v.series)).size > 1;
+  const xt = values.every(v => typeof v.x === 'number') ? 'quantitative' : values.every(v => !isNaN(Date.parse(v.x))) ? 'temporal' : 'nominal';
+  const x = { field: 'x', type: xt }, y = { field: 'y', type: 'quantitative' }, color = { field: 'series', type: 'nominal', legend: many ? {} : null };
+  const tooltip = [{ field: 'series' }, { field: 'x', type: xt }, { field: 'y' }];
+  // Bars treat x as categories; dates keep their text and get short labels.
+  const bx = { field: 'x', type: 'ordinal', axis: { labelAngle: 0, labelOverlap: true, ...(xt === 'temporal' && { labelExpr: "timeFormat(toDate(datum.value), '%b %d')" }) } };
+  const btip = [{ field: 'series' }, { field: 'x', type: 'ordinal' }, { field: 'y' }];
+  const enc = {
+    line:    { mark: { type: 'line', point: values.length < 40 }, encoding: { x, y, color, tooltip } },
+    area:    { mark: { type: 'area', opacity: .75, line: true }, encoding: { x, y, color, tooltip } },
+    bar:     { mark: { type: 'bar', cornerRadiusEnd: 2 }, encoding: { x: bx, xOffset: { field: 'series' }, y, color, tooltip: btip } },
+    stacked: { mark: { type: 'bar', cornerRadiusEnd: 2 }, encoding: { x: bx, y, color, tooltip: btip } },
+    scatter: { mark: { type: 'point', filled: true, size: 70, opacity: .8 }, encoding: { x, y, color, tooltip } },
+    pie:     { mark: { type: 'arc' }, encoding: { theta: { field: 'y', aggregate: 'sum', type: 'quantitative' }, color: { field: 'x', type: 'nominal', legend: { orient: 'right' } }, tooltip: [{ field: 'x' }, { field: 'y', aggregate: 'sum' }] } },
+    donut:   { mark: { type: 'arc', innerRadius: 40 }, encoding: { theta: { field: 'y', aggregate: 'sum', type: 'quantitative' }, color: { field: 'x', type: 'nominal', legend: { orient: 'right' } }, tooltip: [{ field: 'x' }, { field: 'y', aggregate: 'sum' }] } },
+  }[kind || 'line'];
+  return { data: { values }, ...enc };
+}
+// Charts never fetch outside data; a spec carries its own values.
+const noUrls = Object.assign(vega.loader(), { sanitize: () => Promise.reject(new Error('dashboards do not load outside data')) });
+function embed(b, spec) {
+  const full = { $schema: 'https://vega.github.io/schema/vega-lite/v6.json', ...spec, width: Math.max(120, b.clientWidth - 12), height: Math.max(60, b.clientHeight - 12),
+    autosize: { type: 'fit', contains: 'padding' }, config: { ...THEME, ...(spec.config || {}) } };
+  vegaEmbed(b, full, { actions: false, renderer: 'svg', loader: noUrls }).catch(e => b.innerHTML = `<div class="none">Could not draw: ${esc(e.message)}</div>`);
+}
+
+function draw(w) {
+  let el = els[w.id];
+  if (!el) {
+    el = grid.addWidget({ id: w.id, x: w.x, y: w.y, w: w.w, h: w.h });
+    el.querySelector('.grid-stack-item-content').innerHTML = `<div class="w-head"></div><div class="w-body"></div>`;
+    els[w.id] = el;
+  }
+  el.classList.toggle('draft', !!w.draft);
+  if (el.querySelector('.t') === document.activeElement) { el._w = w; return; }
+  el.querySelector('.w-head').innerHTML = `<span class="t">${esc(w.title)}</span>` +
+    (w.type === 'chart' ? `<select class="kind" title="Chart type; posts stay the same">${KINDS.map(k => `<option ${k === (w.kind || 'line') ? 'selected' : ''}>${k}</option>`).join('')}</select>` : '') +
+    (w.draft ? `<span class="badge" title="Created by ${esc(w.by)}; published when its Process is saved">draft · ${esc(w.by)}</span><button class="pub">Publish</button>` : `<code title="Address Processes post to; renaming the title never changes it">${esc(w.type)} · ${esc(w.id)}</code>`) +
+    `<button class="x" title="Remove widget">✕</button>`;
+  const t = el.querySelector('.t'); t.contentEditable = document.body.classList.contains('editing'); t.spellcheck = false;
+  let timer; const saveTitle = () => { clearTimeout(timer); api('PATCH', `/dashboards/${current}/widgets/${w.id}`, { title: t.textContent }); };
+  t.oninput = () => { clearTimeout(timer); timer = setTimeout(saveTitle, 500); }; t.onblur = () => timer && saveTitle();
+  t.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); t.blur(); } };
+  const k = el.querySelector('.kind'); if (k) k.onchange = () => api('PATCH', `/dashboards/${current}/widgets/${w.id}`, { kind: k.value });
+  el.querySelector('.x').onclick = () => confirm(`Remove “${w.title}”?`) && api('DELETE', `/dashboards/${current}/widgets/${w.id}`);
+  const pub = el.querySelector('.pub'); if (pub) pub.onclick = () => api('POST', `/dashboards/${current}/widgets/${w.id}/publish`);
+  const b = el.querySelector('.w-body');
+  const html = render[w.type](w.data, b);
+  b.classList.toggle('vg', html === 'vega');
+  if (html === 'vega') {
+    const spec = () => w.type === 'vega' ? w.data.spec : chartSpec(w.kind, w.data.points);
+    requestAnimationFrame(() => embed(b, spec()));
+    b._size ??= new ResizeObserver(() => { const s = b.clientWidth + 'x' + b.clientHeight; if (b._last && b._last !== s && b._redraw) b._redraw(); b._last = s; });
+    b._redraw = () => embed(b, spec()); b._size.observe(b);
+  }
+  else b.innerHTML = html || `<div class="none">Waiting for its first post · <code>${esc(current)}/${esc(w.id)}</code></div>`;
+  if (w.type === 'log') b.scrollTop = b.scrollHeight; b.classList.add('flash'); setTimeout(() => b.classList.remove('flash'), 300);
+  el._w = w;
+}
+
+// The menu remembers whether Dashboards is open across pages (a cookie in Ants, so the server renders it right).
+const NAV_KEY = 'ants.menu.dashboards';
+const setMenuOpen = open => { $('dashes').hidden = !open; $('dashGroup').classList.toggle('open', open); $('navDash').setAttribute('aria-expanded', open); localStorage.setItem(NAV_KEY, open ? 'open' : 'closed'); };
+$('navDash').onclick = () => setMenuOpen($('dashes').hidden);
+setMenuOpen(localStorage.getItem(NAV_KEY) === 'open');
+
+async function loadNav() {
+  const list = await api('GET', '/dashboards');
+  $('navDash').classList.toggle('on', !!current);
+  $('dashes').innerHTML = list.map(d => `<a class="${d.id === current ? 'on' : ''}" href="/dashboards/${d.id}"><span class="n">${esc(d.name)}</span>${d.drafts ? `<span class="d" title="draft widgets">${d.drafts}</span>` : ''}</a>`).join('')
+    + `<a class="add" href="#" id="addDash">+ Add Dashboard</a>`;
+  // Add Dashboard makes an untitled one and opens it with its title selected, ready to type.
+  $('addDash').onclick = async e => { e.preventDefault(); const d = await api('POST', '/dashboards', {}); location.href = `/dashboards/${d.id}?new`; };
+  return list;
+}
+
+async function open(id) {
+  const list = await loadNav();
+  if (!id || !list.find(d => d.id === id)) {
+    const last = list.find(d => d.id === localStorage.getItem('ants.dashboard.last')) || list[0];
+    if (last) return location.replace('/dashboards/' + last.id);
+    $('boardView').hidden = false; $('noDash').hidden = false; document.querySelector('header').hidden = true; return;
+  }
+  current = id; localStorage.setItem('ants.dashboard.last', id);
+  const d = await api('GET', '/dashboards/' + id);
+  $('boardView').hidden = false; setEditing(false); loadNav();
+  loading = true; d.widgets.forEach(draw); $('empty').hidden = d.widgets.length > 0; loading = false;
+  $('name').textContent = d.name; document.title = d.name + ' · Ants';
+  $('curl').textContent = `curl -X POST ${location.origin}/api/dashboards/${id}/widgets/<widget> \\\n  -d '{"value": 42}'`;
+  $('contracts').textContent = d.widgets.map(w => `${id}/${w.id}  (${w.type}${w.kind ? ' · ' + w.kind : ''}${w.draft ? ', draft' : ''})\n  ${types[w.type]}`).join('\n\n') || 'none yet';
+  if (location.search === '?new') { history.replaceState({}, '', '/dashboards/' + id); const t = $('name'); t.focus(); getSelection().selectAllChildren(t); }
+}
+
+grid.on('change', (e, items) => !loading && api('POST', `/dashboards/${current}/layout`, items.map(i => ({ id: i.id, x: i.x, y: i.y, w: i.w, h: i.h }))));
+grid.on('resizestop', (e, el) => el._w && draw(el._w));
+
+// The title autosaves while you type.
+let renameTimer;
+const rename = async () => {
+  clearTimeout(renameTimer); if (!current) return;
+  const d = await api('PATCH', '/dashboards/' + current, { name: $('name').textContent });
+  document.title = d.name + ' · Ants'; $('saved').textContent = 'Saved'; loadNav();
+};
+$('name').oninput = () => { $('saved').textContent = 'Saving…'; clearTimeout(renameTimer); renameTimer = setTimeout(rename, 500); };
+$('name').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } };
+$('name').onblur = async () => { if ($('saved').textContent === 'Saving…') await rename(); if (!$('name').textContent.trim()) $('name').textContent = 'Untitled dashboard'; };
+$('delBtn').onclick = async () => current && confirm(`Delete dashboard “${$('name').textContent}” and its widgets?`) && (await api('DELETE', '/dashboards/' + current), localStorage.removeItem('ants.dashboard.last'), location.replace('/dashboards'));
+// Edit mode moves, resizes and removes widgets; view mode keeps them still so text can be selected and copied.
+const setEditing = on => { document.body.classList.toggle('editing', on); document.querySelectorAll('.w-head .t').forEach(t => t.contentEditable = on); grid.setStatic(!on); $('editBtn').classList.toggle('on', on); $('editBtn').textContent = on ? 'Done' : 'Edit layout'; };
+$('editBtn').onclick = () => setEditing(!document.body.classList.contains('editing'));
+// + Widget is a dropdown of types; picking one adds it at once with its title ready to type.
+const LABELS = { number: 'One number, with change since last run', progress: 'Done out of total', status: 'Named items that are ok, warn, fail or running',
+  chart: 'Points over time, one line per series', list: 'Titles with links and notes', text: 'A paragraph, such as an agent\'s summary', log: 'Lines added one at a time', vega: 'Any Vega-Lite chart, for agents' };
+const KIND_LABELS = { line: 'Line', area: 'Area', bar: 'Bar', stacked: 'Stacked bar', scatter: 'Scatter', pie: 'Pie', donut: 'Donut' };
+$('addBtn').onclick = e => { e.stopPropagation(); $('addMenu').hidden = !$('addMenu').hidden; if (!$('addMenu').hidden) $('addMenu').querySelector('button').focus(); };
+document.addEventListener('click', () => $('addMenu').hidden = true);
+async function addWidget(type, kind) {
+  $('addMenu').hidden = true; setEditing(true);
+  const w = await api('POST', `/dashboards/${current}/widgets`, { type, kind, title: kind ? `New ${KIND_LABELS[kind].toLowerCase()} chart` : `New ${type}` });
+  const t = (els[w.id] || await new Promise(r => setTimeout(() => r(els[w.id]), 300))).querySelector('.t');
+  t.contentEditable = true; t.focus(); getSelection().selectAllChildren(t); els[w.id].scrollIntoView({ block: 'nearest' });
+}
+document.addEventListener('keydown', e => e.key === 'Escape' && document.body.classList.contains('editing') && setEditing(false)); $('apiBtn').onclick = () => $('apiPanel').hidden = !$('apiPanel').hidden;
+
+const es = new EventSource('/api/events');
+es.addEventListener('widget', e => { const m = JSON.parse(e.data); if (m.dashboard === current) draw(m.widget); });
+es.addEventListener('added', e => { const m = JSON.parse(e.data); if (m.dashboard === current) { draw(m.widget); $('empty').hidden = true; } });
+es.addEventListener('removed', e => { const m = JSON.parse(e.data); if (m.dashboard === current && els[m.id]) { grid.removeWidget(els[m.id]); delete els[m.id]; $('empty').hidden = Object.keys(els).length > 0; } });
+es.addEventListener('dashboards', e => { const m = JSON.parse(e.data); m.deleted && m.deleted === current ? location.replace('/dashboards') : loadNav(); });
+es.onerror = () => $('live').textContent = 'reconnecting'; es.onopen = () => $('live').textContent = 'live';
+
+(async () => {
+  types = await api('GET', '/types');
+  KINDS = await api('GET', '/kinds');
+  $('addMenu').innerHTML = Object.keys(types).filter(t => t !== 'chart' && t !== 'vega').map(t => `<button role="menuitem" data-t="${t}"><b>${t}</b><small>${LABELS[t]}</small></button>`).join('')
+    + `<div class="h">Charts · all take points {x, y, series?}</div>`
+    + KINDS.map(k => `<button role="menuitem" data-t="chart" data-k="${k}"><b>${KIND_LABELS[k]}</b></button>`).join('')
+    + `<button role="menuitem" data-t="vega"><b>Custom chart</b><small>${LABELS.vega}</small></button>`;
+  $('addMenu').querySelectorAll('button').forEach(b => b.onclick = () => addWidget(b.dataset.t, b.dataset.k));
+  open(location.pathname.split('/dashboards/')[1]);
+})();
+</script></body></html>

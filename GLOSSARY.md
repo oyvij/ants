@@ -248,3 +248,19 @@ _Avoid_: summary, log
 The one list of everything waiting on the user: a Task of any Run, such as a Round or a **Permission
 request**, or a scheduled Run that couldn't start; each entry leads to it.
 _Avoid_: inbox, alerts
+
+### Showing work
+
+**Dashboard**:
+A named grid of Widgets the user arranges and Runs Post to; every change to it is kept as it is made, with no
+Draft or Publish.
+_Avoid_: board, panel, report
+
+**Widget**:
+One tile on a Dashboard, whose type fixes the data it accepts; its title can change, its id never does.
+_Avoid_: tile, card, panel
+
+**Post**:
+Data a Run sends to one Widget, which the Widget adds to what it holds or puts in its place, as its type says;
+it remembers the Run and Task that sent it.
+_Avoid_: publish, push, update
