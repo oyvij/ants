@@ -1,6 +1,7 @@
 package ants
 
 import org.junit.jupiter.api.Test
+import java.time.LocalDate
 import kotlin.io.path.isDirectory
 import kotlin.io.path.writeText
 import kotlin.test.assertContains
@@ -95,6 +96,21 @@ class RunTest : AntsTest() {
     }
 
     @Test
+    fun `Ended shows the 10 latest Runs, and Load more 10 more at a time, in the page and its stream`() {
+        browser.import("start-end.bpmn")
+        val ids = List(12) { start("start-end").path.removePrefix("/runs/") }.reversed()
+        fun shown(html: String) = Regex("""data-href="/runs/([^"]+)"""").findAll(html.substringAfter("<h2>Ended</h2>")).map { it.groupValues[1] }.toList()
+        val first = browser.get("/runs").body
+        assertEquals(ids.take(10), shown(first))
+        assertContains(first, """<div class="more"><a class="btn" href="/runs?ended=20" data-more="20">Load more</a></div>""")
+        val more = browser.get("/runs?ended=20").body
+        assertEquals(ids, shown(more))
+        assertFalse("Load more" in more)
+        assertEquals(ids, shown(browser.events("runlist&ended=20", "runlist").take()))
+        assertEquals(ids.take(10), shown(browser.events("runlist", "runlist").take()))
+    }
+
+    @Test
     fun `an ended Run's row offers its Report, and a cancelled one's Dismiss`() {
         browser.import("start-end.bpmn")
         val done = start("start-end").path.removePrefix("/runs/")
@@ -105,5 +121,15 @@ class RunTest : AntsTest() {
         assertContains(ended, Regex("""data-href="/runs/$done">.*?<span class="pill p-done">Done · \d\d:\d\d</span>.*?<a href="/runs/$done/report">Report</a>""", RegexOption.DOT_MATCHES_ALL))
         assertContains(ended, Regex("""data-href="/runs/$cancelled">.*?<span class="pill p-failed">Cancelled · \d\d:\d\d</span>.*?<form method="post" action="/runs/$cancelled/dismiss">""", RegexOption.DOT_MATCHES_ALL))
         assertFalse("/runs/$done\"" in runs("Live"))
+    }
+
+    @Test
+    fun `an ended Run's row ends with the date and time it started and how long it took`() {
+        importLoopThenWait()
+        val cancelled = start("loop-then-wait").path.removePrefix("/runs/")
+        Thread.sleep(2_100)
+        browser.post("/runs/$cancelled/cancel", mapOf())
+        val today = LocalDate.now(clock).dayOfMonth
+        assertContains(runs("Ended"), Regex("""data-href="/runs/$cancelled">.*?<td class="when muted small">\w{3} $today \w{3} \d\d:\d\d · ([2-9]|\d\d)s</td></tr>""", RegexOption.DOT_MATCHES_ALL))
     }
 }

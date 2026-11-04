@@ -63,6 +63,7 @@ class Settings(
             val found = detect()
             save { values -> found.forEach { (cli, path) -> values[cli] = mapOf("path" to path) } }
         }
+        if ("varde-config" in read()) save { it.remove("varde-config") }
         anthill()
         check(!docker || passwordFromEnv) { "Ants in Docker needs a password: set ANTS_PASSWORD or ANTS_PASSWORD_FILE." }
         val loopback = address.isNotEmpty() && InetAddress.getByName(address).isLoopbackAddress
@@ -299,7 +300,6 @@ class Settings(
             #   path: where the CLI lives, as Detect found it through the login shell
             #   command: [claude]  claude and codex only: the command Ants appends its flags to, e.g. [nono, run, --, claude]
             #   env: [PATH, HOME]  claude and codex only: the environment allow-list; Ants may narrow it, never widen it
-            # varde-config: Varde's config.toml, whose [ai] command and env the settings page fills in
             # vaults, source-maps: name: path. default-vault, default-source-map: a name; without one, the first.
             # profiles: name: {vault: <a Vault's name>, source-map: <a Source map's name>, verbosity: brief, normal or
             #   detailed (default normal)}. default-profile: a name; without one, the first. With no Profiles, every Run

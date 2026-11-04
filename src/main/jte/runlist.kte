@@ -1,5 +1,6 @@
 @param live: List<ants.RunRow>
 @param ended: List<ants.RunRow>
+@param more: Int?
 @param coming: List<ants.Schedule>
 @param running: Int
 @param cap: Int
@@ -27,12 +28,13 @@
 <div class="help">Done Runs leave their Report. Cancelled Runs keep their Run workspace until you dismiss them.</div>
 @if(ended.isEmpty())<div class="card muted">None.</div>@else
 <table>
-    <tr><th>Run</th><th>Process</th><th>Now</th><th>Started</th><th></th></tr>
+    <tr><th>Run</th><th>Process</th><th>Now</th><th></th><th class="when">Started · took</th></tr>
 @for(run in ended)
     <tr class="click" data-href="/runs/${run.id}"><td><b><a href="/runs/${run.id}">${run.name}</a></b></td><td class="muted">${run.process}</td>
-        <td><span class="pill ${if (run.done) "p-done" else "p-failed"}">${run.ended}</span></td><td class="muted small">${run.started}</td>
+        <td><span class="pill ${if (run.done) "p-done" else "p-failed"}">${run.ended}</span></td>
         <td>@if(run.kept)<form method="post" action="/runs/${run.id}/dismiss">@if(csrf != null)<input type="hidden" name="${csrf.parameterName}" value="${csrf.token}">@endif<button>Dismiss</button></form>@endif
-            @if(run.report)<a href="/runs/${run.id}/report">Report</a>@endif</td></tr>
+            @if(run.report)<a href="/runs/${run.id}/report">Report</a>@endif</td><td class="when muted small">${run.started} · ${run.took}</td></tr>
 @endfor
 </table>
 @endif
+@if(more != null)<div class="more"><a class="btn" href="/runs?ended=${more}" data-more="${more}">Load more</a></div>@endif

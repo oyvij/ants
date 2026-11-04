@@ -14,6 +14,7 @@
 @param colorScheme: String = "light dark"
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param shell: ants.Shell
+@param posted: Boolean = false
 <!doctype html>
 <html lang="en">
 <head>
@@ -29,7 +30,7 @@
 <div class="ph"><h1>Settings</h1><div class="acts"><button class="primary" form="settings" name="action" value="save">Save</button></div>
     <div class="sub">Written to <code>${file}</code>. A hand edit to it shows here.</div></div>
 @if(message != null)<p role="alert">${message}</p>@endif
-<form method="post" action="/settings" id="settings" class="settings">
+<form method="post" action="/settings" id="settings" class="settings" data-posted="${posted}">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
     <div class="grid2"><div class="card"><h3>Claude login</h3>
         <div class="kv"><span class="k">Status</span><span>@if(login.loggedIn)<span class="pill p-ready">Logged in</span> ${login.method}@else<span class="pill p-failed">Not logged in</span>@endif</span>
@@ -62,8 +63,7 @@
             <div class="fld"><label class="f" for="${cli}.env">Environment allow-list</label>
                 <input class="mono" id="${cli}.env" name="${cli}.env" value="${form.envs[cli]}" placeholder="${Settings.DEFAULT_ENV.joinToString(" ")}"></div></div>
 @endfor
-        <div class="subsec"><label class="small" for="varde-config">Varde's config.toml</label><div class="help">Fills a command and allow-list from its <code>[ai]</code>.</div>
-            <div class="row"><input class="grow mono" id="varde-config" name="varde-config" value="${form.vardeConfig}" placeholder="e.g. ~/.varde/config.toml"><button name="action" value="varde">Fill from Varde</button></div></div></div></div>
+    </div></div>
 
     <div class="card"><h3>Vaults</h3><div class="help">Profiles below pair them with Source maps; with no Profile, every Run uses the default.</div>
         @template.named(list = "vaults", default = "default-vault", named = form.vaults, setUp = setUp, nameExample = "work", pathExample = "~/notes/work")</div>
@@ -136,7 +136,7 @@
         <div class="card"><h3>${label}</h3><div class="help">$unsafe{help}</div><div class="listed">
             <div class="row"><label class="cap grow">Folder<input class="mono" placeholder="e.g. ~/.ants/${name.removeSuffix("-folders")}s" value="${home}/${name.removeSuffix("-folders")}s" disabled></label><span class="muted small nowrap">Ants' own, always</span></div>
 @for(folder in (if (name == "agent-folders") form.agentFolders else form.skillFolders).lines().filter(String::isNotBlank) + "")
-            <div class="row" hidden="${folder.isEmpty()}"><label class="cap grow">Folder<input class="mono" name="${name}" value="${folder}" placeholder="e.g. ~/.varde/ai/${name.removeSuffix("-folders")}s"></label><button type="button" class="ghost" data-remove>Remove</button></div>
+            <div class="row" hidden="${folder.isEmpty()}"><label class="cap grow">Folder<input class="mono" name="${name}" value="${folder}" placeholder="e.g. ~/shared/${name.removeSuffix("-folders")}s"></label><button type="button" class="ghost" data-remove>Remove</button></div>
 @endfor
             <button type="button" data-add>＋ Add folder</button></div></div>
 @endfor
@@ -167,7 +167,7 @@
             <input type="password" id="password" name="password" autocomplete="new-password" placeholder="Change from admin">
 @endif
         </div></div>
-    <div class="card"><h3>Updates</h3>
+    <div class="card updates"><h3>Updates</h3>
         !{val newer = update.newer}
         <p class="small">Running v${shell.version}.@if(newer == null && update.unreachable) Couldn't check for a newer Ants: the release list didn't answer.@elseif(newer == null) Up to date.@elseif(update.installed == newer) Ants ${newer} installed; <code>ants restart</code> to use it.@elseif(update.downloading) Downloading Ants ${newer}…@elseif(docker) Ants ${newer} is available; pull the new image.@else Ants ${newer} is available. <button formaction="/updates/${newer}">Update</button>@endif</p>
 @if(update.failed != null)
@@ -175,6 +175,7 @@
 @endif
         <label class="row"><input type="checkbox" name="prereleases" checked="${form.prereleases}"> Follow beta versions</label>
         <button name="action" value="updates">Check now</button></div></div>
+    <div class="savebar" hidden><span>Unsaved changes</span><button class="primary" name="action" value="save">Save</button></div>
 </form>
 @for((i, map) in maps.entries.withIndex())
 <dialog class="modal source-map" id="source-map-${i}">

@@ -8,7 +8,7 @@
 @for(entry in entries)
     <tr class="click" data-href="/notifications/${entry.id}"><td>@template.tag(entry = entry)</td>
         <td>@if(entry is ants.TaskEntry)<b><a href="/runs/${entry.run}">${entry.runName}</a></b> · @elseif(entry is ants.TicketEntry)<b><a href="/runs/${entry.run}">${entry.runName}</a></b> · @endif<a href="/notifications/${entry.id}">${entry.task}</a><div class="muted small">${entry.process}</div></td>
-        <td>${entry.summary}</td><td class="muted small nowrap">${entry.waited}</td></tr>
+        <td><span class="clip">${entry.summary}</span></td><td class="muted small nowrap">${entry.waited}</td></tr>
 @endfor
 </table>
 @endif

@@ -81,8 +81,8 @@ class SkillsTest : AntsTest() {
     @Test
     fun `the editors' scripts are all served`() {
         val page = browser.get(browser.newDraft("/skills")).body
-        val scripts = Regex(""""(/vendor/codemirror/[^"]+)"""").findAll(page).map { it.groupValues[1] }.toList() + "/markdown.js"
-        assertEquals(44, scripts.size)
+        val scripts = Regex(""""(/vendor/codemirror/[^"]+)"""").findAll(page).map { it.groupValues[1] }.toList() + "/markdown.js" + "/mermaid.js"
+        assertEquals(45, scripts.size)
         for (script in scripts) assertEquals(200, browser.get(script).status, script)
     }
 
@@ -110,8 +110,8 @@ class SkillsTest : AntsTest() {
             yours.resolve("SKILL.md").writeText(skillMd("shipped-draft"))
             val list = page("/skills")
             assertContains(list, """<b><a href="/skills/shipped-draft">shipped-draft</a></b>""")
-            assertContains(list, """<td class="small">Stands in for the Skills Ants ships.</td><td class="muted small">shipped with Ants</td>""")
-            assertContains(list, """<tr class="hidden"><td><b>shipped-draft</b></td><td></td><td class="small">Summarises a text.</td><td class="muted small">$yours, hidden by the shipped Skill</td></tr>""")
+            assertContains(list, """<td class="small"><span class="clip">Stands in for the Skills Ants ships.</span></td><td class="muted small">shipped with Ants</td>""")
+            assertContains(list, """<tr class="hidden"><td><b>shipped-draft</b></td><td></td><td class="small"><span class="clip">Summarises a text.</span></td><td class="muted small">$yours, hidden by the shipped Skill</td></tr>""")
             assertContains(page("/skills/shipped-draft"), "Stands in for the Skills Ants ships.")
         } finally {
             yours.parent.toFile().deleteRecursively()

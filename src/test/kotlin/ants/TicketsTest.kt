@@ -2,8 +2,12 @@ package ants
 
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import java.nio.file.attribute.FileTime
 import java.util.concurrent.TimeUnit.SECONDS
+import kotlin.io.path.createDirectories
 import kotlin.io.path.readText
+import kotlin.io.path.setLastModifiedTime
+import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -48,6 +52,27 @@ class TicketsTest : AntsTest() {
         assertContains(tickets, """<a href="/runs/$run/tickets/spec">Greet the world</a>""")
         assertContains(tickets, "<td>open</td><td>1/2 done</td>")
         assertContains(tickets, Regex("""<a href="/runs/$run">Agent Task, [^<]+</a> · Agent Task</td>"""))
+    }
+
+    @Test
+    fun `the Tickets page shows 10 Specs, and Load more 10 more at a time`() {
+        browser.import("start-end.bpmn")
+        browser.get("/processes/start-end")
+        val runs = List(12) { browser.post("/processes/start-end/runs", mapOf()).path.removePrefix("/runs/") }
+        runs.forEachIndexed { i, run ->
+            val spec = workspace(run).resolve("tickets").createDirectories().resolve("spec.md")
+            spec.writeText("# Spec $i\n\nStatus: open\n")
+            spec.setLastModifiedTime(FileTime.fromMillis(1_000_000L * (i + 1)))
+        }
+        val newest = runs.reversed()
+        fun shown(html: String) = Regex("""<a href="/runs/([^"/]+)/tickets/spec">""").findAll(html).map { it.groupValues[1] }.toList()
+
+        val first = browser.get("/tickets").body
+        assertEquals(newest.take(10), shown(first))
+        assertContains(first, """<div class="more"><a class="btn" href="/tickets?specs=20" data-more="20">Load more</a></div>""")
+        val more = browser.get("/tickets?specs=20").body
+        assertEquals(newest, shown(more))
+        assertFalse("Load more" in more)
     }
 
     @Test

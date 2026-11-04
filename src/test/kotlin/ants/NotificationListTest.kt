@@ -80,7 +80,7 @@ class NotificationListTest : AntsTest() {
         val row = row(run)!!
         for (cell in listOf(
             """<span class="tag t-stuck"><i>⚠</i>[stuck]</span>""", """<b><a href="/runs/$run">Agent Task, """, """· <a href="$entry">Draft</a>""",
-            """<div class="muted small">Agent Task</div>""", "<td>No tone given.</td>", """<td class="muted small nowrap">0m</td>""",
+            """<div class="muted small">Agent Task</div>""", "<td><span class=\"clip\">No tone given.</span></td>", """<td class="muted small nowrap">0m</td>""",
         )) assertContains(row, cell)
         assertContains(browser.get("/notifications").body, """<tr class="click" data-href="$entry">""")
         val page = browser.get(entry(run)).body
@@ -109,7 +109,7 @@ class NotificationListTest : AntsTest() {
         val row = row(run)!!
         for (cell in listOf(
             """<span class="tag t-permission"><i>⊘</i>[permission]</span>""", """· <a href="$entry">Draft</a>""",
-            """<div class="muted small">Agent Task</div>""", "<td>writer wants to run `cargo outdated`</td>",
+            """<div class="muted small">Agent Task</div>""", "<td><span class=\"clip\">writer wants to run `cargo outdated`</span></td>",
         )) assertContains(row, cell)
         assertContains(browser.get(entry).body, """<h3 id="permission-head">Permission request</h3>""")
     }

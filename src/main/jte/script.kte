@@ -109,7 +109,7 @@
 </form>
 <aside class="helper" id="script-helper" aria-label="Script helper">
     <h3>Helper</h3>
-    <div class="tr dialog"><p class="muted">Ask it to write or fix this Script, or paste the Process Builder's hand-off. It reads and replaces the code here, unsaved, and Test runs it with sample inputs. It sees only masked output, never a Secret.</p><div class="live"></div></div>
+    <div class="tr dialog"><p class="muted">Ask it to write or fix this Script, or paste the Process Builder's hand-off. It reads and replaces the code here, unsaved, and Test runs it with sample inputs. It sees only masked output, never a Secret.</p><div id="sh-live"></div></div>
     <form>
         <label class="f" for="sh-message">Message to the helper</label>
         <textarea id="sh-message" name="message" data-markdown data-enter-sends required placeholder="e.g. Post the text input to the Slack channel in CHANNEL. (Enter sends, Shift+Enter adds a line)"></textarea>

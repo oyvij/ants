@@ -1,5 +1,6 @@
 @param live: List<ants.RunRow>
 @param ended: List<ants.RunRow>
+@param more: Int?
 @param coming: List<ants.Schedule>
 @param running: Int
 @param cap: Int
@@ -15,10 +16,21 @@
 </head>
 <body>
 @template.nav(shell = shell)
-<main id="runlist">@template.runlist(live = live, ended = ended, coming = coming, running = running, cap = cap, csrf = shell.csrf)</main>
+<main id="runlist">@template.runlist(live = live, ended = ended, more = more, coming = coming, running = running, cap = cap, csrf = shell.csrf)</main>
 <script type="module">
     stream.on('runlist', html => stream.patch(document.getElementById('runlist'), html));
-    stream.follow('runlist');
+    const follow = () => {
+        const ended = new URLSearchParams(location.search).get('ended');
+        stream.follow('runlist' + (ended ? '&ended=' + ended : ''));
+    };
+    document.getElementById('runlist').addEventListener('click', event => {
+        const more = event.target.closest('[data-more]');
+        if (!more) return;
+        event.preventDefault();
+        history.replaceState(null, '', more.href);
+        follow();
+    });
+    follow();
 </script>
 </body>
 </html>

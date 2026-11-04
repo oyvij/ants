@@ -32,7 +32,6 @@ import java.io.StringWriter
 import java.net.URI
 import java.nio.file.Path
 import java.time.Clock
-import java.util.concurrent.Executors
 import kotlin.io.path.exists
 import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.readBytes
@@ -74,25 +73,24 @@ class Processes(
         }
     }
 
-    /** The Processes list: a row each, its pre-Run checks run side by side, since each may ask claude, gh and git. */
+    /**
+     * The Processes list: a row each. Its Check column streams in ([Home.ready]), since each pre-Run check may ask
+     * claude, gh and git.
+     */
     @GetMapping("/processes")
     fun list(model: Model): String {
         val processes = repository.createProcessDefinitionQuery().latestVersion().orderByProcessDefinitionName().asc().list().filterNot(settings::hides)
         model.addAttribute("processes", processes)
-        val login = preRun.oneLogin() // asked once for them all
         val scheduled = schedules.all().groupingBy { it.key }.eachCount()
-        model.addAttribute("rows", Executors.newVirtualThreadPerTaskExecutor().use { threads ->
-            processes.map { process -> threads.submit<ProcessRow> { row(process, scheduled[process.key] ?: 0, login) } }.map { it.get() }
-        })
+        model.addAttribute("rows", processes.map { row(it, scheduled[it.key] ?: 0) })
         model.addAttribute("drafts", draftsOnly().sortedBy { it.name })
         return "processes"
     }
 
-    private fun row(process: ProcessDefinition, scheduleCount: Int, login: () -> Map<*, *>): ProcessRow {
+    private fun row(process: ProcessDefinition, scheduleCount: Int): ProcessRow {
         val profile = startForm.profile(process, null)
         return ProcessRow(
             process, process.shipped, settings.profile(profile), scheduleCount,
-            reasons(process, startForm.fields(process), profile, login).isEmpty(),
             history.createHistoricProcessInstanceQuery().processDefinitionKey(process.key).rootProcessInstances().active().count(),
             DraftState.of(true, drafts.get(DraftKind.PROCESS, process.key) != null),
         )
@@ -274,7 +272,10 @@ class Processes(
 
     /** The Process page, its start form for the Profile [profile] picked on it, else the Process's own, else the default. */
     @GetMapping("/processes/{key}")
-    fun process(@PathVariable key: String, @RequestParam(PROFILE, required = false) profile: String?, model: Model): String {
+    fun process(
+        @PathVariable key: String, @RequestParam(PROFILE, required = false) profile: String?, model: Model,
+        @RequestParam("edit", required = false) editing: String? = null, @RequestParam("edit.profile", required = false) editingProfile: String? = null,
+    ): String {
         if (latestOrNull(key) == null && drafts.get(DraftKind.PROCESS, key) != null) return "redirect:/processes/$key/edit" // a Draft only has the modeler
         val process = latest(key)
         model.addAttribute("process", process)
@@ -292,7 +293,9 @@ class Processes(
         model.addAttribute("source", settings.profile(picked))
         model.addAttribute("verbosity", startForm.verbosity(filled?.get(VERBOSITY)?.firstOrNull()?.toString(), picked))
         model.addAttribute("repos", RunSource(picked).repos(settings).map(Repo::name)) // the Repos field's choices
-        model.addAttribute("schedules", schedules.of(key))
+        val scheduled = schedules.of(key)
+        model.addAttribute("schedules", scheduled)
+        model.addAttribute("scheduleEdits", scheduled.map { scheduleEdit(it, startForm.fields(process), model.getAttribute("refusedEdit") as RefusedEdit?, editingProfile.takeIf { _ -> it.id == editing }) })
         model.addAttribute("deletable", !shipped(key))
         val runs = history.createHistoricProcessInstanceQuery().processDefinitionKey(key).rootProcessInstances().orderByProcessInstanceStartTime().desc().list()
         model.addAttribute("runs", runs)
@@ -366,6 +369,32 @@ class Processes(
         return dismissed(key, back)
     }
 
+    @PostMapping("/processes/{key}/schedules/{id}")
+    fun edit(@PathVariable key: String, @PathVariable id: String, @RequestParam values: MultiValueMap<String, String>, model: Model, response: HttpServletResponse): String {
+        val schedule = scheduleId(key, id)
+        val cron = values.getFirst("cron").orEmpty()
+        val refused = try {
+            schedules.edit(schedule, values, cron)
+            return "redirect:/processes/$key"
+        } catch (e: Unfilled) {
+            RefusedEdit(schedule, values, cron, listOfNotNull(e.message))
+        } catch (e: CantStart) {
+            RefusedEdit(schedule, values, cron, e.reasons)
+        }
+        response.status = HttpStatus.BAD_REQUEST.value()
+        return process(key, null, model.addAttribute("refusedEdit", refused))
+    }
+
+    private fun scheduleEdit(schedule: Schedule, fields: List<Field>, refused: RefusedEdit?, picked: String?): ScheduleEdit {
+        val refusedHere = refused?.takeIf { it.id == schedule.id }
+        val values = refusedHere?.values ?: schedule.stored
+        val profile = picked?.ifBlank { null } ?: refusedHere?.values?.get(PROFILE)?.firstOrNull()?.ifBlank { null } ?: schedule.profile
+        return ScheduleEdit(
+            schedule, fields.map { it.copy(stored = values[it.name].orEmpty().joinToString(" ")) }, values[NAME]?.firstOrNull().orEmpty(), profile,
+            startForm.verbosity(values[VERBOSITY]?.firstOrNull(), profile), RunSource(profile).repos(settings).map(Repo::name), refusedHere?.cron ?: schedule.cron, refusedHere?.reasons.orEmpty(), picked != null,
+        )
+    }
+
     private fun scheduleId(key: String, id: String) = schedules.of(latest(key).key).firstOrNull { it.id == id }?.id
         ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No Schedule $id of $key")
 
@@ -416,7 +445,17 @@ private val ProcessDefinition.shipped get() = resourceName.startsWith("shipped/"
 
 internal fun Settings.hides(process: ProcessDefinition) = hideShipped() && process.shipped
 
-class ProcessRow(val process: ProcessDefinition, val shipped: Boolean, val profile: Profile?, val scheduleCount: Int, val ready: Boolean, val live: Long, val state: DraftState = DraftState.PUBLISHED)
+class RefusedEdit(val id: String, val values: Map<String, List<String>>, val cron: String, val reasons: List<String>)
+
+class ScheduleEdit(
+    val schedule: Schedule, val fields: List<Field>, val runName: String, val profile: String?, val verbosity: Verbosity, val repos: List<String>, val cron: String, val reasons: List<String>, val picked: Boolean,
+) {
+    val open get() = picked || reasons.isNotEmpty()
+
+    val prefix get() = "edit-${schedule.id}-"
+}
+
+class ProcessRow(val process: ProcessDefinition, val shipped: Boolean, val profile: Profile?, val scheduleCount: Int, val live: Long, val state: DraftState = DraftState.PUBLISHED)
 
 /** Why a Process can't be deployed, in the XML parser's or the engine's words. */
 class Refused(message: String?) : Exception(message)

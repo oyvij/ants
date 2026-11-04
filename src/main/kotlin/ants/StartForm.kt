@@ -7,6 +7,7 @@ import org.operaton.bpm.engine.repository.ProcessDefinition
 import org.operaton.bpm.engine.runtime.ProcessInstance
 import org.operaton.bpm.model.bpmn.instance.Process
 import org.springframework.stereotype.Component
+import java.util.concurrent.Executors
 
 /** What a start-form field asks for: Text, Markdown, or Repos (Source map names, git URLs and new repos' `owner/name`). */
 enum class FieldType { TEXT, MARKDOWN, REPOS }
@@ -98,6 +99,22 @@ class StartForm(
      */
     fun profile(definition: ProcessDefinition, picked: String?): String? = if (settings.profiles().isEmpty()) null
     else picked?.takeIf(String::isNotBlank) ?: diagramProfile(definition) ?: settings.defaultProfile()
+
+    /**
+     * Whether each of [processes] is Ready, by key: the pre-Run check its start form opens with (its Repos fields' stored
+     * values and its Profile), side by side, asking the Claude login once for them all. Home and the Processes list stream it in.
+     */
+    fun ready(processes: List<ProcessDefinition>): Map<String, Boolean> {
+        val login = preRun.oneLogin()
+        return Executors.newVirtualThreadPerTaskExecutor().use { threads ->
+            processes.map { process ->
+                process.key to threads.submit<Boolean> {
+                    val repos = fields(process).filter { it.type == FieldType.REPOS }.flatMap { it.storedRepos }
+                    preRun.reasons(process, repos, profile(process, null), login).isEmpty()
+                }
+            }.associate { (key, ready) -> key to ready.get() }
+        }
+    }
 
     /** The Profile [definition] names on its diagram (its [PROFILE] property), if it names one. */
     fun diagramProfile(definition: ProcessDefinition): String? =

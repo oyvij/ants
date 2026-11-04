@@ -12,7 +12,7 @@
 </head>
 <body class="login">
 <form class="card" method="post" action="/login">
-    <div class="logo"><b>🐜</b>Ants</div>
+    <div class="logo">@template.wordmark(gradientId = "wm")</div>
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
 @if(error)<div role="alert">Wrong password.</div>@endif
 @if(loggedOut)<div role="status">You are logged out.</div>@endif

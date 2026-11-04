@@ -1044,5 +1044,9 @@ fun onClash(complete: () -> Unit) {
 /** [instant] as the user reads it on this [Clock]: `15:45`, with the day in front when it isn't today. */
 fun Clock.local(instant: Instant): String {
     val time = instant.atZone(zone)
-    return time.format(DateTimeFormatter.ofPattern(if (time.toLocalDate() == LocalDate.now(this)) "HH:mm" else "EEE d MMM HH:mm"))
+    return time.format(DateTimeFormatter.ofPattern(if (time.toLocalDate() == LocalDate.now(this)) "HH:mm" else DATED))
 }
+
+fun Clock.dated(instant: Instant): String = instant.atZone(zone).format(DateTimeFormatter.ofPattern(DATED))
+
+private const val DATED = "EEE d MMM HH:mm"

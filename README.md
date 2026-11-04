@@ -1,4 +1,4 @@
-# Ants
+<h1 align="center"><img src="docs/readme-header.svg" alt="Ants" width="420"></h1>
 
 Runs BPMN Processes whose Tasks are AI agents. You draw how a kind of job gets done once, as a Process, then start a
 Run with a prompt and walk away. Agents do the steps they can, and the Run waits on you only where the Process says
@@ -69,3 +69,14 @@ release.yml` makes the newest beta the stable release (`0.27.0`) and its image; 
 
 The tests fake `claude`, `codex` and `gh`, and use real git against local bare repos. `BrowserTest` needs Chromium, so
 it skips locally where Chromium can't launch and runs in CI.
+
+## Icon
+
+The ant is `src/main/resources/static/ant.svg`; Home shows it with twitching antennae (`ant-alive.svg`). The app icons
+are `docs/icon.svg`, the ant on a cream tile; render them with the `chrome-headless-shell` that
+`./gradlew playwright --args="install chromium"` installs (full Chrome's headless window won't shrink to 192 px), for
+N = 192 and 512 (add `--no-sandbox` where its sandbox can't start, such as in a container):
+
+```sh
+chrome-headless-shell --hide-scrollbars --window-size=N,N --screenshot=src/main/resources/static/icon-N.png file://$PWD/docs/icon.svg
+```

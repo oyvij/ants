@@ -1,5 +1,7 @@
 package ants
 
+import com.google.gson.JsonArray
+import com.google.gson.JsonObject
 import com.microsoft.playwright.Browser.NewContextOptions
 import com.microsoft.playwright.BrowserType
 import com.microsoft.playwright.Locator
@@ -7,6 +9,7 @@ import com.microsoft.playwright.options.AriaRole
 import com.microsoft.playwright.options.ColorScheme
 import com.microsoft.playwright.options.FilePayload
 import com.microsoft.playwright.options.KeyboardModifier
+import com.microsoft.playwright.options.LoadState
 import com.microsoft.playwright.Page
 import com.microsoft.playwright.Playwright
 import com.microsoft.playwright.assertions.LocatorAssertions
@@ -17,6 +20,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInfo
+import org.springframework.beans.factory.annotation.Autowired
 import java.nio.file.Path
 import java.util.regex.Pattern
 import kotlin.io.path.createDirectories
@@ -47,6 +51,9 @@ class BrowserTest : AntsTest() {
     private lateinit var page: Page
     private lateinit var test: String
     private val errors = mutableListOf<String>()
+
+    @Autowired
+    private lateinit var processes: Processes
 
     @BeforeEach
     fun launch(info: TestInfo) {
@@ -721,6 +728,31 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `in the Agent Task panel a Skill's long description is cut to one line with an ellipsis, and a hover shows the whole of it in a tooltip`() = browse {
+        val told = "Drafts the release notes from every merged pull request, grouped by area, with a line for each change. ".repeat(3).trim()
+        agentTask(null, mapOf("told" to null))
+        home.resolve("skills/told/SKILL.md").writeText("---\nname: told\ndescription: $told\n---\nDo it.\n")
+        appendAgentTask()
+        label("Agent").selectOption("writer")
+
+        val clip = panel.locator(".skillpick .clip")
+        assertThat(clip).hasText(told)
+        assertThat(clip).hasClass(Pattern.compile("\\bclipped\\b"))
+        assertEquals("1", clip.evaluate("e => getComputedStyle(e).webkitLineClamp"))
+        val about = panel.locator(".help.clip", Locator.LocatorOptions().setHasText(told))
+        assertThat(about).hasClass(Pattern.compile("\\bclipped\\b"))
+        assertEquals("2", about.evaluate("e => getComputedStyle(e).webkitLineClamp"))
+        assertTrue(clip.boundingBox()!!.x + clip.boundingBox()!!.width <= panel.boundingBox()!!.x + panel.boundingBox()!!.width + 1, "the description stays within the panel")
+
+        clip.hover()
+        assertThat(tip).isVisible()
+        assertThat(tip).hasText(told)
+        page.screenshot("modeler-skill-tip")
+        page.mouse().move(0.0, 0.0)
+        assertThat(tip).isHidden()
+    }
+
+    @Test
     fun `the Agent Task panel's pickers mark a Draft-only Agent and a Skill published with a Draft`() = browse {
         agentTask(null)
         val draftOnly = http.post("/agents/new/draft", mapOf()).path
@@ -794,6 +826,52 @@ class BrowserTest : AntsTest() {
         label("text").fill("\${prompt}")
         assertFalse(home.resolve("scripts").toFile().listFiles().orEmpty().any { it.resolve("script.yaml").readText().contains("name: post-to-chat") })
         http.post("/scripts/post-to-chat/delete", mapOf("confirm" to "on"))
+    }
+
+    @Test
+    fun `New Script's modal publishes the Script with Publish and picks it on the Script Task, with no Draft mark`() = browse {
+        val task = appendScriptTask()
+        button("New Script").click()
+        val form = page.frameLocator("dialog iframe")
+        form.locator("input[name=name]").fill("published-at-once")
+        form.locator("input[name=description]").fill("Published from the modal.")
+        page.locator("dialog .mh").getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Publish").setExact(true)).click()
+
+        assertThat(page.locator("dialog")).hasCount(0)
+        assertThat(shape(task)).hasClass(selected)
+        assertThat(label("Script")).hasValue("published-at-once")
+        assertThat(mark("Script")).hasCount(0)
+        assertTrue(home.resolve("scripts").toFile().listFiles().orEmpty().any { it.resolve("script.yaml").readText().contains("name: published-at-once") })
+        http.post("/scripts/published-at-once/delete", mapOf("confirm" to "on"))
+    }
+
+    @Test
+    fun `the modeler's New Script, New Agent and New Skill modals give their page the modal's width, the Script's form and helper apart and each helper button within the helper`() = browse {
+        for ((width, height) in listOf(1280 to 720, 1440 to 900, 1920 to 1080)) {
+            page.setViewportSize(width, height)
+            appendScriptTask()
+            button("New Script").click()
+            val frame = page.frameLocator("dialog iframe")
+            assertThat(frame.locator("#script-helper")).hasAttribute("data-token", Pattern.compile(".+"))
+            val script = frame.locator("form#script").boundingBox()!!
+            val helper = frame.locator("#script-helper").boundingBox()!!
+            assertTrue(script.width >= 0.6 * width, "the Script's form at $width is ${script.width}px wide")
+            assertTrue(helper.x >= script.x + script.width || helper.y >= script.y + script.height, "the helper overlaps the Script's form at $width")
+            assertEquals(true, frame.locator("#script-helper .ed").evaluate("ed => [...ed.querySelectorAll('.bar button')].every(b => b.getBoundingClientRect().right <= ed.getBoundingClientRect().right)"),
+                "a helper button runs past the helper at $width")
+            page.keyboard().press("Escape")
+            assertThat(page.locator("dialog")).hasCount(0)
+            appendAgentTask()
+            for ((opens, selector) in listOf("New Agent" to "form.agent", "New Skill" to ".skill-page")) {
+                button(opens).click()
+                val modal = page.locator("dialog.modal").boundingBox()!!
+                val shown = page.frameLocator("dialog iframe").locator(selector)
+                assertThat(shown).isVisible()
+                assertTrue(shown.boundingBox()!!.width >= modal.width - 60, "$opens's page at $width is ${shown.boundingBox()!!.width}px wide in a ${modal.width}px modal")
+                page.keyboard().press("Escape")
+                assertThat(page.locator("dialog")).hasCount(0)
+            }
+        }
     }
 
     @Test
@@ -1147,6 +1225,86 @@ class BrowserTest : AntsTest() {
         assertThat(page.locator("input[name='inputs[1].name']")).hasValue("channel")
     }
 
+    private fun askHelper(text: String) {
+        val helper = page.getByRole(AriaRole.COMPLEMENTARY, Page.GetByRoleOptions().setName("Script helper"))
+        assertThat(helper).hasAttribute("data-token", Pattern.compile(".+"))
+        assertThat(helper.locator(".send")).isVisible()
+        helper.locator(".cm-content").click()
+        page.keyboard().type(text)
+        page.keyboard().press("Enter")
+    }
+
+    @Test
+    fun `the Script helper's text streams in inside its dialog, below what it said before`() = browse {
+        val claude = FakeClaude()
+        settings(claude)
+        claude.session("script-helper", says("Before."), *streaming, "wait done", says("Almost there."), builderResult, "wait never")
+        page.navigate(url(http.newDraft("/scripts")))
+        askHelper("Write it.")
+        val live = page.locator("#script-helper #live.caret")
+        assertThat(live).containsText("Almost there")
+        assertThat(page.locator("#sh-entries")).containsText("Before.")
+        val dialog = page.locator("#script-helper .dialog").boundingBox()!!
+        val entries = page.locator("#sh-entries").boundingBox()!!
+        val text = live.boundingBox()!!
+        assertTrue(text.x >= dialog.x && text.x + text.width <= dialog.x + dialog.width + 1, "the text stays inside the dialog: $text in $dialog")
+        assertTrue(text.y >= entries.y + entries.height - 1, "the text comes below what came before: $text after $entries")
+        claude.release("done")
+        assertThat(page.locator("#sh-entries")).containsText("Almost there")
+        claude.release("never")
+    }
+
+    @Test
+    fun `the Script helper keeps its dialog on a reload, and a Script page left and come back to starts a new one`() = browse {
+        val claude = FakeClaude()
+        settings(claude)
+        claude.session("script-helper", says("Hello from before."), builderResult, "wait never")
+        val path = http.newDraft("/scripts")
+        page.navigate(url(path))
+        askHelper("Hi.")
+        val helper = page.locator("#script-helper")
+        assertThat(helper.locator(".dialog")).containsText("Hello from before.")
+        val token = helper.getAttribute("data-token")!!
+
+        page.reload()
+        assertThat(helper.locator(".dialog")).containsText("Hello from before.")
+        assertThat(helper).hasAttribute("data-token", token)
+
+        page.navigate(url("/scripts"))
+        page.navigate(url(path))
+        assertThat(helper).hasAttribute("data-token", Pattern.compile(".+"))
+        assertThat(helper).not().hasAttribute("data-token", token)
+        assertThat(helper.locator(".dialog")).not().containsText("Hello from before.")
+        claude.release("never")
+    }
+
+    @Test
+    fun `a Process left and come back to opens a new Process Builder dialog, which starts from its Build log`() = browse {
+        val claude = FakeClaude()
+        settings(claude)
+        claude.session("process-builder", 1, says("One."), builderResult, "wait first")
+        claude.session("process-builder", 2, says("Two."), builderResult, "wait second")
+        newProcess("Come back to")
+        val path = page.url()
+        val dialog = page.locator("#pb-dialog")
+        ask("First.")
+        assertThat(dialog).containsText("One.")
+        builder()
+        assertFalse(mcpCall(port, page.locator("#canvas").getAttribute("data-builder")!!, "build_log", mapOf("markdown" to "Keep it small.")).second)
+
+        page.navigate(url("/processes"))
+        page.navigate(path)
+        assertThat(dialog).not().containsText("One.")
+        ask("Second.")
+        assertThat(dialog).containsText("Two.")
+        assertThat(page.locator("#pb-handoff")).isVisible()
+        val (first, second) = claude.launches("process-builder")
+        assertTrue("Keep it small." in second.stdin)
+        assertNotEquals(first.flag("--session-id"), second.flag("--session-id"))
+        claude.release("first")
+        claude.release("second")
+    }
+
     @Test
     fun `the Secrets card adds two Secrets for one Save, and its ✕ asks first, so Cancel keeps a Secret and Delete removes it once saved`() = browse {
         http.publishNew("/scripts", listOf("name" to "post", "description" to "Posts.", "code" to "console.log('hi')\n", "inputs" to "", "vars" to "",
@@ -1195,6 +1353,26 @@ class BrowserTest : AntsTest() {
         assertThat(page).hasURL(url("/scripts/post"))
         assertThat(rows.nth(1).getByLabel("Value")).hasAttribute("placeholder", "••••")
         assertThat(rows.nth(1).getByLabel("Value")).hasValue("")
+    }
+
+    @Test
+    fun `the Secrets card shows Add Secret and Save Secrets on one row, with no status until a Save says something`() = browse {
+        http.publishNew("/scripts", listOf("name" to "post", "description" to "Posts.", "code" to "console.log('hi')\n", "inputs" to "", "vars" to "",
+            "secrets[0].name" to "OLD_TOKEN", "secrets[0].value" to "tok-old", "secrets[0].was" to ""))
+        page.navigate(url("/scripts/post"))
+        val card = page.locator(card("Secrets"))
+        val add = card.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Add Secret"))
+        val save = card.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Save Secrets"))
+        val state = card.locator("[data-secrets-state]")
+        assertThat(add).isVisible()
+        val (a, s) = add.boundingBox()!! to save.boundingBox()!!
+        assertEquals(a.y + a.height / 2, s.y + s.height / 2, 1.0)
+        assertTrue(a.x + a.width <= s.x || s.x + s.width <= a.x)
+        assertThat(state).isHidden()
+
+        save.click()
+        assertThat(state).hasText(Pattern.compile("^Secrets saved \\d\\d:\\d\\d$"))
+        assertThat(state).isVisible()
     }
 
     @Test
@@ -1608,6 +1786,55 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `Load more, centred below the Tickets list, shows 10 more Specs in place and keeps them on a reload`() = browse {
+        settings(null)
+        val (process, plane) = row("specced", """<bpmn:startEvent id="start" />""", """<bpmn:endEvent id="end" />""")
+        deploy(definitions("specced", "Specced", process, plane))
+        repeat(12) { i ->
+            val run = http.post("/processes/specced/runs", mapOf()).path.removePrefix("/runs/")
+            workspace(run).resolve("tickets").createDirectories().resolve("spec.md").writeText("# Spec $i\n\nStatus: open\n")
+        }
+        page.navigate(url("/tickets"))
+        val rows = page.locator("table.specs tr:has(td)")
+        assertThat(rows).hasCount(10)
+        val more = page.getByRole(AriaRole.LINK, Page.GetByRoleOptions().setName("Load more"))
+        val main = page.locator("main").boundingBox()!!
+        val button = more.boundingBox()!!
+        assertEquals(main.x + main.width / 2, button.x + button.width / 2, 1.0)
+        val loaded = page.url()
+        more.click()
+        assertThat(rows).hasCount(12)
+        assertThat(more).hasCount(0)
+        assertEquals(loaded, page.evaluate("performance.getEntriesByType('navigation')[0].name"), "Load more loads in place")
+        assertTrue(page.url().endsWith("/tickets?specs=20"))
+        page.reload()
+        assertThat(rows).hasCount(12)
+    }
+
+    @Test
+    fun `Load more, centred below Ended, shows 10 more ended Runs in place and keeps them on a reload`() = browse {
+        settings(null)
+        val (process, plane) = row("ended", """<bpmn:startEvent id="start" />""", """<bpmn:endEvent id="end" />""")
+        deploy(definitions("ended", "Ended", process, plane))
+        repeat(12) { assertContains(http.post("/processes/ended/runs", mapOf()).body, "Completed") }
+        page.navigate(url("/runs"))
+        val rows = page.locator("h2:text('Ended') ~ table tr.click")
+        assertThat(rows).hasCount(10)
+        val more = page.getByRole(AriaRole.LINK, Page.GetByRoleOptions().setName("Load more"))
+        val main = page.locator("main").boundingBox()!!
+        val button = more.boundingBox()!!
+        assertEquals(main.x + main.width / 2, button.x + button.width / 2, 1.0)
+        val loaded = page.url()
+        more.click()
+        assertThat(rows).hasCount(12)
+        assertThat(more).hasCount(0)
+        assertEquals(loaded, page.evaluate("performance.getEntriesByType('navigation')[0].name"), "Load more loads in place")
+        assertTrue(page.url().endsWith("/runs?ended=20"))
+        page.reload()
+        assertThat(rows).hasCount(12)
+    }
+
+    @Test
     fun `the Notification list asks for notification permission on a click, since macOS badges an app only with it`() = browse {
         // The browser's answer outlives the page, as a real one's does, so the reload below finds it.
         page.addInitScript(
@@ -1756,7 +1983,8 @@ class BrowserTest : AntsTest() {
             assertEquals(pageBackground, page.evaluate("getComputedStyle(document.documentElement).backgroundColor"), "the page in $theme")
             assertEquals(desktop, background(sidebar), "the drawer in $theme")
             assertEquals(desktop, background(topBar), "the top bar in $theme")
-            assertEquals("rgb(255, 255, 255)", topBar.getByText("Ants").evaluate("e => getComputedStyle(e).color"), "Ants in $theme")
+            assertThat(topBar.getByRole(AriaRole.IMG, Locator.GetByRoleOptions().setName("Ants"))).isVisible()
+            assertContains(topBar.locator(".wordmark text").evaluate("e => getComputedStyle(e).fill") as String, "#wm-top", message = "the brown wordmark in $theme")
             page.screenshot("phone/drawer-$theme")
         }
     }
@@ -2068,6 +2296,31 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `on a phone and a computer the default choice and the buttons of a Vault's, a Source map's and a Profile's row line up, and Updates spaces its parts evenly`() = browse {
+        settings(null, "vaults:\n  work: /tmp/work\ndefault-vault: work\nsource-maps:\n  work: /tmp/work/source-map.md\ndefault-source-map: work\nprofiles:\n  work:\n    vault: work\n    source-map: work\n")
+        onPhone()
+        for ((screen, width) in listOf("phone" to 390, "computer" to 1280)) {
+            page.setViewportSize(width, 900)
+            page.navigate(url("/settings"))
+            for (title in listOf("Vaults", "Source maps", "Profiles")) {
+                val row = page.locator("${card(title)} .listed > .row:not([hidden])").first()
+                val controls = row.locator(":scope > :is(label.row, button)").all()
+                assertTrue(controls.size >= 3, "$title's row has its default choice and buttons")
+                val middles = controls.associate { it.evaluate("e => e.outerHTML.slice(0, 60)") as String to it.boundingBox()!!.let { b -> b.y + b.height / 2 } }
+                val first = middles.values.first()
+                for ((control, middle) in middles) assertEquals(first, middle, 1.0, "on a $screen $title's $control sits on the line of its default choice: $middles")
+            }
+            val updates = page.locator(card("Updates"))
+            val parts = listOf(updates.locator("p.small"), updates.locator("label:has([name=prereleases])"), updates.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Check now"))).map { it.boundingBox()!! }
+            val gaps = parts.zipWithNext { above, below -> below.y - (above.y + above.height) }
+            assertTrue(gaps.all { it >= 8 }, "on a $screen Updates' parts are apart: $gaps")
+            assertEquals(gaps[0], gaps[1], 1.0, "on a $screen Updates' parts are evenly apart: $gaps")
+            assertEquals(parts[1].x, parts[2].x, 1.0, "on a $screen Check now lines up with Follow beta versions")
+            page.screenshot("$screen/settings-rows")
+        }
+    }
+
+    @Test
     fun `just above 768px the modeler, the Skill page, the Agent form and Settings keep their columns side by side`() = browse {
         http.import("start-end.bpmn")
         settings(null)
@@ -2106,6 +2359,174 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `on a phone a Script's schema row fits its card in three lines, its name and description each a line wide, and nested rows too`() = browse {
+        settings(null)
+        val draft = http.newDraft("/scripts")
+        onPhone()
+        page.navigate(url(draft))
+        val inputs = page.locator("#input-schema > .schema-level")
+        inputs.locator(":scope > [data-add-row]").click()
+        page.locator("select[name='inputs[0].type']").selectOption("object")
+        page.locator("li.schema-row [data-add-row]").first().click()
+        assertNoSidewaysScroll()
+        val card = page.locator(".card:has(#input-schema)").boundingBox()!!
+        for (at in listOf("inputs[0]", "inputs[0].rows[0]")) {
+            val row = page.locator("[name='$at.name']").locator("xpath=..")
+            val parts = row.locator(":scope > *").all().associateWith { it.boundingBox()!! }
+            for ((part, box) in parts) {
+                assertTrue(box.x >= card.x && box.x + box.width <= card.x + card.width, "$at's ${part.evaluate("e => e.outerHTML.slice(0, 100)")} spans ${box.x} to ${box.x + box.width} in a card from ${card.x} to ${card.x + card.width}")
+            }
+            val lines = parts.values.map { Math.round(it.y + it.height / 2) }.toSet()
+            assertEquals(3, lines.size, "$at's row is on the lines $lines")
+            val rowWidth = row.boundingBox()!!.width
+            for (field in listOf("name", "description")) {
+                val box = page.locator("[name='$at.$field']").boundingBox()!!
+                assertEquals(rowWidth, box.width, 1.0, "$at's $field spans its row")
+            }
+        }
+        page.screenshot("phone/script-schema")
+    }
+
+    @Test
+    fun `on a phone the Agents, Skills and Scripts lists fit the screen, each row's cells within it and none blank, and an entry opens on a tap`() = browse {
+        settings(null)
+        home.resolve("agents").createDirectories().resolve("a-rather-long-agent-name-that-runs-on.md").writeText("---\nname: a-rather-long-agent-name-that-runs-on\ndescription: ${"An Agent described at length. ".repeat(8)}\ncli: claude\nskills: tdd, code-review, codebase-design, implement\n---\nListed.\n")
+        home.resolve("scripts/s-listed1").createDirectories().run {
+            resolve("script.yaml").writeText("id: s-listed1\nname: a-rather-long-script-name-that-runs-on\ndescription: ${"A Script described at length. ".repeat(8)}\ninputs: {type: object, properties: {}}\nvars: {}\nsecrets: []\n")
+            resolve("script.mjs").writeText("console.log('hi')\n")
+        }
+        onPhone()
+        for ((path, entry) in listOf("/agents" to "/agents/a-rather-long-agent-name-that-runs-on", "/skills" to "/skills/tdd", "/scripts" to "/scripts/a-rather-long-script-name-that-runs-on")) {
+            page.navigate(url(path))
+            val row = page.locator("table.library tr.click[data-href='$entry']")
+            assertThat(row).isVisible()
+            assertNoSidewaysScroll()
+            for (cell in page.locator("table.library td").all()) {
+                if (!cell.isVisible) continue
+                assertWithinScreen(cell, "a cell of a row on $path")
+                assertTrue(cell.boundingBox()!!.height > 8, "a row on $path shows no blank cell")
+            }
+            page.screenshot("phone${path.replace(Regex("[^a-z0-9]+"), "-")}-list")
+
+            row.locator("td").last().tap()
+            page.waitForURL { it.endsWith(entry) }
+        }
+    }
+
+    private val longTold = "A description that goes on and on about what it does, why it does it and where it does it, ".repeat(4).trim()
+
+    private fun longDescriptions() {
+        settings(null)
+        home.resolve("agents").createDirectories().run {
+            resolve("long-told.md").writeText("---\nname: long-told\ndescription: $longTold\ncli: claude\n---\nListed.\n")
+            resolve("short-told.md").writeText("---\nname: short-told\ndescription: Short.\ncli: claude\n---\nListed.\n")
+        }
+        home.resolve("skills/long-told").createDirectories().resolve("SKILL.md").writeText("---\nname: long-told\ndescription: $longTold\n---\nDo it.\n")
+        home.resolve("scripts/s-long-told").createDirectories().run {
+            resolve("script.yaml").writeText("id: s-long-told\nname: long-told\ndescription: $longTold\ninputs: {type: object, properties: {}}\nvars: {}\nsecrets: []\n")
+            resolve("script.mjs").writeText("console.log('hi')\n")
+        }
+    }
+
+    private val longToldLists = listOf("/agents" to "/agents/long-told", "/skills" to "/skills/long-told", "/scripts" to "/scripts/long-told")
+
+    private fun clipOf(entry: String) = page.locator("tr[data-href='$entry'] .clip")
+
+    private fun isClipped(clip: Locator) = clip.evaluate("e => e.scrollHeight > e.clientHeight + 1 || e.scrollWidth > e.clientWidth + 1") as Boolean
+
+    private val tip get() = page.locator(".tip[role=tooltip]")
+
+    @Test
+    fun `a long description on the Agents, Skills and Scripts lists is clamped to two lines with an ellipsis, and a hover or keyboard focus shows the whole of it in a tooltip`() = browse {
+        longDescriptions()
+        for ((path, entry) in longToldLists) {
+            page.navigate(url(path))
+            val clip = clipOf(entry)
+            assertThat(clip).hasClass(Pattern.compile("\\bclipped\\b"))
+            assertTrue(isClipped(clip), "the long description on $path is cut short")
+            assertEquals("2", clip.evaluate("e => getComputedStyle(e).webkitLineClamp"), "the long description on $path shows two lines")
+            assertThat(page.locator("tr[data-href='$entry'] .clip-info")).isHidden()
+
+            clip.hover()
+            assertThat(tip).isVisible()
+            assertThat(tip).hasText(longTold)
+            val (box, over) = clip.boundingBox()!! to tip.boundingBox()!!
+            assertTrue(over.x >= 0 && over.x + over.width <= 1280 && over.y >= 0, "the tooltip on $path is within the window")
+            assertTrue(over.y + over.height <= box.y + 1 || over.y >= box.y + box.height - 1, "the tooltip on $path sits above or below the text, not over it")
+            page.mouse().move(0.0, 0.0)
+            assertThat(tip).isHidden()
+
+            clip.focus()
+            assertThat(tip).isVisible()
+            assertThat(tip).hasText(longTold)
+            page.keyboard().press("Escape")
+            assertThat(tip).isHidden()
+        }
+        page.navigate(url("/agents"))
+        val short = clipOf("/agents/short-told")
+        assertThat(short).not().hasClass(Pattern.compile("\\bclipped\\b"))
+        short.hover()
+        assertThat(tip).isHidden()
+    }
+
+    @Test
+    fun `on a phone a cut-short description has a tap-sized (i) beside it that toggles its tooltip, and the tap doesn't open the row`() = browse {
+        longDescriptions()
+        onPhone()
+        for ((path, entry) in longToldLists) {
+            page.navigate(url(path))
+            val info = page.locator("tr[data-href='$entry'] .clip-info")
+            assertThat(info).isVisible()
+            assertThat(info).hasAccessibleName("Show the whole text")
+            assertTrue(info.boundingBox()!!.height >= 44, "the (i) on $path is at least 44px tall")
+            assertWithinScreen(info, "the (i) on $path")
+            assertNoSidewaysScroll()
+            val shot = "phone${path.replace(Regex("[^a-z0-9]+"), "-")}"
+            page.screenshot("$shot-clip")
+
+            info.tap()
+            assertThat(tip).isVisible()
+            assertThat(tip).hasText(longTold)
+            assertWithinScreen(tip, "the tooltip on $path")
+            assertThat(info).hasAttribute("aria-expanded", "true")
+            assertTrue(page.url().endsWith(path), "the tap on the (i) stays on $path")
+            page.screenshot("$shot-tip")
+
+            info.tap()
+            assertThat(tip).isHidden()
+            assertThat(info).hasAttribute("aria-expanded", "false")
+
+            info.tap()
+            assertThat(tip).isVisible()
+            page.locator("h1").tap()
+            assertThat(tip).isHidden()
+        }
+        page.navigate(url("/agents"))
+        assertThat(page.locator("tr[data-href='/agents/short-told'] .clip-info")).hasCount(0)
+    }
+
+    @Test
+    fun `on a phone an ended Run's row shows when it started and how long it took at its top right, beside its name`() = browse {
+        settings(null)
+        val (process, plane) = row("timed", """<bpmn:startEvent id="start" />""", """<bpmn:endEvent id="end" />""")
+        deploy(definitions("timed", "Timed", process, plane))
+        val run = http.post("/processes/timed/runs", mapOf()).path
+        onPhone()
+        page.navigate(url("/runs"))
+        val row = page.locator("tr.click[data-href='$run']")
+        val name = row.locator("td").first().boundingBox()!!
+        val time = row.locator("td.when")
+        assertThat(time).hasText(Pattern.compile("""\w{3} \d{1,2} \w{3} \d\d:\d\d · \d+s"""))
+        val box = time.boundingBox()!!
+        val whole = row.boundingBox()!!
+        assertEquals(name.y, box.y, 0.5)
+        assertEquals(whole.x + whole.width, box.x + box.width, 0.5)
+        assertTrue(name.x + name.width <= box.x, "the name ends before the time begins")
+        assertNoSidewaysScroll()
+        page.screenshot("phone/runs-ended")
+    }
+
+    @Test
     fun `on a phone the Run page's Task drawer spans the screen, and neither the Run page nor the Process page scrolls sideways`() = browse {
         val run = waitingRun("drawn")
         onPhone()
@@ -2131,6 +2552,89 @@ class BrowserTest : AntsTest() {
         eventually { shape("wait").click() }
         assertThat(page.locator("#drawer-head")).isVisible()
         eventually { assertEquals(460.0, drawer.boundingBox()!!.width, 0.5) }
+    }
+
+    @Test
+    fun `on a phone New Process opens its modal with Name, Start from and Import within the screen, and makes a Process`() = browse {
+        settings(null)
+        http.import("start-end.bpmn")
+        onPhone()
+        page.navigate(url("/processes"))
+        assertNoSidewaysScroll()
+        page.locator(".ph button.primary").tap()
+        val modal = page.locator("dialog#new-process")
+        assertThat(modal).isVisible()
+        settled(modal)
+        page.screenshot("phone/new-process")
+        for (field in listOf("Name", "Start from", "Import a BPMN file")) {
+            val input = modal.getByLabel(field, Locator.GetByLabelOptions().setExact(true))
+            assertThat(input).isVisible()
+            assertWithinScreen(input, field)
+        }
+        assertWithinScreen(modal, "the modal")
+        modal.getByLabel("Name", Locator.GetByLabelOptions().setExact(true)).fill("From the phone")
+        modal.locator("button.primary").tap()
+        page.waitForURL(Pattern.compile(".*/processes/[^/]+/edit$"))
+
+        page.navigate(url("/processes"))
+        assertThat(page.locator("#processes tr.click")).hasCount(2)
+        assertNoSidewaysScroll()
+        assertEquals(0, page.locator("#processes td:visible").all().count { it.innerText().isBlank() }, "blank cells showing in the list's rows")
+    }
+
+    @Test
+    fun `on a phone the Process page's and the Run page's buttons at the top line up two to a row, each as wide, across the page`() = browse {
+        val run = waitingRun("aligned")
+        onPhone()
+        page.navigate(url("/processes/aligned"))
+        assertButtonsInTwoColumns("Copy", "Add a schedule", "Edit diagram", "Delete")
+        page.screenshot("phone/process-head")
+
+        page.navigate(url(run))
+        assertButtonsInTwoColumns("Rename", "Cancel the Run")
+        page.screenshot("phone/run-head")
+    }
+
+    private fun assertButtonsInTwoColumns(vararg names: String) {
+        val acts = page.locator(".ph .acts")
+        val (edge, content, gap) = Triple(16.0, 358.0, 8.0)
+        val column = (content - gap) / 2
+        val boxes = names.associateWith { name ->
+            acts.locator(":scope > button, :scope > .btn, :scope > form > button").filter(Locator.FilterOptions().setHasText(name)).also { assertThat(it).isVisible() }.boundingBox()!!
+        }
+        val height = boxes.values.first().height
+        boxes.entries.chunked(2).forEach { row ->
+            row.forEachIndexed { side, (name, box) ->
+                assertEquals(column, box.width, 0.5, "$name's width")
+                assertEquals(edge + side * (column + gap), box.x, 0.5, "$name's left edge")
+                assertEquals(row.first().value.y, box.y, 0.5, "$name's top")
+                assertEquals(height, box.height, 0.5, "$name's height")
+            }
+        }
+        assertNothingPastTheScreen()
+    }
+
+    @Test
+    fun `on a phone the shipped Build and ship Process page, with its whole start form, fits the screen`() = browse {
+        processes.deployShipped()
+        onPhone()
+        page.navigate(url("/processes/build_and_ship"))
+        assertThat(page.locator("#start .ed")).isVisible()
+        assertThat(shape("start")).isVisible()
+        assertNothingPastTheScreen()
+        page.evaluate("document.querySelector('#when').hidden = false; document.querySelector('#when-advanced').open = true")
+        assertNothingPastTheScreen()
+        page.screenshot("phone/build-and-ship")
+    }
+
+    private fun assertNothingPastTheScreen() {
+        val past = page.evaluate("""[...document.querySelectorAll("main *")]
+            .filter(e => e.checkVisibility() && !e.closest("#diagram"))
+            .map(e => [e, e.getBoundingClientRect()])
+            .filter(([e, box]) => box.width > 0 && (box.left < 0 || box.right > document.documentElement.clientWidth))
+            .map(([e, box]) => e.outerHTML.slice(0, 100) + " spans " + Math.round(box.left) + " to " + Math.round(box.right))""")
+        assertEquals(emptyList<Any>(), past, "parts of ${page.url()} reaching past a 390px screen")
+        assertNoSidewaysScroll()
     }
 
     @Test
@@ -2174,6 +2678,82 @@ class BrowserTest : AntsTest() {
             assertThat(shape("wait")).isVisible()
             assertThat(page.locator(".dia .zoom button")).hasText(arrayOf("＋", "－", "Fit"))
         }
+    }
+
+    private val cdp by lazy { page.context().newCDPSession(page) }
+
+    private fun touch(type: String, vararg fingers: Pair<Double, Double>) {
+        val points = JsonArray()
+        fingers.forEachIndexed { id, (x, y) -> points.add(JsonObject().apply { addProperty("x", x); addProperty("y", y); addProperty("id", id) }) }
+        cdp.send("Input.dispatchTouchEvent", JsonObject().apply { addProperty("type", type); add("touchPoints", points) })
+    }
+
+    private fun gesture(from: List<Pair<Double, Double>>, to: List<Pair<Double, Double>>) {
+        touch("touchStart", *from.toTypedArray())
+        for (step in 1..10) touch("touchMove", *from.zip(to) { (x, y), (u, v) -> x + (u - x) * step / 10 to y + (v - y) * step / 10 }.toTypedArray())
+        touch("touchEnd")
+        // This CDP session's touchEnd returns before the page has it, so a tap through Playwright's own session could
+        // land while the drag's touches are still down there, and no click comes of it. Two frames later the page has it.
+        page.evaluate("() => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)))")
+    }
+
+    private fun viewbox(diagram: Locator) = (diagram.evaluate("e => { const v = e.canvas.viewbox(); return [v.x, v.y, v.scale] }") as List<*>).map { (it as Number).toDouble() }
+
+    private fun pointUnder(diagram: Locator, x: Double, y: Double) = (diagram.evaluate(
+        "(e, [x, y]) => { const v = e.canvas.viewbox(), r = e.querySelector('.djs-container').getBoundingClientRect(); return [v.x + (x - r.left) / v.scale, v.y + (y - r.top) / v.scale] }", listOf(x, y),
+    ) as List<*>).map { (it as Number).toDouble() }
+
+    @Test
+    fun `on a phone a drag moves the Run page's, the Process page's and the modeler's diagram, a pinch zooms it about the fingers, and a Task still opens on a tap`() = browse {
+        val run = waitingRun("pinched")
+        onPhone()
+        for (path in listOf(run, "/processes/pinched", "/processes/pinched/edit")) {
+            page.navigate(url(path))
+            assertThat(shape("wait")).isVisible()
+            val diagram = page.locator(".dia").first()
+            eventually { assertEquals(true, diagram.evaluate("e => e.canvas != null"), "the diagram on $path is drawn") }
+            diagram.scrollIntoViewIfNeeded()
+            val box = diagram.boundingBox()!!
+            val (cx, cy) = box.x + box.width / 2 to box.y + box.height * 0.7
+            val scroll = page.evaluate("scrollY")
+            val (x, y, scale) = viewbox(diagram)
+
+            gesture(listOf(cx to cy), listOf(cx - 60 to cy - 40))
+            val (dragX, dragY) = viewbox(diagram)
+            assertEquals(x + 60 / scale, dragX, 1.0, "a drag on $path moves the diagram sideways")
+            assertEquals(y + 40 / scale, dragY, 1.0, "a drag on $path moves the diagram up")
+
+            val under = pointUnder(diagram, cx, cy)
+            gesture(listOf(cx - 40 to cy, cx + 40 to cy), listOf(cx - 80 to cy, cx + 80 to cy))
+            assertEquals(scale * 2, viewbox(diagram)[2], 0.02, "a pinch on $path zooms the diagram twice as big")
+            pointUnder(diagram, cx, cy).zip(under).forEach { (now, before) -> assertEquals(before, now, 1.0, "the pinch on $path zooms about the fingers") }
+            assertEquals(scroll, page.evaluate("scrollY"), "a drag and a pinch on $path move the diagram, not the page")
+        }
+
+        page.navigate(url(run))
+        eventually { assertEquals(true, page.locator(".dia").first().evaluate("e => e.canvas != null")) }
+        val box = shape("wait").boundingBox()!!
+        gesture(listOf(box.x to box.y + box.height), listOf(box.x - 40 to box.y + box.height - 40))
+        shape("wait").run { tap(Locator.TapOptions().setPosition(boundingBox()!!.width * 0.15, boundingBox()!!.height * 0.85)) }
+        assertThat(page.locator("#drawer-head")).isVisible()
+    }
+
+    @Test
+    fun `on a phone the modeler's palette is one narrow column within the canvas, and above 768px it keeps its size`() = browse {
+        http.import("start-end.bpmn")
+        onPhone()
+        page.navigate(url("/processes/start-end/edit"))
+        val palette = page.locator(".djs-palette")
+        assertThat(palette).isVisible()
+        val canvas = page.locator("#canvas").boundingBox()!!
+        val box = palette.boundingBox()!!
+        page.screenshot("phone/palette")
+        assertTrue(box.width <= 44, "the palette is ${box.width}px wide on a 390px screen")
+        assertTrue(box.y + box.height <= canvas.y + canvas.height, "the palette reaches ${box.y + box.height}, past the canvas's foot at ${canvas.y + canvas.height}")
+
+        page.setViewportSize(1280, 900)
+        page.navigate(url("/processes/start-end/edit"))
+        assertEquals(46.0, page.locator(".djs-palette .entry").first().boundingBox()!!.height, 0.5)
     }
 
     @Test
@@ -2235,6 +2815,78 @@ class BrowserTest : AntsTest() {
         page.waitForFunction("!window.unreloaded")
         page.waitForLoadState()
         assertEquals(0, scrolled(), "a page opened from the sidebar starts at the top")
+    }
+
+    @Test
+    fun `a change on Settings shows a Save bar pinned to the bottom of the window, gone again once undone or saved`() = browse {
+        settings(null, "agent-tasks: 3\n")
+        page.navigate(url("/settings"))
+        val bar = page.locator(".savebar")
+        assertThat(bar).isHidden()
+
+        val add = page.locator("[data-add]").first()
+        add.click()
+        add.click()
+        assertThat(bar).isHidden()
+
+        page.locator("input[name=so-far]").click()
+        page.locator("button[name=action][value=updates]").scrollIntoViewIfNeeded()
+        assertThat(bar).isVisible()
+        assertThat(bar).containsText("Unsaved changes")
+        val spot = bar.boundingBox()!!
+        val height = (page.evaluate("innerHeight") as Number).toDouble()
+        assertEquals(height, spot.y + spot.height, 1.0, "the bar sits on the window's bottom edge")
+        assertTrue(page.locator(".ph button.primary").boundingBox()!!.y < 0, "the header's Save has scrolled out of sight")
+
+        page.locator("input[name=so-far]").click()
+        assertThat(bar).isHidden()
+
+        page.locator("input[name=agent-tasks]").fill("5")
+        assertThat(bar).isVisible()
+        bar.locator("button.primary").click()
+        page.waitForLoadState()
+        assertThat(page.locator("input[name=agent-tasks]")).hasValue("5")
+        assertThat(bar).isHidden()
+    }
+
+    @Test
+    fun `at the end of Settings the Save bar takes its own room under the last card instead of covering it`() = browse {
+        settings(null)
+        page.navigate(url("/settings"))
+        page.locator("input[name=so-far]").click()
+        page.evaluate("scrollTo(0, document.body.scrollHeight)")
+        val bar = page.locator(".savebar")
+        assertThat(bar).isVisible()
+        val last = page.locator("form#settings .card").last().boundingBox()!!
+        assertTrue(bar.boundingBox()!!.y >= last.y + last.height, "the bar sits below the last card")
+    }
+
+    @Test
+    fun `leaving Settings with unsaved changes asks first, and Check now keeps them counted as unsaved`() = browse {
+        settings(null)
+        page.navigate(url("/settings"))
+        val asked = mutableListOf<String>()
+        page.onDialog { asked += it.type(); it.dismiss() }
+
+        page.locator("button[name=action][value=updates]").click()
+        assertThat(page.locator(".toast")).isVisible()
+        assertThat(page.locator(".savebar")).isHidden()
+
+        page.locator("input[name=so-far]").click()
+        page.locator("button[name=action][value=updates]").click()
+        assertThat(page.locator(".toast")).isVisible()
+        assertThat(page.locator(".savebar")).isVisible()
+        assertEquals(emptyList<String>(), asked, "a button of the form itself doesn't ask")
+
+        page.locator("nav.side a[href='/runs']").click()
+        eventually { assertEquals(listOf("beforeunload"), asked) }
+        assertTrue(page.url().endsWith("/settings"), "dismissing stays on Settings")
+
+        page.locator(".savebar button.primary").click()
+        page.waitForLoadState()
+        page.locator("nav.side a[href='/runs']").click()
+        page.waitForURL { it.endsWith("/runs") }
+        assertEquals(listOf("beforeunload"), asked, "once saved, leaving doesn't ask")
     }
 
     private fun round(vararg questions: Pair<String, String>) = """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":""" +
@@ -2439,6 +3091,25 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `a Skill's Preview shows its frontmatter as a table, its name and description on rows of their own, above the body`() = browse {
+        page.navigate(url(http.newDraft("/skills")))
+        val editor = page.locator("textarea[name=skill] + .ed")
+        editor.locator(".cm-content").fill("---\nname: release-notes\ndescription: Writes the release notes for a version, from the commits since the last tag.\n---\nRead the commits.")
+
+        editor.locator("button", Locator.LocatorOptions().setHasText("Preview")).click()
+        val table = page.locator("dialog.modal .md table.frontmatter")
+        assertThat(table.locator("th")).hasText(arrayOf("name", "description"))
+        assertThat(table.locator("td")).hasText(arrayOf("release-notes", "Writes the release notes for a version, from the commits since the last tag."))
+        settled(page.locator("dialog.modal[open]"))
+        val name = table.locator("tr").nth(0).boundingBox()!!
+        val description = table.locator("tr").nth(1).boundingBox()!!
+        assertTrue(description.y >= name.y + name.height - 1, "description sits below name")
+        assertTrue(page.locator("dialog.modal .md p").boundingBox()!!.y >= description.y + description.height, "the body sits below the frontmatter")
+        assertEquals(0, page.locator("dialog.modal .md hr, dialog.modal .md h2").count())
+        page.screenshot("preview-frontmatter")
+    }
+
+    @Test
     fun `pasting an image into the start form's prompt uploads it and references it at the caret, and anything else is refused`() = browse {
         agentTask(null)
         http.import("agent-task.bpmn")
@@ -2553,17 +3224,18 @@ class BrowserTest : AntsTest() {
     private fun openSchedule() = page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("⏰ Schedule").setExact(true)).click()
 
     private fun schedulePicked(repo: String) {
-        page.locator("textarea[name=prompt] + .ed .cm-content").fill("Add dark mode")
+        val start = page.locator("#start")
+        start.locator("textarea[name=prompt] + .ed .cm-content").fill("Add dark mode")
         repoBox.click()
         repoOption(repo).click()
         repoBox.press("Escape")
         openSchedule()
-        val every = page.getByLabel("Every")
+        val every = start.getByLabel("Every")
         assertThat(every).isFocused()
         every.selectOption("day")
-        assertThat(page.getByLabel("Cron")).hasValue("0 0 8 * * *")
+        assertThat(start.getByLabel("Cron")).hasValue("0 0 8 * * *")
         every.selectOption("hour")
-        assertThat(page.getByLabel("Cron")).hasValue("0 0 * * * *")
+        assertThat(start.getByLabel("Cron")).hasValue("0 0 * * * *")
         page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("Save schedule")).click()
         page.waitForURL(Pattern.compile("/processes/picker$"))
     }
@@ -2574,7 +3246,7 @@ class BrowserTest : AntsTest() {
         assertThat(page.locator("#when")).isHidden()
         schedulePicked("api")
         schedulePicked("web")
-        val rows = page.locator("#schedules tr").filter(Locator.FilterOptions().setHasText("Every hour"))
+        val rows = page.locator("#schedules tr[id^=schedule-]").filter(Locator.FilterOptions().setHasText("Every hour"))
         assertThat(rows).hasCount(2)
         assertThat(rows.nth(0)).containsText("api")
         assertThat(rows.nth(1)).containsText("web")
@@ -2598,7 +3270,7 @@ class BrowserTest : AntsTest() {
         picker()
         schedulePicked("api")
         schedulePicked("web")
-        val rows = page.locator("#schedules tr").filter(Locator.FilterOptions().setHasText("Every hour"))
+        val rows = page.locator("#schedules tr[id^=schedule-]").filter(Locator.FilterOptions().setHasText("Every hour"))
         val api = rows.filter(Locator.FilterOptions().setHasText("api"))
         val web = rows.filter(Locator.FilterOptions().setHasText("web"))
         api.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Pause")).click()
@@ -2617,6 +3289,88 @@ class BrowserTest : AntsTest() {
         page.waitForURL(Pattern.compile("/runs/[^/]+$"))
     }
 
+    @Test
+    fun `Edit on a Schedule's row opens a drawer under it filled with its values and times, Save schedule changes that Schedule alone, and Close shuts the drawer`() = browse {
+        picker()
+        schedulePicked("api")
+        schedulePicked("web")
+        val rows = page.locator("#schedules tr[id^=schedule-]")
+        val api = rows.filter(Locator.FilterOptions().setHasText("api"))
+        val web = rows.filter(Locator.FilterOptions().setHasText("web"))
+        val edit = api.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Edit"))
+        val drawer = page.locator("#" + edit.getAttribute("aria-controls"))
+        assertThat(drawer).isHidden()
+        assertThat(edit).hasAttribute("aria-expanded", "false")
+
+        edit.click()
+        assertThat(drawer).isVisible()
+        assertThat(edit).hasAttribute("aria-expanded", "true")
+        assertThat(drawer.getByLabel("Name")).isFocused()
+        assertThat(drawer.locator("textarea[name=prompt] + .ed .cm-content")).hasText("Add dark mode")
+        assertThat(drawer.getByRole(AriaRole.LIST, Locator.GetByRoleOptions().setName("Picked repos")).getByRole(AriaRole.LISTITEM)).hasText(arrayOf("api×"))
+        assertThat(drawer.getByLabel("Every")).hasValue("hour")
+        assertThat(page.locator("#when")).isHidden()
+
+        drawer.getByLabel("Name").fill("Morning api")
+        drawer.locator("textarea[name=prompt] + .ed .cm-content").fill("Add light mode")
+        drawer.getByLabel("Every").selectOption("day")
+        assertThat(drawer.getByLabel("Cron")).hasValue("0 0 8 * * *")
+        drawer.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Save schedule")).click()
+        page.waitForURL(Pattern.compile("/processes/picker$"))
+
+        val morning = rows.filter(Locator.FilterOptions().setHasText("Morning api"))
+        assertThat(morning).containsText("Add light mode")
+        assertThat(morning).containsText("Every day at 08:00")
+        assertThat(web).containsText("Add dark mode")
+        assertThat(web).containsText("Every hour")
+        assertThat(rows).hasCount(2)
+
+        val again = morning.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Edit"))
+        again.click()
+        assertThat(drawer).isVisible()
+        drawer.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Close")).click()
+        assertThat(drawer).isHidden()
+        assertThat(again).isFocused()
+        assertThat(again).hasAttribute("aria-expanded", "false")
+        again.click()
+        again.click()
+        assertThat(drawer).isHidden()
+    }
+
+    @Test
+    fun `on a phone a Schedule's open drawer fits the card with its fields one under another and tap-sized buttons, and on desktop it spans the table under its row`() = browse {
+        picker()
+        schedulePicked("api")
+        onPhone()
+        page.navigate(url("/processes/picker"))
+        val card = page.locator("#schedule")
+        val row = page.locator("#schedules tr[id^=schedule-]")
+        val edit = row.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Edit"))
+        edit.click()
+        val drawer = page.locator("#" + edit.getAttribute("aria-controls"))
+        assertNoSidewaysScroll()
+        for (name in listOf("Name (optional)", "Verbosity", "Every", "Repos (optional)")) assertWithinCard(drawer.getByLabel(name), card, "the drawer's $name")
+        for (name in listOf("Save schedule", "Close")) assertWithinCard(drawer.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName(name)), card, name)
+        assertTrue(drawer.boundingBox()!!.y >= row.boundingBox()!!.y + row.boundingBox()!!.height - 0.5, "the drawer sits under its Schedule")
+        drawer.getByText("Advanced", Locator.GetByTextOptions().setExact(true)).click()
+        assertWithinCard(drawer.getByLabel("Cron"), card, "the drawer's cron field")
+        assertTapSized()
+        page.screenshot("phone/schedule-edit")
+
+        page.setViewportSize(1280, 900)
+        page.reload()
+        edit.click()
+        val (rowBox, drawerBox) = row.boundingBox()!! to drawer.boundingBox()!!
+        assertTrue(drawerBox.y >= rowBox.y + rowBox.height - 0.5, "on desktop the drawer sits under its Schedule's row")
+        assertEquals(rowBox.width, drawerBox.width, 1.0, "on desktop the drawer spans the table")
+        for (name in listOf("Edit", "Start now", "Pause", "Remove", "Save schedule", "Close")) {
+            val box = page.locator("#schedules").getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName(name).setExact(true)).boundingBox()!!
+            val cardBox = card.boundingBox()!!
+            assertTrue(box.x + box.width <= cardBox.x + cardBox.width, "on desktop $name ends at ${box.x + box.width}, past the card at ${cardBox.x + cardBox.width}")
+        }
+        page.screenshot("schedule-edit")
+    }
+
     private fun assertWithinCard(part: Locator, card: Locator, what: String) {
         assertThat(part).isVisible()
         assertWithinScreen(part, what)
@@ -2625,7 +3379,7 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
-    fun `on a phone each Schedule is a block within the card, its name first, then labelled lines and its buttons at least 44px tall, each When part is a line of its own, and on desktop a Schedule is a table row and the When parts one row`() = browse {
+    fun `on a phone each Schedule is a block within the card, its name first, then labelled lines and its buttons at least 44px tall, each When part is a line of its own, and on desktop a Schedule is a table row with its buttons two to a row and the When parts one row`() = browse {
         val prompt = "Sweep the notes for stale links and rewrite every one of them with a longer explanation than fits on one line"
         picker("", *phoneSourceMap)
         http.get("/processes/picker")
@@ -2642,7 +3396,7 @@ class BrowserTest : AntsTest() {
         page.navigate(url("/processes/picker"))
         val card = page.locator("#schedule")
         val profiled = page.locator("#schedule-$id")
-        val unprofiled = page.locator("#schedules tr").filter(Locator.FilterOptions().setHasText("Unprofiled sweep"))
+        val unprofiled = page.locator("#schedules tr[id^=schedule-]").filter(Locator.FilterOptions().setHasText("Unprofiled sweep"))
         assertThat(profiled.getByRole(AriaRole.ALERT)).containsText("The scheduled Run didn't start: The Profile work isn't in the settings.")
         assertNoSidewaysScroll()
         val labels = listOf("Profile", "Values", "Runs", "Cron", "Next Run")
@@ -2657,7 +3411,7 @@ class BrowserTest : AntsTest() {
             val lines = row.locator("td").all().map { it.boundingBox()!! }
             for ((above, below) in lines.zipWithNext()) assertTrue(below.y >= above.y + above.height - 0.5, "a Schedule's lines sit one under another")
             assertThat(row.locator("td").first()).hasText(Pattern.compile("^(Profiled|Unprofiled) sweep\$"))
-            for (name in listOf("Start now", "Pause", "Remove")) assertWithinCard(button(row, name), card, name)
+            for (name in listOf("Edit", "Start now", "Pause", "Remove")) assertWithinCard(button(row, name), card, name)
         }
         assertThat(profiled).containsText("work")
         assertThat(unprofiled).containsText("—")
@@ -2667,7 +3421,7 @@ class BrowserTest : AntsTest() {
         assertWithinCard(profiled.locator("code"), card, "the Cron line")
         assertWithinCard(profiled.getByRole(AriaRole.ALERT), card, "the failed note")
         assertWithinCard(button(profiled, "Dismiss"), card, "Dismiss")
-        val (first, second) = page.locator("#schedules tr[id]").all().map { it.boundingBox()!! }
+        val (first, second) = page.locator("#schedules tr[id^=schedule-]").all().map { it.boundingBox()!! }
         assertTrue(second.y >= first.y + first.height, "the second Schedule's block sits under the first")
         assertTapSized()
         page.screenshot("phone/schedules")
@@ -2692,7 +3446,7 @@ class BrowserTest : AntsTest() {
             val lines = controls.map { line(it).boundingBox()!! }
             for ((above, below) in lines.zipWithNext()) assertTrue(below.y >= above.y + above.height - 0.5, "with Every $choice each When part sits on its own line")
         }
-        page.getByText("Advanced", Page.GetByTextOptions().setExact(true)).click()
+        fieldset.getByText("Advanced", Locator.GetByTextOptions().setExact(true)).click()
         assertWithinCard(part("cron"), fieldset, "the Advanced cron field")
         assertWithinCard(page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("Save schedule")), fieldset, "Save schedule")
         val inside = (fieldset.evaluate("f => { const s = getComputedStyle(f); return f.clientWidth - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight) }") as Number).toDouble()
@@ -2704,8 +3458,10 @@ class BrowserTest : AntsTest() {
         for (header in headers) assertThat(header).isVisible()
         for (label in labels) assertThat(profiled.getByText(label, Locator.GetByTextOptions().setExact(true))).isHidden()
         assertThat(profiled.getByRole(AriaRole.CELL).nth(1)).hasAccessibleName("work")
-        val buttons = listOf("Start now", "Pause", "Remove").map { button(profiled, it).boundingBox()!! }
-        for ((left, right) in buttons.zipWithNext()) assertEquals(left.y, right.y, 0.5, "on desktop a Schedule's buttons sit in one row")
+        val buttons = listOf("Edit", "Start now", "Pause", "Remove").map { button(profiled, it).boundingBox()!! }
+        for ((left, right) in buttons.chunked(2)) assertEquals(left.y, right.y, 0.5, "on desktop a Schedule's buttons sit two to a row")
+        assertTrue(buttons[2].y >= buttons[0].y + buttons[0].height, "on desktop Pause and Remove sit under Edit and Start now")
+        assertTrue(buttons.all { it.x + it.width <= card.boundingBox()!!.let { box -> box.x + box.width } }, "on desktop a Schedule's buttons stay within the card")
         openSchedule()
         every.selectOption("week")
         val parts = listOf("every", "at", "on").map { line(part(it)).boundingBox()!! }
@@ -2981,6 +3737,197 @@ class BrowserTest : AntsTest() {
         assertTrue(ticket <= 860, "the Ticket is ${ticket}px wide")
     }
 
+    private fun ticketWith(key: String, body: String): String {
+        val run = waitingRun(key).removePrefix("/runs/")
+        workspace(run).resolve("tickets/issues").createDirectories().resolve("01-$key.md").writeText("# Drawn\n\nStatus: ready-for-agent\n\n$body\n")
+        return "/runs/$run/tickets/01-$key"
+    }
+
+    private fun requests(): () -> List<String> {
+        val seen = mutableListOf<String>()
+        page.onRequest { synchronized(seen) { seen += it.url() } }
+        return { synchronized(seen) { seen.toList() } }
+    }
+
+    private fun mermaid(source: String) = "```mermaid\n$source\n```"
+
+    @Test
+    fun `a mermaid block in a Ticket shows as a diagram, with Mermaid served by Ants`() = browse {
+        val requested = requests()
+        page.navigate(url(ticketWith("drawn", mermaid("flowchart LR\n  Spec --> Ticket"))))
+        assertThat(page.locator("#ticket svg", Page.LocatorOptions().setHasText("Ticket"))).isVisible()
+        assertThat(page.locator("#ticket code.language-mermaid")).isHidden()
+        val all = requested()
+        assertTrue(all.any { it.startsWith(url("/vendor/mermaid/")) }, "Mermaid comes from /vendor/mermaid/: $all")
+        assertTrue(all.all { it.startsWith(url("/")) || it.startsWith("data:") }, "every request goes to Ants: $all")
+    }
+
+    private val brokenSource get() = page.locator("#ticket code.language-mermaid")
+    private val mermaidError get() = page.locator("#ticket .mermaid-error")
+
+    private fun resolvedColour(variable: String) = page.evaluate(
+        "v => { const p = document.body.appendChild(document.createElement('i')); p.style.color = `var(\${v})`; const c = getComputedStyle(p).color; p.remove(); return c }",
+        variable,
+    ) as String
+
+    private fun assertBrokenDiagramShowsItsSourceAndError() {
+        assertThat(brokenSource).isVisible()
+        assertThat(brokenSource).containsText("Spec --> --> ]")
+        assertThat(mermaidError).isVisible()
+        assertThat(mermaidError).containsText("Parse error")
+        assertThat(mermaidError).hasCSS("background-color", resolvedColour("--badSoft"))
+        assertThat(mermaidError).hasCSS("color", resolvedColour("--badText"))
+        assertThat(page.locator("#ticket .mermaid")).hasCount(0)
+        assertThat(page.locator("svg[aria-roledescription=error], [id^=dmermaid-]")).hasCount(0)
+        assertThat(page.getByText("Syntax error in text")).hasCount(0)
+        val (errorRight, ticketRight) = (page.locator("#ticket").evaluate(
+            "e => [e.querySelector('.mermaid-error').getBoundingClientRect().right, e.getBoundingClientRect().right]",
+        ) as List<*>).map { (it as Number).toDouble() }
+        assertTrue(errorRight <= ticketRight, "the error ends at ${errorRight}px, past the Ticket's ${ticketRight}px")
+    }
+
+    @Test
+    fun `an invalid mermaid block keeps its source and shows Mermaid's error beside it, on desktop and phone`() = browse {
+        val ticket = ticketWith("broken", mermaid("flowchart LR\n  Spec --> --> ]"))
+        page.navigate(url(ticket))
+        assertBrokenDiagramShowsItsSourceAndError()
+        onPhone()
+        page.navigate(url(ticket))
+        assertBrokenDiagramShowsItsSourceAndError()
+        assertNoSidewaysScroll()
+        page.waitForTimeout(500.0)
+        assertThat(mermaidError).hasCount(1)
+    }
+
+    private data class DiagramColours(val node: String, val border: String, val label: String, val edge: String)
+
+    private val lightDiagram = DiagramColours("rgb(246, 237, 228)", "rgb(138, 74, 38)", "rgb(15, 23, 42)", "rgb(100, 116, 139)")
+    private val darkDiagram = DiagramColours("rgb(42, 29, 20)", "rgb(212, 163, 115)", "rgb(230, 232, 238)", "rgb(139, 148, 165)")
+
+    private fun drawnColours() = (page.locator("#ticket .mermaid svg").evaluateAll(
+        "svgs => svgs.map(svg => { const style = s => getComputedStyle(svg.querySelector(s)); const node = style('.node rect'); " +
+            "return [node.fill, node.stroke, style('.nodeLabel').color, style('.flowchart-link').stroke] })",
+    ) as List<*>).map { colours -> (colours as List<*>).map { it as String }.let { (node, border, label, edge) -> DiagramColours(node, border, label, edge) } }
+
+    private fun assertDiagramDrawnIn(expected: DiagramColours, theme: String) = eventually {
+        val drawn = drawnColours()
+        assertTrue(drawn.isNotEmpty(), "a diagram is drawn on $theme")
+        assertEquals(List(drawn.size) { expected }, drawn, "every diagram on $theme")
+        assertEquals(DiagramColours(resolvedColour("--accSoft"), resolvedColour("--acc"), resolvedColour("--text"), resolvedColour("--muted")), expected, "Ants' colours on $theme")
+    }
+
+    @Test
+    fun `a diagram is drawn in Ants' light or dark colours, as the theme setting says`() = browse {
+        val ticket = ticketWith("coloured", mermaid("flowchart LR\n  Spec --> Ticket"))
+        for ((theme, system, expected) in listOf(
+            Triple("light", ColorScheme.DARK, lightDiagram), Triple("dark", ColorScheme.LIGHT, darkDiagram),
+            Triple("system", ColorScheme.LIGHT, lightDiagram), Triple("system", ColorScheme.DARK, darkDiagram),
+        )) {
+            settings(null, "theme: $theme\n")
+            page.emulateMedia(Page.EmulateMediaOptions().setColorScheme(system))
+            page.navigate(url(ticket))
+            assertThat(page.locator("#ticket .mermaid svg")).isVisible()
+            assertDiagramDrawnIn(expected, "$theme with the system $system")
+        }
+    }
+
+    @Test
+    fun `on the system theme, every diagram is drawn again in the new colours when the system switches light and dark`() = browse {
+        val ticket = ticketWith("switched", mermaid("flowchart LR\n  Spec --> Ticket") + "\n\n" + mermaid("flowchart LR\n  Ticket --> Report"))
+        settings(null, "theme: system\n")
+        page.emulateMedia(Page.EmulateMediaOptions().setColorScheme(ColorScheme.LIGHT))
+        page.navigate(url(ticket))
+        assertThat(page.locator("#ticket .mermaid svg")).hasCount(2)
+        assertDiagramDrawnIn(lightDiagram, "the light system")
+        page.evaluate("window.antsNotReloaded = true")
+        page.emulateMedia(Page.EmulateMediaOptions().setColorScheme(ColorScheme.DARK))
+        assertDiagramDrawnIn(darkDiagram, "the dark system")
+        page.emulateMedia(Page.EmulateMediaOptions().setColorScheme(ColorScheme.LIGHT))
+        assertDiagramDrawnIn(lightDiagram, "the light system again")
+        assertThat(page.locator("#ticket .mermaid svg")).hasCount(2)
+        assertThat(page.locator("#ticket code.language-mermaid")).hasCount(2)
+        assertThat(page.locator("#ticket code.language-mermaid").first()).isHidden()
+        assertEquals(true, page.evaluate("window.antsNotReloaded ?? false"))
+    }
+
+    @Test
+    fun `an invalid mermaid block's error reads on light and dark`() = browse {
+        val ticket = ticketWith("broken-themed", mermaid("flowchart LR\n  Spec --> --> ]"))
+        for ((theme, background, text) in listOf(
+            Triple("light", "rgb(253, 236, 236)", "rgb(153, 27, 27)"), Triple("dark", "rgb(44, 20, 22)", "rgb(252, 165, 165)"),
+        )) {
+            settings(null, "theme: $theme\n")
+            page.navigate(url(ticket))
+            assertBrokenDiagramShowsItsSourceAndError()
+            assertThat(mermaidError).hasCSS("background-color", background)
+            assertThat(mermaidError).hasCSS("color", text)
+        }
+    }
+
+    @Test
+    fun `a Ticket without a mermaid block loads no Mermaid`() = browse {
+        val requested = requests()
+        page.navigate(url(ticketWith("plain", "```kotlin\nval drawn = false\n```")))
+        page.waitForLoadState(LoadState.NETWORKIDLE)
+        assertThat(page.locator("#ticket code.language-kotlin")).isVisible()
+        val all = requested()
+        assertTrue(all.none { "/vendor/mermaid/" in it }, "no Mermaid on a page without a diagram: $all")
+    }
+
+    @Test
+    fun `a mermaid block added after load renders, and one inside live stays code until it moves out`() = browse {
+        page.navigate(url(ticketWith("added", "No diagram yet.")))
+        page.evaluate(
+            """() => {
+                const block = text => { const md = document.createElement('div'); md.className = 'md'; const pre = document.createElement('pre'), code = document.createElement('code');
+                    code.className = 'language-mermaid'; code.textContent = text; pre.append(code); md.append(pre); return md; };
+                const live = document.createElement('div'); live.id = 'live'; live.append(block('flowchart LR\n  Streaming --> Landed'));
+                document.querySelector('#ticket').after(block('flowchart LR\n  Added --> Later'), live);
+            }""",
+        )
+        assertThat(page.locator("svg", Page.LocatorOptions().setHasText("Later"))).isVisible()
+        page.waitForTimeout(500.0)
+        assertThat(page.locator("#live code.language-mermaid")).isVisible()
+        assertThat(page.locator("#live svg")).hasCount(0)
+        page.evaluate("() => document.querySelector('#live').before(document.querySelector('#live .md'))")
+        assertThat(page.locator("svg", Page.LocatorOptions().setHasText("Landed"))).isVisible()
+    }
+
+    @Test
+    fun `mermaid runs at its strict security level, so a diagram's labels inject no HTML`() = browse {
+        page.navigate(url(ticketWith("strict", mermaid("flowchart LR\n  A[\"<img src=x onerror=window.antsInjected=1>\"] --> B\n  click A call alert()"))))
+        assertThat(page.locator("#ticket svg", Page.LocatorOptions().setHasText("B"))).isVisible()
+        assertThat(page.locator("#ticket svg :is([onerror], [onclick], script)")).hasCount(0)
+        assertEquals(null, page.evaluate("window.antsInjected ?? null"))
+    }
+
+    private val wideDiagram = mermaid("flowchart LR\n  " + (1..14).joinToString(" --> ") { "Step$it[A long step named number $it]" })
+
+    private fun assertWideDiagramScrollsInsideItsBox() = eventually {
+        val (body, box, boxRight, scrolled) = (page.locator("#ticket").evaluate(
+            "e => { const b = e.querySelector('.mermaid'); b.scrollLeft = 100; " +
+                "return [e.getBoundingClientRect().width, b.getBoundingClientRect().width, b.getBoundingClientRect().right, b.scrollLeft] }",
+        ) as List<*>).map { (it as Number).toDouble() }
+        assertTrue(body <= 860, "the Ticket is ${body}px wide")
+        assertTrue(box <= body, "the diagram's box is ${box}px, wider than the Ticket's ${body}px")
+        assertTrue(boxRight <= page.viewportSize()!!.width, "the diagram's box ends at ${boxRight}px")
+        assertTrue(scrolled > 0, "the wide diagram scrolls sideways inside its own box")
+    }
+
+    @Test
+    fun `a wide diagram stays within the rendered body's measure and scrolls inside its box, on a wide page and on a phone`() = browse {
+        val ticket = ticketWith("wide", wideDiagram)
+        page.setViewportSize(1920, 1080)
+        page.navigate(url(ticket))
+        assertThat(page.locator("#ticket .mermaid svg")).isVisible()
+        assertWideDiagramScrollsInsideItsBox()
+        onPhone()
+        page.navigate(url(ticket))
+        assertThat(page.locator("#ticket .mermaid svg")).isVisible()
+        assertWideDiagramScrollsInsideItsBox()
+        assertNoSidewaysScroll()
+    }
+
     private val wideMarkdown = "| Class | Test | Policy | Clock | Ledger | Gateway |\n|---|---|---|---|---|---|\n" +
         "| PaymentRetryPolicy | PaymentRetryPolicyTest | ExponentialBackoffPolicy | FixedClockForRetries | InMemoryPaymentLedger | StripeWebhookGateway |\n\n" +
         "![Ants](/icon-512.png)\n"
@@ -3162,6 +4109,32 @@ class BrowserTest : AntsTest() {
         page.locator("#save").click()
         assertThat(page).hasURL(Pattern.compile(".*/processes/profiled$"))
         assertContains(http.get("/processes/profiled/diagram.bpmn").body, """name="ants.profile" value="private"""")
+    }
+
+    @Test
+    fun `the Process's panel renames the Process, the page's heading follows, and Publish keeps the new name under the same key`() = browse {
+        val (process, plane) = row("renamed", """<bpmn:startEvent id="start" />""", """<bpmn:endEvent id="end" />""")
+        deploy(definitions("renamed", "Old name", process, plane))
+
+        page.navigate(url("/processes/renamed/edit"))
+        assertThat(heading).hasText("Process")
+        assertThat(label("Name")).hasValue("Old name")
+        label("Name").fill("New name")
+        label("Name").blur()
+        assertThat(page.locator(".ph h1")).hasText("New name")
+        undo()
+        assertThat(label("Name")).hasValue("Old name")
+        assertThat(page.locator(".ph h1")).hasText("Old name")
+        label("Name").fill("  ")
+        label("Name").blur()
+        assertThat(label("Name")).hasValue("Old name")
+        label("Name").fill("New name")
+        label("Name").blur()
+        assertThat(page.locator(".ph h1")).hasText("New name")
+        page.locator("#save").click()
+        assertThat(page).hasURL(Pattern.compile(".*/processes/renamed$"))
+        assertThat(page.locator("h1")).hasText("New name")
+        assertContains(http.get("/processes/renamed/diagram.bpmn").body, """name="New name"""")
     }
 
     @Test
@@ -4204,9 +5177,9 @@ class BrowserTest : AntsTest() {
         assertThat(clock).hasText(Pattern.compile("\\d+s"))
         val first = clock.textContent()!!
         val spin = page.locator("#status .spin")
-        val glyph = spin.textContent()
+        val ant = spin.screenshot()
         assertThat(clock).not().hasText(first) // the clock still ticks
-        assertEquals(glyph, spin.textContent()) // the spinner stands still
+        assertTrue(ant.contentEquals(spin.screenshot()), "the working ant stands still")
         assertEquals("none", page.evaluate("getComputedStyle(document.querySelector('#status .shimmer')).animationName"))
         claude.release("one")
         assertThat(page.locator("#live.caret")).containsText("Almost there")

@@ -140,4 +140,4 @@ function repoPicker(field) {
     render()
 }
 
-document.querySelectorAll("#start [data-filter-placeholder]").forEach(repoPicker)
+document.querySelectorAll(":is(#start, #schedules) [data-filter-placeholder]").forEach(repoPicker)

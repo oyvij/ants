@@ -477,7 +477,19 @@ class Transcript(private val toolLine: (name: String, input: Map<*, *>) -> Strin
         }
 
         /** [text] as HTML, its own HTML escaped and its URLs sanitized. */
-        fun markdown(text: CharSequence) = renderer.render(parser.parse(text.toString()))
+        fun markdown(text: CharSequence): String {
+            val (fields, body) = runCatching { frontmatter(text.toString()) }.getOrNull()?.takeIf { it.first.isNotEmpty() } ?: return html(text.toString())
+            val rows = fields.entries.joinToString("") { (key, value) -> "<tr><th>${esc(key)}</th><td>${esc(frontmatterValue(value))}</td></tr>" }
+            return "<table class=\"frontmatter\"><tbody>$rows</tbody></table>\n" + html(body)
+        }
+
+        private fun html(text: String) = renderer.render(parser.parse(text))
+
+        private fun frontmatterValue(value: Any?) = when (value) {
+            null -> ""
+            is Map<*, *>, is List<*> -> yaml.dump(value)
+            else -> value.toString()
+        }.trimEnd()
 
         private fun esc(value: Any?) = HtmlUtils.htmlEscape(value?.toString().orEmpty())
 

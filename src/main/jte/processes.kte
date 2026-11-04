@@ -27,7 +27,7 @@
         <td class="muted small">${if (row.shipped) "shipped" else "you"}</td>
         <td class="muted small">${row.profile?.vault ?: "—"} · ${row.profile?.sourceMap ?: "—"}</td>
         <td class="small">@if(row.scheduleCount > 0)⏰ ${row.scheduleCount}@endif</td>
-        <td>@if(row.ready)<span class="pill p-ready">Ready</span>@else<span class="pill p-failed">Can't start</span>@endif</td>
+        <td>@template.readymark(key = key, list = true)</td>
         <td class="muted">${row.live}</td>
         <td><a href="/processes/${key}/edit">Edit diagram</a></td>
     </tr>
@@ -61,6 +61,7 @@
         </form>
     </div>
 </dialog>
+<script type="module">stream.follow('ready=list');</script>
 </main>
 </body>
 </html>
