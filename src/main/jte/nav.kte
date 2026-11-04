@@ -5,6 +5,16 @@
     <div class="logo">@template.wordmark(gradientId = "wm-side")</div>
     <span id="history"><button type="button" onclick="history.back()" title="Back" aria-label="Back">←</button><button type="button" onclick="history.forward()" title="Forward" aria-label="Forward">→</button><button type="button" onclick="location.reload()" title="Reload" aria-label="Reload">↻</button></span>
     <a href="/"><svg class="i" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>Home</a>
+    <button type="button" id="dashboards-toggle" aria-expanded="${shell.dashboardsOpen.toString()}" aria-controls="dashboards-list"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="10" rx="1.5"/><rect x="13" y="3" width="8" height="6" rx="1.5"/><rect x="13" y="11" width="8" height="10" rx="1.5"/><rect x="3" y="15" width="8" height="6" rx="1.5"/></svg>Dashboards<svg class="i chev" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></button>
+    <div id="dashboards-list" class="sub" hidden="${!shell.dashboardsOpen}">
+@for(dashboard in shell.dashboards)
+        <a href="/dashboards/${dashboard.id}"><span class="clip">${dashboard.title}</span></a>
+@endfor
+        <form method="post" action="/dashboards">
+            @if(shell.csrf != null)<input type="hidden" name="${shell.csrf.parameterName}" value="${shell.csrf.token}">@endif
+            <button class="add">+ Add Dashboard</button>
+        </form>
+    </div>
     <a href="/notifications"><svg class="i" viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>Notification list<span id="waiting" class="n">${if (shell.waiting > 0) shell.waiting.toString() else ""}</span></a>
     <div class="grp">Work</div>
     <a href="/runs"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m10 8.5 5 3.5-5 3.5z"/></svg>Runs<span id="runs" class="m">@template.running(working = shell.working, live = shell.live)</span></a>

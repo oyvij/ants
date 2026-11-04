@@ -1,0 +1,26 @@
+@param dashboard: ants.Dashboard?
+@param _csrf: org.springframework.security.web.csrf.CsrfToken
+@param colorScheme: String = "light dark"
+@param shell: ants.Shell
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    @template.app()
+    <meta name="color-scheme" content="${colorScheme}">
+    <title>${dashboard?.title ?: "Dashboards"} · Ants</title>
+</head>
+<body>
+@template.nav(shell = shell)
+<main class="dashboard">
+@if(dashboard == null)
+<div class="empty" id="no-dashboards"><b>No Dashboards yet</b>Open <b>Dashboards</b> in the menu and choose <b>Add Dashboard</b>.</div>
+@else
+<div class="ph"><h1 id="title" data-id="${dashboard.id}" contenteditable="plaintext-only" spellcheck="false" title="Click to rename">${dashboard.title}</h1><span id="saved" class="small muted" aria-live="polite"></span>
+    <div class="acts"><form method="post" action="/dashboards/${dashboard.id}/delete"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button class="ghost" title="Delete dashboard" aria-label="Delete dashboard"><svg class="i" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></button></form></div></div>
+<div class="empty" id="no-widgets"><b>No Widgets yet</b>Ask the Process Builder, the Template Builder or the script helper to add the Widgets its Process will Post to.</div>
+<script type="module" src="/dashboard.js"></script>
+@endif
+</main>
+</body>
+</html>
