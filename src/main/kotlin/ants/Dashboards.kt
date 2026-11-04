@@ -334,7 +334,6 @@ class Dashboards(@Value("\${ants.home}") home: Path, private val clock: Clock) {
         private const val WIDTH = 3
         private const val HEIGHT = 2
         private val ID = Regex("d-[a-z0-9]{6}")
-        private val WIDGET = Regex("w-[a-z0-9]{6}")
     }
 }
 

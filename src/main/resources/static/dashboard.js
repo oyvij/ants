@@ -92,8 +92,8 @@ function wire(item) {
         const cleared = await send(`/dashboards/${id}/widgets/${widget}/clear`, {});
         body.innerHTML = shown[widget] = cleared.body;
     });
-    const keep = item.querySelector('.keep');
-    keep?.addEventListener('change', () => keep.checkValidity() && send(`/dashboards/${id}/widgets/${widget}/keep`, { days: keep.value }));
+    const days = item.querySelector('.keep');
+    days?.addEventListener('change', () => days.checkValidity() && send(`/dashboards/${id}/widgets/${widget}/keep`, { days: days.value }));
     showNewest(item);
 }
 
