@@ -78,6 +78,7 @@ svg.i { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-widt
 #dashboards-list a .clip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .side #dashboards-list button.add { color: #d9a877; }
 #dashboards-list form { margin: 0; }
+#dashboards-list a { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; } #dashboards-list a.dragging { background: var(--side2); color: #e5e7eb; cursor: grabbing; box-shadow: 0 2px 8px rgba(0,0,0,.3); }
 #menu, .topbar { display: none; }
 .topbar { position: sticky; top: 0; z-index: 9; align-items: center; gap: 4px; padding: 6px 8px 6px 16px; background: var(--side); color: var(--sideText); color-scheme: dark; }
 .topbar .logo { padding: 0; margin-right: auto; }

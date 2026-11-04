@@ -5,6 +5,7 @@ import com.google.gson.JsonObject
 import com.microsoft.playwright.Browser.NewContextOptions
 import com.microsoft.playwright.BrowserType
 import com.microsoft.playwright.Locator
+import com.microsoft.playwright.Mouse
 import com.microsoft.playwright.options.AriaRole
 import com.microsoft.playwright.options.ColorScheme
 import com.microsoft.playwright.options.FilePayload
@@ -2062,6 +2063,38 @@ class BrowserTest : AntsTest() {
         assertThat(link).hasText("Untitled dashboard")
         page.reload()
         assertThat(title).hasText("Untitled dashboard")
+    }
+
+    @Test
+    fun `dragging a Dashboard up or down the menu reorders it without opening it, and the order is kept`() = browse {
+        val (first, second, third) = listOf("Morning", "Home lab", "Disk").map { dashboards.rename(dashboards.create().id, it).id }
+        fun order() = dashboardsList.locator(":scope > a").evaluateAll("links => links.map(a => a.pathname.split('/').pop())")
+            .let { (it as List<*>).filter { id -> id in listOf(first, second, third) } }
+        page.navigate(url("/runs"))
+        if (dashboardsList.isHidden) dashboardsToggle.click()
+        assertEquals(listOf(first, second, third), order())
+
+        /** Drags the Dashboard [id] by mouse to the top edge of [onto], or to its bottom edge when [below], and waits for the order to be kept. */
+        fun drag(id: String, onto: String, below: Boolean = false) = page.waitForResponse("**/dashboards/order") {
+            dashboardsList.locator("a[href='/dashboards/$onto']").scrollIntoViewIfNeeded()
+            val from = dashboardsList.locator("a[href='/dashboards/$id']").boundingBox()!!
+            val to = dashboardsList.locator("a[href='/dashboards/$onto']").boundingBox()!!
+            page.mouse().move(from.x + 20, from.y + from.height / 2)
+            page.mouse().down()
+            page.mouse().move(from.x + 20, if (below) to.y + to.height - 2 else to.y + 2, Mouse.MoveOptions().setSteps(8))
+            page.mouse().up()
+        }.let { assertEquals(200, it.status()) }
+
+        drag(third, onto = first)
+        assertEquals(listOf(third, first, second), order())
+        assertEquals(url("/runs"), page.url())
+        page.reload()
+        assertEquals(listOf(third, first, second), order())
+
+        drag(third, onto = second, below = true)
+        assertEquals(listOf(first, second, third), order())
+        page.navigate(url("/processes"))
+        assertEquals(listOf(first, second, third), order())
     }
 
     /** A new Dashboard's page, its title left; its id. */
