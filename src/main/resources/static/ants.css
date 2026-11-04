@@ -124,6 +124,19 @@ main.full .composer > :is(div, form) { max-width: none; padding-inline: 24px; }
 .dashboard .num { font-size: 40px; font-weight: 700; line-height: 1.2; } .dashboard .num small { font-size: 18px; color: var(--muted); margin-left: 4px; }
 .dashboard .delta { font-size: 13px; } .dashboard .delta.up { color: var(--ok); } .dashboard .delta.down { color: var(--bad); }
 .dashboard .from { margin-top: 6px; }
+.dashboard .w-tools { display: flex; align-items: center; gap: 8px; padding: 4px 12px; border-bottom: 1px solid var(--line2); background: var(--accSoft); font-size: 12px; }
+.dashboard:not(.editing) .w-tools { display: none; }
+.dashboard .w-tools .keep { width: 5em; padding: 1px 4px; } .dashboard .w-tools .clear { margin-left: auto; padding: 1px 6px; font-size: 12px; }
+.dashboard .bar { height: 14px; background: var(--line2); border-radius: 7px; overflow: hidden; margin-top: 10px; } .dashboard .bar div { height: 100%; background: var(--acc); transition: width .4s; }
+.dashboard .st { display: flex; align-items: center; gap: 8px; padding: 3px 0; } .dashboard .st .n { flex: 1; min-width: 0; } .dashboard .st .s { color: var(--muted); }
+.dashboard .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.dashboard .dot.ok { background: var(--ok); } .dashboard .dot.warn { background: var(--wait); } .dashboard .dot.fail { background: var(--bad); }
+.dashboard .dot.running { background: var(--acc); animation: running 1s infinite alternate; } @keyframes running { to { opacity: .3; } }
+@media (prefers-reduced-motion: reduce) { .dashboard .dot.running { animation: none; } .dashboard .bar div { transition: none; } }
+.dashboard .li { padding: 4px 0; border-bottom: 1px solid var(--line2); } .dashboard .li:last-of-type { border-bottom: 0; } .dashboard .li > div { color: var(--muted); font-size: 12px; }
+.dashboard .text { white-space: pre-wrap; }
+.dashboard .log { font: 12px/1.5 var(--mono); } .dashboard .log .warn { color: var(--warnText); } .dashboard .log .error { color: var(--badText); }
+.dashboard .log time { color: var(--muted); margin-right: 6px; }
 .dashboard .dd { position: relative; }
 .dashboard .menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--sh); padding: 4px; width: 260px; }
 .dashboard .menu[hidden] { display: none; }
