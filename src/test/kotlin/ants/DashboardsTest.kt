@@ -89,4 +89,45 @@ class DashboardsTest : AntsTest() {
             assertEquals("Home lab", title(browser.get("/dashboards/$id").body))
         }
     }
+
+    /** **+ Widget**, number: the new Widget's id. */
+    private fun addWidget(dashboard: String, type: String = "number"): String =
+        answer(browser.post("/dashboards/$dashboard/widgets", mapOf("type" to type)))["id"].toString()
+
+    /** The Widget [widget] as the Dashboard's page draws it, its grid item. */
+    private fun widget(dashboard: String, widget: String) =
+        browser.get("/dashboards/$dashboard").body.let { page -> Regex("""<div class="grid-stack-item" gs-id="$widget".*?</article>""", RegexOption.DOT_MATCHES_ALL).find(page)?.value }
+
+    @Test
+    fun `a number Widget shows its type and fixed id, waits for its first Post at its address, and is renamed and removed for good`() {
+        val dashboard = add()
+        val id = addWidget(dashboard)
+        assertContains(id, Regex("^w-[a-z0-9]{6}$"))
+        val drawn = widget(dashboard, id)!!
+        assertContains(drawn, "New number")
+        assertContains(drawn, "number · $id")
+        assertContains(drawn, "Waiting for its first Post")
+        assertContains(drawn, "<code>$dashboard/$id</code>")
+        val page = browser.get("/dashboards/$dashboard").body
+        assertContains(page, """id="no-widgets" hidden""")
+        assertContains(page.substringAfter("""id="posting""""), "<code>$dashboard/$id</code> · number</dt><dd><code>{value: number, unit?: string, delta?: number}</code>")
+
+        assertEquals("Free disk", answer(browser.post("/dashboards/$dashboard/widgets/$id/title", mapOf("title" to " Free disk "))).get("title"))
+        assertContains(widget(dashboard, id)!!, "Free disk")
+        assertContains(widget(dashboard, id)!!, "number · $id")
+
+        browser.post("/dashboards/$dashboard/widgets/$id/delete", mapOf())
+        assertEquals(null, widget(dashboard, id))
+        assertEquals(400, browser.post("/dashboards/$dashboard/widgets", mapOf("type" to "pie")).status)
+    }
+
+    @Test
+    fun `the layout is kept as it is made`() {
+        val dashboard = add()
+        val first = addWidget(dashboard)
+        val second = addWidget(dashboard)
+        browser.post("/dashboards/$dashboard/layout", mapOf("layout" to """[{"id":"$first","x":3,"y":0,"w":4,"h":2},{"id":"$second","x":0,"y":0,"w":3,"h":3}]"""))
+        assertContains(widget(dashboard, first)!!, """gs-x="3" gs-y="0" gs-w="4" gs-h="2"""")
+        assertContains(widget(dashboard, second)!!, """gs-x="0" gs-y="0" gs-w="3" gs-h="3"""")
+    }
 }

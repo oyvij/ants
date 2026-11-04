@@ -21,11 +21,13 @@ data class Script(
     val output: Map<*, *>? = null,
     val vars: Map<String, String> = emptyMap(),
     val secrets: List<String> = emptyList(),
+    /** The addresses of the Widgets it Posts to, `<dashboard id>/<widget id>` (ADR 0032); `ants.post` refuses any other. */
+    val widgets: List<String> = emptyList(),
 ) {
     val inputNames: List<String> get() = (inputs["properties"] as? Map<*, *>).orEmpty().keys.map { "$it" }
 
     fun definition(): Map<String, Any> = linkedMapOf<String, Any>("id" to id, "name" to name, "description" to description, "inputs" to inputs)
-        .apply { output?.let { put("output", it) } } + mapOf("vars" to vars, "secrets" to secrets)
+        .apply { output?.let { put("output", it) } } + mapOf("vars" to vars, "secrets" to secrets) + (if (widgets.isEmpty()) emptyMap() else mapOf("widgets" to widgets))
 
     companion object {
         fun of(definition: Map<*, *>) = Script(
@@ -36,6 +38,7 @@ data class Script(
             output = definition["output"] as? Map<*, *>,
             vars = (definition["vars"] as? Map<*, *>).orEmpty().entries.associate { (name, value) -> "$name" to "$value" },
             secrets = Settings.strings(definition["secrets"]).orEmpty(),
+            widgets = Settings.strings(definition["widgets"]).orEmpty(),
         )
     }
 }

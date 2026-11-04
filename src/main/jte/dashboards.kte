@@ -1,4 +1,6 @@
 @param dashboard: ants.Dashboard?
+@param widgets: List<ants.WidgetView>
+@param types: List<ants.WidgetType> = emptyList()
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
 @param shell: ants.Shell
@@ -9,6 +11,10 @@
     @template.app()
     <meta name="color-scheme" content="${colorScheme}">
     <title>${dashboard?.title ?: "Dashboards"} · Ants</title>
+@if(dashboard != null)
+    <link rel="stylesheet" href="/vendor/gridstack/gridstack.min.css">
+    <script src="/vendor/gridstack/gridstack-all.js"></script>
+@endif
 </head>
 <body>
 @template.nav(shell = shell)
@@ -17,8 +23,40 @@
 <div class="empty" id="no-dashboards"><b>No Dashboards yet</b>Open <b>Dashboards</b> in the menu and choose <b>Add Dashboard</b>.</div>
 @else
 <div class="ph"><h1 id="title" data-id="${dashboard.id}" contenteditable="plaintext-only" spellcheck="false" title="Click to rename">${dashboard.title}</h1><span id="saved" class="small muted" aria-live="polite"></span>
-    <div class="acts"><form method="post" action="/dashboards/${dashboard.id}/delete"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button class="ghost" title="Delete dashboard" aria-label="Delete dashboard"><svg class="i" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></button></form></div></div>
-<div class="empty" id="no-widgets"><b>No Widgets yet</b>Ask the Process Builder, the Template Builder or the script helper to add the Widgets its Process will Post to.</div>
+    <div class="acts">
+        <button type="button" id="edit" title="Move, resize, rename and remove Widgets" aria-pressed="false">Edit layout</button>
+        <span class="dd"><button type="button" id="add" class="primary" aria-haspopup="menu" aria-expanded="false">+ Widget ▾</button>
+            <div class="menu" id="add-menu" role="menu" hidden>
+@for(type in types)
+                <button type="button" role="menuitem" data-type="${type.label}"><b>${type.label}</b><small>${type.line}</small></button>
+@endfor
+            </div></span>
+        <button type="button" id="posting-toggle" aria-controls="posting" aria-expanded="false">Posting</button>
+        <form method="post" action="/dashboards/${dashboard.id}/delete"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button class="ghost" title="Delete dashboard" aria-label="Delete dashboard"><svg class="i" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></button></form>
+    </div></div>
+<div class="board">
+    <div class="grid-wrap">
+        <div class="grid-stack" id="grid">
+@for(view in widgets)
+            @template.widget(view = view)
+@endfor
+        </div>
+        <div class="empty" id="no-widgets" hidden="${widgets.isNotEmpty()}"><b>No Widgets yet</b>Add one with <b>+ Widget</b>, or ask the Process Builder, the Template Builder or the script helper to add the Widgets its Process will Post to.</div>
+    </div>
+    <aside id="posting" hidden>
+        <h3>How a Process Posts here</h3>
+        <p>A Widget's address is <code>&lt;dashboard id&gt;/&lt;widget id&gt;</code>. A Post with the wrong shape is refused with a message saying the shape it needs; the sender decides what to do.</p>
+        <p>A Script lists each Widget it Posts to under <b>Widgets</b>, one address a line, then Posts in a Script Task:</p>
+        <pre>await ants.post('${dashboard.id}/${widgets.firstOrNull()?.widget?.id ?: "<widget id>"}', {value: 42})</pre>
+        <h3>Widgets on this Dashboard</h3>
+        <dl id="addresses">
+@for(view in widgets)
+            <dt><code>${view.address}</code> · ${view.widget.type.label}</dt><dd><code>${view.widget.type.shape}</code></dd>
+@endfor
+        </dl>
+@if(widgets.isEmpty())<p class="muted" id="no-addresses">None yet.</p>@endif
+    </aside>
+</div>
 <script type="module" src="/dashboard.js"></script>
 @endif
 </main>

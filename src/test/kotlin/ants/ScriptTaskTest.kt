@@ -42,8 +42,8 @@ class ScriptTaskTest : AntsTest() {
         secrets.deleteIfExists()
     }
 
-    private fun saveScript(name: String, code: String, inputs: String = "", vars: String = "", own: List<Pair<String, String>> = emptyList(), linked: List<String> = emptyList(), was: String? = null, output: List<Pair<String, String>> = emptyList()) {
-        val form = listOf("name" to name, "description" to "Does $name.", "code" to code, "vars" to vars) + ScriptsTest.inputRows(inputs) + output +
+    private fun saveScript(name: String, code: String, inputs: String = "", vars: String = "", own: List<Pair<String, String>> = emptyList(), linked: List<String> = emptyList(), was: String? = null, output: List<Pair<String, String>> = emptyList(), widgets: String = "") {
+        val form = listOf("name" to name, "description" to "Does $name.", "code" to code, "vars" to vars, "widgets" to widgets) + ScriptsTest.inputRows(inputs) + output +
             own.withIndex().flatMap { (i, secret) -> listOf("secrets[$i].name" to secret.first, "secrets[$i].value" to secret.second, "secrets[$i].was" to if (was == null) "" else secret.first) } +
             linked.map { "linked" to it }
         val page = if (was == null) browser.publishNew("/scripts", form) else browser.get("/scripts/$was").let { browser.post("/scripts/$was", form) }
@@ -292,5 +292,51 @@ class ScriptTaskTest : AntsTest() {
         assertFalse("value=\"s-zz9999\"" in deployed("archiving"))
         val run = start("archiving")
         eventually { assertNotNull(runtime.getVariable(run, "store")) }
+    }
+
+    @Test
+    fun `a Script Task Posts a number to a Widget it lists, which the open Dashboard shows live with the Run it came from, and a refused Post throws for the Script to decide`() {
+        browser.get("/")
+        val dashboard = browser.post("/dashboards", mapOf()).path.removePrefix("/dashboards/")
+        val disk = answer(browser.post("/dashboards/$dashboard/widgets", mapOf("type" to "number")))["id"]
+        val unlisted = answer(browser.post("/dashboards/$dashboard/widgets", mapOf("type" to "number")))["id"]
+        browser.post("/dashboards/$dashboard/widgets/$disk/title", mapOf("title" to "Free disk"))
+        saveScript(
+            "measure-disk", vars = "DISK=$dashboard/$disk\nOTHER=$dashboard/$unlisted\nGONE=$dashboard/w-gone00",
+            widgets = "$dashboard/$disk\n$dashboard/w-gone00",
+            code = """
+                const e = process.env, refused = []
+                for (const [address, data] of [[e.DISK, {value: 'lots'}], [e.DISK, 7], [e.OTHER, {value: 1}], [e.GONE, {value: 1}]]) {
+                    try { await ants.post(address, data) } catch (error) { refused.push(error.message) }
+                }
+                await ants.post(e.DISK, {value: 42.5, unit: 'GB', delta: -3})
+                ants.output({refused})
+            """.trimIndent(),
+        )
+        deploy("measuring", scriptTask("measure", "measure-disk"))
+        val live = browser.events("dashboard=$dashboard", "widgets")
+        assertContains(live.poll(10, java.util.concurrent.TimeUnit.SECONDS).orEmpty(), "Waiting for its first Post")
+
+        val run = start("measuring")
+        eventually { assertNotNull(runtime.getVariable(run, "measure")) }
+        val refused = ((runtime.getVariable(run, "measure") as Map<*, *>)["payload"] as Map<*, *>)["refused"] as List<*>
+        assertEquals(
+            listOf(
+                "The number Widget $dashboard/$disk (Free disk) takes {value: number, unit?: string, delta?: number}, but value is not a number.",
+                "The number Widget $dashboard/$disk (Free disk) takes {value: number, unit?: string, delta?: number}, but the data is not an object.",
+                "The Script measure-disk doesn't list the Widget $dashboard/$unlisted under its Widgets, so it may not Post to it.",
+            ),
+            refused.take(3),
+        )
+        assertContains(refused[3].toString(), "No Widget $dashboard/w-gone00")
+
+        val shown = live.poll(10, java.util.concurrent.TimeUnit.SECONDS).orEmpty()
+        assertContains(shown, "42.5")
+        val page = browser.get("/dashboards/$dashboard").body
+        val widget = page.substringAfter("""gs-id="$disk"""").substringBefore("</article>")
+        assertContains(widget, """<div class="num">42.5<small>GB</small></div>""")
+        assertContains(widget, "▼ 3 since the last Post")
+        assertContains(widget, """<a href="/runs/$run">${browser.get("/runs/$run").body.substringAfter("<title>").substringBefore(" · ")}</a> · <time datetime=""")
+        assertContains(page.substringAfter("""gs-id="$unlisted"""").substringBefore("</article>"), "Waiting for its first Post")
     }
 }

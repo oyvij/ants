@@ -23,6 +23,9 @@ importers:
       codemirror:
         specifier: 6.0.2
         version: 6.0.2
+      gridstack:
+        specifier: 14.0.0
+        version: 14.0.0
       mermaid:
         specifier: 12.2.0
         version: 12.2.0
@@ -670,6 +673,9 @@ packages:
 
   globrex@0.1.2:
     resolution: {integrity: sha512-uHJgbwAMwNFf5mLst7IWLNg14x1CkeqglJb/K3doi4dw6q2IvAAmM/Y81kevy83wP+Sst+nutFTYOGg3d1lsxg==}
+
+  gridstack@14.0.0:
+    resolution: {integrity: sha512-jkoGugExoCUHNbC3IMQEHUtf3+quii8BI+tTsP8h0bpHjf3Jr3KdCUbHpmqGz3VVHEb5tqciL6foBLum8/32FQ==}
 
   hachure-fill@0.5.2:
     resolution: {integrity: sha512-3GKBOn+m2LX9iq+JC1064cSFprJY4jL1jCXTcpnfER5HYE2l/4EfWSGzkPa/ZDBmYI0ZOEj5VHV/eKnPGkHuOg==}
@@ -1780,6 +1786,8 @@ snapshots:
   globalyzer@0.1.0: {}
 
   globrex@0.1.2: {}
+
+  gridstack@14.0.0: {}
 
   hachure-fill@0.5.2: {}
 

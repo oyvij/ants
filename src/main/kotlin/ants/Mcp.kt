@@ -17,6 +17,12 @@ import java.net.InetAddress
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
+/** [path] on this Ants as a process on this machine reaches it: on the address it listens on, else 127.0.0.1. */
+fun localUrl(server: WebServerApplicationContext, address: String, path: String): String {
+    val host = (address.takeUnless { it.isEmpty() || InetAddress.getByName(it).isAnyLocalAddress } ?: "127.0.0.1").let { if (':' in it) "[$it]" else it }
+    return "http://$host:${server.webServer!!.port}$path"
+}
+
 /** The tools one token opens on `/mcp`: a claude Agent Task's `run` (ADR 0015), or a modeler page's (ADR 0019). */
 interface McpTools {
     /** Each tool as `tools/list` gives it: name, description and inputSchema. */
@@ -41,8 +47,7 @@ class Mcp(private val server: WebServerApplicationContext, @Value("\${server.add
     fun open(tools: McpTools): Pair<String, String> {
         val token = UUID.randomUUID().toString()
         tokens[token] = tools
-        val host = (address.takeUnless { it.isEmpty() || InetAddress.getByName(it).isAnyLocalAddress } ?: "127.0.0.1").let { if (':' in it) "[$it]" else it }
-        val ants = mapOf("type" to "http", "url" to "http://$host:${server.webServer!!.port}/mcp", "headers" to mapOf(AUTHORIZATION to "Bearer $token"))
+        val ants = mapOf("type" to "http", "url" to localUrl(server, address, "/mcp"), "headers" to mapOf(AUTHORIZATION to "Bearer $token"))
         return token to json.writeValueAsString(mapOf("mcpServers" to mapOf("ants" to ants)))
     }
 
