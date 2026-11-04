@@ -12,7 +12,7 @@ FROM eclipse-temurin:25-jre-noble
 COPY --from=clis /usr/local/bin/ /usr/local/bin/
 COPY --from=clis /usr/local/lib/node_modules/ /usr/local/lib/node_modules/
 RUN apt-get update \
-    && apt-get install --yes --no-install-recommends git gh \
+    && apt-get install --yes --no-install-recommends git gh libatomic1 \
     && rm -rf /var/lib/apt/lists/* \
     && mkdir /data \
     && useradd --home-dir /data/home --create-home ants \
