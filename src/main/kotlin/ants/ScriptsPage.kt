@@ -31,6 +31,8 @@ data class ScriptForm(
     val own: List<OwnSecretRow>,
     val linked: List<String>,
     val output: List<SchemaRow> = emptyList(),
+    /** The Widgets it Posts to, one address a line. */
+    val widgets: String = "",
 ) {
     val shownOwn get() = own + OwnSecretRow("")
 
@@ -41,8 +43,10 @@ data class ScriptForm(
     fun script(id: String, old: Script? = null) = Script(
         id, name, description, ScriptSchema.schema(inputs, old?.inputs.orEmpty()),
         output.takeIf { it.isNotEmpty() }?.let { ScriptSchema.schema(it, old?.output.orEmpty()) },
-        varsMap, (own.map { it.name } + linked).distinct(),
+        varsMap, (own.map { it.name } + linked).distinct(), widgetList,
     )
+
+    val widgetList: List<String> get() = widgets.lines().map(String::trim).filter(String::isNotEmpty).distinct()
 
     fun error(others: List<Script>, was: String?): String? = nameError("A Script", name)
         ?: "The Scripts page keeps the name $name for itself.".takeIf { name == TEST_RUN }
@@ -60,6 +64,7 @@ data class ScriptForm(
     /** The form's fields as its page posts them, which [of] reads back. */
     fun fields(): Map<String, List<String>> {
         val fields = linkedMapOf("name" to listOf(name), "description" to listOf(description), "code" to listOf(code), "vars" to listOf(vars))
+        if (widgets.isNotEmpty()) fields["widgets"] = listOf(widgets)
         fun rows(prefix: String, rows: List<SchemaRow>) {
             for ((i, row) in rows.withIndex()) {
                 val at = "$prefix[$i]"
@@ -91,7 +96,7 @@ data class ScriptForm(
             val own = generateSequence(0, Int::inc).takeWhile { "secrets[$it].name" in params }
                 .map { OwnSecretRow(param("secrets[$it].name").trim(), param("secrets[$it].value"), param("secrets[$it].was")) }
                 .filter { it.name.isNotEmpty() }.toList()
-            return ScriptForm(param("name").trim(), param("description").trim(), param("code"), ScriptSchema.rows(params, "inputs"), param("vars"), own, params["linked"].orEmpty(), ScriptSchema.rows(params, "output"))
+            return ScriptForm(param("name").trim(), param("description").trim(), param("code"), ScriptSchema.rows(params, "inputs"), param("vars"), own, params["linked"].orEmpty(), ScriptSchema.rows(params, "output"), param("widgets"))
         }
 
         fun of(script: Script, code: String, own: Set<String>) = ScriptForm(
@@ -100,6 +105,7 @@ data class ScriptForm(
             script.secrets.filter { it in own }.map { OwnSecretRow(it, was = it) },
             script.secrets.filter { it !in own },
             script.output?.let(ScriptSchema::rows).orEmpty(),
+            script.widgets.joinToString("\n"),
         )
 
         val PLACEHOLDER = """

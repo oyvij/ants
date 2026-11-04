@@ -1,0 +1,9 @@
+@param view: ants.WidgetView
+!{val delta = view.delta}
+@if(view.post == null)
+<div class="none">Waiting for its first Post · <code>${view.address}</code></div>
+@else
+<div class="num">${view.number("value")}<small>${view.post.data["unit"]?.toString() ?: ""}</small></div>
+@if(delta != null)<div class="delta ${if (delta >= 0) "up" else "down"}">${if (delta >= 0) "▲" else "▼"} ${view.number("delta")?.removePrefix("-")} since the last Post</div>@endif
+<div class="from small muted">From <a href="/runs/${view.post.run}">${view.runName ?: view.post.run}</a> · <time datetime="${view.post.at.toString()}">${view.at}</time></div>
+@endif

@@ -32,7 +32,8 @@ class ScriptTask(
         val inputs = task.variables.filterKeys { it in inputNames }.mapValues { (name, value) ->
             if (name in literals && value is String) ScriptSchema.literal(value, properties[name] as? Map<*, *>).getOrDefault(value) else value
         }.toSortedMap()
-        val result = runner.run(script, scripts.secretEnvironment(script), scripts.file(script), names.runWorkspace(run).createDirectories(), run, inputs)
+        val workspace = names.runWorkspace(run).createDirectories()
+        val result = runner.run(script, scripts.secretEnvironment(script), scripts.file(script), workspace, run, inputs, Sender(script, run, task.activityId))
         if (result.exitCode != 0) throw Failed("The Script ${script.name} failed" + if (result.exitCode > 0) " with exit code ${result.exitCode}" else "", result.reported)
         if (result.failed) throw Failed("The payload of the Script ${script.name} breaks its output schema", result.reported)
         externalTasks.complete(task.id, WORKER, mapOf(task.activityId to linkedMapOf("exitCode" to result.exitCode, "output" to result.output, "payload" to result.payload)))

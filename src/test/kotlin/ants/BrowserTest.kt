@@ -55,6 +55,9 @@ class BrowserTest : AntsTest() {
     @Autowired
     private lateinit var processes: Processes
 
+    @Autowired
+    private lateinit var dashboards: Dashboards
+
     @BeforeEach
     fun launch(info: TestInfo) {
         test = info.testMethod.get().name
@@ -2059,6 +2062,85 @@ class BrowserTest : AntsTest() {
         assertThat(link).hasText("Untitled dashboard")
         page.reload()
         assertThat(title).hasText("Untitled dashboard")
+    }
+
+    /** A new Dashboard's page, its title left; its id. */
+    private fun newDashboard(): String {
+        page.navigate(url("/"))
+        if (dashboardsList.isHidden) dashboardsToggle.click()
+        dashboardsList.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("+ Add Dashboard")).click()
+        page.waitForURL(Pattern.compile(".*/dashboards/d-[a-z0-9]{6}$"))
+        page.keyboard().press("Enter")
+        return page.url().substringAfterLast('/')
+    }
+
+    /** **+ Widget**, number: the new Widget's grid item. */
+    private fun addNumberWidget(): Locator {
+        page.locator("#add").click()
+        val number = page.getByRole(AriaRole.MENUITEM, Page.GetByRoleOptions().setName(Pattern.compile("^number")))
+        assertThat(number).containsText("One number, with its change since the last Post")
+        number.click()
+        return page.locator(".grid-stack-item").last()
+    }
+
+    @Test
+    fun `a Dashboard opens in view mode, + Widget adds a number in edit mode with its title selected, and Edit layout, Done and Escape switch modes`() = browse {
+        newDashboard()
+        val edit = page.locator("#edit")
+        val grid = page.locator("#grid")
+        val static = Pattern.compile("\\bgrid-stack-static\\b")
+        assertThat(edit).hasText("Edit layout")
+        assertThat(grid).hasClass(static)
+
+        val widget = addNumberWidget()
+        val title = widget.locator(".t")
+        assertThat(title).isFocused()
+        assertThat(edit).hasText("Done")
+        assertThat(page.locator("main.dashboard")).hasClass(Pattern.compile("\\bediting\\b"))
+        assertThat(grid).not().hasClass(static)
+        assertThat(page.locator("#no-widgets")).isHidden()
+        val id = widget.getAttribute("gs-id")!!
+        assertThat(widget.locator(".w-head code")).hasText("number · $id")
+        assertThat(widget.locator(".w-body")).containsText("Waiting for its first Post")
+        page.keyboard().type("Free disk")
+        page.keyboard().press("Enter")
+
+        page.keyboard().press("Escape")
+        assertThat(edit).hasText("Edit layout")
+        assertThat(grid).hasClass(static)
+        assertThat(widget.locator(".x")).isHidden()
+        widget.locator(".w-body code").dblclick()
+        assertTrue(page.evaluate("getSelection().toString()").toString().isNotEmpty()) // view mode: text selects
+
+        page.reload()
+        assertThat(page.locator(".grid-stack-item .t")).hasText("Free disk")
+        edit.click()
+        assertThat(edit).hasText("Done")
+        page.onceDialog { it.accept() }
+        page.locator(".grid-stack-item .x").click()
+        assertThat(page.locator(".grid-stack-item")).hasCount(0)
+        page.reload()
+        assertThat(page.locator(".grid-stack-item")).hasCount(0)
+        assertThat(page.locator("#no-widgets")).isVisible()
+    }
+
+    @Test
+    fun `a Post arrives live on its open Dashboard with a brief highlight, and the Posting panel lists the Widget's address and data`() = browse {
+        val dashboard = newDashboard()
+        val widget = addNumberWidget()
+        val id = widget.getAttribute("gs-id")!!
+        page.keyboard().press("Escape")
+
+        page.locator("#posting-toggle").click()
+        assertThat(page.locator("#posting")).isVisible()
+        assertThat(page.locator("#posting")).containsText("$dashboard/$id · number")
+        assertThat(page.locator("#posting")).containsText("{value: number, unit?: string, delta?: number}")
+        assertThat(page.locator("#posting")).containsText("ants.post")
+
+        dashboards.post("$dashboard/$id", mapOf("value" to 42, "unit" to "GB"), "r-browser", "measure")
+        assertThat(widget.locator(".num")).hasText("42GB")
+        assertThat(widget.locator(".w-body")).hasClass(Pattern.compile("\\bflash\\b"))
+        assertThat(widget.locator(".from a")).hasAttribute("href", "/runs/r-browser")
     }
 
     private val tapTargets = "button, .btn, .topbar a, .topbar label, nav.side a, .tabs a, .fold > summary, .spine a, .walk nav a, .crumbs a, :is(.chipsel, .tags) .c, [role=tab]"

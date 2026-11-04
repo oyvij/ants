@@ -1,0 +1,6 @@
+@param view: ants.WidgetView
+!{val widget = view.widget}
+<div class="grid-stack-item" gs-id="${widget.id}" gs-x="${widget.x}" gs-y="${widget.y}" gs-w="${widget.w}" gs-h="${widget.h}"><article class="grid-stack-item-content widget" data-type="${widget.type.label}">
+    <header class="w-head"><span class="t" spellcheck="false">${widget.title}</span><code title="Its type and fixed id; renaming it never changes them">${widget.type.label} · ${widget.id}</code><button type="button" class="x ghost" title="Remove widget" aria-label="Remove ${widget.title}">✕</button></header>
+    <div class="w-body" id="body-${widget.id}">@template.widgetbody(view = view)</div>
+</article></div>
