@@ -2176,6 +2176,59 @@ class BrowserTest : AntsTest() {
         assertThat(widget.locator(".from a")).hasAttribute("href", "/runs/r-browser")
     }
 
+    @Test
+    fun `each simple Widget type is added from + Widget and draws its Posts, a log shows its newest line, and Clear data empties a Widget`() = browse {
+        val dashboard = newDashboard()
+        val lines = mapOf(
+            "progress" to "Done out of total", "status" to "Named items that are ok, warn, fail or running", "list" to "Titles with links and notes",
+            "text" to "A paragraph, such as an agent's summary", "log" to "Lines added one at a time, kept for a number of days",
+        )
+        val ids = lines.mapValues { (type, line) ->
+            page.locator("#add").click()
+            val choice = page.getByRole(AriaRole.MENUITEM, Page.GetByRoleOptions().setName(Pattern.compile("^$type")))
+            assertThat(choice).containsText(line)
+            choice.click()
+            val item = page.locator(".grid-stack-item").last()
+            assertThat(item.locator(".w-head code")).containsText("$type · ")
+            page.keyboard().press("Enter")
+            item.getAttribute("gs-id")!!
+        }
+        page.keyboard().press("Escape")
+        fun widget(type: String) = page.locator(".grid-stack-item[gs-id=\"${ids[type]}\"]")
+        fun post(type: String, data: Map<String, Any>) = dashboards.post("$dashboard/${ids[type]}", data, "r-browser", "measure")
+
+        post("progress", mapOf("done" to 3, "total" to 4))
+        post("status", mapOf("items" to listOf(mapOf("name" to "nas", "state" to "ok"), mapOf("name" to "router", "state" to "fail"))))
+        post("list", mapOf("items" to listOf(mapOf("title" to "Ants news", "url" to "https://example.com/news", "note" to "today"))))
+        post("text", mapOf("text" to "First line\nSecond line"))
+        repeat(40) { post("log", mapOf("line" to "line $it", "level" to if (it == 39) "error" else "info")) }
+
+        assertThat(widget("progress").locator(".bar div")).hasAttribute("style", "width:75%")
+        assertThat(widget("status").locator(".dot.fail")).isVisible()
+        assertThat(widget("status").locator(".st")).hasCount(2)
+        val link = widget("list").locator(".li a")
+        assertThat(link).hasText("Ants news")
+        assertThat(link).hasAttribute("target", "_blank")
+        assertThat(widget("list").locator(".li")).containsText("today")
+        val text = widget("text").locator(".text")
+        assertThat(text).hasText("First line\nSecond line")
+        assertTrue(text.evaluate("e => e.getBoundingClientRect().height").toString().toDouble() > 25.0) // two lines, not one
+        assertThat(widget("log").locator(".log .error")).containsText("line 39")
+        val log = widget("log").locator(".w-body")
+        page.waitForCondition { log.evaluate("b => b.scrollHeight > b.clientHeight && b.scrollTop + b.clientHeight >= b.scrollHeight - 2") as Boolean }
+        assertEquals(0, (widget("text").locator(".w-body").evaluate("b => b.scrollTop") as Number).toInt())
+
+        assertThat(widget("log").locator(".clear")).isHidden()
+        page.locator("#edit").click()
+        assertThat(widget("log").locator(".keep")).hasValue("90")
+        page.onceDialog { it.accept() }
+        widget("log").locator(".clear").click()
+        assertThat(widget("log").locator(".w-body")).containsText("Waiting for its first Post")
+        page.reload()
+        assertThat(widget("log").locator(".w-body")).containsText("Waiting for its first Post")
+        assertThat(widget("log").locator(".t")).hasText("New log")
+    }
+
     private val tapTargets = "button, .btn, .topbar a, .topbar label, nav.side a, .tabs a, .fold > summary, .spine a, .walk nav a, .crumbs a, :is(.chipsel, .tags) .c, [role=tab]"
     private val textFields = "input:not([type=checkbox], [type=radio], [type=hidden], [type=file]), select, textarea, .cm-content"
 

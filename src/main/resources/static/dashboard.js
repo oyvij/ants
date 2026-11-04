@@ -3,7 +3,8 @@
 // (`?new`) opens with its title selected, ready to type over.
 //
 // Its grid of Widgets opens in view mode, where nothing moves and text can be selected; **Edit layout** moves,
-// resizes, renames and removes them, saving each change as it is made, reads **Done** while on, and Escape leaves it.
+// resizes, renames and removes them, clears their data and sets the days a log keeps, saving each change as it is
+// made, reads **Done** while on, and Escape leaves it.
 // **+ Widget** adds one at once, in edit mode, its title selected. Posts arrive live, each Widget flashing as it changes.
 const title = document.getElementById('title'), saved = document.getElementById('saved');
 const id = title.dataset.id, csrf = document.querySelector('input[name=_csrf]').value;
@@ -84,6 +85,22 @@ function wire(item) {
         addresses.querySelectorAll(`[data-widget="${widget}"]`).forEach(row => row.remove());
         empty.hidden = grid.getGridItems().length > 0;
     });
+    // Clear data empties it once the user confirms; a log's days are kept as typed.
+    const body = item.querySelector('.w-body');
+    item.querySelector('.clear').addEventListener('click', async () => {
+        if (!confirm(`Clear the data of “${t.textContent}”? It keeps its id and title.`)) return;
+        const cleared = await send(`/dashboards/${id}/widgets/${widget}/clear`, {});
+        body.innerHTML = shown[widget] = cleared.body;
+    });
+    const days = item.querySelector('.keep');
+    days?.addEventListener('change', () => days.checkValidity() && send(`/dashboards/${id}/widgets/${widget}/keep`, { days: days.value }));
+    showNewest(item);
+}
+
+/** A log shows its newest line, at the bottom; other Widgets show from the top. */
+function showNewest(item) {
+    const body = item.querySelector('.w-body');
+    if (item.querySelector('.widget').dataset.type === 'log') body.scrollTop = body.scrollHeight;
 }
 grid.getGridItems().forEach(wire);
 
@@ -131,6 +148,7 @@ stream.on('widgets', data => {
         shown[widget] = html;
         if (!body || !changed) continue;
         body.innerHTML = html;
+        showNewest(body.closest('.grid-stack-item'));
         body.classList.remove('flash');
         void body.offsetWidth;
         body.classList.add('flash');

@@ -1,7 +1,12 @@
 package ants
 
 import org.junit.jupiter.api.Test
+import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.web.server.context.WebServerApplicationContext
+import java.net.URI
+import java.net.http.HttpClient
+import java.net.http.HttpRequest
+import java.net.http.HttpResponse
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -10,6 +15,40 @@ import kotlin.test.assertNotEquals
 /** Dashboards (ADR 0032): made, named and deleted from the menu, each kept in its own folder in ANTS_HOME. */
 class DashboardsTest : AntsTest() {
     private val browser by lazy { browser().also { it.login() } }
+
+    @Autowired
+    private lateinit var posts: Posts
+
+    /**
+     * Posts [data], JSON, to [address] over `/posts` as a running Script listing it would, `ants.post`'s request: the
+     * status and the answer's body.
+     */
+    private fun post(address: String, data: String, run: String = "r-post"): Pair<Int, String> {
+        val (token, url) = posts.open(Sender(Script("s-test", "measure", "Measures.", widgets = listOf(address)), run, "measure"))
+        try {
+            val response = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(URI(url)).header("Authorization", "Bearer $token").header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString("""{"address":"$address","data":$data}""")).build(),
+                HttpResponse.BodyHandlers.ofString(),
+            )
+            return response.statusCode() to response.body()
+        } finally {
+            posts.close(token)
+        }
+    }
+
+    /** Posts [data] to [address] and expects it accepted. */
+    private fun accepted(address: String, data: String) = assertEquals(200, post(address, data).first, "refused: $data")
+
+    /** Posts [data] to [address] and expects it refused: the message `ants.post` throws. */
+    private fun refused(address: String, data: String): String {
+        val (status, body) = post(address, data)
+        assertEquals(422, status, "accepted: $data")
+        return answer(Browser.Page(status, "", body))["error"].toString()
+    }
+
+    /** The body of the Widget [widget], as its Dashboard's page draws it. */
+    private fun body(dashboard: String, widget: String) = widget(dashboard, widget)!!.substringAfter("""class="w-body"""").substringBefore("</article>")
 
     /** **+ Add Dashboard**: the new Dashboard's id, from the page it opens. */
     private fun add(browser: Browser = this.browser): String {
@@ -153,5 +192,139 @@ class DashboardsTest : AntsTest() {
         browser.post("/dashboards/$dashboard/layout", mapOf("layout" to """[{"id":"$first","x":3,"y":0,"w":4,"h":2},{"id":"$second","x":0,"y":0,"w":3,"h":3}]"""))
         assertContains(widget(dashboard, first)!!, """gs-x="3" gs-y="0" gs-w="4" gs-h="2"""")
         assertContains(widget(dashboard, second)!!, """gs-x="0" gs-y="0" gs-w="3" gs-h="3"""")
+    }
+
+    @Test
+    fun `a progress Widget shows done out of total, replaced by each Post, and refuses another shape with the shape it needs`() {
+        val dashboard = add()
+        val id = addWidget(dashboard, "progress")
+        accepted("$dashboard/$id", """{"done":3,"total":10}""")
+        accepted("$dashboard/$id", """{"done":7,"total":10}""")
+        val body = body(dashboard, id)
+        assertContains(body, """<div class="num">7<small> / 10</small></div>""")
+        assertContains(body, """<div class="bar"><div style="width:70%"></div></div>""")
+        assertEquals(
+            "The progress Widget $dashboard/$id (New progress) takes {done: number, total: number}, but total is missing.",
+            refused("$dashboard/$id", """{"done":7}"""),
+        )
+    }
+
+    @Test
+    fun `a number Post without a delta shows its change since the previous Post, and one with a delta shows that`() {
+        val dashboard = add()
+        val id = addWidget(dashboard)
+        accepted("$dashboard/$id", """{"value":40,"unit":"GB"}""")
+        assertFalse("since the last Post" in body(dashboard, id))
+        accepted("$dashboard/$id", """{"value":42.5,"unit":"GB"}""")
+        assertContains(body(dashboard, id), """<div class="delta up">▲ 2.5 since the last Post</div>""")
+        accepted("$dashboard/$id", """{"value":39.5}""")
+        assertContains(body(dashboard, id), """<div class="delta down">▼ 3 since the last Post</div>""")
+        accepted("$dashboard/$id", """{"value":39.5,"delta":-10}""")
+        assertContains(body(dashboard, id), """<div class="delta down">▼ 10 since the last Post</div>""")
+    }
+
+    @Test
+    fun `a status Widget shows each item's state, keeps the newest 100 items of a longer Post, and refuses an unknown state`() {
+        val dashboard = add()
+        val id = addWidget(dashboard, "status")
+        accepted("$dashboard/$id", """{"items":[{"name":"nas","state":"ok"},{"name":"router","state":"fail"}]}""")
+        val body = body(dashboard, id)
+        assertContains(body, """<div class="st"><span class="dot ok"></span><span class="n">nas</span><span class="s">ok</span></div>""")
+        assertContains(body, """<span class="dot fail"></span><span class="n">router</span>""")
+
+        accepted("$dashboard/$id", """{"items":[${(1..150).joinToString(",") { """{"name":"host $it","state":"running"}""" }}]}""")
+        val names = Regex("""<span class="n">([^<]*)</span>""").findAll(body(dashboard, id)).map { it.groupValues[1] }.toList()
+        assertEquals((51..150).map { "host $it" }, names)
+
+        assertEquals(
+            "The status Widget $dashboard/$id (New status) takes {items: [{name: string, state: ok | warn | fail | running}]}, but item 2's state is not ok, warn, fail or running; item 3's name is missing.",
+            refused("$dashboard/$id", """{"items":[{"name":"a","state":"ok"},{"name":"b","state":"down"},{"state":"ok"}]}"""),
+        )
+    }
+
+    @Test
+    fun `a list Widget shows titles linking to a new tab with their notes, keeps the newest 100 items, and refuses a link that isn't http`() {
+        val dashboard = add()
+        val id = addWidget(dashboard, "list")
+        accepted("$dashboard/$id", """{"items":[{"title":"Ants 1.2 out","url":"https://example.com/a?b=1&c=2","note":"Dashboards"},{"title":"Plain"}]}""")
+        val body = body(dashboard, id)
+        assertContains(body, """<div class="li"><a href="https://example.com/a?b=1&amp;c=2" target="_blank" rel="noopener">Ants 1.2 out</a><div>Dashboards</div></div>""")
+        assertContains(body, """<div class="li">Plain</div>""")
+
+        accepted("$dashboard/$id", """{"items":[${(1..101).joinToString(",") { """{"title":"story $it"}""" }}]}""")
+        val titles = Regex("""<div class="li">([^<]*)</div>""").findAll(body(dashboard, id)).map { it.groupValues[1] }.toList()
+        assertEquals((2..101).map { "story $it" }, titles)
+
+        assertEquals(
+            "The list Widget $dashboard/$id (New list) takes {items: [{title: string, url?: string, note?: string}]}, but item 1's url is not an http or https address.",
+            refused("$dashboard/$id", """{"items":[{"title":"x","url":"javascript:alert(1)"}]}"""),
+        )
+        assertContains(refused("$dashboard/$id", """{"items":"none"}"""), "but items is not a list.")
+    }
+
+    @Test
+    fun `a text Widget shows the text with its line breaks, escaped, replaced by each Post`() {
+        val dashboard = add()
+        val id = addWidget(dashboard, "text")
+        accepted("$dashboard/$id", """{"text":"old"}""")
+        accepted("$dashboard/$id", """{"text":"Line one\nLine <two>"}""")
+        assertContains(body(dashboard, id), "<div class=\"text\">Line one\nLine &lt;two&gt;</div>")
+        assertFalse(">old<" in body(dashboard, id))
+        assertEquals("The text Widget $dashboard/$id (New text) takes {text: string}, but text is not text.", refused("$dashboard/$id", """{"text":3}"""))
+    }
+
+    @Test
+    fun `a log Widget appends each line with its time and level, keeps 90 days unless the user sets other, and refuses an unknown level`() {
+        val dashboard = add()
+        val id = addWidget(dashboard, "log")
+        val log = "$dashboard/$id"
+        assertContains(widget(dashboard, id)!!, """class="keep" min="1" max="3650" value="90"""")
+        try {
+            accepted(log, """{"line":"started"}""")
+            clock.offset = java.time.Duration.ofDays(60)
+            accepted(log, """{"line":"disk low","level":"warn"}""")
+            clock.offset = java.time.Duration.ofDays(91)
+            accepted(log, """{"line":"failed","level":"error"}""")
+            val lines = Regex("""<div class="(\w+)"><time datetime="[^"]+">[^<]+</time>([^<]*)</div>""").findAll(body(dashboard, id)).map { it.groupValues[1] to it.groupValues[2] }.toList()
+            assertEquals(listOf("warn" to "disk low", "error" to "failed"), lines)
+
+            assertEquals(20, answer(browser.post("/dashboards/$dashboard/widgets/$id/keep", mapOf("days" to "20")))["keep"])
+            assertContains(widget(dashboard, id)!!, """value="20"""")
+            assertEquals(listOf("failed"), Regex("""</time>([^<]+)</div>""").findAll(body(dashboard, id)).map { it.groupValues[1] }.toList())
+            assertEquals(400, browser.post("/dashboards/$dashboard/widgets/$id/keep", mapOf("days" to "0")).status)
+        } finally {
+            clock.offset = java.time.Duration.ZERO
+        }
+        assertEquals(400, browser.post("/dashboards/$dashboard/widgets/${addWidget(dashboard, "text")}/keep", mapOf("days" to "5")).status)
+        assertEquals(
+            "The log Widget $log (New log) takes {line: string, level?: info | warn | error}, but level is not info, warn or error.",
+            refused(log, """{"line":"x","level":"debug"}"""),
+        )
+    }
+
+    @Test
+    fun `a Post over 256 KB is refused with a message saying so`() {
+        val dashboard = add()
+        val id = addWidget(dashboard, "text")
+        accepted("$dashboard/$id", """{"text":"${"a".repeat(200 * 1024)}"}""")
+        assertEquals(
+            "The text Widget $dashboard/$id (New text) takes {text: string} in Posts of up to 256 KB, but this one is 301 KB.",
+            refused("$dashboard/$id", """{"text":"${"a".repeat(300 * 1024)}"}"""),
+        )
+    }
+
+    @Test
+    fun `Clear data empties a Widget, which keeps its id and title and waits for its next Post`() {
+        val dashboard = add()
+        val id = addWidget(dashboard, "log")
+        browser.post("/dashboards/$dashboard/widgets/$id/title", mapOf("title" to "Backups"))
+        accepted("$dashboard/$id", """{"line":"one"}""")
+        assertContains(widget(dashboard, id)!!, ">Clear data</button>")
+        assertContains(answer(browser.post("/dashboards/$dashboard/widgets/$id/clear", mapOf()))["body"].toString(), "Waiting for its first Post")
+        val drawn = widget(dashboard, id)!!
+        assertContains(drawn, "Waiting for its first Post · <code>$dashboard/$id</code>")
+        assertContains(drawn, """<span class="t" spellcheck="false">Backups</span>""")
+        accepted("$dashboard/$id", """{"line":"two"}""")
+        assertEquals(listOf("two"), Regex("""</time>([^<]+)</div>""").findAll(body(dashboard, id)).map { it.groupValues[1] }.toList())
     }
 }
