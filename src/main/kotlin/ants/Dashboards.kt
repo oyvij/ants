@@ -45,7 +45,23 @@ data class Dashboard(
  * A Widget on a Dashboard: its fixed [id], its [type], its [title], its place on the grid, and for a type that
  * [WidgetType.keeps] Posts, the days it [keep]s them.
  */
-data class Widget(val id: String, val type: WidgetType, val title: String, val x: Int, val y: Int, val w: Int, val h: Int, val keep: Int = Dashboards.KEEP)
+data class Widget(
+    val id: String, val type: WidgetType, val title: String, val x: Int, val y: Int, val w: Int, val h: Int, val keep: Int = Dashboards.KEEP,
+    /** How a chart draws its points; switching it never changes what the chart takes. */
+    val kind: ChartKind = ChartKind.LINE,
+)
+
+/** How a chart Widget draws its points: every kind takes the same ones, so the user switches freely. */
+enum class ChartKind(val title: String) {
+    LINE("Line"), AREA("Area"), BAR("Bar"), STACKED("Stacked bar"), SCATTER("Scatter"), PIE("Pie"), DONUT("Donut");
+
+    /** The name a page and a sender use, such as `stacked`. */
+    val label get() = name.lowercase()
+
+    companion object {
+        fun of(label: String) = entries.firstOrNull { it.label == label }
+    }
+}
 
 /** A field a Post's object may hold: its [key], whether it is [required], and what is wrong with a value, if anything. */
 private class PostField(val key: String, val required: Boolean, val wrong: (Any) -> String?)
@@ -63,7 +79,30 @@ private fun problems(data: Map<*, *>, fields: List<PostField>, where: String = "
             value == null -> listOfNotNull("$where${field.key} is missing".takeIf { field.required })
             else -> listOfNotNull(field.wrong(value)?.let { where + it })
         }
-    } + (data.keys.map { "$it" } - fields.map { it.key }.toSet()).map { if (where.isEmpty()) "it takes no $it" else "${where.removeSuffix(" ")} takes no $it" }
+    } + (data.keys.map { "$it" } - fields.map { it.key }.toSet()).map { if (where.isEmpty()) "it takes no $it" else "${where.removeSuffix("'s ")} takes no $it" }
+
+/** A chart's point: its x, a number, a date or text, its number y and its series, if any. */
+private val POINT = listOf(
+    PostField("x", true) { "x is not a number, a date or text".takeIf { _ -> it !is Number && it !is String } },
+    number("y"),
+    text("series", false),
+)
+
+/** The point or points of a chart Post, which the chart's type has accepted. */
+private fun points(data: Map<*, *>): List<Map<*, *>> = ((data["point"]?.let(::listOf) ?: data["points"]) as List<*>).filterIsInstance<Map<*, *>>()
+
+/** What tells a chart's points apart: a point with the same series and x as a stored one replaces it. */
+private fun pointKey(point: Map<*, *>): Pair<String, String> {
+    val x = point["x"]
+    return "${point["series"] ?: ""}" to if (x is Number) "n" + java.math.BigDecimal(x.toString()).stripTrailingZeros().toPlainString() else "t$x"
+}
+
+/** The path of the first `url` key in [value], a custom chart's spec, as `data.url`; null when it names none. */
+private fun url(value: Any?, path: String): String? = when (value) {
+    is Map<*, *> -> value.entries.firstNotNullOfOrNull { (key, inner) -> if (key == "url") "$path.url" else url(inner, "$path.$key") }
+    is List<*> -> value.withIndex().firstNotNullOfOrNull { (index, inner) -> url(inner, "$path[$index]") }
+    else -> null
+}
 
 /** What is wrong with [data]'s `items` as a list of objects of [fields]. */
 private fun items(data: Map<*, *>, fields: List<PostField>): List<String> {
@@ -105,6 +144,43 @@ enum class WidgetType(val shape: String, val line: String, val keeps: Boolean = 
     },
     LOG("{line: string, level?: info | warn | error}", "Lines added one at a time, kept for a number of days", keeps = true) {
         override fun problems(data: Map<*, *>) = problems(data, listOf(text("line"), oneOf("level", LEVELS, false)))
+    },
+
+    /** A chart: it holds points, each its own Post, and draws them as its [ChartKind] says. */
+    CHART("{point: {x: number | date | text, y: number, series?: string}} or {points: [{x, y, series?}, …]}", "", keeps = true) {
+        override fun problems(data: Map<*, *>): List<String> {
+            val point = data["point"]
+            val points = data["points"]
+            return when {
+                point != null && points != null -> listOf("it takes point or points, not both")
+                point != null -> if (point is Map<*, *>) problems(point, POINT, "point's ") else listOf("point is not an object")
+                points is List<*> -> points.withIndex().flatMap { (index, it) ->
+                    if (it is Map<*, *>) problems(it, POINT, "point ${index + 1}'s ") else listOf("point ${index + 1} is not an object")
+                }
+                points != null -> listOf("points is not a list")
+                else -> listOf("point or points is missing")
+            } + (data.keys.map { "$it" } - setOf("point", "points")).map { "it takes no $it" }
+        }
+
+        /** Each point of [post] as its own Post; one with the same series and x as one [earlier] replaces it. */
+        override fun held(earlier: List<Post>, post: Post): List<Post> {
+            val added = points(post.data).map { post.copy(data = it) }.associateBy { pointKey(it.data) }
+            return earlier.filter { pointKey(it.data) !in added } + added.values
+        }
+    },
+
+    /** A chart an agent describes in Vega-Lite, its data inside; it may name no URL, so it never loads data from outside. */
+    CUSTOM("{spec: Vega-Lite with its data in data.values}", "Any Vega-Lite chart, for agents") {
+        override val label get() = "custom chart"
+
+        override fun problems(data: Map<*, *>): List<String> {
+            val spec = data["spec"]
+            return when (spec) {
+                null -> listOf("spec is missing")
+                !is Map<*, *> -> listOf("spec is not an object")
+                else -> listOfNotNull(url(spec, "spec")?.let { "$it names a URL, and a custom chart loads nothing from outside: put its data in data.values" })
+            } + (data.keys.map { "$it" } - "spec").map { "it takes no $it" }
+        }
     };
 
     /** What is wrong with [data] as a Post to this type; nothing for a Post it accepts. */
@@ -113,11 +189,20 @@ enum class WidgetType(val shape: String, val line: String, val keeps: Boolean = 
     /** What the Widget keeps of [data], a Post it accepted. */
     open fun kept(data: Map<*, *>): Map<*, *> = data
 
+    /**
+     * The Posts the Widget holds after [post], whose data it [kept], given those it held [earlier]: for a type that
+     * [keeps] them, all of them; for the others the latest, after the one before it.
+     */
+    open fun held(earlier: List<Post>, post: Post): List<Post> = if (keeps) earlier + post else listOfNotNull(earlier.lastOrNull(), post)
+
     /** [data] with its newest [Dashboards.ITEMS] items, the last ones, so a long list is trimmed rather than refused. */
     protected fun newest(data: Map<*, *>) = data + ("items" to (data["items"] as List<*>).takeLast(Dashboards.ITEMS))
 
     /** The name the user and a sender read, such as `number`. */
-    val label get() = name.lowercase()
+    open val label get() = name.lowercase()
+
+    /** A chart or a custom chart, which **+ Widget** lists under Charts. */
+    val chart get() = this == CHART || this == CUSTOM
 
     companion object {
         fun of(label: String) = entries.firstOrNull { it.label == label }
@@ -175,7 +260,10 @@ class Dashboards(@Value("\${ants.home}") home: Path, private val clock: Clock) {
         val widgets = (yaml["widgets"] as? List<*>).orEmpty().filterIsInstance<Map<*, *>>().mapNotNull { widget ->
             fun int(key: String, default: Int) = (widget[key] as? Number)?.toInt() ?: default
             val type = WidgetType.of(widget["type"].toString()) ?: return@mapNotNull null
-            Widget(widget["id"].toString(), type, widget["title"]?.toString().orEmpty(), int("x", 0), int("y", 0), int("w", WIDTH), int("h", HEIGHT), int("keep", KEEP))
+            Widget(
+                widget["id"].toString(), type, widget["title"]?.toString().orEmpty(), int("x", 0), int("y", 0), int("w", WIDTH), int("h", HEIGHT), int("keep", KEEP),
+                ChartKind.of(widget["kind"].toString()) ?: ChartKind.LINE,
+            )
         }
         return Dashboard(
             id, title(yaml["title"]?.toString()), runCatching { Instant.parse(yaml["created"].toString()) }.getOrDefault(Instant.EPOCH),
@@ -204,12 +292,17 @@ class Dashboards(@Value("\${ants.home}") home: Path, private val clock: Clock) {
 
     fun get(id: String) = find(id) ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No Dashboard $id")
 
-    /** A new Widget of [type] at the bottom of the Dashboard [id], titled "New <type>", with a random id it never had. */
+    /**
+     * A new Widget of [type] at the bottom of the Dashboard [id], titled "New <type>", or for a chart "New <kind>
+     * chart", with a random id it never had. A chart is bigger than the others.
+     */
     @Synchronized
-    fun addWidget(id: String, type: WidgetType): Widget {
+    fun addWidget(id: String, type: WidgetType, kind: ChartKind = ChartKind.LINE): Widget {
         val dashboard = get(id)
         val widgetId = newId(WIDGET_ID) { dashboard.widget(it) != null || it in dashboard.retired }
-        val widget = Widget(widgetId, type, "New ${type.label}", 0, dashboard.widgets.maxOfOrNull { it.y + it.h } ?: 0, WIDTH, HEIGHT)
+        val title = if (type == WidgetType.CHART) "New ${kind.title.lowercase()} chart" else "New ${type.label}"
+        val (w, h) = if (type.chart) CHART_WIDTH to CHART_HEIGHT else WIDTH to HEIGHT
+        val widget = Widget(widgetId, type, title, 0, dashboard.widgets.maxOfOrNull { it.y + it.h } ?: 0, w, h, kind = kind)
         write(dashboard.copy(widgets = dashboard.widgets + widget))
         return widget
     }
@@ -255,8 +348,7 @@ class Dashboards(@Value("\${ants.home}") home: Path, private val clock: Clock) {
         val problems = if (data is Map<*, *>) widget.type.problems(data) else listOf("the data is not an object")
         if (problems.isNotEmpty()) throw PostRefused("$named, but ${problems.joinToString("; ")}.")
         val post = Post(widget.type.kept(data as Map<*, *>), run, task, clock.instant())
-        val earlier = posts(dashboard.id, widget)
-        keep(dashboard.id, widget.id, if (widget.type.keeps) earlier + post else listOfNotNull(earlier.lastOrNull(), post))
+        keep(dashboard.id, widget.id, widget.type.held(posts(dashboard.id, widget), post))
     }
 
     /**
@@ -295,6 +387,17 @@ class Dashboards(@Value("\${ants.home}") home: Path, private val clock: Clock) {
         return changed
     }
 
+    /** Switches the chart [widget] to draw as [kind]; the points it holds and takes stay the same. */
+    @Synchronized
+    fun drawAs(id: String, widget: String, kind: ChartKind): Widget {
+        val dashboard = get(id)
+        val chart = widget(dashboard, widget)
+        if (chart.type != WidgetType.CHART) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "A ${chart.type.label} Widget has no chart kind")
+        val changed = chart.copy(kind = kind)
+        write(dashboard.copy(widgets = dashboard.widgets.map { if (it.id == widget) changed else it }))
+        return changed
+    }
+
     private fun widget(dashboard: Dashboard, widget: String) =
         dashboard.widget(widget) ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No Widget $widget on ${dashboard.id}")
 
@@ -306,6 +409,7 @@ class Dashboards(@Value("\${ants.home}") home: Path, private val clock: Clock) {
                 "widgets" to dashboard.widgets.map { widget ->
                     linkedMapOf<String, Any>("id" to widget.id, "type" to widget.type.label, "title" to widget.title, "x" to widget.x, "y" to widget.y, "w" to widget.w, "h" to widget.h)
                         .also { if (widget.type.keeps) it["keep"] = widget.keep }
+                        .also { if (widget.type == WidgetType.CHART) it["kind"] = widget.kind.label }
                 },
                 "retired" to dashboard.retired,
             ),
@@ -333,6 +437,8 @@ class Dashboards(@Value("\${ants.home}") home: Path, private val clock: Clock) {
         private const val WIDGET_ID = 'w'
         private const val WIDTH = 3
         private const val HEIGHT = 2
+        private const val CHART_WIDTH = 6
+        private const val CHART_HEIGHT = 4
         private val ID = Regex("d-[a-z0-9]{6}")
     }
 }
@@ -379,6 +485,12 @@ class WidgetView(val dashboard: String, val widget: Widget, val posts: List<Post
     /** A log Widget's newest [LINES] lines, oldest first, each with when it came. */
     val lines: List<Post> get() = posts.takeLast(LINES)
 
+    /** A chart's points, as JSON for the page to draw: each point's x, y and series, oldest first. */
+    val points: String get() = JSON.writeValueAsString(posts.map { it.data })
+
+    /** A custom chart's Vega-Lite spec, as JSON for the page to draw. */
+    val spec: String get() = JSON.writeValueAsString(post?.data?.get("spec"))
+
     val at get() = post?.at?.let(::shortTime)
 
     fun time(post: Post) = shortTime(post.at)
@@ -386,6 +498,8 @@ class WidgetView(val dashboard: String, val widget: Widget, val posts: List<Post
     companion object {
         /** The lines a log Widget draws, its newest; it keeps more, for its days. */
         const val LINES = 200
+
+        private val JSON = JsonMapper.shared()
     }
 }
 
@@ -444,8 +558,8 @@ class DashboardsPage(private val dashboards: Dashboards, private val names: RunN
     /** **+ Widget**: a new Widget of [type], answered with its id and its grid item for the page to add. */
     @PostMapping("/dashboards/{id}/widgets")
     @ResponseBody
-    fun addWidget(@PathVariable id: String, @RequestParam type: String): Map<String, String> {
-        val widget = dashboards.addWidget(id, WidgetType.of(type) ?: throw ResponseStatusException(HttpStatus.BAD_REQUEST, "No Widget type $type"))
+    fun addWidget(@PathVariable id: String, @RequestParam type: String, @RequestParam kind: String?): Map<String, String> {
+        val widget = dashboards.addWidget(id, WidgetType.of(type) ?: throw ResponseStatusException(HttpStatus.BAD_REQUEST, "No Widget type $type"), kind(kind ?: "line"))
         val view = WidgetView(id, widget, emptyList(), null)
         return mapOf(
             "id" to widget.id, "type" to widget.type.label, "shape" to widget.type.shape,
@@ -496,6 +610,16 @@ class DashboardsPage(private val dashboards: Dashboards, private val names: RunN
     @PostMapping("/dashboards/{id}/widgets/{widget}/keep")
     @ResponseBody
     fun keep(@PathVariable id: String, @PathVariable widget: String, @RequestParam days: Int) = mapOf("keep" to dashboards.keepFor(id, widget, days).keep)
+
+    /** A chart's kind as the user picked it in edit mode; answers its body, drawn as that kind. */
+    @PostMapping("/dashboards/{id}/widgets/{widget}/kind")
+    @ResponseBody
+    fun drawAs(@PathVariable id: String, @PathVariable widget: String, @RequestParam kind: String): Map<String, String> {
+        val chart = dashboards.drawAs(id, widget, kind(kind))
+        return mapOf("kind" to chart.kind.label, "body" to render("widgetbody.kte", mapOf("view" to view(id, chart))))
+    }
+
+    private fun kind(label: String) = ChartKind.of(label) ?: throw ResponseStatusException(HttpStatus.BAD_REQUEST, "No chart kind $label")
 
     private fun views(dashboard: Dashboard) = dashboard.widgets.map { view(dashboard.id, it) }
 

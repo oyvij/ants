@@ -14,6 +14,9 @@
 @if(dashboard != null)
     <link rel="stylesheet" href="/vendor/gridstack/gridstack.min.css">
     <script src="/vendor/gridstack/gridstack-all.js"></script>
+    <script src="/vendor/vega/vega.min.js"></script>
+    <script src="/vendor/vega/vega-lite.min.js"></script>
+    <script src="/vendor/vega/vega-embed.min.js"></script>
 @endif
 </head>
 <body>
@@ -27,9 +30,14 @@
         <button type="button" id="edit" title="Move, resize, rename and remove Widgets" aria-pressed="false">Edit layout</button>
         <span class="dd"><button type="button" id="add" class="primary" aria-haspopup="menu" aria-expanded="false">+ Widget ▾</button>
             <div class="menu" id="add-menu" role="menu" hidden>
-@for(type in types)
+@for(type in types)@if(!type.chart)
                 <button type="button" role="menuitem" data-type="${type.label}"><b>${type.label}</b><small>${type.line}</small></button>
+@endif@endfor
+                <div class="h" role="presentation">Charts · all take points {x, y, series?}</div>
+@for(kind in ants.ChartKind.entries)
+                <button type="button" role="menuitem" data-type="chart" data-kind="${kind.label}"><b>${kind.title}</b></button>
 @endfor
+                <button type="button" role="menuitem" data-type="${ants.WidgetType.CUSTOM.label}"><b>Custom chart</b><small>${ants.WidgetType.CUSTOM.line}</small></button>
             </div></span>
         <button type="button" id="posting-toggle" aria-controls="posting" aria-expanded="false">Posting</button>
         <form method="post" action="/dashboards/${dashboard.id}/delete"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button class="ghost" title="Delete dashboard" aria-label="Delete dashboard"><svg class="i" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></button></form>
