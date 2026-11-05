@@ -32,7 +32,7 @@ import kotlin.io.path.isRegularFile
 import kotlin.io.path.readText
 import kotlin.io.path.writeText
 
-/** One entry on the Notification list, waiting on the user since [since]: a [TaskEntry] or a [StartEntry]. */
+/** One entry on the Notification list, waiting on the user since [since]: a [TaskEntry], a [StartEntry], a [TicketEntry] or a [NoticeEntry]. */
 sealed class Entry(val id: String, val tag: String, val process: String, val task: String, val summary: String, val since: Date) {
     val icon get() = ICONS[tag] ?: "•"
 
@@ -42,7 +42,7 @@ sealed class Entry(val id: String, val tag: String, val process: String, val tas
     open val runName: String? get() = null
 
     private companion object {
-        val ICONS = mapOf("[failed]" to "✕", "[stuck]" to "⚠", "[stopped]" to "■", "[questions]" to "?", "[approve]" to "✓", "[review]" to "±", "[push]" to "↑", "[permission]" to "⊘")
+        val ICONS = mapOf("[failed]" to "✕", "[stuck]" to "⚠", "[stopped]" to "■", "[questions]" to "?", "[approve]" to "✓", "[review]" to "±", "[push]" to "↑", "[permission]" to "⊘", "[notice]" to "i")
     }
 }
 
@@ -63,8 +63,8 @@ class StartEntry(val schedule: Schedule, failed: FailedStart) : Entry(
 /**
  * The Notification list: one query over what is waiting on the user, with no table of its own, so it can't drift.
  * For now that is every Agent Task held by an incident, its tag and summary read from the incident message, and every
- * open User Task: an Answer a Round, or an Approve; plus failed scheduled starts and the `ready-for-human` Tickets of
- * live Runs.
+ * open User Task: an Answer a Round, or an Approve; plus failed scheduled starts, the `ready-for-human` Tickets of
+ * live Runs and the open Notices, which Ants keeps itself ([Notices]).
  */
 @Controller
 class Notifications(
@@ -82,10 +82,11 @@ class Notifications(
     private val names: RunNames,
     private val catalogue: Catalogue,
     private val agents: Agents,
+    private val notices: Notices,
     @Value("\${ants.home}") private val home: Path,
 ) {
     /** Everything waiting on the user, oldest first. */
-    fun entries(): List<Entry> = (tasks() + failedStarts() + tickets.waiting()).sortedBy { it.since }
+    fun entries(): List<Entry> = (tasks() + failedStarts() + tickets.waiting() + notices.all().map(::NoticeEntry)).sortedBy { it.since }
 
     /** The Tasks waiting on the user, oldest first. */
     fun tasks(): List<TaskEntry> = (rootCauses().map(::entry) + userTasks.createTaskQuery().active().list().map(::entry)).sortedBy { it.since }
@@ -107,6 +108,10 @@ class Notifications(
     @GetMapping("/notifications/{id}")
     fun entry(@PathVariable id: String, model: Model, response: HttpServletResponse, @RequestParam(required = false) tab: String? = null): String {
         tickets.waiting().firstOrNull { it.id == id }?.let { return "redirect:${it.href}" }
+        notices.all().firstOrNull { it.id == id }?.let {
+            model.addAttribute("entry", NoticeEntry(it))
+            return "notice"
+        }
         val failed = failedStarts().firstOrNull { it.id == id }
         if (failed != null) {
             model.addAttribute("entry", failed)
@@ -235,6 +240,14 @@ class Notifications(
             else -> Toast("Continuing", "${entry.task} in ${entry.runName}.", Toast.Kind.INFO)
         })
         return back(back, entry.run, "/notifications/next?run=${entry.run}")
+    }
+
+    /** Dismiss on a Notice: it leaves the Notification list for good. */
+    @PostMapping("/notifications/{id}/dismiss")
+    fun dismiss(@PathVariable id: String, model: Model, response: HttpServletResponse, request: HttpServletRequest): String {
+        val notice = notices.all().firstOrNull { it.id == id }?.takeIf { notices.dismiss(id) } ?: return gone(model, response)
+        Shell.toast(request, Toast("Notice dismissed", notice.line, Toast.Kind.SUCCESS))
+        return "redirect:/notifications"
     }
 
     @PostMapping("/notifications/{id}/permission")

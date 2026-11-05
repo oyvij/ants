@@ -235,7 +235,12 @@ const panels = {
         const topic = element.businessObject.get("camunda:topic")
         const which = el("select", {onchange: () => modeler.get("modeling").updateProperties(element, {"camunda:topic": which.value})},
             ...Object.entries(builtIns).map(([value, {name}]) => el("option", {value, textContent: name, selected: value === topic})))
-        return field("What Ants does", builtIns[topic]?.does || "Ants has no Built-in Task " + topic, which)
+        const what = field("What Ants does", builtIns[topic]?.does || "Ants has no Built-in Task " + topic, which)
+        if (!builtIns[topic]?.line) return what
+        // Notify's line: an extension property, so the engine never evaluates it and Notify fills it in itself.
+        const line = el("input", {value: agentProperties(element.businessObject)["ants.line"] || "", placeholder: "e.g. Pipeline ${pipeline} failed",
+            oninput: () => writeAgentTask(element, {"ants.line": line.value || undefined})})
+        return el("div", {}, what, field("Line", builtIns[topic].line, line))
     },
 }
 

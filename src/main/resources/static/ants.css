@@ -192,6 +192,7 @@ td .draft-mark { margin-left: 6px; vertical-align: 1px; }
 .t-questions, .t-approve, .t-review, .t-push, .t-permission { background: var(--waitSoft); color: var(--wait); border-color: color-mix(in srgb, var(--wait) 35%, transparent); }
 .t-stuck, .t-stopped { background: var(--vioSoft); color: var(--vio); border-color: color-mix(in srgb, var(--vio) 35%, transparent); }
 .t-failed { background: var(--badSoft); color: var(--bad); border-color: color-mix(in srgb, var(--bad) 35%, transparent); }
+.t-notice { background: var(--runSoft); color: var(--run); border-color: color-mix(in srgb, var(--run) 35%, transparent); }
 .t-vault, .t-ISSUE, .t-NOTE, .t-SUGGESTION, .t-COMMENT { background: var(--accSoft); color: var(--accText); border-color: color-mix(in srgb, var(--acc) 30%, transparent); }
 .ent { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; vertical-align: middle; } .ent svg.i { width: 15px; height: 15px; }
 .ent-agent svg.i { color: var(--acc); } .ent-skill svg.i { color: var(--citeC); } .ent-script svg.i { color: var(--invC); } .ent a { color: inherit; } .ent a:hover { color: var(--acc); }

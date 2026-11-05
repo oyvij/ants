@@ -94,6 +94,23 @@ class AlertsTest : AntsTest() {
     }
 
     @Test
+    fun `a Notice sends one Alert holding its line and its Run's name`() {
+        settings(null)
+        turnOn()
+        browser.import("notify.bpmn")
+        browser.get("/processes/watch")
+        val run = browser.post("/processes/watch/runs", mapOf("pipeline" to "api-build", NAME to "Nightly watch")).path.removePrefix("/runs/")
+        val (entry, name) = entry(run)
+        val alert = next().payload()
+        assertEquals("[notice]", alert["tag"])
+        assertEquals("Pipeline api-build failed on main", alert["text"])
+        assertEquals("Nightly watch", name)
+        assertEquals(name, alert["run"])
+        assertEquals(entry, alert["url"])
+        assertNull(device.received.poll(2, SECONDS), "the Notice alerted twice")
+    }
+
+    @Test
     fun `Send a test Alert sends one to this device, signed with the key the Settings page gives the browser`() {
         turnOn()
         val key = Regex("""data-key="([^"]+)"""").find(browser.get("/settings").body)!!.groupValues[1]

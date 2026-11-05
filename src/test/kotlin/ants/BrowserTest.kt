@@ -525,6 +525,20 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `Notify is a Built-in Task whose one line the panel edits, and Save keeps it`() = browse {
+        http.import("notify.bpmn")
+        page.navigate(url("/processes/watch/edit"))
+        shape("notify").click()
+        assertThat(page.locator("#explain select")).hasValue("notify")
+        assertThat(panel).containsText("adds its line as a Notice")
+        assertThat(label("Line")).hasValue("Pipeline \${pipeline} failed on main")
+        label("Line").fill("Pipeline \${pipeline} is red")
+        page.locator("#save").click()
+        assertThat(page).hasURL(Pattern.compile(".*/processes/watch$"))
+        assertContains(http.get("/processes/watch/diagram.bpmn").body, """name="ants.line" value="Pipeline ${'$'}{pipeline} is red"""")
+    }
+
+    @Test
     fun `the Process Builder sets an Assignment and two Skills that Save and deploy takes, and gets the Check back for a Task with neither`() = browse {
         agentTask(null, mapOf("draft" to null, "polish" to null))
         home.resolve("skills/unlisted").createDirectories().resolve("SKILL.md").writeText("---\nname: unlisted\ndescription: Not the writer's.\n---\nNo.\n")
