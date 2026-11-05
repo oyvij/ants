@@ -3,6 +3,8 @@ package ants
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import tools.jackson.databind.json.JsonMapper
+import kotlin.io.path.createDirectories
+import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -92,6 +94,72 @@ class HelperDashboardsTest : AntsTest() {
     }
 
     @Test
+    fun `a helper's list and delete answer name the Process whose Agent Task may Post only to that Dashboard`() {
+        settings(claude)
+        browser.get("/")
+        val lab = browser.post("/dashboards", mapOf()).path.removePrefix("/dashboards/")
+        home.resolve("skills/keep-notes").createDirectories().also { it.resolve("ants.yaml").writeText("id: k-keep-notes\n") }
+            .resolve("SKILL.md").writeText("---\nname: keep-notes\ndescription: Keeps notes.\n---\nKeep notes.\n")
+        home.resolve("agents").createDirectories().resolve("poster.md").writeText("---\nid: a-poster\nname: poster\nskills: k-keep-notes\ntools: Read, PostToWidget($lab)\n---\nKeep it.\n")
+        browser.get("/processes")
+        browser.upload("/processes", "file", "used-by.bpmn", javaClass.getResource("/used-by.bpmn")!!.readText().replace("keeper", "poster").toByteArray())
+        claude.session("process-builder", init,
+            "mcp dashboards",
+            says("Delete it? The Process Keep notes Posts to it."),
+            done, "read",
+            """mcp delete_dashboard {"dashboard":"$lab"}""",
+            done)
+        val token = open("process-builder")
+        send("process-builder", token, "Delete my Dashboard.")
+        eventually { assertTrue(chats.idle(token)) }
+        val listed = json.readValue(answers("process-builder").single().first, List::class.java).map { it as Map<*, *> }.single { it["id"] == lab }
+        assertEquals(listOf("Process Keep notes"), listed["usedBy"])
+        send("process-builder", token, "Yes.")
+        eventually { assertEquals(2, answers("process-builder").size) }
+        assertEquals(
+            "Deleted the Dashboard $lab. The Processes Keep notes have Agent Tasks that Post to it, and Ants will refuse their Posts." to false,
+            answers("process-builder").last(),
+        )
+    }
+
+    /** A call of [tool] claude prints and then refuses itself, so it never reaches Ants. */
+    private fun refusedCall(id: String, tool: String) = listOf(
+        """{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"$id","name":"mcp__ants__$tool","input":{}}]},"session_id":"${'$'}SESSION"}""",
+        """{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"$id","content":"Permission denied.","is_error":true}]},"session_id":"${'$'}SESSION"}""",
+    )
+
+    @Test
+    fun `a call claude refused after the reply lends its verdict to no later call, in its turn or the next`() {
+        settings(claude)
+        val title = "Stale"
+        claude.session("process-builder", init,
+            says("Shall I add a Dashboard $title?"),
+            done, "read",
+            *refusedCall("toolu_1", "create_dashboard").toTypedArray(),
+            says("Before that, shall I call it $title instead?"),
+            """mcp create_dashboard {"title":"$title"}""",
+            done, "read",
+            """{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_2","name":"mcp__ants__create_dashboard","input":{}}]},"session_id":"${'$'}SESSION"}""",
+            done, "read",
+            says("Shall I go on?"),
+            """mcp create_dashboard {"title":"$title"}""",
+            done)
+        val token = open("process-builder")
+        send("process-builder", token, "Make me a Dashboard.")
+        eventually { assertTrue(chats.idle(token)) }
+        send("process-builder", token, "Yes.")
+        eventually { assertEquals(1, answers("process-builder").size) }
+        assertTrue(answers("process-builder").single().second, "a call after the helper wrote again is refused")
+        eventually { assertTrue(chats.idle(token)) }
+        send("process-builder", token, "Yes.") // an interrupted call, its turn ended with no tool_result
+        eventually { assertTrue(chats.idle(token)) }
+        send("process-builder", token, "Hm.")
+        eventually { assertEquals(2, answers("process-builder").size) }
+        assertTrue(answers("process-builder").last().second, "a call after the helper wrote again is refused")
+        assertTrue(dashboards.all().none { it.title == title })
+    }
+
+    @Test
     fun `after one reply the helper adds several Widgets, one with a readable id, lists them with what uses them, and a remove names what breaks`() {
         settings(claude, "node: {path: ${ScriptsTest.NODE}}\n")
         browser.get("/")
@@ -129,9 +197,9 @@ class HelperDashboardsTest : AntsTest() {
         val listed = json.readValue(answers("process-builder")[4].first, List::class.java).map { it as Map<*, *> }.single { it["id"] == lab }
         val widgets = (listed["widgets"] as List<*>).map { it as Map<*, *> }
         assertEquals(listOf("$lab/disk"), widgets.filter { it["title"] == "Disk used" }.map { it["address"] })
-        assertEquals(listOf("measure-disk"), widgets.single { it["id"] == "disk" }["usedBy"])
+        assertEquals(listOf("Script measure-disk"), widgets.single { it["id"] == "disk" }["usedBy"])
         assertEquals("bar", widgets.single { it["title"] == "Load" }["kind"])
-        assertEquals(listOf("measure-disk"), listed["usedBy"])
+        assertEquals(listOf("Script measure-disk"), listed["usedBy"])
 
         eventually { assertTrue(chats.idle(token)) }
         send("process-builder", token, "Yes, remove it.")

@@ -44,7 +44,7 @@ title.addEventListener('keydown', event => {
     event.preventDefault();
     title.blur();
 });
-title.addEventListener('blur', () => timer ? save() : !title.textContent.trim() && (title.textContent = 'Untitled dashboard'));
+title.addEventListener('blur', () => timer ? save() : !title.textContent.trim() && (title.textContent = title.dataset.untitled));
 
 if (new URLSearchParams(location.search).has('new')) {
     history.replaceState(null, '', location.pathname);
@@ -86,7 +86,8 @@ grid.on('change', (event, items) => {
     send(`/dashboards/${id}/layout`, { layout: JSON.stringify(items.map(({ id, x, y, w, h }) => ({ id, x, y, w, h }))) });
 });
 
-// A Widget's title is renamed in place in edit mode, saved as typed; ✕ removes the Widget once the user confirms, told which Scripts it breaks.
+// A Widget's title is renamed in place in edit mode, saved as typed; ✕ removes the Widget once the user confirms, told
+// what Posts to it and breaks, as the server words it.
 function wire(item) {
     const widget = item.getAttribute('gs-id'), t = item.querySelector('.t');
     let wait = null;
@@ -95,8 +96,8 @@ function wire(item) {
     t.addEventListener('blur', () => wait && keep());
     t.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); t.blur(); } });
     item.querySelector('.x').addEventListener('click', async () => {
-        const users = item.querySelector('.widget').dataset.usedBy;
-        if (!confirm(`Remove the Widget “${t.textContent}”? Its Posts go with it.` + (users ? ` ${users.includes(',') ? 'The Scripts' : 'The Script'} ${users} Post${users.includes(',') ? '' : 's'} to it and will break.` : ''))) return;
+        const breaks = item.querySelector('.widget').dataset.breaks;
+        if (!confirm(`Remove the Widget “${t.textContent}”? Its Posts go with it.` + (breaks ? ` ${breaks}` : ''))) return;
         await send(`/dashboards/${id}/widgets/${widget}/delete`, {});
         grid.removeWidget(item);
         addresses.querySelectorAll(`[data-widget="${widget}"]`).forEach(row => row.remove());
@@ -149,8 +150,7 @@ for (const choice of menu.querySelectorAll('button[data-type]')) {
         wire(item);
         shown[added.id] = added.body;
         empty.hidden = true;
-        addresses.insertAdjacentHTML('beforeend', `<dt data-widget="${added.id}"><code>${id}/${added.id}</code> · ${added.type}</dt><dd data-widget="${added.id}"><code></code></dd>`);
-        addresses.querySelector(`dd[data-widget="${added.id}"] code`).textContent = added.shape;
+        addresses.insertAdjacentHTML('beforeend', added.row);
         setEditing(true);
         item.scrollIntoView({ block: 'nearest' });
         const t = item.querySelector('.t');

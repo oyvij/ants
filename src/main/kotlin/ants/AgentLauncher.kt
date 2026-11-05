@@ -548,7 +548,7 @@ class AgentLauncher(
         val tools = scriptTools.of(allowedScripts(task.extensionProperties, agent), workspace, run, task.activityId)
         val agentTools = (catalogue.tools(agent) + granted(task)).distinct()
         val allowed = protectedCommands.allowed(agentTools)
-        val posting = widgetTools.allowed(agentTools)
+        val posting = WidgetTools.allowed(agentTools)
         // Every claude Agent is offered PostToWidget, so claude refuses it to one not allowed it and the user decides.
         val (token, mcp) = protectedCommands.open(workspace, tools + widgetTools.of(posting, run, task.activityId), allowed) // its Protected Commands run in the Run workspace
         val process = runCatching {

@@ -345,7 +345,7 @@ class LookTest : AntsTest() {
             }
         })
         dashboards.renameWidget(id, widgets[0].id, "Requests served by the reverse proxy since the last restart of the whole home lab")
-        fun post(widget: Widget, data: Any) = dashboards.post("$id/${widget.id}", data, "r-look", "measure")
+        fun post(widget: Widget, data: Any) = dashboards.post(WidgetAddress.of("$id/${widget.id}"), data, "r-look", "measure")
         post(widgets[0], mapOf("value" to 1234567890123, "unit" to "requests"))
         post(widgets[1], mapOf("done" to 7, "total" to 9))
         post(widgets[2], mapOf("items" to listOf(
