@@ -335,12 +335,13 @@ class LookTest : AntsTest() {
         val simple = listOf(WidgetType.NUMBER, WidgetType.PROGRESS, WidgetType.STATUS, WidgetType.LIST, WidgetType.TEXT, WidgetType.LOG)
         val widgets = simple.map { dashboards.addWidget(id, it) } +
             ChartKind.entries.map { dashboards.addWidget(id, WidgetType.CHART, it) } + dashboards.addWidget(id, WidgetType.CUSTOM)
-        // Four small Widgets to a row, then the text and the log side by side, then the charts two to a row.
+        // The charts two to a row, then the text and the log side by side, then four small Widgets to a row from right
+        // to left: an order unlike the one they were added in.
         dashboards.layout(id, widgets.mapIndexed { i, widget ->
             when {
-                i < 4 -> Placement(widget.id, i * 3, 0, 3, 2)
-                i < 6 -> Placement(widget.id, (i - 4) * 6, 2, 6, 3)
-                else -> Placement(widget.id, (i - 6) % 2 * 6, 5 + (i - 6) / 2 * 4, 6, 4)
+                i < 4 -> Placement(widget.id, (3 - i) * 3, 19, 3, 2)
+                i < 6 -> Placement(widget.id, (i - 4) * 6, 16, 6, 3)
+                else -> Placement(widget.id, (i - 6) % 2 * 6, (i - 6) / 2 * 4, 6, 4)
             }
         })
         dashboards.renameWidget(id, widgets[0].id, "Requests served by the reverse proxy since the last restart of the whole home lab")
