@@ -14,17 +14,22 @@ import java.util.concurrent.TimeUnit
 import kotlin.io.path.writeText
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 
 /**
  * The look test: every page in light and in dark, as build/reports/browser/look/<page>/app-{light,dark}.png, and on a
  * phone in build/reports/browser/look-phone, for a person or an agent to look at. It asserts nothing about the look
  * itself. The app is seeded with Runs in different states, waiting entries, a Schedule, and the shipped Processes,
- * Agents and Skills. Like [BrowserTest], it is skipped where Chromium can't launch.
+ * Agents and Skills, and a Dashboard with every Widget type and chart kind. Its one check of the look is that a
+ * Dashboard fits a phone and shows no light box in Dark mode. Like [BrowserTest], it is skipped where Chromium can't launch.
  */
 @Tag("browser")
 class LookTest : AntsTest() {
     @Autowired
     private lateinit var processes: Processes
+
+    @Autowired
+    private lateinit var dashboards: Dashboards
 
     private val http by lazy { browser().also { it.login() } }
     private val claude = FakeClaude()
@@ -173,6 +178,7 @@ class LookTest : AntsTest() {
         Shot("skill-reference", "/skills/tdd", "document.querySelector('.references [data-open]').click()"),
         Shot("settings", "/settings"),
         Shot("answer", entry(app.getValue("round"))),
+        Shot("dashboard", "/dashboards/${app.getValue("dashboard")}"),
     )
 
     /** Opens [url] in a fresh document, lets its diagrams and editors load, does [then], and saves it as [name]. */
@@ -316,8 +322,130 @@ class LookTest : AntsTest() {
         """.trimIndent()))
         http.get("/processes/nightly")
         http.post("/processes/nightly/schedule", mapOf("cron" to "0 0 0 * * *"))
+        runs["dashboard"] = dashboard()
         return runs
     }
+
+    /**
+     * A Dashboard with every Widget type and chart kind, each Posted to, with a long title, long words and long lines
+     * that must wrap or be cut short to fit a phone; its id.
+     */
+    private fun dashboard(): String {
+        val id = dashboards.rename(dashboards.create().id, "The home lab, its disks, its backups and everything the nightly sweep finds out").id
+        val simple = listOf(WidgetType.NUMBER, WidgetType.PROGRESS, WidgetType.STATUS, WidgetType.LIST, WidgetType.TEXT, WidgetType.LOG)
+        val widgets = simple.map { dashboards.addWidget(id, it) } +
+            ChartKind.entries.map { dashboards.addWidget(id, WidgetType.CHART, it) } + dashboards.addWidget(id, WidgetType.CUSTOM)
+        // Four small Widgets to a row, then the text and the log side by side, then the charts two to a row.
+        dashboards.layout(id, widgets.mapIndexed { i, widget ->
+            when {
+                i < 4 -> Placement(widget.id, i * 3, 0, 3, 2)
+                i < 6 -> Placement(widget.id, (i - 4) * 6, 2, 6, 3)
+                else -> Placement(widget.id, (i - 6) % 2 * 6, 5 + (i - 6) / 2 * 4, 6, 4)
+            }
+        })
+        dashboards.renameWidget(id, widgets[0].id, "Requests served by the reverse proxy since the last restart of the whole home lab")
+        fun post(widget: Widget, data: Any) = dashboards.post("$id/${widget.id}", data, "r-look", "measure")
+        post(widgets[0], mapOf("value" to 1234567890123, "unit" to "requests"))
+        post(widgets[1], mapOf("done" to 7, "total" to 9))
+        post(widgets[2], mapOf("items" to listOf(
+            mapOf("name" to "nas", "state" to "ok"), mapOf("name" to "backup-of-the-photo-library-to-the-offsite-disk", "state" to "running"),
+            mapOf("name" to "router", "state" to "fail"), mapOf("name" to "printer", "state" to "warn"),
+        )))
+        post(widgets[3], mapOf("items" to listOf(
+            mapOf("title" to "https://example.com/a/very/long/address/that/has/no/spaces/anywhere/in/it/at/all", "url" to "https://example.com/news", "note" to "today"),
+            mapOf("title" to "Ants 1.4 is out"),
+        )))
+        post(widgets[4], mapOf("text" to "The sweep found three new notes.\nSupercalifragilisticexpialidociousandthensomemorewithoutanybreaks was the longest word."))
+        listOf(
+            "info" to "Started the nightly sweep",
+            "warn" to "The offsite disk answered slowly: /mnt/offsite/backups/photos/2026/11/05/full-backup-of-everything.tar.zst",
+            "error" to "Gave up on the printer",
+        ).forEach { (level, line) -> post(widgets[5], mapOf("line" to line, "level" to level)) }
+        val points = listOf("2026-10-30", "2026-10-31", "2026-11-01", "2026-11-02").flatMapIndexed { i, day ->
+            listOf(mapOf("x" to day, "y" to i + 1, "series" to "opened issues"), mapOf("x" to day, "y" to 4 - i, "series" to "closed issues"))
+        }
+        widgets.filter { it.type == WidgetType.CHART }.forEach { post(it, mapOf("points" to points)) }
+        post(widgets.last(), mapOf("spec" to mapOf(
+            "title" to "Commits by hour",
+            "data" to mapOf("values" to (8..18).map { mapOf("hour" to it, "commits" to it % 5) }),
+            "encoding" to mapOf("x" to mapOf("field" to "hour", "type" to "ordinal"), "y" to mapOf("field" to "commits", "type" to "quantitative")),
+            "layer" to listOf(mapOf("mark" to "bar"), mapOf("mark" to mapOf("type" to "text", "dy" to -6), "encoding" to mapOf("text" to mapOf("field" to "commits")))),
+        )))
+        return id
+    }
+
+    @Test
+    @Timeout(5, unit = TimeUnit.MINUTES)
+    fun `a Dashboard is one column on a phone in its layout's order without editing, nothing on it is wider than the screen, and Dark mode shows no light box or dark text`() {
+        Playwright.create().use { playwright ->
+            val chromium = launchChromium(playwright)
+            val id = dashboard()
+            val layout = dashboards.get(id).widgets
+            val offenders = mutableListOf<String>()
+            for ((theme, scheme) in listOf("light" to ColorScheme.LIGHT, "dark" to ColorScheme.DARK)) {
+                settings(claude, "theme: $theme\n")
+                for ((device, options) in listOf("desktop" to desktop(), "phone" to phone())) chromium.newContext(options.setColorScheme(scheme)).use { context ->
+                    val page = context.newPage()
+                    logIn(page)
+                    page.navigate("http://127.0.0.1:$port/dashboards/$id")
+                    page.waitForFunction("[...document.querySelectorAll('.chart')].every(chart => chart.querySelector('svg .mark-text, svg .mark-arc, svg .mark-rect, svg .mark-line, svg .mark-area, svg .mark-symbol'))")
+                    page.waitForTimeout(500.0) // the charts settle at their Widgets' sizes
+                    val where = "on a $device in $theme"
+                    if (device == "phone") {
+                        offenders += (page.evaluate(tooWide) as List<*>).map { "$where, $it" }
+                        val boxes = (page.locator(".grid-stack-item").evaluateAll(
+                            "items => items.map(item => [item.getAttribute('gs-id'), Math.round(item.getBoundingClientRect().left), Math.round(item.getBoundingClientRect().width), item.getBoundingClientRect().top])",
+                        ) as List<*>).map { it as List<*> }
+                        assertEquals(1, boxes.map { it.subList(1, 3) }.distinct().size, "$where, every Widget is in one column: $boxes")
+                        assertEquals(layout.sortedWith(compareBy({ it.y }, { it.x })).map { it.id }, boxes.sortedBy { (it[3] as Number).toDouble() }.map { it[0] }, "$where, in the layout's order")
+                        assertTrue(page.locator("#edit").isHidden && page.locator("#add").isHidden, "$where, Edit layout and + Widget are hidden")
+                    }
+                    if (theme == "dark") offenders += (page.evaluate(lightInDark) as List<*>).map { "$where, $it" }
+                }
+            }
+            assertEquals(emptyList(), offenders)
+            assertEquals(layout, dashboards.get(id).widgets, "a phone's one column never replaces the layout")
+        }
+    }
+
+    /** The visible elements in the page's main part reaching past the screen's edges, and the page if it scrolls sideways. */
+    private val tooWide = """() => {
+        const width = document.documentElement.clientWidth
+        const name = e => e.tagName.toLowerCase() + (e.id ? '#' + e.id : '') + (e.classList.length ? '.' + [...e.classList].join('.') : '')
+        const wide = [...document.querySelectorAll('main *')].filter(e => e.checkVisibility({ visibilityProperty: true }))
+            .filter(e => { const box = e.getBoundingClientRect(); return box.width > 0 && (box.left < -0.5 || box.right > width + 0.5) })
+            .map(e => name(e) + ' reaches ' + Math.round(e.getBoundingClientRect().left) + ' to ' + Math.round(e.getBoundingClientRect().right) + ' of ' + width)
+        return (document.documentElement.scrollWidth > width ? ['the page scrolls sideways to ' + document.documentElement.scrollWidth] : []).concat(wide).slice(0, 15)
+    }"""
+
+    /**
+     * On a Dashboard, the elements with a white or light grey background, a chart's background drawn so, and a chart's
+     * text drawn dark; the first fifteen. A colour such as a status dot's green may be light: it is a colour, not a box.
+     */
+    private val lightInDark = """() => {
+        const probe = document.createElement('span')
+        document.body.append(probe)
+        // A colour's red, green and blue from 0 to 1; nothing for none or one nearly transparent.
+        const rgb = colour => {
+            if (!colour || colour === 'none') return null
+            probe.style.color = 'rgba(0, 0, 0, 0)'
+            probe.style.color = colour
+            const [r, g, b, a = 1] = getComputedStyle(probe).color.match(/[\d.]+/g).map(Number)
+            return a > 0.1 ? [r / 255, g / 255, b / 255] : null
+        }
+        const lightness = ([r, g, b]) => 0.2126 * r + 0.7152 * g + 0.0722 * b
+        const whitish = colour => { const c = rgb(colour); return !!c && lightness(c) > 0.6 && Math.max(...c) - Math.min(...c) < 0.15 }
+        const dark = colour => { const c = rgb(colour); return !!c && lightness(c) < 0.35 }
+        const name = e => e.tagName.toLowerCase() + (e.classList.length ? '.' + [...e.classList].join('.') : '') + (e.textContent.trim() ? ' “' + e.textContent.trim().slice(0, 30) + '”' : '')
+        const shown = [...document.querySelectorAll('main.dashboard *')].filter(e => e.checkVisibility({ visibilityProperty: true }))
+        const offenders = [
+            ...shown.filter(e => !(e instanceof SVGElement) && whitish(getComputedStyle(e).backgroundColor)).map(e => name(e) + ' has a light background'),
+            ...shown.filter(e => e.matches('svg .background') && whitish(getComputedStyle(e).fill)).map(e => name(e) + ' is a light box'),
+            ...shown.filter(e => e.matches('svg text') && dark(getComputedStyle(e).fill)).map(e => name(e) + ' is dark text'),
+        ]
+        probe.remove()
+        return offenders.slice(0, 15)
+    }"""
 
     /** The path of [run]'s entry, once it is on the Notification list. */
     private fun entry(run: String): String {
