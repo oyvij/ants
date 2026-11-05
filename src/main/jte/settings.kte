@@ -16,6 +16,7 @@
 @param shell: ants.Shell
 @param posted: Boolean = false
 @param alertKey: String
+@param alertDevices: List<ants.ListedDevice>
 <!doctype html>
 <html lang="en">
 <head>
@@ -180,8 +181,20 @@
     <div class="grid2"><div class="card alerts" id="alerts" data-key="${alertKey}"><h3>Alerts</h3>
         <div class="help">An Alert on this phone or browser for each new entry on the Notification list; tapping it opens the entry.</div>
         <label class="row"><input type="checkbox" id="alerts-on" disabled> Alerts on this device</label>
+        <p class="why" id="alerts-why" hidden></p>
         <p class="help" id="alerts-said" role="status"></p>
-        <p><button type="button" id="alerts-test" disabled>Send a test Alert</button></p></div></div>
+        <p><button type="button" id="alerts-test" disabled>Send a test Alert</button></p>
+        <div class="subsec"><b class="small">Devices with Alerts on</b>
+@if(alertDevices.isEmpty())
+            <div class="help" id="alert-devices">None yet.</div>
+@else
+            <ul class="devices" id="alert-devices">
+@for(device in alertDevices)
+                <li data-endpoint="${device.endpoint}"><b>${device.name}</b> <span class="muted small">added ${device.added}</span><button formaction="/settings/alerts/remove" name="endpoint" value="${device.endpoint}">Remove</button></li>
+@endfor
+            </ul>
+@endif
+        </div></div></div>
     <div class="savebar" hidden><span>Unsaved changes</span><button class="primary" name="action" value="save">Save</button></div>
 </form>
 @for((i, map) in maps.entries.withIndex())

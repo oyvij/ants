@@ -52,6 +52,22 @@ Out of the box Ants listens only on `127.0.0.1`, which no other device can reach
 change the password, then `ants stop` and start it in the foreground on every address with
 `SERVER_ADDRESS=0.0.0.0 ants run`.
 
+### Alerts on a phone or browser
+
+Ants can send an Alert to your phone or browser for each new entry on the Notification list: turn it on in
+**Settings** → **Alerts**, on the device itself. Alerts use standard Web Push, so they need no account anywhere, but
+browsers allow them only on a page served over HTTPS (or from `localhost`). Ants doesn't serve HTTPS itself, so put it
+behind something that does, for example:
+
+- **Tailscale**: on the machine Ants runs on, `tailscale serve --bg 7323` gives it an HTTPS address
+  such as `https://homelab.your-tailnet.ts.net` that every device on your tailnet can open. Ants can stay on
+  `127.0.0.1`.
+- **A reverse proxy** with a certificate, such as Caddy (`ants.example.com { reverse_proxy 127.0.0.1:7323 }`) or nginx.
+
+On an iPhone or iPad, add Ants to the home screen first and open it from there (iOS 16.4 or later): Safari offers
+Alerts only to an installed app. Settings says why when a device can't get Alerts, lists every device that has them on,
+and has **Remove** for an old one.
+
 ## Developing
 
 Run Ants from source with Java 25 (Gradle and Node are fetched by the build): `./gradlew bootRun`.

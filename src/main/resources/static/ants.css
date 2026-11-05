@@ -365,6 +365,10 @@ div.tools label span { color: var(--muted); font-size: 12px; display: block; }
 :is(.chipsel, .fld .tags) .c button { border: 0; background: none; box-shadow: none; padding: 0 4px; color: var(--accText); }
 .chipsel input { border: 0; outline: 0; flex: 1; min-width: 160px; padding: 4px; min-height: 0; background: none; }
 .listed > .row { margin-bottom: 6px; }
+.alerts .devices { list-style: none; margin: 6px 0 0; padding: 0; }
+.alerts .devices li { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; padding: 6px 0; border-top: 1px solid var(--line); }
+.alerts .devices li > button { margin-left: auto; }
+.alerts .why { padding: 8px 10px; border-radius: 8px; background: var(--waitSoft); color: var(--text); font-size: 13.5px; }
 
 .storyview { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 20px; align-items: start; }
 .spine { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sh); padding: 16px; position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow-y: auto; overflow-wrap: anywhere; }

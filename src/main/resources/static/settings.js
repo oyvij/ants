@@ -65,8 +65,9 @@ if (settingsForm) {
 }
 
 // The Alerts card: its toggle turns Alerts on for this device, asking the browser's permission only then, and
-// registers its push subscription with Ants; off forgets it. Send a test Alert sends one here. None of it is the
-// form's: its controls have no names, so Save never sees them.
+// registers its push subscription with Ants; off forgets it. Send a test Alert sends one here. The list of devices with
+// Alerts on marks this one; its Remove buttons post to Ants. None of it is the form's: its controls have no names, so
+// Save never sees them. On a device that can't get Alerts, the card says why.
 const alertsCard = document.getElementById('alerts');
 if (alertsCard) {
     const toggle = document.getElementById('alerts-on'), test = document.getElementById('alerts-test'), said = document.getElementById('alerts-said');
@@ -98,9 +99,31 @@ if (alertsCard) {
         await post('/alerts/devices/remove', { endpoint: sub.endpoint });
         await sub.unsubscribe();
     };
-    if (window.isSecureContext && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window) {
+    // Why this device can't get Alerts, if it can't: the first that holds of no HTTPS, an iPhone's Ants not on its
+    // home screen, and no Push.
+    const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
+    const why = !window.isSecureContext
+        ? "This device can't get Alerts here: browsers allow them only on a page served over HTTPS, or from localhost, and this one came over plain HTTP. Ants' README says how to serve it over HTTPS."
+        : ios && !navigator.standalone
+            ? "On an iPhone or iPad, Alerts come only to Ants added to the home screen: tap Share, then Add to Home Screen, open Ants from there and turn Alerts on in its Settings."
+            : !('serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window)
+                ? "This browser has no Push support, so it can't get Alerts. Another browser on this device may."
+                : null;
+    // This device's row in the list of devices with Alerts on, marked as this device, or nothing when Ants doesn't list it.
+    const listed = sub => {
+        const row = sub && [...document.querySelectorAll('#alert-devices [data-endpoint]')].find(row => row.dataset.endpoint === sub.endpoint);
+        row?.querySelector('b')?.insertAdjacentHTML('afterend', ' <span class="pill">This device</span>');
+        return row;
+    };
+    // Shows the list as Ants now has it, after this device came or went; whether it lists this device.
+    const relist = async () => {
+        const page = new DOMParser().parseFromString(await (await fetch('/settings')).text(), 'text/html');
+        document.getElementById('alert-devices').replaceWith(page.getElementById('alert-devices'));
+        return !!listed(await subscription());
+    };
+    if (!why) {
         toggle.disabled = false;
-        subscription().then(sub => show(!!sub && Notification.permission === 'granted'));
+        subscription().then(sub => show(!!listed(sub) && Notification.permission === 'granted'));
         toggle.addEventListener('change', async () => {
             const on = toggle.checked;
             toggle.disabled = true;
@@ -109,6 +132,7 @@ if (alertsCard) {
                 await (on ? turnOn() : turnOff());
                 show(on);
                 said.textContent = on ? 'Alerts are on for this device.' : 'Alerts are off for this device.';
+                await relist().catch(() => {});
             } catch (e) {
                 show(!on);
                 said.textContent = e.message;
@@ -119,8 +143,11 @@ if (alertsCard) {
             const sub = await subscription();
             if (!sub) return show(false);
             said.textContent = await (await post('/alerts/test', { endpoint: sub.endpoint })).text();
+            show(await relist().catch(() => true)); // a push service that says the device is gone drops it
         });
     } else {
-        said.textContent = "This browser can't get Alerts here.";
+        const note = document.getElementById('alerts-why');
+        note.textContent = why;
+        note.hidden = false;
     }
 }

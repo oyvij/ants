@@ -3188,6 +3188,7 @@ class BrowserTest : AntsTest() {
             page.navigate(url("/settings"))
             page.getByLabel("Alerts on this device").check()
             assertThat(page.locator("#alerts-said")).hasText("Alerts are on for this device.")
+            assertThat(page.locator("#alert-devices li")).containsText("This device")
 
             page.getByText("Send a test Alert").click()
             assertThat(page.locator("#alerts-said")).hasText("Sent a test Alert.")
@@ -3236,6 +3237,44 @@ class BrowserTest : AntsTest() {
             page.getByLabel("Alerts on this device").uncheck()
             assertThat(page.locator("#alerts-said")).hasText("Alerts are off for this device.")
             assertEquals(404, http.postBytes("/alerts/test", device.subscription().toByteArray()).status)
+        }
+    }
+
+    @Test
+    fun `Settings says plainly why this device can't get Alerts, for no HTTPS, an iPhone's Ants not on the home screen, or no Push`() = browse {
+        // Each case is the page as such a browser would show it, set before Settings' script runs; #as-… picks it.
+        page.addInitScript("""
+            const as = location.hash.slice(4);
+            const set = (on, name, value) => Object.defineProperty(on, name, { configurable: true, get: () => value });
+            if (as) set(window, 'isSecureContext', as !== 'http');
+            if (as === 'iphone' || as === 'iphone-installed') set(Navigator.prototype, 'userAgent', 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1');
+            if (as === 'iphone-installed') set(Navigator.prototype, 'standalone', true);
+            if (as === 'no-push' || as === 'iphone') delete window.PushManager;
+        """.trimIndent())
+        val why = page.locator("#alerts-why")
+        fun open(case: String) {
+            page.navigate("about:blank")
+            page.navigate(url("/settings#as-$case"))
+        }
+
+        open("http")
+        assertThat(why).containsText("served over HTTPS, or from localhost")
+        assertThat(page.getByLabel("Alerts on this device")).isDisabled()
+
+        open("iphone")
+        assertThat(why).containsText("Alerts come only to Ants added to the home screen: tap Share, then Add to Home Screen")
+        assertThat(page.getByLabel("Alerts on this device")).isDisabled()
+
+        open("no-push")
+        assertThat(why).hasText("This browser has no Push support, so it can't get Alerts. Another browser on this device may.")
+        assertThat(page.getByLabel("Alerts on this device")).isDisabled()
+
+        // Installed to the home screen, with Push, an iPhone can: no reason, and the toggle works. A browser has no
+        // service worker outside a secure context, whatever the page is told, so this part needs one.
+        open("iphone-installed")
+        if (page.evaluate("'serviceWorker' in navigator") == true) {
+            assertThat(page.getByLabel("Alerts on this device")).isEnabled()
+            assertThat(why).isHidden()
         }
     }
 
