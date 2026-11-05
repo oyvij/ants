@@ -37,7 +37,7 @@ data class Check(val element: String?, val message: String, val warning: Boolean
  */
 @Component
 class Checks(private val catalogue: Catalogue, private val scripts: Scripts, private val drafted: DraftedItems, private val repository: RepositoryService) {
-    private val kinds: List<(BpmnModelInstance) -> List<Check>> = listOf(::refusedElements, ::refusedUses, ::oneStartEvent, ::startFormNames, ::emptyInputs, ::defaultPaths, ::timerTimes, ::timerStarts, ::reviewSendBacks,
+    private val kinds: List<(BpmnModelInstance) -> List<Check>> = listOf(::refusedElements, ::refusedUses, ::oneStartEvent, ::startFormNames, ::emptyInputs, ::emptyNotifyLines, ::defaultPaths, ::timerTimes, ::timerStarts, ::reviewSendBacks,
         { agentTasks(catalogue, scripts, drafted, it) }, { references(it, scripts) }, // these two in AgentTaskChecks.kt
         { scriptTasks(scripts, catalogue, drafted, it) },
         { calls(repository, it) }) // in CallActivityChecks.kt
@@ -278,6 +278,11 @@ private fun emptyInputs(model: BpmnModelInstance) = model.getModelElementsByType
             .filter { it.textContent.isBlank() && it.domElement.childElements.isEmpty() }
             .map { Check(task.id, "${task.label} has an empty input ${it.operatonName}.", warning = true) }
     }
+
+/** A Notify with no line would add a Notice that says nothing. */
+private fun emptyNotifyLines(model: BpmnModelInstance) = model.getModelElementsByType(ServiceTask::class.java)
+    .filter { it.operatonTopic == Notify.TOPIC && it.property(Notify.LINE).isNullOrBlank() }
+    .map { Check(it.id, "${it.label} has an empty line, so its Notice would say nothing.") }
 
 /** An exclusive gateway that chooses between paths takes its default one when no condition holds; a merge needs none. */
 private fun defaultPaths(model: BpmnModelInstance) = model.getModelElementsByType(ExclusiveGateway::class.java)

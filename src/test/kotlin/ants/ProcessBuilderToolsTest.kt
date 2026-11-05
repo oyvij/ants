@@ -248,6 +248,57 @@ class ProcessBuilderToolsTest : AntsTest() {
     }
 
     @Test
+    fun `add_element and insert draw a Notify with its line, relayed to the page as its line property, and only a Notify takes a line`() {
+        val token = open()
+        val relayed = mutableListOf<Map<*, *>>()
+        page(token) { tool, arguments -> mapOf("id" to "tell").also { relayed += arguments + ("tool" to tool) } }
+
+        val (text, failed) = call(token, "add_element", mapOf("kind" to "built-in", "id" to "tell", "topic" to "notify", "line" to "Pipeline \${pipeline} failed"))
+        assertFalse(failed, text)
+        assertEquals(mapOf(Notify.LINE to "Pipeline \${pipeline} failed"), relayed.single()["properties"])
+        val (inserted, refusedInsert) = call(token, "insert", mapOf("from" to "a", "to" to "b", "kind" to "built-in", "topic" to "notify", "line" to "Done"))
+        assertFalse(refusedInsert, inserted)
+        assertEquals(mapOf(Notify.LINE to "Done"), relayed.last()["properties"])
+
+        relayed.clear()
+        assertEquals("Only a Notify takes a line." to true, call(token, "add_element", mapOf("kind" to "built-in", "line" to "Done")))
+        assertEquals("Only a Notify takes a line." to true, call(token, "add_element", mapOf("kind" to "agent", "topic" to "notify", "line" to "Done")))
+        assertEquals(emptyList(), relayed)
+    }
+
+    @Test
+    fun `set_built_in relays a Notify's line and answers with the Checks Publish refuses on that Task, an empty line among them`() {
+        val token = open()
+        fun process(line: String) = """
+            <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:operaton="http://operaton.org/schema/1.0/bpmn" id="d" targetNamespace="t">
+              <bpmn:process id="watch" isExecutable="true">
+                <bpmn:startEvent id="start" />
+                <bpmn:serviceTask id="tell" name="Tell me" operaton:type="external" operaton:topic="notify">
+                  <bpmn:extensionElements><operaton:properties><operaton:property name="ants.line" value="$line" /></operaton:properties></bpmn:extensionElements>
+                </bpmn:serviceTask>
+              </bpmn:process>
+            </bpmn:definitions>
+        """.trimIndent()
+        var xml = process("")
+        val relayed = mutableListOf<Map<*, *>>()
+        page(token) { tool, arguments ->
+            when (tool) {
+                "set_built_in" -> mapOf("id" to "tell", "topic" to "notify", "line" to arguments["line"]).also { relayed += arguments }
+                "xml" -> xml
+                else -> null
+            }
+        }
+        val emptied = json.readValue(call(token, "set_built_in", mapOf("id" to "tell", "line" to "")).first, Map::class.java)
+        assertEquals("", relayed.single()["line"])
+        assertEquals(listOf("Tell me (tell) has an empty line, so its Notice would say nothing."), emptied["checks"])
+
+        xml = process("Pipeline failed")
+        val written = json.readValue(call(token, "set_built_in", mapOf("id" to "tell", "line" to "Pipeline failed")).first, Map::class.java)
+        assertEquals("Pipeline failed", written["line"])
+        assertEquals(emptyList<Any>(), written["checks"])
+    }
+
+    @Test
     fun `add_element naming a missing Script is refused, saying the Process Builder can't write one and to hand the user a text for the Script editor's helper`() {
         val token = open()
         val relayed = mutableListOf<String>()

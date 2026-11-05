@@ -617,6 +617,20 @@ class BrowserTest : AntsTest() {
         undo()
         eventually { assertEquals("clone-repos", property("clone", "topic")) }
 
+        tool("add_element", mapOf("kind" to "built-in", "id" to "tell", "name" to "Tell me", "topic" to "notify", "line" to "Pipeline \${pipeline} failed"))
+        eventually { assertEquals("Pipeline \${pipeline} failed", property("tell", Notify.LINE)) }
+        assertEquals("Pipeline failed on main", tool("set_built_in", mapOf("id" to "tell", "line" to "Pipeline failed on main"))["line"].asString())
+        shape("tell").click()
+        assertThat(label("Line")).hasValue("Pipeline failed on main")
+        assertEquals(listOf("Tell me (tell) has an empty line, so its Notice would say nothing."),
+            texts(tool("set_built_in", mapOf("id" to "tell", "line" to ""))["checks"]))
+        assertNull(property("tell", Notify.LINE))
+        undo()
+        eventually { assertEquals("Pipeline failed on main", property("tell", Notify.LINE)) }
+        val (notNotify, refused) = mcpCall(port, page.locator("#canvas").getAttribute("data-builder")!!, "set_built_in", mapOf("id" to "clone", "line" to "Hi"))
+        assertTrue(refused, notNotify)
+        assertContains(notNotify, "Only notify says a line")
+
         tool("set_multi_instance", mapOf("id" to "draft", "mode" to "parallel", "collection" to "\${items}", "elementVariable" to "ticket", "itemsAreTickets" to true))
         eventually { assertEquals("ticket", element("draft")["properties"]["multiInstance"]?.get("elementVariable")?.asString()) }
         val loop = element("draft")["properties"]

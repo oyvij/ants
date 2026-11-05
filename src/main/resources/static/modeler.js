@@ -1352,10 +1352,10 @@ async function setCall({id, process, inputs}) {
     return {id, process: key || null, inputs: Object.fromEntries(written)}
 }
 
-function setBuiltIn({id, topic, inputs, asker}) {
+function setBuiltIn({id, topic, inputs, asker, line}) {
     const script = kindOf(found(id)) === "script"
     const element = script ? found(id) : foundAs(id, "built-in", "a Built-in Task or a Script Task")
-    if (script && (topic !== undefined || asker !== undefined)) throw new Error(`${id} is a Script Task: set only its inputs.`)
+    if (script && (topic !== undefined || asker !== undefined || line !== undefined)) throw new Error(`${id} is a Script Task: set only its inputs.`)
     const bo = element.businessObject
     if (topic !== undefined && !builtIns[topic]) throw new Error(`No Built-in Task ${topic}: the topics are ${Object.keys(builtIns).join(", ")}.`)
     const now = topic ?? bo.get("camunda:topic")
@@ -1363,6 +1363,7 @@ function setBuiltIn({id, topic, inputs, asker}) {
         throw new Error(`Only ${Object.keys(builtIns).filter(topic => builtIns[topic].asker).join(", ")} names an asker; ${id} is ${now}.`)
     }
     if (asker !== undefined) agentTaskNamed("asker", asker)
+    if (line !== undefined && !builtIns[now]?.line) throw new Error(`Only ${Object.keys(builtIns).filter(topic => builtIns[topic].line).join(", ")} says a line; ${id} is ${now}.`)
     const given = Object.entries(inputs || {}).map(([name, value]) => {
         checkJuelName(name, "an input name")
         return [name, String(value ?? "")]
@@ -1372,9 +1373,11 @@ function setBuiltIn({id, topic, inputs, asker}) {
         .filter(([, value]) => value)
     edit(() => {
         if (topic !== undefined) modeler.get("modeling").updateProperties(element, {"camunda:topic": topic})
-        if (inputs !== undefined || asker !== undefined) writeAgentTask(element, asker === undefined ? {} : {"ants.asker": asker || undefined}, written, true)
+        const properties = {...(asker === undefined ? {} : {"ants.asker": asker || undefined}), ...(line === undefined ? {} : {"ants.line": String(line) || undefined})}
+        if (inputs !== undefined || asker !== undefined || line !== undefined) writeAgentTask(element, properties, written, true)
     })
-    return {id, topic: now, inputs: Object.fromEntries(agentInputs(bo)), asker: agentProperties(bo)["ants.asker"] || null}
+    return {id, topic: now, inputs: Object.fromEntries(agentInputs(bo)), asker: agentProperties(bo)["ants.asker"] || null,
+        ...(builtIns[now]?.line ? {line: agentProperties(bo)["ants.line"] || ""} : {})}
 }
 
 // Multi-instance, as the wrench menu's parallel and sequential toggles write it, and the panel's collection, element
