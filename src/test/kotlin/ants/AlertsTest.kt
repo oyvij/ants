@@ -129,6 +129,19 @@ class AlertsTest : AntsTest() {
     }
 
     @Test
+    fun `a Notice that only counts up sends no Alert`() {
+        settings(null)
+        turnOn()
+        browser.import("notify.bpmn")
+        browser.get("/processes/watch")
+        browser.post("/processes/watch/runs", mapOf("pipeline" to "api-build", NAME to "Nightly watch"))
+        assertEquals("[notice]", next().payload()["tag"])
+        browser.post("/processes/watch/runs", mapOf("pipeline" to "api-build", NAME to "Later watch"))
+        eventually { assertTrue("×2, last at" in browser.get("/notifications").body) }
+        assertNull(device.received.poll(3, SECONDS), "a Notice that counted up alerted again")
+    }
+
+    @Test
     fun `Send a test Alert sends one to this device, signed with the key the Settings page gives the browser`() {
         turnOn()
         val key = Regex("""data-key="([^"]+)"""").find(browser.get("/settings").body)!!.groupValues[1]
