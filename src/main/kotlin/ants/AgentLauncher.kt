@@ -63,6 +63,7 @@ class AgentLauncher(
     private val scopes: Scopes,
     private val protectedCommands: ProtectedCommands,
     private val scriptTools: ScriptTools,
+    private val widgetTools: WidgetTools,
     private val scripts: Scripts,
     @Lazy private val migration: Migration, // lazy: it deploys through Processes, which reach this launcher
     @Value("\${ants.home}") internal val home: Path,
@@ -544,13 +545,17 @@ class AgentLauncher(
         val places = vault?.let { listOf("--add-dir", "$it") }.orEmpty() // the Vault's path goes nowhere else (ADR 0002)
             .plus(answerHistory(task)?.let { listOf("--add-dir", "${it.createDirectories()}") }.orEmpty()) // so a Read reaches it (ADR 0010)
             .plus(if (verbosity == null) emptyList() else listOf("--add-dir", "${catalogue.verbosityFile.parent}"))
-        val tools = scriptTools.of(allowedScripts(task.extensionProperties, agent), workspace, run)
+        val tools = scriptTools.of(allowedScripts(task.extensionProperties, agent), workspace, run, task.activityId)
         val agentTools = (catalogue.tools(agent) + granted(task)).distinct()
         val allowed = protectedCommands.allowed(agentTools)
-        val (token, mcp) = protectedCommands.open(workspace, tools, allowed) // its Protected Commands run in the Run workspace
+        val posting = widgetTools.allowed(agentTools)
+        // Every claude Agent is offered PostToWidget, so claude refuses it to one not allowed it and the user decides.
+        val (token, mcp) = protectedCommands.open(workspace, tools + widgetTools.of(posting, run, task.activityId), allowed) // its Protected Commands run in the Run workspace
         val process = runCatching {
             val skills = listOfNotNull(skill) + used
-            cli(agent.cli, cwd, flags(agent, agentTools, level, cwd, schema, skills, skillsFolder(workspace, instance, skills), session!!, resume, mcp, listOfNotNull(RUN_TOOL.takeIf { allowed.isNotEmpty() }) + tools.tools.map { Mcp.CLAUDE_PREFIX + it["name"] }, workspace, gated?.let { listOf("Write(/$it/**)", "Edit(/$it/**)") }.orEmpty()) + shared + places)
+            val antsTools = listOfNotNull(RUN_TOOL.takeIf { allowed.isNotEmpty() }) + tools.tools.map { Mcp.CLAUDE_PREFIX + it["name"] } +
+                listOfNotNull(WidgetTools.LIST_RULE, WidgetTools.POST_RULE.takeIf { posting != null })
+            cli(agent.cli, cwd, flags(agent, agentTools, level, cwd, schema, skills, skillsFolder(workspace, instance, skills), session!!, resume, mcp, antsTools, workspace, gated?.let { listOf("Write(/$it/**)", "Edit(/$it/**)") }.orEmpty()) + shared + places)
                 .apply { environment()["ANTS_TASK"] = task.activityId } // names the Task to its session; the fake claude keys on it
                 .start()
         }.onFailure { protectedCommands.close(token) }.getOrThrow()
@@ -621,6 +626,12 @@ class AgentLauncher(
 
     private fun permissionRequest(agent: Agent, cwd: Path, event: Map<*, *>, input: Map<*, *>?): PermissionRequest? {
         val tool = event["tool_name"].toString()
+        // claude 2.1.318 under dontAsk refuses an MCP tool --allowedTools doesn't list: permission_denied, reason mode.
+        if (tool == WidgetTools.POST_RULE) {
+            val dashboard = input?.get("dashboard")?.toString().orEmpty()
+            val limit = if (dashboard.isEmpty()) WidgetTools.AGENT_TOOL else "${WidgetTools.AGENT_TOOL}($dashboard)"
+            return PermissionRequest(agent.name, WidgetTools.AGENT_TOOL, "$dashboard/${input?.get("widget") ?: ""}", limit)
+        }
         val target = PermissionRequest.target(input)
         if (!allowable(tool, target, event["decision_reason_type"] == "rule")) return null
         return PermissionRequest(agent.name, tool, target, PermissionRequest.limit(tool, target, cwd))
@@ -1014,7 +1025,7 @@ class AgentLauncher(
         /** Ants' MCP tool `run`, which runs a Protected Command ([ProtectedCommands]). */
         const val RUN_TOOL = "${Mcp.CLAUDE_PREFIX}run"
 
-        private val OWN_TOOLS = setOf("Skill", ProtectedCommands.AGENT_TOOL)
+        private val OWN_TOOLS = setOf("Skill", ProtectedCommands.AGENT_TOOL, WidgetTools.AGENT_TOOL)
 
         /** The tool that starts Subagents: `Agent`, formerly `Task`. */
         val SUBAGENT_TOOLS = setOf("Agent", "Task")

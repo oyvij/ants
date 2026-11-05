@@ -507,6 +507,7 @@ data class AgentForm(
                 Tool("TaskGet", "Read one step of its task list."),
                 Tool("TaskList", "Read its whole task list."),
                 Tool("TaskUpdate", "Tick off or change a step."),
+                Tool(WidgetTools.AGENT_TOOL, "Post to Dashboard Widgets, through Ants' PostToWidget tool.", "Dashboards", "d-abc123", "Each a Dashboard's id."),
             ),
         )
 

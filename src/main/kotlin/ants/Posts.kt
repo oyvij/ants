@@ -14,13 +14,14 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Who Posts with a token: the [script] that a Script Task, [task], runs in the Run [run]; or, [trying] it, a test run
+ * Who Posts with a token: the [script] that the Task [task], a Script Task or an Agent Task calling it as a Script tool,
+ * runs in the Run [run]; or, [trying] it, a test run
  * from the Script's editor, whose Posts are checked and never stored.
  */
 data class Sender(val script: Script, val run: String, val task: String, val trying: Boolean = false)
 
 /**
- * Where `ants.post` sends a Script's Posts (ADR 0032): one token per run of a Script in a Script Task or a test run, given before it
+ * Where `ants.post` sends a Script's Posts (ADR 0032): one token per run of a Script, given before it
  * starts and dropped when it ends. A Post to a Widget the Script doesn't list is refused here; the rest is [Dashboards.post]'s.
  */
 @RestController

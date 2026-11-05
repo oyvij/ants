@@ -56,6 +56,8 @@
         <p>A Widget's address is <code>&lt;dashboard id&gt;/&lt;widget id&gt;</code>. A Post with the wrong shape is refused with a message saying the shape it needs; the sender decides what to do.</p>
         <p>A Script lists each Widget it Posts to under <b>Widgets</b>, one address a line, then Posts in a Script Task:</p>
         <pre>await ants.post('${dashboard.id}/${widgets.firstOrNull()?.widget?.id ?: "<widget id>"}', {value: 42})</pre>
+        <p id="agent-posting">An Agent lists the Widgets with Ants' <code>ListWidgets</code> tool, then Posts with <code>PostToWidget</code>. The lead may, with its <b>dashboards</b> Skill; any other Agent asks you first, and <code>PostToWidget(${dashboard.id})</code> lets it Post only here.</p>
+        <pre>PostToWidget(dashboard: '${dashboard.id}', widget: '${widgets.firstOrNull()?.widget?.id ?: "<widget id>"}', data: {value: 42})</pre>
         <h3>Widgets on this Dashboard</h3>
         <dl id="addresses">
 @for(view in widgets)

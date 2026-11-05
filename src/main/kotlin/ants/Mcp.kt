@@ -33,6 +33,17 @@ interface McpTools {
 
     /** False once the token is dead, as a page's is when the page has gone. */
     val alive: Boolean get() = true
+
+    /** These tools and [other]'s, behind one token. */
+    operator fun plus(other: McpTools): McpTools = object : McpTools {
+        private val first = this@McpTools
+
+        override val tools = first.tools + other.tools
+
+        override fun call(name: String, arguments: Map<*, *>) = (if (first.tools.any { it["name"] == name }) first else other).call(name, arguments)
+
+        override val alive get() = first.alive && other.alive
+    }
 }
 
 /**
