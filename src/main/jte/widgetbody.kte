@@ -2,7 +2,7 @@
 @param view: ants.WidgetView
 !{val delta = view.delta}
 @if(view.post == null)
-<div class="none">Waiting for its first Post · <code>${view.address}</code></div>
+<div class="none">Waiting for its first Post · <code>${view.address.toString()}</code></div>
 @else
 @if(view.widget.type == WidgetType.NUMBER)
 <div class="num">${view.number("value")}<small>${view.post.data["unit"]?.toString() ?: ""}</small></div>

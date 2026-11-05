@@ -13,14 +13,6 @@ import tools.jackson.databind.json.JsonMapper
 class WidgetTools(private val dashboards: Dashboards) {
     private val json = JsonMapper.shared()
 
-    /** The Dashboards [tools] let an Agent Post to: null for none, empty for every one. */
-    fun allowed(tools: List<String>): List<String>? {
-        val rules = tools.filter { it.substringBefore('(').trim() == AGENT_TOOL }
-        if (rules.isEmpty()) return null
-        if (rules.any { '(' !in it }) return emptyList()
-        return rules.flatMap { it.substringAfter('(').removeSuffix(")").split(',') }.map(String::trim).filter(String::isNotEmpty)
-    }
-
     /** The tools for the Task [task] of the Run [run], whose Agent may Post to the Dashboards [allowed] gives. */
     fun of(allowed: List<String>?, run: String, task: String): McpTools = object : McpTools {
         override val tools = listOf(LIST_TOOL, POST_TOOL)
@@ -31,17 +23,12 @@ class WidgetTools(private val dashboards: Dashboards) {
 
     private fun list(allowed: List<String>?): String = json.writeValueAsString(
         dashboards.all().filter { allowed.isNullOrEmpty() || it.id in allowed }.flatMap { dashboard ->
-            dashboard.widgets.map { widget ->
-                mapOf(
-                    "address" to "${dashboard.id}/${widget.id}", "dashboard" to dashboard.id, "dashboardTitle" to dashboard.title,
-                    "type" to widget.type.label, "title" to widget.title, "accepts" to widget.type.shape,
-                )
-            }
+            dashboard.widgets.map { widget -> described(dashboard, widget) + mapOf("dashboard" to dashboard.id, "dashboardTitle" to dashboard.title) }
         },
     )
 
     private fun post(allowed: List<String>?, dashboard: String, widget: String, data: Any?, run: String, task: String): Pair<String, Boolean> {
-        val address = "$dashboard/$widget"
+        val address = WidgetAddress(dashboard, widget)
         if (allowed == null) return "Your Agent may not Post to Widgets, so Ants Posted nothing: end stuck, saying your Agent needs `$AGENT_TOOL($dashboard)`." to true
         if (allowed.isNotEmpty() && dashboard !in allowed) {
             val named = if (allowed.size == 1) "the Dashboard ${allowed.single()}" else "the Dashboards ${allowed.joinToString(", ")}"
@@ -59,6 +46,19 @@ class WidgetTools(private val dashboards: Dashboards) {
         /** The Agent's tool that lets it Post, as its file and the Agents page name it. */
         const val AGENT_TOOL = "PostToWidget"
 
+        /** The Widget [widget] of [dashboard] as an Agent's or a helper's tool lists it: its address, type, title and the data it accepts. */
+        fun described(dashboard: Dashboard, widget: Widget): Map<String, Any> = mapOf(
+            "address" to "${WidgetAddress.of(dashboard, widget)}", "type" to widget.type.label, "title" to widget.title, "accepts" to widget.type.shape,
+        )
+
+        /** The Dashboards [tools] let an Agent Post to: null for none, empty for every one. */
+        fun allowed(tools: List<String>): List<String>? {
+            val rules = tools.filter { it.substringBefore('(').trim() == AGENT_TOOL }
+            if (rules.isEmpty()) return null
+            if (rules.any { '(' !in it }) return emptyList()
+            return rules.flatMap { it.substringAfter('(').removeSuffix(")").split(',') }.map(String::trim).filter(String::isNotEmpty)
+        }
+
         const val LIST = "ListWidgets"
 
         /** The tools as claude names them: [LIST] every claude Agent may run; [POST] only one with [AGENT_TOOL]. */
@@ -74,7 +74,7 @@ class WidgetTools(private val dashboards: Dashboards) {
         private val POST_TOOL = Mcp.tool(
             AGENT_TOOL,
             "Posts data to one Widget of a Dashboard, which shows it with your Run. The data must have the shape ListWidgets gives " +
-                "for the Widget; a Post of another shape, to a Widget that is gone, or over 256 KB is refused with what to fix.",
+                "for the Widget; a Post of another shape, to a Widget that is gone, or over ${Dashboards.LIMIT_SHOWN} is refused with what to fix.",
             mapOf(
                 "dashboard" to "The Dashboard's id, the part of the Widget's address before the slash.",
                 "widget" to "The Widget's id, the part of its address after the slash.",

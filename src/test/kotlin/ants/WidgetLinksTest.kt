@@ -4,6 +4,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.web.util.HtmlUtils
 import tools.jackson.databind.json.JsonMapper
+import kotlin.io.path.createDirectories
 import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
@@ -69,14 +70,42 @@ class WidgetLinksTest : AntsTest() {
         val (item, row) = shown(dashboard, disk)
         assertContains(item, """Used by: <a href="/scripts/measure">measure</a>, <a href="/scripts/report">report</a>""")
         assertContains(row, """Used by: <a href="/scripts/measure">measure</a>, <a href="/scripts/report">report</a>""")
-        assertContains(item, """data-used-by="measure, report"""")
-        assertContains(shown(dashboard, idle).first, "Used by: no Script")
+        assertContains(item, """data-breaks="The Scripts measure, report Post to it and will break."""")
+        assertContains(shown(dashboard, idle).first, "Used by: no Script or Process")
 
         val confirm = browser.post("/dashboards/$dashboard/delete", mapOf())
         assertContains(confirm.body, "These use it by name and will break.")
         assertContains(confirm.body, """<li>Script <a href="/scripts/measure">measure</a></li>""")
         assertContains(confirm.body, """<li>Script <a href="/scripts/report">report</a></li>""")
         assertContains(browser.get("/scripts/measure").body, "Used by: no Agent or Process") // a Script's own Used by is unchanged
+    }
+
+    @Test
+    fun `an Agent Task whose Agent may Post only to a Dashboard shows in its Widgets' Used by and in deleting it, and one Posting anywhere doesn't`() {
+        val dashboard = dashboard()
+        val disk = widget(dashboard, "Free disk")
+        val other = dashboard()
+        deployPoster("poster", "PostToWidget($dashboard)")
+
+        val (item, row) = shown(dashboard, disk)
+        assertContains(item, """Used by: <a href="/processes/used-by">Keep notes</a>""")
+        assertContains(row, """Used by: <a href="/processes/used-by">Keep notes</a>""")
+        assertContains(item, """data-breaks="The Process Keep notes Posts to it and will break."""")
+        assertContains(browser.post("/dashboards/$dashboard/delete", mapOf()).body, """<li>Process <a href="/processes/used-by">Keep notes</a></li>""")
+
+        widget(other, "Load")
+        deployPoster("anywhere", "PostToWidget") // as the lead's: it would name every Dashboard
+        assertContains(browser.get("/dashboards/$other").body, "Used by: no Script or Process")
+    }
+
+    /** Deploys the Process used-by, "Keep notes", whose one Agent Task runs the Agent [agent] with the [tools]. */
+    private fun deployPoster(agent: String, tools: String) {
+        home.resolve("skills/keep-notes").createDirectories().also { it.resolve("ants.yaml").writeText("id: k-keep-notes\n") }
+            .resolve("SKILL.md").writeText("---\nname: keep-notes\ndescription: Keeps notes.\n---\nKeep notes.\n")
+        home.resolve("agents").createDirectories().resolve("$agent.md").writeText("---\nid: a-$agent\nname: $agent\nskills: k-keep-notes\ntools: Read, $tools\n---\nKeep it.\n")
+        browser.get("/processes")
+        val bpmn = javaClass.getResource("/used-by.bpmn")!!.readText().replace("keeper", agent)
+        browser.upload("/processes", "file", "used-by.bpmn", bpmn.toByteArray())
     }
 
     @Test

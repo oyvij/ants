@@ -107,7 +107,7 @@ main.full .composer > :is(div, form) { max-width: none; padding-inline: 24px; }
 .dashboard .empty { margin: 80px auto; max-width: 420px; text-align: center; color: var(--muted); } .dashboard .empty > b:first-child { display: block; color: var(--text); font-size: 16px; margin-bottom: 6px; }
 .dashboard .empty[hidden] { display: none; }
 /* Its grid of Widgets: view mode keeps them still with their text selectable; edit mode shows a dotted grid and outlines them. */
-.dashboard .board { display: flex; gap: 16px; align-items: flex-start; min-width: 0; }
+.dashboard .dashboard-body { display: flex; gap: 16px; align-items: flex-start; min-width: 0; }
 .dashboard .grid-wrap { flex: 1; min-width: 0; border-radius: var(--r); }
 .dashboard.editing .grid-wrap { background-image: radial-gradient(var(--fieldLine) 1px, transparent 1px); background-size: 24px 24px; }
 .dashboard .widget { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sh); display: flex; flex-direction: column; overflow: hidden; }
@@ -157,7 +157,7 @@ main.full .composer > :is(div, form) { max-width: none; padding-inline: 24px; }
 .dashboard #posting h3 { font-size: 13px; margin: 0 0 6px; } .dashboard #posting h3 + p, .dashboard #posting pre + h3 { margin-top: 14px; }
 .dashboard #posting pre { white-space: pre-wrap; overflow-wrap: anywhere; } .dashboard #posting dd { margin: 2px 0 8px; overflow-wrap: anywhere; }
 @media (max-width: 768px) {
-    .dashboard .board { flex-direction: column; align-items: stretch; } .dashboard #posting { width: 100%; }
+    .dashboard .dashboard-body { flex-direction: column; align-items: stretch; } .dashboard #posting { width: 100%; }
     .dashboard #edit, .dashboard .dd { display: none; }
 }
 h2 { font-size: 14px; margin: 32px 0 12px; letter-spacing: .01em; }

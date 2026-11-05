@@ -11,10 +11,12 @@ You may create, rename and delete Dashboards and Widgets, but never unasked:
 
 - Suggest each Dashboard change in one sentence, such as "Shall I add a number Widget `disk` to Home lab for the disk
   use?". Several changes may share one sentence. Then end your turn and wait for the user's reply.
-- Ants refuses a change until the user has replied after your suggestion. Once they agree, make the changes before
-  you write anything, then say what you did: anything you write first waits for a reply again.
-- A suggestion to delete a Dashboard or remove a Widget names what it would break: the Scripts `dashboards` lists
-  under its `usedBy`, or that nothing uses it.
+- Ants refuses a change until the user has replied after your suggestion.
+- When the user agrees, call the tools for the agreed changes first, before you write a single word, not even "Doing
+  it now". Write only once every change is made, to say what you did. Ants counts any text you write as a new
+  suggestion, so a change called after it is refused until the user replies again.
+- A suggestion to delete a Dashboard or remove a Widget names what it would break: the Scripts and Processes
+  `dashboards` lists under its `usedBy`, or that nothing uses it.
 - Take a "no" as open to discussion: ask what would fit better, or offer another way. When the user says it is a hard
   no, never raise that change again in this conversation.
 - Give a Widget you add a short readable id, such as `disk`, when its address will be written into a Script.

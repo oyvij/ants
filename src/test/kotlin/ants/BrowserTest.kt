@@ -2173,7 +2173,7 @@ class BrowserTest : AntsTest() {
         assertThat(page.locator("#posting")).containsText("{value: number, unit?: string, delta?: number}")
         assertThat(page.locator("#posting")).containsText("ants.post")
 
-        dashboards.post("$dashboard/$id", mapOf("value" to 42, "unit" to "GB"), "r-browser", "measure")
+        dashboards.post(WidgetAddress.of("$dashboard/$id"), mapOf("value" to 42, "unit" to "GB"), "r-browser", "measure")
         assertThat(widget.locator(".num")).hasText("42GB")
         assertThat(widget.locator(".w-body")).hasClass(Pattern.compile("\\bflash\\b"))
         assertThat(widget.locator(".from a")).hasAttribute("href", "/runs/r-browser")
@@ -2221,7 +2221,7 @@ class BrowserTest : AntsTest() {
         }
         page.keyboard().press("Escape")
         fun widget(type: String) = page.locator(".grid-stack-item[gs-id=\"${ids[type]}\"]")
-        fun post(type: String, data: Map<String, Any>) = dashboards.post("$dashboard/${ids[type]}", data, "r-browser", "measure")
+        fun post(type: String, data: Map<String, Any>) = dashboards.post(WidgetAddress.of("$dashboard/${ids[type]}"), data, "r-browser", "measure")
 
         post("progress", mapOf("done" to 3, "total" to 4))
         post("status", mapOf("items" to listOf(mapOf("name" to "nas", "state" to "ok"), mapOf("name" to "router", "state" to "fail"))))
@@ -2272,9 +2272,9 @@ class BrowserTest : AntsTest() {
         val points = listOf("2026-10-30", "2026-10-31", "2026-11-01").flatMapIndexed { i, day ->
             listOf(mapOf("x" to day, "y" to i + 1, "series" to "opened"), mapOf("x" to day, "y" to 3 - i, "series" to "closed"))
         }
-        for (kind in kinds - "Custom chart") dashboards.post("$dashboard/${ids[kind]}", mapOf("points" to points), "r-browser", "measure")
+        for (kind in kinds - "Custom chart") dashboards.post(WidgetAddress.of("$dashboard/${ids[kind]}"), mapOf("points" to points), "r-browser", "measure")
         dashboards.post(
-            "$dashboard/${ids["Custom chart"]}",
+            WidgetAddress.of("$dashboard/${ids["Custom chart"]}"),
             mapOf("spec" to mapOf("data" to mapOf("values" to listOf(mapOf("day" to "Mon", "hour" to 9, "commits" to 4))), "mark" to "rect",
                 "encoding" to mapOf("x" to mapOf("field" to "hour", "type" to "ordinal"), "y" to mapOf("field" to "day", "type" to "ordinal"), "color" to mapOf("field" to "commits", "type" to "quantitative")))),
             "r-browser", "measure",

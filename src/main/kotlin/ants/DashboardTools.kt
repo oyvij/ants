@@ -10,9 +10,13 @@ import tools.jackson.databind.json.JsonMapper
  * a message since ([PageChat.replied]). Only Dashboard changes wait so; Process editing doesn't.
  */
 @Component
-class DashboardTools(private val dashboards: Dashboards, private val usedBy: UsedBy, private val json: JsonMapper) {
-    /** Calls the tool [name], one of [TOOLS], for the helper [chat]. */
-    fun call(chat: PageChat, name: String, arguments: Map<*, *>): Pair<String, Boolean> = try {
+class DashboardTools(private val dashboards: Dashboards, private val usedBy: UsedBy, private val json: JsonMapper) : HelperTools {
+    override val instructions = INSTRUCTIONS
+    override val lines = LINES
+    override val tools = TOOLS
+    override val gated = CHANGES
+
+    override fun call(chat: PageChat, name: String, arguments: Map<*, *>): Pair<String, Boolean> = try {
         fun argument(key: String) = arguments[key]?.toString()?.takeIf(String::isNotBlank) ?: throw Refused("$name needs $key.")
         if (name in CHANGES && !chat.replied(name)) throw Refused(UNANSWERED)
         when (name) {
@@ -30,12 +34,12 @@ class DashboardTools(private val dashboards: Dashboards, private val usedBy: Use
                 val kind = arguments["kind"]?.toString()?.let { ChartKind.of(it) ?: throw Refused("No chart kind $it: it is one of ${ChartKind.entries.joinToString(", ") { k -> k.label }}.") }
                 if (kind != null && type != WidgetType.CHART) throw Refused("Only a chart Widget takes a kind.")
                 val widget = dashboards.addWidget(dashboard, type, kind ?: ChartKind.LINE, arguments["id"]?.toString()?.trim()?.takeIf(String::isNotEmpty), arguments["title"]?.toString())
-                "Added the ${type.label} Widget ${widget.title} at $dashboard/${widget.id}; it accepts ${type.shape}."
+                "Added the ${type.label} Widget ${widget.title} at ${WidgetAddress(dashboard, widget.id)}; it accepts ${type.shape}."
             }
-            "rename_widget" -> dashboards.renameWidget(argument("dashboard"), argument("widget"), argument("title")).let { "The Widget ${arguments["dashboard"]}/${it.id} is now titled ${it.title}." }
-            "remove_widget" -> "${argument("dashboard")}/${argument("widget")}".let { address ->
+            "rename_widget" -> dashboards.renameWidget(argument("dashboard"), argument("widget"), argument("title")).let { "The Widget ${WidgetAddress(argument("dashboard"), it.id)} is now titled ${it.title}." }
+            "remove_widget" -> WidgetAddress(argument("dashboard"), argument("widget")).let { address ->
                 val broke = broken(usedBy.widget(address))
-                dashboards.removeWidget(argument("dashboard"), argument("widget"))
+                dashboards.removeWidget(address.dashboard, address.widget)
                 "Removed the Widget $address.$broke"
             }
             else -> throw Refused("No tool $name here.")
@@ -45,26 +49,30 @@ class DashboardTools(private val dashboards: Dashboards, private val usedBy: Use
     }
 
     private fun list(): String = json.writeValueAsString(dashboards.all().map { dashboard ->
+        val used = usedBy.widgets(dashboard.id, dashboard.widgets.map { it.id })
         mapOf(
-            "id" to dashboard.id, "title" to dashboard.title, "usedBy" to usedBy.dashboard(dashboard.id).scripts,
+            "id" to dashboard.id, "title" to dashboard.title, "usedBy" to usedBy.dashboard(dashboard.id).named,
             "widgets" to dashboard.widgets.map { widget ->
-                val address = "${dashboard.id}/${widget.id}"
-                mapOf("address" to address, "id" to widget.id, "type" to widget.type.label, "title" to widget.title, "accepts" to widget.type.shape) +
+                WidgetTools.described(dashboard, widget) + ("id" to widget.id) +
                     listOfNotNull(("kind" to widget.kind.label).takeIf { widget.type == WidgetType.CHART }) +
-                    ("usedBy" to usedBy.widget(address).scripts)
+                    ("usedBy" to used.getValue(widget.id).named)
             },
         )
     })
 
-    private fun broken(dependents: Dependents) =
-        if (dependents.scripts.isEmpty()) "" else " The Scripts ${dependents.scripts.joinToString(", ")} still list it, so Publish refuses them until their Widgets are fixed."
+    /** What a delete or remove answers after its first sentence: what still names the Dashboard or Widget, and so breaks. */
+    private fun broken(dependents: Dependents): String {
+        val scripts = if (dependents.scripts.isEmpty()) "" else " The Scripts ${dependents.scripts.joinToString(", ")} still list it, so Publish refuses them until their Widgets are fixed."
+        val processes = dependents.processNames.takeIf { it.isNotEmpty() }?.let { " The Processes ${it.joinToString(", ")} have Agent Tasks that Post to it, and Ants will refuse their Posts." }.orEmpty()
+        return scripts + processes
+    }
 
     companion object {
         /** The tools that change a Dashboard, which wait for the user's reply. */
-        val CHANGES = setOf("create_dashboard", "rename_dashboard", "delete_dashboard", "add_widget", "rename_widget", "remove_widget")
+        private val CHANGES = setOf("create_dashboard", "rename_dashboard", "delete_dashboard", "add_widget", "rename_widget", "remove_widget")
 
         /** What the helpers are told about Dashboards, after their own instructions. */
-        val INSTRUCTIONS = DashboardTools::class.java.getResource("/dashboard-changes.md")!!.readText()
+        private val INSTRUCTIONS = DashboardTools::class.java.getResource("/dashboard-changes.md")!!.readText()
 
         private const val UNANSWERED = "Ants changed nothing: a Dashboard changes only after you suggest it in one sentence and the user has replied since. " +
             "Write the suggestion and end your turn. Once the user agrees, make the changes before you write anything, as anything you write waits for a reply again."
@@ -72,10 +80,10 @@ class DashboardTools(private val dashboards: Dashboards, private val usedBy: Use
         private const val DASHBOARD = "The Dashboard's id, such as d-k3x9q2, as `dashboards` lists it."
         private const val WIDGET = "The Widget's id, the part of its address after the slash."
 
-        val TOOLS = listOf(
-            Mcp.tool("dashboards", "The user's Dashboards in their order: each one's id, title, the Scripts that Post to any of its Widgets (usedBy), and its Widgets, " +
+        private val TOOLS = listOf(
+            Mcp.tool("dashboards", "The user's Dashboards in their order: each one's id, title, what Posts to any of its Widgets (usedBy: each Script that lists one and each Process whose Agent Tasks may Post only to Dashboards including it, such as Script measure-disk), and its Widgets, " +
                 "each with its address (<dashboard id>/<widget id>, which a Script lists and Posts to), id, type, title, the data it accepts, a chart's kind, " +
-                "and the Scripts that list it (usedBy)."),
+                "and what Posts to it (usedBy)."),
             Mcp.tool("create_dashboard", "Creates a Dashboard, at the bottom of the user's Dashboards, and gives its id. Only after the user replied to your suggestion.",
                 mapOf("title" to "Its title, such as Home lab.")),
             Mcp.tool("rename_dashboard", "Renames a Dashboard; its id never changes. Only after the user replied to your suggestion.",
@@ -98,10 +106,8 @@ class DashboardTools(private val dashboards: Dashboards, private val usedBy: Use
                 mapOf("dashboard" to DASHBOARD, "widget" to WIDGET)),
         )
 
-        val NAMES = TOOLS.map { it["name"] }.toSet()
-
         /** How the dialog words each tool's call. */
-        val LINES: Map<String, (Map<*, *>) -> String> = mapOf(
+        private val LINES: Map<String, (Map<*, *>) -> String> = mapOf(
             "dashboards" to { _ -> "read the Dashboards" },
             "create_dashboard" to { a -> "created the Dashboard <i>${esc(a["title"])}</i>" },
             "rename_dashboard" to { a -> "renamed the Dashboard <i>${esc(a["dashboard"])}</i> to <i>${esc(a["title"])}</i>" },

@@ -11,6 +11,12 @@ import org.springframework.ui.Model
 
 class Dependents(val processes: List<ProcessDefinition>, val older: Set<String> = emptySet(), val agents: List<String> = emptyList(), val scripts: List<String> = emptyList()) {
     val none get() = processes.isEmpty() && agents.isEmpty() && scripts.isEmpty()
+
+    /** Each Process's name, once however many of its versions use it. */
+    val processNames get() = processes.distinctBy { it.key }.map { it.name ?: it.key }
+
+    /** Each one by kind and name, such as `Script measure-disk`, as a helper reads them. */
+    val named get() = agents.map { "Agent $it" } + processNames.map { "Process $it" } + scripts.map { "Script $it" }
 }
 
 @Component
@@ -38,11 +44,28 @@ class UsedBy(private val repository: RepositoryService, private val runtime: Run
         return dependents(processes).let { Dependents(it.processes, it.older, agents) }
     }
 
-    /** What uses the Widget at [address], `<dashboard id>/<widget id>`: the Scripts that list it under their Widgets. */
-    fun widget(address: String) = Dependents(emptyList(), scripts = scripts.all().filter { address in it.widgets }.map { it.name })
+    /** What uses the Widget at [address]: the Scripts that list it under their Widgets, and the Processes [posting] to its Dashboard. */
+    fun widget(address: WidgetAddress) = widgets(address.dashboard, listOf(address.widget)).getValue(address.widget)
 
-    /** What uses a Widget on the Dashboard [id]: the Scripts that list any of them. */
-    fun dashboard(id: String) = Dependents(emptyList(), scripts = scripts.all().filter { script -> script.widgets.any { it.substringBefore('/') == id } }.map { it.name })
+    /** What uses each of the Widgets [ids] of the Dashboard [dashboard], by id, as [widget] gives it, the Processes looked up once. */
+    fun widgets(dashboard: String, ids: List<String>): Map<String, Dependents> {
+        val posting = posting(dashboard)
+        val all = scripts.all()
+        return ids.associateWith { id -> posting.with(all.filter { script -> script.widgets.any { WidgetAddress.of(it) == WidgetAddress(dashboard, id) } }) }
+    }
+
+    /** What uses a Widget on the Dashboard [id]: the Scripts that list any of them, and the Processes [posting] to it. */
+    fun dashboard(id: String) = posting(id).with(scripts.all().filter { script -> script.widgets.any { WidgetAddress.of(it).dashboard == id } })
+
+    /**
+     * The Processes with an Agent Task whose Agent may Post only to Dashboards that include [dashboard], as
+     * `PostToWidget(<dashboard id>)` says. One that may Post to every Dashboard, as the lead may, names none of them.
+     */
+    private fun posting(dashboard: String) = dependents(processes { _, model ->
+        model.agentTasks.any { task -> runCatching { Links(task).agent(catalogue) }.getOrNull()?.let { dashboard in WidgetTools.allowed(catalogue.tools(it)).orEmpty() } == true }
+    })
+
+    private fun Dependents.with(scripts: List<Script>) = Dependents(processes, older, scripts = scripts.map { it.name })
 
     fun process(key: String) = dependents(processes { process, model ->
         process.key != key && model.getModelElementsByType(CallActivity::class.java).any { it.calledElement == key }

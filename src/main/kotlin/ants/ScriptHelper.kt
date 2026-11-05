@@ -13,16 +13,16 @@ class ScriptHelper(
     private val chats: PageChats, private val scripts: ScriptsPage, private val saved: Scripts, private val settings: Settings, private val templates: TemplateEngine,
     private val json: JsonMapper, private val dashboardTools: DashboardTools,
 ) {
-    private inner class Page : PageChat(chats) {
+    private inner class Page : PageChat(chats, listOf(dashboardTools)) {
         override val name = "script-helper"
         override val title = "Script helper"
         override val pageName = "Script editor"
-        override val instructions = INSTRUCTIONS + DashboardTools.INSTRUCTIONS
+        override val instructions = INSTRUCTIONS
         override val idPrefix = "sh"
-        override val lines = LINES + DashboardTools.LINES
-        override val tools = TOOLS + DashboardTools.TOOLS
+        override val lines = LINES
+        override val pageTools = TOOLS
 
-        override fun call(name: String, arguments: Map<*, *>): Pair<String, Boolean> = if (name in DashboardTools.NAMES) dashboardTools.call(this, name, arguments) else try {
+        override fun pageCall(name: String, arguments: Map<*, *>): Pair<String, Boolean> = try {
             when (name) {
                 "buffer" -> json.readValue(ask(name, emptyMap<String, Any>()), String::class.java)
                 "replace_buffer" -> ask(name, mapOf("code" to (arguments["code"]?.toString() ?: throw Refused("replace_buffer needs code."))))

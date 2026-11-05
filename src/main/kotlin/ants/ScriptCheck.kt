@@ -45,7 +45,7 @@ class ScriptCheck(private val settings: Settings, private val dashboards: Dashbo
     }
 
     /** A Widget [listed] under Widgets that is no Widget, since it or its Dashboard was deleted, so Publish refuses it before a Run's `ants.post` would. */
-    private fun widgetFindings(listed: List<String>) = listed.filter { address -> dashboards.find(address.substringBefore('/'))?.widget(address.substringAfter('/', "")) == null }
+    private fun widgetFindings(listed: List<String>) = listed.filter { dashboards.widget(WidgetAddress.of(it)) == null }
         .map { Finding(Finding.Severity.ERROR, "Widgets lists $it, which is no Widget: it or its Dashboard was deleted, or the address is wrong.") }
 
     /** A missing or repeated name, or an object with no fields, among [rows], each a [kind] at the top level. */

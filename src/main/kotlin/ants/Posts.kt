@@ -43,7 +43,7 @@ class Posts(private val dashboards: Dashboards, private val server: WebServerApp
         val address = post["address"]?.toString().orEmpty()
         return try {
             if (address !in sender.script.widgets) throw PostRefused("The Script ${sender.script.name} doesn't list the Widget $address under its Widgets, so it may not Post to it.")
-            if (sender.trying) dashboards.check(address, post["data"]) else dashboards.post(address, post["data"], sender.run, sender.task)
+            WidgetAddress.of(address).let { if (sender.trying) dashboards.check(it, post["data"]) else dashboards.post(it, post["data"], sender.run, sender.task) }
             ResponseEntity.ok(mapOf("posted" to address))
         } catch (refused: PostRefused) {
             ResponseEntity.status(UNPROCESSABLE_CONTENT).body(mapOf("error" to refused.message!!))

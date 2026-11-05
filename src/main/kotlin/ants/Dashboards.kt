@@ -1,20 +1,8 @@
 package ants
 
-import gg.jte.TemplateEngine
-import gg.jte.output.StringOutput
-import jakarta.servlet.http.Cookie
-import jakarta.servlet.http.HttpServletResponse
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Component
-import org.springframework.stereotype.Controller
-import org.springframework.ui.Model
-import org.springframework.web.bind.annotation.CookieValue
-import org.springframework.web.bind.annotation.GetMapping
-import org.springframework.web.bind.annotation.PathVariable
-import org.springframework.web.bind.annotation.PostMapping
-import org.springframework.web.bind.annotation.RequestParam
-import org.springframework.web.bind.annotation.ResponseBody
 import org.springframework.web.server.ResponseStatusException
 import org.yaml.snakeyaml.Yaml
 import tools.jackson.databind.json.JsonMapper
@@ -51,164 +39,15 @@ data class Widget(
     val kind: ChartKind = ChartKind.LINE,
 )
 
-/** How a chart Widget draws its points: every kind takes the same ones, so the user switches freely. */
-enum class ChartKind(val title: String) {
-    LINE("Line"), AREA("Area"), BAR("Bar"), STACKED("Stacked bar"), SCATTER("Scatter"), PIE("Pie"), DONUT("Donut");
-
-    /** The name a page and a sender use, such as `stacked`. */
-    val label get() = name.lowercase()
+/** Where a Script or an Agent Posts to a Widget, `<dashboard id>/<widget id>`, as a Script lists it; it never changes. */
+data class WidgetAddress(val dashboard: String, val widget: String) {
+    override fun toString() = "$dashboard/$widget"
 
     companion object {
-        fun of(label: String) = entries.firstOrNull { it.label == label }
-    }
-}
+        fun of(dashboard: Dashboard, widget: Widget) = WidgetAddress(dashboard.id, widget.id)
 
-/** A field a Post's object may hold: its [key], whether it is [required], and what is wrong with a value, if anything. */
-private class PostField(val key: String, val required: Boolean, val wrong: (Any) -> String?)
-
-private fun number(key: String, required: Boolean = true) = PostField(key, required) { "$key is not a number".takeIf { _ -> it !is Number } }
-private fun text(key: String, required: Boolean = true) = PostField(key, required) { "$key is not text".takeIf { _ -> it !is String } }
-private fun oneOf(key: String, values: List<String>, required: Boolean = true) =
-    PostField(key, required) { "$key is not ${values.dropLast(1).joinToString(", ")} or ${values.last()}".takeIf { _ -> it !in values } }
-
-/** What is wrong with [data] as an object of [fields], each problem prefixed by [where]; nothing when it fits. */
-private fun problems(data: Map<*, *>, fields: List<PostField>, where: String = ""): List<String> =
-    fields.flatMap { field ->
-        val value = data[field.key]
-        when {
-            value == null -> listOfNotNull("$where${field.key} is missing".takeIf { field.required })
-            else -> listOfNotNull(field.wrong(value)?.let { where + it })
-        }
-    } + (data.keys.map { "$it" } - fields.map { it.key }.toSet()).map { if (where.isEmpty()) "it takes no $it" else "${where.removeSuffix("'s ")} takes no $it" }
-
-/** A chart's point: its x, a number, a date or text, its number y and its series, if any. */
-private val POINT = listOf(
-    PostField("x", true) { "x is not a number, a date or text".takeIf { _ -> it !is Number && it !is String } },
-    number("y"),
-    text("series", false),
-)
-
-/** The point or points of a chart Post, which the chart's type has accepted. */
-private fun points(data: Map<*, *>): List<Map<*, *>> = ((data["point"]?.let(::listOf) ?: data["points"]) as List<*>).filterIsInstance<Map<*, *>>()
-
-/** What tells a chart's points apart: a point with the same series and x as a stored one replaces it. */
-private fun pointKey(point: Map<*, *>): Pair<String, String> {
-    val x = point["x"]
-    return "${point["series"] ?: ""}" to if (x is Number) "n" + java.math.BigDecimal(x.toString()).stripTrailingZeros().toPlainString() else "t$x"
-}
-
-/** The path of the first `url` key in [value], a custom chart's spec, as `data.url`; null when it names none. */
-private fun url(value: Any?, path: String): String? = when (value) {
-    is Map<*, *> -> value.entries.firstNotNullOfOrNull { (key, inner) -> if (key == "url") "$path.url" else url(inner, "$path.$key") }
-    is List<*> -> value.withIndex().firstNotNullOfOrNull { (index, inner) -> url(inner, "$path[$index]") }
-    else -> null
-}
-
-/** What is wrong with [data]'s `items` as a list of objects of [fields]. */
-private fun items(data: Map<*, *>, fields: List<PostField>): List<String> {
-    val items = data["items"] ?: return listOf("items is missing")
-    if (items !is List<*>) return listOf("items is not a list")
-    return problems(data, listOf(PostField("items", true) { null })) + items.withIndex().flatMap { (index, item) ->
-        if (item is Map<*, *>) problems(item, fields, "item ${index + 1}'s ") else listOf("item ${index + 1} is not an object")
-    }
-}
-
-/**
- * A Widget's type: the data a Post to it holds, as [shape] says it, the one plain [line] **+ Widget** shows, and
- * whether it [keeps] its Posts for a number of days, appending each, rather than replacing them.
- */
-enum class WidgetType(val shape: String, val line: String, val keeps: Boolean = false) {
-    NUMBER("{value: number, unit?: string, delta?: number}", "One number, with its change since the last Post") {
-        override fun problems(data: Map<*, *>) = problems(data, listOf(number("value"), text("unit", false), number("delta", false)))
-    },
-    PROGRESS("{done: number, total: number}", "Done out of total") {
-        override fun problems(data: Map<*, *>) = problems(data, listOf(number("done"), number("total")))
-    },
-    STATUS("{items: [{name: string, state: ok | warn | fail | running}]}", "Named items that are ok, warn, fail or running") {
-        override fun problems(data: Map<*, *>) = items(data, listOf(text("name"), oneOf("state", STATES)))
-        override fun kept(data: Map<*, *>) = newest(data)
-    },
-    LIST("{items: [{title: string, url?: string, note?: string}]}", "Titles with links and notes") {
-        override fun problems(data: Map<*, *>) = items(
-            data,
-            listOf(
-                text("title"),
-                PostField("url", false) { "url is not an http or https address".takeIf { _ -> it !is String || !Regex("^https?://\\S+$").matches(it) } },
-                text("note", false),
-            ),
-        )
-        override fun kept(data: Map<*, *>) = newest(data)
-    },
-    TEXT("{text: string}", "A paragraph, such as an agent's summary") {
-        override fun problems(data: Map<*, *>) = problems(data, listOf(text("text")))
-    },
-    LOG("{line: string, level?: info | warn | error}", "Lines added one at a time, kept for a number of days", keeps = true) {
-        override fun problems(data: Map<*, *>) = problems(data, listOf(text("line"), oneOf("level", LEVELS, false)))
-    },
-
-    /** A chart: it holds points, each its own Post, and draws them as its [ChartKind] says. */
-    CHART("{point: {x: number | date | text, y: number, series?: string}} or {points: [{x, y, series?}, …]}", "", keeps = true) {
-        override fun problems(data: Map<*, *>): List<String> {
-            val point = data["point"]
-            val points = data["points"]
-            return when {
-                point != null && points != null -> listOf("it takes point or points, not both")
-                point != null -> if (point is Map<*, *>) problems(point, POINT, "point's ") else listOf("point is not an object")
-                points is List<*> -> points.withIndex().flatMap { (index, it) ->
-                    if (it is Map<*, *>) problems(it, POINT, "point ${index + 1}'s ") else listOf("point ${index + 1} is not an object")
-                }
-                points != null -> listOf("points is not a list")
-                else -> listOf("point or points is missing")
-            } + (data.keys.map { "$it" } - setOf("point", "points")).map { "it takes no $it" }
-        }
-
-        /** Each point of [post] as its own Post; one with the same series and x as one [earlier] replaces it. */
-        override fun held(earlier: List<Post>, post: Post): List<Post> {
-            val added = points(post.data).map { post.copy(data = it) }.associateBy { pointKey(it.data) }
-            return earlier.filter { pointKey(it.data) !in added } + added.values
-        }
-    },
-
-    /** A chart an agent describes in Vega-Lite, its data inside; it may name no URL, so it never loads data from outside. */
-    CUSTOM("{spec: Vega-Lite with its data in data.values}", "Any Vega-Lite chart, for agents") {
-        override val label get() = "custom chart"
-
-        override fun problems(data: Map<*, *>): List<String> {
-            val spec = data["spec"]
-            return when (spec) {
-                null -> listOf("spec is missing")
-                !is Map<*, *> -> listOf("spec is not an object")
-                else -> listOfNotNull(url(spec, "spec")?.let { "$it names a URL, and a custom chart loads nothing from outside: put its data in data.values" })
-            } + (data.keys.map { "$it" } - "spec").map { "it takes no $it" }
-        }
-    };
-
-    /** What is wrong with [data] as a Post to this type; nothing for a Post it accepts. */
-    abstract fun problems(data: Map<*, *>): List<String>
-
-    /** What the Widget keeps of [data], a Post it accepted. */
-    open fun kept(data: Map<*, *>): Map<*, *> = data
-
-    /**
-     * The Posts the Widget holds after [post], whose data it [kept], given those it held [earlier]: for a type that
-     * [keeps] them, all of them; for the others the latest, after the one before it.
-     */
-    open fun held(earlier: List<Post>, post: Post): List<Post> = if (keeps) earlier + post else listOfNotNull(earlier.lastOrNull(), post)
-
-    /** [data] with its newest [Dashboards.ITEMS] items, the last ones, so a long list is trimmed rather than refused. */
-    protected fun newest(data: Map<*, *>) = data + ("items" to (data["items"] as List<*>).takeLast(Dashboards.ITEMS))
-
-    /** The name the user and a sender read, such as `number`. */
-    open val label get() = name.lowercase()
-
-    /** A chart or a custom chart, which **+ Widget** lists under Charts. */
-    val chart get() = this == CHART || this == CUSTOM
-
-    companion object {
-        fun of(label: String) = entries.firstOrNull { it.label == label }
-
-        val STATES = listOf("ok", "warn", "fail", "running")
-        val LEVELS = listOf("info", "warn", "error")
+        /** The address [text] names, as a Script lists it or a sender gives it. */
+        fun of(text: String) = WidgetAddress(text.substringBefore('/'), text.substringAfter('/', ""))
     }
 }
 
@@ -315,12 +154,7 @@ class Dashboards(@Value("\${ants.home}") home: Path, private val clock: Clock) {
 
     /** Renames the Widget [widget] to [title], trimmed; its id never changes. */
     @Synchronized
-    fun renameWidget(id: String, widget: String, title: String): Widget {
-        val dashboard = get(id)
-        val renamed = widget(dashboard, widget).copy(title = title.trim())
-        write(dashboard.copy(widgets = dashboard.widgets.map { if (it.id == widget) renamed else it }))
-        return renamed
-    }
+    fun renameWidget(id: String, widget: String, title: String): Widget = replaceWidget(id, widget) { it.copy(title = title.trim()) }
 
     /** Removes the Widget [widget] and its Posts; its id is retired, never given again. */
     @Synchronized
@@ -344,27 +178,26 @@ class Dashboards(@Value("\${ants.home}") home: Path, private val clock: Clock) {
      * it. A missing Widget or data of the wrong shape is [PostRefused].
      */
     @Synchronized
-    fun post(address: String, data: Any?, run: String, task: String) {
-        val (dashboard, widget, kept) = accepted(address, data)
-        keep(dashboard, widget.id, widget.type.held(posts(dashboard, widget), Post(kept, run, task, clock.instant())))
+    fun post(address: WidgetAddress, data: Any?, run: String, task: String) {
+        val (widget, kept) = accepted(address, data)
+        keep(address.dashboard, widget.id, widget.type.held(posts(address.dashboard, widget), Post(kept, run, task, clock.instant())))
     }
 
     /** Checks [data] as a Post to the Widget at [address], as [post] does, and stores nothing: a test run's Post. */
-    fun check(address: String, data: Any?) {
+    fun check(address: WidgetAddress, data: Any?) {
         accepted(address, data)
     }
 
-    /** The Dashboard id, the Widget and what it keeps of [data], a Post to [address] it accepts; else [PostRefused]. */
-    private fun accepted(address: String, data: Any?): Triple<String, Widget, Map<*, *>> {
-        val dashboard = find(address.substringBefore('/'))
-        val widget = dashboard?.widget(address.substringAfter('/', ""))
+    /** The Widget at [address] and what it keeps of [data], a Post it accepts; else [PostRefused]. */
+    private fun accepted(address: WidgetAddress, data: Any?): Pair<Widget, Map<*, *>> {
+        val widget = widget(address)
             ?: throw PostRefused("No Widget $address: the Widget or its Dashboard was deleted, or the address is wrong. A Widget's address is <dashboard id>/<widget id>, as its Dashboard's Posting panel lists it.")
         val named = "The ${widget.type.label} Widget $address (${widget.title}) takes ${widget.type.shape}"
         val size = json.writeValueAsBytes(data).size
-        if (size > LIMIT) throw PostRefused("$named in Posts of up to 256 KB, but this one is ${(size + 1023) / 1024} KB.")
+        if (size > LIMIT) throw PostRefused("$named in Posts of up to $LIMIT_SHOWN, but this one is ${(size + 1023) / 1024} KB.")
         val problems = if (data is Map<*, *>) widget.type.problems(data) else listOf("the data is not an object")
         if (problems.isNotEmpty()) throw PostRefused("$named, but ${problems.joinToString("; ")}.")
-        return Triple(dashboard.id, widget, widget.type.kept(data as Map<*, *>))
+        return widget to widget.type.kept(data as Map<*, *>)
     }
 
     /**
@@ -393,26 +226,29 @@ class Dashboards(@Value("\${ants.home}") home: Path, private val clock: Clock) {
 
     /** Sets the [days] the Widget [widget], of a type that [WidgetType.keeps] its Posts, keeps them. */
     @Synchronized
-    fun keepFor(id: String, widget: String, days: Int): Widget {
-        val dashboard = get(id)
-        val kept = widget(dashboard, widget)
+    fun keepFor(id: String, widget: String, days: Int): Widget = replaceWidget(id, widget) { kept ->
         if (!kept.type.keeps) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "A ${kept.type.label} Widget keeps only its latest Post")
         if (days !in 1..MAX_KEEP) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "A Widget keeps its Posts for 1 to $MAX_KEEP days")
-        val changed = kept.copy(keep = days)
-        write(dashboard.copy(widgets = dashboard.widgets.map { if (it.id == widget) changed else it }))
-        return changed
+        kept.copy(keep = days)
     }
 
     /** Switches the chart [widget] to draw as [kind]; the points it holds and takes stay the same. */
     @Synchronized
-    fun drawAs(id: String, widget: String, kind: ChartKind): Widget {
-        val dashboard = get(id)
-        val chart = widget(dashboard, widget)
+    fun drawAs(id: String, widget: String, kind: ChartKind): Widget = replaceWidget(id, widget) { chart ->
         if (chart.type != WidgetType.CHART) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "A ${chart.type.label} Widget has no chart kind")
-        val changed = chart.copy(kind = kind)
+        chart.copy(kind = kind)
+    }
+
+    /** Puts what [change] makes of the Widget [widget] of the Dashboard [id] in its place, and gives it. */
+    private fun replaceWidget(id: String, widget: String, change: (Widget) -> Widget): Widget {
+        val dashboard = get(id)
+        val changed = change(widget(dashboard, widget))
         write(dashboard.copy(widgets = dashboard.widgets.map { if (it.id == widget) changed else it }))
         return changed
     }
+
+    /** The Widget at [address], or null when it or its Dashboard is gone. */
+    fun widget(address: WidgetAddress): Widget? = find(address.dashboard)?.widget(address.widget)
 
     private fun widget(dashboard: Dashboard, widget: String) =
         dashboard.widget(widget) ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "No Widget $widget on ${dashboard.id}")
@@ -447,8 +283,12 @@ class Dashboards(@Value("\${ants.home}") home: Path, private val clock: Clock) {
         /** The items a status or list Widget keeps of a Post, its newest. */
         const val ITEMS = 100
 
+        /** The largest Post, in KB of its JSON, as a sender reads it. */
+        private const val LIMIT_KB = 256
+        const val LIMIT_SHOWN = "$LIMIT_KB KB"
+
         /** The largest Post, in bytes of its JSON. */
-        private const val LIMIT = 256 * 1024
+        private const val LIMIT = LIMIT_KB * 1024
         private const val DASHBOARD_ID = 'd'
         private const val WIDGET_ID = 'w'
         private const val WIDTH = 3
@@ -460,200 +300,3 @@ class Dashboards(@Value("\${ants.home}") home: Path, private val clock: Clock) {
     }
 }
 
-/**
- * A Widget as its Dashboard's page draws it: the [posts] it holds, oldest first, its latest [post], the name of the
- * Run that sent that, and the Scripts that list it, [usedBy].
- */
-class WidgetView(val dashboard: String, val widget: Widget, val posts: List<Post>, val runName: String?, val usedBy: Dependents = Dependents(emptyList())) {
-    val post = posts.lastOrNull()
-
-    /** Where a Script or an Agent Posts to it. */
-    val address get() = "$dashboard/${widget.id}"
-
-    /** The number at [key] of the latest Post, without a needless `.0`. */
-    fun number(key: String): String? = post?.data?.get(key)?.let(::shown)
-
-    private fun shown(value: Any): String = when (value) {
-        is Double -> if (value % 1.0 == 0.0 && Math.abs(value) < 1e15) value.toLong().toString() else value.toString()
-        else -> value.toString()
-    }
-
-    /** A number Widget's change: the Post's own delta, or else its change since the Post before it. */
-    val delta: Double? get() {
-        val data = post?.data ?: return null
-        (data["delta"] as? Number)?.let { return it.toDouble() }
-        val before = posts.dropLast(1).lastOrNull()?.data?.get("value") as? Number ?: return null
-        return (data["value"] as? Number)?.let { java.math.BigDecimal(it.toString()) - java.math.BigDecimal(before.toString()) }?.toDouble()
-    }
-
-    /** [delta] as shown, without its sign, which its arrow gives. */
-    val deltaShown get() = delta?.let { shown(Math.abs(it)) }
-
-    /** A progress Widget's share done, 0 to 100. */
-    val percent: Int get() {
-        val done = (post?.data?.get("done") as? Number)?.toDouble() ?: return 0
-        val total = (post?.data?.get("total") as? Number)?.toDouble()?.takeIf { it > 0 } ?: return 0
-        return Math.round(100 * done / total).toInt().coerceIn(0, 100)
-    }
-
-    /** A status or list Widget's items. */
-    val items: List<Map<*, *>> get() = (post?.data?.get("items") as? List<*>).orEmpty().filterIsInstance<Map<*, *>>()
-
-    /** A log Widget's newest [LINES] lines, oldest first, each with when it came. */
-    val lines: List<Post> get() = posts.takeLast(LINES)
-
-    /** A chart's points, as JSON for the page to draw: each point's x, y and series, oldest first. */
-    val points: String get() = JSON.writeValueAsString(posts.map { it.data })
-
-    /** A custom chart's Vega-Lite spec, as JSON for the page to draw. */
-    val spec: String get() = JSON.writeValueAsString(post?.data?.get("spec"))
-
-    val at get() = post?.at?.let(::shortTime)
-
-    fun time(post: Post) = shortTime(post.at)
-
-    companion object {
-        /** The lines a log Widget draws, its newest; it keeps more, for its days. */
-        const val LINES = 200
-
-        private val JSON = JsonMapper.shared()
-    }
-}
-
-/**
- * The Dashboards pages: **+ Add Dashboard** in the menu, a Dashboard's page with its title saved as typed, its grid of
- * Widgets, and Delete. `/dashboards` opens the Dashboard viewed last, kept in the `dashboard` cookie.
- */
-@Controller
-class DashboardsPage(private val dashboards: Dashboards, private val names: RunNames, private val templates: TemplateEngine, private val streams: Streams, private val usedBy: UsedBy) {
-    private val json = JsonMapper.shared()
-
-    @GetMapping("/dashboards")
-    fun dashboards(@CookieValue(LAST, required = false) last: String?, model: Model): String {
-        val open = last?.let(dashboards::find) ?: dashboards.all().firstOrNull()
-        if (open != null) return "redirect:/dashboards/${open.id}"
-        model.addAttribute("dashboard", null)
-        model.addAttribute("widgets", emptyList<WidgetView>())
-        return "dashboards"
-    }
-
-    @GetMapping("/dashboards/{id}")
-    fun dashboard(@PathVariable id: String, model: Model, response: HttpServletResponse): String {
-        val dashboard = dashboards.get(id)
-        model.addAttribute("dashboard", dashboard)
-        model.addAttribute("widgets", views(dashboard))
-        model.addAttribute("types", WidgetType.entries)
-        response.addCookie(Cookie(LAST, id).apply { path = "/"; maxAge = YEAR; isHttpOnly = true })
-        return "dashboards"
-    }
-
-    /** **+ Add Dashboard**: an "Untitled dashboard", opened with its title selected (`?new`). */
-    @PostMapping("/dashboards")
-    fun create() = "redirect:/dashboards/${dashboards.create().id}?new"
-
-    /** The menu's Dashboards dragged into a new order, [order] their ids comma-separated, kept. */
-    @PostMapping("/dashboards/order")
-    @ResponseBody
-    fun reorder(@RequestParam order: String): Map<String, List<String>> {
-        dashboards.reorder(order.split(',').map(String::trim).filter(String::isNotEmpty))
-        return mapOf("order" to dashboards.all().map { it.id })
-    }
-
-    /** The title as typed, saved; answers the title kept, which an emptied one makes "Untitled dashboard". */
-    @PostMapping("/dashboards/{id}/title")
-    @ResponseBody
-    fun rename(@PathVariable id: String, @RequestParam title: String) = mapOf("title" to dashboards.rename(id, title).title)
-
-    @PostMapping("/dashboards/{id}/delete")
-    fun delete(@PathVariable id: String, @RequestParam confirm: String?, model: Model): String {
-        val dashboard = dashboards.get(id)
-        if (confirm == null) return confirm(model, "Delete the Dashboard ${dashboard.title}?", usedBy.dashboard(id), "/dashboards/$id/delete", emptyMap(), "/dashboards/$id")
-        dashboards.delete(id)
-        return "redirect:/dashboards"
-    }
-
-    /** **+ Widget**: a new Widget of [type], answered with its id and its grid item for the page to add. */
-    @PostMapping("/dashboards/{id}/widgets")
-    @ResponseBody
-    fun addWidget(@PathVariable id: String, @RequestParam type: String, @RequestParam kind: String?): Map<String, String> {
-        val widget = dashboards.addWidget(id, WidgetType.of(type) ?: throw ResponseStatusException(HttpStatus.BAD_REQUEST, "No Widget type $type"), kind(kind ?: "line"))
-        val view = WidgetView(id, widget, emptyList(), null)
-        return mapOf(
-            "id" to widget.id, "type" to widget.type.label, "shape" to widget.type.shape,
-            "html" to render("widget.kte", mapOf("view" to view)), "body" to render("widgetbody.kte", mapOf("view" to view)),
-        )
-    }
-
-    /** A Widget's title as typed, saved; answers the title kept. */
-    @PostMapping("/dashboards/{id}/widgets/{widget}/title")
-    @ResponseBody
-    fun renameWidget(@PathVariable id: String, @PathVariable widget: String, @RequestParam title: String) = mapOf("title" to dashboards.renameWidget(id, widget, title).title)
-
-    /** Removes a Widget, once the page has asked the user. */
-    @PostMapping("/dashboards/{id}/widgets/{widget}/delete")
-    @ResponseBody
-    fun removeWidget(@PathVariable id: String, @PathVariable widget: String): Map<String, String> {
-        dashboards.removeWidget(id, widget)
-        return mapOf("removed" to widget)
-    }
-
-    /** The grid as the user left it: `[{id, x, y, w, h}, …]` for each Widget that moved. */
-    @PostMapping("/dashboards/{id}/layout")
-    @ResponseBody
-    fun layout(@PathVariable id: String, @RequestParam layout: String): Map<String, String> {
-        val placed = json.readValue(layout, List::class.java).filterIsInstance<Map<*, *>>().map {
-            fun int(key: String) = (it[key] as? Number)?.toInt() ?: throw ResponseStatusException(HttpStatus.BAD_REQUEST, "A placement needs $key")
-            Placement(it["id"].toString(), int("x"), int("y"), int("w"), int("h"))
-        }
-        dashboards.layout(id, placed)
-        return mapOf("saved" to id)
-    }
-
-    /** An open Dashboard's Widgets, live: each one's body, by its id, whenever a Post or a rename changes any. */
-    fun live(id: String): Part = streams.changes("widgets") {
-        val dashboard = dashboards.find(id) ?: return@changes "{}"
-        json.writeValueAsString(views(dashboard).associate { it.widget.id to render("widgetbody.kte", mapOf("view" to it)) })
-    }
-
-    /** **Clear data**: empties a Widget, which keeps its id and title; answers its body, waiting for its next Post. */
-    @PostMapping("/dashboards/{id}/widgets/{widget}/clear")
-    @ResponseBody
-    fun clear(@PathVariable id: String, @PathVariable widget: String): Map<String, String> {
-        dashboards.clear(id, widget)
-        return mapOf("body" to render("widgetbody.kte", mapOf("view" to view(id, dashboards.get(id).widget(widget)!!))))
-    }
-
-    /** The days a log Widget keeps its Posts, as the user set them in edit mode; answers the days kept. */
-    @PostMapping("/dashboards/{id}/widgets/{widget}/keep")
-    @ResponseBody
-    fun keep(@PathVariable id: String, @PathVariable widget: String, @RequestParam days: Int) = mapOf("keep" to dashboards.keepFor(id, widget, days).keep)
-
-    /** A chart's kind as the user picked it in edit mode; answers its body, drawn as that kind. */
-    @PostMapping("/dashboards/{id}/widgets/{widget}/kind")
-    @ResponseBody
-    fun drawAs(@PathVariable id: String, @PathVariable widget: String, @RequestParam kind: String): Map<String, String> {
-        val chart = dashboards.drawAs(id, widget, kind(kind))
-        return mapOf("kind" to chart.kind.label, "body" to render("widgetbody.kte", mapOf("view" to view(id, chart))))
-    }
-
-    private fun kind(label: String) = ChartKind.of(label) ?: throw ResponseStatusException(HttpStatus.BAD_REQUEST, "No chart kind $label")
-
-    private fun views(dashboard: Dashboard) = dashboard.widgets.map { view(dashboard.id, it) }
-
-    private fun view(dashboard: String, widget: Widget): WidgetView {
-        val posts = dashboards.posts(dashboard, widget)
-        return WidgetView(dashboard, widget, posts, posts.lastOrNull()?.let { runCatching { names.name(it.run) }.getOrNull() }, usedBy.widget("$dashboard/${widget.id}"))
-    }
-
-    private fun render(template: String, params: Map<String, Any?>) = StringOutput().also { templates.render(template, params, it) }.toString().trim()
-
-    companion object {
-        /** The cookie naming the Dashboard viewed last. */
-        const val LAST = "dashboard"
-
-        /** The cookie keeping the menu's Dashboards toggle open (`open`) or closed, so every page draws the menu as it was. */
-        const val MENU = "dashboards-menu"
-
-        private const val YEAR = 365 * 24 * 3600
-    }
-}
