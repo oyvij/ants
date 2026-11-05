@@ -2050,8 +2050,6 @@ class BrowserTest : AntsTest() {
 
         page.keyboard().type("Disk use")
         assertThat(title).hasText("Disk use")
-        assertThat(page.locator("#saved")).hasText("Saving…")
-        assertThat(page.locator("#saved")).hasText("Saved")
         val link = dashboardsList.locator("a[href='${page.url().substringAfter(port.toString())}']")
         assertThat(link).hasText("Disk use")
         assertThat(link).hasClass(Pattern.compile("\\bon\\b"))

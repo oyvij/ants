@@ -1,6 +1,6 @@
-// A Dashboard's page: its title is edited in place and saved as typed, showing Saving… then Saved, and the menu and
-// the tab show the title kept, which an emptied one makes "Untitled dashboard". Enter ends the edit. A new Dashboard
-// (`?new`) opens with its title selected, ready to type over.
+// A Dashboard's page: its title is edited in place and saved as typed, and the menu and the tab show the
+// title kept, which an emptied one makes "Untitled dashboard". Enter ends the edit. A new Dashboard (`?new`) opens
+// with its title selected, ready to type over.
 //
 // Its grid of Widgets opens in view mode, where nothing moves and text can be selected; **Edit layout** moves,
 // resizes, renames and removes them, clears their data and sets the days a log keeps, saving each change as it is
@@ -10,7 +10,7 @@
 // view mode only.
 import { drawCharts } from '/charts.js';
 
-const title = document.getElementById('title'), saved = document.getElementById('saved');
+const title = document.getElementById('title');
 const id = title.dataset.id, csrf = document.querySelector('input[name=_csrf]').value;
 const link = document.querySelector(`#dashboards-list a[href="/dashboards/${id}"] .clip`);
 let timer = null, sending = Promise.resolve();
@@ -29,13 +29,11 @@ function save() {
             if (link) link.textContent = kept;
             document.title = `${kept} · Ants`;
             if (document.activeElement !== title) title.textContent = kept;
-            if (!timer) saved.textContent = 'Saved';
         })
-        .catch(() => saved.textContent = 'Not saved');
+        .catch(() => {}); // a failed save leaves the next one free to run
 }
 
 title.addEventListener('input', () => {
-    saved.textContent = 'Saving…';
     clearTimeout(timer);
     timer = setTimeout(save, 500);
 });
