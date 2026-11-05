@@ -3201,7 +3201,12 @@ class BrowserTest : AntsTest() {
             http.post("/processes/agent-task/runs", mapOf("prompt" to "Say hello"))
             val alert = assertNotNull(device.received.poll(15, java.util.concurrent.TimeUnit.SECONDS), "no Alert for the stuck Task").payload()
 
-            // The push service would deliver it; DevTools hands it to the service worker as the same push event.
+            // The push service would deliver it; DevTools hands it to the service worker as the same push event. The
+            // headless browser keeps no notifications, so the service worker's showNotification records what it would show.
+            var worker: com.microsoft.playwright.Worker? = null
+            eventually { page.waitForTimeout(50.0); worker = assertNotNull(page.context().serviceWorkers().firstOrNull { it.url() == url("/sw.js") }) }
+            val sw = worker!!
+            sw.evaluate("() => { self.registration.showNotification = async (title, options) => { self.shown = { title, ...options } } }")
             val cdp = page.context().newCDPSession(page)
             val scope = page.evaluate("navigator.serviceWorker.ready.then(r => r.scope)")
             var id: String? = null
@@ -3214,21 +3219,16 @@ class BrowserTest : AntsTest() {
                 addProperty("origin", url("")); addProperty("registrationId", id); addProperty("data", com.google.gson.Gson().toJson(alert))
             })
             eventually {
-                assertEquals(listOf("⚠ [stuck] ${alert["run"]}", "Draft: No tone given."), page.evaluate("navigator.serviceWorker.ready.then(r => r.getNotifications()).then(all => all.flatMap(n => [n.title, n.body]))"))
+                page.waitForTimeout(50.0)
+                assertEquals(listOf("⚠ [stuck] ${alert["run"]}", "Draft: No tone given."), sw.evaluate("self.shown ? [self.shown.title, self.shown.body] : []"))
             }
 
-            // DevTools can't tap an Alert, so the test raises the service worker's own tap on the Alert it shows.
-            val browserCdp = page.context().browser()!!.newBrowserCDPSession()
-            val worker = browserCdp.send("Target.getTargets")["targetInfos"].asJsonArray.map { it.asJsonObject }
-                .first { it["type"].asString == "service_worker" && it["url"].asString == url("/sw.js") }
-            val session = browserCdp.send("Target.attachToTarget", JsonObject().apply { addProperty("targetId", worker["targetId"].asString); addProperty("flatten", false) })["sessionId"].asString
-            val tap = "self.registration.getNotifications().then(([alert]) => self.dispatchEvent(new NotificationEvent('notificationclick', { notification: alert })))"
-            val message = JsonObject().apply {
-                addProperty("id", 1)
-                addProperty("method", "Runtime.evaluate")
-                add("params", JsonObject().apply { addProperty("expression", tap); addProperty("awaitPromise", true) })
-            }
-            browserCdp.send("Target.sendMessageToTarget", JsonObject().apply { addProperty("sessionId", session); addProperty("message", message.toString()) })
+            // DevTools can't tap an Alert, so the test raises the service worker's own tap on the Alert it showed.
+            sw.evaluate("""() => {
+                const tap = new Event('notificationclick')
+                Object.assign(tap, { notification: { data: self.shown.data, close() {} }, waitUntil: work => work })
+                self.dispatchEvent(tap)
+            }""")
             page.waitForURL(url("${alert["url"]}"))
             assertThat(page.locator("h1")).containsText("Draft")
 
