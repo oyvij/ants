@@ -64,6 +64,8 @@ val builtIns = mapOf(
     "accept-recommendations" to mapOf("name" to "Accept recommendations", "does" to "answers a Round with every recommendation.",
         "asker" to "The Agent Task whose Round it answers."),
     "push" to mapOf("name" to "Push", "does" to "waits for you to push the work branch of every repo."),
+    Notify.TOPIC to mapOf("name" to "Notify", "does" to "adds its line as a Notice to the Notification list, and the Run goes on at once.",
+        "line" to "The one line the Notice says. ${'$'}{…} names an earlier Result or a start-form field, as in Pipeline ${'$'}{pipeline} failed."),
 )
 
 /** What Ants calls each element the modeler shows, by the modeler's kind, and what it does there: the palette's tooltip and the panel's explanation. */

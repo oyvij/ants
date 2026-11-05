@@ -40,6 +40,11 @@ _Avoid_: human task, manual step
 A Task Ants carries out itself, with no Agent and no user, such as cloning repos.
 _Avoid_: system task, service task, Ants task
 
+**Notify**:
+A Built-in Task that adds its one line, filled in with `${…}`, as a **Notice** and lets the Run go on at once; it
+never fails.
+_Avoid_: alert task, message task
+
 **Script Task**:
 A Task that runs one Script from the library in the Run workspace, with no Agent, and hands its exit code, output
 and payload to the Tasks after it; a Script that fails fails the Task like a failed Built-in Task.
@@ -246,8 +251,13 @@ _Avoid_: summary, log
 
 **Notification list**:
 The one list of everything waiting on the user: a Task of any Run, such as a Round or a **Permission
-request**, or a scheduled Run that couldn't start; each entry leads to it.
+request**, a scheduled Run that couldn't start, or a **Notice**; each entry leads to it.
 _Avoid_: inbox, alerts
+
+**Notice**:
+A one-line entry on the Notification list that a Run left for the user to read; nothing waits on it, and it stays,
+kept by Ants, until the user dismisses it.
+_Avoid_: message, notification, alert
 
 ### Showing work
 
