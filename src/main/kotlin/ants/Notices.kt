@@ -39,10 +39,14 @@ class Notice(
     }
 }
 
-/** A [Notice] on the Notification list: tagged `[notice]`, leading to its Run. */
-class NoticeEntry(val notice: Notice) : Entry(notice.id, "[notice]", notice.process, notice.task, notice.line, Date.from(notice.last)) {
+/**
+ * A [Notice] on the Notification list: tagged `[notice]`, leading to its Run, or, once the Run is [gone], to a note
+ * that it is. [repeats] reads `×3, last at 10:42` once it has counted up, as read on [clock].
+ */
+class NoticeEntry(val notice: Notice, val gone: Boolean, clock: Clock) : Entry(notice.id, "[notice]", notice.process, notice.task, notice.line, Date.from(notice.last)) {
     val run get() = notice.run
     override val runName get() = notice.runName
+    val repeats = if (notice.count > 1) "×${notice.count}, last at ${clock.local(notice.last)}" else null
 }
 
 /** The open Notices, kept by Ants in `notices.yaml` under `ANTS_HOME`, not in the engine, so they outlive their Runs and a restart. */
@@ -53,9 +57,14 @@ class Notices(@Value("\${ants.home}") home: Path, private val clock: Clock) {
     /** The open Notices, oldest first. */
     fun all(): List<Notice> = read().sortedBy { it.last }
 
+    /** Adds a Notice, or counts up the open one with the same [process] and [line], which keeps its id, so it is no new entry. */
     fun add(process: String, run: String, runName: String, task: String, line: String): Notice = synchronized(this) {
         val now = clock.instant()
-        Notice("notice-${UUID.randomUUID()}", process, run, runName, task, line, now, now, 1).also { write(read() + it) }
+        val notices = read()
+        val open = notices.firstOrNull { it.process == process && it.line == line }
+        if (open == null) Notice("notice-${UUID.randomUUID()}", process, run, runName, task, line, now, now, 1).also { write(notices + it) }
+        else Notice(open.id, process, open.run, open.runName, open.task, line, open.first, now, open.count + 1)
+            .also { counted -> write(notices.map { if (it.id == open.id) counted else it }) }
     }
 
     /** Removes the Notice [id]; false when there was none. */
