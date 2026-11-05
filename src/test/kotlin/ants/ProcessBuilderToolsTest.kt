@@ -68,7 +68,7 @@ class ProcessBuilderToolsTest : AntsTest() {
             assertEquals(listOf("diagram", "element", "agents", "skills", "skill", "scripts", "processes", "process", "built_in_tasks", "templates", "template",
                 "references", "checks", "create_agent", "create_skill", "change_agent", "change_skill", "delete_agent", "delete_skill", "build_log", "copy",
                 "set_your_skills", "add_element", "remove", "insert", "rename", "move", "connect", "set_condition", "set_default", "set_agent_task", "set_start_form",
-                "set_user_task", "set_call", "set_built_in", "set_multi_instance", "drop_template"), tools(page))
+                "set_user_task", "set_call", "set_built_in", "set_multi_instance", "drop_template") + DASHBOARD_TOOLS, tools(page))
             assertEquals(listOf("run"), tools(task))
             assertTrue(call(task, "diagram").second)
             assertTrue(call(page, "run", mapOf("args" to listOf("ls"))).second)
@@ -541,6 +541,9 @@ fun mcp(port: Int, token: String, method: String, params: Map<String, Any?> = em
     val response = HttpClient.newHttpClient().send(request.build(), HttpResponse.BodyHandlers.ofString())
     return response.statusCode() to json.readValue(response.body(), Map::class.java)
 }
+
+/** The tools the helpers change Dashboards with, after each one's own. */
+val DASHBOARD_TOOLS = listOf("dashboards", "create_dashboard", "rename_dashboard", "delete_dashboard", "add_widget", "rename_widget", "remove_widget")
 
 /** Calls the MCP tool [name] with [token]: its text, and whether it failed. */
 fun mcpCall(port: Int, token: String, name: String, arguments: Map<String, Any?> = emptyMap()): Pair<String, Boolean> {

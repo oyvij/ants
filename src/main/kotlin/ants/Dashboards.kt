@@ -294,13 +294,19 @@ class Dashboards(@Value("\${ants.home}") home: Path, private val clock: Clock) {
 
     /**
      * A new Widget of [type] at the bottom of the Dashboard [id], titled "New <type>", or for a chart "New <kind>
-     * chart", with a random id it never had. A chart is bigger than the others.
+     * chart", with a random id it never had. A chart is bigger than the others. A helper may give a readable [named]
+     * id, such as `disk`, and a [titled] title; that id is just as fixed, and one the Dashboard has or had is refused.
      */
     @Synchronized
-    fun addWidget(id: String, type: WidgetType, kind: ChartKind = ChartKind.LINE): Widget {
+    fun addWidget(id: String, type: WidgetType, kind: ChartKind = ChartKind.LINE, named: String? = null, titled: String? = null): Widget {
         val dashboard = get(id)
-        val widgetId = newId(WIDGET_ID) { dashboard.widget(it) != null || it in dashboard.retired }
-        val title = if (type == WidgetType.CHART) "New ${kind.title.lowercase()} chart" else "New ${type.label}"
+        fun taken(it: String) = dashboard.widget(it) != null || it in dashboard.retired
+        if (named != null) {
+            if (!READABLE.matches(named)) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "A Widget id is lowercase letters, digits and -, starting with a letter, up to 32 long, such as disk; not $named")
+            if (taken(named)) throw ResponseStatusException(HttpStatus.CONFLICT, "The Dashboard ${dashboard.id} has or had a Widget $named, and a Widget id is never used again: pick another")
+        }
+        val widgetId = named ?: newId(WIDGET_ID, ::taken)
+        val title = titled?.trim()?.takeIf(String::isNotEmpty) ?: if (type == WidgetType.CHART) "New ${kind.title.lowercase()} chart" else "New ${type.label}"
         val (w, h) = if (type.chart) CHART_WIDTH to CHART_HEIGHT else WIDTH to HEIGHT
         val widget = Widget(widgetId, type, title, 0, dashboard.widgets.maxOfOrNull { it.y + it.h } ?: 0, w, h, kind = kind)
         write(dashboard.copy(widgets = dashboard.widgets + widget))
@@ -450,6 +456,7 @@ class Dashboards(@Value("\${ants.home}") home: Path, private val clock: Clock) {
         private const val CHART_WIDTH = 6
         private const val CHART_HEIGHT = 4
         private val ID = Regex("d-[a-z0-9]{6}")
+        private val READABLE = Regex("[a-z][a-z0-9-]{0,31}")
     }
 }
 

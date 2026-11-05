@@ -33,7 +33,7 @@ class ScriptHelperTest : AntsTest() {
     @Test
     fun `a Script editor's token opens the helper's tools only, and buffer reads the page's unsaved code`() {
         val token = open()
-        assertEquals(listOf("buffer", "replace_buffer", "schemas", "replace_schemas", "env", "add_settings_secret", "check", "test_run"), tools(token))
+        assertEquals(listOf("buffer", "replace_buffer", "schemas", "replace_schemas", "env", "add_settings_secret", "check", "test_run") + DASHBOARD_TOOLS, tools(token))
         assertEquals(true, call(token, "diagram").second)
 
         browser.actAsPage(token, chats, "/script-helper/answer") { tool, _ -> "console.log('unsaved')\n".takeIf { tool == "buffer" } }
