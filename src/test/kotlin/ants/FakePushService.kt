@@ -20,7 +20,9 @@ import java.security.spec.ECPrivateKeySpec
 import java.security.spec.ECPublicKeySpec
 import java.time.Instant
 import java.util.Base64
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.TimeUnit
 import javax.crypto.Cipher
 import javax.crypto.KeyAgreement
 import javax.crypto.Mac
@@ -65,10 +67,16 @@ class FakePushService : AutoCloseable {
     @Volatile
     var status = 201
 
+    /** Whether the push service takes requests and never answers them, until it is closed. */
+    @Volatile
+    var hang = false
+    private val closed = CountDownLatch(1)
+
     private val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).apply {
         createContext("/push/device") { exchange ->
             val headers = exchange.requestHeaders.entries.associate { (name, values) -> name.lowercase() to values.joinToString(",") }
             received += Received(headers, exchange.requestBody.readAllBytes(), this@FakePushService)
+            if (hang) closed.await(60, TimeUnit.SECONDS)
             exchange.sendResponseHeaders(status, -1)
             exchange.close()
         }
@@ -84,7 +92,10 @@ class FakePushService : AutoCloseable {
         "name" to name,
     ))
 
-    override fun close() = server.stop(0)
+    override fun close() {
+        closed.countDown()
+        server.stop(0)
+    }
 
     companion object {
         private val P256: ECParameterSpec = AlgorithmParameters.getInstance("EC").apply { init(ECGenParameterSpec("secp256r1")) }

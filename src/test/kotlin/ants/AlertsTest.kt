@@ -2,6 +2,9 @@ package ants
 
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
+import org.operaton.bpm.engine.HistoryService
+import org.operaton.bpm.engine.history.HistoricProcessInstance
+import org.springframework.beans.factory.annotation.Autowired
 import java.util.concurrent.TimeUnit.SECONDS
 import kotlin.io.path.writeText
 import kotlin.test.assertEquals
@@ -11,6 +14,9 @@ import kotlin.test.assertTrue
 
 /** Alerts: every new entry on the Notification list reaches each device with Alerts on, through its push service. */
 class AlertsTest : AntsTest() {
+    @Autowired
+    lateinit var history: HistoryService
+
     private val browser by lazy { browser().also { it.login() } }
     private val claude = FakeClaude()
     private val device = FakePushService()
@@ -21,9 +27,21 @@ class AlertsTest : AntsTest() {
     private fun result(result: String) = """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":$result}"""
 
     /** Turns Alerts on for [device], as the Settings page does with the browser's subscription. */
-    private fun turnOn(device: FakePushService = this.device) {
+    private fun turnOn(device: FakePushService = this.device, name: String = "Test browser") {
         browser.get("/settings")
-        assertEquals(200, browser.postBytes("/alerts/devices", device.subscription().toByteArray()).status)
+        assertEquals(200, browser.postBytes("/alerts/devices", device.subscription(name).toByteArray()).status)
+    }
+
+    /** The devices Settings lists with Alerts on: each one's name and when it was added, as its row reads. */
+    private fun listed(): List<String> = Regex("""<li data-endpoint="[^"]*">(.*?)</li>""", RegexOption.DOT_MATCHES_ALL)
+        .findAll(browser.get("/settings").body).map { it.groupValues[1].replace(Regex("<[^>]+>"), " ").replace(Regex("\\s+"), " ").trim() }.toList()
+
+    /** Presses **Remove** on the device [name] in Settings' list. */
+    private fun removeInSettings(name: String) {
+        val page = browser.get("/settings").body
+        val row = Regex("""<li data-endpoint="[^"]*">((?:(?!</li>).)*?$name(?:(?!</li>).)*)</li>""", RegexOption.DOT_MATCHES_ALL).find(page)!!.groupValues[1]
+        val button = Regex("""<button formaction="([^"]+)" name="endpoint" value="([^"]+)">Remove</button>""").find(row)!!
+        assertEquals("/settings", browser.post(button.groupValues[1], mapOf("endpoint" to button.groupValues[2].replace("&amp;", "&"))).path)
     }
 
     /** The one Alert the push service received next. */
@@ -162,5 +180,71 @@ class AlertsTest : AntsTest() {
         val first = key()
         assertEquals(65, FakePushService.b64(first).size)
         assertEquals(first, key())
+    }
+
+    @Test
+    fun `Settings lists each device with Alerts on, by its name and when it was added, and Remove forgets it`() {
+        assertEquals(emptyList(), listed())
+        turnOn(device, "Chrome on Android")
+        FakePushService().use { other ->
+            turnOn(other, "Firefox on Linux")
+            val rows = listed()
+            assertEquals(2, rows.size, "$rows")
+            assertTrue(rows[0].matches(Regex("""Chrome on Android added \d\d:\d\d Remove""")), rows[0])
+            assertTrue(rows[1].startsWith("Firefox on Linux added "), rows[1])
+
+            removeInSettings("Chrome on Android")
+            assertEquals(listOf("Firefox on Linux"), listed().map { it.substringBefore(" added") })
+            assertEquals(404, browser.postBytes("/alerts/test", device.subscription().toByteArray()).status)
+            assertNull(device.received.poll(1, SECONDS))
+        }
+    }
+
+    @Test
+    fun `a push service answering 410 or 404, that the device is gone, removes the device`() {
+        FakePushService().use { other ->
+            device.status = 410
+            other.status = 404
+            turnOn(device, "Old phone")
+            turnOn(other, "Old laptop")
+            for (gone in listOf(device, other)) {
+                browser.get("/settings")
+                browser.postBytes("/alerts/test", gone.subscription().toByteArray())
+                assertNotNull(gone.received.poll(10, SECONDS))
+            }
+            eventually { assertEquals(emptyList(), listed()) }
+            assertEquals(404, browser.postBytes("/alerts/test", device.subscription().toByteArray()).status)
+        }
+    }
+
+    @Test
+    fun `a push service that is down, never answers or fails holds up no Run, entry or page, and keeps its device`() {
+        settings(null)
+        val failing = FakePushService().apply { status = 500 }
+        val hanging = FakePushService().apply { hang = true }
+        val down = FakePushService()
+        try {
+            turnOn(failing, "Failing phone")
+            turnOn(hanging, "Hanging phone")
+            turnOn(down, "Phone that is off")
+            down.close()
+            browser.import("notify.bpmn")
+            browser.get("/processes/watch")
+            val first = browser.post("/processes/watch/runs", mapOf("pipeline" to "api-build", NAME to "First watch")).path.removePrefix("/runs/")
+            assertNotNull(hanging.received.poll(15, SECONDS), "no Alert reached the hanging push service")
+            assertNotNull(failing.received.poll(10, SECONDS))
+
+            // While the hanging push service still holds the first Alert, the next Run ends and its Notice shows.
+            browser.get("/processes/watch")
+            val second = browser.post("/processes/watch/runs", mapOf("pipeline" to "web-build", NAME to "Second watch")).path.removePrefix("/runs/")
+            for (run in listOf(first, second)) {
+                eventually { assertNotNull(row(run)) }
+                eventually { assertEquals(HistoricProcessInstance.STATE_COMPLETED, history.createHistoricProcessInstanceQuery().processInstanceId(run).singleResult()?.state) }
+            }
+            assertNotNull(failing.received.poll(10, SECONDS), "the second Notice sent no Alert past the hanging one")
+            assertEquals(listOf("Failing phone", "Hanging phone", "Phone that is off"), listed().map { it.substringBefore(" added") })
+        } finally {
+            listOf(failing, hanging, down).forEach { it.close() }
+        }
     }
 }

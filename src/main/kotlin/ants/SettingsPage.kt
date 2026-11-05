@@ -108,6 +108,7 @@ class SettingsPage(
         model.addAttribute("update", updates.current)
         model.addAttribute("docker", updates.docker)
         model.addAttribute("alertKey", alerts.publicKey)
+        model.addAttribute("alertDevices", alerts.listed())
         return "settings"
     }
 

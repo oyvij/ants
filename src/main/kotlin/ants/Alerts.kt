@@ -10,6 +10,7 @@ import org.springframework.http.ResponseEntity
 import org.springframework.stereotype.Controller
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
+import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.ResponseBody
 import tools.jackson.databind.json.JsonMapper
 import java.math.BigInteger
@@ -33,6 +34,7 @@ import java.security.spec.ECPublicKeySpec
 import java.security.spec.PKCS8EncodedKeySpec
 import java.time.Clock
 import java.time.Duration
+import java.time.Instant
 import java.util.Base64
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executors
@@ -54,12 +56,16 @@ data class AlertDevice(val endpoint: String, val p256dh: String, val auth: Strin
     }
 }
 
+/** A device as Settings lists it: its [name], when it was [added] as the user reads it, and its [endpoint] for **Remove**. */
+data class ListedDevice(val endpoint: String, val name: String, val added: String)
+
 /**
  * Alerts: what Ants sends to the user's phones and browsers for each new entry on the Notification list, by Web Push
  * with VAPID (RFC 8030, 8291, 8292). Its key pair is made once and kept in `vapid.yaml`, and each device's subscription
  * in `alert-devices.yaml`, both in ANTS_HOME. With no event bus, a loop polls the Notification list every [every] and
  * alerts the entries whose ids it hasn't seen; what was there when Ants started alerts no one. Sending never waits on
- * a push service: each request runs in the background with a short timeout, and a failure is only logged.
+ * a push service: each request runs in the background with a short timeout, and a failure is only logged. A push
+ * service answering 404 or 410 says the device is gone, and Ants forgets it.
  */
 @Controller
 class Alerts(
@@ -118,8 +124,20 @@ class Alerts(
     @ResponseBody
     fun remove(@RequestBody body: String): ResponseEntity<String> {
         val endpoint = endpoint(body) ?: return ResponseEntity.badRequest().body("No endpoint.")
-        update { devices -> devices.filter { it.endpoint != endpoint } }
+        forget(endpoint)
         return ResponseEntity.ok("")
+    }
+
+    /** **Remove** on a device in Settings' list: forgets it, as turning Alerts off on it would. */
+    @PostMapping("/settings/alerts/remove")
+    fun removeListed(@RequestParam endpoint: String): String {
+        forget(endpoint)
+        return "redirect:/settings"
+    }
+
+    /** The devices with Alerts on, as Settings lists them, in the order they were added. */
+    fun listed(): List<ListedDevice> = devices().map { device ->
+        ListedDevice(device.endpoint, device.name.ifBlank { "A browser" }, runCatching { clock.local(Instant.parse(device.added)) }.getOrDefault(""))
     }
 
     /** **Send a test Alert**: sends one to this device, if it has Alerts on, and says whether its push service took it. */
@@ -129,7 +147,13 @@ class Alerts(
         val endpoint = endpoint(body)
         val device = devices().firstOrNull { it.endpoint == endpoint } ?: return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Alerts aren't on for this device.")
         val status = runCatching { send(device, mapOf("tag" to "", "icon" to "", "title" to "Ants", "text" to "A test Alert: Alerts reach this device.", "run" to null, "url" to "/settings")).get() }
-        val said = status.fold({ if (it in 200..299) "Sent a test Alert." else "The push service answered $it." }, { "The push service couldn't be reached." })
+        val said = status.fold({
+            when (it) {
+                in 200..299 -> "Sent a test Alert."
+                404, 410 -> "The push service says this device is gone, so Ants forgot it. Turn Alerts on again."
+                else -> "The push service answered $it."
+            }
+        }, { "The push service couldn't be reached." })
         return ResponseEntity.ok(said)
     }
 
@@ -137,6 +161,8 @@ class Alerts(
     fun devices(): List<AlertDevice> = synchronized(this) {
         if (!devicesFile.exists()) emptyList() else yaml.load<List<Map<*, *>>?>(devicesFile.readText()).orEmpty().map(AlertDevice::of)
     }
+
+    private fun forget(endpoint: String) = update { devices -> devices.filter { it.endpoint != endpoint } }
 
     private fun update(change: (List<AlertDevice>) -> List<AlertDevice>) = synchronized(this) {
         devicesFile.writeAtomically(yaml.dump(change(devices()).map { it.toYaml() }))
@@ -166,7 +192,13 @@ class Alerts(
                 .build()
         }.getOrElse { return CompletableFuture.failedFuture<Int>(it).also { _ -> log.warn("Couldn't make an Alert for ${device.name}", it) } }
         return http.sendAsync(request, HttpResponse.BodyHandlers.discarding()).thenApply { response ->
-            response.statusCode().also { if (it !in 200..299) log.warn("The push service of ${device.name} answered $it to an Alert") }
+            response.statusCode().also {
+                when (it) {
+                    in 200..299 -> {}
+                    404, 410 -> forget(device.endpoint).also { _ -> log.info("The push service of ${device.name} answered $it: the device is gone, so Ants forgot it") }
+                    else -> log.warn("The push service of ${device.name} answered $it to an Alert")
+                }
+            }
         }.whenComplete { _, failure -> if (failure != null) log.warn("Couldn't send an Alert to ${device.name}: $failure") }
     }
 
