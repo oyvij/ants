@@ -16,14 +16,19 @@ function colour(name) {
     return getComputedStyle(probe).color;
 }
 
-/** Vega-Lite's config: Ants' colours, type and lines. */
+/**
+ * Vega-Lite's config: Ants' colours, type and lines, in Light or Dark mode, for every part a spec may show, so a custom
+ * chart's title, text marks and headers are never drawn black on a dark Widget.
+ */
 function theme() {
-    const muted = colour('--muted'), line = colour('--line'), grid = colour('--line2'), text = colour('--text2');
+    const muted = colour('--muted'), line = colour('--line'), grid = colour('--line2'), text = colour('--text2'), strong = colour('--text');
     return {
         background: null, font: getComputedStyle(document.body).fontFamily, view: { stroke: null },
         range: { category: ['--acc', '--run', '--ok', '--wait', '--vio', '--bad', '--ctx', '--ask', '--rec', '--ans'].map(colour) },
         axis: { labelColor: muted, titleColor: muted, gridColor: grid, domainColor: line, tickColor: line, labelFontSize: 10, title: null },
-        legend: { labelColor: text, orient: 'top', title: null },
+        legend: { labelColor: text, titleColor: muted, orient: 'top', title: null },
+        title: { color: strong, subtitleColor: muted }, header: { labelColor: text, titleColor: muted },
+        mark: { color: colour('--acc') }, text: { color: text }, rule: { color: line },
         arc: { stroke: colour('--panel') }, line: { strokeWidth: 2 },
     };
 }

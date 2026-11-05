@@ -6,7 +6,8 @@
 // resizes, renames and removes them, clears their data and sets the days a log keeps, saving each change as it is
 // made, reads **Done** while on, and Escape leaves it.
 // **+ Widget** adds one at once, in edit mode, its title selected; a chart's kind is switched in its header there.
-// Posts arrive live, each Widget flashing as it changes.
+// Posts arrive live, each Widget flashing as it changes. On a phone the grid is one column in the layout's order, in
+// view mode only.
 import { drawCharts } from '/charts.js';
 
 const title = document.getElementById('title'), saved = document.getElementById('saved');
@@ -68,8 +69,20 @@ const editing = () => main.classList.contains('editing');
 edit.addEventListener('click', () => setEditing(!editing()));
 document.addEventListener('keydown', event => { if (event.key === 'Escape' && editing()) { document.activeElement?.blur(); setEditing(false); } });
 
+// On a phone the grid is one column, in the layout's order, top to bottom and left to right, and editing is off; the
+// layout kept is the full one, which a wider screen shows again.
+const phone = matchMedia('(max-width: 768px)');
+function fit() {
+    if (phone.matches) setEditing(false);
+    loading = true;
+    grid.column(phone.matches ? 1 : 12, phone.matches ? 'list' : 'moveScale');
+    loading = false;
+}
+fit();
+phone.addEventListener('change', fit);
+
 grid.on('change', (event, items) => {
-    if (loading) return;
+    if (loading || grid.getColumn() !== 12) return;
     send(`/dashboards/${id}/layout`, { layout: JSON.stringify(items.map(({ id, x, y, w, h }) => ({ id, x, y, w, h }))) });
 });
 
