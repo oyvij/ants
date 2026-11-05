@@ -16,6 +16,7 @@ import java.util.concurrent.TimeUnit.MILLISECONDS
 import java.util.concurrent.TimeUnit.NANOSECONDS
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 
 abstract class PageChat(protected val chats: PageChats) : McpTools {
     abstract val name: String
@@ -86,6 +87,34 @@ abstract class PageChat(protected val chats: PageChats) : McpTools {
     val outbox = ConcurrentLinkedQueue<String>()
     val waiting = ConcurrentHashMap<String, CompletableFuture<String>>()
 
+    /** Counts the helper's writing and the user's messages, in the order they came, for [replied]. */
+    private val ticks = AtomicLong()
+
+    @Volatile
+    private var written = 0L
+
+    @Volatile
+    private var messaged = 0L
+
+    /** Each of claude's calls of a tool that changes a Dashboard, [DashboardTools.CHANGES], in the order claude made them: the tool, and whether the user had replied to the helper's writing then. */
+    private val uses = ConcurrentLinkedQueue<Pair<String, Boolean>>()
+
+    /**
+     * Whether the user has sent a message since the helper last wrote, as it was when claude called [tool]: the gate
+     * for a change only a suggestion the user answered allows (ADR 0032). claude prints its call before making it, so
+     * Ants waits for that line, which comes after all the helper wrote before it.
+     */
+    fun replied(tool: String): Boolean {
+        val deadline = System.nanoTime() + USE_SEEN.toNanos()
+        while (claude?.isAlive == true && System.nanoTime() < deadline) {
+            uses.firstOrNull { it.first == tool }?.let { use -> if (uses.remove(use)) return use.second }
+            Thread.sleep(10)
+        }
+        return answered()
+    }
+
+    private fun answered() = written in 1..<messaged
+
     val connected get() = polled && System.nanoTime() - seen < CONNECTED.toNanos()
     override val alive get() = !closed
 
@@ -100,6 +129,7 @@ abstract class PageChat(protected val chats: PageChats) : McpTools {
         if (prompt != null) opening = prompt to message
         busy = true
         active = System.nanoTime()
+        messaged = ticks.incrementAndGet()
         if (!stdin!!.say(prompt ?: message)) busy = false.also { throw Refused("claude ended before it read the message. Send it again to resume the session.") }
     }
 
@@ -141,11 +171,22 @@ abstract class PageChat(protected val chats: PageChats) : McpTools {
                 busy = false
                 active = System.nanoTime()
             }
-            else synchronized(dialog) { dialog.add(opening?.let { shown(event, it) } ?: line) }
+            else {
+                if (event["type"] == "assistant") wrote(event)
+                synchronized(dialog) { dialog.add(opening?.let { shown(event, it) } ?: line) }
+            }
         }
         val exit = process.waitFor()
         busy = false
         if (exit != 0 && stdin.open && !stdin.stopping && !closed) note("claude ended (exit $exit)${stderr()?.let { ": ${it.lines().last()}" } ?: ""}. Your next message resumes the session.")
+    }
+
+    /** Notes the helper's text and its calls of Ants' tools in the assistant [event], in order, for [replied]. */
+    private fun wrote(event: Map<*, *>) {
+        for (block in ((event["message"] as? Map<*, *>)?.get("content") as? List<*>).orEmpty().filterIsInstance<Map<*, *>>()) when (block["type"]) {
+            "text" -> if (block["text"]?.toString()?.isNotBlank() == true) written = ticks.incrementAndGet()
+            "tool_use" -> block["name"]?.toString()?.removePrefix(Mcp.CLAUDE_PREFIX)?.takeIf { it in DashboardTools.CHANGES }?.let { uses += it to answered() }
+        }
     }
 
     private fun shown(event: Map<*, *>, opening: Pair<String, String>): String? {
@@ -203,6 +244,9 @@ abstract class PageChat(protected val chats: PageChats) : McpTools {
 
         /** How long a resting claude has to end once its stdin is closed, before it is killed. */
         private val REST = Duration.ofSeconds(5)
+
+        /** How long a gated call waits for claude's line announcing it. */
+        private val USE_SEEN = Duration.ofSeconds(5)
 
         fun claudeOnly(title: String, name: String) = "The $title runs on claude only for now. Set $name's cli to claude in settings.yaml."
     }

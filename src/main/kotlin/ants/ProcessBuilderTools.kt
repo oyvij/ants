@@ -49,13 +49,14 @@ data class BuilderColumn(val name: String, val title: String, val intro: String,
 class ProcessBuilderTools(
     private val chats: PageChats, private val agents: Agents, private val templates: Templates, private val processes: Processes, private val catalogue: Catalogue,
     private val skills: Skills, private val scripts: Scripts, private val json: JsonMapper, private val launcher: AgentLauncher, private val diagrams: Diagrams,
+    private val dashboardTools: DashboardTools,
 ) {
     private abstract inner class Builder(column: BuilderColumn) : PageChat(chats) {
         override val name = column.name
         override val title = column.title
         override val pageName = "modeler page"
         override val idPrefix = "pb"
-        override val lines = LINES
+        override val lines = LINES + DashboardTools.LINES
         override val readsOwnToolResults = true
 
         /** The pages of the Agents, Skills and Templates this session made or changed, in order. */
@@ -88,7 +89,7 @@ class ProcessBuilderTools(
         override fun head() =
             handoff?.let { """<p class="ants" id="pb-handoff">Started from this $kind's <a href="${HtmlUtils.htmlEscape(buildLogPage(it))}" target="_blank">Build log</a>.</p>""" } ?: ""
 
-        override fun call(name: String, arguments: Map<*, *>): Pair<String, Boolean> = try {
+        override fun call(name: String, arguments: Map<*, *>): Pair<String, Boolean> = if (name in DashboardTools.NAMES) dashboardTools.call(this, name, arguments) else try {
             fun argument(key: String) = arguments[key]?.toString() ?: throw Refused("$name needs $key.")
             val text = when (name) {
                 "set_agent_task" -> ask(name, arguments).let { written ->
@@ -179,8 +180,8 @@ class ProcessBuilderTools(
     }
 
     private inner class ProcessPage : Builder(BuilderColumn.PROCESS) {
-        override val instructions = INSTRUCTIONS
-        override val tools = TOOLS
+        override val instructions = INSTRUCTIONS + DashboardTools.INSTRUCTIONS
+        override val tools = TOOLS + DashboardTools.TOOLS
         override val kind = "Process"
 
         /** The process id of the page's diagram, which keys its Build log. */
@@ -192,8 +193,8 @@ class ProcessBuilderTools(
     }
 
     private inner class TemplatePage(private val template: String) : Builder(BuilderColumn.TEMPLATE) {
-        override val instructions = TEMPLATE_INSTRUCTIONS
-        override val tools = TEMPLATE_TOOLS
+        override val instructions = TEMPLATE_INSTRUCTIONS + DashboardTools.INSTRUCTIONS
+        override val tools = TEMPLATE_TOOLS + DashboardTools.TOOLS
         override val kind = "Template"
 
         override fun buildLogName() = template
