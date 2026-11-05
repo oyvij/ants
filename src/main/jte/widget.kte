@@ -1,7 +1,7 @@
 @param view: ants.WidgetView
 !{val widget = view.widget}
 <div class="grid-stack-item" gs-id="${widget.id}" gs-x="${widget.x}" gs-y="${widget.y}" gs-w="${widget.w}" gs-h="${widget.h}"><article class="grid-stack-item-content widget" data-type="${widget.type.label}">
-    <header class="w-head"><span class="t" spellcheck="false">${widget.title}</span><code title="Its type and fixed id; renaming it never changes them">${widget.type.label} · ${widget.id}</code><button type="button" class="x ghost" title="Remove widget" aria-label="Remove ${widget.title}">✕</button></header>
+    <header class="w-head"><span class="t" spellcheck="false">${widget.title}</span>@if(widget.type == ants.WidgetType.CHART)<select class="kind" title="How it draws; what it takes stays the same" aria-label="Chart kind">@for(kind in ants.ChartKind.entries)<option value="${kind.label}" selected="${kind == widget.kind}">${kind.title}</option>@endfor</select>@endif<code title="Its type and fixed id; renaming it never changes them">${widget.type.label} · ${widget.id}</code><button type="button" class="x ghost" title="Remove widget" aria-label="Remove ${widget.title}">✕</button></header>
     <div class="w-tools">@if(widget.type.keeps)<label title="Posts older than this fall away by themselves">Keeps <input type="number" class="keep" min="1" max="3650" value="${widget.keep}"> days</label>@endif<button type="button" class="clear ghost" title="Empty this Widget; it keeps its id and title">Clear data</button></div>
     <div class="w-body" id="body-${widget.id}">@template.widgetbody(view = view)</div>
 </article></div>

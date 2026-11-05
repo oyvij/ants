@@ -20,6 +20,10 @@
 @endfor
 @elseif(view.widget.type == WidgetType.TEXT)
 <div class="text">${view.post.data["text"].toString()}</div>
+@elseif(view.widget.type == WidgetType.CHART)
+<div class="chart" data-kind="${view.widget.kind.label}" data-points="${view.points}"></div>
+@elseif(view.widget.type == WidgetType.CUSTOM)
+<div class="chart" data-spec="${view.spec}"></div>
 @elseif(view.widget.type == WidgetType.LOG)
 <div class="log">@for(line in view.lines)<div class="${line.data["level"]?.toString() ?: "info"}"><time datetime="${line.at.toString()}">${view.time(line)}</time>${line.data["line"].toString()}</div>@endfor</div>
 @endif

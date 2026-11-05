@@ -3,6 +3,8 @@ package ants
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.web.server.context.WebServerApplicationContext
+import org.springframework.web.util.HtmlUtils
+import tools.jackson.databind.json.JsonMapper
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -326,5 +328,125 @@ class DashboardsTest : AntsTest() {
         assertContains(drawn, """<span class="t" spellcheck="false">Backups</span>""")
         accepted("$dashboard/$id", """{"line":"two"}""")
         assertEquals(listOf("two"), Regex("""</time>([^<]+)</div>""").findAll(body(dashboard, id)).map { it.groupValues[1] }.toList())
+    }
+
+    /** **+ Widget**, a chart of [kind]: the new Widget's id. */
+    private fun addChart(dashboard: String, kind: String = "line"): String =
+        answer(browser.post("/dashboards/$dashboard/widgets", mapOf("type" to "chart", "kind" to kind)))["id"].toString()
+
+    /** The chart [widget] as its page draws it: its kind and its points, `series x=y` each, in the order kept. */
+    private fun chart(dashboard: String, widget: String): Pair<String, List<String>> {
+        val drawn = Regex("""<div class="chart" data-kind="([^"]+)" data-points="([^"]*)"""").find(body(dashboard, widget))!!
+        val points = JsonMapper.shared().readValue(HtmlUtils.htmlUnescape(drawn.groupValues[2]), List::class.java)
+        return drawn.groupValues[1] to points.map { (it as Map<*, *>).let { p -> "${p["series"] ?: "-"} ${p["x"]}=${p["y"]}" } }
+    }
+
+    @Test
+    fun `a chart takes one point or a batch, adds each, and one with the same series and x as a stored one replaces it`() {
+        val dashboard = add()
+        val id = addChart(dashboard, "bar")
+        assertContains(widget(dashboard, id)!!, "New bar chart")
+        assertContains(widget(dashboard, id)!!, "chart · $id")
+        assertContains(widget(dashboard, id)!!, "Waiting for its first Post")
+        val address = "$dashboard/$id"
+        accepted(address, """{"point":{"x":"2026-11-01","y":3}}""")
+        accepted(address, """{"points":[{"x":"2026-11-02","y":5},{"x":"2026-11-01","y":4,"series":"merged"},{"x":7,"y":1.5,"series":"merged"},{"x":"mon","y":2}]}""")
+        accepted(address, """{"point":{"x":"2026-11-01","y":9}}""")
+        accepted(address, """{"points":[{"x":7.0,"y":2,"series":"merged"}]}""")
+        assertEquals(
+            "bar" to listOf("- 2026-11-02=5", "merged 2026-11-01=4", "- mon=2", "- 2026-11-01=9", "merged 7.0=2"),
+            chart(dashboard, id),
+        )
+        assertContains(body(dashboard, id), """<a href="/runs/r-post">""")
+    }
+
+    @Test
+    fun `a chart refuses a point without a number y or with an x that is not a number, a date or text, naming the shape`() {
+        val dashboard = add()
+        val address = "$dashboard/${addChart(dashboard)}"
+        val named = "The chart Widget $address (New line chart) takes {point: {x: number | date | text, y: number, series?: string}} or {points: [{x, y, series?}, …]}, but"
+        assertEquals("$named point's y is not a number.", refused(address, """{"point":{"x":1,"y":"3"}}"""))
+        assertEquals(
+            "$named point 2's x is missing; point 3's x is not a number, a date or text.",
+            refused(address, """{"points":[{"x":1,"y":1},{"y":2},{"x":true,"y":3}]}"""),
+        )
+        assertEquals("$named point or points is missing; it takes no value.", refused(address, """{"value":1}"""))
+        assertEquals("$named points is not a list.", refused(address, """{"points":{"x":1,"y":1}}"""))
+        assertEquals("$named it takes point or points, not both.", refused(address, """{"point":{"x":1,"y":1},"points":[]}"""))
+        assertEquals("$named point takes no label.", refused(address, """{"point":{"x":1,"y":1,"label":"a"}}"""))
+    }
+
+    @Test
+    fun `a chart keeps its points 90 days unless the user sets other, and switching its kind keeps what it holds and takes`() {
+        val dashboard = add()
+        val id = addChart(dashboard)
+        val address = "$dashboard/$id"
+        assertContains(widget(dashboard, id)!!, """class="keep" min="1" max="3650" value="90"""")
+        try {
+            accepted(address, """{"point":{"x":"a","y":1}}""")
+            clock.offset = java.time.Duration.ofDays(60)
+            accepted(address, """{"point":{"x":"b","y":2}}""")
+            clock.offset = java.time.Duration.ofDays(91)
+            accepted(address, """{"point":{"x":"c","y":3}}""")
+            assertEquals("line" to listOf("- b=2", "- c=3"), chart(dashboard, id))
+            browser.post("/dashboards/$dashboard/widgets/$id/keep", mapOf("days" to "20"))
+            assertEquals("line" to listOf("- c=3"), chart(dashboard, id))
+        } finally {
+            clock.offset = java.time.Duration.ZERO
+        }
+
+        val switched = answer(browser.post("/dashboards/$dashboard/widgets/$id/kind", mapOf("kind" to "donut")))
+        assertEquals("donut", switched["kind"])
+        assertContains(switched["body"].toString(), """data-kind="donut"""")
+        assertContains(widget(dashboard, id)!!, """<option value="donut" selected>Donut</option>""")
+        accepted(address, """{"point":{"x":"d","y":4}}""")
+        assertEquals("donut" to listOf("- d=4"), chart(dashboard, id).let { (kind, points) -> kind to points.filter { "d=" in it } })
+        assertEquals(400, browser.post("/dashboards/$dashboard/widgets/$id/kind", mapOf("kind" to "radar")).status)
+        assertEquals(400, browser.post("/dashboards/$dashboard/widgets/${addWidget(dashboard)}/kind", mapOf("kind" to "pie")).status)
+    }
+
+    @Test
+    fun `+ Widget lists the chart kinds and Custom chart under Charts, drawn by Vega-Lite bundled with Ants and its licence notices`() {
+        val page = browser.get("/dashboards/${add()}").body
+        val menu = page.substringAfter("""id="add-menu"""").substringBefore("</div></span>")
+        assertEquals(
+            listOf("Line", "Area", "Bar", "Stacked bar", "Scatter", "Pie", "Donut", "Custom chart"),
+            Regex("""<b>([^<]+)</b>""").findAll(menu.substringAfter("Charts · all take points {x, y, series?}")).map { it.groupValues[1] }.toList(),
+        )
+        assertFalse(">chart<" in menu)
+        for (library in listOf("vega", "vega-lite", "vega-embed")) {
+            assertContains(page, """<script src="/vendor/vega/$library.min.js"></script>""")
+            assertEquals(200, browser.get("/vendor/vega/$library.min.js").status)
+            assertContains(browser.get("/vendor/vega/$library.LICENSE").body, "University of Washington Interactive Data Lab")
+        }
+        assertFalse("cdn" in page.lowercase())
+    }
+
+    @Test
+    fun `a custom chart takes a Vega-Lite spec with its data inside, replaced by each Post, and refuses one naming a URL`() {
+        val dashboard = add()
+        val id = addWidget(dashboard, "custom chart")
+        val address = "$dashboard/$id"
+        assertContains(widget(dashboard, id)!!, "New custom chart")
+        assertContains(widget(dashboard, id)!!, "custom chart · $id")
+        accepted(address, """{"spec":{"mark":"bar","data":{"values":[{"a":1}]}}}""")
+        accepted(address, """{"spec":{"mark":"rect","data":{"values":[{"a":2,"link":"https://example.com"}]},"encoding":{"x":{"field":"a"}}}}""")
+        val spec = Regex("""<div class="chart" data-spec="([^"]*)"""").find(body(dashboard, id))!!.groupValues[1]
+        assertEquals(
+            mapOf("mark" to "rect", "data" to mapOf("values" to listOf(mapOf("a" to 2, "link" to "https://example.com"))), "encoding" to mapOf("x" to mapOf("field" to "a"))),
+            JsonMapper.shared().readValue(HtmlUtils.htmlUnescape(spec), Map::class.java),
+        )
+
+        val named = "The custom chart Widget $address (New custom chart) takes {spec: Vega-Lite with its data in data.values}, but"
+        assertEquals(
+            "$named spec.data.url names a URL, and a custom chart loads nothing from outside: put its data in data.values.",
+            refused(address, """{"spec":{"mark":"bar","data":{"url":"https://example.com/data.csv"}}}"""),
+        )
+        assertEquals(
+            "$named spec.layer[1].encoding.url names a URL, and a custom chart loads nothing from outside: put its data in data.values.",
+            refused(address, """{"spec":{"layer":[{"mark":"bar"},{"mark":"image","encoding":{"url":{"field":"img"}}}]}}"""),
+        )
+        assertEquals("$named spec is missing.", refused(address, """{}"""))
+        assertEquals("$named spec is not an object.", refused(address, """{"spec":"bar"}"""))
     }
 }

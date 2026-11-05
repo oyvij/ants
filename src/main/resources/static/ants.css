@@ -137,12 +137,20 @@ main.full .composer > :is(div, form) { max-width: none; padding-inline: 24px; }
 .dashboard .text { white-space: pre-wrap; }
 .dashboard .log { font: 12px/1.5 var(--mono); } .dashboard .log .warn { color: var(--warnText); } .dashboard .log .error { color: var(--badText); }
 .dashboard .log time { color: var(--muted); margin-right: 6px; }
+/* A chart fills its Widget's body above the line naming its Run; its kind is picked in its header in edit mode. */
+.dashboard .w-body:has(> .chart) { display: flex; flex-direction: column; overflow: hidden; padding: 6px 8px; }
+.dashboard .chart { flex: 1 1 0; min-height: 0; overflow: hidden; } .dashboard .chart.none { overflow: auto; }
+.dashboard .w-head .kind { font-size: 11px; padding: 1px 4px; width: auto; } .dashboard:not(.editing) .w-head .kind { display: none; }
+#vg-tooltip-element.custom-theme { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 6px; box-shadow: var(--sh); font: 12px system-ui, sans-serif; padding: 6px 8px; }
+#vg-tooltip-element.custom-theme td.key { color: var(--muted); }
 .dashboard .dd { position: relative; }
 .dashboard .menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--sh); padding: 4px; width: 260px; }
 .dashboard .menu[hidden] { display: none; }
 .dashboard .menu button { display: block; width: 100%; text-align: left; border: 0; box-shadow: none; padding: 7px 10px; border-radius: 6px; background: none; }
 .dashboard .menu button:hover, .dashboard .menu button:focus { background: var(--accSoft); outline: none; }
 .dashboard .menu small { display: block; color: var(--muted); font-size: 12px; font-weight: 400; }
+.dashboard .menu { max-height: 70vh; overflow: auto; }
+.dashboard .menu .h { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); padding: 8px 10px 2px; border-top: 1px solid var(--line); margin-top: 4px; }
 .dashboard #edit[aria-pressed=true] { background: var(--text); color: var(--panel); border-color: var(--text); }
 .dashboard #posting { width: 340px; flex: none; font-size: 12.5px; background: var(--panel2); border: 1px solid var(--line); border-radius: var(--r); padding: 14px; }
 .dashboard #posting[hidden] { display: none; }

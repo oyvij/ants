@@ -2229,6 +2229,50 @@ class BrowserTest : AntsTest() {
         assertThat(widget("log").locator(".t")).hasText("New log")
     }
 
+    @Test
+    fun `each chart kind and a custom chart are added from + Widget's Charts and draw with tooltips, and switching a kind redraws the same points`() = browse {
+        val dashboard = newDashboard()
+        val kinds = listOf("Line", "Area", "Bar", "Stacked bar", "Scatter", "Pie", "Donut", "Custom chart")
+        val ids = kinds.associateWith { kind ->
+            page.locator("#add").click()
+            assertThat(page.locator("#add-menu .h")).hasText("Charts · all take points {x, y, series?}")
+            page.getByRole(AriaRole.MENUITEM, Page.GetByRoleOptions().setName(Pattern.compile("^$kind"))).click()
+            val item = page.locator(".grid-stack-item").last()
+            assertThat(item.locator(".t")).hasText(if (kind == "Custom chart") "New custom chart" else "New ${kind.lowercase()} chart")
+            page.keyboard().press("Enter")
+            item.getAttribute("gs-id")!!
+        }
+        page.keyboard().press("Escape")
+        val points = listOf("2026-10-30", "2026-10-31", "2026-11-01").flatMapIndexed { i, day ->
+            listOf(mapOf("x" to day, "y" to i + 1, "series" to "opened"), mapOf("x" to day, "y" to 3 - i, "series" to "closed"))
+        }
+        for (kind in kinds - "Custom chart") dashboards.post("$dashboard/${ids[kind]}", mapOf("points" to points), "r-browser", "measure")
+        dashboards.post(
+            "$dashboard/${ids["Custom chart"]}",
+            mapOf("spec" to mapOf("data" to mapOf("values" to listOf(mapOf("day" to "Mon", "hour" to 9, "commits" to 4))), "mark" to "rect",
+                "encoding" to mapOf("x" to mapOf("field" to "hour", "type" to "ordinal"), "y" to mapOf("field" to "day", "type" to "ordinal"), "color" to mapOf("field" to "commits", "type" to "quantitative")))),
+            "r-browser", "measure",
+        )
+        fun chart(kind: String) = page.locator(".grid-stack-item[gs-id=\"${ids[kind]}\"] .chart")
+        val marks = mapOf("Line" to "line", "Area" to "area", "Bar" to "rect", "Stacked bar" to "rect", "Scatter" to "symbol", "Pie" to "arc", "Donut" to "arc", "Custom chart" to "rect")
+        for ((kind, mark) in marks) assertThat(chart(kind).locator("svg .mark-$mark path").first()).isAttached()
+        val donut = chart("Donut").locator("svg").first()
+        assertTrue((donut.evaluate("s => s.getBoundingClientRect().width") as Number).toDouble() <= (chart("Donut").evaluate("c => c.clientWidth") as Number).toDouble() + 1)
+
+        chart("Bar").locator("svg .mark-rect path").first().hover()
+        assertThat(page.locator("#vg-tooltip-element")).isVisible()
+        assertThat(page.locator("#vg-tooltip-element")).containsText("opened")
+
+        val line = page.locator(".grid-stack-item[gs-id=\"${ids["Line"]}\"]")
+        assertThat(line.locator(".kind")).isHidden()
+        page.locator("#edit").click()
+        line.locator(".kind").selectOption("pie")
+        assertThat(chart("Line").locator("svg .mark-arc path").first()).isAttached()
+        page.reload()
+        assertThat(chart("Line")).hasAttribute("data-kind", "pie")
+        assertThat(chart("Line").locator("svg .mark-arc path").first()).isAttached()
+    }
+
     private val tapTargets = "button, .btn, .topbar a, .topbar label, nav.side a, .tabs a, .fold > summary, .spine a, .walk nav a, .crumbs a, :is(.chipsel, .tags) .c, [role=tab]"
     private val textFields = "input:not([type=checkbox], [type=radio], [type=hidden], [type=file]), select, textarea, .cm-content"
 

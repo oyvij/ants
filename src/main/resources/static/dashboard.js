@@ -5,7 +5,10 @@
 // Its grid of Widgets opens in view mode, where nothing moves and text can be selected; **Edit layout** moves,
 // resizes, renames and removes them, clears their data and sets the days a log keeps, saving each change as it is
 // made, reads **Done** while on, and Escape leaves it.
-// **+ Widget** adds one at once, in edit mode, its title selected. Posts arrive live, each Widget flashing as it changes.
+// **+ Widget** adds one at once, in edit mode, its title selected; a chart's kind is switched in its header there.
+// Posts arrive live, each Widget flashing as it changes.
+import { drawCharts } from '/charts.js';
+
 const title = document.getElementById('title'), saved = document.getElementById('saved');
 const id = title.dataset.id, csrf = document.querySelector('input[name=_csrf]').value;
 const link = document.querySelector(`#dashboards-list a[href="/dashboards/${id}"] .clip`);
@@ -92,6 +95,13 @@ function wire(item) {
         const cleared = await send(`/dashboards/${id}/widgets/${widget}/clear`, {});
         body.innerHTML = shown[widget] = cleared.body;
     });
+    // A chart's kind, picked in edit mode, draws the same points another way.
+    const kind = item.querySelector('.kind');
+    kind?.addEventListener('change', async () => {
+        const drawn = await send(`/dashboards/${id}/widgets/${widget}/kind`, { kind: kind.value });
+        body.innerHTML = shown[widget] = drawn.body;
+        drawCharts(body);
+    });
     const days = item.querySelector('.keep');
     days?.addEventListener('change', () => days.checkValidity() && send(`/dashboards/${id}/widgets/${widget}/keep`, { days: days.value }));
     showNewest(item);
@@ -103,6 +113,7 @@ function showNewest(item) {
     if (item.querySelector('.widget').dataset.type === 'log') body.scrollTop = body.scrollHeight;
 }
 grid.getGridItems().forEach(wire);
+drawCharts(document.getElementById('grid'));
 
 // + Widget: a menu of types; picking one adds it at once, in edit mode, its title selected for typing.
 const add = document.getElementById('add'), menu = document.getElementById('add-menu');
@@ -113,7 +124,7 @@ menu.addEventListener('keydown', event => { if (event.key === 'Escape') { event.
 for (const choice of menu.querySelectorAll('button[data-type]')) {
     choice.addEventListener('click', async () => {
         showMenu(false);
-        const added = await send(`/dashboards/${id}/widgets`, { type: choice.dataset.type });
+        const added = await send(`/dashboards/${id}/widgets`, { type: choice.dataset.type, ...(choice.dataset.kind && { kind: choice.dataset.kind }) });
         const holder = document.createElement('template');
         holder.innerHTML = added.html;
         const item = holder.content.firstElementChild;
@@ -148,6 +159,7 @@ stream.on('widgets', data => {
         shown[widget] = html;
         if (!body || !changed) continue;
         body.innerHTML = html;
+        drawCharts(body);
         showNewest(body.closest('.grid-stack-item'));
         body.classList.remove('flash');
         void body.offsetWidth;
