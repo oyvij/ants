@@ -34,7 +34,8 @@ class ScriptRunner(private val settings: Settings, private val posts: Posts) {
      * `ants.output(value)` sets the payload. The environment holds the Script's vars and [secrets], its Secrets' values.
      * Inputs that break the input schema are refused before Node starts; once Node exits 0, the payload is checked
      * against the output schema, if the Script has one. With a [sender], `await ants.post(address, data)` Posts to a
-     * Widget the Script lists, throwing when Ants refuses it; without one, as in a test run, it throws at once.
+     * Widget the Script lists, throwing when Ants refuses it; for a sender [Sender.trying] it, a test run, it only checks
+     * each Post and prints `would Post …`; without one, as in a Script tool, it throws at once.
      */
     @OptIn(kotlin.io.path.ExperimentalPathApi::class)
     fun run(script: Script, secrets: Map<String, String>, code: Path, workspace: Path, runId: String, given: Map<*, *>, sender: Sender? = null): ScriptRun {
@@ -48,7 +49,7 @@ class ScriptRunner(private val settings: Settings, private val posts: Posts) {
             val refused = scratch.resolve("refused.txt")
             scratch.resolve("inputs.json").writeBytes(json.writeValueAsBytes(inputs))
             val module = scratch.resolve("ants.mjs")
-            module.writeText(antsModule(scratch.resolve("inputs.json"), payload, refused, posting))
+            module.writeText(antsModule(scratch.resolve("inputs.json"), payload, refused, posting, sender?.trying == true))
             val masked = secrets.values + settings.secretValues().values
             val ants = mapOf("ANTS_RUN_WORKSPACE" to workspace.toString(), "ANTS_RUN_ID" to runId)
             val process = try {
@@ -76,13 +77,13 @@ class ScriptRunner(private val settings: Settings, private val posts: Posts) {
     }
 
     /** The module Node loads before the Script. It serialises the payload when the process ends, so the last `ants.output` wins. */
-    private fun antsModule(inputs: Path, payload: Path, refused: Path, posting: Pair<String, String>?): String {
+    private fun antsModule(inputs: Path, payload: Path, refused: Path, posting: Pair<String, String>?, trying: Boolean): String {
         fun literal(path: Path) = json.writeValueAsString(path.toString())
         val post = if (posting == null) "throw new Error('ants.post Posts only from a Script Task in a Run; this run of the Script Posts nothing.')"
         else """
             |const response = await fetch(${json.writeValueAsString(posting.second)}, {method: 'POST', body: JSON.stringify({address, data}),
             |    headers: {authorization: ${json.writeValueAsString("Bearer " + posting.first)}, 'content-type': 'application/json'}})
-            |  if (!response.ok) throw new Error((await response.json()).error)""".trimMargin()
+            |  if (!response.ok) throw new Error((await response.json()).error)""".trimMargin() + if (trying) "\n    console.log(`would Post \${JSON.stringify(data)} to \${address}`)" else ""
         return """
             |import {readFileSync, writeFileSync} from 'node:fs'
             |let payload, set = false

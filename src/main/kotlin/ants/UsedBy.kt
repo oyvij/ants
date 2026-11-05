@@ -9,8 +9,8 @@ import org.operaton.bpm.model.bpmn.instance.operaton.OperatonProperty
 import org.springframework.stereotype.Component
 import org.springframework.ui.Model
 
-class Dependents(val processes: List<ProcessDefinition>, val older: Set<String> = emptySet(), val agents: List<String> = emptyList()) {
-    val none get() = processes.isEmpty() && agents.isEmpty()
+class Dependents(val processes: List<ProcessDefinition>, val older: Set<String> = emptySet(), val agents: List<String> = emptyList(), val scripts: List<String> = emptyList()) {
+    val none get() = processes.isEmpty() && agents.isEmpty() && scripts.isEmpty()
 }
 
 @Component
@@ -37,6 +37,12 @@ class UsedBy(private val repository: RepositoryService, private val runtime: Run
         val processes = processes { _, model -> model.properties(SCRIPT).any { it == script.id } || model.agentTasks.any { task -> Links(task).scripts(scripts).orEmpty().any { it.getOrNull()?.id == script.id } } }
         return dependents(processes).let { Dependents(it.processes, it.older, agents) }
     }
+
+    /** What uses the Widget at [address], `<dashboard id>/<widget id>`: the Scripts that list it under their Widgets. */
+    fun widget(address: String) = Dependents(emptyList(), scripts = scripts.all().filter { address in it.widgets }.map { it.name })
+
+    /** What uses a Widget on the Dashboard [id]: the Scripts that list any of them. */
+    fun dashboard(id: String) = Dependents(emptyList(), scripts = scripts.all().filter { script -> script.widgets.any { it.substringBefore('/') == id } }.map { it.name })
 
     fun process(key: String) = dependents(processes { process, model ->
         process.key != key && model.getModelElementsByType(CallActivity::class.java).any { it.calledElement == key }

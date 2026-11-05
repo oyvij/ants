@@ -13,11 +13,14 @@ import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
-/** Who Posts with a token: the [script] that a Script Task, [task], runs in the Run [run]. */
-data class Sender(val script: Script, val run: String, val task: String)
+/**
+ * Who Posts with a token: the [script] that a Script Task, [task], runs in the Run [run]; or, [trying] it, a test run
+ * from the Script's editor, whose Posts are checked and never stored.
+ */
+data class Sender(val script: Script, val run: String, val task: String, val trying: Boolean = false)
 
 /**
- * Where `ants.post` sends a Script's Posts (ADR 0032): one token per run of a Script in a Script Task, given before it
+ * Where `ants.post` sends a Script's Posts (ADR 0032): one token per run of a Script in a Script Task or a test run, given before it
  * starts and dropped when it ends. A Post to a Widget the Script doesn't list is refused here; the rest is [Dashboards.post]'s.
  */
 @RestController
@@ -39,7 +42,7 @@ class Posts(private val dashboards: Dashboards, private val server: WebServerApp
         val address = post["address"]?.toString().orEmpty()
         return try {
             if (address !in sender.script.widgets) throw PostRefused("The Script ${sender.script.name} doesn't list the Widget $address under its Widgets, so it may not Post to it.")
-            dashboards.post(address, post["data"], sender.run, sender.task)
+            if (sender.trying) dashboards.check(address, post["data"]) else dashboards.post(address, post["data"], sender.run, sender.task)
             ResponseEntity.ok(mapOf("posted" to address))
         } catch (refused: PostRefused) {
             ResponseEntity.status(UNPROCESSABLE_CONTENT).body(mapOf("error" to refused.message!!))

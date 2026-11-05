@@ -175,7 +175,7 @@ class DashboardsTest : AntsTest() {
         assertContains(drawn, "<code>$dashboard/$id</code>")
         val page = browser.get("/dashboards/$dashboard").body
         assertContains(page, """id="no-widgets" hidden""")
-        assertContains(page.substringAfter("""id="posting""""), "<code>$dashboard/$id</code> · number</dt><dd><code>{value: number, unit?: string, delta?: number}</code>")
+        assertContains(page.substringAfter("""id="posting""""), "<code>$dashboard/$id</code> · number</dt><dd data-widget=\"$id\"><code>{value: number, unit?: string, delta?: number}</code>")
 
         assertEquals("Free disk", answer(browser.post("/dashboards/$dashboard/widgets/$id/title", mapOf("title" to " Free disk "))).get("title"))
         assertContains(widget(dashboard, id)!!, "Free disk")

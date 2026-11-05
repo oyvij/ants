@@ -339,6 +339,17 @@ class Dashboards(@Value("\${ants.home}") home: Path, private val clock: Clock) {
      */
     @Synchronized
     fun post(address: String, data: Any?, run: String, task: String) {
+        val (dashboard, widget, kept) = accepted(address, data)
+        keep(dashboard, widget.id, widget.type.held(posts(dashboard, widget), Post(kept, run, task, clock.instant())))
+    }
+
+    /** Checks [data] as a Post to the Widget at [address], as [post] does, and stores nothing: a test run's Post. */
+    fun check(address: String, data: Any?) {
+        accepted(address, data)
+    }
+
+    /** The Dashboard id, the Widget and what it keeps of [data], a Post to [address] it accepts; else [PostRefused]. */
+    private fun accepted(address: String, data: Any?): Triple<String, Widget, Map<*, *>> {
         val dashboard = find(address.substringBefore('/'))
         val widget = dashboard?.widget(address.substringAfter('/', ""))
             ?: throw PostRefused("No Widget $address: the Widget or its Dashboard was deleted, or the address is wrong. A Widget's address is <dashboard id>/<widget id>, as its Dashboard's Posting panel lists it.")
@@ -347,8 +358,7 @@ class Dashboards(@Value("\${ants.home}") home: Path, private val clock: Clock) {
         if (size > LIMIT) throw PostRefused("$named in Posts of up to 256 KB, but this one is ${(size + 1023) / 1024} KB.")
         val problems = if (data is Map<*, *>) widget.type.problems(data) else listOf("the data is not an object")
         if (problems.isNotEmpty()) throw PostRefused("$named, but ${problems.joinToString("; ")}.")
-        val post = Post(widget.type.kept(data as Map<*, *>), run, task, clock.instant())
-        keep(dashboard.id, widget.id, widget.type.held(posts(dashboard.id, widget), post))
+        return Triple(dashboard.id, widget, widget.type.kept(data as Map<*, *>))
     }
 
     /**
@@ -444,10 +454,10 @@ class Dashboards(@Value("\${ants.home}") home: Path, private val clock: Clock) {
 }
 
 /**
- * A Widget as its Dashboard's page draws it: the [posts] it holds, oldest first, its latest [post], and the name of the
- * Run that sent that.
+ * A Widget as its Dashboard's page draws it: the [posts] it holds, oldest first, its latest [post], the name of the
+ * Run that sent that, and the Scripts that list it, [usedBy].
  */
-class WidgetView(val dashboard: String, val widget: Widget, val posts: List<Post>, val runName: String?) {
+class WidgetView(val dashboard: String, val widget: Widget, val posts: List<Post>, val runName: String?, val usedBy: Dependents = Dependents(emptyList())) {
     val post = posts.lastOrNull()
 
     /** Where a Script or an Agent Posts to it. */
@@ -508,7 +518,7 @@ class WidgetView(val dashboard: String, val widget: Widget, val posts: List<Post
  * Widgets, and Delete. `/dashboards` opens the Dashboard viewed last, kept in the `dashboard` cookie.
  */
 @Controller
-class DashboardsPage(private val dashboards: Dashboards, private val names: RunNames, private val templates: TemplateEngine, private val streams: Streams) {
+class DashboardsPage(private val dashboards: Dashboards, private val names: RunNames, private val templates: TemplateEngine, private val streams: Streams, private val usedBy: UsedBy) {
     private val json = JsonMapper.shared()
 
     @GetMapping("/dashboards")
@@ -550,7 +560,7 @@ class DashboardsPage(private val dashboards: Dashboards, private val names: RunN
     @PostMapping("/dashboards/{id}/delete")
     fun delete(@PathVariable id: String, @RequestParam confirm: String?, model: Model): String {
         val dashboard = dashboards.get(id)
-        if (confirm == null) return confirm(model, "Delete the Dashboard ${dashboard.title}?", Dependents(emptyList()), "/dashboards/$id/delete", emptyMap(), "/dashboards/$id")
+        if (confirm == null) return confirm(model, "Delete the Dashboard ${dashboard.title}?", usedBy.dashboard(id), "/dashboards/$id/delete", emptyMap(), "/dashboards/$id")
         dashboards.delete(id)
         return "redirect:/dashboards"
     }
@@ -625,7 +635,7 @@ class DashboardsPage(private val dashboards: Dashboards, private val names: RunN
 
     private fun view(dashboard: String, widget: Widget): WidgetView {
         val posts = dashboards.posts(dashboard, widget)
-        return WidgetView(dashboard, widget, posts, posts.lastOrNull()?.let { runCatching { names.name(it.run) }.getOrNull() })
+        return WidgetView(dashboard, widget, posts, posts.lastOrNull()?.let { runCatching { names.name(it.run) }.getOrNull() }, usedBy.widget("$dashboard/${widget.id}"))
     }
 
     private fun render(template: String, params: Map<String, Any?>) = StringOutput().also { templates.render(template, params, it) }.toString().trim()
