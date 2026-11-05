@@ -259,6 +259,11 @@ A one-line entry on the Notification list that a Run left for the user to read; 
 kept by Ants, until the user dismisses it.
 _Avoid_: message, notification, alert
 
+**Alert**:
+What Ants sends to each phone or browser the user turned Alerts on for when a new entry arrives on the
+**Notification list**; tapping it opens that entry. Sent by Web Push, with no outside account.
+_Avoid_: push, push notification (**Push** is the Built-in Task that pushes repos)
+
 ### Showing work
 
 **Dashboard**:

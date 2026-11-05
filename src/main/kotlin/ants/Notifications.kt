@@ -38,6 +38,9 @@ sealed class Entry(val id: String, val tag: String, val process: String, val tas
 
     val waited get() = duration(Duration.between(since.toInstant(), Instant.now()), seconds = false)
 
+    /** The name of the Run it came from, if it came from one. */
+    open val runName: String? get() = null
+
     private companion object {
         val ICONS = mapOf("[failed]" to "✕", "[stuck]" to "⚠", "[stopped]" to "■", "[questions]" to "?", "[approve]" to "✓", "[review]" to "±", "[push]" to "↑", "[permission]" to "⊘", "[notice]" to "i")
     }
@@ -49,7 +52,7 @@ sealed class Entry(val id: String, val tag: String, val process: String, val tas
  * in a called Process, the called one's.
  */
 class TaskEntry(
-    id: String, tag: String, process: String, val run: String, val runName: String, task: String, val taskId: String, summary: String, since: Date,
+    id: String, tag: String, process: String, val run: String, override val runName: String, task: String, val taskId: String, summary: String, since: Date,
     val instance: String, val activity: String,
 ) : Entry(id, tag, process, task, summary, since)
 

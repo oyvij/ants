@@ -42,7 +42,7 @@ class Notice(
 /** A [Notice] on the Notification list: tagged `[notice]`, leading to its Run. */
 class NoticeEntry(val notice: Notice) : Entry(notice.id, "[notice]", notice.process, notice.task, notice.line, Date.from(notice.last)) {
     val run get() = notice.run
-    val runName get() = notice.runName
+    override val runName get() = notice.runName
 }
 
 /** The open Notices, kept by Ants in `notices.yaml` under `ANTS_HOME`, not in the engine, so they outlive their Runs and a restart. */
