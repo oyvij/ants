@@ -178,6 +178,7 @@ class LookTest : AntsTest() {
         Shot("skill-reference", "/skills/tdd", "document.querySelector('.references [data-open]').click()"),
         Shot("settings", "/settings"),
         Shot("answer", entry(app.getValue("round"))),
+        Shot("notice", entry(app.getValue("notice"))),
         Shot("dashboard", "/dashboards/${app.getValue("dashboard")}"),
     )
 
@@ -297,6 +298,11 @@ class LookTest : AntsTest() {
         http.import("round.bpmn")
         runs["round"] = start("round")
         entry(runs.getValue("round"))
+
+        // A Notice from a watcher's Run, which has ended, for the Notification list and the Notice's page.
+        http.import("notify.bpmn")
+        runs["notice"] = start("watch", listOf("pipeline" to "api-build", NAME to "Watch the api pipelines"))
+        entry(runs.getValue("notice"))
 
         // An ended Run, a cancelled one, and a Schedule for Coming up.
         http.import("start-end.bpmn")

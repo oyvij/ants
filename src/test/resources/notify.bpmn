@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:operaton="http://operaton.org/schema/1.0/bpmn"
+                  id="definitions" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="watch" name="Watch pipelines" isExecutable="true" operaton:historyTimeToLive="180">
+    <bpmn:startEvent id="start">
+      <bpmn:extensionElements>
+        <operaton:formData>
+          <operaton:formField id="pipeline" label="Pipeline" type="string" />
+        </operaton:formData>
+      </bpmn:extensionElements>
+    </bpmn:startEvent>
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="notify" />
+    <bpmn:serviceTask id="notify" name="Tell me" operaton:type="external" operaton:topic="notify">
+      <bpmn:extensionElements>
+        <operaton:properties>
+          <operaton:property name="ants.line" value="Pipeline ${pipeline} failed on main" />
+        </operaton:properties>
+      </bpmn:extensionElements>
+    </bpmn:serviceTask>
+    <bpmn:sequenceFlow id="f2" sourceRef="notify" targetRef="end" />
+    <bpmn:endEvent id="end" />
+  </bpmn:process>
+</bpmn:definitions>
