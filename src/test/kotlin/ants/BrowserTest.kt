@@ -3204,10 +3204,34 @@ class BrowserTest : AntsTest() {
 
             // The push service would deliver it; DevTools hands it to the service worker as the same push event. The
             // headless browser keeps no notifications, so the service worker's showNotification records what it would show.
-            var worker: com.microsoft.playwright.Worker? = null
-            eventually { page.waitForTimeout(50.0); worker = assertNotNull(page.context().serviceWorkers().firstOrNull { it.url() == url("/sw.js") }) }
-            val sw = worker!!
-            sw.evaluate("() => { self.registration.showNotification = async (title, options) => { self.shown = { title, ...options } } }")
+            // Playwright for Java has no handle on a service worker, so the test evaluates in it over DevTools.
+            val browserCdp = page.context().browser()!!.newBrowserCDPSession()
+            var target: JsonObject? = null
+            eventually {
+                page.waitForTimeout(50.0)
+                target = assertNotNull(browserCdp.send("Target.getTargets")["targetInfos"].asJsonArray.map { it.asJsonObject }
+                    .firstOrNull { it["type"].asString == "service_worker" && it["url"].asString == url("/sw.js") })
+            }
+            val session = browserCdp.send("Target.attachToTarget", JsonObject().apply { addProperty("targetId", target!!["targetId"].asString); addProperty("flatten", false) })["sessionId"].asString
+            val replies = java.util.concurrent.ConcurrentHashMap<Int, JsonObject>()
+            browserCdp.on("Target.receivedMessageFromTarget") { event ->
+                val reply = com.google.gson.JsonParser.parseString(event["message"].asString).asJsonObject
+                reply["id"]?.let { replies[it.asInt] = reply }
+            }
+            var calls = 0
+            fun inWorker(expression: String): String {
+                val call = ++calls
+                val message = JsonObject().apply {
+                    addProperty("id", call)
+                    addProperty("method", "Runtime.evaluate")
+                    add("params", JsonObject().apply { addProperty("expression", expression); addProperty("awaitPromise", true); addProperty("returnByValue", true) })
+                }
+                browserCdp.send("Target.sendMessageToTarget", JsonObject().apply { addProperty("sessionId", session); addProperty("message", message.toString()) })
+                var reply: JsonObject? = null
+                eventually { page.waitForTimeout(20.0); reply = assertNotNull(replies[call]) }
+                return reply!!["result"].asJsonObject["result"].asJsonObject["value"]?.asString ?: ""
+            }
+            inWorker("self.registration.showNotification = async (title, options) => { self.shown = { title, ...options } }; ''")
             val cdp = page.context().newCDPSession(page)
             val scope = page.evaluate("navigator.serviceWorker.ready.then(r => r.scope)")
             var id: String? = null
@@ -3221,15 +3245,16 @@ class BrowserTest : AntsTest() {
             })
             eventually {
                 page.waitForTimeout(50.0)
-                assertEquals(listOf("⚠ [stuck] ${alert["run"]}", "Draft: No tone given."), sw.evaluate("self.shown ? [self.shown.title, self.shown.body] : []"))
+                assertEquals("⚠ [stuck] ${alert["run"]}\nDraft: No tone given.", inWorker("self.shown ? self.shown.title + '\\n' + self.shown.body : ''"))
             }
 
             // DevTools can't tap an Alert, so the test raises the service worker's own tap on the Alert it showed.
-            sw.evaluate("""() => {
+            inWorker("""(() => {
                 const tap = new Event('notificationclick')
                 Object.assign(tap, { notification: { data: self.shown.data, close() {} }, waitUntil: work => work })
                 self.dispatchEvent(tap)
-            }""")
+                return ''
+            })()""")
             page.waitForURL(url("${alert["url"]}"))
             assertThat(page.locator("h1")).containsText("Draft")
 
