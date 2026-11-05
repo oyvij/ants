@@ -14,6 +14,7 @@ class PermissionRequest(val agent: String, val tool: String, val target: String?
             tool == "Read" -> "read $shown"
             tool == "WebFetch" -> "fetch $shown"
             tool in AgentLauncher.SUBAGENT_TOOLS -> "start the Subagent $shown"
+            tool == WidgetTools.AGENT_TOOL -> "Post to $shown"
             else -> "use $tool on $shown"
         }
     }

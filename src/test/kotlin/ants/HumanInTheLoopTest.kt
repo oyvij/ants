@@ -130,11 +130,11 @@ class HumanInTheLoopTest : AntsTest() {
     @Test
     fun `the grilling, the Spec, the Tickets and the Story set run on lead, each on its old level, and engineer builds and fixes the review`() {
         val ws = workspace(humanInTheLoop())
-        fun tools(skill: String) = claude.launches(skill).first().let { it.flag("--tools")?.removeSuffix(",Skill") to it.flag("--allowedTools")?.removeSuffix(",Skill") }
+        fun tools(skill: String) = claude.launches(skill).first().let { it.flag("--tools")?.removeSuffix(",Skill") to it.flag("--allowedTools")?.replace(",Skill", "") }
         fun level(task: String) = claude.launches(task).first().let { "${it.flag("--model")} ${it.flag("--effort")}" }
 
         val lead = "Read,Grep,Glob,Write,Edit,Bash,Agent" to listOf("scout", "tickets", "proposal", "walkthrough").joinToString(",") { "Write(/$ws/$it/**),Edit(/$ws/$it/**)" }
-            .let { "Read,Grep,Glob,$it,Bash(git log *),Bash(git diff *),Bash(git show *),Bash(git merge-base *),Agent(knowledge-searcher)" }
+            .let { "Read,Grep,Glob,$it,Bash(git log *),Bash(git diff *),Bash(git show *),Bash(git merge-base *),Agent(knowledge-searcher),mcp__ants__ListWidgets,mcp__ants__PostToWidget" }
         for (task in listOf("grill", "tospec", "totickets", "walkthrough")) assertEquals(lead, tools(task), task)
         assertEquals(listOf("opus medium", "opus medium", "opus medium", "sonnet medium"), listOf("grill", "tospec", "totickets", "walkthrough").map(::level))
         assertEquals(setOf("grilling"), claude.launches("grill").first().skills.keys) // lead's other Skills stay off a Task that doesn't list them

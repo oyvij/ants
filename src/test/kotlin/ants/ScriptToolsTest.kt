@@ -72,7 +72,8 @@ class ScriptToolsTest : AntsTest() {
         return json.readValue(response.body(), Map::class.java)["result"] as Map<*, *>
     }
 
-    private fun tools(launch: FakeClaude.Launch) = (rpc(launch, "tools/list")["tools"] as List<*>).map { it as Map<*, *> }
+    /** The Script tools the server lists, past the Widget tools every claude Agent gets. */
+    private fun tools(launch: FakeClaude.Launch) = (rpc(launch, "tools/list")["tools"] as List<*>).map { it as Map<*, *> }.filter { it["name"].toString().startsWith(ScriptTools.PREFIX) }
 
     private fun scriptTools(launch: FakeClaude.Launch) = launch.flag("--allowedTools")!!.split(",").filter { it.startsWith("mcp__ants__script_") }
 
@@ -169,6 +170,25 @@ class ScriptToolsTest : AntsTest() {
         claude.release("go")
         eventually { assertContains(browser.get("/runs/$run").body, """id="state">Completed<""") }
         assertFalse(Files.walk(workspace).filter { it.isRegularFile() }.anyMatch { "s3cret" in it.readText() || "ants.output" in it.readText() })
+    }
+
+    @Test
+    fun `a Script tool Posts to a Widget it lists as the Agent Task, which the Widget shows with the Run`() {
+        browser.get("/")
+        val dashboard = browser.post("/dashboards", mapOf()).path.removePrefix("/dashboards/")
+        val disk = answer(browser.post("/dashboards/$dashboard/widgets", mapOf("type" to "number")))["id"]
+        Script("s-disk01", "measure-disk", "Measures the disk.", widgets = listOf("$dashboard/$disk"))
+            .also { scripts.save(it, "await ants.post('$dashboard/$disk', {value: 7})\nants.output({posted: true})\n", emptyMap()) }
+        agentWithScripts("s-disk01")
+        val run = start()
+        val launch = launch()
+
+        val (posted, failed) = call(launch, "script_measure-disk", emptyMap())
+        assertEquals(false, failed, posted.toString())
+        val widget = browser.get("/dashboards/$dashboard").body.substringAfter("""gs-id="$disk"""").substringBefore("</article>")
+        assertContains(widget, """<div class="num">7<small></small></div>""")
+        assertContains(widget, """<a href="/runs/$run">""")
+        claude.release("go")
     }
 
     @Test

@@ -8,14 +8,15 @@ import java.nio.file.Path
 class ScriptTools(private val scripts: Scripts, private val runner: ScriptRunner) {
     private val json = JsonMapper.shared()
 
-    fun of(allowed: List<Script>, workspace: Path, run: String): McpTools {
+    /** The Scripts [allowed] as tools of the Task [task] of the Run [run], each run in [workspace]; their Posts are the Task's. */
+    fun of(allowed: List<Script>, workspace: Path, run: String, task: String): McpTools {
         val named = toolNames(allowed)
         return object : McpTools {
             override val tools = named.map { (name, script) -> mapOf("name" to name, "description" to description(script), "inputSchema" to ScriptSchema.EMPTY + script.inputs.entries.associate { (key, value) -> "$key" to value }) }
 
             override fun call(name: String, arguments: Map<*, *>): Pair<String, Boolean> {
                 val script = named.getValue(name)
-                val result = runner.run(script, scripts.secretEnvironment(script), scripts.file(script), workspace, run, arguments)
+                val result = runner.run(script, scripts.secretEnvironment(script), scripts.file(script), workspace, run, arguments, Sender(script, run, task))
                 return json.writeValueAsString(mapOf("exitCode" to result.exitCode, "output" to withoutSource(result.reported, scripts.file(script)), "payload" to result.payload)) to result.failed
             }
         }
