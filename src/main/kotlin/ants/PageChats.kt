@@ -87,6 +87,10 @@ abstract class PageChat(protected val chats: PageChats, private val added: List<
     @Volatile
     var busy = false
 
+    /** How many messages the session has taken: the dialog shows it, so the page knows which dialog came after its Send. */
+    @Volatile
+    var taken = 0
+
     @Volatile
     var closed = false
 
@@ -150,9 +154,9 @@ abstract class PageChat(protected val chats: PageChats, private val added: List<
     val connected get() = polled && System.nanoTime() - seen < CONNECTED.toNanos()
     override val alive get() = !closed
 
-    /** Sends [message] into the session, launching claude first when none is live. */
+    /** Sends [message] into the session, launching claude first when none is live: how many messages it has taken. */
     @Synchronized
-    fun send(message: String) {
+    fun send(message: String): Int {
         val (cli, model) = chats.settings.chat(name)
         if (cli != "claude") throw Refused(claudeOnly(title, name))
         val starting = claude?.isAlive != true || stdin?.open != true
@@ -163,6 +167,7 @@ abstract class PageChat(protected val chats: PageChats, private val added: List<
         active = System.nanoTime()
         messaged = ticks.incrementAndGet()
         if (!stdin!!.say(prompt ?: message)) busy = false.also { throw Refused("claude ended before it read the message. Send it again to resume the session.") }
+        return ++taken
     }
 
     private fun launch(model: String?) {
@@ -260,8 +265,9 @@ abstract class PageChat(protected val chats: PageChats, private val added: List<
     }
 
     fun html(): String = synchronized(dialog) {
+        val taken = taken // read before busy, so a dialog showing this message shows its turn begun, or ended
         head() + """<div id="$idPrefix-entries">${dialog.roots.joinToString("")}</div>${dialog.html("live")}""" + foot() +
-            """<div id="$idPrefix-state" data-busy="$busy">${if (busy) """<span class="spin">✻</span> <span class="shimmer" data-rotate>Pondering…</span>""" else ""}</div>"""
+            """<div id="$idPrefix-state" data-busy="$busy" data-taken="$taken">${if (busy) """<span class="spin">✻</span> <span class="shimmer" data-rotate>Pondering…</span>""" else ""}</div>"""
     }
 
     /** Relays [tool] to the page and gives its answer, JSON text; fails when no page is connected or it doesn't answer in time. */
@@ -341,11 +347,13 @@ class PageChats(
         return opened
     }
 
-    /** Sends the user's [message] into the page's claude session: empty, or the error that kept it from going. */
+    /**
+     * Sends the user's [message] into the page's claude session: how many messages it has taken, which the dialog showing
+     * it has as its `data-taken`, or the error that kept it from going.
+     */
     fun send(token: String, message: String, title: String): Map<String, String> = try {
         if (message.isBlank()) throw Refused("Write a message to send.")
-        (pages[token] ?: throw Refused("This page's $title session has ended. Reload the page.")).send(message)
-        emptyMap()
+        mapOf("taken" to (pages[token] ?: throw Refused("This page's $title session has ended. Reload the page.")).send(message).toString())
     } catch (e: Exception) {
         mapOf("error" to (e.message ?: e.toString()))
     }
