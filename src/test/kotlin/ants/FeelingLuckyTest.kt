@@ -97,12 +97,12 @@ class FeelingLuckyTest : AntsTest() {
     @Test
     fun `the scout and the proposal run on lead and the build and the pull request on engineer, each Task on its old level`() {
         val ws = workspace(feelingLucky())
-        fun tools(task: String) = claude.launches(task).first().let { it.flag("--tools")?.removeSuffix(",Skill") to it.flag("--allowedTools")?.removeSuffix(",Skill") }
+        fun tools(task: String) = claude.launches(task).first().let { it.flag("--tools")?.removeSuffix(",Skill") to it.flag("--allowedTools")?.replace(",Skill", "") }
         fun level(task: String) = claude.launches(task).first().let { "${it.flag("--model")} ${it.flag("--effort")}" }
 
         // claude checks a Write against Edit rules and ignores a Write(path) rule, so a Write limit goes out as both
         val lead = "Read,Grep,Glob,Write,Edit,Bash,Agent" to listOf("scout", "tickets", "proposal", "walkthrough").joinToString(",") { "Write(/$ws/$it/**),Edit(/$ws/$it/**)" }
-            .let { "Read,Grep,Glob,$it,Bash(git log *),Bash(git diff *),Bash(git show *),Bash(git merge-base *),Agent(knowledge-searcher)" }
+            .let { "Read,Grep,Glob,$it,Bash(git log *),Bash(git diff *),Bash(git show *),Bash(git merge-base *),Agent(knowledge-searcher),mcp__ants__ListWidgets,mcp__ants__PostToWidget" }
         assertEquals(lead, tools("scout"))
         assertEquals(lead, tools("proposesolution"))
         assertEquals(emptyMap(), claude.launches("proposesolution").single().skills) // its empty Skills list is none, not lead's

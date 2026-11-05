@@ -69,6 +69,16 @@ svg.i { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-widt
 :root:has(meta[name=color-scheme][content=light]) .to-light, :root:has(meta[name=color-scheme][content=dark]) .to-dark { display: none; }
 @media (prefers-color-scheme: light) { :root:has(meta[name=color-scheme][content="light dark"]) .to-light { display: none; } }
 @media (prefers-color-scheme: dark) { :root:has(meta[name=color-scheme][content="light dark"]) .to-dark { display: none; } }
+/* The Dashboards toggle reads as a link, its chevron turned down while open; its list sits indented under it. */
+.side #dashboards-toggle, .side #dashboards-list button { width: 100%; background: none; border: 0; box-shadow: none; justify-content: flex-start; gap: 10px; padding: 7px 10px; border-radius: 8px; font-size: 14px; font-weight: 500; color: var(--sideText); line-height: 1.5; }
+.side #dashboards-toggle:hover, .side #dashboards-list button:hover { background: var(--side2); color: #e5e7eb; }
+.side #dashboards-toggle .chev { margin-left: auto; width: 14px; height: 14px; transition: transform .15s; } .side #dashboards-toggle[aria-expanded=true] .chev { transform: rotate(90deg); }
+#dashboards-list { display: flex; flex-direction: column; gap: 2px; } #dashboards-list[hidden] { display: none; }
+#dashboards-list a, .side #dashboards-list button { padding: 5px 10px 5px 37px; font-size: 13px; min-width: 0; }
+#dashboards-list a .clip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.side #dashboards-list button.add { color: #d9a877; }
+#dashboards-list form { margin: 0; }
+#dashboards-list a { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; } #dashboards-list a.dragging { background: var(--side2); color: #e5e7eb; cursor: grabbing; box-shadow: 0 2px 8px rgba(0,0,0,.3); }
 #menu, .topbar { display: none; }
 .topbar { position: sticky; top: 0; z-index: 9; align-items: center; gap: 4px; padding: 6px 8px 6px 16px; background: var(--side); color: var(--sideText); color-scheme: dark; }
 .topbar .logo { padding: 0; margin-right: auto; }
@@ -90,6 +100,65 @@ main.full .composer > :is(div, form) { max-width: none; padding-inline: 24px; }
 .ph h1 { font-size: 22px; letter-spacing: -.01em; margin: 0; } .ph h1 a { color: inherit; } .ph .sub { width: 100%; color: var(--muted); margin-top: -6px; }
 .ph .acts { margin-left: auto; display: flex; gap: 8px; align-items: center; }
 .ph .acts form { margin: 0; }
+/* A Dashboard's page: its title is edited in place; an empty Dashboard, or none at all, says what to do. */
+.dashboard .ph h1#title { padding: 2px 6px; margin-left: -6px; border-radius: 6px; outline: none; min-width: 2ch; overflow-wrap: anywhere; }
+.dashboard .ph h1#title:hover { background: var(--hover); } .dashboard .ph h1#title:focus { background: var(--panel); box-shadow: 0 0 0 2px var(--acc); }
+.dashboard .empty { margin: 80px auto; max-width: 420px; text-align: center; color: var(--muted); } .dashboard .empty > b:first-child { display: block; color: var(--text); font-size: 16px; margin-bottom: 6px; }
+.dashboard .empty[hidden] { display: none; }
+/* Its grid of Widgets: view mode keeps them still with their text selectable; edit mode shows a dotted grid and outlines them. */
+.dashboard .dashboard-body { display: flex; gap: 16px; align-items: flex-start; min-width: 0; }
+.dashboard .grid-wrap { flex: 1; min-width: 0; border-radius: var(--r); }
+.dashboard.editing .grid-wrap { background-image: radial-gradient(var(--fieldLine) 1px, transparent 1px); background-size: 24px 24px; }
+.dashboard .widget { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sh); display: flex; flex-direction: column; overflow: hidden; }
+.dashboard .widget, .dashboard .widget * { user-select: text; }
+.dashboard.editing .widget { outline: 1px dashed var(--acc); outline-offset: -1px; }
+.dashboard .w-head { display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-bottom: 1px solid var(--line2); }
+.dashboard.editing .w-head { background: var(--accSoft); cursor: move; user-select: none; }
+.dashboard .w-head .t { font-weight: 600; flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; border-radius: 4px; outline: none; }
+.dashboard.editing .w-head .t { cursor: text; padding: 0 4px; } .dashboard.editing .w-head .t:focus { background: var(--panel); box-shadow: 0 0 0 2px var(--acc); }
+.dashboard .w-head code { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.dashboard .w-head .x { padding: 0 4px; color: var(--muted); } .dashboard:not(.editing) .w-head .x { display: none; }
+.dashboard .w-body { flex: 1; padding: 10px 12px; overflow: auto; overflow-wrap: anywhere; }
+.dashboard .w-body .none { color: var(--muted); font-style: italic; }
+.dashboard .num { font-size: 40px; font-weight: 700; line-height: 1.2; } .dashboard .num small { font-size: 18px; color: var(--muted); margin-left: 4px; }
+.dashboard .delta { font-size: 13px; } .dashboard .delta.up { color: var(--ok); } .dashboard .delta.down { color: var(--bad); }
+.dashboard .from { margin-top: 6px; }
+.dashboard .w-tools { display: flex; align-items: center; gap: 8px; padding: 4px 12px; border-bottom: 1px solid var(--line2); background: var(--accSoft); font-size: 12px; }
+.dashboard:not(.editing) .w-tools { display: none; }
+.dashboard .w-tools .keep { width: 5em; padding: 1px 4px; } .dashboard .w-tools .clear { margin-left: auto; padding: 1px 6px; font-size: 12px; }
+.dashboard .bar { height: 14px; background: var(--line2); border-radius: 7px; overflow: hidden; margin-top: 10px; } .dashboard .bar div { height: 100%; background: var(--acc); transition: width .4s; }
+.dashboard .st { display: flex; align-items: center; gap: 8px; padding: 3px 0; } .dashboard .st .n { flex: 1; min-width: 0; } .dashboard .st .s { color: var(--muted); }
+.dashboard .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.dashboard .dot.ok { background: var(--ok); } .dashboard .dot.warn { background: var(--wait); } .dashboard .dot.fail { background: var(--bad); }
+.dashboard .dot.running { background: var(--acc); animation: running 1s infinite alternate; } @keyframes running { to { opacity: .3; } }
+@media (prefers-reduced-motion: reduce) { .dashboard .dot.running { animation: none; } .dashboard .bar div { transition: none; } }
+.dashboard .li { padding: 4px 0; border-bottom: 1px solid var(--line2); } .dashboard .li:last-of-type { border-bottom: 0; } .dashboard .li > div { color: var(--muted); font-size: 12px; }
+.dashboard .text { white-space: pre-wrap; }
+.dashboard .log { font: 12px/1.5 var(--mono); } .dashboard .log .warn { color: var(--warnText); } .dashboard .log .error { color: var(--badText); }
+.dashboard .log time { color: var(--muted); margin-right: 6px; }
+/* A chart fills its Widget's body above the line naming its Run; its kind is picked in its header in edit mode. */
+.dashboard .w-body:has(> .chart) { display: flex; flex-direction: column; overflow: hidden; padding: 6px 8px; }
+.dashboard .chart { flex: 1 1 0; min-height: 0; overflow: hidden; } .dashboard .chart.none { overflow: auto; }
+.dashboard .w-head .kind { font-size: 11px; padding: 1px 4px; width: auto; } .dashboard:not(.editing) .w-head .kind { display: none; }
+#vg-tooltip-element.custom-theme { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 6px; box-shadow: var(--sh); font: 12px system-ui, sans-serif; padding: 6px 8px; }
+#vg-tooltip-element.custom-theme td.key { color: var(--muted); }
+.dashboard .dd { position: relative; }
+.dashboard .menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--sh); padding: 4px; width: 260px; }
+.dashboard .menu[hidden] { display: none; }
+.dashboard .menu button { display: block; width: 100%; text-align: left; border: 0; box-shadow: none; padding: 7px 10px; border-radius: 6px; background: none; }
+.dashboard .menu button:hover, .dashboard .menu button:focus { background: var(--accSoft); outline: none; }
+.dashboard .menu small { display: block; color: var(--muted); font-size: 12px; font-weight: 400; }
+.dashboard .menu { max-height: 70vh; overflow: auto; }
+.dashboard .menu .h { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); padding: 8px 10px 2px; border-top: 1px solid var(--line); margin-top: 4px; }
+.dashboard #edit[aria-pressed=true] { background: var(--text); color: var(--panel); border-color: var(--text); }
+.dashboard #posting { width: 340px; flex: none; font-size: 12.5px; background: var(--panel2); border: 1px solid var(--line); border-radius: var(--r); padding: 14px; }
+.dashboard #posting[hidden] { display: none; }
+.dashboard #posting h3 { font-size: 13px; margin: 0 0 6px; } .dashboard #posting h3 + p, .dashboard #posting pre + h3 { margin-top: 14px; }
+.dashboard #posting pre { white-space: pre-wrap; overflow-wrap: anywhere; } .dashboard #posting dd { margin: 2px 0 8px; overflow-wrap: anywhere; }
+@media (max-width: 768px) {
+    .dashboard .dashboard-body { flex-direction: column; align-items: stretch; } .dashboard #posting { width: 100%; }
+    .dashboard #edit, .dashboard .dd { display: none; }
+}
 h2 { font-size: 14px; margin: 32px 0 12px; letter-spacing: .01em; }
 .muted { color: var(--muted); } .small { font-size: 12.5px; }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sh); padding: 20px 22px; margin-bottom: 16px; }

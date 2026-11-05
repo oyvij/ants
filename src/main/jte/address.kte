@@ -1,0 +1,2 @@
+@param view: ants.WidgetView
+<dt data-widget="${view.widget.id}"><code>${view.address.toString()}</code> · ${view.widget.type.label}</dt><dd data-widget="${view.widget.id}"><code>${view.widget.type.shape}</code><br>@template.usedby(dependents = view.usedBy, none = "no Script or Process")</dd>

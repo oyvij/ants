@@ -1,0 +1,31 @@
+@import ants.WidgetType
+@param view: ants.WidgetView
+!{val delta = view.delta}
+@if(view.post == null)
+<div class="none">Waiting for its first Post · <code>${view.address.toString()}</code></div>
+@else
+@if(view.widget.type == WidgetType.NUMBER)
+<div class="num">${view.number("value")}<small>${view.post.data["unit"]?.toString() ?: ""}</small></div>
+@if(delta != null)<div class="delta ${if (delta >= 0) "up" else "down"}">${if (delta >= 0) "▲" else "▼"} ${view.deltaShown} since the last Post</div>@endif
+@elseif(view.widget.type == WidgetType.PROGRESS)
+<div class="num">${view.number("done")}<small> / ${view.number("total")}</small></div>
+<div class="bar"><div style="width:${view.percent}%"></div></div>
+@elseif(view.widget.type == WidgetType.STATUS)
+@for(item in view.items)
+<div class="st"><span class="dot ${item["state"].toString()}"></span><span class="n">${item["name"].toString()}</span><span class="s">${item["state"].toString()}</span></div>
+@endfor
+@elseif(view.widget.type == WidgetType.LIST)
+@for(item in view.items)
+<div class="li">@if(item["url"] != null)<a href="${item["url"].toString()}" target="_blank" rel="noopener">${item["title"].toString()}</a>@else${item["title"].toString()}@endif@if(item["note"] != null)<div>${item["note"].toString()}</div>@endif</div>
+@endfor
+@elseif(view.widget.type == WidgetType.TEXT)
+<div class="text">${view.post.data["text"].toString()}</div>
+@elseif(view.widget.type == WidgetType.CHART)
+<div class="chart" data-kind="${view.widget.kind.label}" data-points="${view.points}"></div>
+@elseif(view.widget.type == WidgetType.CUSTOM)
+<div class="chart" data-spec="${view.spec}"></div>
+@elseif(view.widget.type == WidgetType.LOG)
+<div class="log">@for(line in view.lines)<div class="${line.data["level"]?.toString() ?: "info"}"><time datetime="${line.at.toString()}">${view.time(line)}</time>${line.data["line"].toString()}</div>@endfor</div>
+@endif
+<div class="from small muted">From <a href="/runs/${view.post.run}">${view.runName ?: view.post.run}</a> · <time datetime="${view.post.at.toString()}">${view.at}</time></div>
+@endif

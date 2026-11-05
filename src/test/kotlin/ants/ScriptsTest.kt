@@ -90,7 +90,7 @@ class ScriptsTest : AntsTest() {
         assertContains(list, "Posts a message.")
         assertContains(list, """<a href="/scripts/reshape">reshape</a>""")
         assertContains(list, "Reshapes a JSON file.")
-        assertFalse(Regex("s-[a-z0-9]{6}").containsMatchIn(list))
+        assertFalse(Regex("""\bs-[a-z0-9]{6}\b""").containsMatchIn(list))
     }
 
     @Test

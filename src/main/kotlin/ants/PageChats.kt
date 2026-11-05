@@ -16,8 +16,24 @@ import java.util.concurrent.TimeUnit.MILLISECONDS
 import java.util.concurrent.TimeUnit.NANOSECONDS
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 
-abstract class PageChat(protected val chats: PageChats) : McpTools {
+/**
+ * Tools a helper adds to its page's own, wired in once by passing them to [PageChat]: what the helper is told about
+ * them ([instructions]), how the dialog words their calls ([lines]), and those that wait for the user's reply to a
+ * suggestion ([gated], each checked with [PageChat.replied]).
+ */
+interface HelperTools {
+    val instructions: String
+    val lines: Map<String, (Map<*, *>) -> String>
+    val tools: List<Map<String, Any?>>
+    val gated: Set<String>
+
+    /** Calls the tool [name], one of [tools], for the helper [chat]. */
+    fun call(chat: PageChat, name: String, arguments: Map<*, *>): Pair<String, Boolean>
+}
+
+abstract class PageChat(protected val chats: PageChats, private val added: List<HelperTools> = emptyList()) : McpTools {
     abstract val name: String
 
     abstract val title: String
@@ -25,6 +41,17 @@ abstract class PageChat(protected val chats: PageChats) : McpTools {
     protected abstract val pageName: String
 
     protected abstract val instructions: String
+
+    /** The page's own tools, which the [added] ones join. */
+    protected abstract val pageTools: List<Map<String, Any?>>
+
+    /** Calls the page's own tool [name], one of [pageTools]. */
+    protected abstract fun pageCall(name: String, arguments: Map<*, *>): Pair<String, Boolean>
+
+    final override val tools get() = pageTools + added.flatMap { it.tools }
+
+    final override fun call(name: String, arguments: Map<*, *>): Pair<String, Boolean> =
+        added.firstOrNull { tools -> tools.tools.any { it["name"] == name } }?.call(this, name, arguments) ?: pageCall(name, arguments)
 
     protected abstract val idPrefix: String
 
@@ -68,7 +95,7 @@ abstract class PageChat(protected val chats: PageChats) : McpTools {
     var active = System.nanoTime()
 
     /** The dialog, claude's stream-json lines folded in as an Agent Task's Transcript folds them, each tool call as [lines] words it. Guarded by itself. */
-    val dialog = Transcript { name, input -> lines[name.removePrefix("mcp__ants__").takeIf { it != name }]?.invoke(input) }
+    val dialog = Transcript { name, input -> ours(name)?.let { tool -> (lines[tool] ?: added.firstNotNullOfOrNull { it.lines[tool] })?.invoke(input) } }
 
     @Volatile
     private var opening: Pair<String, String>? = null
@@ -86,6 +113,40 @@ abstract class PageChat(protected val chats: PageChats) : McpTools {
     val outbox = ConcurrentLinkedQueue<String>()
     val waiting = ConcurrentHashMap<String, CompletableFuture<String>>()
 
+    /** Counts the helper's writing and the user's messages, in the order they came, for [replied]. */
+    private val ticks = AtomicLong()
+
+    @Volatile
+    private var written = 0L
+
+    @Volatile
+    private var messaged = 0L
+
+    /** A call of a [HelperTools.gated] tool claude announced: its tool_use [id], the [tool], and whether the user had replied to the helper's writing then. */
+    private class Use(val id: String?, val tool: String, val answered: Boolean)
+
+    /**
+     * Each gated call claude announced that hasn't reached Ants, in the order claude made them. A call claude refused
+     * or cut off never comes, so its tool_result, or else its turn's end, drops it: no later call takes its verdict.
+     */
+    private val uses = ConcurrentLinkedQueue<Use>()
+
+    /**
+     * Whether the user has sent a message since the helper last wrote, as it was when claude called [tool]: the gate
+     * for a change only a suggestion the user answered allows (ADR 0032). claude prints its call before making it, so
+     * Ants waits for that line, which comes after all the helper wrote before it.
+     */
+    fun replied(tool: String): Boolean {
+        val deadline = System.nanoTime() + USE_SEEN.toNanos()
+        while (claude?.isAlive == true && System.nanoTime() < deadline) {
+            uses.firstOrNull { it.tool == tool }?.let { use -> if (uses.remove(use)) return use.answered }
+            Thread.sleep(10)
+        }
+        return answered()
+    }
+
+    private fun answered() = written in 1..<messaged
+
     val connected get() = polled && System.nanoTime() - seen < CONNECTED.toNanos()
     override val alive get() = !closed
 
@@ -100,6 +161,7 @@ abstract class PageChat(protected val chats: PageChats) : McpTools {
         if (prompt != null) opening = prompt to message
         busy = true
         active = System.nanoTime()
+        messaged = ticks.incrementAndGet()
         if (!stdin!!.say(prompt ?: message)) busy = false.also { throw Refused("claude ended before it read the message. Send it again to resume the session.") }
     }
 
@@ -114,7 +176,7 @@ abstract class PageChat(protected val chats: PageChats) : McpTools {
             "--disable-slash-commands",
             "--tools", if (readsOwnToolResults) "Read" else "",
             "--allowedTools", listOfNotNull("mcp__ants__*", toolResults().takeIf { readsOwnToolResults }).joinToString(","),
-            "--append-system-prompt", instructions,
+            "--append-system-prompt", instructions + added.joinToString("") { it.instructions },
         ) + (model?.let { listOf("--model", it) } ?: emptyList())
         val process = chats.launcher.cli("claude", scratch, flags).start()
         val stdin = AgentLauncher.Stdin(process.outputWriter(), name, chats.launcher.home)
@@ -140,13 +202,37 @@ abstract class PageChat(protected val chats: PageChats) : McpTools {
             } else if (event["type"] == "result") { // its text is the last reply's, already shown
                 busy = false
                 active = System.nanoTime()
+                uses.clear()
             }
-            else synchronized(dialog) { dialog.add(opening?.let { shown(event, it) } ?: line) }
+            else {
+                if (event["type"] == "assistant") wrote(event)
+                if (event["type"] == "user") answered(event)
+                synchronized(dialog) { dialog.add(opening?.let { shown(event, it) } ?: line) }
+            }
         }
         val exit = process.waitFor()
         busy = false
         if (exit != 0 && stdin.open && !stdin.stopping && !closed) note("claude ended (exit $exit)${stderr()?.let { ": ${it.lines().last()}" } ?: ""}. Your next message resumes the session.")
     }
+
+    /** Notes the helper's text and its calls of gated tools in the assistant [event], in order, for [replied]. */
+    private fun wrote(event: Map<*, *>) {
+        for (block in blocks(event)) when (block["type"]) {
+            "text" -> if (block["text"]?.toString()?.isNotBlank() == true) written = ticks.incrementAndGet()
+            "tool_use" -> ours(block["name"]?.toString().orEmpty())?.takeIf { tool -> added.any { tool in it.gated } }?.let { uses += Use(block["id"]?.toString(), it, answered()) }
+        }
+    }
+
+    /** Drops the gated calls the user [event]'s tool_results answer: one that reached Ants was taken already, and one claude refused never comes. */
+    private fun answered(event: Map<*, *>) {
+        val ids = blocks(event).filter { it["type"] == "tool_result" }.map { it["tool_use_id"]?.toString() }.toSet()
+        if (ids.isNotEmpty()) uses.removeIf { it.id in ids }
+    }
+
+    private fun blocks(event: Map<*, *>) = ((event["message"] as? Map<*, *>)?.get("content") as? List<*>).orEmpty().filterIsInstance<Map<*, *>>()
+
+    /** The name of Ants' own tool that claude's [name] calls, or null for one of claude's. */
+    private fun ours(name: String) = name.removePrefix(Mcp.CLAUDE_PREFIX).takeIf { it != name }
 
     private fun shown(event: Map<*, *>, opening: Pair<String, String>): String? {
         val (prompt, message) = opening
@@ -203,6 +289,9 @@ abstract class PageChat(protected val chats: PageChats) : McpTools {
 
         /** How long a resting claude has to end once its stdin is closed, before it is killed. */
         private val REST = Duration.ofSeconds(5)
+
+        /** How long a gated call waits for claude's line announcing it. */
+        private val USE_SEEN = Duration.ofSeconds(5)
 
         fun claudeOnly(title: String, name: String) = "The $title runs on claude only for now. Set $name's cli to claude in settings.yaml."
     }

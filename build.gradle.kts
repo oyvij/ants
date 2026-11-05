@@ -83,6 +83,20 @@ tasks.processResources {
         include("mermaid.esm.min.mjs", "chunks/mermaid.esm.min/*.mjs")
         into("static/vendor/mermaid")
     }
+    // Gridstack, the Dashboards' grid (MIT), with its licence notice.
+    from("node_modules/gridstack") {
+        include("LICENSE", "dist/gridstack-all.js", "dist/gridstack-all.js.LICENSE.txt", "dist/gridstack.min.css")
+        eachFile { path = "static/vendor/gridstack/" + name }
+        includeEmptyDirs = false
+    }
+    // Vega, Vega-Lite and Vega-Embed, which draw the Dashboards' charts (BSD-3-Clause), each with its licence notice.
+    for (vega in listOf("vega", "vega-lite", "vega-embed")) {
+        from("node_modules/$vega") {
+            include("LICENSE", "build/$vega.min.js")
+            eachFile { path = "static/vendor/vega/" + if (name == "LICENSE") "$vega.LICENSE" else name }
+            includeEmptyDirs = false
+        }
+    }
     // CodeMirror 6 as plain ES modules: each file the import map in codemirror.kte names, and only those, copied from
     // the one place pnpm put it: a direct dependency in node_modules, any other package in the hoisted .pnpm root.
     val importMap = file("src/main/jte/codemirror.kte")

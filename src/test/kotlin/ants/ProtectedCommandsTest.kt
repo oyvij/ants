@@ -123,7 +123,7 @@ class ProtectedCommandsTest : AntsTest() {
         val launch = claude.launches("draft").single()
 
         assertFalse("mcp__ants__run" in launch.flag("--allowedTools")!!.split(","))
-        assertEquals(emptyList(), listed(launch).map { it["name"] })
+        assertEquals(listOf("ListWidgets", "PostToWidget"), listed(launch).map { it["name"] }) // only the Widget tools every claude Agent gets
         claude.release("go")
     }
 
@@ -156,7 +156,7 @@ class ProtectedCommandsTest : AntsTest() {
         val denied = launch.flag("--disallowedTools")!!.split(",")
         assertEquals(emptyList(), denied.filter { it.startsWith("Bash(") })
         assertFalse("mcp__ants__run" in launch.flag("--allowedTools")!!.split(","))
-        assertEquals(emptyList(), listed(launch).map { it["name"] })
+        assertEquals(listOf("ListWidgets", "PostToWidget"), listed(launch).map { it["name"] }) // only the Widget tools every claude Agent gets
         claude.release("go")
     }
 

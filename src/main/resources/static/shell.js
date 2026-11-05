@@ -180,15 +180,82 @@ if (ask && navigator.setAppBadge && window.Notification?.permission === 'default
     ask.hidden = false;
     ask.querySelector('button').onclick = () => Notification.requestPermission().then(() => ask.hidden = true);
 }
-// The sidebar marks the page it is on, or the page a deeper one sits under.
+// The sidebar marks the page it is on, or the page a deeper one sits under: a Dashboard marks its own link.
 for (const link of document.querySelectorAll('nav.side > a')) {
     if (link.pathname === '/' ? location.pathname === '/' : location.pathname.startsWith(link.pathname)) link.classList.add('on');
+}
+for (const link of document.querySelectorAll('#dashboards-list a')) if (link.pathname === location.pathname) link.classList.add('on');
+
+// The menu's Dashboards toggle. Its cookie keeps it open or closed, so the server draws every page's menu that way.
+const dashboards = document.getElementById('dashboards-toggle');
+if (dashboards) dashboards.onclick = () => {
+    const open = dashboards.ariaExpanded !== 'true';
+    dashboards.ariaExpanded = String(open);
+    document.getElementById('dashboards-list').hidden = !open;
+    document.cookie = `dashboards-menu=${open ? 'open' : 'closed'}; path=/; max-age=31536000; samesite=lax`;
+};
+
+// Dragging a Dashboard up or down the menu reorders it, and the order is kept. A mouse drags once it moves a few
+// pixels; a finger holds still a moment first, so a swipe still scrolls the menu. A drag never opens the link.
+const dashboardsList = document.getElementById('dashboards-list');
+if (dashboardsList) {
+    let drag = null;
+    const links = () => [...dashboardsList.querySelectorAll(':scope > a')];
+    const start = () => {
+        drag.on = true;
+        drag.link.classList.add('dragging');
+        drag.link.setPointerCapture(drag.pointer);
+    };
+    const stop = () => {
+        clearTimeout(drag?.hold);
+        drag?.link.classList.remove('dragging');
+        drag = null;
+    };
+    dashboardsList.addEventListener('pointerdown', event => {
+        const link = event.target.closest('#dashboards-list > a');
+        if (!link || event.button !== 0) return;
+        drag = { link, pointer: event.pointerId, y: event.clientY, on: false, order: links().map(a => a.href).join() };
+        if (event.pointerType === 'touch') drag.hold = setTimeout(start, 300);
+    });
+    dashboardsList.addEventListener('pointermove', event => {
+        if (!drag || event.pointerId !== drag.pointer) return;
+        if (!drag.on) {
+            if (Math.abs(event.clientY - drag.y) < 5) return;
+            if (event.pointerType === 'touch') return stop();
+            start();
+        }
+        event.preventDefault();
+        const below = links().find(a => a !== drag.link && event.clientY < a.getBoundingClientRect().top + a.offsetHeight / 2);
+        dashboardsList.insertBefore(drag.link, below ?? dashboardsList.querySelector(':scope > form'));
+    });
+    // Once a finger's hold starts a drag, the menu stops scrolling under it.
+    dashboardsList.addEventListener('touchmove', event => { if (drag?.on) event.preventDefault(); }, { passive: false });
+    dashboardsList.addEventListener('pointercancel', stop);
+    dashboardsList.addEventListener('pointerup', event => {
+        if (!drag || event.pointerId !== drag.pointer) return;
+        const moved = drag.on && links().map(a => a.href).join() !== drag.order;
+        if (drag.on) {
+            const eat = click => click.preventDefault();
+            dashboardsList.addEventListener('click', eat, { once: true, capture: true });
+            dashboardsList.dataset.dragged = '';
+            setTimeout(() => {
+                dashboardsList.removeEventListener('click', eat, { capture: true });
+                delete dashboardsList.dataset.dragged;
+            });
+        }
+        stop();
+        if (!moved) return;
+        const csrf = dashboardsList.querySelector('input[name=_csrf]')?.value;
+        const order = links().map(a => a.pathname.split('/').pop()).join();
+        fetch('/dashboards/order', { method: 'POST', body: new URLSearchParams({ ...(csrf ? { _csrf: csrf } : {}), order }) });
+    });
+    dashboardsList.addEventListener('dragstart', event => event.target.closest?.('a') && event.preventDefault());
 }
 
 document.addEventListener('click', event => {
     if (!menu?.checked || event.target.closest('label[for=menu], #menu')) return;
     if (event.target.closest('nav.side')) {
-        if (event.target.closest('a')) menu.checked = false;
+        if (event.target.closest('a') && !('dragged' in (dashboardsList?.dataset ?? {}))) menu.checked = false;
         return;
     }
     event.preventDefault();

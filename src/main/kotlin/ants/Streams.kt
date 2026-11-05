@@ -93,7 +93,7 @@ class Streams(private val templates: TemplateEngine) {
  * latest the page has shown), on every page, and an event
  * for each part of the page the query names: `home`; `ready=home` or `ready=list`, the Processes' Ready marks on Home or the Processes list; `runlist`, the Runs list; `notifications`, the Notification list;
  * `run=<id>`, with `drawer=<task>` while its Task drawer is open, and `tasks=<id>`, the Run page's Tasks table;
- * `transcript=<run>/<task>&from=<byte>`, with `taskhead`, its Task page header; `ticket=<run>/<name>`; `builder=<token>`, the calls relayed to a page and its chat's dialog (PageChats).
+ * `transcript=<run>/<task>&from=<byte>`, with `taskhead`, its Task page header; `ticket=<run>/<name>`; `builder=<token>`, the calls relayed to a page and its chat's dialog (PageChats); `dashboard=<id>`, a Dashboard's Widgets.
  */
 @Controller
 class Live(
@@ -107,6 +107,7 @@ class Live(
     private val transcripts: Transcripts,
     private val tickets: Tickets,
     private val chats: PageChats,
+    private val dashboards: DashboardsPage,
 ) {
     @GetMapping("/live", produces = [TEXT_EVENT_STREAM_VALUE])
     @ResponseBody
@@ -129,6 +130,7 @@ class Live(
             query["ticket"]?.let(::inRun)?.let { (run, name) -> tickets.live(run, name) },
             query["builder"]?.let(chats::relay),
             query["builder"]?.let(chats::dialog),
+            query["dashboard"]?.let(dashboards::live),
         ),
     )
 

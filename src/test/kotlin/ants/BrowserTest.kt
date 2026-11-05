@@ -5,6 +5,7 @@ import com.google.gson.JsonObject
 import com.microsoft.playwright.Browser.NewContextOptions
 import com.microsoft.playwright.BrowserType
 import com.microsoft.playwright.Locator
+import com.microsoft.playwright.Mouse
 import com.microsoft.playwright.options.AriaRole
 import com.microsoft.playwright.options.ColorScheme
 import com.microsoft.playwright.options.FilePayload
@@ -54,6 +55,12 @@ class BrowserTest : AntsTest() {
 
     @Autowired
     private lateinit var processes: Processes
+
+    @Autowired
+    private lateinit var dashboards: Dashboards
+
+    @Autowired
+    private lateinit var scripts: Scripts
 
     @BeforeEach
     fun launch(info: TestInfo) {
@@ -2000,6 +2007,294 @@ class BrowserTest : AntsTest() {
         page.setViewportSize(768, 900)
         assertThat(topBar).isVisible()
         assertThat(sidebar).isHidden()
+    }
+
+    private val dashboardsToggle get() = sidebar.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Dashboards"))
+    private val dashboardsList get() = page.locator("#dashboards-list")
+
+    @Test
+    fun `the Dashboards toggle sits right below Home, closed at first, and every page the server draws keeps it as it was left`() = browse {
+        page.navigate(url("/runs"))
+        assertEquals("Home", sidebar.locator("xpath=./*[self::a or self::button]").nth(0).textContent()!!.trim())
+        assertThat(sidebar.locator("xpath=./*[self::a or self::button]").nth(1)).hasId("dashboards-toggle")
+        assertThat(dashboardsToggle).hasAttribute("aria-expanded", "false")
+        assertThat(dashboardsList).isHidden()
+
+        dashboardsToggle.click()
+        assertThat(dashboardsList).isVisible()
+        assertThat(dashboardsList.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("+ Add Dashboard"))).isVisible()
+        page.navigate(url("/processes"))
+        assertThat(dashboardsToggle).hasAttribute("aria-expanded", "true")
+        assertThat(dashboardsList).isVisible()
+        val plain = page.context().browser()!!.newContext(NewContextOptions().setJavaScriptEnabled(false)).apply { addCookies(page.context().cookies()) }.newPage()
+        plain.navigate(url("/tickets"))
+        assertThat(plain.locator("#dashboards-list")).isVisible() // drawn open by the server, before any script runs
+        plain.close()
+
+        dashboardsToggle.click()
+        assertThat(dashboardsList).isHidden()
+        page.navigate(url("/runs"))
+        assertThat(dashboardsList).isHidden()
+    }
+
+    @Test
+    fun `Add Dashboard opens an Untitled dashboard with its title selected, which saves as typed and names it in the menu`() = browse {
+        page.navigate(url("/"))
+        dashboardsToggle.click()
+        dashboardsList.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("+ Add Dashboard")).click()
+        page.waitForURL(Pattern.compile(".*/dashboards/d-[a-z0-9]{6}$"))
+        val title = page.locator("h1#title")
+        assertThat(title).hasText("Untitled dashboard")
+        assertThat(title).isFocused()
+        assertThat(page.locator("#no-widgets")).containsText("No Widgets yet")
+
+        page.keyboard().type("Disk use")
+        assertThat(title).hasText("Disk use")
+        val link = dashboardsList.locator("a[href='${page.url().substringAfter(port.toString())}']")
+        assertThat(link).hasText("Disk use")
+        assertThat(link).hasClass(Pattern.compile("\\bon\\b"))
+        page.reload()
+        assertThat(title).hasText("Disk use")
+
+        title.click()
+        page.keyboard().press("ControlOrMeta+A")
+        page.keyboard().press("Backspace")
+        page.keyboard().press("Enter")
+        assertThat(title).hasText("Untitled dashboard")
+        assertThat(link).hasText("Untitled dashboard")
+        page.reload()
+        assertThat(title).hasText("Untitled dashboard")
+    }
+
+    @Test
+    fun `dragging a Dashboard up or down the menu reorders it without opening it, and the order is kept`() = browse {
+        val (first, second, third) = listOf("Morning", "Home lab", "Disk").map { dashboards.rename(dashboards.create().id, it).id }
+        fun order() = dashboardsList.locator(":scope > a").evaluateAll("links => links.map(a => a.pathname.split('/').pop())")
+            .let { (it as List<*>).filter { id -> id in listOf(first, second, third) } }
+        page.navigate(url("/runs"))
+        if (dashboardsList.isHidden) dashboardsToggle.click()
+        assertEquals(listOf(first, second, third), order())
+
+        /** Drags the Dashboard [id] by mouse to the top edge of [onto], or to its bottom edge when [below], and waits for the order to be kept. */
+        fun drag(id: String, onto: String, below: Boolean = false) = page.waitForResponse("**/dashboards/order") {
+            dashboardsList.locator("a[href='/dashboards/$onto']").scrollIntoViewIfNeeded()
+            val from = dashboardsList.locator("a[href='/dashboards/$id']").boundingBox()!!
+            val to = dashboardsList.locator("a[href='/dashboards/$onto']").boundingBox()!!
+            page.mouse().move(from.x + 20, from.y + from.height / 2)
+            page.mouse().down()
+            page.mouse().move(from.x + 20, if (below) to.y + to.height - 2 else to.y + 2, Mouse.MoveOptions().setSteps(8))
+            page.mouse().up()
+        }.let { assertEquals(200, it.status()) }
+
+        drag(third, onto = first)
+        assertEquals(listOf(third, first, second), order())
+        assertEquals(url("/runs"), page.url())
+        page.reload()
+        assertEquals(listOf(third, first, second), order())
+
+        drag(third, onto = second, below = true)
+        assertEquals(listOf(first, second, third), order())
+        page.navigate(url("/processes"))
+        assertEquals(listOf(first, second, third), order())
+    }
+
+    /** A new Dashboard's page, its title left; its id. */
+    private fun newDashboard(): String {
+        page.navigate(url("/"))
+        if (dashboardsList.isHidden) dashboardsToggle.click()
+        dashboardsList.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("+ Add Dashboard")).click()
+        page.waitForURL(Pattern.compile(".*/dashboards/d-[a-z0-9]{6}$"))
+        page.keyboard().press("Enter")
+        return page.url().substringAfterLast('/')
+    }
+
+    /** **+ Widget**, number: the new Widget's grid item. */
+    private fun addNumberWidget(): Locator {
+        page.locator("#add").click()
+        val number = page.getByRole(AriaRole.MENUITEM, Page.GetByRoleOptions().setName(Pattern.compile("^number")))
+        assertThat(number).containsText("One number, with its change since the last Post")
+        number.click()
+        return page.locator(".grid-stack-item").last()
+    }
+
+    @Test
+    fun `a Dashboard opens in view mode, + Widget adds a number in edit mode with its title selected, and Edit layout, Done and Escape switch modes`() = browse {
+        newDashboard()
+        val edit = page.locator("#edit")
+        val grid = page.locator("#grid")
+        val static = Pattern.compile("\\bgrid-stack-static\\b")
+        assertThat(edit).hasText("Edit layout")
+        assertThat(grid).hasClass(static)
+
+        val widget = addNumberWidget()
+        val title = widget.locator(".t")
+        assertThat(title).isFocused()
+        assertThat(edit).hasText("Done")
+        assertThat(page.locator("main.dashboard")).hasClass(Pattern.compile("\\bediting\\b"))
+        assertThat(grid).not().hasClass(static)
+        assertThat(page.locator("#no-widgets")).isHidden()
+        val id = widget.getAttribute("gs-id")!!
+        assertThat(widget.locator(".w-head code")).hasText("number · $id")
+        assertThat(widget.locator(".w-body")).containsText("Waiting for its first Post")
+        page.keyboard().type("Free disk")
+        page.keyboard().press("Enter")
+
+        page.keyboard().press("Escape")
+        assertThat(edit).hasText("Edit layout")
+        assertThat(grid).hasClass(static)
+        assertThat(widget.locator(".x")).isHidden()
+        widget.locator(".w-body code").dblclick()
+        assertTrue(page.evaluate("getSelection().toString()").toString().isNotEmpty()) // view mode: text selects
+
+        page.reload()
+        assertThat(page.locator(".grid-stack-item .t")).hasText("Free disk")
+        edit.click()
+        assertThat(edit).hasText("Done")
+        page.onceDialog { it.accept() }
+        page.locator(".grid-stack-item .x").click()
+        assertThat(page.locator(".grid-stack-item")).hasCount(0)
+        page.reload()
+        assertThat(page.locator(".grid-stack-item")).hasCount(0)
+        assertThat(page.locator("#no-widgets")).isVisible()
+    }
+
+    @Test
+    fun `a Post arrives live on its open Dashboard with a brief highlight, and the Posting panel lists the Widget's address and data`() = browse {
+        val dashboard = newDashboard()
+        val widget = addNumberWidget()
+        val id = widget.getAttribute("gs-id")!!
+        page.keyboard().press("Escape")
+
+        page.locator("#posting-toggle").click()
+        assertThat(page.locator("#posting")).isVisible()
+        assertThat(page.locator("#posting")).containsText("$dashboard/$id · number")
+        assertThat(page.locator("#posting")).containsText("{value: number, unit?: string, delta?: number}")
+        assertThat(page.locator("#posting")).containsText("ants.post")
+
+        dashboards.post(WidgetAddress.of("$dashboard/$id"), mapOf("value" to 42, "unit" to "GB"), "r-browser", "measure")
+        assertThat(widget.locator(".num")).hasText("42GB")
+        assertThat(widget.locator(".w-body")).hasClass(Pattern.compile("\\bflash\\b"))
+        assertThat(widget.locator(".from a")).hasAttribute("href", "/runs/r-browser")
+    }
+
+    @Test
+    fun `removing a Widget a Script lists asks first, naming the Script that would break`() = browse {
+        val dashboard = newDashboard()
+        val id = addNumberWidget().getAttribute("gs-id")!!
+        page.keyboard().press("Escape")
+        val script = Script(scripts.newId(), "measure-disk", "Measures the disk.", widgets = listOf("$dashboard/$id"))
+        scripts.save(script, "console.log('hi')\n", null)
+        try {
+            page.reload()
+            val widget = page.locator(".grid-stack-item")
+            page.locator("#edit").click()
+            assertThat(widget.locator(".w-tools .usedby a")).hasText("measure-disk")
+
+            var asked = ""
+            page.onceDialog { asked = it.message(); it.dismiss() }
+            widget.locator(".x").click()
+            assertTrue("The Script measure-disk Posts to it and will break." in asked, asked)
+            assertThat(widget).hasCount(1)
+        } finally {
+            scripts.delete(script.id)
+        }
+    }
+
+    @Test
+    fun `each simple Widget type is added from + Widget and draws its Posts, a log shows its newest line, and Clear data empties a Widget`() = browse {
+        val dashboard = newDashboard()
+        val lines = mapOf(
+            "progress" to "Done out of total", "status" to "Named items that are ok, warn, fail or running", "list" to "Titles with links and notes",
+            "text" to "A paragraph, such as an agent's summary", "log" to "Lines added one at a time, kept for a number of days",
+        )
+        val ids = lines.mapValues { (type, line) ->
+            page.locator("#add").click()
+            val choice = page.getByRole(AriaRole.MENUITEM, Page.GetByRoleOptions().setName(Pattern.compile("^$type")))
+            assertThat(choice).containsText(line)
+            choice.click()
+            val item = page.locator(".grid-stack-item").last()
+            assertThat(item.locator(".w-head code")).containsText("$type · ")
+            page.keyboard().press("Enter")
+            item.getAttribute("gs-id")!!
+        }
+        page.keyboard().press("Escape")
+        fun widget(type: String) = page.locator(".grid-stack-item[gs-id=\"${ids[type]}\"]")
+        fun post(type: String, data: Map<String, Any>) = dashboards.post(WidgetAddress.of("$dashboard/${ids[type]}"), data, "r-browser", "measure")
+
+        post("progress", mapOf("done" to 3, "total" to 4))
+        post("status", mapOf("items" to listOf(mapOf("name" to "nas", "state" to "ok"), mapOf("name" to "router", "state" to "fail"))))
+        post("list", mapOf("items" to listOf(mapOf("title" to "Ants news", "url" to "https://example.com/news", "note" to "today"))))
+        post("text", mapOf("text" to "First line\nSecond line"))
+        repeat(40) { post("log", mapOf("line" to "line $it", "level" to if (it == 39) "error" else "info")) }
+
+        assertThat(widget("progress").locator(".bar div")).hasAttribute("style", "width:75%")
+        assertThat(widget("status").locator(".dot.fail")).isVisible()
+        assertThat(widget("status").locator(".st")).hasCount(2)
+        val link = widget("list").locator(".li a")
+        assertThat(link).hasText("Ants news")
+        assertThat(link).hasAttribute("target", "_blank")
+        assertThat(widget("list").locator(".li")).containsText("today")
+        val text = widget("text").locator(".text")
+        assertThat(text).hasText("First line\nSecond line")
+        assertTrue(text.evaluate("e => e.getBoundingClientRect().height").toString().toDouble() > 25.0) // two lines, not one
+        assertThat(widget("log").locator(".log .error")).containsText("line 39")
+        val log = widget("log").locator(".w-body")
+        page.waitForCondition { log.evaluate("b => b.scrollHeight > b.clientHeight && b.scrollTop + b.clientHeight >= b.scrollHeight - 2") as Boolean }
+        assertEquals(0, (widget("text").locator(".w-body").evaluate("b => b.scrollTop") as Number).toInt())
+
+        assertThat(widget("log").locator(".clear")).isHidden()
+        page.locator("#edit").click()
+        assertThat(widget("log").locator(".keep")).hasValue("90")
+        page.onceDialog { it.accept() }
+        widget("log").locator(".clear").click()
+        assertThat(widget("log").locator(".w-body")).containsText("Waiting for its first Post")
+        page.reload()
+        assertThat(widget("log").locator(".w-body")).containsText("Waiting for its first Post")
+        assertThat(widget("log").locator(".t")).hasText("New log")
+    }
+
+    @Test
+    fun `each chart kind and a custom chart are added from + Widget's Charts and draw with tooltips, and switching a kind redraws the same points`() = browse {
+        val dashboard = newDashboard()
+        val kinds = listOf("Line", "Area", "Bar", "Stacked bar", "Scatter", "Pie", "Donut", "Custom chart")
+        val ids = kinds.associateWith { kind ->
+            page.locator("#add").click()
+            assertThat(page.locator("#add-menu .h")).hasText("Charts · all take points {x, y, series?}")
+            page.getByRole(AriaRole.MENUITEM, Page.GetByRoleOptions().setName(Pattern.compile("^$kind"))).click()
+            val item = page.locator(".grid-stack-item").last()
+            assertThat(item.locator(".t")).hasText(if (kind == "Custom chart") "New custom chart" else "New ${kind.lowercase()} chart")
+            page.keyboard().press("Enter")
+            item.getAttribute("gs-id")!!
+        }
+        page.keyboard().press("Escape")
+        val points = listOf("2026-10-30", "2026-10-31", "2026-11-01").flatMapIndexed { i, day ->
+            listOf(mapOf("x" to day, "y" to i + 1, "series" to "opened"), mapOf("x" to day, "y" to 3 - i, "series" to "closed"))
+        }
+        for (kind in kinds - "Custom chart") dashboards.post(WidgetAddress.of("$dashboard/${ids[kind]}"), mapOf("points" to points), "r-browser", "measure")
+        dashboards.post(
+            WidgetAddress.of("$dashboard/${ids["Custom chart"]}"),
+            mapOf("spec" to mapOf("data" to mapOf("values" to listOf(mapOf("day" to "Mon", "hour" to 9, "commits" to 4))), "mark" to "rect",
+                "encoding" to mapOf("x" to mapOf("field" to "hour", "type" to "ordinal"), "y" to mapOf("field" to "day", "type" to "ordinal"), "color" to mapOf("field" to "commits", "type" to "quantitative")))),
+            "r-browser", "measure",
+        )
+        fun chart(kind: String) = page.locator(".grid-stack-item[gs-id=\"${ids[kind]}\"] .chart")
+        val marks = mapOf("Line" to "line", "Area" to "area", "Bar" to "rect", "Stacked bar" to "rect", "Scatter" to "symbol", "Pie" to "arc", "Donut" to "arc", "Custom chart" to "rect")
+        for ((kind, mark) in marks) assertThat(chart(kind).locator("svg .mark-$mark path").first()).isAttached()
+        val donut = chart("Donut").locator("svg").first()
+        assertTrue((donut.evaluate("s => s.getBoundingClientRect().width") as Number).toDouble() <= (chart("Donut").evaluate("c => c.clientWidth") as Number).toDouble() + 1)
+
+        chart("Bar").locator("svg .mark-rect path").first().hover()
+        assertThat(page.locator("#vg-tooltip-element")).isVisible()
+        assertThat(page.locator("#vg-tooltip-element")).containsText("opened")
+
+        val line = page.locator(".grid-stack-item[gs-id=\"${ids["Line"]}\"]")
+        assertThat(line.locator(".kind")).isHidden()
+        page.locator("#edit").click()
+        line.locator(".kind").selectOption("pie")
+        assertThat(chart("Line").locator("svg .mark-arc path").first()).isAttached()
+        page.reload()
+        assertThat(chart("Line")).hasAttribute("data-kind", "pie")
+        assertThat(chart("Line").locator("svg .mark-arc path").first()).isAttached()
     }
 
     private val tapTargets = "button, .btn, .topbar a, .topbar label, nav.side a, .tabs a, .fold > summary, .spine a, .walk nav a, .crumbs a, :is(.chipsel, .tags) .c, [role=tab]"

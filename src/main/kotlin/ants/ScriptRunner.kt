@@ -24,7 +24,7 @@ data class ScriptRun(val exitCode: Int, val output: String, val payload: Any?, v
 private fun listed(problems: List<String>) = problems.joinToString("") { "- $it\n" }
 
 @Component
-class ScriptRunner(private val settings: Settings) {
+class ScriptRunner(private val settings: Settings, private val posts: Posts) {
     internal var timeLimit: Duration = Duration.ofMinutes(10)
 
     private val json = JsonMapper.shared()
@@ -33,20 +33,23 @@ class ScriptRunner(private val settings: Settings) {
      * Runs [code], the [script]'s, with Node, the global `ants` defined before it: `ants.inputs` is [given],
      * `ants.output(value)` sets the payload. The environment holds the Script's vars and [secrets], its Secrets' values.
      * Inputs that break the input schema are refused before Node starts; once Node exits 0, the payload is checked
-     * against the output schema, if the Script has one.
+     * against the output schema, if the Script has one. `await ants.post(address, data)` Posts to a Widget the Script
+     * lists as the [sender], throwing when Ants refuses it; for a sender [Sender.trying] it, a test run, it only checks
+     * each Post and prints `would Post …`.
      */
     @OptIn(kotlin.io.path.ExperimentalPathApi::class)
-    fun run(script: Script, secrets: Map<String, String>, code: Path, workspace: Path, runId: String, given: Map<*, *>): ScriptRun {
+    fun run(script: Script, secrets: Map<String, String>, code: Path, workspace: Path, runId: String, given: Map<*, *>, sender: Sender): ScriptRun {
         val inputs = given.entries.associate { (key, value) -> "$key" to value }
         val broken = ScriptSchema.errors(inputs, script.inputs)
         if (broken.isNotEmpty()) return ScriptRun(-1, "The inputs break the Script's input schema, so it didn't run:\n" + listed(broken), null)
         val scratch = Files.createTempDirectory("ants-script")
+        val posting = posts.open(sender)
         try {
             val payload = scratch.resolve("payload.json")
             val refused = scratch.resolve("refused.txt")
             scratch.resolve("inputs.json").writeBytes(json.writeValueAsBytes(inputs))
             val module = scratch.resolve("ants.mjs")
-            module.writeText(antsModule(scratch.resolve("inputs.json"), payload, refused))
+            module.writeText(antsModule(scratch.resolve("inputs.json"), payload, refused, posting, sender.trying))
             val masked = secrets.values + settings.secretValues().values
             val ants = mapOf("ANTS_RUN_WORKSPACE" to workspace.toString(), "ANTS_RUN_ID" to runId)
             val process = try {
@@ -68,19 +71,27 @@ class ScriptRunner(private val settings: Settings) {
             val mismatches = if (script.output == null || process.exitValue() != 0) emptyList() else ScriptSchema.errors(value, script.output)
             return ScriptRun(process.exitValue(), printed, value, mismatches)
         } finally {
+            posts.close(posting.first)
             scratch.deleteRecursively()
         }
     }
 
     /** The module Node loads before the Script. It serialises the payload when the process ends, so the last `ants.output` wins. */
-    private fun antsModule(inputs: Path, payload: Path, refused: Path): String {
+    private fun antsModule(inputs: Path, payload: Path, refused: Path, posting: Pair<String, String>, trying: Boolean): String {
         fun literal(path: Path) = json.writeValueAsString(path.toString())
+        val post = """
+            |const response = await fetch(${json.writeValueAsString(posting.second)}, {method: 'POST', body: JSON.stringify({address, data}),
+            |    headers: {authorization: ${json.writeValueAsString("Bearer " + posting.first)}, 'content-type': 'application/json'}})
+            |  if (!response.ok) throw new Error((await response.json()).error)""".trimMargin() + if (trying) "\n    console.log(`would Post \${JSON.stringify(data)} to \${address}`)" else ""
         return """
             |import {readFileSync, writeFileSync} from 'node:fs'
             |let payload, set = false
             |globalThis.ants = Object.freeze({
             |  inputs: JSON.parse(readFileSync(${literal(inputs)}, 'utf8')),
             |  output(value) { payload = value; set = true },
+            |  async post(address, data) {
+            |    $post
+            |  },
             |})
             |process.on('exit', () => {
             |  if (!set) return
