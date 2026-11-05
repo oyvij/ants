@@ -23,6 +23,7 @@ import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.server.ResponseStatusException
 import tools.jackson.databind.json.JsonMapper
 import java.nio.file.Path
+import java.time.Clock
 import java.time.Duration
 import java.time.Instant
 import java.util.Date
@@ -83,10 +84,19 @@ class Notifications(
     private val catalogue: Catalogue,
     private val agents: Agents,
     private val notices: Notices,
+    private val clock: Clock,
     @Value("\${ants.home}") private val home: Path,
 ) {
     /** Everything waiting on the user, oldest first. */
-    fun entries(): List<Entry> = (tasks() + failedStarts() + tickets.waiting() + notices.all().map(::NoticeEntry)).sortedBy { it.since }
+    fun entries(): List<Entry> = (tasks() + failedStarts() + tickets.waiting() + noticeEntries()).sortedBy { it.since }
+
+    /** The open Notices, each knowing whether its Run is gone from the engine. */
+    private fun noticeEntries(): List<NoticeEntry> {
+        val all = notices.all()
+        if (all.isEmpty()) return emptyList()
+        val kept = history.createHistoricProcessInstanceQuery().processInstanceIds(all.map { it.run }.toSet()).list().map { it.id }.toSet()
+        return all.map { NoticeEntry(it, gone = it.run !in kept, clock) }
+    }
 
     /** The Tasks waiting on the user, oldest first. */
     fun tasks(): List<TaskEntry> = (rootCauses().map(::entry) + userTasks.createTaskQuery().active().list().map(::entry)).sortedBy { it.since }
@@ -108,8 +118,8 @@ class Notifications(
     @GetMapping("/notifications/{id}")
     fun entry(@PathVariable id: String, model: Model, response: HttpServletResponse, @RequestParam(required = false) tab: String? = null): String {
         tickets.waiting().firstOrNull { it.id == id }?.let { return "redirect:${it.href}" }
-        notices.all().firstOrNull { it.id == id }?.let {
-            model.addAttribute("entry", NoticeEntry(it))
+        noticeEntries().firstOrNull { it.id == id }?.let {
+            model.addAttribute("entry", it)
             return "notice"
         }
         val failed = failedStarts().firstOrNull { it.id == id }

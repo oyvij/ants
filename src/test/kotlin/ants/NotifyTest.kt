@@ -20,13 +20,22 @@ class NotifyTest : AntsTest() {
     /** Starts a Run of `notify.bpmn`, its line reading [line], named [name] with [pipeline], and waits for its Notice. */
     private fun run(pipeline: String, name: String = "Nightly watch", line: String? = null, browser: Browser = this.browser): String {
         val before = notices(browser).size
-        if (line == null) browser.import("notify.bpmn")
-        else browser.upload("/processes", "file", "notify.bpmn", javaClass.getResource("/notify.bpmn")!!.readText().replace("Pipeline \${pipeline} failed on main", line).toByteArray())
-        browser.get("/processes/watch")
-        val run = browser.post("/processes/watch/runs", mapOf("pipeline" to pipeline, NAME to name)).path.removePrefix("/runs/")
+        val run = start(pipeline, name, line, browser)
         eventually { assertEquals(before + 1, notices(browser).size) }
         return run
     }
+
+    /** Starts a Run of `notify.bpmn`, its line reading [line], named [name] with [pipeline]. */
+    private fun start(pipeline: String, name: String = "Nightly watch", line: String? = null, browser: Browser = this.browser): String {
+        if (line == null) browser.import("notify.bpmn")
+        else browser.upload("/processes", "file", "notify.bpmn", javaClass.getResource("/notify.bpmn")!!.readText().replace("Pipeline \${pipeline} failed on main", line).toByteArray())
+        browser.get("/processes/watch")
+        return browser.post("/processes/watch/runs", mapOf("pipeline" to pipeline, NAME to name)).path.removePrefix("/runs/")
+    }
+
+    /** Waits for [run] to end. */
+    private fun ended(run: String) =
+        eventually { assertEquals(HistoricProcessInstance.STATE_COMPLETED, history.createHistoricProcessInstanceQuery().processInstanceId(run).singleResult()?.state) }
 
     /** The Notice rows on the Notification list. */
     private fun notices(browser: Browser = this.browser) = Regex("""<tr[^>]*>((?:(?!</tr>).)*?\[notice](?:(?!</tr>).)*)</tr>""", RegexOption.DOT_MATCHES_ALL)
@@ -98,5 +107,42 @@ class NotifyTest : AntsTest() {
             browser.post("${entry(browser)}/dismiss", mapOf())
             assertFalse("[notice]" in browser.get("/notifications").body)
         }
+    }
+
+    @Test
+    fun `a Notice with the same Process and line as an open one counts up on it, showing its count and last time`() {
+        settings(null)
+        run("api-build")
+        val entry = entry()
+        assertFalse("×" in notices().single())
+        ended(start("api-build", name = "Later watch"))
+        ended(start("api-build", name = "Last watch"))
+        eventually { assertContains(notices().single(), Regex("""×3, last at \d\d:\d\d""")) }
+        assertEquals(entry, entry())
+        assertContains(browser.get(entry).body, Regex("""×3, last at \d\d:\d\d"""))
+
+        run("web-build")
+        assertEquals(2, notices().size)
+        browser.post("$entry/dismiss", mapOf())
+        browser.post("${entry()}/dismiss", mapOf())
+        run("api-build")
+        assertFalse("×" in notices().single())
+    }
+
+    @Test
+    fun `a Notice whose Run was deleted still shows, and leads to a note that the Run is gone`() {
+        settings(null)
+        val run = run("api-build")
+        ended(run)
+        history.deleteHistoricProcessInstance(run)
+        val notice = notices().single()
+        assertContains(notice, "Pipeline api-build failed on main")
+        assertContains(notice, "Nightly watch")
+        assertFalse("/runs/$run" in notice)
+        val page = browser.get(entry()).body
+        assertContains(page, "Pipeline api-build failed on main")
+        assertContains(page, "The Run Nightly watch is gone.")
+        assertFalse("/runs/$run" in page)
+        assertFalse("Open the Run" in page)
     }
 }
