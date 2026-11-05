@@ -300,10 +300,11 @@ class ScriptTaskTest : AntsTest() {
         val dashboard = browser.post("/dashboards", mapOf()).path.removePrefix("/dashboards/")
         val disk = answer(browser.post("/dashboards/$dashboard/widgets", mapOf("type" to "number")))["id"]
         val unlisted = answer(browser.post("/dashboards/$dashboard/widgets", mapOf("type" to "number")))["id"]
+        val gone = answer(browser.post("/dashboards/$dashboard/widgets", mapOf("type" to "number")))["id"]
         browser.post("/dashboards/$dashboard/widgets/$disk/title", mapOf("title" to "Free disk"))
         saveScript(
-            "measure-disk", vars = "DISK=$dashboard/$disk\nOTHER=$dashboard/$unlisted\nGONE=$dashboard/w-gone00",
-            widgets = "$dashboard/$disk\n$dashboard/w-gone00",
+            "measure-disk", vars = "DISK=$dashboard/$disk\nOTHER=$dashboard/$unlisted\nGONE=$dashboard/$gone",
+            widgets = "$dashboard/$disk\n$dashboard/$gone",
             code = """
                 const e = process.env, refused = []
                 for (const [address, data] of [[e.DISK, {value: 'lots'}], [e.DISK, 7], [e.OTHER, {value: 1}], [e.GONE, {value: 1}]]) {
@@ -313,6 +314,7 @@ class ScriptTaskTest : AntsTest() {
                 ants.output({refused})
             """.trimIndent(),
         )
+        browser.post("/dashboards/$dashboard/widgets/$gone/delete", mapOf()) // after Publish, whose Check would refuse it
         deploy("measuring", scriptTask("measure", "measure-disk"))
         val live = browser.events("dashboard=$dashboard", "widgets")
         assertContains(live.poll(10, java.util.concurrent.TimeUnit.SECONDS).orEmpty(), "Waiting for its first Post")
@@ -328,7 +330,7 @@ class ScriptTaskTest : AntsTest() {
             ),
             refused.take(3),
         )
-        assertContains(refused[3].toString(), "No Widget $dashboard/w-gone00")
+        assertContains(refused[3].toString(), "No Widget $dashboard/$gone")
 
         val shown = live.poll(10, java.util.concurrent.TimeUnit.SECONDS).orEmpty()
         assertContains(shown, "42.5")

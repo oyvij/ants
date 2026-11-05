@@ -266,7 +266,7 @@ class ScriptsPage(
         try {
             val code = scratch.resolve("script.mjs").apply { writeText(form.code) }
             val workspace = scratch.resolve("workspace").createDirectories()
-            return result(runner.run(script, scripts.secretEnvironment(script, own), code, workspace, TEST_RUN, inputs))
+            return result(runner.run(script, scripts.secretEnvironment(script, own), code, workspace, TEST_RUN, inputs, Sender(script, TEST_RUN, TEST_RUN, trying = true)))
         } finally {
             scratch.toFile().deleteRecursively()
         }

@@ -59,6 +59,9 @@ class BrowserTest : AntsTest() {
     @Autowired
     private lateinit var dashboards: Dashboards
 
+    @Autowired
+    private lateinit var scripts: Scripts
+
     @BeforeEach
     fun launch(info: TestInfo) {
         test = info.testMethod.get().name
@@ -2174,6 +2177,29 @@ class BrowserTest : AntsTest() {
         assertThat(widget.locator(".num")).hasText("42GB")
         assertThat(widget.locator(".w-body")).hasClass(Pattern.compile("\\bflash\\b"))
         assertThat(widget.locator(".from a")).hasAttribute("href", "/runs/r-browser")
+    }
+
+    @Test
+    fun `removing a Widget a Script lists asks first, naming the Script that would break`() = browse {
+        val dashboard = newDashboard()
+        val id = addNumberWidget().getAttribute("gs-id")!!
+        page.keyboard().press("Escape")
+        val script = Script(scripts.newId(), "measure-disk", "Measures the disk.", widgets = listOf("$dashboard/$id"))
+        scripts.save(script, "console.log('hi')\n", null)
+        try {
+            page.reload()
+            val widget = page.locator(".grid-stack-item")
+            page.locator("#edit").click()
+            assertThat(widget.locator(".w-tools .usedby a")).hasText("measure-disk")
+
+            var asked = ""
+            page.onceDialog { asked = it.message(); it.dismiss() }
+            widget.locator(".x").click()
+            assertTrue("The Script measure-disk Posts to it and will break." in asked, asked)
+            assertThat(widget).hasCount(1)
+        } finally {
+            scripts.delete(script.id)
+        }
     }
 
     @Test

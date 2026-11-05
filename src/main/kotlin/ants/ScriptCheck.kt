@@ -31,18 +31,22 @@ data class Finding(val severity: Severity, val message: String, val line: Int? =
  * code it can't read literally, such as `ants.inputs` passed on, gives no finding.
  */
 @Component
-class ScriptCheck(private val settings: Settings) {
-    /** The findings for the Script page's form, unsaved, as [params] posts it: `code` and the rows under `inputs` and `output`. */
+class ScriptCheck(private val settings: Settings, private val dashboards: Dashboards) {
+    /** The findings for the Script page's form, unsaved, as [params] posts it: `code`, the rows under `inputs` and `output`, and its `widgets`. */
     fun findings(params: Map<String, List<String>>): List<Finding> {
         val inputs = ScriptSchema.posted(params, "inputs")
         val output = ScriptSchema.posted(params, "output")
-        val schema = rowFindings(inputs, "input", "Input row") + rowFindings(output, "payload field", "Payload row")
+        val schema = rowFindings(inputs, "input", "Input row") + rowFindings(output, "payload field", "Payload row") + widgetFindings(ScriptForm.of(params).widgetList)
         val code = params["code"]?.firstOrNull().orEmpty()
         val syntax = syntax(code)
         // Only a syntax error hides the code's findings; Node missing is a warning, and the code reads literally anyway.
         if (syntax?.error == true) return listOf(syntax) + schema
         return listOfNotNull(syntax) + codeFindings(code, inputs.filter { it.name.isNotEmpty() }, output.filter { it.name.isNotEmpty() }) + schema
     }
+
+    /** A Widget [listed] under Widgets that is no Widget, since it or its Dashboard was deleted, so Publish refuses it before a Run's `ants.post` would. */
+    private fun widgetFindings(listed: List<String>) = listed.filter { address -> dashboards.find(address.substringBefore('/'))?.widget(address.substringAfter('/', "")) == null }
+        .map { Finding(Finding.Severity.ERROR, "Widgets lists $it, which is no Widget: it or its Dashboard was deleted, or the address is wrong.") }
 
     /** A missing or repeated name, or an object with no fields, among [rows], each a [kind] at the top level. */
     private fun rowFindings(rows: List<PostedRow>, kind: String, top: String, parent: String? = null): List<Finding> {

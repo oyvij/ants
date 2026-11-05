@@ -73,7 +73,7 @@ grid.on('change', (event, items) => {
     send(`/dashboards/${id}/layout`, { layout: JSON.stringify(items.map(({ id, x, y, w, h }) => ({ id, x, y, w, h }))) });
 });
 
-// A Widget's title is renamed in place in edit mode, saved as typed; ✕ removes the Widget once the user confirms.
+// A Widget's title is renamed in place in edit mode, saved as typed; ✕ removes the Widget once the user confirms, told which Scripts it breaks.
 function wire(item) {
     const widget = item.getAttribute('gs-id'), t = item.querySelector('.t');
     let wait = null;
@@ -82,7 +82,8 @@ function wire(item) {
     t.addEventListener('blur', () => wait && keep());
     t.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); t.blur(); } });
     item.querySelector('.x').addEventListener('click', async () => {
-        if (!confirm(`Remove the Widget “${t.textContent}”? Its Posts go with it.`)) return;
+        const users = item.querySelector('.widget').dataset.usedBy;
+        if (!confirm(`Remove the Widget “${t.textContent}”? Its Posts go with it.` + (users ? ` ${users.includes(',') ? 'The Scripts' : 'The Script'} ${users} Post${users.includes(',') ? '' : 's'} to it and will break.` : ''))) return;
         await send(`/dashboards/${id}/widgets/${widget}/delete`, {});
         grid.removeWidget(item);
         addresses.querySelectorAll(`[data-widget="${widget}"]`).forEach(row => row.remove());

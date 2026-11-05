@@ -59,7 +59,7 @@
         <h3>Widgets on this Dashboard</h3>
         <dl id="addresses">
 @for(view in widgets)
-            <dt><code>${view.address}</code> · ${view.widget.type.label}</dt><dd><code>${view.widget.type.shape}</code></dd>
+            <dt data-widget="${view.widget.id}"><code>${view.address}</code> · ${view.widget.type.label}</dt><dd data-widget="${view.widget.id}"><code>${view.widget.type.shape}</code><br>@template.usedby(dependents = view.usedBy, none = "no Script")</dd>
 @endfor
         </dl>
 @if(widgets.isEmpty())<p class="muted" id="no-addresses">None yet.</p>@endif
