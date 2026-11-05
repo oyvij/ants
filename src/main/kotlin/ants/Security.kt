@@ -17,11 +17,11 @@ import org.springframework.security.web.SecurityFilterChain
 class Security {
     @Bean
     fun filterChain(http: HttpSecurity): SecurityFilterChain = http
-        // A browser fetches the app's manifest and icons without the login cookie; the login page needs its stylesheet and,
+        // A browser fetches the app's manifest, icons and service worker without the login cookie; the login page needs its stylesheet and,
         // like every page, loads markdown.js and mermaid.js (which load nothing more where no field is markdown and no block a diagram).
         // Agents reach the MCP endpoint with their Task's bearer token, and a Script Task's Script reaches /posts with its
         // own, which each checks itself, never the login.
-        .authorizeHttpRequests { it.requestMatchers("/manifest.webmanifest", "/icon-*.png", "/ants.css", "/markdown.js", "/mermaid.js", "/mcp", "/posts").permitAll().anyRequest().authenticated() }
+        .authorizeHttpRequests { it.requestMatchers("/manifest.webmanifest", "/sw.js", "/icon-*.png", "/ants.css", "/markdown.js", "/mermaid.js", "/mcp", "/posts").permitAll().anyRequest().authenticated() }
         // Ants' own login page (login.kte); Log out, in the sidebar, lands back on it.
         .formLogin { it.loginPage("/login").failureUrl("/login?error").permitAll() }
         .logout { it.logoutSuccessUrl("/login?logout").permitAll() }

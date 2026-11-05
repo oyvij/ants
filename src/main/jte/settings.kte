@@ -15,6 +15,7 @@
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param shell: ants.Shell
 @param posted: Boolean = false
+@param alertKey: String
 <!doctype html>
 <html lang="en">
 <head>
@@ -175,6 +176,12 @@
 @endif
         <label class="row"><input type="checkbox" name="prereleases" checked="${form.prereleases}"> Follow beta versions</label>
         <button name="action" value="updates">Check now</button></div></div>
+
+    <div class="grid2"><div class="card alerts" id="alerts" data-key="${alertKey}"><h3>Alerts</h3>
+        <div class="help">An Alert on this phone or browser for each new entry on the Notification list; tapping it opens the entry.</div>
+        <label class="row"><input type="checkbox" id="alerts-on" disabled> Alerts on this device</label>
+        <p class="help" id="alerts-said" role="status"></p>
+        <p><button type="button" id="alerts-test" disabled>Send a test Alert</button></p></div></div>
     <div class="savebar" hidden><span>Unsaved changes</span><button class="primary" name="action" value="save">Save</button></div>
 </form>
 @for((i, map) in maps.entries.withIndex())

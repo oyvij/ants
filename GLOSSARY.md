@@ -249,6 +249,11 @@ The one list of everything waiting on the user: a Task of any Run, such as a Rou
 request**, or a scheduled Run that couldn't start; each entry leads to it.
 _Avoid_: inbox, alerts
 
+**Alert**:
+What Ants sends to each phone or browser the user turned Alerts on for when a new entry arrives on the
+**Notification list**; tapping it opens that entry. Sent by Web Push, with no outside account.
+_Avoid_: push, push notification (**Push** is the Built-in Task that pushes repos)
+
 ### Showing work
 
 **Dashboard**:

@@ -3145,6 +3145,73 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `turning Alerts on registers this device, and its service worker shows an Alert that opens the entry`() = browse {
+        page.navigate(url("/settings"))
+        if (page.evaluate("window.isSecureContext") != true) abort<Unit>("The test Ants isn't a secure context here, so the browser offers no Alerts.")
+        // The browser's push service is a fake inside the test: the page's PushManager hands out its subscription.
+        FakePushService().use { device ->
+            page.addInitScript("""
+                const fake = ${device.subscription()};
+                const subscription = () => sessionStorage.getItem('fake-push') && { endpoint: fake.endpoint, toJSON: () => ({ endpoint: fake.endpoint, expirationTime: null, keys: fake.keys }), unsubscribe: async () => (sessionStorage.removeItem('fake-push'), true) };
+                PushManager.prototype.subscribe = async function () { sessionStorage.setItem('fake-push', '1'); return subscription(); };
+                PushManager.prototype.getSubscription = async function () { return subscription() || null; };
+            """.trimIndent())
+            page.context().grantPermissions(listOf("notifications"))
+            page.navigate(url("/settings"))
+            page.getByLabel("Alerts on this device").check()
+            assertThat(page.locator("#alerts-said")).hasText("Alerts are on for this device.")
+
+            page.getByText("Send a test Alert").click()
+            assertThat(page.locator("#alerts-said")).hasText("Sent a test Alert.")
+            assertEquals("/settings", assertNotNull(device.received.poll(10, java.util.concurrent.TimeUnit.SECONDS)).payload()["url"])
+
+            val claude = FakeClaude()
+            agentTask(claude)
+            claude.session("draft", """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":{"outcome":"stuck","summary":"No tone given.","needs":"Which tone?"}}""")
+            http.import("agent-task.bpmn")
+            http.get("/processes/agent-task")
+            http.post("/processes/agent-task/runs", mapOf("prompt" to "Say hello"))
+            val alert = assertNotNull(device.received.poll(15, java.util.concurrent.TimeUnit.SECONDS), "no Alert for the stuck Task").payload()
+
+            // The push service would deliver it; DevTools hands it to the service worker as the same push event.
+            val cdp = page.context().newCDPSession(page)
+            val scope = page.evaluate("navigator.serviceWorker.ready.then(r => r.scope)")
+            var id: String? = null
+            cdp.on("ServiceWorker.workerRegistrationUpdated") { event ->
+                event.getAsJsonArray("registrations").map { it.asJsonObject }.firstOrNull { it["scopeURL"].asString == scope && !it["isDeleted"].asBoolean }?.let { id = it["registrationId"].asString }
+            }
+            cdp.send("ServiceWorker.enable")
+            eventually { assertNotNull(id) }
+            cdp.send("ServiceWorker.deliverPushMessage", JsonObject().apply {
+                addProperty("origin", url("")); addProperty("registrationId", id); addProperty("data", com.google.gson.Gson().toJson(alert))
+            })
+            eventually {
+                assertEquals(listOf("⚠ [stuck] ${alert["run"]}", "Draft: No tone given."), page.evaluate("navigator.serviceWorker.ready.then(r => r.getNotifications()).then(all => all.flatMap(n => [n.title, n.body]))"))
+            }
+
+            // DevTools can't tap an Alert, so the test raises the service worker's own tap on the Alert it shows.
+            val browserCdp = page.context().browser()!!.newBrowserCDPSession()
+            val worker = browserCdp.send("Target.getTargets")["targetInfos"].asJsonArray.map { it.asJsonObject }
+                .first { it["type"].asString == "service_worker" && it["url"].asString == url("/sw.js") }
+            val session = browserCdp.send("Target.attachToTarget", JsonObject().apply { addProperty("targetId", worker["targetId"].asString); addProperty("flatten", false) })["sessionId"].asString
+            val tap = "self.registration.getNotifications().then(([alert]) => self.dispatchEvent(new NotificationEvent('notificationclick', { notification: alert })))"
+            val message = JsonObject().apply {
+                addProperty("id", 1)
+                addProperty("method", "Runtime.evaluate")
+                add("params", JsonObject().apply { addProperty("expression", tap); addProperty("awaitPromise", true) })
+            }
+            browserCdp.send("Target.sendMessageToTarget", JsonObject().apply { addProperty("sessionId", session); addProperty("message", message.toString()) })
+            page.waitForURL(url("${alert["url"]}"))
+            assertThat(page.locator("h1")).containsText("Draft")
+
+            page.navigate(url("/settings"))
+            page.getByLabel("Alerts on this device").uncheck()
+            assertThat(page.locator("#alerts-said")).hasText("Alerts are off for this device.")
+            assertEquals(404, http.postBytes("/alerts/test", device.subscription().toByteArray()).status)
+        }
+    }
+
+    @Test
     fun `at the end of Settings the Save bar takes its own room under the last card instead of covering it`() = browse {
         settings(null)
         page.navigate(url("/settings"))

@@ -63,3 +63,64 @@ if (settingsForm) {
     });
     showBar();
 }
+
+// The Alerts card: its toggle turns Alerts on for this device, asking the browser's permission only then, and
+// registers its push subscription with Ants; off forgets it. Send a test Alert sends one here. None of it is the
+// form's: its controls have no names, so Save never sees them.
+const alertsCard = document.getElementById('alerts');
+if (alertsCard) {
+    const toggle = document.getElementById('alerts-on'), test = document.getElementById('alerts-test'), said = document.getElementById('alerts-said');
+    const csrf = settingsForm.querySelector('input[name=_csrf]').value;
+    const post = (path, body) => fetch(path, { method: 'POST', headers: { 'X-CSRF-TOKEN': csrf, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const key = Uint8Array.from(atob(alertsCard.dataset.key.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
+    const subscription = async () => (await navigator.serviceWorker.getRegistration('/'))?.pushManager.getSubscription();
+    const deviceName = () => {
+        const agent = navigator.userAgent;
+        const browser = /Edg\//.test(agent) ? 'Edge' : /Firefox\//.test(agent) ? 'Firefox' : /Chrome\//.test(agent) ? 'Chrome' : /Safari\//.test(agent) ? 'Safari' : 'A browser';
+        const system = /Android/.test(agent) ? 'Android' : /iPhone|iPad/.test(agent) ? 'iOS' : /Mac OS/.test(agent) ? 'macOS' : /Windows/.test(agent) ? 'Windows' : /Linux/.test(agent) ? 'Linux' : '';
+        return system ? `${browser} on ${system}` : browser;
+    };
+    const show = on => {
+        toggle.checked = on;
+        test.disabled = !on;
+    };
+    const turnOn = async () => {
+        if (await Notification.requestPermission() !== 'granted') throw new Error("The browser didn't allow notifications for Ants.");
+        const registration = await navigator.serviceWorker.register('/sw.js');
+        await navigator.serviceWorker.ready;
+        const sub = await registration.pushManager.getSubscription() ?? await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+        const answer = await post('/alerts/devices', { ...sub.toJSON(), name: deviceName() });
+        if (!answer.ok) throw new Error(await answer.text() || "Ants didn't take this device.");
+    };
+    const turnOff = async () => {
+        const sub = await subscription();
+        if (!sub) return;
+        await post('/alerts/devices/remove', { endpoint: sub.endpoint });
+        await sub.unsubscribe();
+    };
+    if (window.isSecureContext && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window) {
+        toggle.disabled = false;
+        subscription().then(sub => show(!!sub && Notification.permission === 'granted'));
+        toggle.addEventListener('change', async () => {
+            const on = toggle.checked;
+            toggle.disabled = true;
+            said.textContent = '';
+            try {
+                await (on ? turnOn() : turnOff());
+                show(on);
+                said.textContent = on ? 'Alerts are on for this device.' : 'Alerts are off for this device.';
+            } catch (e) {
+                show(!on);
+                said.textContent = e.message;
+            }
+            toggle.disabled = false;
+        });
+        test.addEventListener('click', async () => {
+            const sub = await subscription();
+            if (!sub) return show(false);
+            said.textContent = await (await post('/alerts/test', { endpoint: sub.endpoint })).text();
+        });
+    } else {
+        said.textContent = "This browser can't get Alerts here.";
+    }
+}
