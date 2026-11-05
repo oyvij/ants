@@ -5472,6 +5472,17 @@ class BrowserTest : AntsTest() {
         assertThat(clock).hasText(Pattern.compile("\\d+s"))
         val first = clock.textContent()!!
         val spin = page.locator("#status .spin")
+        // The ant is a background image that loads after the line appears: shot before it has loaded and been painted, it
+        // would be missing, or drawn a shade off, and differ from a later shot without moving at all.
+        val still = page.evaluate("""async () => {
+            const url = getComputedStyle(document.querySelector('#status .spin')).backgroundImage.slice(5, -2);
+            const image = new Image();
+            image.src = url;
+            await image.decode();
+            await new Promise(painted => requestAnimationFrame(() => requestAnimationFrame(painted)));
+            return url;
+        }""") as String
+        assertTrue(still.endsWith("/working-ant-still.svg"), still)
         val ant = spin.screenshot()
         assertThat(clock).not().hasText(first) // the clock still ticks
         assertTrue(ant.contentEquals(spin.screenshot()), "the working ant stands still")
