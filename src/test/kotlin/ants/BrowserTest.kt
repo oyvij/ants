@@ -617,7 +617,7 @@ class BrowserTest : AntsTest() {
         undo()
         eventually { assertEquals("clone-repos", property("clone", "topic")) }
 
-        tool("add_element", mapOf("kind" to "built-in", "id" to "tell", "name" to "Tell me", "topic" to "notify", "line" to "Pipeline \${pipeline} failed"))
+        tool("add_element", mapOf("kind" to "built-in", "id" to "tell", "name" to "Tell me", "topic" to "notify", "line" to "Pipeline \${pipeline} failed", "x" to 200, "y" to 300))
         eventually { assertEquals("Pipeline \${pipeline} failed", property("tell", Notify.LINE)) }
         assertEquals("Pipeline failed on main", tool("set_built_in", mapOf("id" to "tell", "line" to "Pipeline failed on main"))["line"].asString())
         shape("tell").click()
@@ -3209,7 +3209,7 @@ class BrowserTest : AntsTest() {
                 event.getAsJsonArray("registrations").map { it.asJsonObject }.firstOrNull { it["scopeURL"].asString == scope && !it["isDeleted"].asBoolean }?.let { id = it["registrationId"].asString }
             }
             cdp.send("ServiceWorker.enable")
-            eventually { assertNotNull(id) }
+            eventually { page.waitForTimeout(50.0); assertNotNull(id) } // Playwright hands over CDP events only while it is called
             cdp.send("ServiceWorker.deliverPushMessage", JsonObject().apply {
                 addProperty("origin", url("")); addProperty("registrationId", id); addProperty("data", com.google.gson.Gson().toJson(alert))
             })
