@@ -133,7 +133,7 @@ main.full .composer > :is(div, form) { max-width: none; padding-inline: 24px; }
 .dashboard .dot.running { background: var(--acc); animation: running 1s infinite alternate; } @keyframes running { to { opacity: .3; } }
 @media (prefers-reduced-motion: reduce) { .dashboard .dot.running { animation: none; } .dashboard .bar div { transition: none; } }
 .dashboard .li { padding: 4px 0; border-bottom: 1px solid var(--line2); } .dashboard .li:last-of-type { border-bottom: 0; } .dashboard .li > div { color: var(--muted); font-size: 12px; }
-.dashboard .text { white-space: pre-wrap; }
+.dashboard .text > :first-child { margin-top: 0; } .dashboard .text > :last-child { margin-bottom: 0; }
 .dashboard .log { font: 12px/1.5 var(--mono); } .dashboard .log .warn { color: var(--warnText); } .dashboard .log .error { color: var(--badText); }
 .dashboard .log time { color: var(--muted); margin-right: 6px; }
 /* A chart fills its Widget's body above the line naming its Run; its kind is picked in its header in edit mode. */

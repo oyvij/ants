@@ -88,7 +88,7 @@ enum class WidgetType(val shape: String, val line: String, val keeps: Boolean = 
         )
         override fun kept(data: Map<*, *>) = newest(data)
     },
-    TEXT("{text: string}", "A paragraph, such as an agent's summary") {
+    TEXT("{text: string (Markdown)}", "A paragraph, such as an agent's summary") {
         override fun problems(data: Map<*, *>) = problems(data, listOf(text("text")))
     },
     LOG("{line: string, level?: info | warn | error}", "Lines added one at a time, kept for a number of days", keeps = true) {
