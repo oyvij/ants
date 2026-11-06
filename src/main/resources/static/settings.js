@@ -122,8 +122,8 @@ if (alertsCard) {
         return !!listed(await subscription());
     };
     if (!why) {
-        toggle.disabled = false;
-        subscription().then(sub => show(!!listed(sub) && Notification.permission === 'granted'));
+        // The toggle stays disabled until it shows whether Ants lists this device, so a tap never meets a stale state.
+        subscription().then(sub => show(!!listed(sub) && Notification.permission === 'granted')).finally(() => toggle.disabled = false);
         toggle.addEventListener('change', async () => {
             const on = toggle.checked;
             toggle.disabled = true;

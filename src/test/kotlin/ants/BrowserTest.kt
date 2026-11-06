@@ -3259,6 +3259,7 @@ class BrowserTest : AntsTest() {
             assertThat(page.locator("h1")).containsText("Draft")
 
             page.navigate(url("/settings"))
+            assertThat(page.getByLabel("Alerts on this device")).isChecked()
             page.getByLabel("Alerts on this device").uncheck()
             assertThat(page.locator("#alerts-said")).hasText("Alerts are off for this device.")
             assertEquals(404, http.postBytes("/alerts/test", device.subscription().toByteArray()).status)
