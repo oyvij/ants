@@ -1,4 +1,5 @@
 @import ants.WidgetType
+@import ants.Transcript
 @param view: ants.WidgetView
 !{val delta = view.delta}
 @if(view.post == null)
@@ -19,7 +20,7 @@
 <div class="li">@if(item["url"] != null)<a href="${item["url"].toString()}" target="_blank" rel="noopener">${item["title"].toString()}</a>@else${item["title"].toString()}@endif@if(item["note"] != null)<div>${item["note"].toString()}</div>@endif</div>
 @endfor
 @elseif(view.widget.type == WidgetType.TEXT)
-<div class="text">${view.post.data["text"].toString()}</div>
+<div class="text md">$unsafe{Transcript.markdown(view.post.data["text"].toString())}</div>
 @elseif(view.widget.type == WidgetType.CHART)
 <div class="chart" data-kind="${view.widget.kind.label}" data-points="${view.points}"></div>
 @elseif(view.widget.type == WidgetType.CUSTOM)

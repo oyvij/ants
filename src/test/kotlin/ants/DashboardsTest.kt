@@ -265,14 +265,33 @@ class DashboardsTest : AntsTest() {
     }
 
     @Test
-    fun `a text Widget shows the text with its line breaks, escaped, replaced by each Post`() {
+    fun `a text Widget renders its text as Markdown with its HTML escaped, replaced by each Post`() {
         val dashboard = add()
         val id = addWidget(dashboard, "text")
         accepted("$dashboard/$id", """{"text":"old"}""")
-        accepted("$dashboard/$id", """{"text":"Line one\nLine <two>"}""")
-        assertContains(body(dashboard, id), "<div class=\"text\">Line one\nLine &lt;two&gt;</div>")
+        accepted("$dashboard/$id", """{"text":"Line **bold**\nLine <two>"}""")
+        assertContains(body(dashboard, id), "<div class=\"text md\"><p>Line <strong>bold</strong>\nLine &lt;two&gt;</p>\n</div>")
         assertFalse(">old<" in body(dashboard, id))
-        assertEquals("The text Widget $dashboard/$id (New text) takes {text: string}, but text is not text.", refused("$dashboard/$id", """{"text":3}"""))
+        assertEquals("The text Widget $dashboard/$id (New text) takes {text: string (Markdown)}, but text is not text.", refused("$dashboard/$id", """{"text":3}"""))
+    }
+
+    @Test
+    fun `a text Widget renders GFM tables, code blocks and headings inside the Markdown style`() {
+        val dashboard = add()
+        val id = addWidget(dashboard, "text")
+        accepted("$dashboard/$id", """{"text":"# Head\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n```\ncode\n```"}""")
+        val rendered = body(dashboard, id).substringAfter("<div class=\"text md\">")
+        assertContains(rendered, "<h1>Head</h1>")
+        assertContains(rendered, "<td>1</td>")
+        assertContains(rendered, "<pre><code>code\n</code></pre>")
+    }
+
+    @Test
+    fun `a text Widget renders no javascript link live`() {
+        val dashboard = add()
+        val id = addWidget(dashboard, "text")
+        accepted("$dashboard/$id", """{"text":"[click](javascript:alert(1))"}""")
+        assertFalse("javascript:" in body(dashboard, id))
     }
 
     @Test
@@ -310,7 +329,7 @@ class DashboardsTest : AntsTest() {
         val id = addWidget(dashboard, "text")
         accepted("$dashboard/$id", """{"text":"${"a".repeat(200 * 1024)}"}""")
         assertEquals(
-            "The text Widget $dashboard/$id (New text) takes {text: string} in Posts of up to 256 KB, but this one is 301 KB.",
+            "The text Widget $dashboard/$id (New text) takes {text: string (Markdown)} in Posts of up to 256 KB, but this one is 301 KB.",
             refused("$dashboard/$id", """{"text":"${"a".repeat(300 * 1024)}"}"""),
         )
     }
