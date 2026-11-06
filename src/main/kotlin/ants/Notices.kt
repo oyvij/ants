@@ -1,11 +1,12 @@
 package ants
 
 import org.operaton.bpm.engine.ExternalTaskService
-import org.operaton.bpm.engine.HistoryService
 import org.operaton.bpm.engine.RepositoryService
 import org.operaton.bpm.engine.RuntimeService
 import org.operaton.bpm.engine.externaltask.LockedExternalTask
 import org.operaton.bpm.engine.impl.ServiceImpl
+import org.operaton.bpm.impl.juel.Scanner
+import org.operaton.bpm.impl.juel.Scanner.Symbol
 import org.operaton.bpm.model.bpmn.instance.FlowElement
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
@@ -89,7 +90,6 @@ class Notices(@Value("\${ants.home}") home: Path, private val clock: Clock) {
 class Notify(
     private val externalTasks: ExternalTaskService,
     private val runtime: RuntimeService,
-    private val history: HistoryService,
     private val repository: RepositoryService,
     private val names: RunNames,
     private val notices: Notices,
@@ -98,9 +98,9 @@ class Notify(
         val element = runCatching { repository.getBpmnModelInstance(task.processDefinitionId).getModelElementById<FlowElement>(task.activityId) }.getOrNull()
         val run = runCatching { runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult()!!.rootProcessInstanceId }
             .getOrDefault(task.processInstanceId)
-        val top = runCatching { history.createHistoricProcessInstanceQuery().processInstanceId(run).singleResult()!! }.getOrNull()
         notices.add(
-            process = top?.let { it.processDefinitionName ?: it.processDefinitionKey } ?: task.processDefinitionKey,
+            // The Process that holds this Notify, a called one's own, as the Notification list names a Task's.
+            process = runCatching { repository.getProcessDefinition(task.processDefinitionId).name }.getOrNull() ?: task.processDefinitionKey,
             run = run,
             runName = runCatching { names.name(run) }.getOrDefault(run),
             task = element?.name ?: task.activityId,
@@ -123,11 +123,44 @@ class Notify(
          */
         fun line(raw: String, evaluate: (String) -> Any?): String {
             val unfilled = mutableListOf<String>()
-            val filled = Regex("""\$\{(.*?)}""", RegexOption.DOT_MATCHES_ALL).replace(raw) { match ->
-                runCatching { evaluate(match.value)?.toString().orEmpty() }.getOrElse { unfilled += match.value; match.value }
+            val filled = pieces(raw).joinToString("") { piece ->
+                if (piece !is Piece.Expression) piece.text
+                else runCatching { evaluate(piece.text)?.toString().orEmpty() }.getOrElse { unfilled += piece.text; piece.text }
             }
             val said = if (unfilled.isEmpty()) filled else "Couldn't fill in ${unfilled.distinct().joinToString(", ")}: $filled"
             return said.replace(Regex("""\s+"""), " ").trim().let { if (it.length > LONGEST) it.take(LONGEST - 1).trimEnd() + "…" else it }
+        }
+
+        /** A piece of a line: text, or an expression as written, `${` to its `}`. */
+        private sealed class Piece(val text: String) {
+            class Text(text: String) : Piece(text)
+            class Expression(text: String) : Piece(text)
+        }
+
+        /**
+         * [raw] cut into text and expressions by the engine's own scanner, so an expression ends where the engine's
+         * does: a `}` inside a quoted string doesn't end it, and `\${` is text. An expression left open runs to the end.
+         */
+        private fun pieces(raw: String): List<Piece> {
+            val scanner = object : Scanner(raw) {}
+            val pieces = mutableListOf<Piece>()
+            var start = -1
+            try {
+                while (true) {
+                    val token = scanner.next()
+                    when (token.symbol) {
+                        Symbol.EOF -> break
+                        Symbol.TEXT -> pieces += Piece.Text(token.image)
+                        Symbol.START_EVAL_DYNAMIC, Symbol.START_EVAL_DEFERRED -> start = scanner.position
+                        Symbol.END_EVAL -> pieces += Piece.Expression(raw.substring(start, scanner.position + 1)).also { start = -1 }
+                        else -> {}
+                    }
+                }
+            } catch (_: Scanner.ScanException) {
+                // An unclosed string: the expression runs to the end.
+            }
+            if (start >= 0) pieces += Piece.Expression(raw.substring(start))
+            return pieces
         }
     }
 }

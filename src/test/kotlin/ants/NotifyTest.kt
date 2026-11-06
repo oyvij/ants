@@ -77,6 +77,51 @@ class NotifyTest : AntsTest() {
     }
 
     @Test
+    fun `a closing brace inside a quoted string of an expression stays inside it, as the engine reads it`() {
+        settings(null)
+        run("api-build", line = "Pipeline \${pipeline.concat('}')} failed, \\\${not filled}")
+        assertContains(notices().single(), "<span class=\"clip\">Pipeline api-build} failed, \${not filled}</span>")
+    }
+
+    /** A Process [key], named [name], that calls `watch` with its own `pipeline`. */
+    private fun caller(key: String, name: String) = """<?xml version="1.0" encoding="UTF-8"?>
+        <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:operaton="http://operaton.org/schema/1.0/bpmn"
+                          id="definitions" targetNamespace="http://bpmn.io/schema/bpmn">
+          <bpmn:process id="$key" name="$name" isExecutable="true" operaton:historyTimeToLive="180">
+            <bpmn:startEvent id="start">
+              <bpmn:extensionElements><operaton:formData><operaton:formField id="pipeline" label="Pipeline" type="string" /></operaton:formData></bpmn:extensionElements>
+            </bpmn:startEvent>
+            <bpmn:callActivity id="call" name="Watch" calledElement="watch">
+              <bpmn:extensionElements><operaton:in sourceExpression="${'$'}{pipeline}" target="pipeline" /></bpmn:extensionElements>
+            </bpmn:callActivity>
+            <bpmn:endEvent id="end" />
+            <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="call" />
+            <bpmn:sequenceFlow id="f2" sourceRef="call" targetRef="end" />
+          </bpmn:process>
+        </bpmn:definitions>""".trimIndent()
+
+    @Test
+    fun `a Notify in a called Process records that Process, so two callers with the same line count up on one Notice`() {
+        settings(null)
+        browser.import("notify.bpmn")
+        for ((key, name) in listOf("nightly" to "Nightly", "weekly" to "Weekly")) {
+            browser.upload("/processes", "file", "$key.bpmn", caller(key, name).toByteArray())
+        }
+        browser.get("/processes/nightly")
+        val first = browser.post("/processes/nightly/runs", mapOf("pipeline" to "api-build", NAME to "Nightly run")).path.removePrefix("/runs/")
+        eventually { assertEquals(1, notices().size) }
+        val notice = notices().single()
+        assertContains(notice, "Watch pipelines")
+        assertFalse("Nightly</div>" in notice)
+        assertContains(notice, """<a href="/runs/$first">Nightly run</a>""")
+        ended(first)
+
+        browser.get("/processes/weekly")
+        ended(browser.post("/processes/weekly/runs", mapOf("pipeline" to "api-build", NAME to "Weekly run")).path.removePrefix("/runs/"))
+        eventually { assertContains(notices().single(), Regex("""×2, last at \d\d:\d\d""")) }
+    }
+
+    @Test
     fun `the count follows Notices live, and Dismiss removes a Notice for good, after its Run has ended`() {
         settings(null)
         val counts = browser.events("", "count")
