@@ -3058,9 +3058,9 @@ class BrowserTest : AntsTest() {
         eventually { assertEquals(true, page.locator(".dia").first().evaluate("e => e.canvas != null")) }
         val box = shape("wait").boundingBox()!!
         gesture(listOf(box.x to box.y + box.height), listOf(box.x - 40 to box.y + box.height - 40))
-        // A stall on CI between the tap's touchstart and touchend makes Chrome take it for a long press, a contextmenu
-        // and no click, so no Task opens: only then is it tapped again. Any other tap that opens nothing fails, naming
-        // the events the page saw.
+        // On CI, Chrome now and then makes no click of a tap whose touches the shape got (seen on CI: pointerdown,
+        // touchstart, pointerup, touchend, and nothing more), so no Task opens: only then is it tapped again. A click
+        // that opens nothing, or three taps with no click, fail, naming the events the page saw.
         page.evaluate("""() => { window.seen = []; for (const type of ['touchstart', 'touchend', 'pointerdown', 'pointerup', 'pointercancel', 'contextmenu', 'click'])
             addEventListener(type, e => seen.push(type + ' ' + (e.target.closest?.('[data-element-id]')?.dataset.elementId ?? e.target.tagName)), true) }""")
         for (attempt in 1..3) {
@@ -3071,7 +3071,7 @@ class BrowserTest : AntsTest() {
                 break
             } catch (e: AssertionError) {
                 val seen = page.evaluate("seen.join(', ')") as String
-                if ("contextmenu" !in seen || attempt == 3) throw AssertionError("A tap on the Task opened no drawer; the page saw: $seen", e)
+                if ("click" in seen || attempt == 3) throw AssertionError("A tap on the Task opened no drawer; the page saw: $seen", e)
             }
         }
     }
