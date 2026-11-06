@@ -4306,6 +4306,7 @@ class BrowserTest : AntsTest() {
         val spec = page.locator(".card.md")
         assertThat(spec).containsText("Paying again")
         assertNoSidewaysScroll()
+        assertWideTableScrollsInsideItsBoxAndTheImageFits(".card.md")
         page.screenshot("phone/approve")
         val (left, right) = contentEdges("main")
         val comment = page.locator("#comment + .ed")
@@ -5421,6 +5422,22 @@ class BrowserTest : AntsTest() {
         http.import("agent-task.bpmn")
         http.get("/processes/agent-task")
         return http.post("/processes/agent-task/runs", mapOf("prompt" to "Say hello")).path
+    }
+
+    @Test
+    fun `on a phone a Transcript's wide table scrolls inside its box and the page fits the screen`() = browse {
+        val text = wideMarkdown.replace("\n", "\\n")
+        val run = running(
+            FakeClaude(),
+            """{"type":"assistant","message":{"id":"m1","content":[{"type":"text","text":"$text"}]}}""",
+            """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":{"outcome":"done","summary":"Drafted.","output":{}}}""",
+        )
+        onPhone()
+
+        page.navigate(url("$run/tasks/draft/transcript"))
+        assertThat(page.locator(".tr table.md-table")).isVisible()
+        assertNoSidewaysScroll()
+        assertWideTableScrollsInsideItsBoxAndTheImageFits(".tr")
     }
 
     private val streaming = arrayOf(
