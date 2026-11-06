@@ -112,6 +112,102 @@ class AlertsTest : AntsTest() {
     }
 
     @Test
+    fun `a Round to answer and a Permission request each send one Alert holding its tag and summary`() {
+        agentTask(
+            claude,
+            mapOf("draft" to null, "quiz" to """{"type":"object","properties":{"questions":{"type":"array"}}}""", "stand-in" to """{"type":"object","properties":{"answers":{"type":"array"}}}"""),
+            agent = "tools: Bash(git log *)\n",
+        )
+        turnOn()
+
+        claude.session("quiz", result("""{"outcome":"done","summary":"First round.","output":{"questions":[{"id":"who","title":"Who exports","ask":"Ask who?","context":"Settles who.","recommendation":"Recommend who.","why":"Because who."}]}}"""))
+        browser.import("round.bpmn")
+        browser.get("/processes/round")
+        val round = browser.post("/processes/round/runs", emptyMap()).path.removePrefix("/runs/")
+        val (roundEntry, roundName) = entry(round)
+        val asked = next().payload()
+        assertEquals("[questions]", asked["tag"])
+        assertEquals("First round.", asked["text"])
+        assertEquals(roundName, asked["run"])
+        assertEquals(roundEntry, asked["url"])
+
+        claude.session(
+            "draft",
+            """{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_1","name":"Bash","input":{"command":"cargo outdated"}}]},"session_id":"${'$'}SESSION"}""",
+            """{"type":"system","subtype":"permission_denied","tool_name":"Bash","tool_use_id":"toolu_1","decision_reason_type":"mode","session_id":"${'$'}SESSION"}""",
+            "read",
+            """{"type":"result","subtype":"error_during_execution","is_error":true,"session_id":"${'$'}SESSION"}""",
+            "exit 1",
+        )
+        browser.import("agent-task.bpmn")
+        browser.get("/processes/agent-task")
+        val refused = browser.post("/processes/agent-task/runs", mapOf("prompt" to "Say hello")).path.removePrefix("/runs/")
+        val (permissionEntry, _) = entry(refused)
+        val permission = next().payload()
+        assertEquals("[permission]", permission["tag"])
+        assertEquals("writer wants to run `cargo outdated`", permission["text"])
+        assertEquals(permissionEntry, permission["url"])
+
+        assertNull(device.received.poll(3, SECONDS), "an entry alerted twice")
+    }
+
+    @Test
+    fun `a scheduled start that fails sends one Alert leading to its entry`() {
+        settings(null)
+        turnOn()
+        browser.import("notify.bpmn")
+        browser.get("/processes/watch")
+        browser.post("/processes/watch/schedule", mapOf("pipeline" to "api-build", NAME to "Nightly watch", "cron" to "0 0 0 * * *"))
+        val id = Regex("""<tr id="schedule-([^"]+)">""").find(browser.get("/processes/watch").body)!!.groupValues[1]
+        val required = """<operaton:formField id="pipeline" label="Pipeline" type="string" />
+            <operaton:formField id="branch" label="Branch" type="string"><operaton:validation><operaton:constraint name="required" /></operaton:validation></operaton:formField>"""
+        browser.upload("/processes", "file", "notify.bpmn", javaClass.getResource("/notify.bpmn")!!.readText()
+            .replace("""<operaton:formField id="pipeline" label="Pipeline" type="string" />""", required).toByteArray())
+        browser.get("/processes/watch")
+        browser.post("/processes/watch/schedules/$id/start", emptyMap())
+
+        val alert = next().payload()
+        assertEquals("[failed]", alert["tag"])
+        assertEquals("/notifications/schedule-$id", alert["url"])
+        assertTrue("Branch is required" in "${alert["text"]}", "${alert["text"]}")
+        assertNull(device.received.poll(2, SECONDS), "the failed start alerted twice")
+    }
+
+    @Test
+    fun `entries already on the Notification list when Ants starts send no Alert`() {
+        val home = tempHome()
+        fun url(ants: Any) = "http://127.0.0.1:${(ants as org.springframework.boot.web.server.context.WebServerApplicationContext).webServer!!.port}"
+        startAnother(home).use { ants ->
+            val browser = Browser(url(ants)).also { it.login() }
+            home.resolve("settings.yaml").writeAtomically(vault)
+            browser.import("notify.bpmn")
+            browser.get("/processes/watch")
+            browser.post("/processes/watch/runs", mapOf("pipeline" to "api-build", NAME to "Nightly watch"))
+            eventually { assertTrue("[notice]" in browser.get("/notifications").body) }
+            browser.get("/settings")
+            assertEquals(200, browser.postBytes("/alerts/devices", device.subscription().toByteArray()).status)
+        }
+        device.received.clear()
+        startAnother(home).use { ants ->
+            val browser = Browser(url(ants)).also { it.login() }
+            assertTrue("[notice]" in browser.get("/notifications").body)
+            assertNull(device.received.poll(3, SECONDS), "an entry that was there at startup alerted")
+        }
+    }
+
+    @Test
+    fun `a push endpoint must be https, unless it is on this machine`() {
+        browser.get("/settings")
+        val subscription = device.subscription()
+        for (endpoint in listOf("http://push.example.com/device", "ftp://127.0.0.1/device", "http://127.0.0.1.example.com/device")) {
+            assertEquals(400, browser.postBytes("/alerts/devices", subscription.replace(device.origin + "/push/device", endpoint).toByteArray()).status, endpoint)
+        }
+        for (endpoint in listOf("https://push.example.com/device", "http://localhost:9/device", "http://[::1]:9/device", device.origin + "/push/device")) {
+            assertEquals(200, browser.postBytes("/alerts/devices", subscription.replace(device.origin + "/push/device", endpoint).toByteArray()).status, endpoint)
+        }
+    }
+
+    @Test
     fun `a Notice sends one Alert holding its line and its Run's name`() {
         settings(null)
         turnOn()
@@ -160,7 +256,7 @@ class AlertsTest : AntsTest() {
         try {
             turnOn(other)
             assertEquals(200, browser.postBytes("/alerts/devices/remove", device.subscription().toByteArray()).status)
-            assertEquals(200, browser.postBytes("/alerts/test", other.subscription().toByteArray()).status)
+            assertEquals("The service that delivers this device's Alerts answered 500.", browser.postBytes("/alerts/test", other.subscription().toByteArray()).body)
             assertNotNull(other.received.poll(10, SECONDS))
             assertEquals(404, browser.postBytes("/alerts/test", device.subscription().toByteArray()).status)
             assertNull(device.received.poll(1, SECONDS))
@@ -209,7 +305,10 @@ class AlertsTest : AntsTest() {
             turnOn(other, "Old laptop")
             for (gone in listOf(device, other)) {
                 browser.get("/settings")
-                browser.postBytes("/alerts/test", gone.subscription().toByteArray())
+                assertEquals(
+                    "The service that delivers this device's Alerts says it is gone, so Ants forgot it. Turn Alerts on again.",
+                    browser.postBytes("/alerts/test", gone.subscription().toByteArray()).body,
+                )
                 assertNotNull(gone.received.poll(10, SECONDS))
             }
             eventually { assertEquals(emptyList(), listed()) }

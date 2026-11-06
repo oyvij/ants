@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.ResponseBody
 import tools.jackson.databind.json.JsonMapper
 import java.math.BigInteger
+import java.net.InetAddress
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -150,10 +151,10 @@ class Alerts(
         val said = status.fold({
             when (it) {
                 in 200..299 -> "Sent a test Alert."
-                404, 410 -> "The push service says this device is gone, so Ants forgot it. Turn Alerts on again."
-                else -> "The push service answered $it."
+                404, 410 -> "The service that delivers this device's Alerts says it is gone, so Ants forgot it. Turn Alerts on again."
+                else -> "The service that delivers this device's Alerts answered $it."
             }
-        }, { "The push service couldn't be reached." })
+        }, { "The service that delivers this device's Alerts couldn't be reached." })
         return ResponseEntity.ok(said)
     }
 
@@ -171,7 +172,7 @@ class Alerts(
     private fun subscription(body: String): AlertDevice? = runCatching {
         val json = JsonMapper.shared().readValue(body, Map::class.java)
         val keys = json["keys"] as Map<*, *>
-        val endpoint = "${json["endpoint"]}".takeIf { it.startsWith("https://") || it.startsWith("http://") } ?: return null
+        val endpoint = "${json["endpoint"]}".takeIf(::pushable) ?: return null
         AlertDevice(endpoint, "${keys["p256dh"]}", "${keys["auth"]}", "${json["name"] ?: ""}".take(100), "${clock.instant()}")
             .takeIf { b64(it.p256dh).size == 65 && b64(it.auth).size == 16 }
     }.getOrNull()
@@ -235,6 +236,13 @@ class Alerts(
             .getParameterSpec(ECParameterSpec::class.java)
 
         private fun p256(): KeyPair = KeyPairGenerator.getInstance("EC").apply { initialize(ECGenParameterSpec("secp256r1")) }.generateKeyPair()
+
+        /** Whether Ants sends to [endpoint]: https, or plain http to this machine only. */
+        private fun pushable(endpoint: String): Boolean {
+            val uri = runCatching { URI(endpoint) }.getOrNull() ?: return false
+            val host = uri.host?.removePrefix("[")?.removeSuffix("]") ?: return false
+            return uri.scheme == "https" || uri.scheme == "http" && (host == "localhost" || runCatching { InetAddress.ofLiteral(host).isLoopbackAddress }.getOrDefault(false))
+        }
 
         private fun b64(bytes: ByteArray): String = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
 
