@@ -796,7 +796,7 @@ details.example pre { background: var(--line2); border: 0; padding: 10px; border
     :is(input, select, textarea, .ed .cm-content) { font-size: 16px; }
     .ed .bar { flex-wrap: wrap; }
     .md { max-width: 100%; overflow-wrap: break-word; }
-    .md table { display: block; width: max-content; max-width: 100%; overflow-x: auto; }
+    :is(.md table, table.md-table) { display: block; width: max-content; max-width: 100%; overflow-x: auto; }
     .md table.frontmatter { display: table; width: 100%; }
     #ticket input[type=checkbox] { width: 24px; height: 24px; vertical-align: middle; }
     .card.push .kv { grid-template-columns: 90px minmax(0, 1fr); }
