@@ -525,6 +525,20 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `Notify is a Built-in Task whose one line the panel edits, and Save keeps it`() = browse {
+        http.import("notify.bpmn")
+        page.navigate(url("/processes/watch/edit"))
+        shape("notify").click()
+        assertThat(page.locator("#explain select")).hasValue("notify")
+        assertThat(panel).containsText("adds its line as a Notice")
+        assertThat(label("Line")).hasValue("Pipeline \${pipeline} failed on main")
+        label("Line").fill("Pipeline \${pipeline} is red")
+        page.locator("#save").click()
+        assertThat(page).hasURL(Pattern.compile(".*/processes/watch$"))
+        assertContains(http.get("/processes/watch/diagram.bpmn").body, """name="ants.line" value="Pipeline ${'$'}{pipeline} is red"""")
+    }
+
+    @Test
     fun `the Process Builder sets an Assignment and two Skills that Save and deploy takes, and gets the Check back for a Task with neither`() = browse {
         agentTask(null, mapOf("draft" to null, "polish" to null))
         home.resolve("skills/unlisted").createDirectories().resolve("SKILL.md").writeText("---\nname: unlisted\ndescription: Not the writer's.\n---\nNo.\n")
@@ -602,6 +616,20 @@ class BrowserTest : AntsTest() {
         assertEquals("draft", property("clone", "ants.asker"))
         undo()
         eventually { assertEquals("clone-repos", property("clone", "topic")) }
+
+        tool("add_element", mapOf("kind" to "built-in", "id" to "tell", "name" to "Tell me", "topic" to "notify", "line" to "Pipeline \${pipeline} failed", "x" to 200, "y" to 300))
+        eventually { assertEquals("Pipeline \${pipeline} failed", property("tell", Notify.LINE)) }
+        assertEquals("Pipeline failed on main", tool("set_built_in", mapOf("id" to "tell", "line" to "Pipeline failed on main"))["line"].asString())
+        shape("tell").click()
+        assertThat(label("Line")).hasValue("Pipeline failed on main")
+        assertEquals(listOf("Tell me (tell) has an empty line, so its Notice would say nothing."),
+            texts(tool("set_built_in", mapOf("id" to "tell", "line" to ""))["checks"]))
+        assertNull(property("tell", Notify.LINE))
+        undo()
+        eventually { assertEquals("Pipeline failed on main", property("tell", Notify.LINE)) }
+        val (notNotify, refused) = mcpCall(port, page.locator("#canvas").getAttribute("data-builder")!!, "set_built_in", mapOf("id" to "clone", "line" to "Hi"))
+        assertTrue(refused, notNotify)
+        assertContains(notNotify, "Only notify says a line")
 
         tool("set_multi_instance", mapOf("id" to "draft", "mode" to "parallel", "collection" to "\${items}", "elementVariable" to "ticket", "itemsAreTickets" to true))
         eventually { assertEquals("ticket", element("draft")["properties"]["multiInstance"]?.get("elementVariable")?.asString()) }
@@ -3142,6 +3170,161 @@ class BrowserTest : AntsTest() {
         page.waitForLoadState()
         assertThat(page.locator("input[name=agent-tasks]")).hasValue("5")
         assertThat(bar).isHidden()
+    }
+
+    @Test
+    fun `turning Alerts on registers this device, and its service worker shows an Alert that opens the entry`() = browse {
+        page.navigate(url("/settings"))
+        if (page.evaluate("window.isSecureContext") != true) abort<Unit>("The test Ants isn't a secure context here, so the browser offers no Alerts.")
+        // The browser's push service is a fake inside the test: the page's PushManager hands out its subscription.
+        FakePushService().use { device ->
+            page.addInitScript("""
+                const fake = ${device.subscription()};
+                const subscription = () => sessionStorage.getItem('fake-push') && { endpoint: fake.endpoint, toJSON: () => ({ endpoint: fake.endpoint, expirationTime: null, keys: fake.keys }), unsubscribe: async () => (sessionStorage.removeItem('fake-push'), true) };
+                PushManager.prototype.subscribe = async function () { sessionStorage.setItem('fake-push', '1'); return subscription(); };
+                PushManager.prototype.getSubscription = async function () { return subscription() || null; };
+            """.trimIndent())
+            page.context().grantPermissions(listOf("notifications"))
+            page.navigate(url("/settings"))
+            page.getByLabel("Alerts on this device").check()
+            assertThat(page.locator("#alerts-said")).hasText("Alerts are on for this device.")
+            assertThat(page.locator("#alert-devices li")).containsText("This device")
+
+            page.getByText("Send a test Alert").click()
+            assertThat(page.locator("#alerts-said")).hasText("Sent a test Alert.")
+            assertEquals("/settings", assertNotNull(device.received.poll(10, java.util.concurrent.TimeUnit.SECONDS)).payload()["url"])
+
+            val claude = FakeClaude()
+            agentTask(claude)
+            claude.session("draft", """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":{"outcome":"stuck","summary":"No tone given.","needs":"Which tone?"}}""")
+            http.import("agent-task.bpmn")
+            http.get("/processes/agent-task")
+            http.post("/processes/agent-task/runs", mapOf("prompt" to "Say hello"))
+            val alert = assertNotNull(device.received.poll(15, java.util.concurrent.TimeUnit.SECONDS), "no Alert for the stuck Task").payload()
+
+            // The push service would deliver it; DevTools hands it to the service worker as the same push event. The
+            // headless browser keeps no notifications, so the service worker's showNotification records what it would show.
+            // Playwright for Java has no handle on a service worker, so the test evaluates in it over DevTools.
+            val browserCdp = page.context().browser()!!.newBrowserCDPSession()
+            var target: JsonObject? = null
+            eventually {
+                page.waitForTimeout(50.0)
+                target = assertNotNull(browserCdp.send("Target.getTargets")["targetInfos"].asJsonArray.map { it.asJsonObject }
+                    .firstOrNull { it["type"].asString == "service_worker" && it["url"].asString == url("/sw.js") })
+            }
+            val session = browserCdp.send("Target.attachToTarget", JsonObject().apply { addProperty("targetId", target!!["targetId"].asString); addProperty("flatten", false) })["sessionId"].asString
+            val replies = java.util.concurrent.ConcurrentHashMap<Int, JsonObject>()
+            browserCdp.on("Target.receivedMessageFromTarget") { event ->
+                val reply = com.google.gson.JsonParser.parseString(event["message"].asString).asJsonObject
+                reply["id"]?.let { replies[it.asInt] = reply }
+            }
+            var calls = 0
+            fun inWorker(expression: String): String {
+                val call = ++calls
+                val message = JsonObject().apply {
+                    addProperty("id", call)
+                    addProperty("method", "Runtime.evaluate")
+                    add("params", JsonObject().apply { addProperty("expression", expression); addProperty("awaitPromise", true); addProperty("returnByValue", true) })
+                }
+                browserCdp.send("Target.sendMessageToTarget", JsonObject().apply { addProperty("sessionId", session); addProperty("message", message.toString()) })
+                var reply: JsonObject? = null
+                eventually { page.waitForTimeout(20.0); reply = assertNotNull(replies[call]) }
+                return reply!!["result"].asJsonObject["result"].asJsonObject["value"]?.asString ?: ""
+            }
+            inWorker("self.registration.showNotification = async (title, options) => { self.shown = { title, ...options } }; ''")
+            val cdp = page.context().newCDPSession(page)
+            val scope = page.evaluate("navigator.serviceWorker.ready.then(r => r.scope)")
+            var id: String? = null
+            cdp.on("ServiceWorker.workerRegistrationUpdated") { event ->
+                event.getAsJsonArray("registrations").map { it.asJsonObject }.firstOrNull { it["scopeURL"].asString == scope && !it["isDeleted"].asBoolean }?.let { id = it["registrationId"].asString }
+            }
+            cdp.send("ServiceWorker.enable")
+            eventually { page.waitForTimeout(50.0); assertNotNull(id) } // Playwright hands over CDP events only while it is called
+            cdp.send("ServiceWorker.deliverPushMessage", JsonObject().apply {
+                addProperty("origin", url("")); addProperty("registrationId", id); addProperty("data", com.google.gson.Gson().toJson(alert))
+            })
+            eventually {
+                page.waitForTimeout(50.0)
+                assertEquals("⚠ [stuck] ${alert["run"]}\nDraft: No tone given.", inWorker("self.shown ? self.shown.title + '\\n' + self.shown.body : ''"))
+            }
+
+            // DevTools can't tap an Alert, so the test raises the service worker's own tap on the Alert it showed.
+            inWorker("""(() => {
+                const tap = new Event('notificationclick')
+                Object.assign(tap, { notification: { data: self.shown.data, close() {} }, waitUntil: work => work })
+                self.dispatchEvent(tap)
+                return ''
+            })()""")
+            page.waitForURL(url("${alert["url"]}"))
+            assertThat(page.locator("h1")).containsText("Draft")
+
+            page.navigate(url("/settings"))
+            assertThat(page.getByLabel("Alerts on this device")).isChecked()
+            page.getByLabel("Alerts on this device").uncheck()
+            assertThat(page.locator("#alerts-said")).hasText("Alerts are off for this device.")
+            assertEquals(404, http.postBytes("/alerts/test", device.subscription().toByteArray()).status)
+        }
+    }
+
+    @Test
+    fun `Remove in the list of devices with Alerts on posts only that device, never the Settings form`() = browse {
+        FakePushService().use { device ->
+            http.get("/settings")
+            http.postBytes("/alerts/devices", device.subscription("Old phone").toByteArray())
+            page.navigate(url("/settings"))
+            val sent = page.waitForRequest({ it.url().endsWith("/settings/alerts/remove") }) {
+                page.locator("#alert-devices li", Page.LocatorOptions().setHasText("Old phone")).getByText("Remove").click()
+            }
+            val posted = sent.postData()!!.split("&").map { java.net.URLDecoder.decode(it.substringBefore("="), Charsets.UTF_8) }.toSet()
+            assertEquals(setOf("_csrf", "endpoint"), posted)
+            assertThat(page).hasURL(url("/settings"))
+            assertThat(page.locator("#alert-devices")).hasText("None yet.")
+        }
+    }
+
+    @Test
+    fun `Settings says plainly why this device can't get Alerts, for no HTTPS, an iPhone or iPad whose Ants is not on the home screen, or no Push`() = browse {
+        // Each case is the page as such a browser would show it, set before Settings' script runs; #as-… picks it.
+        page.addInitScript("""
+            const as = location.hash.slice(4);
+            const set = (on, name, value) => Object.defineProperty(on, name, { configurable: true, get: () => value });
+            if (as) set(window, 'isSecureContext', as !== 'http');
+            if (as === 'iphone' || as === 'iphone-installed') set(Navigator.prototype, 'userAgent', 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1');
+            if (as === 'iphone-installed') set(Navigator.prototype, 'standalone', true);
+            // iPadOS 13 and later says it is a Mac; only its touch screen tells it apart.
+            if (as === 'ipad') set(Navigator.prototype, 'userAgent', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15');
+            if (as === 'ipad') set(Navigator.prototype, 'maxTouchPoints', 5);
+            if (as === 'no-push' || as === 'iphone' || as === 'ipad') delete window.PushManager;
+        """.trimIndent())
+        val why = page.locator("#alerts-why")
+        fun open(case: String) {
+            page.navigate("about:blank")
+            page.navigate(url("/settings#as-$case"))
+        }
+
+        open("http")
+        assertThat(why).containsText("served over HTTPS, or from localhost")
+        assertThat(page.getByLabel("Alerts on this device")).isDisabled()
+
+        open("iphone")
+        assertThat(why).containsText("Alerts come only to Ants added to the home screen: tap Share, then Add to Home Screen")
+        assertThat(page.getByLabel("Alerts on this device")).isDisabled()
+
+        open("ipad")
+        assertThat(why).containsText("Alerts come only to Ants added to the home screen: tap Share, then Add to Home Screen")
+        assertThat(page.getByLabel("Alerts on this device")).isDisabled()
+
+        open("no-push")
+        assertThat(why).hasText("This browser can't get Alerts. Another browser on this device may.")
+        assertThat(page.getByLabel("Alerts on this device")).isDisabled()
+
+        // Installed to the home screen, with Push, an iPhone can: no reason, and the toggle works. A browser has no
+        // service worker outside a secure context, whatever the page is told, so this part needs one.
+        open("iphone-installed")
+        if (page.evaluate("'serviceWorker' in navigator") == true) {
+            assertThat(page.getByLabel("Alerts on this device")).isEnabled()
+            assertThat(why).isHidden()
+        }
     }
 
     @Test

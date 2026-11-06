@@ -4,6 +4,7 @@ import com.microsoft.playwright.Browser.NewContextOptions
 import com.microsoft.playwright.Page
 import com.microsoft.playwright.Playwright
 import com.microsoft.playwright.options.ColorScheme
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
@@ -20,7 +21,7 @@ import kotlin.test.assertTrue
  * The look test: every page in light and in dark, as build/reports/browser/look/<page>/app-{light,dark}.png, and on a
  * phone in build/reports/browser/look-phone, for a person or an agent to look at. It asserts nothing about the look
  * itself. The app is seeded with Runs in different states, waiting entries, a Schedule, and the shipped Processes,
- * Agents and Skills, and a Dashboard with every Widget type and chart kind. Its one check of the look is that a
+ * Agents and Skills, a Dashboard with every Widget type and chart kind, and two devices with Alerts on. Its one check of the look is that a
  * Dashboard fits a phone and shows no light box in Dark mode. Like [BrowserTest], it is skipped where Chromium can't launch.
  */
 @Tag("browser")
@@ -35,6 +36,12 @@ class LookTest : AntsTest() {
     private val claude = FakeClaude()
     private val look: Path = Path.of("build/reports/browser/look")
     private val lookOnPhone: Path = Path.of("build/reports/browser/look-phone")
+
+    /** The push services of the devices with Alerts on that Settings lists. */
+    private val phones = List(2) { FakePushService() }
+
+    @AfterEach
+    fun closePhones() = phones.forEach { it.close() }
 
     private fun desktop() = NewContextOptions().setViewportSize(1440, 900)
     private fun phone() = NewContextOptions().setViewportSize(390, 844).setIsMobile(true).setHasTouch(true)
@@ -178,6 +185,7 @@ class LookTest : AntsTest() {
         Shot("skill-reference", "/skills/tdd", "document.querySelector('.references [data-open]').click()"),
         Shot("settings", "/settings"),
         Shot("answer", entry(app.getValue("round"))),
+        Shot("notice", entry(app.getValue("notice"))),
         Shot("dashboard", "/dashboards/${app.getValue("dashboard")}"),
     )
 
@@ -298,6 +306,11 @@ class LookTest : AntsTest() {
         runs["round"] = start("round")
         entry(runs.getValue("round"))
 
+        // A Notice from a watcher's Run, which has ended, for the Notification list and the Notice's page.
+        http.import("notify.bpmn")
+        runs["notice"] = start("watch", listOf("pipeline" to "api-build", NAME to "Watch the api pipelines"))
+        entry(runs.getValue("notice"))
+
         // An ended Run, a cancelled one, and a Schedule for Coming up.
         http.import("start-end.bpmn")
         start("start-end")
@@ -323,6 +336,10 @@ class LookTest : AntsTest() {
         http.get("/processes/nightly")
         http.post("/processes/nightly/schedule", mapOf("cron" to "0 0 0 * * *"))
         runs["dashboard"] = dashboard()
+
+        // Two devices with Alerts on, for Settings' list.
+        http.get("/settings")
+        for ((device, name) in phones.zip(listOf("Chrome on Android", "Firefox on Linux"))) http.postBytes("/alerts/devices", device.subscription(name).toByteArray())
         return runs
     }
 
