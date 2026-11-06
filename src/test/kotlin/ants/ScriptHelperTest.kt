@@ -267,7 +267,7 @@ class ScriptHelperTest : AntsTest() {
         settings(claude)
         claude.session("script-helper", """{"type":"result","subtype":"success","result":"Done.","session_id":"${'$'}SESSION"}""")
         val token = open()
-        assertEquals(emptyMap<Any, Any>(), json.readValue(send(token, "Post the hand-off's message to Slack.").body, Map::class.java))
+        assertEquals(mapOf("taken" to "1"), json.readValue(send(token, "Post the hand-off's message to Slack.").body, Map::class.java)) // its first
         eventually { assertEquals(1, claude.launches("script-helper").size) }
         val launch = claude.launches("script-helper").single()
         val ants = (json.readValue(launch.flag("--mcp-config"), Map::class.java)["mcpServers"] as Map<*, *>)["ants"] as Map<*, *>
