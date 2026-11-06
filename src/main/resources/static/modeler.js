@@ -13,7 +13,7 @@ import {camel, linkedChanges, linkedProperties, listedSkills, operators, readCon
 // `ants.type` property each field carries (the engine only knows `string`), Items are Tickets' property and help, the
 // Process's Profile property, help and empty choice, Ants' own Run variables, each User Task kind with its fields
 // and Result, what the palette and add_element draw for each kind, the multi-instance modes, and the panel's own wording.
-const {kinds, builtIns, fieldTypes, itemsAreTickets, profile, level, runVariables, userTasks, drawn, multiInstanceModes, wording} = JSON.parse(document.getElementById("canvas").dataset.facts)
+const {kinds, builtIns, fieldTypes, itemsAreTickets, notifyLine, profile, level, runVariables, userTasks, drawn, multiInstanceModes, wording} = JSON.parse(document.getElementById("canvas").dataset.facts)
 
 // The three Tasks Ants runs, as the BPMN each one is, and their colour on the diagram and in the palette.
 const tasks = {
@@ -235,7 +235,12 @@ const panels = {
         const topic = element.businessObject.get("camunda:topic")
         const which = el("select", {onchange: () => modeler.get("modeling").updateProperties(element, {"camunda:topic": which.value})},
             ...Object.entries(builtIns).map(([value, {name}]) => el("option", {value, textContent: name, selected: value === topic})))
-        return field("What Ants does", builtIns[topic]?.does || "Ants has no Built-in Task " + topic, which)
+        const what = field("What Ants does", builtIns[topic]?.does || "Ants has no Built-in Task " + topic, which)
+        if (!builtIns[topic]?.line) return what
+        // Notify's line: an extension property, so the engine never evaluates it and Notify fills it in itself.
+        const line = el("input", {value: agentProperties(element.businessObject)[notifyLine.property] || "", placeholder: "e.g. " + notifyLine.example,
+            oninput: () => writeAgentTask(element, {[notifyLine.property]: line.value || undefined})})
+        return el("div", {}, what, field("Line", builtIns[topic].line, line))
     },
 }
 
@@ -1347,10 +1352,10 @@ async function setCall({id, process, inputs}) {
     return {id, process: key || null, inputs: Object.fromEntries(written)}
 }
 
-function setBuiltIn({id, topic, inputs, asker}) {
+function setBuiltIn({id, topic, inputs, asker, line}) {
     const script = kindOf(found(id)) === "script"
     const element = script ? found(id) : foundAs(id, "built-in", "a Built-in Task or a Script Task")
-    if (script && (topic !== undefined || asker !== undefined)) throw new Error(`${id} is a Script Task: set only its inputs.`)
+    if (script && (topic !== undefined || asker !== undefined || line !== undefined)) throw new Error(`${id} is a Script Task: set only its inputs.`)
     const bo = element.businessObject
     if (topic !== undefined && !builtIns[topic]) throw new Error(`No Built-in Task ${topic}: the topics are ${Object.keys(builtIns).join(", ")}.`)
     const now = topic ?? bo.get("camunda:topic")
@@ -1358,6 +1363,7 @@ function setBuiltIn({id, topic, inputs, asker}) {
         throw new Error(`Only ${Object.keys(builtIns).filter(topic => builtIns[topic].asker).join(", ")} names an asker; ${id} is ${now}.`)
     }
     if (asker !== undefined) agentTaskNamed("asker", asker)
+    if (line !== undefined && !builtIns[now]?.line) throw new Error(`Only ${Object.keys(builtIns).filter(topic => builtIns[topic].line).join(", ")} says a line; ${id} is ${now}.`)
     const given = Object.entries(inputs || {}).map(([name, value]) => {
         checkJuelName(name, "an input name")
         return [name, String(value ?? "")]
@@ -1367,9 +1373,11 @@ function setBuiltIn({id, topic, inputs, asker}) {
         .filter(([, value]) => value)
     edit(() => {
         if (topic !== undefined) modeler.get("modeling").updateProperties(element, {"camunda:topic": topic})
-        if (inputs !== undefined || asker !== undefined) writeAgentTask(element, asker === undefined ? {} : {"ants.asker": asker || undefined}, written, true)
+        const properties = {...(asker === undefined ? {} : {"ants.asker": asker || undefined}), ...(line === undefined ? {} : {[notifyLine.property]: String(line) || undefined})}
+        if (inputs !== undefined || asker !== undefined || line !== undefined) writeAgentTask(element, properties, written, true)
     })
-    return {id, topic: now, inputs: Object.fromEntries(agentInputs(bo)), asker: agentProperties(bo)["ants.asker"] || null}
+    return {id, topic: now, inputs: Object.fromEntries(agentInputs(bo)), asker: agentProperties(bo)["ants.asker"] || null,
+        ...(builtIns[now]?.line ? {line: agentProperties(bo)[notifyLine.property] || ""} : {})}
 }
 
 // Multi-instance, as the wrench menu's parallel and sequential toggles write it, and the panel's collection, element

@@ -99,11 +99,11 @@ class Tracked(val run: String, val name: String, val file: Path) {
  * so, and `[failed]` when its fix didn't land.
  */
 // ponytail: waiting since the file last changed, not since it became ready-for-human; nothing records that moment.
-class TicketEntry(ticket: Tracked, process: String, val runName: String, sent: AgentLauncher.Fixing?) : Entry(
+class TicketEntry(ticket: Tracked, process: String, override val runName: String, sent: AgentLauncher.Fixing?) : Entry(
     "ticket-${ticket.run}-${ticket.name}", if (sent?.failed == true) "[failed]" else "[ready-for-human]", process, ticket.title,
     sent?.summary ?: "Yours to do; mark it done when it is.", Date(ticket.file.getLastModifiedTime().toMillis()),
 ) {
-    val run = ticket.run
+    override val run = ticket.run
     val href = ticket.href
 }
 
