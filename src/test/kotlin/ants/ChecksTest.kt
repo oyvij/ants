@@ -202,6 +202,18 @@ class ChecksTest : AntsTest() {
     }
 
     @Test
+    fun `Publish refuses a Notify with an empty line, naming it, and a Notify with a line passes`() {
+        fun notify(line: String?) = """
+            <bpmn:serviceTask id="tell" name="Tell me" operaton:type="external" operaton:topic="notify">
+              ${line?.let { """<bpmn:extensionElements><operaton:properties><operaton:property name="ants.line" value="$it" /></operaton:properties></bpmn:extensionElements>""" }.orEmpty()}
+            </bpmn:serviceTask>
+        """
+        refuses(diagram(notify(null)), "tell", "Tell me (tell) has an empty line, so its Notice would say nothing.")
+        refuses(diagram(notify("  ")), "tell", "Tell me (tell) has an empty line, so its Notice would say nothing.")
+        assertEquals(emptyList(), checks(diagram(notify("Pipeline failed"))))
+    }
+
+    @Test
     fun `the modeler reads camunda as the deploy path does`() {
         val bpmn = diagram(agentTask("x").replace("operaton:", "camunda:"))
             .replace("<bpmn:definitions ", """<bpmn:definitions xmlns:camunda="http://camunda.org/schema/1.0/bpmn" """)

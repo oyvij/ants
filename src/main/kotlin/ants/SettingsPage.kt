@@ -37,6 +37,7 @@ class SettingsPage(
     @Value("\${server.address:}") private val address: String,
     private val updates: Updates,
     private val server: WebServerApplicationContext,
+    private val alerts: Alerts,
 ) {
     private val port get() = server.webServer?.port
 
@@ -106,6 +107,8 @@ class SettingsPage(
         model.addAttribute("address", "${address.ifEmpty { "0.0.0.0" }}:$port")
         model.addAttribute("update", updates.current)
         model.addAttribute("docker", updates.docker)
+        model.addAttribute("alertKey", alerts.publicKey)
+        model.addAttribute("alertDevices", alerts.listed())
         return "settings"
     }
 

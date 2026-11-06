@@ -1,0 +1,25 @@
+@param entry: ants.NoticeEntry
+@param _csrf: org.springframework.security.web.csrf.CsrfToken
+@param colorScheme: String = "light dark"
+@param shell: ants.Shell
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    @template.app()
+    <meta name="color-scheme" content="${colorScheme}">
+    <title>${entry.icon} ${entry.tag} ${entry.task} · Ants</title>
+</head>
+<body>
+@template.nav(shell = shell)
+<main>
+<div class="crumbs"><a href="/notifications">Notification list</a> / @if(entry.gone)${entry.runName}@else<a href="/runs/${entry.run}">${entry.runName}</a>@endif</div>
+<div class="ph"><h1>${entry.task} @template.tag(entry = entry)</h1><div class="acts"><span class="muted small">${entry.waited} ago</span></div>
+    <div class="sub">${entry.process}</div></div>
+<p>${entry.summary}</p>
+@if(entry.repeats != null)<p class="muted small">${entry.repeats}</p>@endif
+@if(entry.gone)<p class="muted">The Run ${entry.runName} is gone.</p>@endif
+<form method="post" action="/notifications/${entry.id}/dismiss"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">@if(!entry.gone)<a class="btn primary" href="/runs/${entry.run}">Open the Run</a> @endif<button data-pending="Dismissing…">Dismiss</button></form>
+</main>
+</body>
+</html>

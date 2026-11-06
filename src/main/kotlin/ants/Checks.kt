@@ -37,7 +37,7 @@ data class Check(val element: String?, val message: String, val warning: Boolean
  */
 @Component
 class Checks(private val catalogue: Catalogue, private val scripts: Scripts, private val drafted: DraftedItems, private val repository: RepositoryService) {
-    private val kinds: List<(BpmnModelInstance) -> List<Check>> = listOf(::refusedElements, ::refusedUses, ::oneStartEvent, ::startFormNames, ::emptyInputs, ::defaultPaths, ::timerTimes, ::timerStarts, ::reviewSendBacks,
+    private val kinds: List<(BpmnModelInstance) -> List<Check>> = listOf(::refusedElements, ::refusedUses, ::oneStartEvent, ::startFormNames, ::emptyInputs, ::emptyNotifyLines, ::defaultPaths, ::timerTimes, ::timerStarts, ::reviewSendBacks,
         { agentTasks(catalogue, scripts, drafted, it) }, { references(it, scripts) }, // these two in AgentTaskChecks.kt
         { scriptTasks(scripts, catalogue, drafted, it) },
         { calls(repository, it) }) // in CallActivityChecks.kt
@@ -64,6 +64,8 @@ val builtIns = mapOf(
     "accept-recommendations" to mapOf("name" to "Accept recommendations", "does" to "answers a Round with every recommendation.",
         "asker" to "The Agent Task whose Round it answers."),
     "push" to mapOf("name" to "Push", "does" to "waits for you to push the work branch of every repo."),
+    Notify.TOPIC to mapOf("name" to "Notify", "does" to "tells you something without waiting, such as that a pipeline failed: adds its line as a Notice to the Notification list, and the Run goes on at once.",
+        "line" to "The one line the Notice says. ${'$'}{…} names an earlier Result or a start-form field, as in ${Notify.EXAMPLE}."),
 )
 
 /** What Ants calls each element the modeler shows, by the modeler's kind, and what it does there: the palette's tooltip and the panel's explanation. */
@@ -147,6 +149,7 @@ val modelerFacts: String = JsonMapper.shared().writeValueAsString(mapOf(
         "help" to "Each item names a Ticket ($TICKETS/01-hello.md, or 01). An instance waits until its Ticket's Blocked by are " +
             "${Tracked.IN_REVIEW} or ${Tracked.DONE}, a ${Tracked.READY_FOR_HUMAN} Ticket waits for you once its Blocked by have, and a landed instance's Ticket goes ${Tracked.IN_REVIEW}.",
     ),
+    "notifyLine" to mapOf("property" to Notify.LINE, "example" to Notify.EXAMPLE),
     "profile" to mapOf(
         "property" to PROFILE,
         "help" to "The Vault and Source map its Runs use, unless the start form picks another Profile.",
@@ -276,6 +279,11 @@ private fun emptyInputs(model: BpmnModelInstance) = model.getModelElementsByType
             .filter { it.textContent.isBlank() && it.domElement.childElements.isEmpty() }
             .map { Check(task.id, "${task.label} has an empty input ${it.operatonName}.", warning = true) }
     }
+
+/** A Notify with no line would add a Notice that says nothing. */
+private fun emptyNotifyLines(model: BpmnModelInstance) = model.getModelElementsByType(ServiceTask::class.java)
+    .filter { it.operatonTopic == Notify.TOPIC && it.property(Notify.LINE).isNullOrBlank() }
+    .map { Check(it.id, "${it.label} has an empty line, so its Notice would say nothing.") }
 
 /** An exclusive gateway that chooses between paths takes its default one when no condition holds; a merge needs none. */
 private fun defaultPaths(model: BpmnModelInstance) = model.getModelElementsByType(ExclusiveGateway::class.java)
