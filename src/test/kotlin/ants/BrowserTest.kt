@@ -5654,10 +5654,18 @@ class BrowserTest : AntsTest() {
         val clock = page.locator("#status [data-since]")
         assertThat(clock).hasText(Pattern.compile("\\d+s"))
         val first = clock.textContent()!!
-        val spin = page.locator("#status .spin")
-        val ant = spin.screenshot()
+        // The ant stands still: it is drawn from the still SVG, which animates nothing, and no animation runs on it. Two
+        // screenshots of it can differ by a repaint without the ant moving, so the test checks what is drawn instead.
+        val (still, animated, running) = page.evaluate("""async () => {
+            const spin = document.querySelector('#status .spin');
+            const url = getComputedStyle(spin).backgroundImage.slice(5, -2);
+            const svg = await (await fetch(url)).text();
+            return [url, /<animate|@keyframes|animation/.test(svg), spin.getAnimations().length];
+        }""") as List<*>
+        assertTrue((still as String).endsWith("/working-ant-still.svg"), "the working ant is drawn from $still")
+        assertEquals(false, animated, "$still animates nothing")
+        assertEquals(0, (running as Number).toInt(), "no animation runs on the working ant")
         assertThat(clock).not().hasText(first) // the clock still ticks
-        assertTrue(ant.contentEquals(spin.screenshot()), "the working ant stands still")
         assertEquals("none", page.evaluate("getComputedStyle(document.querySelector('#status .shimmer')).animationName"))
         claude.release("one")
         assertThat(page.locator("#live.caret")).containsText("Almost there")
