@@ -48,6 +48,10 @@ class ProcessBuilderToolsTest : AntsTest() {
 
     private fun call(token: String, name: String, arguments: Map<String, Any?> = emptyMap()) = mcpCall(port, token, name, arguments)
 
+    /** The JSON [name] gives, failing with the tool's own error when it gives one instead. */
+    private fun read(token: String, name: String, arguments: Map<String, Any?> = emptyMap()) =
+        call(token, name, arguments).let { (text, failed) -> assertFalse(failed, text); json.readTree(text) }
+
     private fun page(token: String, answer: (String, Map<*, *>) -> Any?) = browser.actAsPage(token, builder, answer = answer)
 
     @Test
@@ -137,7 +141,7 @@ class ProcessBuilderToolsTest : AntsTest() {
         deployBuildAndShip()
         val token = open()
         page(token) { tool, _ -> buildAndShip.takeIf { tool == "xml" } }
-        val inside = json.readTree(call(token, "diagram", mapOf("in" to "to_spec")).first)
+        val inside = read(token, "diagram", mapOf("in" to "to_spec"))
         assertTrue(inside["elements"].list().all { it["in"].asString() == "to_spec" })
         val tospec = inside["elements"].list().single { it["id"].asString() == "tospec" }
         val out = inside["connections"].list().filter { it["from"].asString() == "tospec" }
@@ -154,7 +158,7 @@ class ProcessBuilderToolsTest : AntsTest() {
             assertEquals(task.property(RESULT_SCHEMA), full["properties"][RESULT_SCHEMA].asString())
             assertEquals(tospec["outgoing"].list().map { it.asString() }, full["outgoing"].list().map { it["id"].asString() })
         }
-        val sub = json.readTree(call(token, "element", mapOf("id" to "to_spec")).first)
+        val sub = read(token, "element", mapOf("id" to "to_spec"))
         assertTrue(sub["children"]["elements"].list().any { it["id"].asString() == "tospec" })
         assertTrue(call(token, "diagram", mapOf("in" to "tospec")).second)
         assertTrue(call(token, "element", mapOf("id" to "nowhere")).second)
@@ -163,7 +167,7 @@ class ProcessBuilderToolsTest : AntsTest() {
     @Test
     fun `template reads every shipped Template, as diagram reads the open one`() {
         val token = open()
-        val shipped = json.readTree(call(token, "templates").first).list().filter { it["shipped"].asBoolean() }.map { it["name"].asString() }
+        val shipped = read(token, "templates").list().filter { it["shipped"].asBoolean() }.map { it["name"].asString() }
         assertTrue(shipped.size >= 9, "$shipped")
         for (name in shipped) {
             val xml = javaClass.getResource("/shipped/templates/$name.bpmn")!!.readText()
