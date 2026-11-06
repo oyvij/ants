@@ -190,13 +190,15 @@
 @else
             <ul class="devices" id="alert-devices">
 @for(device in alertDevices)
-                <li data-endpoint="${device.endpoint}"><b>${device.name}</b> <span class="muted small">added ${device.added}</span><button formaction="/settings/alerts/remove" name="endpoint" value="${device.endpoint}">Remove</button></li>
+                <li data-endpoint="${device.endpoint}"><b>${device.name}</b> <span class="muted small">added ${device.added}</span><button form="alert-remove" name="endpoint" value="${device.endpoint}">Remove</button></li>
 @endfor
             </ul>
 @endif
         </div></div></div>
     <div class="savebar" hidden><span>Unsaved changes</span><button class="primary" name="action" value="save">Save</button></div>
 </form>
+<%-- Remove in the list of devices with Alerts on posts this form, not the Settings form, so it sends only its device. --%>
+<form method="post" action="/settings/alerts/remove" id="alert-remove"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"></form>
 @for((i, map) in maps.entries.withIndex())
 <dialog class="modal source-map" id="source-map-${i}">
     <form method="dialog" class="mh"><b>${map.key}</b><code class="small">${map.value.first}</code><span class="sp"></span><span class="muted small">Esc to close</span><button class="ghost" title="Close" aria-label="Close">✕</button></form>

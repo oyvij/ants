@@ -3267,7 +3267,23 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
-    fun `Settings says plainly why this device can't get Alerts, for no HTTPS, an iPhone's Ants not on the home screen, or no Push`() = browse {
+    fun `Remove in the list of devices with Alerts on posts only that device, never the Settings form`() = browse {
+        FakePushService().use { device ->
+            http.get("/settings")
+            http.postBytes("/alerts/devices", device.subscription("Old phone").toByteArray())
+            page.navigate(url("/settings"))
+            val sent = page.waitForRequest({ it.url().endsWith("/settings/alerts/remove") }) {
+                page.locator("#alert-devices li", Page.LocatorOptions().setHasText("Old phone")).getByText("Remove").click()
+            }
+            val posted = sent.postData()!!.split("&").map { java.net.URLDecoder.decode(it.substringBefore("="), Charsets.UTF_8) }.toSet()
+            assertEquals(setOf("_csrf", "endpoint"), posted)
+            assertThat(page).hasURL(url("/settings"))
+            assertThat(page.locator("#alert-devices")).hasText("None yet.")
+        }
+    }
+
+    @Test
+    fun `Settings says plainly why this device can't get Alerts, for no HTTPS, an iPhone or iPad whose Ants is not on the home screen, or no Push`() = browse {
         // Each case is the page as such a browser would show it, set before Settings' script runs; #as-… picks it.
         page.addInitScript("""
             const as = location.hash.slice(4);
@@ -3275,7 +3291,10 @@ class BrowserTest : AntsTest() {
             if (as) set(window, 'isSecureContext', as !== 'http');
             if (as === 'iphone' || as === 'iphone-installed') set(Navigator.prototype, 'userAgent', 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1');
             if (as === 'iphone-installed') set(Navigator.prototype, 'standalone', true);
-            if (as === 'no-push' || as === 'iphone') delete window.PushManager;
+            // iPadOS 13 and later says it is a Mac; only its touch screen tells it apart.
+            if (as === 'ipad') set(Navigator.prototype, 'userAgent', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15');
+            if (as === 'ipad') set(Navigator.prototype, 'maxTouchPoints', 5);
+            if (as === 'no-push' || as === 'iphone' || as === 'ipad') delete window.PushManager;
         """.trimIndent())
         val why = page.locator("#alerts-why")
         fun open(case: String) {
@@ -3291,8 +3310,12 @@ class BrowserTest : AntsTest() {
         assertThat(why).containsText("Alerts come only to Ants added to the home screen: tap Share, then Add to Home Screen")
         assertThat(page.getByLabel("Alerts on this device")).isDisabled()
 
+        open("ipad")
+        assertThat(why).containsText("Alerts come only to Ants added to the home screen: tap Share, then Add to Home Screen")
+        assertThat(page.getByLabel("Alerts on this device")).isDisabled()
+
         open("no-push")
-        assertThat(why).hasText("This browser has no Push support, so it can't get Alerts. Another browser on this device may.")
+        assertThat(why).hasText("This browser can't get Alerts. Another browser on this device may.")
         assertThat(page.getByLabel("Alerts on this device")).isDisabled()
 
         // Installed to the home screen, with Push, an iPhone can: no reason, and the toggle works. A browser has no

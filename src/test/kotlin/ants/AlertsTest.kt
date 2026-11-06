@@ -40,8 +40,9 @@ class AlertsTest : AntsTest() {
     private fun removeInSettings(name: String) {
         val page = browser.get("/settings").body
         val row = Regex("""<li data-endpoint="[^"]*">((?:(?!</li>).)*?$name(?:(?!</li>).)*)</li>""", RegexOption.DOT_MATCHES_ALL).find(page)!!.groupValues[1]
-        val button = Regex("""<button formaction="([^"]+)" name="endpoint" value="([^"]+)">Remove</button>""").find(row)!!
-        assertEquals("/settings", browser.post(button.groupValues[1], mapOf("endpoint" to button.groupValues[2].replace("&amp;", "&"))).path)
+        val endpoint = Regex("""<button form="alert-remove" name="endpoint" value="([^"]+)">Remove</button>""").find(row)!!.groupValues[1]
+        val form = Regex("""<form method="post" action="([^"]+)" id="alert-remove">""").find(page)!!.groupValues[1]
+        assertEquals("/settings", browser.post(form, mapOf("endpoint" to endpoint.replace("&amp;", "&"))).path)
     }
 
     /** The one Alert the push service received next. */

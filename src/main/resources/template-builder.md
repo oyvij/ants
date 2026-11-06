@@ -59,10 +59,7 @@ for each Run, and ends at an end event. Between them, connected by paths:
   Send back resumes), review changes, or answer a Round an Agent Task asked (`set_user_task`). Later Tasks read
   `${<task id>.approved}` and `${<task id>.comment}`.
 - **Built-in Task** (`built-in`): Ants does it itself, such as cloning the repos (`built_in_tasks` lists them). Set its
-  topic and inputs, such as clone-repos' `repos`, with `set_built_in`. **Notify** (topic `notify`) tells the user something
-  without waiting, such as "tell me when it fails": it adds its `line` as a Notice to the Notification list and the
-  Run goes on at once. Give the line with `add_element`'s or `set_built_in`'s `line`, naming earlier Results with
-  `${…}` (`Pipeline ${pipeline} failed`); Publish refuses an empty one.
+  topic and inputs, such as clone-repos' `repos`, with `set_built_in`.
 - **Script Task** (`script`): runs one of the user's Scripts in the Run workspace, the same way every time, with no
   Agent and no tokens: plain, repeatable work such as calling an API or reshaping a file. `scripts` lists them, with
   their names, descriptions, input schemas and output schemas. Draw it with `add_element`'s `script`, naming the
