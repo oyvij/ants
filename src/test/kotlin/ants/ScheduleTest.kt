@@ -1,5 +1,6 @@
 package ants
 
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.operaton.bpm.engine.HistoryService
 import org.operaton.bpm.engine.ManagementService
@@ -65,6 +66,25 @@ class ScheduleTest : AntsTest() {
     /** Lets the loop go round a few times, for what should not happen. */
     private fun settle() = Thread.sleep(1000)
 
+    private var halfPast = Duration.ZERO
+
+    /**
+     * Every test starts at half past an hour, so no hourly time comes on the real clock while it settles and checks that
+     * a time doesn't run: an hour turning then is a new time, and runs.
+     */
+    @BeforeEach
+    fun startHalfPast() {
+        val now = clock.instant().atZone(clock.zone)
+        val half = now.truncatedTo(ChronoUnit.HOURS).plusMinutes(30)
+        halfPast = Duration.between(now, if (half.isAfter(now)) half else half.plusHours(1))
+        clock.offset = halfPast
+    }
+
+    /** Moves the clock to [ahead] of where the test started. */
+    private fun later(ahead: Duration) {
+        clock.offset = halfPast + ahead
+    }
+
     @Autowired
     lateinit var schedules: Schedules
 
@@ -121,7 +141,7 @@ class ScheduleTest : AntsTest() {
         assertContains(page, "<dt>prompt</dt><dd><code>Sweep</code></dd>")
         assertContains(page, Regex("<span id=\"name\">Nightly, \\d{1,2} [A-Z][a-z]{2} \\d\\d:\\d\\d</span>"))
 
-        clock.offset = Duration.ofHours(1)
+        later(Duration.ofHours(1))
         eventually { assertEquals(2, runs()) }
         assertEquals(0, management.createJobQuery().processDefinitionKey(key).count())
     }
@@ -155,7 +175,7 @@ class ScheduleTest : AntsTest() {
         settle()
         assertEquals(0, cloneRuns().size)
 
-        clock.offset = Duration.ofHours(1)
+        later(Duration.ofHours(1))
         eventually { assertEquals(1, cloneRuns().size) }
         val run = cloneRuns().single().id
         val page = runPage(run)
@@ -172,7 +192,7 @@ class ScheduleTest : AntsTest() {
         schedule(listOf(NAME to "Ship api", PROFILE to "other", VERBOSITY to "detailed", "repos" to "api", "branch" to "nightly"))
         assertContains(row("Ship api", "clone-repos")!!, Regex("<td>other</td><td class=\"k\">Verbosity</td><td>detailed</td>"))
 
-        clock.offset = Duration.ofHours(1)
+        later(Duration.ofHours(1))
         eventually { assertEquals(1, cloneRuns().size) }
         assertContains(runPage(cloneRuns().single().id), """<span id="verbosity">Verbosity detailed</span>""")
 
@@ -190,13 +210,13 @@ class ScheduleTest : AntsTest() {
         )
         assertContains(browser.get("/processes/clone-repos").body, Regex("<td>other</td><td class=\"k\">Verbosity</td><td>brief</td>"))
 
-        clock.offset = Duration.ofHours(1)
+        later(Duration.ofHours(1))
         eventually { assertEquals(1, cloneRuns().size) }
         assertContains(runPage(cloneRuns().single().id), """<span id="verbosity">Verbosity brief</span>""")
         eventually { tasks.complete(assertNotNull(tasks.createTaskQuery().processInstanceId(cloneRuns().single().id).singleResult()).id) }
 
         twoProfiles(other = Verbosity.DETAILED)
-        clock.offset = Duration.ofHours(2)
+        later(Duration.ofHours(2))
         eventually { assertEquals(2, cloneRuns().size) }
         assertContains(runPage(cloneRuns().last().id), """<span id="verbosity">Verbosity detailed</span>""")
     }
@@ -220,7 +240,7 @@ class ScheduleTest : AntsTest() {
         assertContains(rows, Regex("\\d\\d:\\d\\d · in \\d"))
         home.resolve("settings.yaml").writeAtomically(home.resolve("settings.yaml").readText().replace("default-profile: work", "default-profile: other"))
 
-        clock.offset = Duration.ofDays(4)
+        later(Duration.ofDays(4))
         eventually { assertEquals(2, cloneRuns().size) }
         val (hourly, weekday) = cloneRuns().partition { "<dt>branch</dt><dd><code>a</code></dd>" in runPage(it.id) }.toList().map { it.single().id }
         eventually { assertEquals(listOf("api"), clones(workspace(hourly)).map { it.fileName.toString() }) }
@@ -262,7 +282,7 @@ class ScheduleTest : AntsTest() {
         browser.get("/processes/$key")
         browser.post("/processes/$key/schedule", listOf("prompt" to "Tidy up", "cron" to "0 0 * * * *"))
         deploy(bpmn(stored = "Edited"))
-        clock.offset = Duration.ofHours(5)
+        later(Duration.ofHours(5))
         eventually { assertEquals(1, runs()) }
         settle()
         assertEquals(1, runs())
@@ -297,7 +317,7 @@ class ScheduleTest : AntsTest() {
         assertContains(row("Sweep A")!!, "<span class=\"muted\">paused</span>")
         assertContains(row("Sweep B")!!, "<button>Pause</button>")
 
-        clock.offset = Duration.ofHours(3)
+        later(Duration.ofHours(3))
         eventually { assertEquals(1, runsWith("Sweep B")) }
         settle()
         assertEquals(0, runsWith("Sweep A"))
@@ -306,7 +326,7 @@ class ScheduleTest : AntsTest() {
         assertContains(row("Sweep A")!!, "<button>Pause</button>")
         settle()
         assertEquals(0, runsWith("Sweep A"), "the times passed while paused don't run")
-        clock.offset = Duration.ofHours(4)
+        later(Duration.ofHours(4))
         eventually { assertEquals(1, runsWith("Sweep A")) }
         eventually { assertEquals(2, runsWith("Sweep B")) }
     }
@@ -322,7 +342,7 @@ class ScheduleTest : AntsTest() {
         assertContains(row("Sweep B")!!, "<button>Pause</button>")
         assertEquals(1, repository.createProcessDefinitionQuery().processDefinitionKey(key).count(), "Remove makes no new version")
 
-        clock.offset = Duration.ofHours(2)
+        later(Duration.ofHours(2))
         eventually { assertEquals(1, runsWith("Sweep B")) }
         settle()
         assertEquals(0, runsWith("Sweep A"))
@@ -349,12 +369,12 @@ class ScheduleTest : AntsTest() {
         deploy(bpmn(waits = true))
         scheduleHourly("Sweep A")
         scheduleHourly("Sweep B")
-        clock.offset = Duration.ofHours(1)
+        later(Duration.ofHours(1))
         eventually { assertEquals(1, runsWith("Sweep A")) }
         eventually { assertEquals(1, runsWith("Sweep B")) }
         tasks.complete(tasks.createTaskQuery().processDefinitionKey(key).processVariableValueEquals("prompt", "Sweep B").singleResult()!!.id)
 
-        clock.offset = Duration.ofHours(3)
+        later(Duration.ofHours(3))
         eventually { assertContains(row("Sweep A")!!, "the last Run from this Schedule was still going") }
         val latest = clock.local(clock.instant().atZone(clock.zone).truncatedTo(ChronoUnit.HOURS).toInstant())
         assertContains(row("Sweep A")!!, "Skipped $latest:")
@@ -363,7 +383,7 @@ class ScheduleTest : AntsTest() {
         assertEquals(1, runsWith("Sweep A"))
 
         tasks.complete(tasks.createTaskQuery().processDefinitionKey(key).processVariableValueEquals("prompt", "Sweep A").singleResult()!!.id)
-        clock.offset = Duration.ofHours(4)
+        later(Duration.ofHours(4))
         eventually { assertEquals(2, runsWith("Sweep A")) }
         eventually { assertFalse("Skipped" in row("Sweep A")!!) }
     }
@@ -404,7 +424,7 @@ class ScheduleTest : AntsTest() {
         settle()
         assertEquals(0, cloneRuns().size)
 
-        clock.offset = Duration.ofHours(1)
+        later(Duration.ofHours(1))
         eventually { assertEquals(1, cloneRuns().size) }
         val run = cloneRuns().single().id
         val page = runPage(run)
@@ -482,7 +502,7 @@ class ScheduleTest : AntsTest() {
         schedule(listOf(NAME to "Ship api", PROFILE to "other", "repos" to "api", "branch" to "nightly"))
         home.resolve("settings.yaml").writeAtomically(vault + sourceMapLines(api, web) + "profiles:\n  work:\n    vault: notes\n    source-map: work\n")
 
-        clock.offset = Duration.ofHours(1)
+        later(Duration.ofHours(1))
         eventually { assertEquals(1, failedEntries().size) }
         assertEquals(0, cloneRuns().size)
         val id = browser.get("/processes/clone-repos").body.let { Regex("<tr id=\"schedule-([^\"]+)\">").find(it)!!.groupValues[1] }
@@ -516,7 +536,7 @@ class ScheduleTest : AntsTest() {
         schedule(listOf(NAME to "Ship web", "repos" to "web", "branch" to "w"))
         home.resolve("settings.yaml").writeAtomically(home.resolve("settings.yaml").readText().replace(Regex("source-maps:\n  work: .*\n"), sourceMapLines(web)))
 
-        clock.offset = Duration.ofHours(1)
+        later(Duration.ofHours(1))
         eventually { assertEquals(1, cloneRuns().size) }
         eventually { assertEquals(1, failedEntries().size) }
         assertContains(runPage(cloneRuns().single().id), "<dt>branch</dt><dd><code>w</code></dd>")
@@ -534,7 +554,7 @@ class ScheduleTest : AntsTest() {
         val target = """<camunda:formField id="target" label="Target" type="string"><camunda:validation><camunda:constraint name="required" /></camunda:validation></camunda:formField>"""
         deploy(bpmn().replace("</camunda:formData>", "$target</camunda:formData>"))
 
-        clock.offset = Duration.ofHours(1)
+        later(Duration.ofHours(1))
         eventually { assertEquals(2, failedEntries().size) }
         assertEquals(0, runs())
         val list = browser.get("/notifications").body
