@@ -39,8 +39,12 @@ sealed class Entry(val id: String, val tag: String, val process: String, val tas
 
     val waited get() = duration(Duration.between(since.toInstant(), Instant.now()), seconds = false)
 
-    /** The name of the Run it came from, if it came from one. */
+    /** The Run it came from, if it came from one, and that Run's name. */
+    open val run: String? get() = null
     open val runName: String? get() = null
+
+    /** Whether the Run it came from is gone from the engine, so the entry can't lead to it. */
+    open val gone: Boolean get() = false
 
     private companion object {
         val ICONS = mapOf("[failed]" to "✕", "[stuck]" to "⚠", "[stopped]" to "■", "[questions]" to "?", "[approve]" to "✓", "[review]" to "±", "[push]" to "↑", "[permission]" to "⊘", "[notice]" to "i")
@@ -53,7 +57,7 @@ sealed class Entry(val id: String, val tag: String, val process: String, val tas
  * in a called Process, the called one's.
  */
 class TaskEntry(
-    id: String, tag: String, process: String, val run: String, override val runName: String, task: String, val taskId: String, summary: String, since: Date,
+    id: String, tag: String, process: String, override val run: String, override val runName: String, task: String, val taskId: String, summary: String, since: Date,
     val instance: String, val activity: String,
 ) : Entry(id, tag, process, task, summary, since)
 
@@ -90,12 +94,14 @@ class Notifications(
     /** Everything waiting on the user, oldest first. */
     fun entries(): List<Entry> = (tasks() + failedStarts() + tickets.waiting() + noticeEntries()).sortedBy { it.since }
 
-    /** The open Notices, each knowing whether its Run is gone from the engine. */
+    /**
+     * The open Notices, each knowing whether its Run is gone from the engine. One query answers that for them all, and
+     * only once one is asked, so the Alert sender, which never asks, costs no query.
+     */
     private fun noticeEntries(): List<NoticeEntry> {
         val all = notices.all()
-        if (all.isEmpty()) return emptyList()
-        val kept = history.createHistoricProcessInstanceQuery().processInstanceIds(all.map { it.run }.toSet()).list().map { it.id }.toSet()
-        return all.map { NoticeEntry(it, gone = it.run !in kept, clock) }
+        val kept by lazy { history.createHistoricProcessInstanceQuery().processInstanceIds(all.map { it.run }.toSet()).list().map { it.id }.toSet() }
+        return all.map { notice -> NoticeEntry(notice, { notice.run !in kept }, clock) }
     }
 
     /** The Tasks waiting on the user, oldest first. */
@@ -255,7 +261,7 @@ class Notifications(
     /** Dismiss on a Notice: it leaves the Notification list for good. */
     @PostMapping("/notifications/{id}/dismiss")
     fun dismiss(@PathVariable id: String, model: Model, response: HttpServletResponse, request: HttpServletRequest): String {
-        val notice = notices.all().firstOrNull { it.id == id }?.takeIf { notices.dismiss(id) } ?: return gone(model, response)
+        val notice = notices.dismiss(id) ?: return gone(model, response)
         Shell.toast(request, Toast("Notice dismissed", notice.line, Toast.Kind.SUCCESS))
         return "redirect:/notifications"
     }

@@ -103,7 +103,7 @@ class TicketEntry(ticket: Tracked, process: String, override val runName: String
     "ticket-${ticket.run}-${ticket.name}", if (sent?.failed == true) "[failed]" else "[ready-for-human]", process, ticket.title,
     sent?.summary ?: "Yours to do; mark it done when it is.", Date(ticket.file.getLastModifiedTime().toMillis()),
 ) {
-    val run = ticket.run
+    override val run = ticket.run
     val href = ticket.href
 }
 

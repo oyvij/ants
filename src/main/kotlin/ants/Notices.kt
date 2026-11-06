@@ -16,68 +16,60 @@ import java.time.Duration
 import java.time.Instant
 import java.util.Date
 import java.util.UUID
-import kotlin.io.path.exists
-import kotlin.io.path.readText
 
 /**
  * A Notice: the one [line] the Notify Task [task] of the Run [run], named [runName], of the Process [process] left for
  * the user to read, first at [first] and last at [last], [count] times. Nothing waits on it; it stays until dismissed.
  */
-class Notice(
+data class Notice(
     val id: String, val process: String, val run: String, val runName: String, val task: String, val line: String,
     val first: Instant, val last: Instant, val count: Int,
 ) {
     fun toYaml(): Map<String, Any> = mapOf(
-        "process" to process, "run" to run, "runName" to runName, "task" to task, "line" to line,
+        "id" to id, "process" to process, "run" to run, "runName" to runName, "task" to task, "line" to line,
         "first" to "$first", "last" to "$last", "count" to count,
     )
 
     companion object {
-        fun of(id: String, yaml: Map<*, *>) = Notice(
-            id, "${yaml["process"]}", "${yaml["run"]}", "${yaml["runName"]}", "${yaml["task"]}", "${yaml["line"]}",
+        fun of(yaml: Map<*, *>) = Notice(
+            "${yaml["id"]}", "${yaml["process"]}", "${yaml["run"]}", "${yaml["runName"]}", "${yaml["task"]}", "${yaml["line"]}",
             Instant.parse("${yaml["first"]}"), Instant.parse("${yaml["last"]}"), (yaml["count"] as? Int) ?: 1,
         )
     }
 }
 
 /**
- * A [Notice] on the Notification list: tagged `[notice]`, leading to its Run, or, once the Run is [gone], to a note
- * that it is. [repeats] reads `×3, last at 10:42` once it has counted up, as read on [clock].
+ * A [Notice] on the Notification list: tagged `[notice]`, leading to its Run, or, once the Run is [gone] ([isGone]), to
+ * a note that it is. [repeats] reads `×3, last at 10:42` once it has counted up, as read on [clock].
  */
-class NoticeEntry(val notice: Notice, val gone: Boolean, clock: Clock) : Entry(notice.id, "[notice]", notice.process, notice.task, notice.line, Date.from(notice.last)) {
-    val run get() = notice.run
+class NoticeEntry(val notice: Notice, private val isGone: () -> Boolean, clock: Clock) : Entry(notice.id, "[notice]", notice.process, notice.task, notice.line, Date.from(notice.last)) {
+    override val run get() = notice.run
     override val runName get() = notice.runName
+    override val gone get() = isGone()
     val repeats = if (notice.count > 1) "×${notice.count}, last at ${clock.local(notice.last)}" else null
 }
 
 /** The open Notices, kept by Ants in `notices.yaml` under `ANTS_HOME`, not in the engine, so they outlive their Runs and a restart. */
 @Component
 class Notices(@Value("\${ants.home}") home: Path, private val clock: Clock) {
-    private val file = home.resolve("notices.yaml")
+    private val records = YamlRecords(home.resolve("notices.yaml"), Notice::of, Notice::toYaml)
 
     /** The open Notices, oldest first. */
-    fun all(): List<Notice> = read().sortedBy { it.last }
+    fun all(): List<Notice> = records.all().sortedBy { it.last }
 
-    /** Adds a Notice, or counts up the open one with the same [process] and [line], which keeps its id, so it is no new entry. */
-    fun add(process: String, run: String, runName: String, task: String, line: String): Notice = synchronized(this) {
+    /**
+     * Adds a Notice, or counts up the open one with the same [process] and [line], which keeps its id, so it is no new
+     * entry; the Notice as it now is.
+     */
+    fun add(process: String, run: String, runName: String, task: String, line: String): Notice = records.update { notices ->
         val now = clock.instant()
-        val notices = read()
         val open = notices.firstOrNull { it.process == process && it.line == line }
-        if (open == null) Notice("notice-${UUID.randomUUID()}", process, run, runName, task, line, now, now, 1).also { write(notices + it) }
-        else Notice(open.id, process, open.run, open.runName, open.task, line, open.first, now, open.count + 1)
-            .also { counted -> write(notices.map { if (it.id == open.id) counted else it }) }
+        if (open == null) Notice("notice-${UUID.randomUUID()}", process, run, runName, task, line, now, now, 1).let { notices + it to it }
+        else open.copy(last = now, count = open.count + 1).let { counted -> notices.map { if (it.id == open.id) counted else it } to counted }
     }
 
-    /** Removes the Notice [id]; false when there was none. */
-    fun dismiss(id: String): Boolean = synchronized(this) {
-        val notices = read()
-        notices.any { it.id == id }.also { if (it) write(notices.filter { notice -> notice.id != id }) }
-    }
-
-    private fun read(): List<Notice> = if (!file.exists()) emptyList()
-    else yaml.load<Map<String, Map<*, *>>?>(file.readText()).orEmpty().map { (id, notice) -> Notice.of(id, notice) }
-
-    private fun write(notices: List<Notice>) = file.writeAtomically(yaml.dump(notices.associate { it.id to it.toYaml() }))
+    /** Removes the Notice [id] and gives it back; null when there was none. */
+    fun dismiss(id: String): Notice? = records.update { notices -> notices.filter { it.id != id } to notices.firstOrNull { it.id == id } }
 }
 
 /**
