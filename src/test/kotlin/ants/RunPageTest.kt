@@ -142,6 +142,22 @@ class RunPageTest : AntsTest() {
     }
 
     @Test
+    fun `a Task's drawer shows a pipe table in its output as a table`() {
+        setUp()
+        val table = "| # | Project | Hours |\\n| --- | --- | --- |\\n| 1 | Ants | **7.5** |"
+        claude.session("draft", """{"type":"assistant","message":{"id":"m1","content":[{"type":"text","text":"$table"}]}}""", done)
+        val run = start("agent-task")
+
+        val html = browser.events("run=$run&drawer=draft", "drawer").until { "<table" in part(it, "drawer-output") }
+
+        val output = part(html, "drawer-output")
+        assertContains(output, """<table class="md-table">""")
+        assertContains(output, "<th>Project</th>")
+        assertContains(output, "<td><strong>7.5</strong></td>")
+        assertFalse("| ---" in output)
+    }
+
+    @Test
     fun `So far rewrites a running Task's new Transcript lines with haiku, outside the Task's context, and can be switched off`() {
         setUp("so-far: 1s\n")
         val looked = """{"type":"assistant","message":{"id":"m1","content":[{"type":"text","text":"Looked at the notes."}]}}"""

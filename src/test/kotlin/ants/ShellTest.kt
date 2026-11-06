@@ -8,6 +8,7 @@ import kotlin.io.path.readText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 /** The shell every page is built from: the sidebar, the login page and Log out. */
 class ShellTest : AntsTest() {
@@ -162,5 +163,28 @@ class ShellTest : AntsTest() {
 
         assertContains(quoted, "<tr><th>name</th><td>the user&#39;s</td></tr><tr><th>description</th><td>a &quot;b&quot;</td></tr>")
         assertEquals("<hr />\n<h2>name: [broken</h2>\n", browser.post("/markdown", mapOf("text" to "---\nname: [broken\n---\n")).body)
+    }
+
+    @Test
+    fun `the Preview renders a pipe table as a table, its cells' Markdown rendered and their HTML escaped`() {
+        val text = "| Task | Hours |\n| --- | --- |\n| Review | **7.5** |\n| <script>x</script> | 1 |"
+
+        val preview = browser.post("/markdown", mapOf("text" to text)).body
+
+        assertEquals(
+            "<table class=\"md-table\">\n<thead>\n<tr>\n<th>Task</th>\n<th>Hours</th>\n</tr>\n</thead>\n<tbody>\n" +
+                "<tr>\n<td>Review</td>\n<td><strong>7.5</strong></td>\n</tr>\n" +
+                "<tr>\n<td>&lt;script&gt;x&lt;/script&gt;</td>\n<td>1</td>\n</tr>\n</tbody>\n</table>\n",
+            preview,
+        )
+    }
+
+    @Test
+    fun `the Preview shows the frontmatter table first, then a pipe table in the body`() {
+        val preview = browser.post("/markdown", mapOf("text" to "---\nname: hours\n---\n| A | B |\n| - | - |\n| 1 | 2 |")).body
+
+        assertTrue(preview.startsWith("<table class=\"frontmatter\">"))
+        assertContains(preview, "<table class=\"md-table\">\n<thead>\n<tr>\n<th>A</th>")
+        assertTrue(preview.indexOf("frontmatter") < preview.indexOf("md-table"))
     }
 }

@@ -1,6 +1,9 @@
 package ants
 
+import org.commonmark.ext.gfm.tables.TableBlock
+import org.commonmark.ext.gfm.tables.TablesExtension
 import org.commonmark.parser.Parser
+import org.commonmark.renderer.html.AttributeProvider
 import org.commonmark.renderer.html.HtmlRenderer
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpStatus
@@ -442,8 +445,11 @@ class Transcript(private val toolLine: (name: String, input: Map<*, *>) -> Strin
         private val FILE_TOOLS = setOf("Read", "Edit", "Write", "NotebookEdit") // whose argument is a path, said by its file name
         private val TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault())
         private val json = JsonMapper.shared()
-        private val parser = Parser.builder().build()
-        private val renderer = HtmlRenderer.builder().escapeHtml(true).sanitizeUrls(true).build()
+        private val extensions = listOf(TablesExtension.create())
+        private val parser = Parser.builder().extensions(extensions).build()
+        private val renderer = HtmlRenderer.builder().extensions(extensions).escapeHtml(true).sanitizeUrls(true)
+            .attributeProviderFactory { AttributeProvider { node, _, attributes -> if (node is TableBlock) attributes["class"] = "md-table" } }
+            .build()
 
         fun file(workspace: Path, task: String): Path = workspace.resolve("tasks").resolve(task).resolve("transcript.jsonl")
 
@@ -476,7 +482,7 @@ class Transcript(private val toolLine: (name: String, input: Map<*, *>) -> Strin
             }
         }
 
-        /** [text] as HTML, its own HTML escaped and its URLs sanitized. */
+        /** [text] as HTML, its own HTML escaped, its URLs sanitized and GitHub tables as `table.md-table`. */
         fun markdown(text: CharSequence): String {
             val (fields, body) = runCatching { frontmatter(text.toString()) }.getOrNull()?.takeIf { it.first.isNotEmpty() } ?: return html(text.toString())
             val rows = fields.entries.joinToString("") { (key, value) -> "<tr><th>${esc(key)}</th><td>${esc(frontmatterValue(value))}</td></tr>" }
