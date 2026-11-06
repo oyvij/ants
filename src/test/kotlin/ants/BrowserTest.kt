@@ -3021,12 +3021,13 @@ class BrowserTest : AntsTest() {
     }
 
     private fun gesture(from: List<Pair<Double, Double>>, to: List<Pair<Double, Double>>) {
+        // This CDP session's touchEnd returns before the page has it, so a tap through Playwright's own session could
+        // land while the drag's touches are still down there, and no click comes of it. So wait till the page sees them lift.
+        page.evaluate("() => { window.lifted = new Promise(done => addEventListener('touchend', function up(e) { if (!e.touches.length) { removeEventListener('touchend', up, true); done() } }, true)) }")
         touch("touchStart", *from.toTypedArray())
         for (step in 1..10) touch("touchMove", *from.zip(to) { (x, y), (u, v) -> x + (u - x) * step / 10 to y + (v - y) * step / 10 }.toTypedArray())
         touch("touchEnd")
-        // This CDP session's touchEnd returns before the page has it, so a tap through Playwright's own session could
-        // land while the drag's touches are still down there, and no click comes of it. Two frames later the page has it.
-        page.evaluate("() => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)))")
+        page.evaluate("() => window.lifted")
     }
 
     private fun viewbox(diagram: Locator) = (diagram.evaluate("e => { const v = e.canvas.viewbox(); return [v.x, v.y, v.scale] }") as List<*>).map { (it as Number).toDouble() }
@@ -3066,8 +3067,22 @@ class BrowserTest : AntsTest() {
         eventually { assertEquals(true, page.locator(".dia").first().evaluate("e => e.canvas != null")) }
         val box = shape("wait").boundingBox()!!
         gesture(listOf(box.x to box.y + box.height), listOf(box.x - 40 to box.y + box.height - 40))
-        shape("wait").run { tap(Locator.TapOptions().setPosition(boundingBox()!!.width * 0.15, boundingBox()!!.height * 0.85)) }
-        assertThat(page.locator("#drawer-head")).isVisible()
+        // On CI, Chrome now and then makes no click of a tap whose touches the shape got (seen on CI: pointerdown,
+        // touchstart, pointerup, touchend, and nothing more), so no Task opens: only then is it tapped again. A click
+        // that opens nothing, or three taps with no click, fail, naming the events the page saw.
+        page.evaluate("""() => { window.seen = []; for (const type of ['touchstart', 'touchend', 'pointerdown', 'pointerup', 'pointercancel', 'contextmenu', 'click'])
+            addEventListener(type, e => seen.push(type + ' ' + (e.target.closest?.('[data-element-id]')?.dataset.elementId ?? e.target.tagName)), true) }""")
+        for (attempt in 1..3) {
+            page.evaluate("seen.length = 0")
+            shape("wait").run { tap(Locator.TapOptions().setPosition(boundingBox()!!.width * 0.15, boundingBox()!!.height * 0.85)) }
+            try {
+                assertThat(page.locator("#drawer-head")).isVisible()
+                break
+            } catch (e: AssertionError) {
+                val seen = page.evaluate("seen.join(', ')") as String
+                if ("click" in seen || attempt == 3) throw AssertionError("A tap on the Task opened no drawer; the page saw: $seen", e)
+            }
+        }
     }
 
     @Test
