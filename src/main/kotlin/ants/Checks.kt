@@ -64,8 +64,8 @@ val builtIns = mapOf(
     "accept-recommendations" to mapOf("name" to "Accept recommendations", "does" to "answers a Round with every recommendation.",
         "asker" to "The Agent Task whose Round it answers."),
     "push" to mapOf("name" to "Push", "does" to "waits for you to push the work branch of every repo."),
-    Notify.TOPIC to mapOf("name" to "Notify", "does" to "adds its line as a Notice to the Notification list, and the Run goes on at once.",
-        "line" to "The one line the Notice says. ${'$'}{…} names an earlier Result or a start-form field, as in Pipeline ${'$'}{pipeline} failed."),
+    Notify.TOPIC to mapOf("name" to "Notify", "does" to "tells you something without waiting, such as that a pipeline failed: adds its line as a Notice to the Notification list, and the Run goes on at once.",
+        "line" to "The one line the Notice says. ${'$'}{…} names an earlier Result or a start-form field, as in ${Notify.EXAMPLE}."),
 )
 
 /** What Ants calls each element the modeler shows, by the modeler's kind, and what it does there: the palette's tooltip and the panel's explanation. */
@@ -149,6 +149,7 @@ val modelerFacts: String = JsonMapper.shared().writeValueAsString(mapOf(
         "help" to "Each item names a Ticket ($TICKETS/01-hello.md, or 01). An instance waits until its Ticket's Blocked by are " +
             "${Tracked.IN_REVIEW} or ${Tracked.DONE}, a ${Tracked.READY_FOR_HUMAN} Ticket waits for you once its Blocked by have, and a landed instance's Ticket goes ${Tracked.IN_REVIEW}.",
     ),
+    "notifyLine" to mapOf("property" to Notify.LINE, "example" to Notify.EXAMPLE),
     "profile" to mapOf(
         "property" to PROFILE,
         "help" to "The Vault and Source map its Runs use, unless the start form picks another Profile.",

@@ -13,7 +13,7 @@ import {camel, linkedChanges, linkedProperties, listedSkills, operators, readCon
 // `ants.type` property each field carries (the engine only knows `string`), Items are Tickets' property and help, the
 // Process's Profile property, help and empty choice, Ants' own Run variables, each User Task kind with its fields
 // and Result, what the palette and add_element draw for each kind, the multi-instance modes, and the panel's own wording.
-const {kinds, builtIns, fieldTypes, itemsAreTickets, profile, level, runVariables, userTasks, drawn, multiInstanceModes, wording} = JSON.parse(document.getElementById("canvas").dataset.facts)
+const {kinds, builtIns, fieldTypes, itemsAreTickets, notifyLine, profile, level, runVariables, userTasks, drawn, multiInstanceModes, wording} = JSON.parse(document.getElementById("canvas").dataset.facts)
 
 // The three Tasks Ants runs, as the BPMN each one is, and their colour on the diagram and in the palette.
 const tasks = {
@@ -238,8 +238,8 @@ const panels = {
         const what = field("What Ants does", builtIns[topic]?.does || "Ants has no Built-in Task " + topic, which)
         if (!builtIns[topic]?.line) return what
         // Notify's line: an extension property, so the engine never evaluates it and Notify fills it in itself.
-        const line = el("input", {value: agentProperties(element.businessObject)["ants.line"] || "", placeholder: "e.g. Pipeline ${pipeline} failed",
-            oninput: () => writeAgentTask(element, {"ants.line": line.value || undefined})})
+        const line = el("input", {value: agentProperties(element.businessObject)[notifyLine.property] || "", placeholder: "e.g. " + notifyLine.example,
+            oninput: () => writeAgentTask(element, {[notifyLine.property]: line.value || undefined})})
         return el("div", {}, what, field("Line", builtIns[topic].line, line))
     },
 }
@@ -1373,11 +1373,11 @@ function setBuiltIn({id, topic, inputs, asker, line}) {
         .filter(([, value]) => value)
     edit(() => {
         if (topic !== undefined) modeler.get("modeling").updateProperties(element, {"camunda:topic": topic})
-        const properties = {...(asker === undefined ? {} : {"ants.asker": asker || undefined}), ...(line === undefined ? {} : {"ants.line": String(line) || undefined})}
+        const properties = {...(asker === undefined ? {} : {"ants.asker": asker || undefined}), ...(line === undefined ? {} : {[notifyLine.property]: String(line) || undefined})}
         if (inputs !== undefined || asker !== undefined || line !== undefined) writeAgentTask(element, properties, written, true)
     })
     return {id, topic: now, inputs: Object.fromEntries(agentInputs(bo)), asker: agentProperties(bo)["ants.asker"] || null,
-        ...(builtIns[now]?.line ? {line: agentProperties(bo)["ants.line"] || ""} : {})}
+        ...(builtIns[now]?.line ? {line: agentProperties(bo)[notifyLine.property] || ""} : {})}
 }
 
 // Multi-instance, as the wrench menu's parallel and sequential toggles write it, and the panel's collection, element

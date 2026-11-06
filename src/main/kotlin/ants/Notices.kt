@@ -115,6 +115,9 @@ class Notify(
         /** Notify's line, an extension property. */
         const val LINE = "ants.line"
 
+        /** A line as the modeler and the Process Builder show one. */
+        const val EXAMPLE = "Pipeline \${pipeline} failed"
+
         const val LONGEST = 200
 
         /**
