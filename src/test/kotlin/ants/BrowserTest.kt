@@ -2,6 +2,7 @@ package ants
 
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
+import com.microsoft.playwright.APIResponse
 import com.microsoft.playwright.Browser.NewContextOptions
 import com.microsoft.playwright.BrowserType
 import com.microsoft.playwright.Locator
@@ -13,6 +14,7 @@ import com.microsoft.playwright.options.KeyboardModifier
 import com.microsoft.playwright.options.LoadState
 import com.microsoft.playwright.Page
 import com.microsoft.playwright.Playwright
+import com.microsoft.playwright.Route
 import com.microsoft.playwright.assertions.LocatorAssertions
 import com.microsoft.playwright.assertions.PlaywrightAssertions.assertThat
 import org.junit.jupiter.api.AfterEach
@@ -386,6 +388,7 @@ class BrowserTest : AntsTest() {
     private fun ask(vararg lines: String) {
         assertThat(page.locator("#canvas")).hasAttribute("data-builder", Pattern.compile(".+")) // the session is open
         assertThat(page.locator("#pb-send")).isVisible() // no turn runs
+        assertThat(page.locator("#pb-send")).isEnabled() // the last message's dialog has come
         page.locator("#builder .cm-content").click()
         lines.forEachIndexed { i, line ->
             if (i > 0) page.keyboard().press("Shift+Enter")
@@ -450,8 +453,14 @@ class BrowserTest : AntsTest() {
         ask("First line", "second line")
         assertThat(dialog).containsText("One.")
         eventually { assertTrue("First line\\nsecond line" in claude.launches("process-builder").single().stdin) }
+        // The dialog can come before the answer to Send: here claude has ended before the page hears that it took "Again.".
+        var held: Pair<Route, APIResponse>? = null
+        page.route("**/process-builder/send") { route -> held = route to route.fetch() }
         ask("Again.")
         assertThat(dialog).containsText("Two.")
+        assertThat(page.locator("#pb-state")).hasAttribute("data-busy", "false")
+        held!!.let { (route, answer) -> route.fulfill(Route.FulfillOptions().setResponse(answer)) }
+        page.unroute("**/process-builder/send")
         assertEquals(1, claude.launches("process-builder").size)
         ask("Third.") // claude exited after Two: this resumes its session
         assertThat(dialog).containsText("Three.")

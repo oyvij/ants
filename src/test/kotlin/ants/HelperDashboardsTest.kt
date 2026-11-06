@@ -44,7 +44,8 @@ class HelperDashboardsTest : AntsTest() {
         return json.readValue(browser.post("/$helper", helpers.getValue(helper)).body, Map::class.java)["token"].toString()
     }
 
-    private fun send(helper: String, token: String, message: String) = assertEquals("{}", browser.post("/$helper/send", mapOf("token" to token, "message" to message)).body)
+    private fun send(helper: String, token: String, message: String) =
+        assertEquals(setOf("taken"), json.readValue(browser.post("/$helper/send", mapOf("token" to token, "message" to message)).body, Map::class.java).keys)
 
     private fun tools(token: String) = ((mcp(port, token, "tools/list").second["result"] as Map<*, *>)["tools"] as List<*>).map { (it as Map<*, *>)["name"] }
 
