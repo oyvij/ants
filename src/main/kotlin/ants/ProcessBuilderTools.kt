@@ -92,11 +92,11 @@ class ProcessBuilderTools(
         override fun pageCall(name: String, arguments: Map<*, *>): Pair<String, Boolean> = try {
             fun argument(key: String) = arguments[key]?.toString() ?: throw Refused("$name needs $key.")
             val text = when (name) {
-                "set_agent_task" -> ask(name, arguments).let { written ->
+                "set_agent_task", "set_built_in" -> ask(name, arguments).let { written ->
                     val refusals = processes.checks(xml()).filter { it.element == arguments["id"] && !it.warning }.map { it.message }
                     json.writeValueAsString(json.readValue(written, Map::class.java) + ("checks" to refusals))
                 }
-                "add_element", "insert" -> ask(name, arguments - "properties" + ("properties" to scriptProperties(arguments)))
+                "add_element", "insert" -> ask(name, arguments - "properties" - "line" + ("properties" to scriptProperties(arguments) + notifyLine(arguments)))
                 in RELAYED -> ask(name, arguments)
                 "scripts" -> json.writeValueAsString(scripts.all().map { mapOf("name" to it.name, "description" to it.description, "inputs" to it.inputs, "output" to it.output) })
                 "agents", "skills" -> json.writeValueAsString((agents.catalogue()[name] as List<*>).map { (it as Map<*, *>) - "id" })
@@ -154,6 +154,13 @@ class ProcessBuilderTools(
             if (named == null) return emptyMap()
             val script = scripts.named(named) ?: throw Refused("No Script named $named. $MISSING_SCRIPT")
             return mapOf(SCRIPT to script.id, nameBeside(script.id) to script.name)
+        }
+
+        /** A Notify's line, as the property the page writes on the new element. */
+        fun notifyLine(arguments: Map<*, *>): Map<String, String> {
+            val line = arguments["line"]?.toString() ?: return emptyMap()
+            if (arguments["kind"] != "built-in" || arguments["topic"] != Notify.TOPIC) throw Refused("Only a Notify takes a line.")
+            return mapOf(Notify.LINE to line)
         }
 
         /** What diagram, process and template answer: the part of [diagram] the [arguments] scope, one page of it. */
@@ -282,6 +289,8 @@ class ProcessBuilderTools(
             "cursor" to number("Where the page starts: the next of the answer before; left out, the start."),
         )
 
+        private val LINE = "${Notify.TOPIC} only: ${builtIns.getValue(Notify.TOPIC)["line"]} Publish refuses an empty one."
+
         private const val AT = "Its top-left corner on the diagram, as `diagram` gives positions."
 
         /** The tools that change the diagram: relayed to the page, which makes each call one undo step (modeler.js). */
@@ -296,7 +305,8 @@ class ProcessBuilderTools(
                 "topic" to "A Built-in Task's topic (see `built_in_tasks`); left out, clone-repos.",
                 "script" to "A Script Task's Script, by its name (see `scripts`); Ants links it by its id. $MISSING_SCRIPT",
                 "inputs" to strings("A Script Task's inputs, by the Script's input names, each text or a `\${…}` reference (see `references`). $WIRED"),
-            ), optional = setOf("id", "name", "x", "y", "in", "topic", "script", "inputs")),
+                "line" to LINE,
+            ), optional = setOf("id", "name", "x", "y", "in", "topic", "script", "inputs", "line")),
             Mcp.tool("remove", "Removes an element, with its connections, or a connection: by its id, or a connection by the elements it connects.", mapOf(
                 "id" to "The element's or connection's id.", "from" to "A connection's source element, with to.", "to" to "A connection's target element, with from.",
             ), optional = setOf("id", "from", "to")),
@@ -311,7 +321,8 @@ class ProcessBuilderTools(
                 "script" to "A Script Task's Script, by its name (see `scripts`). $MISSING_SCRIPT",
                 "inputs" to strings("A Script Task's inputs, by the Script's input names. $WIRED"),
                 "connection" to "The new connection's id, out of the new element; left out, bpmn-js makes one.",
-            ), optional = setOf("id", "name", "x", "y", "topic", "script", "inputs", "connection")),
+                "line" to LINE,
+            ), optional = setOf("id", "name", "x", "y", "topic", "script", "inputs", "connection", "line")),
             Mcp.tool("rename", "Names an element or connection, as the diagram shows it.", mapOf("id" to "The element's or connection's id.", "name" to "Its new name; empty clears it.")),
             Mcp.tool("move", "Moves an element, its connections following.", mapOf("id" to "The element's id.", "x" to number(AT), "y" to number(AT))),
             Mcp.tool("connect", "Connects two elements with a sequence flow (an association, to an annotation), and gives its id.", mapOf(
@@ -379,11 +390,13 @@ class ProcessBuilderTools(
                 "inputs" to strings("Values by start-form field name, each text or a `\${…}` reference (see `references`)."),
             ), optional = setOf("process", "inputs")),
             Mcp.tool("set_built_in", "Sets a Built-in Task's topic and inputs. clone-repos reads the inputs repos (Source map names or git URLs, such as " +
-                "`\${scout.output.repos}`) and branch; accept-recommendations names its asker. It sets a Script Task's inputs too, by its Script's input names (see `scripts`). $WIRED", mapOf(
+                "`\${scout.output.repos}`) and branch; accept-recommendations names its asker; notify says its line. It sets a Script Task's inputs too, " +
+                "by its Script's input names (see `scripts`). $WIRED Answers what was written, and the Checks Publish refuses on this Task: fix each before you're done.", mapOf(
                 "id" to "The Built-in Task's or Script Task's id.", "topic" to "Its topic (see `built_in_tasks`).",
                 "inputs" to strings("Values by input name, each text or a `\${…}` reference; empty removes one."),
                 "asker" to builtIns.filterValues { "asker" in it }.map { (topic, it) -> "$topic only: ${it["asker"]}" }.joinToString(" ") + " Empty clears it.",
-            ), optional = setOf("topic", "inputs", "asker")),
+                "line" to LINE,
+            ), optional = setOf("topic", "inputs", "asker", "line")),
             Mcp.tool("set_multi_instance", "Runs an Agent Task, sub-process or call activity once per item of a list, as the wrench menu's toggles and the " +
                 "properties panel do. Its Result becomes a list of its instances' Results, in item order.", mapOf(
                 "id" to "The element's id.",

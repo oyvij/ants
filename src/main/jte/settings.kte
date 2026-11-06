@@ -15,6 +15,8 @@
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param shell: ants.Shell
 @param posted: Boolean = false
+@param alertKey: String
+@param alertDevices: List<ants.ListedDevice>
 <!doctype html>
 <html lang="en">
 <head>
@@ -175,8 +177,28 @@
 @endif
         <label class="row"><input type="checkbox" name="prereleases" checked="${form.prereleases}"> Follow beta versions</label>
         <button name="action" value="updates">Check now</button></div></div>
+
+    <div class="grid2"><div class="card alerts" id="alerts" data-key="${alertKey}"><h3>Alerts</h3>
+        <div class="help">An Alert on this phone or browser for each new entry on the Notification list; tapping it opens the entry.</div>
+        <label class="row"><input type="checkbox" id="alerts-on" disabled> Alerts on this device</label>
+        <p class="why" id="alerts-why" hidden></p>
+        <p class="help" id="alerts-said" role="status"></p>
+        <p><button type="button" id="alerts-test" disabled>Send a test Alert</button></p>
+        <div class="subsec"><b class="small">Devices with Alerts on</b>
+@if(alertDevices.isEmpty())
+            <div class="help" id="alert-devices">None yet.</div>
+@else
+            <ul class="devices" id="alert-devices">
+@for(device in alertDevices)
+                <li data-endpoint="${device.endpoint}"><b>${device.name}</b> <span class="muted small">added ${device.added}</span><button form="alert-remove" name="endpoint" value="${device.endpoint}">Remove</button></li>
+@endfor
+            </ul>
+@endif
+        </div></div></div>
     <div class="savebar" hidden><span>Unsaved changes</span><button class="primary" name="action" value="save">Save</button></div>
 </form>
+<%-- Remove in the list of devices with Alerts on posts this form, not the Settings form, so it sends only its device. --%>
+<form method="post" action="/settings/alerts/remove" id="alert-remove"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"></form>
 @for((i, map) in maps.entries.withIndex())
 <dialog class="modal source-map" id="source-map-${i}">
     <form method="dialog" class="mh"><b>${map.key}</b><code class="small">${map.value.first}</code><span class="sp"></span><span class="muted small">Esc to close</span><button class="ghost" title="Close" aria-label="Close">✕</button></form>
