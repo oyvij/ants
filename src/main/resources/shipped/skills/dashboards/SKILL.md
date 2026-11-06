@@ -20,7 +20,7 @@ Call `PostToWidget` with the Widget's `dashboard` id, its `widget` id and `data`
 gives, such as `{"value": 42, "unit": "GB"}` for a number Widget or `{"text": "…"}` for a text Widget. Leave out
 any field the shape doesn't name.
 
-A text Widget renders its `text` as Markdown (CommonMark and GFM), so format it: bold, lists, tables, code.
+A text Widget renders its `text` as Markdown (CommonMark, with GFM tables), so format it: bold, lists, tables, code.
 
 ## 3. Keep Posts small
 
