@@ -4489,6 +4489,7 @@ class BrowserTest : AntsTest() {
         val spec = page.locator(".card.md")
         assertThat(spec).containsText("Paying again")
         assertNoSidewaysScroll()
+        assertWideTableScrollsInsideItsBoxAndTheImageFits(".card.md")
         page.screenshot("phone/approve")
         val (left, right) = contentEdges("main")
         val comment = page.locator("#comment + .ed")
@@ -5606,6 +5607,22 @@ class BrowserTest : AntsTest() {
         return http.post("/processes/agent-task/runs", mapOf("prompt" to "Say hello")).path
     }
 
+    @Test
+    fun `on a phone a Transcript's wide table scrolls inside its box and the page fits the screen`() = browse {
+        val text = wideMarkdown.replace("\n", "\\n")
+        val run = running(
+            FakeClaude(),
+            """{"type":"assistant","message":{"id":"m1","content":[{"type":"text","text":"$text"}]}}""",
+            """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":{"outcome":"done","summary":"Drafted.","output":{}}}""",
+        )
+        onPhone()
+
+        page.navigate(url("$run/tasks/draft/transcript"))
+        assertThat(page.locator(".tr table.md-table")).isVisible()
+        assertNoSidewaysScroll()
+        assertWideTableScrollsInsideItsBoxAndTheImageFits(".tr")
+    }
+
     private val streaming = arrayOf(
         """{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}""",
         """{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Almost **there**"}}}""",
@@ -5654,10 +5671,18 @@ class BrowserTest : AntsTest() {
         val clock = page.locator("#status [data-since]")
         assertThat(clock).hasText(Pattern.compile("\\d+s"))
         val first = clock.textContent()!!
-        val spin = page.locator("#status .spin")
-        val ant = spin.screenshot()
+        // The ant stands still: it is drawn from the still SVG, which animates nothing, and no animation runs on it. Two
+        // screenshots of it can differ by a repaint without the ant moving, so the test checks what is drawn instead.
+        val (still, animated, running) = page.evaluate("""async () => {
+            const spin = document.querySelector('#status .spin');
+            const url = getComputedStyle(spin).backgroundImage.slice(5, -2);
+            const svg = await (await fetch(url)).text();
+            return [url, /<animate|@keyframes|animation/.test(svg), spin.getAnimations().length];
+        }""") as List<*>
+        assertTrue((still as String).endsWith("/working-ant-still.svg"), "the working ant is drawn from $still")
+        assertEquals(false, animated, "$still animates nothing")
+        assertEquals(0, (running as Number).toInt(), "no animation runs on the working ant")
         assertThat(clock).not().hasText(first) // the clock still ticks
-        assertTrue(ant.contentEquals(spin.screenshot()), "the working ant stands still")
         assertEquals("none", page.evaluate("getComputedStyle(document.querySelector('#status .shimmer')).animationName"))
         claude.release("one")
         assertThat(page.locator("#live.caret")).containsText("Almost there")
