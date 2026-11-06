@@ -43,11 +43,11 @@ class FakePushService : AutoCloseable {
             val fields = params.split(",").associate { it.trim().substringBefore("=") to it.trim().substringAfter("=") }
             val (header, claims, signature) = fields["t"]!!.split(".")
             val verifier = Signature.getInstance("SHA256withECDSAinP1363Format")
-            verifier.initVerify(publicKey(b64(fields["k"]!!)))
+            verifier.initVerify(publicKey(fromBase64url(fields["k"]!!)))
             verifier.update("$header.$claims".toByteArray())
-            check(verifier.verify(b64(signature))) { "the VAPID signature doesn't match its key" }
-            check(JsonMapper.shared().readValue(b64(header), Map::class.java)["alg"] == "ES256")
-            return JsonMapper.shared().readValue(b64(claims), Map::class.java)
+            check(verifier.verify(fromBase64url(signature))) { "the VAPID signature doesn't match its key" }
+            check(JsonMapper.shared().readValue(fromBase64url(header), Map::class.java)["alg"] == "ES256")
+            return JsonMapper.shared().readValue(fromBase64url(claims), Map::class.java)
         }
 
         /** The VAPID header's key `k`. */
@@ -88,7 +88,7 @@ class FakePushService : AutoCloseable {
     /** The subscription a browser's `PushSubscription.toJSON()` gives, as the Settings page posts it. */
     fun subscription(name: String = "Test browser") = JsonMapper.shared().writeValueAsString(mapOf(
         "endpoint" to "$origin/push/device",
-        "keys" to mapOf("p256dh" to b64(raw(keys.public as ECPublicKey)), "auth" to b64(auth)),
+        "keys" to mapOf("p256dh" to base64url(raw(keys.public as ECPublicKey)), "auth" to base64url(auth)),
         "name" to name,
     ))
 
@@ -101,9 +101,9 @@ class FakePushService : AutoCloseable {
         private val P256: ECParameterSpec = AlgorithmParameters.getInstance("EC").apply { init(ECGenParameterSpec("secp256r1")) }
             .getParameterSpec(ECParameterSpec::class.java)
 
-        fun b64(text: String): ByteArray = Base64.getUrlDecoder().decode(text)
+        fun fromBase64url(text: String): ByteArray = Base64.getUrlDecoder().decode(text)
 
-        fun b64(bytes: ByteArray): String = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
+        fun base64url(bytes: ByteArray): String = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
 
         fun raw(key: ECPublicKey) = byteArrayOf(4) + unsigned(key.w.affineX) + unsigned(key.w.affineY)
 
