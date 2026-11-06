@@ -1430,15 +1430,18 @@ async function openBuilder() {
     const stop = document.getElementById("pb-stop"), send = document.getElementById("pb-send"), live = document.getElementById("pb-live")
     const dialog = document.getElementById("pb-dialog")
     const post = (path, fields) => fetch(path, {method: "POST", body: new URLSearchParams({_csrf: csrf, token, ...fields})})
-    let sent = false // Send stays disabled until the first dialog after the server took the message
+    // Send stays disabled until a dialog shows the message taken: it can come before the answer to Send, or after.
+    let shown = 0, awaited = 0
+    const settle = () => send.disabled = shown < awaited
     stream.on("dialog", html => {
         const bottom = dialog.scrollHeight - dialog.scrollTop - dialog.clientHeight < 40
         stream.patch(live, html)
-        const busy = live.querySelector("#pb-state")?.dataset.busy === "true"
+        const state = live.querySelector("#pb-state")
+        const busy = state?.dataset.busy === "true"
+        shown = Number(state?.dataset.taken ?? 0)
         stop.hidden = !busy
         send.hidden = busy
-        if (sent) send.disabled = false
-        sent = false
+        settle()
         if (bottom) dialog.scrollTop = dialog.scrollHeight
     })
     form.addEventListener("submit", async event => {
@@ -1447,12 +1450,13 @@ async function openBuilder() {
         const text = message.value
         message.value = ""
         message.dispatchEvent(new Event("change"))
-        send.disabled = true
+        awaited = Infinity
+        settle()
         const answer = await post(endpoint + "/send", {message: text}).then(response => response.json()).catch(failure => ({error: failure.message}))
         error.textContent = answer.error || ""
-        if (!answer.error) sent = true
-        else {
-            send.disabled = false
+        awaited = answer.error ? 0 : Number(answer.taken)
+        settle()
+        if (answer.error) {
             message.value = text
             message.dispatchEvent(new Event("change"))
         }
