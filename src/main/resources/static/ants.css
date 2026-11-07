@@ -52,7 +52,7 @@ svg.i { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-widt
 .wordmark .ant { width: 1.6em; height: 1.6em; } .topbar .wordmark { font-size: 20px; } body.login .wordmark { font-size: 30px; }
 .side a, .side .bottom > form > button { display: flex; align-items: center; gap: 10px; color: var(--sideText); padding: 7px 10px; border-radius: 8px; font-weight: 500; }
 .side a:hover, .side .bottom > form > button:hover { background: var(--side2); color: #e5e7eb; text-decoration: none; }
-.side a.on { background: #232733; color: #fff; box-shadow: inset 3px 0 0 #e9dcc8; }
+.side a.on { background: #232733; color: #fff; box-shadow: inset 3px 0 0 var(--acc); }
 .side .bottom > form > button svg.i { width: 17px; height: 17px; }
 .side .grp { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: #5b6475; padding: 16px 10px 4px; font-weight: 600; }
 :is(.side, .topbar) .n { margin-left: auto; background: var(--wait); color: #fff; font-size: 11px; font-weight: 700; border-radius: 10px; padding: 0 7px; line-height: 18px; }
@@ -133,7 +133,7 @@ main.full .composer > :is(div, form) { max-width: none; padding-inline: 24px; }
 .dashboard .st { display: flex; align-items: center; gap: 8px; padding: 3px 0; } .dashboard .st .n { flex: 1; min-width: 0; } .dashboard .st .s { color: var(--muted); }
 .dashboard .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
 .dashboard .dot.ok { background: var(--ok); } .dashboard .dot.warn { background: var(--wait); } .dashboard .dot.fail { background: var(--bad); }
-.dashboard .dot.running { background: var(--acc); animation: running 1s infinite alternate; } @keyframes running { to { opacity: .3; } }
+.dashboard .dot.running { background: var(--run); animation: running 1s infinite alternate; } @keyframes running { to { opacity: .3; } }
 @media (prefers-reduced-motion: reduce) { .dashboard .dot.running { animation: none; } .dashboard .bar div { transition: none; } }
 .dashboard .li { padding: 4px 0; border-bottom: 1px solid var(--line2); } .dashboard .li:last-of-type { border-bottom: 0; } .dashboard .li > div { color: var(--muted); font-size: 12px; }
 .dashboard .text > :first-child { margin-top: 0; } .dashboard .text > :last-child { margin-bottom: 0; }
