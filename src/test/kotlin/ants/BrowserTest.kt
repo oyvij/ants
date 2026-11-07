@@ -5019,6 +5019,19 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `on the Run page Copy puts the cd into the Run workspace on the clipboard`() = browse {
+        settings(null)
+        val (process, plane) = row("waiting", """<bpmn:startEvent id="start" />""", """<bpmn:userTask id="wait" name="Wait" />""", """<bpmn:endEvent id="end" />""")
+        deploy(definitions("waiting", "Waiting", process, plane))
+        val run = http.post("/processes/waiting/runs", mapOf()).path
+        page.context().grantPermissions(listOf("clipboard-read", "clipboard-write"))
+        page.navigate(url(run))
+        page.click("#cd button")
+        assertThat(page.locator("#cd button")).hasText("Copied")
+        assertEquals("cd '${workspace(run.substringAfterLast('/'))}'", page.evaluate("navigator.clipboard.readText()"))
+    }
+
+    @Test
     fun `on the Run page Rename renames over the page, Esc closes the drawer, a Task's row opens the Task, whose comment is a markdown editor`() = browse {
         settings(null)
         val (process, plane) = row("approving", """<bpmn:startEvent id="start" />""", """<bpmn:userTask id="wait" name="Wait" />""", """<bpmn:endEvent id="end" />""")
