@@ -1,0 +1,64 @@
+<!doctype html>
+<!-- Throwaway prototype: flat ant-face logo candidates. Open in a browser. -->
+<meta charset="utf-8">
+<title>Ants logo: the face</title>
+<style>
+  body { font: 14px system-ui; margin: 24px; background: #fff; color: #222 }
+  .row { display: flex; gap: 24px; align-items: center; margin-bottom: 28px }
+  .row h2 { width: 140px; font-size: 15px; margin: 0 }
+  .tile { width: 160px; height: 160px; border-radius: 32px; display: grid; place-items: center }
+  .light { background: #f7f1e8 } .dark { background: #17110d }
+  .tile svg { width: 120px; height: 120px }
+  .small svg { width: 32px; height: 32px } .tiny svg { width: 16px; height: 16px }
+  .small, .tiny { width: auto; height: auto; padding: 8px; border-radius: 8px }
+</style>
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <!-- A: solid head, big white eyes, curved jaws -->
+    <symbol id="a" viewBox="0 0 100 100">
+      <g fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M40 20 L34 8 L22 6"/><path d="M60 20 L66 8 L78 6"/>
+      </g>
+      <path d="M43 66 C30 70 29 88 46 93 L45 86 C39 83 39 76 46 72 Z M57 66 C70 70 71 88 54 93 L55 86 C61 83 61 76 54 72 Z" fill="currentColor"/>
+      <ellipse cx="50" cy="45" rx="35" ry="29" fill="currentColor"/>
+      <circle cx="36" cy="44" r="13" fill="var(--bg)"/><circle cx="64" cy="44" r="13" fill="var(--bg)"/>
+      <circle cx="38" cy="47" r="7" fill="currentColor"/><circle cx="62" cy="47" r="7" fill="currentColor"/>
+      <circle cx="40" cy="44" r="2.2" fill="var(--bg)"/><circle cx="64" cy="44" r="2.2" fill="var(--bg)"/>
+    </symbol>
+    <!-- B: monoline outline -->
+    <symbol id="b" viewBox="0 0 100 100">
+      <g fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M40 20 L34 8 L22 6"/><path d="M60 20 L66 8 L78 6"/>
+        <ellipse cx="50" cy="45" rx="35" ry="28"/>
+        <circle cx="36" cy="44" r="11"/><circle cx="64" cy="44" r="11"/>
+        <path d="M43 73 C33 78 34 88 46 92"/><path d="M57 73 C67 78 66 88 54 92"/>
+      </g>
+      <circle cx="38" cy="46" r="5" fill="currentColor"/><circle cx="62" cy="46" r="5" fill="currentColor"/>
+    </symbol>
+    <!-- C: eyes are holes in the head, jaws form a beak -->
+    <symbol id="c" viewBox="0 0 100 100">
+      <path fill="currentColor" fill-rule="evenodd" d="
+        M50 14 C76 14 88 30 88 46 C88 62 74 72 50 72 C26 72 12 62 12 46 C12 30 24 14 50 14 Z
+        M36 32 A13 13 0 1 0 36.01 32 Z M64 32 A13 13 0 1 0 64.01 32 Z"/>
+      <circle cx="38" cy="48" r="6" fill="currentColor"/><circle cx="62" cy="48" r="6" fill="currentColor"/>
+      <path d="M40 70 L50 94 L60 70 Z" fill="currentColor"/>
+      <path d="M50 76 L50 94" stroke="var(--bg)" stroke-width="3"/>
+    </symbol>
+    <!-- D: just eyes and jaws, no head outline -->
+    <symbol id="d" viewBox="0 0 100 100">
+      <circle cx="31" cy="40" r="20" fill="currentColor"/><circle cx="69" cy="40" r="20" fill="currentColor"/>
+      <circle cx="34" cy="44" r="9" fill="var(--bg)"/><circle cx="66" cy="44" r="9" fill="var(--bg)"/>
+      <path d="M40 64 C26 70 28 90 47 95 L46 87 C39 84 39 76 46 72 Z M60 64 C74 70 72 90 53 95 L54 87 C61 84 61 76 54 72 Z" fill="currentColor"/>
+    </symbol>
+  </defs>
+</svg>
+<script>
+  const names = { a: 'A · solid head', b: 'B · outline', c: 'C · eye holes + beak', d: 'D · eyes + jaws only' };
+  for (const [id, name] of Object.entries(names)) {
+    const tile = (cls, fg, bg) =>
+      `<div class="tile ${cls}" style="color:${fg};--bg:${bg};background:${bg}"><svg><use href="#${id}"/></svg></div>`;
+    document.body.insertAdjacentHTML('beforeend', `<div class="row"><h2>${name}</h2>
+      ${tile('', '#2a1208', '#f7f1e8')}${tile('', '#e9b26b', '#17110d')}${tile('', '#fff', '#c2410c')}
+      ${tile('small', '#2a1208', '#f7f1e8')}${tile('tiny', '#2a1208', '#f7f1e8')}</div>`);
+  }
+</script>

@@ -1,0 +1,64 @@
+<!doctype html>
+<!-- Throwaway prototype, round 7: a whole ant seen from the side, white with a thick outline (Snapchat-like) or cut out of a circle (GitHub-like). Open in a browser. -->
+<meta charset="utf-8">
+<title>Brand prototype, round 7</title>
+<style>
+  :root { --ink: #0e1525; --gold: #e8b339; --fire: #ff4f1f; --line: #dde1e8; --muted: #667085 }
+  body { font: 15px Inter, system-ui, sans-serif; margin: 0; background: #f6f7f9; color: var(--ink) }
+  main { max-width: 1140px; margin: 0 auto; padding: 32px }
+  h1 { font-size: 13px; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); margin: 28px 0 14px }
+  .row { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin-bottom: 16px }
+  .big svg { width: 220px; height: 220px; display: block }
+  .icon { width: 112px; height: 112px; border-radius: 26px; display: grid; place-items: center }
+  .icon svg { width: 92px; height: 92px }
+  .s32 svg { width: 32px; height: 32px } .s16 svg { width: 16px; height: 16px }
+  .card { border-radius: 14px; padding: 18px 24px; display: flex; align-items: center; gap: 10px; font-weight: 650; font-size: 32px; letter-spacing: -.03em }
+  .card svg { width: 48px; height: 48px }
+</style>
+<svg width="0" height="0" style="position:absolute"><defs>
+  <!-- The ant from above, head up: elbowed antennae, jaws, three body parts, six legs. -->
+  <g id="geo">
+    <g fill="none" stroke-linecap="round" stroke-linejoin="round" style="stroke-width: var(--legw)">
+      <path d="M79 27 L75 15 Q86 9 93 18"/>
+      <path d="M86 38 Q94 40 90 46"/>
+      <path d="M66 48 L76 55 L80 73"/>
+      <path d="M59 50 L64 60 L62 73"/>
+      <path d="M53 49 L45 58 L37 73"/>
+    </g>
+    <g style="stroke-width: var(--solw)">
+      <ellipse cx="25" cy="54" rx="17" ry="13" transform="rotate(-15 25 54)"/>
+      <circle cx="45" cy="47" r="4"/>
+      <ellipse cx="58" cy="43" rx="11" ry="6.5" transform="rotate(-15 58 43)"/>
+      <ellipse cx="77" cy="35" rx="10" ry="9"/>
+    </g>
+  </g>
+  <!-- Snapchat-like: a white ant with a thick, merged outline. -->
+  <symbol id="snap" viewBox="-6 -16 114 114">
+    <use href="#geo" fill="var(--out)" stroke="var(--out)" style="--legw: 9; --solw: 5.5"/>
+    <use href="#geo" fill="var(--in)" stroke="var(--in)" style="--legw: 3.5; --solw: 0"/>
+  </symbol>
+  <!-- GitHub-like: the ant cut out of a solid circle. -->
+  <mask id="cut"><rect width="100" height="100" fill="#fff"/>
+    <g transform="translate(50 50) scale(.8) translate(-51 -41)"><use href="#geo" fill="#000" stroke="#000" style="--legw: 4; --solw: 0"/></g></mask>
+  <symbol id="hub" viewBox="0 0 100 100"><circle cx="50" cy="50" r="48" fill="var(--out)" mask="url(#cut)"/></symbol>
+</defs></svg>
+<main id="m"></main>
+<script>
+  const s = (id, out, inn) => `<svg style="--out:${out};--in:${inn}"><use href="#${id}"/></svg>`;
+  const block = (title, id, tiles, big, cards) => `<h1>${title}</h1>
+    <div class="row"><div class="big">${big}</div>
+      <div><div class="row">${tiles.map(([bg, out, inn]) => `<div class="icon" style="background:${bg}">${s(id, out, inn)}</div>`).join('')}
+        <div class="s32">${s(id, 'var(--ink)', '#fff')}</div><div class="s16">${s(id, 'var(--ink)', '#fff')}</div></div>
+        <div class="row">${cards}</div></div></div>`;
+  document.getElementById('m').innerHTML =
+    block('White ant, thick outline (like Snapchat)', 'snap',
+      [['var(--gold)', 'var(--ink)', '#fff'], ['var(--fire)', 'var(--ink)', '#fff'], ['var(--ink)', 'var(--gold)', 'var(--ink)'], ['#fff;border:1px solid var(--line)', 'var(--ink)', '#fff']],
+      s('snap', 'var(--ink)', '#fff'),
+      `<div class="card" style="background:#fff;border:1px solid var(--line)">${s('snap', 'var(--ink)', 'var(--gold)')}ants</div>
+       <div class="card" style="background:var(--ink);color:#fff">${s('snap', 'var(--gold)', 'var(--ink)')}ants</div>`)
+  + block('Ant cut out of a circle (like GitHub)', 'hub',
+      [['#fff;border:1px solid var(--line)', 'var(--ink)'], ['var(--gold)', 'var(--ink)'], ['var(--ink)', 'var(--gold)'], ['var(--ink)', '#fff']],
+      s('hub', 'var(--ink)'),
+      `<div class="card" style="background:#fff;border:1px solid var(--line)">${s('hub', 'var(--ink)')}ants</div>
+       <div class="card" style="background:var(--ink);color:#fff">${s('hub', 'var(--gold)')}ants</div>`);
+</script>

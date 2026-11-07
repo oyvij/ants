@@ -1,0 +1,66 @@
+<!doctype html>
+<!-- Throwaway prototype, round 5: round 2's BPMN ant with gentler antennae, in fire and gold. Open in a browser. -->
+<meta charset="utf-8">
+<title>Brand prototype, round 5</title>
+<style>
+  :root { --ink: #0e1525; --line: #dde1e8; --muted: #667085 }
+  body { font: 15px Inter, system-ui, sans-serif; margin: 0; background: #f6f7f9; color: var(--ink) }
+  main { max-width: 1140px; margin: 0 auto; padding: 32px }
+  .head { display: grid; grid-template-columns: 170px repeat(4, 1fr) 96px 96px 96px; gap: 14px; font-size: 12px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin-bottom: 10px }
+  .row { display: grid; grid-template-columns: 170px repeat(4, 1fr) 96px 96px 96px; gap: 14px; align-items: center; margin-bottom: 16px }
+  .about { font-size: 13px; color: var(--muted); line-height: 1.4 } .about b { display: block; color: var(--ink); font-size: 15px; margin-bottom: 3px }
+  .card { border-radius: 12px; padding: 16px 14px; display: flex; align-items: center; gap: 8px; font-weight: 650; font-size: 24px; letter-spacing: -.03em }
+  .card svg { width: 40px; height: 40px }
+  .light { background: #fff; border: 1px solid var(--line) } .dark { background: var(--ink); color: #fff }
+  .icon { width: 96px; height: 96px; border-radius: 22px; display: grid; place-items: center }
+  .icon svg { width: 72px; height: 72px }
+</style>
+<svg width="0" height="0" style="position:absolute"><defs>
+  <!-- Body shared by every head: a Task (thorax) and an end event (abdomen), as in round 2. -->
+  <g id="body">
+    <path d="M19 33 H25 M39 33 H43" stroke="currentColor" stroke-width="3"/>
+    <rect x="25" y="26" width="14" height="14" rx="4" fill="currentColor"/>
+    <circle cx="52" cy="33" r="8" fill="none" stroke="currentColor" stroke-width="5"/>
+  </g>
+  <circle id="ring" cx="12" cy="33" r="7" fill="none" stroke="var(--acc)" stroke-width="3"/>
+  <circle id="dot" cx="12" cy="33" r="8" fill="var(--acc)"/>
+  <!-- 0: round 2 as it was. -->
+  <symbol id="h0" viewBox="0 0 64 64"><use href="#body"/><use href="#ring"/>
+    <path d="M9 26 L5 16 M15 26 L19 16" stroke="var(--acc)" stroke-width="3" stroke-linecap="round"/></symbol>
+  <!-- 1: short antennae that go up, then bend outward, like the ant emoji. Low tips, so no ears. -->
+  <symbol id="h1" viewBox="0 0 64 64"><use href="#body"/><use href="#ring"/>
+    <path d="M9.5 26.5 L8 20 L3 18 M14.5 26.5 L16 20 L21 18" fill="none" stroke="var(--acc)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <!-- 2: short, wide V. -->
+  <symbol id="h2" viewBox="0 0 64 64"><use href="#body"/><use href="#ring"/>
+    <path d="M9 27.5 L4 22 M15 27.5 L20 22" stroke="var(--acc)" stroke-width="3" stroke-linecap="round"/></symbol>
+  <!-- 3: both lean forward, the way the ant walks. -->
+  <symbol id="h3" viewBox="0 0 64 64"><use href="#body"/><use href="#ring"/>
+    <path d="M9.5 26.5 L4 19 M14.5 26.2 L10 18" stroke="var(--acc)" stroke-width="3" stroke-linecap="round"/></symbol>
+  <!-- 4: solid head + the bent antennae from 1. -->
+  <symbol id="h4" viewBox="0 0 64 64"><use href="#body"/><use href="#dot"/>
+    <path d="M9.5 26.5 L8 20 L3 18 M14.5 26.5 L16 20 L21 18" fill="none" stroke="var(--acc)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+</defs></svg>
+<main>
+  <div class="head"><span></span><span>Fire</span><span></span><span>Gold</span><span></span><span>Fire</span><span>Gold</span><span>Gold tile</span></div>
+  <div id="rows"></div>
+</main>
+<script>
+  const fire = '#ff4f1f', gold = '#e8b339';
+  const rows = [
+    ['h0', 'Round 2', 'As it was: the straight V that reads as bunny ears.'],
+    ['h1', 'Bent outward', 'Antennae go up, then bend out. Tips stay low.'],
+    ['h2', 'Short, wide V', 'Shorter and wider, too short to read as ears.'],
+    ['h3', 'Leaning forward', 'Both lean the way the ant walks.'],
+    ['h4', 'Solid head', 'Bent antennae on a filled head.'],
+  ];
+  const mark = id => `<svg viewBox="0 0 64 64"><use href="#${id}"/></svg>`;
+  document.getElementById('rows').innerHTML = rows.map(([id, name, why]) => `<div class="row">
+    <div class="about"><b>${name}</b>${why}</div>
+    <div class="card light" style="--acc:${fire}">${mark(id)}ants</div>
+    <div class="card dark" style="--acc:${fire}">${mark(id)}ants</div>
+    <div class="card light" style="--acc:${gold}">${mark(id)}ants</div>
+    <div class="card dark" style="--acc:${gold}">${mark(id)}ants</div>
+    <div class="icon dark" style="--acc:${fire}">${mark(id)}</div>
+    <div class="icon dark" style="--acc:${gold}">${mark(id)}</div>
+    <div class="icon" style="background:${gold};color:var(--ink);--acc:#fff">${mark(id)}</div></div>`).join('');
+</script>

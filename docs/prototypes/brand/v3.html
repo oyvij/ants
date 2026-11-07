@@ -1,0 +1,46 @@
+<!doctype html>
+<!-- Throwaway prototype, round 3: the ant's head in a flat, one-colour style like Homarr's lobster. Open in a browser. -->
+<meta charset="utf-8">
+<title>Brand prototype, round 3</title>
+<style>
+  body { font: 15px Inter, system-ui, sans-serif; margin: 0; background: #f6f7f9; color: #0e1525 }
+  main { max-width: 1100px; margin: 0 auto; padding: 32px }
+  h1 { font-size: 13px; text-transform: uppercase; letter-spacing: .12em; color: #667085; margin: 32px 0 14px }
+  .row { display: flex; gap: 16px; align-items: center; margin-bottom: 16px }
+  .card { border-radius: 14px; padding: 22px 28px; display: flex; align-items: center; gap: 14px; font-weight: 700; font-size: 34px; letter-spacing: -.03em; width: 260px }
+  .card svg { width: 48px; height: 48px }
+  .icon { width: 112px; height: 112px; border-radius: 26px; display: grid; place-items: center }
+  .icon svg { width: 80px; height: 80px }
+  .big svg { width: 240px; height: 240px }
+  .fav svg { width: 32px; height: 32px } .fav.s svg { width: 16px; height: 16px }
+</style>
+<svg width="0" height="0" style="position:absolute"><defs>
+  <!-- Head with big eye holes, thick elbowed antennae, two notched jaws. Every part is a separate solid shape with an even gap. -->
+  <symbol id="h" viewBox="0 0 100 100">
+    <path d="M40 27 L33 12 L18 10 M60 27 L67 12 L82 10" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+    <path fill="currentColor" fill-rule="evenodd" d="M50 31 C72 31 82 42 82 53 C82 63 72 68 50 68 C28 68 18 63 18 53 C18 42 28 31 50 31 Z
+      M37 41 A9 9 0 1 0 37.01 41 Z M63 41 A9 9 0 1 0 63.01 41 Z"/>
+    <path fill="currentColor" d="M20 73 H37 C37 82 41 87 47 89 L45 95 C30 93 20 86 20 73 Z M80 73 H63 C63 82 59 87 53 89 L55 95 C70 93 80 86 80 73 Z"/>
+  </symbol>
+  <!-- Variant: small dot eyes floating in a gap, like Homarr's, on a dome-shaped head. -->
+  <symbol id="d" viewBox="0 0 100 100">
+    <path d="M40 30 L33 14 L18 12 M60 30 L67 14 L82 12" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="42" cy="44" r="4.5" fill="currentColor"/><circle cx="58" cy="44" r="4.5" fill="currentColor"/>
+    <path fill="currentColor" d="M16 68 C16 56 32 52 50 52 C68 52 84 56 84 68 Z"/>
+    <path fill="currentColor" d="M20 73 H37 C37 82 41 87 47 89 L45 95 C30 93 20 86 20 73 Z M80 73 H63 C63 82 59 87 53 89 L55 95 C70 93 80 86 80 73 Z"/>
+  </symbol>
+</defs></svg>
+<main id="m"></main>
+<script>
+  const colours = [['#ff4f1f', 'Fire'], ['#0e1525', 'Ink'], ['#2f6bff', 'Blue'], ['#0ea5a0', 'Teal']];
+  const mark = id => `<svg><use href="#${id}"/></svg>`;
+  document.getElementById('m').innerHTML = [['h', 'Big eye holes'], ['d', 'Dot eyes, like Homarr']].map(([id, name]) => `
+    <h1>${name}</h1>
+    <div class="row"><div class="big" style="color:#ff4f1f">${mark(id)}</div>
+      <div><div class="row">${colours.map(([c]) => `<div class="icon" style="background:${c};color:#fff">${mark(id)}</div>`).join('')}</div>
+        <div class="row">${colours.map(([c]) => `<div class="icon" style="background:#fff;color:${c};border:1px solid #dde1e8">${mark(id)}</div>`).join('')}
+          <div class="fav" style="color:#ff4f1f">${mark(id)}</div><div class="fav s" style="color:#ff4f1f">${mark(id)}</div></div></div></div>
+    <div class="row"><div class="card" style="background:#fff;border:1px solid #dde1e8"><span style="color:#ff4f1f">${mark(id)}</span>ants</div>
+      <div class="card" style="background:#0e1525;color:#fff"><span style="color:#ff4f1f">${mark(id)}</span>ants</div>
+      <div class="card" style="background:#ff4f1f;color:#fff">${mark(id)}ants</div></div>`).join('');
+</script>

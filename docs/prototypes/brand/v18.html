@@ -1,0 +1,145 @@
+<!doctype html>
+<!-- Throwaway prototype, round 18: the brand's colours and loading animation, around the chosen logo. Open in a browser. -->
+<meta charset="utf-8">
+<title>Brand prototype, round 18: colour + loading</title>
+<style>
+  body { font: 14px Inter, system-ui, sans-serif; margin: 0; background: #f6f7f9; color: #0e1525 }
+  main { max-width: 1180px; margin: 0 auto; padding: 28px 32px }
+  h1 { font-size: 13px; text-transform: uppercase; letter-spacing: .12em; color: #667085; margin: 34px 0 6px }
+  .note { color: #667085; margin: 0 0 14px; max-width: 760px; line-height: 1.5 }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 10px }
+  .label { font-weight: 650; margin: 18px 0 8px } .label span { font-weight: 400; color: #667085 }
+
+  /* the mock app, coloured by the palette's variables */
+  .app { display: flex; height: 270px; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); background: var(--bg); color: var(--text) }
+  .side { width: 150px; background: var(--side); color: var(--sideText); padding: 14px 10px; flex: none }
+  .brand { display: flex; align-items: center; gap: 8px; color: #fff; font-weight: 700; font-size: 17px; letter-spacing: -.02em; margin: 0 6px 16px }
+  .brand img { width: 26px }
+  .nav { padding: 7px 10px; border-radius: 7px; margin-bottom: 2px; font-size: 13px; border-left: 3px solid transparent }
+  .nav.on { background: var(--side2); color: #fff; border-left-color: var(--navMark) }
+  .page { flex: 1; padding: 16px 18px; min-width: 0 }
+  .top { display: flex; align-items: center; gap: 8px; margin-bottom: 12px } .top h2 { font-size: 18px; margin: 0; flex: 1 }
+  .btn { border-radius: 8px; padding: 6px 12px; font-size: 13px; font-weight: 600; border: 1px solid var(--line); background: var(--panel); color: var(--text) }
+  .btn.primary { background: var(--acc); color: var(--accOn); border-color: var(--acc) }
+  .list { background: var(--panel); border: 1px solid var(--line); border-radius: 10px }
+  .row { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-top: 1px solid var(--line); font-size: 13px }
+  .row:first-child { border-top: 0 } .row.sel { background: var(--accSoft) } .row a { color: var(--link); font-weight: 600; text-decoration: none }
+  .row .when { margin-left: auto; color: var(--muted); font-size: 12px }
+  .badge { font-size: 11.5px; font-weight: 600; padding: 2px 8px; border-radius: 99px }
+  .b-run { background: var(--runSoft); color: var(--run) } .b-wait { background: var(--waitSoft); color: var(--warnText) }
+  .b-ok { background: var(--okSoft); color: var(--okText) } .b-bad { background: var(--badSoft); color: var(--badText) }
+  .ld { color: var(--loader); display: inline-flex } .ld svg { height: 1.25em; width: auto; display: block }
+
+  /* palettes: light and dark */
+  .light { --bg: #f4f5f7; --panel: #fff; --text: #0f172a; --muted: #64748b; --line: #e4e7ec; --side: #0e1525; --side2: #1a2235; --sideText: #9aa3b2;
+    --run: #2563eb; --runSoft: #e0ecff; --warnText: #92400e; --waitSoft: #fff4e0; --okText: #166534; --okSoft: #e7f8ed; --badText: #991b1b; --badSoft: #fdecec; --cut: #fff }
+  .dark { --bg: #0b0f18; --panel: #121826; --text: #e6e8ee; --muted: #8b94a5; --line: #232b3b; --side: #070a11; --side2: #151c2b; --sideText: #8b94a5;
+    --run: #60a5fa; --runSoft: #13233d; --warnText: #fbbf24; --waitSoft: #2a1f0c; --okText: #86efac; --okSoft: #0f2a1a; --badText: #fca5a5; --badSoft: #2c1416; --cut: #121826 }
+  .gold.light { --acc: #e8b339; --accOn: #0e1525; --accSoft: #fdf6e3; --link: #0e1525; --navMark: #e8b339; --loader: #c9951f }
+  .gold.dark  { --acc: #f0c14b; --accOn: #0e1525; --accSoft: #2a2414; --link: #f0c14b; --navMark: #f0c14b; --loader: #f0c14b }
+  .ink.light  { --acc: #0e1525; --accOn: #fff; --accSoft: #eef1f6; --link: #0e1525; --navMark: #e8b339; --loader: #0e1525 }
+  .ink.dark   { --acc: #f0c14b; --accOn: #0e1525; --accSoft: #1a2235; --link: #e6e8ee; --navMark: #f0c14b; --loader: #f0c14b }
+  .warm.light { --bg: #f7f5f0; --line: #e8e3d8; --acc: #0e1525; --accOn: #fff; --accSoft: #f8f0dc; --link: #0e1525; --navMark: #e8b339; --loader: #c9951f }
+  .warm.dark  { --acc: #f0c14b; --accOn: #0e1525; --accSoft: #2a2414; --link: #f0c14b; --navMark: #f0c14b; --loader: #f0c14b }
+
+  .cream.light { --bg: #f7f2ea; --panel: #fffdf9; --line: #e9e1d3; --side: #0e1016; --side2: #1b1e27; --acc: #0e1016; --accOn: #f7f1e8; --accSoft: #f1e9db; --link: #0e1016; --navMark: #e9dcc8; --loader: #0e1016; --cut: #fffdf9 }
+  .cream.dark  { --bg: #0b0d12; --panel: #13161d; --line: #252a35; --side: #07080b; --side2: #171a22; --acc: #e9dcc8; --accOn: #0e1016; --accSoft: #1f1d1a; --link: #e9dcc8; --navMark: #e9dcc8; --loader: #e9dcc8; --cut: #13161d }
+  .icons { display: flex; gap: 18px; align-items: center; margin: 6px 0 4px } .icons img { width: 96px; height: 96px; border-radius: 22px; padding: 10px; box-sizing: border-box }
+  .icons span { color: #667085; font-size: 12.5px; margin-right: 18px }
+  /* loaders */
+  .gallery { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px }
+  .card { background: #fff; border: 1px solid #dde1e8; border-radius: 12px; padding: 16px; text-align: center }
+  .card.dk { background: #0e1525; color: #e6e8ee; border-color: #0e1525 }
+  .card .bigld { color: #0e1525; height: 90px; display: grid; place-items: center } .card.dk .bigld { color: #f0c14b }
+  .card .bigld svg { height: 80px; width: auto }
+  .card b { display: block; margin-top: 8px } .card p { color: #667085; font-size: 12.5px; margin: 4px 0 10px; line-height: 1.4 }
+  .card .inline { font-size: 13px; display: flex; gap: 6px; justify-content: center; align-items: center }
+  .card .inline .ld { color: #c9951f } .card.dk .inline .ld { color: #f0c14b }
+  .card.dk p { color: #8b94a5 }
+  .ctl { display: flex; gap: 8px; align-items: center; margin: 8px 0 } .ctl button { font: inherit; border: 1px solid #dde1e8; background: #fff; border-radius: 8px; padding: 5px 10px; cursor: pointer }
+  .ctl button.on { background: #0e1525; color: #fff; border-color: #0e1525 }
+
+  .twitch .ant-n { transform-origin: 81px 33px; animation: tw 1.4s ease-in-out infinite }
+  .twitch .ant-f { transform-origin: 81px 33px; animation: tw 1.4s ease-in-out infinite .35s }
+  @keyframes tw { 0%, 100% { transform: rotate(0) } 25% { transform: rotate(-9deg) } 50% { transform: rotate(3deg) } }
+  .walk .legA { animation: legA .5s steps(1) infinite } .walk .legB { animation: legB .5s steps(1) infinite }
+  @keyframes legA { 0% { opacity: 1 } 50% { opacity: 0 } } @keyframes legB { 0% { opacity: 0 } 50% { opacity: 1 } }
+  .walk .whole { animation: bob .5s ease-in-out infinite } @keyframes bob { 50% { transform: translateY(-1.2px) } }
+  .march .path { stroke-dasharray: 3 5; animation: march .6s linear infinite } @keyframes march { to { stroke-dashoffset: -8 } }
+  .ring .arc { transform-origin: 50px 50px; animation: spin 1s linear infinite } @keyframes spin { to { transform: rotate(360deg) } }
+  .trail .d { animation: pulse 1.2s infinite } .trail .d:nth-of-type(2) { animation-delay: .2s } .trail .d:nth-of-type(3) { animation-delay: .4s }
+  @keyframes pulse { 0%, 60%, 100% { opacity: .25 } 20% { opacity: 1 } }
+  @media (prefers-reduced-motion: reduce) { .ld *, .bigld * { animation: none !important } }
+</style>
+<main>
+  <h1>Colour</h1>
+  <p class="note">D keeps the colours Ants has today, minus the brown. A to C keep the cool greys and add gold, with the sidebar in the logo's navy. Status colours (running blue, waiting amber, done green, failed red) stay as they are.</p>
+  <div class="icons"><img src="../../../src/main/resources/static/logo.svg" style="background:#f7f1e8"><span>Cream tile</span>
+    <img src="../../../src/main/resources/static/logo.svg" style="background:#e9dcc8"><span>Darker cream</span>
+    <img src="../../../src/main/resources/static/logo.svg" style="background:#e8b339"><span>Gold tile</span></div>
+  <div class="ctl">Loader in the mock-ups: <span id="pick"></span></div>
+  <div id="palettes"></div>
+
+  <h1>Loading: instead of the walking ant</h1>
+  <p class="note">Each one big, and inline at text size, the way it sits beside a working Agent Task.</p>
+  <div class="gallery" id="gallery"></div>
+  <div class="gallery" id="galleryDark" style="margin-top:14px"></div>
+</main>
+<script>
+const LEGS = 'M58 55 L65 61 L67 69 M53 56 L54 63 L51 69 M48 56 L42 62 L38 68';
+const BODY = '<ellipse cx="31" cy="55" rx="16" ry="13" transform="rotate(-12 31 55)"/><circle cx="47" cy="52" r="3.5"/><ellipse cx="56" cy="50" rx="8" ry="6" transform="rotate(-20 56 50)"/><circle cx="71" cy="40" r="14"/>';
+const FAR = '<path d="M82.1 33.3 L82.6 31.1 L83.2 28.9 L83.8 26.8 L84.4 24.6 L85.0 22.4 L85.6 20.3 L86.5 19.0 L87.4 17.9 L88.3 16.9 L89.2 16.0 L90.1 15.4 L91.0 14.9 L91.8 14.6 L92.7 14.5 L93.5 14.5 L94.4 14.6 L95.3 15.0 L96.1 15.5 L97.0 16.2 L97.9 17.1 L98.1 16.9 L97.3 16.0 L96.4 15.2 L95.5 14.6 L94.6 14.1 L93.6 13.9 L92.7 13.8 L91.7 13.9 L90.7 14.2 L89.7 14.7 L88.6 15.3 L87.6 16.1 L86.6 17.1 L85.5 18.3 L84.4 19.7 L83.6 22.0 L82.9 24.1 L82.2 26.2 L81.4 28.4 L80.7 30.5 L79.9 32.7 Z"/>';
+const NEAR = '<path d="M81.9 33.8 L83.3 32.1 L84.8 30.4 L86.2 28.6 L87.7 26.9 L89.1 25.2 L90.5 23.5 L91.7 22.7 L93.0 21.9 L94.1 21.4 L95.2 21.1 L96.1 20.9 L97.0 20.9 L97.8 21.1 L98.6 21.5 L99.3 22.1 L99.9 22.9 L100.5 23.8 L101.0 25.0 L101.5 26.4 L101.9 28.0 L102.1 28.0 L101.9 26.3 L101.5 24.9 L101.0 23.6 L100.5 22.5 L99.8 21.6 L99.0 20.9 L98.2 20.4 L97.2 20.0 L96.1 19.9 L95.0 20.0 L93.7 20.3 L92.4 20.8 L91.0 21.5 L89.5 22.5 L87.9 24.1 L86.3 25.7 L84.8 27.4 L83.2 29.0 L81.7 30.6 L80.1 32.2 Z"/>';
+
+  const ant = (cls, extra = '') => `<svg viewBox="12 4 96 70" class="${cls}"><g class="whole">
+      <g class="legA"><path d="${LEGS}" fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/></g>
+      ${extra}
+      <g fill="currentColor">${BODY}<g class="ant-f">${FAR}</g><g class="ant-n">${NEAR}</g></g>
+      <circle cx="77" cy="37" r="3.6" fill="var(--cut, #fff)"/></g></svg>`;
+  const LEGS_B = 'M58 55 L63 62 L62 69 M53 56 L57 62 L57 69 M48 56 L45 62 L43 68';
+  let n = 0;
+  const loaders = {
+    twitch: ['Antennae twitch', 'The ant stands still, its antennae feel around. Calm, and it is the logo.', () => ant('twitch')],
+    walk: ['Walk in place', 'The legs step and the body bobs, but it goes nowhere.', () => ant('walk',
+      `<g class="legB"><path d="${LEGS_B}" fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/></g>`)
+      .replace('<g class="legA">', '<g class="legA">')],
+    march: ['Marching ants', 'A dashed line runs under the ant, like the selection outline called marching ants.', () => ant('march',
+      `<path class="path" d="M14 72 H106" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>`)],
+    ring: ['Ring', 'The logo with an arc running round it. The most like a normal spinner.', () => { const id = 'r' + (n++); return `<svg viewBox="0 0 100 100" class="ring">
+      <defs><mask id="${id}"><rect width="100" height="100" fill="#fff"/><g transform="translate(50 50) scale(.66) translate(-57 -42)">
+        <path d="${LEGS}" fill="none" stroke="#000" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/><g fill="#000">${BODY}${FAR}${NEAR}</g><circle cx="77" cy="37" r="3.6" fill="#fff"/></g></mask></defs>
+      <circle cx="50" cy="50" r="38" fill="currentColor" mask="url(#${id})"/>
+      <circle class="arc" cx="50" cy="50" r="46" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-dasharray="70 220"/></svg>`; }],
+    trail: ['Trail', 'Three dots pulse behind the ant, like the trail it leaves.', () => `<svg viewBox="-34 4 142 70" class="trail">
+      <circle class="d" cx="-24" cy="62" r="4" fill="currentColor"/><circle class="d" cx="-8" cy="62" r="4" fill="currentColor"/><circle class="d" cx="8" cy="62" r="4" fill="currentColor"/>
+      ${ant('').replace(/^<svg[^>]*>/, '').replace(/<\/svg>$/, '')}</svg>`],
+  };
+  let current = 'twitch';
+  const palettes = [['cream', 'D · Cream + dark (what Ants has)', 'No new colour: the cream of the old icon and the near-black the sidebar and dark mode already use. The accent is just dark, or cream in dark mode.'],
+                    ['gold', 'A · Gold', 'Gold buttons with navy text. The loudest.'],
+                    ['ink', 'B · Navy + gold', 'Navy buttons, gold only in the details: the active page, the loader, the logo. Gold buttons in dark mode.'],
+                    ['warm', 'C · Navy + gold, warm paper', 'As B, on a warm off-white instead of cool grey, to sit closer to the gold.']];
+  const mock = (p, mode) => `<div class="app ${p} ${mode}">
+    <div class="side"><div class="brand"><img src="../../../src/main/resources/static/logo.svg" alt="" style="background:${p === 'cream' ? '#e9dcc8' : '#e8b339'};border-radius:50%">ants</div>
+      <div class="nav">Home</div><div class="nav">Processes</div><div class="nav on">Runs</div><div class="nav">Dashboards</div></div>
+    <div class="page"><div class="top"><h2>Runs</h2><span class="btn">Filter</span><span class="btn primary">Start a Run</span></div>
+      <div class="list">
+        <div class="row sel"><span class="ld">${loaders[current][2]()}</span><a>Weekly dependency review</a><span class="badge b-run">Running</span><span class="when">Read the changelogs</span></div>
+        <div class="row"><span class="ld">${loaders[current][2]()}</span><a>Spec #325 tickets</a><span class="badge b-run">Running</span><span class="when">Implement</span></div>
+        <div class="row"><a>Release notes</a><span class="badge b-wait">Waiting for you</span><span class="when">Review</span></div>
+        <div class="row"><a>Morning briefing</a><span class="badge b-ok">Done</span><span class="when">07:02</span></div>
+        <div class="row"><a>Nightly backup check</a><span class="badge b-bad">Failed</span><span class="when">03:10</span></div>
+      </div></div></div>`;
+  function draw() {
+    document.getElementById('pick').innerHTML = Object.entries(loaders).map(([k, [name]]) =>
+      `<button class="${k === current ? 'on' : ''}" onclick="current='${k}';draw()">${name}</button>`).join('');
+    document.getElementById('palettes').innerHTML = palettes.map(([p, name, why]) =>
+      `<div class="label">${name} <span>${why}</span></div><div class="pair">${mock(p, 'light')}${mock(p, 'dark')}</div>`).join('');
+  }
+  draw();
+  const card = (dk) => Object.values(loaders).map(([name, why, svg]) => `<div class="card ${dk}" style="--cut:${dk ? '#0e1525' : '#fff'}">
+    <div class="bigld">${svg()}</div><b>${name}</b><p>${why}</p>
+    <div class="inline"><span class="ld">${svg()}</span>Agent working…</div></div>`).join('');
+  document.getElementById('gallery').innerHTML = card('');
+  document.getElementById('galleryDark').innerHTML = card('dk');
+</script>

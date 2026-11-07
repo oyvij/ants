@@ -1,0 +1,46 @@
+<!doctype html>
+<!-- Throwaway prototype, round 14: thin, long, elbowed antennae. Open in a browser. -->
+<meta charset="utf-8">
+<title>Brand prototype, round 14</title>
+<style>
+  :root { --ink: #0e1525; --gold: #e8b339; --line: #dde1e8; --muted: #667085 }
+  body { font: 15px Inter, system-ui, sans-serif; margin: 0; background: #f6f7f9; color: var(--ink) }
+  main { max-width: 1180px; margin: 0 auto; padding: 32px }
+  .row { display: flex; gap: 14px; align-items: center; margin-bottom: 18px }
+  .about { width: 150px; font-size: 13px; color: var(--muted); line-height: 1.4 } .about b { display: block; color: var(--ink); font-size: 15px; margin-bottom: 3px }
+  .big svg { width: 170px; height: 170px; display: block }
+  .icon { width: 96px; height: 96px; border-radius: 22px; display: grid; place-items: center; flex: none }
+  .icon svg { width: 78px; height: 78px }
+  .s32 svg { width: 32px; height: 32px } .s16 svg { width: 16px; height: 16px }
+  .card { border-radius: 14px; padding: 14px 20px; display: flex; align-items: center; gap: 10px; font-weight: 650; font-size: 30px; letter-spacing: -.03em }
+  .card svg { width: 46px; height: 46px }
+</style>
+<main id="m"></main>
+<script>
+  // Each ant: strokes (legs, antennae, jaws), solids (body parts), and holes (eye, smile) cut back out of the ant.
+  const ants = {
+    was: { name: 'A: front of the head', why: 'As it was.', c: [54, 40], s: .86, w: 4.5,
+      strokes: 'M58 55 L65 61 L67 69 M53 56 L54 63 L51 69 M48 56 L42 62 L38 68', solids: '<ellipse cx="31" cy="55" rx="16" ry="13" transform="rotate(-12 31 55)"/><circle cx="47" cy="52" r="3.5"/><ellipse cx="56" cy="50" rx="8" ry="6" transform="rotate(-20 56 50)"/><circle cx="71" cy="40" r="14"/><path d="M74 34 Q74.5 19 88 11.5 Q77.2 21.5 77 34 Z"/><path d="M78 40 Q78.5 18 94 12 Q81.5 20.5 81 40 Z"/>', holes: '<ellipse cx="74" cy="37" rx="3.3" ry="4.8" transform="rotate(-12 74 37)"/>' },
+    e1: { name: 'Elbowed', why: 'Thin and long: up at 45°, an elbow, then forward and down to a point.', c: [60, 42], s: .82, w: 4.5,
+      strokes: 'M58 55 L65 61 L67 69 M53 56 L54 63 L51 69 M48 56 L42 62 L38 68', solids: '<ellipse cx="31" cy="55" rx="16" ry="13" transform="rotate(-12 31 55)"/><circle cx="47" cy="52" r="3.5"/><ellipse cx="56" cy="50" rx="8" ry="6" transform="rotate(-20 56 50)"/><circle cx="71" cy="40" r="14"/><path d="M75.8 34.7 L77.6 32.7 L79.4 30.6 L81.1 28.6 L82.9 26.5 L84.7 24.5 L86.4 22.5 L87.5 21.7 L88.7 21.1 L89.8 20.6 L90.9 20.3 L91.9 20.2 L92.9 20.2 L93.9 20.4 L94.8 20.7 L95.7 21.2 L96.6 21.8 L97.5 22.6 L98.3 23.6 L99.1 24.7 L99.9 26.1 L100.1 25.9 L99.4 24.6 L98.7 23.3 L97.9 22.3 L97.0 21.4 L96.1 20.6 L95.1 20.1 L94.1 19.6 L93.0 19.4 L91.9 19.3 L90.7 19.4 L89.5 19.7 L88.3 20.1 L87.0 20.7 L85.6 21.5 L83.6 23.5 L81.8 25.5 L79.9 27.4 L78.0 29.4 L76.1 31.3 L74.2 33.3 Z"/><path d="M79.9 38.8 L81.8 36.6 L83.8 34.4 L85.7 32.1 L87.6 29.9 L89.6 27.7 L91.4 25.5 L92.7 24.8 L94.0 24.2 L95.2 23.7 L96.4 23.5 L97.5 23.4 L98.6 23.4 L99.6 23.6 L100.6 24.0 L101.6 24.6 L102.5 25.3 L103.4 26.2 L104.3 27.3 L105.1 28.6 L105.9 30.1 L106.1 29.9 L105.4 28.4 L104.7 27.1 L103.8 25.9 L102.9 24.9 L102.0 24.0 L101.0 23.4 L99.9 22.9 L98.7 22.5 L97.5 22.4 L96.2 22.5 L94.9 22.7 L93.5 23.1 L92.1 23.7 L90.6 24.5 L88.4 26.6 L86.4 28.8 L84.3 30.9 L82.2 33.0 L80.2 35.1 L78.1 37.2 Z"/>', holes: '<ellipse cx="74" cy="37" rx="3.3" ry="4.8" transform="rotate(-12 74 37)"/>' },
+    e2: { name: 'More crooked', why: 'Same, the tip hooks further down.', c: [59, 42], s: .82, w: 4.5,
+      strokes: 'M58 55 L65 61 L67 69 M53 56 L54 63 L51 69 M48 56 L42 62 L38 68', solids: '<ellipse cx="31" cy="55" rx="16" ry="13" transform="rotate(-12 31 55)"/><circle cx="47" cy="52" r="3.5"/><ellipse cx="56" cy="50" rx="8" ry="6" transform="rotate(-20 56 50)"/><circle cx="71" cy="40" r="14"/><path d="M75.8 34.7 L77.4 32.9 L79.0 31.0 L80.7 29.1 L82.3 27.2 L83.9 25.3 L85.5 23.5 L87.0 22.2 L88.5 21.2 L89.8 20.4 L91.0 19.9 L92.1 19.6 L93.0 19.6 L93.8 19.9 L94.5 20.3 L95.2 21.1 L95.7 22.1 L96.2 23.4 L96.5 25.0 L96.8 26.9 L96.9 29.0 L97.1 29.0 L97.1 26.8 L97.0 24.9 L96.7 23.3 L96.3 21.9 L95.8 20.7 L95.1 19.8 L94.2 19.1 L93.2 18.8 L92.0 18.7 L90.7 18.9 L89.4 19.4 L87.9 20.2 L86.3 21.2 L84.5 22.5 L82.8 24.3 L81.1 26.1 L79.3 27.9 L77.6 29.7 L75.9 31.5 L74.2 33.3 Z"/><path d="M79.9 38.8 L81.7 36.8 L83.4 34.7 L85.2 32.7 L87.0 30.6 L88.8 28.5 L90.5 26.6 L92.1 25.4 L93.7 24.5 L95.2 23.8 L96.5 23.4 L97.6 23.3 L98.7 23.3 L99.5 23.6 L100.3 24.2 L101.0 25.0 L101.6 26.0 L102.1 27.4 L102.5 29.0 L102.7 30.9 L102.9 33.0 L103.1 33.0 L103.1 30.8 L103.0 28.9 L102.7 27.2 L102.2 25.8 L101.6 24.6 L100.9 23.6 L100.0 22.9 L98.9 22.4 L97.6 22.3 L96.3 22.4 L94.8 22.8 L93.2 23.4 L91.4 24.3 L89.5 25.4 L87.6 27.5 L85.7 29.4 L83.8 31.3 L81.9 33.3 L80.0 35.2 L78.1 37.2 Z"/>', holes: '<ellipse cx="74" cy="37" rx="3.3" ry="4.8" transform="rotate(-12 74 37)"/>' },
+  };
+  const defs = Object.entries(ants).map(([id, a]) => {
+    const body = (col) => `<path d="${a.strokes}" fill="none" stroke="${col}" stroke-width="${a.w}" stroke-linecap="round" stroke-linejoin="round"/><g fill="${col}">${a.solids}</g>`;
+    return `<mask id="m-${id}"><rect width="100" height="100" fill="#fff"/>
+      <g transform="translate(50 50) scale(${a.s}) translate(${-a.c[0]} ${-a.c[1]})">${body('#000')}
+        <g fill="#fff" stroke="#fff">${a.holes}</g><g fill="#000">${a.shine || ''}</g></g></mask>
+      <symbol id="${id}" viewBox="0 0 100 100"><circle cx="50" cy="50" r="48" fill="var(--c)" mask="url(#m-${id})"/></symbol>`;
+  }).join('');
+  document.body.insertAdjacentHTML('afterbegin', `<svg width="0" height="0" style="position:absolute"><defs>${defs}</defs></svg>`);
+  const m = (id, c) => `<svg style="--c:${c}"><use href="#${id}"/></svg>`;
+  document.getElementById('m').innerHTML = Object.entries(ants).map(([id, a]) => `<div class="row">
+    <div class="about"><b>${a.name}</b>${a.why}</div>
+    <div class="big">${m(id, 'var(--ink)')}</div>
+    <div class="icon" style="background:var(--gold)">${m(id, 'var(--ink)')}</div>
+    <div class="icon" style="background:var(--ink)">${m(id, 'var(--gold)')}</div>
+    <div class="s32">${m(id, 'var(--ink)')}</div><div class="s16">${m(id, 'var(--ink)')}</div>
+    <div class="card" style="background:#fff;border:1px solid var(--line)">${m(id, 'var(--ink)')}ants</div>
+    <div class="card" style="background:var(--ink);color:#fff">${m(id, 'var(--gold)')}ants</div></div>`).join('');
+</script>

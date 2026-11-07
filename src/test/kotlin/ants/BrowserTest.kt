@@ -1791,7 +1791,7 @@ class BrowserTest : AntsTest() {
         val run = http.post("/processes/themed/runs", mapOf()).path
         val diagrams = listOf("/processes/themed", "/processes/themed/edit", run)
         val pages = listOf("/", "/notifications", "/runs", "/processes", "/agents", http.newDraft("/agents"), "/skills", http.newDraft("/skills"), "/templates", "/tickets", "/settings") + diagrams
-        val light = "rgb(244, 245, 247)"
+        val light = "rgb(247, 242, 234)"
         val dark = "rgb(11, 13, 18)"
         for ((theme, system, expected) in listOf(
             Triple("light", ColorScheme.DARK, light), Triple("dark", ColorScheme.LIGHT, dark),
@@ -1953,7 +1953,7 @@ class BrowserTest : AntsTest() {
         waitingRun("counted")
         onPhone()
         page.navigate(url("/runs"))
-        assertThat(topBar).containsText("Ants")
+        assertThat(topBar).containsText("ants")
         assertEquals(0.0, topBar.boundingBox()!!.y, 0.5)
         assertEquals(390.0, topBar.boundingBox()!!.width, 0.5)
         val count = page.locator("#topbar-waiting")
@@ -2016,7 +2016,7 @@ class BrowserTest : AntsTest() {
     fun `on a phone the top bar and the drawer follow light and dark mode as the desktop sidebar does`() = browse {
         onPhone()
         fun background(part: Locator) = part.evaluate("e => getComputedStyle(e).backgroundColor")
-        for ((theme, pageBackground) in listOf("light" to "rgb(244, 245, 247)", "dark" to "rgb(11, 13, 18)")) {
+        for ((theme, pageBackground) in listOf("light" to "rgb(247, 242, 234)", "dark" to "rgb(11, 13, 18)")) {
             settings(null, "theme: $theme\n")
             page.setViewportSize(1024, 844)
             page.navigate(url("/runs"))
@@ -2028,7 +2028,7 @@ class BrowserTest : AntsTest() {
             assertEquals(desktop, background(sidebar), "the drawer in $theme")
             assertEquals(desktop, background(topBar), "the top bar in $theme")
             assertThat(topBar.getByRole(AriaRole.IMG, Locator.GetByRoleOptions().setName("Ants"))).isVisible()
-            assertContains(topBar.locator(".wordmark text").evaluate("e => getComputedStyle(e).fill") as String, "#wm-top", message = "the brown wordmark in $theme")
+            assertEquals("rgb(247, 241, 232)", topBar.locator(".wordmark").evaluate("e => getComputedStyle(e).color"), "the cream wordmark in $theme")
             page.screenshot("phone/drawer-$theme")
         }
     }
@@ -4303,8 +4303,8 @@ class BrowserTest : AntsTest() {
 
     private data class DiagramColours(val node: String, val border: String, val label: String, val edge: String)
 
-    private val lightDiagram = DiagramColours("rgb(246, 237, 228)", "rgb(138, 74, 38)", "rgb(15, 23, 42)", "rgb(100, 116, 139)")
-    private val darkDiagram = DiagramColours("rgb(42, 29, 20)", "rgb(212, 163, 115)", "rgb(230, 232, 238)", "rgb(139, 148, 165)")
+    private val lightDiagram = DiagramColours("rgb(241, 233, 219)", "rgb(14, 16, 22)", "rgb(15, 23, 42)", "rgb(100, 116, 139)")
+    private val darkDiagram = DiagramColours("rgb(31, 29, 26)", "rgb(233, 220, 200)", "rgb(230, 232, 238)", "rgb(139, 148, 165)")
 
     private fun drawnColours() = (page.locator("#ticket .mermaid svg").evaluateAll(
         "svgs => svgs.map(svg => { const style = s => getComputedStyle(svg.querySelector(s)); const node = style('.node rect'); " +
