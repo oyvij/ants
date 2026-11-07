@@ -442,12 +442,8 @@ div.tools label span { color: var(--muted); font-size: 12px; display: block; }
 .home > #live { display: contents; }
 .home .grid3, #waiting-on-you { grid-column: 1 / -1; } .home .grid3 { margin-bottom: 14px; }
 #working-now { grid-row: span 2; } #start-a-run { align-self: start; }
-/* Home's greeting: the logo ant, its antennae twitching as the working ant's do. */
-.ph h1.hello { display: flex; align-items: center; gap: 20px; font: 800 30px system-ui, sans-serif; letter-spacing: -.02em; }
-.hello .ant { width: 96px; height: 96px; flex: none; color: var(--ink); }
-.hello .ant :is(.far, .near) { transform-origin: 81px 33px; animation: twitch 1.4s ease-in-out infinite; } .hello .ant .far { animation-delay: .35s; }
-@keyframes twitch { 25% { transform: rotate(-9deg); } 50% { transform: rotate(3deg); } }
-@media (prefers-reduced-motion: reduce) { .hello .ant * { animation: none; } }
+/* Home's greeting. */
+.ph h1.hello { font: 800 30px system-ui, sans-serif; letter-spacing: -.02em; }
 .card h3 > a.small { margin-left: auto; font-weight: 500; }
 .item { padding: 7px 0; border-bottom: 1px solid var(--line2); } .row.item { padding: 6px 0; }
 .card .notes { box-shadow: none; }
@@ -745,7 +741,7 @@ details.example pre { background: var(--line2); border: 0; padding: 10px; border
 
 @media (max-width: 768px) {
     :root { --side-width: 0px; }
-    .ph h1.hello { gap: 12px; font-size: 26px; } .hello img { width: 130px; height: 100px; }
+    .ph h1.hello { font-size: 26px; }
     .topbar { display: flex; }
     nav.side { width: min(280px, 85vw); visibility: hidden; transform: translateX(-100%); transition: transform .2s, visibility .2s; }
     #menu:checked ~ nav.side { visibility: visible; transform: none; box-shadow: 0 0 0 100vmax var(--modalBg); }

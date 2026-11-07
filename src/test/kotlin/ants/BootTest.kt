@@ -44,7 +44,7 @@ class BootTest : AntsTest() {
         val home = browser().login()
         assertEquals(200, home.status)
         assertEquals("/", home.path)
-        assertContains(home.body, Regex("""<h1 class="hello"><svg class="ant" viewBox="[^"]+" aria-hidden="true">.*?</svg><span>Good (morning|afternoon|evening)</span></h1>"""))
+        assertContains(home.body, Regex("""<h1 class="hello">Good (morning|afternoon|evening)</h1>"""))
     }
 
     @Test
