@@ -1,0 +1,44 @@
+<!doctype html>
+<!-- Throwaway prototype, round 16: big head + eye without its antenna. Open in a browser. -->
+<meta charset="utf-8">
+<title>Brand prototype, round 16</title>
+<style>
+  :root { --ink: #0e1525; --gold: #e8b339; --line: #dde1e8; --muted: #667085 }
+  body { font: 15px Inter, system-ui, sans-serif; margin: 0; background: #f6f7f9; color: var(--ink) }
+  main { max-width: 1180px; margin: 0 auto; padding: 32px }
+  .row { display: flex; gap: 14px; align-items: center; margin-bottom: 18px }
+  .about { width: 150px; font-size: 13px; color: var(--muted); line-height: 1.4 } .about b { display: block; color: var(--ink); font-size: 15px; margin-bottom: 3px }
+  .big svg { width: 170px; height: 170px; display: block }
+  .icon { width: 96px; height: 96px; border-radius: 22px; display: grid; place-items: center; flex: none }
+  .icon svg { width: 78px; height: 78px }
+  .s32 svg { width: 32px; height: 32px } .s16 svg { width: 16px; height: 16px }
+  .card { border-radius: 14px; padding: 14px 20px; display: flex; align-items: center; gap: 10px; font-weight: 650; font-size: 30px; letter-spacing: -.03em }
+  .card svg { width: 46px; height: 46px }
+</style>
+<main id="m"></main>
+<script>
+  // Each ant: strokes (legs, antennae, jaws), solids (body parts), and holes (eye, smile) cut back out of the ant.
+  const ants = {
+    a: { name: 'Big head + eye', why: 'The original from round 8.', c: [52, 42], s: .86, w: 4.5,
+      strokes: 'M68 28 Q64 15 74 12 Q81 10 84 15 M58 55 L65 61 L67 69 M53 56 L54 63 L51 69 M48 56 L42 62 L38 68', solids: '<ellipse cx="31" cy="55" rx="16" ry="13" transform="rotate(-12 31 55)"/><circle cx="47" cy="52" r="3.5"/><ellipse cx="56" cy="50" rx="8" ry="6" transform="rotate(-20 56 50)"/><circle cx="71" cy="40" r="14"/><circle cx="84.5" cy="16" r="3.2"/>', holes: '<circle cx="77" cy="37" r="3.6"/>' },
+    n: { name: 'No antenna', why: 'The same, with the antenna removed.', c: [52, 46], s: .95, w: 4.5,
+      strokes: 'M58 55 L65 61 L67 69 M53 56 L54 63 L51 69 M48 56 L42 62 L38 68', solids: '<ellipse cx="31" cy="55" rx="16" ry="13" transform="rotate(-12 31 55)"/><circle cx="47" cy="52" r="3.5"/><ellipse cx="56" cy="50" rx="8" ry="6" transform="rotate(-20 56 50)"/><circle cx="71" cy="40" r="14"/>', holes: '<circle cx="77" cy="37" r="3.6"/>' },
+  };
+  const defs = Object.entries(ants).map(([id, a]) => {
+    const body = (col) => `<path d="${a.strokes}" fill="none" stroke="${col}" stroke-width="${a.w}" stroke-linecap="round" stroke-linejoin="round"/><g fill="${col}">${a.solids}</g>`;
+    return `<mask id="m-${id}"><rect width="100" height="100" fill="#fff"/>
+      <g transform="translate(50 50) scale(${a.s}) translate(${-a.c[0]} ${-a.c[1]})">${body('#000')}
+        <g fill="#fff" stroke="#fff">${a.holes}</g><g fill="#000">${a.shine || ''}</g></g></mask>
+      <symbol id="${id}" viewBox="0 0 100 100"><circle cx="50" cy="50" r="48" fill="var(--c)" mask="url(#m-${id})"/></symbol>`;
+  }).join('');
+  document.body.insertAdjacentHTML('afterbegin', `<svg width="0" height="0" style="position:absolute"><defs>${defs}</defs></svg>`);
+  const m = (id, c) => `<svg style="--c:${c}"><use href="#${id}"/></svg>`;
+  document.getElementById('m').innerHTML = Object.entries(ants).map(([id, a]) => `<div class="row">
+    <div class="about"><b>${a.name}</b>${a.why}</div>
+    <div class="big">${m(id, 'var(--ink)')}</div>
+    <div class="icon" style="background:var(--gold)">${m(id, 'var(--ink)')}</div>
+    <div class="icon" style="background:var(--ink)">${m(id, 'var(--gold)')}</div>
+    <div class="s32">${m(id, 'var(--ink)')}</div><div class="s16">${m(id, 'var(--ink)')}</div>
+    <div class="card" style="background:#fff;border:1px solid var(--line)">${m(id, 'var(--ink)')}ants</div>
+    <div class="card" style="background:var(--ink);color:#fff">${m(id, 'var(--gold)')}ants</div></div>`).join('');
+</script>

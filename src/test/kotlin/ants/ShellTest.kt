@@ -63,7 +63,7 @@ class ShellTest : AntsTest() {
     fun `the top bar shows Ants, the Notification list count and the ☰ that opens the sidebar`() {
         waitingRun()
         val bar = Regex("""<header class="topbar">.*?</header>""", RegexOption.DOT_MATCHES_ALL).find(browser.get("/runs").body)!!.value
-        assertContains(bar, """<svg class="wordmark" viewBox="0 0 80 54" role="img" aria-label="Ants">""")
+        assertContains(bar, Regex("""<span class="wordmark" role="img" aria-label="Ants"><svg class="ant".*?</svg>ants</span>"""))
         assertFalse("🐜" in bar)
         assertContains(bar, """<span id="topbar-waiting" class="n">1</span>""")
         assertContains(bar, """<label for="menu" title="Menu">☰</label>""")
@@ -97,7 +97,7 @@ class ShellTest : AntsTest() {
     @Test
     fun `the login page is Ants' own, and Log out ends the session on it`() {
         val login = browser().get("/login")
-        assertContains(login.body, """<div class="logo"><svg class="wordmark" viewBox="0 0 80 54" role="img" aria-label="Ants">""")
+        assertContains(login.body, Regex("""<div class="logo"><span class="wordmark" role="img" aria-label="Ants"><svg class="ant".*?</svg>ants</span></div>"""))
         assertFalse("🐜" in login.body)
         assertContains(login.body, """<link rel="stylesheet" href="/ants.css">""")
         assertFalse("""<nav class="side">""" in login.body)

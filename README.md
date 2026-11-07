@@ -88,8 +88,8 @@ it skips locally where Chromium can't launch and runs in CI.
 
 ## Icon
 
-The ant is `src/main/resources/static/ant.svg`; Home shows it with twitching antennae (`ant-alive.svg`). The app icons
-are `docs/icon.svg`, the ant on a cream tile; render them with the `chrome-headless-shell` that
+The logo is `src/main/resources/static/logo.svg`, an ant seen from the side. The app icons are `docs/icon.svg`,
+the logo on a cream tile; render them with the `chrome-headless-shell` that
 `./gradlew playwright --args="install chromium"` installs (full Chrome's headless window won't shrink to 192 px), for
 N = 192 and 512 (add `--no-sandbox` where its sandbox can't start, such as in a container):
 

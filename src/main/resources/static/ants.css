@@ -6,12 +6,14 @@
  * The last part, "Until the page tickets", styles the pages whose markup isn't the prototype's yet.
  */
 :root {
-    --bg: light-dark(#f4f5f7, #0b0d12); --panel: light-dark(#fff, #13161d); --panel2: light-dark(#fafbfc, #171b23);
-    --hover: light-dark(#f6f7f9, #1b1f28); --field: light-dark(#fff, #0f1218); --fieldLine: light-dark(#d5d9e0, #2c3240);
+    --bg: light-dark(#f7f2ea, #0b0d12); --panel: light-dark(#fffdf9, #13161d); --panel2: light-dark(#fbf8f2, #171b23);
+    --hover: light-dark(#f4eee4, #1b1f28); --field: light-dark(#fffdf9, #0f1218); --fieldLine: light-dark(#ddd4c4, #2c3240);
     --text: light-dark(#0f172a, #e6e8ee); --text2: light-dark(#334155, #c3c8d2); --text3: light-dark(#475569, #9aa3b2);
-    --muted: light-dark(#64748b, #8b94a5); --line: light-dark(#e4e7ec, #252a35); --line2: light-dark(#f0f2f5, #1d212a);
-    --side: light-dark(#0e1016, #07080b); --side2: light-dark(#171a22, #12141a); --sideText: #9aa3b2;
-    --acc: light-dark(#8a4a26, #d4a373); --accSoft: light-dark(#f6ede4, #2a1d14); --accText: light-dark(#6b3a1e, #e8c9a8); --accHover: light-dark(#6e3a1d, #b8875a);
+    --muted: light-dark(#64748b, #8b94a5); --line: light-dark(#e9e1d3, #252a35); --line2: light-dark(#f1ebe0, #1d212a);
+    --side: light-dark(#0e1016, #07080b); --side2: light-dark(#1b1e27, #12141a); --sideText: #9aa3b2;
+    /* The brand's colours: near-black and cream, with --accOn the text on --acc. The logo is --ink. */
+    --acc: light-dark(#0e1016, #e9dcc8); --accOn: light-dark(#f7f1e8, #0e1016); --accSoft: light-dark(#f1e9db, #1f1d1a); --accText: light-dark(#0e1016, #e9dcc8);
+    --accHover: light-dark(#2b2f3a, #f7f1e8); --ink: light-dark(#0e1016, #f7f1e8);
     --run: light-dark(#2563eb, #60a5fa); --runSoft: light-dark(#e0ecff, #13233d);
     --wait: light-dark(#d97706, #f59e0b); --waitSoft: light-dark(#fff4e0, #2a1f0c); --warnText: light-dark(#92400e, #fbbf24);
     --ok: light-dark(#16a34a, #4ade80); --okSoft: light-dark(#e7f8ed, #0f2a1a); --okText: light-dark(#166534, #86efac);
@@ -20,8 +22,8 @@
     /* Code's colours by token, highlight.js's: GitHub's light and dark. */
     --tokKey: light-dark(#cf222e, #ff7b72); --tokStr: light-dark(#0a3069, #a5d6ff); --tokNum: light-dark(#0550ae, #79c0ff);
     --tokType: light-dark(#953800, #ffa657); --tokDef: light-dark(#8250df, #d2a8ff); --tokCom: light-dark(#6e7781, #8b949e);
-    --codeBg: light-dark(#fff, #0f1218); --dimCode: light-dark(#b8bec9, #4b5363); --lnum: light-dark(#b0b7c3, #4b5363); --band: light-dark(#fcfcfd, #161a22);
-    --composer: light-dark(rgba(255, 255, 255, .96), rgba(19, 22, 29, .94)); --dotgrid: light-dark(#d9dde5, #252b38);
+    --codeBg: light-dark(#fffdf9, #0f1218); --dimCode: light-dark(#b8bec9, #4b5363); --lnum: light-dark(#b0b7c3, #4b5363); --band: light-dark(#fcfaf5, #161a22);
+    --composer: light-dark(rgba(255, 253, 249, .96), rgba(19, 22, 29, .94)); --dotgrid: light-dark(#d9dde5, #252b38);
     --citeC: light-dark(#0e7490, #67e8f9); --invC: light-dark(#b45309, #fbbf24); --modalBg: light-dark(rgba(15, 23, 42, .5), rgba(0, 0, 0, .6));
     --chev: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237b8495' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
     --r: 10px; --sh: 0 1px 2px light-dark(rgba(16, 24, 40, .05), rgba(0, 0, 0, .45)), 0 1px 3px light-dark(rgba(16, 24, 40, .06), transparent);
@@ -46,10 +48,11 @@ svg.i { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-widt
 /* Sidebar */
 .side { position: fixed; inset: 0 auto 0 0; width: var(--side-width); background: var(--side); color: var(--sideText); display: flex; flex-direction: column; padding: 16px 12px; gap: 2px; z-index: 10; overflow: auto; color-scheme: dark; }
 .logo { display: flex; align-items: center; padding: 4px 10px 10px; }
-.logo .wordmark { height: 64px; width: auto; overflow: visible; } .topbar .wordmark { height: 44px; }
+.wordmark { display: inline-flex; align-items: center; gap: .3em; color: var(--ink); font: 700 26px/1 Inter, ui-sans-serif, system-ui, sans-serif; letter-spacing: -.03em; }
+.wordmark .ant { width: 1.6em; height: 1.6em; } .topbar .wordmark { font-size: 20px; } body.login .wordmark { font-size: 30px; }
 .side a, .side .bottom > form > button { display: flex; align-items: center; gap: 10px; color: var(--sideText); padding: 7px 10px; border-radius: 8px; font-weight: 500; }
 .side a:hover, .side .bottom > form > button:hover { background: var(--side2); color: #e5e7eb; text-decoration: none; }
-.side a.on { background: #232733; color: #fff; }
+.side a.on { background: #232733; color: #fff; box-shadow: inset 3px 0 0 var(--acc); }
 .side .bottom > form > button svg.i { width: 17px; height: 17px; }
 .side .grp { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: #5b6475; padding: 16px 10px 4px; font-weight: 600; }
 :is(.side, .topbar) .n { margin-left: auto; background: var(--wait); color: #fff; font-size: 11px; font-weight: 700; border-radius: 10px; padding: 0 7px; line-height: 18px; }
@@ -130,7 +133,7 @@ main.full .composer > :is(div, form) { max-width: none; padding-inline: 24px; }
 .dashboard .st { display: flex; align-items: center; gap: 8px; padding: 3px 0; } .dashboard .st .n { flex: 1; min-width: 0; } .dashboard .st .s { color: var(--muted); }
 .dashboard .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
 .dashboard .dot.ok { background: var(--ok); } .dashboard .dot.warn { background: var(--wait); } .dashboard .dot.fail { background: var(--bad); }
-.dashboard .dot.running { background: var(--acc); animation: running 1s infinite alternate; } @keyframes running { to { opacity: .3; } }
+.dashboard .dot.running { background: var(--run); animation: running 1s infinite alternate; } @keyframes running { to { opacity: .3; } }
 @media (prefers-reduced-motion: reduce) { .dashboard .dot.running { animation: none; } .dashboard .bar div { transition: none; } }
 .dashboard .li { padding: 4px 0; border-bottom: 1px solid var(--line2); } .dashboard .li:last-of-type { border-bottom: 0; } .dashboard .li > div { color: var(--muted); font-size: 12px; }
 .dashboard .text > :first-child { margin-top: 0; } .dashboard .text > :last-child { margin-bottom: 0; }
@@ -213,7 +216,7 @@ button.small, .ghost.small { min-height: 28px; font-size: 12.5px; }
 input:not([type=checkbox]):not([type=radio]), select { min-height: 36px; }
 .ed .bar button, .tabs button, :is(.chipsel, .fld .tags) .c button, .cmd button, .dia .zoom button, .notice button { min-height: 0; }
 button:hover, .btn:hover { background: var(--hover); }
-button.primary, .btn.primary { background: light-dark(#fbf4ec, #2a1d14); border: 1.5px solid var(--acc); color: light-dark(#6b3a1e, #f0d4b4); } :is(button, .btn).primary:hover { background: light-dark(#f3e3d1, #3a2718); }
+button.primary, .btn.primary { background: var(--acc); border: 1px solid var(--acc); color: var(--accOn); } :is(button, .btn).primary:hover { background: var(--accHover); border-color: var(--accHover); }
 button.danger, .btn.danger { color: var(--bad); } button.ghost { border-color: transparent; box-shadow: none; background: none; color: var(--acc); padding: 4px 6px; }
 button:disabled, button[aria-disabled=true] { opacity: .45; cursor: not-allowed; }
 
@@ -284,7 +287,7 @@ input[type=checkbox], input[type=radio] { width: auto; accent-color: var(--acc);
 .djs-palette { border-radius: 8px; } .djs-palette .entry { border-radius: 4px; }
 /* bpmn-js's own buttons keep its light look, inverted with it in dark. */
 .djs-minimap button { color: #0f172a; background: #fff; }
-.ants-agent .djs-visual > rect { fill: #f6ede4 !important; stroke: #8a4a26 !important; }
+.ants-agent .djs-visual > rect { fill: #f1e9db !important; stroke: #0e1016 !important; }
 .ants-user .djs-visual > rect { fill: #fff8eb !important; stroke: #d97706 !important; }
 .ants-builtin .djs-visual > rect { fill: #f8fafc !important; stroke: #64748b !important; }
 .ants-script .djs-visual > rect { fill: #f0fdfa !important; stroke: #0d9488 !important; }
@@ -298,7 +301,7 @@ input[type=checkbox], input[type=radio] { width: auto; accent-color: var(--acc);
 .ov.waiting { background: var(--wait); color: #fff; } .ov.failed { background: var(--bad); color: #fff; } .ov.quiet, .ants-badge { background: #475569; color: #fff; }
 .ov.done { background: var(--ok); color: #fff; padding: 2px 6px; }
 .ants-badge { font: 600 11px Inter, system-ui, sans-serif; padding: 2px 8px; border-radius: 20px; white-space: nowrap; box-shadow: var(--sh); }
-.ants-pal-agent { color: #8a4a26 !important; } .ants-pal-user { color: #d97706 !important; } .ants-pal-builtin { color: #475569 !important; } .ants-pal-script { color: #0d9488 !important; }
+.ants-pal-agent { color: #0e1016 !important; } .ants-pal-user { color: #d97706 !important; } .ants-pal-builtin { color: #475569 !important; } .ants-pal-script { color: #0d9488 !important; }
 
 .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: 460px; background: var(--panel); border-left: 1px solid var(--line); box-shadow: -12px 0 32px rgba(15, 23, 42, .12); z-index: 30; display: flex; flex-direction: column; animation: slidein .2s ease-out; }
 @keyframes slidein { from { transform: translateX(40px); opacity: 0; } }
@@ -410,11 +413,13 @@ div.tools label span { color: var(--muted); font-size: 12px; display: block; }
 .walk nav a { color: var(--text); padding: 6px 10px; border-radius: 8px; font-size: 13px; overflow-wrap: anywhere; } .walk nav a:hover { background: var(--panel); text-decoration: none; }
 
 /* Liveness: what a running Agent looks like everywhere it appears */
-/* The spinner is the working ant (its own SVG animates), drawn over the ✻ the markup keeps; caramel on a dark page. An SVG
-   drawn as a background image doesn't see the page's prefers-reduced-motion, so then it is a copy with no animation. */
-.spin { --ant: url(/working-ant.svg); --antStill: url(/working-ant-still.svg); display: inline-block; width: 1.9em; height: 1.2em; vertical-align: -.2em; flex: none; color: transparent; overflow: hidden; user-select: none; background: var(--ant) center / contain no-repeat; }
-:root:has(meta[name=color-scheme][content=dark]) .spin, :is(.side, .topbar) .spin { --ant: url(/working-ant-dark.svg); --antStill: url(/working-ant-dark-still.svg); }
-@media (prefers-color-scheme: dark) { :root:has(meta[name=color-scheme][content="light dark"]) .spin { --ant: url(/working-ant-dark.svg); --antStill: url(/working-ant-dark-still.svg); } }
+/* The spinner is the working ant (its own SVG animates), drawn over the ✻ the markup keeps; cream on a dark page. It is
+   Antennae twitch; Walk in place is the backup: write walk for twitch twice on the next line. An SVG drawn as a background
+   image doesn't see the page's prefers-reduced-motion, so then it is the still logo ant. */
+.spin { --antLight: url(/working-ant-twitch.svg); --antDark: url(/working-ant-twitch-dark.svg); }
+.spin { --ant: var(--antLight); --antStill: url(/working-ant-still.svg); display: inline-block; width: 1.9em; height: 1.2em; vertical-align: -.2em; flex: none; color: transparent; overflow: hidden; user-select: none; background: var(--ant) center / contain no-repeat; }
+:root:has(meta[name=color-scheme][content=dark]) .spin, :is(.side, .topbar) .spin { --ant: var(--antDark); --antStill: url(/working-ant-dark-still.svg); }
+@media (prefers-color-scheme: dark) { :root:has(meta[name=color-scheme][content="light dark"]) .spin { --ant: var(--antDark); --antStill: url(/working-ant-dark-still.svg); } }
 @media (prefers-reduced-motion: reduce) { .spin { background-image: var(--antStill); } }
 .shimmer { background: linear-gradient(90deg, var(--run) 0%, var(--run) 35%, #a5c8ff 50%, var(--run) 65%, var(--run) 100%); background-size: 250% 100%;
     -webkit-background-clip: text; background-clip: text; color: transparent; animation: shim 2s linear infinite; font-weight: 600; }
@@ -437,10 +442,8 @@ div.tools label span { color: var(--muted); font-size: 12px; display: block; }
 .home > #live { display: contents; }
 .home .grid3, #waiting-on-you { grid-column: 1 / -1; } .home .grid3 { margin-bottom: 14px; }
 #working-now { grid-row: span 2; } #start-a-run { align-self: start; }
-/* Home's greeting: the big ant, its antennae twitching, beside the wordmark's brown. */
-.ph h1.hello { display: flex; align-items: center; gap: 20px; font: 800 30px system-ui, sans-serif; letter-spacing: -.02em; }
-.hello span { background: linear-gradient(135deg, #d9a066, #a0582c); -webkit-background-clip: text; background-clip: text; color: transparent; }
-.hello img { width: 200px; height: 154px; flex: none; }
+/* Home's greeting. */
+.ph h1.hello { font: 800 30px system-ui, sans-serif; letter-spacing: -.02em; }
 .card h3 > a.small { margin-left: auto; font-weight: 500; }
 .item { padding: 7px 0; border-bottom: 1px solid var(--line2); } .row.item { padding: 6px 0; }
 .card .notes { box-shadow: none; }
@@ -452,7 +455,7 @@ tr.click b a, .notes td a { color: inherit; } tr.click form { margin: 0; }
 /* The login page: one card in the middle of the sidebar's colour. */
 body.login { min-height: 100vh; display: grid; place-items: center; background: var(--side); }
 body.login .card { width: 360px; padding: 28px; margin: 0; }
-body.login .logo { color: var(--text); padding: 0 0 18px; }
+body.login .logo { padding: 0 0 18px; }
 body.login p { margin: 14px 0; } body.login button { width: 100%; padding: 10px; }
 body.login [role] { margin-bottom: 4px; }
 
@@ -738,7 +741,7 @@ details.example pre { background: var(--line2); border: 0; padding: 10px; border
 
 @media (max-width: 768px) {
     :root { --side-width: 0px; }
-    .ph h1.hello { gap: 12px; font-size: 26px; } .hello img { width: 130px; height: 100px; }
+    .ph h1.hello { font-size: 26px; }
     .topbar { display: flex; }
     nav.side { width: min(280px, 85vw); visibility: hidden; transform: translateX(-100%); transition: transform .2s, visibility .2s; }
     #menu:checked ~ nav.side { visibility: visible; transform: none; box-shadow: 0 0 0 100vmax var(--modalBg); }

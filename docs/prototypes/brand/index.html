@@ -1,0 +1,106 @@
+<!doctype html>
+<!-- Throwaway prototype: a new brand for Ants (name, abstract mark, palette, working indicator). Open in a browser. -->
+<meta charset="utf-8">
+<title>Brand prototype</title>
+<style>
+  :root { --ink: #0e1525; --paper: #f6f7f9; --line: #dde1e8; --muted: #667085; --acc: #ff4f1f }
+  body.teal { --acc: #0ea5a0 } body.violet { --acc: #6d5dfc }
+  body { font: 15px Inter, system-ui, sans-serif; margin: 0; background: var(--paper); color: var(--ink) }
+  main { max-width: 1040px; margin: 0 auto; padding: 32px }
+  h1 { font-size: 13px; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); margin: 40px 0 14px }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px }
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 24px }
+  .card.dark { background: var(--ink); color: #fff; border-color: var(--ink) }
+  .lock { display: flex; align-items: center; gap: 12px; font-weight: 650; font-size: 30px; letter-spacing: -.03em }
+  .lock svg { height: 30px }
+  .tag { color: var(--muted); font-size: 13px; margin-top: 10px; line-height: 1.45 }
+  .dark .tag { color: #98a2b3 }
+  .icons { display: flex; gap: 16px; align-items: end }
+  .icon { width: 96px; height: 96px; border-radius: 22px; display: grid; place-items: center }
+  .icon svg { width: 64px }
+  .sw { height: 72px; border-radius: 10px; padding: 10px; font-size: 12px; display: flex; align-items: end }
+  .bar { display: flex; align-items: center; gap: 12px; background: var(--ink); color: #fff; padding: 12px 18px; border-radius: 12px }
+  .bar .lock { font-size: 18px } .bar .lock svg { height: 18px }
+  .run { display: flex; align-items: center; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--line); font-size: 14px }
+  .run .who { color: var(--muted); margin-left: auto; font-size: 13px }
+  .work svg { height: 14px; display: block }
+  .work .seg { fill: var(--line); animation: pulse 1.2s infinite }
+  .work .seg:nth-child(2) { animation-delay: .2s } .work .seg:nth-child(3) { animation-delay: .4s }
+  @keyframes pulse { 0%, 60%, 100% { fill: #c5cbd5 } 20% { fill: var(--acc) } }
+  @media (prefers-reduced-motion: reduce) { .work .seg { animation: none; fill: var(--acc) } }
+  .done { width: 14px; height: 14px; border-radius: 50%; background: #12b76a }
+  button { font: inherit; border: 1px solid var(--line); background: #fff; border-radius: 8px; padding: 6px 12px; cursor: pointer }
+</style>
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <!-- Mark 1: an ant's three body parts, which are also three steps of a Process. The head is the accent. -->
+    <symbol id="m1" viewBox="0 0 72 36">
+      <path d="M13 20 H56" stroke="currentColor" stroke-width="3"/>
+      <path d="M10 13 L5 4 M16 13 L20 4" stroke="var(--acc)" stroke-width="3" stroke-linecap="round"/>
+      <circle cx="13" cy="20" r="8" fill="var(--acc)"/>
+      <circle cx="32" cy="20" r="5" fill="currentColor"/>
+      <ellipse cx="56" cy="20" rx="12" ry="9" fill="currentColor"/>
+    </symbol>
+    <!-- Mark 2: the face, abstract: two eyes, two jaws. -->
+    <symbol id="m2" viewBox="0 0 48 48">
+      <circle cx="15" cy="17" r="8" fill="currentColor"/><circle cx="33" cy="17" r="8" fill="currentColor"/>
+      <path d="M17 32 Q14 42 22 45 M31 32 Q34 42 26 45" fill="none" stroke="var(--acc)" stroke-width="4" stroke-linecap="round"/>
+    </symbol>
+    <!-- Working indicator: the mark's three parts light up in turn, like a token moving through a Process. -->
+    <symbol id="w" viewBox="0 0 72 36">
+      <circle class="seg" cx="13" cy="18" r="8"/><circle class="seg" cx="32" cy="18" r="5"/><ellipse class="seg" cx="56" cy="18" rx="12" ry="9"/>
+    </symbol>
+  </defs>
+</svg>
+<main>
+  <p>Accent: <button onclick="document.body.className=''">Fire</button> <button onclick="document.body.className='teal'">Teal</button> <button onclick="document.body.className='violet'">Violet</button></p>
+
+  <h1>Name + mark</h1>
+  <div class="grid" id="names"></div>
+
+  <h1>Mark 2: the face, abstract</h1>
+  <div class="grid">
+    <div class="card"><div class="lock"><svg viewBox="0 0 48 48"><use href="#m2"/></svg>formic</div></div>
+    <div class="card dark"><div class="lock"><svg viewBox="0 0 48 48"><use href="#m2"/></svg>formic</div></div>
+    <div class="card icons">
+      <div class="icon" style="background:var(--ink);color:#fff"><svg viewBox="0 0 48 48"><use href="#m2"/></svg></div>
+      <svg viewBox="0 0 48 48" style="width:16px"><use href="#m2"/></svg>
+    </div>
+  </div>
+
+  <h1>App icon + favicon (mark 1)</h1>
+  <div class="card icons">
+    <div class="icon" style="background:var(--ink);color:#fff"><svg viewBox="0 0 72 36"><use href="#m1"/></svg></div>
+    <div class="icon" style="background:#fff;border:1px solid var(--line)"><svg viewBox="0 0 72 36"><use href="#m1"/></svg></div>
+    <svg viewBox="0 0 72 36" style="width:32px"><use href="#m1"/></svg>
+    <svg viewBox="0 0 72 36" style="width:16px"><use href="#m1"/></svg>
+  </div>
+
+  <h1>Palette</h1>
+  <div class="grid" style="grid-template-columns: repeat(5, 1fr)">
+    <div class="sw" style="background:var(--ink);color:#fff">Ink #0e1525</div>
+    <div class="sw" style="background:var(--acc);color:#fff">Accent</div>
+    <div class="sw" style="background:var(--paper);border:1px solid var(--line)">Paper #f6f7f9</div>
+    <div class="sw" style="background:var(--line)">Line #dde1e8</div>
+    <div class="sw" style="background:#12b76a;color:#fff">Done #12b76a</div>
+  </div>
+
+  <h1>In the app: header + Runs, with the working indicator instead of the walking ant</h1>
+  <div class="bar"><div class="lock"><svg viewBox="0 0 72 36"><use href="#m1"/></svg>formic</div>
+    <span style="margin-left:auto;font-size:13px;color:#98a2b3">Processes · Runs · Dashboards</span></div>
+  <div class="card" style="margin-top:12px;padding:8px 24px">
+    <div class="run"><span class="work"><svg viewBox="0 0 72 36"><circle class="seg" cx="13" cy="18" r="8"/><circle class="seg" cx="32" cy="18" r="5"/><ellipse class="seg" cx="56" cy="18" rx="12" ry="9"/></svg></span>Weekly dependency review<span class="who">Agent Task · Read the changelogs</span></div>
+    <div class="run"><span class="work"><svg viewBox="0 0 72 36"><circle class="seg" cx="13" cy="18" r="8"/><circle class="seg" cx="32" cy="18" r="5"/><ellipse class="seg" cx="56" cy="18" rx="12" ry="9"/></svg></span>Spec #325 tickets<span class="who">Agent Task · Implement</span></div>
+    <div class="run"><span class="done"></span>Morning briefing<span class="who">Done 07:02</span></div>
+  </div>
+</main>
+<script>
+  const names = {
+    formic: 'From <i>formica</i>, Latin for ant. Short, sharp, sounds like a tool.',
+    colony: 'Many agents, one job. Plain English, says what it does.',
+    trail: 'Ants follow a trail; agents follow the Process. Calm and simple.',
+  };
+  document.getElementById('names').innerHTML = Object.entries(names).map(([n, why]) => `
+    <div class="card"><div class="lock"><svg viewBox="0 0 72 36"><use href="#m1"/></svg>${n}</div><div class="tag">${why}</div></div>`).join('')
+    + Object.keys(names).map(n => `<div class="card dark"><div class="lock"><svg viewBox="0 0 72 36"><use href="#m1"/></svg>${n}</div></div>`).join('');
+</script>

@@ -438,7 +438,8 @@ class LookTest : AntsTest() {
 
     /**
      * On a Dashboard, the elements with a white or light grey background, a chart's background drawn so, and a chart's
-     * text drawn dark; the first fifteen. A colour such as a status dot's green may be light: it is a colour, not a box.
+     * text drawn dark; the first fifteen. A colour such as a status dot's green, or the accent's cream on a primary
+     * button, may be light: it is a colour, not a box.
      */
     private val lightInDark = """() => {
         const probe = document.createElement('span')
@@ -455,9 +456,11 @@ class LookTest : AntsTest() {
         const whitish = colour => { const c = rgb(colour); return !!c && lightness(c) > 0.6 && Math.max(...c) - Math.min(...c) < 0.15 }
         const dark = colour => { const c = rgb(colour); return !!c && lightness(c) < 0.35 }
         const name = e => e.tagName.toLowerCase() + (e.classList.length ? '.' + [...e.classList].join('.') : '') + (e.textContent.trim() ? ' “' + e.textContent.trim().slice(0, 30) + '”' : '')
+        probe.style.color = 'var(--acc)'
+        const accent = getComputedStyle(probe).color
         const shown = [...document.querySelectorAll('main.dashboard *')].filter(e => e.checkVisibility({ visibilityProperty: true }))
         const offenders = [
-            ...shown.filter(e => !(e instanceof SVGElement) && whitish(getComputedStyle(e).backgroundColor)).map(e => name(e) + ' has a light background'),
+            ...shown.filter(e => !(e instanceof SVGElement) && getComputedStyle(e).backgroundColor !== accent && whitish(getComputedStyle(e).backgroundColor)).map(e => name(e) + ' has a light background'),
             ...shown.filter(e => e.matches('svg .background') && whitish(getComputedStyle(e).fill)).map(e => name(e) + ' is a light box'),
             ...shown.filter(e => e.matches('svg text') && dark(getComputedStyle(e).fill)).map(e => name(e) + ' is dark text'),
         ]
