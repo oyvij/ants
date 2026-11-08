@@ -17,7 +17,7 @@
 <body>
 @template.nav(shell = shell)
 <main>
-<div class="ph"><h1>${question}</h1></div>
+<div class="ph"><h1>$unsafe{ants.Transcript.inline(question)}</h1></div>
 @if(!dependents.none)<p role="alert">These use it by name and will break. Ants doesn't change them.</p>@endif
 @template.dependents(dependents = dependents)
 <form method="post" action="${action}">

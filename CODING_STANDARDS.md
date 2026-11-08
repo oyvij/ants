@@ -10,3 +10,4 @@ Read during code review. Each rule is a judgement call; tests and tooling cover 
   ever shows raw. A block renders through `Transcript.markdown`, a single line or a title through `Transcript.inline`,
   and a place that shows only plain text (a tab, a dialog, an attribute, a chart's labels) through `Transcript.plain`.
   Where the text is edited in place, the editor shows it as typed and the page shows it rendered once the edit ends.
+  `MarkdownEverywhereTest` fails on a template that prints such text raw.

@@ -144,7 +144,7 @@
         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
         @if(tab != null)<input type="hidden" name="tab" value="${tab}">@endif
         <span class="tag t-${comment.type}">${comment.type.lowercase().replaceFirstChar(Char::uppercase)}</span>
-        <span>@if(at >= 0)<a href="#s${at + 1}-${comment.step}">${comment.story} › $unsafe{ants.Transcript.inline(stories!!.stories[at].steps.getOrNull(comment.step!! - 1)?.name)}</a> @elseif(comment.story != null)${comment.story} step ${comment.step} @endif<span class="mono">${comment.file}:${comment.from}-${comment.to} (${comment.side})</span>: <span class="cbody">$unsafe{ants.Transcript.inline(comment.body)}</span></span>
+        <span>@if(at >= 0)<a href="#s${at + 1}-${comment.step}">$unsafe{ants.Transcript.inline(comment.story)} › $unsafe{ants.Transcript.inline(stories!!.stories[at].steps.getOrNull(comment.step!! - 1)?.name)}</a> @elseif(comment.story != null)$unsafe{ants.Transcript.inline(comment.story)} step ${comment.step} @endif<span class="mono">${comment.file}:${comment.from}-${comment.to} (${comment.side})</span>: <span class="cbody">$unsafe{ants.Transcript.inline(comment.body)}</span></span>
         <span class="grow"></span><button class="ghost small" name="remove" value="${k}">Remove</button>
     </form>
     @endfor

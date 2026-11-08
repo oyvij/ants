@@ -34,7 +34,7 @@
 @endif
 <main>
 @if(!use)<div class="crumbs"><a href="/agents">Agents</a> / $unsafe{ants.Transcript.inline(form.name.ifEmpty { "New" })}</div>@endif
-<div class="ph"><h1><span class="ent ent-agent"><svg class="i" viewBox="0 0 24 24"><rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 8V4M9 13v1M15 13v1"/></svg>${if (item == null) "New Agent" else form.name}</span></h1>
+<div class="ph"><h1><span class="ent ent-agent"><svg class="i" viewBox="0 0 24 24"><rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 8V4M9 13v1M15 13v1"/></svg>$unsafe{ants.Transcript.inline(if (item == null) "New Agent" else form.name)}</span></h1>
 @if(draft != null)
     @template.drafthead(draft = draft)
 @elseif(yours != null)
