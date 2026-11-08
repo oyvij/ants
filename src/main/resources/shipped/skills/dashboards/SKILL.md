@@ -21,6 +21,8 @@ gives, such as `{"value": 42, "unit": "GB"}` for a number Widget or `{"text": "â
 any field the shape doesn't name.
 
 A text Widget renders its `text` as Markdown (CommonMark, with GFM tables), so format it: bold, lists, tables, code.
+Every other text field renders inline Markdown too (a status `name`, a list `title` and `note`, a log `line`, a
+number `unit`), so `**bold**`, `*italic*`, `` `code` `` and links show formatted. A chart's labels show as plain text.
 
 ## 3. Keep Posts small
 

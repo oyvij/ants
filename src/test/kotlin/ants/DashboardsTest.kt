@@ -287,6 +287,32 @@ class DashboardsTest : AntsTest() {
     }
 
     @Test
+    fun `every Widget's text renders its Markdown, so no star of it shows`() {
+        val dashboard = add()
+        val shown = mapOf(
+            "number" to """{"value":3,"unit":"**GB** free"}""",
+            "status" to """{"items":[{"name":"**db** <one>","state":"ok"}]}""",
+            "list" to """{"items":[{"title":"**PR** 12","url":"https://example.com"},{"title":"*plain*","note":"by **ana** in `main`"}]}""",
+            "log" to """{"line":"**deployed** v2"}""",
+        ).mapValues { (type, data) -> addWidget(dashboard, type).also { accepted("$dashboard/$it", data) } }.mapValues { (_, id) -> body(dashboard, id) }
+        assertContains(shown.getValue("number"), "<small><strong>GB</strong> free</small>")
+        assertContains(shown.getValue("status"), "<span class=\"n\"><strong>db</strong> &lt;one&gt;</span>")
+        assertContains(shown.getValue("list"), "rel=\"noopener\"><strong>PR</strong> 12</a>")
+        assertContains(shown.getValue("list"), "<em>plain</em><div>by <strong>ana</strong> in <code>main</code></div>")
+        assertContains(shown.getValue("log"), "<strong>deployed</strong> v2</div>")
+        shown.values.forEach { assertFalse("**" in it, it) }
+    }
+
+    @Test
+    fun `a chart's labels show without their Markdown`() {
+        val dashboard = add()
+        val id = addWidget(dashboard, "chart")
+        accepted("$dashboard/$id", """{"point":{"x":"**Mon**","y":2,"series":"*builds*"}}""")
+        assertContains(body(dashboard, id), "&#34;x&#34;:&#34;Mon&#34;")
+        assertFalse("**" in body(dashboard, id))
+    }
+
+    @Test
     fun `a text Widget renders no javascript link live`() {
         val dashboard = add()
         val id = addWidget(dashboard, "text")

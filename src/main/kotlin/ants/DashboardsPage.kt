@@ -73,8 +73,8 @@ class WidgetView(val dashboard: String, val widget: Widget, val posts: List<Post
     /** A log Widget's newest [LINES] lines, oldest first, each with when it came. */
     val lines: List<Post> get() = posts.takeLast(LINES)
 
-    /** A chart's points, as JSON for the page to draw: each point's x, y and series, oldest first. */
-    val points: String get() = JSON.writeValueAsString(posts.map { it.data })
+    /** A chart's points, as JSON for the page to draw: each point's x, y and series, oldest first, text without its Markdown. */
+    val points: String get() = JSON.writeValueAsString(posts.map { post -> post.data.mapValues { (_, value) -> if (value is String) Transcript.plain(value) else value } })
 
     /** A custom chart's Vega-Lite spec, as JSON for the page to draw. */
     val spec: String get() = JSON.writeValueAsString(post?.data?.get("spec"))
