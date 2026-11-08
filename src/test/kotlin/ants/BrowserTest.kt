@@ -4599,6 +4599,31 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `a pressed primary button draws the working ant in the other colour from its fill, in light, dark and system`() = browse {
+        val claude = FakeClaude()
+        claude.session("draft", """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":{"outcome":"done","summary":"Drafted.","output":{"notes":"notes.md"}}}""")
+        claude.session("polish", """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":{"outcome":"done","summary":"Polished.","output":{}}}""")
+        agentTask(claude, mapOf("draft" to """{"type":"object","properties":{"notes":{"type":"string","format":"path"}}}""", "polish" to null))
+        http.import("approve.bpmn")
+        val run = http.post("/processes/approve/runs", mapOf()).path.removePrefix("/runs/")
+        workspace(run).resolve("notes.md").writeText("# Paying again\n")
+        val entry = waitingEntry()
+        for ((theme, system, ant) in listOf(
+            Triple("light", ColorScheme.DARK, "working-ant-twitch-dark.svg"), Triple("dark", ColorScheme.LIGHT, "working-ant-twitch.svg"),
+            Triple("system", ColorScheme.LIGHT, "working-ant-twitch-dark.svg"), Triple("system", ColorScheme.DARK, "working-ant-twitch.svg"),
+        )) {
+            settings(null, "theme: $theme\n")
+            page.emulateMedia(Page.EmulateMediaOptions().setColorScheme(system))
+            page.navigate(url(entry))
+            page.evaluate("() => addEventListener('submit', event => event.preventDefault())")
+            buttonNamed("Approve").click()
+            val spin = page.locator("button.primary[aria-busy=true] .spin")
+            assertThat(spin).isVisible()
+            assertTrue(spin.evaluate("it => getComputedStyle(it).backgroundImage").toString().endsWith("/$ant\")"), "the ant on Approve in $theme on a ${system.name.lowercase()} system")
+        }
+    }
+
+    @Test
     fun `on a phone Push is one column of its repos with Cancel and Push on the screen, and Push pushes on a tap`() = browse {
         val repos = listOf(repo("api"), repo("web"))
         settings(null, sourceMapLines(*repos.toTypedArray()))
