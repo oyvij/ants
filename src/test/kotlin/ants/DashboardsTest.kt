@@ -313,6 +313,36 @@ class DashboardsTest : AntsTest() {
     }
 
     @Test
+    fun `a custom chart's titles and data show without their Markdown, its field names as written`() {
+        val dashboard = add()
+        val id = addWidget(dashboard, "custom chart")
+        accepted(
+            "$dashboard/$id",
+            """{"spec":{"title":"**Builds**","mark":"bar","data":{"values":[{"__day__":"*Mon*","n":2}]},"encoding":{"x":{"field":"__day__","title":"_Day_"}}}}""",
+        )
+        val drawn = body(dashboard, id)
+        assertContains(drawn, "&#34;title&#34;:&#34;Builds&#34;")
+        assertContains(drawn, "&#34;__day__&#34;:&#34;Mon&#34;")
+        assertContains(drawn, "&#34;field&#34;:&#34;__day__&#34;")
+        assertContains(drawn, "&#34;title&#34;:&#34;Day&#34;")
+    }
+
+    @Test
+    fun `a Dashboard's and a Widget's titles show their Markdown, kept as typed for editing, and plain in the tab and dialogs`() {
+        val dashboard = add()
+        val id = addWidget(dashboard, "log")
+        val renamed = answer(browser.post("/dashboards/$dashboard/title", mapOf("title" to "**Home** lab")))
+        assertEquals(mapOf("title" to "**Home** lab", "html" to "<strong>Home</strong> lab", "plain" to "Home lab"), renamed)
+        assertEquals("<em>Disk</em> 1", answer(browser.post("/dashboards/$dashboard/widgets/$id/title", mapOf("title" to "*Disk* 1")))["html"])
+        val page = browser.get("/dashboards/$dashboard").body
+        assertContains(page, "<title>Home lab · Ants</title>")
+        assertContains(page, """data-source="**Home** lab" contenteditable="plaintext-only" spellcheck="false" title="Click to rename"><strong>Home</strong> lab</h1>""")
+        assertContains(page, """<span class="clip"><strong>Home</strong> lab</span>""")
+        assertContains(widget(dashboard, id)!!, """data-source="*Disk* 1" data-plain="Disk 1"><em>Disk</em> 1</span>""")
+        assertContains(widget(dashboard, id)!!, """aria-label="Remove Disk 1">""")
+    }
+
+    @Test
     fun `a text Widget renders no javascript link live`() {
         val dashboard = add()
         val id = addWidget(dashboard, "text")
@@ -370,7 +400,7 @@ class DashboardsTest : AntsTest() {
         assertContains(answer(browser.post("/dashboards/$dashboard/widgets/$id/clear", mapOf()))["body"].toString(), "Waiting for its first Post")
         val drawn = widget(dashboard, id)!!
         assertContains(drawn, "Waiting for its first Post · <code>$dashboard/$id</code>")
-        assertContains(drawn, """<span class="t" spellcheck="false">Backups</span>""")
+        assertContains(drawn, """data-source="Backups" data-plain="Backups">Backups</span>""")
         accepted("$dashboard/$id", """{"line":"two"}""")
         assertEquals(listOf("two"), Regex("""</time>([^<]+)</div>""").findAll(body(dashboard, id)).map { it.groupValues[1] }.toList())
     }

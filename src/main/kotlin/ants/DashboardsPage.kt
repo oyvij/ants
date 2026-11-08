@@ -76,14 +76,28 @@ class WidgetView(val dashboard: String, val widget: Widget, val posts: List<Post
     /** A chart's points, as JSON for the page to draw: each point's x, y and series, oldest first, text without its Markdown. */
     val points: String get() = JSON.writeValueAsString(posts.map { post -> post.data.mapValues { (_, value) -> if (value is String) Transcript.plain(value) else value } })
 
-    /** A custom chart's Vega-Lite spec, as JSON for the page to draw. */
-    val spec: String get() = JSON.writeValueAsString(post?.data?.get("spec"))
+    /** A custom chart's Vega-Lite spec, as JSON for the page to draw, the text it shows without its Markdown. */
+    val spec: String get() = JSON.writeValueAsString(post?.data?.get("spec")?.let(::shownText))
 
     val at get() = post?.at?.let(::shortTime)
 
     fun time(post: Post) = shortTime(post.at)
 
     companion object {
+        /** The keys of a Vega-Lite spec whose text a chart draws as is: its titles, labels and text marks. */
+        private val SHOWN = setOf("title", "subtitle", "text", "description", "values")
+
+        /** The keys that name a field, a parameter or an expression, which stay as written wherever they are. */
+        private val NAMES = setOf("field", "expr", "calculate", "filter", "test", "as", "param", "signal", "type", "format", "timeUnit")
+
+        /** [value] with the Markdown taken out of the text it shows: what [SHOWN] keys hold, and nothing a field or an expression names. */
+        private fun shownText(value: Any?, shown: Boolean = false): Any? = when (value) {
+            is String -> if (shown) Transcript.plain(value) else value
+            is Map<*, *> -> value.entries.associate { (key, it) -> key to shownText(it, key !in NAMES && (shown || key in SHOWN)) }
+            is List<*> -> value.map { shownText(it, shown) }
+            else -> value
+        }
+
         /** The lines a log Widget draws, its newest; it keeps more, for its days. */
         const val LINES = 200
 
@@ -130,15 +144,15 @@ class DashboardsPage(private val dashboards: Dashboards, private val names: RunN
         return mapOf("order" to dashboards.all().map { it.id })
     }
 
-    /** The title as typed, saved; answers the title kept, which an emptied one makes "Untitled dashboard". */
+    /** The title as typed, saved; answers the title kept, which an emptied one makes "Untitled dashboard", and how it shows. */
     @PostMapping("/dashboards/{id}/title")
     @ResponseBody
-    fun rename(@PathVariable id: String, @RequestParam title: String) = mapOf("title" to dashboards.rename(id, title).title)
+    fun rename(@PathVariable id: String, @RequestParam title: String) = shown(dashboards.rename(id, title).title)
 
     @PostMapping("/dashboards/{id}/delete")
     fun delete(@PathVariable id: String, @RequestParam confirm: String?, model: Model): String {
         val dashboard = dashboards.get(id)
-        if (confirm == null) return confirm(model, "Delete the Dashboard ${dashboard.title}?", usedBy.dashboard(id), "/dashboards/$id/delete", emptyMap(), "/dashboards/$id")
+        if (confirm == null) return confirm(model, "Delete the Dashboard ${Transcript.plain(dashboard.title)}?", usedBy.dashboard(id), "/dashboards/$id/delete", emptyMap(), "/dashboards/$id")
         dashboards.delete(id)
         return "redirect:/dashboards"
     }
@@ -155,10 +169,13 @@ class DashboardsPage(private val dashboards: Dashboards, private val names: RunN
         )
     }
 
-    /** A Widget's title as typed, saved; answers the title kept. */
+    /** A Widget's title as typed, saved; answers the title kept and how it shows. */
     @PostMapping("/dashboards/{id}/widgets/{widget}/title")
     @ResponseBody
-    fun renameWidget(@PathVariable id: String, @PathVariable widget: String, @RequestParam title: String) = mapOf("title" to dashboards.renameWidget(id, widget, title).title)
+    fun renameWidget(@PathVariable id: String, @PathVariable widget: String, @RequestParam title: String) = shown(dashboards.renameWidget(id, widget, title).title)
+
+    /** A [title] kept, as typed, as its Markdown shows it, and as plain text for the tab and the dialogs. */
+    private fun shown(title: String) = mapOf("title" to title, "html" to Transcript.inline(title), "plain" to Transcript.plain(title))
 
     /** Removes a Widget, once the page has asked the user. */
     @PostMapping("/dashboards/{id}/widgets/{widget}/delete")

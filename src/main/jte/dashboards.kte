@@ -10,7 +10,7 @@
     <meta charset="utf-8">
     @template.app()
     <meta name="color-scheme" content="${colorScheme}">
-    <title>${dashboard?.title ?: "Dashboards"} · Ants</title>
+    <title>${dashboard?.title?.let(ants.Transcript::plain) ?: "Dashboards"} · Ants</title>
 @if(dashboard != null)
     <link rel="stylesheet" href="/vendor/gridstack/gridstack.min.css">
     <script src="/vendor/gridstack/gridstack-all.js"></script>
@@ -25,7 +25,7 @@
 @if(dashboard == null)
 <div class="empty" id="no-dashboards"><b>No Dashboards yet</b>Open <b>Dashboards</b> in the menu and choose <b>Add Dashboard</b>.</div>
 @else
-<div class="ph"><h1 id="title" data-id="${dashboard.id}" data-untitled="${ants.Dashboards.UNTITLED}" contenteditable="plaintext-only" spellcheck="false" title="Click to rename">${dashboard.title}</h1>
+<div class="ph"><h1 id="title" data-id="${dashboard.id}" data-untitled="${ants.Dashboards.UNTITLED}" data-source="${dashboard.title}" contenteditable="plaintext-only" spellcheck="false" title="Click to rename">$unsafe{ants.Transcript.inline(dashboard.title)}</h1>
     <div class="acts">
         <button type="button" id="edit" title="Move, resize, rename and remove Widgets" aria-pressed="false">Edit layout</button>
         <span class="dd"><button type="button" id="add" class="primary" aria-haspopup="menu" aria-expanded="false">+ Widget ▾</button>

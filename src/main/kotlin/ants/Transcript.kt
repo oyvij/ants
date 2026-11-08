@@ -2,7 +2,6 @@ package ants
 
 import org.commonmark.ext.gfm.tables.TableBlock
 import org.commonmark.ext.gfm.tables.TablesExtension
-import org.commonmark.node.Paragraph
 import org.commonmark.parser.Parser
 import org.commonmark.renderer.html.AttributeProvider
 import org.commonmark.renderer.html.HtmlRenderer
@@ -452,6 +451,7 @@ class Transcript(private val toolLine: (name: String, input: Map<*, *>) -> Strin
         private val renderer = HtmlRenderer.builder().extensions(extensions).escapeHtml(true).sanitizeUrls(true)
             .attributeProviderFactory { AttributeProvider { node, _, attributes -> if (node is TableBlock) attributes["class"] = "md-table" } }
             .build()
+        private val inlineParser = Parser.builder().enabledBlockTypes(emptySet()).build()
         private val plainRenderer = TextContentRenderer.builder().extensions(extensions).build()
 
         fun file(workspace: Path, task: String): Path = workspace.resolve("tasks").resolve(task).resolve("transcript.jsonl")
@@ -492,15 +492,15 @@ class Transcript(private val toolLine: (name: String, input: Map<*, *>) -> Strin
             return "<table class=\"frontmatter\"><tbody>$rows</tbody></table>\n" + html(body)
         }
 
-        /** One line of [text] as HTML, like [markdown], without the paragraph around it, so it sits inside a line of its own. */
-        fun inline(text: CharSequence): String {
-            val document = parser.parse(text.toString())
-            val paragraph = document.firstChild?.takeIf { it is Paragraph && it.next == null } ?: return renderer.render(document).trimEnd()
-            return generateSequence(paragraph.firstChild) { it.next }.joinToString("") { renderer.render(it) }
-        }
+        /**
+         * A line of [text] as HTML: its inline Markdown (bold, italics, code, links) rendered, its HTML escaped, and no
+         * blocks, so `1. Disk` or `# 3` reads as typed. Lines apart by a blank line stay apart with a `<br>`.
+         */
+        fun inline(text: CharSequence): String = generateSequence(inlineParser.parse(text.toString()).firstChild) { it.next }
+            .joinToString("<br>") { block -> generateSequence(block.firstChild) { it.next }.joinToString("") { renderer.render(it) } }
 
-        /** [text] with its Markdown taken out, for a place that draws plain text, such as a chart's labels. */
-        fun plain(text: CharSequence): String = plainRenderer.render(parser.parse(text.toString())).trim()
+        /** A line of [text] with its inline Markdown taken out, for a place that shows plain text: a tab, a dialog, a chart's labels. */
+        fun plain(text: CharSequence): String = plainRenderer.render(inlineParser.parse(text.toString())).trim()
 
         private fun html(text: String) = renderer.render(parser.parse(text))
 
