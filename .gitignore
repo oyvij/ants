@@ -16,3 +16,5 @@
 /.project
 /.settings/
 __pycache__/
+# pnpm puts its store here when the build runs in a container with the repo mounted in
+.pnpm-store/
