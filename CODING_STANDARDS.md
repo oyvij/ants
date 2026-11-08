@@ -5,3 +5,7 @@ Read during code review. Each rule is a judgement call; tests and tooling cover 
 - **One source for domain facts.** A list, label or wording the modeler shows comes from the server, as
   `/catalogue.json` and `modelerFacts` (`Checks.kt`) do, so `static/modeler.js` holds no second copy. Logic that edits
   the diagram live, such as a field's `required`, stays in the browser.
+- **Text an Agent writes shows as Markdown.** A page never prints an Agent's or a Script's text raw: a block renders
+  through `Transcript.markdown`, a single line or label through `Transcript.inline`, and a place that draws plain text
+  (a chart's labels) through `Transcript.plain`. No `**` or `` ` `` ever shows unformatted. A user's own typed names,
+  such as a Widget's title, stay as typed.

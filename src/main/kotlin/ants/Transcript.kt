@@ -2,9 +2,11 @@ package ants
 
 import org.commonmark.ext.gfm.tables.TableBlock
 import org.commonmark.ext.gfm.tables.TablesExtension
+import org.commonmark.node.Paragraph
 import org.commonmark.parser.Parser
 import org.commonmark.renderer.html.AttributeProvider
 import org.commonmark.renderer.html.HtmlRenderer
+import org.commonmark.renderer.text.TextContentRenderer
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Controller
@@ -450,6 +452,7 @@ class Transcript(private val toolLine: (name: String, input: Map<*, *>) -> Strin
         private val renderer = HtmlRenderer.builder().extensions(extensions).escapeHtml(true).sanitizeUrls(true)
             .attributeProviderFactory { AttributeProvider { node, _, attributes -> if (node is TableBlock) attributes["class"] = "md-table" } }
             .build()
+        private val plainRenderer = TextContentRenderer.builder().extensions(extensions).build()
 
         fun file(workspace: Path, task: String): Path = workspace.resolve("tasks").resolve(task).resolve("transcript.jsonl")
 
@@ -488,6 +491,16 @@ class Transcript(private val toolLine: (name: String, input: Map<*, *>) -> Strin
             val rows = fields.entries.joinToString("") { (key, value) -> "<tr><th>${esc(key)}</th><td>${esc(frontmatterValue(value))}</td></tr>" }
             return "<table class=\"frontmatter\"><tbody>$rows</tbody></table>\n" + html(body)
         }
+
+        /** One line of [text] as HTML, like [markdown], without the paragraph around it, so it sits inside a line of its own. */
+        fun inline(text: CharSequence): String {
+            val document = parser.parse(text.toString())
+            val paragraph = document.firstChild?.takeIf { it is Paragraph && it.next == null } ?: return renderer.render(document).trimEnd()
+            return generateSequence(paragraph.firstChild) { it.next }.joinToString("") { renderer.render(it) }
+        }
+
+        /** [text] with its Markdown taken out, for a place that draws plain text, such as a chart's labels. */
+        fun plain(text: CharSequence): String = plainRenderer.render(parser.parse(text.toString())).trim()
 
         private fun html(text: String) = renderer.render(parser.parse(text))
 
