@@ -2214,6 +2214,7 @@ class BrowserTest : AntsTest() {
 
         val widget = addNumberWidget()
         val name = widget.locator(".t")
+        assertThat(name).isFocused()
         page.keyboard().type("*Free* disk")
         page.keyboard().press("Enter")
         page.keyboard().press("Escape")

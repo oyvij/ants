@@ -109,7 +109,7 @@ class NotificationListTest : AntsTest() {
         val row = row(run)!!
         for (cell in listOf(
             """<span class="tag t-permission"><i>⊘</i>[permission]</span>""", """· <a href="$entry">Draft</a>""",
-            """<div class="muted small">Agent Task</div>""", "<td><span class=\"clip\">writer wants to run `cargo outdated`</span></td>",
+            """<div class="muted small">Agent Task</div>""", "<td><span class=\"clip\">writer wants to run <code>cargo outdated</code></span></td>",
         )) assertContains(row, cell)
         assertContains(browser.get(entry).body, """<h3 id="permission-head">Permission request</h3>""")
     }
