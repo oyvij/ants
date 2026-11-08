@@ -5,13 +5,13 @@
 @else
 <ul>
 @for(agent in dependents.agents)
-    <li>Agent <a href="/agents/${agent}">${agent}</a></li>
+    <li>Agent <a href="/agents/${agent}">$unsafe{ants.Transcript.inline(agent)}</a></li>
 @endfor
 @for(process in dependents.processes)
-    <li>Process <a href="/processes/${process.key}">${process.name ?: process.key}</a>@if(process.id in dependents.older) · version ${process.version}, which live Runs still run@endif</li>
+    <li>Process <a href="/processes/${process.key}">$unsafe{ants.Transcript.inline(process.name ?: process.key)}</a>@if(process.id in dependents.older) · version ${process.version}, which live Runs still run@endif</li>
 @endfor
 @for(script in dependents.scripts)
-    <li>Script <a href="/scripts/${script}">${script}</a></li>
+    <li>Script <a href="/scripts/${script}">$unsafe{ants.Transcript.inline(script)}</a></li>
 @endfor
 </ul>
 @endif

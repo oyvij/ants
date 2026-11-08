@@ -117,6 +117,6 @@ class DashboardTools(private val dashboards: Dashboards, private val usedBy: Use
             "remove_widget" to { a -> "removed the Widget <i>${esc(a["dashboard"])}/${esc(a["widget"])}</i>" },
         )
 
-        private fun esc(value: Any?) = org.springframework.web.util.HtmlUtils.htmlEscape(value?.toString().orEmpty())
+        private fun esc(value: Any?) = Transcript.inline(value?.toString().orEmpty())
     }
 }

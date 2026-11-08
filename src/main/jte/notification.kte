@@ -13,7 +13,7 @@
     <meta charset="utf-8">
     @template.app()
     <meta name="color-scheme" content="${colorScheme}">
-    <title>${entry.icon} ${entry.tag} ${entry.task} · Ants</title>
+    <title>${entry.icon} ${entry.tag} ${ants.Transcript.plain(entry.task)} · Ants</title>
 </head>
 <body>
 @template.nav(shell = shell)
@@ -35,7 +35,7 @@ $unsafe{line}
         <p><a href="/runs/${entry.run}/tasks/${entry.taskId}/transcript">Full Transcript →</a></p>
     </div>
 </details>
-@if(error != null)<p role="alert">${error}</p>@endif
+@if(error != null)<p role="alert">$unsafe{ants.Transcript.inline(error)}</p>@endif
 @if(permission != null)
 <form method="post" action="/notifications/${entry.id}/permission" class="card" id="permission" role="dialog" aria-labelledby="permission-head">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">

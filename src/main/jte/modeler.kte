@@ -19,20 +19,20 @@
     <meta charset="utf-8">
     @template.app()
     <meta name="color-scheme" content="${colorScheme}">
-    <title>${name} · Modeler · Ants</title>
+    <title>${ants.Transcript.plain(name)} · Modeler · Ants</title>
     <link rel="stylesheet" href="/vendor/camunda-bpmn-js/assets/camunda-platform-modeler.css">
 </head>
 <body>
 @template.nav(shell = shell)
 <main class="full">
-<div class="crumbs"><a href="/${list.lowercase()}">${list}</a> / @if(page != null)<a href="${page}">${name}</a>@else${name}@endif / Diagram</div>
-<div class="ph" data-names-process="${list == "Processes"}"><h1>${name}</h1>
+<div class="crumbs"><a href="/${list.lowercase()}">${list}</a> / @if(page != null)<a href="${page}">$unsafe{ants.Transcript.inline(name)}</a>@else$unsafe{ants.Transcript.inline(name)}@endif / Diagram</div>
+<div class="ph" data-names-process="${list == "Processes"}"><h1>$unsafe{ants.Transcript.inline(name)}</h1>
 @if(draft != null)
     @template.drafthead(draft = draft)
 @endif
     <div class="acts">
 @if(note != null)
-        <span class="muted small">${note}</span>
+        <span class="muted small">$unsafe{ants.Transcript.inline(note)}</span>
 @endif
 @if(copy != null)
         <form method="post" action="${copy}">
@@ -46,9 +46,9 @@
         <form method="post" action="${draft.endpoint.removeSuffix("/draft")}/delete" data-leaves-draft><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button class="danger">Delete</button></form>
 @endif
 @if(builder != null)
-        <button type="button" id="builder-toggle" aria-controls="builder" aria-pressed="true">${column.title}</button>
+        <button type="button" id="builder-toggle" aria-controls="builder" aria-pressed="true">$unsafe{ants.Transcript.inline(column.title)}</button>
 @endif
-        <button class="primary" id="save" data-action="${action}" hidden="${copy != null}">${saveLabel}</button>
+        <button class="primary" id="save" data-action="${action}" hidden="${copy != null}">$unsafe{ants.Transcript.inline(saveLabel)}</button>
     </div>
 </div>
 <p id="refusal" role="alert"></p>
@@ -64,9 +64,9 @@
     </div>
 @if(builder != null)
     <aside class="pb" id="builder" aria-label="${column.title}" data-path="${column.path}" data-template="${if (column == ants.BuilderColumn.TEMPLATE) name else null}" data-off="${builder.ifEmpty { null }}">
-        <div id="pb-dialog" class="tr"><p class="muted">@if(builder.isNotEmpty())${builder}@else${column.intro}@endif</p><div id="pb-live"></div></div>
+        <div id="pb-dialog" class="tr"><p class="muted">@if(builder.isNotEmpty())$unsafe{ants.Transcript.inline(builder)}@else$unsafe{ants.Transcript.inline(column.intro)}@endif</p><div id="pb-live"></div></div>
         <form id="pb-form" hidden="${builder.isNotEmpty()}">
-            <label class="f" for="pb-message">Message to the ${column.title}</label>
+            <label class="f" for="pb-message">Message to the $unsafe{ants.Transcript.inline(column.title)}</label>
             <textarea id="pb-message" name="message" data-markdown data-enter-sends required placeholder="${column.placeholder}"></textarea>
             <div class="row"><span class="grow muted small" id="pb-error" role="alert"></span><button type="button" id="pb-stop" hidden>Stop</button><button class="primary" id="pb-send">Send</button></div>
         </form>

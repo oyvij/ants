@@ -32,14 +32,14 @@
     <meta charset="utf-8">
     @template.app()
     <meta name="color-scheme" content="${colorScheme}">
-    <title>${title} · Ants</title>
+    <title>${ants.Transcript.plain(title)} · Ants</title>
     <link rel="stylesheet" href="/vendor/camunda-bpmn-js/assets/base-navigated-viewer.css">
 </head>
 <body>
 @template.nav(shell = shell)
 <main>
-<div class="crumbs"><a href="/processes">Processes</a> / ${title}</div>
-<div class="ph"><h1>${title}</h1>@template.draftmark(state = draftState, list = true)
+<div class="crumbs"><a href="/processes">Processes</a> / $unsafe{ants.Transcript.inline(title)}</div>
+<div class="ph"><h1>$unsafe{ants.Transcript.inline(title)}</h1>@template.draftmark(state = draftState, list = true)
     <div class="acts"><form method="post" action="/processes/new"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><input type="hidden" name="from" value="${key}"><button>Copy</button></form><a class="btn" href="${if (scheduled) "#schedule" else "#start"}">⏰ ${if (scheduled) "Schedule" else "Add a schedule"}</a><a class="btn" href="/processes/${key}/edit">Edit diagram</a>@if(deletable)<form method="post" action="/processes/${key}/delete"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button class="danger">Delete</button></form>@endif</div>
     <div class="sub">Vault <b>${source?.vault ?: "—"}</b> · Source map <b>${source?.sourceMap ?: "—"}</b> · @if(profile == null)the defaults in <a href="/settings">Settings</a>@else Profile <b>${profile}</b>, ${profileFrom}@endif</div></div>
 @if(liveRuns.isNotEmpty())<p role="alert">Runs of it are live: @for((i, entry) in liveRuns.entries.withIndex())@if(i > 0), @endif<a href="/runs/${entry.key}">${entry.value}</a>@endfor. Cancel them first.</p>@endif
@@ -50,7 +50,7 @@
     <span class="pill p-failed">Can't start</span>@if(scopable) <span class="muted small">&nbsp;unless its Repos are picked</span>@endif
     <ul class="reasons">
     @for(reason in reasons)
-        <li>@if(reason == PreRun.CONFIGURE_VAULT)<a href="/settings">${reason}</a>@if(scopable), or pick the Run's Repos@endif@else${reason}@endif</li>
+        <li>@if(reason == PreRun.CONFIGURE_VAULT)<a href="/settings">$unsafe{ants.Transcript.inline(reason)}</a>@if(scopable), or pick the Run's Repos@endif@else$unsafe{ants.Transcript.inline(reason)}@endif</li>
     @endfor
     </ul>
 @endif
@@ -58,7 +58,7 @@
 <div class="card" id="start"><form method="post" action="/processes/${key}/runs">
     <h3>Start a Run</h3>
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
-@if(error != null)<p role="alert">${error}</p>@endif
+@if(error != null)<p role="alert">$unsafe{ants.Transcript.inline(error)}</p>@endif
 @if(fields.isEmpty())<div class="help">This Process takes no input: its job is in the diagram.</div>@endif
 @template.startfields(fields = fields, repos = repos, profiles = profiles, profile = profile, verbosity = verbosity, runName = runName, reload = "?ants.profile=")
     <div class="go row"><button class="primary" disabled="${reasons.isNotEmpty() && !scopable}" data-pending="Starting…">Start</button><button type="button" id="schedule-open" disabled="${reasons.isNotEmpty() && !scopable}">⏰ Schedule</button></div>
@@ -74,14 +74,14 @@
     <tr><th>Schedule</th><th>Profile</th><th>Verbosity</th><th>Values</th><th>Runs</th><th>Cron</th><th>Next Run</th><th></th></tr>
     @for(edit in scheduleEdits)
     !{val each = edit.schedule; val open = edit.open;}
-    <tr id="schedule-${each.id}"><td><b>${each.label}</b></td><td class="k">Profile</td><td>${each.profile ?: "—"}</td><td class="k">Verbosity</td><td>${each.verbosity.value}</td><td class="k">Values</td><td class="small">@for((label, value) in each.values)<div><span class="muted">${label}</span> ${value}</div>@endfor</td><td class="k">Runs</td><td>${each.words}</td><td class="k">Cron</td><td><code>${each.cron}</code></td><td class="k">Next Run</td><td>@if(each.paused)<span class="muted">paused</span>@else${each.at} · ${each.countdown}@endif@if(each.skipped != null)<div class="warn">${each.skipped}</div>@endif@if(each.failed != null)<div class="failed"><p role="alert">✕ [failed] The scheduled Run didn't start: ${each.failed.why}</p><form method="post" action="${each.actions}/dismiss"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>Dismiss</button></form></div>@endif</td>
+    <tr id="schedule-${each.id}"><td><b>$unsafe{ants.Transcript.inline(each.label)}</b></td><td class="k">Profile</td><td>${each.profile ?: "—"}</td><td class="k">Verbosity</td><td>${each.verbosity.value}</td><td class="k">Values</td><td class="small">@for((label, value) in each.values)<div><span class="muted">$unsafe{ants.Transcript.inline(label)}</span> ${value}</div>@endfor</td><td class="k">Runs</td><td>$unsafe{ants.Transcript.inline(each.words)}</td><td class="k">Cron</td><td><code>${each.cron}</code></td><td class="k">Next Run</td><td>@if(each.paused)<span class="muted">paused</span>@else${each.at} · ${each.countdown}@endif@if(each.skipped != null)<div class="warn">${each.skipped}</div>@endif@if(each.failed != null)<div class="failed"><p role="alert">✕ [failed] The scheduled Run didn't start: $unsafe{ants.Transcript.inline(each.failed.why)}</p><form method="post" action="${each.actions}/dismiss"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>Dismiss</button></form></div>@endif</td>
     <td class="row"><button type="button" data-edit aria-expanded="${open.toString()}" aria-controls="edit-${each.id}">Edit</button><form method="post" action="${each.actions}/start"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button data-pending="Starting…">Start now</button></form>
     <form method="post" action="${each.actions}/${if (each.paused) "resume" else "pause"}"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>${if (each.paused) "Resume" else "Pause"}</button></form>
     <form method="post" action="${each.actions}/remove"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button class="danger">Remove</button></form></td></tr>
     <tr class="edit" id="edit-${each.id}" hidden="${!open}"><td colspan="8"><form method="post" action="${each.actions}">
-        <h3>Edit ${each.label}</h3>
+        <h3>Edit $unsafe{ants.Transcript.inline(each.label)}</h3>
         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
-    @for(reason in edit.reasons)<p role="alert">${reason}</p>@endfor
+    @for(reason in edit.reasons)<p role="alert">$unsafe{ants.Transcript.inline(reason)}</p>@endfor
 @template.startfields(fields = edit.fields, repos = edit.repos, profiles = profiles, profile = edit.profile, verbosity = edit.verbosity, runName = edit.runName, prefix = edit.prefix, reload = "?edit=${each.id}&edit.profile=", anchor = "#edit-${each.id}")
 @template.when(cron = edit.cron, action = each.actions, prefix = edit.prefix, advanced = edit.reasons.isNotEmpty())
     </form></td></tr>
@@ -100,7 +100,7 @@
     <tr><th>Run</th><th>Process</th><th>Now</th><th>Started</th></tr>
 @for(run in runs)
     !{val state = run.stateName; val pill = when (state) { "Running" -> "p-running"; "Completed" -> "p-done"; "Suspended" -> "p-stuck"; else -> "p-failed" };}
-    <tr class="click" data-href="/runs/${run.id}"><td><a href="/runs/${run.id}"><b>${names[run.id]}</b></a></td><td class="muted">${title}</td><td><span class="pill ${pill}">${state}</span></td><td class="muted small">${clock.local(run.startTime.toInstant())}</td></tr>
+    <tr class="click" data-href="/runs/${run.id}"><td><a href="/runs/${run.id}"><b>$unsafe{ants.Transcript.inline(names[run.id])}</b></a></td><td class="muted">$unsafe{ants.Transcript.inline(title)}</td><td><span class="pill ${pill}">${state}</span></td><td class="muted small">${clock.local(run.startTime.toInstant())}</td></tr>
 @endfor
 </table>
 @endif

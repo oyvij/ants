@@ -39,13 +39,13 @@ data class AlertDevice(val endpoint: String, val p256dh: String, val auth: Strin
 /** A device as Settings lists it: its [name], when it was [added] as the user reads it, and its [endpoint] for **Remove**. */
 data class ListedDevice(val endpoint: String, val name: String, val added: String)
 
-/** What an Alert says, as the service worker (`sw.js`) shows it: an entry's [tag], [icon], [title] and [text], its [run] and [process], and the [url] a tap opens. */
+/** What an Alert says, as the service worker (`sw.js`) shows it, in plain text, without its Markdown: an entry's [tag], [icon], [title] and [text], its [run] and [process], and the [url] a tap opens. */
 data class Alert(val tag: String, val icon: String, val title: String, val text: String, val run: String?, val process: String?, val url: String) {
     companion object {
         /** The most of an entry's summary an Alert carries. */
         private const val LONGEST_TEXT = 1000
 
-        fun of(entry: Entry) = Alert(entry.tag, entry.icon, entry.task, entry.summary.take(LONGEST_TEXT), entry.runName, entry.process, "/notifications/${entry.id}")
+        fun of(entry: Entry) = Alert(entry.tag, entry.icon, Transcript.plain(entry.task), Transcript.plain(entry.summary).take(LONGEST_TEXT), entry.runName?.let(Transcript::plain), Transcript.plain(entry.process), "/notifications/${entry.id}")
 
         val TEST = Alert("", "", "Ants", "A test Alert: Alerts reach this device.", null, null, "/settings")
     }

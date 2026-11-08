@@ -11,13 +11,13 @@
     <meta charset="utf-8">
     @template.app()
     <meta name="color-scheme" content="${colorScheme}">
-    <title>Edit ${file.title} · Ants</title>
+    <title>Edit ${ants.Transcript.plain(file.title)} · Ants</title>
 </head>
 <body>
 @template.nav(shell = shell)
 <main>
-<div class="crumbs"><a href="/tickets">Tickets</a> / <a href="${file.href}">${file.title}</a> / Edit</div>
-@if(error != null)<p role="alert">${error}</p>@endif
+<div class="crumbs"><a href="/tickets">Tickets</a> / <a href="${file.href}">$unsafe{ants.Transcript.inline(file.title)}</a> / Edit</div>
+@if(error != null)<p role="alert">$unsafe{ants.Transcript.inline(error)}</p>@endif
 @if(article != null)$unsafe{article}@endif
 <form method="post">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">

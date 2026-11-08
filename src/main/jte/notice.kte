@@ -8,17 +8,17 @@
     <meta charset="utf-8">
     @template.app()
     <meta name="color-scheme" content="${colorScheme}">
-    <title>${entry.icon} ${entry.tag} ${entry.task} · Ants</title>
+    <title>${entry.icon} ${entry.tag} ${ants.Transcript.plain(entry.task)} · Ants</title>
 </head>
 <body>
 @template.nav(shell = shell)
 <main>
-<div class="crumbs"><a href="/notifications">Notification list</a> / @if(entry.gone)${entry.runName}@else<a href="/runs/${entry.run}">${entry.runName}</a>@endif</div>
-<div class="ph"><h1>${entry.task} @template.tag(entry = entry)</h1><div class="acts"><span class="muted small">${entry.waited} ago</span></div>
-    <div class="sub">${entry.process}</div></div>
-<p>${entry.summary}</p>
+<div class="crumbs"><a href="/notifications">Notification list</a> / @if(entry.gone)$unsafe{ants.Transcript.inline(entry.runName)}@else<a href="/runs/${entry.run}">$unsafe{ants.Transcript.inline(entry.runName)}</a>@endif</div>
+<div class="ph"><h1>$unsafe{ants.Transcript.inline(entry.task)} @template.tag(entry = entry)</h1><div class="acts"><span class="muted small">${entry.waited} ago</span></div>
+    <div class="sub">$unsafe{ants.Transcript.inline(entry.process)}</div></div>
+<p>$unsafe{ants.Transcript.inline(entry.summary)}</p>
 @if(entry.repeats != null)<p class="muted small">${entry.repeats}</p>@endif
-@if(entry.gone)<p class="muted">The Run ${entry.runName} is gone.</p>@endif
+@if(entry.gone)<p class="muted">The Run $unsafe{ants.Transcript.inline(entry.runName)} is gone.</p>@endif
 <form method="post" action="/notifications/${entry.id}/dismiss"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">@if(!entry.gone)<a class="btn primary" href="/runs/${entry.run}">Open the Run</a> @endif<button data-pending="Dismissing…">Dismiss</button></form>
 </main>
 </body>

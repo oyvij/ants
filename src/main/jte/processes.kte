@@ -17,13 +17,13 @@
 @template.nav(shell = shell)
 <main>
 <div class="ph"><h1>Processes</h1><div class="acts"><button class="primary" onclick="document.getElementById('new-process').showModal()">New Process</button></div></div>
-@if(error != null)<p role="alert">${error}</p>@endif
+@if(error != null)<p role="alert">$unsafe{ants.Transcript.inline(error)}</p>@endif
 <table id="processes">
     <tr><th>Process</th><th>From</th><th>Vault · Source map</th><th>Schedule</th><th>Check</th><th>Live Runs</th><th></th></tr>
 @for(row in rows)
     !{val key = row.process.key}
     <tr class="click" data-href="/processes/${key}">
-        <td><a href="/processes/${key}"><b>${row.process.name ?: key}</b></a>@template.draftmark(state = row.state, list = true)</td>
+        <td><a href="/processes/${key}"><b>$unsafe{ants.Transcript.inline(row.process.name ?: key)}</b></a>@template.draftmark(state = row.state, list = true)</td>
         <td class="muted small">${if (row.shipped) "shipped" else "you"}</td>
         <td class="muted small">${row.profile?.vault ?: "—"} · ${row.profile?.sourceMap ?: "—"}</td>
         <td class="small">@if(row.scheduleCount > 0)⏰ ${row.scheduleCount}@endif</td>
@@ -34,7 +34,7 @@
 @endfor
 @for(draft in drafts)
     <tr class="click" data-href="/processes/${draft.id}/edit">
-        <td><a href="/processes/${draft.id}/edit"><b>${draft.name}</b></a>@template.draftmark(state = ants.DraftState.DRAFT_ONLY, list = true)</td>
+        <td><a href="/processes/${draft.id}/edit"><b>$unsafe{ants.Transcript.inline(draft.name)}</b></a>@template.draftmark(state = ants.DraftState.DRAFT_ONLY, list = true)</td>
         <td class="muted small">you</td><td></td><td></td><td></td><td></td>
         <td><a href="/processes/${draft.id}/edit">Edit diagram</a></td>
     </tr>
@@ -49,7 +49,7 @@
             <div class="fld"><label class="f" for="new-from">Start from</label><div class="help">A blank diagram, or a copy of a Process.</div><select id="new-from" name="from">
                 <option value="">Blank</option>
 @for(process in processes)
-                <option value="${process.key}">${process.name ?: process.key}</option>
+                <option value="${process.key}">${ants.Transcript.plain(process.name ?: process.key)}</option>
 @endfor
             </select></div>
             <div class="go"><button class="primary">＋ New Process</button></div>

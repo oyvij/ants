@@ -13,14 +13,14 @@
     <meta charset="utf-8">
     @template.app()
     <meta name="color-scheme" content="${colorScheme}">
-    <title>${entry.icon} ${entry.tag} ${entry.task} · Ants</title>
+    <title>${entry.icon} ${entry.tag} ${ants.Transcript.plain(entry.task)} · Ants</title>
 </head>
 <body>
 @template.nav(shell = shell)
 <main>
-<div class="crumbs"><a href="/runs">Runs</a> / <a href="/runs/${entry.run}">${entry.runName}</a> / ${entry.task}</div>
-<div class="ph"><h1>${entry.task} @if(failed)<span class="pill p-failed">Failed</span>@else<span class="pill p-waiting">Waiting on you</span>@endif @template.tag(entry = entry)</h1>
-    <div class="acts"><span class="muted small">Built-in Task</span></div><div class="sub">${entry.summary}</div></div>
+<div class="crumbs"><a href="/runs">Runs</a> / <a href="/runs/${entry.run}">$unsafe{ants.Transcript.inline(entry.runName)}</a> / $unsafe{ants.Transcript.inline(entry.task)}</div>
+<div class="ph"><h1>$unsafe{ants.Transcript.inline(entry.task)} @if(failed)<span class="pill p-failed">Failed</span>@else<span class="pill p-waiting">Waiting on you</span>@endif @template.tag(entry = entry)</h1>
+    <div class="acts"><span class="muted small">Built-in Task</span></div><div class="sub">$unsafe{ants.Transcript.inline(entry.summary)}</div></div>
 @if(details != null)
 <h2>What git said</h2>
 <pre>${details}</pre>
@@ -33,7 +33,7 @@
         <span class="k">Remote</span><span class="mono small">${repo.remote}</span>
         <span class="k">Branch</span><span><code>${repo.branch}</code> @if(repo.isNew)<span class="pill p-quiet">new on the remote</span>@else<span class="pill p-waiting">updates an existing branch</span>@endif
             <span class="muted small">@if(repo.base != null)based on <code>${repo.base}</code>@else no base: the remote has no default branch@endif</span></span>
-        <span class="k">Commits</span><span>@for(commit in repo.commits)<div class="small commit"><span class="mono muted">${commit.getValue("sha").take(7)}</span> ${commit.getValue("subject")}</div>@endfor</span>
+        <span class="k">Commits</span><span>@for(commit in repo.commits)<div class="small commit"><span class="mono muted">${commit.getValue("sha").take(7)}</span> $unsafe{ants.Transcript.inline(commit.getValue("subject"))}</div>@endfor</span>
     </div>
 </div>
 @endfor
@@ -43,7 +43,7 @@
 <pre>@for(changed in repos)git -C ${changed.repo.path.toString()} push ${changed.repo.remote} ${changed.repo.branch}
 @endfor</pre>
 @endif
-@if(error != null)<p role="alert">${error}</p>@endif
+@if(error != null)<p role="alert">$unsafe{ants.Transcript.inline(error)}</p>@endif
 <form method="post" class="row pushacts">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
     <input type="hidden" name="instruction" value="">

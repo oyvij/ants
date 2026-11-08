@@ -10,7 +10,7 @@
 <h2>Coming up</h2>
 <table>
 @for(schedule in coming)
-    <tr class="click" data-href="/processes/${schedule.key}"><td><b><a href="/processes/${schedule.key}">${schedule.label}</a></b></td><td class="small">${schedule.words}</td><td class="muted small">${schedule.at} · ${schedule.countdown}</td></tr>
+    <tr class="click" data-href="/processes/${schedule.key}"><td><b><a href="/processes/${schedule.key}">$unsafe{ants.Transcript.inline(schedule.label)}</a></b></td><td class="small">$unsafe{ants.Transcript.inline(schedule.words)}</td><td class="muted small">${schedule.at} · ${schedule.countdown}</td></tr>
 @endfor
 </table>
 @endif
@@ -19,7 +19,7 @@
 <table>
     <tr><th>Run</th><th>Process</th><th>Now</th><th>Started</th></tr>
 @for(run in live)
-    <tr class="click" data-href="/runs/${run.id}"><td><b><a href="/runs/${run.id}">${run.name}</a></b></td><td class="muted">${run.process}</td>
+    <tr class="click" data-href="/runs/${run.id}"><td><b><a href="/runs/${run.id}">$unsafe{ants.Transcript.inline(run.name)}</a></b></td><td class="muted">$unsafe{ants.Transcript.inline(run.process)}</td>
         <td data-flash="${run.now?.states}">@if(run.now != null)@template.now(now = run.now)@else<span class="pill p-running">Running</span>@endif</td><td class="muted small">${run.started}</td></tr>
 @endfor
 </table>
@@ -30,7 +30,7 @@
 <table>
     <tr><th>Run</th><th>Process</th><th>Now</th><th></th><th class="when">Started · took</th></tr>
 @for(run in ended)
-    <tr class="click" data-href="/runs/${run.id}"><td><b><a href="/runs/${run.id}">${run.name}</a></b></td><td class="muted">${run.process}</td>
+    <tr class="click" data-href="/runs/${run.id}"><td><b><a href="/runs/${run.id}">$unsafe{ants.Transcript.inline(run.name)}</a></b></td><td class="muted">$unsafe{ants.Transcript.inline(run.process)}</td>
         <td><span class="pill ${if (run.done) "p-done" else "p-failed"}">${run.ended}</span></td>
         <td>@if(run.kept)<form method="post" action="/runs/${run.id}/dismiss">@if(csrf != null)<input type="hidden" name="${csrf.parameterName}" value="${csrf.token}">@endif<button>Dismiss</button></form>@endif
             @if(run.report)<a href="/runs/${run.id}/report">Report</a>@endif</td><td class="when muted small">${run.started} · ${run.took}</td></tr>

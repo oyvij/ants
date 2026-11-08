@@ -2,6 +2,8 @@ package ants
 
 import org.commonmark.ext.gfm.tables.TableBlock
 import org.commonmark.ext.gfm.tables.TablesExtension
+import gg.jte.html.escape.Escape
+import gg.jte.output.StringOutput
 import org.commonmark.parser.Parser
 import org.commonmark.renderer.html.AttributeProvider
 import org.commonmark.renderer.html.HtmlRenderer
@@ -451,6 +453,8 @@ class Transcript(private val toolLine: (name: String, input: Map<*, *>) -> Strin
         private val renderer = HtmlRenderer.builder().extensions(extensions).escapeHtml(true).sanitizeUrls(true)
             .attributeProviderFactory { AttributeProvider { node, _, attributes -> if (node is TableBlock) attributes["class"] = "md-table" } }
             .build()
+        /** The characters inline Markdown starts with; a line without them reads as typed, escaped as the templates escape. */
+        private const val MARKS = "*_`[]!<>&\\~"
         private val inlineParser = Parser.builder().enabledBlockTypes(emptySet()).build()
         private val plainRenderer = TextContentRenderer.builder().extensions(extensions).build()
 
@@ -496,11 +500,12 @@ class Transcript(private val toolLine: (name: String, input: Map<*, *>) -> Strin
          * A line of [text] as HTML: its inline Markdown (bold, italics, code, links) rendered, its HTML escaped, and no
          * blocks, so `1. Disk` or `# 3` reads as typed. Lines apart by a blank line stay apart with a `<br>`.
          */
-        fun inline(text: CharSequence): String = generateSequence(inlineParser.parse(text.toString()).firstChild) { it.next }
+        fun inline(text: CharSequence?): String = if (text == null) "" else if (text.none { it in MARKS }) StringOutput().also { Escape.htmlContent(text.toString(), it) }.toString()
+        else generateSequence(inlineParser.parse(text.toString()).firstChild) { it.next }
             .joinToString("<br>") { block -> generateSequence(block.firstChild) { it.next }.joinToString("") { renderer.render(it) } }
 
         /** A line of [text] with its inline Markdown taken out, for a place that shows plain text: a tab, a dialog, a chart's labels. */
-        fun plain(text: CharSequence): String = plainRenderer.render(inlineParser.parse(text.toString())).trim()
+        fun plain(text: CharSequence?): String = if (text == null) "" else plainRenderer.render(inlineParser.parse(text.toString())).trim()
 
         private fun html(text: String) = renderer.render(parser.parse(text))
 

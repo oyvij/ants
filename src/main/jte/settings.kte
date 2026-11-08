@@ -31,7 +31,7 @@
 <main>
 <div class="ph"><h1>Settings</h1><div class="acts"><button class="primary" form="settings" name="action" value="save">Save</button></div>
     <div class="sub">Written to <code>${file}</code>. A hand edit to it shows here.</div></div>
-@if(message != null)<p role="alert">${message}</p>@endif
+@if(message != null)<p role="alert">$unsafe{ants.Transcript.inline(message)}</p>@endif
 <form method="post" action="/settings" id="settings" class="settings" data-posted="${posted}">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
     <div class="grid2"><div class="card"><h3>Claude login</h3>
@@ -83,17 +83,17 @@
                 <label class="cap name">Name<input name="profiles[${i}].name" value="${row.name}" placeholder="e.g. private"></label>
                 <label class="cap grow">Vault<select name="profiles[${i}].vault"><option value="">Vault</option>
 @for(name in (form.vaults.rows.map { it.first } + row.vault).filter(String::isNotEmpty).distinct())
-                    <option selected="${name == row.vault}">${name}</option>
+                    <option selected="${name == row.vault}">${ants.Transcript.plain(name)}</option>
 @endfor
                 </select></label>
                 <label class="cap grow">Source map<select name="profiles[${i}].source-map"><option value="">Source map</option>
 @for(name in (form.sourceMaps.rows.map { it.first } + row.sourceMap).filter(String::isNotEmpty).distinct())
-                    <option selected="${name == row.sourceMap}">${name}</option>
+                    <option selected="${name == row.sourceMap}">${ants.Transcript.plain(name)}</option>
 @endfor
                 </select></label>
                 <label class="row small"><input type="radio" name="default-profile" value="${i}" checked="${i == form.defaultProfile}"> default</label>
 @if(row.name in instructions)
-                <button type="button" data-edit="instructions-${instructions.keys.indexOf(row.name)}">${if (instructions.getValue(row.name).has) "Instructions" else "Add instructions"}</button>
+                <button type="button" data-edit="instructions-${instructions.keys.indexOf(row.name)}">$unsafe{ants.Transcript.inline(if (instructions.getValue(row.name).has) "Instructions" else "Add instructions")}</button>
 @endif
                 <button type="button" class="ghost" data-remove>Remove</button>
             </div>
@@ -125,7 +125,7 @@
                 <label class="cap grow">Command prefix<input class="mono" name="protected-commands[${i}].prefix" value="${row.prefix}" placeholder="e.g. yarn install"></label>
                 <label class="cap grow">Secrets<select multiple name="protected-commands[${i}].secrets">
 @for(label in (form.secrets.map { it.label } + row.secrets).distinct())
-                    <option selected="${label in row.secrets}">${label}</option>
+                    <option selected="${label in row.secrets}">${ants.Transcript.plain(label)}</option>
 @endfor
                 </select></label>
                 <button type="button" class="ghost" data-remove>Remove</button>
@@ -135,7 +135,7 @@
 
     <div class="grid2">
 @for((name, label, help) in listOf(Triple("agent-folders", "Agent folders", "Every <code>*.md</code> directly inside is an Agent."), Triple("skill-folders", "Skill folders", "Every folder holding a <code>SKILL.md</code>, at any depth, is a Skill.")))
-        <div class="card"><h3>${label}</h3><div class="help">$unsafe{help}</div><div class="listed">
+        <div class="card"><h3>$unsafe{ants.Transcript.inline(label)}</h3><div class="help">$unsafe{help}</div><div class="listed">
             <div class="row"><label class="cap grow">Folder<input class="mono" placeholder="e.g. ~/.ants/${name.removeSuffix("-folders")}s" value="${home}/${name.removeSuffix("-folders")}s" disabled></label><span class="muted small nowrap">Ants' own, always</span></div>
 @for(folder in (if (name == "agent-folders") form.agentFolders else form.skillFolders).lines().filter(String::isNotBlank) + "")
             <div class="row" hidden="${folder.isEmpty()}"><label class="cap grow">Folder<input class="mono" name="${name}" value="${folder}" placeholder="e.g. ~/shared/${name.removeSuffix("-folders")}s"></label><button type="button" class="ghost" data-remove>Remove</button></div>
@@ -190,7 +190,7 @@
 @else
             <ul class="devices" id="alert-devices">
 @for(device in alertDevices)
-                <li data-endpoint="${device.endpoint}"><b>${device.name}</b> <span class="muted small">added ${device.added}</span><button form="alert-remove" name="endpoint" value="${device.endpoint}">Remove</button></li>
+                <li data-endpoint="${device.endpoint}"><b>$unsafe{ants.Transcript.inline(device.name)}</b> <span class="muted small">added ${device.added}</span><button form="alert-remove" name="endpoint" value="${device.endpoint}">Remove</button></li>
 @endfor
             </ul>
 @endif

@@ -31,13 +31,13 @@
         <span class="dd"><button type="button" id="add" class="primary" aria-haspopup="menu" aria-expanded="false">+ Widget ▾</button>
             <div class="menu" id="add-menu" role="menu" hidden>
 @for(type in types)@if(!type.chart)
-                <button type="button" role="menuitem" data-type="${type.label}"><b>${type.label}</b><small>${type.line}</small></button>
+                <button type="button" role="menuitem" data-type="${type.label}"><b>${type.label}</b><small>$unsafe{ants.Transcript.inline(type.line)}</small></button>
 @endif@endfor
                 <div class="h" role="presentation">Charts · all take points {x, y, series?}</div>
 @for(kind in ants.ChartKind.entries)
                 <button type="button" role="menuitem" data-type="chart" data-kind="${kind.label}"><b>${kind.title}</b></button>
 @endfor
-                <button type="button" role="menuitem" data-type="${ants.WidgetType.CUSTOM.label}"><b>Custom chart</b><small>${ants.WidgetType.CUSTOM.line}</small></button>
+                <button type="button" role="menuitem" data-type="${ants.WidgetType.CUSTOM.label}"><b>Custom chart</b><small>$unsafe{ants.Transcript.inline(ants.WidgetType.CUSTOM.line)}</small></button>
             </div></span>
         <button type="button" id="posting-toggle" aria-controls="posting" aria-expanded="false">Posting</button>
         <form method="post" action="/dashboards/${dashboard.id}/delete"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button class="ghost" title="Delete dashboard" aria-label="Delete dashboard"><svg class="i" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></button></form>

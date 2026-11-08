@@ -28,5 +28,5 @@
 @elseif(view.widget.type == WidgetType.LOG)
 <div class="log">@for(line in view.lines)<div class="${line.data["level"]?.toString() ?: "info"}"><time datetime="${line.at.toString()}">${view.time(line)}</time>$unsafe{Transcript.inline(line.data["line"].toString())}</div>@endfor</div>
 @endif
-<div class="from small muted">From <a href="/runs/${view.post.run}">${view.runName ?: view.post.run}</a> · <time datetime="${view.post.at.toString()}">${view.at}</time></div>
+<div class="from small muted">From <a href="/runs/${view.post.run}">$unsafe{ants.Transcript.inline(view.runName ?: view.post.run)}</a> · <time datetime="${view.post.at.toString()}">${view.at}</time></div>
 @endif

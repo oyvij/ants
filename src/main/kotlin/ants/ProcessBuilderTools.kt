@@ -414,7 +414,7 @@ class ProcessBuilderTools(
         private val RELAYED = WRITE.map { it["name"] }.toSet()
 
         /** `<i>value</i>`, escaped: what a tool call's line names. */
-        private fun named(value: Any?) = "<i>${HtmlUtils.htmlEscape(value?.toString().orEmpty())}</i>"
+        private fun named(value: Any?) = "<i>${Transcript.inline(value?.toString().orEmpty())}</i>"
 
         /** The `name:` in a file's frontmatter, as an Agent file and a SKILL.md have one. */
         private fun nameIn(file: Any?) = Regex("(?m)^name:\\s*(.+)$").find(file?.toString().orEmpty())?.groupValues?.get(1)?.trim()
