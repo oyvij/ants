@@ -420,6 +420,10 @@ div.tools label span { color: var(--muted); font-size: 12px; display: block; }
 .spin { --ant: var(--antLight); --antStill: url(/working-ant-still.svg); display: inline-block; width: 1.9em; height: 1.2em; vertical-align: -.2em; flex: none; color: transparent; overflow: hidden; user-select: none; background: var(--ant) center / contain no-repeat; }
 :root:has(meta[name=color-scheme][content=dark]) .spin, :is(.side, .topbar) .spin { --ant: var(--antDark); --antStill: url(/working-ant-dark-still.svg); }
 @media (prefers-color-scheme: dark) { :root:has(meta[name=color-scheme][content="light dark"]) .spin { --ant: var(--antDark); --antStill: url(/working-ant-dark-still.svg); } }
+/* A primary button is filled with the accent, the ant's own colour, so on it the ant is the other one. */
+:is(button, .btn).primary .spin { --ant: var(--antDark); --antStill: url(/working-ant-dark-still.svg); }
+:root:has(meta[name=color-scheme][content=dark]) :is(button, .btn).primary .spin { --ant: var(--antLight); --antStill: url(/working-ant-still.svg); }
+@media (prefers-color-scheme: dark) { :root:has(meta[name=color-scheme][content="light dark"]) :is(button, .btn).primary .spin { --ant: var(--antLight); --antStill: url(/working-ant-still.svg); } }
 @media (prefers-reduced-motion: reduce) { .spin { background-image: var(--antStill); } }
 .shimmer { background: linear-gradient(90deg, var(--run) 0%, var(--run) 35%, #a5c8ff 50%, var(--run) 65%, var(--run) 100%); background-size: 250% 100%;
     -webkit-background-clip: text; background-clip: text; color: transparent; animation: shim 2s linear infinite; font-weight: 600; }
