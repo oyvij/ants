@@ -16,7 +16,7 @@
 <main>
 <div class="ph"><h1>Templates</h1>
     <div class="sub">A Template is dropped into a Process from the modeler's palette as a collapsed sub-process, a copy: editing the Template afterwards doesn't change the Process.</div></div>
-@if(message != null)<p role="alert">${message}</p>@endif
+@if(message != null)<p role="alert">$unsafe{ants.Transcript.inline(message)}</p>@endif
 <form method="post" action="/templates/new">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
     <label>Name <input name="name" placeholder="e.g. review-loop" required pattern="[a-z0-9][a-z0-9\-]{0,63}"></label>
@@ -24,7 +24,7 @@
 </form>
 <ul>
 @for(row in templates)
-    <li><a href="/templates/${row.name}">${row.name}</a> ${row.title}@if(row.shipped) <small>shipped</small>@endif</li>
+    <li><a href="/templates/${row.name}">$unsafe{ants.Transcript.inline(row.name)}</a> $unsafe{ants.Transcript.inline(row.title)}@if(row.shipped) <small>shipped</small>@endif</li>
 @endfor
 </ul>
 </main>

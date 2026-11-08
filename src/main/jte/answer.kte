@@ -1,4 +1,3 @@
-@import ants.inlineCode
 @import ants.Transcript
 @param entry: ants.TaskEntry
 @param round: Int
@@ -13,25 +12,25 @@
     <meta charset="utf-8">
     @template.app()
     <meta name="color-scheme" content="${colorScheme}">
-    <title>${entry.icon} ${entry.tag} ${entry.task} · Ants</title>
+    <title>${entry.icon} ${entry.tag} ${ants.Transcript.plain(entry.task)} · Ants</title>
     <script src="/answer.js" defer></script>
 </head>
 <body>
 @template.nav(shell = shell)
 <main>
-<div class="crumbs"><a href="/notifications">Notification list</a> / <a href="/runs/${entry.run}">${entry.runName}</a> / ${entry.task}</div>
-<div class="ph"><h1>$unsafe{inlineCode(entry.summary.ifEmpty { entry.task })}</h1><div class="acts">@template.tag(entry = entry)<span class="muted small">Round ${round} · ${entry.process} · waiting ${entry.waited}</span></div></div>
-@if(error != null)<p role="alert">${error}</p>@endif
+<div class="crumbs"><a href="/notifications">Notification list</a> / <a href="/runs/${entry.run}">$unsafe{ants.Transcript.inline(entry.runName)}</a> / $unsafe{ants.Transcript.inline(entry.task)}</div>
+<div class="ph"><h1>$unsafe{ants.Transcript.inline(entry.summary.ifEmpty { entry.task })}</h1><div class="acts">@template.tag(entry = entry)<span class="muted small">Round ${round} · $unsafe{ants.Transcript.inline(entry.process)} · waiting ${entry.waited}</span></div></div>
+@if(error != null)<p role="alert">$unsafe{ants.Transcript.inline(error)}</p>@endif
 <div class="answering">
 <nav id="tabs" role="tablist" aria-orientation="vertical" hidden></nav>
 <form method="post" action="/notifications/${entry.id}/answers" id="round">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
     @for((i, q) in questions.withIndex())
     <section class="question" data-title="${q.title}" data-recommendation="${q.recommendation}">
-        <div class="count">Question ${i + 1} of ${questions.size} · ${q.title}</div>
+        <div class="count">Question ${i + 1} of ${questions.size} · $unsafe{ants.Transcript.inline(q.title)}</div>
         <div class="part ask"><h3>Question</h3><div class="tx">$unsafe{Transcript.markdown(q.ask)}</div></div>
         <div class="part ctx"><h3>What it settles</h3><div class="tx">$unsafe{Transcript.markdown(q.context)}</div></div>
-        <div class="part rec"><h3>Recommended</h3><div class="tx pick">$unsafe{Transcript.markdown(q.recommendation)}</div><div class="tx why"><b>Why</b> $unsafe{inlineCode(q.why)}</div></div>
+        <div class="part rec"><h3>Recommended</h3><div class="tx pick">$unsafe{Transcript.markdown(q.recommendation)}</div><div class="tx why"><b>Why</b> $unsafe{ants.Transcript.inline(q.why)}</div></div>
         <div class="part ans"><h3><label for="answer-${q.id}">Your answer</label></h3>
         <textarea id="answer-${q.id}" name="answer.${q.id}" placeholder="e.g. Yes, but only for admins." required data-markdown>${q.answer}</textarea></div>
     </section>

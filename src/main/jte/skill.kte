@@ -15,21 +15,21 @@
     <meta charset="utf-8">
     @template.app()
     <meta name="color-scheme" content="${colorScheme}">
-    <title>${form.name ?: "New Skill"} · Skills · Ants</title>
+    <title>${ants.Transcript.plain(form.name ?: "New Skill")} · Skills · Ants</title>
 </head>
 <body>
 @if(use == null)
 @template.nav(shell = shell)
 @endif
 <main>
-@if(use == null)<div class="crumbs"><a href="/skills">Skills</a> / ${form.name ?: "New"}</div>@endif
-<div class="ph"><h1><span class="ent ent-skill"><svg class="i" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>${form.name ?: "New Skill"}</span></h1>
+@if(use == null)<div class="crumbs"><a href="/skills">Skills</a> / $unsafe{ants.Transcript.inline(form.name ?: "New")}</div>@endif
+<div class="ph"><h1><span class="ent ent-skill"><svg class="i" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>$unsafe{ants.Transcript.inline(form.name ?: "New Skill")}</span></h1>
 @if(draft != null)
     @template.drafthead(draft = draft)
 @endif
     <div class="acts">
 @if(form.readOnly)
-        <span class="muted small">Read-only (${form.where})</span>
+        <span class="muted small">Read-only ($unsafe{ants.Transcript.inline(form.where)})</span>
         <form method="post" action="/skills/${form.name}/copy"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>Copy</button></form>
 @else
 @if(draft?.state == ants.DraftState.CHANGED)
@@ -43,7 +43,7 @@
     </div>
 @if(dependents != null)    <div class="sub">@template.usedby(dependents = dependents, none = "no Process")</div>@endif
 </div>
-@if(message != null)<p role="alert">${message}</p>@endif
+@if(message != null)<p role="alert">$unsafe{ants.Transcript.inline(message)}</p>@endif
 <div class="grid2 skill-page">
 <div class="card">
 <form id="skill" method="post" action="/skills/${form.name ?: "new"}" class="skill" data-autosave="${draft?.endpoint}" data-version="${draft?.version?.toString()}" data-leaves-draft>
@@ -58,7 +58,7 @@
 <div>
 <div class="card"><h3>Run by</h3><div class="help">Agents whose <b>Skills it runs</b> list this Skill. Edit that list on the Agent.</div>
 @for(agent in runBy)
-    <div class="row runby"><span class="grow"><a href="/agents/${agent.name}">${agent.name}</a></span><span class="muted small">${agent.cli}</span></div>
+    <div class="row runby"><span class="grow"><a href="/agents/${agent.name}">$unsafe{ants.Transcript.inline(agent.name)}</a></span><span class="muted small">${agent.cli}</span></div>
 @endfor
 @if(runBy.isEmpty())
     <div class="warn">No Agent runs this Skill yet, so no Task can use it.</div>
@@ -89,7 +89,7 @@
 @for((i, reference) in references.withIndex())
 @if(reference.change != ants.ReferenceChange.DELETED)
 <dialog class="modal reference" id="reference-${i}">
-    <form method="dialog" class="mh"><label for="reference-text-${i}">${reference.path}</label><span class="pill p-quiet" title="Skill">${form.name}</span>@if(form.readOnly)<span class="muted small">Read-only</span>@endif<span class="sp"></span><span class="muted small">Esc to close</span><button class="ghost" title="Close" aria-label="Close">✕</button></form>
+    <form method="dialog" class="mh"><label for="reference-text-${i}">${reference.path}</label><span class="pill p-quiet" title="Skill">$unsafe{ants.Transcript.inline(form.name)}</span>@if(form.readOnly)<span class="muted small">Read-only</span>@endif<span class="sp"></span><span class="muted small">Esc to close</span><button class="ghost" title="Close" aria-label="Close">✕</button></form>
 @if(form.readOnly)
     <div class="mb"><textarea id="reference-text-${i}" rows="20" placeholder="e.g. # Format&#10;One finding per line." data-markdown readonly data-tall>${reference.text}</textarea></div>
 @else
@@ -105,7 +105,7 @@
 @endfor
 @if(!form.readOnly && form.name != null)
 <dialog class="modal new-reference" id="new-reference">
-    <form method="dialog" class="mh"><b>New reference</b><span class="pill p-quiet" title="Skill">${form.name}</span><span class="sp"></span><span class="muted small">Esc to close</span><button class="ghost" title="Close" aria-label="Close">✕</button></form>
+    <form method="dialog" class="mh"><b>New reference</b><span class="pill p-quiet" title="Skill">$unsafe{ants.Transcript.inline(form.name)}</span><span class="sp"></span><span class="muted small">Esc to close</span><button class="ghost" title="Close" aria-label="Close">✕</button></form>
     <div class="mb">
         <form method="post" action="/skills/${form.name}/new-reference" data-new-reference>
             <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">

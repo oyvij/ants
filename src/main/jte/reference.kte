@@ -11,14 +11,14 @@
     <meta charset="utf-8">
     @template.app()
     <meta name="color-scheme" content="${colorScheme}">
-    <title>${reference.path} · ${skill} · Skills · Ants</title>
+    <title>${reference.path} · ${ants.Transcript.plain(skill)} · Skills · Ants</title>
 </head>
 <body>
 @template.nav(shell = shell)
 <main>
-<div class="crumbs"><a href="/skills">Skills</a> / <a href="/skills/${skill}">${skill}</a> / ${reference.path}</div>
+<div class="crumbs"><a href="/skills">Skills</a> / <a href="/skills/${skill}">$unsafe{ants.Transcript.inline(skill)}</a> / ${reference.path}</div>
 <div class="ph"><h1><code>${reference.path}</code></h1><div class="acts">@if(editable)<button class="primary" form="reference">Save</button>@else<span class="muted small">Read-only</span>@endif</div></div>
-@if(message != null)<p role="alert">${message}</p>@endif
+@if(message != null)<p role="alert">$unsafe{ants.Transcript.inline(message)}</p>@endif
 <div class="card">
 @if(editable)
 <form id="reference" method="post" action="/skills/${skill}/references/${reference.path}">

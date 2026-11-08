@@ -43,7 +43,7 @@
     </div>
 @if(dependents != null)    <div class="sub">@template.usedby(dependents = dependents, none = "no Agent or Process")</div>@endif
 </div>
-@if(message != null && errors.isEmpty())<p role="alert">${message}</p>@elseif(message != null)<div role="alert">${message}<ul class="findings">@for(error in errors)<li>${error}</li>@endfor</ul></div>@endif
+@if(message != null && errors.isEmpty())<p role="alert">$unsafe{ants.Transcript.inline(message)}</p>@elseif(message != null)<div role="alert">$unsafe{ants.Transcript.inline(message)}<ul class="findings">@for(error in errors)<li>$unsafe{ants.Transcript.inline(error)}</li>@endfor</ul></div>@endif
 <div class="scriptWrap">
 <form id="script" method="post" action="/scripts/${saved}" class="script" data-autosave="${draft?.endpoint}" data-version="${draft?.version?.toString()}" data-leaves-draft>
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
@@ -99,7 +99,7 @@
         <div class="row save-secrets"><button formaction="/scripts/${saved}/secrets" data-save-secrets>Save Secrets</button><span class="muted small" role="status" data-secrets-state></span></div>
         <div class="fld" data-linked><label class="f">From Settings</label><div class="help">Secrets kept in <a href="/settings">Settings</a>, each under its variable names.</div>
 @for(label in labels)
-            <label class="nowrap"><input type="checkbox" name="linked" value="${label}" checked="${label in form.linked}"> ${label}</label>
+            <label class="nowrap"><input type="checkbox" name="linked" value="${label}" checked="${label in form.linked}"> $unsafe{ants.Transcript.inline(label)}</label>
 @endfor
 @if(labels.isEmpty())
             <span class="muted small" data-no-linked>No Secret in Settings yet.</span>

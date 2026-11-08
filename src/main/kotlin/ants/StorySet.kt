@@ -1,7 +1,6 @@
 package ants
 
 import tools.jackson.core.JacksonException
-import org.springframework.web.util.HtmlUtils
 import tools.jackson.databind.json.JsonMapper
 import java.nio.file.Path
 import kotlin.io.path.isRegularFile
@@ -48,9 +47,6 @@ class CodeLine(val number: String, val text: String, val css: String)
 
 /** A concrete value a step names, its provenance, and the line it [cite]s, `file:line`, if any. */
 class Value(val name: String, val value: String, val provenance: String, val cite: String?)
-
-/** [text] as HTML, each `code span` in backticks a `<code>`, as the Story set writes them. */
-fun inlineCode(text: String): String = HtmlUtils.htmlEscape(text).replace(Regex("`([^`]+)`"), "<code>\$1</code>")
 
 /** A Story set that is missing or doesn't parse, refused whole, [because]. */
 class StorySetRefused(val because: String) : Exception("The Story set in $STORIES is refused: $because")

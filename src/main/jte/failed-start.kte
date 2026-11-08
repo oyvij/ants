@@ -8,14 +8,14 @@
     <meta charset="utf-8">
     @template.app()
     <meta name="color-scheme" content="${colorScheme}">
-    <title>${entry.icon} ${entry.tag} ${entry.task} · Ants</title>
+    <title>${entry.icon} ${entry.tag} ${ants.Transcript.plain(entry.task)} · Ants</title>
 </head>
 <body>
 @template.nav(shell = shell)
 <main>
-<div class="crumbs"><a href="/notifications">Notification list</a> / <a href="/processes/${entry.schedule.key}">${entry.process}</a></div>
-<div class="ph"><h1>${entry.task} @template.tag(entry = entry)</h1><div class="acts"><span class="muted small">waiting ${entry.waited}</span></div>
-    <div class="sub">${entry.summary}</div></div>
+<div class="crumbs"><a href="/notifications">Notification list</a> / <a href="/processes/${entry.schedule.key}">$unsafe{ants.Transcript.inline(entry.process)}</a></div>
+<div class="ph"><h1>$unsafe{ants.Transcript.inline(entry.task)} @template.tag(entry = entry)</h1><div class="acts"><span class="muted small">waiting ${entry.waited}</span></div>
+    <div class="sub">$unsafe{ants.Transcript.inline(entry.summary)}</div></div>
 <form method="post" action="${entry.schedule.actions}/start"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button class="primary" data-pending="Starting…">Start now</button></form>
 <form method="post" action="${entry.schedule.actions}/dismiss"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><input type="hidden" name="back" value="notifications"><button>Dismiss</button></form>
 </main>

@@ -16,21 +16,21 @@
     <meta charset="utf-8">
     @template.app()
     <meta name="color-scheme" content="${colorScheme}">
-    <title>${file.title} · Ants</title>
+    <title>${ants.Transcript.plain(file.title)} · Ants</title>
 </head>
 <body>
 @template.nav(shell = shell)
 <main>
-<div class="ph"><div class="crumbs"><a href="/tickets">Tickets</a> / <a href="/runs/${file.run}">${runName}</a>@if(file.name != "spec") / <a href="/runs/${file.run}/tickets/spec">Spec</a>@endif</div>
+<div class="ph"><div class="crumbs"><a href="/tickets">Tickets</a> / <a href="/runs/${file.run}">$unsafe{ants.Transcript.inline(runName)}</a>@if(file.name != "spec") / <a href="/runs/${file.run}/tickets/spec">Spec</a>@endif</div>
     <div class="acts"><a class="btn" href="${file.href}/edit">Edit</a></div></div>
-@if(error != null)<p role="alert">${error}</p>@endif
+@if(error != null)<p role="alert">$unsafe{ants.Transcript.inline(error)}</p>@endif
 $unsafe{article}
 @if(file.forHuman && waitsFor.isNotEmpty())
 <p role="status">Waits for ${waitsFor.joinToString()}, then it is yours to do.</p>
 @elseif(file.forHuman)
 <form method="post" action="${file.href}/send-back">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
-    @if(sent != null)<p role="status">${sent.summary}</p>@endif
+    @if(sent != null)<p role="status">$unsafe{ants.Transcript.inline(sent.summary)}</p>@endif
     @if(sendBack)<p><label for="comment">What fails, for the Agents that built what it checks</label><br><textarea id="comment" name="comment" rows="6" placeholder="e.g. The export still lists cancelled invoices.">${comment}</textarea></p>@endif
     <p>This Ticket is yours to do. <button class="primary" formaction="${file.href}/done">Mark done</button>@if(sendBack) <button>Send back</button>@endif</p>
 </form>
@@ -39,7 +39,7 @@ $unsafe{article}
 <h2>Tickets</h2>
 <ul>
 @for(ticket in tickets)
-    <li><a href="${ticket.href}">${ticket.title}</a> · ${ticket.status ?: ""}</li>
+    <li><a href="${ticket.href}">$unsafe{ants.Transcript.inline(ticket.title)}</a> · ${ticket.status ?: ""}</li>
 @endfor
 </ul>
 @endif

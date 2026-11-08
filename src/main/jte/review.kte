@@ -1,4 +1,3 @@
-@import ants.inlineCode
 @param entry: ants.TaskEntry
 @param changes: List<ants.RepoChanges>
 @param comments: List<ants.LineComment>
@@ -15,17 +14,17 @@
     <meta charset="utf-8">
     @template.app()
     <meta name="color-scheme" content="${colorScheme}">
-    <title>${entry.icon} ${entry.tag} ${entry.task} · Ants</title>
+    <title>${entry.icon} ${entry.tag} ${ants.Transcript.plain(entry.task)} · Ants</title>
     <script src="/review.js" defer></script>
     <script type="module" src="/highlight.js"></script>
 </head>
 <body>
 @template.nav(shell = shell)
 <main class="${if (tab == "story") "full" else null}">
-<div class="crumbs"><a href="/runs">Runs</a> / <a href="/runs/${entry.run}">${entry.runName}</a> / ${entry.task}</div>
-<div class="ph"><h1>${entry.task} <span class="pill p-waiting">Waiting on you</span> @template.tag(entry = entry)</h1>
-    <div class="acts"><span class="muted small">User Task</span></div><div class="sub">${entry.summary}</div></div>
-@if(error != null)<p role="alert">${error}</p>@endif
+<div class="crumbs"><a href="/runs">Runs</a> / <a href="/runs/${entry.run}">$unsafe{ants.Transcript.inline(entry.runName)}</a> / $unsafe{ants.Transcript.inline(entry.task)}</div>
+<div class="ph"><h1>$unsafe{ants.Transcript.inline(entry.task)} <span class="pill p-waiting">Waiting on you</span> @template.tag(entry = entry)</h1>
+    <div class="acts"><span class="muted small">User Task</span></div><div class="sub">$unsafe{ants.Transcript.inline(entry.summary)}</div></div>
+@if(error != null)<p role="alert">$unsafe{ants.Transcript.inline(error)}</p>@endif
 <div class="grid3 repos">
     @for(changed in changes)!{val repo = changed.repo}
     <div class="card"><b class="mono">${repo.repo}</b> <span class="muted small">on ${repo.branch}</span><div class="mono small muted" title="${repo.remote}">${repo.shortRemote}</div>
@@ -36,43 +35,43 @@
 @elseif(tab == "story")<div class="tabs"><a class="on" href="?tab=story">Story</a><a href="?tab=repo">By repo</a></div>
 @else<div class="tabs"><a href="?tab=story">Story</a><a class="on" href="?tab=repo">By repo</a></div>
 @endif
-@if(refused != null)<p role="alert">${refused}</p>@endif
+@if(refused != null)<p role="alert">$unsafe{ants.Transcript.inline(refused)}</p>@endif
 @if(stories != null)!{val uncovered = stories.remainder.values.sum()}
 <div class="storyview">
-    <details class="spine fold"><summary>Stories</summary><nav><div class="stitle">${stories.title}</div>
+    <details class="spine fold"><summary>Stories</summary><nav><div class="stitle">$unsafe{ants.Transcript.inline(stories.title)}</div>
         @for(i in stories.stories.indices)!{val story = stories.stories[i]}
-        <a class="srow" href="#s${i + 1}-1"><span>${story.name}</span><span class="cnt">${story.steps.size} step${if (story.steps.size == 1) "" else "s"}@if(story.stale > 0) · <span class="stalecnt">${story.stale} stale</span>@endif</span></a>
-        <ol class="ssteps" data-story="${i + 1}">@for(j in story.steps.indices)<li><a href="#s${i + 1}-${j + 1}">@if(story.steps[j].stale != null)⚠ @endif${story.steps[j].name}</a></li>@endfor</ol>
+        <a class="srow" href="#s${i + 1}-1"><span>$unsafe{ants.Transcript.inline(story.name)}</span><span class="cnt">${story.steps.size} step${if (story.steps.size == 1) "" else "s"}@if(story.stale > 0) · <span class="stalecnt">${story.stale} stale</span>@endif</span></a>
+        <ol class="ssteps" data-story="${i + 1}">@for(j in story.steps.indices)<li><a href="#s${i + 1}-${j + 1}">@if(story.steps[j].stale != null)⚠ @endif$unsafe{ants.Transcript.inline(story.steps[j].name)}</a></li>@endfor</ol>
         @endfor
         <div class="srem"><div><b>Remainder</b> · ${uncovered} change${if (uncovered == 1) "" else "s"} no step covers</div>
             @for(file in stories.remainder.entries)<div class="rf"><span class="mono"><b>${file.key.first}</b> · ${file.key.second}</span><span class="muted">${file.value} hunk${if (file.value == 1) "" else "s"}</span></div>
             @endfor</div>
     </nav></details>
     <div id="walkMain">
-        <div class="card" id="stories"><div class="muted small">Story set</div><h3>${stories.title}</h3>
+        <div class="card" id="stories"><div class="muted small">Story set</div><h3>$unsafe{ants.Transcript.inline(stories.title)}</h3>
             @for(i in stories.stories.indices)!{val story = stories.stories[i]}
-            <div class="sover"><a href="#s${i + 1}-1"><b>${story.name}</b></a> <span class="muted small">${story.steps.size} step${if (story.steps.size == 1) "" else "s"}</span><div class="small">$unsafe{inlineCode(story.premise)}</div>
-                <div class="small muted">${story.steps.joinToString(" → ") { it.name }}</div></div>
+            <div class="sover"><a href="#s${i + 1}-1"><b>$unsafe{ants.Transcript.inline(story.name)}</b></a> <span class="muted small">${story.steps.size} step${if (story.steps.size == 1) "" else "s"}</span><div class="small">$unsafe{ants.Transcript.inline(story.premise)}</div>
+                <div class="small muted">$unsafe{ants.Transcript.inline(story.steps.joinToString(" → ") { it.name })}</div></div>
             @endfor
             <div class="help">Pick a story to walk it one step at a time.</div></div>
         @for(i in stories.stories.indices)!{val story = stories.stories[i]}
         <section class="walkstory" data-story="${i + 1}">
-            <div class="row walkhead"><b>${story.name}</b><span class="muted small">$unsafe{inlineCode(story.premise)}</span><span class="grow"></span><button type="button" class="ghost small" data-all>All stories</button></div>
+            <div class="row walkhead"><b>$unsafe{ants.Transcript.inline(story.name)}</b><span class="muted small">$unsafe{ants.Transcript.inline(story.premise)}</span><span class="grow"></span><button type="button" class="ghost small" data-all>All stories</button></div>
             <div class="walksteps">
             @for(j in story.steps.indices)!{val step = story.steps[j]}
             <div class="step" data-step="${j + 1}">
                 <div class="cfile"><span class="mono"><b>${step.repo}</b> · ${step.path}</span><span class="grow"></span><label class="small row"><input type="checkbox" class="showdiff"> Show the diff</label></div>
                 <div class="code" data-file="${step.path}">@for(line in step.code)<div class="${line.css}"><span class="ln">${line.number}</span><span class="bar"></span><span class="tx">${line.text}</span></div>@endfor</div>
                 <div class="band">
-                    <div class="claim">@if(step.stale != null)<span class="stale">STALE</span> @endif$unsafe{inlineCode(step.claim)}</div>
-                    @if(step.values.isNotEmpty())<div class="vals">@for(value in step.values)<span class="${if (value.cite != null) "cited" else "inv"}" title="${if (value.cite != null) "from ${value.cite}" else "not found in the code"}">${value.name}: <b>${value.value}</b> <span class="small">[${value.provenance}]</span></span>@endfor</div>@endif
+                    <div class="claim">@if(step.stale != null)<span class="stale">STALE</span> @endif$unsafe{ants.Transcript.inline(step.claim)}</div>
+                    @if(step.values.isNotEmpty())<div class="vals">@for(value in step.values)<span class="${if (value.cite != null) "cited" else "inv"}" title="${if (value.cite != null) "from ${value.cite}" else "not found in the code"}">$unsafe{ants.Transcript.inline(value.name)}: <b>$unsafe{ants.Transcript.inline(value.value)}</b> <span class="small">[$unsafe{ants.Transcript.inline(value.provenance)}]</span></span>@endfor</div>@endif
                     <div class="kv small details">
-                        <span class="k">Why</span><span>$unsafe{inlineCode(step.why)}</span>
-                        @if(step.flow != null)<span class="k">Flow</span><span>in: $unsafe{inlineCode(step.flow!!.first)}<br>out: $unsafe{inlineCode(step.flow!!.second)}</span>@endif
-                        @if(step.nudge != null)<span class="k">Nudge</span><span>$unsafe{inlineCode(step.nudge!!)}</span>@endif
+                        <span class="k">Why</span><span>$unsafe{ants.Transcript.inline(step.why)}</span>
+                        @if(step.flow != null)<span class="k">Flow</span><span>in: $unsafe{ants.Transcript.inline(step.flow!!.first)}<br>out: $unsafe{ants.Transcript.inline(step.flow!!.second)}</span>@endif
+                        @if(step.nudge != null)<span class="k">Nudge</span><span>$unsafe{ants.Transcript.inline(step.nudge!!)}</span>@endif
                         @if(step.stale != null)<span class="k">Stale</span><span>Written against<br><code>${step.stale}</code><br>Now<br><code>${step.now}</code></span>@endif
                     </div>
-                    @for(k in comments.indices)!{val comment = comments[k]}@if(comment.story == story.name && comment.step == j + 1)<form class="row scomment" method="post" action="/notifications/${entry.id}/comments#s${i + 1}-${j + 1}"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><input type="hidden" name="tab" value="story"><span class="grow"><b>${comment.type}</b> <span class="cbody">${comment.body}</span></span><button class="ghost small" name="remove" value="${k}">Remove</button></form>@endif@endfor
+                    @for(k in comments.indices)!{val comment = comments[k]}@if(comment.story == story.name && comment.step == j + 1)<form class="row scomment" method="post" action="/notifications/${entry.id}/comments#s${i + 1}-${j + 1}"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><input type="hidden" name="tab" value="story"><span class="grow"><b>${comment.type}</b> <span class="cbody">$unsafe{ants.Transcript.inline(comment.body)}</span></span><button class="ghost small" name="remove" value="${k}">Remove</button></form>@endif@endfor
                     <form class="row stepcomment" method="post" action="/notifications/${entry.id}/comments#s${i + 1}-${j + 1}">
                         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
                         <input type="hidden" name="story" value="${story.name}">
@@ -108,7 +107,7 @@
         <div class="row"><b class="mono">${repo.repo}</b><span class="mono small muted" title="${repo.remote}">${repo.shortRemote}</span><code>${repo.branch}</code>
             <span class="muted small">since ${repo.base ?: "the start: the remote has no default branch"}</span><span class="grow"></span>
             <span class="small">${changed.files.size} file${if (changed.files.size == 1) "" else "s"} · <span class="plus">+${changed.added}</span> <span class="minus">−${changed.removed}</span></span></div>
-        <div class="commits">@for(commit in repo.commits)<div class="small"><span class="mono muted">${commit["sha"]?.take(7)}</span> ${commit["subject"]}</div>@endfor</div>
+        <div class="commits">@for(commit in repo.commits)<div class="small"><span class="mono muted">${commit["sha"]?.take(7)}</span> $unsafe{ants.Transcript.inline(commit["subject"])}</div>@endfor</div>
         @for(k in changed.files.indices)!{val file = changed.files[k]}
         <details id="f-${repo.repo}-${k + 1}" open>
             <summary><span class="mono small">${file.path.removePrefix("repos/${repo.repo}/")}</span> <span class="small"><span class="plus">+${file.added}</span> <span class="minus">−${file.removed}</span></span></summary>
@@ -145,7 +144,7 @@
         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
         @if(tab != null)<input type="hidden" name="tab" value="${tab}">@endif
         <span class="tag t-${comment.type}">${comment.type.lowercase().replaceFirstChar(Char::uppercase)}</span>
-        <span>@if(at >= 0)<a href="#s${at + 1}-${comment.step}">${comment.story} › ${stories!!.stories[at].steps.getOrNull(comment.step!! - 1)?.name}</a> @elseif(comment.story != null)${comment.story} step ${comment.step} @endif<span class="mono">${comment.file}:${comment.from}-${comment.to} (${comment.side})</span>: <span class="cbody">${comment.body}</span></span>
+        <span>@if(at >= 0)<a href="#s${at + 1}-${comment.step}">$unsafe{ants.Transcript.inline(comment.story)} › $unsafe{ants.Transcript.inline(stories!!.stories[at].steps.getOrNull(comment.step!! - 1)?.name)}</a> @elseif(comment.story != null)$unsafe{ants.Transcript.inline(comment.story)} step ${comment.step} @endif<span class="mono">${comment.file}:${comment.from}-${comment.to} (${comment.side})</span>: <span class="cbody">$unsafe{ants.Transcript.inline(comment.body)}</span></span>
         <span class="grow"></span><button class="ghost small" name="remove" value="${k}">Remove</button>
     </form>
     @endfor

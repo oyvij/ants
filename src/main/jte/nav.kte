@@ -8,7 +8,7 @@
     <button type="button" id="dashboards-toggle" aria-expanded="${shell.dashboardsOpen.toString()}" aria-controls="dashboards-list"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="10" rx="1.5"/><rect x="13" y="3" width="8" height="6" rx="1.5"/><rect x="13" y="11" width="8" height="10" rx="1.5"/><rect x="3" y="15" width="8" height="6" rx="1.5"/></svg>Dashboards<svg class="i chev" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></button>
     <div id="dashboards-list" class="sub" hidden="${!shell.dashboardsOpen}">
 @for(dashboard in shell.dashboards)
-        <a href="/dashboards/${dashboard.id}"><span class="clip">${dashboard.title}</span></a>
+        <a href="/dashboards/${dashboard.id}"><span class="clip">$unsafe{ants.Transcript.inline(dashboard.title)}</span></a>
 @endfor
         <form method="post" action="/dashboards">
             @if(shell.csrf != null)<input type="hidden" name="${shell.csrf.parameterName}" value="${shell.csrf.token}">@endif

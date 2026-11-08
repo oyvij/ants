@@ -2196,6 +2196,39 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `a Dashboard's and a Widget's titles show their Markdown, and the text as typed while edited`() = browse {
+        newDashboard()
+        val title = page.locator("h1#title")
+        title.click()
+        page.keyboard().press("ControlOrMeta+A")
+        page.keyboard().type("**Home** lab")
+        page.keyboard().press("Enter")
+        assertThat(title.locator("strong")).hasText("Home")
+        assertThat(title).hasText("Home lab")
+        assertThat(dashboardsList.locator("a.on strong")).hasText("Home")
+        assertThat(page).hasTitle("Home lab · Ants")
+        title.click()
+        assertThat(title).hasText("**Home** lab")
+        page.keyboard().press("Enter")
+        assertThat(title).hasText("Home lab")
+
+        val widget = addNumberWidget()
+        val name = widget.locator(".t")
+        assertThat(name).isFocused()
+        page.keyboard().type("*Free* disk")
+        page.keyboard().press("Enter")
+        page.keyboard().press("Escape")
+        assertThat(name.locator("em")).hasText("Free")
+        assertThat(name).hasText("Free disk")
+        page.locator("#edit").click()
+        assertThat(name).hasText("*Free* disk")
+        page.locator("#edit").click()
+        assertThat(name).hasText("Free disk")
+        page.reload()
+        assertThat(page.locator(".grid-stack-item .t em")).hasText("Free")
+    }
+
+    @Test
     fun `a Post arrives live on its open Dashboard with a brief highlight, and the Posting panel lists the Widget's address and data`() = browse {
         val dashboard = newDashboard()
         val widget = addNumberWidget()

@@ -26,14 +26,14 @@
     <meta charset="utf-8">
     @template.app()
     <meta name="color-scheme" content="${colorScheme}">
-    <title>${name} · Ants</title>
+    <title>${ants.Transcript.plain(name)} · Ants</title>
     <link rel="stylesheet" href="/vendor/camunda-bpmn-js/assets/base-navigated-viewer.css">
 </head>
 <body>
 @template.nav(shell = shell)
 <main>
-<div class="crumbs"><a href="/runs">Runs</a> / ${name}</div>
-<div class="ph"><h1><span id="name">${name}</span> <span class="pill p-${RUN_PILLS[run.stateName] ?: "quiet"}" id="state">${run.stateName}</span></h1>
+<div class="crumbs"><a href="/runs">Runs</a> / $unsafe{ants.Transcript.inline(name)}</div>
+<div class="ph"><h1><span id="name">$unsafe{ants.Transcript.inline(name)}</span> <span class="pill p-${RUN_PILLS[run.stateName] ?: "quiet"}" id="state">${run.stateName}</span></h1>
     <div class="acts">
 @if(run.endTime == null || variables.containsKey(ants.NAME))
         <button type="button" popovertarget="rename">Rename</button>
@@ -55,7 +55,7 @@
         </form>
 @endif
     </div>
-    <div class="sub"><a href="/processes/${run.processDefinitionKey}">${run.processDefinitionName ?: run.processDefinitionKey}</a> · started ${started}@if(branch != null) · branch <code>${branch}</code>@endif
+    <div class="sub"><a href="/processes/${run.processDefinitionKey}">$unsafe{ants.Transcript.inline(run.processDefinitionName ?: run.processDefinitionKey)}</a> · started ${started}@if(branch != null) · branch <code>${branch}</code>@endif
         · repos @if(cloned.isEmpty())none yet@else@for(repo in cloned)<code>${repo}</code> @endfor@endif
 @if(scope != null)        · <span id="scope">Repos picked: @for((i, repo) in scope.withIndex())@if(i > 0), @endif<code>${repo}</code>@endfor</span>@endif
 @if(profile != null)        · <span id="profile">Profile ${profile}</span>@endif
@@ -99,7 +99,7 @@
 <h2>Agent Tasks</h2>
 <dl>
 @for((task, state) in agentTasks)
-    <dt>${task}</dt><dd>${state}</dd>
+    <dt>$unsafe{ants.Transcript.inline(task)}</dt><dd>${state}</dd>
 @endfor
 </dl>
 @endif
@@ -107,7 +107,7 @@
 <h2>Transcripts</h2>
 <ul>
 @for((task, context) in transcripts)
-    <li><a href="/runs/${run.id}/tasks/${task}/transcript">${task}</a> · ${context}</li>
+    <li><a href="/runs/${run.id}/tasks/${task}/transcript">$unsafe{ants.Transcript.inline(task)}</a> · ${context}</li>
 @endfor
 </ul>
 @endif

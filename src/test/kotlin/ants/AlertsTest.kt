@@ -146,7 +146,7 @@ class AlertsTest : AntsTest() {
         val (permissionEntry, _) = entry(refused)
         val permission = next().payload()
         assertEquals("[permission]", permission["tag"])
-        assertEquals("writer wants to run `cargo outdated`", permission["text"])
+        assertEquals("writer wants to run \"cargo outdated\"", permission["text"])
         assertEquals(permissionEntry, permission["url"])
 
         assertNull(device.received.poll(3, SECONDS), "an entry alerted twice")

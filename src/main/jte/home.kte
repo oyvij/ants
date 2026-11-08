@@ -20,12 +20,12 @@
 <body>
 @template.nav(shell = shell)
 <main>
-<div class="ph"><h1 class="hello">${greeting}</h1><div class="acts"><a class="btn primary" href="/processes">Start a Run</a></div></div>
+<div class="ph"><h1 class="hello">$unsafe{ants.Transcript.inline(greeting)}</h1><div class="acts"><a class="btn primary" href="/processes">Start a Run</a></div></div>
 <div class="home">
 <div id="live">@template.glance(entries = entries, running = running, cap = cap, live = live, ended = ended, working = working, coming = coming)</div>
 <div class="card" id="start-a-run"><h3><svg class="i" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><path d="M6.5 10v3.5A2.5 2.5 0 0 0 9 16h5"/></svg> Start a Run</h3>
 @for(process in processes)
-    <div class="row item"><a class="grow" href="/processes/${process.key}">${process.name ?: process.key}</a>@template.readymark(key = process.key)</div>
+    <div class="row item"><a class="grow" href="/processes/${process.key}">$unsafe{ants.Transcript.inline(process.name ?: process.key)}</a>@template.readymark(key = process.key)</div>
 @endfor
 </div>
 </div>

@@ -33,8 +33,8 @@
 @template.nav(shell = shell)
 @endif
 <main>
-@if(!use)<div class="crumbs"><a href="/agents">Agents</a> / ${form.name.ifEmpty { "New" }}</div>@endif
-<div class="ph"><h1><span class="ent ent-agent"><svg class="i" viewBox="0 0 24 24"><rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 8V4M9 13v1M15 13v1"/></svg>${if (item == null) "New Agent" else form.name}</span></h1>
+@if(!use)<div class="crumbs"><a href="/agents">Agents</a> / $unsafe{ants.Transcript.inline(form.name.ifEmpty { "New" })}</div>@endif
+<div class="ph"><h1><span class="ent ent-agent"><svg class="i" viewBox="0 0 24 24"><rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 8V4M9 13v1M15 13v1"/></svg>$unsafe{ants.Transcript.inline(if (item == null) "New Agent" else form.name)}</span></h1>
 @if(draft != null)
     @template.drafthead(draft = draft)
 @elseif(yours != null)
@@ -42,7 +42,7 @@
 @endif
     <div class="acts">
 @if(readOnly)
-        <span class="muted small">Read-only (${where})</span>
+        <span class="muted small">Read-only ($unsafe{ants.Transcript.inline(where)})</span>
         <form method="post" action="${action}/copy"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>Copy</button></form>
 @if(yours?.head?.state == ants.DraftState.CHANGED)
         <form method="post" action="${action}/your-skills/discard" data-leaves-draft><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><button>Discard Draft</button></form>
@@ -62,7 +62,7 @@
     </div>
 @if(dependents != null)    <div class="sub">@template.usedby(dependents = dependents, none = "no Process")</div>@endif
 </div>
-@if(error != null)<p role="alert">${error}</p>@endif
+@if(error != null)<p role="alert">$unsafe{ants.Transcript.inline(error)}</p>@endif
 @if(yours != null)
 <form id="your-skills" class="card your-skills" method="post" action="${action}/your-skills" data-autosave="${yours.head.endpoint}" data-version="${yours.head.version.toString()}" data-leaves-draft>
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
@@ -70,7 +70,7 @@
     <div class="help">Skills you add to this shipped Agent, beside the ones it ships with. An update to Ants keeps them. A Skill brings no tools: one whose scripts need a tool the Agent lacks can run them only once you add it to Your tools. &nbsp;e.g. <span class="eg">diagnosing-bugs</span></div>
     <div class="chipsel">
 @for(skill in yours.skills)
-        <span class="c">$unsafe{skillIcon}${skill}<input type="hidden" name="skills" value="${skill}"><button type="button" title="Remove">×</button></span>
+        <span class="c">$unsafe{skillIcon}$unsafe{ants.Transcript.inline(skill)}<input type="hidden" name="skills" value="${skill}"><button type="button" title="Remove">×</button></span>
 @endfor
         <input id="add-skill" name="skills" list="skill-list" placeholder="Add a Skill, e.g. diagnosing-bugs" autocomplete="off">
     </div>
@@ -113,7 +113,7 @@
                         <option value="" selected="${form.model.isEmpty()}">none · runs on its level</option>
                         <optgroup label="Always the newest">
 @for(alias in models.aliases)
-                            <option value="${alias.key}" selected="${claude && form.model == alias.key}">${alias.key} · newest ${alias.key.replaceFirstChar(Char::uppercase)}${alias.value?.let { ", now " + models.label(it) }.orEmpty()}</option>
+                            <option value="${alias.key}" selected="${claude && form.model == alias.key}">${alias.key} · newest ${alias.key.replaceFirstChar(Char::uppercase)}${ants.Transcript.plain(alias.value?.let { ", now " + models.label(it) }.orEmpty())}</option>
 @endfor
                         </optgroup>
                         <optgroup label="A fixed version">
@@ -157,7 +157,7 @@
 @endif
             <div class="chipsel">
 @for(skill in ants.words(form.skills))
-                <span class="c">$unsafe{skillIcon}${if (skill == "*") "every Skill" else skill}<input type="hidden" name="skills" value="${skill}">@if(!readOnly)<button type="button" title="Remove">×</button>@endif</span>
+                <span class="c">$unsafe{skillIcon}$unsafe{ants.Transcript.inline(if (skill == "*") "every Skill" else skill)}<input type="hidden" name="skills" value="${skill}">@if(!readOnly)<button type="button" title="Remove">×</button>@endif</span>
 @endfor
 @if(!readOnly)
                 <input id="add-skill" name="skills" list="skill-list" placeholder="Add a Skill, e.g. implement" autocomplete="off">
@@ -165,7 +165,7 @@
             </div>
             <datalist id="skill-list">
 @for(skill in skills)
-                <option value="${skill.name}">${skill.description}</option>
+                <option value="${skill.name}">${ants.Transcript.plain(skill.description)}</option>
 @endfor
             </datalist>
             <template id="skill-chip"><span class="c">$unsafe{skillIcon}<input type="hidden" name="skills"><button type="button" title="Remove">×</button></span></template>
@@ -178,7 +178,7 @@
                 <div class="help">No Scripts yet. <button class="ghost small" form="new-script">New Script</button></div>
 @endif
 @for(script in scripts)
-                <label class="tick"><input type="checkbox" name="scripts" value="${script}" checked="${script in form.scriptList}"> ${script}</label>
+                <label class="tick"><input type="checkbox" name="scripts" value="${script}" checked="${script in form.scriptList}"> $unsafe{ants.Transcript.inline(script)}</label>
 @endfor
             </div>
         </fieldset>

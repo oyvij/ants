@@ -7,8 +7,8 @@
 @if(!bare)    <tr><th>Tag</th><th>Run · Task</th><th>Summary</th><th>Waiting</th></tr>@endif
 @for(entry in entries)
     <tr class="click" data-href="/notifications/${entry.id}"><td>@template.tag(entry = entry)</td>
-        <td>@if(entry.runName != null && entry.gone)<b>${entry.runName}</b> <span class="muted small">(gone)</span> · @elseif(entry.runName != null)<b><a href="/runs/${entry.run}">${entry.runName}</a></b> · @endif<a href="/notifications/${entry.id}">${entry.task}</a><div class="muted small">${entry.process}</div></td>
-        <td><span class="clip">${entry.summary}</span>@if(entry is ants.NoticeEntry && entry.repeats != null)<div class="muted small">${entry.repeats}</div>@endif</td><td class="muted small nowrap">${entry.waited}</td></tr>
+        <td>@if(entry.runName != null && entry.gone)<b>$unsafe{ants.Transcript.inline(entry.runName)}</b> <span class="muted small">(gone)</span> · @elseif(entry.runName != null)<b><a href="/runs/${entry.run}">$unsafe{ants.Transcript.inline(entry.runName)}</a></b> · @endif<a href="/notifications/${entry.id}">$unsafe{ants.Transcript.inline(entry.task)}</a><div class="muted small">$unsafe{ants.Transcript.inline(entry.process)}</div></td>
+        <td><span class="clip">$unsafe{ants.Transcript.inline(entry.summary)}</span>@if(entry is ants.NoticeEntry && entry.repeats != null)<div class="muted small">${entry.repeats}</div>@endif</td><td class="muted small nowrap">${entry.waited}</td></tr>
 @endfor
 </table>
 @endif

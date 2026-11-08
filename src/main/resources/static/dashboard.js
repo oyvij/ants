@@ -1,5 +1,6 @@
 // A Dashboard's page: its title is edited in place and saved as typed, and the menu and the tab show the
-// title kept, which an emptied one makes "Untitled dashboard". Enter ends the edit. A new Dashboard (`?new`) opens
+// title kept, which an emptied one makes "Untitled dashboard". A title shows its Markdown rendered, and the text as
+// typed while it is edited. Enter ends the edit. A new Dashboard (`?new`) opens
 // with its title selected, ready to type over.
 //
 // Its grid of Widgets opens in view mode, where nothing moves and text can be selected; **Edit layout** moves,
@@ -13,7 +14,7 @@ import { drawCharts } from '/charts.js';
 const title = document.getElementById('title');
 const id = title.dataset.id, csrf = document.querySelector('input[name=_csrf]').value;
 const link = document.querySelector(`#dashboards-list a[href="/dashboards/${id}"] .clip`);
-let timer = null, sending = Promise.resolve();
+let timer = null, sending = Promise.resolve(), titleHtml = title.innerHTML;
 
 /** Posts [fields] to [path] with the page's CSRF token; the answer's JSON. */
 const send = (path, fields) => fetch(path, { method: 'POST', body: new URLSearchParams({ _csrf: csrf, ...fields }) })
@@ -25,10 +26,12 @@ function save() {
     const typed = title.textContent;
     sending = sending
         .then(() => send(`/dashboards/${id}/title`, { title: typed }))
-        .then(({ title: kept }) => {
-            if (link) link.textContent = kept;
-            document.title = `${kept} · Ants`;
-            if (document.activeElement !== title) title.textContent = kept;
+        .then(({ title: kept, html, plain }) => {
+            title.dataset.source = kept;
+            titleHtml = html;
+            if (link) link.innerHTML = html;
+            document.title = `${plain} · Ants`;
+            if (document.activeElement !== title) title.innerHTML = html;
         })
         .catch(() => {}); // a failed save leaves the next one free to run
 }
@@ -42,7 +45,8 @@ title.addEventListener('keydown', event => {
     event.preventDefault();
     title.blur();
 });
-title.addEventListener('blur', () => timer ? save() : !title.textContent.trim() && (title.textContent = title.dataset.untitled));
+title.addEventListener('focus', () => { title.textContent = title.dataset.source; });
+title.addEventListener('blur', () => timer ? save() : (title.innerHTML = titleHtml));
 
 if (new URLSearchParams(location.search).has('new')) {
     history.replaceState(null, '', location.pathname);
@@ -56,10 +60,17 @@ const empty = document.getElementById('no-widgets'), addresses = document.getEle
 const grid = GridStack.init({ cellHeight: 70, margin: 8, handle: '.w-head', float: false, staticGrid: true, column: 12 }, '#grid');
 let loading = false;
 
+// A Widget's title, as its Markdown shows it, which edit mode swaps for the text as typed.
+const titles = new WeakMap();
+
 function setEditing(on) {
+    const swap = on !== editing();
     main.classList.toggle('editing', on);
     grid.setStatic(!on);
-    document.querySelectorAll('.w-head .t').forEach(t => t.contentEditable = on ? 'plaintext-only' : 'false');
+    document.querySelectorAll('.w-head .t').forEach(t => {
+        t.contentEditable = on ? 'plaintext-only' : 'false';
+        if (swap) on ? (t.textContent = t.dataset.source) : (t.innerHTML = titles.get(t));
+    });
     edit.textContent = on ? 'Done' : 'Edit layout';
     edit.ariaPressed = String(on);
 }
@@ -89,13 +100,22 @@ grid.on('change', (event, items) => {
 function wire(item) {
     const widget = item.getAttribute('gs-id'), t = item.querySelector('.t');
     let wait = null;
-    const keep = () => { clearTimeout(wait); wait = null; send(`/dashboards/${id}/widgets/${widget}/title`, { title: t.textContent }); };
+    titles.set(t, t.innerHTML);
+    const keep = () => {
+        clearTimeout(wait);
+        wait = null;
+        send(`/dashboards/${id}/widgets/${widget}/title`, { title: t.textContent }).then(({ title, html, plain }) => {
+            Object.assign(t.dataset, { source: title, plain });
+            titles.set(t, html);
+            if (!editing()) t.innerHTML = html;
+        });
+    };
     t.addEventListener('input', () => { clearTimeout(wait); wait = setTimeout(keep, 500); });
     t.addEventListener('blur', () => wait && keep());
     t.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); t.blur(); } });
     item.querySelector('.x').addEventListener('click', async () => {
         const breaks = item.querySelector('.widget').dataset.breaks;
-        if (!confirm(`Remove the Widget “${t.textContent}”? Its Posts go with it.` + (breaks ? ` ${breaks}` : ''))) return;
+        if (!confirm(`Remove the Widget “${t.dataset.plain}”? Its Posts go with it.` + (breaks ? ` ${breaks}` : ''))) return;
         await send(`/dashboards/${id}/widgets/${widget}/delete`, {});
         grid.removeWidget(item);
         addresses.querySelectorAll(`[data-widget="${widget}"]`).forEach(row => row.remove());
@@ -104,7 +124,7 @@ function wire(item) {
     // Clear data empties it once the user confirms; a log's days are kept as typed.
     const body = item.querySelector('.w-body');
     item.querySelector('.clear').addEventListener('click', async () => {
-        if (!confirm(`Clear the data of “${t.textContent}”? It keeps its id and title.`)) return;
+        if (!confirm(`Clear the data of “${t.dataset.plain}”? It keeps its id and title.`)) return;
         const cleared = await send(`/dashboards/${id}/widgets/${widget}/clear`, {});
         body.innerHTML = shown[widget] = cleared.body;
     });
@@ -152,6 +172,7 @@ for (const choice of menu.querySelectorAll('button[data-type]')) {
         setEditing(true);
         item.scrollIntoView({ block: 'nearest' });
         const t = item.querySelector('.t');
+        t.textContent = t.dataset.source;
         t.focus();
         getSelection().selectAllChildren(t);
     });

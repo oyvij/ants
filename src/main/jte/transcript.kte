@@ -15,7 +15,7 @@
     <meta charset="utf-8">
     @template.app()
     <meta name="color-scheme" content="${colorScheme}">
-    <title>${view.name} · Transcript · Ants</title>
+    <title>${ants.Transcript.plain(view.name)} · Transcript · Ants</title>
 </head>
 <body>
 @template.nav(shell = shell)
@@ -35,7 +35,7 @@ $unsafe{entry}
 $unsafe{transcript.html("live")}
 $unsafe{transcript.html("status")}
 </div>
-@if(error != null)<p role="alert">${error}</p>@endif
+@if(error != null)<p role="alert">$unsafe{ants.Transcript.inline(error)}</p>@endif
 @if(sendHint != null)
 <div class="composer"><form method="post" action="/runs/${run}/tasks/${task}/transcript/send">
     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
