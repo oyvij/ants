@@ -2,6 +2,7 @@
 @param token: String?
 @param report: List<ants.Setup.Landed>?
 @param refusal: String?
+@param keyRefusal: String?
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
 @param shell: ants.Shell
@@ -48,6 +49,10 @@
 @endif
         </tbody>
     </table>
+@if(preview.keptValues)
+    <label class="cap">Safe key of the Ants that exported it, which opens its Kept values<input type="password" name="safe-key" autocomplete="off" required></label>
+@endif
+@if(keyRefusal != null)<p role="alert">$unsafe{ants.Transcript.inline(keyRefusal)}</p>@endif
     <p class="row"><button class="primary">Import</button> <a href="/settings">Cancel</a></p>
 </form>
 @elseif(report != null)
