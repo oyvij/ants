@@ -63,25 +63,29 @@ class SecretStore(home: Path, password: String? = null) {
         if (!locked) write { it["key-saved"] = true }
     }
 
+    /** The current password that didn't open the wrapping (reset outside Ants): the Safe key's unlock wraps with it. */
+    private var stale: String? = null
+
     /**
-     * A login with [password] unlocks a locked Safe, unless the password doesn't open its wrapping (a wrong one, or one
-     * reset outside Ants), and wraps an unlocked Safe that no password wraps yet.
+     * A login with [password] unlocks a locked Safe, and wraps an unlocked Safe that the password doesn't open. A password
+     * that doesn't open the wrapping (one reset by `ants password` or the environment, as a wrong one never logs in)
+     * leaves the Safe locked until the Safe key unlocks it, which then wraps it with this password.
      */
     @Synchronized
     fun unlock(password: String) {
         val stored = stored()
-        val wrapped = stored["wrapped"] as? String
-        if (!locked) {
-            if (wrapped == null) rewrap(password)
-            return
+        val opened = (stored["wrapped"] as? String)?.let {
+            try {
+                decrypt(derive(password, decode(stored["salt"])), decode(it))
+            } catch (_: AEADBadTagException) {
+                null
+            }
         }
-        if (wrapped == null) return
-        val opened = try {
-            decrypt(derive(password, decode(stored["salt"])), decode(wrapped))
-        } catch (_: AEADBadTagException) {
-            return
+        when {
+            !locked -> if (opened == null) rewrap(password)
+            opened == null -> stale = password
+            else -> open(opened).also { stale = null }
         }
-        open(opened)
     }
 
     /** The Safe key, as [newKey] showed it, unlocks a locked Safe; false, and the Safe stays locked, if it doesn't open it. */
@@ -89,7 +93,7 @@ class SecretStore(home: Path, password: String? = null) {
     fun unlockWithKey(key: String): Boolean {
         if (!locked) return true
         val opened = runCatching { Base64.getDecoder().decode(key.trim()) }.getOrNull()?.takeIf { it.size == 32 } ?: return false
-        return runCatching { open(opened) }.isSuccess
+        return runCatching { open(opened) }.onSuccess { stale?.let(::rewrap) }.isSuccess
     }
 
     private fun open(opened: ByteArray) {
