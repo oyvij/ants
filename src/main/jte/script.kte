@@ -86,13 +86,15 @@
         <div class="fld"><label class="f" for="widgets">Widgets</label><div class="help">The Widgets it Posts to with <code>await ants.post(address, data)</code>, one address a line, as a Dashboard's Posting panel lists them. A Post to any other is refused.</div>
             <textarea id="widgets" class="mono" name="widgets" rows="2" placeholder="e.g. d-4k2m9x/w-7hq3pz">${form.widgets}</textarea></div>
     </div>
-    <div class="card"><h3>Secrets</h3><div class="help">The Script's own Secrets, kept apart from its Draft: Save Secrets keeps them at once, and the published Script uses them from its next run. A value is kept in the Safe, encrypted, never shown again; left blank, the saved one stays. A Secret removed, or with its name cleared, goes on Save Secrets.</div>
+    <div class="card"><h3>Secrets</h3><div class="help">The Script's own Secrets, kept apart from its Draft: Save Secrets keeps them at once, and the published Script uses them from its next run. A value is kept in the Safe, encrypted, never shown again; left blank, the saved one stays. A Lookup is a pointer into your password manager, such as <code>op://Dev/slack/token</code>, that its <a href="/settings">Secret Provider</a> resolves at each run; the published Script lists only the name. A Secret removed, or with its name cleared, goes on Save Secrets.</div>
         <div class="listed" data-secrets>
 @for((i, row) in form.shownOwn.withIndex())
             <div class="row">
                 <input type="hidden" name="secrets[${i}].was" value="${row.was}">
                 <label class="cap grow">Name<input class="mono" name="secrets[${i}].name" value="${row.name}" placeholder="e.g. SLACK_TOKEN"></label>
-                <label class="cap grow">Value<input type="password" name="secrets[${i}].value" placeholder="${if (row.set) "••••" else "e.g. xoxb-1234"}" autocomplete="new-password"></label>
+                <label class="cap">Kind<select name="secrets[${i}].kind"><option value="kept">Kept</option><option value="lookup" selected="${row.lookup != null}">Lookup</option></select></label>
+                <label class="cap grow lookup">Lookup<input class="mono" name="secrets[${i}].lookup" value="${row.lookup}" placeholder="e.g. op://Dev/slack/token"></label>
+                <label class="cap grow kept">Value<input type="password" name="secrets[${i}].value" placeholder="${if (row.set) "••••" else "e.g. xoxb-1234"}" autocomplete="new-password"></label>
             </div>
 @endfor
         </div>

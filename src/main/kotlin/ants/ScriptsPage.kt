@@ -18,7 +18,8 @@ import java.time.Instant
 import kotlin.io.path.createDirectories
 import kotlin.io.path.writeText
 
-data class OwnSecretRow(val name: String, val value: String = "", val was: String = "") {
+/** A row of the Script page's Secrets card: a Kept Secret's [value], typed and not yet saved, or a Lookup's pointer. */
+data class OwnSecretRow(val name: String, val value: String = "", val was: String = "", val lookup: String? = null) {
     val set get() = was.isNotEmpty()
 }
 
@@ -56,10 +57,17 @@ data class ScriptForm(
         ?: ScriptSchema.names(inputs).firstOrNull { !FIELD_NAME.matches(it) }?.let { "An input's name is letters, digits, hyphens and underscores, not $it." }
         ?: envError(varsMap.keys + own.map { it.name })
 
-    /** The card's rows as the Script with the [kept] own Secrets has them: a row naming a kept one is set, and a kept one no row names gets a row. */
-    fun keeping(kept: Set<String>) = copy(
-        own = own.map { OwnSecretRow(it.name, was = it.name.takeIf(kept::contains).orEmpty()) } + kept.filter { name -> own.none { it.name == name } }.map { OwnSecretRow(it, was = it) },
+    /**
+     * The card's rows as the Script with the [kept] own Secrets, [lookups] among them, has them: a row naming a kept one
+     * is set, showing its saved pointer if a Lookup, and a kept one no row names gets a row.
+     */
+    fun keeping(kept: Set<String>, lookups: Map<String, String> = emptyMap()) = copy(
+        own = own.map { OwnSecretRow(it.name, was = it.name.takeIf(kept::contains).orEmpty(), lookup = if (it.name in kept) lookups[it.name] else it.lookup) } +
+            kept.filter { name -> own.none { it.name == name } }.map { OwnSecretRow(it, was = it, lookup = lookups[it]) },
     )
+
+    /** The card's Lookups, each Secret's name to its pointer. */
+    val ownLookups: Map<String, String> get() = own.mapNotNull { row -> row.lookup?.let { row.name to it } }.toMap()
 
     /** The form's fields as its page posts them, which [of] reads back. */
     fun fields(): Map<String, List<String>> {
@@ -80,6 +88,7 @@ data class ScriptForm(
         for ((i, row) in own.withIndex()) {
             fields["secrets[$i].name"] = listOf(row.name)
             fields["secrets[$i].was"] = listOf(row.was)
+            row.lookup?.let { fields["secrets[$i].kind"] = listOf("lookup"); fields["secrets[$i].lookup"] = listOf(it) }
         }
         if (linked.isNotEmpty()) fields["linked"] = linked
         return fields
@@ -94,7 +103,7 @@ data class ScriptForm(
         fun of(params: Map<String, List<String>>): ScriptForm {
             fun param(name: String) = params[name]?.firstOrNull().orEmpty()
             val own = generateSequence(0, Int::inc).takeWhile { "secrets[$it].name" in params }
-                .map { OwnSecretRow(param("secrets[$it].name").trim(), param("secrets[$it].value"), param("secrets[$it].was")) }
+                .map { OwnSecretRow(param("secrets[$it].name").trim(), param("secrets[$it].value"), param("secrets[$it].was"), param("secrets[$it].lookup").trim().takeIf { _ -> param("secrets[$it].kind") == "lookup" }) }
                 .filter { it.name.isNotEmpty() }.toList()
             return ScriptForm(param("name").trim(), param("description").trim(), param("code"), ScriptSchema.rows(params, "inputs"), param("vars"), own, params["linked"].orEmpty(), ScriptSchema.rows(params, "output"), param("widgets"))
         }
@@ -138,7 +147,7 @@ class ScriptsPage(
 
     /** A Script page's fields: the Draft's when there is one. */
     private val ScriptItem.fields: Map<String, List<String>>
-        get() = draft?.let(::scriptFields) ?: published!!.let { ScriptForm.of(it, scripts.code(it), scripts.ownSecrets(it.id).keys).fields() }
+        get() = draft?.let(::scriptFields) ?: published!!.let { ScriptForm.of(it, scripts.code(it), scripts.ownNames(it.id)).fields() }
 
     /** The Script whose page is /scripts/[name]: a published one by its name, else a Draft-only one by its key. */
     private fun item(name: String): ScriptItem = items.item(name)
@@ -186,7 +195,7 @@ class ScriptsPage(
     fun saveSecrets(@PathVariable name: String, @RequestParam params: MultiValueMap<String, String>): ResponseEntity<Map<String, Any>> {
         val item = item(name)
         val error = keepSecrets(item, ScriptForm.of(params))
-            ?: return ResponseEntity.ok(mapOf("secrets" to scripts.ownSecrets(item.id).keys.toList(), "saved" to "Secrets saved ${shortTime(Instant.now())}"))
+            ?: return ResponseEntity.ok(mapOf("secrets" to scripts.ownNames(item.id).toList(), "saved" to "Secrets saved ${shortTime(Instant.now())}"))
         return ResponseEntity.badRequest().body(mapOf("error" to error))
     }
 
@@ -202,8 +211,11 @@ class ScriptsPage(
     /** Saves [form]'s rows as [item]'s own Secrets, or says why not. */
     private fun keepSecrets(item: ScriptItem, form: ScriptForm): String? {
         val own = ownValues(form, scripts.ownSecrets(item.id))
-        val error = ScriptForm.envError(form.own.map { it.name }) ?: form.own.firstOrNull { it.name !in own }?.let { "The Secret ${it.name} needs a value." }
-        if (error == null) scripts.saveSecrets(item.id, own)
+        val lookups = form.ownLookups
+        val error = ScriptForm.envError(form.own.map { it.name })
+            ?: form.own.firstOrNull { it.name !in own && it.name !in lookups }?.let { "The Secret ${it.name} needs a value." }
+            ?: lookups.entries.firstOrNull { !LOOKUP.matches(it.value) }?.let { "The Secret ${it.key}'s Lookup is a pointer with a scheme, such as op://Dev/npm/token." }
+        if (error == null) scripts.saveSecrets(item.id, own, lookups)
         return error
     }
 
@@ -266,7 +278,12 @@ class ScriptsPage(
         try {
             val code = scratch.resolve("script.mjs").apply { writeText(form.code) }
             val workspace = scratch.resolve("workspace").createDirectories()
-            return result(runner.run(script, scripts.secretEnvironment(script, own), code, workspace, TEST_RUN, inputs, Sender(script, TEST_RUN, TEST_RUN, trying = true)))
+            val secrets = try {
+                scripts.secretEnvironment(script, own, form.ownLookups)
+            } catch (failed: SecretProviders.Failed) {
+                return result(ScriptRun(-1, failed.message + "\n", null))
+            }
+            return result(runner.run(script, secrets, code, workspace, TEST_RUN, inputs, Sender(script, TEST_RUN, TEST_RUN, trying = true)))
         } finally {
             scratch.toFile().deleteRecursively()
         }
@@ -275,7 +292,7 @@ class ScriptsPage(
     private fun result(run: ScriptRun) = mapOf("exitCode" to run.exitCode, "output" to run.output, "payload" to run.payload, "mismatches" to run.mismatches)
 
     private fun ownValues(form: ScriptForm, savedSecrets: Map<String, String>) =
-        form.own.mapNotNull { row -> row.value.ifEmpty { savedSecrets[row.was.ifEmpty { row.name }] }?.let { row.name to it } }.toMap()
+        form.own.filter { it.lookup == null }.mapNotNull { row -> row.value.ifEmpty { savedSecrets[row.was.ifEmpty { row.name }] }?.let { row.name to it } }.toMap()
 
     /**
      * Publishes the page's [params] as [item], with the own Secrets its Secrets card saved, or shows the page with why
@@ -285,7 +302,7 @@ class ScriptsPage(
         val form = ScriptForm.of(params)
         val modal = "use" in params
         val edited = item.published
-        val kept = scripts.ownSecrets(item.id)
+        val kept = scripts.ownNames(item.id)
         val error = form.error(scripts.all(), edited?.name)
             ?: "A Script named ${form.name} already exists.".takeIf { taken(form.name, item.id) }
             ?: form.own.firstOrNull { it.name !in kept }?.let { "The Secret ${it.name} needs a value: save it on the Secrets card." }
@@ -295,7 +312,7 @@ class ScriptsPage(
             model.addAttribute("errors", errors.map { it.sentence })
             return PublishOutcome.Refused(show(model.addAttribute("use", modal), form, item, "The Script has ${if (errors.size == 1) "an error" else "${errors.size} errors"}, so it wasn't published:"))
         }
-        val script = form.script(item.id, edited).copy(secrets = (kept.keys + form.linked).distinct())
+        val script = form.script(item.id, edited).copy(secrets = (kept + form.linked).distinct())
         scripts.save(script, form.code, null)
         return PublishOutcome.Published("/scripts/${script.name}" + if (modal) "?saved" else "")
     }
@@ -305,7 +322,7 @@ class ScriptsPage(
         yaml.dump(params.filterKeys { it !in NOT_DRAFTED && !SECRET_VALUE.matches(it) }.mapValues { (_, values) -> values.toList() })
 
     private fun show(model: Model, form: ScriptForm, item: ScriptItem, message: String? = null): String {
-        model.addAttribute("form", form.keeping(scripts.ownSecrets(item.id).keys))
+        model.addAttribute("form", form.keeping(scripts.ownNames(item.id), scripts.ownLookups(item.id)))
         model.addAttribute("saved", item.name)
         model.addAttribute("draft", item.head)
         model.addAttribute("labels", (settings.secrets().keys + form.linked).distinct())
@@ -323,6 +340,7 @@ class ScriptsPage(
         private val NOT_DRAFTED = setOf("_csrf", "version", "tab", "seq", "use", "script", "sample")
         private val SECRET_VALUE = Regex("""secrets\[\d+]\.value""")
         private val WAS = Regex("""secrets\[\d+]\.was""")
+        private val LOOKUP = Regex("""[a-z][a-z0-9+.-]*://\S+""")
     }
 }
 

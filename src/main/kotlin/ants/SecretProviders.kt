@@ -17,8 +17,10 @@ class SecretProviders(private val settings: Settings, private val store: SecretS
     internal var timeLimit: Duration = Duration.ofSeconds(30)
 
     /** The value of the Secret [label], null for a Kept one with none; throws [Failed] when its Lookup can't be resolved. */
-    fun value(label: String): String? {
-        val pointer = settings.lookups()[label] ?: return store.settingsValues()[label]
+    fun value(label: String): String? = settings.lookups()[label]?.let { lookUp(label, it) } ?: store.settingsValues()[label]
+
+    /** The value [pointer] resolves to, the Lookup of the Secret [label], such as a Script's own; throws [Failed] when it can't be resolved. */
+    fun lookUp(label: String, pointer: String): String {
         val scheme = pointer.substringBefore("://", "")
         val provider = settings.secretProviders()[scheme] ?: throw Failed("Ants couldn't look up the Secret $label: no Secret Provider resolves $scheme://.")
         val kept = store.settingsValues()

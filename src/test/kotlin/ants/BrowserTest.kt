@@ -1467,6 +1467,31 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `the Secrets card's Kind toggles a Secret to a Lookup, which shows its pointer instead of a Value, and the published Script lists its name only`() = browse {
+        http.publishNew("/scripts", listOf("name" to "post", "description" to "Posts.", "code" to "console.log('hi')\n", "inputs" to "", "vars" to ""))
+        val folder = home.resolve("scripts").toFile().listFiles()!!.single { "name: post" in it.resolve("script.yaml").readText() }.toPath()
+        page.navigate(url("/scripts/post"))
+        val card = page.locator(card("Secrets"))
+        val row = card.locator(".listed > .row").first()
+        val lookup = row.getByLabel("Lookup", Locator.GetByLabelOptions().setExact(true))
+        assertThat(lookup).isHidden()
+        row.getByLabel("Name").fill("SLACK_TOKEN")
+        row.getByLabel("Kind").selectOption("Lookup")
+        assertThat(row.getByLabel("Value")).isHidden()
+        lookup.fill("op://Dev/slack/token")
+        card.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Save Secrets")).click()
+        assertThat(card.locator("[data-secrets-state]")).hasText(Pattern.compile("^Secrets saved \\d\\d:\\d\\d$"))
+        assertEquals(listOf("SLACK_TOKEN"), org.yaml.snakeyaml.Yaml().load<Map<*, *>>(folder.resolve("script.yaml").readText())["secrets"])
+        assertFalse("op://" in folder.resolve("script.yaml").readText())
+
+        page.navigate(url("/scripts/post"))
+        assertThat(row.getByLabel("Kind")).hasValue("lookup")
+        assertThat(lookup).hasValue("op://Dev/slack/token")
+        assertThat(row.getByLabel("Value")).isHidden()
+        page.screenshot("script-secret-lookup")
+    }
+
+    @Test
     fun `a Secret saved on a Draft-only Script's card survives a reload and is there after Publish, and a refused Save says why`() = browse {
         http.get("/scripts")
         page.navigate(url(http.post("/scripts/new/draft", emptyMap()).path))

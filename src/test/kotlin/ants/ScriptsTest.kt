@@ -783,6 +783,50 @@ class ScriptsTest : AntsTest() {
         browser.post("${copy.path}/delete", mapOf("confirm" to "on"))
     }
 
+    @Autowired
+    lateinit var library: Scripts
+
+    @Test
+    fun `a Script's own Secret can be a Lookup, resolved by its Secret Provider into the Script's environment and masked, and its definition lists the name only`() {
+        // A fake Secret Provider for `fake://`: it writes its arguments beside itself and prints a value per pointer, or fails for `broken`.
+        val provider = java.nio.file.Files.createTempDirectory("provider").resolve("lookup")
+        provider.writeText(
+            "#!/bin/sh\nprintf '[%s]\\n' \"$@\" >> \"$0.args\"\n" +
+                "case \"$2\" in *broken*) echo \"no item\"; exit 1;; *npm*) echo s3cret-npm-looked;; *) echo s3cret-looked-up;; esac\n",
+        )
+        provider.toFile().setExecutable(true)
+        home.resolve("settings.yaml").writeText(
+            "node: {path: $NODE}\nclaude: {env: [PATH, HOME]}\nsecrets:\n  npm: [NPM_TOKEN]\nlookups:\n  npm: fake://Dev/npm\n" +
+                "secret-providers:\n  fake:\n    command: $provider read {ref}\n    secrets: []\n",
+        )
+        val code = "console.log(`token ${'$'}{process.env.TOKEN} npm ${'$'}{process.env.NPM_TOKEN}`)\n"
+        create(form("looker", code = code, linked = listOf("npm")))
+        val lookup = listOf("secrets[0].name" to "TOKEN", "secrets[0].kind" to "lookup", "secrets[0].lookup" to "fake://Dev/token", "secrets[0].value" to "", "secrets[0].was" to "")
+        val saved = browser.post("/scripts/looker/secrets", lookup)
+        assertEquals(200, saved.status, saved.body)
+        val folder = folder("looker")
+        assertEquals(listOf("TOKEN", "npm"), definition(folder)["secrets"])
+        assertFalse("fake://" in folder.resolve("script.yaml").readText()) // the definition lists names, never a pointer
+        assertNull(savedSecrets("looker"))
+        val page = browser.get("/scripts/looker").body
+        assertContains(page, """name="secrets[0].lookup" value="fake://Dev/token"""")
+        assertContains(page, """<option value="lookup" selected>""")
+
+        val script = library.named("looker")!!
+        val run = runner.run(script, library.secretEnvironment(script), library.file(script), java.nio.file.Files.createTempDirectory("ws"), "r-1", emptyMap<String, Any>(), Sender(script, "r-1", "t"))
+        assertEquals(0, run.exitCode, run.output)
+        assertEquals("token •••• npm ••••\n", run.output)
+        assertEquals("[read]\n[fake://Dev/token]\n[read]\n[fake://Dev/npm]\n", Path.of("$provider.args").readText()) // its own Lookup, then the one in Settings
+
+        assertEquals("token •••• npm ••••\n", testRun(form("looker", code = code, linked = listOf("npm")) + lookup, script = "looker")["output"])
+        val failed = testRun(form("looker", code = code) + lookup.map { if (it.first.endsWith("lookup")) it.first to "fake://broken" else it }, script = "looker")
+        assertEquals(-1, failed["exitCode"])
+        assertEquals("Ants couldn't look up the Secret TOKEN: its Secret Provider exited 1:\nno item\n", failed["output"])
+
+        browser.post("/scripts/looker/delete", mapOf("confirm" to "on"))
+        assertFalse("fake://Dev/token" in home.resolve("settings.yaml").readText())
+    }
+
     companion object {
         /** The schema card's rows for [spec], inputs such as `text, count:number`, each optional and with no description, as the page posts them. */
         fun inputRows(spec: String): List<Pair<String, String>> = spec.split(',').map(String::trim).filter(String::isNotEmpty).withIndex().flatMap { (i, input) ->
