@@ -12,7 +12,7 @@ import java.util.concurrent.TimeoutException
 import kotlin.io.path.isDirectory
 
 @Component
-class ProtectedCommands(private val settings: Settings, private val mcp: Mcp, private val store: SecretStore) {
+class ProtectedCommands(private val settings: Settings, private val mcp: Mcp, private val store: SecretStore, private val providers: SecretProviders) {
     /** How long a Protected Command may run before Ants kills it. */
     internal var timeLimit: Duration = Duration.ofMinutes(10)
 
@@ -53,9 +53,12 @@ class ProtectedCommands(private val settings: Settings, private val mcp: Mcp, pr
         val dir = runCatching { root.resolve(folder).toRealPath() }.getOrNull()?.takeIf { it.startsWith(root) && it.isDirectory() }
             ?: throw Refused("$folder is no folder in the Run workspace, so Ants ran nothing.")
         val names = settings.secrets()
-        val values = store.settingsValues()
         val secrets = labels.flatMap { label ->
-            val value = values[label] ?: throw Refused("The Secret $label has no value, so Ants ran nothing. End stuck: the user sets it in Settings.")
+            val value = try {
+                providers.value(label)
+            } catch (failed: SecretProviders.Failed) {
+                throw Refused("${failed.message}\nAnts ran nothing. End stuck: the user fixes the Lookup or its Secret Provider in Settings.")
+            } ?: throw Refused("The Secret $label has no value, so Ants ran nothing. End stuck: the user sets it in Settings.")
             names[label].orEmpty().map { it to value }
         }
         val process = try {

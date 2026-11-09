@@ -429,6 +429,45 @@ class SettingsTest : AntsTest() {
     }
 
     @Test
+    fun `a Lookup keeps its pointer in settings yaml and on the page, and a Secret Provider runs with Kept Secrets only`() {
+        try {
+            fun save(vararg form: Pair<String, String>): String {
+                browser.get("/settings")
+                return browser.post("/settings", form.toList() + ("action" to "save")).body.replace("&#34;", "\"")
+            }
+            val secrets = arrayOf(
+                "secrets[0].label" to "op", "secrets[0].kind" to "kept", "secrets[0].value" to "tok-op", "secrets[0].names" to "OP_SERVICE_ACCOUNT_TOKEN", "secrets[0].was" to "",
+                "secrets[1].label" to "npm", "secrets[1].kind" to "lookup", "secrets[1].value" to "", "secrets[1].lookup" to "op://Dev/npm/token",
+                "secrets[1].names" to "NPM_TOKEN", "secrets[1].was" to "",
+            )
+            save(*secrets, "secret-providers[0].scheme" to "op", "secret-providers[0].command" to "op read {ref}", "secret-providers[0].secrets" to "op")
+            assertEquals(mapOf("op" to listOf("OP_SERVICE_ACCOUNT_TOKEN"), "npm" to listOf("NPM_TOKEN")), yaml()["secrets"])
+            assertEquals(mapOf("npm" to "op://Dev/npm/token"), yaml()["lookups"])
+            assertEquals(mapOf("op" to mapOf("command" to listOf("op", "read", "{ref}"), "secrets" to listOf("op"))), yaml()["secret-providers"])
+            assertEquals(mapOf("op" to "tok-op"), secretStore.settingsValues())
+            val page = browser.get("/settings").body.replace("&#34;", "\"")
+            assertFalse("tok-" in page)
+            assertContains(page, """name="secrets[1].lookup" value="op://Dev/npm/token"""")
+            assertContains(page, """<option value="lookup" selected>Lookup</option>""")
+            assertContains(page, """name="secret-providers[0].command" value="op read {ref}"""")
+            assertContains(page, "1Password service account")
+
+            val refused = listOf(
+                save(*secrets, "secret-providers[0].scheme" to "op", "secret-providers[0].command" to "op read {ref}", "secret-providers[0].secrets" to "npm") to
+                    "The Secret Provider op needs Kept Secrets from the list above.",
+                save(*secrets, "secret-providers[0].scheme" to "op", "secret-providers[0].command" to "op read") to
+                    "A Secret Provider's command needs {ref}, where the pointer goes, such as op read {ref}.",
+                save("secrets[0].label" to "npm", "secrets[0].kind" to "lookup", "secrets[0].lookup" to "Dev/npm", "secrets[0].names" to "NPM_TOKEN", "secrets[0].was" to "npm") to
+                    "A Lookup is a pointer with a scheme, such as op://Dev/npm/token.",
+            )
+            for ((page, alert) in refused) assertContains(page, alert)
+            assertEquals(mapOf("npm" to "op://Dev/npm/token"), yaml()["lookups"])
+        } finally {
+            secretStore.saveSettingsValues(emptyMap())
+        }
+    }
+
+    @Test
     fun `changing the password takes effect at the next login`() {
         press("save", mapOf("password" to "s3cret"))
         assertTrue(yaml()["password"].toString().startsWith("{bcrypt}"))

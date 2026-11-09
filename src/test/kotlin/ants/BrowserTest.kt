@@ -5699,6 +5699,46 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `on Settings, a Secret toggled to Lookup shows its pointer instead of a Value, and a Secret Provider picks Kept Secrets`() = browse {
+        settings(null, "secrets:\n  op: [OP_SERVICE_ACCOUNT_TOKEN]\n")
+        secretStore.saveSettingsValues(mapOf("op" to "tok-op"))
+        try {
+            page.navigate(url("/settings"))
+            fun card(title: String) = page.locator(".card", Page.LocatorOptions().setHas(page.locator("h3:text-is('$title')")))
+            val card = card("Secrets")
+            card.getByText("＋ Add").click()
+            val added = card.locator(".listed > .row:visible").nth(1)
+            assertThat(added.getByLabel("Lookup", Locator.GetByLabelOptions().setExact(true))).isHidden()
+            added.getByLabel("Label").fill("npm")
+            added.getByLabel("Kind").selectOption("Lookup")
+            assertThat(added.getByLabel("Value")).isHidden()
+            added.getByLabel("Lookup", Locator.GetByLabelOptions().setExact(true)).fill("op://Dev/npm/token")
+            added.getByLabel("Variable names").fill("NPM_TOKEN")
+            val providers = card("Secret Providers")
+            assertThat(providers).containsText("1Password service account")
+            providers.getByText("＋ Add").click()
+            val provider = providers.locator(".listed > .row:visible").first()
+            provider.getByLabel("Scheme").fill("op")
+            provider.getByLabel("Command").fill("op read {ref}")
+            assertThat(provider.getByLabel("Secrets").locator("option")).hasText(arrayOf("op")) // Kept ones only
+            provider.getByLabel("Secrets").selectOption("op")
+            page.locator(".ph button.primary").click()
+            eventually {
+                val saved = org.yaml.snakeyaml.Yaml().load<Map<*, *>>(home.resolve("settings.yaml").readText())
+                assertEquals(mapOf("npm" to "op://Dev/npm/token"), saved["lookups"])
+                assertEquals(mapOf("op" to mapOf("command" to listOf("op", "read", "{ref}"), "secrets" to listOf("op"))), saved["secret-providers"])
+            }
+            page.navigate(url("/settings"))
+            val lookup = card("Secrets").locator(".listed > .row:visible").nth(1)
+            assertThat(lookup.getByLabel("Lookup", Locator.GetByLabelOptions().setExact(true))).hasValue("op://Dev/npm/token")
+            assertThat(lookup.getByLabel("Value")).isHidden()
+            assertFalse("tok-op" in page.content())
+        } finally {
+            secretStore.saveSettingsValues(emptyMap())
+        }
+    }
+
+    @Test
     fun `a page follows one SSE connection, so three tabs on Run pages and a Transcript leave a fourth free to navigate`() = browse {
         settings(null)
         val (process, plane) = row("followed", """<bpmn:startEvent id="start" />""", """<bpmn:userTask id="wait" name="Wait" />""", """<bpmn:endEvent id="end" />""")
