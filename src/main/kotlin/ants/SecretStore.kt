@@ -3,7 +3,9 @@ package ants
 import org.yaml.snakeyaml.Yaml
 import java.nio.file.Path
 import java.security.SecureRandom
+import java.time.Instant
 import java.util.Base64
+import java.util.concurrent.CountDownLatch
 import javax.crypto.AEADBadTagException
 import javax.crypto.Cipher
 import javax.crypto.SecretKeyFactory
@@ -34,6 +36,14 @@ class SecretStore(home: Path, password: String? = null) {
 
     /** Settings Secrets' values by label under `settings`, each Script's own by its id under `scripts`. */
     private var values = mutableMapOf<String, MutableMap<String, String>>()
+
+    /** Since when a Task has waited on the locked Safe ([whenUnlocked]); null while none waits. */
+    @Volatile
+    var waitingSince: Instant? = null
+        private set
+
+    /** What each waiting Task does once the Safe is unlocked. */
+    private val held = mutableListOf<() -> Unit>()
 
     init {
         if (file.exists()) password?.let(::unlock)
@@ -71,9 +81,41 @@ class SecretStore(home: Path, password: String? = null) {
         } catch (_: AEADBadTagException) {
             return
         }
-        values = parse(decrypt(opened, decode(stored["values"])).decodeToString())
-        key = opened
+        open(opened)
     }
+
+    /** The Safe key, as [newKey] showed it, unlocks a locked Safe; false, and the Safe stays locked, if it doesn't open it. */
+    @Synchronized
+    fun unlockWithKey(key: String): Boolean {
+        if (!locked) return true
+        val opened = runCatching { Base64.getDecoder().decode(key.trim()) }.getOrNull()?.takeIf { it.size == 32 } ?: return false
+        return runCatching { open(opened) }.isSuccess
+    }
+
+    private fun open(opened: ByteArray) {
+        values = parse(decrypt(opened, decode(stored()["values"])).decodeToString())
+        key = opened
+        waitingSince = null
+        held.toList().also { held.clear() }.forEach { runCatching(it) }
+    }
+
+    /** Forgets the Safe key and every value, until a login or the Safe key unlocks the Safe again. */
+    @Synchronized
+    fun lock() {
+        key = null
+        values = mutableMapOf()
+    }
+
+    /** Runs [go] once the Safe is unlocked, now if it is: a Task that needs a Secret waits so, as on a Permission request. */
+    @Synchronized
+    fun whenUnlocked(go: () -> Unit) {
+        if (!locked) return go()
+        if (held.isEmpty()) waitingSince = Instant.now()
+        held += go
+    }
+
+    /** Waits on this thread until the Safe is unlocked. */
+    fun awaitUnlocked() = CountDownLatch(1).also { whenUnlocked(it::countDown) }.await()
 
     /** Wraps the Safe key with [password], the new login password. */
     @Synchronized

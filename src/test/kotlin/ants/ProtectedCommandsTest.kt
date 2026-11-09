@@ -216,6 +216,26 @@ class ProtectedCommandsTest : AntsTest() {
         assertFalse(Files.walk(workspace(run)).filter { it.isRegularFile() && it.fileName.toString() !in listOf("env.out", "yarn") }.anyMatch { "s3cret" in it.readText() })
     }
 
+    @Test
+    fun `on a locked Safe the run tool waits, on the Notification list, and runs the Protected Command once the Safe is unlocked`() {
+        val (_, launch) = yarn()
+        val (url, authorization) = server(launch)
+        secretStore.lock()
+        try {
+            val answer = java.util.concurrent.CompletableFuture.supplyAsync { call(url, authorization, listOf("./yarn"), folder = "sub") }
+            eventually { assertContains(browser.get("/notifications").body, "The Safe is locked") }
+            assertFalse(answer.isDone)
+
+            secretStore.unlock("admin")
+            val text = ((answer.get().second["result"] as Map<*, *>)["content"] as List<*>).single().let { (it as Map<*, *>)["text"].toString() }
+            assertTrue(text.startsWith("Exit code 3"), text)
+            assertFalse("The Safe is locked" in browser.get("/notifications").body)
+        } finally {
+            secretStore.unlock("admin")
+            claude.release("go")
+        }
+    }
+
     @Autowired
     lateinit var protectedCommands: ProtectedCommands
 

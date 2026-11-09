@@ -169,6 +169,38 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `Settings shows whether the Safe is locked, refuses a wrong Safe key, and the Safe key unlocks it`() = browse {
+        val home = tempHome()
+        val hashed = org.springframework.security.crypto.factory.PasswordEncoderFactories.createDelegatingPasswordEncoder().encode("admin")
+        home.createDirectories().resolve("settings.yaml").writeText("password: '$hashed'\n")
+        // No plain password at boot: the Safe key is wrapped by no login yet, so after a restart only the Safe key opens it.
+        val key = startAnother(home).use { it.getBean(SecretStore::class.java).newKey()!! }
+        startAnother(home).use { ants ->
+            val base = "http://127.0.0.1:${(ants as org.springframework.boot.web.server.context.WebServerApplicationContext).webServer!!.port}"
+            page.navigate("$base/login")
+            page.fill("input[name=username]", "admin")
+            page.fill("input[name=password]", "admin") // a login that opens no wrapping leaves the Safe locked
+            page.click("button[type=submit]")
+            page.waitForURL { !it.contains("/login") }
+            page.navigate("$base/settings")
+            val state = page.locator(".safe-state")
+            assertThat(state).containsText("The Safe is locked")
+
+            page.fill("input[name=key]", "not the key")
+            page.getByText("Unlock", Page.GetByTextOptions().setExact(true)).click()
+            assertThat(page.locator(".toast")).containsText("not the Safe key")
+            assertThat(state).containsText("The Safe is locked")
+            assertTrue(ants.getBean(SecretStore::class.java).locked)
+
+            page.fill("input[name=key]", key)
+            page.getByText("Unlock", Page.GetByTextOptions().setExact(true)).click()
+            assertThat(state).containsText("The Safe is unlocked")
+            assertThat(page.locator("input[name=key]")).hasCount(0)
+            assertFalse(ants.getBean(SecretStore::class.java).locked)
+        }
+    }
+
+    @Test
     fun `the hover menu appends an Agent, User or Built-in Task and offers nothing Ants doesn't run`() = browse {
         newProcess("Hover menu")
         for ((action, name) in listOf("append.agent-task" to "Agent Task", "append.user-task" to "User Task", "append.built-in-task" to "Built-in Task")) {

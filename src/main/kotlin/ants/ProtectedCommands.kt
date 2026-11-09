@@ -53,7 +53,8 @@ class ProtectedCommands(private val settings: Settings, private val mcp: Mcp, pr
         val dir = runCatching { root.resolve(folder).toRealPath() }.getOrNull()?.takeIf { it.startsWith(root) && it.isDirectory() }
             ?: throw Refused("$folder is no folder in the Run workspace, so Ants ran nothing.")
         val names = settings.secrets()
-        val values = store.settingsValues()
+        if (labels.isNotEmpty()) store.awaitUnlocked()
+        val values = if (labels.isEmpty()) emptyMap() else store.settingsValues()
         val secrets = labels.flatMap { label ->
             val value = values[label] ?: throw Refused("The Secret $label has no value, so Ants ran nothing. End stuck: the user sets it in Settings.")
             names[label].orEmpty().map { it to value }

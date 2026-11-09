@@ -103,7 +103,10 @@ class Scripts(@Value("\${ants.home}") home: Path, private val settings: Settings
     }
 
     /** The environment holding [script]'s Secrets' values, [own] being its own ones. */
-    fun secretEnvironment(script: Script, own: Map<String, String> = ownSecrets(script.id)): Map<String, String> {
+    fun secretEnvironment(script: Script, own: Map<String, String>? = null): Map<String, String> {
+        if (script.secrets.isEmpty()) return emptyMap()
+        store.awaitUnlocked() // a Script tool's call waits on a locked Safe
+        val own = own ?: ownSecrets(script.id)
         val names = settings.secrets()
         val values = store.settingsValues()
         return script.secrets.flatMap { secret ->
