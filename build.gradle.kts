@@ -114,6 +114,9 @@ tasks.withType<Test> {
         events("failed")
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
     }
+    // Ants runs H2 without assertions, and so do the tests. With them on, an `assert` in H2's own background compaction
+    // (FreeSpaceBitSet.allocate) now and then fails, which closes the database for every later test in the JVM.
+    jvmArgs("-da:org.h2...")
 }
 
 // What modeler.js writes as text, checked by Node's own test runner with no browser, as part of `test`.

@@ -326,18 +326,22 @@ class Browser(private val base: String, private val diagram: (String) -> String 
 
     /**
      * Opens a page's SSE stream, `/live?[query]`, the way its `EventSource` does; the data of each event named [name]
-     * arrives on the queue.
+     * arrives on the queue. A virtual thread of its own reads the stream for its minute: a `sendAsync(…).thenAccept`
+     * reading it blocked a shared pool thread, or the caller itself when the response came before `thenAccept` did, so
+     * a test under load sat out the stream's minute and the calls relayed to it went unread.
      */
     fun events(query: String, name: String): BlockingQueue<String> {
         val events = LinkedBlockingQueue<String>()
-        var event = ""
-        client.sendAsync(HttpRequest.newBuilder(URI("$base/live?$query")).header("Accept", "text/event-stream").GET().build(), HttpResponse.BodyHandlers.ofLines())
-            .thenAccept { response ->
-                response.body().forEach {
+        val request = HttpRequest.newBuilder(URI("$base/live?$query")).header("Accept", "text/event-stream").GET().build()
+        Thread.ofVirtual().start {
+            var event = ""
+            runCatching { // the stream ends when it times out, or the client closes
+                client.send(request, HttpResponse.BodyHandlers.ofLines()).body().forEach {
                     if (it.startsWith("event:")) event = it.removePrefix("event:")
                     if (it.startsWith("data:") && event == name) events += it.removePrefix("data:")
                 }
             }
+        }
         return events
     }
 
