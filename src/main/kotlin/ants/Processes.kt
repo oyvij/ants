@@ -441,7 +441,7 @@ private const val OPERATON = "http://operaton.org/schema/1.0/bpmn"
 internal const val BPMN = "http://www.omg.org/spec/BPMN/20100524/MODEL"
 internal const val BPMNDI = "http://www.omg.org/spec/BPMN/20100524/DI"
 
-private val ProcessDefinition.shipped get() = resourceName.startsWith("shipped/")
+internal val ProcessDefinition.shipped get() = resourceName.startsWith("shipped/")
 
 internal fun Settings.hides(process: ProcessDefinition) = hideShipped() && process.shipped
 
@@ -515,6 +515,6 @@ internal fun operatonOnly(document: Document) {
 }
 
 /** A Process id that is a plain folder name: no separator, and never `.` or `..`. */
-private val SAFE_KEY = Regex("[A-Za-z_][A-Za-z0-9_.-]*")
+internal val SAFE_KEY = Regex("[A-Za-z_][A-Za-z0-9_.-]*")
 
 internal fun processFolder(home: Path, key: String): Path? = home.resolve("processes").resolve(key).takeIf { SAFE_KEY.matches(key) }
