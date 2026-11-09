@@ -89,8 +89,11 @@ class SecretStoreTest {
     @Test
     fun `a Task waiting on a locked Safe goes on once it is unlocked, and the Safe says since when one waits`() {
         val key = assertNotNull(store.newKey())
+        store.saveSettingsValues(mapOf("npm" to "s3cret-npm"))
+        store.lookedUp("s3cret-looked-up")
         store.lock()
         assertTrue(store.locked)
+        assertEquals(emptyList(), store.masks().toList()) // locking forgets Kept and looked-up values alike
         assertNull(store.waitingSince)
         val waiter = Thread { store.awaitUnlocked() }.apply { start() }
         eventually { assertNotNull(store.waitingSince) }

@@ -197,7 +197,10 @@ data class ProfileRow(val name: String, val vault: String, val sourceMap: String
  * One Secret on the settings page: its label, its variable names, the value typed in, which the page never shows, the
  * label it was saved under, whose value a blank one keeps, and whether it has a value [set].
  */
-data class SecretRow(val label: String, val names: String, val value: String = "", val was: String = "", val set: Boolean = false)
+data class SecretRow(val label: String, val names: String, val value: String = "", val was: String = "", val set: Boolean = false, val lookup: String? = null)
+
+/** One Secret Provider on the settings page: the scheme it resolves, its command with `{ref}`, and the labels of the Kept Secrets it runs with. */
+data class ProviderRow(val scheme: String, val command: String, val secrets: List<String>)
 
 /** One Protected Command on the settings page: its prefix and the labels of the Secrets it runs with. */
 data class ProtectedCommandRow(val prefix: String, val secrets: List<String>)
@@ -217,6 +220,7 @@ data class SettingsForm(
     val defaultProfile: Int,
     val secrets: List<SecretRow>,
     val protectedCommands: List<ProtectedCommandRow>,
+    val providers: List<ProviderRow>,
     val agentFolders: String,
     val skillFolders: String,
     val theme: String,
@@ -228,7 +232,7 @@ data class SettingsForm(
         agentTasks.isNotEmpty() && (agentTasks.toIntOrNull() ?: 0) < 1 -> "Agent Tasks at once must be a whole number, 1 or more."
         subagentDepth.isNotEmpty() && (subagentDepth.toIntOrNull() ?: 0) < 1 -> "Subagent depth must be a whole number, 1 or more."
         retries.isNotEmpty() && (retries.toIntOrNull() ?: -1) < 0 -> "Retries must be a whole number, 0 or more."
-        else -> vaults.error("Vault") ?: sourceMaps.error("Source map") ?: profileError() ?: secretError() ?: protectedCommandError()
+        else -> vaults.error("Vault") ?: sourceMaps.error("Source map") ?: profileError() ?: secretError() ?: protectedCommandError() ?: providerError()
     }
 
     /** The Profile rows plus an empty one, which adds the next. */
@@ -236,6 +240,9 @@ data class SettingsForm(
 
     /** The Secret rows plus an empty one, which adds the next. */
     val shownSecrets get() = secrets + SecretRow("", "")
+
+    /** The Secret Provider rows plus an empty one, which adds the next. */
+    val shownProviders get() = providers + ProviderRow("", "", emptyList())
 
     /** The Protected Command rows plus an empty one, which adds the next. */
     val shownProtectedCommands get() = protectedCommands + ProtectedCommandRow("", emptyList())
@@ -245,7 +252,8 @@ data class SettingsForm(
     private fun renamedProfiles() = profiles.filter { it.was.isNotEmpty() && it.was != it.name }.associate { it.was to it.name }
 
     private fun secretError() = when {
-        secrets.any { it.label.isEmpty() || words(it.names).isEmpty() || (it.value.isEmpty() && it.was.isEmpty()) } -> "Every Secret needs a label, a value and a variable name."
+        secrets.any { it.label.isEmpty() || words(it.names).isEmpty() || (it.lookup == null && it.value.isEmpty() && it.was.isEmpty()) } -> "Every Secret needs a label, a value and a variable name."
+        secrets.any { it.lookup != null && !Regex("[a-z][a-z0-9+.-]*://\\S+").matches(it.lookup) } -> "A Lookup is a pointer with a scheme, such as op://Dev/npm/token."
         secrets.flatMap { words(it.names) }.any { !Regex("[A-Z_][A-Z0-9_]*").matches(it) } ->
             "A variable name is capitals, digits and underscores, such as NPM_TOKEN: the variable the command reads the Secret from."
         secrets.map { it.label }.toSet().size < secrets.size -> "Two Secrets have the same label."
@@ -255,6 +263,13 @@ data class SettingsForm(
     private fun protectedCommandError() = protectedCommands.firstOrNull { row -> row.secrets.any { it !in secrets.map(SecretRow::label) } }
         ?.let { "The Protected Command ${it.prefix} needs Secrets from the list above." }
         ?: "Two Protected Commands have the same prefix.".takeIf { protectedCommands.map { it.prefix }.toSet().size < protectedCommands.size }
+
+    private fun providerError(): String? {
+        val kept = secrets.filter { it.lookup == null }.map(SecretRow::label)
+        return providers.firstOrNull { "{ref}" !in words(it.command) }?.let { "A Secret Provider's command needs {ref}, where the pointer goes, such as op read {ref}." }
+            ?: providers.firstOrNull { row -> row.secrets.any { it !in kept } }?.let { "The Secret Provider ${it.scheme} needs Kept Secrets from the list above." }
+            ?: "Two Secret Providers have the same scheme.".takeIf { providers.map { it.scheme }.toSet().size < providers.size }
+    }
 
     private fun profileError(): String? {
         val vaultNames = vaults.rows.map { it.first }
@@ -271,7 +286,7 @@ data class SettingsForm(
     fun save(settings: Settings, store: SecretStore, password: String, encoder: PasswordEncoder) {
         val saved = store.settingsValues()
         val removed = removedProfiles(settings)
-        store.saveSettingsValues(secrets.mapNotNull { row -> row.value.ifEmpty { saved[row.was] }?.let { row.label to it } }.toMap())
+        store.saveSettingsValues(secrets.filter { it.lookup == null }.mapNotNull { row -> row.value.ifEmpty { saved[row.was] }?.let { row.label to it } }.toMap())
         settings.save { values -> write(values, password, encoder) }
         if (password.isNotEmpty()) store.rewrap(password)
         settings.keepInstructions(renamedProfiles(), removed)
@@ -297,6 +312,8 @@ data class SettingsForm(
         values.keep("profiles", profiles.associate { it.name to mapOf("vault" to it.vault, "source-map" to it.sourceMap) + it.verbosity.setting })
         values.keep("default-profile", profiles.getOrNull(defaultProfile)?.name)
         values.keep("secrets", secrets.associate { it.label to words(it.names) })
+        values.keep("lookups", secrets.mapNotNull { row -> row.lookup?.let { row.label to it } }.toMap())
+        values.keep("secret-providers", providers.associate { it.scheme to mapOf("command" to words(it.command), "secrets" to it.secrets) })
         values.keep("protected-commands", protectedCommands.associate { it.prefix to it.secrets })
         values.keep("agent-folders", agentFolders.lines().map(String::trim).filter(String::isNotEmpty))
         values.keep("skill-folders", skillFolders.lines().map(String::trim).filter(String::isNotEmpty))
@@ -327,8 +344,10 @@ data class SettingsForm(
                 profiles = settings.profiles().map { (name, profile) -> ProfileRow(name, profile.vault.orEmpty(), profile.sourceMap.orEmpty(), was = name, verbosity = profile.verbosity) },
                 defaultProfile = settings.profiles().keys.indexOf(settings.defaultProfile()),
                 secrets = (if (store.locked) emptySet() else store.settingsValues().keys).let { set ->
-                    settings.secrets().map { (label, names) -> SecretRow(label, names.joinToString(", "), was = label, set = label in set) }
+                    val lookups = settings.lookups()
+                    settings.secrets().map { (label, names) -> SecretRow(label, names.joinToString(", "), was = label, set = label in set, lookup = lookups[label]) }
                 },
+                providers = settings.secretProviders().map { (scheme, provider) -> ProviderRow(scheme, provider.command.joinToString(" "), provider.secrets) },
                 protectedCommands = settings.protectedCommands().map { (prefix, labels) -> ProtectedCommandRow(prefix, labels) },
                 agentFolders = lines(values["agent-folders"]),
                 skillFolders = lines(values["skill-folders"]),
@@ -354,11 +373,17 @@ data class SettingsForm(
             val profiles = allProfiles.filter { it.name.isNotEmpty() }
             // The value is posted as typed, never trimmed.
             val secrets = generateSequence(0, Int::inc).takeWhile { "secrets[$it].label" in params }
-                .map { SecretRow(param("secrets[$it].label"), param("secrets[$it].names"), params["secrets[$it].value"].orEmpty(), param("secrets[$it].was"), set = param("secrets[$it].was").isNotEmpty()) }
+                .map {
+                    val lookup = param("secrets[$it].lookup").takeIf { _ -> param("secrets[$it].kind") == "lookup" }
+                    SecretRow(param("secrets[$it].label"), param("secrets[$it].names"), params["secrets[$it].value"].orEmpty(), param("secrets[$it].was"), set = param("secrets[$it].was").isNotEmpty(), lookup = lookup)
+                }
                 .filter { it.label.isNotEmpty() }.toList()
             val commands = generateSequence(0, Int::inc).takeWhile { "protected-commands[$it].prefix" in params }
                 .map { ProtectedCommandRow(Settings.strings(param("protected-commands[$it].prefix")).orEmpty().joinToString(" "), param("protected-commands[$it].secrets").lines().filter(String::isNotEmpty)) }
                 .filter { it.prefix.isNotEmpty() }.toList()
+            val providers = generateSequence(0, Int::inc).takeWhile { "secret-providers[$it].scheme" in params }
+                .map { ProviderRow(param("secret-providers[$it].scheme").removeSuffix("://"), param("secret-providers[$it].command"), param("secret-providers[$it].secrets").lines().filter(String::isNotEmpty)) }
+                .filter { it.scheme.isNotEmpty() }.toList()
             return SettingsForm(
                 paths = Settings.CLIS.associateWith { param("$it.path") },
                 commands = Settings.AI_CLIS.associateWith { param("$it.command") },
@@ -372,6 +397,7 @@ data class SettingsForm(
                 defaultProfile = profiles.indexOf(param("default-profile").toIntOrNull()?.let(allProfiles::getOrNull)),
                 secrets = secrets,
                 protectedCommands = commands,
+                providers = providers,
                 agentFolders = param("agent-folders"),
                 skillFolders = param("skill-folders"),
                 theme = param("theme").ifEmpty { "system" },
