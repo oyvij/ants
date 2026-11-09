@@ -26,10 +26,10 @@ class SetupPage(private val setup: Setup, private val clock: Clock) {
     private val uploaded = ConcurrentHashMap<String, ByteArray>()
 
     @GetMapping("/settings/setup/export")
-    fun export(): ResponseEntity<ByteArray> = ResponseEntity.ok()
+    fun export(@RequestParam(defaultValue = "false") kept: Boolean): ResponseEntity<ByteArray> = ResponseEntity.ok()
         .contentType(MediaType.parseMediaType("application/zip"))
         .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment().filename("ants-setup-${LocalDate.now(clock)}.zip").build().toString())
-        .body(setup.export())
+        .body(setup.export(keptValues = kept))
 
     @PostMapping("/settings/setup/import")
     fun upload(@RequestParam file: MultipartFile, model: Model): String {
@@ -49,13 +49,16 @@ class SetupPage(private val setup: Setup, private val clock: Clock) {
         val zip = uploaded.remove(token) ?: return show(model, refusal = "That preview has gone: upload the Setup again.")
         val choices = ticked.orEmpty().associateWith { Setup.Choice(params["rename:$it"]) }
         return try {
-            show(model, report = setup.import(zip, choices))
+            show(model, report = setup.import(zip, choices, params["safe-key"]))
         } catch (e: Setup.Refused) {
-            show(model, refusal = e.message)
+            // Such as a wrong Safe key: nothing landed, so the same preview asks again.
+            uploaded[token] = zip
+            show(model, preview = setup.preview(zip), token = token, keyRefusal = e.message)
         }
     }
 
-    private fun show(model: Model, preview: Setup.Preview? = null, token: String? = null, report: List<Setup.Landed>? = null, refusal: String? = null): String {
+    private fun show(model: Model, preview: Setup.Preview? = null, token: String? = null, report: List<Setup.Landed>? = null, refusal: String? = null, keyRefusal: String? = null): String {
+        model.addAttribute("keyRefusal", keyRefusal)
         model.addAttribute("preview", preview)
         model.addAttribute("token", token)
         model.addAttribute("report", report)

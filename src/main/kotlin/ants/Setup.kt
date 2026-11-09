@@ -60,9 +60,12 @@ interface SetupKind {
  * A Setup (ADR 0034): what the user made, without its history, as one zip laid out like ANTS_HOME with `setup.yaml`
  * holding the Ants version that wrote it. [export] writes one, [preview] reads one into what Import would do with each
  * item, and [import] lands the items the user confirmed, each on its own, into a report.
+ *
+ * The Kept values of its Secret labels and Scripts travel only when asked for, in `safe.yaml`, encrypted with the
+ * exporting Safe key (ADR 0033), which Import then needs.
  */
 @Component
-class Setup(private val kinds: List<SetupKind>, build: BuildProperties) {
+class Setup(private val kinds: List<SetupKind>, build: BuildProperties, private val store: SecretStore) {
     private val version = build.version
 
     enum class Status(val label: String) { NEW("New"), REPLACES("Replaces"), CLASHES("Clashes") }
@@ -77,8 +80,8 @@ class Setup(private val kinds: List<SetupKind>, build: BuildProperties) {
         val problem get() = item.problem
     }
 
-    /** A Setup's items as Import would land them, written by Ants [version]. */
-    data class Preview(val version: String, val items: List<Previewed>)
+    /** A Setup's items as Import would land them, written by Ants [version], and whether it carries [keptValues], which need its Safe key. */
+    data class Preview(val version: String, val items: List<Previewed>, val keptValues: Boolean = false)
 
     /** A ticked item, under its own name, or [rename] when given. */
     data class Choice(val rename: String? = null)
@@ -89,11 +92,15 @@ class Setup(private val kinds: List<SetupKind>, build: BuildProperties) {
     /** A file Import refuses whole, saying why. */
     class Refused(message: String) : RuntimeException(message)
 
-    /** The user's own items of every kind as a Setup. */
-    fun export(): ByteArray = ByteArrayOutputStream().also { bytes ->
+    /**
+     * The user's own items of every kind as a Setup, with the Kept values of its Secret labels and Scripts, encrypted
+     * with the Safe key, when [keptValues]; throws while the Safe is locked.
+     */
+    fun export(keptValues: Boolean = false): ByteArray = ByteArrayOutputStream().also { bytes ->
         ZipOutputStream(bytes).use { zip ->
             val meta = mapOf("ants" to version) + kinds.flatMap { it.exportSettings().entries.map { (key, value) -> key to value } }
-            val files = mapOf(SETUP_FILE to yaml.dump(meta).toByteArray()) + kinds.flatMap { it.export().entries.map { (path, data) -> path to data } }
+            val items = kinds.flatMap { it.export().entries.map { (path, data) -> path to data } }.toMap()
+            val files = mapOf(SETUP_FILE to yaml.dump(meta).toByteArray()) + items + (if (keptValues) mapOf(SAFE_FILE to kept(meta, items.keys)) else emptyMap())
             for ((path, data) in files) {
                 zip.putNextEntry(ZipEntry(path))
                 zip.write(data)
@@ -102,9 +109,21 @@ class Setup(private val kinds: List<SetupKind>, build: BuildProperties) {
         }
     }.toByteArray()
 
+    /** The Kept values of the Secret labels in [meta] and the Scripts among [paths], sealed with the Safe key, as `safe.yaml` holds them. */
+    private fun kept(meta: Map<String, Any?>, paths: Set<String>): ByteArray {
+        val labels = (meta[SECRETS] as? Map<*, *>).orEmpty().keys.map { "$it" } - (meta[LOOKUPS] as? Map<*, *>).orEmpty().keys.map { "$it" }.toSet()
+        val scripts = paths.filter { it.startsWith("$SCRIPTS/") }.map { it.split('/')[1] }.distinct()
+        val values = mapOf(
+            SECRETS to store.settingsValues().filterKeys { it in labels },
+            SCRIPTS to scripts.associateWith(store::scriptValues).filterValues { it.isNotEmpty() },
+        )
+        return yaml.dump(mapOf("sealed" to store.seal(values))).toByteArray()
+    }
+
     /** Every item in [zip] as New, Replaces or Clashes; throws [Refused] for a file that isn't a Setup this Ants can read. */
-    fun preview(zip: ByteArray): Preview {
-        val files = unzip(zip)
+    fun preview(zip: ByteArray): Preview = preview(unzip(zip))
+
+    private fun preview(files: Map<String, ByteArray>): Preview {
         val meta = runCatching { yaml.load<Any?>(files[SETUP_FILE]?.decodeToString() ?: throw Refused("This file isn't a Setup: it has no $SETUP_FILE.")) as? Map<*, *> }
             .getOrElse { if (it is Refused) throw it else null } ?: throw Refused("This Setup's $SETUP_FILE is broken.")
         val from = meta["ants"]?.toString() ?: throw Refused("This Setup's $SETUP_FILE doesn't say which Ants wrote it.")
@@ -118,21 +137,51 @@ class Setup(private val kinds: List<SetupKind>, build: BuildProperties) {
                 else -> Status.NEW
             })
         }
-        return Preview(from, items)
+        return Preview(from, items, SAFE_FILE in files)
     }
 
     /**
      * Lands each item of [zip] that [choices] ticks, by its key, on its own, and says what became of every item: an
      * unticked one and a Clash not renamed are skipped, and one that can't be read or can't land is refused, the rest
-     * landing still.
+     * landing still. A landed Secret label or Script gets its Kept value from the Setup, which [safeKey] must open, or
+     * nothing lands.
      */
-    fun import(zip: ByteArray, choices: Map<String, Choice>): List<Landed> = preview(zip).items.map { previewed ->
+    fun import(zip: ByteArray, choices: Map<String, Choice>, safeKey: String? = null): List<Landed> {
+        val files = unzip(zip)
+        val preview = preview(files)
+        val kept = files[SAFE_FILE]?.let { opened(it, safeKey) }
+        val secrets = (kept?.get(SECRETS) as? Map<*, *>).orEmpty()
+        val scripts = (kept?.get(SCRIPTS) as? Map<*, *>).orEmpty()
+        val landedSecrets = mutableMapOf<String, String>()
+        return preview.items.map { previewed ->
+            land(previewed, choices).also { landed ->
+                val item = previewed.item
+                if (landed.outcome != Outcome.ADDED && landed.outcome != Outcome.REPLACED) return@also
+                when (item.kind) {
+                    is SecretsInSetup -> secrets[item.id]?.let { landedSecrets[item.id] = "$it" }
+                    is ScriptsInSetup -> (scripts[item.id] as? Map<*, *>)?.let { own -> store.saveScriptValues(item.id, own.entries.associate { (name, value) -> "$name" to "$value" }) }
+                }
+            }
+        }.also { if (landedSecrets.isNotEmpty()) store.saveSettingsValues(store.settingsValues() + landedSecrets) }
+    }
+
+    /** The Kept values a Setup's `safe.yaml` [file] seals, opened with [safeKey]; throws [Refused] when it can't be, before anything lands. */
+    private fun opened(file: ByteArray, safeKey: String?): Map<*, *> {
+        if (safeKey.isNullOrBlank()) throw Refused("This Setup holds Kept values: give the Safe key of the Ants that exported it.")
+        val sealed = runCatching { (yaml.load<Any?>(file.decodeToString()) as Map<*, *>)["sealed"] as String }.getOrNull() ?: throw Refused("This Setup's $SAFE_FILE is broken.")
+        val values = SecretStore.open(safeKey, sealed) ?: throw Refused("That Safe key doesn't open this Setup's Kept values: give the Safe key of the Ants that exported it.")
+        if (store.locked) throw Refused("${SecretStore.LOCKED}, then import again.")
+        return values
+    }
+
+    /** What becomes of [previewed] as [choices] say. */
+    private fun land(previewed: Previewed, choices: Map<String, Choice>): Landed {
         val item = previewed.item
         val noun = item.kind.noun
-        if (item.problem != null) return@map Landed(noun, item.name, Outcome.REFUSED, "${item.key}: ${item.problem}")
-        val choice = choices[item.key] ?: return@map Landed(noun, item.name, Outcome.SKIPPED, "Unticked.")
+        if (item.problem != null) return Landed(noun, item.name, Outcome.REFUSED, "${item.key}: ${item.problem}")
+        val choice = choices[item.key] ?: return Landed(noun, item.name, Outcome.SKIPPED, "Unticked.")
         val name = choice.rename?.trim()?.ifEmpty { null } ?: item.name
-        when {
+        return when {
             previewed.status == Status.CLASHES && name == item.name -> Landed(noun, name, Outcome.SKIPPED, "Another $noun is named $name: rename it to import it.")
             name != item.name && item.kind.taken(name, item.id) -> Landed(noun, name, Outcome.REFUSED, "Another $noun is named $name.")
             else -> runCatching { item.kind.land(item, name) }.fold(
@@ -157,6 +206,13 @@ class Setup(private val kinds: List<SetupKind>, build: BuildProperties) {
 
     companion object {
         const val SETUP_FILE = "setup.yaml"
+
+        /** Where a Setup carries Kept values, sealed with the exporting Safe key. */
+        const val SAFE_FILE = "safe.yaml"
+
+        private const val SECRETS = "secrets"
+        private const val LOOKUPS = "lookups"
+        private const val SCRIPTS = "scripts"
 
         /** An id as Ants gives them, which is safe as a folder's name. */
         internal val ID = Regex("[a-z0-9][a-z0-9-]{0,63}")

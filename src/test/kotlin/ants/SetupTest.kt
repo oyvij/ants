@@ -436,4 +436,59 @@ class SetupTest : AntsTest() {
             assertEquals(listOf("WebFetch"), catalogue.yours.tools(lead))
         }
     }
+
+    @Autowired
+    lateinit var secretProviders: SecretProviders
+
+    /** A Setup with its Kept values from an Ants with the Kept Secret npm, a Protected Command and a Script with its own Kept Secret, and that Ants' Safe key. */
+    private fun withKeptValues(): Pair<ByteArray, String> = tempHome().let { other ->
+        startAnother(other).use { ants ->
+            other.resolve("settings.yaml").writeText("secrets:\n  npm: [NPM_TOKEN]\nprotected-commands:\n  yarn publish: [npm]\n")
+            val store = ants.getBean(SecretStore::class.java)
+            store.saveSettingsValues(mapOf("npm" to "npm-s3cret"))
+            ants.getBean(Scripts::class.java).save(Script("s-post01", "post", "Posts.", secrets = listOf("TOKEN")), "console.log('hi')\n", mapOf("TOKEN" to "script-s3cret"))
+            ants.getBean(Setup::class.java).export(keptValues = true) to store.newKey()!!
+        }
+    }
+
+    @Test
+    fun `Kept values travel only when included, encrypted, and land with the right Safe key`() {
+        home.resolve("settings.yaml").writeText("secrets:\n  npm: [NPM_TOKEN]\n")
+        secretStore.saveSettingsValues(mapOf("npm" to "npm-s3cret"))
+        val plain = setup.export()
+        assertFalse("safe.yaml" in entries(plain), "Kept values went into a Setup by default")
+        assertFalse("npm-s3cret" in plain.decodeToString())
+        assertFalse(setup.preview(plain).keptValues)
+
+        val (zip, key) = withKeptValues()
+        assertTrue("safe.yaml" in entries(zip), entries(zip).keys.toString())
+        for (secret in listOf("npm-s3cret", "script-s3cret")) assertFalse(entries(zip).values.any { secret in it }, "$secret is in plain text in the zip")
+        assertTrue(setup.preview(zip).keptValues)
+
+        home.resolve("settings.yaml").writeText("")
+        secretStore.saveSettingsValues(emptyMap())
+        try {
+            val report = setup.import(zip, all(setup.preview(zip)), key)
+            assertEquals(listOf(Setup.Outcome.ADDED), report.map { it.outcome }.distinct(), report.toString())
+            assertEquals(mapOf("yarn publish" to listOf("npm")), settings.protectedCommands())
+            assertEquals("npm-s3cret", secretProviders.value("npm"))
+            assertEquals(mapOf("TOKEN" to "script-s3cret"), secretStore.scriptValues("s-post01"))
+        } finally {
+            secretStore.saveSettingsValues(emptyMap())
+            secretStore.deleteScriptValues("s-post01")
+        }
+    }
+
+    @Test
+    fun `a wrong Safe key is refused and nothing of the Setup lands`() {
+        val (zip, _) = withKeptValues()
+        val wrong = startAnother(tempHome()).use { it.getBean(SecretStore::class.java).newKey()!! }
+        for (key in listOf(wrong, "not a key", "")) {
+            val refused = assertFailsWith<Setup.Refused> { setup.import(zip, all(setup.preview(zip)), key) }
+            assertContains(refused.message!!, "Safe key")
+        }
+        assertEquals(null, scripts.withId("s-post01"))
+        assertEquals(emptyMap(), settings.protectedCommands())
+        assertEquals(emptyMap(), settings.secrets())
+    }
 }
