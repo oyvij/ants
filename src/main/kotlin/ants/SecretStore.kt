@@ -188,6 +188,10 @@ class SecretStore(home: Path, password: String? = null) {
 
     fun deleteScriptValues(id: String) = saveScriptValues(id, emptyMap())
 
+    /** [values], as `safe.yaml` holds its own, encrypted with the Safe key, for a Setup to carry (ADR 0033). */
+    @Synchronized
+    fun seal(values: Map<String, Any>): String = encode(encrypt(checkNotNull(key) { LOCKED }, yaml.dump(values).encodeToByteArray()))
+
     /** Every Lookup value resolved since the unlock, in memory only, masked with the Kept ones; locking clears them. */
     private val looked = mutableSetOf<String>()
 
@@ -241,6 +245,11 @@ class SecretStore(home: Path, password: String? = null) {
 
     companion object {
         const val LOCKED = "The Safe is locked: log in to unlock it"
+
+        /** What [seal] sealed with the Safe key [key], as [newKey] showed it; null if that key doesn't open it. */
+        fun open(key: String, sealed: String): Map<*, *>? = runCatching {
+            Yaml().load<Map<*, *>>(decrypt(Base64.getDecoder().decode(key.trim()).also { require(it.size == 32) }, decode(sealed)).decodeToString())
+        }.getOrNull()
 
         private fun Map<*, *>?.strings() = orEmpty().entries.associate { (key, value) -> "$key" to "$value" }
 

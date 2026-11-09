@@ -32,10 +32,11 @@ class BootTest : AntsTest() {
     }
 
     @Test
-    fun `tests never reach a real claude or nono, by its bare name or through the login shell`() {
+    fun `tests never reach a real claude, nono or gh, by its bare name or through the login shell`() {
+        val ownGh = System.getenv("PATH").substringBefore(':') + "/gh" // the tests' own, logged in
         for (shell in listOf(listOf("/bin/sh", "-c"), listOf("$shell", "-l", "-c"))) {
-            val found = ProcessBuilder(shell + "command -v claude nono").start().inputReader().readLines()
-            assertEquals(emptyList(), found.filter { !it.startsWith("$loginBin") }, "found by $shell")
+            val found = ProcessBuilder(shell + "command -v claude nono gh").start().inputReader().readLines()
+            assertEquals(emptyList(), found.filter { !it.startsWith("$loginBin") && it != ownGh }, "found by $shell")
         }
     }
 

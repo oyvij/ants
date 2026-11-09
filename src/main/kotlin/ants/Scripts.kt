@@ -99,7 +99,8 @@ class Scripts(@Value("\${ants.home}") home: Path, private val settings: Settings
         folder(script).resolve("script.yaml").writeAtomically(yaml.dump(script.copy(secrets = (own.keys + lookups.keys + script.secrets.filter { it !in old }).distinct()).definition()))
     }
 
-    private fun saveLookups(id: String, lookups: Map<String, String>) {
+    /** Keeps [lookups] as the Script with [id]'s own Lookups, in place of those it had. */
+    fun saveLookups(id: String, lookups: Map<String, String>) {
         if (lookups == ownLookups(id)) return
         settings.save { values ->
             val all = (values["script-lookups"] as? Map<*, *>).orEmpty().filterKeys { it != id } + (if (lookups.isEmpty()) emptyMap() else mapOf(id to lookups))

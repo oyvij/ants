@@ -183,6 +183,21 @@ class Migration(
         giveBareBashProtectedCommand()
     }
 
+    /**
+     * [bpmn], a Process or Template from a Setup of an older Ants, in today's shape, as [migrate] brings the user's own
+     * there: each Agent Task naming its Skill the old way lists it, and one naming an old shipped Agent runs on its new
+     * one; the user's Agents list the Skills those Tasks now need, by id. One already in today's shape is given back as it is.
+     */
+    fun migrated(bpmn: ByteArray): ByteArray {
+        val document = parse(bpmn)
+        val (named, needs) = migrate(document, shippedJobs())
+        if (!catalogue.onNewAgents(document) && named.isEmpty()) return bpmn
+        val agents = Agents()
+        agents.list(needs)
+        linkSkillsById(agents.keepOld())
+        return serialize(document).toByteArray()
+    }
+
     private fun giveBareBashProtectedCommand() {
         val done = home.resolve("migrated/protected-command")
         if (done.exists()) return
