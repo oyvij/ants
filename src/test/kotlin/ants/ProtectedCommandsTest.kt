@@ -9,6 +9,7 @@ import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.nio.file.Files
+import java.nio.file.Path
 import java.time.Duration
 import kotlin.io.path.createSymbolicLinkPointingTo
 import kotlin.io.path.deleteIfExists
@@ -40,11 +41,11 @@ class ProtectedCommandsTest : AntsTest() {
     }
 
     /** A Task whose settings link the Secret `npm` to `./yarn` and keep `maven` for `mvn deploy`. */
-    private fun protected(vararg session: String, tools: String? = null) {
+    private fun protected(vararg session: String, tools: String? = null, extra: String = "") {
         agentTask(
             claude,
             agent = tools?.let { "tools: $it\n" }.orEmpty(),
-            extra = "secrets:\n  npm: [YARN_NPM_AUTH_TOKEN, NPM_TOKEN]\n  maven: [MAVEN_TOKEN]\n" +
+            extra = "secrets:\n  npm: [YARN_NPM_AUTH_TOKEN, NPM_TOKEN]\n  maven: [MAVEN_TOKEN]\n" + extra +
                 "protected-commands:\n  ./yarn: [npm]\n  mvn deploy: [maven]\n",
             env = listOf("PATH", "HOME"),
         )
@@ -217,6 +218,49 @@ class ProtectedCommandsTest : AntsTest() {
         // Nothing of a Secret reaches the Transcript or the Run workspace's Ants files.
         assertFalse(Files.walk(workspace(run)).filter { it.isRegularFile() && it.fileName.toString() !in listOf("env.out", "yarn") }.anyMatch { "s3cret" in it.readText() })
     }
+
+    @Test
+    fun `a Protected Command gets a Lookup's value from its Secret Provider, masked in its output, and a failing Provider refuses it naming the Secret`() {
+        // A fake Secret Provider for `fake://`: it writes its arguments and environment beside itself and prints the value,
+        // or fails for a pointer holding `broken`, printing its linked Secret.
+        val provider = Files.createTempDirectory("provider").resolve("lookup")
+        provider.writeText(
+            "#!/bin/sh\nprintf '[%s]\\n' \"$@\" > \"$0.args\"\nenv > \"$0.env\"\n" +
+                "case \"$2\" in *broken*) echo \"no item, token \$VAULT_TOKEN\"; exit 1;; esac\necho s3cret-looked-up\n",
+        )
+        provider.toFile().setExecutable(true)
+        val script = """#!/bin/sh\necho "token ${'$'}NPM_TOKEN"\n"""
+        protected(
+            "write yarn $script", "sh chmod +x yarn", "write ready ok", "wait go", done,
+            extra = "  vault: [VAULT_TOKEN]\nlookups:\n  npm: fake://Dev/npm/token\n" +
+                "secret-providers:\n  fake:\n    command: $provider read {ref}\n    secrets: [vault]\n",
+        )
+        secretStore.saveSettingsValues(mapOf("vault" to "s3cret-vault", "maven" to "s3cret-mvn"))
+        val run = start()
+        eventually { assertTrue(workspace(run).resolve("ready").exists()) }
+        val (url, authorization) = server(claude.launches("draft").single())
+        fun text(response: Pair<Int, Map<*, *>>) = ((response.second["result"] as Map<*, *>)["content"] as List<*>).single().let { (it as Map<*, *>)["text"].toString() }
+
+        assertEquals("Exit code 0\n\ntoken ••••\n", text(call(url, authorization, listOf("./yarn"))))
+        // The pointer came as one argument, the linked Secret under its name, on the allow-list.
+        assertEquals("[read]\n[fake://Dev/npm/token]\n", Path.of("$provider.args").readText())
+        val env = Path.of("$provider.env").readLines().associate { it.substringBefore('=') to it.substringAfter('=') }
+        assertEquals("s3cret-vault", env["VAULT_TOKEN"])
+        assertEquals(System.getenv("PATH"), env["PATH"])
+        assertFalse("MAVEN_TOKEN" in env)
+
+        settings.save { it["lookups"] = mapOf("npm" to "fake://broken") }
+        assertEquals(
+            "Ants couldn't look up the Secret npm: its Secret Provider exited 1:\nno item, token ••••\nAnts ran nothing. End stuck: the user fixes the Lookup or its Secret Provider in Settings.",
+            text(call(url, authorization, listOf("./yarn"))),
+        )
+        claude.release("go")
+        eventually { assertContains(browser.get("/runs/$run").body, """id="state">Completed<""") }
+        assertFalse(Files.walk(workspace(run)).filter { it.isRegularFile() && it.fileName.toString() != "yarn" }.anyMatch { "s3cret" in it.readText() })
+    }
+
+    @Autowired
+    lateinit var settings: Settings
 
     @Autowired
     lateinit var protectedCommands: ProtectedCommands

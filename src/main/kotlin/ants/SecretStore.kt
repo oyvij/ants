@@ -136,9 +136,17 @@ class SecretStore(home: Path, password: String? = null) {
 
     fun deleteScriptValues(id: String) = save(id, emptyMap())
 
-    /** The values to mask in any output an Agent or the user reads: every Settings Secret's; none while locked. */
+    /** Every Lookup value resolved since the unlock, in memory only, masked with the Kept ones; locking clears them. */
+    private val looked = mutableSetOf<String>()
+
     @Synchronized
-    fun masks(): Collection<String> = values["settings"].orEmpty().values.toList()
+    fun lookedUp(value: String) {
+        looked += value
+    }
+
+    /** The values to mask in any output an Agent or the user reads: every Settings Secret's and every Lookup's resolved; none while locked. */
+    @Synchronized
+    fun masks(): Collection<String> = values["settings"].orEmpty().values.toList() + looked
 
     @Synchronized
     private fun section(name: String): Map<String, String> {

@@ -209,6 +209,15 @@ class Settings(
     /** The Secrets, each label to the variable names it goes under; their values are in the [SecretStore]. */
     fun secrets(): Map<String, List<String>> = (read()["secrets"] as? Map<*, *>).orEmpty().entries.associate { (label, names) -> "$label" to strings(names).orEmpty() }
 
+    /** The Lookups: each label of a Secret whose value a Secret Provider resolves, to its pointer, such as `op://Dev/npm/token`. */
+    fun lookups(): Map<String, String> = (read()["lookups"] as? Map<*, *>).orEmpty().entries.associate { (label, pointer) -> "$label" to "$pointer" }
+
+    /** The Secret Providers by scheme, such as `op`. */
+    fun secretProviders(): Map<String, SecretProvider> = (read()["secret-providers"] as? Map<*, *>).orEmpty().entries.associate { (scheme, provider) ->
+        val entry = provider as? Map<*, *> ?: emptyMap<String, Any?>()
+        "$scheme" to SecretProvider(strings(entry["command"]).orEmpty(), strings(entry["secrets"]).orEmpty())
+    }
+
     /** The Protected Commands, each command prefix to the labels of the Secrets it runs with. */
     fun protectedCommands(): Map<String, List<String>> =
         (read()["protected-commands"] as? Map<*, *>).orEmpty().entries
@@ -298,6 +307,8 @@ class Settings(
             # agent-folders, skill-folders: extra folders, read after Ants' own
             # secrets: label: [VARIABLE, NAMES], the variables a Protected Command reads it under; the values are in
             #   the Safe, never here
+            # lookups: label: pointer, such as `npm: op://Dev/npm/token`: a Secret whose value its Secret Provider resolves
+            # secret-providers: scheme: {command: [op, read, "{ref}"], secrets: [labels of Kept Secrets it runs with]}
             # protected-commands: prefix: [Secret labels], such as `mvn deploy: [maven]`; Agents ask Ants to run them
             # theme: light or dark; without it, the pages follow the system
             # so-far: false switches off the So far paragraph on running Tasks; a time (90s, 5m) sets how often it's
