@@ -124,6 +124,44 @@ class SettingsTest : AntsTest() {
     }
 
     @Test
+    fun `a password changed on the page keeps the Safe, and one reset outside Ants asks for the Safe key once`() {
+        val home = tempHome()
+        val encoder = PasswordEncoderFactories.createDelegatingPasswordEncoder()
+        home.createDirectories().resolve("settings.yaml").writeText("password: '${encoder.encode("first-pw")}'\n")
+        fun url(ants: Any) = "http://127.0.0.1:${(ants as WebServerApplicationContext).webServer!!.port}"
+        fun store(ants: ConfigurableApplicationContext) = ants.getBean(SecretStore::class.java)
+        val key = startAnother(home).use { ants ->
+            Browser(url(ants)).apply { login("first-pw"); get("/settings"); post("/settings", mapOf("action" to "save", "password" to "page-pw")) }
+            store(ants).saveSettingsValues(mapOf("npm" to "tok-9f3a"))
+            store(ants).newKey()!!
+        }
+        startAnother(home).use { ants ->
+            Browser(url(ants)).login("page-pw")
+            assertEquals(mapOf("npm" to "tok-9f3a"), store(ants).settingsValues())
+        }
+
+        home.resolve("settings.yaml").writeText("password: '${encoder.encode("reset-pw")}'\n") // as `ants password` does
+        startAnother(home).use { ants ->
+            val browser = Browser(url(ants)).apply { login("reset-pw") }
+            assertTrue(store(ants).locked)
+            browser.get("/settings")
+            browser.post("/settings/safe/unlock", mapOf("key" to key))
+            assertEquals(mapOf("npm" to "tok-9f3a"), store(ants).settingsValues())
+        }
+        startAnother(home).use { ants ->
+            Browser(url(ants)).login("reset-pw")
+            assertEquals(mapOf("npm" to "tok-9f3a"), store(ants).settingsValues())
+        }
+        startAnother(home, "--ants.password=env-pw").use { ants ->
+            assertTrue(store(ants).locked)
+            assertTrue(store(ants).unlockWithKey(key))
+        }
+        startAnother(home, "--ants.password=env-pw").use { ants ->
+            assertEquals(mapOf("npm" to "tok-9f3a"), store(ants).settingsValues())
+        }
+    }
+
+    @Test
     fun `saving the page writes settings yaml, and a hand edit shows on the page`() {
         press("save", mapOf("agent-tasks" to "5", "subagent-depth" to "2", "retries" to "4", "claude.command" to "nono run -- claude", "claude.env" to "PATH HOME", "agent-folders" to "/tmp/a\n/tmp/b"))
         assertEquals(5, yaml()["agent-tasks"])
