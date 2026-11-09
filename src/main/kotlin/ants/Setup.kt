@@ -16,6 +16,9 @@ import java.util.zip.ZipOutputStream
  */
 data class SetupItem(val kind: SetupKind, val key: String, val id: String, val name: String, val files: Map<String, ByteArray>, val problem: String? = null)
 
+/** An item one item uses: the one of the kind in [folder] whose id or name is [value]. */
+data class SetupUse(val folder: String, val value: String)
+
 /**
  * One kind of item a Setup holds, such as the Agents, in its [folder], the same in a Setup as in ANTS_HOME: how the
  * user's own items go into a Setup, are read out of one, and land in this Ants, each keeping its id (ADR 0034). The
@@ -32,6 +35,12 @@ interface SetupKind {
 
     /** The items in a Setup's [files], which all lie in [folder]. */
     fun read(files: Map<String, ByteArray>): List<SetupItem>
+
+    /**
+     * What [item] uses that would go in a Setup beside it, each by the [SetupKind.folder] of its kind and its id or
+     * name, such as a Process's Agent: none, unless the kind links others.
+     */
+    fun uses(item: SetupItem): List<SetupUse> = emptyList()
 
     /** Whether [id] is an id this kind's items have, safe as a file's name. */
     fun isId(id: String) = Setup.ID.matches(id)
@@ -79,10 +88,32 @@ class Setup(private val kinds: List<SetupKind>, build: BuildProperties) {
     /** A file Import refuses whole, saying why. */
     class Refused(message: String) : RuntimeException(message)
 
-    /** The user's own items of every kind as a Setup. */
-    fun export(): ByteArray = ByteArrayOutputStream().also { bytes ->
+    /** One of the user's own items Export offers, by the [key] it has in a Setup, with the keys of every item it [uses], through those it uses. */
+    data class Exportable(val key: String, val noun: String, val name: String, val uses: List<String>)
+
+    /** The user's own items of every kind, as Export lists them to tick. */
+    fun exportable(): List<Exportable> {
+        val items = own()
+        val used = items.associateWith { item ->
+            item.kind.uses(item).mapNotNull { use -> items.firstOrNull { it !== item && it.kind.folder == use.folder && (it.id == use.value || it.name == use.value) } }
+        }
+        return items.map { item ->
+            // Through what each used one uses, so ticking a Process ticks what its called Processes and its Agent use too.
+            val reached = linkedSetOf<SetupItem>()
+            val next = ArrayDeque(used.getValue(item))
+            while (next.isNotEmpty()) next.removeFirst().let { if (it !== item && reached.add(it)) next += used.getValue(it) }
+            Exportable(item.key, item.kind.noun, item.name, reached.map { it.key })
+        }
+    }
+
+    /** The user's own items as each kind reads them back. */
+    private fun own() = kinds.flatMap { kind -> kind.read(kind.export()) }
+
+    /** The user's own items of every kind as a Setup, or only those whose keys are [ticked]. */
+    fun export(ticked: Set<String>? = null): ByteArray = ByteArrayOutputStream().also { bytes ->
         ZipOutputStream(bytes).use { zip ->
-            val files = mapOf(SETUP_FILE to yaml.dump(mapOf("ants" to version)).toByteArray()) + kinds.flatMap { it.export().entries.map { (path, data) -> path to data } }
+            val items = own().filter { ticked == null || it.key in ticked }
+            val files = mapOf(SETUP_FILE to yaml.dump(mapOf("ants" to version)).toByteArray()) + items.flatMap { it.files.entries.map { (path, data) -> path to data } }
             for ((path, data) in files) {
                 zip.putNextEntry(ZipEntry(path))
                 zip.write(data)

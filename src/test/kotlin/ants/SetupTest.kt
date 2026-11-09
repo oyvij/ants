@@ -141,6 +141,28 @@ class SetupTest : AntsTest() {
     """.trimIndent()
 
     @Test
+    fun `Export lists every item ticked, a Process using its Agent's Skills and Scripts and what it calls, and writes only the ticked`() {
+        home.resolve("agents/writer.md").writeText("---\nid: a-writer1\nname: writer\ndescription: Writes.\nskills: draft, style\nscripts: [post]\n---\nWrite.\n")
+        agent("editor", "a-editor1")
+        skill("draft", "k-draft1")
+        skill("style", "k-style1")
+        skill("unused", "k-unused1")
+        script("post", "s-post01")
+        processes.deploy(agentTaskProcess("task", "Task").replace("<operaton:constraint name=\"required\" />", "").toByteArray()) // so a call needs to give it nothing
+        processes.deploy(caller("outer", "task").toByteArray())
+
+        val items = setup.exportable().associateBy { it.key }
+        val made = setOf("agents/writer.md", "agents/editor.md", "skills/draft", "skills/style", "skills/unused", "scripts/s-post01", "processes/task.bpmn", "processes/outer.bpmn")
+        assertTrue(items.keys.containsAll(made), items.keys.toString())
+        assertEquals(setOf("processes/task.bpmn", "agents/writer.md", "skills/draft", "skills/style", "scripts/s-post01"), items.getValue("processes/outer.bpmn").uses.toSet())
+        assertEquals(setOf("agents/writer.md", "skills/draft", "skills/style", "scripts/s-post01"), items.getValue("processes/task.bpmn").uses.toSet())
+        assertEquals(emptyList(), items.getValue("agents/editor.md").uses)
+
+        val zip = setup.export(setOf("processes/outer.bpmn", "agents/writer.md"))
+        assertEquals(setOf("setup.yaml", "processes/outer.bpmn", "agents/writer.md"), entries(zip).keys)
+    }
+
+    @Test
     fun `a replaced Process becomes its next version, one Publish would refuse is refused in the report, and the rest lands`() {
         agentTask(null)
         processes.deploy(agentTaskProcess("agent-task", "Agent Task").toByteArray())

@@ -36,6 +36,10 @@ class AgentsInSetup(private val catalogue: Catalogue, private val drafted: Draft
         )
     }
 
+    /** Its own Skills (not every Skill, `*`) and Scripts, which a Task without Skills of its own inherits. */
+    override fun uses(item: SetupItem): List<SetupUse> = runCatching { Agent(Path.of(item.key), item.files.values.single().decodeToString()) }.getOrNull()
+        ?.let { agent -> agent.skills.filter { it != "*" }.map { SetupUse("skills", it) } + agent.scripts.map { SetupUse("scripts", it) } }.orEmpty()
+
     override fun has(id: String) = own().any { it.id == id }
 
     override fun taken(name: String, id: String) = drafted.agents.taken(name, id)

@@ -242,7 +242,7 @@
 <%-- Outside the Settings form, so picking a Setup to import isn't an unsaved change. --%>
 <div class="card setup"><h3>Setup</h3><div class="help">Your own Agents, Skills with their References and Scripts in one zip, laid out like
     ANTS_HOME, to move to another Ants or share. It holds no Run, Draft or Secret value. Import shows what it would add or replace before anything changes.</div>
-    <div class="row"><a class="btn" href="/settings/setup/export" download>Export</a>
+    <div class="row"><a class="btn" href="/settings/setup/export">Export…</a>
         <form method="post" action="/settings/setup/import" enctype="multipart/form-data"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"><label class="btn" title="Import a Setup's zip">Import…<input type="file" name="file" accept=".zip" required hidden onchange="this.form.submit()"></label></form></div></div>
 <%-- Remove in the list of devices with Alerts on posts this form, not the Settings form, so it sends only its device. --%>
 <form method="post" action="/settings/alerts/remove" id="alert-remove"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"></form>

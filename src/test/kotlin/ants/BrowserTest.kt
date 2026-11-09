@@ -216,13 +216,46 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `Export lists everything ticked, ticking a Process ticks what it uses, and unticking a used item warns`() = browse {
+        home.resolve("agents/writer.md").writeText("---\nid: a-writer1\nname: writer\ndescription: Writes.\nskills: draft, style\n---\nWrite.\n")
+        for ((name, id) in listOf("draft" to "k-draft1", "style" to "k-style1")) {
+            home.resolve("skills/$name").createDirectories().resolve("SKILL.md").writeText("---\nname: $name\ndescription: Does $name.\n---\nDo it.\n")
+            home.resolve("skills/$name/ants.yaml").writeText("id: $id\n")
+        }
+        processes.deploy(javaClass.getResource("/agent-task.bpmn")!!.readText().replace("\"agent-task\"", "\"export-task\"").replace("name=\"Agent Task\"", "name=\"Export task\"").toByteArray())
+        page.navigate(url("/settings/setup/export"))
+        fun row(key: String) = page.locator("tr[data-key='$key']")
+        fun box(key: String) = row(key).locator("input[type=checkbox]")
+        for (key in listOf("processes/export-task.bpmn", "agents/writer.md", "skills/draft", "skills/style")) assertThat(box(key)).isChecked()
+        assertThat(row("agents/writer.md").locator(".used-by")).hasText("used by Process Export task")
+        assertThat(row("skills/style").locator(".used-by")).containsText("Agent writer")
+
+        box("skills/style").uncheck()
+        assertThat(row("skills/style").getByRole(AriaRole.ALERT)).containsText("Import then needs it to exist")
+        page.screenshot("setup-export-warning")
+        box("processes/export-task.bpmn").uncheck()
+        box("agents/writer.md").uncheck()
+        box("skills/draft").uncheck()
+        assertThat(row("skills/style").getByRole(AriaRole.ALERT)).isHidden()
+        box("processes/export-task.bpmn").check() // ticks its Agent, its Skill and, through its Agent, the Agent's
+        for (key in listOf("agents/writer.md", "skills/draft", "skills/style")) assertThat(box(key)).isChecked()
+
+        box("skills/style").uncheck()
+        val download = page.waitForDownload { page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("Export").setExact(true)).click() }
+        val names = java.util.zip.ZipInputStream(java.nio.file.Files.newInputStream(download.path())).use { zip -> generateSequence { zip.nextEntry }.map { it.name }.toSet() }
+        assertTrue("processes/export-task.bpmn" in names && "agents/writer.md" in names && "skills/draft/SKILL.md" in names, names.toString())
+        assertFalse(names.any { it.startsWith("skills/style/") }, names.toString())
+    }
+
+    @Test
     fun `Settings exports a Setup, and imports one through a preview of New, Replaces and Clashes into a report`() = browse {
         fun agent(name: String, id: String) = home.resolve("agents/$name.md").writeText("---\nid: $id\nname: $name\ndescription: Works.\n---\nWork.\n")
         agent("writer", "a-writer1")
         agent("editor", "a-editor1")
         agent("reviewer", "a-review1")
         page.navigate(url("/settings"))
-        val download = page.waitForDownload { page.getByRole(AriaRole.LINK, Page.GetByRoleOptions().setName("Export").setExact(true)).click() }
+        page.getByRole(AriaRole.LINK, Page.GetByRoleOptions().setName("Export…").setExact(true)).click()
+        val download = page.waitForDownload { page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("Export").setExact(true)).click() }
         assertContains(download.suggestedFilename(), "ants-setup-")
         val zip = java.nio.file.Files.readAllBytes(download.path())
 
