@@ -81,6 +81,8 @@ class ProtectedCommandsTest : AntsTest() {
             assertContains(denied, "Read(/$home/$file)")
             assertContains(denied, "Edit(/$home/$file)")
         }
+        assertContains(denied, "Read(/$home-safe.key)") // Keep open's Safe key, beside ANTS_HOME
+        assertContains(denied, "Edit(/$home-safe.key)")
         assertContains(denied, "Read(/$home/scripts/**)")
         assertContains(denied, "Edit(/$home/scripts/**)")
         assertContains(denied, "Read(/$home/drafts/scripts/**)") // a Script's Draft is as private as the Script

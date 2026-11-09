@@ -30,14 +30,31 @@ class SecretStore(home: Path, password: String? = null) {
     /** The Safe's file, which claude Agents may neither read nor edit (ADR 0015). */
     val file: Path = home.resolve("safe.yaml")
 
+    /**
+     * Keep open's file, beside ANTS_HOME, not in it, so a copy of ANTS_HOME carries no key: the Safe key in plain, mode
+     * 0600, which unlocks the Safe at boot. claude Agents may neither read nor edit it.
+     */
+    val keyFile: Path = home.resolveSibling("${home.fileName}-safe.key")
+
     private var key: ByteArray? = null
 
     /** Settings Secrets' values by label under `settings`, each Script's own by its id under `scripts`. */
     private var values = mutableMapOf<String, MutableMap<String, String>>()
 
     init {
-        if (file.exists()) password?.let(::unlock)
-        else migrate(home, password)
+        if (!file.exists()) migrate(home, password)
+        else if (keyFile.exists()) open(decode(keyFile.readText().trim()))
+        else password?.let(::unlock)
+    }
+
+    /** Keep open is on: the Safe unlocks at boot from [keyFile]. */
+    val keepOpen get() = keyFile.exists()
+
+    /** On writes the Safe key to [keyFile] (the Safe must be unlocked); off deletes it. */
+    @Synchronized
+    fun keepOpen(on: Boolean) {
+        if (on) keyFile.writePrivately(encode(checkNotNull(key) { "The Safe is locked: log in to unlock it" }))
+        else keyFile.deleteIfExists()
     }
 
     /** No Safe key in memory: no value can be read or saved until a login or the Safe key unlocks it. */
@@ -66,12 +83,20 @@ class SecretStore(home: Path, password: String? = null) {
             return
         }
         if (wrapped == null) return
-        val opened = try {
+        open(try {
             decrypt(derive(password, decode(stored["salt"])), decode(wrapped))
         } catch (_: AEADBadTagException) {
             return
+        })
+    }
+
+    /** Unlocks with the Safe key [opened]; one that doesn't open the Safe leaves it locked. */
+    private fun open(opened: ByteArray) {
+        values = try {
+            parse(decrypt(opened, decode(stored()["values"])).decodeToString())
+        } catch (_: AEADBadTagException) {
+            return
         }
-        values = parse(decrypt(opened, decode(stored["values"])).decodeToString())
         key = opened
     }
 

@@ -71,6 +71,13 @@ class SettingsPage(
         }
     }
 
+    /** Keep open's toggle: on writes the Safe key beside ANTS_HOME, so the Safe unlocks at boot; off deletes it. */
+    @PostMapping("/settings/keep-open")
+    fun keepOpen(@RequestParam on: Boolean): String {
+        store.keepOpen(on)
+        return "redirect:/settings"
+    }
+
     /** Save in a Source map's editor: rewrites the file of the saved Source map [name], creating it if it isn't there. */
     @PostMapping("/settings/source-map")
     fun sourceMap(@RequestParam name: String, @RequestParam text: String): String {
@@ -103,6 +110,8 @@ class SettingsPage(
         model.addAttribute("file", settings.file.toString())
         model.addAttribute("message", message)
         model.addAttribute("passwordFromEnv", settings.passwordFromEnv)
+        model.addAttribute("keepOpen", store.keepOpen)
+        model.addAttribute("keyFile", store.keyFile.toString())
         model.addAttribute("login", login())
         model.addAttribute("home", home.toString())
         model.addAttribute("address", "${address.ifEmpty { "0.0.0.0" }}:$port")

@@ -3,6 +3,8 @@
 @param file: String
 @param message: String? = null
 @param passwordFromEnv: Boolean
+@param keepOpen: Boolean = false
+@param keyFile: String = ""
 @param login: ants.ClaudeLogin
 @param home: String
 @param address: String
@@ -168,6 +170,13 @@
             <div class="help">Takes effect at the next login.</div>
             <input type="password" id="password" name="password" autocomplete="new-password" placeholder="Change from admin">
 @endif
+        </div>
+        <div class="fld"><b class="f">Keep open</b>
+            <div class="help">For a server nobody logs in to after a restart: keeps the Safe key in <code>${keyFile}</code>, outside ANTS_HOME, so the Safe unlocks at boot.</div>
+            <p class="row">@if(keepOpen)<span class="pill p-ready">On</span> <button form="keep-open" name="on" value="false">Turn off</button>@else<span class="pill p-quiet">Off</span> <button form="keep-open" name="on" value="true">Turn on</button>@endif</p>
+@if(keepOpen || passwordFromEnv)
+            <p role="alert">With ${if (keepOpen) "Keep open on" else "the password from the environment"}, the Safe guards against disk leaks only, not against an Agent: one that runs code as Ants' OS user can open it.</p>
+@endif
         </div></div>
     <div class="card updates"><h3>Updates</h3>
         !{val newer = update.newer}
@@ -199,6 +208,7 @@
 </form>
 <%-- Remove in the list of devices with Alerts on posts this form, not the Settings form, so it sends only its device. --%>
 <form method="post" action="/settings/alerts/remove" id="alert-remove"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"></form>
+<form method="post" action="/settings/keep-open" id="keep-open"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"></form>
 @for((i, map) in maps.entries.withIndex())
 <dialog class="modal source-map" id="source-map-${i}">
     <form method="dialog" class="mh"><b>${map.key}</b><code class="small">${map.value.first}</code><span class="sp"></span><span class="muted small">Esc to close</span><button class="ghost" title="Close" aria-label="Close">✕</button></form>

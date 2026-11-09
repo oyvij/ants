@@ -73,6 +73,34 @@ class SettingsTest : AntsTest() {
     }
 
     @Test
+    fun `Keep open keeps the Safe unlocked across restarts and warns, and off deletes the key file`() {
+        val warning = "guards against disk leaks only"
+        val home = tempHome()
+        fun url(ants: Any) = "http://127.0.0.1:${(ants as WebServerApplicationContext).webServer!!.port}"
+        fun store(ants: ConfigurableApplicationContext) = ants.getBean(SecretStore::class.java)
+        home.createDirectories().resolve("settings.yaml").writeText("password: '${PasswordEncoderFactories.createDelegatingPasswordEncoder().encode("s3cret-pw")}'\n")
+        startAnother(home).use { ants ->
+            val browser = Browser(url(ants)).also { it.login("s3cret-pw") }
+            store(ants).saveSettingsValues(mapOf("npm" to "tok-9f3a"))
+            assertFalse(warning in browser.get("/settings").body)
+            assertEquals(200, browser.post("/settings/keep-open", mapOf("on" to "true")).status)
+            assertContains(browser.get("/settings").body, warning)
+        }
+        startAnother(home).use { ants ->
+            assertEquals(mapOf("npm" to "tok-9f3a"), store(ants).settingsValues()) // no login
+            val browser = Browser(url(ants)).also { it.login("s3cret-pw") }
+            assertContains(browser.get("/settings").body, warning)
+            assertEquals(200, browser.post("/settings/keep-open", mapOf("on" to "false")).status)
+            assertFalse(store(ants).keyFile.exists())
+            assertFalse(warning in browser.get("/settings").body)
+        }
+        startAnother(home).use { ants -> assertTrue(store(ants).locked) }
+        startAnother(home, "--ants.password=s3cret-pw").use { ants ->
+            assertContains(Browser(url(ants)).also { it.login("s3cret-pw") }.get("/settings").body, warning)
+        }
+    }
+
+    @Test
     fun `saving the page writes settings yaml, and a hand edit shows on the page`() {
         press("save", mapOf("agent-tasks" to "5", "subagent-depth" to "2", "retries" to "4", "claude.command" to "nono run -- claude", "claude.env" to "PATH HOME", "agent-folders" to "/tmp/a\n/tmp/b"))
         assertEquals(5, yaml()["agent-tasks"])
