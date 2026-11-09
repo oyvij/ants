@@ -127,6 +127,32 @@ class SecretStoreTest {
     }
 
     @Test
+    fun `after a password reset outside Ants the Safe asks for the Safe key once, then logins unlock it again`() {
+        store.saveSettingsValues(mapOf("npm" to "s3cret-npm"))
+        val key = assertNotNull(store.newKey())
+
+        val afterLogin = SecretStore(home)
+        afterLogin.unlock("reset-by-ants-password")
+        assertTrue(afterLogin.locked)
+        assertTrue(afterLogin.unlockWithKey(key))
+        assertEquals(mapOf("npm" to "s3cret-npm"), SecretStore(home, "reset-by-ants-password").settingsValues())
+
+        val fromEnvironment = SecretStore(home, "reset-by-ANTS_PASSWORD")
+        assertTrue(fromEnvironment.locked)
+        assertTrue(fromEnvironment.unlockWithKey(key))
+        val restarted = SecretStore(home)
+        restarted.unlock("reset-by-ANTS_PASSWORD")
+        assertEquals(mapOf("npm" to "s3cret-npm"), restarted.settingsValues())
+    }
+
+    @Test
+    fun `a login rewraps a Safe already unlocked whose wrapping its password doesn't open`() {
+        store.saveSettingsValues(mapOf("npm" to "s3cret-npm"))
+        store.unlock("reset-by-ants-password")
+        assertEquals(mapOf("npm" to "s3cret-npm"), SecretStore(home, "reset-by-ants-password").settingsValues())
+    }
+
+    @Test
     fun `the first start moves every plain secrets yaml into the Safe and deletes them`() {
         val old = Files.createTempDirectory("ants-home")
         old.resolve("secrets.yaml").writeText("npm: s3cret-npm\nmaven: s3cret-mvn\n")
