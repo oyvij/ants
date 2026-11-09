@@ -77,7 +77,7 @@ class ProtectedCommandsTest : AntsTest() {
         assertContains(launch.argv, "--strict-mcp-config")
         assertContains(launch.flag("--allowedTools")!!.split(","), "mcp__ants__run")
         val denied = launch.flag("--disallowedTools")!!.split(",")
-        for (file in listOf("secrets.yaml", "settings.yaml")) {
+        for (file in listOf("safe.yaml", "settings.yaml")) {
             assertContains(denied, "Read(/$home/$file)")
             assertContains(denied, "Edit(/$home/$file)")
         }

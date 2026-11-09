@@ -346,6 +346,8 @@ dialog.modal::backdrop { background: var(--modalBg); }
 .modal .split > div { overflow: auto; } .modal .split .cm-editor { min-height: 100%; max-height: none; font-size: 15px; } .modal .split .cm-scroller { padding: 12px 8px; }
 .modal .split .md { max-width: none; padding: 20px 28px; border-left: 1px solid var(--line); background: var(--band); font-size: 15px; }
 /* A toast, for an action that left the page it was pressed on, such as a Push: it says what happens next. */
+.safe-key { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 12px 40px; background: var(--panel); border-bottom: 2px solid var(--wait); font-size: 13px; color: var(--text); }
+.safe-key code { user-select: all; overflow-wrap: anywhere; }
 .toast { position: fixed; top: 16px; right: 16px; z-index: 90; width: 380px; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-left: 3px solid var(--kind, var(--line)); border-radius: 10px; padding: 12px 14px; box-shadow: 0 10px 30px rgba(0, 0, 0, .25); font-size: 13px; animation: fadein .15s; }
 .toast[data-kind] { display: grid; grid-template-columns: auto 1fr auto; column-gap: 10px; align-items: start; }
 .toast[data-kind=success] { --kind: var(--ok); } .toast[data-kind=info] { --kind: var(--run); } .toast[data-kind=warning] { --kind: var(--wait); } .toast[data-kind=error] { --kind: var(--bad); }

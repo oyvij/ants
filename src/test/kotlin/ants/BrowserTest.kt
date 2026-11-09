@@ -137,6 +137,38 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `a new Safe's key shows in a banner on every page until the user says they saved it, then never again`() = browse {
+        val home = tempHome()
+        fun base(ants: Any) = "http://127.0.0.1:${(ants as org.springframework.boot.web.server.context.WebServerApplicationContext).webServer!!.port}"
+        fun logInTo(base: String) {
+            page.navigate("$base/login")
+            page.fill("input[name=username]", "admin")
+            page.fill("input[name=password]", "admin")
+            page.click("button[type=submit]")
+            page.waitForURL { !it.contains("/login") }
+        }
+        val banner = page.locator(".safe-key")
+        startAnother(home).use { ants ->
+            val base = base(ants)
+            logInTo(base)
+            val key = ants.getBean(SecretStore::class.java).newKey()!!
+            assertThat(banner.locator("code")).hasText(key)
+            page.navigate("$base/settings")
+            assertThat(banner.locator("code")).hasText(key)
+            banner.getByText("I saved it").click()
+            assertThat(banner).hasCount(0)
+            assertTrue(page.url().endsWith("/settings"))
+            page.navigate("$base/processes")
+            assertThat(banner).hasCount(0)
+        }
+        startAnother(home).use { ants ->
+            logInTo(base(ants))
+            assertThat(page.locator("main")).isVisible()
+            assertThat(banner).hasCount(0)
+        }
+    }
+
+    @Test
     fun `the hover menu appends an Agent, User or Built-in Task and offers nothing Ants doesn't run`() = browse {
         newProcess("Hover menu")
         for ((action, name) in listOf("append.agent-task" to "Agent Task", "append.user-task" to "User Task", "append.built-in-task" to "Built-in Task")) {

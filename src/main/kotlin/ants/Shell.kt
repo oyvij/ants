@@ -31,7 +31,11 @@ class Shell(
     dashboards: () -> List<Dashboard> = ::emptyList,
     /** Whether the menu's Dashboards toggle is open, as its cookie keeps it. */
     val dashboardsOpen: Boolean = false,
+    newKey: () -> String? = { null },
 ) {
+    /** A new Safe's key, which a banner on every page shows until the user says they saved it. */
+    val newKey by lazy(newKey)
+
     val waiting by lazy(waiting)
 
     /** The Dashboards the menu lists under its toggle. */
@@ -69,6 +73,7 @@ class ShellAdvice(
     private val history: HistoryService,
     private val build: BuildProperties,
     private val dashboards: Dashboards,
+    private val store: SecretStore,
 ) {
     @ModelAttribute("shell")
     fun shell(request: HttpServletRequest) = Shell(
@@ -80,12 +85,13 @@ class ShellAdvice(
         request.getSession(false),
         dashboards::all,
         request.cookies.orEmpty().any { it.name == DashboardsPage.MENU && it.value == "open" },
+        store::newKey,
     )
 }
 
-/** The login page, the sidebar's Light mode and Dark mode, and a markdown field's Preview. */
+/** The login page, the sidebar's Light mode and Dark mode, the Safe key banner's I saved it, and a markdown field's Preview. */
 @Controller
-class ShellPages(private val settings: Settings) {
+class ShellPages(private val settings: Settings, private val store: SecretStore) {
     /** Spring Security sends a wrong password back here with `?error`, and Log out with `?logout`. */
     @GetMapping("/login")
     fun login(@RequestParam params: Map<String, String>, model: Model): String {
@@ -99,6 +105,13 @@ class ShellPages(private val settings: Settings) {
     fun theme(@RequestParam theme: String, @RequestHeader("Referer", required = false) from: String?): String {
         require(theme in listOf("light", "dark")) { "No theme $theme" }
         settings.save { it["theme"] = theme }
+        return back(from)
+    }
+
+    /** The user saved the new Safe's key: the banner goes, and the key is never shown again. */
+    @PostMapping("/safe/key-saved")
+    fun keySaved(@RequestHeader("Referer", required = false) from: String?): String {
+        store.keySaved()
         return back(from)
     }
 

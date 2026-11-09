@@ -101,7 +101,7 @@
             <button type="button" data-add>＋ Add</button></div></div>
 
     <div class="card"><h3>Secrets</h3><div class="help">Values such as a registry token, which Protected Commands run with and Agents never see.
-        A value is kept in <code>secrets.yaml</code>, never shown again; left blank, the saved one stays. Each variable name is the
+        A value is kept in the Safe, encrypted, never shown again; left blank, the saved one stays. Each variable name is the
         variable the command reads the value from, such as <span class="eg">YARN_NPM_AUTH_TOKEN</span>.</div>
         <div class="listed">
 @for((i, row) in form.shownSecrets.withIndex())

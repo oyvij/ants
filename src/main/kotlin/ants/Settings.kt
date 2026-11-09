@@ -99,6 +99,9 @@ class Settings(
         return if (password.startsWith("{")) password else "{noop}$password"
     }
 
+    /** The login password when Ants knows it in plain, from the environment or `settings.yaml`, which unlocks the Safe at boot. */
+    fun plainPassword(): String? = password().takeIf { it.startsWith("{noop}") }?.removePrefix("{noop}")
+
     // ponytail: one global cap, no per-CLI caps or priorities
     fun agentTasks(): Int = (read()["agent-tasks"] as? Int) ?: 3
 
@@ -294,7 +297,7 @@ class Settings(
             #   and source-map.md beside this file.
             # agent-folders, skill-folders: extra folders, read after Ants' own
             # secrets: label: [VARIABLE, NAMES], the variables a Protected Command reads it under; the values are in
-            #   secrets.yaml, never here
+            #   the Safe, never here
             # protected-commands: prefix: [Secret labels], such as `mvn deploy: [maven]`; Agents ask Ants to run them
             # theme: light or dark; without it, the pages follow the system
             # so-far: false switches off the So far paragraph on running Tasks; a time (90s, 5m) sets how often it's

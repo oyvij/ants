@@ -252,7 +252,7 @@ data class SettingsForm(
     }
 
     /**
-     * Writes the form into `settings.yaml`, with [password] as the new password unless it's empty, and the Secrets'
+     * Writes the form into `settings.yaml`, with [password] as the new password unless it's empty (rewrapping the Safe key with it), and the Secrets'
      * values into the [SecretStore], a blank one keeping the value saved under the label it was.
      */
     fun save(settings: Settings, store: SecretStore, password: String, encoder: PasswordEncoder) {
@@ -260,6 +260,7 @@ data class SettingsForm(
         val removed = removedProfiles(settings)
         store.saveSettingsValues(secrets.mapNotNull { row -> row.value.ifEmpty { saved[row.was] }?.let { row.label to it } }.toMap())
         settings.save { values -> write(values, password, encoder) }
+        if (password.isNotEmpty()) store.rewrap(password)
         settings.keepInstructions(renamedProfiles(), removed)
     }
 

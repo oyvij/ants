@@ -93,7 +93,7 @@ class ScriptsTest : AntsTest() {
     }
 
     @Test
-    fun `creating a Script writes its code and definition under a new s- id, and its own Secret values only to secrets yaml`() {
+    fun `creating a Script writes its code and definition under a new s- id, and its own Secret values only to the Safe`() {
         val page = create(
             form(
                 "post-message", code = "console.log(process.env.SLACK_TOKEN)\n", inputs = "channel, text",
@@ -248,7 +248,7 @@ class ScriptsTest : AntsTest() {
         assertFalse("s3cret" in output)
         assertEquals(mapOf("posted" to "hello", "token" to "••••"), result["payload"])
         assertFalse(Path.of(printed["cwd"].toString()).exists())
-        assertEquals(setOf("script.mjs", "script.yaml", "secrets.yaml"), folder("post-message").listDirectoryEntries().map { it.fileName.toString() }.toSet())
+        assertEquals(setOf("script.mjs", "script.yaml"), folder("post-message").listDirectoryEntries().map { it.fileName.toString() }.toSet())
         assertEquals("console.log('hi')\n", folder("post-message").resolve("script.mjs").readText())
     }
 

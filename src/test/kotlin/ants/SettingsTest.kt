@@ -4,6 +4,9 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.boot.web.server.context.WebServerApplicationContext
+import org.springframework.context.ConfigurableApplicationContext
+import org.springframework.security.crypto.factory.PasswordEncoderFactories
 import org.yaml.snakeyaml.Yaml
 import java.nio.file.Files
 import java.nio.file.attribute.PosixFilePermissions
@@ -46,6 +49,28 @@ class SettingsTest : AntsTest() {
     }
 
     private fun executable(name: String) = loginBin.resolve(name).apply { writeText("#!/bin/sh\n"); toFile().setExecutable(true) }
+
+    @Test
+    fun `logging in unlocks the Safe after a restart, and a password from the environment unlocks it at boot`() {
+        val home = tempHome()
+        home.createDirectories().resolve("settings.yaml").writeText("password: '${PasswordEncoderFactories.createDelegatingPasswordEncoder().encode("s3cret-pw")}'\n")
+        fun url(ants: Any) = "http://127.0.0.1:${(ants as WebServerApplicationContext).webServer!!.port}"
+        fun store(ants: ConfigurableApplicationContext) = ants.getBean(SecretStore::class.java)
+        startAnother(home).use { ants ->
+            Browser(url(ants)).login("s3cret-pw") // wraps the Safe key Ants made with no password it knew
+            store(ants).saveSettingsValues(mapOf("npm" to "tok-9f3a"))
+        }
+        startAnother(home).use { ants ->
+            assertTrue(store(ants).locked)
+            Browser(url(ants)).login("wrong")
+            assertTrue(store(ants).locked)
+            Browser(url(ants)).login("s3cret-pw")
+            assertEquals(mapOf("npm" to "tok-9f3a"), store(ants).settingsValues())
+        }
+        startAnother(home, "--ants.password=s3cret-pw").use { ants ->
+            assertEquals(mapOf("npm" to "tok-9f3a"), store(ants).settingsValues())
+        }
+    }
 
     @Test
     fun `saving the page writes settings yaml, and a hand edit shows on the page`() {
@@ -354,7 +379,7 @@ class SettingsTest : AntsTest() {
     }
 
     @Test
-    fun `Secrets keep their values in secrets yaml, never on the page or in settings yaml, and Protected Commands link them by label`() {
+    fun `Secrets keep their values in the Safe, never on the page or in settings yaml, and Protected Commands link them by label`() {
         try {
             fun save(vararg form: Pair<String, String>): String {
                 browser.get("/settings")
@@ -369,6 +394,7 @@ class SettingsTest : AntsTest() {
             assertEquals(mapOf("npm" to listOf("YARN_NPM_AUTH_TOKEN", "NPM_TOKEN"), "maven" to listOf("MAVEN_TOKEN")), yaml()["secrets"])
             assertEquals(mapOf("yarn" to listOf("npm"), "mvn deploy" to listOf("npm", "maven")), yaml()["protected-commands"])
             assertFalse("tok-" in file.readText())
+            assertFalse("tok-" in secretStore.file.readText())
             assertEquals(mapOf("npm" to "tok-9f3a", "maven" to "tok-77mv"), secretStore.settingsValues())
             assertEquals("rw-------", PosixFilePermissions.toString(Files.getPosixFilePermissions(secretStore.file)))
             val page = browser.get("/settings").body.replace("&#34;", "\"")

@@ -86,7 +86,7 @@
         <div class="fld"><label class="f" for="widgets">Widgets</label><div class="help">The Widgets it Posts to with <code>await ants.post(address, data)</code>, one address a line, as a Dashboard's Posting panel lists them. A Post to any other is refused.</div>
             <textarea id="widgets" class="mono" name="widgets" rows="2" placeholder="e.g. d-4k2m9x/w-7hq3pz">${form.widgets}</textarea></div>
     </div>
-    <div class="card"><h3>Secrets</h3><div class="help">The Script's own Secrets, kept apart from its Draft: Save Secrets keeps them at once, and the published Script uses them from its next run. A value is kept in its <code>secrets.yaml</code>, never shown again; left blank, the saved one stays. A Secret removed, or with its name cleared, goes on Save Secrets.</div>
+    <div class="card"><h3>Secrets</h3><div class="help">The Script's own Secrets, kept apart from its Draft: Save Secrets keeps them at once, and the published Script uses them from its next run. A value is kept in the Safe, encrypted, never shown again; left blank, the saved one stays. A Secret removed, or with its name cleared, goes on Save Secrets.</div>
         <div class="listed" data-secrets>
 @for((i, row) in form.shownOwn.withIndex())
             <div class="row">

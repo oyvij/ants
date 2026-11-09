@@ -1,6 +1,6 @@
 // The Script page's Secrets card: "Add Secret" adds an empty row, and a row's ✕ removes it once Ants' own modal
 // confirms, naming the Secret. Nothing is saved until Save Secrets, which posts the card's rows alone, numbered from 0,
-// apart from the Draft; a Secret no row names leaves secrets.yaml. Without this script the card shows its saved
+// apart from the Draft; a Secret no row names leaves the Safe. Without this script the card shows its saved
 // Secrets and one empty row, and Save Secrets posts the whole page.
 const list = document.querySelector('[data-secrets]');
 const saveSecrets = document.querySelector('[data-save-secrets]');
