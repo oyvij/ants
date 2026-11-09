@@ -165,8 +165,22 @@ _Avoid_: tone, style, detail level
 
 **Secret**:
 A value the user gives Ants, such as a registry token, under one or more variable names, that Protected Commands
-and Scripts use and Agents never see.
+and Scripts use and Agents never see. Its value is either kept in the Safe or a Lookup.
 _Avoid_: credential, env var, key
+
+**Safe**:
+Ants' one encrypted store of every Secret's value, opened by a Safe key the user is shown once and that Ants holds
+only while the Safe is unlocked.
+_Avoid_: vault, keystore, secret store
+
+**Lookup**:
+A Secret whose value lives in the user's own password manager, written as a pointer such as `op://Dev/npm/token`
+that a Secret Provider resolves each time the Secret is used.
+_Avoid_: reference, external secret
+
+**Secret Provider**:
+The command, such as `op read`, that resolves the Lookups of one scheme, run with the Secrets it needs to log in.
+_Avoid_: vault provider, resolver, backend
 
 **Protected Command**:
 A command prefix, such as `yarn` or `mvn deploy`, that an Agent whose tools list `ProtectedCommand` may ask Ants to

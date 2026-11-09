@@ -1,5 +1,7 @@
 # Protected Commands run with Secrets Agents never see
 
+Superseded in part by ADR 0033: Secret values live encrypted in the Safe, or as Lookups, not in plain `secrets.yaml`.
+
 An Agent's environment is the settings allow-list, which Ants may narrow but never widen, and Ants under launchd has
 none of the user's shell exports. So a repo whose `.yarnrc.yml` reads `${YARN_NPM_AUTH_TOKEN}` for a private feed
 can't `yarn install`, and the only workaround, the token in the plist and the allow-list, hands it to the Agent and the
