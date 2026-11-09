@@ -50,6 +50,18 @@ class SetupSchedulesTest : AntsTest() {
         assertEquals("Nightly", schedule.label)
     }
 
+    @Test
+    fun `a Schedule whose Process is neither here nor in the Setup is refused, and the report says so`() {
+        val zip = startAnother(tempHome()).use { ants ->
+            ants.getBean(Processes::class.java).deploy(javaClass.getResource("/start-end.bpmn")!!.readBytes())
+            val id = ants.getBean(Schedules::class.java).add("start-end", mapOf(NAME to listOf("Nightly")), "0 0 8 * * MON-FRI")
+            ants.getBean(Setup::class.java).export(setOf("schedules/$id"))
+        }
+        val report = setup.import(zip, all(setup.preview(zip))).single { it.noun == "Schedule" }
+        assertEquals(Setup.Outcome.REFUSED, report.outcome, report.toString())
+        assertEquals("Its Process start-end isn't in this Ants: import or publish it first.", report.reason)
+    }
+
     @Autowired
     lateinit var dashboards: Dashboards
 
@@ -67,16 +79,15 @@ class SetupSchedulesTest : AntsTest() {
         }
         assertEquals(setOf("dashboards/$dashboard/dashboard.yaml"), entries(zip).keys.filter { it.startsWith("dashboards/") }.toSet())
 
+        settings(null, "node: {path: ${ScriptsTest.NODE}}\n")
         val report = setup.import(zip, all(setup.preview(zip)))
-        // The default Profile replaces this Ants' own once an earlier test wrote its settings.yaml.
-        assertEquals(listOf(Setup.Outcome.ADDED), report.filter { it.noun != "Profile" }.map { it.outcome }.distinct(), report.toString())
+        assertEquals(listOf(Setup.Outcome.ADDED), report.map { it.outcome }.distinct(), report.toString())
         val landed = dashboards.get(dashboard)
         assertEquals("Disks", landed.title)
         val widget = landed.widget("disk")!!
         assertEquals("Free disk", widget.title)
         assertEquals(emptyList(), dashboards.posts(dashboard, widget))
 
-        settings(null, "node: {path: ${ScriptsTest.NODE}}\n")
         val script = scripts.withId("s-disk01")!!
         val run = runner.run(script, emptyMap(), scripts.where(script).resolve("script.mjs"), Files.createTempDirectory("workspace"), "r-new", emptyMap<String, Any>(), Sender(script, "r-new", "t-new"))
         assertEquals(0, run.exitCode, run.output)

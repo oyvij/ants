@@ -240,7 +240,7 @@
     <div class="savebar" hidden><span>Unsaved changes</span><button class="primary" name="action" value="save">Save</button></div>
 </form>
 <%-- Outside the Settings form, so picking a Setup to import isn't an unsaved change. --%>
-<div class="card setup"><h3>Setup</h3><div class="help">Your own Agents, Skills with their References and Scripts in one zip, laid out like
+<div class="card setup"><h3>Setup</h3><div class="help">What you made in one zip: your published Processes, Agents, Skills with their References, Scripts, Templates, Profiles, Schedules, Dashboards and portable Settings, laid out like
     ANTS_HOME, to move to another Ants or share. It holds no Run or Draft, and no Secret value unless you include the Kept values, encrypted with
     your Safe key, which Import then asks for. Import shows what it would add or replace before anything changes.</div>
     <div class="row"><a class="btn" href="/settings/setup/export">Export…</a>

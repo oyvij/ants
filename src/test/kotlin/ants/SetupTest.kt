@@ -591,4 +591,64 @@ class SetupTest : AntsTest() {
         assertEquals(emptyMap(), settings.protectedCommands())
         assertEquals(emptyMap(), settings.secrets())
     }
+
+    @Test
+    fun `a Script's own Lookups travel with it, and its own Secrets named like a label here mark it only when their values stay behind`() {
+        scripts.save(Script("s-deploy1", "deploy", "Deploys."), "console.log('deploy')\n", null)
+        scripts.saveSecrets("s-deploy1", mapOf("KEY" to "own-s3cret"), mapOf("TOKEN" to "op://Dev/deploy/token"))
+        try {
+            val plain = setup.export()
+            val withValues = setup.export(keptValues = true)
+            scripts.delete("s-deploy1")
+            home.resolve("settings.yaml").writeText("secrets:\n  TOKEN: [TOKEN]\n  KEY: [KEY]\n")
+
+            // Its own Lookup TOKEN is its own wherever it lands; its own Kept KEY only when its value comes with it.
+            val marked = setup.preview(plain).items.single { it.noun == "Script" }
+            assertFalse(marked.ticked)
+            assertEquals("It would run with your Secret KEY.", marked.warning)
+            val script = setup.preview(withValues).items.single { it.noun == "Script" }
+            assertTrue(script.ticked && script.warning == null, script.toString())
+
+            val report = setup.import(plain, mapOf(script.key to Setup.Choice()))
+            assertEquals(Setup.Outcome.ADDED, report.single { it.noun == "Script" }.outcome, report.toString())
+            assertEquals(mapOf("TOKEN" to "op://Dev/deploy/token"), scripts.ownLookups("s-deploy1"))
+        } finally {
+            secretStore.deleteScriptValues("s-deploy1")
+        }
+    }
+
+    @Test
+    fun `listing what to export changes no file, and Export gives an Agent or Skill without an id one`() {
+        val agent = home.resolve("agents/plain.md").apply { writeText("---\nname: plain\ndescription: Writes.\n---\nWrite.\n") }
+        val skill = home.resolve("skills/bare").createDirectories().also { it.resolve("SKILL.md").writeText("---\nname: bare\ndescription: Bare.\n---\nDo.\n") }
+        val before = agent.readText()
+
+        assertEquals(setOf("agents/plain.md", "skills/bare"), setup.exportable().map { it.key }.toSet())
+        assertEquals(before, agent.readText())
+        assertFalse(skill.resolve("ants.yaml").exists())
+
+        val zip = entries(setup.export())
+        assertContains(zip.getValue("agents/plain.md"), "id: ${catalogue.agent("plain").id!!}")
+        assertContains(zip.getValue("skills/bare/ants.yaml"), catalogue.skill("bare").id!!)
+    }
+
+    @Test
+    fun `a Setup from an older Ants is read through the migrations ANTS_HOME gets, so a Process naming its Skill the old way lands`() {
+        val bpmn = javaClass.getResource("/agent-task.bpmn")!!.readText().replace("\"agent-task\"", "\"old-shape\"")
+            .replace("""<operaton:property name="ants.skills" value="draft" />""", """<operaton:property name="ants.skill" value="draft" />""")
+        val zip = zip(mapOf(
+            "setup.yaml" to "ants: 0.0.1\n",
+            "agents/writer.md" to "---\nid: a-writer1\nname: writer\ndescription: Writes.\n---\nWrite plainly.\n",
+            "skills/draft/SKILL.md" to "---\nname: draft\ndescription: Drafts.\n---\nDo it.\n",
+            "skills/draft/ants.yaml" to "id: k-draft1\n",
+            "processes/old-shape.bpmn" to bpmn,
+        ))
+
+        val report = setup.import(zip, all(setup.preview(zip)))
+        assertEquals(listOf(Setup.Outcome.ADDED), report.map { it.outcome }.distinct(), report.toString())
+        val deployed = repository.getProcessModel(repository.createProcessDefinitionQuery().processDefinitionKey("old-shape").latestVersion().singleResult()!!.id)!!.readAllBytes().decodeToString()
+        assertContains(deployed, "\"ants.skills\"")
+        assertFalse("\"ants.skill\"" in deployed, deployed)
+        assertEquals(listOf("k-draft1"), catalogue.agent("writer").skills)
+    }
 }

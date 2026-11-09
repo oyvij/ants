@@ -134,7 +134,7 @@ class Schedules(
         val given = State.of(schedule)
         val process = given.process ?: throw Unfilled("It names no Process.")
         val times = cron(given.cron.orEmpty())
-        latest(process) ?: throw Unfilled("There is no Process $process.")
+        latest(process) ?: throw Unfilled("Its Process $process isn't in this Ants: import or publish it first.")
         update(id) { State(paused = true, last = clock.instant(), process = process, cron = times, values = given.values) }
     }
 

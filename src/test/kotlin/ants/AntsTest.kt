@@ -177,10 +177,11 @@ abstract class AntsTest {
 
         /**
          * The fake login shell. Only `-l` reads the "profile", the way only a login shell reads the user's, and puts
-         * [loginBin] before the system folders alone, so Detect never finds a real claude or nono.
+         * [loginBin] before the tests' own PATH alone, so Detect never finds a real claude or nono, nor a real gh before
+         * the tests' own, which is logged in.
          */
         val shell: Path = loginBin.resolveSibling("sh").also {
-            Files.writeString(it, "#!/bin/sh\n[ \"$1\" = -l ] && PATH=\"$loginBin:/usr/bin:/bin\" && shift\n[ \"$1\" = -c ] && exec /bin/sh -c \"$2\"\n")
+            Files.writeString(it, "#!/bin/sh\n[ \"$1\" = -l ] && PATH=\"$loginBin:${System.getenv("PATH")}\" && shift\n[ \"$1\" = -c ] && exec /bin/sh -c \"$2\"\n")
             it.toFile().setExecutable(true)
         }
 
