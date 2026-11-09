@@ -416,6 +416,66 @@ class SetupTest : AntsTest() {
     }
 
     @Test
+    fun `a Protected Command linked to a Secret label this Ants has starts unticked with a warning, and ticking it imports it`() {
+        home.resolve("settings.yaml").writeText("secrets:\n  npm: [NPM_TOKEN]\nprotected-commands:\n  yarn publish: [npm]\n")
+        val zip = setup.export()
+        home.resolve("settings.yaml").writeText("secrets:\n  npm: [MY_NPM_TOKEN]\n")
+
+        val command = setup.preview(zip).items.single { it.noun == "Protected Command" }
+        assertFalse(command.ticked)
+        assertContains(command.warning.orEmpty(), "npm")
+        val report = setup.import(zip, mapOf(command.key to Setup.Choice()))
+        assertEquals(Setup.Outcome.ADDED, report.single { it.noun == "Protected Command" }.outcome)
+        assertEquals(mapOf("yarn publish" to listOf("npm")), settings.protectedCommands())
+    }
+
+    @Test
+    fun `a Script listing a Secret label this Ants has and a Secret Provider linking one are marked, and the others are not`() {
+        home.resolve("settings.yaml").writeText(
+            """
+            secrets:
+              npm: [NPM_TOKEN]
+              op-login: [OP_SERVICE_ACCOUNT_TOKEN]
+            secret-providers:
+              op: {command: [op, read, "{ref}"], secrets: [op-login]}
+              bw: {command: [bw, get, "{ref}"], secrets: []}
+            """.trimIndent() + "\n",
+        )
+        scripts.save(Script("s-publish1", "publish", "Publishes.", secrets = listOf("npm")), "console.log('publish')\n", null)
+        script("tidy", "s-tidy0001")
+        val zip = setup.export()
+
+        val items = setup.preview(zip).items.associateBy { it.name }
+        for (marked in listOf("publish" to "npm", "op" to "op-login")) {
+            assertFalse(items.getValue(marked.first).ticked, marked.first)
+            assertContains(items.getValue(marked.first).warning.orEmpty(), marked.second)
+        }
+        for (plain in listOf("tidy", "bw", "npm")) assertTrue(items.getValue(plain).ticked && items.getValue(plain).warning == null, plain)
+    }
+
+    @Test
+    fun `Importing into a fresh Ants marks nothing`() {
+        home.resolve("settings.yaml").writeText(
+            """
+            secrets:
+              npm: [NPM_TOKEN]
+            secret-providers:
+              op: {command: [op, read, "{ref}"], secrets: [npm]}
+            protected-commands:
+              yarn publish: [npm]
+            """.trimIndent() + "\n",
+        )
+        scripts.save(Script("s-publish1", "publish", "Publishes.", secrets = listOf("npm")), "console.log('publish')\n", null)
+        val zip = setup.export()
+
+        startAnother(tempHome()).use { ants ->
+            val items = ants.getBean(Setup::class.java).preview(zip).items
+            assertEquals(4, items.size, items.toString())
+            assertTrue(items.all { it.ticked && it.warning == null }, items.toString())
+        }
+    }
+
+    @Test
     fun `Your Skills and Your tools of a shipped Agent round-trip`() {
         val lead = catalogue.agent("lead")
         skill("style", "k-style1")

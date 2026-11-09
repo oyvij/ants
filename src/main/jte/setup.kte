@@ -31,13 +31,14 @@
         <tbody>
 @for(item in preview.items)
         <tr data-key="${item.key}">
-            <td><input type="checkbox" name="item" value="${item.key}" checked="${item.problem == null}" aria-label="Import ${item.noun} ${ants.Transcript.plain(item.name)}"></td>
+            <td><input type="checkbox" name="item" value="${item.key}" checked="${item.ticked}" aria-label="Import ${item.noun} ${ants.Transcript.plain(item.name)}"></td>
             <td>${item.noun}</td>
             <td><b>$unsafe{ants.Transcript.inline(item.name)}</b>
 @if(item.status == ants.Setup.Status.CLASHES)
                 <label class="cap">Rename to<input name="rename:${item.key}" placeholder="e.g. ${ants.Transcript.plain(item.name)}-2"></label>
 @endif
 @if(item.problem != null)<div class="small" role="alert">$unsafe{ants.Transcript.inline(item.problem.orEmpty())}</div>@endif
+@if(item.warning != null)<div class="warn">⚠ $unsafe{ants.Transcript.inline(item.warning.orEmpty())}</div>@endif
             </td>
             <td><span class="pill ${when (item.status) { ants.Setup.Status.NEW -> "p-added"; ants.Setup.Status.REPLACES -> "p-changed"; ants.Setup.Status.CLASHES -> "p-failed" }}">${ants.Transcript.plain(item.status.label)}</span></td>
         </tr>
