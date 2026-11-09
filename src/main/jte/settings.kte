@@ -204,9 +204,11 @@
         </div>
         <div class="fld"><b class="f">Keep open</b>
             <div class="help">For a server nobody logs in to after a restart: keeps the Safe key in <code>${keyFile}</code>, outside ANTS_HOME, so the Safe unlocks at boot.</div>
-            <p class="row">@if(keepOpen)<span class="pill p-ready">On</span> <button form="keep-open" name="on" value="false">Turn off</button>@else<span class="pill p-quiet">Off</span> <button form="keep-open" name="on" value="true">Turn on</button>@endif</p>
+            <p class="row">@if(keepOpen)<span class="pill p-ready">On</span> <button form="keep-open" name="on" value="false">Turn off</button>@elseif(safeLocked)<span class="pill p-quiet">Off</span> <span class="muted small">Unlock the Safe to turn it on.</span>@else<span class="pill p-quiet">Off</span> <button form="keep-open" name="on" value="true">Turn on</button>@endif</p>
 @if(keepOpen || passwordFromEnv)
             <p role="alert">With ${if (keepOpen) "Keep open on" else "the password from the environment"}, the Safe guards against disk leaks only, not against an Agent: one that runs code as Ants' OS user can open it.</p>
+@elseif(!safeLocked)
+            <p class="help">Turned on, the Safe guards against disk leaks only, not against an Agent: one that runs code as Ants' OS user can open it.</p>
 @endif
         </div></div>
     <div class="card updates"><h3>Updates</h3>

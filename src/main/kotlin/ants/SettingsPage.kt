@@ -72,10 +72,11 @@ class SettingsPage(
         }
     }
 
-    /** Keep open's toggle: on writes the Safe key beside ANTS_HOME, so the Safe unlocks at boot; off deletes it. */
+    /** Keep open's toggle: on writes the Safe key beside ANTS_HOME, so the Safe unlocks at boot; off deletes it. On needs the Safe unlocked. */
     @PostMapping("/settings/keep-open")
-    fun keepOpen(@RequestParam on: Boolean): String {
-        store.keepOpen(on)
+    fun keepOpen(@RequestParam on: Boolean, request: HttpServletRequest): String {
+        if (on && store.locked) Shell.toast(request, Toast("Keep open is off", "Unlock the Safe first, then turn Keep open on.", Toast.Kind.ERROR))
+        else store.keepOpen(on)
         return "redirect:/settings"
     }
 

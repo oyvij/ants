@@ -96,7 +96,7 @@ class SettingsTest : AntsTest() {
     }
 
     @Test
-    fun `Keep open keeps the Safe unlocked across restarts and warns, and off deletes the key file`() {
+    fun `Keep open warns before it is turned on, keeps the Safe unlocked across restarts, and off deletes the key file`() {
         val warning = "guards against disk leaks only"
         val home = tempHome()
         fun url(ants: Any) = "http://127.0.0.1:${(ants as WebServerApplicationContext).webServer!!.port}"
@@ -105,7 +105,7 @@ class SettingsTest : AntsTest() {
         startAnother(home).use { ants ->
             val browser = Browser(url(ants)).also { it.login("s3cret-pw") }
             store(ants).saveSettingsValues(mapOf("npm" to "tok-9f3a"))
-            assertFalse(warning in browser.get("/settings").body)
+            assertContains(browser.get("/settings").body, warning) // before turning it on, beside Turn on
             assertEquals(200, browser.post("/settings/keep-open", mapOf("on" to "true")).status)
             assertContains(browser.get("/settings").body, warning)
         }
@@ -115,12 +115,27 @@ class SettingsTest : AntsTest() {
             assertContains(browser.get("/settings").body, warning)
             assertEquals(200, browser.post("/settings/keep-open", mapOf("on" to "false")).status)
             assertFalse(store(ants).keyFile.exists())
-            assertFalse(warning in browser.get("/settings").body)
         }
         startAnother(home).use { ants -> assertTrue(store(ants).locked) }
         startAnother(home, "--ants.password=s3cret-pw").use { ants ->
             assertContains(Browser(url(ants)).also { it.login("s3cret-pw") }.get("/settings").body, warning)
         }
+    }
+
+    @Test
+    fun `Keep open is offered only while the Safe is unlocked, and turning it on while locked is refused`() {
+        browser.get("/settings") // logs in first, which unlocks the Safe
+        secretStore.lock()
+        try {
+            assertFalse("""form="keep-open" name="on" value="true"""" in browser.get("/settings").body)
+            val response = browser.post("/settings/keep-open", mapOf("on" to "true"))
+            assertEquals(200, response.status)
+            assertContains(response.body, toastMarkup(Toast.Kind.ERROR, "Keep open is off", "Unlock the Safe first, then turn Keep open on."))
+            assertFalse(secretStore.keepOpen)
+        } finally {
+            secretStore.unlock("admin")
+        }
+        assertContains(browser.get("/settings").body, """form="keep-open" name="on" value="true"""")
     }
 
     @Test
