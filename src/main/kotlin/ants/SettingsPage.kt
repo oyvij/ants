@@ -72,6 +72,13 @@ class SettingsPage(
         }
     }
 
+    /** Keep open's toggle: on writes the Safe key beside ANTS_HOME, so the Safe unlocks at boot; off deletes it. */
+    @PostMapping("/settings/keep-open")
+    fun keepOpen(@RequestParam on: Boolean): String {
+        store.keepOpen(on)
+        return "redirect:/settings"
+    }
+
     /** **Unlock** in the Secrets card: the Safe key unlocks a locked Safe, and the Tasks waiting on it go on; a wrong one is refused. */
     @PostMapping("/settings/safe/unlock")
     fun unlock(@RequestParam key: String, request: HttpServletRequest): String {
@@ -115,6 +122,8 @@ class SettingsPage(
         model.addAttribute("file", settings.file.toString())
         model.addAttribute("message", message)
         model.addAttribute("passwordFromEnv", settings.passwordFromEnv)
+        model.addAttribute("keepOpen", store.keepOpen)
+        model.addAttribute("keyFile", store.keyFile.toString())
         model.addAttribute("login", login())
         model.addAttribute("home", home.toString())
         model.addAttribute("address", "${address.ifEmpty { "0.0.0.0" }}:$port")

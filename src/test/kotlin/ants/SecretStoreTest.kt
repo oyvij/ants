@@ -3,6 +3,7 @@ package ants
 import org.junit.jupiter.api.Test
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.PosixFilePermissions
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.readText
@@ -171,6 +172,37 @@ class SecretStoreTest {
         for (file in old.walk()) for (plain in listOf("s3cret-npm", "s3cret-mvn", "xoxb-s3cret", key, "pa55word")) {
             assertFalse(plain in file.readText(), "$plain in $file")
         }
+    }
+
+    @Test
+    fun `Keep open writes the Safe key outside ANTS_HOME, so a restart unlocks with no login, and off deletes it`() {
+        store.saveSettingsValues(mapOf("npm" to "s3cret-npm"))
+        assertFalse(store.keepOpen)
+
+        store.keepOpen(true)
+        assertTrue(store.keepOpen)
+        assertFalse(store.keyFile.startsWith(home))
+        assertEquals("rw-------", PosixFilePermissions.toString(Files.getPosixFilePermissions(store.keyFile)))
+        val restarted = SecretStore(home)
+        assertFalse(restarted.locked)
+        assertTrue(restarted.keepOpen)
+        assertEquals(mapOf("npm" to "s3cret-npm"), restarted.settingsValues())
+
+        restarted.keepOpen(false)
+        assertFalse(restarted.keyFile.exists())
+        assertTrue(SecretStore(home).locked)
+    }
+
+    @Test
+    fun `Reset Safe replaces the Keep open key file when Keep open is on`() {
+        store.keepOpen(true)
+        store.reset()
+        store.saveSettingsValues(mapOf("npm" to "s3cret-npm"))
+        assertEquals(mapOf("npm" to "s3cret-npm"), SecretStore(home).settingsValues()) // unlocked from the new key
+
+        store.keepOpen(false)
+        store.reset()
+        assertFalse(store.keepOpen)
     }
 
     @Test

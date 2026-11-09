@@ -857,7 +857,7 @@ class AgentLauncher(
         // the deny rule `Bash(git *--output*)` refuses it (git takes no abbreviation of `--output`)
         val gitOutput = if (tools.any { it.startsWith("Bash(git ") }) listOf("Bash(git *--output*)") else emptyList()
         val protectedCommandRules = settings.protectedCommands().keys.flatMap { listOf("Bash($it)", "Bash($it *)") }
-        val disallowed = types + gitOutput + protectedCommandRules + denied + (listOf(store.file, settings.file).map(Path::toAbsolutePath).map(Path::toString) + listOf("scripts", "drafts/scripts").map { "${home.resolve(it).toAbsolutePath()}/**" }).flatMap { listOf("Read(/$it)", "Edit(/$it)") }
+        val disallowed = types + gitOutput + protectedCommandRules + denied + (listOf(store.file, store.keyFile, settings.file).map(Path::toAbsolutePath).map(Path::toString) + listOf("scripts", "drafts/scripts").map { "${home.resolve(it).toAbsolutePath()}/**" }).flatMap { listOf("Read(/$it)", "Edit(/$it)") }
         return STREAM_JSON + listOf(
             "--json-schema", json.writeValueAsString(schema),
             if (resume) "--resume" else "--session-id", session,

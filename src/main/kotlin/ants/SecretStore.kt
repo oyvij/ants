@@ -32,6 +32,12 @@ class SecretStore(home: Path, password: String? = null) {
     /** The Safe's file, which claude Agents may neither read nor edit (ADR 0015). */
     val file: Path = home.resolve("safe.yaml")
 
+    /**
+     * Keep open's file, beside ANTS_HOME, not in it, so a copy of ANTS_HOME carries no key: the Safe key in plain, mode
+     * 0600, which unlocks the Safe at boot. claude Agents may neither read nor edit it.
+     */
+    val keyFile: Path = home.resolveSibling("${home.fileName}-safe.key")
+
     private var key: ByteArray? = null
 
     /** Settings Secrets' values by label under `settings`, each Script's own by its id under `scripts`. */
@@ -46,8 +52,19 @@ class SecretStore(home: Path, password: String? = null) {
     private val held = mutableListOf<() -> Unit>()
 
     init {
-        if (file.exists()) password?.let(::unlock)
-        else migrate(home, password)
+        if (!file.exists()) migrate(home, password)
+        else if (keyFile.exists()) unlockWithKey(keyFile.readText()) // a stale key leaves it locked
+        else password?.let(::unlock)
+    }
+
+    /** Keep open is on: the Safe unlocks at boot from [keyFile]. */
+    val keepOpen get() = keyFile.exists()
+
+    /** On writes the Safe key to [keyFile] (the Safe must be unlocked); off deletes it. */
+    @Synchronized
+    fun keepOpen(on: Boolean) {
+        if (on) keyFile.writePrivately(encode(checkNotNull(key) { "The Safe is locked: log in to unlock it" }))
+        else keyFile.deleteIfExists()
     }
 
     /** No Safe key in memory: no value can be read or saved until a login or the Safe key unlocks it. */
@@ -146,6 +163,7 @@ class SecretStore(home: Path, password: String? = null) {
         values = mutableMapOf()
         file.writePrivately(yaml.dump(mapOf("values" to encode(encrypt(fresh, yaml.dump(values).encodeToByteArray())))))
         password?.let(::rewrap)
+        if (keepOpen) keepOpen(true)
         release() // the Tasks waiting go on, and fail on a Secret with no value until it is retyped
     }
 
