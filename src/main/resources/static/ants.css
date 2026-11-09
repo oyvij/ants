@@ -603,7 +603,7 @@ main form.row:is(.pushacts, .remove) { display: flex; margin: 16px 0 0; } #comme
 
 /* Settings: its lists' name column and number fields keep the prototype's widths, and a long path wraps in its card. */
 .settings .grid2 > .card { min-width: 0; }
-.settings .kv code { overflow-wrap: anywhere; } .settings .cmd code { min-width: 0; }
+.settings .kv code, .settings .help code { overflow-wrap: anywhere; } .settings .cmd code { min-width: 0; }
 .settings .row > .name { width: 180px; flex: none; }
 .settings .listed > .row > label.row { min-height: 36px; margin-right: 0; }
 .settings .updates > :is(p, label.row) { margin: 0 0 10px; }
