@@ -17,6 +17,7 @@
 @param posted: Boolean = false
 @param alertKey: String
 @param alertDevices: List<ants.ListedDevice>
+@param safeLocked: Boolean = false
 <!doctype html>
 <html lang="en">
 <head>
@@ -104,6 +105,13 @@
         A Kept value is kept in the Safe, encrypted, never shown again; left blank, the saved one stays. A Lookup is a pointer into
         your password manager, such as <span class="eg">op://Dev/npm/token</span>, which its Secret Provider below resolves at each use.
         Each variable name is the variable the command reads the value from, such as <span class="eg">YARN_NPM_AUTH_TOKEN</span>.</div>
+@if(safeLocked)
+        <div class="safe-state row"><span><b>The Safe is locked.</b> Tasks that need a Secret wait until it is unlocked.</span>
+            <label class="cap grow">Safe key<input type="password" name="key" form="safe-unlock" autocomplete="off"></label>
+            <button form="safe-unlock">Unlock</button></div>
+@else
+        <div class="safe-state help">The Safe is unlocked.</div>
+@endif
         <div class="listed">
 @for((i, row) in form.shownSecrets.withIndex())
             <div class="row" hidden="${row.label.isEmpty()}">
@@ -222,6 +230,7 @@
 </form>
 <%-- Remove in the list of devices with Alerts on posts this form, not the Settings form, so it sends only its device. --%>
 <form method="post" action="/settings/alerts/remove" id="alert-remove"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"></form>
+<form method="post" action="/settings/safe/unlock" id="safe-unlock"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"></form>
 @for((i, map) in maps.entries.withIndex())
 <dialog class="modal source-map" id="source-map-${i}">
     <form method="dialog" class="mh"><b>${map.key}</b><code class="small">${map.value.first}</code><span class="sp"></span><span class="muted small">Esc to close</span><button class="ghost" title="Close" aria-label="Close">✕</button></form>

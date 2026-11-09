@@ -19,12 +19,21 @@ class ScriptTask(
     private val names: RunNames,
     private val scripts: Scripts,
     private val runner: ScriptRunner,
+    private val store: SecretStore,
 ) : BuiltInWorker(externalTasks, "Script Task", TOPIC, Duration.ofMinutes(15), { it.includeExtensionProperties().enableCustomObjectDeserialization() }) {
     override fun handle(task: LockedExternalTask) {
         val element = repository.getBpmnModelInstance(task.processDefinitionId).getModelElementById<BaseElement>(task.activityId)
         val linked = task.extensionProperties[SCRIPT] ?: error("${task.activityId} names no Script")
         val kept = task.extensionProperties[nameBeside(linked)]
         val script = scripts.linked(linked, kept)
+        if (script.secrets.isNotEmpty() && store.locked) {
+            // Held as a failure with retries left, so no incident, and freed once the Safe is unlocked, keeping this
+            // one worker free for the Script Tasks that need no Secret. ponytail: re-held each minute until then, as
+            // a restart forgets who waits.
+            externalTasks.handleFailure(task.id, WORKER, "Waiting on the locked Safe", null, 1, Duration.ofMinutes(1).toMillis())
+            store.whenUnlocked { externalTasks.unlock(task.id) }
+            return
+        }
         val run = runtime.createProcessInstanceQuery().processInstanceId(task.processInstanceId).singleResult()!!.rootProcessInstanceId
         val inputNames = element?.inputs().orEmpty().map { it.operatonName }.toSet()
         val literals = element?.literalInputs().orEmpty().keys

@@ -218,6 +218,27 @@ class ProtectedCommandsTest : AntsTest() {
     }
 
     @Test
+    fun `on a locked Safe the run tool waits, on the Notification list, and runs the Protected Command once the Safe is unlocked`() {
+        val (_, launch) = yarn()
+        val (url, authorization) = server(launch)
+        secretStore.rewrap("admin") // another test may have changed the password the Safe key is wrapped by
+        secretStore.lock()
+        try {
+            val answer = java.util.concurrent.CompletableFuture.supplyAsync { call(url, authorization, listOf("./yarn"), folder = "sub") }
+            eventually { assertContains(browser.get("/notifications").body, "The Safe is locked") }
+            assertFalse(answer.isDone)
+
+            secretStore.unlock("admin")
+            val text = ((answer.get().second["result"] as Map<*, *>)["content"] as List<*>).single().let { (it as Map<*, *>)["text"].toString() }
+            assertTrue(text.startsWith("Exit code 3"), text)
+            assertFalse("The Safe is locked" in browser.get("/notifications").body)
+        } finally {
+            secretStore.unlock("admin")
+            claude.release("go")
+        }
+    }
+
+    @Test
     fun `a Protected Command gets a Lookup's value from its Secret Provider, masked in its output, and a failing Provider refuses it naming the Secret`() {
         // A fake Secret Provider for `fake://`: it writes its arguments and environment beside itself and prints the value,
         // or fails for a pointer holding `broken`, printing its linked Secret.

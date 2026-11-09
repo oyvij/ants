@@ -126,7 +126,10 @@ class Scripts(@Value("\${ants.home}") home: Path, private val settings: Settings
      * The environment holding [script]'s Secrets' values, [own] being its own Kept ones and [lookups] its own Lookups,
      * each Lookup, its own or one in Settings, resolved now; throws [SecretProviders.Failed] when one can't be.
      */
-    fun secretEnvironment(script: Script, own: Map<String, String> = ownSecrets(script.id), lookups: Map<String, String> = ownLookups(script.id)): Map<String, String> {
+    fun secretEnvironment(script: Script, own: Map<String, String>? = null, lookups: Map<String, String> = ownLookups(script.id)): Map<String, String> {
+        if (script.secrets.isEmpty()) return emptyMap()
+        store.awaitUnlocked() // a Script tool's call waits on a locked Safe
+        val own = own ?: ownSecrets(script.id)
         val names = settings.secrets()
         return script.secrets.flatMap { secret ->
             own[secret]?.let { listOf(secret to it) }

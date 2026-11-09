@@ -53,6 +53,7 @@ class ProtectedCommands(private val settings: Settings, private val mcp: Mcp, pr
         val dir = runCatching { root.resolve(folder).toRealPath() }.getOrNull()?.takeIf { it.startsWith(root) && it.isDirectory() }
             ?: throw Refused("$folder is no folder in the Run workspace, so Ants ran nothing.")
         val names = settings.secrets()
+        if (labels.isNotEmpty()) store.awaitUnlocked()
         val secrets = labels.flatMap { label ->
             val value = try {
                 providers.value(label)

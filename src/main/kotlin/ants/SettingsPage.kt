@@ -62,7 +62,7 @@ class SettingsPage(
                 val missing = Settings.CLIS - found.keys
                 show(model, form.copy(paths = form.paths + found), if (missing.isEmpty()) null else "Your login shell doesn't find ${missing.joinToString(", ")}.")
             }
-            else -> form.error()?.let { show(model, form, it) } ?: run {
+            else -> (form.error() ?: "The Safe is locked: unlock it under Secrets before you save.".takeIf { store.locked })?.let { show(model, form, it) } ?: run {
                 val asked = form.removedProfiles(settings).filter(settings::hasInstructions)
                 if (asked.isNotEmpty() && "confirm" !in params) return confirm(model, removalQuestion(asked), Dependents(emptyList()), "/settings", params, "/settings")
                 form.save(settings, store, params["password"].orEmpty().takeUnless { settings.passwordFromEnv }.orEmpty(), encoder)
@@ -70,6 +70,17 @@ class SettingsPage(
                 "redirect:/settings"
             }
         }
+    }
+
+    /** **Unlock** in the Secrets card: the Safe key unlocks a locked Safe, and the Tasks waiting on it go on; a wrong one is refused. */
+    @PostMapping("/settings/safe/unlock")
+    fun unlock(@RequestParam key: String, request: HttpServletRequest): String {
+        Shell.toast(
+            request,
+            if (store.unlockWithKey(key)) Toast("Safe unlocked", "Tasks waiting on it go on.", Toast.Kind.SUCCESS)
+            else Toast("Not unlocked", "That is not the Safe key, so the Safe stays locked.", Toast.Kind.ERROR),
+        )
+        return "redirect:/settings"
     }
 
     /** Save in a Source map's editor: rewrites the file of the saved Source map [name], creating it if it isn't there. */
@@ -111,6 +122,7 @@ class SettingsPage(
         model.addAttribute("docker", updates.docker)
         model.addAttribute("alertKey", alerts.publicKey)
         model.addAttribute("alertDevices", alerts.listed())
+        model.addAttribute("safeLocked", store.locked)
         return "settings"
     }
 
@@ -331,7 +343,7 @@ data class SettingsForm(
                 sourceMaps = named(settings.sourceMaps(), settings.defaultSourceMap()),
                 profiles = settings.profiles().map { (name, profile) -> ProfileRow(name, profile.vault.orEmpty(), profile.sourceMap.orEmpty(), was = name, verbosity = profile.verbosity) },
                 defaultProfile = settings.profiles().keys.indexOf(settings.defaultProfile()),
-                secrets = store.settingsValues().keys.let { set ->
+                secrets = (if (store.locked) emptySet() else store.settingsValues().keys).let { set ->
                     val lookups = settings.lookups()
                     settings.secrets().map { (label, names) -> SecretRow(label, names.joinToString(", "), was = label, set = label in set, lookup = lookups[label]) }
                 },
