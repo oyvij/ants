@@ -31,14 +31,12 @@ class ProtectedCommandsTest : AntsTest() {
     private val claude = FakeClaude()
     private val json = JsonMapper.shared()
 
-    private val secrets = home.resolve("secrets.yaml")
-
     private val done = """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION",""" +
         """"structured_output":{"outcome":"done","summary":"Drafted.","output":{}}}"""
 
     @AfterEach
     fun noSecrets() {
-        secrets.deleteIfExists()
+        secretStore.saveSettingsValues(emptyMap())
     }
 
     /** A Task whose settings link the Secret `npm` to `./yarn` and keep `maven` for `mvn deploy`. */
@@ -50,7 +48,7 @@ class ProtectedCommandsTest : AntsTest() {
                 "protected-commands:\n  ./yarn: [npm]\n  mvn deploy: [maven]\n",
             env = listOf("PATH", "HOME"),
         )
-        secrets.writeText("npm: s3cret-npm\nmaven: s3cret-mvn\n")
+        secretStore.saveSettingsValues(mapOf("npm" to "s3cret-npm", "maven" to "s3cret-mvn"))
         claude.session("draft", *session)
     }
 

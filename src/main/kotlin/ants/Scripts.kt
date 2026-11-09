@@ -5,7 +5,6 @@ import org.springframework.stereotype.Component
 import org.yaml.snakeyaml.Yaml
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
-import kotlin.io.path.deleteIfExists
 import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
 import kotlin.io.path.listDirectoryEntries
@@ -44,7 +43,7 @@ data class Script(
 }
 
 @Component
-class Scripts(@Value("\${ants.home}") home: Path, private val settings: Settings, private val drafts: Drafts) {
+class Scripts(@Value("\${ants.home}") home: Path, private val settings: Settings, private val drafts: Drafts, private val store: SecretStore) {
     val folder: Path = home.resolve("scripts")
 
     fun all(): List<Script> = inFolders().map { it.second }.sortedBy { it.name }
@@ -73,8 +72,7 @@ class Scripts(@Value("\${ants.home}") home: Path, private val settings: Settings
     fun code(script: Script): String = file(script).takeIf { it.exists() }?.readText().orEmpty()
 
     /** The Script with [id]'s own Secrets' values, kept apart from its Draft and its published version, so a Draft-only Script has them too. */
-    fun ownSecrets(id: String): Map<String, String> = folder.resolve(id).resolve("secrets.yaml").takeIf { it.exists() }
-        ?.let { Yaml().load<Map<*, *>>(it.readText()) }.orEmpty().entries.associate { (name, value) -> "$name" to "$value" }
+    fun ownSecrets(id: String): Map<String, String> = store.scriptValues(id)
 
     /**
      * Keeps [own] as the Script with [id]'s own Secrets, at once: a published Script's definition then lists them,
@@ -82,15 +80,9 @@ class Scripts(@Value("\${ants.home}") home: Path, private val settings: Settings
      */
     fun saveSecrets(id: String, own: Map<String, String>) {
         val old = ownSecrets(id).keys
-        writeSecrets(folder.resolve(id), own)
+        store.saveScriptValues(id, own)
         val script = withId(id) ?: return
         folder(script).resolve("script.yaml").writeAtomically(yaml.dump(script.copy(secrets = (own.keys + script.secrets.filter { it !in old }).distinct()).definition()))
-    }
-
-    private fun writeSecrets(dir: Path, own: Map<String, String>) {
-        val secrets = dir.resolve("secrets.yaml")
-        if (own.isEmpty()) secrets.deleteIfExists()
-        else secrets.also { dir.createDirectories() }.writePrivately(yaml.dump(own))
     }
 
     /** A new Script's id: none a Script or any Draft holds. */
@@ -100,19 +92,20 @@ class Scripts(@Value("\${ants.home}") home: Path, private val settings: Settings
     fun save(script: Script, code: String, own: Map<String, String>?) {
         val dir = folder(script).createDirectories()
         dir.resolve("script.mjs").writeAtomically(code)
-        own?.let { writeSecrets(dir, it) }
+        own?.let { store.saveScriptValues(script.id, it) }
         dir.resolve("script.yaml").writeAtomically(yaml.dump(script.definition()))
     }
 
     /** Deletes the Script with [id], its own Secrets with it. */
     fun delete(id: String) {
+        store.deleteScriptValues(id)
         folder.resolve(id).toFile().deleteRecursively()
     }
 
     /** The environment holding [script]'s Secrets' values, [own] being its own ones. */
     fun secretEnvironment(script: Script, own: Map<String, String> = ownSecrets(script.id)): Map<String, String> {
         val names = settings.secrets()
-        val values = settings.secretValues()
+        val values = store.settingsValues()
         return script.secrets.flatMap { secret ->
             own[secret]?.let { listOf(secret to it) }
                 ?: values[secret]?.let { value -> names[secret].orEmpty().map { it to value } }

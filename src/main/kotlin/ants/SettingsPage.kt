@@ -38,11 +38,12 @@ class SettingsPage(
     private val updates: Updates,
     private val server: WebServerApplicationContext,
     private val alerts: Alerts,
+    private val store: SecretStore,
 ) {
     private val port get() = server.webServer?.port
 
     @GetMapping("/settings")
-    fun page(model: Model) = show(model, SettingsForm.of(settings))
+    fun page(model: Model) = show(model, SettingsForm.of(settings, store))
 
     @PostMapping("/settings")
     fun press(@RequestParam all: MultiValueMap<String, String>, request: HttpServletRequest, model: Model): String {
@@ -63,7 +64,7 @@ class SettingsPage(
             else -> form.error()?.let { show(model, form, it) } ?: run {
                 val asked = form.removedProfiles(settings).filter(settings::hasInstructions)
                 if (asked.isNotEmpty() && "confirm" !in params) return confirm(model, removalQuestion(asked), Dependents(emptyList()), "/settings", params, "/settings")
-                form.save(settings, params["password"].orEmpty().takeUnless { settings.passwordFromEnv }.orEmpty(), encoder)
+                form.save(settings, store, params["password"].orEmpty().takeUnless { settings.passwordFromEnv }.orEmpty(), encoder)
                 updates.checkSoon()
                 "redirect:/settings"
             }
@@ -252,12 +253,12 @@ data class SettingsForm(
 
     /**
      * Writes the form into `settings.yaml`, with [password] as the new password unless it's empty, and the Secrets'
-     * values into `secrets.yaml`, a blank one keeping the value saved under the label it was.
+     * values into the [SecretStore], a blank one keeping the value saved under the label it was.
      */
-    fun save(settings: Settings, password: String, encoder: PasswordEncoder) {
-        val saved = settings.secretValues()
+    fun save(settings: Settings, store: SecretStore, password: String, encoder: PasswordEncoder) {
+        val saved = store.settingsValues()
         val removed = removedProfiles(settings)
-        settings.saveSecretValues(secrets.mapNotNull { row -> row.value.ifEmpty { saved[row.was] }?.let { row.label to it } }.toMap())
+        store.saveSettingsValues(secrets.mapNotNull { row -> row.value.ifEmpty { saved[row.was] }?.let { row.label to it } }.toMap())
         settings.save { values -> write(values, password, encoder) }
         settings.keepInstructions(renamedProfiles(), removed)
     }
@@ -294,7 +295,7 @@ data class SettingsForm(
     }
 
     companion object {
-        fun of(settings: Settings): SettingsForm {
+        fun of(settings: Settings, store: SecretStore): SettingsForm {
             val values = settings.read()
             fun cli(cli: String) = values[cli] as? Map<*, *> ?: emptyMap<String, Any?>()
             fun words(value: Any?) = Settings.strings(value)?.joinToString(" ").orEmpty()
@@ -311,7 +312,7 @@ data class SettingsForm(
                 sourceMaps = named(settings.sourceMaps(), settings.defaultSourceMap()),
                 profiles = settings.profiles().map { (name, profile) -> ProfileRow(name, profile.vault.orEmpty(), profile.sourceMap.orEmpty(), was = name, verbosity = profile.verbosity) },
                 defaultProfile = settings.profiles().keys.indexOf(settings.defaultProfile()),
-                secrets = settings.secretValues().keys.let { set ->
+                secrets = store.settingsValues().keys.let { set ->
                     settings.secrets().map { (label, names) -> SecretRow(label, names.joinToString(", "), was = label, set = label in set) }
                 },
                 protectedCommands = settings.protectedCommands().map { (prefix, labels) -> ProtectedCommandRow(prefix, labels) },

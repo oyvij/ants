@@ -1354,7 +1354,7 @@ class BrowserTest : AntsTest() {
         http.publishNew("/scripts", listOf("name" to "post", "description" to "Posts.", "code" to "console.log('hi')\n", "inputs" to "", "vars" to "",
             "secrets[0].name" to "OLD_TOKEN", "secrets[0].value" to "tok-old", "secrets[0].was" to ""))
         val folder = home.resolve("scripts").toFile().listFiles()!!.single { "name: post" in it.resolve("script.yaml").readText() }.toPath()
-        fun ownSecrets() = org.yaml.snakeyaml.Yaml().load<Map<*, *>?>(folder.resolve("secrets.yaml").toFile().takeIf { it.exists() }?.readText() ?: "").orEmpty()
+        fun ownSecrets() = secretStore.scriptValues(folder.fileName.toString())
         fun listed() = org.yaml.snakeyaml.Yaml().load<Map<*, *>>(folder.resolve("script.yaml").readText())["secrets"]
         page.navigate(url("/scripts/post"))
         val card = page.locator(card("Secrets"))
@@ -1453,7 +1453,7 @@ class BrowserTest : AntsTest() {
         page.waitForURL(url("/scripts/kept-token"))
         assertThat(marker).hasText("Published")
         val folder = home.resolve("scripts").toFile().listFiles()!!.single { it.resolve("script.yaml").exists() && "Keeps its token." in it.resolve("script.yaml").readText() }
-        assertEquals("TOKEN: t0ps3cret\n", folder.resolve("secrets.yaml").readText())
+        assertEquals(mapOf("TOKEN" to "t0ps3cret"), secretStore.scriptValues(folder.name))
     }
 
     @Test
@@ -5634,7 +5634,7 @@ class BrowserTest : AntsTest() {
     @Test
     fun `on Settings, a Secret is added with a value the page never shows, and a Protected Command picks Secrets by label`() = browse {
         settings(null, "secrets:\n  npm: [NPM_TOKEN]\n")
-        val secrets = home.resolve("secrets.yaml").apply { writeText("npm: tok-old\n") }
+        secretStore.saveSettingsValues(mapOf("npm" to "tok-old"))
         try {
             page.navigate(url("/settings"))
             assertFalse("tok-old" in page.content())
@@ -5656,13 +5656,13 @@ class BrowserTest : AntsTest() {
                 val saved = org.yaml.snakeyaml.Yaml().load<Map<*, *>>(home.resolve("settings.yaml").readText())
                 assertEquals(mapOf("npm" to listOf("NPM_TOKEN"), "maven" to listOf("MAVEN_TOKEN", "MVN_TOKEN")), saved["secrets"])
                 assertEquals(mapOf("yarn" to listOf("npm")), saved["protected-commands"])
-                assertEquals(mapOf("npm" to "tok-old", "maven" to "tok-mvn"), org.yaml.snakeyaml.Yaml().load<Map<*, *>>(secrets.readText()))
+                assertEquals(mapOf("npm" to "tok-old", "maven" to "tok-mvn"), secretStore.settingsValues())
             }
             page.navigate(url("/settings"))
             assertFalse("tok-" in page.content())
             assertThat(card("Protected Commands").locator("select").first().locator("option")).hasText(arrayOf("npm", "maven")) // once saved, offered
         } finally {
-            secrets.deleteIfExists()
+            secretStore.saveSettingsValues(emptyMap())
         }
     }
 

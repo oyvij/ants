@@ -22,7 +22,6 @@ class ScriptToolsTest : AntsTest() {
     private val browser by lazy { browser().also { it.login() } }
     private val claude = FakeClaude()
     private val json = JsonMapper.shared()
-    private val secrets = home.resolve("secrets.yaml")
 
     @Autowired
     lateinit var scripts: Scripts
@@ -32,7 +31,7 @@ class ScriptToolsTest : AntsTest() {
 
     @AfterEach
     fun noSecrets() {
-        secrets.deleteIfExists()
+        secretStore.saveSettingsValues(emptyMap())
     }
 
     private fun script(id: String, name: String, description: String = "Does $name.", inputs: List<String> = emptyList(), code: String = "console.log('hi')\n") =

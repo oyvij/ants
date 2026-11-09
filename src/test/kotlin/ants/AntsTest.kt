@@ -67,6 +67,10 @@ abstract class AntsTest {
     @Autowired
     private lateinit var history: HistoryService
 
+    /** Where tests seed and read Secret values, as Ants keeps them. */
+    @Autowired
+    protected lateinit var secretStore: SecretStore
+
     @Autowired
     private lateinit var launcher: AgentLauncher
 

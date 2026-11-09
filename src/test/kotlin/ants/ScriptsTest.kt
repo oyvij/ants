@@ -30,7 +30,6 @@ class ScriptsTest : AntsTest() {
     private val browser by lazy { browser().also { it.login() } }
     private val json = JsonMapper.shared()
     private val scripts get() = home.resolve("scripts")
-    private val secrets = home.resolve("secrets.yaml")
 
     @Autowired
     lateinit var runner: ScriptRunner
@@ -41,7 +40,7 @@ class ScriptsTest : AntsTest() {
             "node: {path: $NODE}\nclaude: {env: [PATH, HOME]}\n" +
                 "secrets:\n  npm: [NPM_TOKEN]\n  maven: [MAVEN_TOKEN]\n",
         )
-        secrets.writeText("npm: s3cret-npm\nmaven: s3cret-mvn\n")
+        secretStore.saveSettingsValues(mapOf("npm" to "s3cret-npm", "maven" to "s3cret-mvn"))
     }
 
     @BeforeEach
@@ -51,7 +50,7 @@ class ScriptsTest : AntsTest() {
 
     @AfterEach
     fun noSecrets() {
-        secrets.deleteIfExists()
+        secretStore.saveSettingsValues(emptyMap())
     }
 
     /** The form of a Script named [name], as its page posts it. */
@@ -113,7 +112,7 @@ class ScriptsTest : AntsTest() {
             ),
             definition(folder),
         )
-        assertEquals(mapOf("SLACK_TOKEN" to "xoxb-s3cret"), Yaml().load<Map<*, *>>(folder.resolve("secrets.yaml").readText()))
+        assertEquals(mapOf("SLACK_TOKEN" to "xoxb-s3cret"), secretStore.scriptValues(folder.fileName.toString()))
         assertFalse("xoxb-s3cret" in folder.resolve("script.yaml").readText())
         assertFalse("xoxb-s3cret" in page.body)
         assertFalse(folder.fileName.toString() in page.body)
@@ -124,11 +123,11 @@ class ScriptsTest : AntsTest() {
         assertFalse("secrets[2]" in shown)
 
         browser.post("/scripts/post-message", form("post-message", inputs = "channel", own = listOf("SLACK_TOKEN" to "")))
-        assertEquals(mapOf("SLACK_TOKEN" to "xoxb-s3cret"), Yaml().load<Map<*, *>>(folder.resolve("secrets.yaml").readText()))
+        assertEquals(mapOf("SLACK_TOKEN" to "xoxb-s3cret"), secretStore.scriptValues(folder.fileName.toString()))
         browser.post("/scripts/post-message", form("post-message", own = listOf("SLACK_TOKEN" to "xoxb-typed"))) // Publish leaves the Secrets as the card saved them
-        assertEquals(mapOf("SLACK_TOKEN" to "xoxb-s3cret"), Yaml().load<Map<*, *>>(folder.resolve("secrets.yaml").readText()))
+        assertEquals(mapOf("SLACK_TOKEN" to "xoxb-s3cret"), secretStore.scriptValues(folder.fileName.toString()))
         browser.post("/scripts/post-message/secrets", emptyList())
-        assertFalse(folder.resolve("secrets.yaml").exists())
+        assertEquals(emptyMap(), secretStore.scriptValues(folder.fileName.toString()))
     }
 
     @Test
@@ -607,7 +606,7 @@ class ScriptsTest : AntsTest() {
         val draft = Drafts(home).get(DraftKind.SCRIPT, id)!!.content // as a restarted Ants reads it
         assertContains(draft, "Half done.")
         assertFalse("xoxb" in draft) // a Secret's value is never in the Draft
-        assertEquals(mapOf("SLACK_TOKEN" to "xoxb-s3cret"), Yaml().load<Map<*, *>>(folder.resolve("secrets.yaml").readText()))
+        assertEquals(mapOf("SLACK_TOKEN" to "xoxb-s3cret"), secretStore.scriptValues(folder.fileName.toString()))
         assertContains(browser.get("/scripts").body, """<a href="/scripts/drafter">drafter</a></b><span class="pill draft-mark p-changed">Draft · changes not published</span>""")
     }
 
@@ -721,7 +720,7 @@ class ScriptsTest : AntsTest() {
         listOf("secrets[$i].name" to row.first, "secrets[$i].value" to row.second, "secrets[$i].was" to row.third)
     }
 
-    private fun savedSecrets(name: String): Map<*, *>? = folder(name).resolve("secrets.yaml").takeIf { it.exists() }?.let { Yaml().load<Map<*, *>>(it.readText()) }
+    private fun savedSecrets(name: String): Map<*, *>? = secretStore.scriptValues(folder(name).fileName.toString()).ifEmpty { null }
 
     @Test
     fun `the Secrets card's Save writes its Secrets at once, and neither publishes the Script nor touches its Draft`() {

@@ -19,7 +19,6 @@ import kotlin.test.assertTrue
 
 class ScriptTaskTest : AntsTest() {
     private val browser by lazy { browser().also { it.login() } }
-    private val secrets = home.resolve("secrets.yaml")
     private val json = JsonMapper.shared()
 
     @Autowired
@@ -34,12 +33,12 @@ class ScriptTaskTest : AntsTest() {
     @BeforeEach
     fun settings() {
         home.resolve("settings.yaml").writeText("node: {path: ${ScriptsTest.NODE}}\nclaude: {env: [PATH, HOME]}\nsecrets:\n  npm: [NPM_TOKEN]\n$vault")
-        secrets.writeText("npm: s3cret-npm\n")
+        secretStore.saveSettingsValues(mapOf("npm" to "s3cret-npm"))
     }
 
     @AfterEach
     fun noSecrets() {
-        secrets.deleteIfExists()
+        secretStore.saveSettingsValues(emptyMap())
     }
 
     private fun saveScript(name: String, code: String, inputs: String = "", vars: String = "", own: List<Pair<String, String>> = emptyList(), linked: List<String> = emptyList(), was: String? = null, output: List<Pair<String, String>> = emptyList(), widgets: String = "") {

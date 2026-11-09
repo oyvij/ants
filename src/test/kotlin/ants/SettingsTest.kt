@@ -355,7 +355,6 @@ class SettingsTest : AntsTest() {
 
     @Test
     fun `Secrets keep their values in secrets yaml, never on the page or in settings yaml, and Protected Commands link them by label`() {
-        val secrets = home.resolve("secrets.yaml")
         try {
             fun save(vararg form: Pair<String, String>): String {
                 browser.get("/settings")
@@ -370,8 +369,8 @@ class SettingsTest : AntsTest() {
             assertEquals(mapOf("npm" to listOf("YARN_NPM_AUTH_TOKEN", "NPM_TOKEN"), "maven" to listOf("MAVEN_TOKEN")), yaml()["secrets"])
             assertEquals(mapOf("yarn" to listOf("npm"), "mvn deploy" to listOf("npm", "maven")), yaml()["protected-commands"])
             assertFalse("tok-" in file.readText())
-            assertEquals(mapOf("npm" to "tok-9f3a", "maven" to "tok-77mv"), Yaml().load<Map<*, *>>(secrets.readText()))
-            assertEquals("rw-------", PosixFilePermissions.toString(Files.getPosixFilePermissions(secrets)))
+            assertEquals(mapOf("npm" to "tok-9f3a", "maven" to "tok-77mv"), secretStore.settingsValues())
+            assertEquals("rw-------", PosixFilePermissions.toString(Files.getPosixFilePermissions(secretStore.file)))
             val page = browser.get("/settings").body.replace("&#34;", "\"")
             assertFalse("tok-" in page)
             assertContains(page, """name="secrets[0].label" value="npm"""")
@@ -387,7 +386,7 @@ class SettingsTest : AntsTest() {
                 "secrets[1].label" to "", "secrets[1].value" to "", "secrets[1].names" to "", "secrets[1].was" to "maven",
                 "protected-commands[0].prefix" to "yarn", "protected-commands[0].secrets" to "registry",
             )
-            assertEquals(mapOf("registry" to "tok-9f3a"), Yaml().load<Map<*, *>>(secrets.readText()))
+            assertEquals(mapOf("registry" to "tok-9f3a"), secretStore.settingsValues())
             assertEquals(mapOf("yarn" to listOf("registry")), yaml()["protected-commands"])
 
             val refused = listOf(
@@ -397,9 +396,9 @@ class SettingsTest : AntsTest() {
                 save("protected-commands[0].prefix" to "yarn", "protected-commands[0].secrets" to "gone") to "The Protected Command yarn needs Secrets from the list above.",
             )
             for ((page, alert) in refused) assertContains(page, alert)
-            assertEquals(mapOf("registry" to "tok-9f3a"), Yaml().load<Map<*, *>>(secrets.readText()))
+            assertEquals(mapOf("registry" to "tok-9f3a"), secretStore.settingsValues())
         } finally {
-            secrets.deleteIfExists()
+            secretStore.saveSettingsValues(emptyMap())
         }
     }
 

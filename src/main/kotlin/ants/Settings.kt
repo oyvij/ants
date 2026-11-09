@@ -203,26 +203,13 @@ class Settings(
     /** The extra Skill folders, read after Ants' own. */
     fun skillFolders(): List<Path> = folders("skill-folders")
 
-    /** The Secrets, each label to the variable names it goes under; their values are in [secretsFile] ([secretValues]). */
+    /** The Secrets, each label to the variable names it goes under; their values are in the [SecretStore]. */
     fun secrets(): Map<String, List<String>> = (read()["secrets"] as? Map<*, *>).orEmpty().entries.associate { (label, names) -> "$label" to strings(names).orEmpty() }
 
     /** The Protected Commands, each command prefix to the labels of the Secrets it runs with. */
     fun protectedCommands(): Map<String, List<String>> =
         (read()["protected-commands"] as? Map<*, *>).orEmpty().entries
             .associate { (prefix, labels) -> strings(prefix).orEmpty().joinToString(" ") to strings(labels).orEmpty() }.filterKeys(String::isNotEmpty)
-
-    /** `secrets.yaml`, beside this file: each Secret's value by label, readable by Ants' OS user alone. */
-    val secretsFile: Path = home.resolve("secrets.yaml")
-
-    /** Each Secret's value, by label, read fresh. */
-    fun secretValues(): Map<String, String> = if (!secretsFile.exists()) emptyMap()
-    else (Yaml().load<Map<*, *>>(secretsFile.readText()) ?: emptyMap<Any, Any>()).entries.associate { (label, value) -> "$label" to "$value" }
-
-    /** Rewrites [secretsFile] with [values], the file mode 0600 before a value is in it. */
-    @Synchronized
-    fun saveSecretValues(values: Map<String, String>) {
-        secretsFile.writePrivately(if (values.isEmpty()) "" else yaml.dump(values))
-    }
 
     /** The pages' `color-scheme`: the system's until the user picks light or dark. */
     fun colorScheme(): String = read()["theme"]?.toString()?.takeIf { it in listOf("light", "dark") } ?: "light dark"
