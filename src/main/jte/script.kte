@@ -7,6 +7,7 @@
 @param dependents: ants.Dependents?
 @param draft: ants.DraftHead? = null
 @param use: Boolean = false
+@param safeLocked: Boolean = false
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
 @param shell: ants.Shell
@@ -87,6 +88,9 @@
             <textarea id="widgets" class="mono" name="widgets" rows="2" placeholder="e.g. d-4k2m9x/w-7hq3pz">${form.widgets}</textarea></div>
     </div>
     <div class="card"><h3>Secrets</h3><div class="help">The Script's own Secrets, kept apart from its Draft: Save Secrets keeps them at once, and the published Script uses them from its next run. A value is kept in the Safe, encrypted, never shown again; left blank, the saved one stays. A Lookup is a pointer into your password manager, such as <code>op://Dev/slack/token</code>, that its <a href="/settings">Secret Provider</a> resolves at each run; the published Script lists only the name. A Secret removed, or with its name cleared, goes on Save Secrets.</div>
+@if(safeLocked)
+        <p class="help" role="status"><b>The Safe is locked.</b> <a href="/settings">Unlock it in Settings</a> to save Secrets or Test run with them.</p>
+@endif
         <div class="listed" data-secrets>
 @for((i, row) in form.shownOwn.withIndex())
             <div class="row">

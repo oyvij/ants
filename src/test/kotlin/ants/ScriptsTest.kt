@@ -783,6 +783,25 @@ class ScriptsTest : AntsTest() {
         browser.post("${copy.path}/delete", mapOf("confirm" to "on"))
     }
 
+    @Test
+    fun `a Script's page renders while the Safe is locked, showing no Kept value as set, and refuses Save Secrets and a Test run with Secrets`() {
+        create(form("locked-out", code = "console.log(process.env.TOKEN)\n", own = listOf("TOKEN" to "t0ps3cret")))
+        secretStore.lock()
+        try {
+            val page = browser.get("/scripts/locked-out")
+            assertEquals(200, page.status, page.body)
+            assertContains(page.body, """name="secrets[0].name" value="TOKEN"""")
+            assertFalse("••••" in page.body)
+            assertFalse("""name="linked" value="TOKEN"""" in page.body) // still its own, not one from Settings
+            assertContains(page.body, "The Safe is locked")
+            assertContains(browser.post("/scripts/locked-out/secrets", secretRows(Triple("TOKEN", "n3w", "TOKEN"))).body, "The Safe is locked")
+            assertContains(testRun(form("locked-out", own = listOf("TOKEN" to "")), script = "locked-out")["output"].toString(), "The Safe is locked")
+        } finally {
+            secretStore.unlock("admin")
+        }
+        assertEquals(mapOf("TOKEN" to "t0ps3cret"), savedSecrets("locked-out"))
+    }
+
     @Autowired
     lateinit var library: Scripts
 

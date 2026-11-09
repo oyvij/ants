@@ -210,6 +210,7 @@ class ScriptsPage(
 
     /** Saves [form]'s rows as [item]'s own Secrets, or says why not. */
     private fun keepSecrets(item: ScriptItem, form: ScriptForm): String? {
+        if (scripts.locked) return LOCKED
         val own = ownValues(form, scripts.ownSecrets(item.id))
         val lookups = form.ownLookups
         val error = ScriptForm.envError(form.own.map { it.name })
@@ -266,6 +267,7 @@ class ScriptsPage(
         val form = ScriptForm.of(params)
         val page = params["script"]?.firstOrNull()?.let { runCatching { item(it) }.getOrNull() }
         val saved = page?.published
+        if (scripts.locked && (form.own.isNotEmpty() || form.linked.isNotEmpty())) return result(ScriptRun(-1, "$LOCKED\n", null))
         val savedSecrets = page?.let { scripts.ownSecrets(it.id) }.orEmpty()
         val inputs = try {
             json.readValue(params["sample"]?.firstOrNull()?.ifBlank { null } ?: "{}", Map::class.java)
@@ -322,7 +324,10 @@ class ScriptsPage(
         yaml.dump(params.filterKeys { it !in NOT_DRAFTED && !SECRET_VALUE.matches(it) }.mapValues { (_, values) -> values.toList() })
 
     private fun show(model: Model, form: ScriptForm, item: ScriptItem, message: String? = null): String {
-        model.addAttribute("form", form.keeping(scripts.ownNames(item.id), scripts.ownLookups(item.id)))
+        val lookups = scripts.ownLookups(item.id)
+        // A locked Safe shows no Kept value as set, as Settings does.
+        model.addAttribute("form", form.keeping(if (scripts.locked) lookups.keys else scripts.ownNames(item.id), lookups))
+        model.addAttribute("safeLocked", scripts.locked)
         model.addAttribute("saved", item.name)
         model.addAttribute("draft", item.head)
         model.addAttribute("labels", (settings.secrets().keys + form.linked).distinct())
@@ -340,7 +345,8 @@ class ScriptsPage(
         private val NOT_DRAFTED = setOf("_csrf", "version", "tab", "seq", "use", "script", "sample")
         private val SECRET_VALUE = Regex("""secrets\[\d+]\.value""")
         private val WAS = Regex("""secrets\[\d+]\.was""")
-        private val LOOKUP = Regex("""[a-z][a-z0-9+.-]*://\S+""")
+        private const val LOCKED = "The Safe is locked: unlock it in Settings to save Secrets or Test run with them."
+        private val LOOKUP =Regex("""[a-z][a-z0-9+.-]*://\S+""")
     }
 }
 

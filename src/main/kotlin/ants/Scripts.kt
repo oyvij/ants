@@ -81,8 +81,15 @@ class Scripts(@Value("\${ants.home}") home: Path, private val settings: Settings
     fun ownLookups(id: String): Map<String, String> =
         ((settings.read()["script-lookups"] as? Map<*, *>)?.get(id) as? Map<*, *>).orEmpty().entries.associate { (name, pointer) -> "$name" to "$pointer" }
 
-    /** The names of the Script with [id]'s own Secrets, Kept or Lookups. */
-    fun ownNames(id: String): Set<String> = ownSecrets(id).keys + ownLookups(id).keys
+    /**
+     * The names of the Script with [id]'s own Secrets, Kept or Lookups. While the Safe is locked its Kept ones are the
+     * Secrets its definition lists that Settings doesn't hold. ponytail: an own Secret named as a Settings label reads as linked then.
+     */
+    fun ownNames(id: String): Set<String> = ownLookups(id).keys +
+        if (store.locked) withId(id)?.secrets.orEmpty().filter { it !in settings.secrets() } else ownSecrets(id).keys
+
+    /** Whether the Safe is locked, so no Kept value can be read or saved. */
+    val locked get() = store.locked
 
     /**
      * Keeps [own] as the Script with [id]'s own Kept Secrets and [lookups] as its own Lookups, at once: a published
