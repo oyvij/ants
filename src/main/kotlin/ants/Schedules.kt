@@ -115,15 +115,36 @@ class Schedules(
     }
 
     private fun checked(processKey: String, values: Map<String, List<String>>, cron: String): Pair<String, Map<String, List<String>>> {
-        val times = cron.trim()
-        if (times.split(Regex("\\s+")).size != 6 || runCatching { CronExpression.parse(times) }.isFailure) {
-            throw Unfilled("Ants can't read the cron $times: it takes six fields, seconds first, such as 0 0 8 * * MON-FRI.")
-        }
+        val times = cron(cron)
         val definition = latest(processKey) ?: throw Unfilled("There is no Process $processKey.")
         val kept = values.filterKeys { it in startForm.fields(definition).map(Field::name) + NAME + PROFILE + VERBOSITY }
         startForm.variables(definition, kept)
         val profile = startForm.profile(definition, kept[PROFILE]?.firstOrNull())
         return times to kept + listOfNotNull(profile?.let { PROFILE to listOf(it) })
+    }
+
+    /** Every Schedule as a Setup holds it, by its id: its Process, cron and values, never what it ran or noted. */
+    fun exported(): Map<String, Map<String, Any>> = scheduleStates().mapValues { (_, state) -> State(process = state.process, cron = state.cron, values = state.values).toYaml() - "paused" }
+
+    /**
+     * Lands a Schedule from a Setup with its [id], replacing the one with it, paused, so it starts nothing until
+     * resumed. Its values are kept as they are: a Profile this Ants lacks fails its start, as when a Profile is removed.
+     */
+    fun land(id: String, schedule: Map<*, *>) = synchronized(this) {
+        val given = State.of(schedule)
+        val process = given.process ?: throw Unfilled("It names no Process.")
+        val times = cron(given.cron.orEmpty())
+        latest(process) ?: throw Unfilled("There is no Process $process.")
+        update(id) { State(paused = true, last = clock.instant(), process = process, cron = times, values = given.values) }
+    }
+
+    fun has(id: String) = id in scheduleStates()
+
+    /** [text] trimmed, a cron Ants can read; else [Unfilled] saying why. */
+    private fun cron(text: String) = text.trim().also { times ->
+        if (times.split(Regex("\\s+")).size != 6 || runCatching { CronExpression.parse(times) }.isFailure) {
+            throw Unfilled("Ants can't read the cron $times: it takes six fields, seconds first, such as 0 0 8 * * MON-FRI.")
+        }
     }
 
     fun pause(id: String, paused: Boolean) = update(id) { it.copy(paused = paused, last = clock.instant()) }
