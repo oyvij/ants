@@ -1,0 +1,44 @@
+@param items: List<ants.Setup.Exportable>
+@param _csrf: org.springframework.security.web.csrf.CsrfToken
+@param colorScheme: String = "light dark"
+@param shell: ants.Shell
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    @template.app()
+    <meta name="color-scheme" content="${colorScheme}">
+    <title>Export a Setup · Ants</title>
+    <script src="/setup-export.js" defer></script>
+</head>
+<body>
+@template.nav(shell = shell)
+<main class="setup">
+<div class="ph"><h1>Export a Setup</h1>
+    <div class="sub">What you made, in one zip laid out like ANTS_HOME, to move to another Ants or share. Untick what you don't share; ticking a
+        Process ticks what it uses.</div></div>
+<form method="post" action="/settings/setup/export" class="export">
+    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+    <table class="library">
+        <thead><tr><th>Export</th><th>Kind</th><th>Name</th></tr></thead>
+        <tbody>
+@for(item in items)
+        <tr data-key="${item.key}" data-name="${item.noun} ${ants.Transcript.plain(item.name)}" data-uses="${item.uses.joinToString(" ")}">
+            <td><input type="checkbox" name="item" value="${item.key}" checked aria-label="Export ${item.noun} ${ants.Transcript.plain(item.name)}"></td>
+            <td>${item.noun}</td>
+            <td><b>$unsafe{ants.Transcript.inline(item.name)}</b> <span class="used-by muted small"></span>
+                <div class="warn" role="alert" hidden></div></td>
+        </tr>
+@endfor
+@if(items.isEmpty())
+        <tr><td colspan="3" class="muted small">You have made nothing to export yet.</td></tr>
+@endif
+        </tbody>
+    </table>
+    <p class="row"><label class="cap"><input type="checkbox" name="kept" value="true"> Include Kept values</label></p>
+    <div class="help">The Kept values of the ticked Secret labels and Scripts, encrypted with your Safe key, which Import then asks for.</div>
+    <p class="row"><button class="primary">Export</button> <a href="/settings">Cancel</a></p>
+</form>
+</main>
+</body>
+</html>

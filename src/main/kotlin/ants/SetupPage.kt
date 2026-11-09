@@ -25,11 +25,18 @@ class SetupPage(private val setup: Setup, private val clock: Clock) {
     /** The Setups uploaded and previewed, by the token their preview posts back, until they are imported. */
     private val uploaded = ConcurrentHashMap<String, ByteArray>()
 
+    /** Every item the user made, all ticked; ticking a Process ticks what it uses. */
     @GetMapping("/settings/setup/export")
-    fun export(@RequestParam(defaultValue = "false") kept: Boolean): ResponseEntity<ByteArray> = ResponseEntity.ok()
+    fun exportable(model: Model): String {
+        model.addAttribute("items", setup.exportable())
+        return "setup-export"
+    }
+
+    @PostMapping("/settings/setup/export")
+    fun export(@RequestParam(name = "item", required = false) ticked: List<String>?, @RequestParam(defaultValue = "false") kept: Boolean): ResponseEntity<ByteArray> = ResponseEntity.ok()
         .contentType(MediaType.parseMediaType("application/zip"))
         .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment().filename("ants-setup-${LocalDate.now(clock)}.zip").build().toString())
-        .body(setup.export(keptValues = kept))
+        .body(setup.export(ticked.orEmpty().toSet(), keptValues = kept))
 
     @PostMapping("/settings/setup/import")
     fun upload(@RequestParam file: MultipartFile, model: Model): String {

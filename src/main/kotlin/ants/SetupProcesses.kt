@@ -73,6 +73,24 @@ class ProcessesInSetup(private val repository: RepositoryService, private val pr
     /** The keys of the Processes [item] calls. */
     private fun calls(item: SetupItem) = parse(item.files.values.single()).getElementsByTagNameNS(BPMN, "callActivity").elements().map { it.getAttribute("calledElement") }
 
+    /** Its Tasks' Agents, Skills, Scripts and Profile, each by id or name, and the Processes it calls. */
+    override fun uses(item: SetupItem): List<SetupUse> {
+        if (item.problem != null) return emptyList()
+        val properties = parse(item.files.values.single()).getElementsByTagNameNS("*", "property").elements().filter { it.parentNode.localName == "properties" }
+        val linked = properties.flatMap { property ->
+            val value = property.getAttribute("value")
+            when (property.getAttribute("name")) {
+                AGENT -> listOf(SetupUse("agents", value.trim()))
+                SKILLS -> words(value).map { SetupUse("skills", it) }
+                SCRIPTS -> words(value).map { SetupUse("scripts", it) }
+                SCRIPT -> listOf(SetupUse("scripts", value.trim()))
+                PROFILE -> listOf(SetupUse("profiles", value.trim()))
+                else -> emptyList()
+            }
+        }
+        return (linked + calls(item).map { SetupUse(folder, it) }).filter { it.value.isNotBlank() }.distinct()
+    }
+
     override fun isId(id: String) = SAFE_KEY.matches(id)
 
     override fun has(id: String) = repository.createProcessDefinitionQuery().processDefinitionKey(id).count() > 0

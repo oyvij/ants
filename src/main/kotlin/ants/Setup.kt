@@ -17,6 +17,9 @@ import java.util.zip.ZipOutputStream
  */
 data class SetupItem(val kind: SetupKind, val key: String, val id: String, val name: String, val files: Map<String, ByteArray>, val problem: String? = null, val setting: Any? = null)
 
+/** An item one item uses: the one of the kind in [folder] whose id or name is [value]. */
+data class SetupUse(val folder: String, val value: String)
+
 /**
  * One kind of item a Setup holds, such as the Agents, in its [folder], the same in a Setup as in ANTS_HOME: how the
  * user's own items go into a Setup, are read out of one, and land in this Ants, each keeping its id (ADR 0034). The
@@ -39,6 +42,12 @@ interface SetupKind {
 
     /** The items in a Setup's [files], which all lie in [folder], and in its `setup.yaml`'s keys, [settings]. */
     fun read(files: Map<String, ByteArray>, settings: Map<*, *>): List<SetupItem> = read(files)
+
+    /**
+     * What [item] uses that would go in a Setup beside it, each by the [SetupKind.folder] of its kind and its id or
+     * name, such as a Process's Agent: none, unless the kind links others.
+     */
+    fun uses(item: SetupItem): List<SetupUse> = emptyList()
 
     /** What the report says beside [item] once it landed, such as what it names that this Ants lacks. */
     fun note(item: SetupItem): String? = null
@@ -92,15 +101,37 @@ class Setup(private val kinds: List<SetupKind>, build: BuildProperties, private 
     /** A file Import refuses whole, saying why. */
     class Refused(message: String) : RuntimeException(message)
 
+    /** One of the user's own items Export offers, by the [key] it has in a Setup, with the keys of every item it [uses], through those it uses. */
+    data class Exportable(val key: String, val noun: String, val name: String, val uses: List<String>)
+
+    /** The user's own items of every kind, as Export lists them to tick. */
+    fun exportable(): List<Exportable> {
+        val items = own()
+        val used = items.associateWith { item ->
+            item.kind.uses(item).mapNotNull { use -> items.firstOrNull { it !== item && it.kind.folder == use.folder && (it.id == use.value || it.name == use.value) } }
+        }
+        return items.map { item ->
+            // Through what each used one uses, so ticking a Process ticks what its called Processes and its Agent use too.
+            val reached = linkedSetOf<SetupItem>()
+            val next = ArrayDeque(used.getValue(item))
+            while (next.isNotEmpty()) next.removeFirst().let { if (it !== item && reached.add(it)) next += used.getValue(it) }
+            Exportable(item.key, item.kind.noun, item.name, reached.map { it.key })
+        }
+    }
+
+    /** The user's own items as each kind reads them back. */
+    private fun own() = kinds.flatMap { kind -> kind.read(kind.export(), kind.exportSettings()) }
+
     /**
-     * The user's own items of every kind as a Setup, with the Kept values of its Secret labels and Scripts, encrypted
-     * with the Safe key, when [keptValues]; throws while the Safe is locked.
+     * The user's own items of every kind as a Setup, or only those whose keys are [ticked], with the Kept values of its
+     * Secret labels and Scripts, encrypted with the Safe key, when [keptValues]; throws while the Safe is locked.
      */
-    fun export(keptValues: Boolean = false): ByteArray = ByteArrayOutputStream().also { bytes ->
+    fun export(ticked: Set<String>? = null, keptValues: Boolean = false): ByteArray = ByteArrayOutputStream().also { bytes ->
         ZipOutputStream(bytes).use { zip ->
-            val meta = mapOf("ants" to version) + kinds.flatMap { it.exportSettings().entries.map { (key, value) -> key to value } }
-            val items = kinds.flatMap { it.export().entries.map { (path, data) -> path to data } }.toMap()
-            val files = mapOf(SETUP_FILE to yaml.dump(meta).toByteArray()) + items + (if (keptValues) mapOf(SAFE_FILE to kept(meta, items.keys)) else emptyMap())
+            val items = own().filter { ticked == null || it.key in ticked }
+            val meta = mapOf("ants" to version) + kinds.flatMap { kind -> settings(kind, items.filter { it.kind === kind }.takeIf { ticked != null }).entries.map { (key, value) -> key to value } }
+            val paths = items.flatMap { it.files.entries.map { (path, data) -> path to data } }.toMap()
+            val files = mapOf(SETUP_FILE to yaml.dump(meta).toByteArray()) + paths + (if (keptValues) mapOf(SAFE_FILE to kept(meta, paths.keys)) else emptyMap())
             for ((path, data) in files) {
                 zip.putNextEntry(ZipEntry(path))
                 zip.write(data)
@@ -118,6 +149,19 @@ class Setup(private val kinds: List<SetupKind>, build: BuildProperties, private 
             SCRIPTS to scripts.associateWith(store::scriptValues).filterValues { it.isNotEmpty() },
         )
         return yaml.dump(mapOf("sealed" to store.seal(values))).toByteArray()
+    }
+
+    /**
+     * What [kind] keeps in `setup.yaml`, of its [ticked] items only when given: a key holding a map keeps the entries
+     * named by a ticked item's id or name, and any other key is kept when it is a ticked item's id.
+     */
+    private fun settings(kind: SetupKind, ticked: List<SetupItem>?): Map<String, Any> {
+        val all = kind.exportSettings()
+        if (ticked == null) return all
+        val named = ticked.flatMap { listOf(it.id, it.name) }.toSet()
+        return all.mapNotNull { (key, value) ->
+            if (value is Map<*, *>) value.filterKeys { "$it" in named }.takeIf { it.isNotEmpty() }?.let { key to it } else (key to value).takeIf { key in named }
+        }.toMap()
     }
 
     /** Every item in [zip] as New, Replaces or Clashes; throws [Refused] for a file that isn't a Setup this Ants can read. */

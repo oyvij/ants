@@ -150,6 +150,28 @@ class SetupTest : AntsTest() {
     """.trimIndent()
 
     @Test
+    fun `Export lists every item ticked, a Process using its Agent's Skills and Scripts and what it calls, and writes only the ticked`() {
+        home.resolve("agents/writer.md").writeText("---\nid: a-writer1\nname: writer\ndescription: Writes.\nskills: draft, style\nscripts: [post]\n---\nWrite.\n")
+        agent("editor", "a-editor1")
+        skill("draft", "k-draft1")
+        skill("style", "k-style1")
+        skill("unused", "k-unused1")
+        script("post", "s-post01")
+        processes.deploy(agentTaskProcess("task", "Task").replace("<operaton:constraint name=\"required\" />", "").toByteArray()) // so a call needs to give it nothing
+        processes.deploy(caller("outer", "task").toByteArray())
+
+        val items = setup.exportable().associateBy { it.key }
+        val made = setOf("agents/writer.md", "agents/editor.md", "skills/draft", "skills/style", "skills/unused", "scripts/s-post01", "processes/task.bpmn", "processes/outer.bpmn")
+        assertTrue(items.keys.containsAll(made), items.keys.toString())
+        assertEquals(setOf("processes/task.bpmn", "agents/writer.md", "skills/draft", "skills/style", "scripts/s-post01"), items.getValue("processes/outer.bpmn").uses.toSet())
+        assertEquals(setOf("agents/writer.md", "skills/draft", "skills/style", "scripts/s-post01"), items.getValue("processes/task.bpmn").uses.toSet())
+        assertEquals(emptyList(), items.getValue("agents/editor.md").uses)
+
+        val zip = setup.export(setOf("processes/outer.bpmn", "agents/writer.md"))
+        assertEquals(setOf("setup.yaml", "processes/outer.bpmn", "agents/writer.md"), entries(zip).keys)
+    }
+
+    @Test
     fun `a replaced Process becomes its next version, one Publish would refuse is refused in the report, and the rest lands`() {
         agentTask(null)
         processes.deploy(agentTaskProcess("agent-task", "Agent Task").toByteArray())
@@ -327,6 +349,14 @@ class SetupTest : AntsTest() {
         val files = entries(zip)
         assertEquals(setOf("setup.yaml", "profiles/work/AGENTS.md"), files.keys)
         for (machine in listOf("/opt/claude", "hunter2-pass", "/home/me", "default-vault")) assertFalse(machine in files.getValue("setup.yaml"), machine)
+        val some = entries(setup.export(setOf("secrets/npm", "settings/theme", "profiles/work")))
+        assertEquals(setOf("setup.yaml", "profiles/work/AGENTS.md"), some.keys)
+        assertEquals(
+            setOf("ants", "secrets", "lookups", "theme", "profiles"),
+            (yaml.load<Map<*, *>>(some.getValue("setup.yaml")).keys),
+            "Only the ticked Settings go in: ${some.getValue("setup.yaml")}",
+        )
+        assertEquals(mapOf("npm" to listOf("NPM_TOKEN")), yaml.load<Map<*, *>>(some.getValue("setup.yaml"))["secrets"])
 
         val other = tempHome().createDirectories()
         other.resolve("settings.yaml").writeText("vaults:\n  notes: $vaultPath\n")
@@ -441,13 +471,13 @@ class SetupTest : AntsTest() {
     lateinit var secretProviders: SecretProviders
 
     /** A Setup with its Kept values from an Ants with the Kept Secret npm, a Protected Command and a Script with its own Kept Secret, and that Ants' Safe key. */
-    private fun withKeptValues(): Pair<ByteArray, String> = tempHome().let { other ->
+    private fun withKeptValues(ticked: Set<String>? = null): Pair<ByteArray, String> = tempHome().let { other ->
         startAnother(other).use { ants ->
             other.resolve("settings.yaml").writeText("secrets:\n  npm: [NPM_TOKEN]\nprotected-commands:\n  yarn publish: [npm]\n")
             val store = ants.getBean(SecretStore::class.java)
             store.saveSettingsValues(mapOf("npm" to "npm-s3cret"))
             ants.getBean(Scripts::class.java).save(Script("s-post01", "post", "Posts.", secrets = listOf("TOKEN")), "console.log('hi')\n", mapOf("TOKEN" to "script-s3cret"))
-            ants.getBean(Setup::class.java).export(keptValues = true) to store.newKey()!!
+            ants.getBean(Setup::class.java).export(ticked, keptValues = true) to store.newKey()!!
         }
     }
 
@@ -477,6 +507,16 @@ class SetupTest : AntsTest() {
             secretStore.saveSettingsValues(emptyMap())
             secretStore.deleteScriptValues("s-post01")
         }
+    }
+
+    @Test
+    fun `Kept values cover only the ticked Secret labels and Scripts`() {
+        fun kept(ticked: Set<String>): Map<*, *> = withKeptValues(ticked).let { (zip, key) ->
+            val sealed = (org.yaml.snakeyaml.Yaml().load<Any?>(entries(zip).getValue("safe.yaml")) as Map<*, *>)["sealed"] as String
+            SecretStore.open(key, sealed)!!
+        }
+        assertEquals(mapOf("secrets" to mapOf("npm" to "npm-s3cret"), "scripts" to emptyMap<String, Any>()), kept(setOf("secrets/npm")))
+        assertEquals(mapOf("secrets" to emptyMap<String, Any>(), "scripts" to mapOf("s-post01" to mapOf("TOKEN" to "script-s3cret"))), kept(setOf("scripts/s-post01")))
     }
 
     @Test
