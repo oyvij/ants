@@ -9,6 +9,7 @@ import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.nio.file.Files
+import java.nio.file.Path
 import java.time.Duration
 import kotlin.io.path.createSymbolicLinkPointingTo
 import kotlin.io.path.deleteIfExists
@@ -31,26 +32,25 @@ class ProtectedCommandsTest : AntsTest() {
     private val claude = FakeClaude()
     private val json = JsonMapper.shared()
 
-    private val secrets = home.resolve("secrets.yaml")
-
     private val done = """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION",""" +
         """"structured_output":{"outcome":"done","summary":"Drafted.","output":{}}}"""
 
     @AfterEach
     fun noSecrets() {
-        secrets.deleteIfExists()
+        secretStore.saveSettingsValues(emptyMap())
+        secretStore.deleteScriptValues("s-other01")
     }
 
     /** A Task whose settings link the Secret `npm` to `./yarn` and keep `maven` for `mvn deploy`. */
-    private fun protected(vararg session: String, tools: String? = null) {
+    private fun protected(vararg session: String, tools: String? = null, extra: String = "") {
         agentTask(
             claude,
             agent = tools?.let { "tools: $it\n" }.orEmpty(),
-            extra = "secrets:\n  npm: [YARN_NPM_AUTH_TOKEN, NPM_TOKEN]\n  maven: [MAVEN_TOKEN]\n" +
+            extra = "secrets:\n  npm: [YARN_NPM_AUTH_TOKEN, NPM_TOKEN]\n  maven: [MAVEN_TOKEN]\n" + extra +
                 "protected-commands:\n  ./yarn: [npm]\n  mvn deploy: [maven]\n",
             env = listOf("PATH", "HOME"),
         )
-        secrets.writeText("npm: s3cret-npm\nmaven: s3cret-mvn\n")
+        secretStore.saveSettingsValues(mapOf("npm" to "s3cret-npm", "maven" to "s3cret-mvn"))
         claude.session("draft", *session)
     }
 
@@ -79,10 +79,12 @@ class ProtectedCommandsTest : AntsTest() {
         assertContains(launch.argv, "--strict-mcp-config")
         assertContains(launch.flag("--allowedTools")!!.split(","), "mcp__ants__run")
         val denied = launch.flag("--disallowedTools")!!.split(",")
-        for (file in listOf("secrets.yaml", "settings.yaml")) {
+        for (file in listOf("safe.yaml", "settings.yaml")) {
             assertContains(denied, "Read(/$home/$file)")
             assertContains(denied, "Edit(/$home/$file)")
         }
+        assertContains(denied, "Read(/$home-safe.key)") // Keep open's Safe key, beside ANTS_HOME
+        assertContains(denied, "Edit(/$home-safe.key)")
         assertContains(denied, "Read(/$home/scripts/**)")
         assertContains(denied, "Edit(/$home/scripts/**)")
         assertContains(denied, "Read(/$home/drafts/scripts/**)") // a Script's Draft is as private as the Script
@@ -186,7 +188,7 @@ class ProtectedCommandsTest : AntsTest() {
      */
     private fun yarn(tools: String? = null): Pair<String, FakeClaude.Launch> {
         val script = """#!/bin/sh\nif [ "$1" = slow ]; then sleep 30 & echo $! > sleep.pid; wait; fi\npwd\nprintf '[%s]\\n' "$@"\n""" +
-            """env > env.out\necho s3cret-mvn\necho on stderr >&2\nexit 3\n"""
+            """env > env.out\necho s3cret-mvn\necho s3cret-own\necho on stderr >&2\nexit 3\n"""
         protected("write sub/yarn $script", "sh chmod +x sub/yarn", "write ready ok", "wait go", done, tools = tools)
         val run = start()
         eventually { assertTrue(workspace(run).resolve("ready").exists()) }
@@ -195,6 +197,7 @@ class ProtectedCommandsTest : AntsTest() {
 
     @Test
     fun `the run tool runs a Protected Command in the folder asked, with its Secrets under each name, and masks every Secret in its output`() {
+        secretStore.saveScriptValues("s-other01", mapOf("SLACK_TOKEN" to "s3cret-own")) // another Script's own
         val (run, launch) = yarn()
         val (url, authorization) = server(launch)
 
@@ -205,7 +208,7 @@ class ProtectedCommandsTest : AntsTest() {
         assertEquals(true, result["isError"]) // it exited 3
         val text = ((result["content"] as List<*>).single() as Map<*, *>)["text"].toString()
         val sub = workspace(run).resolve("sub").toRealPath()
-        assertEquals("Exit code 3\n\n$sub\n[install]\n[a b]\n[;]\n[env]\n[.files[] | \"=== \" + .filename \\\"x\\\"]\n••••\non stderr\n", text)
+        assertEquals("Exit code 3\n\n$sub\n[install]\n[a b]\n[;]\n[env]\n[.files[] | \"=== \" + .filename \\\"x\\\"]\n••••\n••••\non stderr\n", text)
         // The Secrets went to the command, under every name, and only the linked one.
         val env = sub.resolve("env.out").readLines().associate { it.substringBefore('=') to it.substringAfter('=') }
         assertEquals("s3cret-npm", env["YARN_NPM_AUTH_TOKEN"])
@@ -217,6 +220,70 @@ class ProtectedCommandsTest : AntsTest() {
         // Nothing of a Secret reaches the Transcript or the Run workspace's Ants files.
         assertFalse(Files.walk(workspace(run)).filter { it.isRegularFile() && it.fileName.toString() !in listOf("env.out", "yarn") }.anyMatch { "s3cret" in it.readText() })
     }
+
+    @Test
+    fun `on a locked Safe the run tool waits, on the Notification list, and runs the Protected Command once the Safe is unlocked`() {
+        val (_, launch) = yarn()
+        val (url, authorization) = server(launch)
+        secretStore.rewrap("admin") // another test may have changed the password the Safe key is wrapped by
+        secretStore.lock()
+        try {
+            val answer = java.util.concurrent.CompletableFuture.supplyAsync { call(url, authorization, listOf("./yarn"), folder = "sub") }
+            eventually { assertContains(browser.get("/notifications").body, "The Safe is locked") }
+            assertFalse(answer.isDone)
+
+            secretStore.unlock("admin")
+            val text = ((answer.get().second["result"] as Map<*, *>)["content"] as List<*>).single().let { (it as Map<*, *>)["text"].toString() }
+            assertTrue(text.startsWith("Exit code 3"), text)
+            assertFalse("The Safe is locked" in browser.get("/notifications").body)
+        } finally {
+            secretStore.unlock("admin")
+            claude.release("go")
+        }
+    }
+
+    @Test
+    fun `a Protected Command gets a Lookup's value from its Secret Provider, masked in its output, and a failing Provider refuses it naming the Secret`() {
+        // A fake Secret Provider for `fake://`: it writes its arguments and environment beside itself and prints the value,
+        // or fails for a pointer holding `broken`, printing its linked Secret.
+        val provider = Files.createTempDirectory("provider").resolve("lookup")
+        provider.writeText(
+            "#!/bin/sh\nprintf '[%s]\\n' \"$@\" > \"$0.args\"\nenv > \"$0.env\"\n" +
+                "case \"$2\" in *broken*) echo \"no item, token \$VAULT_TOKEN\"; exit 1;; esac\necho s3cret-looked-up\n",
+        )
+        provider.toFile().setExecutable(true)
+        val script = """#!/bin/sh\necho "token ${'$'}NPM_TOKEN"\n"""
+        protected(
+            "write yarn $script", "sh chmod +x yarn", "write ready ok", "wait go", done,
+            extra = "  vault: [VAULT_TOKEN]\nlookups:\n  npm: fake://Dev/npm/token\n" +
+                "secret-providers:\n  fake:\n    command: $provider read {ref}\n    secrets: [vault]\n",
+        )
+        secretStore.saveSettingsValues(mapOf("vault" to "s3cret-vault", "maven" to "s3cret-mvn"))
+        val run = start()
+        eventually { assertTrue(workspace(run).resolve("ready").exists()) }
+        val (url, authorization) = server(claude.launches("draft").single())
+        fun text(response: Pair<Int, Map<*, *>>) = ((response.second["result"] as Map<*, *>)["content"] as List<*>).single().let { (it as Map<*, *>)["text"].toString() }
+
+        assertEquals("Exit code 0\n\ntoken ••••\n", text(call(url, authorization, listOf("./yarn"))))
+        // The pointer came as one argument, the linked Secret under its name, on the allow-list.
+        assertEquals("[read]\n[fake://Dev/npm/token]\n", Path.of("$provider.args").readText())
+        val env = Path.of("$provider.env").readLines().associate { it.substringBefore('=') to it.substringAfter('=') }
+        assertEquals("s3cret-vault", env["VAULT_TOKEN"])
+        assertEquals(System.getenv("PATH"), env["PATH"])
+        assertFalse("MAVEN_TOKEN" in env)
+
+        settings.save { it["lookups"] = mapOf("npm" to "fake://broken") }
+        assertEquals(
+            "Ants couldn't look up the Secret npm: its Secret Provider exited 1:\nno item, token ••••\nAnts ran nothing. End stuck: the user fixes the Lookup or its Secret Provider in Settings.",
+            text(call(url, authorization, listOf("./yarn"))),
+        )
+        claude.release("go")
+        eventually { assertContains(browser.get("/runs/$run").body, """id="state">Completed<""") }
+        assertFalse(Files.walk(workspace(run)).filter { it.isRegularFile() && it.fileName.toString() != "yarn" }.anyMatch { "s3cret" in it.readText() })
+    }
+
+    @Autowired
+    lateinit var settings: Settings
 
     @Autowired
     lateinit var protectedCommands: ProtectedCommands

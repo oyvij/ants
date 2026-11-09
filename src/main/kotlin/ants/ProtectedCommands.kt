@@ -12,7 +12,7 @@ import java.util.concurrent.TimeoutException
 import kotlin.io.path.isDirectory
 
 @Component
-class ProtectedCommands(private val settings: Settings, private val mcp: Mcp) {
+class ProtectedCommands(private val settings: Settings, private val mcp: Mcp, private val store: SecretStore, private val providers: SecretProviders) {
     /** How long a Protected Command may run before Ants kills it. */
     internal var timeLimit: Duration = Duration.ofMinutes(10)
 
@@ -53,9 +53,13 @@ class ProtectedCommands(private val settings: Settings, private val mcp: Mcp) {
         val dir = runCatching { root.resolve(folder).toRealPath() }.getOrNull()?.takeIf { it.startsWith(root) && it.isDirectory() }
             ?: throw Refused("$folder is no folder in the Run workspace, so Ants ran nothing.")
         val names = settings.secrets()
-        val values = settings.secretValues()
+        if (labels.isNotEmpty()) store.awaitUnlocked()
         val secrets = labels.flatMap { label ->
-            val value = values[label] ?: throw Refused("The Secret $label has no value, so Ants ran nothing. End stuck: the user sets it in Settings.")
+            val value = try {
+                providers.value(label)
+            } catch (failed: SecretProviders.Failed) {
+                throw Refused("${failed.message}\nAnts ran nothing. End stuck: the user fixes the Lookup or its Secret Provider in Settings.")
+            } ?: throw Refused("The Secret $label has no value, so Ants ran nothing. End stuck: the user sets it in Settings.")
             names[label].orEmpty().map { it to value }
         }
         val process = try {
@@ -68,7 +72,7 @@ class ProtectedCommands(private val settings: Settings, private val mcp: Mcp) {
         // process group if a build tool's daemon ever does this.
         val (finished, text) = process.within(timeLimit, "(Ants stopped reading: a process `$command` left running still holds its output.)")
         if (!finished) throw Refused("`$command` ran past its time limit of ${timeLimit.short()}, so Ants killed it.")
-        return process.exitValue() to mask(text, values.values)
+        return process.exitValue() to mask(text, store.masks())
     }
 
     /** Refused: Ants ran nothing, or killed what it ran, and the Agent reads why. */

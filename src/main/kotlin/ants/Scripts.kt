@@ -5,7 +5,6 @@ import org.springframework.stereotype.Component
 import org.yaml.snakeyaml.Yaml
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
-import kotlin.io.path.deleteIfExists
 import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
 import kotlin.io.path.listDirectoryEntries
@@ -44,7 +43,7 @@ data class Script(
 }
 
 @Component
-class Scripts(@Value("\${ants.home}") home: Path, private val settings: Settings, private val drafts: Drafts) {
+class Scripts(@Value("\${ants.home}") home: Path, private val settings: Settings, private val drafts: Drafts, private val store: SecretStore, private val providers: SecretProviders) {
     val folder: Path = home.resolve("scripts")
 
     fun all(): List<Script> = inFolders().map { it.second }.sortedBy { it.name }
@@ -73,24 +72,39 @@ class Scripts(@Value("\${ants.home}") home: Path, private val settings: Settings
     fun code(script: Script): String = file(script).takeIf { it.exists() }?.readText().orEmpty()
 
     /** The Script with [id]'s own Secrets' values, kept apart from its Draft and its published version, so a Draft-only Script has them too. */
-    fun ownSecrets(id: String): Map<String, String> = folder.resolve(id).resolve("secrets.yaml").takeIf { it.exists() }
-        ?.let { Yaml().load<Map<*, *>>(it.readText()) }.orEmpty().entries.associate { (name, value) -> "$name" to "$value" }
+    fun ownSecrets(id: String): Map<String, String> = store.scriptValues(id)
 
     /**
-     * Keeps [own] as the Script with [id]'s own Secrets, at once: a published Script's definition then lists them,
-     * beside the Secrets from Settings it lists, and nothing else of it changes.
+     * The Script with [id]'s own Lookups, each Secret's name to its pointer: in `settings.yaml` under `script-lookups`,
+     * as a pointer is no secret, and never in the Script's definition, which a shared Script carries.
      */
-    fun saveSecrets(id: String, own: Map<String, String>) {
-        val old = ownSecrets(id).keys
-        writeSecrets(folder.resolve(id), own)
+    fun ownLookups(id: String): Map<String, String> = settings.scriptLookups()[id].orEmpty()
+
+    /**
+     * The names of the Script with [id]'s own Secrets, Kept or Lookups. While the Safe is locked its Kept ones are the
+     * Secrets its definition lists that Settings doesn't hold. ponytail: an own Secret named as a Settings label reads as linked then.
+     */
+    fun ownNames(id: String): Set<String> = ownLookups(id).keys +
+        if (store.locked) withId(id)?.secrets.orEmpty().filter { it !in settings.secrets() } else ownSecrets(id).keys
+
+    /**
+     * Keeps [own] as the Script with [id]'s own Kept Secrets and [lookups] as its own Lookups, at once: a published
+     * Script's definition then lists their names, beside the Secrets from Settings it lists, and nothing else of it changes.
+     */
+    fun saveSecrets(id: String, own: Map<String, String>, lookups: Map<String, String> = emptyMap()) {
+        val old = ownNames(id)
+        store.saveScriptValues(id, own)
+        saveLookups(id, lookups)
         val script = withId(id) ?: return
-        folder(script).resolve("script.yaml").writeAtomically(yaml.dump(script.copy(secrets = (own.keys + script.secrets.filter { it !in old }).distinct()).definition()))
+        folder(script).resolve("script.yaml").writeAtomically(yaml.dump(script.copy(secrets = (own.keys + lookups.keys + script.secrets.filter { it !in old }).distinct()).definition()))
     }
 
-    private fun writeSecrets(dir: Path, own: Map<String, String>) {
-        val secrets = dir.resolve("secrets.yaml")
-        if (own.isEmpty()) secrets.deleteIfExists()
-        else secrets.also { dir.createDirectories() }.writePrivately(yaml.dump(own))
+    private fun saveLookups(id: String, lookups: Map<String, String>) {
+        if (lookups == ownLookups(id)) return
+        settings.save { values ->
+            val all = (values["script-lookups"] as? Map<*, *>).orEmpty().filterKeys { it != id } + (if (lookups.isEmpty()) emptyMap() else mapOf(id to lookups))
+            if (all.isEmpty()) values.remove("script-lookups") else values["script-lookups"] = all
+        }
     }
 
     /** A new Script's id: none a Script or any Draft holds. */
@@ -100,22 +114,30 @@ class Scripts(@Value("\${ants.home}") home: Path, private val settings: Settings
     fun save(script: Script, code: String, own: Map<String, String>?) {
         val dir = folder(script).createDirectories()
         dir.resolve("script.mjs").writeAtomically(code)
-        own?.let { writeSecrets(dir, it) }
+        own?.let { store.saveScriptValues(script.id, it) }
         dir.resolve("script.yaml").writeAtomically(yaml.dump(script.definition()))
     }
 
     /** Deletes the Script with [id], its own Secrets with it. */
     fun delete(id: String) {
+        store.deleteScriptValues(id)
+        saveLookups(id, emptyMap())
         folder.resolve(id).toFile().deleteRecursively()
     }
 
-    /** The environment holding [script]'s Secrets' values, [own] being its own ones. */
-    fun secretEnvironment(script: Script, own: Map<String, String> = ownSecrets(script.id)): Map<String, String> {
+    /**
+     * The environment holding [script]'s Secrets' values, [own] being its own Kept ones and [lookups] its own Lookups,
+     * each Lookup, its own or one in Settings, resolved now; throws [SecretProviders.Failed] when one can't be.
+     */
+    fun secretEnvironment(script: Script, own: Map<String, String>? = null, lookups: Map<String, String> = ownLookups(script.id)): Map<String, String> {
+        if (script.secrets.isEmpty()) return emptyMap()
+        store.awaitUnlocked() // a Script tool's call waits on a locked Safe
+        val own = own ?: ownSecrets(script.id)
         val names = settings.secrets()
-        val values = settings.secretValues()
         return script.secrets.flatMap { secret ->
             own[secret]?.let { listOf(secret to it) }
-                ?: values[secret]?.let { value -> names[secret].orEmpty().map { it to value } }
+                ?: lookups[secret]?.let { listOf(secret to providers.lookUp(secret, it)) }
+                ?: providers.value(secret)?.let { value -> names[secret].orEmpty().map { it to value } }
                 ?: emptyList()
         }.toMap()
     }

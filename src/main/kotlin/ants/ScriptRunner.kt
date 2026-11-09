@@ -24,7 +24,7 @@ data class ScriptRun(val exitCode: Int, val output: String, val payload: Any?, v
 private fun listed(problems: List<String>) = problems.joinToString("") { "- $it\n" }
 
 @Component
-class ScriptRunner(private val settings: Settings, private val posts: Posts) {
+class ScriptRunner(private val settings: Settings, private val posts: Posts, private val store: SecretStore) {
     internal var timeLimit: Duration = Duration.ofMinutes(10)
 
     private val json = JsonMapper.shared()
@@ -50,7 +50,7 @@ class ScriptRunner(private val settings: Settings, private val posts: Posts) {
             scratch.resolve("inputs.json").writeBytes(json.writeValueAsBytes(inputs))
             val module = scratch.resolve("ants.mjs")
             module.writeText(antsModule(scratch.resolve("inputs.json"), payload, refused, posting, sender.trying))
-            val masked = secrets.values + settings.secretValues().values
+            val masked = secrets.values + store.masks()
             val ants = mapOf("ANTS_RUN_WORKSPACE" to workspace.toString(), "ANTS_RUN_ID" to runId)
             val process = try {
                 ProcessBuilder(settings.path("node") ?: "node", "--import", module.toUri().toString(), code.toAbsolutePath().toString())

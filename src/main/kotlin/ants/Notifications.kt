@@ -47,7 +47,7 @@ sealed class Entry(val id: String, val tag: String, val process: String, val tas
     open val gone: Boolean get() = false
 
     private companion object {
-        val ICONS = mapOf("[failed]" to "✕", "[stuck]" to "⚠", "[stopped]" to "■", "[questions]" to "?", "[approve]" to "✓", "[review]" to "±", "[push]" to "↑", "[permission]" to "⊘", "[notice]" to "i")
+        val ICONS = mapOf("[failed]" to "✕", "[stuck]" to "⚠", "[stopped]" to "■", "[questions]" to "?", "[approve]" to "✓", "[review]" to "±", "[push]" to "↑", "[permission]" to "⊘", "[safe]" to "⚿", "[notice]" to "i")
     }
 }
 
@@ -61,6 +61,11 @@ class TaskEntry(
     val instance: String, val activity: String,
 ) : Entry(id, tag, process, task, summary, since)
 
+/** Tasks that need a Secret wait on the locked Safe, since [since]: one entry for them all, leading to Settings' Unlock. */
+class SafeEntry(since: Instant) : Entry(
+    "safe", "[safe]", "Ants", "Unlock the Safe", "The Safe is locked: Tasks that need a Secret wait until you unlock it in Settings.", Date.from(since),
+)
+
 class StartEntry(val schedule: Schedule, failed: FailedStart) : Entry(
     "schedule-${schedule.id}", "[failed]", schedule.process, schedule.label, "The scheduled Run didn't start: ${failed.why}", Date.from(failed.at),
 )
@@ -69,7 +74,7 @@ class StartEntry(val schedule: Schedule, failed: FailedStart) : Entry(
  * The Notification list: one query over what is waiting on the user, with no table of its own, so it can't drift.
  * For now that is every Agent Task held by an incident, its tag and summary read from the incident message, and every
  * open User Task: an Answer a Round, or an Approve; plus failed scheduled starts, the `ready-for-human` Tickets of
- * live Runs and the open Notices, which Ants keeps itself ([Notices]).
+ * live Runs, the open Notices, which Ants keeps itself ([Notices]), and the Tasks waiting on a locked Safe ([SafeEntry]).
  */
 @Controller
 class Notifications(
@@ -88,11 +93,12 @@ class Notifications(
     private val catalogue: Catalogue,
     private val agents: Agents,
     private val notices: Notices,
+    private val store: SecretStore,
     private val clock: Clock,
     @Value("\${ants.home}") private val home: Path,
 ) {
     /** Everything waiting on the user, oldest first. */
-    fun entries(): List<Entry> = (tasks() + failedStarts() + tickets.waiting() + noticeEntries()).sortedBy { it.since }
+    fun entries(): List<Entry> = (tasks() + failedStarts() + tickets.waiting() + noticeEntries() + listOfNotNull(store.waitingSince?.let(::SafeEntry))).sortedBy { it.since }
 
     /**
      * The open Notices, each knowing whether its Run is gone from the engine. One query answers that for them all, and
@@ -124,6 +130,7 @@ class Notifications(
     @GetMapping("/notifications/{id}")
     fun entry(@PathVariable id: String, model: Model, response: HttpServletResponse, @RequestParam(required = false) tab: String? = null): String {
         tickets.waiting().firstOrNull { it.id == id }?.let { return "redirect:${it.href}" }
+        if (id == "safe") return "redirect:/settings"
         noticeEntries().firstOrNull { it.id == id }?.let {
             model.addAttribute("entry", it)
             return "notice"

@@ -67,6 +67,10 @@ abstract class AntsTest {
     @Autowired
     private lateinit var history: HistoryService
 
+    /** Where tests seed and read Secret values, as Ants keeps them. */
+    @Autowired
+    protected lateinit var secretStore: SecretStore
+
     @Autowired
     private lateinit var launcher: AgentLauncher
 
@@ -91,6 +95,8 @@ abstract class AntsTest {
     fun cleanSlate() {
         clock.offset = Duration.ZERO
         promises.clear()
+        // The shared Ants made its Safe at boot; its Safe key banner would cover every page.
+        secretStore.keySaved()
         val runs = runtime.createProcessInstanceQuery().rootProcessInstances().list().map { it.id }
         // Deleting a deployment deletes its Runs and their history too; Schedules read the deployed Processes.
         for (deployment in repository.createDeploymentQuery().list()) {

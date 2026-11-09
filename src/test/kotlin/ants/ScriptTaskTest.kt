@@ -9,6 +9,7 @@ import org.springframework.beans.factory.annotation.Autowired
 import tools.jackson.databind.json.JsonMapper
 import java.nio.file.Path
 import java.time.Duration
+import java.util.concurrent.TimeUnit.SECONDS
 import kotlin.io.path.deleteIfExists
 import kotlin.io.path.writeText
 import kotlin.test.assertContains
@@ -19,7 +20,6 @@ import kotlin.test.assertTrue
 
 class ScriptTaskTest : AntsTest() {
     private val browser by lazy { browser().also { it.login() } }
-    private val secrets = home.resolve("secrets.yaml")
     private val json = JsonMapper.shared()
 
     @Autowired
@@ -34,12 +34,12 @@ class ScriptTaskTest : AntsTest() {
     @BeforeEach
     fun settings() {
         home.resolve("settings.yaml").writeText("node: {path: ${ScriptsTest.NODE}}\nclaude: {env: [PATH, HOME]}\nsecrets:\n  npm: [NPM_TOKEN]\n$vault")
-        secrets.writeText("npm: s3cret-npm\n")
+        secretStore.saveSettingsValues(mapOf("npm" to "s3cret-npm"))
     }
 
     @AfterEach
     fun noSecrets() {
-        secrets.deleteIfExists()
+        secretStore.saveSettingsValues(emptyMap())
     }
 
     private fun saveScript(name: String, code: String, inputs: String = "", vars: String = "", own: List<Pair<String, String>> = emptyList(), linked: List<String> = emptyList(), was: String? = null, output: List<Pair<String, String>> = emptyList(), widgets: String = "") {
@@ -197,6 +197,39 @@ class ScriptTaskTest : AntsTest() {
         val removed = start("keying")
         eventually { assertNotNull(runtime.getVariable(removed, "keyed")) }
         assertEquals(mapOf("ran" to "published", "token" to "none", "key" to true), (runtime.getVariable(removed, "keyed") as Map<*, *>)["payload"])
+    }
+
+    @Test
+    fun `on a locked Safe a Script Task needing a Secret waits with an Alert, one needing none runs, and unlocking lets the waiting one go on`() {
+        val device = FakePushService()
+        try {
+            browser.get("/settings")
+            assertEquals(200, browser.postBytes("/alerts/devices", device.subscription().toByteArray()).status)
+            saveScript("keyed", own = listOf("TOKEN" to "on3"), code = "ants.output({token: process.env.TOKEN})\n")
+            saveScript("plain", code = "ants.output({ran: true})\n")
+            deploy("keying", scriptTask("keyed", "keyed"))
+            deploy("unkeyed", scriptTask("plain", "plain"))
+            secretStore.rewrap("admin") // another test may have changed the password the Safe key is wrapped by
+            secretStore.lock()
+
+            val keying = start("keying")
+            eventually { assertContains(browser.get("/notifications").body, "The Safe is locked") }
+            val alert = assertNotNull(device.received.poll(15, SECONDS), "no Alert reached the push service").payload()
+            assertEquals("[safe]", alert["tag"])
+            assertEquals("/settings", browser.get(alert["url"].toString()).path)
+            val plain = start("unkeyed")
+            eventually { assertNotNull(runtime.getVariable(plain, "plain")) }
+            assertEquals(null, runtime.getVariable(keying, "keyed"))
+            assertEquals(null, incident(keying))
+
+            secretStore.unlock("admin")
+            eventually { assertNotNull(runtime.getVariable(keying, "keyed")) }
+            assertEquals(mapOf("token" to "••••"), (runtime.getVariable(keying, "keyed") as Map<*, *>)["payload"])
+            assertFalse("The Safe is locked" in browser.get("/notifications").body)
+        } finally {
+            secretStore.unlock("admin")
+            device.close()
+        }
     }
 
     @Test

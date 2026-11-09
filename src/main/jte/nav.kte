@@ -40,6 +40,8 @@
         </form>
     </div>
 </nav>
+!{val newKey = shell.newKey}
+@if(newKey != null)<form class="safe-key" method="post" action="/safe/key-saved">@if(shell.csrf != null)<input type="hidden" name="${shell.csrf.parameterName}" value="${shell.csrf.token}">@endif<b>Save your Safe key</b> in your password manager: it opens the Safe that keeps your Secrets, and Ants shows it only until you say you saved it. <code>${newKey}</code> <button class="primary">I saved it</button></form>@endif
 !{val toast = shell.toast}
 @if(toast != null)@template.toast(toast = toast)@endif
 <script src="/shell.js" defer></script>

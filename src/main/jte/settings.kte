@@ -3,6 +3,8 @@
 @param file: String
 @param message: String? = null
 @param passwordFromEnv: Boolean
+@param keepOpen: Boolean = false
+@param keyFile: String = ""
 @param login: ants.ClaudeLogin
 @param home: String
 @param address: String
@@ -17,6 +19,7 @@
 @param posted: Boolean = false
 @param alertKey: String
 @param alertDevices: List<ants.ListedDevice>
+@param safeLocked: Boolean = false
 <!doctype html>
 <html lang="en">
 <head>
@@ -101,15 +104,45 @@
             <button type="button" data-add>＋ Add</button></div></div>
 
     <div class="card"><h3>Secrets</h3><div class="help">Values such as a registry token, which Protected Commands run with and Agents never see.
-        A value is kept in <code>secrets.yaml</code>, never shown again; left blank, the saved one stays. Each variable name is the
-        variable the command reads the value from, such as <span class="eg">YARN_NPM_AUTH_TOKEN</span>.</div>
+        A Kept value is kept in the Safe, encrypted, never shown again; left blank, the saved one stays. A Lookup is a pointer into
+        your password manager, such as <span class="eg">op://Dev/npm/token</span>, which its Secret Provider below resolves at each use.
+        Each variable name is the variable the command reads the value from, such as <span class="eg">YARN_NPM_AUTH_TOKEN</span>.</div>
+@if(safeLocked)
+        <div class="safe-state row"><span><b>The Safe is locked.</b> Tasks that need a Secret wait until it is unlocked.</span>
+            <label class="cap grow">Safe key<input type="password" name="key" form="safe-unlock" autocomplete="off"></label>
+            <button form="safe-unlock">Unlock</button></div>
+@else
+        <div class="safe-state help">The Safe is unlocked.</div>
+@endif
         <div class="listed">
 @for((i, row) in form.shownSecrets.withIndex())
             <div class="row" hidden="${row.label.isEmpty()}">
                 <input type="hidden" name="secrets[${i}].was" value="${row.was}">
                 <label class="cap name">Label<input name="secrets[${i}].label" value="${row.label}" placeholder="e.g. npm"></label>
-                <label class="cap name">Value<input type="password" name="secrets[${i}].value" placeholder="${if (row.set) "••••" else if (row.was.isNotEmpty()) "Not set yet" else "e.g. npm_a1b2c3"}" autocomplete="new-password"></label>
+                <label class="cap">Kind<select name="secrets[${i}].kind"><option value="kept">Kept</option><option value="lookup" selected="${row.lookup != null}">Lookup</option></select></label>
+                <label class="cap name lookup">Lookup<input class="mono" name="secrets[${i}].lookup" value="${row.lookup}" placeholder="e.g. op://Dev/npm/token"></label>
+                <label class="cap name kept">Value<input type="password" name="secrets[${i}].value" placeholder="${if (row.set) "••••" else if (row.was.isNotEmpty()) "Not set yet" else "e.g. npm_a1b2c3"}" autocomplete="new-password"></label>
                 <label class="cap grow">Variable names<input class="mono" name="secrets[${i}].names" value="${row.names}" placeholder="e.g. NPM_TOKEN"></label>
+                <button type="button" class="ghost" data-remove>Remove</button>
+            </div>
+@endfor
+            <button type="button" data-add>＋ Add</button></div>
+        <p class="row"><button name="action" value="reset-safe" class="danger" formnovalidate onclick="return confirm('Reset the Safe? Every Secret value is wiped, here and in your Scripts, and you retype them. Labels, variable names and Protected Commands stay.')">Reset Safe</button> <span class="muted small">Lost the Safe key and the password that opened it? Start a new Safe.</span></p></div>
+
+    <div class="card"><h3>Secret Providers</h3><div class="help">A Secret Provider resolves the Lookups of one scheme with a command, run with no shell,
+        <span class="eg">{ref}</span> standing for the pointer, and with the Kept Secrets picked under their variable names. For 1Password, make a
+        1Password service account, keep its token as a Secret under <span class="eg">OP_SERVICE_ACCOUNT_TOKEN</span>, and add the scheme
+        <span class="eg">op</span> with <span class="eg">op read {ref}</span>.</div>
+        <div class="listed">
+@for((i, row) in form.shownProviders.withIndex())
+            <div class="row" hidden="${row.scheme.isEmpty()}">
+                <label class="cap name">Scheme<input class="mono" name="secret-providers[${i}].scheme" value="${row.scheme}" placeholder="e.g. op"></label>
+                <label class="cap grow">Command<input class="mono" name="secret-providers[${i}].command" value="${row.command}" placeholder="e.g. op read {ref}"></label>
+                <label class="cap grow">Secrets<select multiple name="secret-providers[${i}].secrets">
+@for(label in (form.secrets.filter { it.lookup == null }.map { it.label } + row.secrets).distinct())
+                    <option selected="${label in row.secrets}">${ants.Transcript.plain(label)}</option>
+@endfor
+                </select></label>
                 <button type="button" class="ghost" data-remove>Remove</button>
             </div>
 @endfor
@@ -168,6 +201,15 @@
             <div class="help">Takes effect at the next login.</div>
             <input type="password" id="password" name="password" autocomplete="new-password" placeholder="Change from admin">
 @endif
+        </div>
+        <div class="fld"><b class="f">Keep open</b>
+            <div class="help">For a server nobody logs in to after a restart: keeps the Safe key in <code>${keyFile}</code>, outside ANTS_HOME, so the Safe unlocks at boot.</div>
+            <p class="row">@if(keepOpen)<span class="pill p-ready">On</span> <button form="keep-open" name="on" value="false">Turn off</button>@elseif(safeLocked)<span class="pill p-quiet">Off</span> <span class="muted small">Unlock the Safe to turn it on.</span>@else<span class="pill p-quiet">Off</span> <button form="keep-open" name="on" value="true">Turn on</button>@endif</p>
+@if(keepOpen || passwordFromEnv)
+            <p role="alert">With ${if (keepOpen) "Keep open on" else "the password from the environment"}, the Safe guards against disk leaks only, not against an Agent: one that runs code as Ants' OS user can open it.</p>
+@elseif(!safeLocked)
+            <p class="help">Turned on, the Safe guards against disk leaks only, not against an Agent: one that runs code as Ants' OS user can open it.</p>
+@endif
         </div></div>
     <div class="card updates"><h3>Updates</h3>
         !{val newer = update.newer}
@@ -199,6 +241,8 @@
 </form>
 <%-- Remove in the list of devices with Alerts on posts this form, not the Settings form, so it sends only its device. --%>
 <form method="post" action="/settings/alerts/remove" id="alert-remove"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"></form>
+<form method="post" action="/settings/keep-open" id="keep-open"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"></form>
+<form method="post" action="/settings/safe/unlock" id="safe-unlock"><input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"></form>
 @for((i, map) in maps.entries.withIndex())
 <dialog class="modal source-map" id="source-map-${i}">
     <form method="dialog" class="mh"><b>${map.key}</b><code class="small">${map.value.first}</code><span class="sp"></span><span class="muted small">Esc to close</span><button class="ghost" title="Close" aria-label="Close">✕</button></form>

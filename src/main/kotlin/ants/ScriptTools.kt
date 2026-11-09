@@ -16,7 +16,12 @@ class ScriptTools(private val scripts: Scripts, private val runner: ScriptRunner
 
             override fun call(name: String, arguments: Map<*, *>): Pair<String, Boolean> {
                 val script = named.getValue(name)
-                val result = runner.run(script, scripts.secretEnvironment(script), scripts.file(script), workspace, run, arguments, Sender(script, run, task))
+                val secrets = try {
+                    scripts.secretEnvironment(script)
+                } catch (failed: SecretProviders.Failed) {
+                    return "${failed.message}\nAnts ran nothing. End stuck: the user fixes the Lookup or its Secret Provider." to true
+                }
+                val result = runner.run(script, secrets, scripts.file(script), workspace, run, arguments, Sender(script, run, task))
                 return json.writeValueAsString(mapOf("exitCode" to result.exitCode, "output" to withoutSource(result.reported, scripts.file(script)), "payload" to result.payload)) to result.failed
             }
         }

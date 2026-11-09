@@ -4,6 +4,9 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.boot.web.server.context.WebServerApplicationContext
+import org.springframework.context.ConfigurableApplicationContext
+import org.springframework.security.crypto.factory.PasswordEncoderFactories
 import org.yaml.snakeyaml.Yaml
 import java.nio.file.Files
 import java.nio.file.attribute.PosixFilePermissions
@@ -20,6 +23,7 @@ import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class SettingsTest : AntsTest() {
@@ -46,6 +50,131 @@ class SettingsTest : AntsTest() {
     }
 
     private fun executable(name: String) = loginBin.resolve(name).apply { writeText("#!/bin/sh\n"); toFile().setExecutable(true) }
+
+    @Test
+    fun `Reset Safe empties every Kept value, keeps the Secret labels and Protected Commands, and shows a new Safe key once`() {
+        try {
+            settings.save { it["secrets"] = mapOf("npm" to listOf("NPM_TOKEN")); it["protected-commands"] = mapOf("yarn" to listOf("npm")) }
+            secretStore.saveSettingsValues(mapOf("npm" to "tok-9f3a"))
+            secretStore.saveScriptValues("s-post01", mapOf("SLACK_TOKEN" to "xoxb-s3cret"))
+            assertContains(browser.get("/settings").body, """<button name="action" value="reset-safe"""")
+
+            browser.post("/settings", listOf("action" to "reset-safe"))
+
+            assertEquals(emptyMap(), secretStore.settingsValues())
+            assertEquals(emptyMap(), secretStore.scriptValues("s-post01"))
+            assertEquals(mapOf("npm" to listOf("NPM_TOKEN")), yaml()["secrets"])
+            assertEquals(mapOf("yarn" to listOf("npm")), yaml()["protected-commands"])
+            val key = assertNotNull(secretStore.newKey())
+            assertContains(browser.get("/settings").body, "<code>$key</code>")
+            assertTrue(SecretStore(secretStore.file.parent).also { it.unlock("admin") }.settingsValues().isEmpty())
+        } finally {
+            secretStore.keySaved()
+        }
+    }
+
+    @Test
+    fun `logging in unlocks the Safe after a restart, and a password from the environment unlocks it at boot`() {
+        val home = tempHome()
+        home.createDirectories().resolve("settings.yaml").writeText("password: '${PasswordEncoderFactories.createDelegatingPasswordEncoder().encode("s3cret-pw")}'\n")
+        fun url(ants: Any) = "http://127.0.0.1:${(ants as WebServerApplicationContext).webServer!!.port}"
+        fun store(ants: ConfigurableApplicationContext) = ants.getBean(SecretStore::class.java)
+        startAnother(home).use { ants ->
+            Browser(url(ants)).login("s3cret-pw") // wraps the Safe key Ants made with no password it knew
+            store(ants).saveSettingsValues(mapOf("npm" to "tok-9f3a"))
+        }
+        startAnother(home).use { ants ->
+            assertTrue(store(ants).locked)
+            Browser(url(ants)).login("wrong")
+            assertTrue(store(ants).locked)
+            Browser(url(ants)).login("s3cret-pw")
+            assertEquals(mapOf("npm" to "tok-9f3a"), store(ants).settingsValues())
+        }
+        startAnother(home, "--ants.password=s3cret-pw").use { ants ->
+            assertEquals(mapOf("npm" to "tok-9f3a"), store(ants).settingsValues())
+        }
+    }
+
+    @Test
+    fun `Keep open warns before it is turned on, keeps the Safe unlocked across restarts, and off deletes the key file`() {
+        val warning = "guards against disk leaks only"
+        val home = tempHome()
+        fun url(ants: Any) = "http://127.0.0.1:${(ants as WebServerApplicationContext).webServer!!.port}"
+        fun store(ants: ConfigurableApplicationContext) = ants.getBean(SecretStore::class.java)
+        home.createDirectories().resolve("settings.yaml").writeText("password: '${PasswordEncoderFactories.createDelegatingPasswordEncoder().encode("s3cret-pw")}'\n")
+        startAnother(home).use { ants ->
+            val browser = Browser(url(ants)).also { it.login("s3cret-pw") }
+            store(ants).saveSettingsValues(mapOf("npm" to "tok-9f3a"))
+            assertContains(browser.get("/settings").body, warning) // before turning it on, beside Turn on
+            assertEquals(200, browser.post("/settings/keep-open", mapOf("on" to "true")).status)
+            assertContains(browser.get("/settings").body, warning)
+        }
+        startAnother(home).use { ants ->
+            assertEquals(mapOf("npm" to "tok-9f3a"), store(ants).settingsValues()) // no login
+            val browser = Browser(url(ants)).also { it.login("s3cret-pw") }
+            assertContains(browser.get("/settings").body, warning)
+            assertEquals(200, browser.post("/settings/keep-open", mapOf("on" to "false")).status)
+            assertFalse(store(ants).keyFile.exists())
+        }
+        startAnother(home).use { ants -> assertTrue(store(ants).locked) }
+        startAnother(home, "--ants.password=s3cret-pw").use { ants ->
+            assertContains(Browser(url(ants)).also { it.login("s3cret-pw") }.get("/settings").body, warning)
+        }
+    }
+
+    @Test
+    fun `Keep open is offered only while the Safe is unlocked, and turning it on while locked is refused`() {
+        browser.get("/settings") // logs in first, which unlocks the Safe
+        secretStore.lock()
+        try {
+            assertFalse("""form="keep-open" name="on" value="true"""" in browser.get("/settings").body)
+            val response = browser.post("/settings/keep-open", mapOf("on" to "true"))
+            assertEquals(200, response.status)
+            assertContains(response.body, toastMarkup(Toast.Kind.ERROR, "Keep open is off", "Unlock the Safe first, then turn Keep open on."))
+            assertFalse(secretStore.keepOpen)
+        } finally {
+            secretStore.unlock("admin")
+        }
+        assertContains(browser.get("/settings").body, """form="keep-open" name="on" value="true"""")
+    }
+
+    @Test
+    fun `a password changed on the page keeps the Safe, and one reset outside Ants asks for the Safe key once`() {
+        val home = tempHome()
+        val encoder = PasswordEncoderFactories.createDelegatingPasswordEncoder()
+        home.createDirectories().resolve("settings.yaml").writeText("password: '${encoder.encode("first-pw")}'\n")
+        fun url(ants: Any) = "http://127.0.0.1:${(ants as WebServerApplicationContext).webServer!!.port}"
+        fun store(ants: ConfigurableApplicationContext) = ants.getBean(SecretStore::class.java)
+        val key = startAnother(home).use { ants ->
+            Browser(url(ants)).apply { login("first-pw"); get("/settings"); post("/settings", mapOf("action" to "save", "password" to "page-pw")) }
+            store(ants).saveSettingsValues(mapOf("npm" to "tok-9f3a"))
+            store(ants).newKey()!!
+        }
+        startAnother(home).use { ants ->
+            Browser(url(ants)).login("page-pw")
+            assertEquals(mapOf("npm" to "tok-9f3a"), store(ants).settingsValues())
+        }
+
+        home.resolve("settings.yaml").writeText("password: '${encoder.encode("reset-pw")}'\n") // as `ants password` does
+        startAnother(home).use { ants ->
+            val browser = Browser(url(ants)).apply { login("reset-pw") }
+            assertTrue(store(ants).locked)
+            browser.get("/settings")
+            browser.post("/settings/safe/unlock", mapOf("key" to key))
+            assertEquals(mapOf("npm" to "tok-9f3a"), store(ants).settingsValues())
+        }
+        startAnother(home).use { ants ->
+            Browser(url(ants)).login("reset-pw")
+            assertEquals(mapOf("npm" to "tok-9f3a"), store(ants).settingsValues())
+        }
+        startAnother(home, "--ants.password=env-pw").use { ants ->
+            assertTrue(store(ants).locked)
+            assertTrue(store(ants).unlockWithKey(key))
+        }
+        startAnother(home, "--ants.password=env-pw").use { ants ->
+            assertEquals(mapOf("npm" to "tok-9f3a"), store(ants).settingsValues())
+        }
+    }
 
     @Test
     fun `saving the page writes settings yaml, and a hand edit shows on the page`() {
@@ -354,8 +483,7 @@ class SettingsTest : AntsTest() {
     }
 
     @Test
-    fun `Secrets keep their values in secrets yaml, never on the page or in settings yaml, and Protected Commands link them by label`() {
-        val secrets = home.resolve("secrets.yaml")
+    fun `Secrets keep their values in the Safe, never on the page or in settings yaml, and Protected Commands link them by label`() {
         try {
             fun save(vararg form: Pair<String, String>): String {
                 browser.get("/settings")
@@ -370,8 +498,9 @@ class SettingsTest : AntsTest() {
             assertEquals(mapOf("npm" to listOf("YARN_NPM_AUTH_TOKEN", "NPM_TOKEN"), "maven" to listOf("MAVEN_TOKEN")), yaml()["secrets"])
             assertEquals(mapOf("yarn" to listOf("npm"), "mvn deploy" to listOf("npm", "maven")), yaml()["protected-commands"])
             assertFalse("tok-" in file.readText())
-            assertEquals(mapOf("npm" to "tok-9f3a", "maven" to "tok-77mv"), Yaml().load<Map<*, *>>(secrets.readText()))
-            assertEquals("rw-------", PosixFilePermissions.toString(Files.getPosixFilePermissions(secrets)))
+            assertFalse("tok-" in secretStore.file.readText())
+            assertEquals(mapOf("npm" to "tok-9f3a", "maven" to "tok-77mv"), secretStore.settingsValues())
+            assertEquals("rw-------", PosixFilePermissions.toString(Files.getPosixFilePermissions(secretStore.file)))
             val page = browser.get("/settings").body.replace("&#34;", "\"")
             assertFalse("tok-" in page)
             assertContains(page, """name="secrets[0].label" value="npm"""")
@@ -387,7 +516,7 @@ class SettingsTest : AntsTest() {
                 "secrets[1].label" to "", "secrets[1].value" to "", "secrets[1].names" to "", "secrets[1].was" to "maven",
                 "protected-commands[0].prefix" to "yarn", "protected-commands[0].secrets" to "registry",
             )
-            assertEquals(mapOf("registry" to "tok-9f3a"), Yaml().load<Map<*, *>>(secrets.readText()))
+            assertEquals(mapOf("registry" to "tok-9f3a"), secretStore.settingsValues())
             assertEquals(mapOf("yarn" to listOf("registry")), yaml()["protected-commands"])
 
             val refused = listOf(
@@ -397,9 +526,48 @@ class SettingsTest : AntsTest() {
                 save("protected-commands[0].prefix" to "yarn", "protected-commands[0].secrets" to "gone") to "The Protected Command yarn needs Secrets from the list above.",
             )
             for ((page, alert) in refused) assertContains(page, alert)
-            assertEquals(mapOf("registry" to "tok-9f3a"), Yaml().load<Map<*, *>>(secrets.readText()))
+            assertEquals(mapOf("registry" to "tok-9f3a"), secretStore.settingsValues())
         } finally {
-            secrets.deleteIfExists()
+            secretStore.saveSettingsValues(emptyMap())
+        }
+    }
+
+    @Test
+    fun `a Lookup keeps its pointer in settings yaml and on the page, and a Secret Provider runs with Kept Secrets only`() {
+        try {
+            fun save(vararg form: Pair<String, String>): String {
+                browser.get("/settings")
+                return browser.post("/settings", form.toList() + ("action" to "save")).body.replace("&#34;", "\"")
+            }
+            val secrets = arrayOf(
+                "secrets[0].label" to "op", "secrets[0].kind" to "kept", "secrets[0].value" to "tok-op", "secrets[0].names" to "OP_SERVICE_ACCOUNT_TOKEN", "secrets[0].was" to "",
+                "secrets[1].label" to "npm", "secrets[1].kind" to "lookup", "secrets[1].value" to "", "secrets[1].lookup" to "op://Dev/npm/token",
+                "secrets[1].names" to "NPM_TOKEN", "secrets[1].was" to "",
+            )
+            save(*secrets, "secret-providers[0].scheme" to "op", "secret-providers[0].command" to "op read {ref}", "secret-providers[0].secrets" to "op")
+            assertEquals(mapOf("op" to listOf("OP_SERVICE_ACCOUNT_TOKEN"), "npm" to listOf("NPM_TOKEN")), yaml()["secrets"])
+            assertEquals(mapOf("npm" to "op://Dev/npm/token"), yaml()["lookups"])
+            assertEquals(mapOf("op" to mapOf("command" to listOf("op", "read", "{ref}"), "secrets" to listOf("op"))), yaml()["secret-providers"])
+            assertEquals(mapOf("op" to "tok-op"), secretStore.settingsValues())
+            val page = browser.get("/settings").body.replace("&#34;", "\"")
+            assertFalse("tok-" in page)
+            assertContains(page, """name="secrets[1].lookup" value="op://Dev/npm/token"""")
+            assertContains(page, """<option value="lookup" selected>Lookup</option>""")
+            assertContains(page, """name="secret-providers[0].command" value="op read {ref}"""")
+            assertContains(page, "1Password service account")
+
+            val refused = listOf(
+                save(*secrets, "secret-providers[0].scheme" to "op", "secret-providers[0].command" to "op read {ref}", "secret-providers[0].secrets" to "npm") to
+                    "The Secret Provider op needs Kept Secrets from the list above.",
+                save(*secrets, "secret-providers[0].scheme" to "op", "secret-providers[0].command" to "op read") to
+                    "A Secret Provider's command needs {ref}, where the pointer goes, such as op read {ref}.",
+                save("secrets[0].label" to "npm", "secrets[0].kind" to "lookup", "secrets[0].lookup" to "Dev/npm", "secrets[0].names" to "NPM_TOKEN", "secrets[0].was" to "npm") to
+                    "A Lookup is a pointer with a scheme, such as op://Dev/npm/token.",
+            )
+            for ((page, alert) in refused) assertContains(page, alert)
+            assertEquals(mapOf("npm" to "op://Dev/npm/token"), yaml()["lookups"])
+        } finally {
+            secretStore.saveSettingsValues(emptyMap())
         }
     }
 

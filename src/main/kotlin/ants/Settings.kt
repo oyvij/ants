@@ -99,6 +99,9 @@ class Settings(
         return if (password.startsWith("{")) password else "{noop}$password"
     }
 
+    /** The login password when Ants knows it in plain, from the environment or `settings.yaml`, which unlocks the Safe at boot. */
+    fun plainPassword(): String? = password().takeIf { it.startsWith("{noop}") }?.removePrefix("{noop}")
+
     // ponytail: one global cap, no per-CLI caps or priorities
     fun agentTasks(): Int = (read()["agent-tasks"] as? Int) ?: 3
 
@@ -203,26 +206,27 @@ class Settings(
     /** The extra Skill folders, read after Ants' own. */
     fun skillFolders(): List<Path> = folders("skill-folders")
 
-    /** The Secrets, each label to the variable names it goes under; their values are in [secretsFile] ([secretValues]). */
+    /** The Secrets, each label to the variable names it goes under; their values are in the [SecretStore]. */
     fun secrets(): Map<String, List<String>> = (read()["secrets"] as? Map<*, *>).orEmpty().entries.associate { (label, names) -> "$label" to strings(names).orEmpty() }
+
+    /** The Lookups: each label of a Secret whose value a Secret Provider resolves, to its pointer, such as `op://Dev/npm/token`. */
+    fun lookups(): Map<String, String> = (read()["lookups"] as? Map<*, *>).orEmpty().entries.associate { (label, pointer) -> "$label" to "$pointer" }
+
+    /** Each Script's own Lookups by the Script's id, each Secret's name to its pointer. */
+    fun scriptLookups(): Map<String, Map<String, String>> = (read()["script-lookups"] as? Map<*, *>).orEmpty().entries.associate { (id, lookups) ->
+        "$id" to (lookups as? Map<*, *>).orEmpty().entries.associate { (name, pointer) -> "$name" to "$pointer" }
+    }
+
+    /** The Secret Providers by scheme, such as `op`. */
+    fun secretProviders(): Map<String, SecretProvider> = (read()["secret-providers"] as? Map<*, *>).orEmpty().entries.associate { (scheme, provider) ->
+        val entry = provider as? Map<*, *> ?: emptyMap<String, Any?>()
+        "$scheme" to SecretProvider(strings(entry["command"]).orEmpty(), strings(entry["secrets"]).orEmpty())
+    }
 
     /** The Protected Commands, each command prefix to the labels of the Secrets it runs with. */
     fun protectedCommands(): Map<String, List<String>> =
         (read()["protected-commands"] as? Map<*, *>).orEmpty().entries
             .associate { (prefix, labels) -> strings(prefix).orEmpty().joinToString(" ") to strings(labels).orEmpty() }.filterKeys(String::isNotEmpty)
-
-    /** `secrets.yaml`, beside this file: each Secret's value by label, readable by Ants' OS user alone. */
-    val secretsFile: Path = home.resolve("secrets.yaml")
-
-    /** Each Secret's value, by label, read fresh. */
-    fun secretValues(): Map<String, String> = if (!secretsFile.exists()) emptyMap()
-    else (Yaml().load<Map<*, *>>(secretsFile.readText()) ?: emptyMap<Any, Any>()).entries.associate { (label, value) -> "$label" to "$value" }
-
-    /** Rewrites [secretsFile] with [values], the file mode 0600 before a value is in it. */
-    @Synchronized
-    fun saveSecretValues(values: Map<String, String>) {
-        secretsFile.writePrivately(if (values.isEmpty()) "" else yaml.dump(values))
-    }
 
     /** The pages' `color-scheme`: the system's until the user picks light or dark. */
     fun colorScheme(): String = read()["theme"]?.toString()?.takeIf { it in listOf("light", "dark") } ?: "light dark"
@@ -307,7 +311,9 @@ class Settings(
             #   and source-map.md beside this file.
             # agent-folders, skill-folders: extra folders, read after Ants' own
             # secrets: label: [VARIABLE, NAMES], the variables a Protected Command reads it under; the values are in
-            #   secrets.yaml, never here
+            #   the Safe, never here
+            # lookups: label: pointer, such as `npm: op://Dev/npm/token`: a Secret whose value its Secret Provider resolves
+            # secret-providers: scheme: {command: [op, read, "{ref}"], secrets: [labels of Kept Secrets it runs with]}
             # protected-commands: prefix: [Secret labels], such as `mvn deploy: [maven]`; Agents ask Ants to run them
             # theme: light or dark; without it, the pages follow the system
             # so-far: false switches off the So far paragraph on running Tasks; a time (90s, 5m) sets how often it's

@@ -16,7 +16,6 @@ import kotlin.test.assertTrue
 class ScriptHelperTest : AntsTest() {
     private val browser by lazy { browser().also { it.login(); it.get("/scripts") } }
     private val json = JsonMapper.shared()
-    private val secrets = home.resolve("secrets.yaml")
 
     @Autowired
     private lateinit var chats: PageChats
@@ -92,7 +91,7 @@ class ScriptHelperTest : AntsTest() {
     @Test
     fun `env names the page's unsaved vars and own Secrets and every Secret in Settings with its variables, never a value`() {
         home.resolve("settings.yaml").writeText("secrets:\n  github: [GH_TOKEN, GITHUB_TOKEN]\n  npm: [NPM_TOKEN]\n")
-        secrets.writeText("github: s3cret-gh\nnpm: s3cret-npm\n")
+        secretStore.saveSettingsValues(mapOf("github" to "s3cret-gh", "npm" to "s3cret-npm"))
         try {
             val token = open()
             browser.actAsPage(token, chats, "/script-helper/answer") { tool, _ ->
@@ -113,14 +112,14 @@ class ScriptHelperTest : AntsTest() {
             ), json.readValue(text, Map::class.java))
             for (value in listOf("s3cret", "gen3ral", "eu-n0rth")) assertFalse(value in text, value)
         } finally {
-            secrets.deleteIfExists()
+            secretStore.saveSettingsValues(emptyMap())
         }
     }
 
     @Test
     fun `add_settings_secret adds a Secret to Settings with no value and links it on the page, and an existing label is only linked`() {
         home.resolve("settings.yaml").writeText("secrets:\n  npm: [NPM_TOKEN]\n")
-        secrets.writeText("npm: s3cret-npm\n")
+        secretStore.saveSettingsValues(mapOf("npm" to "s3cret-npm"))
         try {
             val token = open()
             val linked = mutableListOf<Any?>()
@@ -130,7 +129,7 @@ class ScriptHelperTest : AntsTest() {
             assertFalse(failed, text)
             assertContains(text, "SLACK_TOKEN")
             assertEquals(mapOf("npm" to listOf("NPM_TOKEN"), "slack" to listOf("SLACK_TOKEN")), settings.secrets())
-            assertEquals("npm: s3cret-npm\n", secrets.readText())
+            assertEquals(mapOf("npm" to "s3cret-npm"), secretStore.settingsValues())
             assertEquals(listOf<Any?>("slack"), linked)
 
             val (existing, refused) = call(token, "add_settings_secret", mapOf("label" to "npm", "variables" to listOf("OTHER")))
@@ -144,7 +143,7 @@ class ScriptHelperTest : AntsTest() {
             }
             assertEquals(setOf("npm", "slack"), settings.secrets().keys)
         } finally {
-            secrets.deleteIfExists()
+            secretStore.saveSettingsValues(emptyMap())
         }
     }
 
@@ -208,7 +207,7 @@ class ScriptHelperTest : AntsTest() {
     @Test
     fun `test_run runs the page's unsaved code with the sample inputs and the Script's real Secrets, and gives back only masked output`() {
         home.resolve("settings.yaml").writeText("node: {path: ${ScriptsTest.NODE}}\nclaude: {env: [PATH, HOME]}\nsecrets:\n  npm: [NPM_TOKEN]\n")
-        secrets.writeText("npm: s3cret-npm\n")
+        secretStore.saveSettingsValues(mapOf("npm" to "s3cret-npm"))
         try {
             browser.publishNew("/scripts", listOf("name" to "post-message", "description" to "Posts a message.", "code" to "console.log('saved')\n",
                 "inputs[0].name" to "text", "inputs[0].type" to "string", "vars" to "", "secrets[0].name" to "SLACK_TOKEN", "secrets[0].value" to "xoxb-s3cret", "secrets[0].was" to ""))
@@ -240,7 +239,7 @@ class ScriptHelperTest : AntsTest() {
             assertTrue(failing, failure)
             assertEquals(mapOf("exitCode" to 3, "output" to "••••\n", "payload" to null, "mismatches" to emptyList<String>()), json.readValue(failure, Map::class.java))
         } finally {
-            secrets.deleteIfExists()
+            secretStore.saveSettingsValues(emptyMap())
         }
     }
 

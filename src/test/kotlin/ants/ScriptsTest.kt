@@ -30,7 +30,6 @@ class ScriptsTest : AntsTest() {
     private val browser by lazy { browser().also { it.login() } }
     private val json = JsonMapper.shared()
     private val scripts get() = home.resolve("scripts")
-    private val secrets = home.resolve("secrets.yaml")
 
     @Autowired
     lateinit var runner: ScriptRunner
@@ -41,7 +40,7 @@ class ScriptsTest : AntsTest() {
             "node: {path: $NODE}\nclaude: {env: [PATH, HOME]}\n" +
                 "secrets:\n  npm: [NPM_TOKEN]\n  maven: [MAVEN_TOKEN]\n",
         )
-        secrets.writeText("npm: s3cret-npm\nmaven: s3cret-mvn\n")
+        secretStore.saveSettingsValues(mapOf("npm" to "s3cret-npm", "maven" to "s3cret-mvn"))
     }
 
     @BeforeEach
@@ -51,7 +50,7 @@ class ScriptsTest : AntsTest() {
 
     @AfterEach
     fun noSecrets() {
-        secrets.deleteIfExists()
+        secretStore.saveSettingsValues(emptyMap())
     }
 
     /** The form of a Script named [name], as its page posts it. */
@@ -94,7 +93,7 @@ class ScriptsTest : AntsTest() {
     }
 
     @Test
-    fun `creating a Script writes its code and definition under a new s- id, and its own Secret values only to secrets yaml`() {
+    fun `creating a Script writes its code and definition under a new s- id, and its own Secret values only to the Safe`() {
         val page = create(
             form(
                 "post-message", code = "console.log(process.env.SLACK_TOKEN)\n", inputs = "channel, text",
@@ -113,7 +112,7 @@ class ScriptsTest : AntsTest() {
             ),
             definition(folder),
         )
-        assertEquals(mapOf("SLACK_TOKEN" to "xoxb-s3cret"), Yaml().load<Map<*, *>>(folder.resolve("secrets.yaml").readText()))
+        assertEquals(mapOf("SLACK_TOKEN" to "xoxb-s3cret"), secretStore.scriptValues(folder.fileName.toString()))
         assertFalse("xoxb-s3cret" in folder.resolve("script.yaml").readText())
         assertFalse("xoxb-s3cret" in page.body)
         assertFalse(folder.fileName.toString() in page.body)
@@ -124,11 +123,11 @@ class ScriptsTest : AntsTest() {
         assertFalse("secrets[2]" in shown)
 
         browser.post("/scripts/post-message", form("post-message", inputs = "channel", own = listOf("SLACK_TOKEN" to "")))
-        assertEquals(mapOf("SLACK_TOKEN" to "xoxb-s3cret"), Yaml().load<Map<*, *>>(folder.resolve("secrets.yaml").readText()))
+        assertEquals(mapOf("SLACK_TOKEN" to "xoxb-s3cret"), secretStore.scriptValues(folder.fileName.toString()))
         browser.post("/scripts/post-message", form("post-message", own = listOf("SLACK_TOKEN" to "xoxb-typed"))) // Publish leaves the Secrets as the card saved them
-        assertEquals(mapOf("SLACK_TOKEN" to "xoxb-s3cret"), Yaml().load<Map<*, *>>(folder.resolve("secrets.yaml").readText()))
+        assertEquals(mapOf("SLACK_TOKEN" to "xoxb-s3cret"), secretStore.scriptValues(folder.fileName.toString()))
         browser.post("/scripts/post-message/secrets", emptyList())
-        assertFalse(folder.resolve("secrets.yaml").exists())
+        assertEquals(emptyMap(), secretStore.scriptValues(folder.fileName.toString()))
     }
 
     @Test
@@ -249,7 +248,7 @@ class ScriptsTest : AntsTest() {
         assertFalse("s3cret" in output)
         assertEquals(mapOf("posted" to "hello", "token" to "••••"), result["payload"])
         assertFalse(Path.of(printed["cwd"].toString()).exists())
-        assertEquals(setOf("script.mjs", "script.yaml", "secrets.yaml"), folder("post-message").listDirectoryEntries().map { it.fileName.toString() }.toSet())
+        assertEquals(setOf("script.mjs", "script.yaml"), folder("post-message").listDirectoryEntries().map { it.fileName.toString() }.toSet())
         assertEquals("console.log('hi')\n", folder("post-message").resolve("script.mjs").readText())
     }
 
@@ -607,7 +606,7 @@ class ScriptsTest : AntsTest() {
         val draft = Drafts(home).get(DraftKind.SCRIPT, id)!!.content // as a restarted Ants reads it
         assertContains(draft, "Half done.")
         assertFalse("xoxb" in draft) // a Secret's value is never in the Draft
-        assertEquals(mapOf("SLACK_TOKEN" to "xoxb-s3cret"), Yaml().load<Map<*, *>>(folder.resolve("secrets.yaml").readText()))
+        assertEquals(mapOf("SLACK_TOKEN" to "xoxb-s3cret"), secretStore.scriptValues(folder.fileName.toString()))
         assertContains(browser.get("/scripts").body, """<a href="/scripts/drafter">drafter</a></b><span class="pill draft-mark p-changed">Draft · changes not published</span>""")
     }
 
@@ -721,7 +720,7 @@ class ScriptsTest : AntsTest() {
         listOf("secrets[$i].name" to row.first, "secrets[$i].value" to row.second, "secrets[$i].was" to row.third)
     }
 
-    private fun savedSecrets(name: String): Map<*, *>? = folder(name).resolve("secrets.yaml").takeIf { it.exists() }?.let { Yaml().load<Map<*, *>>(it.readText()) }
+    private fun savedSecrets(name: String): Map<*, *>? = secretStore.scriptValues(folder(name).fileName.toString()).ifEmpty { null }
 
     @Test
     fun `the Secrets card's Save writes its Secrets at once, and neither publishes the Script nor touches its Draft`() {
@@ -782,6 +781,69 @@ class ScriptsTest : AntsTest() {
         val refused = browser.post(copy.path, form("kept-secret-copy") + secretRows(Triple("TOKEN", "", "")))
         assertContains(refused.body, "The Secret TOKEN needs a value: save it on the Secrets card.")
         browser.post("${copy.path}/delete", mapOf("confirm" to "on"))
+    }
+
+    @Test
+    fun `a Script's page renders while the Safe is locked, showing no Kept value as set, and refuses Save Secrets and a Test run with Secrets`() {
+        create(form("locked-out", code = "console.log(process.env.TOKEN)\n", own = listOf("TOKEN" to "t0ps3cret")))
+        secretStore.lock()
+        try {
+            val page = browser.get("/scripts/locked-out")
+            assertEquals(200, page.status, page.body)
+            assertContains(page.body, """name="secrets[0].name" value="TOKEN"""")
+            assertFalse("••••" in page.body)
+            assertFalse("""name="linked" value="TOKEN"""" in page.body) // still its own, not one from Settings
+            assertContains(page.body, "The Safe is locked")
+            assertContains(browser.post("/scripts/locked-out/secrets", secretRows(Triple("TOKEN", "n3w", "TOKEN"))).body, "The Safe is locked")
+            assertContains(testRun(form("locked-out", own = listOf("TOKEN" to "")), script = "locked-out")["output"].toString(), "The Safe is locked")
+        } finally {
+            secretStore.unlock("admin")
+        }
+        assertEquals(mapOf("TOKEN" to "t0ps3cret"), savedSecrets("locked-out"))
+    }
+
+    @Autowired
+    lateinit var library: Scripts
+
+    @Test
+    fun `a Script's own Secret can be a Lookup, resolved by its Secret Provider into the Script's environment and masked, and its definition lists the name only`() {
+        // A fake Secret Provider for `fake://`: it writes its arguments beside itself and prints a value per pointer, or fails for `broken`.
+        val provider = java.nio.file.Files.createTempDirectory("provider").resolve("lookup")
+        provider.writeText(
+            "#!/bin/sh\nprintf '[%s]\\n' \"$@\" >> \"$0.args\"\n" +
+                "case \"$2\" in *broken*) echo \"no item\"; exit 1;; *npm*) echo s3cret-npm-looked;; *) echo s3cret-looked-up;; esac\n",
+        )
+        provider.toFile().setExecutable(true)
+        home.resolve("settings.yaml").writeText(
+            "node: {path: $NODE}\nclaude: {env: [PATH, HOME]}\nsecrets:\n  npm: [NPM_TOKEN]\nlookups:\n  npm: fake://Dev/npm\n" +
+                "secret-providers:\n  fake:\n    command: $provider read {ref}\n    secrets: []\n",
+        )
+        val code = "console.log(`token ${'$'}{process.env.TOKEN} npm ${'$'}{process.env.NPM_TOKEN}`)\n"
+        create(form("looker", code = code, linked = listOf("npm")))
+        val lookup = listOf("secrets[0].name" to "TOKEN", "secrets[0].kind" to "lookup", "secrets[0].lookup" to "fake://Dev/token", "secrets[0].value" to "", "secrets[0].was" to "")
+        val saved = browser.post("/scripts/looker/secrets", lookup)
+        assertEquals(200, saved.status, saved.body)
+        val folder = folder("looker")
+        assertEquals(listOf("TOKEN", "npm"), definition(folder)["secrets"])
+        assertFalse("fake://" in folder.resolve("script.yaml").readText()) // the definition lists names, never a pointer
+        assertNull(savedSecrets("looker"))
+        val page = browser.get("/scripts/looker").body
+        assertContains(page, """name="secrets[0].lookup" value="fake://Dev/token"""")
+        assertContains(page, """<option value="lookup" selected>""")
+
+        val script = library.named("looker")!!
+        val run = runner.run(script, library.secretEnvironment(script), library.file(script), java.nio.file.Files.createTempDirectory("ws"), "r-1", emptyMap<String, Any>(), Sender(script, "r-1", "t"))
+        assertEquals(0, run.exitCode, run.output)
+        assertEquals("token •••• npm ••••\n", run.output)
+        assertEquals("[read]\n[fake://Dev/token]\n[read]\n[fake://Dev/npm]\n", Path.of("$provider.args").readText()) // its own Lookup, then the one in Settings
+
+        assertEquals("token •••• npm ••••\n", testRun(form("looker", code = code, linked = listOf("npm")) + lookup, script = "looker")["output"])
+        val failed = testRun(form("looker", code = code) + lookup.map { if (it.first.endsWith("lookup")) it.first to "fake://broken" else it }, script = "looker")
+        assertEquals(-1, failed["exitCode"])
+        assertEquals("Ants couldn't look up the Secret TOKEN: its Secret Provider exited 1:\nno item\n", failed["output"])
+
+        browser.post("/scripts/looker/delete", mapOf("confirm" to "on"))
+        assertFalse("fake://Dev/token" in home.resolve("settings.yaml").readText())
     }
 
     companion object {

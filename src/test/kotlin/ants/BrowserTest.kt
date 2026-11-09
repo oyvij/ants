@@ -137,6 +137,85 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `a new Safe's key shows in a banner on every page until the user says they saved it, then never again`() = browse {
+        val home = tempHome()
+        fun base(ants: Any) = "http://127.0.0.1:${(ants as org.springframework.boot.web.server.context.WebServerApplicationContext).webServer!!.port}"
+        fun logInTo(base: String) {
+            page.navigate("$base/login")
+            page.fill("input[name=username]", "admin")
+            page.fill("input[name=password]", "admin")
+            page.click("button[type=submit]")
+            page.waitForURL { !it.contains("/login") }
+        }
+        val banner = page.locator(".safe-key")
+        startAnother(home).use { ants ->
+            val base = base(ants)
+            logInTo(base)
+            val key = ants.getBean(SecretStore::class.java).newKey()!!
+            assertThat(banner.locator("code")).hasText(key)
+            page.navigate("$base/settings")
+            assertThat(banner.locator("code")).hasText(key)
+            banner.getByText("I saved it").click()
+            assertThat(banner).hasCount(0)
+            assertTrue(page.url().endsWith("/settings"))
+            page.navigate("$base/processes")
+            assertThat(banner).hasCount(0)
+        }
+        startAnother(home).use { ants ->
+            logInTo(base(ants))
+            assertThat(page.locator("main")).isVisible()
+            assertThat(banner).hasCount(0)
+        }
+    }
+
+    @Test
+    fun `Settings shows whether the Safe is locked, refuses a wrong Safe key, and the Safe key unlocks it`() = browse {
+        val home = tempHome()
+        val hashed = org.springframework.security.crypto.factory.PasswordEncoderFactories.createDelegatingPasswordEncoder().encode("admin")
+        home.createDirectories().resolve("settings.yaml").writeText("password: '$hashed'\n")
+        // No plain password at boot: the Safe key is wrapped by no login yet, so after a restart only the Safe key opens it.
+        val key = startAnother(home).use { it.getBean(SecretStore::class.java).newKey()!! }
+        startAnother(home).use { ants ->
+            val base = "http://127.0.0.1:${(ants as org.springframework.boot.web.server.context.WebServerApplicationContext).webServer!!.port}"
+            page.navigate("$base/login")
+            page.fill("input[name=username]", "admin")
+            page.fill("input[name=password]", "admin") // a login that opens no wrapping leaves the Safe locked
+            page.click("button[type=submit]")
+            page.waitForURL { !it.contains("/login") }
+            page.navigate("$base/settings")
+            val state = page.locator(".safe-state")
+            assertThat(state).containsText("The Safe is locked")
+
+            page.fill("input[name=key]", "not the key")
+            page.getByText("Unlock", Page.GetByTextOptions().setExact(true)).click()
+            assertThat(page.locator(".toast")).containsText("not the Safe key")
+            assertThat(state).containsText("The Safe is locked")
+            assertTrue(ants.getBean(SecretStore::class.java).locked)
+
+            page.fill("input[name=key]", key)
+            page.getByText("Unlock", Page.GetByTextOptions().setExact(true)).click()
+            assertThat(state).containsText("The Safe is unlocked")
+            assertThat(page.locator("input[name=key]")).hasCount(0)
+            assertFalse(ants.getBean(SecretStore::class.java).locked)
+        }
+    }
+
+    @Test
+    fun `Reset Safe asks first, then wipes the Kept values and shows the new Safe key in the banner`() = browse {
+        secretStore.saveSettingsValues(mapOf("npm" to "tok-9f3a"))
+        page.navigate(url("/settings"))
+        var asked = ""
+        page.onceDialog { asked = it.message(); it.accept() }
+        page.getByText("Reset Safe", Page.GetByTextOptions().setExact(true)).click()
+        assertThat(page.locator(".safe-key code")).isVisible()
+        assertThat(page.locator(".safe-key code")).hasText(secretStore.newKey()!!)
+        assertContains(asked, "Every Secret value is wiped")
+        assertEquals(emptyMap(), secretStore.settingsValues())
+        page.locator(".safe-key").getByText("I saved it").click()
+        assertThat(page.locator(".safe-key")).hasCount(0)
+    }
+
+    @Test
     fun `the hover menu appends an Agent, User or Built-in Task and offers nothing Ants doesn't run`() = browse {
         newProcess("Hover menu")
         for ((action, name) in listOf("append.agent-task" to "Agent Task", "append.user-task" to "User Task", "append.built-in-task" to "Built-in Task")) {
@@ -1354,7 +1433,7 @@ class BrowserTest : AntsTest() {
         http.publishNew("/scripts", listOf("name" to "post", "description" to "Posts.", "code" to "console.log('hi')\n", "inputs" to "", "vars" to "",
             "secrets[0].name" to "OLD_TOKEN", "secrets[0].value" to "tok-old", "secrets[0].was" to ""))
         val folder = home.resolve("scripts").toFile().listFiles()!!.single { "name: post" in it.resolve("script.yaml").readText() }.toPath()
-        fun ownSecrets() = org.yaml.snakeyaml.Yaml().load<Map<*, *>?>(folder.resolve("secrets.yaml").toFile().takeIf { it.exists() }?.readText() ?: "").orEmpty()
+        fun ownSecrets() = secretStore.scriptValues(folder.fileName.toString())
         fun listed() = org.yaml.snakeyaml.Yaml().load<Map<*, *>>(folder.resolve("script.yaml").readText())["secrets"]
         page.navigate(url("/scripts/post"))
         val card = page.locator(card("Secrets"))
@@ -1420,6 +1499,31 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `the Secrets card's Kind toggles a Secret to a Lookup, which shows its pointer instead of a Value, and the published Script lists its name only`() = browse {
+        http.publishNew("/scripts", listOf("name" to "post", "description" to "Posts.", "code" to "console.log('hi')\n", "inputs" to "", "vars" to ""))
+        val folder = home.resolve("scripts").toFile().listFiles()!!.single { "name: post" in it.resolve("script.yaml").readText() }.toPath()
+        page.navigate(url("/scripts/post"))
+        val card = page.locator(card("Secrets"))
+        val row = card.locator(".listed > .row").first()
+        val lookup = row.getByLabel("Lookup", Locator.GetByLabelOptions().setExact(true))
+        assertThat(lookup).isHidden()
+        row.getByLabel("Name").fill("SLACK_TOKEN")
+        row.getByLabel("Kind").selectOption("Lookup")
+        assertThat(row.getByLabel("Value")).isHidden()
+        lookup.fill("op://Dev/slack/token")
+        card.getByRole(AriaRole.BUTTON, Locator.GetByRoleOptions().setName("Save Secrets")).click()
+        assertThat(card.locator("[data-secrets-state]")).hasText(Pattern.compile("^Secrets saved \\d\\d:\\d\\d$"))
+        assertEquals(listOf("SLACK_TOKEN"), org.yaml.snakeyaml.Yaml().load<Map<*, *>>(folder.resolve("script.yaml").readText())["secrets"])
+        assertFalse("op://" in folder.resolve("script.yaml").readText())
+
+        page.navigate(url("/scripts/post"))
+        assertThat(row.getByLabel("Kind")).hasValue("lookup")
+        assertThat(lookup).hasValue("op://Dev/slack/token")
+        assertThat(row.getByLabel("Value")).isHidden()
+        page.screenshot("script-secret-lookup")
+    }
+
+    @Test
     fun `a Secret saved on a Draft-only Script's card survives a reload and is there after Publish, and a refused Save says why`() = browse {
         http.get("/scripts")
         page.navigate(url(http.post("/scripts/new/draft", emptyMap()).path))
@@ -1453,7 +1557,7 @@ class BrowserTest : AntsTest() {
         page.waitForURL(url("/scripts/kept-token"))
         assertThat(marker).hasText("Published")
         val folder = home.resolve("scripts").toFile().listFiles()!!.single { it.resolve("script.yaml").exists() && "Keeps its token." in it.resolve("script.yaml").readText() }
-        assertEquals("TOKEN: t0ps3cret\n", folder.resolve("secrets.yaml").readText())
+        assertEquals(mapOf("TOKEN" to "t0ps3cret"), secretStore.scriptValues(folder.name))
     }
 
     @Test
@@ -5634,7 +5738,7 @@ class BrowserTest : AntsTest() {
     @Test
     fun `on Settings, a Secret is added with a value the page never shows, and a Protected Command picks Secrets by label`() = browse {
         settings(null, "secrets:\n  npm: [NPM_TOKEN]\n")
-        val secrets = home.resolve("secrets.yaml").apply { writeText("npm: tok-old\n") }
+        secretStore.saveSettingsValues(mapOf("npm" to "tok-old"))
         try {
             page.navigate(url("/settings"))
             assertFalse("tok-old" in page.content())
@@ -5656,13 +5760,53 @@ class BrowserTest : AntsTest() {
                 val saved = org.yaml.snakeyaml.Yaml().load<Map<*, *>>(home.resolve("settings.yaml").readText())
                 assertEquals(mapOf("npm" to listOf("NPM_TOKEN"), "maven" to listOf("MAVEN_TOKEN", "MVN_TOKEN")), saved["secrets"])
                 assertEquals(mapOf("yarn" to listOf("npm")), saved["protected-commands"])
-                assertEquals(mapOf("npm" to "tok-old", "maven" to "tok-mvn"), org.yaml.snakeyaml.Yaml().load<Map<*, *>>(secrets.readText()))
+                assertEquals(mapOf("npm" to "tok-old", "maven" to "tok-mvn"), secretStore.settingsValues())
             }
             page.navigate(url("/settings"))
             assertFalse("tok-" in page.content())
             assertThat(card("Protected Commands").locator("select").first().locator("option")).hasText(arrayOf("npm", "maven")) // once saved, offered
         } finally {
-            secrets.deleteIfExists()
+            secretStore.saveSettingsValues(emptyMap())
+        }
+    }
+
+    @Test
+    fun `on Settings, a Secret toggled to Lookup shows its pointer instead of a Value, and a Secret Provider picks Kept Secrets`() = browse {
+        settings(null, "secrets:\n  op: [OP_SERVICE_ACCOUNT_TOKEN]\n")
+        secretStore.saveSettingsValues(mapOf("op" to "tok-op"))
+        try {
+            page.navigate(url("/settings"))
+            fun card(title: String) = page.locator(".card", Page.LocatorOptions().setHas(page.locator("h3:text-is('$title')")))
+            val card = card("Secrets")
+            card.getByText("＋ Add").click()
+            val added = card.locator(".listed > .row:visible").nth(1)
+            assertThat(added.getByLabel("Lookup", Locator.GetByLabelOptions().setExact(true))).isHidden()
+            added.getByLabel("Label").fill("npm")
+            added.getByLabel("Kind").selectOption("Lookup")
+            assertThat(added.getByLabel("Value")).isHidden()
+            added.getByLabel("Lookup", Locator.GetByLabelOptions().setExact(true)).fill("op://Dev/npm/token")
+            added.getByLabel("Variable names").fill("NPM_TOKEN")
+            val providers = card("Secret Providers")
+            assertThat(providers).containsText("1Password service account")
+            providers.getByText("＋ Add").click()
+            val provider = providers.locator(".listed > .row:visible").first()
+            provider.getByLabel("Scheme").fill("op")
+            provider.getByLabel("Command").fill("op read {ref}")
+            assertThat(provider.getByLabel("Secrets").locator("option")).hasText(arrayOf("op")) // Kept ones only
+            provider.getByLabel("Secrets").selectOption("op")
+            page.locator(".ph button.primary").click()
+            eventually {
+                val saved = org.yaml.snakeyaml.Yaml().load<Map<*, *>>(home.resolve("settings.yaml").readText())
+                assertEquals(mapOf("npm" to "op://Dev/npm/token"), saved["lookups"])
+                assertEquals(mapOf("op" to mapOf("command" to listOf("op", "read", "{ref}"), "secrets" to listOf("op"))), saved["secret-providers"])
+            }
+            page.navigate(url("/settings"))
+            val lookup = card("Secrets").locator(".listed > .row:visible").nth(1)
+            assertThat(lookup.getByLabel("Lookup", Locator.GetByLabelOptions().setExact(true))).hasValue("op://Dev/npm/token")
+            assertThat(lookup.getByLabel("Value")).isHidden()
+            assertFalse("tok-op" in page.content())
+        } finally {
+            secretStore.saveSettingsValues(emptyMap())
         }
     }
 
