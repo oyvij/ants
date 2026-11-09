@@ -74,6 +74,46 @@ class SecretStoreTest {
     }
 
     @Test
+    fun `the Safe key unlocks a locked Safe, and a wrong key leaves it locked`() {
+        store.saveSettingsValues(mapOf("npm" to "s3cret-npm"))
+        val key = assertNotNull(store.newKey())
+        val restarted = SecretStore(home)
+
+        for (wrong in listOf("", "not a key", key.reversed(), SecretStore(Files.createTempDirectory("ants-home")).newKey()!!)) {
+            assertFalse(restarted.unlockWithKey(wrong), wrong)
+            assertTrue(restarted.locked)
+        }
+        assertTrue(restarted.unlockWithKey(" $key\n"))
+        assertEquals(mapOf("npm" to "s3cret-npm"), restarted.settingsValues())
+    }
+
+    @Test
+    fun `a Task waiting on a locked Safe goes on once it is unlocked, and the Safe says since when one waits`() {
+        val key = assertNotNull(store.newKey())
+        store.saveSettingsValues(mapOf("npm" to "s3cret-npm"))
+        store.lookedUp("s3cret-looked-up")
+        store.lock()
+        assertTrue(store.locked)
+        assertEquals(emptyList(), store.masks().toList()) // locking forgets Kept and looked-up values alike
+        assertNull(store.waitingSince)
+        val waiter = Thread { store.awaitUnlocked() }.apply { start() }
+        eventually { assertNotNull(store.waitingSince) }
+        assertTrue(waiter.isAlive)
+
+        store.unlockWithKey(key)
+        waiter.join(5000)
+        assertFalse(waiter.isAlive)
+        assertNull(store.waitingSince)
+        store.awaitUnlocked() // an unlocked Safe makes no one wait
+
+        store.lock()
+        var went = false
+        store.whenUnlocked { went = true }
+        store.reset()
+        assertTrue(went, "Reset Safe lets the waiting Tasks go on")
+    }
+
+    @Test
     fun `a Safe made with no password yet is wrapped by the first login, and a changed password rewraps it`() {
         val fresh = Files.createTempDirectory("ants-home")
         val store = SecretStore(fresh)
