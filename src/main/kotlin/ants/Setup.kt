@@ -12,9 +12,10 @@ import java.util.zip.ZipOutputStream
 
 /**
  * One item in a Setup as its [kind] reads it: its [key], the path in the Setup that holds it, its [id] and [name], its
- * [files] by their path in the Setup, and the [problem] that keeps it from landing, if one does.
+ * [files] by their path in the Setup, the [problem] that keeps it from landing, if one does, and its [setting], its
+ * value in `setup.yaml` for an item kept there.
  */
-data class SetupItem(val kind: SetupKind, val key: String, val id: String, val name: String, val files: Map<String, ByteArray>, val problem: String? = null)
+data class SetupItem(val kind: SetupKind, val key: String, val id: String, val name: String, val files: Map<String, ByteArray>, val problem: String? = null, val setting: Any? = null)
 
 /**
  * One kind of item a Setup holds, such as the Agents, in its [folder], the same in a Setup as in ANTS_HOME: how the
@@ -32,6 +33,18 @@ interface SetupKind {
 
     /** The items in a Setup's [files], which all lie in [folder]. */
     fun read(files: Map<String, ByteArray>): List<SetupItem>
+
+    /** What this kind keeps in `setup.yaml`, by key, beside the Ants version: nothing for a kind whose items are files only. */
+    fun exportSettings(): Map<String, Any> = emptyMap()
+
+    /** The items in a Setup's [files], which all lie in [folder], and in its `setup.yaml`'s keys, [settings]. */
+    fun read(files: Map<String, ByteArray>, settings: Map<*, *>): List<SetupItem> = read(files)
+
+    /** Whether its items are known by name, their [SetupItem.id], as Settings are: Import merges them by name, and none Clashes. */
+    val byName: Boolean get() = false
+
+    /** What the report says beside [item] once it landed, such as what it names that this Ants lacks. */
+    fun note(item: SetupItem): String? = null
 
     /** Whether the user has an item of this kind with [id] of their own, which an item with it replaces. */
     fun has(id: String): Boolean
@@ -79,7 +92,8 @@ class Setup(private val kinds: List<SetupKind>, build: BuildProperties) {
     /** The user's own items of every kind as a Setup. */
     fun export(): ByteArray = ByteArrayOutputStream().also { bytes ->
         ZipOutputStream(bytes).use { zip ->
-            val files = mapOf(SETUP_FILE to yaml.dump(mapOf("ants" to version)).toByteArray()) + kinds.flatMap { it.export().entries.map { (path, data) -> path to data } }
+            val meta = mapOf("ants" to version) + kinds.flatMap { it.exportSettings().entries.map { (key, value) -> key to value } }
+            val files = mapOf(SETUP_FILE to yaml.dump(meta).toByteArray()) + kinds.flatMap { it.export().entries.map { (path, data) -> path to data } }
             for ((path, data) in files) {
                 zip.putNextEntry(ZipEntry(path))
                 zip.write(data)
@@ -96,8 +110,8 @@ class Setup(private val kinds: List<SetupKind>, build: BuildProperties) {
         val from = meta["ants"]?.toString() ?: throw Refused("This Setup's $SETUP_FILE doesn't say which Ants wrote it.")
         val newer = runCatching { Version.parse(from) > Version.parse(version) }.getOrDefault(true)
         if (newer) throw Refused("This Setup is from Ants $from, newer than this Ants $version: update Ants first.")
-        val items = kinds.flatMap { kind -> kind.read(files.filterKeys { it.startsWith("${kind.folder}/") }) }.map { item ->
-            val checked = if (item.problem == null && !ID.matches(item.id)) item.copy(problem = "it has no id.") else item
+        val items = kinds.flatMap { kind -> kind.read(files.filterKeys { it.startsWith("${kind.folder}/") }, meta) }.map { item ->
+            val checked = if (item.problem == null && !item.kind.byName && !ID.matches(item.id)) item.copy(problem = "it has no id.") else item
             Previewed(checked, when {
                 checked.kind.has(checked.id) -> Status.REPLACES
                 checked.kind.taken(checked.name, checked.id) -> Status.CLASHES
@@ -122,7 +136,7 @@ class Setup(private val kinds: List<SetupKind>, build: BuildProperties) {
             previewed.status == Status.CLASHES && name == item.name -> Landed(noun, name, Outcome.SKIPPED, "Another $noun is named $name: rename it to import it.")
             name != item.name && item.kind.taken(name, item.id) -> Landed(noun, name, Outcome.REFUSED, "Another $noun is named $name.")
             else -> runCatching { item.kind.land(item, name) }.fold(
-                { Landed(noun, name, if (previewed.status == Status.REPLACES) Outcome.REPLACED else Outcome.ADDED) },
+                { Landed(noun, name, if (previewed.status == Status.REPLACES) Outcome.REPLACED else Outcome.ADDED, item.kind.note(item)) },
                 { Landed(noun, name, Outcome.REFUSED, it.message ?: it.toString()) },
             )
         }
