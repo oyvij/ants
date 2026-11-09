@@ -27,11 +27,17 @@ interface SetupKind {
 
     val folder: String
 
-    /** The user's own items' files, by their path in the Setup. */
+    /**
+     * The user's own items' files, by their path in the Setup. A kind whose items are no files of their own gives them
+     * as `setup.yaml`, a map of its part of that file, which the [Setup] merges with the others'.
+     */
     fun export(): Map<String, ByteArray>
 
-    /** The items in a Setup's [files], which all lie in [folder]. */
+    /** The items in a Setup's [files], which lie in [folder], with `setup.yaml` beside them. */
     fun read(files: Map<String, ByteArray>): List<SetupItem>
+
+    /** What the report says of each item of this kind that lands, if anything. */
+    val landed: String? get() = null
 
     /** Whether [id] is an id this kind's items have, safe as a file's name. */
     fun isId(id: String) = Setup.ID.matches(id)
@@ -73,7 +79,7 @@ class Setup(private val kinds: List<SetupKind>, build: BuildProperties) {
     /** A ticked item, under its own name, or [rename] when given. */
     data class Choice(val rename: String? = null)
 
-    /** What Import did with one item, named [name] as it landed, and why for a skipped or refused one. */
+    /** What Import did with one item, named [name] as it landed, and why for a skipped or refused one, or its kind's note for a landed one. */
     data class Landed(val noun: String, val name: String, val outcome: Outcome, val reason: String? = null)
 
     /** A file Import refuses whole, saying why. */
@@ -82,8 +88,9 @@ class Setup(private val kinds: List<SetupKind>, build: BuildProperties) {
     /** The user's own items of every kind as a Setup. */
     fun export(): ByteArray = ByteArrayOutputStream().also { bytes ->
         ZipOutputStream(bytes).use { zip ->
-            val files = mapOf(SETUP_FILE to yaml.dump(mapOf("ants" to version)).toByteArray()) + kinds.flatMap { it.export().entries.map { (path, data) -> path to data } }
-            for ((path, data) in files) {
+            val (parts, files) = kinds.flatMap { it.export().toList() }.partition { it.first == SETUP_FILE }
+            val meta = mapOf("ants" to version) + parts.flatMap { (yaml.load<Map<String, Any?>>(it.second.decodeToString())).toList() }
+            for ((path, data) in listOf(SETUP_FILE to yaml.dump(meta).toByteArray()) + files) {
                 zip.putNextEntry(ZipEntry(path))
                 zip.write(data)
                 zip.closeEntry()
@@ -99,7 +106,7 @@ class Setup(private val kinds: List<SetupKind>, build: BuildProperties) {
         val from = meta["ants"]?.toString() ?: throw Refused("This Setup's $SETUP_FILE doesn't say which Ants wrote it.")
         val newer = runCatching { Version.parse(from) > Version.parse(version) }.getOrDefault(true)
         if (newer) throw Refused("This Setup is from Ants $from, newer than this Ants $version: update Ants first.")
-        val items = kinds.flatMap { kind -> kind.read(files.filterKeys { it.startsWith("${kind.folder}/") }) }.map { item ->
+        val items = kinds.flatMap { kind -> kind.read(files.filterKeys { it.startsWith("${kind.folder}/") || it == SETUP_FILE }) }.map { item ->
             val checked = if (item.problem == null && !item.kind.isId(item.id)) item.copy(problem = "it has no id.") else item
             Previewed(checked, when {
                 checked.kind.has(checked.id) -> Status.REPLACES
@@ -125,7 +132,7 @@ class Setup(private val kinds: List<SetupKind>, build: BuildProperties) {
             previewed.status == Status.CLASHES && name == item.name -> Landed(noun, name, Outcome.SKIPPED, "Another $noun is named $name: rename it to import it.")
             name != item.name && item.kind.taken(name, item.id) -> Landed(noun, name, Outcome.REFUSED, "Another $noun is named $name.")
             else -> runCatching { item.kind.land(item, name) }.fold(
-                { Landed(noun, name, if (previewed.status == Status.REPLACES) Outcome.REPLACED else Outcome.ADDED) },
+                { Landed(noun, name, if (previewed.status == Status.REPLACES) Outcome.REPLACED else Outcome.ADDED, item.kind.landed) },
                 { Landed(noun, name, Outcome.REFUSED, it.message ?: it.toString()) },
             )
         }
