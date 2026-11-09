@@ -222,7 +222,7 @@ class BrowserTest : AntsTest() {
         agent("editor", "a-editor1")
         agent("reviewer", "a-review1")
         page.navigate(url("/settings"))
-        val download = page.waitForDownload { page.getByRole(AriaRole.LINK, Page.GetByRoleOptions().setName("Export").setExact(true)).click() }
+        val download = page.waitForDownload { page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("Export").setExact(true)).click() }
         assertContains(download.suggestedFilename(), "ants-setup-")
         val zip = java.nio.file.Files.readAllBytes(download.path())
 
@@ -246,6 +246,29 @@ class BrowserTest : AntsTest() {
         assertContains(home.resolve("agents/reviewer-2.md").readText(), "id: a-review1")
         assertContains(home.resolve("agents/reviewer.md").readText(), "id: a-review2")
         assertContains(home.resolve("agents/writer.md").readText(), "id: a-writer1")
+    }
+
+    @Test
+    fun `Export includes Kept values only when ticked, and Import asks for the Safe key, refusing a wrong one`() = browse {
+        home.resolve("settings.yaml").writeText("secrets:\n  npm: [NPM_TOKEN]\n")
+        secretStore.saveSettingsValues(mapOf("npm" to "npm-s3cret"))
+        page.navigate(url("/settings"))
+        page.getByLabel("Include Kept values").check()
+        val download = page.waitForDownload { page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("Export").setExact(true)).click() }
+        val zip = java.nio.file.Files.readAllBytes(download.path())
+        assertTrue(java.util.zip.ZipInputStream(zip.inputStream()).use { input -> generateSequence { input.nextEntry }.any { it.name == "safe.yaml" } })
+
+        home.resolve("settings.yaml").writeText("")
+        secretStore.saveSettingsValues(emptyMap())
+        val wrong = startAnother(tempHome()).use { it.getBean(SecretStore::class.java).newKey()!! }
+        page.navigate(url("/settings"))
+        page.locator(".setup input[type=file]").setInputFiles(FilePayload("ants-setup.zip", "application/zip", zip))
+        page.getByLabel("Safe key").fill(wrong)
+        page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("Import").setExact(true)).click()
+        assertThat(page.getByRole(AriaRole.ALERT)).containsText("That Safe key doesn't open")
+        assertEquals("", home.resolve("settings.yaml").readText())
+        page.screenshot("setup-safe-key")
+        secretStore.saveSettingsValues(emptyMap())
     }
 
     @Test
