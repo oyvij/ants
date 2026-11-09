@@ -253,6 +253,7 @@ class BrowserTest : AntsTest() {
         agent("writer", "a-writer1")
         agent("editor", "a-editor1")
         agent("reviewer", "a-review1")
+        home.resolve("settings.yaml").writeText("secrets:\n  npm: [NPM_TOKEN]\nprotected-commands:\n  yarn publish: [npm]\n")
         page.navigate(url("/settings"))
         page.getByRole(AriaRole.LINK, Page.GetByRoleOptions().setName("Export…").setExact(true)).click()
         val download = page.waitForDownload { page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("Export").setExact(true)).click() }
@@ -266,6 +267,10 @@ class BrowserTest : AntsTest() {
         assertThat(page.locator("tr[data-key='agents/writer.md'] .pill")).hasText("New")
         assertThat(page.locator("tr[data-key='agents/editor.md'] .pill")).hasText("Replaces")
         assertThat(page.locator("tr[data-key='agents/reviewer.md'] .pill")).hasText("Clashes")
+        val reaching = page.locator("tr[data-key='protected-commands/yarn publish']") // it would run with this Ants' Secret npm
+        assertThat(reaching.locator("input[type=checkbox]")).not().isChecked()
+        assertThat(reaching.locator(".warn")).containsText("⚠ It would run with your Secret npm.")
+        assertThat(page.locator("tr[data-key='agents/writer.md'] input[type=checkbox]")).isChecked()
         page.screenshot("setup-preview")
         page.locator("tr[data-key='agents/editor.md'] input[type=checkbox]").uncheck()
         page.locator("tr[data-key='agents/reviewer.md']").getByLabel("Rename to").fill("reviewer-2")

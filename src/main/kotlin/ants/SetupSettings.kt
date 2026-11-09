@@ -44,6 +44,9 @@ abstract class SettingsInSetup(protected val settings: Settings, private val key
 
     override fun land(item: SetupItem, name: String) = settings.save { write(it, name, item.setting) }
 
+    /** The ⚠ for an item that runs with [labels], naming those this Ants already has, if any. */
+    protected fun reaches(labels: List<String>, what: String = "Secret") = Setup.reaches(labels.filter { it in settings.secrets() }, what)
+
     /** The Secret labels this Ants has, which a Protected Command or Secret Provider needs before it lands. */
     protected fun needs(labels: List<String>, have: Set<String>, what: String) = labels.filterNot { it in have }.takeIf { it.isNotEmpty() }?.let {
         throw IllegalArgumentException("It runs with the $what ${it.joinToString(", ")}, which this Ants hasn't: import ${if (it.size == 1) "it" else "them"} too.")
@@ -116,6 +119,10 @@ class SecretProvidersInSetup(settings: Settings) : SettingsInSetup(settings, "se
         needs(secrets, settings.secrets().keys - settings.lookups().keys, "Kept Secret")
         super.write(values, name, mapOf("command" to Settings.strings(entry["command"]).orEmpty(), "secrets" to secrets))
     }
+
+    override fun warning(item: SetupItem) = (item.setting as? Map<*, *>)?.let { entry ->
+        reaches(Settings.strings(entry["secrets"]).orEmpty(), "Kept Secret")?.let { "Its command `${Settings.strings(entry["command"]).orEmpty().joinToString(" ")}` ${it.replaceFirstChar(Char::lowercase)}" }
+    }
 }
 
 /** The Protected Commands in a Setup, each command prefix to the labels of the Secrets it runs with. */
@@ -133,6 +140,8 @@ class ProtectedCommandsInSetup(settings: Settings) : SettingsInSetup(settings, "
         needs(labels, settings.secrets().keys, "Secret")
         values["protected-commands"] = own().filterKeys { it != name } + (name to labels)
     }
+
+    override fun warning(item: SetupItem) = reaches(Settings.strings(item.setting).orEmpty())
 }
 
 /**

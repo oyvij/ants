@@ -68,7 +68,8 @@ class SetupSchedulesTest : AntsTest() {
         assertEquals(setOf("dashboards/$dashboard/dashboard.yaml"), entries(zip).keys.filter { it.startsWith("dashboards/") }.toSet())
 
         val report = setup.import(zip, all(setup.preview(zip)))
-        assertEquals(listOf(Setup.Outcome.ADDED), report.map { it.outcome }.distinct(), report.toString())
+        // The default Profile replaces this Ants' own once an earlier test wrote its settings.yaml.
+        assertEquals(listOf(Setup.Outcome.ADDED), report.filter { it.noun != "Profile" }.map { it.outcome }.distinct(), report.toString())
         val landed = dashboards.get(dashboard)
         assertEquals("Disks", landed.title)
         val widget = landed.widget("disk")!!
@@ -81,6 +82,31 @@ class SetupSchedulesTest : AntsTest() {
         assertEquals(0, run.exitCode, run.output)
         assertEquals(listOf(7), dashboards.posts(dashboard, widget).map { it.data["value"] })
     }
+
+    @Test
+    fun `Export lists Schedules and Dashboards to tick, a Schedule using its Process, and keeps only the ticked ones`() {
+        settings(null)
+        processes.deploy(javaClass.getResource("/start-end.bpmn")!!.readBytes())
+        val kept = schedules.add("start-end", mapOf(NAME to listOf("Nightly")), "0 0 8 * * MON-FRI")
+        val dropped = schedules.add("start-end", mapOf(NAME to listOf("Weekly")), "0 0 9 * * MON")
+        val shown = dashboards.rename(dashboards.create().id, "Disks").id
+        val hidden = dashboards.rename(dashboards.create().id, "Queues").id
+
+        val items = setup.exportable().associateBy { it.key }
+        assertEquals("Schedule", items.getValue("schedules/$kept").noun)
+        assertEquals(listOf("processes/start-end.bpmn"), items.getValue("schedules/$kept").uses)
+        assertEquals("Dashboard", items.getValue("dashboards/$shown").noun)
+
+        val zip = entries(setup.export(setOf("schedules/$kept", "dashboards/$shown")))
+        val written = zip.getValue("setup.yaml")
+        assertContains(written, kept)
+        assertFalse(dropped in written, written)
+        assertEquals(setOf("dashboards/$shown/dashboard.yaml"), zip.keys.filter { it.startsWith("dashboards/") }.toSet())
+        assertFalse(hidden in zip.keys.joinToString(), zip.keys.toString())
+    }
+
+    @Autowired
+    lateinit var processes: Processes
 
     @Autowired
     lateinit var scripts: Scripts

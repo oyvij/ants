@@ -110,7 +110,7 @@ class SkillsInSetup(private val catalogue: Catalogue, private val drafted: Draft
 /** The user's own Scripts in a Setup: `scripts/<id>/`, each `script.yaml` and `script.mjs`, never a Secret's value. */
 @Component
 @Order(3)
-class ScriptsInSetup(private val scripts: Scripts, private val drafted: DraftedItems) : SetupKind {
+class ScriptsInSetup(private val scripts: Scripts, private val drafted: DraftedItems, private val settings: Settings) : SetupKind {
     override val noun = "Script"
     override val folder = "scripts"
 
@@ -127,6 +127,11 @@ class ScriptsInSetup(private val scripts: Scripts, private val drafted: DraftedI
             { SetupItem(this, root, "", root.substringAfterLast('/'), own, "its script.yaml is broken: ${it.message}") },
         )
     }
+
+    /** A Script lists its Secrets in `script.yaml`: those that are labels in this Ants' Settings are the user's. */
+    override fun warning(item: SetupItem) = item.files["${item.key}/script.yaml"]
+        ?.let { runCatching { Script.of(yaml.load<Map<*, *>>(it.decodeToString())) }.getOrNull() }
+        ?.let { script -> Setup.reaches(script.secrets.filter { it in settings.secrets() }) }
 
     override fun has(id: String) = scripts.withId(id) != null
 

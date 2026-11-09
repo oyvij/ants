@@ -49,6 +49,12 @@ interface SetupKind {
      */
     fun uses(item: SetupItem): List<SetupUse> = emptyList()
 
+    /**
+     * Why [item] waits for the user's say before it lands: the Secrets of this Ants it would run with, which a shared
+     * Setup mustn't reach unasked; null when it reaches none.
+     */
+    fun warning(item: SetupItem): String? = null
+
     /** What the report says beside [item] once it landed, such as what it names that this Ants lacks. */
     fun note(item: SetupItem): String? = null
 
@@ -81,12 +87,15 @@ class Setup(private val kinds: List<SetupKind>, build: BuildProperties, private 
 
     enum class Outcome(val label: String) { ADDED("Added"), REPLACED("Replaced"), SKIPPED("Skipped"), REFUSED("Refused") }
 
-    /** What Import would do with [item]. */
-    data class Previewed(val item: SetupItem, val status: Status) {
+    /** What Import would do with [item], and the [warning] that keeps it unticked until the user ticks it. */
+    data class Previewed(val item: SetupItem, val status: Status, val warning: String? = null) {
         val key get() = item.key
         val noun get() = item.kind.noun
         val name get() = item.name
         val problem get() = item.problem
+
+        /** Whether the preview starts with it ticked: neither refused nor reaching the user's Secrets. */
+        val ticked get() = problem == null && warning == null
     }
 
     /** A Setup's items as Import would land them, written by Ants [version], and whether it carries [keptValues], which need its Safe key. */
@@ -179,7 +188,7 @@ class Setup(private val kinds: List<SetupKind>, build: BuildProperties, private 
                 checked.kind.has(checked.id) -> Status.REPLACES
                 checked.kind.taken(checked.name, checked.id) -> Status.CLASHES
                 else -> Status.NEW
-            })
+            }, checked.kind.warning(checked))
         }
         return Preview(from, items, SAFE_FILE in files)
     }
@@ -260,5 +269,10 @@ class Setup(private val kinds: List<SetupKind>, build: BuildProperties, private 
 
         /** An id as Ants gives them, which is safe as a folder's name. */
         internal val ID = Regex("[a-z0-9][a-z0-9-]{0,63}")
+
+        /** The warning for an item that would run with [labels], the user's own Secret labels of [what] kind; null for none. */
+        fun reaches(labels: List<String>, what: String = "Secret") = labels.takeIf { it.isNotEmpty() }?.let {
+            "It would run with your $what${if (it.size == 1) "" else "s"} ${it.joinToString(", ")}."
+        }
     }
 }

@@ -64,6 +64,10 @@ class SchedulesInSetup(private val schedules: Schedules) : SetupKind {
         SetupItem(this, "$folder/$id", "$id", name, emptyMap(), if (given == null) "it is no Schedule." else null, given)
     }
 
+    /** Its Process, so ticking a Schedule on the Export page ticks the Process it starts. */
+    override fun uses(item: SetupItem) = (item.setting as? Map<*, *>)?.get("process")?.toString()?.takeIf { it.isNotBlank() }
+        ?.let { listOf(SetupUse("processes", it)) }.orEmpty()
+
     /** A Schedule's id, a UUID. */
     override fun isId(id: String) = Regex("[0-9a-f-]{36}").matches(id)
 
