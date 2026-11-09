@@ -101,20 +101,42 @@
             <button type="button" data-add>＋ Add</button></div></div>
 
     <div class="card"><h3>Secrets</h3><div class="help">Values such as a registry token, which Protected Commands run with and Agents never see.
-        A value is kept in the Safe, encrypted, never shown again; left blank, the saved one stays. Each variable name is the
-        variable the command reads the value from, such as <span class="eg">YARN_NPM_AUTH_TOKEN</span>.</div>
+        A Kept value is kept in the Safe, encrypted, never shown again; left blank, the saved one stays. A Lookup is a pointer into
+        your password manager, such as <span class="eg">op://Dev/npm/token</span>, which its Secret Provider below resolves at each use.
+        Each variable name is the variable the command reads the value from, such as <span class="eg">YARN_NPM_AUTH_TOKEN</span>.</div>
         <div class="listed">
 @for((i, row) in form.shownSecrets.withIndex())
             <div class="row" hidden="${row.label.isEmpty()}">
                 <input type="hidden" name="secrets[${i}].was" value="${row.was}">
                 <label class="cap name">Label<input name="secrets[${i}].label" value="${row.label}" placeholder="e.g. npm"></label>
-                <label class="cap name">Value<input type="password" name="secrets[${i}].value" placeholder="${if (row.set) "••••" else if (row.was.isNotEmpty()) "Not set yet" else "e.g. npm_a1b2c3"}" autocomplete="new-password"></label>
+                <label class="cap">Kind<select name="secrets[${i}].kind"><option value="kept">Kept</option><option value="lookup" selected="${row.lookup != null}">Lookup</option></select></label>
+                <label class="cap name lookup">Lookup<input class="mono" name="secrets[${i}].lookup" value="${row.lookup}" placeholder="e.g. op://Dev/npm/token"></label>
+                <label class="cap name kept">Value<input type="password" name="secrets[${i}].value" placeholder="${if (row.set) "••••" else if (row.was.isNotEmpty()) "Not set yet" else "e.g. npm_a1b2c3"}" autocomplete="new-password"></label>
                 <label class="cap grow">Variable names<input class="mono" name="secrets[${i}].names" value="${row.names}" placeholder="e.g. NPM_TOKEN"></label>
                 <button type="button" class="ghost" data-remove>Remove</button>
             </div>
 @endfor
             <button type="button" data-add>＋ Add</button></div>
         <p class="row"><button name="action" value="reset-safe" class="danger" formnovalidate onclick="return confirm('Reset the Safe? Every Secret value is wiped, here and in your Scripts, and you retype them. Labels, variable names and Protected Commands stay.')">Reset Safe</button> <span class="muted small">Lost the Safe key and the password that opened it? Start a new Safe.</span></p></div>
+
+    <div class="card"><h3>Secret Providers</h3><div class="help">A Secret Provider resolves the Lookups of one scheme with a command, run with no shell,
+        <span class="eg">{ref}</span> standing for the pointer, and with the Kept Secrets picked under their variable names. For 1Password, make a
+        1Password service account, keep its token as a Secret under <span class="eg">OP_SERVICE_ACCOUNT_TOKEN</span>, and add the scheme
+        <span class="eg">op</span> with <span class="eg">op read {ref}</span>.</div>
+        <div class="listed">
+@for((i, row) in form.shownProviders.withIndex())
+            <div class="row" hidden="${row.scheme.isEmpty()}">
+                <label class="cap name">Scheme<input class="mono" name="secret-providers[${i}].scheme" value="${row.scheme}" placeholder="e.g. op"></label>
+                <label class="cap grow">Command<input class="mono" name="secret-providers[${i}].command" value="${row.command}" placeholder="e.g. op read {ref}"></label>
+                <label class="cap grow">Secrets<select multiple name="secret-providers[${i}].secrets">
+@for(label in (form.secrets.filter { it.lookup == null }.map { it.label } + row.secrets).distinct())
+                    <option selected="${label in row.secrets}">${ants.Transcript.plain(label)}</option>
+@endfor
+                </select></label>
+                <button type="button" class="ghost" data-remove>Remove</button>
+            </div>
+@endfor
+            <button type="button" data-add>＋ Add</button></div></div>
 
     <div class="card"><h3>Protected Commands</h3><div class="help">A Protected Command is a command that needs Secrets. Agents run it only through Ants, never through Bash,
         so a command that needs no Secret, such as <span class="eg">cargo</span> or <span class="eg">gh</span>, doesn't belong here. Ants runs it, with any
