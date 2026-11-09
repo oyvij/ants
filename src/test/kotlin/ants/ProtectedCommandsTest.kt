@@ -38,6 +38,7 @@ class ProtectedCommandsTest : AntsTest() {
     @AfterEach
     fun noSecrets() {
         secretStore.saveSettingsValues(emptyMap())
+        secretStore.deleteScriptValues("s-other01")
     }
 
     /** A Task whose settings link the Secret `npm` to `./yarn` and keep `maven` for `mvn deploy`. */
@@ -187,7 +188,7 @@ class ProtectedCommandsTest : AntsTest() {
      */
     private fun yarn(tools: String? = null): Pair<String, FakeClaude.Launch> {
         val script = """#!/bin/sh\nif [ "$1" = slow ]; then sleep 30 & echo $! > sleep.pid; wait; fi\npwd\nprintf '[%s]\\n' "$@"\n""" +
-            """env > env.out\necho s3cret-mvn\necho on stderr >&2\nexit 3\n"""
+            """env > env.out\necho s3cret-mvn\necho s3cret-own\necho on stderr >&2\nexit 3\n"""
         protected("write sub/yarn $script", "sh chmod +x sub/yarn", "write ready ok", "wait go", done, tools = tools)
         val run = start()
         eventually { assertTrue(workspace(run).resolve("ready").exists()) }
@@ -196,6 +197,7 @@ class ProtectedCommandsTest : AntsTest() {
 
     @Test
     fun `the run tool runs a Protected Command in the folder asked, with its Secrets under each name, and masks every Secret in its output`() {
+        secretStore.saveScriptValues("s-other01", mapOf("SLACK_TOKEN" to "s3cret-own")) // another Script's own
         val (run, launch) = yarn()
         val (url, authorization) = server(launch)
 
@@ -206,7 +208,7 @@ class ProtectedCommandsTest : AntsTest() {
         assertEquals(true, result["isError"]) // it exited 3
         val text = ((result["content"] as List<*>).single() as Map<*, *>)["text"].toString()
         val sub = workspace(run).resolve("sub").toRealPath()
-        assertEquals("Exit code 3\n\n$sub\n[install]\n[a b]\n[;]\n[env]\n[.files[] | \"=== \" + .filename \\\"x\\\"]\n••••\non stderr\n", text)
+        assertEquals("Exit code 3\n\n$sub\n[install]\n[a b]\n[;]\n[env]\n[.files[] | \"=== \" + .filename \\\"x\\\"]\n••••\n••••\non stderr\n", text)
         // The Secrets went to the command, under every name, and only the linked one.
         val env = sub.resolve("env.out").readLines().associate { it.substringBefore('=') to it.substringAfter('=') }
         assertEquals("s3cret-npm", env["YARN_NPM_AUTH_TOKEN"])

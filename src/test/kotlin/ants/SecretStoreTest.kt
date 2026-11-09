@@ -25,7 +25,7 @@ class SecretStoreTest {
     private val store = SecretStore(home, "pa55word")
 
     @Test
-    fun `keeps Settings Secrets by label and each Script's own apart, and masks with the Settings values`() {
+    fun `keeps Settings Secrets by label and each Script's own apart, and masks with every Kept value`() {
         assertEquals(emptyMap(), store.settingsValues())
         store.saveSettingsValues(mapOf("npm" to "s3cret-npm", "maven" to "s3cret-mvn"))
         store.saveScriptValues("s-post01", mapOf("SLACK_TOKEN" to "xoxb-s3cret"))
@@ -33,7 +33,7 @@ class SecretStoreTest {
         assertEquals(mapOf("npm" to "s3cret-npm", "maven" to "s3cret-mvn"), store.settingsValues())
         assertEquals(mapOf("SLACK_TOKEN" to "xoxb-s3cret"), store.scriptValues("s-post01"))
         assertEquals(emptyMap(), store.scriptValues("s-other01"))
-        assertEquals(setOf("s3cret-npm", "s3cret-mvn"), store.masks().toSet())
+        assertEquals(setOf("s3cret-npm", "s3cret-mvn", "xoxb-s3cret"), store.masks().toSet())
 
         store.saveSettingsValues(mapOf("npm" to "s3cret-npm"))
         assertEquals(mapOf("npm" to "s3cret-npm"), store.settingsValues())
@@ -236,5 +236,34 @@ class SecretStoreTest {
         store.saveSettingsValues(mapOf("npm" to "s3cret-npm"))
         store.reset("pa55word")
         assertEquals(emptyMap(), SecretStore(home, "pa55word").settingsValues())
+    }
+
+    @Test
+    fun `a Script whose id is settings keeps its own Secrets apart from the Settings Secrets`() {
+        store.saveSettingsValues(mapOf("npm" to "s3cret-npm"))
+        store.saveScriptValues("settings", mapOf("SLACK_TOKEN" to "xoxb-s3cret"))
+        assertEquals(mapOf("npm" to "s3cret-npm"), SecretStore(home, "pa55word").settingsValues())
+        assertEquals(mapOf("SLACK_TOKEN" to "xoxb-s3cret"), SecretStore(home, "pa55word").scriptValues("settings"))
+    }
+
+    @Test
+    fun `Reset Safe forgets the Lookup values resolved before it`() {
+        store.lookedUp("s3cret-looked-up")
+        store.reset("pa55word")
+        assertEquals(emptyList(), store.masks().toList())
+    }
+
+    @Test
+    fun `a password changed after one reset outside Ants wraps the Safe, not the reset one`() {
+        val key = assertNotNull(store.newKey())
+        val lost = SecretStore(home)
+        lost.unlock("reset-outside-ants")
+        assertTrue(lost.unlockWithKey(key))
+
+        lost.rewrap("changed-on-the-page")
+        lost.lock()
+        assertTrue(lost.unlockWithKey(key))
+
+        assertFalse(SecretStore(home, "changed-on-the-page").locked)
     }
 }

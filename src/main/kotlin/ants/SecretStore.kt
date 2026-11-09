@@ -20,8 +20,8 @@ import kotlin.io.path.readText
 
 /**
  * The Safe (ADR 0033): every Secret value Ants keeps, and the only code that reads or writes one, Settings Secrets by
- * label and each Script's own by the Script's fixed id. All of them sit in one file, `safe.yaml` in ANTS_HOME, mode
- * 0600, encrypted with AES-256-GCM under a random Safe key, which the file holds only wrapped by a key derived from the
+ * label under `settings` and each Script's own by name under `scripts` and the Script's fixed id. All of them sit in one
+ * file, `safe.yaml` in ANTS_HOME, mode 0600, encrypted with AES-256-GCM under a random Safe key, which the file holds only wrapped by a key derived from the
  * login password. Ants holds the Safe key in memory while the Safe is unlocked: [password] (one Ants knows in plain, from
  * the environment) unlocks it here, and a login ([unlock]) after.
  *
@@ -40,8 +40,11 @@ class SecretStore(home: Path, password: String? = null) {
 
     private var key: ByteArray? = null
 
-    /** Settings Secrets' values by label under `settings`, each Script's own by its id under `scripts`. */
-    private var values = mutableMapOf<String, MutableMap<String, String>>()
+    /** Settings Secrets' values, by label. */
+    private var settings = mapOf<String, String>()
+
+    /** Each Script's own Secrets' values by name, under the Script's id. */
+    private var scripts = mutableMapOf<String, Map<String, String>>()
 
     /** Since when a Task has waited on the locked Safe ([whenUnlocked]); null while none waits. */
     @Volatile
@@ -63,7 +66,7 @@ class SecretStore(home: Path, password: String? = null) {
     /** On writes the Safe key to [keyFile] (the Safe must be unlocked); off deletes it. */
     @Synchronized
     fun keepOpen(on: Boolean) {
-        if (on) keyFile.writePrivately(encode(checkNotNull(key) { "The Safe is locked: log in to unlock it" }))
+        if (on) keyFile.writePrivately(encode(checkNotNull(key) { LOCKED }))
         else keyFile.deleteIfExists()
     }
 
@@ -114,7 +117,7 @@ class SecretStore(home: Path, password: String? = null) {
     }
 
     private fun open(opened: ByteArray) {
-        values = parse(decrypt(opened, decode(stored()["values"])).decodeToString())
+        parse(decrypt(opened, decode(stored()["values"])).decodeToString())
         key = opened
         release()
     }
@@ -129,7 +132,8 @@ class SecretStore(home: Path, password: String? = null) {
     @Synchronized
     fun lock() {
         key = null
-        values = mutableMapOf()
+        settings = emptyMap()
+        scripts.clear()
         looked.clear()
     }
 
@@ -149,6 +153,7 @@ class SecretStore(home: Path, password: String? = null) {
     fun rewrap(password: String) {
         val key = key ?: return
         val salt = random(16)
+        stale = null // this wrapping is the current one
         write { it["salt"] = encode(salt); it["wrapped"] = encode(encrypt(derive(password, salt), key)) }
     }
 
@@ -160,26 +165,28 @@ class SecretStore(home: Path, password: String? = null) {
     fun reset(password: String? = null) {
         val fresh = random(32)
         key = fresh
-        values = mutableMapOf()
-        file.writePrivately(yaml.dump(mapOf("values" to encode(encrypt(fresh, yaml.dump(values).encodeToByteArray())))))
+        settings = emptyMap()
+        scripts.clear()
+        looked.clear()
+        file.writePrivately(yaml.dump(mapOf("values" to sealed(fresh))))
         password?.let(::rewrap)
         if (keepOpen) keepOpen(true)
         release() // the Tasks waiting go on, and fail on a Secret with no value until it is retyped
     }
 
     /** Each Settings Secret's value, by label. */
-    fun settingsValues(): Map<String, String> = section("settings")
+    fun settingsValues(): Map<String, String> = read { settings }
 
     /** Rewrites the Settings Secrets' values with [values]. */
-    fun saveSettingsValues(values: Map<String, String>) = save("settings", values)
+    fun saveSettingsValues(values: Map<String, String>) = save { settings = values.toMap() }
 
     /** The Script with [id]'s own Secrets' values, by name, kept apart from its Draft and its published version. */
-    fun scriptValues(id: String): Map<String, String> = section(id)
+    fun scriptValues(id: String): Map<String, String> = read { scripts[id].orEmpty() }
 
     /** Keeps [values] as the Script with [id]'s own Secrets; none deletes them. */
-    fun saveScriptValues(id: String, values: Map<String, String>) = save(id, values)
+    fun saveScriptValues(id: String, values: Map<String, String>) = save { if (values.isEmpty()) scripts.remove(id) else scripts[id] = values.toMap() }
 
-    fun deleteScriptValues(id: String) = save(id, emptyMap())
+    fun deleteScriptValues(id: String) = saveScriptValues(id, emptyMap())
 
     /** Every Lookup value resolved since the unlock, in memory only, masked with the Kept ones; locking clears them. */
     private val looked = mutableSetOf<String>()
@@ -189,64 +196,73 @@ class SecretStore(home: Path, password: String? = null) {
         looked += value
     }
 
-    /** The values to mask in any output an Agent or the user reads: every Settings Secret's and every Lookup's resolved; none while locked. */
+    /** The values to mask in any output an Agent or the user reads: every Kept value, each Script's own too, and every Lookup's resolved; none while locked. */
     @Synchronized
-    fun masks(): Collection<String> = values["settings"].orEmpty().values.toList() + looked
+    fun masks(): Collection<String> = settings.values + scripts.values.flatMap { it.values } + looked
 
     @Synchronized
-    private fun section(name: String): Map<String, String> {
-        check(!locked) { "The Safe is locked: log in to unlock it" }
-        return values[name].orEmpty().toMap()
+    private fun read(section: () -> Map<String, String>): Map<String, String> {
+        check(!locked) { LOCKED }
+        return section()
     }
 
     @Synchronized
-    private fun save(name: String, section: Map<String, String>) {
-        val key = checkNotNull(key) { "The Safe is locked: log in to unlock it" }
-        if (section.isEmpty()) values.remove(name) else values[name] = section.toMutableMap()
-        write { it["values"] = encode(encrypt(key, yaml.dump(values).encodeToByteArray())) }
+    private fun save(change: () -> Unit) {
+        val key = checkNotNull(key) { LOCKED }
+        change()
+        write { it["values"] = sealed(key) }
     }
+
+    /** Every value, encrypted with [key] as `safe.yaml` holds them. */
+    private fun sealed(key: ByteArray) = encode(encrypt(key, yaml.dump(mapOf("settings" to settings, "scripts" to scripts)).encodeToByteArray()))
 
     /** Creates the Safe, holding the values of every plain `secrets.yaml`, which it then deletes. */
     private fun migrate(home: Path, password: String?) {
         key = random(32)
-        val scripts = home.resolve("scripts").takeIf { it.isDirectory() }?.listDirectoryEntries().orEmpty()
-        val plain = listOf("settings" to home) + scripts.map { it.fileName.toString() to it }
-        for ((name, folder) in plain) read(folder.resolve("secrets.yaml")).takeIf { it.isNotEmpty() }?.let { values[name] = it.toMutableMap() }
-        save("settings", values["settings"].orEmpty())
+        val folders = home.resolve("scripts").takeIf { it.isDirectory() }?.listDirectoryEntries().orEmpty()
+        settings = read(home.resolve("secrets.yaml"))
+        for (folder in folders) read(folder.resolve("secrets.yaml")).takeIf { it.isNotEmpty() }?.let { scripts[folder.fileName.toString()] = it }
+        save {}
         password?.let(::rewrap)
-        plain.forEach { (_, folder) -> folder.resolve("secrets.yaml").deleteIfExists() }
+        (folders.plusElement(home)).forEach { it.resolve("secrets.yaml").deleteIfExists() }
     }
 
     private fun stored(): Map<String, Any?> = file.takeIf { it.exists() }?.let { Yaml().load<Map<String, Any?>>(it.readText()) }.orEmpty()
 
     private fun write(change: (MutableMap<String, Any?>) -> Unit) = file.writePrivately(yaml.dump(LinkedHashMap(stored()).also(change)))
 
-    private fun read(file: Path): MutableMap<String, String> = file.takeIf { it.exists() }?.let { Yaml().load<Map<*, *>>(it.readText()) }
-        .orEmpty().entries.associateTo(mutableMapOf()) { (key, value) -> "$key" to "$value" }
+    private fun read(file: Path): Map<String, String> = file.takeIf { it.exists() }?.let { Yaml().load<Map<*, *>>(it.readText()) }.strings()
 
-    private fun parse(text: String) = (Yaml().load<Map<String, Map<String, String>>>(text) ?: emptyMap())
-        .mapValuesTo(mutableMapOf()) { (_, section) -> section.toMutableMap() }
+    private fun parse(text: String) {
+        val loaded = Yaml().load<Map<*, *>>(text).orEmpty()
+        settings = (loaded["settings"] as Map<*, *>?).strings()
+        scripts = (loaded["scripts"] as Map<*, *>?).orEmpty().entries.associateTo(mutableMapOf()) { (id, own) -> "$id" to (own as Map<*, *>?).strings() }
+    }
 
-    private companion object {
-        const val ITERATIONS = 600_000
-        val random = SecureRandom()
+    companion object {
+        const val LOCKED = "The Safe is locked: log in to unlock it"
 
-        fun random(size: Int) = ByteArray(size).also(random::nextBytes)
-        fun encode(bytes: ByteArray): String = Base64.getEncoder().encodeToString(bytes)
-        fun decode(text: Any?): ByteArray = Base64.getDecoder().decode(text as String)
+        private fun Map<*, *>?.strings() = orEmpty().entries.associate { (key, value) -> "$key" to "$value" }
 
-        fun derive(password: String, salt: ByteArray): ByteArray = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
+        private const val ITERATIONS = 600_000
+        private val random = SecureRandom()
+
+        private fun random(size: Int) = ByteArray(size).also(random::nextBytes)
+        private fun encode(bytes: ByteArray): String = Base64.getEncoder().encodeToString(bytes)
+        private fun decode(text: Any?): ByteArray = Base64.getDecoder().decode(text as String)
+
+        private fun derive(password: String, salt: ByteArray): ByteArray = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
             .generateSecret(PBEKeySpec(password.toCharArray(), salt, ITERATIONS, 256)).encoded
 
         /** A random 12-byte nonce, then the ciphertext and its tag. */
-        fun encrypt(key: ByteArray, plain: ByteArray): ByteArray {
+        private fun encrypt(key: ByteArray, plain: ByteArray): ByteArray {
             val nonce = random(12)
             return nonce + cipher(Cipher.ENCRYPT_MODE, key, nonce).doFinal(plain)
         }
 
-        fun decrypt(key: ByteArray, sealed: ByteArray): ByteArray = cipher(Cipher.DECRYPT_MODE, key, sealed.copyOf(12)).doFinal(sealed, 12, sealed.size - 12)
+        private fun decrypt(key: ByteArray, sealed: ByteArray): ByteArray = cipher(Cipher.DECRYPT_MODE, key, sealed.copyOf(12)).doFinal(sealed, 12, sealed.size - 12)
 
-        fun cipher(mode: Int, key: ByteArray, nonce: ByteArray): Cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        private fun cipher(mode: Int, key: ByteArray, nonce: ByteArray): Cipher = Cipher.getInstance("AES/GCM/NoPadding")
             .apply { init(mode, SecretKeySpec(key, "AES"), GCMParameterSpec(128, nonce)) }
     }
 }
