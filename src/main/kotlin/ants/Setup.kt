@@ -12,9 +12,10 @@ import java.util.zip.ZipOutputStream
 
 /**
  * One item in a Setup as its [kind] reads it: its [key], the path in the Setup that holds it, its [id] and [name], its
- * [files] by their path in the Setup, and the [problem] that keeps it from landing, if one does.
+ * [files] by their path in the Setup, the [problem] that keeps it from landing, if one does, and its [setting], its
+ * value in `setup.yaml` for an item kept there.
  */
-data class SetupItem(val kind: SetupKind, val key: String, val id: String, val name: String, val files: Map<String, ByteArray>, val problem: String? = null)
+data class SetupItem(val kind: SetupKind, val key: String, val id: String, val name: String, val files: Map<String, ByteArray>, val problem: String? = null, val setting: Any? = null)
 
 /** An item one item uses: the one of the kind in [folder] whose id or name is [value]. */
 data class SetupUse(val folder: String, val value: String)
@@ -36,11 +37,20 @@ interface SetupKind {
     /** The items in a Setup's [files], which all lie in [folder]. */
     fun read(files: Map<String, ByteArray>): List<SetupItem>
 
+    /** What this kind keeps in `setup.yaml`, by key, beside the Ants version: nothing for a kind whose items are files only. */
+    fun exportSettings(): Map<String, Any> = emptyMap()
+
+    /** The items in a Setup's [files], which all lie in [folder], and in its `setup.yaml`'s keys, [settings]. */
+    fun read(files: Map<String, ByteArray>, settings: Map<*, *>): List<SetupItem> = read(files)
+
     /**
      * What [item] uses that would go in a Setup beside it, each by the [SetupKind.folder] of its kind and its id or
      * name, such as a Process's Agent: none, unless the kind links others.
      */
     fun uses(item: SetupItem): List<SetupUse> = emptyList()
+
+    /** What the report says beside [item] once it landed, such as what it names that this Ants lacks. */
+    fun note(item: SetupItem): String? = null
 
     /** Whether [id] is an id this kind's items have, safe as a file's name. */
     fun isId(id: String) = Setup.ID.matches(id)
@@ -107,13 +117,14 @@ class Setup(private val kinds: List<SetupKind>, build: BuildProperties) {
     }
 
     /** The user's own items as each kind reads them back. */
-    private fun own() = kinds.flatMap { kind -> kind.read(kind.export()) }
+    private fun own() = kinds.flatMap { kind -> kind.read(kind.export(), kind.exportSettings()) }
 
     /** The user's own items of every kind as a Setup, or only those whose keys are [ticked]. */
     fun export(ticked: Set<String>? = null): ByteArray = ByteArrayOutputStream().also { bytes ->
         ZipOutputStream(bytes).use { zip ->
             val items = own().filter { ticked == null || it.key in ticked }
-            val files = mapOf(SETUP_FILE to yaml.dump(mapOf("ants" to version)).toByteArray()) + items.flatMap { it.files.entries.map { (path, data) -> path to data } }
+            val meta = mapOf("ants" to version) + kinds.flatMap { kind -> settings(kind, items.filter { it.kind === kind }.takeIf { ticked != null }).entries.map { (key, value) -> key to value } }
+            val files = mapOf(SETUP_FILE to yaml.dump(meta).toByteArray()) + items.flatMap { it.files.entries.map { (path, data) -> path to data } }
             for ((path, data) in files) {
                 zip.putNextEntry(ZipEntry(path))
                 zip.write(data)
@@ -121,6 +132,19 @@ class Setup(private val kinds: List<SetupKind>, build: BuildProperties) {
             }
         }
     }.toByteArray()
+
+    /**
+     * What [kind] keeps in `setup.yaml`, of its [ticked] items only when given: a key holding a map keeps the entries
+     * named by a ticked item's id or name, and any other key is kept when it is a ticked item's id.
+     */
+    private fun settings(kind: SetupKind, ticked: List<SetupItem>?): Map<String, Any> {
+        val all = kind.exportSettings()
+        if (ticked == null) return all
+        val named = ticked.flatMap { listOf(it.id, it.name) }.toSet()
+        return all.mapNotNull { (key, value) ->
+            if (value is Map<*, *>) value.filterKeys { "$it" in named }.takeIf { it.isNotEmpty() }?.let { key to it } else (key to value).takeIf { key in named }
+        }.toMap()
+    }
 
     /** Every item in [zip] as New, Replaces or Clashes; throws [Refused] for a file that isn't a Setup this Ants can read. */
     fun preview(zip: ByteArray): Preview {
@@ -130,7 +154,7 @@ class Setup(private val kinds: List<SetupKind>, build: BuildProperties) {
         val from = meta["ants"]?.toString() ?: throw Refused("This Setup's $SETUP_FILE doesn't say which Ants wrote it.")
         val newer = runCatching { Version.parse(from) > Version.parse(version) }.getOrDefault(true)
         if (newer) throw Refused("This Setup is from Ants $from, newer than this Ants $version: update Ants first.")
-        val items = kinds.flatMap { kind -> kind.read(files.filterKeys { it.startsWith("${kind.folder}/") }) }.map { item ->
+        val items = kinds.flatMap { kind -> kind.read(files.filterKeys { it.startsWith("${kind.folder}/") }, meta) }.map { item ->
             val checked = if (item.problem == null && !item.kind.isId(item.id)) item.copy(problem = "it has no id.") else item
             Previewed(checked, when {
                 checked.kind.has(checked.id) -> Status.REPLACES
@@ -156,7 +180,7 @@ class Setup(private val kinds: List<SetupKind>, build: BuildProperties) {
             previewed.status == Status.CLASHES && name == item.name -> Landed(noun, name, Outcome.SKIPPED, "Another $noun is named $name: rename it to import it.")
             name != item.name && item.kind.taken(name, item.id) -> Landed(noun, name, Outcome.REFUSED, "Another $noun is named $name.")
             else -> runCatching { item.kind.land(item, name) }.fold(
-                { Landed(noun, name, if (previewed.status == Status.REPLACES) Outcome.REPLACED else Outcome.ADDED) },
+                { Landed(noun, name, if (previewed.status == Status.REPLACES) Outcome.REPLACED else Outcome.ADDED, item.kind.note(item)) },
                 { Landed(noun, name, Outcome.REFUSED, it.message ?: it.toString()) },
             )
         }
