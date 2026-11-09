@@ -209,6 +209,7 @@ class ScriptTaskTest : AntsTest() {
             saveScript("plain", code = "ants.output({ran: true})\n")
             deploy("keying", scriptTask("keyed", "keyed"))
             deploy("unkeyed", scriptTask("plain", "plain"))
+            secretStore.rewrap("admin") // another test may have changed the password the Safe key is wrapped by
             secretStore.lock()
 
             val keying = start("keying")

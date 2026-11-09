@@ -220,6 +220,7 @@ class ProtectedCommandsTest : AntsTest() {
     fun `on a locked Safe the run tool waits, on the Notification list, and runs the Protected Command once the Safe is unlocked`() {
         val (_, launch) = yarn()
         val (url, authorization) = server(launch)
+        secretStore.rewrap("admin") // another test may have changed the password the Safe key is wrapped by
         secretStore.lock()
         try {
             val answer = java.util.concurrent.CompletableFuture.supplyAsync { call(url, authorization, listOf("./yarn"), folder = "sub") }
