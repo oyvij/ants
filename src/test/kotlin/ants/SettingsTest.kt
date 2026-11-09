@@ -23,6 +23,7 @@ import kotlin.io.path.writeText
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class SettingsTest : AntsTest() {
@@ -49,6 +50,28 @@ class SettingsTest : AntsTest() {
     }
 
     private fun executable(name: String) = loginBin.resolve(name).apply { writeText("#!/bin/sh\n"); toFile().setExecutable(true) }
+
+    @Test
+    fun `Reset Safe empties every Kept value, keeps the Secret labels and Protected Commands, and shows a new Safe key once`() {
+        try {
+            settings.save { it["secrets"] = mapOf("npm" to listOf("NPM_TOKEN")); it["protected-commands"] = mapOf("yarn" to listOf("npm")) }
+            secretStore.saveSettingsValues(mapOf("npm" to "tok-9f3a"))
+            secretStore.saveScriptValues("s-post01", mapOf("SLACK_TOKEN" to "xoxb-s3cret"))
+            assertContains(browser.get("/settings").body, """<button name="action" value="reset-safe"""")
+
+            browser.post("/settings", listOf("action" to "reset-safe"))
+
+            assertEquals(emptyMap(), secretStore.settingsValues())
+            assertEquals(emptyMap(), secretStore.scriptValues("s-post01"))
+            assertEquals(mapOf("npm" to listOf("NPM_TOKEN")), yaml()["secrets"])
+            assertEquals(mapOf("yarn" to listOf("npm")), yaml()["protected-commands"])
+            val key = assertNotNull(secretStore.newKey())
+            assertContains(browser.get("/settings").body, "<code>$key</code>")
+            assertTrue(SecretStore(secretStore.file.parent).also { it.unlock("admin") }.settingsValues().isEmpty())
+        } finally {
+            secretStore.keySaved()
+        }
+    }
 
     @Test
     fun `logging in unlocks the Safe after a restart, and a password from the environment unlocks it at boot`() {

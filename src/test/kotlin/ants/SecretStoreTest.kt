@@ -126,4 +126,49 @@ class SecretStoreTest {
         assertFalse(restarted.keyFile.exists())
         assertTrue(SecretStore(home).locked)
     }
+
+    @Test
+    fun `Reset Safe replaces the Keep open key file when Keep open is on`() {
+        store.keepOpen(true)
+        store.reset()
+        store.saveSettingsValues(mapOf("npm" to "s3cret-npm"))
+        assertEquals(mapOf("npm" to "s3cret-npm"), SecretStore(home).settingsValues()) // unlocked from the new key
+
+        store.keepOpen(false)
+        store.reset()
+        assertFalse(store.keepOpen)
+    }
+
+    @Test
+    fun `Reset Safe on a locked Safe empties every Kept value, shows a new Safe key once, and unlocks at login as before`() {
+        store.saveSettingsValues(mapOf("npm" to "s3cret-npm"))
+        store.saveScriptValues("s-post01", mapOf("SLACK_TOKEN" to "xoxb-s3cret"))
+        val old = assertNotNull(store.newKey())
+        store.keySaved()
+        val lost = SecretStore(home)
+        lost.unlock("reset-outside-ants")
+        assertTrue(lost.locked)
+
+        lost.reset()
+
+        assertFalse(lost.locked)
+        assertEquals(emptyMap(), lost.settingsValues())
+        assertEquals(emptyMap(), lost.scriptValues("s-post01"))
+        val key = assertNotNull(lost.newKey())
+        assertTrue(key != old)
+        lost.unlock("reset-outside-ants")
+        lost.keySaved()
+        assertNull(lost.newKey())
+        val restarted = SecretStore(home)
+        restarted.unlock("reset-outside-ants")
+        assertFalse(restarted.locked)
+        assertEquals(emptyMap(), restarted.settingsValues())
+    }
+
+    @Test
+    fun `Reset Safe wraps the new Safe key with a password Ants knows in plain`() {
+        store.saveSettingsValues(mapOf("npm" to "s3cret-npm"))
+        store.reset("pa55word")
+        assertEquals(emptyMap(), SecretStore(home, "pa55word").settingsValues())
+    }
 }

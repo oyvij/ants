@@ -108,6 +108,20 @@ class SecretStore(home: Path, password: String? = null) {
         write { it["salt"] = encode(salt); it["wrapped"] = encode(encrypt(derive(password, salt), key)) }
     }
 
+    /**
+     * Reset Safe, for a lost Safe key and password: a new Safe key with no Kept value, shown once as at creation. Ants
+     * wraps it with [password] when it knows one in plain, else the next login does.
+     */
+    @Synchronized
+    fun reset(password: String? = null) {
+        val fresh = random(32)
+        key = fresh
+        values = mutableMapOf()
+        file.writePrivately(yaml.dump(mapOf("values" to encode(encrypt(fresh, yaml.dump(values).encodeToByteArray())))))
+        password?.let(::rewrap)
+        if (keepOpen) keepOpen(true)
+    }
+
     /** Each Settings Secret's value, by label. */
     fun settingsValues(): Map<String, String> = section("settings")
 
