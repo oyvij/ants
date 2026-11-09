@@ -201,6 +201,21 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `Reset Safe asks first, then wipes the Kept values and shows the new Safe key in the banner`() = browse {
+        secretStore.saveSettingsValues(mapOf("npm" to "tok-9f3a"))
+        page.navigate(url("/settings"))
+        var asked = ""
+        page.onceDialog { asked = it.message(); it.accept() }
+        page.getByText("Reset Safe", Page.GetByTextOptions().setExact(true)).click()
+        assertThat(page.locator(".safe-key code")).isVisible()
+        assertThat(page.locator(".safe-key code")).hasText(secretStore.newKey()!!)
+        assertContains(asked, "Every Secret value is wiped")
+        assertEquals(emptyMap(), secretStore.settingsValues())
+        page.locator(".safe-key").getByText("I saved it").click()
+        assertThat(page.locator(".safe-key")).hasCount(0)
+    }
+
+    @Test
     fun `the hover menu appends an Agent, User or Built-in Task and offers nothing Ants doesn't run`() = browse {
         newProcess("Hover menu")
         for ((action, name) in listOf("append.agent-task" to "Agent Task", "append.user-task" to "User Task", "append.built-in-task" to "Built-in Task")) {

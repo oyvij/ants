@@ -121,7 +121,8 @@
                 <button type="button" class="ghost" data-remove>Remove</button>
             </div>
 @endfor
-            <button type="button" data-add>＋ Add</button></div></div>
+            <button type="button" data-add>＋ Add</button></div>
+        <p class="row"><button name="action" value="reset-safe" class="danger" formnovalidate onclick="return confirm('Reset the Safe? Every Secret value is wiped, here and in your Scripts, and you retype them. Labels, variable names and Protected Commands stay.')">Reset Safe</button> <span class="muted small">Lost the Safe key and the password that opened it? Start a new Safe.</span></p></div>
 
     <div class="card"><h3>Protected Commands</h3><div class="help">A Protected Command is a command that needs Secrets. Agents run it only through Ants, never through Bash,
         so a command that needs no Secret, such as <span class="eg">cargo</span> or <span class="eg">gh</span>, doesn't belong here. Ants runs it, with any

@@ -95,6 +95,11 @@ class SecretStore(home: Path, password: String? = null) {
     private fun open(opened: ByteArray) {
         values = parse(decrypt(opened, decode(stored()["values"])).decodeToString())
         key = opened
+        release()
+    }
+
+    /** Lets every Task waiting on the Safe go on, now it is unlocked. */
+    private fun release() {
         waitingSince = null
         held.toList().also { held.clear() }.forEach { runCatching(it) }
     }
@@ -123,6 +128,20 @@ class SecretStore(home: Path, password: String? = null) {
         val key = key ?: return
         val salt = random(16)
         write { it["salt"] = encode(salt); it["wrapped"] = encode(encrypt(derive(password, salt), key)) }
+    }
+
+    /**
+     * Reset Safe, for a lost Safe key and password: a new Safe key with no Kept value, shown once as at creation. Ants
+     * wraps it with [password] when it knows one in plain, else the next login does.
+     */
+    @Synchronized
+    fun reset(password: String? = null) {
+        val fresh = random(32)
+        key = fresh
+        values = mutableMapOf()
+        file.writePrivately(yaml.dump(mapOf("values" to encode(encrypt(fresh, yaml.dump(values).encodeToByteArray())))))
+        password?.let(::rewrap)
+        release() // the Tasks waiting go on, and fail on a Secret with no value until it is retyped
     }
 
     /** Each Settings Secret's value, by label. */

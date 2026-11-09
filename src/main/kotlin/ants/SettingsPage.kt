@@ -57,6 +57,7 @@ class SettingsPage(
                 show(model, form)
             }
             "updates" -> Shell.toast(request, updates.checkNow()).let { show(model, form) }
+            "reset-safe" -> store.reset(settings.plainPassword()).let { "redirect:/settings" }
             "detect" -> settings.detect().let { found ->
                 val missing = Settings.CLIS - found.keys
                 show(model, form.copy(paths = form.paths + found), if (missing.isEmpty()) null else "Your login shell doesn't find ${missing.joinToString(", ")}.")
