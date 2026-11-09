@@ -216,6 +216,39 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `Settings exports a Setup, and imports one through a preview of New, Replaces and Clashes into a report`() = browse {
+        fun agent(name: String, id: String) = home.resolve("agents/$name.md").writeText("---\nid: $id\nname: $name\ndescription: Works.\n---\nWork.\n")
+        agent("writer", "a-writer1")
+        agent("editor", "a-editor1")
+        agent("reviewer", "a-review1")
+        page.navigate(url("/settings"))
+        val download = page.waitForDownload { page.getByRole(AriaRole.LINK, Page.GetByRoleOptions().setName("Export").setExact(true)).click() }
+        assertContains(download.suggestedFilename(), "ants-setup-")
+        val zip = java.nio.file.Files.readAllBytes(download.path())
+
+        home.resolve("agents/writer.md").deleteExisting() // New
+        agent("reviewer", "a-review2") // the same name, another id: a Clash
+        page.navigate(url("/settings"))
+        page.locator(".setup input[type=file]").setInputFiles(FilePayload("ants-setup.zip", "application/zip", zip))
+        assertThat(page.locator("tr[data-key='agents/writer.md'] .pill")).hasText("New")
+        assertThat(page.locator("tr[data-key='agents/editor.md'] .pill")).hasText("Replaces")
+        assertThat(page.locator("tr[data-key='agents/reviewer.md'] .pill")).hasText("Clashes")
+        page.screenshot("setup-preview")
+        page.locator("tr[data-key='agents/editor.md'] input[type=checkbox]").uncheck()
+        page.locator("tr[data-key='agents/reviewer.md']").getByLabel("Rename to").fill("reviewer-2")
+        page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("Import").setExact(true)).click()
+
+        val report = page.locator("table.report")
+        assertThat(report.locator("tr", Locator.LocatorOptions().setHasText("writer")).locator(".pill")).hasText("Added")
+        assertThat(report.locator("tr", Locator.LocatorOptions().setHasText("reviewer-2")).locator(".pill")).hasText("Added")
+        assertThat(report.locator("tr", Locator.LocatorOptions().setHasText("editor"))).containsText("Unticked.")
+        page.screenshot("setup-report")
+        assertContains(home.resolve("agents/reviewer-2.md").readText(), "id: a-review1")
+        assertContains(home.resolve("agents/reviewer.md").readText(), "id: a-review2")
+        assertContains(home.resolve("agents/writer.md").readText(), "id: a-writer1")
+    }
+
+    @Test
     fun `the hover menu appends an Agent, User or Built-in Task and offers nothing Ants doesn't run`() = browse {
         newProcess("Hover menu")
         for ((action, name) in listOf("append.agent-task" to "Agent Task", "append.user-task" to "User Task", "append.built-in-task" to "Built-in Task")) {
