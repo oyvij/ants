@@ -7,13 +7,15 @@ import kotlin.io.path.deleteIfExists
 
 /**
  * The portable Settings in a Setup, kept in `setup.yaml` under the key [key] they have in `settings.yaml`, one item per
- * name ([SetupKind.byName]): Import merges each into `settings.yaml` by name, adding or replacing it and leaving every
- * other Setting as it is. The machine-specific Settings (CLI paths and env, Vault and Source map folders, outside Agent
- * and Skill folders, the password) are no kind's, so a Setup never holds them.
+ * name, which is its id, so none Clashes: Import merges each into `settings.yaml` by name, adding or replacing it and
+ * leaving every other Setting as it is. The machine-specific Settings (CLI paths and env, Vault and Source map folders,
+ * outside Agent and Skill folders, the password) are no kind's, so a Setup never holds them.
  */
 abstract class SettingsInSetup(protected val settings: Settings, private val key: String) : SetupKind {
     override val folder get() = key
-    override val byName get() = true
+
+    /** A name, such as the Protected Command `mvn deploy`, is the id. */
+    override fun isId(id: String) = true
 
     /** The user's own, each name to its value as `setup.yaml` holds it. */
     protected abstract fun own(): Map<String, Any>
@@ -186,7 +188,8 @@ class ProfilesInSetup(settings: Settings) : SettingsInSetup(settings, "profiles"
 class OneSettingsInSetup(private val settings: Settings) : SetupKind {
     override val noun = "Setting"
     override val folder = "settings"
-    override val byName = true
+
+    override fun isId(id: String) = true
 
     private fun own() = settings.read().filterKeys { it in KEYS }.filterValues { it != null }.mapValues { it.value!! }
 

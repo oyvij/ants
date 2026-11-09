@@ -2,6 +2,7 @@ package ants
 
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.operaton.bpm.engine.RepositoryService
 import org.springframework.beans.factory.annotation.Autowired
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
@@ -90,6 +91,126 @@ class SetupTest : AntsTest() {
             assertEquals("post", ants.getBean(Scripts::class.java).withId("s-post01")?.name)
         }
     }
+
+    @Test
+    fun `a round trip brings a published Process that runs here with its Agent, Skill and Script`() {
+        val other = tempHome()
+        val zip = startAnother(other).use { ants ->
+            other.resolve("agents").createDirectories().resolve("writer.md").writeText("---\nid: a-writer1\nskills: draft\nscripts: [s-post01]\n---\nWrite plainly.\n")
+            other.resolve("skills/draft").createDirectories().resolve("SKILL.md").writeText("---\nname: draft\ndescription: Drafts.\n---\nDo it.\n")
+            other.resolve("skills/draft/ants.yaml").writeText("id: k-draft1\n")
+            ants.getBean(Scripts::class.java).save(Script("s-post01", "post-message", "Posts a message."), "console.log('hi')\n", emptyMap())
+            val bpmn = javaClass.getResource("/agent-task.bpmn")!!.readText().replace(
+                """<operaton:property name="ants.skills" value="draft" />""",
+                """<operaton:property name="ants.skills" value="draft" /><operaton:property name="ants.scripts" value="post-message" />""",
+            )
+            ants.getBean(Processes::class.java).deploy(bpmn.toByteArray())
+            other.resolve("settings.yaml").writeText("") // its Anthill Profile would name a Vault this Ants hasn't
+            ants.getBean(Setup::class.java).export()
+        }
+        assertTrue("processes/agent-task.bpmn" in entries(zip), entries(zip).keys.toString())
+        assertFalse(entries(zip).keys.any { it.startsWith("processes/") && it != "processes/agent-task.bpmn" }, "A shipped Process went into the Setup: ${entries(zip).keys}")
+
+        val claude = FakeClaude()
+        claude.session("draft", done)
+        settings(claude, "node: {path: ${ScriptsTest.NODE}}\n", env = listOf("PATH", "HOME"))
+        val report = setup.import(zip, all(setup.preview(zip)))
+        assertEquals(listOf(Setup.Outcome.ADDED), report.map { it.outcome }.distinct(), report.toString())
+
+        val browser = browser().also { it.login() }
+        browser.get("/processes/agent-task")
+        val run = browser.post("/processes/agent-task/runs", mapOf("prompt" to "Say hello")).path.removePrefix("/runs/")
+        eventually { assertContains(browser.get("/runs/$run").body, """id="state">Completed<""") }
+        assertEquals(listOf("mcp__ants__script_post-message"), claude.launches("draft").single().flag("--allowedTools")!!.split(",").filter { it.startsWith("mcp__ants__script_") })
+    }
+
+    @Autowired
+    lateinit var processes: Processes
+
+    @Autowired
+    lateinit var repository: RepositoryService
+
+    private val agentTaskBpmn = javaClass.getResource("/agent-task.bpmn")!!.readText()
+
+    /** The agent-task diagram as the Process [key] named [name] whose Task runs the Agent [agent]. */
+    private fun agentTaskProcess(key: String, name: String, agent: String = "writer") = agentTaskBpmn
+        .replace("\"agent-task\"", "\"$key\"").replace("name=\"Agent Task\"", "name=\"$name\"").replace("value=\"writer\"", "value=\"$agent\"")
+
+    /** A Process [key] that calls the Process [called]. */
+    private fun caller(key: String, called: String) = """
+        <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:operaton="http://operaton.org/schema/1.0/bpmn" id="d" targetNamespace="http://bpmn.io/schema/bpmn">
+          <bpmn:process id="$key" name="$key" isExecutable="true" operaton:historyTimeToLive="180">
+            <bpmn:startEvent id="start" />
+            <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="call" />
+            <bpmn:callActivity id="call" name="Call $called" calledElement="$called" />
+            <bpmn:sequenceFlow id="f2" sourceRef="call" targetRef="end" />
+            <bpmn:endEvent id="end" />
+          </bpmn:process>
+        </bpmn:definitions>
+    """.trimIndent()
+
+    @Test
+    fun `a replaced Process becomes its next version, one Publish would refuse is refused in the report, and the rest lands`() {
+        agentTask(null)
+        processes.deploy(agentTaskProcess("agent-task", "Agent Task").toByteArray())
+        val zip = zip(mapOf(
+            "setup.yaml" to "ants: 0.1.0\n",
+            "processes/agent-task.bpmn" to agentTaskProcess("agent-task", "Agent Task again"),
+            "processes/lookalike.bpmn" to agentTaskProcess("lookalike", "Agent Task"),
+            "processes/nobodys.bpmn" to agentTaskProcess("nobodys", "Nobody's", agent = "nobody"),
+            "processes/a-caller.bpmn" to caller("a-caller", "z-called"),
+            "processes/z-called.bpmn" to javaClass.getResource("/start-end.bpmn")!!.readText().replace("start-end", "z-called").replace("Start to end", "Called"),
+            "agents/reviewer.md" to "---\nid: a-review1\ndescription: Reviews.\n---\nReview.\n",
+        ))
+
+        val preview = setup.preview(zip)
+        assertEquals(
+            mapOf(
+                "processes/agent-task.bpmn" to Setup.Status.REPLACES, "processes/lookalike.bpmn" to Setup.Status.CLASHES, "processes/nobodys.bpmn" to Setup.Status.NEW,
+                "processes/a-caller.bpmn" to Setup.Status.NEW, "processes/z-called.bpmn" to Setup.Status.NEW, "agents/reviewer.md" to Setup.Status.NEW,
+            ),
+            preview.items.associate { it.key to it.status },
+        )
+
+        val report = setup.import(zip, all(preview) + ("processes/lookalike.bpmn" to Setup.Choice(rename = "Agent Task lookalike"))).associateBy { it.name }
+        assertEquals(Setup.Outcome.REPLACED, report.getValue("Agent Task again").outcome, report.toString())
+        assertEquals(Setup.Outcome.ADDED, report.getValue("Agent Task lookalike").outcome, report.toString())
+        assertEquals(Setup.Outcome.REFUSED, report.getValue("Nobody's").outcome)
+        assertContains(report.getValue("Nobody's").reason!!, "No Agent named nobody")
+        assertEquals(Setup.Outcome.ADDED, report.getValue("a-caller").outcome, report.toString())
+        assertEquals(Setup.Outcome.ADDED, report.getValue("Called").outcome)
+        assertEquals(Setup.Outcome.ADDED, report.getValue("reviewer").outcome)
+
+        val latest = repository.createProcessDefinitionQuery().processDefinitionKey("agent-task").latestVersion().singleResult()!!
+        assertEquals(2, latest.version)
+        assertEquals("Agent Task again", latest.name)
+        assertEquals("Agent Task lookalike", repository.createProcessDefinitionQuery().processDefinitionKey("lookalike").singleResult()!!.name)
+        assertEquals(0, repository.createProcessDefinitionQuery().processDefinitionKey("nobodys").count())
+    }
+
+    @Test
+    fun `Templates round-trip without their Build logs and clash by name`() {
+        home.resolve("templates/review.bpmn").writeText(agentTaskProcess("review", "Review"))
+        home.resolve("templates/notes.bpmn").writeText(agentTaskProcess("notes", "Notes"))
+        home.resolve("templates/build-logs").createDirectories().resolve("review.md").writeText("Built.\n")
+        agentTask(null)
+        val zip = setup.export()
+        assertEquals(setOf("templates/review.bpmn", "templates/notes.bpmn"), entries(zip).keys.filter { it.startsWith("templates/") }.toSet())
+
+        home.resolve("templates/notes.bpmn").deleteIfExists()
+        home.resolve("templates/review.bpmn").writeText(agentTaskProcess("review", "Mine"))
+        val preview = setup.preview(zip).items.filter { it.noun == "Template" }
+        assertEquals(mapOf("templates/review.bpmn" to Setup.Status.CLASHES, "templates/notes.bpmn" to Setup.Status.NEW), preview.associate { it.key to it.status })
+
+        val report = setup.import(zip, mapOf("templates/review.bpmn" to Setup.Choice(rename = "review-2"), "templates/notes.bpmn" to Setup.Choice()))
+            .filter { it.noun == "Template" }
+        assertEquals(listOf(Setup.Landed("Template", "review-2", Setup.Outcome.ADDED), Setup.Landed("Template", "notes", Setup.Outcome.ADDED)), report.sortedBy { it.name }.reversed())
+        assertContains(home.resolve("templates/review-2.bpmn").readText(), "name=\"Review\"")
+        assertContains(home.resolve("templates/review.bpmn").readText(), "name=\"Mine\"")
+        assertContains(home.resolve("templates/notes.bpmn").readText(), "name=\"Notes\"")
+    }
+
+    private val done ="""{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":{"outcome":"done","summary":"Drafted.","output":{}}}"""
 
     @Test
     fun `the preview shows New, Replaces and Clashes, a Clash lands only renamed and keeps its id, and an unticked item stays out`() {

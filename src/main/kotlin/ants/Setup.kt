@@ -40,11 +40,11 @@ interface SetupKind {
     /** The items in a Setup's [files], which all lie in [folder], and in its `setup.yaml`'s keys, [settings]. */
     fun read(files: Map<String, ByteArray>, settings: Map<*, *>): List<SetupItem> = read(files)
 
-    /** Whether its items are known by name, their [SetupItem.id], as Settings are: Import merges them by name, and none Clashes. */
-    val byName: Boolean get() = false
-
     /** What the report says beside [item] once it landed, such as what it names that this Ants lacks. */
     fun note(item: SetupItem): String? = null
+
+    /** Whether [id] is an id this kind's items have, safe as a file's name. */
+    fun isId(id: String) = Setup.ID.matches(id)
 
     /** Whether the user has an item of this kind with [id] of their own, which an item with it replaces. */
     fun has(id: String): Boolean
@@ -111,7 +111,7 @@ class Setup(private val kinds: List<SetupKind>, build: BuildProperties) {
         val newer = runCatching { Version.parse(from) > Version.parse(version) }.getOrDefault(true)
         if (newer) throw Refused("This Setup is from Ants $from, newer than this Ants $version: update Ants first.")
         val items = kinds.flatMap { kind -> kind.read(files.filterKeys { it.startsWith("${kind.folder}/") }, meta) }.map { item ->
-            val checked = if (item.problem == null && !item.kind.byName && !ID.matches(item.id)) item.copy(problem = "it has no id.") else item
+            val checked = if (item.problem == null && !item.kind.isId(item.id)) item.copy(problem = "it has no id.") else item
             Previewed(checked, when {
                 checked.kind.has(checked.id) -> Status.REPLACES
                 checked.kind.taken(checked.name, checked.id) -> Status.CLASHES
@@ -159,6 +159,6 @@ class Setup(private val kinds: List<SetupKind>, build: BuildProperties) {
         const val SETUP_FILE = "setup.yaml"
 
         /** An id as Ants gives them, which is safe as a folder's name. */
-        private val ID = Regex("[a-z0-9][a-z0-9-]{0,63}")
+        internal val ID = Regex("[a-z0-9][a-z0-9-]{0,63}")
     }
 }
