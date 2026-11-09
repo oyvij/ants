@@ -137,7 +137,7 @@ data class ScriptForm(
 @Controller
 class ScriptsPage(
     private val scripts: Scripts, private val runner: ScriptRunner, private val settings: Settings, private val usedBy: UsedBy, private val validator: ScriptCheck,
-    drafted: DraftedItems,
+    drafted: DraftedItems, private val store: SecretStore,
 ) {
     private val json = JsonMapper.shared()
     private val items = drafted.scripts
@@ -210,12 +210,12 @@ class ScriptsPage(
 
     /** Saves [form]'s rows as [item]'s own Secrets, or says why not. */
     private fun keepSecrets(item: ScriptItem, form: ScriptForm): String? {
-        if (scripts.locked) return LOCKED
+        if (store.locked) return LOCKED
         val own = ownValues(form, scripts.ownSecrets(item.id))
         val lookups = form.ownLookups
         val error = ScriptForm.envError(form.own.map { it.name })
             ?: form.own.firstOrNull { it.name !in own && it.name !in lookups }?.let { "The Secret ${it.name} needs a value." }
-            ?: lookups.entries.firstOrNull { !LOOKUP.matches(it.value) }?.let { "The Secret ${it.key}'s Lookup is a pointer with a scheme, such as op://Dev/npm/token." }
+            ?: lookups.entries.firstOrNull { !SecretProviders.POINTER.matches(it.value) }?.let { "The Secret ${it.key}'s Lookup is a pointer with a scheme, such as op://Dev/npm/token." }
         if (error == null) scripts.saveSecrets(item.id, own, lookups)
         return error
     }
@@ -267,7 +267,7 @@ class ScriptsPage(
         val form = ScriptForm.of(params)
         val page = params["script"]?.firstOrNull()?.let { runCatching { item(it) }.getOrNull() }
         val saved = page?.published
-        if (scripts.locked && (form.own.isNotEmpty() || form.linked.isNotEmpty())) return result(ScriptRun(-1, "$LOCKED\n", null))
+        if (store.locked && (form.own.isNotEmpty() || form.linked.isNotEmpty())) return result(ScriptRun(-1, "$LOCKED\n", null))
         val savedSecrets = page?.let { scripts.ownSecrets(it.id) }.orEmpty()
         val inputs = try {
             json.readValue(params["sample"]?.firstOrNull()?.ifBlank { null } ?: "{}", Map::class.java)
@@ -326,8 +326,8 @@ class ScriptsPage(
     private fun show(model: Model, form: ScriptForm, item: ScriptItem, message: String? = null): String {
         val lookups = scripts.ownLookups(item.id)
         // A locked Safe shows no Kept value as set, as Settings does.
-        model.addAttribute("form", form.keeping(if (scripts.locked) lookups.keys else scripts.ownNames(item.id), lookups))
-        model.addAttribute("safeLocked", scripts.locked)
+        model.addAttribute("form", form.keeping(if (store.locked) lookups.keys else scripts.ownNames(item.id), lookups))
+        model.addAttribute("safeLocked", store.locked)
         model.addAttribute("saved", item.name)
         model.addAttribute("draft", item.head)
         model.addAttribute("labels", (settings.secrets().keys + form.linked).distinct())
@@ -346,7 +346,6 @@ class ScriptsPage(
         private val SECRET_VALUE = Regex("""secrets\[\d+]\.value""")
         private val WAS = Regex("""secrets\[\d+]\.was""")
         private const val LOCKED = "The Safe is locked: unlock it in Settings to save Secrets or Test run with them."
-        private val LOOKUP =Regex("""[a-z][a-z0-9+.-]*://\S+""")
     }
 }
 

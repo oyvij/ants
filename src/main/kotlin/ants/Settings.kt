@@ -212,6 +212,11 @@ class Settings(
     /** The Lookups: each label of a Secret whose value a Secret Provider resolves, to its pointer, such as `op://Dev/npm/token`. */
     fun lookups(): Map<String, String> = (read()["lookups"] as? Map<*, *>).orEmpty().entries.associate { (label, pointer) -> "$label" to "$pointer" }
 
+    /** Each Script's own Lookups by the Script's id, each Secret's name to its pointer. */
+    fun scriptLookups(): Map<String, Map<String, String>> = (read()["script-lookups"] as? Map<*, *>).orEmpty().entries.associate { (id, lookups) ->
+        "$id" to (lookups as? Map<*, *>).orEmpty().entries.associate { (name, pointer) -> "$name" to "$pointer" }
+    }
+
     /** The Secret Providers by scheme, such as `op`. */
     fun secretProviders(): Map<String, SecretProvider> = (read()["secret-providers"] as? Map<*, *>).orEmpty().entries.associate { (scheme, provider) ->
         val entry = provider as? Map<*, *> ?: emptyMap<String, Any?>()

@@ -78,8 +78,7 @@ class Scripts(@Value("\${ants.home}") home: Path, private val settings: Settings
      * The Script with [id]'s own Lookups, each Secret's name to its pointer: in `settings.yaml` under `script-lookups`,
      * as a pointer is no secret, and never in the Script's definition, which a shared Script carries.
      */
-    fun ownLookups(id: String): Map<String, String> =
-        ((settings.read()["script-lookups"] as? Map<*, *>)?.get(id) as? Map<*, *>).orEmpty().entries.associate { (name, pointer) -> "$name" to "$pointer" }
+    fun ownLookups(id: String): Map<String, String> = settings.scriptLookups()[id].orEmpty()
 
     /**
      * The names of the Script with [id]'s own Secrets, Kept or Lookups. While the Safe is locked its Kept ones are the
@@ -87,9 +86,6 @@ class Scripts(@Value("\${ants.home}") home: Path, private val settings: Settings
      */
     fun ownNames(id: String): Set<String> = ownLookups(id).keys +
         if (store.locked) withId(id)?.secrets.orEmpty().filter { it !in settings.secrets() } else ownSecrets(id).keys
-
-    /** Whether the Safe is locked, so no Kept value can be read or saved. */
-    val locked get() = store.locked
 
     /**
      * Keeps [own] as the Script with [id]'s own Kept Secrets and [lookups] as its own Lookups, at once: a published

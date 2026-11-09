@@ -45,6 +45,11 @@ class SecretProviders(private val settings: Settings, private val store: SecretS
     }
 
     class Failed(override val message: String) : Exception(message)
+
+    companion object {
+        /** A Lookup's pointer: a scheme, then `://`, such as `op://Dev/npm/token`. */
+        val POINTER = Regex("""[a-z][a-z0-9+.-]*://\S+""")
+    }
 }
 
 /** A Secret Provider: the command resolving its scheme's Lookups, `{ref}` standing for the pointer, and the labels of the Kept Secrets it runs with. */

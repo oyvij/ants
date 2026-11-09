@@ -263,7 +263,7 @@ data class SettingsForm(
 
     private fun secretError() = when {
         secrets.any { it.label.isEmpty() || words(it.names).isEmpty() || (it.lookup == null && it.value.isEmpty() && it.was.isEmpty()) } -> "Every Secret needs a label, a value and a variable name."
-        secrets.any { it.lookup != null && !Regex("[a-z][a-z0-9+.-]*://\\S+").matches(it.lookup) } -> "A Lookup is a pointer with a scheme, such as op://Dev/npm/token."
+        secrets.any { it.lookup != null && !SecretProviders.POINTER.matches(it.lookup) } -> "A Lookup is a pointer with a scheme, such as op://Dev/npm/token."
         secrets.flatMap { words(it.names) }.any { !Regex("[A-Z_][A-Z0-9_]*").matches(it) } ->
             "A variable name is capitals, digits and underscores, such as NPM_TOKEN: the variable the command reads the Secret from."
         secrets.map { it.label }.toSet().size < secrets.size -> "Two Secrets have the same label."
