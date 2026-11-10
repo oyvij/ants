@@ -6,7 +6,7 @@ plugins {
     kotlin("jvm") version "2.4.21"
     kotlin("plugin.spring") version "2.4.21"
     id("org.springframework.boot") version "4.1.2"
-    id("gg.jte.gradle") version "3.2.4"
+    id("gg.jte.gradle") version "3.2.5"
     id("com.github.node-gradle.node") version "7.1.0"
 }
 
@@ -19,7 +19,7 @@ kotlin {
 }
 
 val operaton = "2.2.0"
-val jte = "3.2.4"
+val jte = "3.2.5"
 
 repositories {
     mavenCentral()
@@ -37,10 +37,10 @@ dependencies {
     implementation("gg.jte:jte-spring-boot-starter-4:$jte")
     implementation("gg.jte:jte-kotlin:$jte")
     implementation("org.jetbrains.kotlin:kotlin-reflect")
-    implementation("com.networknt:json-schema-validator:3.0.8")
-    implementation("org.commonmark:commonmark:0.31.0")
-    implementation("org.commonmark:commonmark-ext-task-list-items:0.31.0") // a Ticket's ticking checkboxes
-    implementation("org.commonmark:commonmark-ext-gfm-tables:0.31.0")
+    implementation("com.networknt:json-schema-validator:3.0.9")
+    implementation("org.commonmark:commonmark:0.32.0")
+    implementation("org.commonmark:commonmark-ext-task-list-items:0.32.0") // a Ticket's ticking checkboxes
+    implementation("org.commonmark:commonmark-ext-gfm-tables:0.32.0")
     runtimeOnly("com.h2database:h2")
     runtimeOnly("org.postgresql:postgresql") // engine state on a server, such as in the Docker image
 
