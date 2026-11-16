@@ -20,7 +20,7 @@
 <body>
 @template.nav(shell = shell)
 <main>
-<div id="taskhead">@template.taskhead(view = view, run = run, runName = runName, tokens = view.tokens(transcript))</div>
+<div id="taskhead">@template.taskhead(view = view, run = run, runName = runName, tokens = view.tokens(transcript), current = task)</div>
 $unsafe{transcript.html("sofar")}
 $unsafe{transcript.html("subagents")}
 @if(view.state == "round" && view.asked != null)

@@ -617,7 +617,7 @@ class Transcripts(
             offset = end
             lines.forEach(transcript::add)
             val view = tasks.task(run, task, transcript)
-            mapOf("view" to view, "run" to run, "runName" to names.name(run), "tokens" to view.tokens(transcript))
+            mapOf("view" to view, "run" to run, "runName" to names.name(run), "tokens" to view.tokens(transcript), "current" to task)
         }
     }
 

@@ -177,6 +177,36 @@ class MultiInstanceTest : AntsTest() {
         eventually { assertContains(page(run), """id="state">Completed<""") }
     }
 
+    private fun bar(html: String) = Regex("""<nav class="instances".*?</nav>""", RegexOption.DOT_MATCHES_ALL).find(html)?.value
+
+    private fun chip(run: String, key: String, label: String, pill: String, context: String, current: Boolean = false) =
+        """<a href="/runs/$run/tasks/$key/transcript"${if (current) """ aria-current="page"""" else ""}><b>$label</b> $pill <span class="muted num">$context</span></a>"""
+
+    private val running = """<span class="pill p-running">Running</span>"""
+    private val done = """<span class="pill p-done">Done</span>"""
+
+    @Test
+    fun `each instance's Transcript page of a parallel multi-instance has a bar with a chip per instance, its own marked, its pills changing live`() {
+        setUp()
+        claude.session("plan", result("""{"items":["a",{"name":"Beta"},{"title":"Gamma"}]}"""))
+        claude.session("draft", read("m", 1_000), "wait go", result("""{"text":"same"}"""))
+        val run = start("bar", agentTask("draft", "draft", itemInput, loop()), "draft")
+
+        eventually { assertEquals(3, claude.launches("draft").size) }
+        val labels = listOf("#1 a", "#2 Beta", "#3 Gamma")
+        eventually {
+            for (n in 1..3) assertEquals(
+                labels.mapIndexed { i, label -> chip(run, "draft-${i + 1}", label, running, "1k tokens", current = i + 1 == n) }.joinToString(""),
+                bar(browser.get("/runs/$run/tasks/draft-$n/transcript").body)?.substringAfter(">")?.substringBeforeLast("</nav>")?.trim(),
+            )
+        }
+        val head = browser.events("transcript=$run/draft-2&from=0", "taskhead")
+        claude.release("go")
+        val html = head.until { bar(it)?.split("p-done")?.size == 4 }
+        assertContains(html, chip(run, "draft-2", "#2 Beta", done, "1k tokens", current = true))
+        eventually { assertContains(page(run), """id="state">Completed<""") }
+    }
+
     @Test
     fun `a sequential multi-instance's row and head sum its instances so far, labelled by number and item`() {
         setUp()
