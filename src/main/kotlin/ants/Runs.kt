@@ -665,7 +665,8 @@ class RunLifecycle(
             return@ExecutionListener
         }
         val workspace = home.runWorkspace(run.processInstanceId, run.getVariable(FOLDER) as? String)
-        val report = report(run, workspace, runs.tasks(run.processInstanceId) { Transcript.all(workspace) })
+        val transcripts = Transcript.all(workspace)
+        val report = report(run, workspace, if (transcripts.isEmpty()) emptyList() else runs.tasks(run.processInstanceId) { transcripts })
         // Only once the end is committed: a rolled-back end leaves the Run alive and needing its workspace.
         Context.getCommandContext().transactionContext.addTransactionListener(TransactionState.COMMITTED) {
             closeSpec(workspace, cancelled)
