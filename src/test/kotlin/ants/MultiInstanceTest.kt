@@ -7,6 +7,7 @@ import kotlin.io.path.name
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 
 class MultiInstanceTest : AntsTest() {
     private val browser by lazy { browser().also { it.login() } }
@@ -179,6 +180,8 @@ class MultiInstanceTest : AntsTest() {
 
     private fun bar(html: String) = Regex("""<nav class="instances".*?</nav>""", RegexOption.DOT_MATCHES_ALL).find(html)?.value
 
+    private fun chips(html: String) = bar(html)?.substringAfter(">")?.substringBeforeLast("</nav>")?.trim()
+
     private fun chip(run: String, key: String, label: String, pill: String, context: String, current: Boolean = false) =
         """<a href="/runs/$run/tasks/$key/transcript"${if (current) """ aria-current="page"""" else ""}><b>$label</b> $pill <span class="muted num">$context</span></a>"""
 
@@ -197,7 +200,7 @@ class MultiInstanceTest : AntsTest() {
         eventually {
             for (n in 1..3) assertEquals(
                 labels.mapIndexed { i, label -> chip(run, "draft-${i + 1}", label, running, "1k tokens", current = i + 1 == n) }.joinToString(""),
-                bar(browser.get("/runs/$run/tasks/draft-$n/transcript").body)?.substringAfter(">")?.substringBeforeLast("</nav>")?.trim(),
+                chips(browser.get("/runs/$run/tasks/draft-$n/transcript").body),
             )
         }
         val head = browser.events("transcript=$run/draft-2&from=0", "taskhead")
@@ -205,6 +208,34 @@ class MultiInstanceTest : AntsTest() {
         val html = head.until { bar(it)?.split("p-done")?.size == 4 }
         assertContains(html, chip(run, "draft-2", "#2 Beta", done, "1k tokens", current = true))
         eventually { assertContains(page(run), """id="state">Completed<""") }
+    }
+
+    @Test
+    fun `Send and Stop on an instance's Transcript page reach that instance's session only, and Send to an ended one is refused`() {
+        setUp()
+        val init = """{"type":"system","subtype":"init","session_id":"${'$'}SESSION","apiKeySource":"none"}"""
+        claude.session("plan", result("""{"items":["a","b","c"]}"""))
+        for (n in 1..3) claude.session("draft", n, init, "wait sent-$n", "read", result("""{"text":"$n"}"""))
+        val run = start("send-each", agentTask("draft", "draft", itemInput, loop()), "draft")
+        val transcript = { key: String -> "/runs/$run/tasks/$key/transcript" }
+
+        eventually { assertEquals(3, claude.launches("draft").size) }
+        val (a, b, c) = listOf("a", "b", "c").map { launchOf("draft", """\"item\":\"$it\"""") }
+        for (key in listOf("draft-1", "draft-2", "draft-3")) eventually { assertContains(browser.get(transcript(key)).body, """data-pending="Sending…">Send</button>""") }
+        assertEquals(transcript("draft-1"), browser.post("${transcript("draft-1")}/send", mapOf("message" to "Only for a.")).path)
+        assertEquals(transcript("draft-2"), browser.post("${transcript("draft-2")}/send", mapOf("message" to "Only for b.")).path)
+        assertEquals(transcript("draft-3"), browser.post("${transcript("draft-3")}/stop", emptyMap()).path)
+        listOf(a, b, c).forEach { claude.release("sent-$it") }
+
+        eventually { assertEquals(3, claude.launches("draft").count { it.stdin.lines().size == 2 }) }
+        val received = claude.launches("draft").map { it.stdin.lines()[1] }
+        assertContains(received[a - 1], "Only for a.")
+        assertContains(received[b - 1], "Only for b.")
+        assertContains(received[c - 1], """"request":{"subtype":"interrupt"}}""")
+        eventually { assertContains(browser.get(transcript("draft-1")).body, "Result: done") }
+        val refused = browser.post("${transcript("draft-1")}/send", mapOf("message" to "One more thing."))
+        assertContains(refused.body, "Not sent: the Agent's session has ended")
+        assertEquals(0, claude.launches("draft").count { "One more thing." in it.stdin })
     }
 
     @Test
@@ -218,14 +249,18 @@ class MultiInstanceTest : AntsTest() {
 
         eventually { assertEquals(1, claude.launches("draft").size) }
         eventually { assertContains(row(run, "draft"), "1k · 1 agent<") }
+        val head = browser.events("transcript=$run/draft-1&from=0", "taskhead")
         claude.release("go")
+        assertContains(bar(head.until { "#5" in bar(it).orEmpty() }).orEmpty(), chip(run, "draft-1", "#1 a", done, "1k tokens", current = true))
         eventually { assertContains(page(run), """id="state">Completed<""") }
         assertContains(row(run, "draft"), "5k · 5 agents")
         assertContains(row(run, "draft"), """data-href="/runs/$run/tasks/draft-1/transcript"""")
         assertContains(browser.get("/runs/$run/tasks/draft-4/transcript").body, """<span id="tokens">5k · 5 agents</span>""")
+        val labels = listOf("#1 a", "#2 Beta", "#3 Gamma", "#4", "#5 ${"x".repeat(39)}…")
+        assertEquals(labels, runs.tasks(run).single { it.key == "draft" }.instances.map { it.label })
         assertEquals(
-            listOf("#1 a", "#2 Beta", "#3 Gamma", "#4", "#5 ${"x".repeat(39)}…"),
-            runs.tasks(run).single { it.key == "draft" }.instances.map { it.label },
+            labels.mapIndexed { i, label -> chip(run, "draft-${i + 1}", label, done, "1k tokens", current = i == 3) }.joinToString(""),
+            chips(browser.get("/runs/$run/tasks/draft-4/transcript").body),
         )
     }
 
@@ -249,6 +284,11 @@ class MultiInstanceTest : AntsTest() {
         assertContains(row(run, "draft"), "8k · 4 agents")
         assertContains(browser.get("/runs/$run/tasks/draft-2-1/transcript").body, """<span id="tokens">8k · 4 agents</span>""")
         assertEquals(listOf("#1.1 a", "#1.2 b", "#2.1 a", "#2.2 b"), runs.tasks(run).single { it.key == "draft" }.instances.map { it.label })
+        assertEquals(
+            listOf("1-1" to "#1.1 a", "1-2" to "#1.2 b", "2-1" to "#2.1 a", "2-2" to "#2.2 b")
+                .joinToString("") { (key, label) -> chip(run, "draft-$key", label, done, "2k tokens", current = key == "2-1") },
+            chips(browser.get("/runs/$run/tasks/draft-2-1/transcript").body),
+        )
     }
 
     @Test
@@ -267,6 +307,7 @@ class MultiInstanceTest : AntsTest() {
         assertContains(row(run, "plan"), """data-href="/runs/$run/tasks/plan/transcript"""")
         assertContains(browser.get("/runs/$run/tasks/plan/transcript").body, """<span id="tokens">62k tokens (6.2%)</span>""")
         assertContains(row(run, "draft"), "0 · 1 agent<")
+        assertNull(bar(browser.get("/runs/$run/tasks/plan/transcript").body))
     }
 
     @Test
