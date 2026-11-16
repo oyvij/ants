@@ -81,6 +81,34 @@ class MultiInstanceTest : AntsTest() {
         assertEquals(order.joinToString(",", "[", "]") { drafted("$it") }, variable(run, "draft"))
     }
 
+    private fun read(id: String, tokens: Int) =
+        """{"type":"assistant","message":{"id":"$id","content":[{"type":"text","text":"Reading."}],"usage":{"input_tokens":$tokens}}}"""
+
+    private val itemInput = """<operaton:inputParameter name="item">${'$'}{item}</operaton:inputParameter>"""
+
+    private fun row(run: String, task: String) = Regex("""<tr class="click" data-href="/runs/$run/tasks/$task[-\d]*/transcript">.*?</tr>""", RegexOption.DOT_MATCHES_ALL)
+        .find(page(run))?.value.orEmpty()
+
+    @Test
+    fun `a parallel multi-instance's row sums its instances' contexts, counts them, and opens the first running one`() {
+        setUp()
+        claude.session("plan", result("""{"items":["a","b","c"]}"""))
+        claude.session("draft", 1, read("m1", 30_000), "wait go-1", result("""{"text":"1"}"""))
+        claude.session("draft", 2, read("m2", 20_000), "wait go-2", result("""{"text":"2"}"""))
+        claude.session("draft", 3, "wait go-3", result("""{"text":"3"}"""))
+        val run = start("summed", agentTask("draft", "draft", itemInput, loop()), "draft")
+
+        eventually { assertEquals(3, claude.launches("draft").size) }
+        eventually { assertContains(row(run, "draft"), "50k · 3 agents") }
+        assertContains(row(run, "draft"), """data-href="/runs/$run/tasks/draft-1/transcript"""")
+        assertContains(browser.get("/runs/$run/tasks/draft-2/transcript").body, "50k · 3 agents")
+
+        claude.release("go-${launchOf("draft", """\"item\":\"a\"""")}")
+        eventually { assertContains(row(run, "draft"), """data-href="/runs/$run/tasks/draft-2/transcript"""") }
+        listOf("b", "c").forEach { claude.release("go-${launchOf("draft", """\"item\":\"$it\"""")}") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
+    }
+
     @Test
     fun `a sequential multi-instance runs its instances one at a time, each on its own item, and gives their Results in instance order`() {
         setUp()

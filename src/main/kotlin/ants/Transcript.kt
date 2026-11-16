@@ -108,6 +108,9 @@ class Transcript(private val toolLine: (name: String, input: Map<*, *>) -> Strin
 
     val running get() = launches.isNotEmpty() && launches.last().end == null
 
+    var item: String? = null
+        private set
+
     /**
      * The live line of the launch running now, as the Runs list, Home, the Run page and its drawer show it: `✻ Reading
      * Header.tsx… (1m 20s · ↓ 3.4k tokens)`, its clock from the launch's start; null when no launch runs.
@@ -206,6 +209,7 @@ class Transcript(private val toolLine: (name: String, input: Map<*, *>) -> Strin
                 val launch = Launch(entries.size, launches.size + 1, at)
                 launches += launch
                 chip = ModelChip.of(event) ?: chip
+                item = event["item"]?.toString() ?: item
                 append { divider(launch) }
                 verb = null
                 live.clear()
@@ -429,9 +433,9 @@ class Transcript(private val toolLine: (name: String, input: Map<*, *>) -> Strin
         }
 
         /** One of Ants' own lines: `launch`, `end` with how the launch ended, or `so-far` with the paragraph and its [tokens]. */
-        fun ants(subtype: String, text: String? = null, tokens: Long? = null, chip: ModelChip? = null) = line(
+        fun ants(subtype: String, text: String? = null, tokens: Long? = null, chip: ModelChip? = null, item: String? = null) = line(
             json.writeValueAsString(
-                listOfNotNull("type" to "ants", "subtype" to subtype, "at" to Instant.now().toString(), text?.let { "text" to it }, tokens?.let { "tokens" to it }).toMap() + chip?.fields.orEmpty(),
+                listOfNotNull("type" to "ants", "subtype" to subtype, "at" to Instant.now().toString(), text?.let { "text" to it }, tokens?.let { "tokens" to it }, item?.let { "item" to it }).toMap() + chip?.fields.orEmpty(),
             ),
         )
     }
@@ -594,10 +598,11 @@ class Transcripts(
         val file = file(run, task)
         val transcript = Transcript()
         var offset = Transcript.read(file, 0, from).let { (lines, end) -> lines.forEach(transcript::add); end }
+        val multiInstance = tasks.task(run, task, transcript).instances.isNotEmpty()
         return Part("transcript", Duration.ofMillis(250)) {
             val (lines, end) = Transcript.read(file, offset)
             offset = end
-            lines.flatMapTo(linkedSetOf()) { transcript.add(it) }.map(transcript::html)
+            lines.flatMapTo(linkedSetOf()) { transcript.add(it) }.filterNot { multiInstance && it == "tokens" }.map(transcript::html)
         }
     }
 
@@ -611,7 +616,8 @@ class Transcripts(
             val (lines, end) = Transcript.read(file, offset)
             offset = end
             lines.forEach(transcript::add)
-            mapOf("view" to tasks.task(run, task, transcript), "run" to run, "runName" to names.name(run), "tokens" to transcript.html("tokens"))
+            val view = tasks.task(run, task, transcript)
+            mapOf("view" to view, "run" to run, "runName" to names.name(run), "tokens" to view.tokens(transcript))
         }
     }
 

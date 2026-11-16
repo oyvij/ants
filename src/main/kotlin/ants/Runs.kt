@@ -91,14 +91,16 @@ val TaskEntry.pill get() = TaskView.state(this).let { (state, label) -> TaskView
  * A Task of a Run as the Run page's Tasks table, the Task's own page and its drawer show it: its [element] in the
  * Process (null for a called Process's Task, known only by its [key]), its [state] (running, queued, round, waiting,
  * stuck, failed, stopped or done) and how it reads, [label], the [entry] waiting on the user, its [round] (its count in
- * `runs`), its [context] (its session's, the largest one's for a multi-instance; empty with none), where it opens, [href]: its entry's page, else its Transcript; and while it waits on its Round,
+ * `runs`), its [context], where it opens, [href]: its entry's page, else its Transcript; and while it waits on its Round,
  * that Round's entry, [asked].
  */
 class TaskView(
     val key: String, val element: FlowElement?, val state: String, val label: String, val entry: TaskEntry?, val round: Int?,
     val transcript: Transcript?, val context: String, val href: String?, val asked: TaskEntry? = null, val reached: HistoricActivityInstance? = null,
-    private val catalogue: Catalogue,
+    private val catalogue: Catalogue, val instances: List<InstanceView> = emptyList(),
 ) {
+    fun tokens(transcript: Transcript) = if (instances.isEmpty()) transcript.html("tokens") else """<span id="tokens">$context</span>"""
+
     val name: String get() = element?.name ?: reached?.activityName ?: key
 
     /** agent, user or builtin. */
@@ -133,6 +135,30 @@ class TaskView(
         }
     }
 }
+
+class InstanceView(val key: String, val label: String, val state: String, val stateLabel: String, val transcript: Transcript, val href: String) {
+    val context get() = transcript.context
+    val badge get() = """<span class="pill p-${TaskView.PILLS[state]}">${HtmlUtils.htmlEscape(stateLabel)}</span>"""
+}
+
+fun itemName(item: Any?): String? = when (item) {
+    is String -> item
+    is Map<*, *> -> (item["name"] as? String)?.ifBlank { null } ?: (item["title"] as? String)?.ifBlank { null }
+    else -> null
+}?.ifBlank { null }
+
+fun instanceLabel(task: String, instance: String, item: String?): String {
+    val number = "#" + instance.removePrefix("$task-").replace('-', '.')
+    val short = item?.let { if (it.length > ITEM_LENGTH) it.take(ITEM_LENGTH - 1).trimEnd() + "…" else it }
+    return listOfNotNull(number, short).joinToString(" ")
+}
+
+private const val ITEM_LENGTH = 40
+
+private fun instanceNumbers(task: String, key: String) = key.removePrefix("$task-").split('-').map { it.toInt() }
+
+private fun summed(instances: List<InstanceView>) =
+    tokens(instances.sumOf { it.transcript.tokens }).removeSuffix(" tokens") + " · ${instances.size} " + if (instances.size == 1) "agent" else "agents"
 
 @Controller
 class Runs(
@@ -403,7 +429,7 @@ class Runs(
     /**
      * The Tasks the Run, or called Process instance, [id] has reached, in the order it reached them, a called Process's
      * Tasks where its call is. A Task that asked the Round waiting on the user waits on its Round. A multi-instance's
-     * instances count as one Task, opening the first, its live line the running one's. Each Task's Transcript is read
+     * instances count as one Task, its live line the running one's. Each Task's Transcript is read
      * from [transcripts], every Transcript in the Run by default.
      */
     fun tasks(id: String, transcripts: (top: String) -> Map<String, Transcript> = { Transcript.all(names.runWorkspace(it)) }): List<TaskView> =
@@ -426,7 +452,8 @@ class Runs(
                 val activity = reached.activityId
                 val key = prefix + activity
                 val entry = entries.firstOrNull { it.activity == activity }
-                val own = transcripts.filterKeys { it == key || it.startsWith("$key-") }
+                val own = transcripts.filterKeys { it == key || instanceOf(key, it) }
+                val instances = instances(top, key, own, entries)
                 val now = shown[activity]
                 val (state, label) = when {
                     entry != null -> TaskView.state(entry)
@@ -436,10 +463,12 @@ class Runs(
                     now?.state == "cancelled" -> "cancelled" to "Cancelled"
                     else -> "done" to "Done"
                 }
-                val href = entry?.let { "/notifications/${it.id}" } ?: own.keys.firstOrNull()?.let { "/runs/$top/tasks/$it/transcript" }
+                val opens = instances.firstOrNull { it.transcript.running } ?: instances.firstOrNull()
+                val href = entry?.let { "/notifications/${it.id}" } ?: opens?.href ?: own.keys.firstOrNull()?.let { "/runs/$top/tasks/$it/transcript" }
+                val context = if (instances.isEmpty()) own[key]?.takeIf { it.tokens > 0 }?.context.orEmpty() else summed(instances)
                 listOf(TaskView(
-                    key, task, state, label, entry, now?.round, own.values.firstOrNull { it.running } ?: own.values.firstOrNull(), own.values.filter { it.tokens > 0 }.maxByOrNull { it.tokens }?.context.orEmpty(),
-                    href, asking[activity], reached, catalogue,
+                    key, task, state, label, entry, now?.round, opens?.transcript ?: own[key],
+                    context, href, asking[activity], reached, catalogue, instances,
                 ))
             }.distinctBy { it.key }
     }
@@ -448,11 +477,22 @@ class Runs(
      * The Task [key] of the Run [run] as its page heads it, with its [transcript]; a called Process's Task, which the Run's
      * Tasks don't list, by its key, its entry and its Transcript alone.
      */
-    fun task(run: String, key: String, transcript: Transcript): TaskView = tasks(run).firstOrNull { key == it.key || key.startsWith(it.key + "-") }
+    fun task(run: String, key: String, transcript: Transcript): TaskView = tasks(run).firstOrNull { key == it.key || instanceOf(it.key, key) }
         ?: notifications.tasks().firstOrNull { it.run == run && it.taskId == key }.let { entry ->
-            val (state, label) = entry?.let(TaskView::state) ?: if (transcript.running) "running" to "Running" else "done" to "Done"
+            val (state, label) = entry?.let(TaskView::state) ?: transcript.state
             TaskView(key, null, state, label, entry, null, transcript, transcript.context, entry?.let { "/notifications/${it.id}" }, catalogue = catalogue)
         }
+
+    private fun instanceOf(task: String, key: String) = key.startsWith("$task-") && key.removePrefix("$task-").split('-').all { it.isNotEmpty() && it.all(Char::isDigit) }
+
+    private fun instances(top: String?, task: String, own: Map<String, Transcript>, entries: List<TaskEntry>) = own.filterKeys { it != task }.toList()
+        .sortedWith { (a, _), (b, _) -> instanceNumbers(task, a).zip(instanceNumbers(task, b)).map { (x, y) -> x.compareTo(y) }.firstOrNull { it != 0 } ?: 0 }
+        .map { (key, transcript) ->
+            val (state, label) = entries.firstOrNull { it.taskId == key }?.let(TaskView::state) ?: transcript.state
+            InstanceView(key, instanceLabel(task, key, transcript.item), state, label, transcript, "/runs/$top/tasks/$key/transcript")
+        }
+
+    private val Transcript.state get() = if (running) "running" to "Running" else "done" to "Done"
 
     /**
      * Each element the Run has reached: once every instance of it ended, cancelled if its latest were, by a Cancel or
@@ -768,6 +808,11 @@ fun RuntimeService.ticketItem(execution: String, activity: String): Any? = (this
         (scope as? ActivityImpl)?.takeIf { it.getProperty(ITEMS_ARE_TICKETS) == true }
             ?.let { body -> level.getVariable((body.activityBehavior as MultiInstanceActivityBehavior).collectionElementVariable!!) }
     }
+}
+
+fun RuntimeService.instanceItem(execution: String, activity: String): Any? = (this as ServiceImpl).commandExecutor.execute { context ->
+    context.scopes(execution, activity).firstOrNull { (_, scope) -> (scope as? ActivityImpl)?.activityBehavior is MultiInstanceActivityBehavior }
+        ?.let { (level, body) -> ((body as ActivityImpl).activityBehavior as MultiInstanceActivityBehavior).collectionElementVariable?.let(level::getVariable) }
 }
 
 /**
