@@ -36,6 +36,7 @@ import org.springframework.security.web.csrf.CsrfToken
 import org.operaton.bpm.engine.RepositoryService
 import org.operaton.bpm.engine.RuntimeService
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.context.annotation.Lazy
 import org.springframework.web.bind.annotation.ResponseBody
 import tools.jackson.databind.json.JsonMapper
 import org.springframework.http.HttpStatus
@@ -158,16 +159,8 @@ private const val ITEM_LENGTH = 40
 private fun instanceNumbers(task: String, key: String): List<Int> =
     key.takeIf { it.startsWith("$task-") }?.removePrefix("$task-")?.split('-')?.map { it.toIntOrNull() ?: return emptyList() }.orEmpty()
 
-fun instanceOrder(task: String) = Comparator<String> { a, b ->
-    instanceNumbers(task, a).zip(instanceNumbers(task, b)).map { (x, y) -> x.compareTo(y) }.firstOrNull { it != 0 } ?: 0
-}
-
-fun taskOfInstance(key: String) = key.replace(INSTANCE_SUFFIX, "")
-
-private val INSTANCE_SUFFIX = Regex("""(-\d+)+$""")
-
-fun summedFigure(instances: Collection<Transcript>) =
-    tokens(instances.sumOf { it.tokens }).removeSuffix(" tokens") + " · ${instances.size} " + if (instances.size == 1) "agent" else "agents"
+private fun summedFigure(instances: List<InstanceView>) =
+    tokens(instances.sumOf { it.transcript.tokens }).removeSuffix(" tokens") + " · ${instances.size} " + if (instances.size == 1) "agent" else "agents"
 
 @Controller
 class Runs(
@@ -475,7 +468,7 @@ class Runs(
                 }
                 val opens = instances.firstOrNull { it.transcript.running } ?: instances.firstOrNull()
                 val href = entry?.let { "/notifications/${it.id}" } ?: opens?.href ?: own.keys.firstOrNull()?.let { "/runs/$top/tasks/$it/transcript" }
-                val context = if (instances.isEmpty()) own[key]?.takeIf { it.tokens > 0 }?.context.orEmpty() else summedFigure(instances.map { it.transcript })
+                val context = if (instances.isEmpty()) own[key]?.takeIf { it.tokens > 0 }?.context.orEmpty() else summedFigure(instances)
                 listOf(TaskView(
                     key, task, state, label, entry, now?.round, opens?.transcript ?: own[key],
                     context, href, asking[activity], reached, catalogue, instances,
@@ -496,7 +489,7 @@ class Runs(
     private fun instanceOf(task: String, key: String) = instanceNumbers(task, key).isNotEmpty()
 
     private fun instances(top: String?, task: String, own: Map<String, Transcript>, entries: List<TaskEntry>) = own.filterKeys { it != task }.toList()
-        .sortedWith(compareBy(instanceOrder(task)) { it.first })
+        .sortedWith { (a, _), (b, _) -> instanceNumbers(task, a).zip(instanceNumbers(task, b)).map { (x, y) -> x.compareTo(y) }.firstOrNull { it != 0 } ?: 0 }
         .map { (key, transcript) ->
             val (state, label) = entries.firstOrNull { it.taskId == key }?.let(TaskView::state) ?: transcript.state
             InstanceView(key, instanceLabel(task, key, transcript.item), state, label, transcript, "/runs/$top/tasks/$key/transcript")
@@ -631,7 +624,10 @@ val HistoricProcessInstance.stateName
 val RUN_VARIABLES = listOf("runs", "clones", "sourceMap")
 
 @Component
-class RunLifecycle(@Value("\${ants.home}") private val home: Path, private val settings: Settings, private val clock: Clock) : AbstractProcessEnginePlugin() {
+class RunLifecycle(
+    @Value("\${ants.home}") private val home: Path, private val settings: Settings, private val clock: Clock,
+    @Lazy private val runs: Runs,
+) : AbstractProcessEnginePlugin() {
     private fun started(tasks: List<String>, results: List<String>) = ExecutionListener { run ->
         if (run.isTopRun) {
             // The name given on the start form, else the Process and start time; the folder and Run log start with it.
@@ -669,7 +665,7 @@ class RunLifecycle(@Value("\${ants.home}") private val home: Path, private val s
             return@ExecutionListener
         }
         val workspace = home.runWorkspace(run.processInstanceId, run.getVariable(FOLDER) as? String)
-        val report = report(run, workspace)
+        val report = report(run, workspace, runs.tasks(run.processInstanceId) { Transcript.all(workspace) })
         // Only once the end is committed: a rolled-back end leaves the Run alive and needing its workspace.
         Context.getCommandContext().transactionContext.addTransactionListener(TransactionState.COMMITTED) {
             closeSpec(workspace, cancelled)

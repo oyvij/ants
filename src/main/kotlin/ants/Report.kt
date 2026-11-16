@@ -13,7 +13,7 @@ const val REPORT = "report.md"
  * form, each Agent Task's Result summary, its session's context and Transcript link, read from the Transcripts in [workspace], and
  * each Round's answers and their sources, read from its Run log, its Spec and Tickets, the Push Results and the pull requests.
  */
-fun report(run: DelegateExecution, workspace: Path): String = buildString {
+fun report(run: DelegateExecution, workspace: Path, tasks: List<TaskView>): String = buildString {
     val definition = (run as ExecutionEntity).processDefinition
     val process = definition.name ?: definition.key
     append("# ${run.getVariable(NAME) ?: process}\n\n$process · ${if (run.isCanceled) "Cancelled" else "Completed"}\n\n")
@@ -29,12 +29,9 @@ fun report(run: DelegateExecution, workspace: Path): String = buildString {
     append("## Tasks\n\n") // each Task is its own session, so their contexts don't add up
     fun line(key: String, text: String, transcript: Transcript) =
         "[$text](/runs/${run.processInstanceId}/tasks/$key/transcript)" + transcript.result?.let { " · ${it["outcome"]}: ${it["summary"]}" }.orEmpty() + " · ${transcript.context}\n"
-    for ((task, own) in transcripts.entries.groupBy { taskOfInstance(it.key) }) {
-        own.firstOrNull { it.key == task }?.let { append("- " + line(task, task, it.value)) }
-        val instances = own.filter { it.key != task }.sortedWith(compareBy(instanceOrder(task)) { it.key })
-        if (instances.isEmpty()) continue
-        append("- $task · ${summedFigure(instances.map { it.value })}\n")
-        for ((key, transcript) in instances) append("  - " + line(key, instanceLabel(task, key, transcript.item), transcript))
+    for (task in tasks) {
+        if (task.instances.isEmpty()) transcripts[task.key]?.let { append("- " + line(task.key, task.key, it)) }
+        else append("- ${task.key} · ${task.context}\n" + task.instances.joinToString("") { "  - " + line(it.key, it.label, it.transcript) })
     }
     append(roundsReport(workspace))
     // The implementers' and fixers' own reviews: a Result's `output.review`, the last of each Task's launches.

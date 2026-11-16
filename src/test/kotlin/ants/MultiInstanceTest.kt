@@ -337,6 +337,17 @@ class MultiInstanceTest : AntsTest() {
     }
 
     @Test
+    fun `the Report keeps a single-instance Task whose id ends in a number on its own line`() {
+        setUp()
+        claude.session("plan", result("""{"items":[]}"""))
+        claude.session("draft", read("m", 2_000), result("""{"text":"1"}"""))
+        val run = start("report-numbered", agentTask("review-2", "draft"), "review-2")
+
+        eventually { assertContains(page(run), """id="state">Completed<""") }
+        assertContains(browser.report(run), reportLine(run, "review-2", "review-2", "2k tokens"))
+    }
+
+    @Test
     fun `the Report nests a multi-instance sub-process's Task instances under one line, labelled by both numbers`() {
         setUp()
         claude.session("plan", result("""{"items":["a","b"]}"""))
