@@ -6,6 +6,7 @@ import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.name
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 
 class MultiInstanceTest : AntsTest() {
     private val browser by lazy { browser().also { it.login() } }
@@ -110,6 +111,69 @@ class MultiInstanceTest : AntsTest() {
         claude.release("go-${launchOf("draft", """\"item\":\"a\"""")}")
         eventually { assertContains(row(run, "draft"), """data-href="/runs/$run/tasks/draft-2/transcript"""") }
         listOf("b", "c").forEach { claude.release("go-${launchOf("draft", """\"item\":\"$it\"""")}") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
+    }
+
+    private fun now(run: String) = Regex("""<tr class="click" data-href="/runs/$run">.*?</tr>""", RegexOption.DOT_MATCHES_ALL)
+        .find(browser.get("/runs").body)?.value.orEmpty()
+
+    private fun nowLine(run: String, key: String, text: String) = """<b class="small"><a href="/runs/$run/tasks/$key/transcript">$text</a></b>"""
+
+    @Test
+    fun `each running instance of a parallel multi-instance has its own Now line, labelled and linking to its Transcript`() {
+        setUp()
+        claude.session("plan", result("""{"items":["a",{"name":"Beta"},{"title":"Gamma"}]}"""))
+        for (n in 1..3) claude.session("draft", n, "wait go", result("""{"text":"$n"}"""))
+        val run = start("now-lines", agentTask("draft", "draft", itemInput, loop()), "draft")
+
+        eventually { assertEquals(3, claude.launches("draft").size) }
+        eventually {
+            val now = now(run)
+            listOf("draft-1" to "draft #1 a", "draft-2" to "draft #2 Beta", "draft-3" to "draft #3 Gamma").forEach { (key, text) -> assertContains(now, nowLine(run, key, text)) }
+        }
+        claude.release("go")
+        eventually { assertContains(page(run), """id="state">Completed<""") }
+    }
+
+    @Test
+    fun `a sequential multi-instance's Now line names and links the running instance, and a single Task's links without a number`() {
+        setUp()
+        claude.session("plan", "wait planned", result("""{"items":["a","b"]}"""))
+        for (n in 1..2) claude.session("draft", n, "wait go-$n", result("""{"text":"$n"}"""))
+        val run = start("now-sequential", agentTask("draft", "draft", itemInput, loop(sequential = true)), "draft")
+
+        eventually { assertContains(now(run), nowLine(run, "plan", "plan")) }
+        claude.release("planned")
+        eventually { assertContains(now(run), nowLine(run, "draft-1", "draft #1 a")) }
+        claude.release("go-1")
+        eventually { assertContains(now(run), nowLine(run, "draft-2", "draft #2 b")) }
+        assertFalse("draft-1/transcript" in now(run))
+        claude.release("go-2")
+        eventually { assertContains(page(run), """id="state">Completed<""") }
+    }
+
+    @Test
+    fun `a multi-instance Task in a multi-instance sub-process has Now lines numbered by both instances`() {
+        setUp(agentTasks = 4)
+        claude.session("plan", result("""{"items":["a","b"]}"""))
+        claude.session("draft", "wait go", result("""{"text":"same"}"""))
+        val subProcess = """
+            <bpmn:subProcess id="fanout">
+              ${loop()}
+              <bpmn:startEvent id="inner-start" />
+              <bpmn:sequenceFlow id="s1" sourceRef="inner-start" targetRef="draft" />
+              ${agentTask("draft", "draft", loop = loop())}
+              <bpmn:sequenceFlow id="s2" sourceRef="draft" targetRef="inner-end" />
+              <bpmn:endEvent id="inner-end" />
+            </bpmn:subProcess>"""
+        val run = start("now-nested", subProcess, "fanout")
+
+        eventually { assertEquals(4, claude.launches("draft").size) }
+        eventually {
+            val now = now(run)
+            listOf("1-1" to "#1.1 a", "1-2" to "#1.2 b", "2-1" to "#2.1 a", "2-2" to "#2.2 b").forEach { (n, label) -> assertContains(now, nowLine(run, "draft-$n", "draft $label")) }
+        }
+        claude.release("go")
         eventually { assertContains(page(run), """id="state">Completed<""") }
     }
 

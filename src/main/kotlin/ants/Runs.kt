@@ -82,7 +82,7 @@ class Now(val run: String, val name: String, val waiting: List<TaskEntry>, val r
 }
 
 /** An Agent Task of a live Run: its [task] name, and its live [line] and [subagents] while it runs, else its [pill], such as "Queued · 2 of 3 running". */
-class Doing(val task: String, val pill: String?, val line: String? = null, val subagents: Int = 0)
+class Doing(val task: String, val pill: String?, val line: String? = null, val subagents: Int = 0, val key: String? = null, val label: String? = null)
 
 /** The pill beside an entry's tag in a Run's Now: its class and its words. */
 val TaskEntry.pill get() = TaskView.state(this).let { (state, label) -> TaskView.PILLS.getValue(state) to label }
@@ -232,7 +232,8 @@ class Runs(
                 task.lockExpirationTime?.after(Date()) == true -> {
                     val key = runCatching { runtime.taskKey(task.executionId, task.activityId) }.getOrDefault(task.activityId)
                     val transcript = followed(Transcript.file(names.runWorkspace(run), key).also { read.add(it) })
-                    Doing(name, null, transcript.line, transcript.runningSubagents)
+                    val of = key.take(key.lastIndexOf(task.activityId) + task.activityId.length)
+                    Doing(name, null, transcript.line, transcript.runningSubagents, key, instanceLabel(of, key, transcript.item).takeIf { instanceOf(of, key) })
                 }
                 else -> Doing(name, "Queued · ${launcher.running} of $cap running")
             }

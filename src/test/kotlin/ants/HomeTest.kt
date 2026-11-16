@@ -55,7 +55,7 @@ class HomeTest : AntsTest() {
 
         val working = start()
         html = live.until { "/runs/$working" in section(it, "working-now") }
-        assertContains(section(html, "working-now"), Regex("""<b class="small">Draft</b><div class="small"><span class="spin">✻</span> <span class="shimmer"[^>]*>[^<]+…</span>"""))
+        assertContains(section(html, "working-now"), Regex("""<b class="small"><a href="/runs/$working/tasks/draft/transcript">Draft</a></b><div class="small"><span class="spin">✻</span> <span class="shimmer"[^>]*>[^<]+…</span>"""))
         assertFalse("/runs/$waiting" in section(html, "working-now"))
         assertEquals(stats(1, 1, 2, 0), stats(html))
 
