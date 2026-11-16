@@ -574,12 +574,13 @@ class Transcripts(
      */
     @PostMapping("/runs/{run}/tasks/{task}/transcript/send")
     fun send(
-        @PathVariable run: String, @PathVariable task: String, @RequestParam message: String, @RequestParam(required = false) back: String?, model: Model,
+        @PathVariable run: String, @PathVariable task: String, @RequestParam message: String, @RequestParam(required = false) back: String?,
+        @RequestParam(required = false) drawer: String?, model: Model,
     ): String {
         val error = when {
             message.isBlank() -> "Write a message to send."
             !launcher.send(run, task, message) -> "Not sent: the Agent's session has ended, as Ants holds its Result or it is not running."
-            else -> return back(back, run, "/runs/$run/tasks/$task/transcript")
+            else -> return back(back, run, "/runs/$run/tasks/$task/transcript", drawer, task)
         }
         model.addAttribute("error", error)
         return page(run, task, model)
@@ -587,8 +588,10 @@ class Transcripts(
 
     /** Stop: interrupts the Task's live session, which puts it on the Notification list as `[stopped]`. */
     @PostMapping("/runs/{run}/tasks/{task}/transcript/stop")
-    fun stop(@PathVariable run: String, @PathVariable task: String, @RequestParam(required = false) back: String?, model: Model): String {
-        if (launcher.stop(run, task)) return back(back, run, "/runs/$run/tasks/$task/transcript")
+    fun stop(
+        @PathVariable run: String, @PathVariable task: String, @RequestParam(required = false) back: String?, @RequestParam(required = false) drawer: String?, model: Model,
+    ): String {
+        if (launcher.stop(run, task)) return back(back, run, "/runs/$run/tasks/$task/transcript", drawer, task)
         model.addAttribute("error", "Not stopped: the Agent's session has already ended.")
         return page(run, task, model)
     }

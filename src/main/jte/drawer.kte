@@ -1,6 +1,7 @@
 @param run: String
 @param runName: String
 @param task: String
+@param element: String
 @param view: ants.TaskView
 @param transcript: ants.Transcript
 @param details: String?
@@ -74,6 +75,7 @@
     <form method="post" action="/runs/${run}/tasks/${task}/transcript/send">
         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
         <input type="hidden" name="back" value="run">
+        @if(view.instances.isNotEmpty())<input type="hidden" name="drawer" value="${element}">@endif
         <label class="f" for="drawer-message">Comment to the Agent</label>
         <textarea id="drawer-message" name="message" data-markdown required placeholder="e.g. Use the existing retry helper. ${sendHint}"></textarea>
         <div class="row"><span class="grow"></span>

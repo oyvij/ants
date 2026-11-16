@@ -50,6 +50,7 @@ import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.server.ResponseStatusException
 import java.io.File
+import java.net.URLEncoder
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption.APPEND
@@ -401,8 +402,7 @@ class Runs(
     /**
      * The drawer of the Run's Task [task] as HTML, sent on connect and whenever it changes: its state, So far, the
      * Agent's checklist, latest output, and the comment box and action when it waits on the user. [id] may be a
-     * called Process's instance, whose Task is kept in the top Run under its key ([taskKey]). A multi-instance Task's
-     * drawer shows its instance [shown], else the first running one, else the first, with the instance bar.
+     * called Process's instance, whose Task is kept in the top Run under its key ([taskKey]).
      */
     fun drawer(id: String, task: String, csrf: CsrfToken, shown: String? = null): Part {
         val instance = run(id)
@@ -423,7 +423,7 @@ class Runs(
             val shownKey = opened?.key ?: key
             val entry = view.entry
             val model = mapOf(
-                "run" to top, "runName" to names.name(top), "task" to shownKey, "view" to view, "transcript" to (opened?.transcript ?: transcripts[key] ?: Transcript()),
+                "run" to top, "runName" to names.name(top), "task" to shownKey, "element" to task, "view" to view, "transcript" to (opened?.transcript ?: transcripts[key] ?: Transcript()),
                 "details" to entry?.let(notifications::details), "topic" to entry?.let(notifications::topic), "sendHint" to launcher.sendHint(top, shownKey), "_csrf" to csrf,
             )
             StringOutput().also { templates.render("drawer.kte", model, it) }.toString()
@@ -583,7 +583,11 @@ class Runs(
 private val json = JsonMapper.shared()
 
 /** Back to the Run page of [run] when the user acted from its Task drawer ([back] is `run`), else to [otherwise]. */
-fun back(back: String?, run: String, otherwise: String) = "redirect:" + if (back == "run") "/runs/$run" else otherwise
+fun back(back: String?, run: String, otherwise: String, drawer: String? = null, instance: String? = null) = "redirect:" + when {
+    back != "run" -> otherwise
+    drawer == null || instance == null -> "/runs/$run"
+    else -> "/runs/$run?drawer=${URLEncoder.encode(drawer, Charsets.UTF_8)}&instance=${URLEncoder.encode(instance, Charsets.UTF_8)}"
+}
 
 /** Appends one entry to the Run log, `run-log.md` in the Run workspace [workspace]: [what] the user did on [task], and [text]. */
 fun runLog(workspace: Path, task: String, what: String, text: String) {

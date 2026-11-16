@@ -279,6 +279,41 @@ class MultiInstanceTest : AntsTest() {
         eventually { assertContains(page(run), """id="state">Completed<""") }
     }
 
+    private fun hiddenFields(form: String) = Regex("""<input type="hidden" name="([^"]+)" value="([^"]*)">""").findAll(form)
+        .map { it.groupValues[1] to it.groupValues[2] }.filter { (name, _) -> name != "_csrf" }.toList()
+
+    @Test
+    fun `Send and Stop from the drawer reach the shown instance's session only, and return to the Run page with that instance's drawer`() {
+        setUp()
+        val init = """{"type":"system","subtype":"init","session_id":"${'$'}SESSION","apiKeySource":"none"}"""
+        claude.session("plan", result("""{"items":["a","b","c"]}"""))
+        for (n in 1..3) claude.session("draft", n, init, said("Wrote $n."), "wait sent-$n", "read", result("""{"text":"$n"}"""))
+        val run = start("drawer-send", agentTask("draft", "draft", itemInput, loop()), "draft")
+
+        eventually { assertEquals(3, claude.launches("draft").size) }
+        val (a, b, c) = listOf("a", "b", "c").map { launchOf("draft", """\"item\":\"$it\"""") }
+        fun form(instance: String) = drawerPart(
+            browser.events("run=$run&drawer=draft&instance=$instance", "drawer").until { "Sending…" in it },
+            "drawer-send",
+        )
+        val send = form("draft-2")
+        val fields = hiddenFields(send)
+        assertEquals(listOf("back" to "run", "drawer" to "draft"), fields)
+        val sent = browser.post("/runs/$run/tasks/draft-2/transcript/send", fields + ("message" to "Only for b."))
+        assertEquals("/runs/$run" to "drawer=draft&instance=draft-2", sent.path to sent.query)
+        val stopped = browser.post("/runs/$run/tasks/draft-3/transcript/stop", hiddenFields(form("draft-3")))
+        assertEquals("/runs/$run" to "drawer=draft&instance=draft-3", stopped.path to stopped.query)
+        listOf(a, b, c).forEach { claude.release("sent-$it") }
+
+        eventually { assertEquals(2, claude.launches("draft").count { it.stdin.lines().size == 2 }) }
+        val received = claude.launches("draft").map { it.stdin.lines().getOrNull(1) }
+        assertNull(received[a - 1])
+        assertContains(received[b - 1].orEmpty(), "Only for b.")
+        assertContains(received[c - 1].orEmpty(), """"request":{"subtype":"interrupt"}}""")
+        browser.post("/runs/$run/tasks/draft-1/transcript/send", mapOf("message" to "Done now."))
+        eventually { assertContains(browser.get("/runs/$run/tasks/draft-1/transcript").body, "Result: done") }
+    }
+
     @Test
     fun `a sequential multi-instance's row and head sum its instances so far, labelled by number and item`() {
         setUp()

@@ -92,7 +92,7 @@ class Streams(private val templates: TemplateEngine) {
  * installed app: the sidebar's events, `count`, `runs`, `pauses` and `update`, and `toast` (after `toast=<n>`, the
  * latest the page has shown), on every page, and an event
  * for each part of the page the query names: `home`; `ready=home` or `ready=list`, the Processes' Ready marks on Home or the Processes list; `runlist`, the Runs list; `notifications`, the Notification list;
- * `run=<id>`, with `drawer=<task>` while its Task drawer is open (`&instance=<key>`, the instance it shows), and `tasks=<id>`, the Run page's Tasks table;
+ * `run=<id>`, with `drawer=<task>` while its Task drawer is open, and `tasks=<id>`, the Run page's Tasks table;
  * `transcript=<run>/<task>&from=<byte>`, with `taskhead`, its Task page header; `ticket=<run>/<name>`; `builder=<token>`, the calls relayed to a page and its chat's dialog (PageChats); `dashboard=<id>`, a Dashboard's Widgets.
  */
 @Controller
