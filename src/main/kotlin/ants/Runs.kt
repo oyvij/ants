@@ -158,8 +158,16 @@ private const val ITEM_LENGTH = 40
 private fun instanceNumbers(task: String, key: String): List<Int> =
     key.takeIf { it.startsWith("$task-") }?.removePrefix("$task-")?.split('-')?.map { it.toIntOrNull() ?: return emptyList() }.orEmpty()
 
-private fun summedFigure(instances: List<InstanceView>) =
-    tokens(instances.sumOf { it.transcript.tokens }).removeSuffix(" tokens") + " · ${instances.size} " + if (instances.size == 1) "agent" else "agents"
+fun instanceOrder(task: String) = Comparator<String> { a, b ->
+    instanceNumbers(task, a).zip(instanceNumbers(task, b)).map { (x, y) -> x.compareTo(y) }.firstOrNull { it != 0 } ?: 0
+}
+
+fun taskOfInstance(key: String) = key.replace(INSTANCE_SUFFIX, "")
+
+private val INSTANCE_SUFFIX = Regex("""(-\d+)+$""")
+
+fun summedFigure(instances: Collection<Transcript>) =
+    tokens(instances.sumOf { it.tokens }).removeSuffix(" tokens") + " · ${instances.size} " + if (instances.size == 1) "agent" else "agents"
 
 @Controller
 class Runs(
@@ -467,7 +475,7 @@ class Runs(
                 }
                 val opens = instances.firstOrNull { it.transcript.running } ?: instances.firstOrNull()
                 val href = entry?.let { "/notifications/${it.id}" } ?: opens?.href ?: own.keys.firstOrNull()?.let { "/runs/$top/tasks/$it/transcript" }
-                val context = if (instances.isEmpty()) own[key]?.takeIf { it.tokens > 0 }?.context.orEmpty() else summedFigure(instances)
+                val context = if (instances.isEmpty()) own[key]?.takeIf { it.tokens > 0 }?.context.orEmpty() else summedFigure(instances.map { it.transcript })
                 listOf(TaskView(
                     key, task, state, label, entry, now?.round, opens?.transcript ?: own[key],
                     context, href, asking[activity], reached, catalogue, instances,
@@ -488,7 +496,7 @@ class Runs(
     private fun instanceOf(task: String, key: String) = instanceNumbers(task, key).isNotEmpty()
 
     private fun instances(top: String?, task: String, own: Map<String, Transcript>, entries: List<TaskEntry>) = own.filterKeys { it != task }.toList()
-        .sortedWith { (a, _), (b, _) -> instanceNumbers(task, a).zip(instanceNumbers(task, b)).map { (x, y) -> x.compareTo(y) }.firstOrNull { it != 0 } ?: 0 }
+        .sortedWith(compareBy(instanceOrder(task)) { it.first })
         .map { (key, transcript) ->
             val (state, label) = entries.firstOrNull { it.taskId == key }?.let(TaskView::state) ?: transcript.state
             InstanceView(key, instanceLabel(task, key, transcript.item), state, label, transcript, "/runs/$top/tasks/$key/transcript")

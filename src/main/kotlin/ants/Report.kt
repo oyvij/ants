@@ -27,9 +27,14 @@ fun report(run: DelegateExecution, workspace: Path): String = buildString {
     }
     val transcripts = Transcript.all(workspace)
     append("## Tasks\n\n") // each Task is its own session, so their contexts don't add up
-    for ((task, transcript) in transcripts) {
-        val result = transcript.result?.let { " · ${it["outcome"]}: ${it["summary"]}" }.orEmpty()
-        append("- [$task](/runs/${run.processInstanceId}/tasks/$task/transcript)$result · ${transcript.context}\n")
+    fun line(key: String, text: String, transcript: Transcript) =
+        "[$text](/runs/${run.processInstanceId}/tasks/$key/transcript)" + transcript.result?.let { " · ${it["outcome"]}: ${it["summary"]}" }.orEmpty() + " · ${transcript.context}\n"
+    for ((task, own) in transcripts.entries.groupBy { taskOfInstance(it.key) }) {
+        own.firstOrNull { it.key == task }?.let { append("- " + line(task, task, it.value)) }
+        val instances = own.filter { it.key != task }.sortedWith(compareBy(instanceOrder(task)) { it.key })
+        if (instances.isEmpty()) continue
+        append("- $task · ${summedFigure(instances.map { it.value })}\n")
+        for ((key, transcript) in instances) append("  - " + line(key, instanceLabel(task, key, transcript.item), transcript))
     }
     append(roundsReport(workspace))
     // The implementers' and fixers' own reviews: a Result's `output.review`, the last of each Task's launches.

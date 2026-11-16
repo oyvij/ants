@@ -314,6 +314,53 @@ class MultiInstanceTest : AntsTest() {
         assertNull(bar(browser.get("/runs/$run/tasks/plan/transcript").body))
     }
 
+    private fun reportLine(run: String, key: String, text: String, context: String) =
+        """<li><a rel="nofollow" href="/runs/$run/tasks/$key/transcript">$text</a> · done: Done. · $context</li>"""
+
+    @Test
+    fun `the Report lists a multi-instance Task as one line with its summed figure, its instances nested under it`() {
+        setUp()
+        claude.session("plan", read("p", 700), result("""{"items":["a",{"name":"Beta"},{"size":1}]}"""))
+        claude.session("draft", read("m", 2_000), result("""{"text":"same"}"""))
+        val run = start("report", agentTask("draft", "draft", itemInput, loop()), "draft")
+
+        eventually { assertContains(page(run), """id="state">Completed<""") }
+        val report = browser.report(run)
+        assertContains(report, reportLine(run, "plan", "plan", "700 tokens"))
+        assertContains(
+            report,
+            "<li>draft · 6k · 3 agents\n<ul>\n" +
+                reportLine(run, "draft-1", "#1 a", "2k tokens") + "\n" +
+                reportLine(run, "draft-2", "#2 Beta", "2k tokens") + "\n" +
+                reportLine(run, "draft-3", "#3", "2k tokens") + "\n</ul>\n</li>",
+        )
+    }
+
+    @Test
+    fun `the Report nests a multi-instance sub-process's Task instances under one line, labelled by both numbers`() {
+        setUp()
+        claude.session("plan", result("""{"items":["a","b"]}"""))
+        claude.session("draft", read("m", 2_000), result("""{"text":"same"}"""))
+        val subProcess = """
+            <bpmn:subProcess id="fanout">
+              ${loop()}
+              <bpmn:startEvent id="inner-start" />
+              <bpmn:sequenceFlow id="s1" sourceRef="inner-start" targetRef="draft" />
+              ${agentTask("draft", "draft", loop = loop())}
+              <bpmn:sequenceFlow id="s2" sourceRef="draft" targetRef="inner-end" />
+              <bpmn:endEvent id="inner-end" />
+            </bpmn:subProcess>"""
+        val run = start("report-nested", subProcess, "fanout")
+
+        eventually { assertContains(page(run), """id="state">Completed<""") }
+        assertContains(
+            browser.report(run),
+            "<li>draft · 8k · 4 agents\n<ul>\n" +
+                listOf("1-1" to "#1.1 a", "1-2" to "#1.2 b", "2-1" to "#2.1 a", "2-2" to "#2.2 b")
+                    .joinToString("") { (n, label) -> reportLine(run, "draft-$n", label, "2k tokens") + "\n" } + "</ul>\n</li>",
+        )
+    }
+
     @Test
     fun `a sequential multi-instance runs its instances one at a time, each on its own item, and gives their Results in instance order`() {
         setUp()
