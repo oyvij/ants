@@ -36,7 +36,7 @@ class MarkdownEverywhereTest {
         val NOT_PROSE = setOf(
             "view.widget.type.label", "type.label", "kind.title", "state.label", "level.label", "run.stateName", // Ants' own labels
             "story.steps.size", "story.stale", "process.version", "process.value.version", "task.round", "task.subagents", "task.transcript.runningSubagents", "task.pill",
-            "transcript.context", "context", "task.context.replace(\" tokens\", \"\")", "if (does.isEmpty()) \"\" else \" \"", // counts and spacing
+            "transcript.context", "instance.context", "context", "task.context.replace(\" tokens\", \"\")", "if (does.isEmpty()) \"\" else \" \"", // counts and spacing
             "line.text", "comment.file", "comment.from", "comment.to", "comment.side", "comment.step", // code and where in it
             "comment.type", "comment.type.lowercase().replaceFirstChar(Char::uppercase)", // a Review comment's fixed type
             "run.kte: name", "toolrow.kte: name", // a variable's name and a tool's name: ids, in a mono font
