@@ -7,6 +7,7 @@ import kotlin.io.path.name
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 
 class MultiInstanceTest : AntsTest() {
@@ -241,6 +242,41 @@ class MultiInstanceTest : AntsTest() {
         val refused = browser.post("${transcript("draft-1")}/send", mapOf("message" to "One more thing."))
         assertContains(refused.body, "Not sent: the Agent's session has ended")
         assertEquals(0, claude.launches("draft").count { "One more thing." in it.stdin })
+    }
+
+    private fun said(text: String) = """{"type":"assistant","message":{"id":"m","content":[{"type":"text","text":"$text"}]}}"""
+
+    private fun drawerPart(html: String, id: String) =
+        Regex("""<(\w+) id="$id"[^>]*>(.*?)</\1>""", RegexOption.DOT_MATCHES_ALL).find(html)?.groupValues?.get(2).orEmpty()
+
+    @Test
+    fun `a multi-instance Task's drawer shows the first running instance's Transcript and the bar, or the instance it is asked for`() {
+        setUp()
+        claude.session("plan", result("""{"items":["a",{"name":"Beta"},{"title":"Gamma"}]}"""))
+        for (n in 1..3) claude.session("draft", n, said("Wrote $n."), "wait go-$n", result("""{"text":"$n"}"""))
+        val run = start("drawer", agentTask("draft", "draft", itemInput, loop()), "draft")
+
+        eventually { assertEquals(3, claude.launches("draft").size) }
+        val (a, b, c) = listOf("""\"item\":\"a\"""", "Beta", "Gamma").map { launchOf("draft", it) }
+        claude.release("go-$a")
+        eventually { assertContains(row(run, "draft"), """data-href="/runs/$run/tasks/draft-2/transcript"""") }
+
+        val html = browser.events("run=$run&drawer=draft", "drawer").until { "Wrote $b." in it }
+        assertContains(drawerPart(html, "drawer-head"), """href="/runs/$run/tasks/draft-2/transcript">Full Transcript →</a>""")
+        assertFalse("Wrote $c." in html)
+        val bar = assertNotNull(chipsOn(drawerPart(html, "drawer-instances")))
+        assertContains(bar, """<a href="/runs/$run/tasks/draft-2/transcript" aria-current="page"><b>#2 Beta</b>""")
+        assertContains(bar, """<a href="/runs/$run/tasks/draft-1/transcript"><b>#1 a</b> $done""")
+        assertContains(bar, """<a href="/runs/$run/tasks/draft-3/transcript"><b>#3 Gamma</b> $running""")
+        val send = drawerPart(html, "drawer-send")
+        assertContains(send, """<form method="post" action="/runs/$run/tasks/draft-2/transcript/send">""")
+        assertContains(send, """formaction="/runs/$run/tasks/draft-2/transcript/stop"""")
+
+        val third = browser.events("run=$run&drawer=draft&instance=draft-3", "drawer").until { "Wrote $c." in it }
+        assertContains(chipsOn(drawerPart(third, "drawer-instances")).orEmpty(), """<a href="/runs/$run/tasks/draft-3/transcript" aria-current="page">""")
+        assertContains(drawerPart(third, "drawer-send"), """action="/runs/$run/tasks/draft-3/transcript/send"""")
+        listOf(b, c).forEach { claude.release("go-$it") }
+        eventually { assertContains(page(run), """id="state">Completed<""") }
     }
 
     @Test

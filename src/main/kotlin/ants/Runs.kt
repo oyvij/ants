@@ -401,29 +401,30 @@ class Runs(
     /**
      * The drawer of the Run's Task [task] as HTML, sent on connect and whenever it changes: its state, So far, the
      * Agent's checklist, latest output, and the comment box and action when it waits on the user. [id] may be a
-     * called Process's instance, whose Task is kept in the top Run under its key ([taskKey]).
+     * called Process's instance, whose Task is kept in the top Run under its key ([taskKey]). A multi-instance Task's
+     * drawer shows its instance [shown], else the first running one, else the first, with the instance bar.
      */
-    fun drawer(id: String, task: String, csrf: CsrfToken): Part {
+    fun drawer(id: String, task: String, csrf: CsrfToken, shown: String? = null): Part {
         val instance = run(id)
         val model = model(instance)
         val element = model?.getModelElementById<FlowElement>(task)
         if (model != null && element == null) throw ResponseStatusException(HttpStatus.NOT_FOUND, "No Task $task")
         val top = instance.rootProcessInstanceId!!
         val key = (history.variable(id, CALLED) as? String).orEmpty() + task
-        val file = Transcript.file(names.runWorkspace(top), key)
-        val transcript = Transcript()
-        var offset = 0L
+        val seen = mutableMapOf<Path, Pair<Transcript, Long>>()
+        var picked = shown
         csrf.token // loads the token while the request is still here
         return streams.changes("drawer") {
-            val (lines, end) = Transcript.read(file, offset)
-            offset = end
-            lines.forEach(transcript::add)
-            val view = tasks(id) { emptyMap() }.firstOrNull { it.key == key }
+            val transcripts = Transcript.follow(names.runWorkspace(top), seen)
+            val view = tasks(id) { transcripts }.firstOrNull { it.key == key }
                 ?: TaskView(key, element, "queued", "Not reached", null, null, null, "", null, catalogue = catalogue)
+            val opened = view.instances.firstOrNull { it.key == picked } ?: view.instances.firstOrNull { it.transcript.running } ?: view.instances.firstOrNull()
+            picked = opened?.key
+            val shownKey = opened?.key ?: key
             val entry = view.entry
             val model = mapOf(
-                "run" to top, "runName" to names.name(top), "task" to key, "view" to view, "transcript" to transcript,
-                "details" to entry?.let(notifications::details), "topic" to entry?.let(notifications::topic), "sendHint" to launcher.sendHint(top, key), "_csrf" to csrf,
+                "run" to top, "runName" to names.name(top), "task" to shownKey, "view" to view, "transcript" to (opened?.transcript ?: transcripts[key] ?: Transcript()),
+                "details" to entry?.let(notifications::details), "topic" to entry?.let(notifications::topic), "sendHint" to launcher.sendHint(top, shownKey), "_csrf" to csrf,
             )
             StringOutput().also { templates.render("drawer.kte", model, it) }.toString()
         }

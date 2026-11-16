@@ -13,6 +13,9 @@
     <h3>$unsafe{ants.Transcript.inline(view.name)}</h3>
     <div class="row" data-flash="${view.state}">@if(view.state == "running" && transcript.line != null)<span class="small">$unsafe{transcript.line}</span>@else$unsafe{view.badge}@if(view.entry != null) @template.tag(entry = view.entry)@endif@endif<span class="grow"></span>@if(view.kind == "agent")<a class="small" href="/runs/${run}/tasks/${task}/transcript">Full Transcript →</a>@endif</div>
 </header>
+@if(view.instances.isNotEmpty())
+<section id="drawer-instances">@template.instancebar(view = view, shownKey = task)</section>
+@endif
 @if(view.kind == "agent")
 <section id="drawer-so-far">$unsafe{transcript.html("sofar")}</section>
 <section id="drawer-output">
