@@ -113,7 +113,6 @@ class MultiInstanceTest : AntsTest() {
         eventually { assertContains(page(run), """id="state">Completed<""") }
     }
 
-
     @Test
     fun `a sequential multi-instance's row and head sum its instances so far, labelled by number and item`() {
         setUp()
@@ -175,6 +174,7 @@ class MultiInstanceTest : AntsTest() {
         assertContains(browser.get("/runs/$run/tasks/plan/transcript").body, """<span id="tokens">62k tokens (6.2%)</span>""")
         assertContains(row(run, "draft"), "0 · 1 agent<")
     }
+
     @Test
     fun `a sequential multi-instance runs its instances one at a time, each on its own item, and gives their Results in instance order`() {
         setUp()
