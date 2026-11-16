@@ -180,10 +180,15 @@ class MultiInstanceTest : AntsTest() {
 
     private fun bar(html: String) = Regex("""<nav class="instances".*?</nav>""", RegexOption.DOT_MATCHES_ALL).find(html)?.value
 
-    private fun chips(html: String) = bar(html)?.substringAfter(">")?.substringBeforeLast("</nav>")?.trim()
+    private fun chipsOn(html: String) = bar(html)?.substringAfter(">")?.substringBeforeLast("</nav>")?.trim()
 
     private fun chip(run: String, key: String, label: String, pill: String, context: String, current: Boolean = false) =
         """<a href="/runs/$run/tasks/$key/transcript"${if (current) """ aria-current="page"""" else ""}><b>$label</b> $pill <span class="muted num">$context</span></a>"""
+
+    private fun chips(run: String, instances: List<Pair<String, String>>, pill: String, context: String, shown: String) =
+        instances.joinToString("") { (key, label) -> chip(run, "draft-$key", label, pill, context, current = key == shown) }
+
+    private fun numbered(labels: List<String>) = labels.mapIndexed { i, label -> "${i + 1}" to label }
 
     private val running = """<span class="pill p-running">Running</span>"""
     private val done = """<span class="pill p-done">Done</span>"""
@@ -199,8 +204,8 @@ class MultiInstanceTest : AntsTest() {
         val labels = listOf("#1 a", "#2 Beta", "#3 Gamma")
         eventually {
             for (n in 1..3) assertEquals(
-                labels.mapIndexed { i, label -> chip(run, "draft-${i + 1}", label, running, "1k tokens", current = i + 1 == n) }.joinToString(""),
-                chips(browser.get("/runs/$run/tasks/draft-$n/transcript").body),
+                chips(run, numbered(labels), running, "1k tokens", shown = "$n"),
+                chipsOn(browser.get("/runs/$run/tasks/draft-$n/transcript").body),
             )
         }
         val head = browser.events("transcript=$run/draft-2&from=0", "taskhead")
@@ -259,8 +264,8 @@ class MultiInstanceTest : AntsTest() {
         val labels = listOf("#1 a", "#2 Beta", "#3 Gamma", "#4", "#5 ${"x".repeat(39)}…")
         assertEquals(labels, runs.tasks(run).single { it.key == "draft" }.instances.map { it.label })
         assertEquals(
-            labels.mapIndexed { i, label -> chip(run, "draft-${i + 1}", label, done, "1k tokens", current = i == 3) }.joinToString(""),
-            chips(browser.get("/runs/$run/tasks/draft-4/transcript").body),
+            chips(run, numbered(labels), done, "1k tokens", shown = "4"),
+            chipsOn(browser.get("/runs/$run/tasks/draft-4/transcript").body),
         )
     }
 
@@ -285,9 +290,8 @@ class MultiInstanceTest : AntsTest() {
         assertContains(browser.get("/runs/$run/tasks/draft-2-1/transcript").body, """<span id="tokens">8k · 4 agents</span>""")
         assertEquals(listOf("#1.1 a", "#1.2 b", "#2.1 a", "#2.2 b"), runs.tasks(run).single { it.key == "draft" }.instances.map { it.label })
         assertEquals(
-            listOf("1-1" to "#1.1 a", "1-2" to "#1.2 b", "2-1" to "#2.1 a", "2-2" to "#2.2 b")
-                .joinToString("") { (key, label) -> chip(run, "draft-$key", label, done, "2k tokens", current = key == "2-1") },
-            chips(browser.get("/runs/$run/tasks/draft-2-1/transcript").body),
+            chips(run, listOf("1-1" to "#1.1 a", "1-2" to "#1.2 b", "2-1" to "#2.1 a", "2-2" to "#2.2 b"), done, "2k tokens", shown = "2-1"),
+            chipsOn(browser.get("/runs/$run/tasks/draft-2-1/transcript").body),
         )
     }
 
