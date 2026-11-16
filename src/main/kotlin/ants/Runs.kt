@@ -232,8 +232,8 @@ class Runs(
                 task.lockExpirationTime?.after(Date()) == true -> {
                     val key = runCatching { runtime.taskKey(task.executionId, task.activityId) }.getOrDefault(task.activityId)
                     val transcript = followed(Transcript.file(names.runWorkspace(run), key).also { read.add(it) })
-                    val of = key.take(key.lastIndexOf(task.activityId) + task.activityId.length)
-                    Doing(name, null, transcript.line, transcript.runningSubagents, key, instanceLabel(of, key, transcript.item).takeIf { instanceOf(of, key) })
+                    val taskKey = (runCatching { runtime.getVariable(task.executionId, CALLED) }.getOrNull() as? String).orEmpty() + task.activityId
+                    Doing(name, null, transcript.line, transcript.runningSubagents, key, instanceLabel(taskKey, key, transcript.item).takeIf { instanceOf(taskKey, key) })
                 }
                 else -> Doing(name, "Queued · ${launcher.running} of $cap running")
             }
