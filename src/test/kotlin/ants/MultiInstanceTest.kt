@@ -1,6 +1,7 @@
 package ants
 
 import org.junit.jupiter.api.Test
+import org.springframework.beans.factory.annotation.Autowired
 import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.name
 import kotlin.test.assertContains
@@ -9,6 +10,9 @@ import kotlin.test.assertEquals
 class MultiInstanceTest : AntsTest() {
     private val browser by lazy { browser().also { it.login() } }
     private val claude = FakeClaude()
+
+    @Autowired
+    private lateinit var runs: Runs
 
     private fun setUp(agentTasks: Int = 3) = agentTask(
         claude,
@@ -109,6 +113,68 @@ class MultiInstanceTest : AntsTest() {
         eventually { assertContains(page(run), """id="state">Completed<""") }
     }
 
+
+    @Test
+    fun `a sequential multi-instance's row and head sum its instances so far, labelled by number and item`() {
+        setUp()
+        val long = "x".repeat(60)
+        claude.session("plan", result("""{"items":["a",{"name":"Beta"},{"title":"Gamma"},{"size":1},"$long"]}"""))
+        claude.session("draft", read("m", 1_000), "wait go", result("""{"text":"same"}"""))
+        val ticket = """<operaton:inputParameter name="ticket">${'$'}{ticket}</operaton:inputParameter>"""
+        val run = start("labelled", agentTask("draft", "draft", ticket, loop(sequential = true, element = """operaton:elementVariable="ticket"""")), "draft")
+
+        eventually { assertEquals(1, claude.launches("draft").size) }
+        eventually { assertContains(row(run, "draft"), "1k · 1 agent<") }
+        claude.release("go")
+        eventually { assertContains(page(run), """id="state">Completed<""") }
+        assertContains(row(run, "draft"), "5k · 5 agents")
+        assertContains(row(run, "draft"), """data-href="/runs/$run/tasks/draft-1/transcript"""")
+        assertContains(browser.get("/runs/$run/tasks/draft-4/transcript").body, """<span id="tokens">5k · 5 agents</span>""")
+        assertEquals(
+            listOf("#1 a", "#2 Beta", "#3 Gamma", "#4", "#5 ${"x".repeat(39)}…"),
+            runs.tasks(run).single { it.key == "draft" }.instances.map { it.label },
+        )
+    }
+
+    @Test
+    fun `a multi-instance Task in a multi-instance sub-process sums all its instances, labelled by both numbers`() {
+        setUp()
+        claude.session("plan", result("""{"items":["a","b"]}"""))
+        claude.session("draft", read("m", 2_000), result("""{"text":"same"}"""))
+        val subProcess = """
+            <bpmn:subProcess id="fanout">
+              ${loop()}
+              <bpmn:startEvent id="inner-start" />
+              <bpmn:sequenceFlow id="s1" sourceRef="inner-start" targetRef="draft" />
+              ${agentTask("draft", "draft", loop = loop())}
+              <bpmn:sequenceFlow id="s2" sourceRef="draft" targetRef="inner-end" />
+              <bpmn:endEvent id="inner-end" />
+            </bpmn:subProcess>"""
+        val run = start("nested-sum", subProcess, "fanout")
+
+        eventually { assertContains(page(run), """id="state">Completed<""") }
+        assertContains(row(run, "draft"), "8k · 4 agents")
+        assertContains(browser.get("/runs/$run/tasks/draft-2-1/transcript").body, """<span id="tokens">8k · 4 agents</span>""")
+        assertEquals(listOf("#1.1 a", "#1.2 b", "#2.1 a", "#2.2 b"), runs.tasks(run).single { it.key == "draft" }.instances.map { it.label })
+    }
+
+    @Test
+    fun `a single-instance Task beside a multi-instance keeps its own context and window share`() {
+        setUp()
+        claude.session(
+            "plan", read("m", 62_000),
+            """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","modelUsage":{"m":{"contextWindow":1000000}},""" +
+                """"structured_output":{"outcome":"done","summary":"Done.","output":{"items":["a"]}}}""",
+        )
+        claude.session("draft", result("""{"text":"1"}"""))
+        val run = start("single", agentTask("draft", "draft", loop = loop()), "draft")
+
+        eventually { assertContains(page(run), """id="state">Completed<""") }
+        assertContains(row(run, "plan"), "62k (6.2%)")
+        assertContains(row(run, "plan"), """data-href="/runs/$run/tasks/plan/transcript"""")
+        assertContains(browser.get("/runs/$run/tasks/plan/transcript").body, """<span id="tokens">62k tokens (6.2%)</span>""")
+        assertContains(row(run, "draft"), "0 · 1 agent<")
+    }
     @Test
     fun `a sequential multi-instance runs its instances one at a time, each on its own item, and gives their Results in instance order`() {
         setUp()
