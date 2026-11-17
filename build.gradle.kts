@@ -18,7 +18,7 @@ kotlin {
     jvmToolchain(25)
 }
 
-val operaton = "2.2.0"
+val operaton = "2.2.1"
 val jte = "3.2.5"
 
 repositories {
@@ -47,7 +47,7 @@ dependencies {
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation(kotlin("test"))
     // BrowserTest.
-    testImplementation("com.microsoft.playwright:playwright:1.64.0")
+    testImplementation("com.microsoft.playwright:playwright:1.65.0")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
