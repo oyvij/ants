@@ -1,0 +1,7 @@
+@param view: ants.TaskView
+@param shownKey: String
+@if(view.instances.isNotEmpty())
+<nav class="instances" aria-label="Instances">
+@for(instance in view.instances)<a href="${instance.href}" aria-current="${if (instance.key == shownKey) "page" else null}"><b>$unsafe{ants.Transcript.inline(instance.label)}</b> $unsafe{instance.badge} <span class="muted num">${instance.context}</span></a>@endfor
+</nav>
+@endif
