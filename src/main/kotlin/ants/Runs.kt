@@ -143,6 +143,8 @@ class InstanceView(val key: String, val label: String, val state: String, val st
     val badge get() = """<span class="pill p-${TaskView.PILLS[state]}">${HtmlUtils.htmlEscape(stateLabel)}</span>"""
 }
 
+fun List<InstanceView>.shown(key: String? = null) = firstOrNull { it.key == key } ?: firstOrNull { it.transcript.running } ?: firstOrNull()
+
 fun itemName(item: Any?): String? = when (item) {
     is String -> item
     is Map<*, *> -> (item["name"] as? String)?.ifBlank { null } ?: (item["title"] as? String)?.ifBlank { null }
@@ -404,7 +406,7 @@ class Runs(
      * Agent's checklist, latest output, and the comment box and action when it waits on the user. [id] may be a
      * called Process's instance, whose Task is kept in the top Run under its key ([taskKey]).
      */
-    fun drawer(id: String, task: String, csrf: CsrfToken, shown: String? = null): Part {
+    fun drawer(id: String, task: String, csrf: CsrfToken, instanceKey: String? = null): Part {
         val instance = run(id)
         val model = model(instance)
         val element = model?.getModelElementById<FlowElement>(task)
@@ -412,18 +414,18 @@ class Runs(
         val top = instance.rootProcessInstanceId!!
         val key = (history.variable(id, CALLED) as? String).orEmpty() + task
         val seen = mutableMapOf<Path, Pair<Transcript, Long>>()
-        var picked = shown
+        var shownInstance = instanceKey
         csrf.token // loads the token while the request is still here
         return streams.changes("drawer") {
             val transcripts = Transcript.follow(names.runWorkspace(top), seen)
             val view = tasks(id) { transcripts }.firstOrNull { it.key == key }
                 ?: TaskView(key, element, "queued", "Not reached", null, null, null, "", null, catalogue = catalogue)
-            val opened = view.instances.firstOrNull { it.key == picked } ?: view.instances.firstOrNull { it.transcript.running } ?: view.instances.firstOrNull()
-            picked = opened?.key
-            val shownKey = opened?.key ?: key
+            val shown = view.instances.shown(shownInstance)
+            shownInstance = shown?.key
+            val shownKey = shown?.key ?: key
             val entry = view.entry
             val model = mapOf(
-                "run" to top, "runName" to names.name(top), "task" to shownKey, "element" to task.takeIf { id == top }, "view" to view, "transcript" to (opened?.transcript ?: transcripts[key] ?: Transcript()),
+                "run" to top, "runName" to names.name(top), "task" to shownKey, "element" to task.takeIf { id == top }, "view" to view, "transcript" to (shown?.transcript ?: transcripts[key] ?: Transcript()),
                 "details" to entry?.let(notifications::details), "topic" to entry?.let(notifications::topic), "sendHint" to launcher.sendHint(top, shownKey), "_csrf" to csrf,
             )
             StringOutput().also { templates.render("drawer.kte", model, it) }.toString()
@@ -467,7 +469,7 @@ class Runs(
                     now?.state == "cancelled" -> "cancelled" to "Cancelled"
                     else -> "done" to "Done"
                 }
-                val opens = instances.firstOrNull { it.transcript.running } ?: instances.firstOrNull()
+                val opens = instances.shown()
                 val href = entry?.let { "/notifications/${it.id}" } ?: opens?.href ?: own.keys.firstOrNull()?.let { "/runs/$top/tasks/$it/transcript" }
                 val context = if (instances.isEmpty()) own[key]?.takeIf { it.tokens > 0 }?.context.orEmpty() else summedFigure(instances)
                 listOf(TaskView(

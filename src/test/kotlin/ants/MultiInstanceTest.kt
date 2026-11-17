@@ -279,6 +279,11 @@ class MultiInstanceTest : AntsTest() {
         eventually { assertContains(page(run), """id="state">Completed<""") }
     }
 
+    private fun drawerChips(run: String, instance: String? = null) = chipsOn(drawerPart(
+        browser.events("run=$run&drawer=draft" + instance?.let { "&instance=$it" }.orEmpty(), "drawer").until { "drawer-instances" in it },
+        "drawer-instances",
+    ).replace("&#10;", ""))
+
     private fun hiddenFields(form: String) = Regex("""<input type="hidden" name="([^"]+)" value="([^"]*)">""").findAll(form)
         .map { it.groupValues[1] to it.groupValues[2] }.filter { (name, _) -> name != "_csrf" }.toList()
 
@@ -338,6 +343,10 @@ class MultiInstanceTest : AntsTest() {
             chips(run, numbered(labels), done, "1k tokens", shown = "4"),
             chipsOn(browser.get("/runs/$run/tasks/draft-4/transcript").body),
         )
+        assertEquals(
+            chips(run, numbered(labels), done, "1k tokens", shown = "4"),
+            drawerChips(run, "draft-4"),
+        )
     }
 
     @Test
@@ -363,6 +372,10 @@ class MultiInstanceTest : AntsTest() {
         assertEquals(
             chips(run, listOf("1-1" to "#1.1 a", "1-2" to "#1.2 b", "2-1" to "#2.1 a", "2-2" to "#2.2 b"), done, "2k tokens", shown = "2-1"),
             chipsOn(browser.get("/runs/$run/tasks/draft-2-1/transcript").body),
+        )
+        assertEquals(
+            chips(run, listOf("1-1" to "#1.1 a", "1-2" to "#1.2 b", "2-1" to "#2.1 a", "2-2" to "#2.2 b"), done, "2k tokens", shown = "1-1"),
+            drawerChips(run),
         )
     }
 
