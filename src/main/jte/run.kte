@@ -134,7 +134,6 @@
     const trail = [{ id: run, name: document.getElementById('name').textContent }], nav = document.getElementById('trail');
     let current = run, drawn = null, latest = null, shown = {}, called = {}, task = null, chosen = null;
     const asked = new URLSearchParams(location.search);
-    let reopen = asked.get('drawer');
     const follow = () => stream.follow('run=' + current + '&tasks=' + run + (task === null ? '' : '&drawer=' + encodeURIComponent(task))
         + (task === null || chosen === null ? '' : '&instance=' + encodeURIComponent(chosen)));
     stream.on('tasks', html => stream.patch(document.getElementById('run-tasks'), html));
@@ -189,8 +188,6 @@
             canvas.zoom('fit-viewport');
             drawn = instance;
             paint();
-            if (reopen !== null && registry.get(reopen)) open(reopen, asked.get('instance'));
-            reopen = null;
         });
     }
     viewer.on('element.click', ({ element }) => {
@@ -242,6 +239,7 @@
     document.getElementById('close').onclick = close;
     addEventListener('keydown', event => { if (event.key === 'Escape' && !drawer.hidden) close(); });
     show(run);
+    if (asked.has('drawer')) open(asked.get('drawer'), asked.get('instance'));
 </script>
 </main>
 </body>

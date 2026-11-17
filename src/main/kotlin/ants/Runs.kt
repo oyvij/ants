@@ -423,7 +423,7 @@ class Runs(
             val shownKey = opened?.key ?: key
             val entry = view.entry
             val model = mapOf(
-                "run" to top, "runName" to names.name(top), "task" to shownKey, "element" to task, "view" to view, "transcript" to (opened?.transcript ?: transcripts[key] ?: Transcript()),
+                "run" to top, "runName" to names.name(top), "task" to shownKey, "element" to task.takeIf { id == top }, "view" to view, "transcript" to (opened?.transcript ?: transcripts[key] ?: Transcript()),
                 "details" to entry?.let(notifications::details), "topic" to entry?.let(notifications::topic), "sendHint" to launcher.sendHint(top, shownKey), "_csrf" to csrf,
             )
             StringOutput().also { templates.render("drawer.kte", model, it) }.toString()

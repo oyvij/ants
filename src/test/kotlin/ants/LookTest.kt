@@ -461,6 +461,11 @@ class LookTest : AntsTest() {
                 page.waitForFunction("document.querySelectorAll('nav.instances a').length === 8")
                 page.screenshot(Page.ScreenshotOptions().setPath(lookOnPhone.resolve("instance-bar/app-light.png")).setFullPage(true))
                 assertEquals(emptyList<Any?>(), page.evaluate(tooWide) as List<*>)
+
+                page.navigate("http://127.0.0.1:$port/runs/$run?drawer=draft")
+                page.waitForFunction("document.querySelectorAll('#drawer nav.instances a').length === 8")
+                page.screenshot(Page.ScreenshotOptions().setPath(lookOnPhone.resolve("instance-bar/drawer-light.png")))
+                assertEquals(emptyList<Any?>(), page.evaluate(tooWide) as List<*>)
             }
         }
     }
