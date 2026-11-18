@@ -38,9 +38,9 @@ stream.on('ready', html => {
 });
 if (window.top === window) {
     addEventListener('DOMContentLoaded', () => source || stream.follow());
-    let submitted = false;
-    addEventListener('submit', event => submitted = !event.defaultPrevented && event.target.method !== 'dialog');
-    addEventListener('pagehide', () => sessionStorage.setItem('scroll', JSON.stringify({ path: location.pathname, y: scrollY, submitted })));
+    let submittedAt = null;
+    addEventListener('submit', event => submittedAt = !event.defaultPrevented && event.target.method !== 'dialog' ? scrollY : null);
+    addEventListener('pagehide', () => sessionStorage.setItem('scroll', JSON.stringify({ path: location.pathname, y: submittedAt ?? scrollY, submitted: submittedAt !== null })));
     const left = JSON.parse(sessionStorage.getItem('scroll'));
     sessionStorage.removeItem('scroll');
     const reloaded = performance.getEntriesByType('navigation')[0]?.type === 'reload';
