@@ -132,8 +132,10 @@
     const viewer = new BpmnNavigatedViewer({ container: '#diagram' });
     const canvas = document.getElementById('diagram').canvas = viewer.get('canvas'), overlays = viewer.get('overlays'), registry = viewer.get('elementRegistry');
     const trail = [{ id: run, name: document.getElementById('name').textContent }], nav = document.getElementById('trail');
-    let current = run, drawn = null, latest = null, shown = {}, called = {}, task = null;
-    const follow = () => stream.follow('run=' + current + '&tasks=' + run + (task === null ? '' : '&drawer=' + encodeURIComponent(task)));
+    let current = run, drawn = null, latest = null, shown = {}, called = {}, task = null, shownInstance = null;
+    const asked = new URLSearchParams(location.search);
+    const follow = () => stream.follow('run=' + current + '&tasks=' + run + (task === null ? '' : '&drawer=' + encodeURIComponent(task))
+        + (task === null || shownInstance === null ? '' : '&instance=' + encodeURIComponent(shownInstance)));
     stream.on('tasks', html => stream.patch(document.getElementById('run-tasks'), html));
     // Paints the latest update once the diagram it is for is drawn.
     function paint() {
@@ -166,6 +168,7 @@
     function show(instance) {
         drawer.hidden = true;
         task = null;
+        shownInstance = null;
         current = instance;
         drawn = null;
         latest = null;
@@ -199,8 +202,9 @@
     // the action once it is handled. Its Latest output keeps scrolled to the end.
     const drawer = document.getElementById('drawer'), parts = document.getElementById('parts');
     let received = {};
-    function open(id) {
+    function open(id, instanceKey = null) {
         task = id;
+        shownInstance = instanceKey;
         received = {};
         parts.replaceChildren();
         drawer.hidden = false;
@@ -225,10 +229,17 @@
         });
         document.querySelector('#drawer-output .tr')?.scrollTo(0, 1e6);
     });
-    const close = () => { task = null; drawer.hidden = true; follow(); };
+    const close = () => { task = null; shownInstance = null; drawer.hidden = true; follow(); };
+    parts.addEventListener('click', event => {
+        const chip = event.target.closest('.instances a');
+        if (!chip) return;
+        event.preventDefault();
+        open(task, decodeURIComponent(chip.pathname.split('/').at(-2)));
+    });
     document.getElementById('close').onclick = close;
     addEventListener('keydown', event => { if (event.key === 'Escape' && !drawer.hidden) close(); });
     show(run);
+    if (asked.has('drawer')) open(asked.get('drawer'), asked.get('instance'));
 </script>
 </main>
 </body>

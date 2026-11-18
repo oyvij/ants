@@ -124,7 +124,7 @@ class Live(
             notifications.live().takeIf { "notifications" in query },
             query["tasks"]?.let(runs::liveTasks),
             query["run"]?.let(runs::live),
-            query["drawer"]?.let { runs.drawer(query.getValue("run"), it, csrf) },
+            query["drawer"]?.let { runs.drawer(query.getValue("run"), it, csrf, query["instance"]) },
             query["transcript"]?.let(::inRun)?.let { (run, task) -> transcripts.events(run, task, query.getValue("from").toLong()) },
             query["transcript"]?.let(::inRun)?.let { (run, task) -> transcripts.head(run, task) },
             query["ticket"]?.let(::inRun)?.let { (run, name) -> tickets.live(run, name) },

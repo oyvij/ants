@@ -10,7 +10,12 @@ than any window holds. The user reads the figure as Claude Code's status line: h
   counts it. A `result`'s `modelUsage` gives the window (`contextWindow`), so the figure reads `62k tokens (6.2%)`.
 - **One session, one context.** A Task shows its latest launch's: a resumed session carries on the same context and a
   fresh one starts over, so launches never add up. Nor do Tasks: the Run page and the Report list each Task's context
-  with no total, and a multi-instance row shows its largest instance's.
+  with no total.
+- **A multi-instance Task shows its instances' sum and count:** the sum of each instance's latest-session context
+  and how many instances there are, `1.6M · 10 agents`, with no window share, on its Run page row and its Task page
+  head. An instance that hasn't read anything yet counts and adds 0. It first showed its largest instance's, but the
+  user reads a multi-instance as one Task with N sessions, and the largest alone hid most of its work; the count says
+  the figure spans N windows, not one overfull one. Tasks still don't add up across a Run.
 - **Left out:** a Subagent's calls, which read a context of their own, and the So far rewrites, haiku's own sessions.
 - **codex** prints no context per call (`turn.completed` usage is the session's total so far), so a codex launch shows
   that total until codex gives better.

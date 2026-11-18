@@ -5310,6 +5310,44 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `clicking an instance's chip in a multi-instance Task's drawer switches it to that instance live, and Send brings the user back to it`() = browse {
+        val claude = FakeClaude()
+        agentTask(claude, mapOf("plan" to """{"type":"object","properties":{"items":{"type":"array"}}}""", "draft" to null), extra = "agent-tasks: 3\n")
+        fun task(id: String, skill: String, more: String = "", inputs: String = "") = """<bpmn:serviceTask id="$id" name="${id.replaceFirstChar(Char::uppercase)}" operaton:type="external" operaton:topic="agent">""" +
+            """<bpmn:extensionElements><operaton:properties><operaton:property name="ants.agent" value="writer" /><operaton:property name="ants.skills" value="$skill" />""" +
+            """</operaton:properties>$inputs</bpmn:extensionElements>$more</bpmn:serviceTask>"""
+        val loop = """<bpmn:multiInstanceLoopCharacteristics operaton:collection="${'$'}{plan.output.items}" operaton:elementVariable="item" />"""
+        val init = """{"type":"system","subtype":"init","session_id":"${'$'}SESSION","apiKeySource":"none"}"""
+        val done = """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":{"outcome":"done","summary":"Done.","output":{}}}"""
+        claude.session("plan", """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":{"outcome":"done","summary":"Done.","output":{"items":["a","b","c"]}}}""")
+        for (n in 1..3) claude.session("draft", n, init, says("Wrote $n."), "wait more-$n", says("More from $n."), "read", done)
+        val (process, plane) = row("fanned", """<bpmn:startEvent id="start" />""", task("plan", "plan"), task("draft", "draft", loop, """<operaton:inputOutput><operaton:inputParameter name="item">${'$'}{item}</operaton:inputParameter></operaton:inputOutput>"""), """<bpmn:endEvent id="end" />""")
+        deploy(definitions("fanned", "Fanned", process, plane))
+        val run = http.post("/processes/fanned/runs", mapOf()).path
+        eventually { assertEquals(3, claude.launches("draft").size) }
+        val second = claude.launches("draft").indexOfFirst { """\"item\":\"b\"""" in it.stdin } + 1
+
+        page.navigate(url(run))
+        eventually { page.locator("#diagram .djs-element[data-element-id='draft']").click() }
+        val bar = page.locator("#drawer .instances")
+        assertThat(bar.locator("a")).hasCount(3)
+        assertThat(bar.locator("a[aria-current=page] b")).hasText("#1 a")
+        bar.getByText("#2 b").click()
+        assertThat(bar.locator("a[aria-current=page] b")).hasText("#2 b")
+        assertTrue(page.url().endsWith(run), "the drawer switched without leaving the Run page")
+        assertThat(page.locator("#drawer-output")).containsText("Wrote $second.")
+        claude.release("more-$second")
+        assertThat(page.locator("#drawer-output")).containsText("More from $second.")
+
+        page.locator("#drawer-message + .ed .cm-content").fill("Only for b.")
+        page.locator("#drawer-send button.primary").click()
+        page.waitForURL { it.endsWith("$run?drawer=draft&instance=draft-2") }
+        assertThat(page.locator("#drawer .instances a[aria-current=page] b")).hasText("#2 b")
+        eventually { assertTrue(claude.launches("draft")[second - 1].stdin.contains("Only for b.")) }
+        (1..3).filter { it != second }.forEach { claude.release("more-$it") }
+    }
+
+    @Test
     fun `New Process on the Processes list opens a modal that starts the modeler on a Draft-only Process, and a row opens its Process`() = browse {
         http.import("start-end.bpmn")
         page.navigate(url("/processes"))
