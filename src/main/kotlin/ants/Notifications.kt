@@ -22,11 +22,14 @@ import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.server.ResponseStatusException
 import tools.jackson.databind.json.JsonMapper
+import java.net.URLEncoder
+import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
 import java.util.Date
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.io.path.createDirectories
 import kotlin.io.path.deleteIfExists
 import kotlin.io.path.isRegularFile
@@ -128,7 +131,10 @@ class Notifications(
      * repo's changes as it will push them; any other Built-in Task's, why it failed.
      */
     @GetMapping("/notifications/{id}")
-    fun entry(@PathVariable id: String, model: Model, response: HttpServletResponse, @RequestParam(required = false) tab: String? = null): String {
+    fun entry(
+        @PathVariable id: String, model: Model, response: HttpServletResponse, @RequestParam(required = false) tab: String? = null,
+        @RequestParam(required = false) repo: String? = null,
+    ): String {
         tickets.waiting().firstOrNull { it.id == id }?.let { return "redirect:${it.href}" }
         if (id == "safe") return "redirect:/settings"
         noticeEntries().firstOrNull { it.id == id }?.let {
@@ -157,14 +163,18 @@ class Notifications(
                     }
                     val story = shown == "story"
                     model.addAttribute("tab", shown)
+                    val outgoing = push.outgoing(entry.run)
                     if (story) {
                         try {
-                            model.addAttribute("stories", storySet(names.runWorkspace(entry.run), cloneRepos.untrimmed))
+                            model.addAttribute("stories", storySet(names.runWorkspace(entry.run), outgoing))
                         } catch (refused: StorySetRefused) {
                             model.addAttribute("refused", refused.message)
                         }
                     }
-                    model.addAttribute("changes", changes(push.outgoing(entry.run), cloneRepos::git)) // each tab's summary cards
+                    val changes = changes(outgoing, cloneRepos::git)
+                    model.addAttribute("changes", changes) // each tab's summary cards
+                    model.addAttribute("unchanged", outgoing.filter { it.commits.isEmpty() }.map { it.repo })
+                    model.addAttribute("diffs", if (story) emptyMap() else diffs(changes, repo))
                     model.addAttribute("comments", comments(task))
                     "review"
                 }
@@ -345,7 +355,7 @@ class Notifications(
 
     /**
      * Adds a line comment to a Review changes, kept on its User Task until it completes, or takes out the [remove]th; one
-     * on a story step names its [story] and [step], 1-based. Back to the [tab] it was made on.
+     * on a story step names its [story] and [step], 1-based. Back to the [tab] it was made on, with a line comment's repo open.
      */
     @PostMapping("/notifications/{id}/comments")
     fun comment(
@@ -359,12 +369,44 @@ class Notifications(
             val comment = LineComment.of(fields) ?: throw ResponseStatusException(HttpStatus.BAD_REQUEST, "A line comment needs a repo, a file, a side, its lines and a type")
             if (comment.body.isBlank()) {
                 model.addAttribute("error", "A line comment needs a body.")
-                return entry(id, model, response, tab)
+                return entry(id, model, response, tab, comment.repo)
             }
             comments += comment
         }
         userTasks.setVariableLocal(task.id, COMMENTS, LineComment.json(comments))
-        return "redirect:/notifications/$id" + if (tab in setOf("story", "repo")) "?tab=$tab" else ""
+        val query = listOfNotNull(tab?.takeIf { it in setOf("story", "repo") }?.let { "tab=$it" }, fields["repo"]?.takeIf { remove == null && tab != "story" }?.let { "repo=${URLEncoder.encode(it, Charsets.UTF_8)}" })
+        return "redirect:/notifications/$id" + if (query.isEmpty()) "" else query.joinToString("&", "?")
+    }
+
+    /**
+     * The diffs By repo shows when the page loads: [open]'s, and each repo's in turn while their lines add up to
+     * [INLINE] at most, so a Run with few changes shows them all; any other repo's diff loads when it is opened.
+     */
+    private fun diffs(changes: List<RepoChanges>, open: String?): Map<String, List<FileDiff>> {
+        var lines = 0
+        val shown = changes.filter { it.repo.repo == open || (lines + it.lines <= INLINE).also { fits -> if (fits) lines += it.lines } }
+        return shown.parallelStream().map { it.repo.repo to diff(it.repo, cloneRepos::git) }.toList().toMap()
+    }
+
+    /** A Review changes' diff of one of its Run's [repo]s, as By repo shows it when the repo is opened. */
+    @GetMapping("/notifications/{id}/diff")
+    fun diff(@PathVariable id: String, @RequestParam repo: String, model: Model, response: HttpServletResponse): String {
+        val task = userTask(id, UserTaskKind.REVIEW_CHANGES) ?: return gone(model, response)
+        val outgoing = push.outgoing(entry(task).run).firstOrNull { it.repo == repo } ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
+        model.addAttribute("repo", repo)
+        model.addAttribute("files", diff(outgoing, cloneRepos::git))
+        return "repodiff"
+    }
+
+    /** Each Run workspace's Story set, kept while its file and the clones' refs are as they were when it was read. */
+    private val storySets = ConcurrentHashMap<Path, Pair<List<Any?>, StorySet>>()
+
+    // shortcut: a range named by a ref other than HEAD or the base (a tag, another branch) may move unseen; add its ref to the key if one turns up.
+    private fun storySet(workspace: Path, outgoing: List<Outgoing>): StorySet {
+        val file = workspace.resolve(STORIES)
+        val key = listOf(runCatching { Files.getLastModifiedTime(file) }.getOrNull()) + outgoing.flatMap { listOf(it.repo, it.head, it.baseHead) }
+        storySets[workspace]?.takeIf { it.first == key }?.let { return it.second }
+        return storySet(workspace, cloneRepos.untrimmed).also { storySets[workspace] = key to it }
     }
 
     /** A Review changes' line comments so far. */

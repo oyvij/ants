@@ -73,19 +73,24 @@ const colour = (cells, lang, skip = 0) => {
     })
 }
 
-for (const table of document.querySelectorAll("table.diff[data-file]")) {
-    const lang = await language(table.dataset.file)
-    if (!lang) continue
-    const rows = [...table.querySelectorAll("tr[data-line]")]
-    const text = row => row.cells[2]
-    // The kept and added lines are the new file; the removed ones are coloured as the old file reads them, kept lines between.
-    colour(rows.filter(it => !it.classList.contains("del")).map(text), lang, 1)
-    const old = rows.filter(it => !it.classList.contains("add"))
-    paint(old.map(it => text(it).textContent.slice(1)), lang).forEach((line, i) => {
-        if (old[i].classList.contains("del")) text(old[i]).replaceChildren(sign("-"), line)
-    })
-    table.classList.add("hl")
+// Colours the diffs in root; review.js sends "diff-loaded" from a repo's diff it loaded later.
+const diffs = async root => {
+    for (const table of root.querySelectorAll("table.diff[data-file]:not(.hl)")) {
+        const lang = await language(table.dataset.file)
+        if (!lang) continue
+        const rows = [...table.querySelectorAll("tr[data-line]")]
+        const text = row => row.cells[2]
+        // The kept and added lines are the new file; the removed ones are coloured as the old file reads them, kept lines between.
+        colour(rows.filter(it => !it.classList.contains("del")).map(text), lang, 1)
+        const old = rows.filter(it => !it.classList.contains("add"))
+        paint(old.map(it => text(it).textContent.slice(1)), lang).forEach((line, i) => {
+            if (old[i].classList.contains("del")) text(old[i]).replaceChildren(sign("-"), line)
+        })
+        table.classList.add("hl")
+    }
 }
+document.addEventListener("diff-loaded", event => diffs(event.target))
+await diffs(document)
 
 for (const code of document.querySelectorAll(".code[data-file]")) {
     const lang = await language(code.dataset.file)

@@ -1,6 +1,8 @@
 package ants
 
 import org.junit.jupiter.api.Test
+import org.operaton.bpm.engine.TaskService
+import org.springframework.beans.factory.annotation.Autowired
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.CsvSource
 import tools.jackson.databind.json.JsonMapper
@@ -12,6 +14,9 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 
 class StorySetTest : AntsTest() {
+    @Autowired
+    private lateinit var userTasks: TaskService
+
     private val browser by lazy { browser().also { it.login() } }
     private val claude = FakeClaude()
 
@@ -105,7 +110,8 @@ class StorySetTest : AntsTest() {
 
         val byRepo = browser.get(entry(run) + "?tab=repo").body
         assertContains(byRepo, """<a href="?tab=story">Story</a><a class="on" href="?tab=repo">By repo</a>""")
-        assertContains(byRepo, "data-repo=\"web\"")
+        assertContains(byRepo, "data-repo=\"api\"")
+        assertContains(byRepo, """<div class="small muted unchanged">1 repo unchanged: <span class="mono">web</span></div>""") // web has no commits
         assertEquals(1, claude.launches("narrate").single().stdin.lines().size) // nothing to fix
     }
 
@@ -192,6 +198,33 @@ class StorySetTest : AntsTest() {
             listOf(mapOf("story" to "The first word is shouted", "step" to 2, "repo" to "api", "file" to "repos/api/long.txt", "side" to "new", "from" to 9, "to" to 10, "type" to "NOTE", "body" to "Fine.")),
             verdict["comments"],
         )
+    }
+
+    @Test
+    fun `a Review changes waiting with comments kept as they were opens on both tabs, and takes more and drops one`() {
+        walkthrough(valid)
+        val run = start()
+        val entry = entry(run)
+        // The comments as a Review changes kept them on its User Task: one on a story step, one on a diff line.
+        userTasks.setVariableLocal(
+            entry.substringAfterLast('/'), "comments",
+            """[{"story":"The first word is shouted","step":2,"repo":"api","file":"repos/api/long.txt","side":"new","from":9,"to":10,"type":"NOTE","body":"Kept."},""" +
+                """{"story":null,"step":null,"repo":"api","file":"repos/api/other.txt","side":"new","from":1,"to":1,"type":"ISSUE","body":"Also kept."}]""",
+        )
+
+        val story = browser.get(entry).body
+        assertContains(story, """<span class="grow"><b>NOTE</b> <span class="cbody">Kept.</span></span>""")
+        assertContains(story, """<b class="small">Comments (2)</b>""")
+        val byRepo = browser.get("$entry?tab=repo").body
+        assertContains(byRepo, """<table class="diff" data-file="repos/api/other.txt">""")
+        assertContains(byRepo, """<span class="mono">repos/api/other.txt:1-1 (new)</span>: <span class="cbody">Also kept.</span>""")
+
+        val added = browser.post("$entry/comments", mapOf("repo" to "api", "file" to "repos/api/long.txt", "side" to "new", "from" to "1", "to" to "1", "type" to "SUGGESTION", "body" to "New.", "tab" to "repo")).body
+        assertContains(added, """<b class="small">Comments (3)</b>""")
+        assertContains(added, """<table class="diff" data-file="repos/api/long.txt">""")
+        val dropped = browser.post("$entry/comments", mapOf("remove" to "0", "tab" to "repo")).body
+        assertContains(dropped, """<b class="small">Comments (2)</b>""")
+        assertFalse("Kept.</span>" in dropped)
     }
 
     private companion object {
