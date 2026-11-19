@@ -120,7 +120,7 @@ class LookTest : AntsTest() {
         visit("/scripts/post-message", "a Script with a Secret added") { addSecret() }
         visit("/settings", "Settings with a row added to every list") { locator("[data-add]").all().forEach { it.click() } }
         visit("/settings", "a Source map's editor") { locator("[data-edit]").first().click() }
-        visit(entry(app.getValue("review")) + "#s1-1", "a story step's comment") { locator(".step:not([hidden]) [data-comment]").click() }
+        visit(entry(app.getValue("review")) + "?tab=story&story=1&step=1", "a story step's comment") { locator(".step:not([hidden]) [data-comment]").click() }
         visit(entry(app.getValue("review")) + "?tab=repo", "a line comment") { locator("table.diff tr[data-line] td").nth(1).click() }
         for (list in listOf("/agents", "/skills")) visit(http.newDraft(list), "the modeler's modal's New on $list")
         visit(http.newDraft("/agents"), "a new codex Agent") { selectOption("select[name=cli]", "codex") }
@@ -171,7 +171,7 @@ class LookTest : AntsTest() {
         Shot("approve", entry(app.getValue("approve"))),
         Shot("review", entry(app.getValue("review"))),
         // A story walked to its third step, with the diff and the details shown.
-        Shot("review-step", entry(app.getValue("review")) + "#s1-3", "document.querySelector('.step:not([hidden]) .showdiff').click(); document.querySelector('.step:not([hidden]) [data-details]').click()"),
+        Shot("review-step", entry(app.getValue("review")) + "?tab=story&story=1&step=3", "document.querySelector('.step:not([hidden]) .showdiff').click(); document.querySelector('.step:not([hidden]) [data-details]').click()"),
         Shot("review-by-repo", entry(app.getValue("review")) + "?tab=repo"),
         Shot("push", entry(app.getValue("push"))),
         Shot("processes", "/processes"),

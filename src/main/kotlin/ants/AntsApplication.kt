@@ -35,7 +35,7 @@ class SlowRequests : OncePerRequestFilter() {
         val start = System.nanoTime()
         chain.doFilter(request, response)
         val took = Duration.ofNanos(System.nanoTime() - start).toMillis()
-        if (took > 100) log.info("${request.method} ${request.requestURI} took $took ms")
+        if (took > 100) log.info("${request.method} ${request.requestURI}${request.queryString?.let { "?$it" }.orEmpty()} took $took ms")
     }
 }
 

@@ -29,7 +29,10 @@ import java.time.Clock
 import java.time.Duration
 import java.time.Instant
 import java.util.Date
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import kotlin.io.path.createDirectories
 import kotlin.io.path.deleteIfExists
 import kotlin.io.path.isRegularFile
@@ -133,7 +136,7 @@ class Notifications(
     @GetMapping("/notifications/{id}")
     fun entry(
         @PathVariable id: String, model: Model, response: HttpServletResponse, @RequestParam(required = false) tab: String? = null,
-        @RequestParam(required = false) repo: String? = null,
+        @RequestParam(required = false) repo: String? = null, @RequestParam(required = false) story: Int? = null, @RequestParam(required = false) step: Int? = null,
     ): String {
         tickets.waiting().firstOrNull { it.id == id }?.let { return "redirect:${it.href}" }
         if (id == "safe") return "redirect:/settings"
@@ -161,12 +164,20 @@ class Notifications(
                         tab == "repo" -> "repo"
                         else -> "story"
                     }
-                    val story = shown == "story"
                     model.addAttribute("tab", shown)
                     val outgoing = push.outgoing(entry.run)
-                    if (story) {
+                    if (shown == "story") {
+                        val workspace = names.runWorkspace(entry.run)
                         try {
-                            model.addAttribute("stories", storySet(names.runWorkspace(entry.run), outgoing))
+                            val stories = storySet(workspace)
+                            model.addAttribute("stories", stories)
+                            model.addAttribute("checks", runCatching { checks(workspace, stories, outgoing).get(2, TimeUnit.SECONDS) }.getOrNull())
+                            val at = (story ?: 0) to (step ?: 0)
+                            if (stories.stories.getOrNull(at.first - 1)?.steps?.getOrNull(at.second - 1) != null) {
+                                model.addAttribute("story", at.first)
+                                model.addAttribute("step", at.second)
+                                model.addAttribute("current", storyStep(workspace, stories, at.first - 1, at.second - 1, cloneRepos.untrimmed))
+                            }
                         } catch (refused: StorySetRefused) {
                             model.addAttribute("refused", refused.message)
                         }
@@ -174,7 +185,7 @@ class Notifications(
                     val changes = changes(outgoing, cloneRepos::git)
                     model.addAttribute("changes", changes) // each tab's summary cards
                     model.addAttribute("unchanged", outgoing.filter { it.commits.isEmpty() }.map { it.repo })
-                    model.addAttribute("diffs", if (story) emptyMap() else diffs(changes, repo))
+                    model.addAttribute("diffs", if (shown == "story") emptyMap() else diffs(changes, repo))
                     model.addAttribute("comments", comments(task))
                     "review"
                 }
@@ -355,7 +366,8 @@ class Notifications(
 
     /**
      * Adds a line comment to a Review changes, kept on its User Task until it completes, or takes out the [remove]th; one
-     * on a story step names its [story] and [step], 1-based. Back to the [tab] it was made on, with a line comment's repo open.
+     * on a story step names its [story] and [step], 1-based. Back to the [tab] it was made on, on the story step it was
+     * made on (`at`, `<story>-<step>`, 1-based), or with a line comment's repo open.
      */
     @PostMapping("/notifications/{id}/comments")
     fun comment(
@@ -374,7 +386,11 @@ class Notifications(
             comments += comment
         }
         userTasks.setVariableLocal(task.id, COMMENTS, LineComment.json(comments))
-        val query = listOfNotNull(tab?.takeIf { it in setOf("story", "repo") }?.let { "tab=$it" }, fields["repo"]?.takeIf { remove == null && tab != "story" }?.let { "repo=${URLEncoder.encode(it, Charsets.UTF_8)}" })
+        val at = fields["at"]?.let { Regex("""^(\d+)-(\d+)$""").find(it) }?.destructured?.let { (i, j) -> "story=$i&step=$j" }
+        val query = listOfNotNull(
+            tab?.takeIf { it in setOf("story", "repo") }?.let { "tab=$it" }, at?.takeIf { tab == "story" },
+            fields["repo"]?.takeIf { remove == null && tab != "story" }?.let { "repo=${URLEncoder.encode(it, Charsets.UTF_8)}" },
+        )
         return "redirect:/notifications/$id" + if (query.isEmpty()) "" else query.joinToString("&", "?")
     }
 
@@ -398,15 +414,43 @@ class Notifications(
         return "repodiff"
     }
 
-    /** Each Run workspace's Story set, kept while its file and the clones' refs are as they were when it was read. */
-    private val storySets = ConcurrentHashMap<Path, Pair<List<Any?>, StorySet>>()
+    /** The Story tab's list of stories, with its checks, which waits for them; for the page to put in place of its list without them. */
+    @GetMapping("/notifications/{id}/spine")
+    fun spine(
+        @PathVariable id: String, @RequestParam(required = false) story: Int?, @RequestParam(required = false) step: Int?, model: Model, response: HttpServletResponse,
+    ): String {
+        val task = userTask(id, UserTaskKind.REVIEW_CHANGES) ?: return gone(model, response)
+        val entry = entry(task)
+        val workspace = names.runWorkspace(entry.run)
+        val stories = storySet(workspace)
+        model.addAttribute("entry", entry)
+        model.addAttribute("stories", stories)
+        model.addAttribute("checks", checks(workspace, stories, push.outgoing(entry.run)).get())
+        model.addAttribute("story", story ?: 0)
+        model.addAttribute("step", step ?: 0)
+        return "storyspine"
+    }
+
+    /** Each Run workspace's Story set checks, kept while its file and the clones' refs are as they were when they started. */
+    private val storyChecks = ConcurrentHashMap<Path, Pair<List<Any?>, CompletableFuture<StoryChecks>>>()
 
     // shortcut: a range named by a ref other than HEAD or the base (a tag, another branch) may move unseen; add its ref to the key if one turns up.
-    private fun storySet(workspace: Path, outgoing: List<Outgoing>): StorySet {
-        val file = workspace.resolve(STORIES)
-        val key = listOf(runCatching { Files.getLastModifiedTime(file) }.getOrNull()) + outgoing.flatMap { listOf(it.repo, it.head, it.baseHead) }
+    private fun checks(workspace: Path, stories: StorySet, outgoing: List<Outgoing>): CompletableFuture<StoryChecks> {
+        val key = listOf(runCatching { Files.getLastModifiedTime(workspace.resolve(STORIES)) }.getOrNull()) + outgoing.flatMap { listOf(it.repo, it.head, it.baseHead) }
+        return storyChecks.compute(workspace) { _, kept ->
+            kept?.takeIf { it.first == key && !it.second.isCompletedExceptionally } ?: (key to CompletableFuture.supplyAsync({ storyChecks(workspace, stories, cloneRepos.untrimmed) }, checking))
+        }!!.second
+    }
+
+    private val checking = Executors.newVirtualThreadPerTaskExecutor()
+
+    /** Each Run workspace's Story set, kept while its file is as it was when it was read. */
+    private val storySets = ConcurrentHashMap<Path, Pair<Any?, StorySet>>()
+
+    private fun storySet(workspace: Path): StorySet {
+        val key = runCatching { Files.getLastModifiedTime(workspace.resolve(STORIES)) }.getOrNull()
         storySets[workspace]?.takeIf { it.first == key }?.let { return it.second }
-        return storySet(workspace, cloneRepos.untrimmed).also { storySets[workspace] = key to it }
+        return ants.storySet(workspace).also { storySets[workspace] = key to it }
     }
 
     /** A Review changes' line comments so far. */

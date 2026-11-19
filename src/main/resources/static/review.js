@@ -1,10 +1,11 @@
 // Review changes.
 //
-// The Story tab walks one story step at a time, its place in the hash, #s<story>-<step> (1-based), and the list of
-// stories without one; its buttons go back and next, show the diff, the details (Why, Flow, Nudge) and a comment form on
-// the step, and back to the stories. No keys: Ants is clicked, and a key would be lost from the comments typed here.
-// A step comment's form posts to a URL with the step's hash, which the redirect back keeps.
-// Without this script every story, step, its details and its comment form show at once; this script hides them.
+// The Story tab shows one story step at a time, by ?tab=story&story=<n>&step=<n> (1-based), or the list of stories
+// without one; its buttons and links load the step they name. This script hides each step's details (Why, Flow,
+// Nudge) and comment form behind buttons, shows the diff on demand, and sends an old #s<story>-<step> link to its step.
+// The list of stories comes without its stale marks and Remainder while Ants still checks them; this script puts the
+// list with them in place once they are done. Going from step to step keeps where the page is scrolled to, whether
+// the Stories disclosure is open, and Show the diff, as the walk did when it was one page.
 //
 // By repo: a click on a diff line's number picks it for a line comment, filling the comment form's repo, file, side
 // and lines; a shift-click on the same file and side takes in the lines between. Without this script the form is
@@ -12,60 +13,52 @@
 //
 // A repo whose diff didn't come with the page loads it when its "Show the diff" or a Files link to it is clicked.
 // Without this script the link opens the page with that repo's diff in it.
+const old = location.hash.match(/^#s(\d+)-(\d+)$/)
+if (old) location.replace(`${location.pathname}?tab=story&story=${old[1]}&step=${old[2]}`)
+
 const walk = document.getElementById("walkMain")
 if (walk) {
-    const at = () => (location.hash.match(/^#s(\d+)-(\d+)$/) || []).slice(1).map(Number)
-    const step = () => walk.querySelector(".walkstory:not([hidden]) .step:not([hidden])")
+    const kept = JSON.parse(sessionStorage.getItem("walk") || "null")
+    sessionStorage.removeItem("walk")
+    if (kept?.path === location.pathname) {
+        document.querySelector(".spine").open = kept.open
+        walk.classList.toggle("diff", kept.diff)
+        walk.querySelectorAll(".showdiff").forEach(it => it.checked = kept.diff)
+        scrollTo(0, kept.y)
+    }
+    // A click on to another step or the list of stories, not one away from the Story tab.
+    document.addEventListener("click", event => {
+        if (!event.target.closest(".spine a, #stories a, button[form^=walk]")) return
+        sessionStorage.setItem("walk", JSON.stringify({path: location.pathname, y: scrollY, open: document.querySelector(".spine").open, diff: walk.classList.contains("diff")}))
+    })
 
-    const show = () => {
-        const [story, n] = at()
-        document.getElementById("stories").hidden = story != null
-        walk.querySelectorAll(".walkstory").forEach(it => {
-            it.hidden = Number(it.dataset.story) !== story
-            it.querySelectorAll(".step").forEach(s => s.hidden = it.hidden || Number(s.dataset.step) !== n)
-        })
-        document.querySelectorAll(".spine .srow").forEach(a => a.classList.toggle("on", a.hash.startsWith(`#s${story}-`)))
-        document.querySelectorAll(".spine .ssteps").forEach(list => {
-            list.hidden = Number(list.dataset.story) !== story
-            list.querySelectorAll("a").forEach(a => {
-                if (a.hash === `#s${story}-${n}`) a.setAttribute("aria-current", "step")
-                else a.removeAttribute("aria-current")
-            })
-        })
-        walk.querySelectorAll(".details, .stepcomment").forEach(it => it.hidden = true)
-        walk.querySelectorAll("[data-details]").forEach(it => it.textContent = "Why, flow, nudge")
-    }
-    addEventListener("hashchange", show)
-    show()
+    const checking = document.querySelector(".spine .srem[data-src]")
+    if (checking) fetch(checking.dataset.src).then(it => it.ok ? it.text() : null).then(html => {
+        if (!html) return
+        const box = document.createElement("div")
+        box.innerHTML = html
+        const checked = box.querySelector(".spine")
+        checked.open = document.querySelector(".spine").open
+        document.querySelector(".spine").replaceWith(checked)
+    })
 
-    const go = by => {
-        const [story, n] = at()
-        if (walk.querySelector(`.walkstory[data-story="${story}"] .step[data-step="${n + by}"]`)) location.hash = `#s${story}-${n + by}`
-    }
-    const diff = on => {
-        walk.classList.toggle("diff", on)
-        walk.querySelectorAll(".showdiff").forEach(it => it.checked = on)
-    }
-    const details = () => {
-        const box = step().querySelector(".details")
-        box.hidden = !box.hidden
-        step().querySelector("[data-details]").textContent = box.hidden ? "Why, flow, nudge" : "Hide details"
-    }
-    const comment = () => {
-        const form = step().querySelector(".stepcomment")
-        form.hidden = false
-        form.body.focus()
-    }
+    const step = walk.querySelector(".step")
+    walk.querySelectorAll(".details, .stepcomment").forEach(it => it.hidden = true)
 
     walk.addEventListener("click", event => {
         const button = event.target.closest("button[type=button]")
-        if (!button) return
-        if (button.dataset.go) go(Number(button.dataset.go))
-        else if (button.hasAttribute("data-details")) details()
-        else if (button.hasAttribute("data-comment")) comment()
-        else if (button.hasAttribute("data-all")) location.hash = ""
+        if (!button || !step) return
+        if (button.hasAttribute("data-details")) {
+            const box = step.querySelector(".details")
+            box.hidden = !box.hidden
+            button.textContent = box.hidden ? "Why, flow, nudge" : "Hide details"
+        } else if (button.hasAttribute("data-comment")) {
+            const form = step.querySelector(".stepcomment")
+            form.hidden = false
+            form.body.focus()
+        }
     })
-    walk.addEventListener("change", event => event.target.matches(".showdiff") && diff(event.target.checked))
+    walk.addEventListener("change", event => event.target.matches(".showdiff") && walk.classList.toggle("diff", event.target.checked))
 }
 
 const form = document.getElementById("line-comment")
