@@ -9,6 +9,9 @@
 // By repo: a click on a diff line's number picks it for a line comment, filling the comment form's repo, file, side
 // and lines; a shift-click on the same file and side takes in the lines between. Without this script the form is
 // filled by hand.
+//
+// A repo whose diff didn't come with the page loads it when its "Show the diff" or a Files link to it is clicked.
+// Without this script the link opens the page with that repo's diff in it.
 const walk = document.getElementById("walkMain")
 if (walk) {
     const at = () => (location.hash.match(/^#s(\d+)-(\d+)$/) || []).slice(1).map(Number)
@@ -87,4 +90,31 @@ form && document.addEventListener("click", event => {
         if (it.dataset.line >= Number(form.from.value) && it.dataset.line <= Number(form.to.value)) it.classList.add("picked")
     })
     form.body.focus()
+})
+
+// Puts the repo's diff in place of its "Show the diff", once.
+const load = async lazy => {
+    const response = await fetch(lazy.dataset.src)
+    if (!response.ok) return
+    const diff = document.createElement("div")
+    diff.innerHTML = await response.text()
+    lazy.replaceWith(diff)
+    diff.dispatchEvent(new Event("diff-loaded", {bubbles: true}))
+}
+
+document.addEventListener("click", async event => {
+    const show = event.target.closest(".lazydiff a")
+    if (show) {
+        event.preventDefault()
+        return load(show.closest(".lazydiff"))
+    }
+    // A Files link, #f-<repo>-<n>, to a file whose repo's diff isn't loaded yet.
+    const link = event.target.closest(".files a[href^='#f-']")
+    if (!link || document.getElementById(link.hash.slice(1))) return
+    const lazy = document.querySelector(`[data-repo="${CSS.escape(link.hash.slice(3).replace(/-\d+$/, ""))}"] .lazydiff`)
+    if (!lazy) return
+    event.preventDefault()
+    await load(lazy)
+    history.pushState(null, "", link.hash)
+    document.getElementById(link.hash.slice(1))?.scrollIntoView()
 })

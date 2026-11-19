@@ -1,0 +1,12 @@
+@param repo: String
+@param files: List<ants.FileDiff>
+@for(k in files.indices)!{val file = files[k]}
+<details id="f-${repo}-${k + 1}" open>
+    <summary><span class="mono small">${file.path.removePrefix("repos/${repo}/")}</span> <span class="small"><span class="plus">+${file.added}</span> <span class="minus">−${file.removed}</span></span></summary>
+    <table class="diff" data-file="${file.path}">
+        @for(line in file.lines)@if(line.kind == '@')<tr class="hunk"><td></td><td></td><td>${line.text}</td></tr>
+        @else<tr class="${line.css}" data-side="${line.side}" data-line="${line.line?.toString()}"><td>${line.old?.toString()}</td><td>${line.new?.toString()}</td><td>${line.text}</td></tr>
+        @endif@endfor
+    </table>
+</details>
+@endfor

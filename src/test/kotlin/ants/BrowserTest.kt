@@ -4359,6 +4359,26 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `Review changes loads a repo's diff left out on load when it is opened, or when a Files link goes into it, and its lines take comments`() = browse {
+        val entry = byRepoReviewEntryOfApiCommitting("big.kt", (0..INLINE).joinToString("\n", postfix = "\n") { "val x$it = $it" })
+
+        page.navigate(url(entry))
+        val diff = page.locator("table.diff[data-file='repos/api/big.kt']")
+        assertThat(diff).hasCount(0)
+        page.click("[data-repo=api] .lazydiff a")
+        assertThat(diff).hasClass(Pattern.compile("hl")) // loaded and coloured
+        assertThat(page.locator("[data-repo=api] .lazydiff")).hasCount(0)
+        diff.locator("tr[data-side=new][data-line='3'] td").nth(1).click()
+        assertThat(page.locator("#line-comment [name=file]")).hasValue("repos/api/big.kt")
+        assertThat(page.locator("#line-comment [name=from]")).hasValue("3")
+
+        page.navigate(url(entry))
+        page.click(".files a[href='#f-api-1']") // the Files list stands beside the diffs on a desktop
+        assertThat(diff).isVisible()
+        assertEquals("#f-api-1", page.evaluate("location.hash"))
+    }
+
+    @Test
     fun `Review changes picks diff lines for a comment by clicking their numbers, and files it`() = browse {
         val entry = byRepoReviewEntryOfApiCommitting("hello.txt", "hi\nthere\nworld\n")
 

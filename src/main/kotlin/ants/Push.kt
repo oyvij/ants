@@ -8,15 +8,21 @@ import org.operaton.bpm.model.bpmn.instance.ServiceTask
 import org.springframework.stereotype.Component
 import java.nio.file.Path
 import java.time.Duration
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.io.path.name
+import kotlin.io.path.readText
 
 /**
  * One of the Run's clones as Push sees it: its [remote] (the fetch URL, since the push URL is dead), its work
  * [branch], its [base] (the remote's default branch, null when the remote had none) and the [commits] on the work
  * branch since the base, newest first, each `{sha, subject}`. [isNew] when the remote didn't have the work branch when
- * it was cloned. [toPush] when it has commits since the base that the remote's work branch didn't have.
+ * it was cloned. [toPush] when it has commits since the base that the remote's work branch didn't have. [head] and
+ * [baseHead] are the commits HEAD and the base are at, null when git couldn't say.
  */
-class Outgoing(val repo: String, val path: Path, val remote: String, val branch: String, val base: String?, val commits: List<Map<String, String>>, val isNew: Boolean, val toPush: Boolean) {
+class Outgoing(
+    val repo: String, val path: Path, val remote: String, val branch: String, val base: String?, val commits: List<Map<String, String>>, val isNew: Boolean, val toPush: Boolean,
+    val head: String? = null, val baseHead: String? = null,
+) {
     /** The [remote] as the pages show it: `github.com/stacc/api` for `git@github.com:stacc/api.git` or its https URL. */
     val shortRemote get() = remote.replace(Regex("^git@([^:]+):"), "$1/").replace(Regex("^https?://"), "").removeSuffix(".git")
 }
@@ -85,8 +91,21 @@ class Push(
     /** The Run's clones that have something to push ([Outgoing.toPush]), which Push offers and pushes. */
     fun pushing(run: String) = outgoing(run).filter(Outgoing::toPush)
 
-    /** The Run's clones, by name, each on the work branch Clone repos put it on. */
-    fun outgoing(run: String): List<Outgoing> = clones(names.runWorkspace(run)).map { path ->
+    // shortcut: kept for every clone ever read, a few hundred bytes each, until Ants restarts; evict by Run if it grows.
+    /** Each clone's [Outgoing], kept while its refs and git config are as they were when it was read. */
+    private val read = ConcurrentHashMap<Path, Pair<String, Outgoing>>()
+
+    /**
+     * The Run's clones, by name, each on the work branch Clone repos put it on; read side by side, and again only once a
+     * ref or the git config moved.
+     */
+    fun outgoing(run: String): List<Outgoing> = clones(names.runWorkspace(run)).parallelStream().map { path ->
+        val refs = runCatching { cloneRepos.git(path, "show-ref", "--head") }.getOrDefault("")
+        val key = refs + runCatching { path.resolve(".git/config").readText() + path.resolve(".git/refs/remotes/origin/HEAD").readText() }.getOrDefault("")
+        read[path]?.takeIf { it.first == key }?.second ?: outgoing(path, refs).also { read[path] = key to it }
+    }.toList()
+
+    private fun outgoing(path: Path, refs: String): Outgoing {
         val branch = cloneRepos.workBranch(path)
         val base = runCatching { cloneRepos.git(path, "symbolic-ref", "--short", "refs/remotes/origin/HEAD").removePrefix("origin/") }.getOrNull()
         val commits = cloneRepos.git(path, "log", "--format=%H %s", if (base == null) "refs/heads/$branch" else "origin/$base..refs/heads/$branch").lines().filter(String::isNotBlank)
@@ -94,7 +113,11 @@ class Push(
         // Clone repos tracks the work branch when the remote had it, and Push pushes to the URL, so no tracking branch is ever added.
         val remoteHead = runCatching { cloneRepos.git(path, "rev-parse", "--verify", "-q", "refs/remotes/origin/$branch") }.getOrNull()
         val toPush = commits.isNotEmpty() && remoteHead != cloneRepos.git(path, "rev-parse", "refs/heads/$branch")
-        Outgoing(path.name, path, cloneRepos.git(path, "config", "remote.origin.url"), branch, base, commits, remoteHead == null, toPush)
+        val shas = refs.lines().associate { it.substringAfter(' ') to it.substringBefore(' ') }
+        return Outgoing(
+            path.name, path, cloneRepos.git(path, "config", "remote.origin.url"), branch, base, commits, remoteHead == null, toPush,
+            shas["HEAD"], base?.let { shas["refs/remotes/origin/$it"] },
+        )
     }
 
 

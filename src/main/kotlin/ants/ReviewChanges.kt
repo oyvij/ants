@@ -19,10 +19,14 @@ class FileDiff(val path: String, val lines: List<DiffLine>) {
     val removed get() = lines.count { it.kind == '-' }
 }
 
-/** A repo's changes under review: its commits since the base, as Push reads them ([repo]), and their diff. */
-class RepoChanges(val repo: Outgoing, val files: List<FileDiff>) {
+/** One file's line counts in a repo's changes, [path] relative to the Run workspace root; 0 and 0 for a binary file. */
+class FileStat(val path: String, val added: Int, val removed: Int)
+
+/** A repo's changes under review: its commits since the base, as Push reads them ([repo]), and each file's line counts. */
+class RepoChanges(val repo: Outgoing, val files: List<FileStat>) {
     val added get() = files.sumOf { it.added }
     val removed get() = files.sumOf { it.removed }
+    val lines get() = added + removed
 }
 
 /**
@@ -71,17 +75,44 @@ data class LineComment(
     }
 }
 
+/** How many changed lines By repo shows on load, at most, before it leaves the remaining repos' diffs to load when opened. */
+const val INLINE = 3000
+
 /** `git diff` as Ants reads it: plain, whatever the user's git config says, and a renamed file as a delete and an add. */
 val DIFF = listOf("diff", "--no-color", "--no-ext-diff", "--no-renames")
 
-/**
- * The changes in each of the Run's clones, [outgoing] as Push sees them: the commits on the work branch since the
- * base, the remote's default branch, and their diff, read with [git].
- */
-fun changes(outgoing: List<Outgoing>, git: (Path, List<String>) -> String): List<RepoChanges> = outgoing.map { repo ->
-    val diff = repo.base?.let { git(repo.path, listOf("-c", "core.quotePath=false") + DIFF + "origin/$it...HEAD") }
-    RepoChanges(repo, files(diff.orEmpty(), "repos/${repo.repo}"))
+/** The base and head [repo]'s changes are read between; null without a base. */
+private fun range(repo: Outgoing) = repo.base?.let { "${repo.baseHead ?: "origin/$it"}...${repo.head ?: "HEAD"}" }
+
+/** [git] in [repo]'s clone, kept when the range names commits only, as git's output for them never changes. */
+private fun read(repo: Outgoing, args: List<String>, git: (Path, List<String>) -> String) =
+    if (repo.head == null || repo.baseHead == null) git(repo.path, args) else memo(repo.path, args, git)
+
+/** Git's output for [args] in [dir], kept by both, for arguments that name commits only, whose output never changes. */
+private val memo = object : LinkedHashMap<Pair<Path, List<String>>, String>(64, 0.75f, true) {
+    override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Pair<Path, List<String>>, String>) = size > 500
 }
+
+private fun memo(dir: Path, args: List<String>, git: (Path, List<String>) -> String): String {
+    synchronized(memo) { memo[dir to args] }?.let { return it }
+    return git(dir, args).also { synchronized(memo) { memo[dir to args] = it } }
+}
+
+/**
+ * The changes in each of the Run's clones that has commits since the base, [outgoing] as Push sees them, and each
+ * file's line counts, read side by side with [git]. A clone without commits is left out.
+ */
+fun changes(outgoing: List<Outgoing>, git: (Path, List<String>) -> String): List<RepoChanges> = outgoing.filter { it.commits.isNotEmpty() }.parallelStream().map { repo ->
+    val stat = range(repo)?.let { read(repo, listOf("-c", "core.quotePath=false") + DIFF + "--numstat" + it, git) }
+    RepoChanges(repo, stat.orEmpty().lines().filter(String::isNotBlank).map { line ->
+        val (added, removed, file) = line.split('\t', limit = 3)
+        FileStat("repos/${repo.repo}/$file", added.toIntOrNull() ?: 0, removed.toIntOrNull() ?: 0)
+    })
+}.toList()
+
+/** [repo]'s diff since the base, read with [git], each file's path from the Run workspace root. */
+fun diff(repo: Outgoing, git: (Path, List<String>) -> String): List<FileDiff> =
+    files(range(repo)?.let { read(repo, listOf("-c", "core.quotePath=false") + DIFF + it, git) }.orEmpty(), "repos/${repo.repo}")
 
 /** The files of the unified diff [diff], each path prefixed with the clone's [path] in the Run workspace. */
 internal fun files(diff: String, path: String): List<FileDiff> {

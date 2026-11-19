@@ -75,6 +75,35 @@ class ReviewChangesTest : AntsTest() {
     }
 
     @Test
+    fun `a repo whose diff would pass what By repo shows on load loads it when opened, and a line comment on it keeps it open`() {
+        val run = start()
+        commitFile(clone(run, "api"), "big.txt", (0..INLINE).joinToString("\n", postfix = "\n"), "Count high")
+        commitFile(clone(run, "web"), "new.txt", "brand new\n", "Add a file")
+        val entry = entry(run)
+
+        val body = browser.get(entry).body
+        assertContains(body, """1 file · <span class="plus">+${INLINE + 1}</span> <span class="minus">−0</span> · 1 commit""") // the summary card still counts it
+        assertContains(body, """<div class="lazydiff" data-src="$entry/diff?repo=api"><a href="?repo=api#f-api-1">Show the diff</a></div>""")
+        assertFalse("""data-file="repos/api/big.txt"""" in body)
+        assertContains(body, """<table class="diff" data-file="repos/web/new.txt">""") // within what shows on load
+        assertContains(browser.get("$entry/diff?repo=api").body, """<table class="diff" data-file="repos/api/big.txt">""")
+        assertContains(browser.get("$entry?repo=api").body, """<table class="diff" data-file="repos/api/big.txt">""")
+
+        val commented = browser.post("$entry/comments", issue + ("file" to "repos/api/big.txt"))
+        assertContains(commented.body, """<table class="diff" data-file="repos/api/big.txt">""")
+    }
+
+    @Test
+    fun `a repo without commits is one line, not a card`() {
+        val run = start()
+        commitFile(clone(run, "api"), "hello.txt", "hi\nworld\n", "Say hi")
+        val body = browser.get(entry(run)).body
+        assertContains(body, """<div class="card" data-repo="api">""")
+        assertFalse("""data-repo="web"""" in body)
+        assertContains(body, """<div class="small muted unchanged">1 repo unchanged: <span class="mono">web</span></div>""")
+    }
+
+    @Test
     fun `a typed line comment reaches the fix Task's resume message, which starts it fresh, then resumes it`() {
         claude.session("mend", result("""{"review":"Put hello back."}"""))
         claude.session("ship", result("{}"))

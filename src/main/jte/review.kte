@@ -5,6 +5,8 @@
 @param tab: String? = null
 @param stories: ants.StorySet? = null
 @param refused: String? = null
+@param unchanged: List<String> = emptyList()
+@param diffs: Map<String, List<ants.FileDiff>> = emptyMap()
 @param _csrf: org.springframework.security.web.csrf.CsrfToken
 @param colorScheme: String = "light dark"
 @param shell: ants.Shell
@@ -31,6 +33,7 @@
         <div class="small">${changed.files.size} file${if (changed.files.size == 1) "" else "s"} · <span class="plus">+${changed.added}</span> <span class="minus">−${changed.removed}</span> · ${repo.commits.size} commit${if (repo.commits.size == 1) "" else "s"}</div></div>
     @endfor
 </div>
+@if(unchanged.isNotEmpty())<div class="small muted unchanged">${unchanged.size} repo${if (unchanged.size == 1) "" else "s"} unchanged: <span class="mono">${unchanged.joinToString(", ")}</span></div>@endif
 @if(tab == null)<div class="tabs"><a class="on" href="?tab=repo">By repo</a></div>
 @elseif(tab == "story")<div class="tabs"><a class="on" href="?tab=story">Story</a><a href="?tab=repo">By repo</a></div>
 @else<div class="tabs"><a href="?tab=story">Story</a><a class="on" href="?tab=repo">By repo</a></div>
@@ -108,16 +111,10 @@
             <span class="muted small">since ${repo.base ?: "the start: the remote has no default branch"}</span><span class="grow"></span>
             <span class="small">${changed.files.size} file${if (changed.files.size == 1) "" else "s"} · <span class="plus">+${changed.added}</span> <span class="minus">−${changed.removed}</span></span></div>
         <div class="commits">@for(commit in repo.commits)<div class="small"><span class="mono muted">${commit["sha"]?.take(7)}</span> $unsafe{ants.Transcript.inline(commit["subject"])}</div>@endfor</div>
-        @for(k in changed.files.indices)!{val file = changed.files[k]}
-        <details id="f-${repo.repo}-${k + 1}" open>
-            <summary><span class="mono small">${file.path.removePrefix("repos/${repo.repo}/")}</span> <span class="small"><span class="plus">+${file.added}</span> <span class="minus">−${file.removed}</span></span></summary>
-            <table class="diff" data-file="${file.path}">
-                @for(line in file.lines)@if(line.kind == '@')<tr class="hunk"><td></td><td></td><td>${line.text}</td></tr>
-                @else<tr class="${line.css}" data-side="${line.side}" data-line="${line.line?.toString()}"><td>${line.old?.toString()}</td><td>${line.new?.toString()}</td><td>${line.text}</td></tr>
-                @endif@endfor
-            </table>
-        </details>
-        @endfor
+        !{val files = diffs[repo.repo]}
+        @if(files != null)@template.repodiff(repo = repo.repo, files = files)
+        @else<div class="lazydiff" data-src="/notifications/${entry.id}/diff?repo=${repo.repo}"><a href="?${if (tab != null) "tab=repo&" else ""}repo=${repo.repo}#f-${repo.repo}-1">Show the diff</a></div>
+        @endif
     </div>
     @endfor
     <form method="post" action="/notifications/${entry.id}/comments" id="line-comment" class="card">
