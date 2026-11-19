@@ -262,7 +262,7 @@ class AgentLauncher(
             val again = last.takeIf { resume == null && task.variables[ACTION] == null && (task.extensionProperties[RESUME] == "true" || comment != null) && it.exists() }?.readText()
             // codex names a new session itself, once it starts ([started]).
             session = session ?: again ?: UUID.randomUUID().toString().takeIf { agent.cli == "claude" }
-            transcript = Transcript.Writer(Transcript.file(workspace, instance)).apply { ants("launch", chip = chip(task, agent, launchLevel)) }
+            transcript = Transcript.Writer(Transcript.file(workspace, instance)).apply { ants("launch", chip = chip(task, agent, launchLevel), item = itemName(runtime.instanceItem(task.executionId, task.activityId))) }
             session?.let(last::writeText)
             val started = { id: String -> session = id; last.writeText(id) }
             val resumed = resume != null || again != null // claude knows the session already

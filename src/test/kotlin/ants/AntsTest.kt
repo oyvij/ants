@@ -120,6 +120,7 @@ abstract class AntsTest {
         Settings.AI_CLIS.forEach { launcher.tryNow(it) }
         for (folder in listOf("agents", "skills", "templates", "scripts", "drafts", "your-skills", "your-tools"))home.resolve(folder).toFile().run { deleteRecursively(); mkdirs() }
         home.resolve("profiles").toFile().deleteRecursively()
+        home.resolve("dashboards").toFile().deleteRecursively()
         listOf("agent-ids.yaml", "skill-ids.yaml", "notices.yaml", "alert-devices.yaml").forEach { home.resolve(it).deleteIfExists() }
         // Under the Schedule loop's lock: a Run it was starting for the last test, at that test's clock, writes its state
         // once started, which would bring back that test's last start and leave this test's first time not yet due.
@@ -176,10 +177,11 @@ abstract class AntsTest {
 
         /**
          * The fake login shell. Only `-l` reads the "profile", the way only a login shell reads the user's, and puts
-         * [loginBin] before the system folders alone, so Detect never finds a real claude or nono.
+         * [loginBin] before the tests' own PATH alone, so Detect never finds a real claude or nono, nor a real gh before
+         * the tests' own, which is logged in.
          */
         val shell: Path = loginBin.resolveSibling("sh").also {
-            Files.writeString(it, "#!/bin/sh\n[ \"$1\" = -l ] && PATH=\"$loginBin:/usr/bin:/bin\" && shift\n[ \"$1\" = -c ] && exec /bin/sh -c \"$2\"\n")
+            Files.writeString(it, "#!/bin/sh\n[ \"$1\" = -l ] && PATH=\"$loginBin:${System.getenv("PATH")}\" && shift\n[ \"$1\" = -c ] && exec /bin/sh -c \"$2\"\n")
             it.toFile().setExecutable(true)
         }
 
@@ -326,18 +328,22 @@ class Browser(private val base: String, private val diagram: (String) -> String 
 
     /**
      * Opens a page's SSE stream, `/live?[query]`, the way its `EventSource` does; the data of each event named [name]
-     * arrives on the queue.
+     * arrives on the queue. A virtual thread of its own reads the stream for its minute: a `sendAsync(…).thenAccept`
+     * reading it blocked a shared pool thread, or the caller itself when the response came before `thenAccept` did, so
+     * a test under load sat out the stream's minute and the calls relayed to it went unread.
      */
     fun events(query: String, name: String): BlockingQueue<String> {
         val events = LinkedBlockingQueue<String>()
-        var event = ""
-        client.sendAsync(HttpRequest.newBuilder(URI("$base/live?$query")).header("Accept", "text/event-stream").GET().build(), HttpResponse.BodyHandlers.ofLines())
-            .thenAccept { response ->
-                response.body().forEach {
+        val request = HttpRequest.newBuilder(URI("$base/live?$query")).header("Accept", "text/event-stream").GET().build()
+        Thread.ofVirtual().start {
+            var event = ""
+            runCatching { // the stream ends when it times out, or the client closes
+                client.send(request, HttpResponse.BodyHandlers.ofLines()).body().forEach {
                     if (it.startsWith("event:")) event = it.removePrefix("event:")
                     if (it.startsWith("data:") && event == name) events += it.removePrefix("data:")
                 }
             }
+        }
         return events
     }
 

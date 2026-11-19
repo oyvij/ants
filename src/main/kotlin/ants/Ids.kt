@@ -40,8 +40,11 @@ class IdFile(private val file: Path, private val prefix: Char) {
 }
 
 /** An agent file's [text] with [id] as its `id:`, in its frontmatter, which it gets if it has none. */
-fun withId(text: String, id: String): String = when {
-    "id" in frontmatter(text).first -> Regex("(?m)^id:.*$").replaceFirst(text, "id: $id")
-    Regex("""\A---\R.*?\R---""", RegexOption.DOT_MATCHES_ALL).containsMatchIn(text) -> text.replaceFirst(Regex("""\A---\R"""), "---\nid: $id\n")
-    else -> "---\nid: $id\n---\n$text"
+fun withId(text: String, id: String): String = withField(text, "id", id)
+
+/** An agent file's [text] with [value] as its [key] in its frontmatter, which it gets if it has none. */
+fun withField(text: String, key: String, value: String): String = when {
+    key in frontmatter(text).first -> Regex("(?m)^$key:.*$").replaceFirst(text, "$key: $value")
+    Regex("""\A---\R.*?\R---""", RegexOption.DOT_MATCHES_ALL).containsMatchIn(text) -> text.replaceFirst(Regex("""\A---\R"""), "---\n$key: $value\n")
+    else -> "---\n$key: $value\n---\n$text"
 }

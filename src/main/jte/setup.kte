@@ -1,0 +1,73 @@
+@param preview: ants.Setup.Preview?
+@param token: String?
+@param report: List<ants.Setup.Landed>?
+@param refusal: String?
+@param keyRefusal: String?
+@param _csrf: org.springframework.security.web.csrf.CsrfToken
+@param colorScheme: String = "light dark"
+@param shell: ants.Shell
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    @template.app()
+    <meta name="color-scheme" content="${colorScheme}">
+    <title>Import a Setup · Ants</title>
+</head>
+<body>
+@template.nav(shell = shell)
+<main class="setup">
+<div class="ph"><h1>Import a Setup</h1>
+    <div class="sub">What another Ants made, laid out like ANTS_HOME. Each item keeps its id: one with the id of yours replaces it, and one with
+        the name of yours but another id is a Clash, imported only under a new name.</div></div>
+@if(refusal != null)
+<p role="alert">$unsafe{ants.Transcript.inline(refusal)}</p>
+<p><a href="/settings">Back to Settings</a></p>
+@elseif(preview != null)
+<form method="post" action="/settings/setup/import/${token}" class="preview">
+    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+    <p class="muted small">Written by Ants ${preview.version}. Untick what you don't want.</p>
+    <table class="library">
+        <thead><tr><th>Import</th><th>Kind</th><th>Name</th><th>Here</th></tr></thead>
+        <tbody>
+@for(item in preview.items)
+        <tr data-key="${item.key}">
+            <td><input type="checkbox" name="item" value="${item.key}" checked="${item.ticked}" aria-label="Import ${item.noun} ${ants.Transcript.plain(item.name)}"></td>
+            <td>${item.noun}</td>
+            <td><b>$unsafe{ants.Transcript.inline(item.name)}</b>
+@if(item.status == ants.Setup.Status.CLASHES)
+                <label class="cap">Rename to<input name="rename:${item.key}" placeholder="e.g. ${ants.Transcript.plain(item.name)}-2"></label>
+@endif
+@if(item.problem != null)<div class="small" role="alert">$unsafe{ants.Transcript.inline(item.problem.orEmpty())}</div>@endif
+@if(item.warning != null)<div class="warn">⚠ $unsafe{ants.Transcript.inline(item.warning.orEmpty())}</div>@endif
+            </td>
+            <td><span class="pill ${when (item.status) { ants.Setup.Status.NEW -> "p-added"; ants.Setup.Status.REPLACES -> "p-changed"; ants.Setup.Status.CLASHES -> "p-failed" }}">${ants.Transcript.plain(item.status.label)}</span></td>
+        </tr>
+@endfor
+@if(preview.items.isEmpty())
+        <tr><td colspan="4" class="muted small">This Setup holds nothing to import.</td></tr>
+@endif
+        </tbody>
+    </table>
+@if(preview.keptValues)
+    <label class="cap">Safe key of the Ants that exported it, which opens its Kept values<input type="password" name="safe-key" autocomplete="off" required></label>
+@endif
+@if(keyRefusal != null)<p role="alert">$unsafe{ants.Transcript.inline(keyRefusal)}</p>@endif
+    <p class="row"><button class="primary">Import</button> <a href="/settings">Cancel</a></p>
+</form>
+@elseif(report != null)
+<table class="library report">
+    <thead><tr><th>Kind</th><th>Name</th><th>Outcome</th><th>Why</th></tr></thead>
+    <tbody>
+@for(landed in report)
+    <tr><td>${landed.noun}</td><td><b>$unsafe{ants.Transcript.inline(landed.name)}</b></td>
+        <td><span class="pill ${when (landed.outcome) { ants.Setup.Outcome.ADDED -> "p-added"; ants.Setup.Outcome.REPLACED -> "p-changed"; ants.Setup.Outcome.SKIPPED -> "p-quiet"; ants.Setup.Outcome.REFUSED -> "p-failed" }}">${ants.Transcript.plain(landed.outcome.label)}</span></td>
+        <td class="small">@if(landed.reason != null)$unsafe{ants.Transcript.inline(landed.reason)}@endif</td></tr>
+@endfor
+    </tbody>
+</table>
+<p><a href="/settings">Back to Settings</a></p>
+@endif
+</main>
+</body>
+</html>

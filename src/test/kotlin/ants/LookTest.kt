@@ -426,6 +426,50 @@ class LookTest : AntsTest() {
         }
     }
 
+    @Test
+    @Timeout(5, unit = TimeUnit.MINUTES)
+    fun `an instance bar of many long-labelled instances fits a phone without the page scrolling sideways`() {
+        agentTask(claude, mapOf("plan" to """{"type":"object","properties":{"items":{"type":"array"}}}""", "draft" to null), extra = "agent-tasks: 8\n")
+        val items = List(8) { if (it % 2 == 0) "Supercalifragilisticexpialidociousandthensomemorewithoutanybreaks" else "scan the payments service and its webhooks" }
+        claude.session("plan", result(JsonMapper.shared().writeValueAsString(mapOf("outcome" to "done", "summary" to "Planned.", "output" to mapOf("items" to items)))))
+        claude.session("draft", """{"type":"assistant","message":{"id":"m","content":[{"type":"text","text":"Reading."}],"usage":{"input_tokens":123456}}}""", "wait never")
+        http.post("/processes/deploy", mapOf("bpmn" to """
+            <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:operaton="http://operaton.org/schema/1.0/bpmn"
+                              id="definitions" targetNamespace="http://bpmn.io/schema/bpmn">
+              <bpmn:process id="scan" name="Scan" isExecutable="true" operaton:historyTimeToLive="180">
+                <bpmn:startEvent id="start" /><bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="plan" />
+                <bpmn:serviceTask id="plan" operaton:type="external" operaton:topic="agent"><bpmn:extensionElements><operaton:properties>
+                  <operaton:property name="ants.agent" value="writer" /><operaton:property name="ants.skills" value="plan" />
+                </operaton:properties></bpmn:extensionElements></bpmn:serviceTask>
+                <bpmn:sequenceFlow id="f2" sourceRef="plan" targetRef="draft" />
+                <bpmn:serviceTask id="draft" operaton:type="external" operaton:topic="agent"><bpmn:extensionElements><operaton:properties>
+                  <operaton:property name="ants.agent" value="writer" /><operaton:property name="ants.skills" value="draft" />
+                </operaton:properties></bpmn:extensionElements>
+                  <bpmn:multiInstanceLoopCharacteristics operaton:collection="${'$'}{plan.output.items}" />
+                </bpmn:serviceTask>
+                <bpmn:sequenceFlow id="f3" sourceRef="draft" targetRef="end" /><bpmn:endEvent id="end" />
+              </bpmn:process>
+            </bpmn:definitions>
+        """.trimIndent()))
+        val run = http.post("/processes/scan/runs", emptyMap()).path.removePrefix("/runs/")
+        eventually { assertEquals(8, claude.launches("draft").size) }
+        Playwright.create().use { playwright ->
+            launchChromium(playwright).newContext(phone()).use { context ->
+                val page = context.newPage()
+                logIn(page)
+                page.navigate("http://127.0.0.1:$port/runs/$run/tasks/draft-1/transcript")
+                page.waitForFunction("document.querySelectorAll('nav.instances a').length === 8")
+                page.screenshot(Page.ScreenshotOptions().setPath(lookOnPhone.resolve("instance-bar/app-light.png")).setFullPage(true))
+                assertEquals(emptyList<Any?>(), page.evaluate(tooWide) as List<*>)
+
+                page.navigate("http://127.0.0.1:$port/runs/$run?drawer=draft")
+                page.waitForFunction("document.querySelectorAll('#drawer nav.instances a').length === 8")
+                page.screenshot(Page.ScreenshotOptions().setPath(lookOnPhone.resolve("instance-bar/drawer-light.png")))
+                assertEquals(emptyList<Any?>(), page.evaluate(tooWide) as List<*>)
+            }
+        }
+    }
+
     /** The visible elements in the page's main part reaching past the screen's edges, and the page if it scrolls sideways. */
     private val tooWide = """() => {
         const width = document.documentElement.clientWidth

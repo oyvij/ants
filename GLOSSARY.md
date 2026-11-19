@@ -99,6 +99,11 @@ Checking a Draft as Save and deploy and Save did and, when it passes, making it 
 uses, and removing the Draft. A refused Publish keeps the Draft.
 _Avoid_: save, deploy, release
 
+**Setup**:
+One file holding what the user made in Ants, without its history, which **Export** writes and **Import** reads,
+to move it to another Ants or share it with someone else's.
+_Avoid_: Ants state, backup, bundle
+
 **Template**:
 A named piece of a Process, kept in a library, that is copied into another Process and changed there;
 editing a Template never changes the Processes it was copied into.

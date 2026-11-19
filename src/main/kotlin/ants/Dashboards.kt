@@ -10,11 +10,13 @@ import java.nio.file.Path
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
+import kotlin.io.path.createDirectories
 import kotlin.io.path.deleteIfExists
 import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
 import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.name
+import kotlin.io.path.readBytes
 import kotlin.io.path.readText
 
 /** A Dashboard (ADR 0032): its fixed [id], which its page address uses, its [title], its name, and its [widgets]. */
@@ -93,9 +95,28 @@ class Dashboards(@Value("\${ants.home}") home: Path, private val clock: Clock) {
 
     private fun keep(ids: List<String>) = order.writeAtomically(yaml.dump(ids))
 
-    fun find(id: String): Dashboard? {
-        val file = file(id)?.takeIf { it.exists() } ?: return null
-        val yaml = Yaml().load<Any?>(file.readText()) as? Map<*, *> ?: emptyMap<String, Any?>()
+    fun find(id: String): Dashboard? = file(id)?.takeIf { it.exists() }?.let { parse(id, it.readText()) }
+
+    /** Each Dashboard's `dashboard.yaml` by its id, as a Setup holds it: its layout and Widget ids, never its Posts. */
+    fun layouts(): Map<String, ByteArray> = all().associate { it.id to file(it.id)!!.readBytes() }
+
+    /**
+     * Writes the Dashboard [id] from [layout], a `dashboard.yaml` from a Setup, titled [title], keeping its Widget ids
+     * so Scripts Posting to them keep working, in place of the one with [id], whose Posts to a Widget it keeps stay.
+     */
+    @Synchronized
+    fun land(id: String, layout: String, title: String) {
+        val file = file(id) ?: throw IllegalArgumentException("$id is no Dashboard id.")
+        val dashboard = parse(id, layout).copy(title = title(title))
+        val gone = find(id)?.widgets.orEmpty().map { it.id } - dashboard.widgets.map { it.id }.toSet()
+        file.parent.createDirectories()
+        write(dashboard)
+        gone.forEach { file.resolveSibling("$it.json").deleteIfExists() }
+    }
+
+    /** The Dashboard [id] that the `dashboard.yaml` [text] holds. */
+    private fun parse(id: String, text: String): Dashboard {
+        val yaml = Yaml().load<Any?>(text) as? Map<*, *> ?: emptyMap<String, Any?>()
         val widgets = (yaml["widgets"] as? List<*>).orEmpty().filterIsInstance<Map<*, *>>().mapNotNull { widget ->
             fun int(key: String, default: Int) = (widget[key] as? Number)?.toInt() ?: default
             val type = WidgetType.of(widget["type"].toString()) ?: return@mapNotNull null
@@ -295,7 +316,7 @@ class Dashboards(@Value("\${ants.home}") home: Path, private val clock: Clock) {
         private const val HEIGHT = 2
         private const val CHART_WIDTH = 6
         private const val CHART_HEIGHT = 4
-        private val ID = Regex("d-[a-z0-9]{6}")
+        internal val ID = Regex("d-[a-z0-9]{6}")
         private val READABLE = Regex("[a-z][a-z0-9-]{0,31}")
     }
 }

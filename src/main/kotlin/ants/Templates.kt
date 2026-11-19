@@ -96,7 +96,7 @@ class Templates(@Value("\${ants.home}") home: Path, private val catalogue: Catal
     fun save(@PathVariable name: String, @RequestParam bpmn: String): ResponseEntity<String> {
         val file = file(name).takeIf { it.startsWith(yours) }
             ?: throw ResponseStatusException(HttpStatus.FORBIDDEN, "The Template $name is read-only; Copy it to make your own.")
-        file.writeAtomically(serialize(read(bpmn.toByteArray()).also { catalogue.linkById(it, scripts); scripts.linkById(it) }))
+        file.writeAtomically(linked(read(bpmn.toByteArray())))
         return ResponseEntity.status(HttpStatus.SEE_OTHER).location(URI("/templates/$name")).build()
     }
 
@@ -131,7 +131,26 @@ class Templates(@Value("\${ants.home}") home: Path, private val catalogue: Catal
         return mapOf("bpmn" to serialize(target), "element" to element)
     }
 
-    private fun exists(name: String) = listOf(yours, shipped).any { it.resolve("$name.bpmn").exists() }
+    /** Whether a Template of the user's or Ants' own is named [name]. */
+    internal fun exists(name: String) = listOf(yours, shipped).any { it.resolve("$name.bpmn").exists() }
+
+    /** The user's own Templates' files. */
+    internal fun yours(): List<Path> = if (yours.exists()) yours.listDirectoryEntries("*.bpmn").sorted() else emptyList()
+
+    /** Writes [bpmn] as the user's new Template [name], as Save writes one; throws with why not. */
+    internal fun add(name: String, bpmn: ByteArray) {
+        nameError("A Template", name)?.let { throw IllegalArgumentException(it) }
+        require(!exists(name)) { "A Template named $name already exists." }
+        val document = try {
+            parse(bpmn).also(::operatonOnly).also(::process)
+        } catch (e: SAXException) {
+            throw IllegalArgumentException("It can't be read: ${e.message}")
+        }
+        yours.createDirectories().resolve("$name.bpmn").writeAtomically(linked(document))
+    }
+
+    /** [document] as a Template's file holds it, linking each Agent, Skill and Script by id. */
+    private fun linked(document: Document) = serialize(document.also { catalogue.linkById(it, scripts); scripts.linkById(it) })
 
     /** The file of the Template [name], the user's before Ants' own. */
     private fun file(name: String): Path = listOf(yours, shipped).map { it.resolve("$name.bpmn") }

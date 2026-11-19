@@ -32,6 +32,10 @@ private typealias SkillItem = DraftedItem<Skill>
 /** A Skill's `SKILL.md` as the Skills page shows it; [name] is null on the create form. */
 data class SkillForm(val name: String?, val skill: String, val readOnly: Boolean = false, val where: String = "")
 
+/** The files in a Skill's [folder], its `SKILL.md` among them; a Skill folder can hold other Skills' folders, and their files aren't its. */
+fun besideFiles(folder: Path) = folder.takeIf { it.exists() }?.walk().orEmpty()
+    .filter { file -> generateSequence(file.parent) { it.parent }.takeWhile { it != folder }.none { it.resolve("SKILL.md").exists() } }
+
 enum class ReferenceChange { ADDED, CHANGED, DELETED }
 
 data class SkillReference(val path: String, val text: String, val change: ReferenceChange? = null)
@@ -216,8 +220,6 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
         return "redirect:/skills/$copy"
     }
 
-    private fun renamed(skill: String, name: String) = Regex("(?m)^name:.*$").replaceFirst(skill, "name: $name")
-
     /** Copies the files beside the `SKILL.md` in [from] into [to]; a Skill folder can hold other Skills' folders, and those stay where they are. */
     private fun copyBeside(from: Path, to: Path) {
         for (file in besideFiles(from)) {
@@ -225,9 +227,6 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
             if (relative != "SKILL.md" && relative != SKILL_ID_FILE) file.copyTo(to.resolve(relative).also { it.parent.createDirectories() })
         }
     }
-
-    private fun besideFiles(folder: Path) = folder.takeIf { it.exists() }?.walk().orEmpty()
-        .filter { file -> generateSequence(file.parent) { it.parent }.takeWhile { it != folder }.none { it.resolve("SKILL.md").exists() } }
 
     private fun referencePaths(folder: Path) = besideFiles(folder).map { it.relativeTo(folder).invariantSeparatorsPathString }
         .filter { it.endsWith(".md") && it != "SKILL.md" }.sorted().toList()
@@ -444,16 +443,21 @@ class Skills(private val catalogue: Catalogue, private val usedBy: UsedBy, priva
 
     private fun readOnly(name: String) = ResponseStatusException(HttpStatus.FORBIDDEN, "The Skill $name is read-only; Copy it to make your own.")
 
-    /** The name in a `SKILL.md`'s frontmatter, refusing broken YAML and a Skill without a name or a description. */
-    private fun named(skill: String): String {
-        val meta = try {
-            frontmatter(skill).first
-        } catch (e: YAMLException) {
-            throw IllegalArgumentException("The frontmatter isn't valid YAML: ${e.message}")
+    companion object {
+        /** The name in a `SKILL.md`'s frontmatter, refusing broken YAML and a Skill without a name or a description. */
+        fun named(skill: String): String {
+            val meta = try {
+                frontmatter(skill).first
+            } catch (e: YAMLException) {
+                throw IllegalArgumentException("The frontmatter isn't valid YAML: ${e.message}")
+            }
+            val (name, description) = listOf("name", "description").map { meta[it]?.toString()?.trim().orEmpty() }
+            require(name.isNotEmpty() && description.isNotEmpty()) { "A Skill needs a name and a description in its frontmatter." }
+            return name
         }
-        val (name, description) = listOf("name", "description").map { meta[it]?.toString()?.trim().orEmpty() }
-        require(name.isNotEmpty() && description.isNotEmpty()) { "A Skill needs a name and a description in its frontmatter." }
-        return name
+
+        /** A `SKILL.md` with [name] as its name. */
+        fun renamed(skill: String, name: String) = Regex("(?m)^name:.*$").replaceFirst(skill, "name: $name")
     }
 
     /** The page of [item], or the create form for none. */

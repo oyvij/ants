@@ -216,6 +216,100 @@ class BrowserTest : AntsTest() {
     }
 
     @Test
+    fun `Export lists everything ticked, ticking a Process ticks what it uses, and unticking a used item warns`() = browse {
+        home.resolve("agents/writer.md").writeText("---\nid: a-writer1\nname: writer\ndescription: Writes.\nskills: draft, style\n---\nWrite.\n")
+        for ((name, id) in listOf("draft" to "k-draft1", "style" to "k-style1")) {
+            home.resolve("skills/$name").createDirectories().resolve("SKILL.md").writeText("---\nname: $name\ndescription: Does $name.\n---\nDo it.\n")
+            home.resolve("skills/$name/ants.yaml").writeText("id: $id\n")
+        }
+        processes.deploy(javaClass.getResource("/agent-task.bpmn")!!.readText().replace("\"agent-task\"", "\"export-task\"").replace("name=\"Agent Task\"", "name=\"Export task\"").toByteArray())
+        page.navigate(url("/settings/setup/export"))
+        fun row(key: String) = page.locator("tr[data-key='$key']")
+        fun box(key: String) = row(key).locator("input[type=checkbox]")
+        for (key in listOf("processes/export-task.bpmn", "agents/writer.md", "skills/draft", "skills/style")) assertThat(box(key)).isChecked()
+        assertThat(row("agents/writer.md").locator(".used-by")).hasText("used by Process Export task")
+        assertThat(row("skills/style").locator(".used-by")).containsText("Agent writer")
+
+        box("skills/style").uncheck()
+        assertThat(row("skills/style").getByRole(AriaRole.ALERT)).containsText("Import then needs it to exist")
+        page.screenshot("setup-export-warning")
+        box("processes/export-task.bpmn").uncheck()
+        box("agents/writer.md").uncheck()
+        box("skills/draft").uncheck()
+        assertThat(row("skills/style").getByRole(AriaRole.ALERT)).isHidden()
+        box("processes/export-task.bpmn").check() // ticks its Agent, its Skill and, through its Agent, the Agent's
+        for (key in listOf("agents/writer.md", "skills/draft", "skills/style")) assertThat(box(key)).isChecked()
+
+        box("skills/style").uncheck()
+        val download = page.waitForDownload { page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("Export").setExact(true)).click() }
+        val names = java.util.zip.ZipInputStream(java.nio.file.Files.newInputStream(download.path())).use { zip -> generateSequence { zip.nextEntry }.map { it.name }.toSet() }
+        assertTrue("processes/export-task.bpmn" in names && "agents/writer.md" in names && "skills/draft/SKILL.md" in names, names.toString())
+        assertFalse(names.any { it.startsWith("skills/style/") }, names.toString())
+    }
+
+    @Test
+    fun `Settings exports a Setup, and imports one through a preview of New, Replaces and Clashes into a report`() = browse {
+        fun agent(name: String, id: String) = home.resolve("agents/$name.md").writeText("---\nid: $id\nname: $name\ndescription: Works.\n---\nWork.\n")
+        agent("writer", "a-writer1")
+        agent("editor", "a-editor1")
+        agent("reviewer", "a-review1")
+        home.resolve("settings.yaml").writeText("secrets:\n  npm: [NPM_TOKEN]\nprotected-commands:\n  yarn publish: [npm]\n")
+        page.navigate(url("/settings"))
+        page.getByRole(AriaRole.LINK, Page.GetByRoleOptions().setName("Export…").setExact(true)).click()
+        val download = page.waitForDownload { page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("Export").setExact(true)).click() }
+        assertContains(download.suggestedFilename(), "ants-setup-")
+        val zip = java.nio.file.Files.readAllBytes(download.path())
+
+        home.resolve("agents/writer.md").deleteExisting() // New
+        agent("reviewer", "a-review2") // the same name, another id: a Clash
+        page.navigate(url("/settings"))
+        page.locator(".setup input[type=file]").setInputFiles(FilePayload("ants-setup.zip", "application/zip", zip))
+        assertThat(page.locator("tr[data-key='agents/writer.md'] .pill")).hasText("New")
+        assertThat(page.locator("tr[data-key='agents/editor.md'] .pill")).hasText("Replaces")
+        assertThat(page.locator("tr[data-key='agents/reviewer.md'] .pill")).hasText("Clashes")
+        val reaching = page.locator("tr[data-key='protected-commands/yarn publish']") // it would run with this Ants' Secret npm
+        assertThat(reaching.locator("input[type=checkbox]")).not().isChecked()
+        assertThat(reaching.locator(".warn")).containsText("⚠ It would run with your Secret npm.")
+        assertThat(page.locator("tr[data-key='agents/writer.md'] input[type=checkbox]")).isChecked()
+        page.screenshot("setup-preview")
+        page.locator("tr[data-key='agents/editor.md'] input[type=checkbox]").uncheck()
+        page.locator("tr[data-key='agents/reviewer.md']").getByLabel("Rename to").fill("reviewer-2")
+        page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("Import").setExact(true)).click()
+
+        val report = page.locator("table.report")
+        assertThat(report.locator("tr", Locator.LocatorOptions().setHasText("writer")).locator(".pill")).hasText("Added")
+        assertThat(report.locator("tr", Locator.LocatorOptions().setHasText("reviewer-2")).locator(".pill")).hasText("Added")
+        assertThat(report.locator("tr", Locator.LocatorOptions().setHasText("editor"))).containsText("Unticked.")
+        page.screenshot("setup-report")
+        assertContains(home.resolve("agents/reviewer-2.md").readText(), "id: a-review1")
+        assertContains(home.resolve("agents/reviewer.md").readText(), "id: a-review2")
+        assertContains(home.resolve("agents/writer.md").readText(), "id: a-writer1")
+    }
+
+    @Test
+    fun `Export includes Kept values only when ticked, and Import asks for the Safe key, refusing a wrong one`() = browse {
+        home.resolve("settings.yaml").writeText("secrets:\n  npm: [NPM_TOKEN]\n")
+        secretStore.saveSettingsValues(mapOf("npm" to "npm-s3cret"))
+        page.navigate(url("/settings/setup/export"))
+        page.getByLabel("Include Kept values").check()
+        val download = page.waitForDownload { page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("Export").setExact(true)).click() }
+        val zip = java.nio.file.Files.readAllBytes(download.path())
+        assertTrue(java.util.zip.ZipInputStream(zip.inputStream()).use { input -> generateSequence { input.nextEntry }.any { it.name == "safe.yaml" } })
+
+        home.resolve("settings.yaml").writeText("")
+        secretStore.saveSettingsValues(emptyMap())
+        val wrong = startAnother(tempHome()).use { it.getBean(SecretStore::class.java).newKey()!! }
+        page.navigate(url("/settings"))
+        page.locator(".setup input[type=file]").setInputFiles(FilePayload("ants-setup.zip", "application/zip", zip))
+        page.getByLabel("Safe key").fill(wrong)
+        page.getByRole(AriaRole.BUTTON, Page.GetByRoleOptions().setName("Import").setExact(true)).click()
+        assertThat(page.getByRole(AriaRole.ALERT)).containsText("That Safe key doesn't open")
+        assertEquals("", home.resolve("settings.yaml").readText())
+        page.screenshot("setup-safe-key")
+        secretStore.saveSettingsValues(emptyMap())
+    }
+
+    @Test
     fun `the hover menu appends an Agent, User or Built-in Task and offers nothing Ants doesn't run`() = browse {
         newProcess("Hover menu")
         for ((action, name) in listOf("append.agent-task" to "Agent Task", "append.user-task" to "User Task", "append.built-in-task" to "Built-in Task")) {
@@ -5233,6 +5327,44 @@ class BrowserTest : AntsTest() {
         page.click("#tasks tr.click")
         page.waitForURL { "/notifications/" in it }
         assertThat(page.locator("#comment + .ed .cm-content")).isVisible() // markdown.js's editor, whose own test is above
+    }
+
+    @Test
+    fun `clicking an instance's chip in a multi-instance Task's drawer switches it to that instance live, and Send brings the user back to it`() = browse {
+        val claude = FakeClaude()
+        agentTask(claude, mapOf("plan" to """{"type":"object","properties":{"items":{"type":"array"}}}""", "draft" to null), extra = "agent-tasks: 3\n")
+        fun task(id: String, skill: String, more: String = "", inputs: String = "") = """<bpmn:serviceTask id="$id" name="${id.replaceFirstChar(Char::uppercase)}" operaton:type="external" operaton:topic="agent">""" +
+            """<bpmn:extensionElements><operaton:properties><operaton:property name="ants.agent" value="writer" /><operaton:property name="ants.skills" value="$skill" />""" +
+            """</operaton:properties>$inputs</bpmn:extensionElements>$more</bpmn:serviceTask>"""
+        val loop = """<bpmn:multiInstanceLoopCharacteristics operaton:collection="${'$'}{plan.output.items}" operaton:elementVariable="item" />"""
+        val init = """{"type":"system","subtype":"init","session_id":"${'$'}SESSION","apiKeySource":"none"}"""
+        val done = """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":{"outcome":"done","summary":"Done.","output":{}}}"""
+        claude.session("plan", """{"type":"result","subtype":"success","is_error":false,"session_id":"${'$'}SESSION","structured_output":{"outcome":"done","summary":"Done.","output":{"items":["a","b","c"]}}}""")
+        for (n in 1..3) claude.session("draft", n, init, says("Wrote $n."), "wait more-$n", says("More from $n."), "read", done)
+        val (process, plane) = row("fanned", """<bpmn:startEvent id="start" />""", task("plan", "plan"), task("draft", "draft", loop, """<operaton:inputOutput><operaton:inputParameter name="item">${'$'}{item}</operaton:inputParameter></operaton:inputOutput>"""), """<bpmn:endEvent id="end" />""")
+        deploy(definitions("fanned", "Fanned", process, plane))
+        val run = http.post("/processes/fanned/runs", mapOf()).path
+        eventually { assertEquals(3, claude.launches("draft").size) }
+        val second = claude.launches("draft").indexOfFirst { """\"item\":\"b\"""" in it.stdin } + 1
+
+        page.navigate(url(run))
+        eventually { page.locator("#diagram .djs-element[data-element-id='draft']").click() }
+        val bar = page.locator("#drawer .instances")
+        assertThat(bar.locator("a")).hasCount(3)
+        assertThat(bar.locator("a[aria-current=page] b")).hasText("#1 a")
+        bar.getByText("#2 b").click()
+        assertThat(bar.locator("a[aria-current=page] b")).hasText("#2 b")
+        assertTrue(page.url().endsWith(run), "the drawer switched without leaving the Run page")
+        assertThat(page.locator("#drawer-output")).containsText("Wrote $second.")
+        claude.release("more-$second")
+        assertThat(page.locator("#drawer-output")).containsText("More from $second.")
+
+        page.locator("#drawer-message + .ed .cm-content").fill("Only for b.")
+        page.locator("#drawer-send button.primary").click()
+        page.waitForURL { it.endsWith("$run?drawer=draft&instance=draft-2") }
+        assertThat(page.locator("#drawer .instances a[aria-current=page] b")).hasText("#2 b")
+        eventually { assertTrue(claude.launches("draft")[second - 1].stdin.contains("Only for b.")) }
+        (1..3).filter { it != second }.forEach { claude.release("more-$it") }
     }
 
     @Test
