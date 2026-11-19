@@ -1,0 +1,17 @@
+@param entry: ants.TaskEntry
+@param stories: ants.StorySet
+@param checks: ants.StoryChecks? = null
+@param story: Int = 0
+@param step: Int = 0
+<details class="spine fold"><summary>Stories</summary><nav><div class="stitle">$unsafe{ants.Transcript.inline(stories.title)}</div>
+    @for(i in stories.stories.indices)!{val s = stories.stories[i]; val stale = checks?.stale(i) ?: 0}
+    <a class="${if (i + 1 == story) "srow on" else "srow"}" href="?tab=story&story=${i + 1}&step=1"><span>$unsafe{ants.Transcript.inline(s.name)}</span><span class="cnt">${s.steps.size} step${if (s.steps.size == 1) "" else "s"}@if(stale > 0) · <span class="stalecnt">${stale} stale</span>@endif</span></a>
+    <ol class="ssteps" data-story="${i + 1}" hidden="${i + 1 != story}">@for(j in s.steps.indices)<li><a href="?tab=story&story=${i + 1}&step=${j + 1}" aria-current="${if (i + 1 == story && j + 1 == step) "step" else null}">@if(checks?.stale?.contains(i to j) == true)⚠ @endif$unsafe{ants.Transcript.inline(s.steps[j])}</a></li>@endfor</ol>
+    @endfor
+    @if(checks == null)<div class="srem" data-src="/notifications/${entry.id}/spine?story=${story}&step=${step}"><div class="muted">Checking for stale steps and changes no step covers…</div></div>
+    @else!{val uncovered = checks.remainder.values.sum()}
+    <div class="srem"><div><b>Remainder</b> · ${uncovered} change${if (uncovered == 1) "" else "s"} no step covers</div>
+        @for(file in checks.remainder.entries)<div class="rf"><span class="mono"><b>${file.key.first}</b> · ${file.key.second}</span><span class="muted">${file.value} hunk${if (file.value == 1) "" else "s"}</span></div>
+        @endfor</div>
+    @endif
+</nav></details>

@@ -3,6 +3,7 @@ package ants
 import tools.jackson.core.JacksonException
 import tools.jackson.databind.json.JsonMapper
 import java.nio.file.Path
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.io.path.isRegularFile
 import kotlin.io.path.readText
 
@@ -16,14 +17,19 @@ const val WALKTHROUGH = "ants.walkthrough"
 const val STORY_SET_SCHEMA = "/shipped/skills/walkthrough/story-set.schema.json"
 
 /**
- * A Story set as the Story tab shows it: Varde's story format widened to a Run (the walkthrough Skill's
- * `story-set.schema.json`), each step's Site in its code, and the [remainder]: per changed file, by its repo and its
- * path in the clone, how many of its hunks no step's Site touches.
+ * A Story set as the Story tab lists it, read from its file alone: Varde's story format widened to a Run (the
+ * walkthrough Skill's `story-set.schema.json`), each story with its steps' names.
  */
-class StorySet(val title: String, val stories: List<Story>, val remainder: Map<Pair<String, String>, Int>)
+class StorySet(val title: String, val stories: List<Story>, internal val set: Map<*, *>)
 
-class Story(val name: String, val premise: String, val steps: List<Step>) {
-    val stale get() = steps.count { it.stale != null }
+class Story(val name: String, val premise: String, val steps: List<String>)
+
+/**
+ * What the Story tab marks once every step is read: the [stale] steps, each by its story's and its own index, 0-based,
+ * and the [remainder]: per changed file, by its repo and its path in the clone, how many of its hunks no step's Site touches.
+ */
+class StoryChecks(val stale: Set<Pair<Int, Int>>, val remainder: Map<Pair<String, String>, Int>) {
+    fun stale(story: Int) = stale.count { it.first == story }
 }
 
 /**
@@ -68,36 +74,50 @@ enum class Fault(val label: String, val complaint: String) {
     CITATION_ABSENT("citation-absent", "a value on this step cites a line that does not contain it. Fix the line number, or mark the value `\"invented\"` and drop its `cite`."),
 }
 
-/** The Story set in [workspace], each Site read with [git] (its output untrimmed) from its repo's range; [StorySetRefused] when it doesn't parse. */
-fun storySet(workspace: Path, git: (Path, List<String>) -> String): StorySet {
+/** The Story set in [workspace], from its file alone; [StorySetRefused] when it doesn't parse. */
+fun storySet(workspace: Path): StorySet {
     val set = read(workspace)
-    val ranges = Ranges(workspace, set, git)
-    val stories = set.list("stories").map { story ->
-        Story(story["name"].toString(), story["premise"].toString(), story.list("steps").map { step ->
-            val site = step["site"] as Map<*, *>
-            val file = site["file"].toString()
-            val side = site["side"].toString()
-            val kind = site["kind"].toString()
-            val from = (site["from"] as Number).toInt()
-            val to = (site["to"] as Number).toInt()
-            val written = ranges.text(file, side)?.let { lines(it, from, to) }.orEmpty()
-            val now = if (side == "old") written else ranges.now(file)?.let { lines(it, from, to) }.orEmpty()
-            Step(
-                step["name"].toString(), step["claim"].toString(), step["why"].toString(), locate(file)?.first.orEmpty(), file, side, kind, from, to,
-                code(ranges.code(file), side, kind, from, to), (step["flow"] as? Map<*, *>)?.let { "${it["in"]}" to "${it["out"]}" },
-                step.list("values").map { value ->
-                    val cite = value["cite"] as? Map<*, *>
-                    Value(value["name"].toString(), value["value"].toString(), if (cite == null) "invented" else "${value["provenance"]}", cite?.let { "${it["file"]}:${it["line"]}" })
-                },
-                step["nudge"] as? String, written.takeIf { it != now }, now,
-            )
-        })
-    }
-    val steps = stories.flatMap { it.steps }
-    val remainder = ranges.changed().associate { file ->
-        locate(file)!! to ranges.hunks(file).count { hunk -> steps.none { it.file == file && touches(hunk, it.side, it.from, it.to) } }
-    }.filterValues { it > 0 }
-    return StorySet(set["title"].toString(), stories, remainder)
+    return StorySet(set["title"].toString(), set.list("stories").map { story ->
+        Story(story["name"].toString(), story["premise"].toString(), story.list("steps").map { it["name"].toString() })
+    }, set)
+}
+
+/** The [step]th step of the [story]th story of [stories], 0-based, its Site read with [git] (its output untrimmed) from its repo's range. */
+fun storyStep(workspace: Path, stories: StorySet, story: Int, step: Int, git: (Path, List<String>) -> String): Step {
+    val ranges = Ranges(workspace, stories.set, git)
+    val it = stories.set.list("stories")[story].list("steps")[step]
+    val site = it["site"] as Map<*, *>
+    val file = site["file"].toString()
+    val side = site["side"].toString()
+    val kind = site["kind"].toString()
+    val from = (site["from"] as Number).toInt()
+    val to = (site["to"] as Number).toInt()
+    val (written, now) = ranges.site(file, side, from, to)
+    return Step(
+        it["name"].toString(), it["claim"].toString(), it["why"].toString(), locate(file)?.first.orEmpty(), file, side, kind, from, to,
+        code(ranges.code(file), side, kind, from, to), (it["flow"] as? Map<*, *>)?.let { flow -> "${flow["in"]}" to "${flow["out"]}" },
+        it.list("values").map { value ->
+            val cite = value["cite"] as? Map<*, *>
+            Value(value["name"].toString(), value["value"].toString(), if (cite == null) "invented" else "${value["provenance"]}", cite?.let { c -> "${c["file"]}:${c["line"]}" })
+        },
+        it["nudge"] as? String, written.takeIf { it != now }, now,
+    )
+}
+
+/** [stories]' stale steps and remainder, every step and changed file read with [git] side by side. */
+fun storyChecks(workspace: Path, stories: StorySet, git: (Path, List<String>) -> String): StoryChecks {
+    val ranges = Ranges(workspace, stories.set, git)
+    val sites = stories.set.list("stories").flatMapIndexed { i, story -> story.list("steps").mapIndexed { j, step -> (i to j) to step["site"] as Map<*, *> } }
+    val stale = sites.parallelStream().filter { (_, site) ->
+        val (written, now) = ranges.site(site["file"].toString(), site["side"].toString(), (site["from"] as Number).toInt(), (site["to"] as Number).toInt())
+        written != now
+    }.map { it.first }.toList().toSet()
+    val remainder = ranges.changed().parallelStream().map { file ->
+        locate(file)!! to ranges.hunks(file).count { hunk ->
+            sites.none { (_, site) -> site["file"] == file && touches(hunk, site["side"].toString(), (site["from"] as Number).toInt(), (site["to"] as Number).toInt()) }
+        }
+    }.toList().filter { it.second > 0 }.toMap()
+    return StoryChecks(stale, remainder)
 }
 
 /** How many lines of code a step shows around its Site, on its side. */
@@ -207,7 +227,20 @@ private class Ranges(private val workspace: Path, set: Map<*, *>, private val gi
         return show(repo, "HEAD", path)
     }
 
-    private fun show(repo: String, rev: String, path: String) = runCatching { git(workspace.resolve("repos/$repo"), listOf("show", "$rev:$path")) }.getOrNull()
+    /**
+     * A Site's lines, [from] to [to] on [side] of [file], as the Story set was written against them, at its range, and
+     * as the clone's HEAD has them now; the same on the `old` side, which doesn't move. Empty when they aren't there.
+     */
+    fun site(file: String, side: String, from: Int, to: Int): Pair<String, String> {
+        val written = text(file, side)?.let { lines(it, from, to) }.orEmpty()
+        return written to if (side == "old") written else now(file)?.let { lines(it, from, to) }.orEmpty()
+    }
+
+    private val shown = ConcurrentHashMap<String, Result<String>>()
+
+    /** [path] at [rev] in [repo]'s clone, read once, since steps share files. */
+    private fun show(repo: String, rev: String, path: String) =
+        shown.computeIfAbsent("$repo\u0000$rev\u0000$path") { runCatching { git(workspace.resolve("repos/$repo"), listOf("show", "$rev:$path")) } }.getOrNull()
 
     /** Every file its range changed, by its path from the Run workspace root. */
     fun changed(): List<String> = ranges.flatMap { (repo, range) ->

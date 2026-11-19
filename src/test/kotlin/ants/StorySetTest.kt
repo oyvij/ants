@@ -80,6 +80,8 @@ class StorySetTest : AntsTest() {
         walkthrough(valid)
         val run = start()
         val page = browser.get(entry(run)).body
+        val first = browser.get(entry(run) + "?tab=story&story=1&step=1").body
+        val second = browser.get(entry(run) + "?tab=story&story=1&step=2").body
         assertContains(page, """<a class="on" href="?tab=story">Story</a><a href="?tab=repo">By repo</a>""")
         // A summary card per repo: files, +/−, commits on the work branch.
         assertContains(page, """<b class="mono">api</b>""")
@@ -91,22 +93,33 @@ class StorySetTest : AntsTest() {
         assertContains(page, """<div class="rf"><span class="mono"><b>api</b> · other.txt</span><span class="muted">1 hunk</span></div>""")
         assertContains(page, """<div class="small">Only the first line changes.</div>""")
         assertContains(page, "Shout → The rest")
-        // Each step: its code with its site highlighted (the diff's removed lines shown on demand), the claim and the values.
-        assertContains(page, """<span class="mono"><b>api</b> · long.txt</span>""")
-        assertContains(page, """<div class="cl site changed add"><span class="ln">1</span><span class="bar"></span><span class="tx">ONE</span></div>""")
-        assertContains(page, """<div class="cl del extra"><span class="ln">−</span><span class="bar"></span><span class="tx">one</span></div>""")
-        assertContains(page, """<div class="cl dim"><span class="ln">2</span><span class="bar"></span><span class="tx">two</span></div>""")
-        assertContains(page, """<div class="cl site context"><span class="ln">10</span><span class="bar"></span><span class="tx">ten</span></div>""")
-        assertContains(page, """<div class="claim">Line one is upper case.</div>""")
-        assertContains(page, """<span class="cited" title="from repos/api/long.txt:1">word: <b>ONE</b> <span class="small">[literal]</span></span>""")
-        assertContains(page, """<span class="k">Why</span><span>It is a heading.</span>""")
-        assertContains(page, """<span class="k">Flow</span><span>in: the heading<br>out: the end</span>""")
-        assertFalse("STALE" in page)
+        assertFalse("""<div class="step"""" in page) // the list of stories, no step
+        // Each step, on a page of its own: its code with its site highlighted (the diff's removed lines shown on demand), the claim and the values.
+        assertContains(first, """<span class="mono"><b>api</b> · long.txt</span>""")
+        assertContains(first, """<div class="cl site changed add"><span class="ln">1</span><span class="bar"></span><span class="tx">ONE</span></div>""")
+        assertContains(first, """<div class="cl del extra"><span class="ln">−</span><span class="bar"></span><span class="tx">one</span></div>""")
+        assertContains(first, """<div class="cl dim"><span class="ln">2</span><span class="bar"></span><span class="tx">two</span></div>""")
+        assertContains(second, """<div class="cl site context"><span class="ln">10</span><span class="bar"></span><span class="tx">ten</span></div>""")
+        assertContains(first, """<div class="claim">Line one is upper case.</div>""")
+        assertContains(first, """<span class="cited" title="from repos/api/long.txt:1">word: <b>ONE</b> <span class="small">[literal]</span></span>""")
+        assertContains(first, """<span class="k">Why</span><span>It is a heading.</span>""")
+        assertContains(second, """<span class="k">Flow</span><span>in: the heading<br>out: the end</span>""")
+        assertFalse("STALE" in first || "STALE" in second)
         assertFalse("data-repo=\"web\"" in page) // By repo is the other tab
-        // Without JS every story and step shows, with its comment form; review.js hides them and walks them.
-        assertContains(page, """<section class="walkstory" data-story="1">""")
-        assertContains(page, """<div class="step" data-step="1">""")
-        assertContains(page, """<form class="row stepcomment" method="post" action="${entry(run)}/comments#s1-1">""")
+        // Without JS the step shows with its comment form, and Back and Next load the step they name; review.js hides the form.
+        assertContains(first, """<section class="walkstory" data-story="1">""")
+        assertContains(first, """<div class="step" data-step="1">""")
+        assertFalse("""<div class="step" data-step="2">""" in first)
+        assertContains(first, """<form class="row stepcomment" method="post" action="${entry(run)}/comments">""")
+        assertContains(first, """<input type="hidden" name="at" value="1-1">""")
+        assertContains(first, """<button form="walkto" name="step" value="2" data-go="1">Next ▶</button>""")
+        assertContains(first, """<a href="?tab=story&story=1&step=2">The rest</a>""")
+
+        // The list with its checks, which the page loads in place of its own while Ants still checks them.
+        val spine = browser.get(entry(run) + "/spine?story=1&step=2").body
+        assertContains(spine, """<b>Remainder</b> · 1 change no step covers""")
+        assertContains(spine, """<a href="?tab=story&story=1&step=2" aria-current="step">The rest</a>""")
+        assertFalse("data-src" in spine)
 
         val byRepo = browser.get(entry(run) + "?tab=repo").body
         assertContains(byRepo, """<a href="?tab=story">Story</a><a class="on" href="?tab=repo">By repo</a>""")
@@ -119,12 +132,12 @@ class StorySetTest : AntsTest() {
     fun `a step whose site changed since the Story set was written is STALE, with its lines then and now`() {
         walkthrough(valid.replace(""""base":"HEAD~1","head":"HEAD"""", """"base":"HEAD~2","head":"HEAD~1""""))
         val run = start { api -> commitFile(api, "long.txt", WORDS.joinToString("\n", postfix = "\n").replace("one", "ONE").replace("nine", "NINE"), "Shout nine") }
-        val page = browser.get(entry(run)).body
+        val page = browser.get(entry(run) + "?tab=story&story=1&step=2").body
         assertContains(page, """<div class="claim"><span class="stale">STALE</span> The end stays.</div>""")
         assertContains(page, """<span class="k">Stale</span><span>Written against<br><code>nine""" + "\n" + """ten</code><br>Now<br><code>NINE""" + "\n" + """ten</code></span>""")
-        assertContains(page, """<a href="#s1-2">⚠ The rest</a>""")
+        assertContains(page, """<a href="?tab=story&story=1&step=2" aria-current="step">⚠ The rest</a>""")
         assertContains(page, """<span class="cnt">2 steps · <span class="stalecnt">1 stale</span></span>""")
-        assertContains(page, """<div class="claim">Line one is upper case.</div>""") // its line is as it was
+        assertContains(browser.get(entry(run) + "?tab=story&story=1&step=1").body, """<div class="claim">Line one is upper case.</div>""") // its line is as it was
     }
 
     @ParameterizedTest(name = "{0}")
@@ -138,7 +151,7 @@ class StorySetTest : AntsTest() {
     fun `a check that fails resumes the walkthrough naming the step`(fault: String, step: String, from: String, to: String) {
         walkthrough(valid.replace(from, to), valid)
         val run = start()
-        val page = browser.get(entry(run)).body
+        val page = browser.get(entry(run) + "?tab=story&story=1&step=1").body
         assertContains(page, """<div class="claim">Line one is upper case.</div>""")
         val fix = JsonMapper.shared().readTree(claude.launches("narrate").single().stdin.lines()[1])["message"]["content"].asString()
         assertContains(fix, "Ants checked the Story set in walkthrough/stories.json")
@@ -181,14 +194,14 @@ class StorySetTest : AntsTest() {
         claude.session("ship", result("{}"))
         val run = start()
         val entry = entry(run)
-        assertContains(browser.get(entry).body, """<input type="hidden" name="story" value="The first word is shouted">""")
+        assertContains(browser.get("$entry?tab=story&story=1&step=2").body, """<input type="hidden" name="story" value="The first word is shouted">""")
         val commented = browser.post(
             "$entry/comments",
-            mapOf("story" to "The first word is shouted", "step" to "2", "repo" to "api", "file" to "repos/api/long.txt", "side" to "new", "from" to "9", "to" to "10", "type" to "NOTE", "body" to "Fine.", "tab" to "story"),
+            mapOf("story" to "The first word is shouted", "step" to "2", "repo" to "api", "file" to "repos/api/long.txt", "side" to "new", "from" to "9", "to" to "10", "type" to "NOTE", "body" to "Fine.", "tab" to "story", "at" to "1-2"),
         )
         assertContains(commented.body, """<span class="grow"><b>NOTE</b> <span class="cbody">Fine.</span></span><button class="ghost small" name="remove" value="0">Remove</button>""") // under its step
         assertContains(commented.body, """<span class="tag t-NOTE">Note</span>""") // and listed above the overall comment
-        assertContains(commented.body, """<a href="#s1-2">The first word is shouted › The rest</a> <span class="mono">repos/api/long.txt:9-10 (new)</span>: <span class="cbody">Fine.</span>""")
+        assertContains(commented.body, """<a href="?tab=story&story=1&step=2">The first word is shouted › The rest</a> <span class="mono">repos/api/long.txt:9-10 (new)</span>: <span class="cbody">Fine.</span>""")
 
         browser.post(entry, mapOf("action" to "approve", "comment" to ""))
         eventually { assertContains(browser.get("/runs/$run").body, """id="state">Completed<""") }
@@ -212,7 +225,7 @@ class StorySetTest : AntsTest() {
                 """{"story":null,"step":null,"repo":"api","file":"repos/api/other.txt","side":"new","from":1,"to":1,"type":"ISSUE","body":"Also kept."}]""",
         )
 
-        val story = browser.get(entry).body
+        val story = browser.get("$entry?tab=story&story=1&step=2").body
         assertContains(story, """<span class="grow"><b>NOTE</b> <span class="cbody">Kept.</span></span>""")
         assertContains(story, """<b class="small">Comments (2)</b>""")
         val byRepo = browser.get("$entry?tab=repo").body
