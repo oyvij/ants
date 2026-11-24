@@ -5,7 +5,7 @@ import java.util.HexFormat
 plugins {
     kotlin("jvm") version "2.4.21"
     kotlin("plugin.spring") version "2.4.21"
-    id("org.springframework.boot") version "4.1.2"
+    id("org.springframework.boot") version "4.2.0"
     id("gg.jte.gradle") version "3.2.5"
     id("com.github.node-gradle.node") version "7.1.0"
 }
@@ -18,7 +18,7 @@ kotlin {
     jvmToolchain(25)
 }
 
-val operaton = "2.2.1"
+val operaton = "2.2.2"
 val jte = "3.2.5"
 
 repositories {
@@ -38,16 +38,16 @@ dependencies {
     implementation("gg.jte:jte-kotlin:$jte")
     implementation("org.jetbrains.kotlin:kotlin-reflect")
     implementation("com.networknt:json-schema-validator:3.0.9")
-    implementation("org.commonmark:commonmark:0.32.0")
-    implementation("org.commonmark:commonmark-ext-task-list-items:0.32.0") // a Ticket's ticking checkboxes
-    implementation("org.commonmark:commonmark-ext-gfm-tables:0.32.0")
+    implementation("org.commonmark:commonmark:0.33.0")
+    implementation("org.commonmark:commonmark-ext-task-list-items:0.33.0") // a Ticket's ticking checkboxes
+    implementation("org.commonmark:commonmark-ext-gfm-tables:0.33.0")
     runtimeOnly("com.h2database:h2")
     runtimeOnly("org.postgresql:postgresql") // engine state on a server, such as in the Docker image
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation(kotlin("test"))
     // BrowserTest.
-    testImplementation("com.microsoft.playwright:playwright:1.65.0")
+    testImplementation("com.microsoft.playwright:playwright:1.65.1")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
