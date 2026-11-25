@@ -339,8 +339,8 @@ class Browser(private val base: String, private val diagram: (String) -> String 
             var event = ""
             runCatching { // the stream ends when it times out, or the client closes
                 client.send(request, HttpResponse.BodyHandlers.ofLines()).body().forEach {
-                    if (it.startsWith("event:")) event = it.removePrefix("event:")
-                    if (it.startsWith("data:") && event == name) events += it.removePrefix("data:")
+                    sseField(it, "event")?.let { value -> event = value }
+                    if (event == name) sseField(it, "data")?.let { value -> events += value }
                 }
             }
         }
@@ -357,10 +357,12 @@ class Browser(private val base: String, private val diagram: (String) -> String 
             .body().use { lines ->
                 var event = ""
                 lines.iterator().asSequence()
-                    .onEach { if (it.startsWith("event:")) event = it.removePrefix("event:") }
-                    .first { it.startsWith("data:") && event == name }
-                    .removePrefix("data:")
+                    .onEach { line -> sseField(line, "event")?.let { event = it } }
+                    .firstNotNullOf { line -> sseField(line, "data")?.takeIf { event == name } }
             }
+
+    private fun sseField(line: String, field: String): String? =
+        line.takeIf { it.startsWith("$field:") }?.removePrefix("$field:")?.removePrefix(" ")
 
     fun login(password: String = "admin"): Page {
         get("/login")
