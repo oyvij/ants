@@ -5,12 +5,12 @@
     "@codemirror/lang-json": "6.0.2",
     "@codemirror/lang-markdown": "6.5.2",
     "@codemirror/legacy-modes": "6.5.5",
-    "camunda-bpmn-js": "5.38.0",
+    "camunda-bpmn-js": "5.39.0",
     "codemirror": "6.0.2",
-    "gridstack": "14.1.0",
+    "gridstack": "14.1.1",
     "mermaid": "12.3.0",
     "vega": "6.4.0",
-    "vega-embed": "7.3.0",
+    "vega-embed": "7.4.0",
     "vega-lite": "6.5.0"
   }
 }
